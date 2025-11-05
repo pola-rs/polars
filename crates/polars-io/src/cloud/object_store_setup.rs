@@ -1,48 +1,42 @@
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
-use object_store::local::LocalFileSystem;
 use object_store::ObjectStore;
-use once_cell::sync::Lazy;
-use polars_core::config;
-use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
+use object_store::local::LocalFileSystem;
+use polars_core::config::{self, verbose_print_sensitive};
+use polars_error::{PolarsError, PolarsResult, polars_bail, to_compute_err};
 use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::plpath::{PlPath, PlPathRef};
+use polars_utils::{format_pl_smallstr, pl_serialize};
 use tokio::sync::RwLock;
-use url::Url;
 
-use super::{parse_url, CloudLocation, CloudOptions, CloudType, PolarsObjectStore};
+use super::{CloudLocation, CloudOptions, CloudType, PolarsObjectStore};
 use crate::cloud::CloudConfig;
 
 /// Object stores must be cached. Every object-store will do DNS lookups and
 /// get rate limited when querying the DNS (can take up to 5s).
 /// Other reasons are connection pools that must be shared between as much as possible.
 #[allow(clippy::type_complexity)]
-static OBJECT_STORE_CACHE: Lazy<RwLock<PlHashMap<String, PolarsObjectStore>>> =
-    Lazy::new(Default::default);
+static OBJECT_STORE_CACHE: LazyLock<RwLock<PlHashMap<Vec<u8>, PolarsObjectStore>>> =
+    LazyLock::new(Default::default);
 
 #[allow(dead_code)]
-fn err_missing_feature(feature: &str, scheme: &str) -> PolarsResult<Arc<dyn ObjectStore>> {
+fn err_missing_feature(
+    feature: &str,
+    cloud_type: &CloudType,
+) -> PolarsResult<Arc<dyn ObjectStore>> {
     polars_bail!(
         ComputeError:
-        "feature '{}' must be enabled in order to use '{}' cloud urls", feature, scheme,
+        "feature '{}' must be enabled in order to use '{:?}' cloud urls",
+        feature,
+        cloud_type,
     );
 }
 
 /// Get the key of a url for object store registration.
-fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> String {
-    #[derive(Clone, Debug, PartialEq, Hash, Eq)]
-    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-    struct S {
-        max_retries: usize,
-        #[cfg(feature = "file_cache")]
-        file_cache_ttl: u64,
-        config: Option<CloudConfig>,
-        #[cfg(feature = "cloud")]
-        credential_provider: usize,
-    }
-
+fn path_and_creds_to_key(path: PlPathRef<'_>, options: Option<&CloudOptions>) -> Vec<u8> {
     // We include credentials as they can expire, so users will send new credentials for the same url.
-    let creds = serde_json::to_string(&options.map(
+    let cloud_options = options.map(
         |CloudOptions {
              // Destructure to ensure this breaks if anything changes.
              max_retries,
@@ -52,7 +46,7 @@ fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> String {
              #[cfg(feature = "cloud")]
              credential_provider,
          }| {
-            S {
+            CloudOptions2 {
                 max_retries: *max_retries,
                 #[cfg(feature = "file_cache")]
                 file_cache_ttl: *file_cache_ttl,
@@ -61,15 +55,42 @@ fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> String {
                 credential_provider: credential_provider.as_ref().map_or(0, |x| x.func_addr()),
             }
         },
-    ))
-    .unwrap();
+    );
 
-    format!(
-        "{}://{}<\\creds\\>{}",
-        url.scheme(),
-        &url[url::Position::BeforeHost..url::Position::AfterPort],
-        creds
-    )
+    let cache_key = CacheKey {
+        url_base: format_pl_smallstr!("{}", &path.to_str()[..path.authority_end_position()]),
+        cloud_options,
+    };
+
+    verbose_print_sensitive(|| {
+        format!(
+            "object store cache key for path at '{}': {:?}",
+            path.to_str(),
+            &cache_key
+        )
+    });
+
+    return pl_serialize::serialize_to_bytes::<_, false>(&cache_key).unwrap();
+
+    #[derive(Clone, Debug, PartialEq, Hash, Eq)]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+    struct CacheKey {
+        url_base: PlSmallStr,
+        cloud_options: Option<CloudOptions2>,
+    }
+
+    /// Variant of CloudOptions for serializing to a cache key. The credential
+    /// provider is replaced by the function address.
+    #[derive(Clone, Debug, PartialEq, Hash, Eq)]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+    struct CloudOptions2 {
+        max_retries: usize,
+        #[cfg(feature = "file_cache")]
+        file_cache_ttl: u64,
+        config: Option<CloudConfig>,
+        #[cfg(feature = "cloud")]
+        credential_provider: usize,
+    }
 }
 
 /// Construct an object_store `Path` from a string without any encoding/decoding.
@@ -79,16 +100,17 @@ pub fn object_path_from_str(path: &str) -> PolarsResult<object_store::path::Path
 
 #[derive(Debug, Clone)]
 pub(crate) struct PolarsObjectStoreBuilder {
-    url: PlSmallStr,
-    parsed_url: Url,
-    #[allow(unused)]
-    scheme: PlSmallStr,
+    path: PlPath,
     cloud_type: CloudType,
     options: Option<CloudOptions>,
 }
 
 impl PolarsObjectStoreBuilder {
-    pub(super) async fn build_impl(&self) -> PolarsResult<Arc<dyn ObjectStore>> {
+    pub(super) async fn build_impl(
+        &self,
+        // Whether to clear cached credentials for Python credential providers.
+        clear_cached_credentials: bool,
+    ) -> PolarsResult<Arc<dyn ObjectStore>> {
         let options = self
             .options
             .as_ref()
@@ -98,31 +120,35 @@ impl PolarsObjectStoreBuilder {
             CloudType::Aws => {
                 #[cfg(feature = "aws")]
                 {
-                    let store = options.build_aws(&self.url).await?;
+                    let store = options
+                        .build_aws(self.path.to_str(), clear_cached_credentials)
+                        .await?;
                     Ok::<_, PolarsError>(Arc::new(store) as Arc<dyn ObjectStore>)
                 }
                 #[cfg(not(feature = "aws"))]
-                return err_missing_feature("aws", &self.scheme);
+                return err_missing_feature("aws", &self.cloud_type);
             },
             CloudType::Gcp => {
                 #[cfg(feature = "gcp")]
                 {
-                    let store = options.build_gcp(&self.url)?;
+                    let store = options.build_gcp(self.path.to_str(), clear_cached_credentials)?;
+
                     Ok::<_, PolarsError>(Arc::new(store) as Arc<dyn ObjectStore>)
                 }
                 #[cfg(not(feature = "gcp"))]
-                return err_missing_feature("gcp", &self.scheme);
+                return err_missing_feature("gcp", &self.cloud_type);
             },
             CloudType::Azure => {
                 {
                     #[cfg(feature = "azure")]
                     {
-                        let store = options.build_azure(&self.url)?;
+                        let store =
+                            options.build_azure(self.path.to_str(), clear_cached_credentials)?;
                         Ok::<_, PolarsError>(Arc::new(store) as Arc<dyn ObjectStore>)
                     }
                 }
                 #[cfg(not(feature = "azure"))]
-                return err_missing_feature("azure", &self.scheme);
+                return err_missing_feature("azure", &self.cloud_type);
             },
             CloudType::File => {
                 let local = LocalFileSystem::new();
@@ -132,7 +158,7 @@ impl PolarsObjectStoreBuilder {
                 {
                     #[cfg(feature = "http")]
                     {
-                        let store = options.build_http(&self.url)?;
+                        let store = options.build_http(self.path.to_str())?;
                         PolarsResult::Ok(Arc::new(store) as Arc<dyn ObjectStore>)
                     }
                 }
@@ -148,8 +174,8 @@ impl PolarsObjectStoreBuilder {
     /// Note: Use `build_impl` for a non-caching version.
     pub(super) async fn build(self) -> PolarsResult<PolarsObjectStore> {
         let opt_cache_key = match &self.cloud_type {
-            CloudType::Aws | CloudType::Gcp | CloudType::Azure => Some(url_and_creds_to_key(
-                &self.parsed_url,
+            CloudType::Aws | CloudType::Gcp | CloudType::Azure => Some(path_and_creds_to_key(
+                self.path.as_ref(),
                 self.options.as_ref(),
             )),
             CloudType::File | CloudType::Http | CloudType::Hf => None,
@@ -175,7 +201,7 @@ impl PolarsObjectStoreBuilder {
             None
         };
 
-        let store = self.build_impl().await?;
+        let store = self.build_impl(false).await?;
         let store = PolarsObjectStore::new_from_inner(store, self);
 
         if let Some(mut cache) = opt_cache_write_guard {
@@ -195,11 +221,15 @@ impl PolarsObjectStoreBuilder {
 
         Ok(store)
     }
+
+    pub(crate) fn is_azure(&self) -> bool {
+        matches!(&self.cloud_type, CloudType::Azure)
+    }
 }
 
 /// Build an [`ObjectStore`] based on the URL and passed in url. Return the cloud location and an implementation of the object store.
 pub async fn build_object_store(
-    url: &str,
+    path: PlPathRef<'_>,
     #[cfg_attr(
         not(any(feature = "aws", feature = "gcp", feature = "azure")),
         allow(unused_variables)
@@ -207,14 +237,15 @@ pub async fn build_object_store(
     options: Option<&CloudOptions>,
     glob: bool,
 ) -> PolarsResult<(CloudLocation, PolarsObjectStore)> {
-    let parsed = parse_url(url).map_err(to_compute_err)?;
-    let cloud_location = CloudLocation::from_url(&parsed, glob)?;
-    let cloud_type = CloudType::from_url(&parsed)?;
+    let path = path.to_absolute_path().unwrap_or_else(|| path.into_owned());
+
+    let cloud_location = CloudLocation::new(path.as_ref(), glob)?;
+    let cloud_type = path.as_ref().scheme().map_or(CloudType::File, |scheme| {
+        CloudType::from_cloud_scheme(&scheme)
+    });
 
     let store = PolarsObjectStoreBuilder {
-        url: url.into(),
-        parsed_url: parsed,
-        scheme: cloud_location.scheme.as_str().into(),
+        path,
         cloud_type,
         options: options.cloned(),
     }

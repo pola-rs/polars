@@ -5,7 +5,14 @@ from typing import Any
 import pytest
 
 import polars as pl
+from polars.datatypes.group import NUMERIC_DTYPES, TEMPORAL_DTYPES
 from polars.testing.asserts.frame import assert_frame_equal
+
+# Used by test_lazy_collect_schema_matches_computed_schema
+_TEST_COLLECT_SCHEMA_M_DTYPES = sorted(
+    ({pl.Boolean, pl.String} | NUMERIC_DTYPES | TEMPORAL_DTYPES) - {pl.Decimal},
+    key=repr,
+)
 
 
 def test_schema() -> None:
@@ -22,6 +29,28 @@ def test_schema() -> None:
         match="dtypes must be fully-specified, got: List",
     ):
         pl.Schema({"foo": pl.String, "bar": pl.List})
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [
+        pl.Schema(),
+        pl.Schema({"foo": pl.Int8()}),
+        pl.Schema({"foo": pl.Datetime("us"), "bar": pl.String()}),
+        pl.Schema(
+            {
+                "foo": pl.UInt32(),
+                "bar": pl.Categorical(),
+                "baz": pl.Struct({"x": pl.Int64(), "y": pl.Float64()}),
+            }
+        ),
+    ],
+)
+def test_schema_empty_frame(schema: pl.Schema) -> None:
+    assert_frame_equal(
+        schema.to_frame(),
+        pl.DataFrame(schema=schema),
+    )
 
 
 def test_schema_equality() -> None:
@@ -107,13 +136,68 @@ def test_schema_in_map_elements_returns_scalar() -> None:
     )
     q = ldf.group_by("portfolio").agg(
         pl.col("amounts")
-        .map_elements(
-            lambda x: float(x.sum()), return_dtype=pl.Float64, returns_scalar=True
-        )
+        .implode()
+        .map_elements(lambda x: float(x.sum()), return_dtype=pl.Float64)
         .alias("irr")
     )
     assert q.collect_schema() == schema
     assert q.collect().schema == schema
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    "expr",
+    [
+        # TODO: Add more (bitwise) operators once their types are resolved correctly
+        pl.col("col0") > pl.col("col1"),
+        pl.col("col0") >= pl.col("col1"),
+        pl.col("col0") < pl.col("col1"),
+        pl.col("col0") <= pl.col("col1"),
+        pl.col("col0") == pl.col("col1"),
+        pl.col("col0") != pl.col("col1"),
+        pl.col("col0") + pl.col("col1"),
+        pl.col("col0") - pl.col("col1"),
+        pl.col("col0") * pl.col("col1"),
+        pl.col("col0") / pl.col("col1"),
+        pl.col("col0").truediv(pl.col("col1")),
+        pl.col("col0") // pl.col("col1"),
+        pl.col("col0") % pl.col("col1"),
+    ],
+)
+@pytest.mark.parametrize("dtype1", _TEST_COLLECT_SCHEMA_M_DTYPES)
+@pytest.mark.parametrize("dtype2", _TEST_COLLECT_SCHEMA_M_DTYPES)
+def test_lazy_collect_schema_matches_computed_schema(
+    expr: pl.Expr, dtype1: pl.DataType, dtype2: pl.DataType
+) -> None:
+    df = pl.DataFrame(
+        {
+            "col0": [None],
+            "col1": [None],
+        },
+        schema={
+            "col0": dtype1,
+            "col1": dtype2,
+        },
+    )
+    lazy_df = df.lazy().select(expr)
+
+    expected_schema = None
+    try:
+        expected_schema = lazy_df.collect().schema
+    except (
+        # Applying the operator to these dtypes will result in an error,
+        # so they their output dtype is undefined
+        pl.exceptions.InvalidOperationError,
+        pl.exceptions.SchemaError,
+        pl.exceptions.ComputeError,
+    ):
+        return
+
+    actual_schema = lazy_df.collect_schema()
+    assert actual_schema == expected_schema, (
+        f"{expr} on {df.dtypes} results in {actual_schema} instead of {expected_schema}\n"
+        f"result of computation is:\n{lazy_df.collect()}\n"
+    )
 
 
 def test_ir_cache_unique_18198() -> None:
@@ -208,7 +292,7 @@ def test_lazy_nested_function_expr_agg_schema() -> None:
 def test_lazy_agg_scalar_return_schema() -> None:
     q = pl.LazyFrame({"k": [1]}).group_by("k").agg(pl.col("k").null_count().alias("o"))
 
-    schema = {"k": pl.Int64, "o": pl.UInt32}
+    schema = {"k": pl.Int64, "o": pl.get_index_type()}
     assert q.collect_schema() == schema
     assert_frame_equal(q.collect(), pl.DataFrame({"k": 1, "o": 0}, schema=schema))
 
@@ -248,13 +332,15 @@ def test_lazy_agg_lit_explode() -> None:
     assert_frame_equal(q.collect(), pl.DataFrame({"k": 1, "o": [[1]]}, schema=schema))  # type: ignore[arg-type]
 
 
-@pytest.mark.parametrize("expr_op", [
-    "approx_n_unique", "arg_max", "arg_min", "bitwise_and", "bitwise_or",
-    "bitwise_xor", "count", "entropy", "first", "has_nulls", "implode", "kurtosis",
-    "last", "len", "lower_bound", "max", "mean", "median", "min", "n_unique", "nan_max",
-    "nan_min", "null_count", "product", "sample", "skew", "std", "sum", "upper_bound",
-    "var"
-])  # fmt: skip
+@pytest.mark.parametrize(
+    "expr_op", [
+        "approx_n_unique", "arg_max", "arg_min", "bitwise_and", "bitwise_or",
+        "bitwise_xor", "count", "entropy", "first", "has_nulls", "implode", "kurtosis",
+        "last", "len", "lower_bound", "max", "mean", "median", "min", "n_unique", "nan_max",
+        "nan_min", "null_count", "product", "sample", "skew", "std", "sum", "upper_bound",
+        "var"
+    ]
+)  # fmt: skip
 @pytest.mark.parametrize("lhs", [pl.col("b"), pl.lit(1, dtype=pl.Int64).alias("b")])
 def test_lazy_agg_to_scalar_schema_19752(lhs: pl.Expr, expr_op: str) -> None:
     op = getattr(pl.Expr, expr_op)
@@ -272,16 +358,16 @@ def test_lazy_agg_to_scalar_schema_19752(lhs: pl.Expr, expr_op: str) -> None:
 def test_lazy_agg_schema_after_elementwise_19984() -> None:
     lf = pl.LazyFrame({"a": 1, "b": 1})
 
-    q = lf.group_by("a").agg(pl.col("b").first().fill_null(0))
+    q = lf.group_by("a").agg(pl.col("b").item().fill_null(0))
     assert q.collect_schema() == q.collect().collect_schema()
 
-    q = lf.group_by("a").agg(pl.col("b").first().fill_null(0).fill_null(0))
+    q = lf.group_by("a").agg(pl.col("b").item().fill_null(0).fill_null(0))
     assert q.collect_schema() == q.collect().collect_schema()
 
-    q = lf.group_by("a").agg(pl.col("b").first() + 1)
+    q = lf.group_by("a").agg(pl.col("b").item() + 1)
     assert q.collect_schema() == q.collect().collect_schema()
 
-    q = lf.group_by("a").agg(1 + pl.col("b").first())
+    q = lf.group_by("a").agg(1 + pl.col("b").item())
     assert q.collect_schema() == q.collect().collect_schema()
 
 
@@ -345,3 +431,24 @@ def test_scalar_agg_schema_20044() -> None:
         .group_by("c")
         .agg(pl.col("d").mean())
     ).schema == pl.Schema([("c", pl.String), ("d", pl.Float64)])
+
+
+@pytest.mark.parametrize(
+    "df",
+    [
+        pl.DataFrame({"a": [None, True, False], "b": 3 * [128]}),
+        pl.DataFrame(
+            {"a": [[None, True, False]], "b": [3 * [128]]},
+            schema={"a": pl.Array(pl.Boolean, 3), "b": pl.Array(pl.Int64, 3)},
+        ),
+        pl.DataFrame(
+            {"a": [[None, True, False]], "b": [3 * [128]]},
+            schema={"a": pl.List(pl.Boolean), "b": pl.List(pl.Int64)},
+        ),
+    ],
+)
+def test_div_collect_schema_matches_23993(df: pl.DataFrame) -> None:
+    q = df.lazy().select(pl.col("a") / pl.col("b"))
+    expected = q.collect().schema
+    actual = q.collect_schema()
+    assert actual == expected

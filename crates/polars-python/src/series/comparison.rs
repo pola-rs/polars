@@ -1,219 +1,138 @@
+use polars_compute::decimal::{DEC128_MAX_PREC, dec128_fits};
 use pyo3::prelude::*;
 
+use crate::PySeries;
 use crate::error::PyPolarsErr;
 use crate::prelude::*;
-use crate::PySeries;
+use crate::utils::EnterPolarsExt;
 
 #[pymethods]
 impl PySeries {
-    fn eq(&self, py: Python, rhs: &PySeries) -> PyResult<Self> {
-        let s = py
-            .allow_threads(|| self.series.equal(&rhs.series))
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.into_series().into())
+    fn eq(&self, py: Python<'_>, rhs: &PySeries) -> PyResult<Self> {
+        py.enter_polars_series(|| self.series.read().equal(&*rhs.series.read()))
     }
 
-    fn neq(&self, py: Python, rhs: &PySeries) -> PyResult<Self> {
-        let s = py
-            .allow_threads(|| self.series.not_equal(&rhs.series))
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.into_series().into())
+    fn neq(&self, py: Python<'_>, rhs: &PySeries) -> PyResult<Self> {
+        py.enter_polars_series(|| self.series.read().not_equal(&*rhs.series.read()))
     }
 
-    fn gt(&self, py: Python, rhs: &PySeries) -> PyResult<Self> {
-        let s = py
-            .allow_threads(|| self.series.gt(&rhs.series))
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.into_series().into())
+    fn gt(&self, py: Python<'_>, rhs: &PySeries) -> PyResult<Self> {
+        py.enter_polars_series(|| self.series.read().gt(&*rhs.series.read()))
     }
 
-    fn gt_eq(&self, py: Python, rhs: &PySeries) -> PyResult<Self> {
-        let s = py
-            .allow_threads(|| self.series.gt_eq(&rhs.series))
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.into_series().into())
+    fn gt_eq(&self, py: Python<'_>, rhs: &PySeries) -> PyResult<Self> {
+        py.enter_polars_series(|| self.series.read().gt_eq(&*rhs.series.read()))
     }
 
-    fn lt(&self, py: Python, rhs: &PySeries) -> PyResult<Self> {
-        let s = py
-            .allow_threads(|| self.series.lt(&rhs.series))
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.into_series().into())
+    fn lt(&self, py: Python<'_>, rhs: &PySeries) -> PyResult<Self> {
+        py.enter_polars_series(|| self.series.read().lt(&*rhs.series.read()))
     }
 
-    fn lt_eq(&self, py: Python, rhs: &PySeries) -> PyResult<Self> {
-        let s = py
-            .allow_threads(|| self.series.lt_eq(&rhs.series))
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.into_series().into())
+    fn lt_eq(&self, py: Python<'_>, rhs: &PySeries) -> PyResult<Self> {
+        py.enter_polars_series(|| self.series.read().lt_eq(&*rhs.series.read()))
     }
 }
 
-macro_rules! impl_eq_num {
-    ($name:ident, $type:ty) => {
+macro_rules! impl_op {
+    ($op:ident, $name:ident, $type:ty) => {
         #[pymethods]
         impl PySeries {
-            fn $name(&self, py: Python, rhs: $type) -> PyResult<Self> {
-                let s = py
-                    .allow_threads(|| self.series.equal(rhs))
-                    .map_err(PyPolarsErr::from)?;
-                Ok(s.into_series().into())
+            fn $name(&self, py: Python<'_>, rhs: $type) -> PyResult<Self> {
+                py.enter_polars_series(|| self.series.read().$op(rhs))
             }
         }
     };
 }
 
-impl_eq_num!(eq_u8, u8);
-impl_eq_num!(eq_u16, u16);
-impl_eq_num!(eq_u32, u32);
-impl_eq_num!(eq_u64, u64);
-impl_eq_num!(eq_i8, i8);
-impl_eq_num!(eq_i16, i16);
-impl_eq_num!(eq_i32, i32);
-impl_eq_num!(eq_i64, i64);
-impl_eq_num!(eq_f32, f32);
-impl_eq_num!(eq_f64, f64);
-impl_eq_num!(eq_str, &str);
+impl_op!(equal, eq_u8, u8);
+impl_op!(equal, eq_u16, u16);
+impl_op!(equal, eq_u32, u32);
+impl_op!(equal, eq_u64, u64);
+impl_op!(equal, eq_i8, i8);
+impl_op!(equal, eq_i16, i16);
+impl_op!(equal, eq_i32, i32);
+impl_op!(equal, eq_i64, i64);
+impl_op!(equal, eq_i128, i128);
+impl_op!(equal, eq_f32, f32);
+impl_op!(equal, eq_f64, f64);
+impl_op!(equal, eq_str, &str);
 
-macro_rules! impl_neq_num {
-    ($name:ident, $type:ty) => {
-        #[allow(clippy::nonstandard_macro_braces)]
-        #[pymethods]
-        impl PySeries {
-            fn $name(&self, py: Python, rhs: $type) -> PyResult<Self> {
-                let s = py
-                    .allow_threads(|| self.series.not_equal(rhs))
-                    .map_err(PyPolarsErr::from)?;
-                Ok(s.into_series().into())
-            }
-        }
-    };
-}
+impl_op!(not_equal, neq_u8, u8);
+impl_op!(not_equal, neq_u16, u16);
+impl_op!(not_equal, neq_u32, u32);
+impl_op!(not_equal, neq_u64, u64);
+impl_op!(not_equal, neq_i8, i8);
+impl_op!(not_equal, neq_i16, i16);
+impl_op!(not_equal, neq_i32, i32);
+impl_op!(not_equal, neq_i64, i64);
+impl_op!(not_equal, neq_i128, i128);
+impl_op!(not_equal, neq_f32, f32);
+impl_op!(not_equal, neq_f64, f64);
+impl_op!(not_equal, neq_str, &str);
 
-impl_neq_num!(neq_u8, u8);
-impl_neq_num!(neq_u16, u16);
-impl_neq_num!(neq_u32, u32);
-impl_neq_num!(neq_u64, u64);
-impl_neq_num!(neq_i8, i8);
-impl_neq_num!(neq_i16, i16);
-impl_neq_num!(neq_i32, i32);
-impl_neq_num!(neq_i64, i64);
-impl_neq_num!(neq_f32, f32);
-impl_neq_num!(neq_f64, f64);
-impl_neq_num!(neq_str, &str);
+impl_op!(gt, gt_u8, u8);
+impl_op!(gt, gt_u16, u16);
+impl_op!(gt, gt_u32, u32);
+impl_op!(gt, gt_u64, u64);
+impl_op!(gt, gt_i8, i8);
+impl_op!(gt, gt_i16, i16);
+impl_op!(gt, gt_i32, i32);
+impl_op!(gt, gt_i64, i64);
+impl_op!(gt, gt_i128, i128);
+impl_op!(gt, gt_f32, f32);
+impl_op!(gt, gt_f64, f64);
+impl_op!(gt, gt_str, &str);
 
-macro_rules! impl_gt_num {
-    ($name:ident, $type:ty) => {
-        #[pymethods]
-        impl PySeries {
-            fn $name(&self, py: Python, rhs: $type) -> PyResult<Self> {
-                let s = py
-                    .allow_threads(|| self.series.gt(rhs))
-                    .map_err(PyPolarsErr::from)?;
-                Ok(s.into_series().into())
-            }
-        }
-    };
-}
+impl_op!(gt_eq, gt_eq_u8, u8);
+impl_op!(gt_eq, gt_eq_u16, u16);
+impl_op!(gt_eq, gt_eq_u32, u32);
+impl_op!(gt_eq, gt_eq_u64, u64);
+impl_op!(gt_eq, gt_eq_i8, i8);
+impl_op!(gt_eq, gt_eq_i16, i16);
+impl_op!(gt_eq, gt_eq_i32, i32);
+impl_op!(gt_eq, gt_eq_i64, i64);
+impl_op!(gt_eq, gt_eq_i128, i128);
+impl_op!(gt_eq, gt_eq_f32, f32);
+impl_op!(gt_eq, gt_eq_f64, f64);
+impl_op!(gt_eq, gt_eq_str, &str);
 
-impl_gt_num!(gt_u8, u8);
-impl_gt_num!(gt_u16, u16);
-impl_gt_num!(gt_u32, u32);
-impl_gt_num!(gt_u64, u64);
-impl_gt_num!(gt_i8, i8);
-impl_gt_num!(gt_i16, i16);
-impl_gt_num!(gt_i32, i32);
-impl_gt_num!(gt_i64, i64);
-impl_gt_num!(gt_f32, f32);
-impl_gt_num!(gt_f64, f64);
-impl_gt_num!(gt_str, &str);
+impl_op!(lt, lt_u8, u8);
+impl_op!(lt, lt_u16, u16);
+impl_op!(lt, lt_u32, u32);
+impl_op!(lt, lt_u64, u64);
+impl_op!(lt, lt_i8, i8);
+impl_op!(lt, lt_i16, i16);
+impl_op!(lt, lt_i32, i32);
+impl_op!(lt, lt_i64, i64);
+impl_op!(lt, lt_i128, i128);
+impl_op!(lt, lt_f32, f32);
+impl_op!(lt, lt_f64, f64);
+impl_op!(lt, lt_str, &str);
 
-macro_rules! impl_gt_eq_num {
-    ($name:ident, $type:ty) => {
-        #[pymethods]
-        impl PySeries {
-            fn $name(&self, py: Python, rhs: $type) -> PyResult<Self> {
-                let s = py
-                    .allow_threads(|| self.series.gt_eq(rhs))
-                    .map_err(PyPolarsErr::from)?;
-                Ok(s.into_series().into())
-            }
-        }
-    };
-}
+impl_op!(lt_eq, lt_eq_u8, u8);
+impl_op!(lt_eq, lt_eq_u16, u16);
+impl_op!(lt_eq, lt_eq_u32, u32);
+impl_op!(lt_eq, lt_eq_u64, u64);
+impl_op!(lt_eq, lt_eq_i8, i8);
+impl_op!(lt_eq, lt_eq_i16, i16);
+impl_op!(lt_eq, lt_eq_i32, i32);
+impl_op!(lt_eq, lt_eq_i64, i64);
+impl_op!(lt_eq, lt_eq_i128, i128);
+impl_op!(lt_eq, lt_eq_f32, f32);
+impl_op!(lt_eq, lt_eq_f64, f64);
+impl_op!(lt_eq, lt_eq_str, &str);
 
-impl_gt_eq_num!(gt_eq_u8, u8);
-impl_gt_eq_num!(gt_eq_u16, u16);
-impl_gt_eq_num!(gt_eq_u32, u32);
-impl_gt_eq_num!(gt_eq_u64, u64);
-impl_gt_eq_num!(gt_eq_i8, i8);
-impl_gt_eq_num!(gt_eq_i16, i16);
-impl_gt_eq_num!(gt_eq_i32, i32);
-impl_gt_eq_num!(gt_eq_i64, i64);
-impl_gt_eq_num!(gt_eq_f32, f32);
-impl_gt_eq_num!(gt_eq_f64, f64);
-impl_gt_eq_num!(gt_eq_str, &str);
-
-macro_rules! impl_lt_num {
-    ($name:ident, $type:ty) => {
-        #[allow(clippy::nonstandard_macro_braces)]
-        #[pymethods]
-        impl PySeries {
-            fn $name(&self, py: Python, rhs: $type) -> PyResult<Self> {
-                let s = py
-                    .allow_threads(|| self.series.lt(rhs))
-                    .map_err(PyPolarsErr::from)?;
-                Ok(s.into_series().into())
-            }
-        }
-    };
-}
-
-impl_lt_num!(lt_u8, u8);
-impl_lt_num!(lt_u16, u16);
-impl_lt_num!(lt_u32, u32);
-impl_lt_num!(lt_u64, u64);
-impl_lt_num!(lt_i8, i8);
-impl_lt_num!(lt_i16, i16);
-impl_lt_num!(lt_i32, i32);
-impl_lt_num!(lt_i64, i64);
-impl_lt_num!(lt_f32, f32);
-impl_lt_num!(lt_f64, f64);
-impl_lt_num!(lt_str, &str);
-
-macro_rules! impl_lt_eq_num {
-    ($name:ident, $type:ty) => {
-        #[pymethods]
-        impl PySeries {
-            fn $name(&self, py: Python, rhs: $type) -> PyResult<Self> {
-                let s = py
-                    .allow_threads(|| self.series.lt_eq(rhs))
-                    .map_err(PyPolarsErr::from)?;
-                Ok(s.into_series().into())
-            }
-        }
-    };
-}
-
-impl_lt_eq_num!(lt_eq_u8, u8);
-impl_lt_eq_num!(lt_eq_u16, u16);
-impl_lt_eq_num!(lt_eq_u32, u32);
-impl_lt_eq_num!(lt_eq_u64, u64);
-impl_lt_eq_num!(lt_eq_i8, i8);
-impl_lt_eq_num!(lt_eq_i16, i16);
-impl_lt_eq_num!(lt_eq_i32, i32);
-impl_lt_eq_num!(lt_eq_i64, i64);
-impl_lt_eq_num!(lt_eq_f32, f32);
-impl_lt_eq_num!(lt_eq_f64, f64);
-impl_lt_eq_num!(lt_eq_str, &str);
-
-struct PyDecimal(i128, usize);
+struct PyDecimal(i128, usize, usize);
 
 impl<'source> FromPyObject<'source> for PyDecimal {
     fn extract_bound(obj: &Bound<'source, PyAny>) -> PyResult<Self> {
         if let Ok(val) = obj.extract() {
-            return Ok(PyDecimal(val, 0));
+            return Ok(PyDecimal(val, DEC128_MAX_PREC, 0));
         }
+
+        let err = || {
+            Err(PyPolarsErr::from(polars_err!(ComputeError: "overflow in Python Decimal to Polars Decimal conversion")).into())
+        };
 
         let (sign, digits, exponent) = obj
             .call_method0("as_tuple")?
@@ -223,23 +142,27 @@ impl<'source> FromPyObject<'source> for PyDecimal {
             if let Some(v) = val.checked_mul(10).and_then(|val| val.checked_add(d as _)) {
                 val = v;
             } else {
-                return Err(PyPolarsErr::from(polars_err!(ComputeError: "overflow")).into());
+                return err();
             }
         }
-        let exponent = if exponent > 0 {
+        let scale = if exponent > 0 {
             if let Some(v) = val.checked_mul(10_i128.pow((-exponent) as u32)) {
                 val = v;
             } else {
-                return Err(PyPolarsErr::from(polars_err!(ComputeError: "overflow")).into());
+                return err();
             };
             0_usize
         } else {
-            -exponent as _
+            (-exponent) as usize
         };
         if sign == 1 {
             val = -val
         };
-        Ok(PyDecimal(val, exponent))
+        if dec128_fits(val, DEC128_MAX_PREC) {
+            Ok(PyDecimal(val, DEC128_MAX_PREC, scale))
+        } else {
+            err()
+        }
     }
 }
 
@@ -247,15 +170,12 @@ macro_rules! impl_decimal {
     ($name:ident, $method:ident) => {
         #[pymethods]
         impl PySeries {
-            fn $name(&self, py: Python, rhs: PyDecimal) -> PyResult<Self> {
+            fn $name(&self, py: Python<'_>, rhs: PyDecimal) -> PyResult<Self> {
                 let rhs = Series::new(
                     PlSmallStr::from_static("decimal"),
-                    &[AnyValue::Decimal(rhs.0, rhs.1)],
+                    &[AnyValue::Decimal(rhs.0, rhs.1, rhs.2)],
                 );
-                let s = py
-                    .allow_threads(|| self.series.$method(&rhs))
-                    .map_err(PyPolarsErr::from)?;
-                Ok(s.into_series().into())
+                py.enter_polars_series(|| self.series.read().$method(&rhs))
             }
         }
     };

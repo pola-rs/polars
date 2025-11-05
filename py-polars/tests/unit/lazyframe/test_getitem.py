@@ -55,9 +55,9 @@ def test_lazyframe_getitem(ldf: pl.LazyFrame) -> None:
         sliced_py_data = py_data[s]
         try:
             sliced_df_data = ldf[s].collect().rows()
-            assert (
-                sliced_py_data == sliced_df_data
-            ), f"slice [{start}:{stop}:{step}] failed on lazy df w/len={len(py_data)}"
+            assert sliced_py_data == sliced_df_data, (
+                f"slice [{start}:{stop}:{step}] failed on lazy df w/len={len(py_data)}"
+            )
 
         except ValueError as exc:
             # test params will trigger some known

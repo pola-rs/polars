@@ -11,7 +11,7 @@ fn test_explode_row_numbers() -> PolarsResult<()> {
     .lazy()
     .select([col("text").str().split(lit(" ")).alias("tokens")])
     .with_row_index("index", None)
-    .explode([col("tokens")])
+    .explode(cols(["tokens"]))
     .select([col("index"), col("tokens")])
     .collect()?;
 

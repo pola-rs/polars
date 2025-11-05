@@ -1,4 +1,5 @@
 use std::hash::Hash;
+use std::ops::Deref;
 
 use arrow::bitmap::MutableBitmap;
 use polars_compute::unique::BooleanUniqueKernelState;
@@ -25,21 +26,21 @@ fn finish_is_unique_helper(
 }
 
 pub(crate) fn is_unique_helper(
-    groups: GroupsProxy,
+    groups: &GroupPositions,
     len: IdxSize,
     unique_val: bool,
     duplicated_val: bool,
 ) -> BooleanChunked {
     debug_assert_ne!(unique_val, duplicated_val);
 
-    let idx = match groups {
-        GroupsProxy::Idx(groups) => groups
-            .into_iter()
+    let idx = match groups.deref() {
+        GroupsType::Idx(groups) => groups
+            .iter()
             .filter_map(|(first, g)| if g.len() == 1 { Some(first) } else { None })
             .collect::<Vec<_>>(),
-        GroupsProxy::Slice { groups, .. } => groups
-            .into_iter()
-            .filter_map(|[first, len]| if len == 1 { Some(first) } else { None })
+        GroupsType::Slice { groups, .. } => groups
+            .iter()
+            .filter_map(|[first, len]| if *len == 1 { Some(*first) } else { None })
             .collect(),
     };
     finish_is_unique_helper(idx, len, unique_val, duplicated_val)
@@ -85,8 +86,7 @@ where
     T: PolarsNumericType,
     T::Native: TotalHash + TotalEq + ToTotalOrd,
     <T::Native as ToTotalOrd>::TotalOrdItem: Hash + Eq + Ord,
-    ChunkedArray<T>:
-        IntoSeries + for<'a> ChunkCompareEq<&'a ChunkedArray<T>, Item = BooleanChunked>,
+    ChunkedArray<T>: for<'a> ChunkCompareEq<&'a ChunkedArray<T>, Item = BooleanChunked>,
 {
     fn unique(&self) -> PolarsResult<Self> {
         // prevent stackoverflow repeated sorted.unique call

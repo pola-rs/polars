@@ -52,7 +52,7 @@ def test_expr_deserialize_invalid_json() -> None:
 
 
 def test_expression_json_13991() -> None:
-    expr = pl.col("foo").cast(pl.Decimal)
+    expr = pl.col("foo").cast(pl.Decimal(38, 10))
     json = expr.meta.serialize(format="json")
 
     round_tripped = pl.Expr.deserialize(io.StringIO(json), format="json")

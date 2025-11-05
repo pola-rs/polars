@@ -1,14 +1,14 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_err};
 
 use crate::array::{Array, DictionaryKey, FixedSizeListArray, ListArray, StructArray, View};
 use crate::datatypes::ArrowDataType;
 use crate::ffi::mmap::create_array;
-use crate::ffi::{export_array_to_c, try_from, ArrowArray, InternalArrowArray};
-use crate::io::ipc::read::{Dictionaries, IpcBuffer, Node, OutOfSpecKind};
+use crate::ffi::{ArrowArray, InternalArrowArray, export_array_to_c, try_from};
 use crate::io::ipc::IpcField;
+use crate::io::ipc::read::{Dictionaries, IpcBuffer, Node, OutOfSpecKind};
 use crate::offset::Offset;
 use crate::types::NativeType;
 use crate::{match_integer_type, with_match_primitive_type_full};
@@ -300,14 +300,20 @@ fn mmap_primitive<P: NativeType, T: AsRef<[u8]>>(
             )
         }
     } else {
-        let mut values = vec![P::default(); num_rows];
+        let mut values: Vec<P> = Vec::with_capacity(num_rows);
+        let num_bytes = num_rows * std::mem::size_of::<P>();
+
+        assert!(bytes.len() >= num_bytes);
         unsafe {
             std::ptr::copy_nonoverlapping(
                 bytes.as_ptr(),
                 values.as_mut_ptr() as *mut u8,
-                bytes.len(),
-            )
+                num_bytes,
+            );
+
+            values.set_len(num_rows);
         };
+
         // Now we need to keep the new buffer alive
         let owned_data = Arc::new((
             // We can drop the original ref if we don't have a validity

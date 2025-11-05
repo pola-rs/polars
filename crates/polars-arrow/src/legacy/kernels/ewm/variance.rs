@@ -2,8 +2,8 @@ use std::ops::{AddAssign, DivAssign, MulAssign};
 
 use num_traits::Float;
 
-use crate::array::PrimitiveArray;
-use crate::legacy::utils::CustomIterTools;
+use crate::array::{Array, PrimitiveArray};
+use crate::legacy::kernels::ewm::EwmStateUpdate;
 use crate::trusted_len::TrustedLen;
 use crate::types::NativeType;
 
@@ -20,110 +20,192 @@ fn ewm_cov_internal<I, T>(
 ) -> PrimitiveArray<T>
 where
     I: IntoIterator<Item = Option<T>>,
-    I::IntoIter: TrustedLen,
     T: Float + NativeType + AddAssign + MulAssign + DivAssign,
 {
-    let old_wt_factor = T::one() - alpha;
-    let new_wt = if adjust { T::one() } else { alpha };
-    let mut sum_wt = T::one();
-    let mut sum_wt2 = T::one();
-    let mut old_wt = T::one();
+    let mut state = EwmCovState::new(alpha, adjust, bias, min_periods, ignore_nulls);
+    let iter = state.update_iter(xs.into_iter().zip(ys).map(|(x, y)| x.zip(y)));
 
-    let mut opt_mean_x = None;
-    let mut opt_mean_y = None;
-    let mut cov = T::zero();
-    let mut non_na_cnt = 0usize;
-    let min_periods_fixed = if min_periods == 0 { 1 } else { min_periods };
+    if do_sqrt {
+        iter.map(|opt_x| opt_x.map(|x| x.sqrt())).collect()
+    } else {
+        iter.collect()
+    }
+}
 
-    let res = xs
-        .into_iter()
-        .zip(ys)
-        .enumerate()
-        .map(|(i, (opt_x, opt_y))| {
-            let is_observation = opt_x.is_some() && opt_y.is_some();
-            if is_observation {
-                non_na_cnt += 1;
+pub struct EwmCovState<T> {
+    weight: T,
+    mean_x: T,
+    mean_y: T,
+    cov: T,
+    weight_sum: T,
+    weight_square_sum: T,
+    alpha: T,
+    non_null_count: usize,
+    adjust: bool,
+    bias: bool,
+    min_periods: usize,
+    ignore_nulls: bool,
+}
+
+impl<T> EwmCovState<T>
+where
+    T: num_traits::Float,
+{
+    pub fn new(alpha: T, adjust: bool, bias: bool, min_periods: usize, ignore_nulls: bool) -> Self {
+        Self {
+            mean_x: T::zero(),
+            mean_y: T::zero(),
+            weight: T::zero(),
+            cov: T::zero(),
+            weight_sum: T::zero(),
+            weight_square_sum: T::zero(),
+            alpha,
+            non_null_count: 0,
+            adjust,
+            bias,
+            min_periods: min_periods.max(1),
+            ignore_nulls,
+        }
+    }
+}
+
+impl<T> EwmCovState<T>
+where
+    T: NativeType
+        + num_traits::Float
+        + std::ops::AddAssign
+        + std::ops::DivAssign
+        + std::ops::MulAssign,
+{
+    pub fn update_iter<I>(&mut self, values: I) -> impl Iterator<Item = Option<T>>
+    where
+        I: IntoIterator<Item = Option<(T, T)>>,
+    {
+        let other_weight = if self.adjust { T::one() } else { self.alpha };
+
+        values.into_iter().map(move |opt_xy| {
+            if self.non_null_count == 0
+                && let Some((x, y)) = opt_xy
+            {
+                // Initialize
+                self.non_null_count = 1;
+                self.mean_x = x;
+                self.mean_y = y;
+                self.weight = T::one();
+                self.weight_sum = T::one();
+                self.weight_square_sum = T::one();
+            } else {
+                if opt_xy.is_some() || !self.ignore_nulls {
+                    self.weight_sum *= T::one() - self.alpha;
+                    self.weight_square_sum *= (T::one() - self.alpha) * (T::one() - self.alpha);
+                    self.weight *= T::one() - self.alpha;
+                }
+
+                if let Some((other_x, other_y)) = opt_xy {
+                    self.non_null_count += 1;
+
+                    let new_weight = self.weight + other_weight;
+                    let other_weight_frac = other_weight / new_weight;
+                    let delta_mean_x = other_x - self.mean_x;
+                    let delta_mean_y = other_y - self.mean_y;
+
+                    let new_mean_x = self.mean_x + delta_mean_x * other_weight_frac;
+                    let new_mean_y = self.mean_y + delta_mean_y * other_weight_frac;
+
+                    let cov = ((self.weight
+                        * (self.cov + (self.mean_x - new_mean_x) * (self.mean_y - new_mean_y)))
+                        + other_weight * (other_x - new_mean_x) * (other_y - new_mean_y))
+                        / new_weight;
+
+                    self.cov = cov;
+                    self.weight = new_weight;
+                    self.mean_x = new_mean_x;
+                    self.mean_y = new_mean_y;
+
+                    self.weight_sum += other_weight;
+                    self.weight_square_sum += other_weight * other_weight;
+
+                    if !self.adjust {
+                        self.weight_sum /= new_weight;
+                        self.weight_square_sum /= new_weight * new_weight;
+                        self.weight = T::one();
+                    }
+                }
             }
-            match (i, opt_mean_x, opt_mean_y) {
-                (0, _, _) => {
-                    if is_observation {
-                        opt_mean_x = opt_x;
-                        opt_mean_y = opt_y;
-                    }
-                },
-                (_, Some(mean_x), Some(mean_y)) => {
-                    if is_observation || !ignore_nulls {
-                        sum_wt *= old_wt_factor;
-                        sum_wt2 *= old_wt_factor * old_wt_factor;
-                        old_wt *= old_wt_factor;
-                        if is_observation {
-                            let x = opt_x.unwrap();
-                            let y = opt_y.unwrap();
-                            let old_mean_x = mean_x;
-                            let old_mean_y = mean_y;
 
-                            // avoid numerical errors on constant series
-                            if mean_x != x {
-                                opt_mean_x =
-                                    Some((old_wt * old_mean_x + new_wt * x) / (old_wt + new_wt));
-                            }
-
-                            // avoid numerical errors on constant series
-                            if mean_y != y {
-                                opt_mean_y =
-                                    Some((old_wt * old_mean_y + new_wt * y) / (old_wt + new_wt));
-                            }
-
-                            cov = ((old_wt
-                                * (cov
-                                    + ((old_mean_x - opt_mean_x.unwrap())
-                                        * (old_mean_y - opt_mean_y.unwrap()))))
-                                + (new_wt
-                                    * ((x - opt_mean_x.unwrap()) * (y - opt_mean_y.unwrap()))))
-                                / (old_wt + new_wt);
-
-                            sum_wt += new_wt;
-                            sum_wt2 += new_wt * new_wt;
-                            old_wt += new_wt;
-                            if !adjust {
-                                sum_wt /= old_wt;
-                                sum_wt2 /= old_wt * old_wt;
-                                old_wt = T::one();
-                            }
-                        }
-                    }
-                },
-                _ => {
-                    if is_observation {
-                        opt_mean_x = opt_x;
-                        opt_mean_y = opt_y;
-                    }
-                },
-            }
-            match (non_na_cnt >= min_periods_fixed, bias, is_observation) {
-                (_, _, false) => None,
-                (false, _, true) => None,
-                (true, false, true) => {
-                    if non_na_cnt == 1 {
+            (opt_xy.is_some() && self.non_null_count >= self.min_periods)
+                .then_some(self.cov)
+                .and_then(|cov| {
+                    if self.bias || self.non_null_count == 1 {
                         Some(cov)
                     } else {
-                        let numerator = sum_wt * sum_wt;
-                        let denominator = numerator - sum_wt2;
+                        let numerator = self.weight_sum * self.weight_sum;
+                        let denominator = numerator - self.weight_square_sum;
                         if denominator > T::zero() {
                             Some((numerator / denominator) * cov)
                         } else {
                             None
                         }
                     }
-                },
-                (true, true, true) => Some(cov),
-            }
-        });
+                })
+        })
+    }
+}
 
-    if do_sqrt {
-        res.map(|opt_x| opt_x.map(|x| x.sqrt())).collect_trusted()
-    } else {
-        res.collect_trusted()
+pub struct EwmVarState<T>(EwmCovState<T>);
+
+impl<T> EwmVarState<T> {
+    pub fn new(cov_state: EwmCovState<T>) -> Self {
+        Self(cov_state)
+    }
+}
+
+impl<T> EwmStateUpdate for EwmVarState<T>
+where
+    T: NativeType
+        + num_traits::Float
+        + std::ops::AddAssign
+        + std::ops::DivAssign
+        + std::ops::MulAssign,
+{
+    fn ewm_state_update(&mut self, values: &dyn Array) -> Box<dyn Array> {
+        let values: &PrimitiveArray<T> = values.as_any().downcast_ref().unwrap();
+
+        let out: PrimitiveArray<T> = self
+            .0
+            .update_iter(values.iter().map(|x| x.map(|x| (*x, *x))))
+            .collect();
+
+        out.boxed()
+    }
+}
+
+pub struct EwmStdState<T>(EwmCovState<T>);
+
+impl<T> EwmStdState<T> {
+    pub fn new(cov_state: EwmCovState<T>) -> Self {
+        Self(cov_state)
+    }
+}
+
+impl<T> EwmStateUpdate for EwmStdState<T>
+where
+    T: NativeType
+        + num_traits::Float
+        + std::ops::AddAssign
+        + std::ops::DivAssign
+        + std::ops::MulAssign,
+{
+    fn ewm_state_update(&mut self, values: &dyn Array) -> Box<dyn Array> {
+        let values: &PrimitiveArray<T> = values.as_any().downcast_ref().unwrap();
+
+        let out: PrimitiveArray<T> = self
+            .0
+            .update_iter(values.iter().map(|x| x.map(|x| (*x, *x))))
+            .map(|x| x.map(|x| x.sqrt()))
+            .collect();
+
+        out.boxed()
     }
 }
 

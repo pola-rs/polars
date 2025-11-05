@@ -1,9 +1,9 @@
 use num_traits::{Float, NumCast};
 use polars_error::to_compute_err;
-use rand::distributions::Bernoulli;
+use rand::distr::Bernoulli;
 use rand::prelude::*;
 use rand::seq::index::IndexVec;
-use rand_distr::{Normal, Standard, StandardNormal, Uniform};
+use rand_distr::{Normal, StandardNormal, StandardUniform, Uniform};
 
 use crate::prelude::DataType::Float64;
 use crate::prelude::*;
@@ -15,7 +15,7 @@ fn create_rand_index_with_replacement(n: usize, len: usize, seed: Option<u64>) -
         return IdxCa::new_vec(PlSmallStr::EMPTY, vec![]);
     }
     let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_global_random_u64));
-    let dist = Uniform::new(0, len as IdxSize);
+    let dist = Uniform::new(0, len as IdxSize).unwrap();
     (0..n as IdxSize)
         .map(move |_| dist.sample(&mut rng))
         .collect_trusted::<NoNull<IdxCa>>()
@@ -42,7 +42,8 @@ fn create_rand_index_no_replacement(
         // size returned.
         buf = match rand::seq::index::sample(&mut rng, len, n) {
             IndexVec::U32(v) => v.into_iter().map(|x| x as IdxSize).collect(),
-            IndexVec::USize(v) => v.into_iter().map(|x| x as IdxSize).collect(),
+            #[cfg(target_pointer_width = "64")]
+            IndexVec::U64(v) => v.into_iter().map(|x| x as IdxSize).collect(),
         };
     }
     IdxCa::new_vec(PlSmallStr::EMPTY, buf)
@@ -51,16 +52,16 @@ fn create_rand_index_no_replacement(
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
-    Standard: Distribution<T::Native>,
+    StandardUniform: Distribution<T::Native>,
 {
     pub fn init_rand(size: usize, null_density: f32, seed: Option<u64>) -> Self {
         let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_global_random_u64));
         (0..size)
             .map(|_| {
-                if rng.gen::<f32>() < null_density {
+                if rng.random::<f32>() < null_density {
                     None
                 } else {
-                    Some(rng.gen())
+                    Some(rng.random())
                 }
             })
             .collect()
@@ -253,7 +254,7 @@ where
     ) -> PolarsResult<Self> {
         let normal = Normal::new(mean, std_dev).map_err(to_compute_err)?;
         let mut builder = PrimitiveChunkedBuilder::<T>::new(name, length);
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         for _ in 0..length {
             let smpl = normal.sample(&mut rng);
             let smpl = NumCast::from(smpl).unwrap();
@@ -265,7 +266,7 @@ where
     /// Create [`ChunkedArray`] with samples from a Standard Normal distribution.
     pub fn rand_standard_normal(name: PlSmallStr, length: usize) -> Self {
         let mut builder = PrimitiveChunkedBuilder::<T>::new(name, length);
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         for _ in 0..length {
             let smpl: f64 = rng.sample(StandardNormal);
             let smpl = NumCast::from(smpl).unwrap();
@@ -276,9 +277,9 @@ where
 
     /// Create [`ChunkedArray`] with samples from a Uniform distribution.
     pub fn rand_uniform(name: PlSmallStr, length: usize, low: f64, high: f64) -> Self {
-        let uniform = Uniform::new(low, high);
+        let uniform = Uniform::new(low, high).unwrap();
         let mut builder = PrimitiveChunkedBuilder::<T>::new(name, length);
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         for _ in 0..length {
             let smpl = uniform.sample(&mut rng);
             let smpl = NumCast::from(smpl).unwrap();
@@ -292,7 +293,7 @@ impl BooleanChunked {
     /// Create [`ChunkedArray`] with samples from a Bernoulli distribution.
     pub fn rand_bernoulli(name: PlSmallStr, length: usize, p: f64) -> PolarsResult<Self> {
         let dist = Bernoulli::new(p).map_err(to_compute_err)?;
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut builder = BooleanChunkedBuilder::new(name, length);
         for _ in 0..length {
             let smpl = dist.sample(&mut rng);
@@ -314,72 +315,80 @@ mod test {
         .unwrap();
 
         // Default samples are random and don't require seeds.
-        assert!(df
-            .sample_n(
+        assert!(
+            df.sample_n(
                 &Series::new(PlSmallStr::from_static("s"), &[3]),
                 false,
                 false,
                 None
             )
-            .is_ok());
-        assert!(df
-            .sample_frac(
+            .is_ok()
+        );
+        assert!(
+            df.sample_frac(
                 &Series::new(PlSmallStr::from_static("frac"), &[0.4]),
                 false,
                 false,
                 None
             )
-            .is_ok());
+            .is_ok()
+        );
         // With seeding.
-        assert!(df
-            .sample_n(
+        assert!(
+            df.sample_n(
                 &Series::new(PlSmallStr::from_static("s"), &[3]),
                 false,
                 false,
                 Some(0)
             )
-            .is_ok());
-        assert!(df
-            .sample_frac(
+            .is_ok()
+        );
+        assert!(
+            df.sample_frac(
                 &Series::new(PlSmallStr::from_static("frac"), &[0.4]),
                 false,
                 false,
                 Some(0)
             )
-            .is_ok());
+            .is_ok()
+        );
         // Without replacement can not sample more than 100%.
-        assert!(df
-            .sample_frac(
+        assert!(
+            df.sample_frac(
                 &Series::new(PlSmallStr::from_static("frac"), &[2.0]),
                 false,
                 false,
                 Some(0)
             )
-            .is_err());
-        assert!(df
-            .sample_n(
+            .is_err()
+        );
+        assert!(
+            df.sample_n(
                 &Series::new(PlSmallStr::from_static("s"), &[3]),
                 true,
                 false,
                 Some(0)
             )
-            .is_ok());
-        assert!(df
-            .sample_frac(
+            .is_ok()
+        );
+        assert!(
+            df.sample_frac(
                 &Series::new(PlSmallStr::from_static("frac"), &[0.4]),
                 true,
                 false,
                 Some(0)
             )
-            .is_ok());
+            .is_ok()
+        );
         // With replacement can sample more than 100%.
-        assert!(df
-            .sample_frac(
+        assert!(
+            df.sample_frac(
                 &Series::new(PlSmallStr::from_static("frac"), &[2.0]),
                 true,
                 false,
                 Some(0)
             )
-            .is_ok());
+            .is_ok()
+        );
     }
 }

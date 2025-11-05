@@ -1,9 +1,10 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::ptr;
 
 use ndarray::IntoDimension;
 use numpy::npyffi::types::npy_intp;
 use numpy::npyffi::{self, flags};
-use numpy::{Element, PyArray1, PyArrayDescrMethods, ToNpyDims, PY_ARRAY_API};
+use numpy::{Element, PY_ARRAY_API, PyArray1, PyArrayDescrMethods, ToNpyDims};
 use polars_core::prelude::*;
 use polars_core::utils::arrow::types::NativeType;
 use pyo3::prelude::*;
@@ -35,7 +36,7 @@ unsafe fn aligned_array<T: Element + NativeType>(
     let ptr = PY_ARRAY_API.PyArray_NewFromDescr(
         py,
         PY_ARRAY_API.get_type_object(py, npyffi::NpyTypes::PyArray_Type),
-        T::get_dtype_bound(py).into_dtype_ptr(),
+        T::get_dtype(py).into_dtype_ptr(),
         dims.ndim_cint(),
         dims.as_dims_ptr(),
         strides.as_ptr() as *mut _, // strides
@@ -56,11 +57,11 @@ unsafe fn aligned_array<T: Element + NativeType>(
 ///   - For PyPy: Reference counters for a live PyPy object = refcnt + 2 << 60.
 fn get_refcnt<T>(pyarray: &Bound<'_, PyArray1<T>>) -> isize {
     let refcnt = pyarray.get_refcnt();
+    #[cfg(target_pointer_width = "64")]
     if refcnt >= (2 << 60) {
-        refcnt - (2 << 60)
-    } else {
-        refcnt
+        return refcnt - (2 << 60);
     }
+    refcnt
 }
 
 macro_rules! impl_ufuncs {
@@ -79,13 +80,12 @@ macro_rules! impl_ufuncs {
             // have to convert that NumPy array into a pl.Series.
             fn $name(&self, lambda: &Bound<PyAny>, allocate_out: bool) -> PyResult<PySeries> {
                 // numpy array object, and a *mut ptr
-                Python::with_gil(|py| {
+                Python::attach(|py| {
                     if !allocate_out {
                         // We're not going to allocate the output array.
                         // Instead, we'll let the ufunc do it.
-                        let result = lambda.call1((PyNone::get_bound(py),))?;
-                        let series_factory =
-                            PyModule::import_bound(py, "polars")?.getattr("Series")?;
+                        let result = lambda.call1((PyNone::get(py),))?;
+                        let series_factory = crate::py_modules::pl_series(py).bind(py);
                         return series_factory
                             .call((self.name(), result), None)?
                             .getattr("_s")?
@@ -98,7 +98,7 @@ macro_rules! impl_ufuncs {
 
                     debug_assert_eq!(get_refcnt(&out_array), 1);
                     // inserting it in a tuple increase the reference count by 1.
-                    let args = PyTuple::new_bound(py, &[out_array.clone()]);
+                    let args = PyTuple::new(py, std::slice::from_ref(&out_array))?;
                     debug_assert_eq!(get_refcnt(&out_array), 2);
 
                     // whatever the result, we must take the leaked memory ownership back
@@ -108,9 +108,10 @@ macro_rules! impl_ufuncs {
                             // args and the lambda return have a reference, making a total of 3
                             assert!(get_refcnt(&out_array) <= 3);
 
-                            let validity = self.series.chunks()[0].validity().cloned();
+                            let s = self.series.read();
+                            let validity = s.chunks()[0].validity().cloned();
                             let ca = ChunkedArray::<$type>::from_vec_validity(
-                                self.series.name().clone(),
+                                s.name().clone(),
                                 av,
                                 validity,
                             );

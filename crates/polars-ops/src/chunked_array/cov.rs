@@ -1,5 +1,5 @@
 use num_traits::AsPrimitive;
-use polars_compute::var_cov::{CovState, PearsonState};
+use polars_compute::moment::{CovState, PearsonState};
 use polars_core::prelude::*;
 use polars_core::utils::align_chunks_binary;
 
@@ -13,7 +13,7 @@ where
     let (a, b) = align_chunks_binary(a, b);
     let mut out = CovState::default();
     for (a, b) in a.downcast_iter().zip(b.downcast_iter()) {
-        out.combine(&polars_compute::var_cov::cov(a, b))
+        out.combine(&polars_compute::moment::cov(a, b))
     }
     out.finalize(ddof)
 }
@@ -28,7 +28,7 @@ where
     let (a, b) = align_chunks_binary(a, b);
     let mut out = PearsonState::default();
     for (a, b) in a.downcast_iter().zip(b.downcast_iter()) {
-        out.combine(&polars_compute::var_cov::pearson_corr(a, b))
+        out.combine(&polars_compute::moment::pearson_corr(a, b))
     }
     Some(out.finalize())
 }

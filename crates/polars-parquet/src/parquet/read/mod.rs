@@ -9,11 +9,11 @@ mod stream;
 use std::io::{Seek, SeekFrom};
 
 pub use column::*;
-pub use compression::{decompress, BasicDecompressor};
+pub use compression::{BasicDecompressor, decompress};
 pub use metadata::{deserialize_metadata, read_metadata, read_metadata_with_size};
+pub use page::{PageIterator, PageMetaData, PageReader};
 #[cfg(feature = "async")]
 pub use page::{get_page_stream, get_page_stream_from_column_start};
-pub use page::{PageIterator, PageMetaData, PageReader};
 use polars_utils::mmap::MemReader;
 #[cfg(feature = "async")]
 pub use stream::read_metadata as read_metadata_async;

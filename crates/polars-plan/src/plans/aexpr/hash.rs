@@ -12,7 +12,6 @@ impl Hash for AExpr {
 
         match self {
             AExpr::Column(name) => name.hash(state),
-            AExpr::Alias(_, name) => name.hash(state),
             AExpr::Literal(lv) => lv.hash(state),
             AExpr::Function {
                 options, function, ..

@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use arrow::array::{Array, PrimitiveArray};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
@@ -35,10 +36,14 @@ impl PolarsOpsNumericType for UInt8Type {}
 impl PolarsOpsNumericType for UInt16Type {}
 impl PolarsOpsNumericType for UInt32Type {}
 impl PolarsOpsNumericType for UInt64Type {}
+#[cfg(feature = "dtype-u128")]
+impl PolarsOpsNumericType for UInt128Type {}
 impl PolarsOpsNumericType for Int8Type {}
 impl PolarsOpsNumericType for Int16Type {}
 impl PolarsOpsNumericType for Int32Type {}
 impl PolarsOpsNumericType for Int64Type {}
+#[cfg(feature = "dtype-i128")]
+impl PolarsOpsNumericType for Int128Type {}
 impl PolarsOpsNumericType for Float32Type {}
 impl PolarsOpsNumericType for Float64Type {}
 
@@ -90,16 +95,14 @@ unsafe fn scatter_impl<V, T: NativeType>(
     }
 }
 
-impl<T: PolarsOpsNumericType> ChunkedSet<T::Native> for &mut ChunkedArray<T>
-where
-    ChunkedArray<T>: IntoSeries,
-{
+impl<T: PolarsOpsNumericType> ChunkedSet<T::Native> for &mut ChunkedArray<T> {
     fn scatter<V>(self, idx: &[IdxSize], values: V) -> PolarsResult<Series>
     where
         V: IntoIterator<Item = Option<T::Native>>,
     {
         check_bounds(idx, self.len() as IdxSize)?;
-        let mut ca = std::mem::take(self).rechunk();
+        let mut ca = std::mem::take(self);
+        ca.rechunk_mut();
 
         // SAFETY:
         // we will not modify the length

@@ -1,19 +1,31 @@
 mod binary;
+#[cfg(all(
+    feature = "range",
+    any(feature = "dtype-date", feature = "dtype-datetime")
+))]
+mod datetime;
 mod functions;
 #[cfg(feature = "is_in")]
 mod is_in;
 
-use std::borrow::Cow;
-
 use binary::process_binary;
-use either::Either;
-use polars_compute::cast::temporal::{time_unit_multiple, SECONDS_IN_DAY};
+#[cfg(all(
+    feature = "range",
+    any(feature = "dtype-date", feature = "dtype-datetime")
+))]
+use datetime::coerce_temporal_dt;
+#[cfg(all(feature = "range", feature = "dtype-datetime"))]
+use datetime::temporal_range_output_type;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
+#[cfg(all(
+    feature = "range",
+    any(feature = "dtype-date", feature = "dtype-datetime")
+))]
+use polars_core::utils::try_get_supertype;
 use polars_core::utils::{get_supertype, get_supertype_with_options, materialize_dyn_int};
-use polars_utils::idx_vec::UnitVec;
+use polars_utils::format_list;
 use polars_utils::itertools::Itertools;
-use polars_utils::{format_list, unitvec};
 
 use super::*;
 
@@ -43,55 +55,25 @@ fn modify_supertype(
     match (type_left, type_right, left, right) {
         // if the we compare a categorical to a literal string we want to cast the literal to categorical
         #[cfg(feature = "dtype-categorical")]
-        (Categorical(_, ordering), String | Unknown(UnknownKind::Str), _, AExpr::Literal(_))
-        | (String | Unknown(UnknownKind::Str), Categorical(_, ordering), AExpr::Literal(_), _) => {
-            st = Categorical(None, *ordering)
-        },
-        #[cfg(feature = "dtype-categorical")]
-        (dt @ Enum(_, _), String | Unknown(UnknownKind::Str), _, AExpr::Literal(_))
+        (dt @ Categorical(_, _), String | Unknown(UnknownKind::Str), _, AExpr::Literal(_))
+        | (String | Unknown(UnknownKind::Str), dt @ Categorical(_, _), AExpr::Literal(_), _)
+        | (dt @ Enum(_, _), String | Unknown(UnknownKind::Str), _, AExpr::Literal(_))
         | (String | Unknown(UnknownKind::Str), dt @ Enum(_, _), AExpr::Literal(_), _) => {
             st = dt.clone()
         },
+
         // when then expression literals can have a different list type.
         // so we cast the literal to the other hand side.
         (List(inner), List(other), _, AExpr::Literal(_))
         | (List(other), List(inner), AExpr::Literal(_), _)
             if inner != other =>
         {
-            st = match &**inner {
-                #[cfg(feature = "dtype-categorical")]
-                Categorical(_, ordering) => List(Box::new(Categorical(None, *ordering))),
-                _ => List(inner.clone()),
-            };
+            st = List(inner.clone())
         },
         // do nothing
         _ => {},
     }
     st
-}
-
-fn get_input(lp_arena: &Arena<IR>, lp_node: Node) -> UnitVec<Node> {
-    let plan = lp_arena.get(lp_node);
-    let mut inputs: UnitVec<Node> = unitvec!();
-
-    // Used to get the schema of the input.
-    if is_scan(plan) {
-        inputs.push(lp_node);
-    } else {
-        plan.copy_inputs(&mut inputs);
-    };
-    inputs
-}
-
-fn get_schema(lp_arena: &Arena<IR>, lp_node: Node) -> Cow<'_, SchemaRef> {
-    let inputs = get_input(lp_arena, lp_node);
-    if inputs.is_empty() {
-        // Files don't have an input, so we must take their schema.
-        Cow::Borrowed(lp_arena.get(lp_node).scan_schema())
-    } else {
-        let input = inputs[0];
-        lp_arena.get(input).schema(lp_arena)
-    }
 }
 
 fn get_aexpr_and_type<'a>(
@@ -102,9 +84,15 @@ fn get_aexpr_and_type<'a>(
     let ae = expr_arena.get(e);
     Some((
         ae,
-        ae.get_type(input_schema, Context::Default, expr_arena)
+        ae.to_dtype(&ToFieldContext::new(expr_arena, input_schema))
             .ok()?,
     ))
+}
+
+fn try_get_dtype(expr_arena: &Arena<AExpr>, e: Node, schema: &Schema) -> PolarsResult<DataType> {
+    expr_arena
+        .get(e)
+        .to_dtype(&ToFieldContext::new(expr_arena, schema))
 }
 
 fn materialize(aexpr: &AExpr) -> Option<AExpr> {
@@ -119,37 +107,87 @@ impl OptimizationRule for TypeCoercionRule {
         &mut self,
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
-        lp_arena: &Arena<IR>,
-        lp_node: Node,
+        schema: &Schema,
+        ctx: OptimizeExprContext,
     ) -> PolarsResult<Option<AExpr>> {
         let expr = expr_arena.get(expr_node);
         let out = match *expr {
-            AExpr::Cast {
-                expr,
-                ref dtype,
-                options,
-            } => {
-                let input = expr_arena.get(expr);
-
-                inline_or_prune_cast(
-                    input,
+            ref ae @ AExpr::Cast { .. } => {
+                let AExpr::Cast {
+                    expr: input_expr,
                     dtype,
-                    options.strict(),
-                    lp_node,
-                    lp_arena,
-                    expr_arena,
-                )?
+                    options,
+                } = ae.clone()
+                else {
+                    unreachable!()
+                };
+
+                let input = expr_arena.get(input_expr).clone();
+                if ctx.has_inputs {
+                    if let CastOptions::Strict = options {
+                        let cast_from = expr_arena
+                            .get(input_expr)
+                            .to_field(&ToFieldContext::new(expr_arena, schema))?
+                            .dtype;
+                        let cast_to = &dtype;
+
+                        let v = CastColumnsPolicy {
+                            integer_upcast: true,
+                            float_upcast: true,
+                            float_downcast: true,
+                            datetime_nanoseconds_downcast: true,
+                            datetime_microseconds_downcast: true,
+                            datetime_convert_timezone: true,
+                            null_upcast: true,
+                            categorical_to_string: true,
+                            missing_struct_fields: MissingColumnsPolicy::Insert,
+                            extra_struct_fields: ExtraColumnsPolicy::Ignore,
+                        }
+                        .should_cast_column("", cast_to, &cast_from);
+
+                        match v {
+                            // No casting needed
+                            Ok(false) => {
+                                return Ok(Some(expr_arena.get(input_expr).clone()));
+                            },
+                            Ok(true) => {
+                                let options = if cast_from.is_primitive_numeric()
+                                    && cast_to.is_primitive_numeric()
+                                {
+                                    CastOptions::Overflowing
+                                } else {
+                                    CastOptions::NonStrict
+                                };
+
+                                let dtype = cast_to.clone();
+
+                                expr_arena.replace(
+                                    expr_node,
+                                    AExpr::Cast {
+                                        expr: input_expr,
+                                        dtype,
+                                        options,
+                                    },
+                                );
+                            },
+
+                            Err(_) => {},
+                        }
+                    }
+                }
+
+                inline_or_prune_cast(&input, &dtype, options, schema, expr_arena)?
             },
+            AExpr::Agg(IRAggExpr::Implode(expr)) => inline_implode(expr, expr_arena)?,
             AExpr::Ternary {
                 truthy: truthy_node,
                 falsy: falsy_node,
                 predicate,
             } => {
-                let input_schema = get_schema(lp_arena, lp_node);
                 let (truthy, type_true) =
-                    unpack!(get_aexpr_and_type(expr_arena, truthy_node, &input_schema));
+                    unpack!(get_aexpr_and_type(expr_arena, truthy_node, schema));
                 let (falsy, type_false) =
-                    unpack!(get_aexpr_and_type(expr_arena, falsy_node, &input_schema));
+                    unpack!(get_aexpr_and_type(expr_arena, falsy_node, schema));
 
                 if type_true == type_false {
                     return Ok(None);
@@ -191,44 +229,160 @@ impl OptimizationRule for TypeCoercionRule {
                 left: node_left,
                 op,
                 right: node_right,
-            } => return process_binary(expr_arena, lp_arena, lp_node, node_left, op, node_right),
+            } => return process_binary(expr_arena, schema, node_left, op, node_right),
             #[cfg(feature = "is_in")]
             AExpr::Function {
-                function: FunctionExpr::Boolean(BooleanFunction::IsIn),
+                ref function,
                 ref input,
                 options,
-            } => {
-                let Some(casted_expr) = is_in::resolve_is_in(input, expr_arena, lp_arena, lp_node)?
+            } if {
+                let mut matches = matches!(
+                    function,
+                    IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. })
+                        | IRFunctionExpr::ListExpr(IRListFunction::Contains { .. })
+                );
+                #[cfg(feature = "dtype-array")]
+                {
+                    matches |= matches!(
+                        function,
+                        IRFunctionExpr::ArrayExpr(IRArrayFunction::Contains { .. })
+                    );
+                }
+                matches
+            } =>
+            {
+                let (op, flat, nested, is_contains) = match function {
+                    IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }) => {
+                        ("is_in", 0, 1, false)
+                    },
+                    IRFunctionExpr::ListExpr(IRListFunction::Contains { .. }) => {
+                        ("list.contains", 1, 0, true)
+                    },
+                    #[cfg(feature = "dtype-array")]
+                    IRFunctionExpr::ArrayExpr(IRArrayFunction::Contains { .. }) => {
+                        ("arr.contains", 1, 0, true)
+                    },
+                    _ => unreachable!(),
+                };
+
+                let Some(result) =
+                    is_in::resolve_is_in(input, expr_arena, schema, is_contains, op, flat, nested)?
                 else {
                     return Ok(None);
                 };
 
+                let function = function.clone();
                 let mut input = input.to_vec();
-                let other_input = expr_arena.add(casted_expr);
-                input[1].set_node(other_input);
+                use self::is_in::IsInTypeCoercionResult;
+                match result {
+                    IsInTypeCoercionResult::SuperType(flat_type, nested_type) => {
+                        let (_, type_left) =
+                            unpack!(get_aexpr_and_type(expr_arena, input[flat].node(), schema));
+                        let (_, type_other) =
+                            unpack!(get_aexpr_and_type(expr_arena, input[nested].node(), schema));
+                        cast_expr_ir(
+                            &mut input[flat],
+                            &type_left,
+                            &flat_type,
+                            expr_arena,
+                            CastOptions::NonStrict,
+                        )?;
+                        cast_expr_ir(
+                            &mut input[nested],
+                            &type_other,
+                            &nested_type,
+                            expr_arena,
+                            CastOptions::NonStrict,
+                        )?;
+                    },
+                    IsInTypeCoercionResult::SelfCast { dtype, strict } => {
+                        let (_, type_self) =
+                            unpack!(get_aexpr_and_type(expr_arena, input[flat].node(), schema));
+                        let options = if strict {
+                            CastOptions::Strict
+                        } else {
+                            CastOptions::NonStrict
+                        };
+                        cast_expr_ir(&mut input[flat], &type_self, &dtype, expr_arena, options)?;
+                    },
+                    IsInTypeCoercionResult::OtherCast { dtype, strict } => {
+                        let (_, type_other) =
+                            unpack!(get_aexpr_and_type(expr_arena, input[nested].node(), schema));
+                        let options = if strict {
+                            CastOptions::Strict
+                        } else {
+                            CastOptions::NonStrict
+                        };
+                        cast_expr_ir(&mut input[nested], &type_other, &dtype, expr_arena, options)?;
+                    },
+                    IsInTypeCoercionResult::Implode => {
+                        assert!(!is_contains);
+                        let other_input =
+                            expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[1].node())));
+                        input[1].set_node(other_input);
+                    },
+                }
 
                 Some(AExpr::Function {
-                    function: FunctionExpr::Boolean(BooleanFunction::IsIn),
+                    function,
+                    input,
+                    options,
+                })
+            },
+            AExpr::Function {
+                ref function,
+                ref input,
+                options,
+            } if matches!(
+                function,
+                IRFunctionExpr::Boolean(
+                    IRBooleanFunction::Any { .. } | IRBooleanFunction::All { .. }
+                )
+            ) =>
+            {
+                // Ensure the input to boolean aggregations is boolean; try cast if possible.
+                let (_, in_dtype) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
+
+                if in_dtype.is_bool() {
+                    return Ok(None);
+                }
+
+                // If input cannot be cast to boolean, raise a error.
+                polars_ensure!(
+                    in_dtype.can_cast_to(&DataType::Boolean) != Some(false),
+                    InvalidOperation: "expected boolean input for '{}()' (got {})",
+                    function,
+                    in_dtype
+                );
+
+                let function = function.clone();
+                let mut input = input.clone();
+                cast_expr_ir(
+                    &mut input[0],
+                    &in_dtype,
+                    &DataType::Boolean,
+                    expr_arena,
+                    CastOptions::NonStrict,
+                )?;
+
+                Some(AExpr::Function {
+                    function,
                     input,
                     options,
                 })
             },
             // shift and fill should only cast left and fill value to super type.
             AExpr::Function {
-                function: FunctionExpr::ShiftAndFill,
+                function: IRFunctionExpr::ShiftAndFill,
                 ref input,
                 options,
             } => {
-                let input_schema = get_schema(lp_arena, lp_node);
                 let left_node = input[0].node();
                 let fill_value_node = input[2].node();
-                let (left, type_left) =
-                    unpack!(get_aexpr_and_type(expr_arena, left_node, &input_schema));
-                let (fill_value, type_fill_value) = unpack!(get_aexpr_and_type(
-                    expr_arena,
-                    fill_value_node,
-                    &input_schema
-                ));
+                let (left, type_left) = unpack!(get_aexpr_and_type(expr_arena, left_node, schema));
+                let (fill_value, type_fill_value) =
+                    unpack!(get_aexpr_and_type(expr_arena, fill_value_node, schema));
 
                 unpack!(early_escape(&type_left, &type_fill_value));
 
@@ -250,7 +404,7 @@ impl OptimizationRule for TypeCoercionRule {
                 let new_node_fill_value = if type_fill_value != super_type {
                     expr_arena.add(AExpr::Cast {
                         expr: fill_value_node,
-                        dtype: super_type.clone(),
+                        dtype: super_type,
                         options: CastOptions::NonStrict,
                     })
                 } else {
@@ -261,8 +415,73 @@ impl OptimizationRule for TypeCoercionRule {
                 input[2].set_node(new_node_fill_value);
 
                 Some(AExpr::Function {
-                    function: FunctionExpr::ShiftAndFill,
+                    function: IRFunctionExpr::ShiftAndFill,
                     input,
+                    options,
+                })
+            },
+            #[cfg(feature = "ewma")]
+            AExpr::Function {
+                function:
+                    ref ewm_variant @ IRFunctionExpr::EwmMean {
+                        options: ewm_options,
+                    }
+                    | ref ewm_variant @ IRFunctionExpr::EwmVar {
+                        options: ewm_options,
+                    }
+                    | ref ewm_variant @ IRFunctionExpr::EwmStd {
+                        options: ewm_options,
+                    },
+                ref input,
+                options,
+            } => {
+                polars_ensure!(
+                    (0.0..=1.0).contains(&ewm_options.alpha),
+                    ComputeError: "alpha must be in [0; 1]"
+                );
+
+                let input_expr = match &input.as_slice() {
+                    &[first] => first,
+                    v => polars_bail!(
+                        ComputeError:
+                        "ewm_mean requires 1 input, got {} (input: {:?})",
+                        v.len(),
+                        v
+                    ),
+                };
+
+                let (_, dtype) = get_aexpr_and_type(expr_arena, input_expr.node(), schema).unwrap();
+
+                if dtype.is_float() {
+                    return Ok(None);
+                }
+
+                let new_function = match ewm_variant {
+                    IRFunctionExpr::EwmMean { .. } => IRFunctionExpr::EwmMean {
+                        options: ewm_options,
+                    },
+                    IRFunctionExpr::EwmVar { .. } => IRFunctionExpr::EwmVar {
+                        options: ewm_options,
+                    },
+                    IRFunctionExpr::EwmStd { .. } => IRFunctionExpr::EwmStd {
+                        options: ewm_options,
+                    },
+                    _ => unreachable!(),
+                };
+
+                let input_expr = ExprIR::from_node(
+                    expr_arena.add(AExpr::Cast {
+                        expr: input_expr.node(),
+                        dtype: DataType::Float64,
+                        // FIXME: Non-strict to match legacy execution behavior, but should be strict.
+                        options: CastOptions::NonStrict,
+                    }),
+                    expr_arena,
+                );
+
+                Some(AExpr::Function {
+                    function: new_function,
+                    input: vec![input_expr],
                     options,
                 })
             },
@@ -272,104 +491,583 @@ impl OptimizationRule for TypeCoercionRule {
                 ref function,
                 ref input,
                 mut options,
-            } if options.cast_to_supertypes.is_some() => {
-                let input_schema = get_schema(lp_arena, lp_node);
+            } if options.cast_options.is_some() => {
+                let casting_rules = options.cast_options.unwrap();
 
-                let dtypes = match functions::get_function_dtypes(
-                    input,
-                    expr_arena,
-                    &input_schema,
-                    function,
-                    options,
-                )? {
-                    Either::Left(dtypes) => dtypes,
-                    Either::Right(ae) => return Ok(Some(ae)),
-                };
+                let function = function.clone();
+                let mut input = input.clone();
 
-                // TODO! use args_to_supertype.
-                let self_e = input[0].clone();
-                let (self_ae, type_self) =
-                    unpack!(get_aexpr_and_type(expr_arena, self_e.node(), &input_schema));
+                if let Some(dtypes) =
+                    functions::get_function_dtypes(&input, expr_arena, schema, &function)?
+                {
+                    let self_e = input[0].clone();
+                    let (self_ae, type_self) =
+                        unpack!(get_aexpr_and_type(expr_arena, self_e.node(), schema));
+                    let mut super_type = type_self.clone();
+                    match casting_rules {
+                        CastingRules::Supertype(super_type_opts) => {
+                            for other in &input[1..] {
+                                let (other, type_other) =
+                                    unpack!(get_aexpr_and_type(expr_arena, other.node(), schema));
 
-                let mut super_type = type_self.clone();
-                for other in &input[1..] {
-                    let (other, type_other) =
-                        unpack!(get_aexpr_and_type(expr_arena, other.node(), &input_schema));
+                                let Some(new_st) = get_supertype_with_options(
+                                    &super_type,
+                                    &type_other,
+                                    super_type_opts,
+                                ) else {
+                                    raise_supertype(&function, &input, schema, expr_arena)?;
+                                    unreachable!()
+                                };
+                                if input.len() == 2 {
+                                    // modify_supertype is a bit more conservative of casting columns
+                                    // to literals
+                                    super_type = modify_supertype(
+                                        new_st,
+                                        self_ae,
+                                        other,
+                                        &type_self,
+                                        &type_other,
+                                    )
+                                } else {
+                                    // when dealing with more than 1 argument, we simply find the supertypes
+                                    super_type = new_st
+                                }
+                            }
+                        },
+                        CastingRules::FirstArgLossless => {
+                            if super_type.is_integer() {
+                                for other in &input[1..] {
+                                    let other = other.dtype(schema, expr_arena)?;
+                                    if other.is_float() {
+                                        polars_bail!(InvalidOperation: "cannot cast lossless between {} and {}", super_type, other)
+                                    }
+                                }
+                            }
+                            if super_type.is_categorical() || super_type.is_enum() {
+                                for other in &input[1..] {
+                                    let other = other.dtype(schema, expr_arena)?;
+                                    if !(other.is_string()
+                                        || other.is_null()
+                                        || *other == super_type)
+                                    {
+                                        polars_bail!(InvalidOperation: "cannot cast lossless between {} and {}", super_type, other)
+                                    }
+                                }
+                            }
+                        },
+                    }
 
-                    let Some(new_st) = get_supertype_with_options(
-                        &super_type,
-                        &type_other,
-                        options.cast_to_supertypes.unwrap(),
-                    ) else {
-                        raise_supertype(function, input, &input_schema, expr_arena)?;
+                    if matches!(super_type, DataType::Unknown(UnknownKind::Any)) {
+                        raise_supertype(&function, &input, schema, expr_arena)?;
                         unreachable!()
-                    };
-                    if input.len() == 2 {
-                        // modify_supertype is a bit more conservative of casting columns
-                        // to literals
-                        super_type =
-                            modify_supertype(new_st, self_ae, other, &type_self, &type_other)
-                    } else {
-                        // when dealing with more than 1 argument, we simply find the supertypes
-                        super_type = new_st
+                    }
+
+                    match super_type {
+                        DataType::Unknown(UnknownKind::Float) => super_type = DataType::Float64,
+                        DataType::Unknown(UnknownKind::Int(v)) => {
+                            super_type = materialize_dyn_int(v).dtype()
+                        },
+                        _ => {},
+                    }
+
+                    for (e, dtype) in input.iter_mut().zip(dtypes) {
+                        cast_expr_ir(e, &dtype, &super_type, expr_arena, CastOptions::NonStrict)?;
                     }
                 }
 
-                if matches!(super_type, DataType::Unknown(UnknownKind::Any)) {
-                    raise_supertype(function, input, &input_schema, expr_arena)?;
-                    unreachable!()
-                }
-
-                let function = function.clone();
-                let input = input.clone();
-
-                match super_type {
-                    DataType::Unknown(UnknownKind::Float) => super_type = DataType::Float64,
-                    DataType::Unknown(UnknownKind::Int(v)) => {
-                        super_type = materialize_dyn_int(v).dtype()
-                    },
-                    _ => {},
-                }
-
-                let input = input
-                    .into_iter()
-                    .zip(dtypes)
-                    .map(|(mut e, dtype)| {
-                        match super_type {
-                            #[cfg(feature = "dtype-categorical")]
-                            DataType::Categorical(_, _) if dtype.is_string() => {
-                                // pass
-                            },
-                            _ => {
-                                if dtype != super_type {
-                                    let n = expr_arena.add(AExpr::Cast {
-                                        expr: e.node(),
-                                        dtype: super_type.clone(),
-                                        options: CastOptions::NonStrict,
-                                    });
-                                    e.set_node(n);
-                                }
-                            },
-                        }
-                        e
-                    })
-                    .collect::<Vec<_>>();
-
                 // Ensure we don't go through this on next iteration.
-                options.cast_to_supertypes = None;
+                options.cast_options = None;
                 Some(AExpr::Function {
                     function,
                     input,
                     options,
                 })
             },
+            #[cfg(all(feature = "temporal", feature = "dtype-duration"))]
+            AExpr::Function {
+                function:
+                    ref function @ IRFunctionExpr::TemporalExpr(IRTemporalFunction::Duration(_)),
+                ref input,
+                options,
+            } => {
+                let no_cast_needed = input.iter().all(|expr| {
+                    let (_, dtype) = get_aexpr_and_type(expr_arena, expr.node(), schema).unwrap();
+                    matches!(dtype, DataType::Int64 | DataType::Float64)
+                });
+                if no_cast_needed {
+                    return Ok(None);
+                }
+
+                let function = function.clone();
+                let input = input.clone().into_iter().enumerate().map(|(i, expr)| {
+                    let mut expr = expr.to_owned();
+                    let (_, dtype) = get_aexpr_and_type(expr_arena, expr.node(), schema).unwrap();
+                    Ok(match &dtype {
+                        DataType::Int64 | DataType::Float64 => expr,
+                        dt if dt.is_integer() => {
+                            cast_expr_ir(
+                                &mut expr,
+                                &dtype,
+                                &DataType::Int64,
+                                expr_arena,
+                                CastOptions::Strict,
+                            )?;
+                            expr
+                        },
+                        dt if dt.is_float() => {
+                            cast_expr_ir(
+                                &mut expr,
+                                &dtype,
+                                &DataType::Float64,
+                                expr_arena,
+                                CastOptions::Strict,
+                            )?;
+                            expr
+                        },
+                        dt => {
+                            polars_bail!(InvalidOperation: "expected integer or float dtype, (got {dt}) in input {i} of duration")
+                        },
+                    })
+                }).try_collect()?;
+
+                Some(AExpr::Function {
+                    function,
+                    input,
+                    options,
+                })
+            },
+            #[cfg(feature = "list_gather")]
+            AExpr::Function {
+                function: ref function @ IRFunctionExpr::ListExpr(IRListFunction::Gather(_)),
+                ref input,
+                options,
+            } => {
+                let (_, type_left) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
+                let (_, type_other) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
+
+                let DataType::List(inner_dtype) = &type_other else {
+                    // @HACK. This needs to happen until 2.0 because we support
+                    // `pl.col.a.list.gather(0)` and `pl.col.a.list.gather(pl.col.b)` where `b` is
+                    // an integer.
+                    let function = function.clone();
+                    let mut input = input.clone();
+
+                    polars_warn!(
+                        Deprecation,
+                        "`list.gather` with a flat datatype is deprecated.
+Please use `implode` to return to previous behavior.
+
+See https://github.com/pola-rs/polars/issues/22149 for more information."
+                    );
+
+                    let other_input =
+                        expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[1].node())));
+                    input[1].set_node(other_input);
+
+                    return Ok(Some(AExpr::Function {
+                        function,
+                        input,
+                        options,
+                    }));
+                };
+
+                polars_ensure!(
+                    inner_dtype.is_integer(),
+                    op = "list.gather",
+                    type_left,
+                    type_other
+                );
+                None
+            },
+            #[cfg(all(feature = "strings", feature = "find_many"))]
+            AExpr::Function {
+                function:
+                    ref function @ IRFunctionExpr::StringExpr(
+                        IRStringFunction::ContainsAny { .. }
+                        | IRStringFunction::FindMany { .. }
+                        | IRStringFunction::ExtractMany { .. },
+                    ),
+                ref input,
+                options,
+            } => {
+                let (_, type_left) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
+                let (_, type_other) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
+
+                let DataType::List(inner_dtype) = &type_other else {
+                    // @HACK. This needs to happen until 2.0 because we support
+                    // `pl.col.a.str.contains_any(pl.col.b)` where `b` is a string.
+                    let function = function.clone();
+                    let mut input = input.clone();
+
+                    polars_warn!(
+                        Deprecation,
+                        "`{function}` with a flat string datatype is deprecated.
+Please use `implode` to return to previous behavior.
+See https://github.com/pola-rs/polars/issues/22149 for more information."
+                    );
+
+                    let other_input =
+                        expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[1].node())));
+                    input[1].set_node(other_input);
+
+                    return Ok(Some(AExpr::Function {
+                        function,
+                        input,
+                        options,
+                    }));
+                };
+
+                polars_ensure!(
+                    type_left.is_string() && inner_dtype.is_string(),
+                    op = format!("{function}"),
+                    type_left,
+                    type_other
+                );
+                None
+            },
+
+            #[cfg(feature = "string_pad")]
+            AExpr::Function {
+                function:
+                    ref function @ IRFunctionExpr::StringExpr(
+                        IRStringFunction::PadStart { .. }
+                        | IRStringFunction::PadEnd { .. }
+                        | IRStringFunction::ZFill,
+                    ),
+                ref input,
+                options,
+            } => {
+                let (_, length_type) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
+
+                if length_type == DataType::UInt64 {
+                    None
+                } else {
+                    let function = function.clone();
+                    let mut input = input.clone();
+                    cast_expr_ir(
+                        &mut input[1],
+                        &length_type,
+                        &DataType::UInt64,
+                        expr_arena,
+                        CastOptions::Strict,
+                    )?;
+
+                    Some(AExpr::Function {
+                        function,
+                        input,
+                        options,
+                    })
+                }
+            },
+
+            #[cfg(all(feature = "strings", feature = "find_many"))]
+            AExpr::Function {
+                function:
+                    ref function @ IRFunctionExpr::StringExpr(IRStringFunction::ReplaceMany { .. }),
+                ref input,
+                options,
+            } => {
+                let (_, type_left) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
+                let (_, type_patterns) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
+                let (_, type_replace_with) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[2].node(), schema));
+
+                let (
+                    DataType::List(type_patterns_inner_dtype),
+                    DataType::List(type_replace_with_inner_dtype),
+                ) = (&type_patterns, &type_replace_with)
+                else {
+                    // @HACK. This needs to happen until 2.0 because we support
+                    // `pl.col.a.str.replace_with(pl.col.b, ..)` where `b` is a string.
+                    let function = function.clone();
+                    let mut input = input.clone();
+
+                    polars_warn!(
+                        Deprecation,
+                        "`str.replace_many` with a flat string datatype is deprecated.
+please use `implode` to return to previous behavior.
+See https://github.com/pola-rs/polars/issues/22149 for more information."
+                    );
+
+                    if !type_patterns.is_list() {
+                        let other_input =
+                            expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[1].node())));
+                        input[1].set_node(other_input);
+                    }
+                    if !type_replace_with.is_list() {
+                        let other_input =
+                            expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[2].node())));
+                        input[2].set_node(other_input);
+                    }
+
+                    return Ok(Some(AExpr::Function {
+                        function,
+                        input,
+                        options,
+                    }));
+                };
+
+                polars_ensure!(
+                    type_left.is_string()
+                        && type_patterns_inner_dtype.is_string()
+                        && type_replace_with_inner_dtype.is_string(),
+                    op = "str.replace_many",
+                    type_left,
+                    type_patterns,
+                    type_replace_with
+                );
+                None
+            },
+            #[cfg(feature = "replace")]
+            AExpr::Function {
+                function:
+                    ref function @ (IRFunctionExpr::Replace | IRFunctionExpr::ReplaceStrict { .. }),
+                ref input,
+                options,
+            } => {
+                let (_, type_old) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
+                let (_, type_new) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[2].node(), schema));
+
+                let (DataType::List(_), DataType::List(_)) = (&type_old, &type_new) else {
+                    let function = function.clone();
+                    let mut input = input.clone();
+
+                    if !type_old.is_list() {
+                        let other_input =
+                            expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[1].node())));
+                        input[1].set_node(other_input);
+                    }
+                    if !type_new.is_list() {
+                        let other_input =
+                            expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[2].node())));
+                        input[2].set_node(other_input);
+                    }
+
+                    return Ok(Some(AExpr::Function {
+                        function,
+                        input,
+                        options,
+                    }));
+                };
+
+                None
+            },
+            #[cfg(feature = "range")]
+            AExpr::Function {
+                function:
+                    ref
+                    function @ IRFunctionExpr::Range(IRRangeFunction::IntRange { step: _, ref dtype }),
+                ref input,
+                options,
+            } => {
+                polars_ensure!(dtype.is_integer(), ComputeError: "non-integer `dtype` passed to `int_range`: {:?}", dtype);
+
+                let (_, type_start) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
+                let (_, type_end) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
+
+                if [&type_start, &type_end]
+                    .into_iter()
+                    .all(|arg_dtype| arg_dtype == dtype)
+                {
+                    return Ok(None);
+                }
+
+                let function = function.clone();
+                let dtype = dtype.clone();
+                let mut input = input.clone();
+                for (i, arg_dtype) in [type_start, type_end].into_iter().enumerate() {
+                    cast_expr_ir(
+                        &mut input[i],
+                        &arg_dtype,
+                        &dtype,
+                        expr_arena,
+                        CastOptions::Strict,
+                    )?;
+                }
+
+                Some(AExpr::Function {
+                    function,
+                    input,
+                    options,
+                })
+            },
+            #[cfg(feature = "range")]
+            AExpr::Function {
+                function:
+                    ref function @ IRFunctionExpr::Range(IRRangeFunction::IntRanges { dtype: _ }),
+                ref input,
+                options,
+            } => {
+                let (_, type_start) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
+                let (_, type_end) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
+                let (_, type_step) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[2].node(), schema));
+
+                if [&type_start, &type_end, &type_step]
+                    .into_iter()
+                    .all(|dtype| dtype == &DataType::Int64)
+                {
+                    return Ok(None);
+                }
+
+                let function = function.clone();
+                let mut input = input.clone();
+                for (i, dtype) in [type_start, type_end, type_step].into_iter().enumerate() {
+                    cast_expr_ir(
+                        &mut input[i],
+                        &dtype,
+                        &DataType::Int64,
+                        expr_arena,
+                        CastOptions::Strict,
+                    )?;
+                }
+
+                Some(AExpr::Function {
+                    function,
+                    input,
+                    options,
+                })
+            },
+            #[cfg(feature = "range")]
+            AExpr::Function {
+                function: ref function @ (IRFunctionExpr::Skew(..) | IRFunctionExpr::Kurtosis(..)),
+                ref input,
+                options,
+            } => {
+                let (_, type_input) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
+
+                if matches!(type_input, DataType::Float64) {
+                    return Ok(None);
+                }
+
+                let function = function.clone();
+                let mut input = input.clone();
+                cast_expr_ir(
+                    &mut input[0],
+                    &type_input,
+                    &DataType::Float64,
+                    expr_arena,
+                    CastOptions::Strict,
+                )?;
+                Some(AExpr::Function {
+                    function,
+                    input,
+                    options,
+                })
+            },
+            #[cfg(all(feature = "range", feature = "dtype-date"))]
+            AExpr::Function {
+                function:
+                    ref function @ IRFunctionExpr::Range(IRRangeFunction::DateRange {
+                        interval: _,
+                        closed: _,
+                    })
+                    | ref function @ IRFunctionExpr::Range(IRRangeFunction::DateRanges {
+                        interval: _,
+                        closed: _,
+                    }),
+                ref input,
+                options,
+            } => {
+                let mut input = input.clone();
+                let function = function.clone();
+
+                // Determine the current and target dtypes.
+                let type_start = try_get_dtype(expr_arena, input[0].node(), schema)?;
+                let type_end = try_get_dtype(expr_arena, input[1].node(), schema)?;
+                let from_types = [type_start, type_end];
+
+                // Upcast input expressions if necessary.
+                let from_iter = from_types.into_iter();
+                let mut modified = false;
+                for (i, from_dtype) in from_iter.enumerate() {
+                    if from_dtype != DataType::Date {
+                        modified = true;
+                        coerce_temporal_dt(
+                            &from_dtype,
+                            &DataType::Date,
+                            &mut input[i],
+                            expr_arena,
+                        )?;
+                    }
+                }
+
+                if modified {
+                    Some(AExpr::Function {
+                        function,
+                        input,
+                        options,
+                    })
+                } else {
+                    return Ok(None);
+                }
+            },
+            #[cfg(all(feature = "range", feature = "dtype-datetime"))]
+            AExpr::Function {
+                function:
+                    ref function @ IRFunctionExpr::Range(IRRangeFunction::DatetimeRange {
+                        ref interval,
+                        closed: _,
+                        time_unit: ref tu,
+                        time_zone: ref tz,
+                    })
+                    | ref function @ IRFunctionExpr::Range(IRRangeFunction::DatetimeRanges {
+                        ref interval,
+                        closed: _,
+                        time_unit: ref tu,
+                        time_zone: ref tz,
+                    }),
+                ref input,
+                options,
+            } => {
+                let mut input = input.clone();
+                let function = function.clone();
+
+                // Determine the current and target dtypes.
+                let type_start = try_get_dtype(expr_arena, input[0].node(), schema)?;
+                let type_end = try_get_dtype(expr_arena, input[1].node(), schema)?;
+                let default = try_get_supertype(&type_start, &type_end)?;
+                let supertype = temporal_range_output_type(default, tu, tz, interval)?;
+                let from_types = [type_start, type_end];
+
+                // Upcast input expressions if necessary.
+                let from_iter = from_types.into_iter();
+                let mut modified = false;
+                for (i, from_dtype) in from_iter.enumerate() {
+                    if from_dtype != supertype {
+                        modified = true;
+                        coerce_temporal_dt(&from_dtype, &supertype, &mut input[i], expr_arena)?;
+                    }
+                }
+
+                if modified {
+                    Some(AExpr::Function {
+                        function,
+                        input,
+                        options,
+                    })
+                } else {
+                    return Ok(None);
+                }
+            },
             AExpr::Slice { offset, length, .. } => {
-                let input_schema = get_schema(lp_arena, lp_node);
-                let (_, offset_dtype) =
-                    unpack!(get_aexpr_and_type(expr_arena, offset, &input_schema));
+                let (_, offset_dtype) = unpack!(get_aexpr_and_type(expr_arena, offset, schema));
                 polars_ensure!(offset_dtype.is_integer(), InvalidOperation: "offset must be integral for slice expression, not {}", offset_dtype);
-                let (_, length_dtype) =
-                    unpack!(get_aexpr_and_type(expr_arena, length, &input_schema));
+                let (_, length_dtype) = unpack!(get_aexpr_and_type(expr_arena, length, schema));
                 polars_ensure!(length_dtype.is_integer() || length_dtype.is_null(), InvalidOperation: "length must be integral for slice expression, not {}", length_dtype);
                 None
             },
@@ -382,101 +1080,143 @@ impl OptimizationRule for TypeCoercionRule {
 fn inline_or_prune_cast(
     aexpr: &AExpr,
     dtype: &DataType,
-    strict: bool,
-    lp_node: Node,
-    lp_arena: &Arena<IR>,
+    options: CastOptions,
+    input_schema: &Schema,
     expr_arena: &Arena<AExpr>,
 ) -> PolarsResult<Option<AExpr>> {
     if !dtype.is_known() {
         return Ok(None);
     }
-    let lv = match (aexpr, dtype) {
+
+    let out = match aexpr {
         // PRUNE
-        (
-            AExpr::BinaryExpr {
-                op: Operator::LogicalOr | Operator::LogicalAnd,
-                ..
-            },
-            _,
-        ) => {
-            if let Some(schema) = lp_arena.get(lp_node).input_schema(lp_arena) {
-                let field = aexpr.to_field(&schema, Context::Default, expr_arena)?;
-                if field.dtype == *dtype {
-                    return Ok(Some(aexpr.clone()));
-                }
+        AExpr::BinaryExpr { op, .. } => {
+            use Operator::*;
+
+            match op {
+                LogicalOr | LogicalAnd => {
+                    let field = aexpr.to_field(&ToFieldContext::new(expr_arena, input_schema))?;
+                    if field.dtype == *dtype {
+                        return Ok(Some(aexpr.clone()));
+                    }
+
+                    None
+                },
+                Eq | EqValidity | NotEq | NotEqValidity | Lt | LtEq | Gt | GtEq => {
+                    if dtype.is_bool() {
+                        Some(aexpr.clone())
+                    } else {
+                        None
+                    }
+                },
+                _ => None,
             }
-            return Ok(None);
         },
         // INLINE
-        (AExpr::Literal(lv), _) => match lv {
-            LiteralValue::Series(s) => {
-                let s = if strict {
-                    s.strict_cast(dtype)
-                } else {
-                    s.cast(dtype)
-                }?;
-                LiteralValue::Series(SpecialEq::new(s))
-            },
-            LiteralValue::StrCat(s) => {
-                let av = AnyValue::String(s).strict_cast(dtype);
-                return Ok(av.map(|av| AExpr::Literal(av.into())));
-            },
-            // We generate casted literal datetimes, so ensure we cast upon conversion
-            // to create simpler expr trees.
-            #[cfg(feature = "dtype-datetime")]
-            LiteralValue::DateTime(ts, tu, None) if dtype.is_date() => {
-                let from_size = time_unit_multiple(tu.to_arrow()) * SECONDS_IN_DAY;
-                LiteralValue::Date((*ts / from_size) as i32)
-            },
-            lv @ (LiteralValue::Int(_) | LiteralValue::Float(_)) => {
-                let av = lv.to_any_value().ok_or_else(|| polars_err!(InvalidOperation: "literal value: {:?} too large for Polars", lv))?;
-                let av = av.strict_cast(dtype);
-                return Ok(av.map(|av| AExpr::Literal(av.into())));
-            },
-            LiteralValue::Null => match dtype {
-                DataType::Unknown(UnknownKind::Float | UnknownKind::Int(_) | UnknownKind::Str) => {
-                    return Ok(Some(AExpr::Literal(LiteralValue::Null)))
-                },
-                _ => return Ok(None),
-            },
-            _ => {
-                let Some(av) = lv.to_any_value() else {
-                    return Ok(None);
-                };
-                if dtype == &av.dtype() {
-                    return Ok(Some(aexpr.clone()));
-                }
-                match (av, dtype) {
-                    // casting null always remains null
-                    (AnyValue::Null, _) => return Ok(None),
-                    // series cast should do this one
-                    #[cfg(feature = "dtype-datetime")]
-                    (AnyValue::Datetime(_, _, _), DataType::Datetime(_, _)) => return Ok(None),
-                    #[cfg(feature = "dtype-duration")]
-                    (AnyValue::Duration(_, _), _) => return Ok(None),
-                    #[cfg(feature = "dtype-categorical")]
-                    (AnyValue::Categorical(_, _, _), _) | (_, DataType::Categorical(_, _)) => {
-                        return Ok(None)
-                    },
-                    #[cfg(feature = "dtype-categorical")]
-                    (AnyValue::Enum(_, _, _), _) | (_, DataType::Enum(_, _)) => return Ok(None),
-                    #[cfg(feature = "dtype-struct")]
-                    (_, DataType::Struct(_)) => return Ok(None),
-                    (av, _) => {
-                        let out = {
-                            match av.strict_cast(dtype) {
-                                Some(out) => out,
-                                None => return Ok(None),
-                            }
-                        };
-                        out.into()
-                    },
-                }
-            },
-        },
-        _ => return Ok(None),
+        AExpr::Literal(lv) => try_inline_literal_cast(lv, dtype, options)?.map(AExpr::Literal),
+        _ => None,
     };
-    Ok(Some(AExpr::Literal(lv)))
+
+    Ok(out)
+}
+
+fn try_inline_literal_cast(
+    lv: &LiteralValue,
+    dtype: &DataType,
+    options: CastOptions,
+) -> PolarsResult<Option<LiteralValue>> {
+    let lv = match lv {
+        LiteralValue::Series(s) => {
+            let s = s.cast_with_options(dtype, options)?;
+            LiteralValue::Series(SpecialEq::new(s))
+        },
+        LiteralValue::Dyn(dyn_value) => dyn_value
+            .clone()
+            .try_materialize_to_dtype(dtype, options)?
+            .into(),
+        lv if lv.is_null() => match dtype {
+            DataType::Unknown(UnknownKind::Float | UnknownKind::Int(_) | UnknownKind::Str) => {
+                LiteralValue::untyped_null()
+            },
+            _ => return Ok(None),
+        },
+        LiteralValue::Scalar(sc) => sc.clone().cast_with_options(dtype, options)?.into(),
+        lv => {
+            let Some(av) = lv.to_any_value() else {
+                return Ok(None);
+            };
+            if dtype == &av.dtype() {
+                return Ok(Some(lv.clone()));
+            }
+            match (av, dtype) {
+                // casting null always remains null
+                (AnyValue::Null, _) => return Ok(None),
+                // series cast should do this one
+                #[cfg(feature = "dtype-datetime")]
+                (AnyValue::Datetime(_, _, _), DataType::Datetime(_, _)) => return Ok(None),
+                #[cfg(feature = "dtype-duration")]
+                (AnyValue::Duration(_, _), _) => return Ok(None),
+                #[cfg(feature = "dtype-categorical")]
+                (AnyValue::Categorical(_, _), _) | (_, DataType::Categorical(_, _)) => {
+                    return Ok(None);
+                },
+                #[cfg(feature = "dtype-categorical")]
+                (AnyValue::Enum(_, _), _) | (_, DataType::Enum(_, _)) => return Ok(None),
+                #[cfg(feature = "dtype-struct")]
+                (_, DataType::Struct(_)) => return Ok(None),
+                (av, _) => {
+                    let out = {
+                        match av.strict_cast(dtype) {
+                            Some(out) => out,
+                            None => return Ok(None),
+                        }
+                    };
+                    out.into()
+                },
+            }
+        },
+    };
+
+    Ok(Some(lv))
+}
+
+fn cast_expr_ir(
+    e: &mut ExprIR,
+    from_dtype: &DataType,
+    to_dtype: &DataType,
+    expr_arena: &mut Arena<AExpr>,
+    options: CastOptions,
+) -> PolarsResult<()> {
+    if from_dtype == to_dtype {
+        return Ok(());
+    }
+
+    check_cast(from_dtype, to_dtype)?;
+
+    if let AExpr::Literal(lv) = expr_arena.get(e.node()) {
+        if let Some(literal) = try_inline_literal_cast(lv, to_dtype, options)? {
+            e.set_node(expr_arena.add(AExpr::Literal(literal)));
+            e.set_dtype(to_dtype.clone());
+            return Ok(());
+        }
+    }
+
+    e.set_node(expr_arena.add(AExpr::Cast {
+        expr: e.node(),
+        dtype: to_dtype.clone(),
+        options: CastOptions::Strict,
+    }));
+    e.set_dtype(to_dtype.clone());
+
+    Ok(())
+}
+
+fn check_cast(from: &DataType, to: &DataType) -> PolarsResult<()> {
+    polars_ensure!(
+        from.can_cast_to(to) != Some(false),
+        InvalidOperation: "casting from {from:?} to {to:?} not supported"
+    );
+    Ok(())
 }
 
 fn early_escape(type_self: &DataType, type_other: &DataType) -> Option<()> {
@@ -487,17 +1227,14 @@ fn early_escape(type_self: &DataType, type_other: &DataType) -> Option<()> {
 }
 
 fn raise_supertype(
-    function: &FunctionExpr,
+    function: &IRFunctionExpr,
     inputs: &[ExprIR],
     input_schema: &Schema,
     expr_arena: &Arena<AExpr>,
 ) -> PolarsResult<()> {
     let dtypes = inputs
         .iter()
-        .map(|e| {
-            let ae = expr_arena.get(e.node());
-            ae.to_dtype(input_schema, Context::Default, expr_arena)
-        })
+        .map(|e| e.dtype(input_schema, expr_arena).cloned())
         .collect::<PolarsResult<Vec<_>>>()?;
 
     let st = dtypes
@@ -517,58 +1254,28 @@ fn raise_supertype(
     }
 }
 
-#[cfg(test)]
-#[cfg(feature = "dtype-categorical")]
-mod test {
-    use polars_core::prelude::*;
+fn inline_implode(expr: Node, expr_arena: &mut Arena<AExpr>) -> PolarsResult<Option<AExpr>> {
+    let out = match expr_arena.get(expr) {
+        // INLINE
+        AExpr::Cast {
+            expr,
+            dtype,
+            options,
+        } => {
+            let dtype = dtype.clone();
+            let options = *options;
+            inline_implode(*expr, expr_arena)?.map(|expr| {
+                let expr = expr_arena.add(expr);
+                AExpr::Cast {
+                    expr,
+                    dtype: DataType::List(Box::new(dtype)),
+                    options,
+                }
+            })
+        },
+        AExpr::Literal(lv) => Some(AExpr::Literal(lv.clone().implode()?)),
+        _ => None,
+    };
 
-    use super::*;
-
-    #[test]
-    fn test_categorical_string() {
-        let mut expr_arena = Arena::new();
-        let mut lp_arena = Arena::new();
-        let optimizer = StackOptimizer {};
-        let rules: &mut [Box<dyn OptimizationRule>] = &mut [Box::new(TypeCoercionRule {})];
-
-        let df = DataFrame::new(Vec::from([Column::new_empty(
-            PlSmallStr::from_static("fruits"),
-            &DataType::Categorical(None, Default::default()),
-        )]))
-        .unwrap();
-
-        let expr_in = vec![col("fruits").eq(lit("somestr"))];
-        let lp = DslBuilder::from_existing_df(df.clone())
-            .project(expr_in.clone(), Default::default())
-            .build();
-
-        let mut lp_top =
-            to_alp(lp, &mut expr_arena, &mut lp_arena, &mut OptFlags::default()).unwrap();
-        lp_top = optimizer
-            .optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top)
-            .unwrap();
-        let lp = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
-
-        // we test that the fruits column is not cast to string for the comparison
-        if let DslPlan::Select { expr, .. } = lp {
-            assert_eq!(expr, expr_in);
-        };
-
-        let expr_in = vec![col("fruits") + (lit("somestr"))];
-        let lp = DslBuilder::from_existing_df(df)
-            .project(expr_in, Default::default())
-            .build();
-        let mut lp_top =
-            to_alp(lp, &mut expr_arena, &mut lp_arena, &mut OptFlags::default()).unwrap();
-        lp_top = optimizer
-            .optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top)
-            .unwrap();
-        let lp = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
-
-        // we test that the fruits column is cast to string for the addition
-        let expected = vec![col("fruits").cast(DataType::String) + lit("somestr")];
-        if let DslPlan::Select { expr, .. } = lp {
-            assert_eq!(expr, expected);
-        };
-    }
+    Ok(out)
 }

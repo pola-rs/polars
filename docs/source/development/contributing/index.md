@@ -99,7 +99,7 @@ rustup toolchain install nightly --component miri
 ```
 
 Next, install Python, for example using [pyenv](https://github.com/pyenv/pyenv#installation). We
-recommend using the latest Python version (`3.12`). Make sure you deactivate any active virtual
+recommend using the latest Python version (`3.13`). Make sure you deactivate any active virtual
 environments (command: `deactivate`) or conda environments (command: `conda deactivate`), as the
 steps below will create a new [virtual environment](https://docs.python.org/3/tutorial/venv.html)
 for Polars. You will need Python even if you intend to work on the Rust code only, as we rely on the
@@ -234,8 +234,11 @@ your solution, feel free to open a draft pull request and ask for help.
 ## Contributing to documentation
 
 The most important components of Polars documentation are the
-[user guide](https://docs.pola.rs/user-guide/), the [API references](https://docs.pola.rs/api/), and
-the database of questions on [StackOverflow](https://stackoverflow.com/).
+[user guide](https://docs.pola.rs/user-guide/), the
+[API references](https://docs.pola.rs/api/python/stable/reference/index.html), and the database of
+questions on Stack Overflow for
+[Python Polars](https://stackoverflow.com/questions/tagged/python-polars) and
+[Rust Polars](https://stackoverflow.com/questions/tagged/rust-polars).
 
 ### User guide
 
@@ -395,8 +398,8 @@ Start by bumping the version number in the source code:
   subdirectories. You'll probably want to use some search/replace strategy, as there are quite a few
   crates that need to be updated.
 - _Python:_ Update the version number in
-  [`py-polars/Cargo.toml`](https://github.com/pola-rs/polars/blob/main/py-polars/Cargo.toml#L3) to
-  match the version of the draft release.
+  [`py-polars/Cargo.toml`](https://github.com/pola-rs/polars/blob/main/py-polars/runtime/Cargo.toml#L3)
+  to match the version of the draft release.
 
 4. From the `py-polars` directory, run `make build` to generate a new `Cargo.lock` file.
 5. Create a new commit with all files added. The name of the commit should follow the format

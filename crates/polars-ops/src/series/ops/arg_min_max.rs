@@ -1,11 +1,10 @@
 use argminmax::ArgMinMax;
 use arrow::array::Array;
-use arrow::legacy::bit_util::*;
 use polars_core::chunked_array::ops::float_sorted_arg_max::{
     float_arg_max_sorted_ascending, float_arg_max_sorted_descending,
 };
 use polars_core::series::IsSorted;
-use polars_core::with_match_physical_numeric_polars_type;
+use polars_core::with_match_categorical_physical_type;
 
 use super::*;
 
@@ -17,28 +16,52 @@ pub trait ArgAgg {
     fn arg_max(&self) -> Option<usize>;
 }
 
+macro_rules! with_match_physical_numeric_polars_type {(
+    $key_type:expr, | $_:tt $T:ident | $($body:tt)*
+) => ({
+    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
+    use DataType::*;
+    match $key_type {
+            #[cfg(feature = "dtype-i8")]
+        Int8 => __with_ty__! { Int8Type },
+            #[cfg(feature = "dtype-i16")]
+        Int16 => __with_ty__! { Int16Type },
+        Int32 => __with_ty__! { Int32Type },
+        Int64 => __with_ty__! { Int64Type },
+            #[cfg(feature = "dtype-u8")]
+        UInt8 => __with_ty__! { UInt8Type },
+            #[cfg(feature = "dtype-u16")]
+        UInt16 => __with_ty__! { UInt16Type },
+        UInt32 => __with_ty__! { UInt32Type },
+        UInt64 => __with_ty__! { UInt64Type },
+        Float32 => __with_ty__! { Float32Type },
+        Float64 => __with_ty__! { Float64Type },
+        dt => panic!("not implemented for dtype {:?}", dt),
+    }
+})}
+
 impl ArgAgg for Series {
     fn arg_min(&self) -> Option<usize> {
         use DataType::*;
-        let s = self.to_physical_repr();
+        let phys_s = self.to_physical_repr();
         match self.dtype() {
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_, _) => {
-                let ca = self.categorical().unwrap();
-                if ca.null_count() == ca.len() {
-                    return None;
-                }
-                if ca.uses_lexical_ordering() {
+            Categorical(cats, _) => {
+                with_match_categorical_physical_type!(cats.physical(), |$C| {
+                    let ca = self.cat::<$C>().unwrap();
+                    if ca.null_count() == ca.len() {
+                        return None;
+                    }
                     ca.iter_str()
                         .enumerate()
                         .flat_map(|(idx, val)| val.map(|val| (idx, val)))
                         .reduce(|acc, (idx, val)| if acc.1 > val { (idx, val) } else { acc })
                         .map(|tpl| tpl.0)
-                } else {
-                    let ca = s.u32().unwrap();
-                    arg_min_numeric_dispatch(ca)
-                }
+                })
             },
+            #[cfg(feature = "dtype-categorical")]
+            Enum(_, _) => phys_s.arg_min(),
+            Date | Datetime(_, _) | Duration(_) | Time => phys_s.arg_min(),
             String => {
                 let ca = self.str().unwrap();
                 arg_min_str(ca)
@@ -47,17 +70,9 @@ impl ArgAgg for Series {
                 let ca = self.bool().unwrap();
                 arg_min_bool(ca)
             },
-            Date => {
-                let ca = s.i32().unwrap();
-                arg_min_numeric_dispatch(ca)
-            },
-            Datetime(_, _) | Duration(_) | Time => {
-                let ca = s.i64().unwrap();
-                arg_min_numeric_dispatch(ca)
-            },
-            dt if dt.is_numeric() => {
-                with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
-                    let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+            dt if dt.is_primitive_numeric() => {
+                with_match_physical_numeric_polars_type!(phys_s.dtype(), |$T| {
+                    let ca: &ChunkedArray<$T> = phys_s.as_ref().as_ref().as_ref();
                     arg_min_numeric_dispatch(ca)
                 })
             },
@@ -67,24 +82,25 @@ impl ArgAgg for Series {
 
     fn arg_max(&self) -> Option<usize> {
         use DataType::*;
-        let s = self.to_physical_repr();
+        let phys_s = self.to_physical_repr();
         match self.dtype() {
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_, _) => {
-                let ca = self.categorical().unwrap();
-                if ca.null_count() == ca.len() {
-                    return None;
-                }
-                if ca.uses_lexical_ordering() {
+            Categorical(cats, _) => {
+                with_match_categorical_physical_type!(cats.physical(), |$C| {
+                    let ca = self.cat::<$C>().unwrap();
+                    if ca.null_count() == ca.len() {
+                        return None;
+                    }
                     ca.iter_str()
                         .enumerate()
+                        .flat_map(|(idx, val)| val.map(|val| (idx, val)))
                         .reduce(|acc, (idx, val)| if acc.1 < val { (idx, val) } else { acc })
                         .map(|tpl| tpl.0)
-                } else {
-                    let ca_phys = s.u32().unwrap();
-                    arg_max_numeric_dispatch(ca_phys)
-                }
+                })
             },
+            #[cfg(feature = "dtype-categorical")]
+            Enum(_, _) => phys_s.arg_max(),
+            Date | Datetime(_, _) | Duration(_) | Time => phys_s.arg_max(),
             String => {
                 let ca = self.str().unwrap();
                 arg_max_str(ca)
@@ -93,17 +109,9 @@ impl ArgAgg for Series {
                 let ca = self.bool().unwrap();
                 arg_max_bool(ca)
             },
-            Date => {
-                let ca = s.i32().unwrap();
-                arg_max_numeric_dispatch(ca)
-            },
-            Datetime(_, _) | Duration(_) | Time => {
-                let ca = s.i64().unwrap();
-                arg_max_numeric_dispatch(ca)
-            },
-            dt if dt.is_numeric() => {
-                with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
-                    let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+            dt if dt.is_primitive_numeric() => {
+                with_match_physical_numeric_polars_type!(phys_s.dtype(), |$T| {
+                    let ca: &ChunkedArray<$T> = phys_s.as_ref().as_ref().as_ref();
                     arg_max_numeric_dispatch(ca)
                 })
             },
@@ -119,7 +127,7 @@ where
 {
     if ca.null_count() == ca.len() {
         None
-    } else if T::get_dtype().is_float() && !matches!(ca.is_sorted_flag(), IsSorted::Not) {
+    } else if T::get_static_dtype().is_float() && !matches!(ca.is_sorted_flag(), IsSorted::Not) {
         arg_max_float_sorted(ca)
     } else if let Ok(vals) = ca.cont_slice() {
         arg_max_numeric_slice(vals, ca.is_sorted_flag())
@@ -142,29 +150,8 @@ where
     }
 }
 
-pub(crate) fn arg_max_bool(ca: &BooleanChunked) -> Option<usize> {
-    if ca.null_count() == ca.len() {
-        None
-    }
-    // don't check for any, that on itself is already an argmax search
-    else if ca.null_count() == 0 && ca.chunks().len() == 1 {
-        let arr = ca.downcast_iter().next().unwrap();
-        let mask = arr.values();
-        Some(first_set_bit(mask))
-    } else {
-        let mut first_false_idx: Option<usize> = None;
-        ca.iter()
-            .enumerate()
-            .find_map(|(idx, val)| match val {
-                Some(true) => Some(idx),
-                Some(false) if first_false_idx.is_none() => {
-                    first_false_idx = Some(idx);
-                    None
-                },
-                _ => None,
-            })
-            .or(first_false_idx)
-    }
+fn arg_max_bool(ca: &BooleanChunked) -> Option<usize> {
+    ca.first_true_idx().or_else(|| ca.first_false_idx())
 }
 
 /// # Safety
@@ -178,31 +165,11 @@ where
         IsSorted::Descending => float_arg_max_sorted_descending(ca),
         _ => unreachable!(),
     };
-
     Some(out)
 }
 
 fn arg_min_bool(ca: &BooleanChunked) -> Option<usize> {
-    if ca.null_count() == ca.len() {
-        None
-    } else if ca.null_count() == 0 && ca.chunks().len() == 1 {
-        let arr = ca.downcast_iter().next().unwrap();
-        let mask = arr.values();
-        Some(first_unset_bit(mask))
-    } else {
-        let mut first_true_idx: Option<usize> = None;
-        ca.iter()
-            .enumerate()
-            .find_map(|(idx, val)| match val {
-                Some(false) => Some(idx),
-                Some(true) if first_true_idx.is_none() => {
-                    first_true_idx = Some(idx);
-                    None
-                },
-                _ => None,
-            })
-            .or(first_true_idx)
-    }
+    ca.first_false_idx().or_else(|| ca.first_true_idx())
 }
 
 fn arg_min_str(ca: &StringChunked) -> Option<usize> {

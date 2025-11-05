@@ -232,9 +232,25 @@ class TestWriteDatabase:
 
         with pytest.raises(
             TypeError,
-            match="unrecognised connection type",
+            match="unrecognised connection type.*",
         ):
-            df.write_database(connection=True, table_name="misc")  # type: ignore[arg-type]
+            df.write_database(connection=True, table_name="misc", engine=engine)  # type: ignore[arg-type]
+
+    def test_write_database_adbc_missing_driver_error(
+        self, engine: DbWriteEngine, uri_connection: bool, tmp_path: Path
+    ) -> None:
+        # Skip for sqlalchemy
+        if engine == "sqlalchemy":
+            return
+        df = pl.DataFrame({"colx": [1, 2, 3]})
+        with pytest.raises(
+            ModuleNotFoundError, match="ADBC 'adbc_driver_mysql' driver not detected."
+        ):
+            df.write_database(
+                table_name="my_schema.my_table",
+                connection="mysql:///:memory:",
+                engine=engine,
+            )
 
 
 @pytest.mark.write_disk
@@ -320,10 +336,7 @@ def test_write_database_sa_commit(tmp_path: str, pass_connection: bool) -> None:
     assert_frame_equal(result, df)
 
 
-@pytest.mark.skipif(
-    sys.version_info < (3, 9) or sys.platform == "win32",
-    reason="adbc not available on Windows or <= Python 3.8",
-)
+@pytest.mark.skipif(sys.platform == "win32", reason="adbc not available on Windows")
 def test_write_database_adbc_temporary_table() -> None:
     """Confirm that execution_options are passed along to create temporary tables."""
     df = pl.DataFrame({"colx": [1, 2, 3]})

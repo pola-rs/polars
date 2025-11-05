@@ -305,7 +305,7 @@ fn set_values() {
 
 #[test]
 fn try_from_trusted_len_iter() {
-    let iter = std::iter::repeat(Some(1)).take(2).map(PolarsResult::Ok);
+    let iter = std::iter::repeat_n(Some(1), 2).map(PolarsResult::Ok);
     let a = MutablePrimitiveArray::try_from_trusted_len_iter(iter).unwrap();
     assert_eq!(a, MutablePrimitiveArray::from([Some(1), Some(1)]));
 }

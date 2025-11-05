@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::io::{Read, Seek};
 
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_utils::aliases::PlHashSet;
 
 use super::super::{Compression, Dictionaries, IpcBuffer, Node};

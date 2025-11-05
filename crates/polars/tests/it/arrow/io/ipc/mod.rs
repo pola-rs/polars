@@ -3,9 +3,9 @@ use std::sync::Arc;
 
 use arrow::array::*;
 use arrow::datatypes::{ArrowSchema, ArrowSchemaRef, Field};
-use arrow::io::ipc::read::{read_file_metadata, FileReader};
-use arrow::io::ipc::write::*;
 use arrow::io::ipc::IpcField;
+use arrow::io::ipc::read::{FileReader, read_file_metadata};
+use arrow::io::ipc::write::*;
 use arrow::record_batch::RecordBatchT;
 use polars::prelude::PlSmallStr;
 use polars_error::*;
@@ -62,8 +62,13 @@ fn prep_schema(array: &dyn Array) -> ArrowSchemaRef {
 fn write_boolean() -> PolarsResult<()> {
     let array = BooleanArray::from([Some(true), Some(false), None, Some(true)]).boxed();
     let schema = prep_schema(array.as_ref());
-    let columns = RecordBatchT::try_new(4, vec![array])?;
-    round_trip(columns, schema, None, Some(Compression::ZSTD))
+    let columns = RecordBatchT::try_new(4, schema.clone(), vec![array])?;
+    round_trip(
+        columns,
+        schema,
+        None,
+        Some(Compression::ZSTD(Default::default())),
+    )
 }
 
 #[test]
@@ -72,14 +77,24 @@ fn write_sliced_utf8() -> PolarsResult<()> {
         .sliced(1, 1)
         .boxed();
     let schema = prep_schema(array.as_ref());
-    let columns = RecordBatchT::try_new(array.len(), vec![array])?;
-    round_trip(columns, schema, None, Some(Compression::ZSTD))
+    let columns = RecordBatchT::try_new(array.len(), schema.clone(), vec![array])?;
+    round_trip(
+        columns,
+        schema,
+        None,
+        Some(Compression::ZSTD(Default::default())),
+    )
 }
 
 #[test]
 fn write_binview() -> PolarsResult<()> {
     let array = Utf8ViewArray::from_slice([Some("foo"), Some("bar"), None, Some("hamlet")]).boxed();
     let schema = prep_schema(array.as_ref());
-    let columns = RecordBatchT::try_new(array.len(), vec![array])?;
-    round_trip(columns, schema, None, Some(Compression::ZSTD))
+    let columns = RecordBatchT::try_new(array.len(), schema.clone(), vec![array])?;
+    round_trip(
+        columns,
+        schema,
+        None,
+        Some(Compression::ZSTD(Default::default())),
+    )
 }

@@ -8,17 +8,17 @@ use polars_parquet_format::thrift::protocol::TCompactOutputStreamProtocol;
 use polars_parquet_format::{ColumnChunk, ColumnMetaData, Type};
 use polars_utils::aliases::PlHashSet;
 
+use super::DynStreamingIterator;
 #[cfg(feature = "async")]
 use super::page::write_page_async;
-use super::page::{write_page, PageWriteSpec};
+use super::page::{PageWriteSpec, write_page};
 use super::statistics::reduce;
-use super::DynStreamingIterator;
+use crate::parquet::FallibleStreamingIterator;
 use crate::parquet::compression::Compression;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::ColumnDescriptor;
 use crate::parquet::page::{CompressedPage, PageType};
-use crate::parquet::FallibleStreamingIterator;
 
 pub fn write_column_chunk<W, E>(
     writer: &mut W,

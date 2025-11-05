@@ -5,7 +5,6 @@ mod dictionary;
 mod equal;
 mod fixed_size_binary;
 mod fixed_size_list;
-mod growable;
 mod list;
 mod map;
 mod primitive;
@@ -13,9 +12,10 @@ mod struct_;
 mod union;
 mod utf8;
 
-use arrow::array::{clone, new_empty_array, new_null_array, Array, PrimitiveArray};
+use arrow::array::{Array, PrimitiveArray, clone, new_empty_array, new_null_array};
 use arrow::bitmap::Bitmap;
-use arrow::datatypes::{ArrowDataType, Field, UnionMode};
+use arrow::datatypes::{ArrowDataType, ExtensionType, Field, UnionMode};
+use union::union_type;
 
 #[test]
 fn nulls() {
@@ -37,12 +37,12 @@ fn nulls() {
 
     // unions' null count is always 0
     let datatypes = vec![
-        ArrowDataType::Union(
+        union_type(
             vec![Field::new("a".into(), ArrowDataType::Binary, true)],
             None,
             UnionMode::Dense,
         ),
-        ArrowDataType::Union(
+        union_type(
             vec![Field::new("a".into(), ArrowDataType::Binary, true)],
             None,
             UnionMode::Sparse,
@@ -68,22 +68,26 @@ fn empty() {
         ))),
         ArrowDataType::List(Box::new(Field::new(
             "a".into(),
-            ArrowDataType::Extension("ext".into(), Box::new(ArrowDataType::Int32), None),
+            ArrowDataType::Extension(Box::new(ExtensionType {
+                name: "ext".into(),
+                inner: ArrowDataType::Int32,
+                metadata: None,
+            })),
             true,
         ))),
-        ArrowDataType::Union(
+        union_type(
             vec![Field::new("a".into(), ArrowDataType::Binary, true)],
             None,
             UnionMode::Sparse,
         ),
-        ArrowDataType::Union(
+        union_type(
             vec![Field::new("a".into(), ArrowDataType::Binary, true)],
             None,
             UnionMode::Dense,
         ),
         ArrowDataType::Struct(vec![Field::new("a".into(), ArrowDataType::Int32, true)]),
     ];
-    let a = datatypes.into_iter().all(|x| new_empty_array(x).len() == 0);
+    let a = datatypes.into_iter().all(|x| new_empty_array(x).is_empty());
     assert!(a);
 }
 
@@ -99,12 +103,12 @@ fn empty_extension() {
             ArrowDataType::Binary,
             true,
         ))),
-        ArrowDataType::Union(
+        union_type(
             vec![Field::new("a".into(), ArrowDataType::Binary, true)],
             None,
             UnionMode::Sparse,
         ),
-        ArrowDataType::Union(
+        union_type(
             vec![Field::new("a".into(), ArrowDataType::Binary, true)],
             None,
             UnionMode::Dense,
@@ -113,10 +117,16 @@ fn empty_extension() {
     ];
     let a = datatypes
         .into_iter()
-        .map(|dt| ArrowDataType::Extension("ext".into(), Box::new(dt), None))
+        .map(|dt| {
+            ArrowDataType::Extension(Box::new(ExtensionType {
+                name: "ext".into(),
+                inner: dt,
+                metadata: None,
+            }))
+        })
         .all(|x| {
             let a = new_empty_array(x);
-            a.len() == 0 && matches!(a.dtype(), ArrowDataType::Extension(_, _, _))
+            a.is_empty() && matches!(a.dtype(), ArrowDataType::Extension(_))
         });
     assert!(a);
 }

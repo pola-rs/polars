@@ -1,7 +1,7 @@
 use arrow::array::{Array, BinaryViewArray};
 use polars_error::PolarsResult;
 
-use super::super::{nested, utils, WriteOptions};
+use super::super::{WriteOptions, nested, utils};
 use super::basic::{build_statistics, encode_plain};
 use crate::arrow::write::Nested;
 use crate::parquet::encoding::Encoding;

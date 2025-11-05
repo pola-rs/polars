@@ -3,8 +3,8 @@ use std::ops::{Add, IndexMut};
 use std::simd::{prelude::*, *};
 
 use arrow::array::{Array, PrimitiveArray};
-use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::Bitmap;
+use arrow::bitmap::bitmask::BitMask;
 use arrow::types::NativeType;
 use num_traits::{AsPrimitive, Float};
 
@@ -120,6 +120,24 @@ where
     }
 }
 
+#[cfg(feature = "simd")]
+impl<F> SumBlock<F> for [u128; PAIRWISE_RECURSION_LIMIT]
+where
+    u128: AsPrimitive<F>,
+    F: Float + std::iter::Sum + 'static,
+{
+    fn sum_block_vectorized(&self) -> F {
+        self.iter().map(|x| x.as_()).sum()
+    }
+
+    fn sum_block_vectorized_with_mask(&self, mask: BitMask<'_>) -> F {
+        self.iter()
+            .enumerate()
+            .map(|(idx, x)| if mask.get(idx) { x.as_() } else { F::zero() })
+            .sum()
+    }
+}
+
 #[cfg(not(feature = "simd"))]
 impl<T, F> SumBlock<F> for [T; PAIRWISE_RECURSION_LIMIT]
 where
@@ -159,7 +177,7 @@ where
     [T; PAIRWISE_RECURSION_LIMIT]: SumBlock<F>,
     F: Add<Output = F>,
 {
-    debug_assert!(!f.is_empty() && f.len() % PAIRWISE_RECURSION_LIMIT == 0);
+    debug_assert!(!f.is_empty() && f.len().is_multiple_of(PAIRWISE_RECURSION_LIMIT));
 
     let block: Option<&[T; PAIRWISE_RECURSION_LIMIT]> = f.try_into().ok();
     if let Some(block) = block {
@@ -185,7 +203,7 @@ where
     [T; PAIRWISE_RECURSION_LIMIT]: SumBlock<F>,
     F: Add<Output = F>,
 {
-    debug_assert!(!f.is_empty() && f.len() % PAIRWISE_RECURSION_LIMIT == 0);
+    debug_assert!(!f.is_empty() && f.len().is_multiple_of(PAIRWISE_RECURSION_LIMIT));
     debug_assert!(f.len() == mask.len());
 
     let block: Option<&[T; PAIRWISE_RECURSION_LIMIT]> = f.try_into().ok();
@@ -245,11 +263,7 @@ where
             .enumerate()
             .map(|(i, x)| {
                 // No filter but rather select of 0.0 for cmov opt.
-                if rest_mask.get(i) {
-                    x.as_()
-                } else {
-                    F::zero()
-                }
+                if rest_mask.get(i) { x.as_() } else { F::zero() }
             })
             .sum();
         mainsum + restsum

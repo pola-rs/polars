@@ -9,6 +9,8 @@ Table Operations
      - Description
    * - :ref:`CREATE TABLE <create_table>`
      - Create a new table and its columns from a SQL query executed against an existing table.
+   * - :ref:`DELETE FROM <delete_from_table>`
+     - Remove specific rows of data from a table using an (optional) constraint.
    * - :ref:`DROP TABLES <drop_tables>`
      - Deletes the specified table, unregistering it.
    * - :ref:`EXPLAIN <explain>`
@@ -33,6 +35,19 @@ Create a new table and its columns from a SQL query executed against an existing
 
     CREATE TABLE new_table AS
     SELECT * FROM existing_table WHERE value > 42
+
+.. _delete_from_table:
+
+DELETE
+------
+Remove specific rows from a table using an (optional) constraint.
+Omitting the constraint deletes all rows, equivalent to TRUNCATE.
+
+**Example:**
+
+.. code-block:: sql
+
+    DELETE FROM some_table WHERE value < 0
 
 .. _drop_tables:
 

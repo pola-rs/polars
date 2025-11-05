@@ -2,7 +2,7 @@ use std::num::NonZeroUsize;
 
 use polars_core::prelude::DataType;
 use polars_core::utils::try_get_supertype;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 use simd_json::BorrowedValue;
 
 pub(crate) fn json_values_to_supertype(

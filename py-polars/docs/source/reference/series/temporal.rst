@@ -18,9 +18,11 @@ The following methods are available under the `Series.dt` attribute.
     Series.dt.date
     Series.dt.datetime
     Series.dt.day
+    Series.dt.days_in_month
     Series.dt.dst_offset
     Series.dt.epoch
     Series.dt.hour
+    Series.dt.is_business_day
     Series.dt.is_leap_year
     Series.dt.iso_year
     Series.dt.max
@@ -38,6 +40,7 @@ The following methods are available under the `Series.dt` attribute.
     Series.dt.offset_by
     Series.dt.ordinal_day
     Series.dt.quarter
+    Series.dt.replace
     Series.dt.replace_time_zone
     Series.dt.round
     Series.dt.second

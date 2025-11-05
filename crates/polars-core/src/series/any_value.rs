@@ -2,9 +2,9 @@ use std::fmt::Write;
 
 use arrow::bitmap::MutableBitmap;
 
-use crate::chunked_array::builder::{get_list_builder, AnonymousOwnedListBuilder};
-#[cfg(feature = "object")]
-use crate::chunked_array::object::registry::ObjectRegistry;
+#[cfg(feature = "dtype-categorical")]
+use crate::chunked_array::builder::CategoricalChunkedBuilder;
+use crate::chunked_array::builder::{AnonymousOwnedListBuilder, get_list_builder};
 use crate::prelude::*;
 use crate::utils::any_values_to_supertype;
 
@@ -30,7 +30,8 @@ impl Series {
     /// and the `strict` parameter:
     /// - If `strict` is `true`, the data type is equal to the data type of the
     ///   first non-null value. If any other non-null values do not match this
-    ///   data type, an error is raised.
+    ///   data type, an error is raised. If the first non-null value is a
+    ///   decimal the slice is scanned for the maximum precision and scale possible.
     /// - If `strict` is `false`, the data type is the supertype of the `values`.
     ///   An error is returned if no supertype can be determined.
     ///   **WARNING**: A full pass over the values is required to determine the supertype.
@@ -63,18 +64,22 @@ impl Series {
             }
         }
         let dtype = if strict {
-            get_first_non_null_dtype(values)
+            match get_first_non_null_dtype(values) {
+                #[cfg(feature = "dtype-decimal")]
+                DataType::Decimal(mut prec, mut scale) => {
+                    for v in values {
+                        if let DataType::Decimal(p, s) = v.dtype() {
+                            prec = prec.max(p);
+                            scale = scale.max(s);
+                        }
+                    }
+                    DataType::Decimal(prec, scale)
+                },
+                dt => dt,
+            }
         } else {
-            // Currently does not work correctly for Decimal because equality is not implemented.
             any_values_to_supertype(values)?
         };
-
-        // TODO: Remove this when Decimal data type equality is implemented.
-        #[cfg(feature = "dtype-decimal")]
-        if dtype.is_decimal() {
-            let dtype = DataType::Decimal(None, None);
-            return Self::from_any_values_and_dtype(name, values, &dtype, strict);
-        }
 
         Self::from_any_values_and_dtype(name, values, &dtype, strict)
     }
@@ -90,50 +95,35 @@ impl Series {
         dtype: &DataType,
         strict: bool,
     ) -> PolarsResult<Self> {
-        use crate::chunked_array::metadata::MetadataCollectable;
-
         if values.is_empty() {
             return Ok(Self::new_empty(name, dtype));
         }
 
         let mut s = match dtype {
             #[cfg(feature = "dtype-i8")]
-            DataType::Int8 => any_values_to_integer::<Int8Type>(values, strict)?
-                .with_cheap_metadata()
-                .into_series(),
+            DataType::Int8 => any_values_to_integer::<Int8Type>(values, strict)?.into_series(),
             #[cfg(feature = "dtype-i16")]
-            DataType::Int16 => any_values_to_integer::<Int16Type>(values, strict)?
-                .with_cheap_metadata()
-                .into_series(),
-            DataType::Int32 => any_values_to_integer::<Int32Type>(values, strict)?
-                .with_cheap_metadata()
-                .into_series(),
-            DataType::Int64 => any_values_to_integer::<Int64Type>(values, strict)?
-                .with_cheap_metadata()
-                .into_series(),
+            DataType::Int16 => any_values_to_integer::<Int16Type>(values, strict)?.into_series(),
+            DataType::Int32 => any_values_to_integer::<Int32Type>(values, strict)?.into_series(),
+            DataType::Int64 => any_values_to_integer::<Int64Type>(values, strict)?.into_series(),
+            #[cfg(feature = "dtype-i128")]
+            DataType::Int128 => any_values_to_integer::<Int128Type>(values, strict)?.into_series(),
             #[cfg(feature = "dtype-u8")]
-            DataType::UInt8 => any_values_to_integer::<UInt8Type>(values, strict)?
-                .with_cheap_metadata()
-                .into_series(),
+            DataType::UInt8 => any_values_to_integer::<UInt8Type>(values, strict)?.into_series(),
             #[cfg(feature = "dtype-u16")]
-            DataType::UInt16 => any_values_to_integer::<UInt16Type>(values, strict)?
-                .with_cheap_metadata()
-                .into_series(),
-            DataType::UInt32 => any_values_to_integer::<UInt32Type>(values, strict)?
-                .with_cheap_metadata()
-                .into_series(),
-            DataType::UInt64 => any_values_to_integer::<UInt64Type>(values, strict)?
-                .with_cheap_metadata()
-                .into_series(),
-            DataType::Float32 => any_values_to_f32(values, strict)?
-                .with_cheap_metadata()
-                .into_series(),
-            DataType::Float64 => any_values_to_f64(values, strict)?
-                .with_cheap_metadata()
-                .into_series(),
+            DataType::UInt16 => any_values_to_integer::<UInt16Type>(values, strict)?.into_series(),
+            DataType::UInt32 => any_values_to_integer::<UInt32Type>(values, strict)?.into_series(),
+            DataType::UInt64 => any_values_to_integer::<UInt64Type>(values, strict)?.into_series(),
+            #[cfg(feature = "dtype-u128")]
+            DataType::UInt128 => {
+                any_values_to_integer::<UInt128Type>(values, strict)?.into_series()
+            },
+            DataType::Float32 => any_values_to_f32(values, strict)?.into_series(),
+            DataType::Float64 => any_values_to_f64(values, strict)?.into_series(),
             DataType::Boolean => any_values_to_bool(values, strict)?.into_series(),
             DataType::String => any_values_to_string(values, strict)?.into_series(),
             DataType::Binary => any_values_to_binary(values, strict)?.into_series(),
+            DataType::BinaryOffset => any_values_to_binary_offset(values, strict)?.into_series(),
             #[cfg(feature = "dtype-date")]
             DataType::Date => any_values_to_date(values, strict)?.into_series(),
             #[cfg(feature = "dtype-time")]
@@ -145,9 +135,9 @@ impl Series {
             #[cfg(feature = "dtype-duration")]
             DataType::Duration(tu) => any_values_to_duration(values, *tu, strict)?.into_series(),
             #[cfg(feature = "dtype-categorical")]
-            dt @ DataType::Categorical(_, _) => any_values_to_categorical(values, dt, strict)?,
-            #[cfg(feature = "dtype-categorical")]
-            dt @ DataType::Enum(_, _) => any_values_to_enum(values, dt, strict)?,
+            dt @ (DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
+                any_values_to_categorical(values, dt, strict)?
+            },
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => {
                 any_values_to_decimal(values, *precision, *scale, strict)?.into_series()
@@ -160,7 +150,7 @@ impl Series {
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => any_values_to_struct(values, fields, strict)?,
             #[cfg(feature = "object")]
-            DataType::Object(_, registry) => any_values_to_object(values, registry)?,
+            DataType::Object(_) => any_values_to_object(values)?,
             DataType::Null => Series::new_null(PlSmallStr::EMPTY, values.len()),
             dt => {
                 polars_bail!(
@@ -195,12 +185,12 @@ fn any_values_to_integer<T: PolarsIntegerType>(
                     let opt_val = av.extract::<T::Native>();
                     let val = match opt_val {
                         Some(v) => v,
-                        None => return Err(invalid_value_error(&T::get_dtype(), av)),
+                        None => return Err(invalid_value_error(&T::get_static_dtype(), av)),
                     };
                     builder.append_value(val)
                 },
                 AnyValue::Null => builder.append_null(),
-                av => return Err(invalid_value_error(&T::get_dtype(), av)),
+                av => return Err(invalid_value_error(&T::get_static_dtype(), av)),
             }
         }
         Ok(builder.finish())
@@ -343,6 +333,31 @@ fn any_values_to_binary(values: &[AnyValue], strict: bool) -> PolarsResult<Binar
     }
 }
 
+fn any_values_to_binary_offset(
+    values: &[AnyValue],
+    strict: bool,
+) -> PolarsResult<BinaryOffsetChunked> {
+    let mut builder = MutableBinaryArray::<i64>::new();
+    for av in values {
+        match av {
+            AnyValue::Binary(s) => builder.push(Some(*s)),
+            AnyValue::BinaryOwned(s) => builder.push(Some(&**s)),
+            AnyValue::Null => builder.push_null(),
+            av => {
+                if strict {
+                    return Err(invalid_value_error(&DataType::Binary, av));
+                } else {
+                    builder.push_null();
+                };
+            },
+        }
+    }
+    Ok(BinaryOffsetChunked::with_chunk(
+        Default::default(),
+        builder.into(),
+    ))
+}
+
 #[cfg(feature = "dtype-date")]
 fn any_values_to_date(values: &[AnyValue], strict: bool) -> PolarsResult<DateChunked> {
     let mut builder = PrimitiveChunkedBuilder::<Int32Type>::new(PlSmallStr::EMPTY, values.len());
@@ -361,7 +376,7 @@ fn any_values_to_date(values: &[AnyValue], strict: bool) -> PolarsResult<DateChu
             },
         }
     }
-    Ok(builder.finish().into())
+    Ok(builder.finish().into_date())
 }
 
 #[cfg(feature = "dtype-time")]
@@ -382,7 +397,7 @@ fn any_values_to_time(values: &[AnyValue], strict: bool) -> PolarsResult<TimeChu
             },
         }
     }
-    Ok(builder.finish().into())
+    Ok(builder.finish().into_time())
 }
 
 #[cfg(feature = "dtype-datetime")]
@@ -446,139 +461,73 @@ fn any_values_to_categorical(
     dtype: &DataType,
     strict: bool,
 ) -> PolarsResult<Series> {
-    let ordering = match dtype {
-        DataType::Categorical(_, ordering) => ordering,
-        _ => panic!("any_values_to_categorical with dtype={dtype:?}"),
-    };
+    with_match_categorical_physical_type!(dtype.cat_physical().unwrap(), |$C| {
+        let mut builder = CategoricalChunkedBuilder::<$C>::new(PlSmallStr::EMPTY, dtype.clone());
 
-    let mut builder = CategoricalChunkedBuilder::new(PlSmallStr::EMPTY, values.len(), *ordering);
+        let mut owned = String::new(); // Amortize allocations.
+        for av in values {
+            let ret = match av {
+                AnyValue::String(s) => builder.append_str(s),
+                AnyValue::StringOwned(s) => builder.append_str(s),
 
-    let mut owned = String::new(); // Amortize allocations.
-    for av in values {
-        match av {
-            AnyValue::String(s) => builder.append_value(s),
-            AnyValue::StringOwned(s) => builder.append_value(s),
+                &AnyValue::Enum(cat, &ref map) |
+                &AnyValue::EnumOwned(cat, ref map) |
+                &AnyValue::Categorical(cat, &ref map) |
+                &AnyValue::CategoricalOwned(cat, ref map) => builder.append_cat(cat, map),
 
-            AnyValue::Enum(s, rev, _) => builder.append_value(rev.get(*s)),
-            AnyValue::EnumOwned(s, rev, _) => builder.append_value(rev.get(*s)),
-
-            AnyValue::Categorical(s, rev, _) => builder.append_value(rev.get(*s)),
-            AnyValue::CategoricalOwned(s, rev, _) => builder.append_value(rev.get(*s)),
-
-            AnyValue::Binary(_) | AnyValue::BinaryOwned(_) if !strict => builder.append_null(),
-            AnyValue::Null => builder.append_null(),
-
-            av => {
-                if strict {
-                    return Err(invalid_value_error(&DataType::String, av));
+                AnyValue::Binary(_) | AnyValue::BinaryOwned(_) if !strict => {
+                    builder.append_null();
+                    Ok(())
+                },
+                AnyValue::Null => {
+                    builder.append_null();
+                    Ok(())
                 }
 
-                owned.clear();
-                write!(owned, "{av}").unwrap();
-                builder.append_value(&owned);
-            },
+                av => {
+                    if strict {
+                        return Err(invalid_value_error(&DataType::String, av));
+                    }
+
+                    owned.clear();
+                    write!(owned, "{av}").unwrap();
+                    builder.append_str(&owned)
+                },
+            };
+
+            if let Err(e) = ret {
+                if strict {
+                    return Err(e);
+                } else {
+                    builder.append_null();
+                }
+            }
         }
-    }
 
-    let ca = builder.finish();
-
-    Ok(ca.into_series())
-}
-
-#[cfg(feature = "dtype-categorical")]
-fn any_values_to_enum(values: &[AnyValue], dtype: &DataType, strict: bool) -> PolarsResult<Series> {
-    use self::enum_::EnumChunkedBuilder;
-
-    let (rev, ordering) = match dtype {
-        DataType::Enum(rev, ordering) => (rev.clone(), ordering),
-        _ => panic!("any_values_to_categorical with dtype={dtype:?}"),
-    };
-
-    let Some(rev) = rev else {
-        polars_bail!(nyi = "Not yet possible to create enum series without a rev-map");
-    };
-
-    let mut builder =
-        EnumChunkedBuilder::new(PlSmallStr::EMPTY, values.len(), rev, *ordering, strict);
-
-    let mut owned = String::new(); // Amortize allocations.
-    for av in values {
-        match av {
-            AnyValue::String(s) => builder.append_str(s)?,
-            AnyValue::StringOwned(s) => builder.append_str(s)?,
-
-            AnyValue::Enum(s, rev, _) => builder.append_enum(*s, rev)?,
-            AnyValue::EnumOwned(s, rev, _) => builder.append_enum(*s, rev)?,
-
-            AnyValue::Categorical(s, rev, _) => builder.append_str(rev.get(*s))?,
-            AnyValue::CategoricalOwned(s, rev, _) => builder.append_str(rev.get(*s))?,
-
-            AnyValue::Binary(_) | AnyValue::BinaryOwned(_) if !strict => builder.append_null(),
-            AnyValue::Null => builder.append_null(),
-
-            av => {
-                if strict {
-                    return Err(invalid_value_error(&DataType::String, av));
-                }
-
-                owned.clear();
-                write!(owned, "{av}").unwrap();
-                builder.append_str(&owned)?
-            },
-        };
-    }
-
-    let ca = builder.finish();
-
-    Ok(ca.into_series())
+        let ca = builder.finish();
+        Ok(ca.into_series())
+    })
 }
 
 #[cfg(feature = "dtype-decimal")]
 fn any_values_to_decimal(
     values: &[AnyValue],
-    precision: Option<usize>,
-    scale: Option<usize>, // If None, we're inferring the scale.
+    precision: usize,
+    scale: usize,
     strict: bool,
 ) -> PolarsResult<DecimalChunked> {
-    /// Get the maximum scale among AnyValues
-    fn infer_scale(
-        values: &[AnyValue],
-        precision: Option<usize>,
-        strict: bool,
-    ) -> PolarsResult<usize> {
-        let mut max_scale = 0;
-        for av in values {
-            let av_scale = match av {
-                AnyValue::Decimal(_, scale) => *scale,
-                AnyValue::Null => continue,
-                av => {
-                    if strict {
-                        let target_dtype = DataType::Decimal(precision, None);
-                        return Err(invalid_value_error(&target_dtype, av));
-                    }
-                    continue;
-                },
-            };
-            max_scale = max_scale.max(av_scale);
-        }
-        Ok(max_scale)
-    }
-    let scale = match scale {
-        Some(s) => s,
-        None => infer_scale(values, precision, strict)?,
-    };
-    let target_dtype = DataType::Decimal(precision, Some(scale));
+    let target_dtype = DataType::Decimal(precision, scale);
 
     let mut builder = PrimitiveChunkedBuilder::<Int128Type>::new(PlSmallStr::EMPTY, values.len());
     for av in values {
         match av {
             // Allow equal or less scale. We do want to support different scales even in 'strict' mode.
-            AnyValue::Decimal(v, s) if *s <= scale => {
-                if *s == scale {
+            AnyValue::Decimal(v, p, s) if *s <= scale => {
+                if *p <= precision && *s == scale {
                     builder.append_value(*v)
                 } else {
                     match av.strict_cast(&target_dtype) {
-                        Some(AnyValue::Decimal(i, _)) => builder.append_value(i),
+                        Some(AnyValue::Decimal(i, _, _)) => builder.append_value(i),
                         _ => builder.append_null(),
                     }
                 }
@@ -588,9 +537,8 @@ fn any_values_to_decimal(
                 if strict {
                     return Err(invalid_value_error(&target_dtype, av));
                 }
-                // TODO: Precision check, else set to null
                 match av.strict_cast(&target_dtype) {
-                    Some(AnyValue::Decimal(i, _)) => builder.append_value(i),
+                    Some(AnyValue::Decimal(i, _, _)) => builder.append_value(i),
                     _ => builder.append_null(),
                 }
             },
@@ -646,23 +594,11 @@ fn any_values_to_list(
         },
 
         #[cfg(feature = "object")]
-        DataType::Object(_, _) => polars_bail!(nyi = "Nested object types"),
+        DataType::Object(_) => polars_bail!(nyi = "Nested object types"),
 
         _ => {
-            let list_inner_type = match inner_type {
-                // Categoricals may not have a revmap yet. We just give them an empty one here and
-                // the list builder takes care of the rest.
-                #[cfg(feature = "dtype-categorical")]
-                DataType::Categorical(None, ordering) => {
-                    DataType::Categorical(Some(Arc::new(RevMapping::default())), *ordering)
-                },
-
-                _ => inner_type.clone(),
-            };
-
             let mut builder =
-                get_list_builder(&list_inner_type, capacity * 5, capacity, PlSmallStr::EMPTY);
-
+                get_list_builder(inner_type, capacity * 5, capacity, PlSmallStr::EMPTY);
             for av in avs {
                 match av {
                     AnyValue::List(b) => match b.cast(inner_type) {
@@ -767,7 +703,7 @@ fn any_values_to_array(
     #[cfg(feature = "dtype-struct")]
     if !matches!(inner_type, DataType::Null) && out.inner_dtype().is_nested() {
         unsafe {
-            out.set_dtype(target_dtype.clone());
+            out.set_dtype(target_dtype);
         };
     }
 
@@ -884,44 +820,22 @@ fn any_values_to_struct(
 }
 
 #[cfg(feature = "object")]
-fn any_values_to_object(
-    values: &[AnyValue],
-    registry: &Option<Arc<ObjectRegistry>>,
-) -> PolarsResult<Series> {
-    let mut builder = match registry {
-        None => {
-            use crate::chunked_array::object::registry;
-            let converter = registry::get_object_converter();
-            let mut builder = registry::get_object_builder(PlSmallStr::EMPTY, values.len());
-            for av in values {
-                match av {
-                    AnyValue::Object(val) => builder.append_value(val.as_any()),
-                    AnyValue::Null => builder.append_null(),
-                    _ => {
-                        // This is needed because in Python users can send mixed types.
-                        // This only works if you set a global converter.
-                        let any = converter(av.as_borrowed());
-                        builder.append_value(&*any)
-                    },
-                }
-            }
-            builder
-        },
-        Some(registry) => {
-            let mut builder = (*registry.builder_constructor)(PlSmallStr::EMPTY, values.len());
-            for av in values {
-                match av {
-                    AnyValue::Object(val) => builder.append_value(val.as_any()),
-                    AnyValue::ObjectOwned(val) => builder.append_value(val.0.as_any()),
-                    AnyValue::Null => builder.append_null(),
-                    _ => {
-                        polars_bail!(SchemaMismatch: "expected object");
-                    },
-                }
-            }
-            builder
-        },
-    };
+fn any_values_to_object(values: &[AnyValue]) -> PolarsResult<Series> {
+    use crate::chunked_array::object::registry;
+    let converter = registry::get_object_converter();
+    let mut builder = registry::get_object_builder(PlSmallStr::EMPTY, values.len());
+    for av in values {
+        match av {
+            AnyValue::Object(val) => builder.append_value(val.as_any()),
+            AnyValue::Null => builder.append_null(),
+            _ => {
+                // This is needed because in Python users can send mixed types.
+                // This only works if you set a global converter.
+                let any = converter(av.as_borrowed());
+                builder.append_value(&*any)
+            },
+        }
+    }
 
     Ok(builder.to_series())
 }

@@ -1,17 +1,17 @@
 //! Contains functionality to load an ArrayData from the C Data Interface
 use std::sync::Arc;
 
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 
 use super::ArrowArray;
 use crate::array::*;
-use crate::bitmap::utils::bytes_for;
 use crate::bitmap::Bitmap;
+use crate::bitmap::utils::bytes_for;
 use crate::buffer::Buffer;
 use crate::datatypes::{ArrowDataType, PhysicalType};
 use crate::ffi::schema::get_child;
 use crate::storage::SharedStorage;
-use crate::types::NativeType;
+use crate::types::{NativeType, PrimitiveType, months_days_ns};
 use crate::{ffi, match_integer_type, with_match_primitive_type_full};
 
 /// Reads a valid `ffi` interface into a `Box<dyn Array>`
@@ -23,6 +23,9 @@ pub unsafe fn try_from<A: ArrowArrayRef>(array: A) -> PolarsResult<Box<dyn Array
     Ok(match array.dtype().to_physical_type() {
         Null => Box::new(NullArray::try_from_ffi(array)?),
         Boolean => Box::new(BooleanArray::try_from_ffi(array)?),
+        Primitive(PrimitiveType::MonthDayNano) => {
+            Box::new(PrimitiveArray::<months_days_ns>::try_from_ffi(array)?)
+        },
         Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             Box::new(PrimitiveArray::<$T>::try_from_ffi(array)?)
         }),
@@ -252,6 +255,8 @@ unsafe fn create_buffer_known_len<T: NativeType>(
     index: usize,
 ) -> PolarsResult<Buffer<T>> {
     if len == 0 {
+        // Zero-length arrays might have invalid pointers for zero-length slices in Rust,
+        // so this is more than just an optimization.
         return Ok(Buffer::new());
     }
     let ptr: *mut T = get_buffer_ptr(array, dtype, index)?;
@@ -273,6 +278,8 @@ unsafe fn create_buffer<T: NativeType>(
     let len = buffer_len(array, dtype, index)?;
 
     if len == 0 {
+        // Zero-length arrays might have invalid pointers for zero-length slices in Rust,
+        // so this is more than just an optimization.
         return Ok(Buffer::new());
     }
 
@@ -309,6 +316,8 @@ unsafe fn create_bitmap(
 ) -> PolarsResult<Bitmap> {
     let len: usize = array.length.try_into().expect("length to fit in `usize`");
     if len == 0 {
+        // Zero-length arrays might have invalid pointers for zero-length slices in Rust,
+        // so this is more than just an optimization.
         return Ok(Bitmap::new());
     }
     let ptr = get_buffer_ptr(array, dtype, index)?;
@@ -523,11 +532,11 @@ pub trait ArrowArrayRef: std::fmt::Debug {
     /// * `array.children` is not mutably shared for the lifetime of `parent`
     /// * the pointer of `array.children` at `index` is valid
     /// * the pointer of `array.children` at `index` is not mutably shared for the lifetime of `parent`
-    unsafe fn child(&self, index: usize) -> PolarsResult<ArrowArrayChild> {
+    unsafe fn child(&self, index: usize) -> PolarsResult<ArrowArrayChild<'_>> {
         create_child(self.array(), self.dtype(), self.parent().clone(), index)
     }
 
-    unsafe fn dictionary(&self) -> PolarsResult<Option<ArrowArrayChild>> {
+    unsafe fn dictionary(&self) -> PolarsResult<Option<ArrowArrayChild<'_>>> {
         create_dictionary(self.array(), self.dtype(), self.parent().clone())
     }
 

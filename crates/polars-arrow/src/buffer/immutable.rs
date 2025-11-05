@@ -1,7 +1,8 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::ops::Deref;
 
+use bytemuck::{Pod, Zeroable};
 use either::Either;
-use num_traits::Zero;
 
 use super::IntoIter;
 use crate::array::{ArrayAccessor, Splitable};
@@ -36,7 +37,6 @@ use crate::storage::SharedStorage;
 /// // but cloning forbids getting mut since `slice` and `buffer` now share data
 /// assert_eq!(buffer.get_mut_slice(), None);
 /// ```
-#[derive(Clone)]
 pub struct Buffer<T> {
     /// The internal byte buffer.
     storage: SharedStorage<T>,
@@ -48,6 +48,16 @@ pub struct Buffer<T> {
     length: usize,
 }
 
+impl<T> Clone for Buffer<T> {
+    fn clone(&self) -> Self {
+        Self {
+            storage: self.storage.clone(),
+            ptr: self.ptr,
+            length: self.length,
+        }
+    }
+}
+
 unsafe impl<T: Send + Sync> Sync for Buffer<T> {}
 unsafe impl<T: Send + Sync> Send for Buffer<T> {}
 
@@ -55,6 +65,15 @@ impl<T: PartialEq> PartialEq for Buffer<T> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.deref() == other.deref()
+    }
+}
+
+impl<T: Eq> Eq for Buffer<T> {}
+
+impl<T: std::hash::Hash> std::hash::Hash for Buffer<T> {
+    #[inline]
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.as_slice().hash(state);
     }
 }
 
@@ -89,6 +108,10 @@ impl<T> Buffer<T> {
         }
     }
 
+    pub fn from_static(data: &'static [T]) -> Self {
+        Self::from_storage(SharedStorage::from_static(data))
+    }
+
     /// Returns the number of bytes in the buffer
     #[inline]
     pub fn len(&self) -> usize {
@@ -106,6 +129,20 @@ impl<T> Buffer<T> {
     /// more data than the length of `Self`.
     pub fn is_sliced(&self) -> bool {
         self.storage.len() != self.length
+    }
+
+    /// Expands this slice to the maximum allowed by the underlying storage.
+    /// Only expands towards the end, the offset isn't changed. That is, element
+    /// i before and after this operation refer to the same element.
+    pub fn expand_end_to_storage(self) -> Self {
+        unsafe {
+            let offset = self.ptr.offset_from(self.storage.as_ptr()) as usize;
+            Self {
+                ptr: self.ptr,
+                length: self.storage.len() - offset,
+                storage: self.storage,
+            }
+        }
     }
 
     /// Returns the byte slice stored in this buffer
@@ -242,6 +279,25 @@ impl<T> Buffer<T> {
     }
 }
 
+impl<T: Pod> Buffer<T> {
+    pub fn try_transmute<U: Pod>(mut self) -> Result<Buffer<U>, Self> {
+        assert_ne!(size_of::<U>(), 0);
+        let ptr = self.ptr as *const U;
+        let length = self.length;
+        match self.storage.try_transmute() {
+            Err(v) => {
+                self.storage = v;
+                Err(self)
+            },
+            Ok(storage) => Ok(Buffer {
+                storage,
+                ptr,
+                length: length.checked_mul(size_of::<T>()).expect("overflow") / size_of::<U>(),
+            }),
+        }
+    }
+}
+
 impl<T: Clone> Buffer<T> {
     pub fn make_mut(self) -> Vec<T> {
         match self.into_mut() {
@@ -251,9 +307,9 @@ impl<T: Clone> Buffer<T> {
     }
 }
 
-impl<T: Zero + Copy> Buffer<T> {
+impl<T: Zeroable + Copy> Buffer<T> {
     pub fn zeroed(len: usize) -> Self {
-        vec![T::zero(); len].into()
+        vec![T::zeroed(); len].into()
     }
 }
 
@@ -264,11 +320,18 @@ impl<T> From<Vec<T>> for Buffer<T> {
     }
 }
 
-impl<T> std::ops::Deref for Buffer<T> {
+impl<T> Deref for Buffer<T> {
     type Target = [T];
 
-    #[inline]
+    #[inline(always)]
     fn deref(&self) -> &[T] {
+        self.as_slice()
+    }
+}
+
+impl<T> AsRef<[T]> for Buffer<T> {
+    #[inline(always)]
+    fn as_ref(&self) -> &[T] {
         self.as_slice()
     }
 }
@@ -323,5 +386,51 @@ impl<T> Splitable for Buffer<T> {
                 length: self.length - offset,
             },
         )
+    }
+}
+
+#[cfg(feature = "serde")]
+mod _serde_impl {
+    use serde::{Deserialize, Serialize};
+
+    use super::Buffer;
+
+    impl<T> Serialize for Buffer<T>
+    where
+        T: Serialize,
+    {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            <[T] as Serialize>::serialize(self.as_slice(), serializer)
+        }
+    }
+
+    impl<'de, T> Deserialize<'de> for Buffer<T>
+    where
+        T: Deserialize<'de>,
+    {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            <Vec<T> as Deserialize>::deserialize(deserializer).map(Buffer::from)
+        }
+    }
+}
+
+#[cfg(feature = "dsl-schema")]
+impl<T: schemars::JsonSchema> schemars::JsonSchema for Buffer<T> {
+    fn schema_name() -> String {
+        <[T] as schemars::JsonSchema>::schema_name()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        <[T] as schemars::JsonSchema>::schema_id()
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        <[T] as schemars::JsonSchema>::json_schema(generator)
     }
 }

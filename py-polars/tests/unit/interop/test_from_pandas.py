@@ -60,7 +60,7 @@ def test_from_pandas() -> None:
         "floats_nulls": pl.Float64,
         "strings": pl.String,
         "strings_nulls": pl.String,
-        "strings-cat": pl.Categorical(ordering="physical"),
+        "strings-cat": pl.Categorical(ordering="lexical"),
     }
     assert out.rows() == [
         (False, None, 1, 1.0, 1.0, 1.0, "foo", "foo", "foo"),
@@ -328,7 +328,8 @@ def test_untrusted_categorical_input() -> None:
     df = pl.from_pandas(df_pd)
     result = df.group_by("x").len()
     expected = pl.DataFrame(
-        {"x": ["x"], "len": [1]}, schema={"x": pl.Categorical, "len": pl.UInt32}
+        {"x": ["x"], "len": [1]},
+        schema={"x": pl.Categorical, "len": pl.get_index_type()},
     )
     assert_frame_equal(result, expected, categorical_as_str=True)
 

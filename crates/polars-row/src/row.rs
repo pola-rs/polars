@@ -1,20 +1,33 @@
-use arrow::array::{BinaryArray, BinaryViewArray, Utf8ViewArray};
+#![allow(unsafe_op_in_unsafe_fn)]
+use std::sync::Arc;
+
+use arrow::array::{BinaryArray, BinaryViewArray};
 use arrow::datatypes::ArrowDataType;
 use arrow::ffi::mmap;
 use arrow::offset::{Offsets, OffsetsBuffer};
 use polars_compute::cast::binary_to_binview;
+use polars_dtype::categorical::CategoricalMapping;
 
 const BOOLEAN_TRUE_SENTINEL: u8 = 0x03;
 const BOOLEAN_FALSE_SENTINEL: u8 = 0x02;
 
-/// The Row Encoding ordering used for Categorical types.
+/// Additional context provided to row encoding regarding a column.
 ///
-/// This includes both `Enum` and `Categorical`.
+/// This allows communication based on the Polars datatype instead on the Arrow datatype. Since
+/// polars-row is used under polars-core, we don't have access to the actual datatypes.
 #[derive(Debug, Clone)]
-pub enum RowEncodingCatOrder {
-    Struct(Vec<Option<RowEncodingCatOrder>>),
-    Physical(usize),
-    Lexical(Box<Utf8ViewArray>),
+pub enum RowEncodingContext {
+    Struct(Vec<Option<RowEncodingContext>>),
+    /// Categorical / Enum
+    Categorical(RowEncodingCategoricalContext),
+    /// Decimal with given precision
+    Decimal(usize),
+}
+
+#[derive(Debug, Clone)]
+pub struct RowEncodingCategoricalContext {
+    pub is_enum: bool,
+    pub mapping: Arc<CategoricalMapping>,
 }
 
 bitflags::bitflags! {
@@ -52,6 +65,10 @@ impl RowEncodingOptions {
 
     pub fn new_unsorted() -> Self {
         Self::NO_ORDER
+    }
+
+    pub fn is_ordered(self) -> bool {
+        !self.contains(Self::NO_ORDER)
     }
 
     pub fn null_sentinel(self) -> u8 {
@@ -101,6 +118,15 @@ impl RowEncodingOptions {
             EMPTY_STR_TOKEN
         }
     }
+
+    pub fn into_nested(mut self) -> RowEncodingOptions {
+        // Correct nested ordering (see #22557)
+        self.set(
+            RowEncodingOptions::NULLS_LAST,
+            self.contains(RowEncodingOptions::DESCENDING),
+        );
+        self
+    }
 }
 
 #[derive(Default, Clone)]
@@ -133,7 +159,7 @@ impl RowsEncoded {
         RowsEncoded { values, offsets }
     }
 
-    pub fn iter(&self) -> RowsEncodedIter {
+    pub fn iter(&self) -> RowsEncodedIter<'_> {
         let iter = self.offsets[1..].iter();
         let offset = self.offsets[0];
         RowsEncodedIter {

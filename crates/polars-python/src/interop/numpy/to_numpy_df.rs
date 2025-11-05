@@ -5,9 +5,9 @@ use polars_core::prelude::*;
 use polars_core::utils::dtypes_to_supertype;
 use polars_core::with_match_physical_numeric_polars_type;
 use pyo3::exceptions::PyRuntimeError;
-use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
+use pyo3::{IntoPyObjectExt, intern};
 
 use super::to_numpy_series::series_to_numpy;
 use super::utils::{
@@ -21,22 +21,22 @@ impl PyDataFrame {
     /// Convert this DataFrame to a NumPy ndarray.
     fn to_numpy(
         &self,
-        py: Python,
+        py: Python<'_>,
         order: Wrap<IndexOrder>,
         writable: bool,
         allow_copy: bool,
-    ) -> PyResult<PyObject> {
-        df_to_numpy(py, &self.df, order.0, writable, allow_copy)
+    ) -> PyResult<Py<PyAny>> {
+        df_to_numpy(py, &self.df.read(), order.0, writable, allow_copy)
     }
 }
 
 pub(super) fn df_to_numpy(
-    py: Python,
+    py: Python<'_>,
     df: &DataFrame,
     order: IndexOrder,
     writable: bool,
     allow_copy: bool,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     if df.is_empty() {
         // Take this path to ensure a writable array.
         // This does not actually copy data for an empty DataFrame.
@@ -67,7 +67,7 @@ pub(super) fn df_to_numpy(
 }
 
 /// Create a NumPy view of the given DataFrame.
-fn try_df_to_numpy_view(py: Python, df: &DataFrame, allow_nulls: bool) -> Option<PyObject> {
+fn try_df_to_numpy_view(py: Python<'_>, df: &DataFrame, allow_nulls: bool) -> Option<Py<PyAny>> {
     let first_dtype = check_df_dtypes_support_view(df)?;
 
     // TODO: Check for nested nulls using `series_contains_null` util when we support Array types.
@@ -78,11 +78,11 @@ fn try_df_to_numpy_view(py: Python, df: &DataFrame, allow_nulls: bool) -> Option
         return None;
     }
 
-    let owner = PyDataFrame::from(df.clone()).into_py(py); // Keep the DataFrame memory alive.
+    let owner = PyDataFrame::from(df.clone()).into_py_any(py).ok()?; // Keep the DataFrame memory alive.
 
     let arr = match first_dtype {
-        dt if dt.is_numeric() => {
-            with_match_physical_numeric_polars_type!(first_dtype, |$T| {
+        dt if dt.is_primitive_numeric() => {
+            with_match_physical_numpy_polars_type!(first_dtype, |$T| {
                 numeric_df_to_numpy_view::<$T>(py, df, owner)
             })
         },
@@ -124,7 +124,7 @@ fn check_df_columns_contiguous(df: &DataFrame) -> bool {
     }
 
     match columns.first().unwrap().dtype() {
-        dt if dt.is_numeric() => {
+        dt if dt.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(dt, |$T| {
                 let slices = columns
                     .iter()
@@ -163,7 +163,7 @@ where
     let mut end_ptr = unsafe { first_slice.as_ptr().add(first_slice.len()) };
     slices[1..].iter().all(|slice| {
         let slice_ptr = slice.as_ptr();
-        let valid = slice_ptr == end_ptr;
+        let valid = std::ptr::eq(slice_ptr, end_ptr);
 
         end_ptr = unsafe { slice_ptr.add(slice.len()) };
 
@@ -172,7 +172,7 @@ where
 }
 
 /// Create a NumPy view of a numeric DataFrame.
-fn numeric_df_to_numpy_view<T>(py: Python, df: &DataFrame, owner: PyObject) -> PyObject
+fn numeric_df_to_numpy_view<T>(py: Python<'_>, df: &DataFrame, owner: Py<PyAny>) -> Py<PyAny>
 where
     T: PolarsNumericType,
     T::Native: Element,
@@ -187,7 +187,7 @@ where
     let first_slice = ca.data_views().next().unwrap();
 
     let start_ptr = first_slice.as_ptr();
-    let np_dtype = T::Native::get_dtype_bound(py);
+    let np_dtype = T::Native::get_dtype(py);
     let dims = [first_slice.len(), df.width()].into_dimension();
 
     unsafe {
@@ -202,7 +202,7 @@ where
     }
 }
 /// Create a NumPy view of a Datetime or Duration DataFrame.
-fn temporal_df_to_numpy_view(py: Python, df: &DataFrame, owner: PyObject) -> PyObject {
+fn temporal_df_to_numpy_view(py: Python<'_>, df: &DataFrame, owner: Py<PyAny>) -> Py<PyAny> {
     let s = df.get_columns().first().unwrap();
     let phys = s.to_physical_repr();
     let ca = phys.i64().unwrap();
@@ -225,11 +225,11 @@ fn temporal_df_to_numpy_view(py: Python, df: &DataFrame, owner: PyObject) -> PyO
 }
 
 fn df_to_numpy_with_copy(
-    py: Python,
+    py: Python<'_>,
     df: &DataFrame,
     order: IndexOrder,
     writable: bool,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     if let Some(arr) = try_df_to_numpy_numeric_supertype(py, df, order) {
         Ok(arr)
     } else {
@@ -237,15 +237,15 @@ fn df_to_numpy_with_copy(
     }
 }
 fn try_df_to_numpy_numeric_supertype(
-    py: Python,
+    py: Python<'_>,
     df: &DataFrame,
     order: IndexOrder,
-) -> Option<PyObject> {
+) -> Option<Py<PyAny>> {
     let st = dtypes_to_supertype(df.iter().map(|s| s.dtype())).ok()?;
 
     let np_array = match st {
-        dt if dt.is_numeric() => with_match_physical_numeric_polars_type!(dt, |$T| {
-            df.to_ndarray::<$T>(order).ok()?.into_pyarray_bound(py).into_py(py)
+        dt if dt.is_primitive_numeric() => with_match_physical_numpy_polars_type!(dt, |$T| {
+            df.to_ndarray::<$T>(order).ok()?.into_pyarray(py).into_py_any(py).ok()?
         }),
         _ => return None,
     };
@@ -253,11 +253,11 @@ fn try_df_to_numpy_numeric_supertype(
 }
 
 fn df_columns_to_numpy(
-    py: Python,
+    py: Python<'_>,
     df: &DataFrame,
     order: IndexOrder,
     writable: bool,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let np_arrays = df.iter().map(|s| {
         let mut arr = series_to_numpy(py, s, writable, true).unwrap();
 
@@ -273,21 +273,19 @@ fn df_columns_to_numpy(
                 arr.call_method1(py, intern!(py, "__getitem__"), (idx,))
                     .unwrap()
             });
-            arr = PyArray1::from_iter_bound(py, subarrays).into_py(py);
+            arr = PyArray1::from_iter(py, subarrays).into_py_any(py).unwrap();
         }
         arr
     });
 
-    let numpy = PyModule::import_bound(py, intern!(py, "numpy"))?;
+    let numpy = PyModule::import(py, intern!(py, "numpy"))?;
     let np_array = match order {
         IndexOrder::C => numpy
-            .getattr(intern!(py, "column_stack"))
-            .unwrap()
-            .call1((PyList::new_bound(py, np_arrays),))?,
+            .getattr(intern!(py, "column_stack"))?
+            .call1((PyList::new(py, np_arrays)?,))?,
         IndexOrder::Fortran => numpy
-            .getattr(intern!(py, "vstack"))
-            .unwrap()
-            .call1((PyList::new_bound(py, np_arrays),))?
+            .getattr(intern!(py, "vstack"))?
+            .call1((PyList::new(py, np_arrays)?,))?
             .getattr(intern!(py, "T"))?,
     };
 

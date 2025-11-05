@@ -1,10 +1,14 @@
+use std::hash::BuildHasher;
+
 use hashbrown::hash_map::RawEntryMut;
+use polars_utils::unique_id::UniqueId;
 
 use super::*;
 use crate::prelude::visitor::IRNode;
 
 mod identifier_impl {
-    use polars_core::hashing::_boost_hash_combine;
+    use polars_utils::aliases::PlFixedStateQuality;
+    use polars_utils::hashing::_boost_hash_combine;
 
     use super::*;
     /// Identifier that shows the sub-expression path.
@@ -16,7 +20,7 @@ mod identifier_impl {
     pub(super) struct Identifier {
         inner: Option<u64>,
         last_node: Option<IRNode>,
-        hb: PlRandomState,
+        hb: PlFixedStateQuality,
     }
 
     impl Identifier {
@@ -47,7 +51,7 @@ mod identifier_impl {
             Self {
                 inner: None,
                 last_node: None,
-                hb: PlRandomState::with_seed(0),
+                hb: PlFixedStateQuality::with_seed(0),
             }
         }
 
@@ -86,12 +90,17 @@ mod identifier_impl {
 }
 use identifier_impl::*;
 
-#[derive(Default)]
 struct IdentifierMap<V> {
     inner: PlHashMap<Identifier, V>,
 }
 
 impl<V> IdentifierMap<V> {
+    fn new() -> Self {
+        Self {
+            inner: Default::default(),
+        }
+    }
+
     fn get(&self, id: &Identifier, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Option<&V> {
         self.inner
             .raw_entry()
@@ -118,6 +127,12 @@ impl<V> IdentifierMap<V> {
                 v
             },
         }
+    }
+}
+
+impl<V> Default for IdentifierMap<V> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -234,7 +249,7 @@ impl Visitor for LpIdentifierVisitor<'_> {
     }
 }
 
-pub(super) type CacheId2Caches = PlHashMap<usize, (u32, Vec<Node>)>;
+pub(super) type CacheId2Caches = PlHashMap<UniqueId, (u32, Vec<Node>)>;
 
 struct CommonSubPlanRewriter<'a> {
     sp_count: &'a SubPlanCount,
@@ -246,7 +261,7 @@ struct CommonSubPlanRewriter<'a> {
     visited_idx: usize,
     /// Indicates if this expression is rewritten.
     rewritten: bool,
-    cache_id: IdentifierMap<usize>,
+    cache_id: IdentifierMap<UniqueId>,
     // Maps cache_id : (cache_count and cache_nodes)
     cache_id_to_caches: CacheId2Caches,
 }
@@ -328,16 +343,14 @@ impl RewritingVisitor for CommonSubPlanRewriter<'_> {
             self.visited_idx += 1;
         }
 
-        let cache_id = self.cache_id.inner.len();
         let cache_id = *self
             .cache_id
-            .entry(id.clone(), || cache_id, &arena.0, &arena.1);
+            .entry(id.clone(), UniqueId::new, &arena.0, &arena.1);
         let cache_count = self.sp_count.get(id, &arena.0, &arena.1).unwrap().1;
 
         let cache_node = IR::Cache {
             input: node.node(),
             id: cache_id,
-            cache_hits: cache_count - 1,
         };
         node.assign(cache_node, &mut arena.0);
         let (_count, nodes) = self
@@ -350,7 +363,7 @@ impl RewritingVisitor for CommonSubPlanRewriter<'_> {
     }
 }
 
-pub(crate) fn elim_cmn_subplans(
+fn insert_caches(
     root: Node,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
@@ -359,15 +372,20 @@ pub(crate) fn elim_cmn_subplans(
     let mut id_array = Default::default();
 
     with_ir_arena(lp_arena, expr_arena, |arena| {
-        let lp_node = IRNode::new(root);
+        let lp_node = IRNode::new_mutate(root);
         let mut visitor = LpIdentifierVisitor::new(&mut sp_count, &mut id_array);
 
         lp_node.visit(&mut visitor, arena).map(|_| ()).unwrap();
 
-        let mut rewriter = CommonSubPlanRewriter::new(&sp_count, &id_array);
-        lp_node.rewrite(&mut rewriter, arena).unwrap();
+        if visitor.has_subplan {
+            let lp_node = IRNode::new_mutate(root);
+            let mut rewriter = CommonSubPlanRewriter::new(&sp_count, &id_array);
+            lp_node.rewrite(&mut rewriter, arena).unwrap();
 
-        (root, rewriter.rewritten, rewriter.cache_id_to_caches)
+            (root, rewriter.rewritten, rewriter.cache_id_to_caches)
+        } else {
+            (root, false, Default::default())
+        }
     })
 }
 
@@ -378,7 +396,7 @@ pub(crate) fn elim_cmn_subplans(
 ///
 /// `conctat([lf.select(), lf.select(), lf])`
 ///
-pub(crate) fn prune_unused_caches(lp_arena: &mut Arena<IR>, cid2c: CacheId2Caches) {
+fn prune_unused_caches(lp_arena: &mut Arena<IR>, cid2c: &CacheId2Caches) {
     for (count, nodes) in cid2c.values() {
         if *count == nodes.len() as u32 {
             continue;
@@ -391,4 +409,31 @@ pub(crate) fn prune_unused_caches(lp_arena: &mut Arena<IR>, cid2c: CacheId2Cache
             lp_arena.swap(*input, *node)
         }
     }
+}
+
+pub(crate) fn elim_cmn_subplans(
+    root: Node,
+    lp_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+) -> (Node, bool) {
+    let (lp, changed, cid2c) = insert_caches(root, lp_arena, expr_arena);
+    if changed {
+        prune_unused_caches(lp_arena, &cid2c);
+    }
+    // The CSPE only finds the longest trail duplicates, so we must recursively apply the
+    // optimization
+    // Below the inserted caches, might be more duplicates. So we recurse one time to find
+    // inner duplicates as well.
+    // TODO! reactivate this and recursively deal with projection/predicate pushdown.
+    //for (_, (_count, caches_nodes)) in cid2c.iter() {
+    //    // The last node seems the one traversed by the planners. This is validated by tests.
+    //    // We could traverse all nodes, but it would be duplicate work.
+    //    if let Some(cache) = caches_nodes.last() {
+    //        if let IR::Cache { input, id: _ } = lp_arena.get(*cache) {
+    //            let _ = elim_cmn_subplans(*input, lp_arena, expr_arena);
+    //        }
+    //    }
+    //}
+
+    (lp, changed)
 }

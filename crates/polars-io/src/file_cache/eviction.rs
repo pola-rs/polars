@@ -1,12 +1,12 @@
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use fs4::fs_std::FileExt;
 use polars_error::{PolarsError, PolarsResult};
 
-use super::cache_lock::{GlobalFileCacheGuardExclusive, GLOBAL_FILE_CACHE_LOCK};
+use super::cache_lock::{GLOBAL_FILE_CACHE_LOCK, GlobalFileCacheGuardExclusive};
 use super::metadata::EntryMetadata;
 use crate::pl_async;
 
@@ -100,7 +100,10 @@ impl EvictionCandidate {
             Ok(v) => v.as_secs(),
             Err(_) => {
                 if verbose {
-                    eprintln!("[EvictionManager] evict_files: skipping {} (last accessed time was updated)", path.to_str().unwrap());
+                    eprintln!(
+                        "[EvictionManager] evict_files: skipping {} (last accessed time was updated)",
+                        path.to_str().unwrap()
+                    );
                 }
                 return;
             },
@@ -179,7 +182,7 @@ impl EvictionManager {
                 match result {
                     Ok(_) if self.files_to_remove.as_ref().unwrap().is_empty() => {},
                     Ok(_) => loop {
-                        if let Some(guard) = GLOBAL_FILE_CACHE_LOCK.try_lock_exclusive() {
+                        if let Some(guard) = GLOBAL_FILE_CACHE_LOCK.try_lock_eviction() {
                             if verbose {
                                 eprintln!(
                                     "[EvictionManager] got exclusive cache lock, evicting {} files",
@@ -194,7 +197,7 @@ impl EvictionManager {
                     },
                     Err(err) => {
                         if verbose {
-                            eprintln!("[EvictionManager] error updating file list: {}", err);
+                            eprintln!("[EvictionManager] error updating file list: {err}");
                         }
                     },
                 }
@@ -234,7 +237,7 @@ impl EvictionManager {
         let data_files_iter = match std::fs::read_dir(self.data_dir.as_ref()) {
             Ok(v) => v,
             Err(e) => {
-                let msg = format!("failed to read data directory: {}", e);
+                let msg = format!("failed to read data directory: {e}");
 
                 return Err(PolarsError::IO {
                     error: e.into(),
@@ -246,7 +249,7 @@ impl EvictionManager {
         let metadata_files_iter = match std::fs::read_dir(self.metadata_dir.as_ref()) {
             Ok(v) => v,
             Err(e) => {
-                let msg = format!("failed to read metadata directory: {}", e);
+                let msg = format!("failed to read metadata directory: {e}");
 
                 return Err(PolarsError::IO {
                     error: e.into(),

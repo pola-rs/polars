@@ -6,6 +6,7 @@ Manipulation/selection
 .. autosummary::
    :toctree: api/
 
+    LazyFrame.__getitem__
     LazyFrame.approx_n_unique
     LazyFrame.bottom_k
     LazyFrame.cast
@@ -30,8 +31,10 @@ Manipulation/selection
     LazyFrame.join_where
     LazyFrame.last
     LazyFrame.limit
+    LazyFrame.match_to_schema
     LazyFrame.melt
     LazyFrame.merge_sorted
+    LazyFrame.remove
     LazyFrame.rename
     LazyFrame.reverse
     LazyFrame.rolling

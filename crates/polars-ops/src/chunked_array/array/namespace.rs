@@ -1,3 +1,9 @@
+use arrow::array::builder::{ShareStrategy, make_builder};
+use arrow::array::{Array, FixedSizeListArray};
+use arrow::bitmap::BitmapBuilder;
+use polars_core::prelude::arity::unary_kernel;
+use polars_core::utils::slice_offsets;
+
 use super::min_max::AggType;
 use super::*;
 #[cfg(feature = "array_count")]
@@ -46,9 +52,14 @@ pub trait ArrayNameSpace: AsArray {
 
         match ca.inner_dtype() {
             DataType::Boolean => Ok(count_boolean_bits(ca).into_series()),
-            dt if dt.is_numeric() => Ok(sum_array_numerical(ca, dt)),
+            dt if dt.is_primitive_numeric() => Ok(sum_array_numerical(ca, dt)),
             dt => sum_with_nulls(ca, dt),
         }
+    }
+
+    fn array_mean(&self) -> PolarsResult<Series> {
+        let ca = self.as_array();
+        dispersion::mean_with_nulls(ca)
     }
 
     fn array_median(&self) -> PolarsResult<Series> {
@@ -142,8 +153,19 @@ pub trait ArrayNameSpace: AsArray {
         let ca = self.as_array();
         let n_s = n.cast(&DataType::Int64)?;
         let n = n_s.i64()?;
-        let out = match n.len() {
-            1 => {
+        let out = match (ca.len(), n.len()) {
+            (a, b) if a == b => {
+                // SAFETY: Shift does not change the dtype and number of elements of sub-array.
+                unsafe {
+                    ca.zip_and_apply_amortized_same_type(n, |opt_s, opt_periods| {
+                        match (opt_s, opt_periods) {
+                            (Some(s), Some(n)) => Some(s.as_ref().shift(n)),
+                            _ => None,
+                        }
+                    })
+                }
+            },
+            (_, 1) => {
                 if let Some(n) = n.get(0) {
                     // SAFETY: Shift does not change the dtype and number of elements of sub-array.
                     unsafe { ca.apply_amortized_same_type(|s| s.as_ref().shift(n)) }
@@ -156,19 +178,77 @@ pub trait ArrayNameSpace: AsArray {
                     )
                 }
             },
-            _ => {
-                // SAFETY: Shift does not change the dtype and number of elements of sub-array.
-                unsafe {
-                    ca.zip_and_apply_amortized_same_type(n, |opt_s, opt_periods| {
-                        match (opt_s, opt_periods) {
-                            (Some(s), Some(n)) => Some(s.as_ref().shift(n)),
-                            _ => None,
-                        }
-                    })
+            (1, _) => {
+                if ca.get(0).is_some() {
+                    // Optimize: This does not need to broadcast first.
+                    let ca = ca.new_from_index(0, n.len());
+                    // SAFETY: Shift does not change the dtype and number of elements of sub-array.
+                    unsafe {
+                        ca.zip_and_apply_amortized_same_type(n, |opt_s, opt_periods| {
+                            match (opt_s, opt_periods) {
+                                (Some(s), Some(n)) => Some(s.as_ref().shift(n)),
+                                _ => None,
+                            }
+                        })
+                    }
+                } else {
+                    ArrayChunked::full_null_with_dtype(
+                        ca.name().clone(),
+                        ca.len(),
+                        ca.inner_dtype(),
+                        ca.width(),
+                    )
                 }
             },
+            _ => polars_bail!(length_mismatch = "arr.shift", ca.len(), n.len()),
         };
         Ok(out.into_series())
+    }
+
+    fn array_slice(&self, offset: i64, length: i64) -> PolarsResult<Series> {
+        let slice_arr: ArrayChunked = unary_kernel(
+            self.as_array(),
+            move |arr: &FixedSizeListArray| -> FixedSizeListArray {
+                let length: usize = if length < 0 {
+                    (arr.size() as i64 + length).max(0)
+                } else {
+                    length
+                }
+                .try_into()
+                .expect("Length can not be larger than i64::MAX");
+                let (raw_offset, slice_len) = slice_offsets(offset, length, arr.size());
+
+                let mut builder = make_builder(arr.values().dtype());
+                builder.reserve(slice_len * arr.len());
+
+                let mut validity = BitmapBuilder::with_capacity(arr.len());
+
+                let values = arr.values().as_ref();
+                for row in 0..arr.len() {
+                    if !arr.is_valid(row) {
+                        validity.push(false);
+                        continue;
+                    }
+                    let inner_offset = row * arr.size() + raw_offset;
+                    builder.subslice_extend(values, inner_offset, slice_len, ShareStrategy::Always);
+                    validity.push(true);
+                }
+                let values = builder.freeze_reset();
+                let sliced_dtype = match arr.dtype() {
+                    ArrowDataType::FixedSizeList(inner, _) => {
+                        ArrowDataType::FixedSizeList(inner.clone(), slice_len)
+                    },
+                    _ => unreachable!(),
+                };
+                FixedSizeListArray::new(
+                    sliced_dtype,
+                    arr.len(),
+                    values,
+                    validity.into_opt_validity(),
+                )
+            },
+        );
+        Ok(slice_arr.into_series())
     }
 }
 

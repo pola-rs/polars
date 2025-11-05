@@ -1,42 +1,49 @@
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::compute_node_prelude::*;
 use crate::async_primitives::wait_group::WaitGroup;
-use crate::morsel::{get_ideal_morsel_size, MorselSeq, SourceToken};
+use crate::morsel::{MorselSeq, SourceToken, get_ideal_morsel_size};
 
 pub struct InMemorySourceNode {
     source: Option<Arc<DataFrame>>,
     morsel_size: usize,
     seq: AtomicU64,
+    seq_offset: MorselSeq,
 }
 
 impl InMemorySourceNode {
-    pub fn new(source: Arc<DataFrame>) -> Self {
+    pub fn new(source: Arc<DataFrame>, seq_offset: MorselSeq) -> Self {
         InMemorySourceNode {
             source: Some(source),
             morsel_size: 0,
             seq: AtomicU64::new(0),
+            seq_offset,
         }
     }
 }
 
 impl ComputeNode for InMemorySourceNode {
     fn name(&self) -> &str {
-        "in_memory_source"
+        "in-memory-source"
     }
 
-    fn initialize(&mut self, num_pipelines: usize) {
-        let len = self.source.as_ref().unwrap().height();
-        let ideal_morsel_count = (len / get_ideal_morsel_size()).max(1);
-        let morsel_count = ideal_morsel_count.next_multiple_of(num_pipelines);
-        self.morsel_size = len.div_ceil(morsel_count).max(1);
-        self.seq = AtomicU64::new(0);
-    }
-
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
+    fn update_state(
+        &mut self,
+        recv: &mut [PortState],
+        send: &mut [PortState],
+        state: &StreamingExecutionState,
+    ) -> PolarsResult<()> {
         assert!(recv.is_empty());
         assert!(send.len() == 1);
+
+        if self.morsel_size == 0 {
+            let len = self.source.as_ref().unwrap().height();
+            let ideal_morsel_count = (len / get_ideal_morsel_size()).max(1);
+            let morsel_count = ideal_morsel_count.next_multiple_of(state.num_pipelines);
+            self.morsel_size = len.div_ceil(morsel_count).max(1);
+            self.seq = AtomicU64::new(0);
+        }
 
         // As a temporary hack for some nodes (like the FunctionIR::FastCount)
         // node that rely on an empty input, always ensure we send at least one
@@ -62,7 +69,7 @@ impl ComputeNode for InMemorySourceNode {
         scope: &'s TaskScope<'s, 'env>,
         recv_ports: &mut [Option<RecvPort<'_>>],
         send_ports: &mut [Option<SendPort<'_>>],
-        _state: &'s ExecutionState,
+        _state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         assert!(recv_ports.is_empty() && send_ports.len() == 1);
@@ -83,11 +90,12 @@ impl ComputeNode for InMemorySourceNode {
 
                     // TODO: remove this 'always sent at least one morsel'
                     // condition, see update_state.
-                    if df.is_empty() && seq > 0 {
+                    if df.height() == 0 && seq > 0 {
                         break;
                     }
 
-                    let mut morsel = Morsel::new(df, MorselSeq::new(seq), source_token.clone());
+                    let morsel_seq = MorselSeq::new(seq).offset_by(slf.seq_offset);
+                    let mut morsel = Morsel::new(df, morsel_seq, source_token.clone());
                     morsel.set_consume_token(wait_group.token());
                     if send.send(morsel).await.is_err() {
                         break;

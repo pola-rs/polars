@@ -4,8 +4,7 @@
 //! We could use [serde_1712](https://github.com/serde-rs/serde/issues/1712), but that gave problems caused by
 //! [rust_96956](https://github.com/rust-lang/rust/issues/96956), so we make a dummy type without static
 
-#[cfg(feature = "dtype-categorical")]
-use serde::de::SeqAccess;
+use polars_dtype::categorical::CategoricalPhysical;
 use serde::{Deserialize, Serialize};
 
 use super::*;
@@ -29,66 +28,41 @@ impl Serialize for DataType {
     }
 }
 
-#[cfg(feature = "dtype-categorical")]
-struct Wrap<T>(T);
-
-#[cfg(feature = "dtype-categorical")]
-impl serde::Serialize for Wrap<Utf8ViewArray> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.collect_seq(self.0.values_iter())
+#[cfg(feature = "dsl-schema")]
+impl schemars::JsonSchema for DataType {
+    fn schema_name() -> String {
+        SerializableDataType::schema_name()
     }
-}
 
-#[cfg(feature = "dtype-categorical")]
-impl<'de> serde::Deserialize<'de> for Wrap<Utf8ViewArray> {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct Utf8Visitor;
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        SerializableDataType::schema_id()
+    }
 
-        impl<'de> Visitor<'de> for Utf8Visitor {
-            type Value = Wrap<Utf8ViewArray>;
-
-            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                formatter.write_str("Utf8Visitor string sequence.")
-            }
-
-            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-            where
-                A: SeqAccess<'de>,
-            {
-                let mut utf8array = MutablePlString::with_capacity(seq.size_hint().unwrap_or(10));
-                while let Some(key) = seq.next_element()? {
-                    let key: Option<String> = key;
-                    utf8array.push(key)
-                }
-                Ok(Wrap(utf8array.into()))
-            }
-        }
-
-        deserializer.deserialize_seq(Utf8Visitor)
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        SerializableDataType::json_schema(generator)
     }
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[serde(rename = "DataType")]
 enum SerializableDataType {
     Boolean,
     UInt8,
     UInt16,
     UInt32,
     UInt64,
+    UInt128,
     Int8,
     Int16,
     Int32,
     Int64,
+    Int128,
     Float32,
     Float64,
     String,
     Binary,
+    BinaryOffset,
     /// A 32-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in days (32 bits).
     Date,
@@ -108,11 +82,17 @@ enum SerializableDataType {
     // some logical types we cannot know statically, e.g. Datetime
     Unknown(UnknownKind),
     #[cfg(feature = "dtype-categorical")]
-    Categorical(Option<Wrap<Utf8ViewArray>>, CategoricalOrdering),
-    #[cfg(feature = "dtype-decimal")]
-    Decimal(Option<usize>, Option<usize>),
+    Categorical {
+        name: String,
+        namespace: String,
+        physical: CategoricalPhysical,
+    },
     #[cfg(feature = "dtype-categorical")]
-    Enum(Option<Wrap<Utf8ViewArray>>, CategoricalOrdering),
+    Enum {
+        strings: Series,
+    },
+    #[cfg(feature = "dtype-decimal")]
+    Decimal(usize, usize),
     #[cfg(feature = "object")]
     Object(String),
 }
@@ -126,14 +106,17 @@ impl From<&DataType> for SerializableDataType {
             UInt16 => Self::UInt16,
             UInt32 => Self::UInt32,
             UInt64 => Self::UInt64,
+            UInt128 => Self::UInt128,
             Int8 => Self::Int8,
             Int16 => Self::Int16,
             Int32 => Self::Int32,
             Int64 => Self::Int64,
+            Int128 => Self::Int128,
             Float32 => Self::Float32,
             Float64 => Self::Float64,
             String => Self::String,
             Binary => Self::Binary,
+            BinaryOffset => Self::BinaryOffset,
             Date => Self::Date,
             Datetime(tu, tz) => Self::Datetime(*tu, tz.clone()),
             Duration(tu) => Self::Duration(*tu),
@@ -146,18 +129,23 @@ impl From<&DataType> for SerializableDataType {
             #[cfg(feature = "dtype-struct")]
             Struct(flds) => Self::Struct(flds.clone()),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_, ordering) => Self::Categorical(None, *ordering),
-            #[cfg(feature = "dtype-categorical")]
-            Enum(Some(rev_map), ordering) => {
-                Self::Enum(Some(Wrap(rev_map.get_categories().clone())), *ordering)
+            Categorical(cats, _) => Self::Categorical {
+                name: cats.name().to_string(),
+                namespace: cats.namespace().to_string(),
+                physical: cats.physical(),
             },
             #[cfg(feature = "dtype-categorical")]
-            Enum(None, ordering) => Self::Enum(None, *ordering),
+            Enum(fcats, _) => Self::Enum {
+                strings: StringChunked::with_chunk(
+                    PlSmallStr::from_static("categories"),
+                    fcats.categories().clone(),
+                )
+                .into_series(),
+            },
             #[cfg(feature = "dtype-decimal")]
             Decimal(precision, scale) => Self::Decimal(*precision, *scale),
             #[cfg(feature = "object")]
-            Object(name, _) => Self::Object(name.to_string()),
-            dt => panic!("{dt:?} not supported"),
+            Object(name) => Self::Object(name.to_string()),
         }
     }
 }
@@ -170,14 +158,17 @@ impl From<SerializableDataType> for DataType {
             UInt16 => Self::UInt16,
             UInt32 => Self::UInt32,
             UInt64 => Self::UInt64,
+            UInt128 => Self::UInt128,
             Int8 => Self::Int8,
             Int16 => Self::Int16,
             Int32 => Self::Int32,
             Int64 => Self::Int64,
+            Int128 => Self::Int128,
             Float32 => Self::Float32,
             Float64 => Self::Float64,
             String => Self::String,
             Binary => Self::Binary,
+            BinaryOffset => Self::BinaryOffset,
             Date => Self::Date,
             Datetime(tu, tz) => Self::Datetime(tu, tz),
             Duration(tu) => Self::Duration(tu),
@@ -190,15 +181,30 @@ impl From<SerializableDataType> for DataType {
             #[cfg(feature = "dtype-struct")]
             Struct(flds) => Self::Struct(flds),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_, ordering) => Self::Categorical(None, ordering),
+            Categorical {
+                name,
+                namespace,
+                physical,
+            } => {
+                let cats = Categories::new(
+                    PlSmallStr::from(name),
+                    PlSmallStr::from(namespace),
+                    physical,
+                );
+                let mapping = cats.mapping();
+                Self::Categorical(cats, mapping)
+            },
             #[cfg(feature = "dtype-categorical")]
-            Enum(Some(categories), _) => create_enum_dtype(categories.0),
-            #[cfg(feature = "dtype-categorical")]
-            Enum(None, ordering) => Self::Enum(None, ordering),
+            Enum { strings } => {
+                let ca = strings.str().unwrap();
+                let fcats = FrozenCategories::new(ca.iter().flatten()).unwrap();
+                let mapping = fcats.mapping().clone();
+                Self::Enum(fcats, mapping)
+            },
             #[cfg(feature = "dtype-decimal")]
             Decimal(precision, scale) => Self::Decimal(precision, scale),
             #[cfg(feature = "object")]
-            Object(_) => Self::Object("unknown", None),
+            Object(_) => Self::Object("unknown"),
         }
     }
 }

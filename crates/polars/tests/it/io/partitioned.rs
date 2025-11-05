@@ -5,7 +5,6 @@ use polars::io::ipc::{IpcReader, IpcWriterOption};
 use polars::io::prelude::SerReader;
 use polars::io::PartitionedWriter;
 use polars_error::PolarsResult;
-use tempfile;
 
 #[test]
 #[cfg(feature = "ipc")]

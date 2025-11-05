@@ -1,7 +1,7 @@
 # --8<-- [start:dataframe]
 import polars as pl
 
-url = "https://theunitedstates.io/congress-legislators/legislators-historical.csv"
+url = "hf://datasets/nameexhaustion/polars-docs/legislators-historical.csv"
 
 schema_overrides = {
     "first_name": pl.Categorical,
@@ -11,8 +11,10 @@ schema_overrides = {
     "party": pl.Categorical,
 }
 
-dataset = pl.read_csv(url, schema_overrides=schema_overrides).with_columns(
-    pl.col("birthday").str.to_date(strict=False)
+dataset = (
+    pl.read_csv(url, schema_overrides=schema_overrides)
+    .with_columns(pl.col("first", "middle", "last").name.suffix("_name"))
+    .with_columns(pl.col("birthday").str.to_date(strict=False))
 )
 # --8<-- [end:dataframe]
 
@@ -75,12 +77,12 @@ def compute_age():
     return date.today().year - pl.col("birthday").dt.year()
 
 
-def avg_birthday(gender: str) -> pl.Expr:
+def avg_age(gender: str) -> pl.Expr:
     return (
         compute_age()
         .filter(pl.col("gender") == gender)
         .mean()
-        .alias(f"avg {gender} birthday")
+        .alias(f"avg {gender} age")
     )
 
 
@@ -88,8 +90,8 @@ q = (
     dataset.lazy()
     .group_by("state")
     .agg(
-        avg_birthday("M"),
-        avg_birthday("F"),
+        avg_age("M"),
+        avg_age("F"),
         (pl.col("gender") == "M").sum().alias("# male"),
         (pl.col("gender") == "F").sum().alias("# female"),
     )
@@ -106,8 +108,8 @@ q = (
     dataset.lazy()
     .group_by("state", "gender")
     .agg(
-        # The function `avg_birthday` is not needed:
-        compute_age().mean().alias("avg birthday"),
+        # The function `avg_age` is not needed:
+        compute_age().mean().alias("avg age"),
         pl.len().alias("#"),
     )
     .sort("#", descending=True)

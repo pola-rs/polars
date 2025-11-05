@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path("../..").resolve()))
 
 project = "Polars"
 author = "Ritchie Vink"
-copyright = f"2020, {author}"
+copyright = f"2025, {author}"
 
 
 # -- General configuration ---------------------------------------------------
@@ -46,6 +46,7 @@ extensions = [
     "sphinx_copybutton",
     "sphinx_design",
     "sphinx_favicon",
+    "sphinx_llms_txt",
     "sphinx_reredirects",
     "sphinx_toolbox.more_autodoc.overloads",
 ]
@@ -54,6 +55,7 @@ extensions = [
 default_role = "code"
 
 maximum_signature_line_length = 88
+
 
 # Below setting is used by
 # sphinx-autosummary-accessors - build docs for namespace accessors like `Series.str`
@@ -132,6 +134,10 @@ html_theme_options = {
             "name": "User guide",
             "url": f"{web_root}/",
         },
+        {
+            "name": "Polars Cloud API reference",
+            "url": "https://docs.cloud.pola.rs/reference/index.html",
+        },
     ],
     "icon_links": [
         {
@@ -145,9 +151,14 @@ html_theme_options = {
             "icon": "fa-brands fa-discord",
         },
         {
-            "name": "Twitter",
-            "url": "https://twitter.com/DataPolars",
-            "icon": "fa-brands fa-twitter",
+            "name": "X/Twitter",
+            "url": "https://x.com/datapolars",
+            "icon": "fa-brands fa-x-twitter",
+        },
+        {
+            "name": "Bluesky",
+            "url": "https://bsky.app/profile/pola.rs",
+            "icon": "fa-brands fa-bluesky",
         },
     ],
     "logo": {
@@ -234,7 +245,7 @@ def linkcode_resolve(domain: str, info: dict[str, Any]) -> str | None:
     polars_root = (conf_dir_path.parent.parent / "polars").absolute()
 
     fn = os.path.relpath(fn, start=polars_root)
-    return f"{github_root}/blob/{git_ref}/py-polars/polars/{fn}{linespec}"
+    return f"{github_root}/blob/{git_ref}/py-polars/src/polars/{fn}{linespec}"
 
 
 def _minify_classpaths(s: str) -> str:

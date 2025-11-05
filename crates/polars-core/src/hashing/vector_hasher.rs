@@ -1,13 +1,16 @@
+use std::hash::BuildHasher;
+
 use arrow::bitmap::utils::get_bit_unchecked;
-use polars_utils::hashing::folded_multiply;
+use polars_utils::aliases::PlSeedableRandomStateQuality;
+use polars_utils::hashing::{_boost_hash_combine, folded_multiply};
 use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 use rayon::prelude::*;
 use xxhash_rust::xxh3::xxh3_64_with_seed;
 
 use super::*;
+use crate::POOL;
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
-use crate::POOL;
 
 // See: https://github.com/tkaitchuck/aHash/blob/f9acd508bd89e7c5b2877a9510098100f9018d64/src/operations.rs#L4
 const MULTIPLE: u64 = 6364136223846793005;
@@ -18,27 +21,31 @@ const MULTIPLE: u64 = 6364136223846793005;
 
 pub trait VecHash {
     /// Compute the hash for all values in the array.
-    fn vec_hash(&self, _random_state: PlRandomState, _buf: &mut Vec<u64>) -> PolarsResult<()> {
-        polars_bail!(un_impl = vec_hash);
-    }
+    fn vec_hash(
+        &self,
+        _random_state: PlSeedableRandomStateQuality,
+        _buf: &mut Vec<u64>,
+    ) -> PolarsResult<()>;
 
     fn vec_hash_combine(
         &self,
-        _random_state: PlRandomState,
+        _random_state: PlSeedableRandomStateQuality,
         _hashes: &mut [u64],
-    ) -> PolarsResult<()> {
-        polars_bail!(un_impl = vec_hash_combine);
-    }
+    ) -> PolarsResult<()>;
 }
 
-pub(crate) fn get_null_hash_value(random_state: &PlRandomState) -> u64 {
+pub(crate) fn get_null_hash_value(random_state: &PlSeedableRandomStateQuality) -> u64 {
     // we just start with a large prime number and hash that twice
     // to get a constant hash value for null/None
     let first = random_state.hash_one(3188347919usize);
     random_state.hash_one(first)
 }
 
-fn insert_null_hash(chunks: &[ArrayRef], random_state: PlRandomState, buf: &mut Vec<u64>) {
+fn insert_null_hash(
+    chunks: &[ArrayRef],
+    random_state: PlSeedableRandomStateQuality,
+    buf: &mut Vec<u64>,
+) {
     let null_h = get_null_hash_value(&random_state);
     let hashes = buf.as_mut_slice();
 
@@ -58,8 +65,11 @@ fn insert_null_hash(chunks: &[ArrayRef], random_state: PlRandomState, buf: &mut 
     });
 }
 
-fn numeric_vec_hash<T>(ca: &ChunkedArray<T>, random_state: PlRandomState, buf: &mut Vec<u64>)
-where
+fn numeric_vec_hash<T>(
+    ca: &ChunkedArray<T>,
+    random_state: PlSeedableRandomStateQuality,
+    buf: &mut Vec<u64>,
+) where
     T: PolarsNumericType,
     T::Native: TotalHash + ToTotalOrd,
     <T::Native as ToTotalOrd>::TotalOrdItem: Hash,
@@ -89,7 +99,7 @@ where
 
 fn numeric_vec_hash_combine<T>(
     ca: &ChunkedArray<T>,
-    random_state: PlRandomState,
+    random_state: PlSeedableRandomStateQuality,
     hashes: &mut [u64],
 ) where
     T: PolarsNumericType,
@@ -138,7 +148,7 @@ macro_rules! vec_hash_numeric {
         impl VecHash for $ca {
             fn vec_hash(
                 &self,
-                random_state: PlRandomState,
+                random_state: PlSeedableRandomStateQuality,
                 buf: &mut Vec<u64>,
             ) -> PolarsResult<()> {
                 numeric_vec_hash(self, random_state, buf);
@@ -147,7 +157,7 @@ macro_rules! vec_hash_numeric {
 
             fn vec_hash_combine(
                 &self,
-                random_state: PlRandomState,
+                random_state: PlSeedableRandomStateQuality,
                 hashes: &mut [u64],
             ) -> PolarsResult<()> {
                 numeric_vec_hash_combine(self, random_state, hashes);
@@ -167,18 +177,24 @@ vec_hash_numeric!(UInt16Chunked);
 vec_hash_numeric!(UInt8Chunked);
 vec_hash_numeric!(Float64Chunked);
 vec_hash_numeric!(Float32Chunked);
-#[cfg(feature = "dtype-decimal")]
+#[cfg(feature = "dtype-u128")]
+vec_hash_numeric!(UInt128Chunked);
+#[cfg(any(feature = "dtype-decimal", feature = "dtype-i128"))]
 vec_hash_numeric!(Int128Chunked);
 
 impl VecHash for StringChunked {
-    fn vec_hash(&self, random_state: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+    fn vec_hash(
+        &self,
+        random_state: PlSeedableRandomStateQuality,
+        buf: &mut Vec<u64>,
+    ) -> PolarsResult<()> {
         self.as_binary().vec_hash(random_state, buf)?;
         Ok(())
     }
 
     fn vec_hash_combine(
         &self,
-        random_state: PlRandomState,
+        random_state: PlSeedableRandomStateQuality,
         hashes: &mut [u64],
     ) -> PolarsResult<()> {
         self.as_binary().vec_hash_combine(random_state, hashes)?;
@@ -187,7 +203,11 @@ impl VecHash for StringChunked {
 }
 
 // used in polars-pipe
-pub fn _hash_binary_array(arr: &BinaryArray<i64>, random_state: PlRandomState, buf: &mut Vec<u64>) {
+pub fn _hash_binary_array(
+    arr: &BinaryArray<i64>,
+    random_state: PlSeedableRandomStateQuality,
+    buf: &mut Vec<u64>,
+) {
     let null_h = get_null_hash_value(&random_state);
     if arr.null_count() == 0 {
         // use the null_hash as seed to get a hash determined by `random_state` that is passed
@@ -200,7 +220,11 @@ pub fn _hash_binary_array(arr: &BinaryArray<i64>, random_state: PlRandomState, b
     }
 }
 
-fn hash_binview_array(arr: &BinaryViewArray, random_state: PlRandomState, buf: &mut Vec<u64>) {
+fn hash_binview_array(
+    arr: &BinaryViewArray,
+    random_state: PlSeedableRandomStateQuality,
+    buf: &mut Vec<u64>,
+) {
     let null_h = get_null_hash_value(&random_state);
     if arr.null_count() == 0 {
         // use the null_hash as seed to get a hash determined by `random_state` that is passed
@@ -214,7 +238,11 @@ fn hash_binview_array(arr: &BinaryViewArray, random_state: PlRandomState, buf: &
 }
 
 impl VecHash for BinaryChunked {
-    fn vec_hash(&self, random_state: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+    fn vec_hash(
+        &self,
+        random_state: PlSeedableRandomStateQuality,
+        buf: &mut Vec<u64>,
+    ) -> PolarsResult<()> {
         buf.clear();
         buf.reserve(self.len());
         self.downcast_iter()
@@ -224,7 +252,7 @@ impl VecHash for BinaryChunked {
 
     fn vec_hash_combine(
         &self,
-        random_state: PlRandomState,
+        random_state: PlSeedableRandomStateQuality,
         hashes: &mut [u64],
     ) -> PolarsResult<()> {
         let null_h = get_null_hash_value(&random_state);
@@ -263,7 +291,11 @@ impl VecHash for BinaryChunked {
 }
 
 impl VecHash for BinaryOffsetChunked {
-    fn vec_hash(&self, random_state: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+    fn vec_hash(
+        &self,
+        random_state: PlSeedableRandomStateQuality,
+        buf: &mut Vec<u64>,
+    ) -> PolarsResult<()> {
         buf.clear();
         buf.reserve(self.len());
         self.downcast_iter()
@@ -273,7 +305,7 @@ impl VecHash for BinaryOffsetChunked {
 
     fn vec_hash_combine(
         &self,
-        random_state: PlRandomState,
+        random_state: PlSeedableRandomStateQuality,
         hashes: &mut [u64],
     ) -> PolarsResult<()> {
         let null_h = get_null_hash_value(&random_state);
@@ -312,7 +344,11 @@ impl VecHash for BinaryOffsetChunked {
 }
 
 impl VecHash for NullChunked {
-    fn vec_hash(&self, random_state: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+    fn vec_hash(
+        &self,
+        random_state: PlSeedableRandomStateQuality,
+        buf: &mut Vec<u64>,
+    ) -> PolarsResult<()> {
         let null_h = get_null_hash_value(&random_state);
         buf.clear();
         buf.resize(self.len(), null_h);
@@ -321,7 +357,7 @@ impl VecHash for NullChunked {
 
     fn vec_hash_combine(
         &self,
-        random_state: PlRandomState,
+        random_state: PlSeedableRandomStateQuality,
         hashes: &mut [u64],
     ) -> PolarsResult<()> {
         let null_h = get_null_hash_value(&random_state);
@@ -332,7 +368,11 @@ impl VecHash for NullChunked {
     }
 }
 impl VecHash for BooleanChunked {
-    fn vec_hash(&self, random_state: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+    fn vec_hash(
+        &self,
+        random_state: PlSeedableRandomStateQuality,
+        buf: &mut Vec<u64>,
+    ) -> PolarsResult<()> {
         buf.clear();
         buf.reserve(self.len());
         let true_h = random_state.hash_one(true);
@@ -354,7 +394,7 @@ impl VecHash for BooleanChunked {
 
     fn vec_hash_combine(
         &self,
-        random_state: PlRandomState,
+        random_state: PlSeedableRandomStateQuality,
         hashes: &mut [u64],
     ) -> PolarsResult<()> {
         let true_h = random_state.hash_one(true);
@@ -380,11 +420,7 @@ impl VecHash for BooleanChunked {
                         .zip(arr.values())
                         .for_each(|((valid, h), l)| {
                             let l = if valid {
-                                if l {
-                                    true_h
-                                } else {
-                                    false_h
-                                }
+                                if l { true_h } else { false_h }
                             } else {
                                 null_h
                             };
@@ -403,7 +439,11 @@ impl<T> VecHash for ObjectChunked<T>
 where
     T: PolarsObject,
 {
-    fn vec_hash(&self, random_state: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+    fn vec_hash(
+        &self,
+        random_state: PlSeedableRandomStateQuality,
+        buf: &mut Vec<u64>,
+    ) -> PolarsResult<()> {
         // Note that we don't use the no null branch! This can break in unexpected ways.
         // for instance with threading we split an array in n_threads, this may lead to
         // splits that have no nulls and splits that have nulls. Then one array is hashed with
@@ -421,7 +461,7 @@ where
 
     fn vec_hash_combine(
         &self,
-        random_state: PlRandomState,
+        random_state: PlSeedableRandomStateQuality,
         hashes: &mut [u64],
     ) -> PolarsResult<()> {
         self.apply_to_slice(
@@ -437,28 +477,28 @@ where
 
 pub fn _df_rows_to_hashes_threaded_vertical(
     keys: &[DataFrame],
-    hasher_builder: Option<PlRandomState>,
-) -> PolarsResult<(Vec<UInt64Chunked>, PlRandomState)> {
-    let hasher_builder = hasher_builder.unwrap_or_default();
+    build_hasher: Option<PlSeedableRandomStateQuality>,
+) -> PolarsResult<(Vec<UInt64Chunked>, PlSeedableRandomStateQuality)> {
+    let build_hasher = build_hasher.unwrap_or_default();
 
     let hashes = POOL.install(|| {
         keys.into_par_iter()
             .map(|df| {
-                let hb = hasher_builder.clone();
+                let hb = build_hasher.clone();
                 let mut hashes = vec![];
                 columns_to_hashes(df.get_columns(), Some(hb), &mut hashes)?;
                 Ok(UInt64Chunked::from_vec(PlSmallStr::EMPTY, hashes))
             })
             .collect::<PolarsResult<Vec<_>>>()
     })?;
-    Ok((hashes, hasher_builder))
+    Ok((hashes, build_hasher))
 }
 
 pub fn columns_to_hashes(
     keys: &[Column],
-    build_hasher: Option<PlRandomState>,
+    build_hasher: Option<PlSeedableRandomStateQuality>,
     hashes: &mut Vec<u64>,
-) -> PolarsResult<PlRandomState> {
+) -> PolarsResult<PlSeedableRandomStateQuality> {
     let build_hasher = build_hasher.unwrap_or_default();
 
     let mut iter = keys.iter();

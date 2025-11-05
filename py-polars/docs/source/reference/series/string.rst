@@ -30,6 +30,7 @@ The following methods are available under the `Series.str` attribute.
     Series.str.json_path_match
     Series.str.len_bytes
     Series.str.len_chars
+    Series.str.normalize
     Series.str.pad_end
     Series.str.pad_start
     Series.str.replace
