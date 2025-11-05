@@ -6,6 +6,8 @@ use crate::index::{IdxSize, NonZeroIdxSize};
 
 pub type IdxVec = UnitVec<IdxSize>;
 
+//
+
 union PointerOrValue<T> {
     ptr: *mut T,
     value: ManuallyDrop<T>,
