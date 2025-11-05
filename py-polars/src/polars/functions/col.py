@@ -371,12 +371,19 @@ class Col:
         if re.match(r"^_\w+__", name):
             import inspect
 
+            have_qualname = sys.version_info >= (3, 11)
             frame = inspect.currentframe()
             while frame is not None:
-                if (frame := frame.f_back) is not None:
-                    if class_name := frame.f_code.co_qualname.split(".")[-2:][0]:
-                        # if we are inside class scope confirm the col has been mangled
-                        # with the *specific* class name associated with that scope
+                if (frame := frame.f_back) is not None and (
+                    have_qualname or "self" in frame.f_locals
+                ):
+                    # if we are inside class scope confirm the col has been mangled
+                    # with the *specific* class name associated with that scope
+                    if class_name := (
+                        frame.f_code.co_qualname.split(".")[-2:][0]
+                        if have_qualname
+                        else type(frame.f_locals["self"]).__name__
+                    ):
                         if name.startswith(
                             mangled_prefix := f"_{class_name}"
                         ) and isinstance(frame.f_globals.get(class_name), type):
