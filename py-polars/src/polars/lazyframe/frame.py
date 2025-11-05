@@ -8475,7 +8475,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def remote(
         self,
         context: pc.ComputeContext | None = None,
+        *,
         plan_type: pc._typing.PlanTypePreference = "dot",
+        n_retries: int = 0,
+        engine: pc._typing.Engine = "auto",
+        scaling_mode: pc._typing.ScalingMode = "auto",
     ) -> pc.LazyFrameRemote:
         """
         Run a query remotely on Polars Cloud.
@@ -8494,6 +8498,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         plan_type: {'plain', 'dot'}
             Whether to give a dot diagram of a plain text
             version of logical plan.
+        n_retries:
+            How often a stage should be retried on failure.
+        engine: {'auto', 'streaming', 'in-memory'}
+            This will serve as a hint that tells Polars which engine
+            to prefer. It doesn't have to be respected.
+        scaling_mode: {'auto', 'single-node', 'distributed'}
+            If set to auto, a query that doesn't explicitly specify
+            a scaling mode via `remote().distributed()` or
+            `remote().single_node()` will run in distributed mode
+            if the cluster has more than 1 node.
+
 
         Examples
         --------
@@ -8512,7 +8527,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 6        │
         └──────────┘
 
-        Run a query distributed.
+        Explicitly run a query distributed.
 
         >>> lf = (
         ...     pl.scan_parquet("s3://my_bucket/").group_by("key").agg(pl.sum("values"))
