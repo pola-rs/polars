@@ -85,3 +85,11 @@ def test_format_on_multiple_chunks_25159(monkeypatch: Any) -> None:
         pl.format("{}", (pl.col("date").max()).dt.to_string()).alias("label")
     )
     assert out.shape == (6, 3)
+
+
+def test_format_on_multiple_chunks_concat_25159() -> None:
+    df1 = pl.DataFrame({"a": ["123"]})
+    df2 = pl.DataFrame({"a": ["456"]})
+    df = pl.concat([df1, df2])
+    out = df.select(pl.format("{}", pl.col.a))
+    assert_frame_equal(df, out)
