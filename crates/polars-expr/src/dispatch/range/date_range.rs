@@ -18,18 +18,18 @@ pub(super) fn date_range(
     let end = &s[1];
 
     ensure_range_bounds_contain_exactly_one_value(start, end)?;
-    let start = start.strict_cast(&DataType::Date)?;
-    let end = end.strict_cast(&DataType::Date)?;
     polars_ensure!(
         interval.is_full_days(),
         ComputeError: "`interval` input for `date_range` must consist of full days, got: {interval}"
     );
 
     let name = start.name().clone();
-    let start = temporal_series_to_i64_scalar(&start)
+    polars_ensure!(start.dtype() == &DataType::Date, ComputeError: "expected 'Date', got '{}'", start.dtype());
+    polars_ensure!(end.dtype() == &DataType::Date, ComputeError: "expected 'Date', got '{}'", end.dtype());
+    let start = temporal_series_to_i64_scalar(start)
         .ok_or_else(|| polars_err!(ComputeError: "start is an out-of-range time."))?
         * MICROSECONDS_IN_DAY;
-    let end = temporal_series_to_i64_scalar(&end)
+    let end = temporal_series_to_i64_scalar(end)
         .ok_or_else(|| polars_err!(ComputeError: "end is an out-of-range time."))?
         * MICROSECONDS_IN_DAY;
 
@@ -43,8 +43,7 @@ pub(super) fn date_range(
         None,
     )?;
 
-    let to_type = DataType::Date;
-    out.cast(&to_type).map(Column::from)
+    out.cast(&DataType::Date).map(Column::from)
 }
 
 pub(super) fn date_ranges(
@@ -55,13 +54,15 @@ pub(super) fn date_ranges(
     let start = &s[0];
     let end = &s[1];
 
+    polars_ensure!(start.dtype() == &DataType::Date, ComputeError: "Expected Date, got {}", start.dtype());
+    polars_ensure!(end.dtype() == &DataType::Date, ComputeError: "Expected Date, got {}", end.dtype());
     polars_ensure!(
         interval.is_full_days(),
         ComputeError: "`interval` input for `date_ranges` must consist of full days, got: {interval}"
     );
 
-    let start = start.strict_cast(&DataType::Date)?.cast(&DataType::Int64)?;
-    let end = end.strict_cast(&DataType::Date)?.cast(&DataType::Int64)?;
+    let start = start.cast(&DataType::Int64)?;
+    let end = end.cast(&DataType::Int64)?;
 
     let start = start.i64().unwrap() * MICROSECONDS_IN_DAY;
     let end = end.i64().unwrap() * MICROSECONDS_IN_DAY;

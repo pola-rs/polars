@@ -1,11 +1,28 @@
 mod binary;
+#[cfg(all(
+    feature = "range",
+    any(feature = "dtype-date", feature = "dtype-datetime")
+))]
+mod datetime;
 mod functions;
 #[cfg(feature = "is_in")]
 mod is_in;
 
 use binary::process_binary;
+#[cfg(all(
+    feature = "range",
+    any(feature = "dtype-date", feature = "dtype-datetime")
+))]
+use datetime::coerce_temporal_dt;
+#[cfg(all(feature = "range", feature = "dtype-datetime"))]
+use datetime::temporal_range_output_type;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
+#[cfg(all(
+    feature = "range",
+    any(feature = "dtype-date", feature = "dtype-datetime")
+))]
+use polars_core::utils::try_get_supertype;
 use polars_core::utils::{get_supertype, get_supertype_with_options, materialize_dyn_int};
 use polars_utils::format_list;
 use polars_utils::itertools::Itertools;
@@ -70,6 +87,12 @@ fn get_aexpr_and_type<'a>(
         ae.to_dtype(&ToFieldContext::new(expr_arena, input_schema))
             .ok()?,
     ))
+}
+
+fn try_get_dtype(expr_arena: &Arena<AExpr>, e: Node, schema: &Schema) -> PolarsResult<DataType> {
+    expr_arena
+        .get(e)
+        .to_dtype(&ToFieldContext::new(expr_arena, schema))
 }
 
 fn materialize(aexpr: &AExpr) -> Option<AExpr> {
@@ -945,6 +968,101 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     input,
                     options,
                 })
+            },
+            #[cfg(all(feature = "range", feature = "dtype-date"))]
+            AExpr::Function {
+                function:
+                    ref function @ IRFunctionExpr::Range(IRRangeFunction::DateRange {
+                        interval: _,
+                        closed: _,
+                    })
+                    | ref function @ IRFunctionExpr::Range(IRRangeFunction::DateRanges {
+                        interval: _,
+                        closed: _,
+                    }),
+                ref input,
+                options,
+            } => {
+                let mut input = input.clone();
+                let function = function.clone();
+
+                // Determine the current and target dtypes.
+                let type_start = try_get_dtype(expr_arena, input[0].node(), schema)?;
+                let type_end = try_get_dtype(expr_arena, input[1].node(), schema)?;
+                let from_types = [type_start, type_end];
+
+                // Upcast input expressions if necessary.
+                let from_iter = from_types.into_iter();
+                let mut modified = false;
+                for (i, from_dtype) in from_iter.enumerate() {
+                    if from_dtype != DataType::Date {
+                        modified = true;
+                        coerce_temporal_dt(
+                            &from_dtype,
+                            &DataType::Date,
+                            &mut input[i],
+                            expr_arena,
+                        )?;
+                    }
+                }
+
+                if modified {
+                    Some(AExpr::Function {
+                        function,
+                        input,
+                        options,
+                    })
+                } else {
+                    return Ok(None);
+                }
+            },
+            #[cfg(all(feature = "range", feature = "dtype-datetime"))]
+            AExpr::Function {
+                function:
+                    ref function @ IRFunctionExpr::Range(IRRangeFunction::DatetimeRange {
+                        ref interval,
+                        closed: _,
+                        time_unit: ref tu,
+                        time_zone: ref tz,
+                    })
+                    | ref function @ IRFunctionExpr::Range(IRRangeFunction::DatetimeRanges {
+                        ref interval,
+                        closed: _,
+                        time_unit: ref tu,
+                        time_zone: ref tz,
+                    }),
+                ref input,
+                options,
+            } => {
+                let mut input = input.clone();
+                let function = function.clone();
+
+                // Determine the current and target dtypes.
+                let type_start = try_get_dtype(expr_arena, input[0].node(), schema)?;
+                let type_end = try_get_dtype(expr_arena, input[1].node(), schema)?;
+                let default = try_get_supertype(&type_start, &type_end)?;
+                let supertype = temporal_range_output_type(default, tu, tz, interval)?;
+                let from_types = [type_start, type_end];
+
+                // Upcast input expressions if necessary.
+                let from_iter = from_types.into_iter();
+                let mut modified = false;
+                for (i, from_dtype) in from_iter.enumerate() {
+                    if from_dtype != supertype {
+                        modified = true;
+                        coerce_temporal_dt(&from_dtype, &supertype, &mut input[i], expr_arena)?;
+                    }
+                }
+
+                if modified {
+                    Some(AExpr::Function {
+                        function,
+                        input,
+                        options,
+                    })
+                } else {
+                    return Ok(None);
+                }
             },
             AExpr::Slice { offset, length, .. } => {
                 let (_, offset_dtype) = unpack!(get_aexpr_and_type(expr_arena, offset, schema));
