@@ -1,3 +1,0 @@
-changes-dsl:
-  - changed-files:
-      - all-globs-to-any-file: '^\b$'

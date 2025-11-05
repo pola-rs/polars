@@ -15,4 +15,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/labeler@v5
         with:
-          configuration-path: .github/labeler-dsl-changed.yml
+          configuration-path: .github/dsl-changed-labeler-config.yml
