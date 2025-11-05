@@ -373,14 +373,15 @@ class Col:
 
             frame = inspect.currentframe()
             while frame is not None:
-                frame = frame.f_back
-                if f_self := frame.f_locals.get("self"):  # type: ignore[union-attr]
-                    # we are inside class scope; confirm the col has been mangled
-                    # with the *specific* class name associated with that scope
-                    mangled_prefix = f"_{type(f_self).__name__}"
-                    if name.startswith(mangled_prefix):
-                        name = name.removeprefix(mangled_prefix)
-                    break
+                if (frame := frame.f_back) is not None:
+                    if class_name := frame.f_code.co_qualname.split(".")[-2:][0]:
+                        # if we are inside class scope confirm the col has been mangled
+                        # with the *specific* class name associated with that scope
+                        if name.startswith(
+                            mangled_prefix := f"_{class_name}"
+                        ) and isinstance(frame.f_globals.get(class_name), type):
+                            name = name.removeprefix(mangled_prefix)
+                            break
 
         # help autocomplete work with IPython
         with contextlib.suppress(AttributeError):
