@@ -51,7 +51,7 @@ old_getrandom = { version = "0.2", features = ["js"], package = "getrandom" }
 sql = ["polars-sql"]
 rows = ["polars-core/rows"]
 simd = ["polars-core/simd", "polars-io/simd", "polars-ops?/simd"]
-avx512 = ["polars-core/avx512"] # TODO: [amber] Enable AVX512 float16 support
+avx512 = ["polars-core/avx512"]
 nightly = [
   "polars-core/nightly",
   "polars-ops?/nightly",
