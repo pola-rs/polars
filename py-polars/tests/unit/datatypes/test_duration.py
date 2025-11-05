@@ -5,7 +5,7 @@ from functools import partial
 from typing import TYPE_CHECKING, Any, Callable
 
 import pytest
-from hypothesis import assume, given, settings
+from hypothesis import assume, given
 
 import polars as pl
 from polars._utils.constants import I64_MAX, I64_MIN

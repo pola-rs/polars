@@ -153,7 +153,7 @@ where
 impl ExplodeByOffsets for Float16Chunked {
     fn explode_by_offsets(&self, offsets: &[i64], skip_empty: bool) -> Series {
         self.apply_as_ints(|s| {
-            let ca = s.f16().unwrap();
+            let ca = s.u16().unwrap();
             ca.explode_by_offsets(offsets, skip_empty)
         })
     }

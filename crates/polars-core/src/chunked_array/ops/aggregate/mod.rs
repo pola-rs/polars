@@ -55,7 +55,7 @@ where
                 let f16_arr =
                     std::mem::transmute::<&PrimitiveArray<T>, &PrimitiveArray<pf16>>(array);
                 let sum = float_sum::sum_arr_as_f16(f16_arr);
-                return std::mem::transmute_copy::<pf16, T>(&sum);
+                std::mem::transmute_copy::<pf16, T>(&sum)
             } else if T::is_f32() {
                 let f32_arr =
                     std::mem::transmute::<&PrimitiveArray<T>, &PrimitiveArray<f32>>(array);
@@ -67,7 +67,7 @@ where
                 let sum = float_sum::sum_arr_as_f64(f64_arr);
                 std::mem::transmute_copy::<f64, T>(&sum)
             } else {
-                unreachable!("only supported float types are f32 and f64");
+                unreachable!("only supported float types are f16, f32 and f64");
             }
         }
     } else {

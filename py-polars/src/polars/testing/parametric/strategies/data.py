@@ -5,7 +5,7 @@ from __future__ import annotations
 import decimal
 from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 from zoneinfo import ZoneInfo
 
 import hypothesis.strategies as st
@@ -43,6 +43,7 @@ from polars.datatypes import (
     Float16,
     Float32,
     Float64,
+    FloatType,
     Int8,
     Int16,
     Int32,
@@ -403,9 +404,10 @@ def data(
     if (strategy := _STATIC_STRATEGIES.get(dtype.base_type())) is not None:
         strategy = strategy
     elif dtype.is_float():
-        bit_width = {Float16: 16, Float32: 32, Float64: 64}[dtype]
+        dtype = cast(FloatType, dtype)
+        bit_width = {Float16: 16, Float32: 32, Float64: 64}[type(dtype)]
         strategy = floats(
-            bit_width=bit_width,
+            bit_width=cast(Literal[16, 32, 64], bit_width),
             allow_nan=kwargs.pop("allow_nan", True),
             allow_infinity=kwargs.pop("allow_infinity", True),
         )
