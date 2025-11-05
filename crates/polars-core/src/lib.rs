@@ -33,7 +33,6 @@ pub mod testing;
 mod tests;
 
 use std::cell::{Cell, RefCell};
-use std::panic::AssertUnwindSafe;
 use std::sync::{LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
