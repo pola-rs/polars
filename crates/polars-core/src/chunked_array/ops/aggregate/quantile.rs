@@ -195,118 +195,63 @@ where
     }
 }
 
-// TODO: [amber] I feel like this could be chunked together maybe?
-#[cfg(feature = "dtype-f16")]
-impl ChunkQuantile<pf16> for Float16Chunked {
-    fn quantile(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<pf16>> {
-        // in case of sorted data, the sort is free, so don't take quickselect route
-        let out = if let (Ok(slice), false) = (self.cont_slice(), self.is_sorted_ascending_flag()) {
-            let mut owned = slice.to_vec();
-            quantile_slice(&mut owned, quantile, method)
-        } else {
-            generic_quantile(self.clone(), quantile, method)
-        };
-        out.map(|v| v.map(|v| v.as_()))
-    }
+macro_rules! impl_chunk_quantile_for_float_chunked {
+    ($T:ty, $CA:ty) => {
+        impl ChunkQuantile<$T> for $CA {
+            fn quantile(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<$T>> {
+                // in case of sorted data, the sort is free, so don't take quickselect route
+                let out = if let (Ok(slice), false) =
+                    (self.cont_slice(), self.is_sorted_ascending_flag())
+                {
+                    let mut owned = slice.to_vec();
+                    quantile_slice(&mut owned, quantile, method)
+                } else {
+                    generic_quantile(self.clone(), quantile, method)
+                };
+                out.map(|v| v.map(|v| v.as_()))
+            }
 
-    fn median(&self) -> Option<pf16> {
-        self.quantile(0.5, QuantileMethod::Linear).unwrap() // unwrap fine since quantile in range
-    }
-}
-
-impl ChunkQuantile<f32> for Float32Chunked {
-    fn quantile(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<f32>> {
-        // in case of sorted data, the sort is free, so don't take quickselect route
-        let out = if let (Ok(slice), false) = (self.cont_slice(), self.is_sorted_ascending_flag()) {
-            let mut owned = slice.to_vec();
-            quantile_slice(&mut owned, quantile, method)
-        } else {
-            generic_quantile(self.clone(), quantile, method)
-        };
-        out.map(|v| v.map(|v| v.as_()))
-    }
-
-    fn median(&self) -> Option<f32> {
-        self.quantile(0.5, QuantileMethod::Linear).unwrap() // unwrap fine since quantile in range
-    }
-}
-
-impl ChunkQuantile<f64> for Float64Chunked {
-    fn quantile(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<f64>> {
-        // in case of sorted data, the sort is free, so don't take quickselect route
-        if let (Ok(slice), false) = (self.cont_slice(), self.is_sorted_ascending_flag()) {
-            let mut owned = slice.to_vec();
-            quantile_slice(&mut owned, quantile, method)
-        } else {
-            generic_quantile(self.clone(), quantile, method)
+            fn median(&self) -> Option<$T> {
+                self.quantile(0.5, QuantileMethod::Linear).unwrap() // unwrap fine since quantile in range
+            }
         }
-    }
-
-    fn median(&self) -> Option<f64> {
-        self.quantile(0.5, QuantileMethod::Linear).unwrap() // unwrap fine since quantile in range
-    }
-}
-
-impl Float64Chunked {
-    pub(crate) fn quantile_faster(
-        mut self,
-        quantile: f64,
-        method: QuantileMethod,
-    ) -> PolarsResult<Option<f64>> {
-        // in case of sorted data, the sort is free, so don't take quickselect route
-        let is_sorted = self.is_sorted_ascending_flag();
-        if let (Some(slice), false) = (self.cont_slice_mut(), is_sorted) {
-            quantile_slice(slice, quantile, method)
-        } else {
-            self.quantile(quantile, method)
-        }
-    }
-
-    pub(crate) fn median_faster(self) -> Option<f64> {
-        self.quantile_faster(0.5, QuantileMethod::Linear).unwrap()
-    }
-}
-
-impl Float32Chunked {
-    pub(crate) fn quantile_faster(
-        mut self,
-        quantile: f64,
-        method: QuantileMethod,
-    ) -> PolarsResult<Option<f32>> {
-        // in case of sorted data, the sort is free, so don't take quickselect route
-        let is_sorted = self.is_sorted_ascending_flag();
-        if let (Some(slice), false) = (self.cont_slice_mut(), is_sorted) {
-            quantile_slice(slice, quantile, method).map(|v| v.map(|v| v as f32))
-        } else {
-            self.quantile(quantile, method)
-        }
-    }
-
-    pub(crate) fn median_faster(self) -> Option<f32> {
-        self.quantile_faster(0.5, QuantileMethod::Linear).unwrap()
-    }
+    };
 }
 
 #[cfg(feature = "dtype-f16")]
-impl Float16Chunked {
-    pub(crate) fn quantile_faster(
-        mut self,
-        quantile: f64,
-        method: QuantileMethod,
-    ) -> PolarsResult<Option<pf16>> {
-        // in case of sorted data, the sort is free, so don't take quickselect route
-        let is_sorted = self.is_sorted_ascending_flag();
-        if let (Some(slice), false) = (self.cont_slice_mut(), is_sorted) {
-            quantile_slice(slice, quantile, method).map(|v| v.map(|v| v.as_()))
-        } else {
-            self.quantile(quantile, method)
-        }
-    }
+impl_chunk_quantile_for_float_chunked!(pf16, Float16Chunked);
+impl_chunk_quantile_for_float_chunked!(f32, Float32Chunked);
+impl_chunk_quantile_for_float_chunked!(f64, Float64Chunked);
 
-    pub(crate) fn median_faster(self) -> Option<pf16> {
-        self.quantile_faster(0.5, QuantileMethod::Linear).unwrap()
-    }
+macro_rules! impl_float_chunked {
+    ($T:ty, $CA:ty) => {
+        impl $CA {
+            pub(crate) fn quantile_faster(
+                mut self,
+                quantile: f64,
+                method: QuantileMethod,
+            ) -> PolarsResult<Option<$T>> {
+                // in case of sorted data, the sort is free, so don't take quickselect route
+                let is_sorted = self.is_sorted_ascending_flag();
+                if let (Some(slice), false) = (self.cont_slice_mut(), is_sorted) {
+                    Ok(quantile_slice(slice, quantile, method)?.map(AsPrimitive::as_))
+                } else {
+                    Ok(self.quantile(quantile, method)?.map(AsPrimitive::as_))
+                }
+            }
+
+            pub(crate) fn median_faster(self) -> Option<$T> {
+                self.quantile_faster(0.5.into(), QuantileMethod::Linear)
+                    .unwrap()
+            }
+        }
+    };
 }
+
+#[cfg(feature = "dtype-f16")]
+impl_float_chunked!(pf16, Float16Chunked);
+impl_float_chunked!(f32, Float32Chunked);
+impl_float_chunked!(f64, Float64Chunked);
 
 impl ChunkQuantile<String> for StringChunked {}
 impl ChunkQuantile<Series> for ListChunked {}
