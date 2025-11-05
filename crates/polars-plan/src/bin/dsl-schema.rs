@@ -107,17 +107,17 @@ mod impls {
 
         let mut hashes = serde_json::Map::new();
 
-        // Insert the top level enum schema
-        hashes.insert(String::from("DslPlan"), schema_hash(&schema).into());
-
         // Insert the subschemas
         if let Some(definitions) = schema.get("$defs") {
             if let Some(definitions) = definitions.as_object() {
                 for (name, def) in definitions {
-                    if let Some(def) = def.as_object() {
-                        hashes.insert(name.into(), schema_hash(&def.to_owned().into()).into());
-                    }
+                    let mut def = def.to_owned();
+                    def.sort_all_objects();
+                    let schema: &Schema = (&def).try_into().unwrap();
+                    hashes.insert(name.into(), schema_hash(schema).into());
                 }
+
+                assert!(definitions.contains_key("DslPlan"));
             }
         }
 
