@@ -3666,6 +3666,7 @@ dependencies = [
  "crossbeam-utils",
  "futures",
  "memmap2",
+ "num-traits",
  "parking_lot",
  "percent-encoding",
  "pin-project-lite",

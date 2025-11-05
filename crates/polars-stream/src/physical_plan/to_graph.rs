@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use num_traits::AsPrimitive;
 use parking_lot::Mutex;
 use polars_core::prelude::PlRandomState;
 use polars_core::schema::Schema;
@@ -1252,7 +1253,7 @@ fn to_graph_rec<'a>(
                 EwmMean { .. } => {
                     with_match_physical_float_type!(dtype, |$T| {
                         let state: EwmMeanState<$T> = EwmMeanState::new(
-                            options.alpha as $T,
+                            AsPrimitive::<$T>::as_(options.alpha),
                             options.adjust,
                             options.min_periods,
                             options.ignore_nulls,
@@ -1263,7 +1264,7 @@ fn to_graph_rec<'a>(
                 },
                 _ => with_match_physical_float_type!(dtype, |$T| {
                     let state: EwmCovState<$T> = EwmCovState::new(
-                        options.alpha as $T,
+                        AsPrimitive::<$T>::as_(options.alpha),
                         options.adjust,
                         options.bias,
                         options.min_periods,
