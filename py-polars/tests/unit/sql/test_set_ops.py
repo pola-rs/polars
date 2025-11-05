@@ -8,8 +8,8 @@ from polars.testing import assert_frame_equal
 
 
 def test_except_intersect() -> None:
-    df1 = pl.DataFrame({"x": [1, 9, 1, 1], "y": [2, 3, 4, 4], "z": [5, 5, 5, 5]})  # noqa: F841
-    df2 = pl.DataFrame({"x": [1, 9, 1], "y": [2, None, 4], "z": [7, 6, 5]})  # noqa: F841
+    df1 = pl.DataFrame({"x": [1, 9, 1, 1], "y": [2, 3, 4, 4], "z": [5, 5, 5, 5]})
+    df2 = pl.DataFrame({"x": [1, 9, 1], "y": [2, None, 4], "z": [7, 6, 5]})
 
     res_e = pl.sql("SELECT x, y, z FROM df1 EXCEPT SELECT * FROM df2", eager=True)
     res_i = pl.sql("SELECT * FROM df1 INTERSECT SELECT x, y, z FROM df2", eager=True)
@@ -40,14 +40,14 @@ def test_except_intersect() -> None:
 
 
 def test_except_intersect_by_name() -> None:
-    df1 = pl.DataFrame(  # noqa: F841
+    df1 = pl.DataFrame(
         {
             "x": [1, 9, 1, 1],
             "y": [2, 3, 4, 4],
             "z": [5, 5, 5, 5],
         }
     )
-    df2 = pl.DataFrame(  # noqa: F841
+    df2 = pl.DataFrame(
         {
             "y": [2, None, 4],
             "w": ["?", "!", "%"],
@@ -79,8 +79,8 @@ def test_except_intersect_by_name() -> None:
     ],
 )
 def test_except_intersect_all_unsupported(op: str, op_subtype: str) -> None:
-    df1 = pl.DataFrame({"n": [1, 1, 1, 2, 2, 2, 3]})  # noqa: F841
-    df2 = pl.DataFrame({"n": [1, 1, 2, 2]})  # noqa: F841
+    df1 = pl.DataFrame({"n": [1, 1, 1, 2, 2, 2, 3]})
+    df2 = pl.DataFrame({"n": [1, 1, 2, 2]})
 
     with pytest.raises(
         SQLInterfaceError,
@@ -139,8 +139,8 @@ def test_update_statement_error() -> None:
 
 @pytest.mark.parametrize("op", ["EXCEPT", "INTERSECT", "UNION"])
 def test_except_intersect_errors(op: str) -> None:
-    df1 = pl.DataFrame({"x": [1, 9, 1, 1], "y": [2, 3, 4, 4], "z": [5, 5, 5, 5]})  # noqa: F841
-    df2 = pl.DataFrame({"x": [1, 9, 1], "y": [2, None, 4], "z": [7, 6, 5]})  # noqa: F841
+    df1 = pl.DataFrame({"x": [1, 9, 1, 1], "y": [2, 3, 4, 4], "z": [5, 5, 5, 5]})
+    df2 = pl.DataFrame({"x": [1, 9, 1], "y": [2, None, 4], "z": [7, 6, 5]})
 
     if op != "UNION":
         with pytest.raises(
