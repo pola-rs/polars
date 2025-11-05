@@ -1,13 +1,6 @@
 name: 'DSL changed labeler'
 on:
-  pull_request_target:
-    paths:
-      - crates/polars-plan/dsl-schema-hashes.json
-  push:
-    branches:
-      - main
-    paths:
-      - crates/polars-plan/dsl-schema-hashes.json
+  - pull_request_target
 
 jobs:
   labeler:
@@ -16,6 +9,4 @@ jobs:
       pull-requests: write
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
       - uses: actions/labeler@v6
