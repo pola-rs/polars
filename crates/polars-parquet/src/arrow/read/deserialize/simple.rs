@@ -506,9 +506,6 @@ pub fn page_iter_to_array(
         )?
         .collect_boxed(filter)?,
 
-        // Float16
-        // TODO: [amber] I am not yet convinded that this is right
-        // [amber] https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#float16
         (PhysicalType::FixedLenByteArray(2), Float16) => {
             // @NOTE: To reduce code bloat, we just use the FixedSizeBinary decoder.
 

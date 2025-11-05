@@ -66,7 +66,7 @@ pub(super) fn build_statistics_float16(
     primitive_type: PrimitiveType,
     options: &StatisticsOptions,
 ) -> FixedLenStatistics {
-    // TODO: [amber] Quickly drafted this function. Check for correctness.
+    // TODO: [amber] Check if this code is covered
     FixedLenStatistics {
         primitive_type,
         null_count: options.null_count.then_some(array.null_count() as i64),
