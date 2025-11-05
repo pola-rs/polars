@@ -3,7 +3,7 @@ on:
   - pull_request_target
 
 jobs:
-  dsl-changed-labeler:
+  changes-dsl-labeler:
     permissions:
       contents: read
       pull-requests: write
@@ -22,4 +22,4 @@ jobs:
 
       - uses: actions/labeler@v5
         with:
-          configuration-path: .github/dsl-changed-labeler-config.yml
+          configuration-path: .github/changes-dsl-labeler-config.yml
