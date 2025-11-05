@@ -1,0 +1,25 @@
+name: 'DSL changed labeler'
+on:
+  - pull_request_target
+
+jobs:
+  dsl-changed-labeler:
+    permissions:
+      contents: read
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Delete label
+        run: |
+          curl -s \
+          -X DELETE \
+          -H 'Accept: application/vnd.github.v3+json' \
+          -H 'Authorization: token ${{ github.token }}' \
+          'https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.number }}/labels/changes-dsl' \
+          || true
+
+      - uses: actions/labeler@v5
+        with:
+          configuration-path: .github/dsl-changed-labeler-config.yml
