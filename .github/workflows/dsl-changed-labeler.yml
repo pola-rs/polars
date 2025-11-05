@@ -1,6 +1,6 @@
 name: 'DSL changed labeler'
 on:
-  pull_request:
+  pull_request_target:
     paths:
       - crates/polars-plan/dsl-schema-hashes.json
   push:
