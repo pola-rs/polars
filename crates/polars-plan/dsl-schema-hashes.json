@@ -1,4 +1,0 @@
-- name: Delete tag
-        run: gh release delete $TAG --cleanup-tag
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
