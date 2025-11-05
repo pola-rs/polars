@@ -11,6 +11,7 @@ use half;
 use num_derive::*;
 use num_traits::real::Real;
 use num_traits::{AsPrimitive, Bounded, FromBytes, One, Pow, ToBytes, Zero};
+#[cfg(feature = "python")]
 use numpy::Element;
 #[cfg(feature = "python")]
 use pyo3::types::{PyAnyMethods, PyFloat};
