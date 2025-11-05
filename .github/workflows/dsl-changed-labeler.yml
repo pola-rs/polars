@@ -9,8 +9,6 @@ jobs:
       pull-requests: write
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/labeler@v5
       - name: Delete tag
         run: gh release delete changes-dsl --cleanup-tag
         env:
