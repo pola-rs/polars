@@ -11,10 +11,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Delete tag
-        run: gh release delete changes-dsl --cleanup-tag
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Delete label
+        run: |
+          curl -s \
+          -X DELETE \
+          -H 'Accept: application/vnd.github.v3+json' \
+          -H 'Authorization: token ${{ github.token }}' \
+          'https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.number }}/labels/YOUR-LABEL'
 
       - uses: actions/labeler@v5
         with:
