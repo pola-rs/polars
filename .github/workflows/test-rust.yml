@@ -21,7 +21,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
+  RUSTFLAGS: -C debuginfo=0 # Do not produce debug symbols to keep memory usage down
   RUST_BACKTRACE: 1
 
 jobs:
@@ -172,9 +172,9 @@ jobs:
 
       - name: Check DSL freeze
         run: |
-          if [ "$(git diff origin/main..HEAD crates/polars-plan/dsl-schema-hashes.json | head -c 1)" ]; then
+          if [ "$(git diff origin/master..HEAD crates/polars-plan/dsl-schema-hashes.json | head -c 1)" ]; then
             match='"state"\s*:\s*"closed"'; if [ "$(curl -s https://api.github.com/repos/pola-rs/polars/issues/24575 | grep -E ${match})" ]; then
-              echo "DSL freeze"
+              echo "This PR changes the DSL hash, but the DSL is frozen"
               exit 1
             fi
           fi
