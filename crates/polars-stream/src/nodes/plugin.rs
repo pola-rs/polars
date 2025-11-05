@@ -72,7 +72,7 @@ impl PluginNode {
                         .into_iter()
                         .map(|c| c.take_materialized_series())
                         .collect::<Vec<Series>>();
-                    match (state.step(&inputs)?, tx.as_mut()) {
+                    match (state.step(inputs)?, tx.as_mut()) {
                         (None, _) => continue,
                         (Some(out), None) => {
                             _ = buffer.append_owned(out.with_name(output_name.clone()))?

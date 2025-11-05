@@ -94,7 +94,7 @@ impl PolarsPlugin for RollingProduct {
     }
 
     fn finalize(&self, _state: &mut Self::State) -> PolarsResult<Option<Series>> {
-        Ok(None)
+        unreachable!()
     }
 
     fn new_empty(&self, state: &Self::State) -> PolarsResult<Self::State> {
@@ -108,18 +108,11 @@ impl PolarsPlugin for RollingProduct {
         state.values.clear();
         Ok(())
     }
+
+    fn combine(&self, _state: &mut Self::State, _other: &Self::State) -> PolarsResult<()> {
+        unreachable!()
+    }
 }
-
-// fn insert_on_groups(&self, state: &mut [Self::State], data: Series, groups: )
-
-// None
-// Array[idx32, 2]
-// Array[idx64, 2]
-// List[idx32]
-// List[idx64]
-// fn evaluate_on_groups(&self, data: &[(Series, Array)]) -> PolarsResult<(Series, Array)> {
-// fn insert_on_groups(&self, data: &[(Series, Array)]) -> PolarsResult<Vec<State>> {
-// }
 
 #[pyo3::pyfunction]
 pub fn rolling_product(n: usize) -> PolarsPluginExprInfo {

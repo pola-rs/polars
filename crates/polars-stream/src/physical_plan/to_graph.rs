@@ -623,7 +623,7 @@ fn to_graph_rec<'a>(
             let input_schema = &ctx.phys_sm[input.node].output_schema;
             ctx.graph.add_node(
                 nodes::plugin::PluginNode::new(
-                    (&**plugin).clone(),
+                    (**plugin).clone(),
                     input_schema.clone(),
                     output_name.clone(),
                 )?,

@@ -118,8 +118,12 @@ fn load_vtable(lib: &str, symbol: &str) -> PolarsResult<(libloading::Library, ff
 }
 
 impl PluginV1 {
+    /// # Safety
+    ///
+    /// This is inherently unsafe, we are loading a shared library from an arbitrary location.
+    /// Trust the shared library??
     pub unsafe fn new_shared_object(
-        library: &str,
+        lib: &str,
         symbol: &str,
         data: usize,
         flags: PluginV1Flags,
@@ -128,16 +132,16 @@ impl PluginV1 {
         flags.verify_coherency()?;
 
         let data = ffi::DataPtr::_new(NonNull::new(data as *mut u8).unwrap());
-        let (lib, vtable) = load_vtable(&library, &symbol)?;
+        let (library, vtable) = load_vtable(lib, symbol)?;
 
         Ok(PluginV1 {
             flags,
             function_name,
             data,
             library: Some(Box::new(LibrarySymbol {
-                lib: library.into(),
+                lib: lib.into(),
                 symbol: symbol.into(),
-                library: lib,
+                library,
             })),
             vtable,
         })

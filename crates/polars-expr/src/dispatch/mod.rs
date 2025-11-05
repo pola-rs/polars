@@ -444,8 +444,8 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
             )
         },
         #[cfg(feature = "ffi_plugin")]
-        F::PluginV1(udf) => {
-            map_as_slice!(plugin::call, (&*udf).clone())
+        F::PluginV1(plugin) => {
+            map_as_slice!(plugin::call, (*plugin).clone())
         },
 
         F::FoldHorizontal {

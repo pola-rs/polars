@@ -91,7 +91,7 @@ impl PolarsPlugin for VerticalScan {
     }
 
     fn finalize(&self, _state: &mut Self::State) -> PolarsResult<Option<Series>> {
-        Ok(None)
+        unreachable!()
     }
 
     fn new_empty(&self, state: &Self::State) -> PolarsResult<Self::State> {
@@ -103,6 +103,10 @@ impl PolarsPlugin for VerticalScan {
     fn reset(&self, state: &mut Self::State) -> PolarsResult<()> {
         state.n = self.init;
         Ok(())
+    }
+
+    fn combine(&self, _state: &mut Self::State, _other: &Self::State) -> PolarsResult<()> {
+        unreachable!()
     }
 }
 

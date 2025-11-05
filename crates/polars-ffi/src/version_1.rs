@@ -63,14 +63,14 @@ pub trait PolarsPlugin: Send + Sync + Sized {
     ///
     /// Invariants:
     /// * This may be called any number of times and should yield an equally valid result given the
-    /// same `self`, `state` and `inputs`.
+    ///   same `self`, `state` and `inputs`.
     /// * If the inputs are zippable, this is always called with equal length data for `non-scalar`
-    /// inputs.
+    ///   inputs.
     /// * Subsequent calls to `step` with the same `state` never provide the data of the input
-    /// expressions out-of-order unless the expression is explicitly set to not observe the input
-    /// order.
+    ///   expressions out-of-order unless the expression is explicitly set to not observe the input
+    ///   order.
     /// * If states are **not** combinable, the combination of all `step` calls will receive all
-    /// input data.
+    ///   input data.
     /// * If step is said to have no output, the result is always to be either `Err` or `Ok(None)`.
     fn step(&self, state: &mut Self::State, inputs: &[Series]) -> PolarsResult<Option<Series>>;
 
@@ -166,8 +166,7 @@ pub struct VTable {
     ///
     /// # Safety
     ///
-    /// - `ptr` and `length` should be the components belonging to a `Box<[u8]>` on the callee's
-    /// allocator.
+    /// - `ptr` and `length` should be the components belonging to a `Box<[u8]>` on the callee's allocator.
     _drop_box_byte_slice: unsafe extern "C" fn(ptr: *mut u8, length: usize) -> u32,
 
     /// Allocate and initialize a new `Box<State>` and put its pointer in `state`.
@@ -273,8 +272,7 @@ pub struct VTable {
     ///
     /// # Safety
     ///
-    /// - `ptr` and `length` should be the components belonging to a `Box<Data>` on the callee's
-    /// allocator.
+    /// - `ptr` and `length` should be the components belonging to a `Box<Data>` on the callee's allocator.
     _drop_state: unsafe extern "C" fn(StatePtr) -> u32,
     /// Drop `Box<State>`.
     ///
@@ -282,8 +280,7 @@ pub struct VTable {
     ///
     /// # Safety
     ///
-    /// - `ptr` and `length` should be the components belonging to a `Box<State>` on the callee's
-    /// allocator.
+    /// - `ptr` and `length` should be the components belonging to a `Box<State>` on the callee's allocator.
     _drop_data: unsafe extern "C" fn(DataPtr) -> u32,
 
     /// Set the `caller` plugin v1 version in the callee.
@@ -320,28 +317,48 @@ impl DataPtr {
         Self(ptr)
     }
 
+    /// # Safety
+    ///
+    /// Shared access and not yet free-ed.
     pub unsafe fn as_ref<T>(&self) -> &T {
         unsafe { self.0.as_ptr().cast::<T>().as_ref() }.unwrap()
     }
 
+    /// # Safety
+    ///
+    /// Exclusive access and not yet free-ed.
+    #[expect(clippy::mut_from_ref)]
     pub unsafe fn as_mut<T>(&self) -> &mut T {
         unsafe { self.0.as_ptr().cast::<T>().as_mut() }.unwrap()
     }
 
+    /// # Safety
+    ///
+    /// Underlying Data is not free-ed before the result is dropped.
     pub unsafe fn ptr_clone(&self) -> Self {
         Self(self.0)
     }
 }
 
 impl StatePtr {
+    /// # Safety
+    ///
+    /// Shared access and not yet free-ed.
     pub unsafe fn as_ref<T>(&self) -> &T {
         unsafe { self.0.as_ptr().cast::<T>().as_ref() }.unwrap()
     }
 
+    /// # Safety
+    ///
+    /// Exclusive access and not yet free-ed.
+    #[expect(clippy::mut_from_ref)]
     pub unsafe fn as_mut<T>(&self) -> &mut T {
         unsafe { self.0.as_ptr().cast::<T>().as_mut() }.unwrap()
     }
 
+    /// # Safety
+    ///
+    /// Underlying Data is not free-ed before the result is dropped.
     pub unsafe fn ptr_clone(&self) -> Self {
         Self(self.0)
     }
@@ -432,6 +449,9 @@ mod _callee {
     static POLARS_PLUGIN_VERSION: AtomicU32 = AtomicU32::new(0);
     thread_local! { static ERROR_MESSAGE: RefCell<Option<Box<str>>> = const { RefCell::new(None) }; }
 
+    /// # Safety
+    ///
+    /// See VTable.
     pub unsafe extern "C" fn get_error(ptr: NonNull<*const u8>, length: NonNull<isize>) {
         ERROR_MESSAGE.with_borrow(|v| {
             let (n_ptr, n_len) = v.as_ref().map_or((std::ptr::null(), -1), |v| {
@@ -446,10 +466,16 @@ mod _callee {
         })
     }
 
+    /// # Safety
+    ///
+    /// See VTable.
     pub unsafe extern "C" fn set_version(version: u32) {
         POLARS_PLUGIN_VERSION.store(version, Ordering::Relaxed);
     }
 
+    /// # Safety
+    ///
+    /// Valid schema.
     unsafe fn import_pl_schema(schema: NonNull<ArrowSchema>) -> PolarsResult<Schema> {
         let fields = unsafe { schema.as_ref() };
         let fields = unsafe { import_field_from_c(fields) }?;
@@ -497,7 +523,7 @@ mod _callee {
                 match (kind, msg) {
                     (None, None) => Ok(()),
                     (Some(m), None) | (None, Some(m)) => std::panic::catch_unwind(move || {
-                        ERROR_MESSAGE.with_borrow_mut(|b| *b = Some(format!("{m}").into()))
+                        ERROR_MESSAGE.with_borrow_mut(|b| *b = Some(m.into()))
                     }),
                     (Some(kind), Some(msg)) => std::panic::catch_unwind(move || {
                         ERROR_MESSAGE
@@ -525,6 +551,9 @@ mod _callee {
         }) as u32
     }
 
+    /// # Safety
+    ///
+    /// See VTable.
     pub unsafe extern "C" fn serialize_data<Data: PolarsPlugin>(
         data: DataPtr,
         buffer: NonNull<*mut u8>,
@@ -540,6 +569,9 @@ mod _callee {
         })
     }
 
+    /// # Safety
+    ///
+    /// See VTable.
     pub unsafe extern "C" fn deserialize_data<Data: PolarsPlugin>(
         buffer: *const u8,
         length: usize,
@@ -556,6 +588,9 @@ mod _callee {
         })
     }
 
+    /// # Safety
+    ///
+    /// See VTable.
     pub unsafe extern "C" fn serialize_state<Data: PolarsPlugin>(
         data: DataPtr,
         state: StatePtr,
@@ -573,6 +608,9 @@ mod _callee {
         })
     }
 
+    /// # Safety
+    ///
+    /// See VTable.
     pub unsafe extern "C" fn deserialize_state<Data: PolarsPlugin>(
         data: DataPtr,
         buffer: *const u8,
@@ -591,6 +629,9 @@ mod _callee {
         })
     }
 
+    /// # Safety
+    ///
+    /// See VTable.
     pub unsafe extern "C" fn drop_box_byte_slice(buffer: *mut u8, length: usize) -> u32 {
         wrap_callee_function(|| {
             let buffer = unsafe { std::slice::from_raw_parts_mut(buffer, length) };
@@ -600,6 +641,9 @@ mod _callee {
         })
     }
 
+    /// # Safety
+    ///
+    /// See VTable.
     pub unsafe extern "C" fn new_state<Data: PolarsPlugin>(
         data: DataPtr,
         fields: NonNull<ArrowSchema>,
@@ -617,6 +661,9 @@ mod _callee {
         })
     }
 
+    /// # Safety
+    ///
+    /// See VTable.
     pub unsafe extern "C" fn new_empty<Data: PolarsPlugin>(
         data: DataPtr,
         state: StatePtr,
@@ -634,6 +681,9 @@ mod _callee {
         })
     }
 
+    /// # Safety
+    ///
+    /// See VTable.
     pub unsafe extern "C" fn reset<Data: PolarsPlugin>(data: DataPtr, state: StatePtr) -> u32 {
         wrap_callee_function(|| {
             let data = unsafe { data.as_ref::<Data>() };
@@ -642,6 +692,9 @@ mod _callee {
         })
     }
 
+    /// # Safety
+    ///
+    /// See VTable.
     pub unsafe extern "C" fn step<Data: PolarsPlugin>(
         data: DataPtr,
         state: StatePtr,
@@ -671,6 +724,9 @@ mod _callee {
         })
     }
 
+    /// # Safety
+    ///
+    /// See VTable.
     pub unsafe extern "C" fn finalize<Data: PolarsPlugin>(
         data: DataPtr,
         state: StatePtr,
@@ -694,6 +750,9 @@ mod _callee {
         })
     }
 
+    /// # Safety
+    ///
+    /// See VTable.
     pub unsafe extern "C" fn combine<Data: PolarsPlugin>(
         data: DataPtr,
         state: StatePtr,
@@ -707,6 +766,9 @@ mod _callee {
         })
     }
 
+    /// # Safety
+    ///
+    /// See VTable.
     pub unsafe extern "C" fn to_field<Data: PolarsPlugin>(
         data: DataPtr,
         fields: NonNull<ArrowSchema>,
@@ -723,6 +785,9 @@ mod _callee {
         })
     }
 
+    /// # Safety
+    ///
+    /// See VTable.
     pub unsafe extern "C" fn drop_state<Data: PolarsPlugin>(state: StatePtr) -> u32 {
         wrap_callee_function(|| {
             let state = state.0.as_ptr().cast::<Data::State>();
@@ -732,6 +797,9 @@ mod _callee {
         })
     }
 
+    /// # Safety
+    ///
+    /// See VTable.
     pub unsafe extern "C" fn drop_data<Data: PolarsPlugin>(data: DataPtr) -> u32 {
         wrap_callee_function(|| {
             let data = data.0.as_ptr().cast::<Data>();
@@ -759,7 +827,10 @@ mod _caller {
     use crate::version_0::{export_series, import_series};
 
     impl VTable {
-        unsafe fn get_error(&self) -> Option<Box<str>> {
+        /// # Safety
+        ///
+        /// VTable is filled from callee::get_error.
+        fn get_error(&self) -> Option<Box<str>> {
             let mut ptr = std::ptr::null();
             let mut len = 0isize;
             unsafe { (self._get_error)(NonNull::from_mut(&mut ptr), NonNull::from_mut(&mut len)) };
@@ -771,40 +842,43 @@ mod _caller {
             Some(s.into())
         }
 
-        pub unsafe fn set_version(&self, version: u32) {
+        /// # Safety
+        ///
+        /// VTable is filled from callee::set_version.
+        pub fn set_version(&self, version: u32) {
             unsafe { (self._set_version)(version) }
         }
 
-        unsafe fn handle_return_value(&self, rv: u32) -> PolarsResult<()> {
+        fn handle_return_value(&self, rv: u32) -> PolarsResult<()> {
             match ReturnValue::from(rv) {
                 ReturnValue::Ok => Ok(()),
                 ReturnValue::Panic => {
                     panic!("plugin panicked")
                 },
                 ReturnValue::InvalidOperation => {
-                    let msg = unsafe { self.get_error() }.unwrap();
+                    let msg = self.get_error().unwrap();
                     polars_bail!(InvalidOperation: "{msg}")
                 },
                 ReturnValue::ComputeError => {
-                    let msg = unsafe { self.get_error() }.unwrap();
+                    let msg = self.get_error().unwrap();
                     polars_bail!(ComputeError: "{msg}")
                 },
                 ReturnValue::ShapeMismatch => {
-                    let msg = unsafe { self.get_error() }.unwrap();
+                    let msg = self.get_error().unwrap();
                     polars_bail!(ShapeMismatch: "{msg}")
                 },
                 ReturnValue::AssertionError => {
-                    let msg = unsafe { self.get_error() }.unwrap();
+                    let msg = self.get_error().unwrap();
                     polars_bail!(AssertionError: "{msg}");
                 },
                 ReturnValue::OtherError => {
-                    let msg = unsafe { self.get_error() }.unwrap();
+                    let msg = self.get_error().unwrap();
                     polars_bail!(ComputeError: "unknown error: {msg}")
                 },
             }
         }
 
-        unsafe fn handle_return_value_panic(&self, rv: u32) {
+        fn handle_return_value_panic(&self, rv: u32) {
             match ReturnValue::from(rv) {
                 ReturnValue::Ok => {},
                 ReturnValue::Panic => panic!("plugin panicked"),
@@ -812,6 +886,9 @@ mod _caller {
             }
         }
 
+        /// # Safety
+        ///
+        /// `data` is valid and belonging to this VTable.
         pub unsafe fn serialize_data(&self, data: DataPtr, out: &mut Vec<u8>) -> PolarsResult<()> {
             let mut buffer = std::ptr::null_mut();
             let mut length = 0;
@@ -823,17 +900,17 @@ mod _caller {
                     NonNull::from_mut(&mut length),
                 )
             };
-            unsafe { self.handle_return_value(rv) }?;
+            self.handle_return_value(rv)?;
 
             let slice = unsafe { std::slice::from_raw_parts(buffer, length) };
             out.extend_from_slice(slice);
 
             let rv = unsafe { (self._drop_box_byte_slice)(buffer, length) };
-            unsafe { self.handle_return_value_panic(rv) };
+            self.handle_return_value_panic(rv);
             Ok(())
         }
 
-        pub unsafe fn deserialize_data(&self, buffer: &[u8]) -> PolarsResult<DataPtr> {
+        pub fn deserialize_data(&self, buffer: &[u8]) -> PolarsResult<DataPtr> {
             let mut data = MaybeUninit::uninit();
 
             let rv = unsafe {
@@ -843,11 +920,14 @@ mod _caller {
                     NonNull::from_mut(&mut data),
                 )
             };
-            unsafe { self.handle_return_value(rv) }?;
+            self.handle_return_value(rv)?;
 
             Ok(unsafe { data.assume_init() })
         }
 
+        /// # Safety
+        ///
+        /// `data` and `state` are valid and belonging to this VTable.
         pub unsafe fn serialize_state(
             &self,
             data: DataPtr,
@@ -865,16 +945,19 @@ mod _caller {
                     NonNull::from_mut(&mut length),
                 )
             };
-            unsafe { self.handle_return_value(rv) }?;
+            self.handle_return_value(rv)?;
 
             let slice = unsafe { std::slice::from_raw_parts(buffer, length) };
             out.extend_from_slice(slice);
 
             let rv = unsafe { (self._drop_box_byte_slice)(buffer, length) };
-            unsafe { self.handle_return_value_panic(rv) };
+            self.handle_return_value_panic(rv);
             Ok(())
         }
 
+        /// # Safety
+        ///
+        /// `data` is valid and belonging to this VTable.
         pub unsafe fn deserialize_state(
             &self,
             data: DataPtr,
@@ -890,11 +973,14 @@ mod _caller {
                     NonNull::from_mut(&mut state),
                 )
             };
-            unsafe { self.handle_return_value(rv) }?;
+            self.handle_return_value(rv)?;
 
             Ok(unsafe { state.assume_init() })
         }
 
+        /// # Safety
+        ///
+        /// `data` is valid and belonging to this VTable.
         pub unsafe fn new_state(&self, data: DataPtr, fields: &Schema) -> PolarsResult<StatePtr> {
             let mut out_state: MaybeUninit<StatePtr> = MaybeUninit::uninit();
             let fields = arrow::ffi::export_field_to_c(&ArrowField::new(
@@ -914,23 +1000,32 @@ mod _caller {
                     NonNull::from_mut(&mut out_state),
                 )
             };
-            unsafe { self.handle_return_value(rv) }?;
+            self.handle_return_value(rv)?;
             Ok(unsafe { out_state.assume_init() })
         }
 
+        /// # Safety
+        ///
+        /// `data` and `state` are valid and belonging to this VTable.
         pub unsafe fn new_empty(&self, data: DataPtr, state: StatePtr) -> PolarsResult<StatePtr> {
             let mut out_state: MaybeUninit<StatePtr> = MaybeUninit::uninit();
             let rv = unsafe { (self._new_empty)(data, state, NonNull::from_mut(&mut out_state)) };
-            unsafe { self.handle_return_value(rv) }?;
+            self.handle_return_value(rv)?;
             Ok(unsafe { out_state.assume_init() })
         }
 
-        pub unsafe fn reset(&self, data: DataPtr, state: StatePtr) -> PolarsResult<()> {
+        /// # Safety
+        ///
+        /// `data` and `state` are valid and belonging to this VTable.
+        pub fn reset(&self, data: DataPtr, state: StatePtr) -> PolarsResult<()> {
             let rv = unsafe { (self._reset)(data, state) };
-            unsafe { self.handle_return_value(rv) }?;
+            self.handle_return_value(rv)?;
             Ok(())
         }
 
+        /// # Safety
+        ///
+        /// `data` and `state` are valid and belonging to this VTable.
         pub unsafe fn step(
             &self,
             data: DataPtr,
@@ -957,7 +1052,7 @@ mod _caller {
                     NonNull::from_mut(&mut out_series),
                 )
             };
-            unsafe { self.handle_return_value(rv) }?;
+            self.handle_return_value(rv)?;
             // Already deallocated in step function
             unsafe { inputs_export.set_len(0) };
 
@@ -973,6 +1068,9 @@ mod _caller {
             }
         }
 
+        /// # Safety
+        ///
+        /// `data` and `state` are valid and belonging to this VTable.
         pub unsafe fn finalize(
             &self,
             data: DataPtr,
@@ -989,7 +1087,7 @@ mod _caller {
                     NonNull::from_mut(&mut out_series),
                 )
             };
-            unsafe { self.handle_return_value(rv) }?;
+            self.handle_return_value(rv)?;
 
             let Ok(out_kind) = Value::try_from(out_kind) else {
                 panic!("invalid series kind value");
@@ -1003,6 +1101,9 @@ mod _caller {
             }
         }
 
+        /// # Safety
+        ///
+        /// `data` and `state` are valid and belonging to this VTable.
         pub unsafe fn combine(
             &self,
             data: DataPtr,
@@ -1010,10 +1111,13 @@ mod _caller {
             other: StatePtr,
         ) -> PolarsResult<()> {
             let rv = unsafe { (self._combine)(data, state, other) };
-            unsafe { self.handle_return_value(rv) }?;
+            self.handle_return_value(rv)?;
             Ok(())
         }
 
+        /// # Safety
+        ///
+        /// `data` is valid and belonging to this VTable.
         pub unsafe fn to_field(&self, data: DataPtr, fields: &Schema) -> PolarsResult<Field> {
             let mut field: MaybeUninit<ArrowSchema> = MaybeUninit::uninit();
             let fields = arrow::ffi::export_field_to_c(&ArrowField::new(
@@ -1033,20 +1137,26 @@ mod _caller {
                     NonNull::from_mut(&mut field),
                 )
             };
-            unsafe { self.handle_return_value(rv) }?;
+            self.handle_return_value(rv)?;
             let field = unsafe { field.assume_init() };
             let field = unsafe { arrow::ffi::import_field_from_c(&field) }?;
             Ok(Field::from(&field))
         }
 
+        /// # Safety
+        ///
+        /// `state` is valid and belonging to this VTable.
         pub unsafe fn drop_state(&self, state: StatePtr) {
             let rv = unsafe { (self._drop_state)(state) };
-            unsafe { self.handle_return_value_panic(rv) };
+            self.handle_return_value_panic(rv);
         }
 
+        /// # Safety
+        ///
+        /// `data` is valid and belonging to this VTable.
         pub unsafe fn drop_data(&self, data: DataPtr) {
             let rv = unsafe { (self._drop_data)(data) };
-            unsafe { self.handle_return_value_panic(rv) };
+            self.handle_return_value_panic(rv);
         }
     }
 }

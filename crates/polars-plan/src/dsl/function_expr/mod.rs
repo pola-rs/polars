@@ -833,7 +833,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin { lib, symbol, .. } => return write!(f, "{lib}:{symbol}"),
             #[cfg(feature = "ffi_plugin")]
-            PluginV1(udf) => return f.write_str(&udf.function_name()),
+            PluginV1(plugin) => return f.write_str(plugin.function_name()),
             FoldHorizontal { .. } => "fold",
             ReduceHorizontal { .. } => "reduce",
             #[cfg(feature = "dtype-struct")]

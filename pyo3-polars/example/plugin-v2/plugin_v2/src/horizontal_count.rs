@@ -68,6 +68,10 @@ impl PolarsPlugin for HorizontalCount {
     fn reset(&self, _state: &mut Self::State) -> PolarsResult<()> {
         Ok(())
     }
+
+    fn combine(&self, _state: &mut Self::State, _other: &Self::State) -> PolarsResult<()> {
+        unreachable!()
+    }
 }
 
 #[pyo3::pyfunction]

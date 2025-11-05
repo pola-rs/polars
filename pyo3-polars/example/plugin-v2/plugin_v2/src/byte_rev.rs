@@ -58,7 +58,7 @@ impl PolarsPlugin for ByteRev {
     }
 
     fn finalize(&self, _state: &mut Self::State) -> PolarsResult<Option<Series>> {
-        Ok(None)
+        unreachable!()
     }
 
     fn new_empty(&self, _state: &Self::State) -> PolarsResult<Self::State> {
@@ -67,6 +67,10 @@ impl PolarsPlugin for ByteRev {
 
     fn reset(&self, _state: &mut Self::State) -> PolarsResult<()> {
         Ok(())
+    }
+
+    fn combine(&self, _state: &mut Self::State, _other: &Self::State) -> PolarsResult<()> {
+        unreachable!()
     }
 }
 

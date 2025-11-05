@@ -442,7 +442,7 @@ impl Hash for IRFunctionExpr {
                 symbol.hash(state);
             },
             #[cfg(feature = "ffi_plugin")]
-            PluginV1(udf) => udf.hash(state),
+            PluginV1(plugin) => plugin.hash(state),
 
             FoldHorizontal {
                 callback,
@@ -850,7 +850,7 @@ impl Display for IRFunctionExpr {
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin { lib, symbol, .. } => return write!(f, "{lib}:{symbol}"),
             #[cfg(feature = "ffi_plugin")]
-            PluginV1(udf) => return f.write_str(&udf.function_name()),
+            PluginV1(plugin) => return f.write_str(plugin.function_name()),
 
             FoldHorizontal { .. } => "fold",
             ReduceHorizontal { .. } => "reduce",
@@ -1160,8 +1160,8 @@ impl IRFunctionExpr {
             #[cfg(feature = "ffi_plugin")]
             F::FfiPlugin { flags, .. } => *flags,
             #[cfg(feature = "ffi_plugin")]
-            F::PluginV1(udf) => {
-                let flags = udf.flags();
+            F::PluginV1(plugin) => {
+                let flags = plugin.flags();
                 FunctionOptions::groupwise().with_flags(|mut f: FunctionFlags| {
                     f.set(
                         FunctionFlags::LENGTH_PRESERVING,
