@@ -1,7 +1,9 @@
 use std::mem::MaybeUninit;
 use std::ptr::NonNull;
 
-use arrow::ffi::ArrowSchema;
+use arrow::array::Array;
+use arrow::datatypes::ArrowDataType;
+use arrow::ffi::{ArrowArray, ArrowSchema};
 use polars_core::prelude::Field;
 use polars_core::schema::Schema;
 use polars_core::series::Series;
@@ -24,6 +26,15 @@ pub struct DataPtr(NonNull<u8>);
 /// Pointer to a `Box<T::State>` where `T: PolarsPlugin`.
 #[repr(transparent)]
 pub struct StatePtr(NonNull<u8>);
+
+#[repr(C)]
+enum GroupsVariant {
+    Scalar = 0,
+    Indices32 = 1,
+    Indices64 = 2,
+    Slice32 = 3,
+    Slice64 = 4,
+}
 
 pub trait PolarsPlugin: Send + Sync + Sized {
     type State: Send + Sync + Sized;
@@ -78,6 +89,23 @@ pub trait PolarsPlugin: Send + Sync + Sized {
     ///
     /// This indicates that this state will not `step` anymore.
     fn finalize(&self, state: &mut Self::State) -> PolarsResult<Option<Series>>;
+
+    fn evaluate_on_groups(
+        &self,
+        inputs: &[(Series, Option<Box<dyn Array>>)],
+    ) -> PolarsResult<(Series, Option<Box<dyn Array>>)> {
+        _ = inputs;
+        dbg!(todo!())
+    }
+    fn update_groups(
+        &self,
+        states: &mut [&mut Self::State],
+        inputs: &[(Series, Option<Box<dyn Array>>)],
+    ) -> PolarsResult<()> {
+        _ = states;
+        _ = inputs;
+        dbg!(todo!())
+    }
 }
 
 #[derive(Clone)]
@@ -254,6 +282,22 @@ pub struct VTable {
         out_series: NonNull<MaybeUninit<SeriesExport>>,
     ) -> u32,
 
+    _evaluate_on_groups: unsafe extern "C" fn(
+        data: DataPtr,
+        inputs_ptr: *mut (SeriesExport, Option<ArrowArray>, GroupsVariant),
+        inputs_len: usize,
+        output_series: NonNull<MaybeUninit<SeriesExport>>,
+        output_groups: NonNull<MaybeUninit<ArrowArray>>,
+        output_kind: NonNull<MaybeUninit<GroupsVariant>>,
+    ) -> u32,
+    _update_groups: unsafe extern "C" fn(
+        data: DataPtr,
+        inputs_ptr: *mut (SeriesExport, Option<ArrowArray>, GroupsVariant),
+        inputs_len: usize,
+        states_ptr: *const StatePtr,
+        states_len: usize,
+    ) -> u32,
+
     /// Get the output field.
     ///
     /// Returns a `ReturnValue` to handle panics and errors.
@@ -364,6 +408,39 @@ impl StatePtr {
     }
 }
 
+impl TryFrom<&ArrowDataType> for GroupsVariant {
+    type Error = ();
+    fn try_from(value: &ArrowDataType) -> Result<Self, Self::Error> {
+        Ok(match value {
+            ArrowDataType::LargeList(f) if f.dtype == ArrowDataType::UInt32 => {
+                GroupsVariant::Indices32
+            },
+            ArrowDataType::LargeList(f) if f.dtype == ArrowDataType::UInt64 => {
+                GroupsVariant::Indices64
+            },
+            ArrowDataType::FixedSizeList(f, 2) if f.dtype == ArrowDataType::UInt32 => {
+                GroupsVariant::Slice32
+            },
+            ArrowDataType::FixedSizeList(f, 2) if f.dtype == ArrowDataType::UInt64 => {
+                GroupsVariant::Slice64
+            },
+            _ => return Err(()),
+        })
+    }
+}
+
+impl TryFrom<GroupsVariant> for ArrowDataType {
+    type Error = ();
+    fn try_from(value: GroupsVariant) -> Result<Self, Self::Error> {
+        Ok(match value {
+            GroupsVariant::Scalar => return Err(()),
+            GroupsVariant::Indices32 => ArrowDataType::UInt32.to_large_list(false),
+            GroupsVariant::Indices64 => ArrowDataType::UInt64.to_large_list(false),
+            GroupsVariant::Slice32 => ArrowDataType::UInt32.to_fixed_size_list(2, false),
+            GroupsVariant::Slice64 => ArrowDataType::UInt64.to_fixed_size_list(2, false),
+        })
+    }
+}
 impl TryFrom<u32> for Value {
     type Error = ();
     fn try_from(value: u32) -> Result<Self, Self::Error> {
@@ -391,6 +468,9 @@ impl VTable {
             _step: _callee::step::<Data>,
             _finalize: _callee::finalize::<Data>,
             _combine: _callee::combine::<Data>,
+
+            _evaluate_on_groups: _callee::evaluate_on_groups::<Data>,
+            _update_groups: _callee::update_groups::<Data>,
 
             _to_field: _callee::to_field::<Data>,
             _drop_state: _callee::drop_state::<Data>,
@@ -435,13 +515,16 @@ mod _callee {
     use std::sync::atomic::{AtomicU32, Ordering};
 
     use arrow::datatypes::ArrowDataType;
-    use arrow::ffi::{ArrowSchema, export_field_to_c, import_field_from_c};
+    use arrow::ffi::{
+        ArrowArray, ArrowSchema, export_array_to_c, export_field_to_c, import_array_from_c,
+        import_field_from_c,
+    };
     use polars_core::prelude::{CompatLevel, Schema};
     use polars_core::schema::SchemaExt;
     use polars_error::{PolarsError, PolarsResult, polars_bail};
 
-    use super::{DataPtr, PolarsPlugin, ReturnValue, StatePtr, Value};
-    use crate::version_0::{SeriesExport, export_series, import_series_buffer};
+    use super::{DataPtr, GroupsVariant, PolarsPlugin, ReturnValue, StatePtr, Value};
+    use crate::version_0::{SeriesExport, export_series, import_series, import_series_buffer};
 
     /// Plugin version of the *caller*.
     ///
@@ -753,6 +836,84 @@ mod _callee {
     /// # Safety
     ///
     /// See VTable.
+    pub unsafe extern "C" fn evaluate_on_groups<Data: PolarsPlugin>(
+        data: DataPtr,
+        inputs_ptr: *mut (SeriesExport, Option<ArrowArray>, GroupsVariant),
+        inputs_len: usize,
+        output_series: NonNull<MaybeUninit<SeriesExport>>,
+        output_groups: NonNull<MaybeUninit<ArrowArray>>,
+        output_kind: NonNull<MaybeUninit<GroupsVariant>>,
+    ) -> u32 {
+        wrap_callee_function(|| {
+            let data = unsafe { data.as_ref::<Data>() };
+            let mut collected_inputs = Vec::with_capacity(inputs_len);
+            for i in 0..inputs_len {
+                let (series, groups, variant) = unsafe { std::ptr::read(inputs_ptr.add(i)) };
+                let series = unsafe { import_series(series)? };
+                let dtype = ArrowDataType::try_from(variant).ok();
+                let groups = match dtype {
+                    None => None,
+                    Some(dtype) => Some(unsafe { import_array_from_c(groups.unwrap(), dtype) }?),
+                };
+                collected_inputs.push((series, groups));
+            }
+            let (out_data, out_groups) = data.evaluate_on_groups(&collected_inputs)?;
+
+            match out_groups {
+                None => unsafe { output_kind.write(MaybeUninit::new(GroupsVariant::Scalar)) },
+                Some(array) => {
+                    let kind = GroupsVariant::try_from(array.dtype())
+                        .expect("invalid output groups datatype");
+                    let out_groups = export_array_to_c(array);
+                    unsafe { output_kind.write(MaybeUninit::new(kind)) };
+                    unsafe { output_groups.write(MaybeUninit::new(out_groups)) };
+                },
+            }
+
+            let out_data = export_series(&out_data);
+            unsafe { output_series.write(MaybeUninit::new(out_data)) };
+
+            Ok(())
+        })
+    }
+
+    /// # Safety
+    ///
+    /// See VTable.
+    pub unsafe extern "C" fn update_groups<Data: PolarsPlugin>(
+        data: DataPtr,
+        inputs_ptr: *mut (SeriesExport, Option<ArrowArray>, GroupsVariant),
+        inputs_len: usize,
+        states_ptr: *const StatePtr,
+        states_len: usize,
+    ) -> u32 {
+        wrap_callee_function(|| {
+            let data = unsafe { data.as_ref::<Data>() };
+            let mut collected_inputs = Vec::with_capacity(inputs_len);
+            for i in 0..inputs_len {
+                let (series, groups, variant) = unsafe { std::ptr::read(inputs_ptr.add(i)) };
+                let series = unsafe { import_series(series)? };
+                let dtype = ArrowDataType::try_from(variant).ok();
+                let groups = match dtype {
+                    None => None,
+                    Some(dtype) => Some(unsafe { import_array_from_c(groups.unwrap(), dtype) }?),
+                };
+                collected_inputs.push((series, groups));
+            }
+            let mut collected_states = Vec::with_capacity(states_len);
+            for i in 0..states_len {
+                let state = unsafe { std::ptr::read(states_ptr.add(i)) };
+                let state = unsafe { state.0.cast::<Data::State>().as_mut() };
+                collected_states.push(state);
+            }
+            data.update_groups(&mut collected_states, &collected_inputs)?;
+            Ok(())
+        })
+    }
+
+    /// # Safety
+    ///
+    /// See VTable.
     pub unsafe extern "C" fn combine<Data: PolarsPlugin>(
         data: DataPtr,
         state: StatePtr,
@@ -815,15 +976,16 @@ mod _caller {
     use std::mem::MaybeUninit;
     use std::ptr::NonNull;
 
+    use arrow::array::Array;
     use arrow::datatypes::{ArrowDataType, Field as ArrowField};
-    use arrow::ffi::ArrowSchema;
+    use arrow::ffi::{ArrowSchema, export_array_to_c, import_array_from_c};
     use polars_core::prelude::{CompatLevel, Field, Schema};
     use polars_core::schema::SchemaExt;
     use polars_core::series::Series;
     use polars_error::{PolarsResult, polars_bail};
     use polars_utils::pl_str::PlSmallStr;
 
-    use super::{DataPtr, ReturnValue, StatePtr, VTable, Value};
+    use super::{DataPtr, GroupsVariant, ReturnValue, StatePtr, VTable, Value};
     use crate::version_0::{export_series, import_series};
 
     impl VTable {
@@ -1052,9 +1214,9 @@ mod _caller {
                     NonNull::from_mut(&mut out_series),
                 )
             };
-            self.handle_return_value(rv)?;
             // Already deallocated in step function
             unsafe { inputs_export.set_len(0) };
+            self.handle_return_value(rv)?;
 
             let Ok(out_kind) = Value::try_from(out_kind) else {
                 panic!("invalid series kind value");
@@ -1141,6 +1303,90 @@ mod _caller {
             let field = unsafe { field.assume_init() };
             let field = unsafe { arrow::ffi::import_field_from_c(&field) }?;
             Ok(Field::from(&field))
+        }
+
+        pub unsafe fn evaluate_on_groups(
+            &self,
+            data: DataPtr,
+            inputs: &[(Series, Option<Box<dyn Array>>)],
+        ) -> PolarsResult<(Series, Option<Box<dyn Array>>)> {
+            let mut out_series = MaybeUninit::uninit();
+            let mut out_groups = MaybeUninit::uninit();
+            let mut out_kind = MaybeUninit::uninit();
+
+            let mut inputs_export = Vec::with_capacity(inputs.len());
+            for (series, groups) in inputs {
+                let series = export_series(series);
+                let (groups, variant) =
+                    groups.as_ref().map_or((None, GroupsVariant::Scalar), |a| {
+                        (
+                            Some(export_array_to_c(a.clone())),
+                            GroupsVariant::try_from(a.dtype()).unwrap(),
+                        )
+                    });
+                inputs_export.push((series, groups, variant));
+            }
+
+            let rv = unsafe {
+                (self._evaluate_on_groups)(
+                    data,
+                    inputs_export.as_mut_ptr(),
+                    inputs.len(),
+                    NonNull::from_mut(&mut out_series),
+                    NonNull::from_mut(&mut out_groups),
+                    NonNull::from_mut(&mut out_kind),
+                )
+            };
+            // Already deallocated in step function
+            unsafe { inputs_export.set_len(0) };
+            self.handle_return_value(rv)?;
+
+            let out_series = unsafe { out_series.assume_init() };
+            let out_series = unsafe { import_series(out_series) }?;
+            let out_kind = unsafe { out_kind.assume_init() };
+
+            let Ok(dtype) = out_kind.try_into() else {
+                return Ok((out_series, None));
+            };
+
+            let out_groups = unsafe { out_groups.assume_init() };
+            let out_groups = unsafe { import_array_from_c(out_groups, dtype) }?;
+            Ok((out_series, Some(out_groups)))
+        }
+
+        pub unsafe fn update_groups(
+            &self,
+            data: DataPtr,
+            states: &[StatePtr],
+            inputs: &[(Series, Option<Box<dyn Array>>)],
+        ) -> PolarsResult<()> {
+            let mut inputs_export = Vec::with_capacity(inputs.len());
+            for (series, groups) in inputs {
+                let series = export_series(series);
+                let (groups, variant) =
+                    groups.as_ref().map_or((None, GroupsVariant::Scalar), |a| {
+                        (
+                            Some(export_array_to_c(a.clone())),
+                            GroupsVariant::try_from(a.dtype()).unwrap(),
+                        )
+                    });
+                inputs_export.push((series, groups, variant));
+            }
+
+            let rv = unsafe {
+                (self._update_groups)(
+                    data,
+                    inputs_export.as_mut_ptr(),
+                    inputs.len(),
+                    states.as_ptr(),
+                    states.len(),
+                )
+            };
+            // Already deallocated in step function
+            unsafe { inputs_export.set_len(0) };
+            self.handle_return_value(rv)?;
+
+            Ok(())
         }
 
         /// # Safety

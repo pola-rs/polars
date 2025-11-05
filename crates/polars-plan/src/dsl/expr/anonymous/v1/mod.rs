@@ -5,6 +5,7 @@ use std::mem::MaybeUninit;
 use std::ptr::NonNull;
 use std::sync::Arc;
 
+use arrow::array::Array;
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::{ArrowDataType, Field as ArrowField};
 use arrow::ffi::ArrowSchema;
@@ -84,6 +85,14 @@ impl PluginV1Flags {
         self.contains(Self::LENGTH_PRESERVING | Self::ROW_SEPARABLE)
     }
 
+    pub fn is_length_preserving(&self) -> bool {
+        self.contains(Self::LENGTH_PRESERVING)
+    }
+
+    pub fn returns_scalar(&self) -> bool {
+        self.contains(Self::RETURNS_SCALAR)
+    }
+
     pub fn needs_finalize(&self) -> bool {
         !self.is_elementwise() && self.contains(Self::NEEDS_FINALIZE)
     }
@@ -154,6 +163,16 @@ impl PluginV1 {
     pub fn initialize(self: Arc<Self>, fields: &Schema) -> PolarsResult<PluginV1State> {
         let ptr = unsafe { self.vtable.new_state(self.data.ptr_clone(), fields) }?;
         Ok(PluginV1State { ptr, plugin: self })
+    }
+
+    pub fn evaluate_on_groups(
+        &self,
+        inputs: &[(Series, Option<Box<dyn Array>>)],
+    ) -> PolarsResult<(Series, Option<Box<dyn Array>>)> {
+        unsafe {
+            self.vtable
+                .evaluate_on_groups(self.data.ptr_clone(), inputs)
+        }
     }
 
     pub fn flags(&self) -> PluginV1Flags {
