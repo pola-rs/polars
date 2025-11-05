@@ -87,7 +87,7 @@ def test_format_on_multiple_chunks_25159(monkeypatch: Any) -> None:
     assert out.shape == (6, 3)
 
 
-def test_format_on_multiple_chunks_25159_mre() -> None:
+def test_format_on_multiple_chunks_concat_25159() -> None:
     df1 = pl.DataFrame({"a": ["123"]})
     df2 = pl.DataFrame({"a": ["456"]})
     df = pl.concat([df1, df2])
