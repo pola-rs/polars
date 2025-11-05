@@ -1,0 +1,3 @@
+merge-after-dsl-unfreeze:
+  - changed-files:
+      - all-globs-to-any-file: '^\b$'
