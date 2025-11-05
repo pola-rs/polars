@@ -174,7 +174,7 @@ jobs:
         run: |
           git fetch origin --depth 1 main:main
           if [ "$(git diff origin/main..HEAD crates/polars-plan/dsl-schema-hashes.json | head -c 1)" ]; then
-            match='"state"\s*:\s*"closed"'; if [ -z "$(curl -s https://api.github.com/repos/pola-rs/polars/issues/24575 | grep -E ${match}) | head -c 1" ]; then
+            match='"state"\s*:\s*"closed"'; if [ -z "$(curl -s https://api.github.com/repos/pola-rs/polars/issues/24575 | grep -E ${match} | head -c 1)" ]; then
               echo "DSL changes have been temporarily blocked"
               exit 1
             fi
