@@ -1727,15 +1727,19 @@ def test_to_template_from_template() -> None:
         .to_template()
     )
 
-    df_agg = pl.DataFrame({
-        "category": ["A", "B", "A", "B"],
-        "amount": [100, 200, 300, 400],
-    })
+    df_agg = pl.DataFrame(
+        {
+            "category": ["A", "B", "A", "B"],
+            "amount": [100, 200, 300, 400],
+        }
+    )
     result_agg = pl.LazyFrame.from_template(df_agg, agg_template).collect()
-    expected_agg = pl.DataFrame({
-        "category": ["A", "B"],
-        "amount": [400, 600],
-    })
+    expected_agg = pl.DataFrame(
+        {
+            "category": ["A", "B"],
+            "amount": [400, 600],
+        }
+    )
     assert_frame_equal(result_agg, expected_agg, check_row_order=False)
 
 
@@ -1755,31 +1759,39 @@ def test_template_serialization_deserialization() -> None:
     assert len(template) > 0
 
     # Apply template to first dataset
-    df1 = pl.DataFrame({
-        "x": [1.0, -1.0, 2.0, 0.0],
-        "y": [10.0, 20.0, 30.0, 40.0],
-        "z": ["a", "b", "c", "d"],
-    })
+    df1 = pl.DataFrame(
+        {
+            "x": [1.0, -1.0, 2.0, 0.0],
+            "y": [10.0, 20.0, 30.0, 40.0],
+            "z": ["a", "b", "c", "d"],
+        }
+    )
     result1 = pl.LazyFrame.from_template(df1, template).collect()
-    expected1 = pl.DataFrame({
-        "x": [1.0, 2.0],
-        "y_doubled": [20.0, 60.0],
-        "z": ["a", "c"],
-    })
+    expected1 = pl.DataFrame(
+        {
+            "x": [1.0, 2.0],
+            "y_doubled": [20.0, 60.0],
+            "z": ["a", "c"],
+        }
+    )
     assert_frame_equal(result1, expected1)
 
     # Apply same template to different dataset
-    df2 = pl.DataFrame({
-        "x": [5.0, -5.0, 10.0],
-        "y": [100.0, 200.0, 300.0],
-        "z": ["foo", "bar", "baz"],
-    })
+    df2 = pl.DataFrame(
+        {
+            "x": [5.0, -5.0, 10.0],
+            "y": [100.0, 200.0, 300.0],
+            "z": ["foo", "bar", "baz"],
+        }
+    )
     result2 = pl.LazyFrame.from_template(df2, template).collect()
-    expected2 = pl.DataFrame({
-        "x": [5.0, 10.0],
-        "y_doubled": [200.0, 600.0],
-        "z": ["foo", "baz"],
-    })
+    expected2 = pl.DataFrame(
+        {
+            "x": [5.0, 10.0],
+            "y_doubled": [200.0, 600.0],
+            "z": ["foo", "baz"],
+        }
+    )
     assert_frame_equal(result2, expected2)
 
 
@@ -1793,17 +1805,21 @@ def test_template_with_joins() -> None:
         .to_template()
     )
 
-    df = pl.DataFrame({
-        "id": [-1, 1, 2, 3],
-        "value": [1.5, 2.5, 3.5, 4.5],
-    })
+    df = pl.DataFrame(
+        {
+            "id": [-1, 1, 2, 3],
+            "value": [1.5, 2.5, 3.5, 4.5],
+        }
+    )
 
     result = pl.LazyFrame.from_template(df, template).collect()
-    expected = pl.DataFrame({
-        "id": [1, 2, 3],
-        "value": [2.5, 3.5, 4.5],
-        "scaled": [25.0, 35.0, 45.0],
-    })
+    expected = pl.DataFrame(
+        {
+            "id": [1, 2, 3],
+            "value": [2.5, 3.5, 4.5],
+            "scaled": [25.0, 35.0, 45.0],
+        }
+    )
     assert_frame_equal(result, expected)
 
 
@@ -1816,18 +1832,22 @@ def test_template_with_sorting() -> None:
         .to_template()
     )
 
-    df = pl.DataFrame({
-        "name": ["Alice", "Bob", "Charlie", "David"],
-        "age": [25, 30, 22, 35],
-        "score": [85.5, 90.0, 78.5, 92.5],
-    })
+    df = pl.DataFrame(
+        {
+            "name": ["Alice", "Bob", "Charlie", "David"],
+            "age": [25, 30, 22, 35],
+            "score": [85.5, 90.0, 78.5, 92.5],
+        }
+    )
 
     result = pl.LazyFrame.from_template(df, template).collect()
-    expected = pl.DataFrame({
-        "name": ["David", "Bob"],
-        "age": [35, 30],
-        "score": [92.5, 90.0],
-    })
+    expected = pl.DataFrame(
+        {
+            "name": ["David", "Bob"],
+            "age": [35, 30],
+            "score": [92.5, 90.0],
+        }
+    )
     assert_frame_equal(result, expected)
 
 
@@ -1839,15 +1859,19 @@ def test_template_with_window_functions() -> None:
         .to_template()
     )
 
-    df = pl.DataFrame({
-        "group": ["A", "B", "A", "B", "A"],
-        "value": [1, 2, 3, 4, 5],
-    })
+    df = pl.DataFrame(
+        {
+            "group": ["A", "B", "A", "B", "A"],
+            "value": [1, 2, 3, 4, 5],
+        }
+    )
 
     result = pl.LazyFrame.from_template(df, template).collect()
-    expected = pl.DataFrame({
-        "group": ["A", "B", "A", "B", "A"],
-        "value": [1, 2, 3, 4, 5],
-        "group_sum": [9, 6, 9, 6, 9],
-    })
+    expected = pl.DataFrame(
+        {
+            "group": ["A", "B", "A", "B", "A"],
+            "value": [1, 2, 3, 4, 5],
+            "group_sum": [9, 6, 9, 6, 9],
+        }
+    )
     assert_frame_equal(result, expected)

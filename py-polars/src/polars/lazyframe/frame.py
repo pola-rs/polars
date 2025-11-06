@@ -567,7 +567,10 @@ class LazyFrame:
     @classmethod
     def from_template(
         cls,
-        data: LazyFrame | DataFrame | list[LazyFrame | DataFrame] | tuple[LazyFrame | DataFrame, ...],
+        data: LazyFrame
+        | DataFrame
+        | list[LazyFrame | DataFrame]
+        | tuple[LazyFrame | DataFrame, ...],
         template: bytes,
     ) -> LazyFrame:
         """

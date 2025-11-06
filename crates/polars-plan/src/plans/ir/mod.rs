@@ -247,7 +247,12 @@ impl IRPlan {
     pub fn to_template(&self) -> Self {
         let mut new_arena = Arena::with_capacity(self.lp_arena.len());
         let mut placeholder_id = 0;
-        let new_top = Self::convert_to_placeholder(self.lp_top, &self.lp_arena, &mut new_arena, &mut placeholder_id);
+        let new_top = Self::convert_to_placeholder(
+            self.lp_top,
+            &self.lp_arena,
+            &mut new_arena,
+            &mut placeholder_id,
+        );
         Self {
             lp_top: new_top,
             lp_arena: new_arena,
@@ -256,10 +261,19 @@ impl IRPlan {
     }
 
     #[recursive::recursive]
-    fn convert_to_placeholder(node: Node, old_arena: &Arena<IR>, new_arena: &mut Arena<IR>, placeholder_id: &mut usize) -> Node {
+    fn convert_to_placeholder(
+        node: Node,
+        old_arena: &Arena<IR>,
+        new_arena: &mut Arena<IR>,
+        placeholder_id: &mut usize,
+    ) -> Node {
         let ir = old_arena.get(node);
         let new_ir = match ir {
-            IR::DataFrameScan { schema, output_schema, .. } => {
+            IR::DataFrameScan {
+                schema,
+                output_schema,
+                ..
+            } => {
                 let id = *placeholder_id;
                 *placeholder_id += 1;
                 IR::PlaceholderScan {
@@ -267,8 +281,12 @@ impl IRPlan {
                     schema: schema.clone(),
                     output_schema: output_schema.clone(),
                 }
-            }
-            IR::Scan { file_info, output_schema, .. } => {
+            },
+            IR::Scan {
+                file_info,
+                output_schema,
+                ..
+            } => {
                 let id = *placeholder_id;
                 *placeholder_id += 1;
                 IR::PlaceholderScan {
@@ -276,7 +294,7 @@ impl IRPlan {
                     schema: file_info.schema.clone(),
                     output_schema: output_schema.clone(),
                 }
-            }
+            },
             #[cfg(feature = "python")]
             IR::PythonScan { options } => {
                 let id = *placeholder_id;
@@ -286,33 +304,50 @@ impl IRPlan {
                     schema: options.schema.clone(),
                     output_schema: options.output_schema.clone(),
                 }
-            }
-            IR::Select { input, expr, schema, options } => {
-                let new_input = Self::convert_to_placeholder(*input, old_arena, new_arena, placeholder_id);
+            },
+            IR::Select {
+                input,
+                expr,
+                schema,
+                options,
+            } => {
+                let new_input =
+                    Self::convert_to_placeholder(*input, old_arena, new_arena, placeholder_id);
                 IR::Select {
                     input: new_input,
                     expr: expr.clone(),
                     schema: schema.clone(),
                     options: *options,
                 }
-            }
+            },
             IR::Filter { input, predicate } => {
-                let new_input = Self::convert_to_placeholder(*input, old_arena, new_arena, placeholder_id);
+                let new_input =
+                    Self::convert_to_placeholder(*input, old_arena, new_arena, placeholder_id);
                 IR::Filter {
                     input: new_input,
                     predicate: predicate.clone(),
                 }
-            }
+            },
             IR::Slice { input, offset, len } => {
-                let new_input = Self::convert_to_placeholder(*input, old_arena, new_arena, placeholder_id);
+                let new_input =
+                    Self::convert_to_placeholder(*input, old_arena, new_arena, placeholder_id);
                 IR::Slice {
                     input: new_input,
                     offset: *offset,
                     len: *len,
                 }
-            }
-            IR::GroupBy { input, keys, aggs, schema, maintain_order, options, apply } => {
-                let new_input = Self::convert_to_placeholder(*input, old_arena, new_arena, placeholder_id);
+            },
+            IR::GroupBy {
+                input,
+                keys,
+                aggs,
+                schema,
+                maintain_order,
+                options,
+                apply,
+            } => {
+                let new_input =
+                    Self::convert_to_placeholder(*input, old_arena, new_arena, placeholder_id);
                 IR::GroupBy {
                     input: new_input,
                     keys: keys.clone(),
@@ -322,10 +357,23 @@ impl IRPlan {
                     options: options.clone(),
                     apply: apply.clone(),
                 }
-            }
-            IR::Join { input_left, input_right, schema, left_on, right_on, options } => {
-                let new_left = Self::convert_to_placeholder(*input_left, old_arena, new_arena, placeholder_id);
-                let new_right = Self::convert_to_placeholder(*input_right, old_arena, new_arena, placeholder_id);
+            },
+            IR::Join {
+                input_left,
+                input_right,
+                schema,
+                left_on,
+                right_on,
+                options,
+            } => {
+                let new_left =
+                    Self::convert_to_placeholder(*input_left, old_arena, new_arena, placeholder_id);
+                let new_right = Self::convert_to_placeholder(
+                    *input_right,
+                    old_arena,
+                    new_arena,
+                    placeholder_id,
+                );
                 IR::Join {
                     input_left: new_left,
                     input_right: new_right,
@@ -334,112 +382,154 @@ impl IRPlan {
                     right_on: right_on.clone(),
                     options: options.clone(),
                 }
-            }
-            IR::HStack { input, exprs, schema, options } => {
-                let new_input = Self::convert_to_placeholder(*input, old_arena, new_arena, placeholder_id);
+            },
+            IR::HStack {
+                input,
+                exprs,
+                schema,
+                options,
+            } => {
+                let new_input =
+                    Self::convert_to_placeholder(*input, old_arena, new_arena, placeholder_id);
                 IR::HStack {
                     input: new_input,
                     exprs: exprs.clone(),
                     schema: schema.clone(),
                     options: *options,
                 }
-            }
+            },
             IR::SimpleProjection { input, columns } => {
-                let new_input = Self::convert_to_placeholder(*input, old_arena, new_arena, placeholder_id);
+                let new_input =
+                    Self::convert_to_placeholder(*input, old_arena, new_arena, placeholder_id);
                 IR::SimpleProjection {
                     input: new_input,
                     columns: columns.clone(),
                 }
-            }
-            IR::Sort { input, by_column, slice, sort_options } => {
-                let new_input = Self::convert_to_placeholder(*input, old_arena, new_arena, placeholder_id);
+            },
+            IR::Sort {
+                input,
+                by_column,
+                slice,
+                sort_options,
+            } => {
+                let new_input =
+                    Self::convert_to_placeholder(*input, old_arena, new_arena, placeholder_id);
                 IR::Sort {
                     input: new_input,
                     by_column: by_column.clone(),
                     slice: *slice,
                     sort_options: sort_options.clone(),
                 }
-            }
+            },
             IR::Distinct { input, options } => {
-                let new_input = Self::convert_to_placeholder(*input, old_arena, new_arena, placeholder_id);
+                let new_input =
+                    Self::convert_to_placeholder(*input, old_arena, new_arena, placeholder_id);
                 IR::Distinct {
                     input: new_input,
                     options: options.clone(),
                 }
-            }
+            },
             IR::MapFunction { input, function } => {
-                let new_input = Self::convert_to_placeholder(*input, old_arena, new_arena, placeholder_id);
+                let new_input =
+                    Self::convert_to_placeholder(*input, old_arena, new_arena, placeholder_id);
                 IR::MapFunction {
                     input: new_input,
                     function: function.clone(),
                 }
-            }
+            },
             IR::Cache { input, id } => {
-                let new_input = Self::convert_to_placeholder(*input, old_arena, new_arena, placeholder_id);
+                let new_input =
+                    Self::convert_to_placeholder(*input, old_arena, new_arena, placeholder_id);
                 IR::Cache {
                     input: new_input,
                     id: *id,
                 }
-            }
+            },
             IR::Union { inputs, options } => {
                 let new_inputs: Vec<_> = inputs
                     .iter()
-                    .map(|&input| Self::convert_to_placeholder(input, old_arena, new_arena, placeholder_id))
+                    .map(|&input| {
+                        Self::convert_to_placeholder(input, old_arena, new_arena, placeholder_id)
+                    })
                     .collect();
                 IR::Union {
                     inputs: new_inputs,
                     options: options.clone(),
                 }
-            }
-            IR::HConcat { inputs, schema, options } => {
+            },
+            IR::HConcat {
+                inputs,
+                schema,
+                options,
+            } => {
                 let new_inputs: Vec<_> = inputs
                     .iter()
-                    .map(|&input| Self::convert_to_placeholder(input, old_arena, new_arena, placeholder_id))
+                    .map(|&input| {
+                        Self::convert_to_placeholder(input, old_arena, new_arena, placeholder_id)
+                    })
                     .collect();
                 IR::HConcat {
                     inputs: new_inputs,
                     schema: schema.clone(),
                     options: options.clone(),
                 }
-            }
-            IR::ExtContext { input, contexts, schema } => {
-                let new_input = Self::convert_to_placeholder(*input, old_arena, new_arena, placeholder_id);
+            },
+            IR::ExtContext {
+                input,
+                contexts,
+                schema,
+            } => {
+                let new_input =
+                    Self::convert_to_placeholder(*input, old_arena, new_arena, placeholder_id);
                 let new_contexts: Vec<_> = contexts
                     .iter()
-                    .map(|&ctx| Self::convert_to_placeholder(ctx, old_arena, new_arena, placeholder_id))
+                    .map(|&ctx| {
+                        Self::convert_to_placeholder(ctx, old_arena, new_arena, placeholder_id)
+                    })
                     .collect();
                 IR::ExtContext {
                     input: new_input,
                     contexts: new_contexts,
                     schema: schema.clone(),
                 }
-            }
+            },
             IR::Sink { input, payload } => {
-                let new_input = Self::convert_to_placeholder(*input, old_arena, new_arena, placeholder_id);
+                let new_input =
+                    Self::convert_to_placeholder(*input, old_arena, new_arena, placeholder_id);
                 IR::Sink {
                     input: new_input,
                     payload: payload.clone(),
                 }
-            }
+            },
             IR::SinkMultiple { inputs } => {
                 let new_inputs: Vec<_> = inputs
                     .iter()
-                    .map(|&input| Self::convert_to_placeholder(input, old_arena, new_arena, placeholder_id))
+                    .map(|&input| {
+                        Self::convert_to_placeholder(input, old_arena, new_arena, placeholder_id)
+                    })
                     .collect();
-                IR::SinkMultiple {
-                    inputs: new_inputs,
-                }
-            }
+                IR::SinkMultiple { inputs: new_inputs }
+            },
             #[cfg(feature = "merge_sorted")]
-            IR::MergeSorted { input_left, input_right, key } => {
-                let new_left = Self::convert_to_placeholder(*input_left, old_arena, new_arena, placeholder_id);
-                let new_right = Self::convert_to_placeholder(*input_right, old_arena, new_arena, placeholder_id);
+            IR::MergeSorted {
+                input_left,
+                input_right,
+                key,
+            } => {
+                let new_left =
+                    Self::convert_to_placeholder(*input_left, old_arena, new_arena, placeholder_id);
+                let new_right = Self::convert_to_placeholder(
+                    *input_right,
+                    old_arena,
+                    new_arena,
+                    placeholder_id,
+                );
                 IR::MergeSorted {
                     input_left: new_left,
                     input_right: new_right,
                     key: key.clone(),
                 }
-            }
+            },
             // Nodes without inputs - just clone them
             IR::PlaceholderScan { .. } => ir.clone(),
             IR::Invalid => ir.clone(),
@@ -447,9 +537,19 @@ impl IRPlan {
         new_arena.add(new_ir)
     }
 
-    pub fn bind_data(&self, data_map: HashMap<usize, Node>, data_arena: &Arena<IR>) -> PolarsResult<Self> {
+    pub fn bind_data(
+        &self,
+        data_map: HashMap<usize, Node>,
+        data_arena: &Arena<IR>,
+    ) -> PolarsResult<Self> {
         let mut new_arena = Arena::with_capacity(self.lp_arena.len());
-        let new_top = Self::replace_placeholder(self.lp_top, &data_map, data_arena, &self.lp_arena, &mut new_arena)?;
+        let new_top = Self::replace_placeholder(
+            self.lp_top,
+            &data_map,
+            data_arena,
+            &self.lp_arena,
+            &mut new_arena,
+        )?;
         Ok(Self {
             lp_top: new_top,
             lp_arena: new_arena,
@@ -528,7 +628,7 @@ impl IRPlan {
                     .into_iter()
                     .map(|input| self.count_placeholders_recursive(input, arena))
                     .sum()
-            }
+            },
         }
     }
 
@@ -543,14 +643,19 @@ impl IRPlan {
         let ir = template_arena.get(node);
         let new_ir = match ir {
             IR::PlaceholderScan { id, schema, .. } => {
-                let data_node = data_map.get(id).ok_or_else(|| {
-                    polars_err!(ComputeError: "Placeholder ID {} not found in data map", id)
-                })?;
+                let data_node = data_map.get(id).ok_or_else(
+                    || polars_err!(ComputeError: "Placeholder ID {} not found in data map", id),
+                )?;
 
                 let data_ir = data_arena.get(*data_node);
                 let data_schema = match data_ir {
-                    IR::DataFrameScan { schema: data_schema, .. } => data_schema,
-                    _ => polars_bail!(ComputeError: "bind_data requires data to be a DataFrameScan"),
+                    IR::DataFrameScan {
+                        schema: data_schema,
+                        ..
+                    } => data_schema,
+                    _ => {
+                        polars_bail!(ComputeError: "bind_data requires data to be a DataFrameScan")
+                    },
                 };
 
                 // Allow empty schemas to bind to any data (generic templates)
@@ -579,33 +684,70 @@ impl IRPlan {
                 }
 
                 return Ok(new_arena.add(data_ir.clone()));
-            }
-            IR::Select { input, expr, schema, options } => {
-                let new_input = Self::replace_placeholder(*input, data_map, data_arena, template_arena, new_arena)?;
+            },
+            IR::Select {
+                input,
+                expr,
+                schema,
+                options,
+            } => {
+                let new_input = Self::replace_placeholder(
+                    *input,
+                    data_map,
+                    data_arena,
+                    template_arena,
+                    new_arena,
+                )?;
                 IR::Select {
                     input: new_input,
                     expr: expr.clone(),
                     schema: schema.clone(),
                     options: *options,
                 }
-            }
+            },
             IR::Filter { input, predicate } => {
-                let new_input = Self::replace_placeholder(*input, data_map, data_arena, template_arena, new_arena)?;
+                let new_input = Self::replace_placeholder(
+                    *input,
+                    data_map,
+                    data_arena,
+                    template_arena,
+                    new_arena,
+                )?;
                 IR::Filter {
                     input: new_input,
                     predicate: predicate.clone(),
                 }
-            }
+            },
             IR::Slice { input, offset, len } => {
-                let new_input = Self::replace_placeholder(*input, data_map, data_arena, template_arena, new_arena)?;
+                let new_input = Self::replace_placeholder(
+                    *input,
+                    data_map,
+                    data_arena,
+                    template_arena,
+                    new_arena,
+                )?;
                 IR::Slice {
                     input: new_input,
                     offset: *offset,
                     len: *len,
                 }
-            }
-            IR::GroupBy { input, keys, aggs, schema, maintain_order, options, apply } => {
-                let new_input = Self::replace_placeholder(*input, data_map, data_arena, template_arena, new_arena)?;
+            },
+            IR::GroupBy {
+                input,
+                keys,
+                aggs,
+                schema,
+                maintain_order,
+                options,
+                apply,
+            } => {
+                let new_input = Self::replace_placeholder(
+                    *input,
+                    data_map,
+                    data_arena,
+                    template_arena,
+                    new_arena,
+                )?;
                 IR::GroupBy {
                     input: new_input,
                     keys: keys.clone(),
@@ -615,10 +757,29 @@ impl IRPlan {
                     options: options.clone(),
                     apply: apply.clone(),
                 }
-            }
-            IR::Join { input_left, input_right, schema, left_on, right_on, options } => {
-                let new_left = Self::replace_placeholder(*input_left, data_map, data_arena, template_arena, new_arena)?;
-                let new_right = Self::replace_placeholder(*input_right, data_map, data_arena, template_arena, new_arena)?;
+            },
+            IR::Join {
+                input_left,
+                input_right,
+                schema,
+                left_on,
+                right_on,
+                options,
+            } => {
+                let new_left = Self::replace_placeholder(
+                    *input_left,
+                    data_map,
+                    data_arena,
+                    template_arena,
+                    new_arena,
+                )?;
+                let new_right = Self::replace_placeholder(
+                    *input_right,
+                    data_map,
+                    data_arena,
+                    template_arena,
+                    new_arena,
+                )?;
                 IR::Join {
                     input_left: new_left,
                     input_right: new_right,
@@ -627,112 +788,224 @@ impl IRPlan {
                     right_on: right_on.clone(),
                     options: options.clone(),
                 }
-            }
-            IR::HStack { input, exprs, schema, options } => {
-                let new_input = Self::replace_placeholder(*input, data_map, data_arena, template_arena, new_arena)?;
+            },
+            IR::HStack {
+                input,
+                exprs,
+                schema,
+                options,
+            } => {
+                let new_input = Self::replace_placeholder(
+                    *input,
+                    data_map,
+                    data_arena,
+                    template_arena,
+                    new_arena,
+                )?;
                 IR::HStack {
                     input: new_input,
                     exprs: exprs.clone(),
                     schema: schema.clone(),
                     options: *options,
                 }
-            }
+            },
             IR::SimpleProjection { input, columns } => {
-                let new_input = Self::replace_placeholder(*input, data_map, data_arena, template_arena, new_arena)?;
+                let new_input = Self::replace_placeholder(
+                    *input,
+                    data_map,
+                    data_arena,
+                    template_arena,
+                    new_arena,
+                )?;
                 IR::SimpleProjection {
                     input: new_input,
                     columns: columns.clone(),
                 }
-            }
-            IR::Sort { input, by_column, slice, sort_options } => {
-                let new_input = Self::replace_placeholder(*input, data_map, data_arena, template_arena, new_arena)?;
+            },
+            IR::Sort {
+                input,
+                by_column,
+                slice,
+                sort_options,
+            } => {
+                let new_input = Self::replace_placeholder(
+                    *input,
+                    data_map,
+                    data_arena,
+                    template_arena,
+                    new_arena,
+                )?;
                 IR::Sort {
                     input: new_input,
                     by_column: by_column.clone(),
                     slice: *slice,
                     sort_options: sort_options.clone(),
                 }
-            }
+            },
             IR::Distinct { input, options } => {
-                let new_input = Self::replace_placeholder(*input, data_map, data_arena, template_arena, new_arena)?;
+                let new_input = Self::replace_placeholder(
+                    *input,
+                    data_map,
+                    data_arena,
+                    template_arena,
+                    new_arena,
+                )?;
                 IR::Distinct {
                     input: new_input,
                     options: options.clone(),
                 }
-            }
+            },
             IR::MapFunction { input, function } => {
-                let new_input = Self::replace_placeholder(*input, data_map, data_arena, template_arena, new_arena)?;
+                let new_input = Self::replace_placeholder(
+                    *input,
+                    data_map,
+                    data_arena,
+                    template_arena,
+                    new_arena,
+                )?;
                 IR::MapFunction {
                     input: new_input,
                     function: function.clone(),
                 }
-            }
+            },
             IR::Cache { input, id } => {
-                let new_input = Self::replace_placeholder(*input, data_map, data_arena, template_arena, new_arena)?;
+                let new_input = Self::replace_placeholder(
+                    *input,
+                    data_map,
+                    data_arena,
+                    template_arena,
+                    new_arena,
+                )?;
                 IR::Cache {
                     input: new_input,
                     id: *id,
                 }
-            }
+            },
             IR::Union { inputs, options } => {
                 let new_inputs: Vec<_> = inputs
                     .iter()
-                    .map(|&input| Self::replace_placeholder(input, data_map, data_arena, template_arena, new_arena))
+                    .map(|&input| {
+                        Self::replace_placeholder(
+                            input,
+                            data_map,
+                            data_arena,
+                            template_arena,
+                            new_arena,
+                        )
+                    })
                     .collect::<PolarsResult<_>>()?;
                 IR::Union {
                     inputs: new_inputs,
                     options: options.clone(),
                 }
-            }
-            IR::HConcat { inputs, schema, options } => {
+            },
+            IR::HConcat {
+                inputs,
+                schema,
+                options,
+            } => {
                 let new_inputs: Vec<_> = inputs
                     .iter()
-                    .map(|&input| Self::replace_placeholder(input, data_map, data_arena, template_arena, new_arena))
+                    .map(|&input| {
+                        Self::replace_placeholder(
+                            input,
+                            data_map,
+                            data_arena,
+                            template_arena,
+                            new_arena,
+                        )
+                    })
                     .collect::<PolarsResult<_>>()?;
                 IR::HConcat {
                     inputs: new_inputs,
                     schema: schema.clone(),
                     options: options.clone(),
                 }
-            }
-            IR::ExtContext { input, contexts, schema } => {
-                let new_input = Self::replace_placeholder(*input, data_map, data_arena, template_arena, new_arena)?;
+            },
+            IR::ExtContext {
+                input,
+                contexts,
+                schema,
+            } => {
+                let new_input = Self::replace_placeholder(
+                    *input,
+                    data_map,
+                    data_arena,
+                    template_arena,
+                    new_arena,
+                )?;
                 let new_contexts: Vec<_> = contexts
                     .iter()
-                    .map(|&ctx| Self::replace_placeholder(ctx, data_map, data_arena, template_arena, new_arena))
+                    .map(|&ctx| {
+                        Self::replace_placeholder(
+                            ctx,
+                            data_map,
+                            data_arena,
+                            template_arena,
+                            new_arena,
+                        )
+                    })
                     .collect::<PolarsResult<_>>()?;
                 IR::ExtContext {
                     input: new_input,
                     contexts: new_contexts,
                     schema: schema.clone(),
                 }
-            }
+            },
             IR::Sink { input, payload } => {
-                let new_input = Self::replace_placeholder(*input, data_map, data_arena, template_arena, new_arena)?;
+                let new_input = Self::replace_placeholder(
+                    *input,
+                    data_map,
+                    data_arena,
+                    template_arena,
+                    new_arena,
+                )?;
                 IR::Sink {
                     input: new_input,
                     payload: payload.clone(),
                 }
-            }
+            },
             IR::SinkMultiple { inputs } => {
                 let new_inputs: Vec<_> = inputs
                     .iter()
-                    .map(|&input| Self::replace_placeholder(input, data_map, data_arena, template_arena, new_arena))
+                    .map(|&input| {
+                        Self::replace_placeholder(
+                            input,
+                            data_map,
+                            data_arena,
+                            template_arena,
+                            new_arena,
+                        )
+                    })
                     .collect::<PolarsResult<_>>()?;
-                IR::SinkMultiple {
-                    inputs: new_inputs,
-                }
-            }
+                IR::SinkMultiple { inputs: new_inputs }
+            },
             #[cfg(feature = "merge_sorted")]
-            IR::MergeSorted { input_left, input_right, key } => {
-                let new_left = Self::replace_placeholder(*input_left, data_map, data_arena, template_arena, new_arena)?;
-                let new_right = Self::replace_placeholder(*input_right, data_map, data_arena, template_arena, new_arena)?;
+            IR::MergeSorted {
+                input_left,
+                input_right,
+                key,
+            } => {
+                let new_left = Self::replace_placeholder(
+                    *input_left,
+                    data_map,
+                    data_arena,
+                    template_arena,
+                    new_arena,
+                )?;
+                let new_right = Self::replace_placeholder(
+                    *input_right,
+                    data_map,
+                    data_arena,
+                    template_arena,
+                    new_arena,
+                )?;
                 IR::MergeSorted {
                     input_left: new_left,
                     input_right: new_right,
                     key: key.clone(),
                 }
-            }
+            },
             // Nodes without inputs - clone as-is
             // Note: DataFrameScan/Scan/PythonScan shouldn't appear in templates (they're replaced by PlaceholderScan),
             // but we handle them explicitly for exhaustiveness checking
