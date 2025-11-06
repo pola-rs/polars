@@ -577,7 +577,8 @@ class LazyFrame:
         ----------
         data
             The LazyFrame or DataFrame to apply the template transformations to.
-            For templates with multiple data sources (e.g., joins), provide a list or tuple
+            For templates with multiple data sources (e.g., joins),
+            provide a list or tuple
             of DataFrames/LazyFrames corresponding to each placeholder in the template.
         template
             Serialized template bytes from `to_template()`.
@@ -603,18 +604,7 @@ class LazyFrame:
         ... )
         >>> lf = pl.LazyFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
         >>> result = pl.LazyFrame.from_template(lf, template).collect()
-
-        Multiple data sources (for joins, unions, etc.):
-
-        >>> left = pl.LazyFrame({"a": [1, 2, 3]})
-        >>> right = pl.LazyFrame({"b": [4, 5, 6]})
-        >>> template = left.join(right, left_on="a", right_on="b").to_template()
-        >>> new_left = pl.DataFrame({"a": [7, 8, 9]})
-        >>> new_right = pl.DataFrame({"b": [10, 11, 12]})
-        >>> result = pl.LazyFrame.from_template([new_left, new_right], template).collect()
         """
-        from polars.dataframe import DataFrame
-
         # Handle list/tuple of data sources
         if isinstance(data, (list, tuple)):
             dfs = []
