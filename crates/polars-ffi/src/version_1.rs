@@ -1,9 +1,8 @@
+use std::borrow::Cow;
 use std::mem::MaybeUninit;
 use std::ptr::NonNull;
 
-use arrow::array::Array;
-use arrow::datatypes::ArrowDataType;
-use arrow::ffi::{ArrowArray, ArrowSchema};
+use arrow::ffi::ArrowSchema;
 use polars_core::prelude::Field;
 use polars_core::schema::Schema;
 use polars_core::series::Series;
@@ -26,15 +25,6 @@ pub struct DataPtr(NonNull<u8>);
 /// Pointer to a `Box<T::State>` where `T: PolarsPlugin`.
 #[repr(transparent)]
 pub struct StatePtr(NonNull<u8>);
-
-#[repr(C)]
-enum GroupsVariant {
-    Scalar = 0,
-    Indices32 = 1,
-    Indices64 = 2,
-    Slice32 = 3,
-    Slice64 = 4,
-}
 
 // pub trait ElementwisePlugin: Sereajfdlakjf + Dserajlkj {
 //     fn to_field() -> ...;
@@ -110,21 +100,81 @@ pub trait PolarsPlugin: Send + Sync + Sized {
     /// This indicates that this state will not `step` anymore.
     fn finalize(&self, state: &mut Self::State) -> PolarsResult<Option<Series>>;
 
-    fn evaluate_on_groups(
+    fn evaluate_on_groups<'a>(
         &self,
-        inputs: &[(Series, Option<Box<dyn Array>>)],
-    ) -> PolarsResult<(Series, Option<Box<dyn Array>>)> {
+        inputs: &[(Series, &'a GroupPositions)],
+    ) -> PolarsResult<(Series, Cow<'a, GroupPositions>)> {
         _ = inputs;
-        dbg!(todo!())
+        dbg!();
+        todo!()
     }
-    fn update_groups(
-        &self,
-        states: &mut [&mut Self::State],
-        inputs: &[(Series, Option<Box<dyn Array>>)],
-    ) -> PolarsResult<()> {
-        _ = states;
-        _ = inputs;
-        dbg!(todo!())
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct SliceGroup {
+    pub offset: u64,
+    pub length: u64,
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct IndexGroups {
+    pub index: Box<[u64]>,
+    pub ends: Box<[u64]>,
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub enum GroupPositions {
+    /// Every group has all the data values.
+    SharedAcrossGroups,
+    /// Every group has 1 value in sequential order of the data.
+    ScalarPerGroup,
+    Slice(Box<[SliceGroup]>),
+    Index(IndexGroups),
+}
+
+pub struct CowGroupPositions<'a> {
+    groups: &'a GroupPositions,
+    drop: Option<unsafe extern "C" fn(*mut GroupPositions) -> u32>,
+}
+
+impl<'a> AsRef<GroupPositions> for CowGroupPositions<'a> {
+    fn as_ref(&self) -> &GroupPositions {
+        self.groups
+    }
+}
+
+impl<'a> Drop for CowGroupPositions<'a> {
+    fn drop(&mut self) {
+        if let Some(drop) = &self.drop {
+            let rv = unsafe { (drop)(self.groups as *const GroupPositions as *mut GroupPositions) };
+            match ReturnValue::from(rv) {
+                ReturnValue::Ok => {},
+                ReturnValue::Panic => panic!("plugin panicked"),
+                _ => panic!("did not expect error"),
+            }
+        }
+    }
+}
+
+impl IndexGroups {
+    pub fn lengths(&self) -> impl Iterator<Item = usize> {
+        (0..self.ends.len()).map(|i| {
+            let start = i.checked_sub(1).map_or(0, |i| self.ends[i]);
+            let end = self.ends[i];
+            (end - start) as usize
+        })
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &[u64]> {
+        (0..self.ends.len()).map(|i| {
+            let start = i.checked_sub(1).map_or(0, |i| self.ends[i]);
+            let end = self.ends[i];
+
+            &self.index[start as usize..end as usize]
+        })
     }
 }
 
@@ -304,19 +354,13 @@ pub struct VTable {
 
     _evaluate_on_groups: unsafe extern "C" fn(
         data: DataPtr,
-        inputs_ptr: *mut (SeriesExport, Option<ArrowArray>, GroupsVariant),
+        inputs_ptr: *mut (SeriesExport, NonNull<GroupPositions>),
         inputs_len: usize,
         output_series: NonNull<MaybeUninit<SeriesExport>>,
-        output_groups: NonNull<MaybeUninit<ArrowArray>>,
-        output_kind: NonNull<MaybeUninit<GroupsVariant>>,
+        output_groups_owned: NonNull<MaybeUninit<bool>>,
+        output_groups: NonNull<MaybeUninit<NonNull<GroupPositions>>>,
     ) -> u32,
-    _update_groups: unsafe extern "C" fn(
-        data: DataPtr,
-        inputs_ptr: *mut (SeriesExport, Option<ArrowArray>, GroupsVariant),
-        inputs_len: usize,
-        states_ptr: *const StatePtr,
-        states_len: usize,
-    ) -> u32,
+    _drop_box_group_positions: unsafe extern "C" fn(ptr: *mut GroupPositions) -> u32,
 
     /// Get the output field.
     ///
@@ -428,39 +472,6 @@ impl StatePtr {
     }
 }
 
-impl TryFrom<&ArrowDataType> for GroupsVariant {
-    type Error = ();
-    fn try_from(value: &ArrowDataType) -> Result<Self, Self::Error> {
-        Ok(match value {
-            ArrowDataType::LargeList(f) if f.dtype == ArrowDataType::UInt32 => {
-                GroupsVariant::Indices32
-            },
-            ArrowDataType::LargeList(f) if f.dtype == ArrowDataType::UInt64 => {
-                GroupsVariant::Indices64
-            },
-            ArrowDataType::FixedSizeList(f, 2) if f.dtype == ArrowDataType::UInt32 => {
-                GroupsVariant::Slice32
-            },
-            ArrowDataType::FixedSizeList(f, 2) if f.dtype == ArrowDataType::UInt64 => {
-                GroupsVariant::Slice64
-            },
-            _ => return Err(()),
-        })
-    }
-}
-
-impl TryFrom<GroupsVariant> for ArrowDataType {
-    type Error = ();
-    fn try_from(value: GroupsVariant) -> Result<Self, Self::Error> {
-        Ok(match value {
-            GroupsVariant::Scalar => return Err(()),
-            GroupsVariant::Indices32 => ArrowDataType::UInt32.to_large_list(false),
-            GroupsVariant::Indices64 => ArrowDataType::UInt64.to_large_list(false),
-            GroupsVariant::Slice32 => ArrowDataType::UInt32.to_fixed_size_list(2, false),
-            GroupsVariant::Slice64 => ArrowDataType::UInt64.to_fixed_size_list(2, false),
-        })
-    }
-}
 impl TryFrom<u32> for Value {
     type Error = ();
     fn try_from(value: u32) -> Result<Self, Self::Error> {
@@ -490,7 +501,7 @@ impl VTable {
             _combine: _callee::combine::<Data>,
 
             _evaluate_on_groups: _callee::evaluate_on_groups::<Data>,
-            _update_groups: _callee::update_groups::<Data>,
+            _drop_box_group_positions: _callee::drop_box_group_positions,
 
             _to_field: _callee::to_field::<Data>,
             _drop_state: _callee::drop_state::<Data>,
@@ -528,6 +539,7 @@ impl From<u32> for ReturnValue {
 
 /// FFI Wrappers for all [`PolarsPlugin`] functions from the *callee* or Plugin's side.
 mod _callee {
+    use std::borrow::Cow;
     use std::cell::RefCell;
     use std::mem::MaybeUninit;
     use std::panic::UnwindSafe;
@@ -535,15 +547,12 @@ mod _callee {
     use std::sync::atomic::{AtomicU32, Ordering};
 
     use arrow::datatypes::ArrowDataType;
-    use arrow::ffi::{
-        ArrowArray, ArrowSchema, export_array_to_c, export_field_to_c, import_array_from_c,
-        import_field_from_c,
-    };
+    use arrow::ffi::{ArrowSchema, export_field_to_c, import_field_from_c};
     use polars_core::prelude::{CompatLevel, Schema};
     use polars_core::schema::SchemaExt;
     use polars_error::{PolarsError, PolarsResult, polars_bail};
 
-    use super::{DataPtr, GroupsVariant, PolarsPlugin, ReturnValue, StatePtr, Value};
+    use super::{DataPtr, GroupPositions, PolarsPlugin, ReturnValue, StatePtr, Value};
     use crate::version_0::{SeriesExport, export_series, import_series, import_series_buffer};
 
     /// Plugin version of the *caller*.
@@ -859,38 +868,34 @@ mod _callee {
     /// See VTable.
     pub unsafe extern "C" fn evaluate_on_groups<Data: PolarsPlugin>(
         data: DataPtr,
-        inputs_ptr: *mut (SeriesExport, Option<ArrowArray>, GroupsVariant),
+        inputs_ptr: *mut (SeriesExport, NonNull<GroupPositions>),
         inputs_len: usize,
         output_series: NonNull<MaybeUninit<SeriesExport>>,
-        output_groups: NonNull<MaybeUninit<ArrowArray>>,
-        output_kind: NonNull<MaybeUninit<GroupsVariant>>,
+        output_groups_owned: NonNull<MaybeUninit<bool>>,
+        output_groups: NonNull<MaybeUninit<NonNull<GroupPositions>>>,
     ) -> u32 {
         wrap_callee_function(|| {
             let data = unsafe { data.as_ref::<Data>() };
             let mut collected_inputs = Vec::with_capacity(inputs_len);
             for i in 0..inputs_len {
-                let (series, groups, variant) = unsafe { std::ptr::read(inputs_ptr.add(i)) };
+                let (series, groups) = unsafe { std::ptr::read(inputs_ptr.add(i)) };
                 let series = unsafe { import_series(series)? };
-                let dtype = ArrowDataType::try_from(variant).ok();
-                let groups = match dtype {
-                    None => None,
-                    Some(dtype) => Some(unsafe { import_array_from_c(groups.unwrap(), dtype) }?),
-                };
+                let groups = unsafe { groups.as_ref() };
                 collected_inputs.push((series, groups));
             }
             let (out_data, out_groups) = data.evaluate_on_groups(&collected_inputs)?;
 
-            match out_groups {
-                None => unsafe { output_kind.write(MaybeUninit::new(GroupsVariant::Scalar)) },
-                Some(array) => {
-                    let kind = GroupsVariant::try_from(array.dtype())
-                        .expect("invalid output groups datatype");
-                    let out_groups = export_array_to_c(array);
-                    unsafe { output_kind.write(MaybeUninit::new(kind)) };
-                    unsafe { output_groups.write(MaybeUninit::new(out_groups)) };
+            let is_owned = matches!(out_groups, Cow::Owned(_));
+            unsafe { output_groups_owned.write(MaybeUninit::new(is_owned)) };
+            let out_groups = match out_groups {
+                Cow::Borrowed(ptr) => NonNull::from_ref(ptr),
+                Cow::Owned(out_groups) => {
+                    NonNull::new(Box::into_raw(Box::new(out_groups))).unwrap()
                 },
+            };
+            unsafe {
+                output_groups.write(MaybeUninit::new(out_groups));
             }
-
             let out_data = export_series(&out_data);
             unsafe { output_series.write(MaybeUninit::new(out_data)) };
 
@@ -898,36 +903,10 @@ mod _callee {
         })
     }
 
-    /// # Safety
-    ///
-    /// See VTable.
-    pub unsafe extern "C" fn update_groups<Data: PolarsPlugin>(
-        data: DataPtr,
-        inputs_ptr: *mut (SeriesExport, Option<ArrowArray>, GroupsVariant),
-        inputs_len: usize,
-        states_ptr: *const StatePtr,
-        states_len: usize,
-    ) -> u32 {
+    pub unsafe extern "C" fn drop_box_group_positions(ptr: *mut GroupPositions) -> u32 {
         wrap_callee_function(|| {
-            let data = unsafe { data.as_ref::<Data>() };
-            let mut collected_inputs = Vec::with_capacity(inputs_len);
-            for i in 0..inputs_len {
-                let (series, groups, variant) = unsafe { std::ptr::read(inputs_ptr.add(i)) };
-                let series = unsafe { import_series(series)? };
-                let dtype = ArrowDataType::try_from(variant).ok();
-                let groups = match dtype {
-                    None => None,
-                    Some(dtype) => Some(unsafe { import_array_from_c(groups.unwrap(), dtype) }?),
-                };
-                collected_inputs.push((series, groups));
-            }
-            let mut collected_states = Vec::with_capacity(states_len);
-            for i in 0..states_len {
-                let state = unsafe { std::ptr::read(states_ptr.add(i)) };
-                let state = unsafe { state.0.cast::<Data::State>().as_mut() };
-                collected_states.push(state);
-            }
-            data.update_groups(&mut collected_states, &collected_inputs)?;
+            let buffer = unsafe { Box::from_raw(ptr) };
+            drop(buffer);
             Ok(())
         })
     }
@@ -997,16 +976,15 @@ mod _caller {
     use std::mem::MaybeUninit;
     use std::ptr::NonNull;
 
-    use arrow::array::Array;
     use arrow::datatypes::{ArrowDataType, Field as ArrowField};
-    use arrow::ffi::{ArrowSchema, export_array_to_c, import_array_from_c};
+    use arrow::ffi::ArrowSchema;
     use polars_core::prelude::{CompatLevel, Field, Schema};
     use polars_core::schema::SchemaExt;
     use polars_core::series::Series;
     use polars_error::{PolarsResult, polars_bail};
     use polars_utils::pl_str::PlSmallStr;
 
-    use super::{DataPtr, GroupsVariant, ReturnValue, StatePtr, VTable, Value};
+    use super::{CowGroupPositions, DataPtr, GroupPositions, ReturnValue, StatePtr, VTable, Value};
     use crate::version_0::{export_series, import_series};
 
     impl VTable {
@@ -1326,26 +1304,20 @@ mod _caller {
             Ok(Field::from(&field))
         }
 
-        pub unsafe fn evaluate_on_groups(
+        pub unsafe fn evaluate_on_groups<'a>(
             &self,
             data: DataPtr,
-            inputs: &[(Series, Option<Box<dyn Array>>)],
-        ) -> PolarsResult<(Series, Option<Box<dyn Array>>)> {
+            inputs: &[(Series, &'a GroupPositions)],
+        ) -> PolarsResult<(Series, CowGroupPositions<'a>)> {
             let mut out_series = MaybeUninit::uninit();
+            let mut out_groups_owned = MaybeUninit::uninit();
             let mut out_groups = MaybeUninit::uninit();
-            let mut out_kind = MaybeUninit::uninit();
 
             let mut inputs_export = Vec::with_capacity(inputs.len());
             for (series, groups) in inputs {
                 let series = export_series(series);
-                let (groups, variant) =
-                    groups.as_ref().map_or((None, GroupsVariant::Scalar), |a| {
-                        (
-                            Some(export_array_to_c(a.clone())),
-                            GroupsVariant::try_from(a.dtype()).unwrap(),
-                        )
-                    });
-                inputs_export.push((series, groups, variant));
+                let groups = NonNull::from_ref(*groups);
+                inputs_export.push((series, groups));
             }
 
             let rv = unsafe {
@@ -1354,8 +1326,8 @@ mod _caller {
                     inputs_export.as_mut_ptr(),
                     inputs.len(),
                     NonNull::from_mut(&mut out_series),
+                    NonNull::from_mut(&mut out_groups_owned),
                     NonNull::from_mut(&mut out_groups),
-                    NonNull::from_mut(&mut out_kind),
                 )
             };
             // Already deallocated in step function
@@ -1364,50 +1336,16 @@ mod _caller {
 
             let out_series = unsafe { out_series.assume_init() };
             let out_series = unsafe { import_series(out_series) }?;
-            let out_kind = unsafe { out_kind.assume_init() };
-
-            let Ok(dtype) = out_kind.try_into() else {
-                return Ok((out_series, None));
-            };
-
+            let out_groups_owned = unsafe { out_groups_owned.assume_init() };
             let out_groups = unsafe { out_groups.assume_init() };
-            let out_groups = unsafe { import_array_from_c(out_groups, dtype) }?;
-            Ok((out_series, Some(out_groups)))
-        }
-
-        pub unsafe fn update_groups(
-            &self,
-            data: DataPtr,
-            states: &[StatePtr],
-            inputs: &[(Series, Option<Box<dyn Array>>)],
-        ) -> PolarsResult<()> {
-            let mut inputs_export = Vec::with_capacity(inputs.len());
-            for (series, groups) in inputs {
-                let series = export_series(series);
-                let (groups, variant) =
-                    groups.as_ref().map_or((None, GroupsVariant::Scalar), |a| {
-                        (
-                            Some(export_array_to_c(a.clone())),
-                            GroupsVariant::try_from(a.dtype()).unwrap(),
-                        )
-                    });
-                inputs_export.push((series, groups, variant));
-            }
-
-            let rv = unsafe {
-                (self._update_groups)(
-                    data,
-                    inputs_export.as_mut_ptr(),
-                    inputs.len(),
-                    states.as_ptr(),
-                    states.len(),
-                )
-            };
-            // Already deallocated in step function
-            unsafe { inputs_export.set_len(0) };
-            self.handle_return_value(rv)?;
-
-            Ok(())
+            let drop_fn = out_groups_owned.then_some(self._drop_box_group_positions);
+            Ok((
+                out_series,
+                CowGroupPositions {
+                    groups: unsafe { out_groups.as_ref() },
+                    drop: drop_fn,
+                },
+            ))
         }
 
         /// # Safety

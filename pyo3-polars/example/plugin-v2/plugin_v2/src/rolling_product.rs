@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::VecDeque;
 
 use arrow::array::{Array, FixedSizeListArray, ListArray, PrimitiveArray};
@@ -11,7 +12,9 @@ use polars::prelude::{
     PrimitiveChunkedBuilder, Schema, SchemaExt,
 };
 use polars::series::{IntoSeries, Series};
-use pyo3_polars::export::polars_ffi::version_1::PolarsPlugin;
+use pyo3_polars::export::polars_ffi::version_1::{
+    GroupPositions, IndexGroups, PolarsPlugin, SliceGroup,
+};
 use pyo3_polars::polars_plugin_expr_info;
 use pyo3_polars::v1::PolarsPluginExprInfo;
 use serde::{Deserialize, Serialize};
@@ -119,183 +122,108 @@ impl PolarsPlugin for RollingProduct {
         unreachable!()
     }
 
-    // data: Series
-    // groups:
-    //     None
-    //     List<u32>     -> [offset_1, ..., offset_n] 
-    //     List<u64>     -> [offset_1, ..., offset_n] 
-    //     Array<u32, 2> -> [offset, length]
-    //     Array<u64, 2> -> [offset, length]
-    fn evaluate_on_groups(
+    fn evaluate_on_groups<'a>(
         &self,
-        inputs: &[(Series, Option<Box<dyn Array>>)],
-    ) -> PolarsResult<(Series, Option<Box<dyn Array>>)> {
+        inputs: &[(Series, &'a GroupPositions)],
+    ) -> PolarsResult<(Series, Cow<'a, GroupPositions>)> {
         assert_eq!(inputs.len(), 1);
         let (data, groups) = &inputs[0];
 
-        fn indices<T: NativeType + Into<u64>>(
-            name: PlSmallStr,
-            data: &PrimitiveArray<i64>,
-            groups: &ListArray<i64>,
-            n: usize,
-        ) -> (Series, Option<Box<dyn Array>>) {
-            let mut out = Vec::with_capacity(groups.values().len());
-            let mut out_bitmap = BitmapBuilder::with_capacity(groups.values().len());
-            let mut slices = Vec::with_capacity(groups.len());
-            assert_eq!(groups.validity(), None);
-            let indices = groups.values();
-            let indices = indices
-                .as_any()
-                .downcast_ref::<PrimitiveArray<T>>()
-                .unwrap();
-            assert_eq!(indices.validity(), None);
-            let indices = indices.values().as_slice();
-            let data_values = data.values().as_slice();
-            let data_validity = data.validity().map(BitMask::from_bitmap);
-            let mut past = VecDeque::with_capacity(n);
-            for (offset, length) in groups.offsets().offset_and_length_iter() {
-                past.clear();
-                slices.push(offset as u64);
-                rolling_product_indices::<T>(
-                    data_values,
-                    data_validity,
-                    &indices[offset..][..length],
-                    &mut past,
-                    &mut out,
-                    &mut out_bitmap,
-                    n,
-                );
-                slices.push(length as u64);
-            }
+        if let GroupPositions::SharedAcrossGroups = groups {
+            let mut state = self.new_state(&Schema::from_iter([data.field().into_owned()]))?;
+            let data = self.step(&mut state, &[data.clone()])?.unwrap();
+            return Ok((data, Cow::Borrowed(groups)));
+        };
 
-            let out = PrimitiveArray::new(
-                ArrowDataType::Int64,
-                out.into(),
-                out_bitmap.into_opt_validity(),
-            );
-            let slices = PrimitiveArray::new(ArrowDataType::UInt64, slices.into(), None);
-            let slices = FixedSizeListArray::new(
-                ArrowDataType::UInt64.to_fixed_size_list(2, false),
-                groups.len(),
-                slices.boxed(),
-                None,
-            );
+        if let GroupPositions::ScalarPerGroup = groups {
+            return Ok((data.clone(), Cow::Borrowed(groups)));
+        };
 
-            let data = unsafe {
-                ChunkedArray::<Int64Type>::from_chunks_and_dtype(
-                    name,
-                    vec![out.boxed()],
-                    DataType::Int64,
-                )
-            }
-            .into_series();
-            let groups = slices.boxed();
+        let data = data.i64()?;
+        let name = data.name().clone();
+        let data = data.rechunk();
+        let data = data.downcast_as_array();
 
-            (data, Some(groups))
-        }
+        let num_groups = match groups {
+            GroupPositions::SharedAcrossGroups | GroupPositions::ScalarPerGroup => unreachable!(),
+            GroupPositions::Slice(slice_groups) => slice_groups.len(),
+            GroupPositions::Index(index_groups) => index_groups.ends.len(),
+        };
+        let num_values = match groups {
+            GroupPositions::SharedAcrossGroups | GroupPositions::ScalarPerGroup => unreachable!(),
+            GroupPositions::Slice(slice_groups) => {
+                slice_groups.iter().map(|s| s.length as usize).sum()
+            },
+            GroupPositions::Index(index_groups) => {
+                index_groups.ends.last().copied().unwrap_or(0) as usize
+            },
+        };
 
-        fn slices<T: NativeType + Into<u64>>(
-            name: PlSmallStr,
-            data: &PrimitiveArray<i64>,
-            groups: &FixedSizeListArray,
-            n: usize,
-        ) -> (Series, Option<Box<dyn Array>>) {
-            let mut out = Vec::with_capacity(groups.values().len());
-            let mut out_bitmap = BitmapBuilder::with_capacity(groups.values().len());
-            let mut out_slices = Vec::with_capacity(groups.len());
-            assert_eq!(groups.validity(), None);
-            let indices = groups.values();
-            let indices = indices
-                .as_any()
-                .downcast_ref::<PrimitiveArray<T>>()
-                .unwrap();
-            assert_eq!(indices.validity(), None);
-            let indices = indices.values().as_slice();
-            let data_values = data.values().as_slice();
-            let data_validity = data.validity().map(BitMask::from_bitmap);
-            let mut past = VecDeque::with_capacity(n);
-            for i in 0..groups.len() {
-                let offset = indices[i * 2].into() as usize;
-                let length = indices[i * 2 + 1].into() as usize;
+        let mut out = Vec::with_capacity(num_values as usize);
+        let mut out_bitmap = BitmapBuilder::with_capacity(num_values as usize);
+        let mut out_slices = Vec::with_capacity(num_groups);
 
-                past.clear();
-                out_slices.push(out.len() as u64);
-                rolling_product_values(
-                    &data_values[offset..][..length],
-                    data_validity,
-                    &mut 1,
-                    &mut past,
-                    &mut out,
-                    &mut out_bitmap,
-                    n,
-                );
-                out_slices.push((out.len() as u64 - *out_slices.last().unwrap()) as u64);
-            }
-
-            let out = PrimitiveArray::new(
-                ArrowDataType::Int64,
-                out.into(),
-                out_bitmap.into_opt_validity(),
-            );
-            let out_slices = PrimitiveArray::new(ArrowDataType::UInt64, out_slices.into(), None);
-            let out_slices = FixedSizeListArray::new(
-                ArrowDataType::UInt64.to_fixed_size_list(2, false),
-                groups.len(),
-                out_slices.boxed(),
-                None,
-            );
-
-            let data = unsafe {
-                ChunkedArray::<Int64Type>::from_chunks_and_dtype(
-                    name,
-                    vec![out.boxed()],
-                    DataType::Int64,
-                )
-            }
-            .into_series();
-            let groups = out_slices.boxed();
-
-            (data, Some(groups))
-        }
+        let data_values = data.values().as_slice();
+        let data_validity = data.validity().map(BitMask::from_bitmap);
+        let mut past = VecDeque::with_capacity(self.n);
 
         match groups {
-            None => Ok((data.clone(), groups.clone())),
-            Some(groups) => {
-                let data = data.i64()?;
-                let name = data.name().clone();
-                let data = data.rechunk();
-                let data = data.downcast_as_array();
-
-                use ArrowDataType as D;
-                match groups.dtype() {
-                    D::LargeList(f) if matches!(f.dtype(), D::UInt32) => Ok(indices::<u32>(
-                        name,
-                        data,
-                        groups.as_any().downcast_ref().unwrap(),
+            GroupPositions::ScalarPerGroup | GroupPositions::SharedAcrossGroups => unreachable!(),
+            GroupPositions::Slice(groups) => {
+                for slice in groups {
+                    past.clear();
+                    let offset = out.len() as u64;
+                    rolling_product_values(
+                        &data_values[slice.offset as usize..][..slice.length as usize],
+                        data_validity,
+                        &mut 1,
+                        &mut past,
+                        &mut out,
+                        &mut out_bitmap,
                         self.n,
-                    )),
-                    D::LargeList(f) if matches!(f.dtype(), D::UInt64) => Ok(indices::<u64>(
-                        name,
-                        data,
-                        groups.as_any().downcast_ref().unwrap(),
+                    );
+                    let length = out.len() as u64 - offset;
+                    out_slices.push(SliceGroup { offset, length });
+                }
+            },
+            GroupPositions::Index(indices) => {
+                for i in indices.iter() {
+                    past.clear();
+                    let offset = out.len();
+                    rolling_product_indices(
+                        data_values,
+                        data_validity,
+                        i,
+                        &mut past,
+                        &mut out,
+                        &mut out_bitmap,
                         self.n,
-                    )),
-                    D::FixedSizeList(f, 2) if matches!(f.dtype(), D::UInt32) => Ok(slices::<u32>(
-                        name,
-                        data,
-                        groups.as_any().downcast_ref().unwrap(),
-                        self.n,
-                    )),
-                    D::FixedSizeList(f, 2) if matches!(f.dtype(), D::UInt64) => Ok(slices::<u64>(
-                        name,
-                        data,
-                        groups.as_any().downcast_ref().unwrap(),
-                        self.n,
-                    )),
-                    _ => unreachable!(),
+                    );
+                    let length = out.len() - offset;
+                    out_slices.push(SliceGroup {
+                        offset: offset as u64,
+                        length: length as u64,
+                    });
                 }
             },
         }
+
+        let out = PrimitiveArray::new(
+            ArrowDataType::Int64,
+            out.into(),
+            out_bitmap.into_opt_validity(),
+        );
+        let data = unsafe {
+            ChunkedArray::<Int64Type>::from_chunks_and_dtype(
+                name,
+                vec![out.boxed()],
+                DataType::Int64,
+            )
+        }
+        .into_series();
+
+        let groups = GroupPositions::Slice(out_slices.into());
+        Ok((data, Cow::Owned(groups)))
     }
 }
 
@@ -340,10 +268,10 @@ fn rolling_product_values(
     }
 }
 
-fn rolling_product_indices<T: Copy + Into<u64>>(
+fn rolling_product_indices(
     values: &[i64],
     validity: Option<BitMask>,
-    indices: &[T],
+    indices: &[u64],
     past: &mut VecDeque<i64>,
     out: &mut Vec<i64>,
     out_bitmap: &mut BitmapBuilder,
@@ -356,7 +284,7 @@ fn rolling_product_indices<T: Copy + Into<u64>>(
         None => {
             out_bitmap.extend_constant(values.len(), true);
             out.extend(indices.iter().map(|i| {
-                let v = values[(*i).into() as usize];
+                let v = values[*i as usize];
                 if past.len() >= n {
                     product /= past.pop_front().unwrap();
                 }
@@ -368,8 +296,8 @@ fn rolling_product_indices<T: Copy + Into<u64>>(
         Some(validity) => {
             out_bitmap.reserve(values.len());
             out.extend(indices.iter().map(|i| {
-                let v = values[(*i).into() as usize];
-                let is_valid = validity.get((*i).into() as usize);
+                let v = values[*i as usize];
+                let is_valid = validity.get(*i as usize);
 
                 if !is_valid {
                     out_bitmap.push(false);

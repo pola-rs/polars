@@ -14,7 +14,7 @@ use polars_core::prelude::{CompatLevel, Field};
 use polars_core::schema::{Schema, SchemaExt};
 use polars_core::series::Series;
 use polars_error::{PolarsResult, polars_bail};
-use polars_ffi::version_1 as ffi;
+use polars_ffi::version_1::{self as ffi, CowGroupPositions, GroupPositions};
 use polars_utils::pl_str::PlSmallStr;
 
 #[cfg(feature = "serde")]
@@ -165,10 +165,10 @@ impl PluginV1 {
         Ok(PluginV1State { ptr, plugin: self })
     }
 
-    pub fn evaluate_on_groups(
+    pub fn evaluate_on_groups<'a>(
         &self,
-        inputs: &[(Series, Option<Box<dyn Array>>)],
-    ) -> PolarsResult<(Series, Option<Box<dyn Array>>)> {
+        inputs: &[(Series, &'a GroupPositions)],
+    ) -> PolarsResult<(Series, CowGroupPositions<'a>)> {
         unsafe {
             self.vtable
                 .evaluate_on_groups(self.data.ptr_clone(), inputs)
