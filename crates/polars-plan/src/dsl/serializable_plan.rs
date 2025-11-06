@@ -583,6 +583,7 @@ fn get_dsl_plan(
     }
 }
 
+/// Serialization wrapper that splits large serialized byte values into chunks.
 #[derive(Debug, Clone)]
 pub(crate) struct DataFrameSerdeWrap(Arc<DataFrame>);
 
