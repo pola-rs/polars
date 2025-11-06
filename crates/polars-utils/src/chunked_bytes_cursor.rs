@@ -43,7 +43,8 @@ where
     T: AsRef<[u8]>,
 {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let new_position = self.position + buf.len().min(self.total_size - self.position);
+        let new_position =
+            self.position + buf.len().min(self.total_size.saturating_sub(self.position));
 
         let byte_range = self.position..new_position;
 
@@ -54,13 +55,11 @@ where
         let mut bytes_read: usize = 0;
 
         {
-            let bytes = self.chunked_bytes[byte_range.start / self.chunk_size].as_ref();
-            let offset = (byte_range.start % self.chunk_size).min(bytes.len());
-            let len = (bytes.len() - offset).min(byte_range.len());
+            let chunk_bytes = self.chunked_bytes[byte_range.start / self.chunk_size].as_ref();
+            let offset_in_chunk = (byte_range.start % self.chunk_size).min(chunk_bytes.len());
+            let len = byte_range.len().min(chunk_bytes.len() - offset_in_chunk);
 
-            unsafe {
-                std::ptr::copy_nonoverlapping(bytes.as_ptr().add(offset), buf.as_mut_ptr(), len)
-            };
+            buf[..len].copy_from_slice(&chunk_bytes[offset_in_chunk..][..len]);
 
             bytes_read += len;
         }
@@ -69,16 +68,10 @@ where
             for chunk_idx in
                 byte_range.start.div_ceil(self.chunk_size)..byte_range.end.div_ceil(self.chunk_size)
             {
-                let bytes = self.chunked_bytes[chunk_idx].as_ref();
-                let len = bytes.len().min(byte_range.len() - bytes_read);
+                let chunk_bytes = self.chunked_bytes[chunk_idx].as_ref();
+                let len = (byte_range.len() - bytes_read).min(chunk_bytes.len());
 
-                unsafe {
-                    std::ptr::copy_nonoverlapping(
-                        bytes.as_ptr(),
-                        buf.as_mut_ptr().add(bytes_read),
-                        len,
-                    )
-                };
+                buf[bytes_read..][..len].copy_from_slice(&chunk_bytes[..len]);
 
                 bytes_read += len;
             }
@@ -86,7 +79,7 @@ where
 
         assert_eq!(bytes_read, byte_range.len());
 
-        self.position = byte_range.end;
+        self.position = new_position;
 
         Ok(byte_range.len())
     }
