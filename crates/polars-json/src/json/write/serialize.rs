@@ -479,6 +479,9 @@ pub(crate) fn new_serializer<'a>(
         ArrowDataType::Int64 => {
             primitive_serializer::<i64>(array.as_any().downcast_ref().unwrap(), offset, take)
         },
+        ArrowDataType::Int128 => {
+            primitive_serializer::<i128>(array.as_any().downcast_ref().unwrap(), offset, take)
+        },
         ArrowDataType::UInt8 => {
             primitive_serializer::<u8>(array.as_any().downcast_ref().unwrap(), offset, take)
         },
@@ -490,6 +493,9 @@ pub(crate) fn new_serializer<'a>(
         },
         ArrowDataType::UInt64 => {
             primitive_serializer::<u64>(array.as_any().downcast_ref().unwrap(), offset, take)
+        },
+        ArrowDataType::UInt128 => {
+            primitive_serializer::<u128>(array.as_any().downcast_ref().unwrap(), offset, take)
         },
         ArrowDataType::Float16 => {
             float16_serializer(array.as_any().downcast_ref().unwrap(), offset, take)

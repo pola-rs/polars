@@ -294,7 +294,11 @@ fn deserialize_all<'a>(
     let out = match json {
         Value::Static(StaticNode::Bool(b)) => AnyValue::Boolean(*b),
         Value::Static(StaticNode::I64(i)) => AnyValue::Int64(*i),
+        #[cfg(feature = "dtype-i128")]
+        Value::Static(StaticNode::I128(i)) => AnyValue::Int128(*i),
         Value::Static(StaticNode::U64(u)) => AnyValue::UInt64(*u),
+        #[cfg(feature = "dtype-u128")]
+        Value::Static(StaticNode::U128(i)) => AnyValue::UInt128(*i),
         Value::Static(StaticNode::F64(f)) => AnyValue::Float64(*f),
         Value::String(s) => AnyValue::StringOwned(s.as_ref().into()),
         Value::Array(arr) => {
