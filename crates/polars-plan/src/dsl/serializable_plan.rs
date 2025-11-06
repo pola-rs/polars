@@ -644,7 +644,7 @@ mod _serde_impl {
 
             result
                 .map(|x| DataFrameSerdeWrap(Arc::new(x)))
-                .map_err(|e| D::Error::custom(e))
+                .map_err(D::Error::custom)
         }
     }
 }
