@@ -22,6 +22,24 @@ def test_frame() -> pl.LazyFrame:
     )
 
 
+def test_create_table() -> None:
+    with pl.SQLContext() as ctx:
+        # test all three ways of creating a new table
+        ctx.execute("CREATE TABLE tbl1(colx VARCHAR, coly DATE, colz ARRAY<DOUBLE>)")
+        ctx.execute("CREATE TABLE tbl2 AS SELECT * FROM tbl1")
+        ctx.execute("CREATE TABLE tbl3 LIKE tbl2")
+        df = ctx.execute("SELECT * FROM tbl3", eager=True)
+
+    df_expected = pl.DataFrame(
+        schema={
+            "colx": pl.String,
+            "coly": pl.Date,
+            "colz": pl.List(pl.Float64),
+        }
+    )
+    assert_frame_equal(df_expected, df)
+
+
 @pytest.mark.parametrize(
     ("delete_constraint", "expected_ids"),
     [

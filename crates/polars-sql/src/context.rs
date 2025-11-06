@@ -22,6 +22,7 @@ use crate::sql_expr::{
     parse_sql_array, parse_sql_expr, resolve_compound_identifier, to_sql_interface_err,
 };
 use crate::table_functions::PolarsTableFunctions;
+use crate::types::map_sql_dtype_to_polars;
 
 #[derive(Clone)]
 pub struct TableInfo {
@@ -1125,27 +1126,65 @@ impl SQLContext {
             if_not_exists,
             name,
             query,
+            columns,
+            like,
             ..
         }) = stmt
         {
             let tbl_name = name.0.first().unwrap().value.as_str();
-            // CREATE TABLE IF NOT EXISTS
             if *if_not_exists && self.table_map.contains_key(tbl_name) {
                 polars_bail!(SQLInterface: "relation '{}' already exists", tbl_name);
-                // CREATE OR REPLACE TABLE
             }
-            if let Some(query) = query {
-                let lf = self.execute_query(query)?;
-                self.register(tbl_name, lf);
-                let out = df! {
-                    "Response" => ["CREATE TABLE"]
-                }
-                .unwrap()
-                .lazy();
-                Ok(out)
-            } else {
-                polars_bail!(SQLInterface: "only `CREATE TABLE AS SELECT ...` is currently supported");
-            }
+            let lf = match (query, columns.is_empty(), like) {
+                (Some(query), true, None) => {
+                    // ----------------------------------------------------
+                    // CREATE TABLE [IF NOT EXISTS] <name> AS <query>
+                    // ----------------------------------------------------
+                    self.execute_query(query)?
+                },
+                (None, false, None) => {
+                    // ----------------------------------------------------
+                    // CREATE TABLE [IF NOT EXISTS] <name> (<coldef>, ...)
+                    // ----------------------------------------------------
+                    let mut schema = Schema::with_capacity(columns.len());
+                    for col in columns {
+                        let col_name = col.name.value.as_str();
+                        let dtype = map_sql_dtype_to_polars(&col.data_type)?;
+                        schema.insert_at_index(schema.len(), col_name.into(), dtype)?;
+                    }
+                    DataFrame::empty_with_schema(&schema).lazy()
+                },
+                (None, true, Some(from_name)) => {
+                    // ----------------------------------------------------
+                    // CREATE TABLE [IF NOT EXISTS] <name> LIKE <table>
+                    // ----------------------------------------------------
+                    let like_table = from_name.0.first().unwrap().value.as_str();
+                    if let Some(mut table) = self.table_map.get(like_table).cloned() {
+                        let schema = self.get_frame_schema(&mut table)?;
+                        DataFrame::empty_with_schema(&schema).lazy()
+                    } else {
+                        polars_bail!(SQLInterface: "table given in LIKE does not exist: {}", like_table)
+                    }
+                },
+                // No valid options provided
+                (None, true, None) => {
+                    polars_bail!(SQLInterface: "CREATE TABLE expected a query, column definitions, or LIKE clause")
+                },
+                // Mutually exclusive options
+                _ => {
+                    polars_bail!(
+                        SQLInterface: "CREATE TABLE received mutually exclusive options:\nquery = {:?}\ncolumns = {:?}\nlike = {:?}",
+                        query,
+                        columns,
+                        like,
+                    )
+                },
+            };
+            self.register(tbl_name, lf);
+
+            let df_created =
+                df! { "Response" => [format!("CREATE TABLE {}", name.0.first().unwrap().value)] };
+            Ok(df_created.unwrap().lazy())
         } else {
             unreachable!()
         }
@@ -1241,7 +1280,6 @@ impl SQLContext {
 
                     if *with_offset {
                         // TODO: support 'WITH ORDINALITY|OFFSET' modifier.
-                        //  (note that 'WITH OFFSET' is BigQuery-specific syntax, not PostgreSQL)
                         polars_bail!(SQLInterface: "UNNEST tables do not (yet) support WITH ORDINALITY|OFFSET");
                     }
                     let table_name = alias.name.value.clone();
