@@ -219,7 +219,7 @@ impl ColumnStatistics {
                 })
             },
 
-            (_, PPT::FixedLenByteArray(2))
+            (D::Float16, PPT::FixedLenByteArray(2))
                 if matches!(
                     self.logical_type.as_ref(),
                     Some(PrimitiveLogicalType::Float16)
