@@ -9,7 +9,7 @@ jobs:
       pull-requests: write
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Clear existing label
         run: |
@@ -20,6 +20,6 @@ jobs:
           'https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.number }}/labels/changes-dsl' \
           || true
 
-      - uses: actions/labeler@v5
+      - uses: actions/labeler@v6
         with:
           configuration-path: .github/changes-dsl-labeler-config.yml
