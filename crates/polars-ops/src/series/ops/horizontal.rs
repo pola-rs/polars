@@ -287,7 +287,7 @@ pub fn mean_horizontal(
     match num_rows {
         0 => Ok(None),
         1 => Ok(Some(match columns[0].dtype() {
-            dt if dt != &DataType::Float32 && !dt.is_decimal() => {
+            dt if dt != &DataType::Float16 && dt != &DataType::Float32 && !dt.is_decimal() => {
                 columns[0].cast(&DataType::Float64)?
             },
             _ => columns[0].clone(),
@@ -329,14 +329,11 @@ pub fn mean_horizontal(
 
             // make sure that we do not divide by zero
             // by replacing with None
-            let dt = if sum
+            let dt = sum
                 .as_ref()
-                .is_some_and(|s| s.dtype() == &DataType::Float32)
-            {
-                &DataType::Float32
-            } else {
-                &DataType::Float64
-            };
+                .map(Column::dtype)
+                .filter(|dt| matches!(dt, DataType::Float16 | DataType::Float32))
+                .unwrap_or(&DataType::Float64);
             let value_length = value_length
                 .set(&value_length.equal(0), None)?
                 .into_column()
