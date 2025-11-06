@@ -588,7 +588,7 @@ pub(crate) struct DataFrameSerdeWrap(Arc<DataFrame>);
 
 #[cfg(feature = "serde")]
 mod _serde_impl {
-    use std::sync::Arc;
+    use std::sync::{Arc, LazyLock};
 
     use polars_core::frame::DataFrame;
     use polars_utils::chunked_bytes_cursor::FixedSizeChunkedBytesCursor;
@@ -597,8 +597,14 @@ mod _serde_impl {
 
     use super::DataFrameSerdeWrap;
 
-    /// Limit for rmp_serde
-    const MAX_BYTE_SLICE_LEN: usize = u32::MAX as usize;
+    fn max_byte_slice_len() -> usize {
+        std::env::var("POLARS_SERIALIZE_LAZYFRAME_MAX_BYTE_SLICE_LEN")
+            .as_deref()
+            .map_or(
+                usize::try_from(u32::MAX).unwrap(), // Limit for rmp_serde
+                |x| x.parse().unwrap(),
+            )
+    }
 
     impl Serialize for DataFrameSerdeWrap {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -614,7 +620,7 @@ mod _serde_impl {
                 .serialize_into_writer(&mut bytes)
                 .map_err(S::Error::custom)?;
 
-            serializer.collect_seq(bytes.chunks(MAX_BYTE_SLICE_LEN))
+            serializer.collect_seq(bytes.chunks(max_byte_slice_len()))
         }
     }
 
@@ -628,8 +634,11 @@ mod _serde_impl {
             let result = match bytes.as_slice() {
                 [v] => DataFrame::deserialize_from_reader(&mut std::io::Cursor::new(v.as_slice())),
                 _ => DataFrame::deserialize_from_reader(
-                    &mut FixedSizeChunkedBytesCursor::try_new(bytes.as_slice(), MAX_BYTE_SLICE_LEN)
-                        .unwrap(),
+                    &mut FixedSizeChunkedBytesCursor::try_new(
+                        bytes.as_slice(),
+                        max_byte_slice_len(),
+                    )
+                    .unwrap(),
                 ),
             };
 

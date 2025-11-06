@@ -13,6 +13,8 @@ where
     /// Returns error if `chunked_bytes` is empty, or if a byte slice that is not the last one
     /// has a length != `chunk_size`;
     pub fn try_new(chunked_bytes: &'a [T], chunk_size: usize) -> Result<Self, ()> {
+        assert!(chunk_size > 0);
+
         if chunked_bytes.is_empty() {
             return Err(());
         }
