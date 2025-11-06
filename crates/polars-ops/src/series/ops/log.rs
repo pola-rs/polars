@@ -101,7 +101,7 @@ pub trait LogSeries: SeriesSealed {
             return Ok(0.0);
         }
         match s.dtype() {
-            DataType::Float32 | DataType::Float64 => {
+            DataType::Float16 | DataType::Float32 | DataType::Float64 => {
                 let pk = s.as_ref();
 
                 let pk = if normalize {

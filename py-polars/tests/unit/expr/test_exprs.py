@@ -180,12 +180,19 @@ def test_log_broadcast_upcasting(
 @pytest.mark.parametrize(
     ("dtype_a", "dtype_base", "dtype_out"),
     [
+        (pl.Float16, pl.Float16, pl.Float16),
+        (pl.Float16, pl.Float32, pl.Float16),
+        (pl.Float16, pl.Float64, pl.Float16),
+        (pl.Float32, pl.Float16, pl.Float32),
         (pl.Float32, pl.Float32, pl.Float32),
         (pl.Float32, pl.Float64, pl.Float32),
+        (pl.Float64, pl.Float16, pl.Float64),
         (pl.Float64, pl.Float32, pl.Float64),
         (pl.Float64, pl.Float64, pl.Float64),
+        (pl.Float16, pl.Int32, pl.Float16),
         (pl.Float32, pl.Int32, pl.Float32),
         (pl.Float64, pl.Int32, pl.Float64),
+        (pl.Int32, pl.Float16, pl.Float16),
         (pl.Int32, pl.Float32, pl.Float32),
         (pl.Int32, pl.Float64, pl.Float64),
         (pl.Decimal(21, 3), pl.Decimal(21, 3), pl.Float64),
@@ -214,6 +221,7 @@ def test_log(
     ("dtype_in", "dtype_out"),
     [
         (pl.Int32, pl.Float64),
+        (pl.Float16, pl.Float16),
         (pl.Float32, pl.Float32),
         (pl.Float64, pl.Float64),
     ],
@@ -275,6 +283,7 @@ def test_dtype_col_selection() -> None:
             "l": pl.UInt16,
             "m": pl.UInt32,
             "n": pl.UInt64,
+            "o": pl.Float16,
         },
     )
     assert df.select(pl.col(INTEGER_DTYPES)).columns == [
@@ -287,7 +296,7 @@ def test_dtype_col_selection() -> None:
         "m",
         "n",
     ]
-    assert df.select(pl.col(FLOAT_DTYPES)).columns == ["i", "j"]
+    assert df.select(pl.col(FLOAT_DTYPES)).columns == ["i", "j", "o"]
     assert df.select(pl.col(NUMERIC_DTYPES)).columns == [
         "e",
         "f",
@@ -299,6 +308,7 @@ def test_dtype_col_selection() -> None:
         "l",
         "m",
         "n",
+        "o",
     ]
     assert df.select(pl.col(TEMPORAL_DTYPES)).columns == [
         "a1",
@@ -471,7 +481,9 @@ def test_lit_dtypes() -> None:
             "dur_ms": lit_series(td, pl.Duration("ms")),
             "dur_us": lit_series(td, pl.Duration("us")),
             "dur_ns": lit_series(td, pl.Duration("ns")),
+            "f16": lit_series(0, pl.Float16),
             "f32": lit_series(0, pl.Float32),
+            "f64": lit_series(0, pl.Float64),
             "u16": lit_series(0, pl.UInt16),
             "i16": lit_series(0, pl.Int16),
             "i64": lit_series(pl.Series([8]), None),
@@ -489,7 +501,9 @@ def test_lit_dtypes() -> None:
         pl.Duration("ms"),
         pl.Duration("us"),
         pl.Duration("ns"),
+        pl.Float16,
         pl.Float32,
+        pl.Float64,
         pl.UInt16,
         pl.Int16,
         pl.Int64,
@@ -506,6 +520,8 @@ def test_lit_dtypes() -> None:
         td_ms,
         td,
         td,
+        0,
+        0,
         0,
         0,
         0,
