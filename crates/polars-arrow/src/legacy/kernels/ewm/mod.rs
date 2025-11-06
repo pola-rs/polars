@@ -1,9 +1,7 @@
-mod average;
 mod variance;
 
 use std::hash::{Hash, Hasher};
 
-pub use average::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 pub use variance::*;
@@ -75,19 +73,20 @@ impl EWMOptions {
 #[cfg(test)]
 macro_rules! assert_allclose {
     ($xs:expr, $ys:expr, $tol:expr) => {
-        assert!(
-            $xs.iter()
-                .zip($ys.iter())
-                .map(|(x, z)| {
-                    match (x, z) {
-                        (Some(a), Some(b)) => (a - b).abs() < $tol,
-                        (None, None) => true,
-                        _ => false,
-                    }
-                })
-                .fold(true, |acc, b| acc && b)
-        );
+        assert!($xs.iter().zip($ys.iter()).all(|(x, z)| {
+            match (x, z) {
+                (Some(a), Some(b)) => (a - b).abs() < $tol,
+                (None, None) => true,
+                _ => false,
+            }
+        }));
     };
 }
 #[cfg(test)]
 pub(crate) use assert_allclose;
+
+use crate::array::Array;
+
+pub trait EwmStateUpdate {
+    fn ewm_state_update(&mut self, values: &dyn Array) -> Box<dyn Array>;
+}

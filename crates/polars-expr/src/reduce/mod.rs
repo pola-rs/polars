@@ -1,5 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 mod any_all;
+#[cfg(feature = "approx_unique")]
+mod approx_n_unique;
 #[cfg(feature = "bitwise")]
 mod bitwise;
 mod convert;
@@ -217,7 +219,7 @@ pub struct VecGroupedReduction<R: Reducer> {
 }
 
 impl<R: Reducer> VecGroupedReduction<R> {
-    fn new(in_dtype: DataType, reducer: R) -> Self {
+    pub fn new(in_dtype: DataType, reducer: R) -> Self {
         Self {
             values: Vec::new(),
             evicted_values: Vec::new(),
@@ -483,25 +485,26 @@ where
     }
 }
 
-struct NullGroupedReduction {
+#[derive(Clone)]
+pub struct NullGroupedReduction {
     num_groups: IdxSize,
     num_evictions: IdxSize,
-    dtype: DataType,
+    output: Scalar,
 }
 
 impl NullGroupedReduction {
-    fn new(dtype: DataType) -> Self {
+    pub fn new(output: Scalar) -> Self {
         Self {
             num_groups: 0,
             num_evictions: 0,
-            dtype,
+            output,
         }
     }
 }
 
 impl GroupedReduction for NullGroupedReduction {
     fn new_empty(&self) -> Box<dyn GroupedReduction> {
-        Box::new(Self::new(self.dtype.clone()))
+        Box::new(Self::new(self.output.clone()))
     }
 
     fn reserve(&mut self, _additional: usize) {}
@@ -512,20 +515,23 @@ impl GroupedReduction for NullGroupedReduction {
 
     fn update_group(
         &mut self,
-        _values: &Column,
+        values: &Column,
         _group_idx: IdxSize,
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        assert!(values.dtype().is_null());
         Ok(())
     }
 
     unsafe fn update_groups_while_evicting(
         &mut self,
-        _values: &Column,
-        _subset: &[IdxSize],
+        values: &Column,
+        subset: &[IdxSize],
         group_idxs: &[EvictIdx],
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        assert!(values.dtype().is_null());
+        assert!(subset.len() == group_idxs.len());
         for g in group_idxs {
             self.num_evictions += g.should_evict() as IdxSize;
         }
@@ -534,10 +540,12 @@ impl GroupedReduction for NullGroupedReduction {
 
     unsafe fn combine_subset(
         &mut self,
-        _other: &dyn GroupedReduction,
-        _subset: &[IdxSize],
-        _group_idxs: &[IdxSize],
+        other: &dyn GroupedReduction,
+        subset: &[IdxSize],
+        group_idxs: &[IdxSize],
     ) -> PolarsResult<()> {
+        let _other = other.as_any().downcast_ref::<Self>().unwrap();
+        assert!(subset.len() == group_idxs.len());
         Ok(())
     }
 
@@ -545,16 +553,14 @@ impl GroupedReduction for NullGroupedReduction {
         Box::new(Self {
             num_groups: core::mem::replace(&mut self.num_evictions, 0),
             num_evictions: 0,
-            dtype: self.dtype.clone(),
+            output: self.output.clone(),
         })
     }
 
     fn finalize(&mut self) -> PolarsResult<Series> {
-        Ok(Series::full_null(
-            PlSmallStr::EMPTY,
-            core::mem::replace(&mut self.num_groups, 0) as usize,
-            &self.dtype,
-        ))
+        let length = core::mem::replace(&mut self.num_groups, 0) as usize;
+        let s = self.output.clone().into_series(PlSmallStr::EMPTY);
+        Ok(s.new_from_index(0, length))
     }
 
     fn as_any(&self) -> &dyn Any {

@@ -260,6 +260,14 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .into_series()
     }
 
+    fn deposit(&self, validity: &Bitmap) -> Series {
+        self.0
+            .physical()
+            .deposit(validity)
+            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_series()
+    }
+
     fn len(&self) -> usize {
         self.0.len()
     }
@@ -370,6 +378,11 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         let sc = self.0.physical().min_reduce();
 
         Ok(Scalar::new(self.dtype().clone(), sc.value().clone()))
+    }
+
+    fn mean_reduce(&self) -> PolarsResult<Scalar> {
+        let mean = self.mean().map(|v| v as i64);
+        Ok(Scalar::new(self.dtype().clone(), mean.into()))
     }
 
     fn median_reduce(&self) -> PolarsResult<Scalar> {

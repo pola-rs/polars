@@ -395,6 +395,14 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
+    fn deposit(&self, validity: &Bitmap) -> Series {
+        self.0
+            .physical()
+            .deposit(validity)
+            .into_duration(self.0.time_unit())
+            .into_series()
+    }
+
     fn len(&self) -> usize {
         self.0.len()
     }
@@ -516,6 +524,11 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
             self.dtype().clone(),
             v.as_duration(self.0.time_unit()),
         ))
+    }
+
+    fn mean_reduce(&self) -> PolarsResult<Scalar> {
+        let mean = self.mean().map(|v| v as i64);
+        Ok(Scalar::new(self.dtype().clone(), mean.into()))
     }
 
     fn median_reduce(&self) -> PolarsResult<Scalar> {

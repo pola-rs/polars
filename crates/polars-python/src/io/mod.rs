@@ -4,15 +4,17 @@ use polars::prelude::default_values::DefaultFieldValues;
 use polars::prelude::deletion::DeletionFilesList;
 use polars::prelude::{
     CastColumnsPolicy, ColumnMapping, ExtraColumnsPolicy, MissingColumnsPolicy, PlSmallStr, Schema,
-    UnifiedScanArgs,
+    TableStatistics, UnifiedScanArgs,
 };
 use polars_io::{HiveOptions, RowIndex};
 use polars_utils::IdxSize;
 use polars_utils::plpath::PlPathRef;
 use polars_utils::slice_enum::Slice;
+use pyo3::pybacked::PyBackedStr;
 use pyo3::types::PyAnyMethods;
-use pyo3::{Bound, FromPyObject, PyObject, PyResult};
+use pyo3::{Bound, FromPyObject, Py, PyAny, PyResult, intern};
 
+use crate::PyDataFrame;
 use crate::functions::parse_cloud_options;
 use crate::prelude::Wrap;
 
@@ -22,6 +24,17 @@ pub struct PyScanOptions<'py>(Bound<'py, pyo3::PyAny>);
 impl<'py> FromPyObject<'py> for PyScanOptions<'py> {
     fn extract_bound(ob: &Bound<'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
         Ok(Self(ob.clone()))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<TableStatistics> {
+    fn extract_bound(ob: &Bound<'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
+        let py = ob.py();
+        Ok(Wrap(TableStatistics(Arc::new(
+            PyDataFrame::extract_bound(&ob.getattr(intern!(py, "_df"))?)?
+                .df
+                .into_inner(),
+        ))))
     }
 }
 
@@ -40,6 +53,7 @@ impl PyScanOptions<'_> {
             missing_columns: Wrap<MissingColumnsPolicy>,
             include_file_paths: Option<Wrap<PlSmallStr>>,
             glob: bool,
+            hidden_file_prefix: Option<Vec<PyBackedStr>>,
             column_mapping: Option<Wrap<ColumnMapping>>,
             default_values: Option<Wrap<DefaultFieldValues>>,
             hive_partitioning: Option<bool>,
@@ -48,9 +62,11 @@ impl PyScanOptions<'_> {
             rechunk: bool,
             cache: bool,
             storage_options: Option<Vec<(String, String)>>,
-            credential_provider: Option<PyObject>,
+            credential_provider: Option<Py<PyAny>>,
             retries: usize,
             deletion_files: Option<Wrap<DeletionFilesList>>,
+            table_statistics: Option<Wrap<TableStatistics>>,
+            row_count: Option<(u64, u64)>,
         }
 
         let Extract {
@@ -63,6 +79,7 @@ impl PyScanOptions<'_> {
             column_mapping,
             default_values,
             glob,
+            hidden_file_prefix,
             hive_partitioning,
             hive_schema,
             try_parse_hive_dates,
@@ -72,6 +89,8 @@ impl PyScanOptions<'_> {
             credential_provider,
             retries,
             deletion_files,
+            table_statistics,
+            row_count,
         } = self.0.extract()?;
 
         let cloud_options =
@@ -100,6 +119,8 @@ impl PyScanOptions<'_> {
             rechunk,
             cache,
             glob,
+            hidden_file_prefix: hidden_file_prefix
+                .map(|x| x.into_iter().map(|x| (*x).into()).collect()),
             projection: None,
             column_mapping: column_mapping.map(|x| x.0),
             default_values: default_values
@@ -112,6 +133,8 @@ impl PyScanOptions<'_> {
             extra_columns_policy: extra_columns.0,
             include_file_paths: include_file_paths.map(|x| x.0),
             deletion_files: DeletionFilesList::filter_empty(deletion_files.map(|x| x.0)),
+            table_statistics: table_statistics.map(|x| x.0),
+            row_count,
         };
 
         Ok(unified_scan_args)

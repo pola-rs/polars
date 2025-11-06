@@ -241,7 +241,7 @@ impl FrozenCategories {
     /// It is guaranteed that the nth string ends up with category n (0-indexed).
     pub fn new<'a, I: IntoIterator<Item = &'a str>>(strings: I) -> PolarsResult<Arc<Self>> {
         let strings = strings.into_iter();
-        let hasher = *FROZEN_CATEGORIES_HASHER;
+        let hasher = FROZEN_CATEGORIES_HASHER.clone();
         let mut mapping = CategoricalMapping::with_hasher(usize::MAX, hasher);
         let mut builder = Utf8ViewArrayBuilder::new(ArrowDataType::Utf8);
         builder.reserve(strings.size_hint().0);

@@ -1,0 +1,3 @@
+changes-dsl:
+  - changed-files:
+      - all-globs-to-any-file: 'crates/polars-plan/dsl-schema-hashes.json'

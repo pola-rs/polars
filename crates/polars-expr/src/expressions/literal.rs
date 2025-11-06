@@ -7,7 +7,7 @@ use polars_core::utils::NoNull;
 use polars_plan::constants::get_literal_name;
 
 use super::*;
-use crate::expressions::{AggregationContext, PartitionedAggregation, PhysicalExpr};
+use crate::expressions::{AggregationContext, PhysicalExpr};
 
 pub struct LiteralExpr(pub LiteralValue, Expr);
 
@@ -121,7 +121,7 @@ impl PhysicalExpr for LiteralExpr {
                 groups: (0..groups.len() as IdxSize)
                     .map(|i| [i * lit_length, lit_length])
                     .collect(),
-                rolling: false,
+                overlapping: false,
             };
             let agg_state = AggState::AggregatedList(Column::new_scalar(
                 s.name().clone(),
@@ -137,10 +137,6 @@ impl PhysicalExpr for LiteralExpr {
         }
     }
 
-    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
-        Some(self)
-    }
-
     fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
         let dtype = self.0.get_datatype();
         Ok(Field::new(PlSmallStr::from_static("literal"), dtype))
@@ -151,25 +147,5 @@ impl PhysicalExpr for LiteralExpr {
 
     fn is_scalar(&self) -> bool {
         self.0.is_scalar()
-    }
-}
-
-impl PartitionedAggregation for LiteralExpr {
-    fn evaluate_partitioned(
-        &self,
-        df: &DataFrame,
-        _groups: &GroupPositions,
-        state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        self.evaluate(df, state)
-    }
-
-    fn finalize(
-        &self,
-        partitioned: Column,
-        _groups: &GroupPositions,
-        _state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        Ok(partitioned)
     }
 }

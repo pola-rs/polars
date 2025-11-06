@@ -296,6 +296,8 @@ impl DataFrame {
             );
         }
 
+        ensure_names_unique(&columns, |s| s.name().as_str())?;
+
         Ok(DataFrame {
             height,
             columns,
@@ -386,6 +388,13 @@ impl DataFrame {
             columns: vec![],
             cached_schema: OnceLock::new(),
         }
+    }
+
+    /// Create an empty `DataFrame` with empty columns as per the `schema`.
+    pub fn empty_with_arc_schema(schema: Arc<Schema>) -> Self {
+        let mut df = Self::empty_with_schema(&schema);
+        df.cached_schema = OnceLock::from(schema);
+        df
     }
 
     /// Create an empty `DataFrame` with empty columns as per the `schema`.
@@ -2039,8 +2048,26 @@ impl DataFrame {
     /// # Safety
     /// The indices must be in-bounds.
     pub unsafe fn take_unchecked_impl(&self, idx: &IdxCa, allow_threads: bool) -> Self {
-        let cols = if allow_threads {
-            POOL.install(|| self._apply_columns_par(&|c| c.take_unchecked(idx)))
+        let cols = if allow_threads && POOL.current_num_threads() > 1 {
+            POOL.install(|| {
+                if POOL.current_num_threads() > self.width() {
+                    let stride = usize::max(idx.len().div_ceil(POOL.current_num_threads()), 256);
+                    self._apply_columns_par(&|c| {
+                        (0..idx.len().div_ceil(stride))
+                            .into_par_iter()
+                            .map(|i| c.take_unchecked(&idx.slice((i * stride) as i64, stride)))
+                            .reduce(
+                                || Column::new_empty(c.name().clone(), c.dtype()),
+                                |mut a, b| {
+                                    a.append_owned(b).unwrap();
+                                    a
+                                },
+                            )
+                    })
+                } else {
+                    self._apply_columns_par(&|c| c.take_unchecked(idx))
+                }
+            })
         } else {
             self._apply_columns(&|s| s.take_unchecked(idx))
         };
@@ -2056,8 +2083,30 @@ impl DataFrame {
     /// # Safety
     /// The indices must be in-bounds.
     pub unsafe fn take_slice_unchecked_impl(&self, idx: &[IdxSize], allow_threads: bool) -> Self {
-        let cols = if allow_threads {
-            POOL.install(|| self._apply_columns_par(&|s| s.take_slice_unchecked(idx)))
+        let cols = if allow_threads && POOL.current_num_threads() > 1 {
+            POOL.install(|| {
+                if POOL.current_num_threads() > self.width() {
+                    let stride = usize::max(idx.len().div_ceil(POOL.current_num_threads()), 256);
+                    self._apply_columns_par(&|c| {
+                        (0..idx.len().div_ceil(stride))
+                            .into_par_iter()
+                            .map(|i| {
+                                let idx = &idx[i * stride..];
+                                let idx = &idx[..idx.len().min(stride)];
+                                c.take_slice_unchecked(idx)
+                            })
+                            .reduce(
+                                || Column::new_empty(c.name().clone(), c.dtype()),
+                                |mut a, b| {
+                                    a.append_owned(b).unwrap();
+                                    a
+                                },
+                            )
+                    })
+                } else {
+                    self._apply_columns_par(&|s| s.take_slice_unchecked(idx))
+                }
+            })
         } else {
             self._apply_columns(&|s| s.take_slice_unchecked(idx))
         };
@@ -2719,6 +2768,7 @@ impl DataFrame {
         (a, b)
     }
 
+    #[must_use]
     pub fn clear(&self) -> Self {
         let col = self.columns.iter().map(|s| s.clear()).collect::<Vec<_>>();
         unsafe { DataFrame::new_no_checks(0, col) }
@@ -3327,19 +3377,37 @@ impl DataFrame {
     /// Unnest the given `Struct` columns. This means that the fields of the `Struct` type will be
     /// inserted as columns.
     #[cfg(feature = "dtype-struct")]
-    pub fn unnest<I: IntoVec<PlSmallStr>>(&self, cols: I) -> PolarsResult<DataFrame> {
+    pub fn unnest<I: IntoVec<PlSmallStr>>(
+        &self,
+        cols: I,
+        separator: Option<&str>,
+    ) -> PolarsResult<DataFrame> {
         let cols = cols.into_vec();
-        self.unnest_impl(cols.into_iter().collect())
+        self.unnest_impl(cols.into_iter().collect(), separator)
     }
 
     #[cfg(feature = "dtype-struct")]
-    fn unnest_impl(&self, cols: PlHashSet<PlSmallStr>) -> PolarsResult<DataFrame> {
+    fn unnest_impl(
+        &self,
+        cols: PlHashSet<PlSmallStr>,
+        separator: Option<&str>,
+    ) -> PolarsResult<DataFrame> {
         let mut new_cols = Vec::with_capacity(std::cmp::min(self.width() * 2, self.width() + 128));
         let mut count = 0;
         for s in &self.columns {
             if cols.contains(s.name()) {
                 let ca = s.struct_()?.clone();
-                new_cols.extend(ca.fields_as_series().into_iter().map(Column::from));
+                new_cols.extend(ca.fields_as_series().into_iter().map(|mut f| {
+                    if let Some(separator) = &separator {
+                        f.rename(polars_utils::format_pl_smallstr!(
+                            "{}{}{}",
+                            s.name(),
+                            separator,
+                            f.name()
+                        ));
+                    }
+                    Column::from(f)
+                }));
                 count += 1;
             } else {
                 new_cols.push(s.clone())

@@ -1,7 +1,7 @@
 use std::fmt;
 
 use polars_core::error::*;
-use polars_utils::{format_list_container_truncated, format_list_truncated};
+use polars_utils::format_list_truncated;
 
 use crate::constants;
 use crate::plans::ir::IRPlanRef;
@@ -24,6 +24,7 @@ pub struct TreeFmtAExpr<'a>(&'a AExpr);
 impl fmt::Display for TreeFmtAExpr<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self.0 {
+            AExpr::Element => "element()",
             AExpr::Explode {
                 expr: _,
                 skip_empty: false,
@@ -69,6 +70,9 @@ impl fmt::Display for TreeFmtAExpr<'_> {
             AExpr::Ternary { .. } => "ternary",
             AExpr::AnonymousFunction { fmt_str, .. } => {
                 return write!(f, "anonymous_function: {fmt_str}");
+            },
+            AExpr::AnonymousStreamingAgg { fmt_str, .. } => {
+                return write!(f, "anonymous_streaming_agg: {fmt_str}");
             },
             AExpr::Eval { .. } => "list.eval",
             AExpr::Function { function, .. } => return write!(f, "function: {function}"),
@@ -339,6 +343,7 @@ impl<'a> TreeFmtNode<'a> {
                             h,
                             match payload {
                                 SinkTypeIR::Memory => "SINK (memory)",
+                                SinkTypeIR::Callback(..) => "SINK (callback)",
                                 SinkTypeIR::File { .. } => "SINK (file)",
                                 SinkTypeIR::Partition { .. } => "SINK (partition)",
                             },

@@ -49,6 +49,10 @@ impl PyExpr {
         self.inner.clone().list().eval(expr.inner).into()
     }
 
+    fn list_agg(&self, expr: PyExpr) -> Self {
+        self.inner.clone().list().agg(expr.inner).into()
+    }
+
     #[cfg(feature = "list_filter")]
     fn list_filter(&self, predicate: PyExpr) -> Self {
         self.inner

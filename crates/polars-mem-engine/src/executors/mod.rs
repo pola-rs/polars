@@ -4,8 +4,8 @@ mod ext_context;
 mod filter;
 mod group_by;
 mod group_by_dynamic;
-mod group_by_partitioned;
 pub(super) mod group_by_rolling;
+mod group_by_streaming;
 mod hconcat;
 mod join;
 #[cfg(feature = "merge_sorted")]
@@ -36,9 +36,9 @@ pub(super) use self::filter::*;
 pub(super) use self::group_by::*;
 #[cfg(feature = "dynamic_group_by")]
 pub(super) use self::group_by_dynamic::*;
-pub(super) use self::group_by_partitioned::*;
 #[cfg(feature = "dynamic_group_by")]
 pub(super) use self::group_by_rolling::GroupByRollingExec;
+pub(super) use self::group_by_streaming::*;
 pub(super) use self::hconcat::*;
 pub(super) use self::join::*;
 #[cfg(feature = "merge_sorted")]

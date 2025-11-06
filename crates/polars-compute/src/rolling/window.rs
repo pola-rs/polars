@@ -1,4 +1,4 @@
-use ::skiplist::OrderedSkipList;
+use polars_utils::order_statistic_tree::OrderStatisticTree;
 use polars_utils::total_ord::TotalOrd;
 
 use super::*;
@@ -9,7 +9,7 @@ pub(super) struct SortedBuf<'a, T: NativeType> {
     last_start: usize,
     last_end: usize,
     // values within the window that we keep sorted
-    buf: OrderedSkipList<T>,
+    buf: OrderStatisticTree<T>,
 }
 
 impl<'a, T: NativeType + PartialOrd + Copy> SortedBuf<'a, T> {
@@ -19,12 +19,11 @@ impl<'a, T: NativeType + PartialOrd + Copy> SortedBuf<'a, T> {
         end: usize,
         max_window_size: Option<usize>,
     ) -> Self {
-        let mut buf = if let Some(max_window_size) = max_window_size {
-            OrderedSkipList::with_capacity(max_window_size)
+        let buf = if let Some(max_window_size) = max_window_size {
+            OrderStatisticTree::with_capacity(max_window_size, TotalOrd::tot_cmp)
         } else {
-            OrderedSkipList::new()
+            OrderStatisticTree::new(TotalOrd::tot_cmp)
         };
-        unsafe { buf.sort_by(TotalOrd::tot_cmp) };
         let mut out = Self {
             slice,
             last_start: start,
@@ -74,18 +73,11 @@ impl<'a, T: NativeType + PartialOrd + Copy> SortedBuf<'a, T> {
     }
 
     pub(super) fn get(&self, index: usize) -> T {
-        self.buf[index]
+        self.buf.get(index).copied().unwrap()
     }
 
     pub(super) fn len(&self) -> usize {
         self.buf.len()
-    }
-    // Note: range is not inclusive
-    pub(super) fn index_range(
-        &self,
-        range: std::ops::Range<usize>,
-    ) -> skiplist::ordered_skiplist::Iter<'_, T> {
-        self.buf.index_range(range)
     }
 }
 
@@ -96,7 +88,7 @@ pub(super) struct SortedBufNulls<'a, T: NativeType> {
     last_start: usize,
     last_end: usize,
     // non-null values within the window that we keep sorted
-    buf: OrderedSkipList<T>,
+    buf: OrderStatisticTree<T>,
     pub null_count: usize,
 }
 
@@ -123,12 +115,11 @@ impl<'a, T: NativeType + PartialOrd> SortedBufNulls<'a, T> {
         end: usize,
         max_window_size: Option<usize>,
     ) -> Self {
-        let mut buf = if let Some(max_window_size) = max_window_size {
-            OrderedSkipList::with_capacity(max_window_size)
+        let buf = if let Some(max_window_size) = max_window_size {
+            OrderStatisticTree::with_capacity(max_window_size, TotalOrd::tot_cmp)
         } else {
-            OrderedSkipList::new()
+            OrderStatisticTree::new(TotalOrd::tot_cmp)
         };
-        unsafe { buf.sort_by(TotalOrd::tot_cmp) };
 
         // sort_opt_buf(&mut buf);
         let mut out = Self {
@@ -152,7 +143,7 @@ impl<'a, T: NativeType + PartialOrd> SortedBufNulls<'a, T> {
         if start >= self.last_end {
             unsafe { self.fill_and_sort_buf(start, end) };
         } else {
-            // Vemove elements that should leave the window.
+            // Remove elements that should leave the window.
             for idx in self.last_start..start {
                 // SAFETY: we are in bounds.
                 if unsafe { self.validity.get_bit_unchecked(idx) } {
@@ -188,18 +179,9 @@ impl<'a, T: NativeType + PartialOrd> SortedBufNulls<'a, T> {
 
     pub fn get(&self, idx: usize) -> Option<T> {
         if idx >= self.null_count {
-            Some(self.buf[idx - self.null_count])
+            Some(self.buf.get(idx - self.null_count).copied().unwrap())
         } else {
             None
         }
-    }
-
-    // Note: range is not inclusive
-    pub fn index_range(&self, range: std::ops::Range<usize>) -> impl Iterator<Item = Option<T>> {
-        let nonnull_range =
-            range.start.saturating_sub(self.null_count)..range.end.saturating_sub(self.null_count);
-        (0..range.len() - nonnull_range.len())
-            .map(|_| None)
-            .chain(self.buf.index_range(nonnull_range).map(|x| Some(*x)))
     }
 }

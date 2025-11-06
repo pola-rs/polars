@@ -346,6 +346,7 @@ def test_cse_mixed_window_functions() -> None:
         pl.col("b").rank().alias("d_rank"),
         pl.col("b").first().over([pl.col("a")]).alias("b_first"),
         pl.col("b").last().over([pl.col("a")]).alias("b_last"),
+        pl.col("b").item().over([pl.col("a")]).alias("b_item"),
         pl.col("b").shift().alias("b_lag_1"),
         pl.col("b").shift().alias("b_lead_1"),
         pl.col("c").cum_sum().alias("c_cumsum"),
@@ -363,6 +364,7 @@ def test_cse_mixed_window_functions() -> None:
             "d_rank": [1.0],
             "b_first": [1],
             "b_last": [1],
+            "b_item": [1],
             "b_lag_1": [None],
             "b_lead_1": [None],
             "c_cumsum": [1],
@@ -1141,3 +1143,69 @@ def test_cse_custom_io_source_diff_filters() -> None:
     expected = [df.pipe(left_pipe), df.pipe(right_pipe)]
     assert_frame_equal(expected[0], res[0])
     assert_frame_equal(expected[1], res[1])
+
+
+@pytest.mark.skip
+def test_cspe_recursive_24744() -> None:
+    df_a = pl.DataFrame([pl.Series("x", [0, 1, 2, 3], dtype=pl.UInt32)])
+
+    def convoluted_inner_join(
+        lf_left: pl.LazyFrame,
+        lf_right: pl.LazyFrame,
+    ) -> pl.LazyFrame:
+        lf_left = lf_left.with_columns(pl.col("x").alias("index"))
+
+        lf_joined = lf_left.join(
+            lf_right,
+            how="inner",
+            on=["x"],
+        )
+
+        lf_joined_final = lf_left.join(
+            lf_joined,
+            how="inner",
+            on=["index", "x"],
+        ).drop("index")
+        return lf_joined_final
+
+    lf_a = df_a.lazy()
+    lf_j1 = convoluted_inner_join(lf_left=lf_a, lf_right=lf_a)
+    lf_j2 = convoluted_inner_join(lf_left=lf_j1, lf_right=lf_a)
+    lf_j3 = convoluted_inner_join(lf_left=lf_j2, lf_right=lf_a).sort("x")
+
+    assert lf_j3.explain().count("CACHE") == 14
+    assert_frame_equal(
+        lf_j3.collect(),
+        lf_j3.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+    )
+    assert (
+        lf_j3.show_graph(  # type: ignore[union-attr]
+            engine="streaming", plan_stage="physical", raw_output=True
+        ).count("multiplexer")
+        == 3
+    )
+    assert (
+        lf_j3.show_graph(  # type: ignore[union-attr]
+            engine="in-memory", plan_stage="physical", raw_output=True
+        ).count("CACHE")
+        == 3
+    )
+
+
+def test_cpse_predicates_25030() -> None:
+    df = pl.LazyFrame({"key": [1, 2, 2], "x": [6, 2, 3], "y": [0, 1, 4]})
+
+    q1 = df.group_by("key").len().filter(pl.col("len") > 1)
+    q2 = df.filter(pl.col.x > pl.col.y)
+
+    q3 = q1.join(q2, on="key")
+
+    q4 = q3.group_by("key").len().join(q3, on="key")
+
+    got = q4.collect()
+    expected = q4.collect(
+        optimizations=pl.lazyframe.opt_flags.QueryOptFlags(comm_subplan_elim=False)
+    )
+
+    assert_frame_equal(got, expected)
+    assert q4.explain().count("CACHE") == 2

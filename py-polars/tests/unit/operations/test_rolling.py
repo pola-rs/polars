@@ -266,6 +266,7 @@ def test_rolling_non_negative_offset_9077(
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_rolling_dynamic_sortedness_check() -> None:
     # when the by argument is passed, the sortedness flag
     # will be unset as the take shuffles data, so we must explicitly
@@ -411,7 +412,7 @@ def test_negative_zero_offset_16168() -> None:
     result = df.rolling(index_column="foo", period="1i", offset="0i").agg("index")
     expected = pl.DataFrame(
         {"foo": [1, 1, 1], "index": [[], [], []]},
-        schema_overrides={"index": pl.List(pl.UInt32)},
+        schema_overrides={"index": pl.List(pl.get_index_type())},
     )
     assert_frame_equal(result, expected)
     result = df.rolling(index_column="foo", period="1i", offset="-0i").agg("index")
@@ -639,7 +640,7 @@ def test_rolling_unsupported_22065() -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError):
         pl.Series("a", [[]]).rolling_sum(10)
     with pytest.raises(pl.exceptions.InvalidOperationError):
-        pl.Series("a", ["1.0"], pl.Decimal).rolling_min(1)
+        pl.Series("a", ["1.0"], pl.Decimal(10, 2)).rolling_min(1)
     with pytest.raises(pl.exceptions.InvalidOperationError):
         pl.Series("a", [None]).rolling_sum(10)
     with pytest.raises(pl.exceptions.InvalidOperationError):

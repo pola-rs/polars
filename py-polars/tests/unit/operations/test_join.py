@@ -2928,6 +2928,53 @@ def test_join_filter_pushdown_cross_join() -> None:
     assert_frame_equal(q.collect(), expect)
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
 
+    # Avoid conversion for order maintaining cross-join
+    q = (
+        pl.LazyFrame(
+            [
+                pl.Series("a", [2, 4, 8, 9, 11], dtype=pl.Int64),
+                pl.Series("b", [1, 2, 3, 4, 5], dtype=pl.Int64),
+            ]
+        )
+        .join(
+            pl.LazyFrame(
+                {
+                    "c": [0, 1, 2, 3, 4],
+                }
+            ),
+            how="cross",
+            maintain_order="left_right",
+        )
+        .filter(pl.col("c") <= pl.col("b"))
+    )
+
+    expect = pl.DataFrame(
+        [
+            pl.Series(
+                "a",
+                [2, 2, 4, 4, 4, 8, 8, 8, 8, 9, 9, 9, 9, 9, 11, 11, 11, 11, 11],
+                dtype=pl.Int64,
+            ),
+            pl.Series(
+                "b",
+                [1, 1, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5],
+                dtype=pl.Int64,
+            ),
+            pl.Series(
+                "c",
+                [0, 1, 0, 1, 2, 0, 1, 2, 3, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4],
+                dtype=pl.Int64,
+            ),
+        ]
+    )
+
+    plan = q.explain()
+
+    assert plan.startswith('NESTED LOOP JOIN ON [(col("c")) <= (col("b"))]:')
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
 
 def test_join_filter_pushdown_iejoin() -> None:
     lhs = pl.LazyFrame(
@@ -2992,7 +3039,7 @@ def test_join_filter_pushdown_iejoin() -> None:
 
     expect = pl.DataFrame(
         [
-            pl.Series("index", [0, 1, 1, 2, 2, 3, 3, 4, 4], dtype=pl.UInt32),
+            pl.Series("index", [0, 1, 1, 2, 2, 3, 3, 4, 4], dtype=pl.get_index_type()),
             pl.Series("a", [1, 2, 2, 3, 3, 4, 4, 5, 5], dtype=pl.Int64),
             pl.Series("b", [1, 2, 2, 3, 3, 4, 4, None, None], dtype=pl.Int64),
             pl.Series(

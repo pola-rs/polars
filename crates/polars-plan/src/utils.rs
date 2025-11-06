@@ -225,16 +225,32 @@ pub(crate) fn expr_to_leaf_column_exprs_iter(expr: &Expr) -> impl Iterator<Item 
 }
 
 /// Take a list of expressions and a schema and determine the output schema.
-pub fn expressions_to_schema(expr: &[Expr], schema: &Schema) -> PolarsResult<Schema> {
+pub fn expressions_to_schema<E>(
+    expr: &[Expr],
+    schema: &Schema,
+    duplicate_err_msg_func: E,
+) -> PolarsResult<Schema>
+where
+    E: Fn(&str) -> String,
+{
     let mut expr_arena = Arena::with_capacity(4 * expr.len());
-    expr.iter()
-        .map(|expr| {
-            let mut field = expr.to_field_amortized(schema, &mut expr_arena)?;
 
+    Schema::try_from_iter_check_duplicates(
+        expr.iter().map(|expr| {
+            let mut field = expr.to_field_amortized(schema, &mut expr_arena)?;
             field.dtype = field.dtype.materialize_unknown(true)?;
             Ok(field)
-        })
-        .collect()
+        }),
+        |duplicate_name: &str| {
+            polars_err!(
+                Duplicate:
+                "{}. It's possible that multiple expressions are returning the same default column name. \
+                If this is the case, try renaming the columns with `.alias(\"new_name\")` to avoid \
+                duplicate column names.",
+                duplicate_err_msg_func(duplicate_name)
+            )
+        },
+    )
 }
 
 pub fn aexpr_to_leaf_names_iter(
@@ -282,7 +298,12 @@ pub(crate) fn aexprs_to_schema<I: IntoIterator<Item = K>, K: Into<Node>>(
     arena: &Arena<AExpr>,
 ) -> Schema {
     expr.into_iter()
-        .map(|node| arena.get(node.into()).to_field(schema, arena).unwrap())
+        .map(|node| {
+            arena
+                .get(node.into())
+                .to_field(&ToFieldContext::new(arena, schema))
+                .unwrap()
+        })
         .collect()
 }
 
@@ -290,18 +311,19 @@ pub(crate) fn expr_irs_to_schema<I: IntoIterator<Item = K>, K: AsRef<ExprIR>>(
     expr: I,
     schema: &Schema,
     arena: &Arena<AExpr>,
-) -> Schema {
+) -> PolarsResult<Schema> {
     expr.into_iter()
         .map(|e| {
             let e = e.as_ref();
-            let mut field = e.field(schema, arena).expect("should be resolved");
-
-            // TODO! (can this be removed?)
-            if let Some(name) = e.get_alias() {
-                field.name = name.clone()
-            }
-            field.dtype = field.dtype.materialize_unknown(true).unwrap();
-            field
+            let field = e.field(schema, arena).map(move |mut field| {
+                // TODO! (can this be removed?)
+                if let Some(name) = e.get_alias() {
+                    field.name = name.clone()
+                }
+                field.dtype = field.dtype.materialize_unknown(true).unwrap();
+                field
+            })?;
+            Ok(field)
         })
         .collect()
 }

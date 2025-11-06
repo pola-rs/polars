@@ -9,6 +9,7 @@ repository = { workspace = true }
 description = "IO related logic for the Polars DataFrame library"
 
 [dependencies]
+polars-compute = { workspace = true }
 polars-core = { workspace = true }
 polars-error = { workspace = true }
 polars-json = { workspace = true, optional = true }
@@ -48,8 +49,6 @@ simdutf8 = { workspace = true, optional = true }
 strum = { workspace = true, optional = true }
 strum_macros = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["fs", "net", "rt-multi-thread", "time", "sync"], optional = true }
-tokio-util = { workspace = true, features = ["io", "io-util"], optional = true }
-url = { workspace = true, optional = true }
 zstd = { workspace = true, optional = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
@@ -70,6 +69,7 @@ json = [
   "dtype-struct",
   "csv",
 ]
+scan_lines = []
 serde = ["dep:serde", "polars-core/serde-lazy", "polars-parquet/serde", "polars-utils/serde"]
 dsl-schema = ["dep:schemars", "polars-core/dsl-schema", "polars-parquet/dsl-schema", "polars-utils/dsl-schema"]
 # support for arrows ipc file parsing
@@ -113,7 +113,6 @@ async = [
   "async-trait",
   "futures",
   "tokio",
-  "tokio-util",
   "polars-error/regex",
   "polars-parquet?/async",
 ]
@@ -121,7 +120,6 @@ cloud = [
   "object_store",
   "async",
   "polars-error/object_store",
-  "url",
   "serde_json",
   "serde",
   "file_cache",

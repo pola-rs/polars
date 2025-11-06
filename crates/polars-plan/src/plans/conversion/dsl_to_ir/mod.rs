@@ -4,6 +4,7 @@ use expr_expansion::rewrite_projections;
 use hive::hive_partitions_from_paths;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::config::verbose;
+use polars_utils::format_pl_smallstr;
 use polars_utils::plpath::PlPath;
 use polars_utils::unique_id::UniqueId;
 
@@ -64,11 +65,9 @@ pub fn to_alp(
                 // where in the query plan it went wrong. It is clear from the backtrace anyway.
                 return Err(err.remove_context());
             };
-
             let Some(ir_until_then) = lp_arena.last_node() else {
                 return Err(err);
             };
-
             let node_name = if let PolarsError::Context { msg, .. } = &err {
                 msg
             } else {
@@ -683,34 +682,107 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             };
 
             // Adjust the input and start conversion again
-            let input_adjusted =
-                callback.call((input_owned, Arc::unwrap_or_clone(input_schema.into_owned())))?;
+            let input_adjusted = callback.call((input_owned, input_schema.into_owned()))?;
             return to_alp_impl(input_adjusted, ctxt);
         },
         DslPlan::Distinct { input, options } => {
             let input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(unique)))?;
-            let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
+            let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena).into_owned();
 
-            let subset = options
-                .subset
-                .map(|s| {
-                    PolarsResult::Ok(
-                        s.into_columns(input_schema.as_ref(), &Default::default())?
-                            .into_iter()
-                            .collect(),
+            // "subset" param supports cols and/or arbitrary expressions
+            let (input, subset, temp_cols) = if let Some(exprs) = options.subset {
+                let exprs = rewrite_projections(
+                    exprs,
+                    &PlHashSet::default(),
+                    &input_schema,
+                    ctxt.opt_flags,
+                )?;
+
+                // identify cols and exprs in "subset" param
+                let mut subset_colnames = vec![];
+                let mut subset_exprs = vec![];
+                for expr in &exprs {
+                    match expr {
+                        Expr::Column(name) => {
+                            polars_ensure!(
+                                input_schema.contains(name),
+                                ColumnNotFound: "{name:?} not found"
+                            );
+                            subset_colnames.push(name.clone());
+                        },
+                        _ => subset_exprs.push(expr.clone()),
+                    }
+                }
+
+                if subset_exprs.is_empty() {
+                    // "subset" is a collection of basic cols (or empty)
+                    (input, Some(subset_colnames.into_iter().collect()), vec![])
+                } else {
+                    // "subset" contains exprs; add them as temporary cols
+                    let (aliased_exprs, temp_names): (Vec<_>, Vec<_>) = subset_exprs
+                        .into_iter()
+                        .enumerate()
+                        .map(|(idx, expr)| {
+                            let temp_name = format_pl_smallstr!("__POLARS_UNIQUE_SUBSET_{}", idx);
+                            (expr.alias(temp_name.clone()), temp_name)
+                        })
+                        .unzip();
+
+                    subset_colnames.extend_from_slice(&temp_names);
+
+                    // integrate the temporary cols with the existing "input" node
+                    let (temp_expr_irs, schema) = resolve_with_columns(
+                        aliased_exprs,
+                        input,
+                        ctxt.lp_arena,
+                        ctxt.expr_arena,
+                        ctxt.opt_flags,
+                    )?;
+                    ctxt.conversion_optimizer
+                        .fill_scratch(&temp_expr_irs, ctxt.expr_arena);
+
+                    let input_with_exprs = ctxt.lp_arena.add(IR::HStack {
+                        input,
+                        exprs: temp_expr_irs,
+                        schema,
+                        options: ProjectionOptions {
+                            run_parallel: false,
+                            duplicate_check: false,
+                            should_broadcast: true,
+                        },
+                    });
+                    (
+                        input_with_exprs,
+                        Some(subset_colnames.into_iter().collect()),
+                        temp_names,
                     )
-                })
-                .transpose()?;
-
-            let options = DistinctOptionsIR {
-                subset,
-                maintain_order: options.maintain_order,
-                keep_strategy: options.keep_strategy,
-                slice: None,
+                }
+            } else {
+                (input, None, vec![])
             };
 
-            IR::Distinct { input, options }
+            // `distinct` definition (will contain temporary cols if we have "subset" exprs)
+            let distinct_node = ctxt.lp_arena.add(IR::Distinct {
+                input,
+                options: DistinctOptionsIR {
+                    subset,
+                    maintain_order: options.maintain_order,
+                    keep_strategy: options.keep_strategy,
+                    slice: None,
+                },
+            });
+
+            // if no temporary cols (eg: we had no "subset" exprs), we're done...
+            if temp_cols.is_empty() {
+                return Ok(distinct_node);
+            }
+
+            // ...otherwise, drop them by projecting the original schema
+            return Ok(ctxt.lp_arena.add(IR::SimpleProjection {
+                input: distinct_node,
+                columns: input_schema,
+            }));
         },
         DslPlan::MapFunction { input, function } => {
             let input = to_alp_impl(owned(input), ctxt)
@@ -773,17 +845,17 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 DslFunction::Stats(sf) => {
                     let exprs = match sf {
                         StatsFunction::Var { ddof } => stats_helper(
-                            |dt| dt.is_primitive_numeric() || dt.is_bool(),
+                            |dt| dt.is_primitive_numeric() || dt.is_bool() || dt.is_decimal(),
                             |name| col(name.clone()).var(ddof),
                             &input_schema,
                         ),
                         StatsFunction::Std { ddof } => stats_helper(
-                            |dt| dt.is_primitive_numeric() || dt.is_bool(),
+                            |dt| dt.is_primitive_numeric() || dt.is_bool() || dt.is_decimal(),
                             |name| col(name.clone()).std(ddof),
                             &input_schema,
                         ),
                         StatsFunction::Quantile { quantile, method } => stats_helper(
-                            |dt| dt.is_primitive_numeric(),
+                            |dt| dt.is_primitive_numeric() || dt.is_decimal(),
                             |name| col(name.clone()).quantile(quantile.clone(), method),
                             &input_schema,
                         ),
@@ -791,7 +863,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             |dt| {
                                 dt.is_primitive_numeric()
                                     || dt.is_temporal()
-                                    || dt == &DataType::Boolean
+                                    || dt.is_bool()
+                                    || dt.is_decimal()
                             },
                             |name| col(name.clone()).mean(),
                             &input_schema,
@@ -825,7 +898,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             &input_schema,
                         ),
                     };
-                    let schema = Arc::new(expressions_to_schema(&exprs, &input_schema)?);
+                    let schema = Arc::new(expressions_to_schema(
+                        &exprs,
+                        &input_schema,
+                        |duplicate_name: &str| duplicate_name.to_string(),
+                    )?);
                     let eirs = to_expr_irs(
                         exprs,
                         &mut ExprToIRContext::new_with_opt_eager(
@@ -952,6 +1029,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
             let payload = match payload {
                 SinkType::Memory => SinkTypeIR::Memory,
+                SinkType::Callback(f) => SinkTypeIR::Callback(f),
                 SinkType::File(f) => SinkTypeIR::File(f),
                 SinkType::Partition(f) => SinkTypeIR::Partition(PartitionSinkTypeIR {
                     base_path: f.base_path,
@@ -1136,7 +1214,9 @@ fn resolve_group_by(
     let mut keys = rewrite_projections(keys, &PlHashSet::default(), input_schema, opt_flags)?;
 
     // Initialize schema from keys
-    let mut output_schema = expressions_to_schema(&keys, input_schema)?;
+    let mut output_schema = expressions_to_schema(&keys, input_schema, |duplicate_name: &str| {
+        format!("group_by keys contained duplicate output name '{duplicate_name}'")
+    })?;
     let mut key_names: PlHashSet<PlSmallStr> = output_schema.iter_names().cloned().collect();
 
     #[allow(unused_mut)]
@@ -1183,7 +1263,7 @@ fn resolve_group_by(
     utils::validate_expressions(&keys, expr_arena, input_schema, "group by")?;
     utils::validate_expressions(&aggs, expr_arena, input_schema, "group by")?;
 
-    let mut aggs_schema = expr_irs_to_schema(&aggs, input_schema, expr_arena);
+    let mut aggs_schema = expr_irs_to_schema(&aggs, input_schema, expr_arena)?;
 
     // Make sure aggregation columns do not contain duplicates
     if aggs_schema.len() < aggs.len() {

@@ -603,7 +603,7 @@ def test_decimal_parquet(tmp_path: Path) -> None:
         }
     )
 
-    df = df.with_columns(pl.col("bar").cast(pl.Decimal))
+    df = df.with_columns(pl.col("bar").cast(pl.Decimal(scale=3)))
 
     df.write_parquet(path, statistics=True)
     out = pl.scan_parquet(path).filter(foo=2).collect().to_dict(as_series=False)
@@ -3349,7 +3349,7 @@ def test_field_overwrites_metadata() -> None:
     assert schema[2].type.fields[1].metadata[b"md2"] == b"Yes!"
 
 
-def multiple_test_sorting_columns() -> None:
+def test_multiple_sorting_columns() -> None:
     df = pl.DataFrame(
         {
             "a": [1, 1, 1, 2, 2, 2],
@@ -3560,3 +3560,42 @@ def test_binary_offset_roundtrip() -> None:
     lf = pl.scan_parquet(f)
 
     assert "binary[offset]" in str(lf.collect())
+
+
+@pytest.mark.parametrize(
+    "df",
+    [
+        pl.Series("a", [], pl.Struct([])).to_frame(),
+        pl.Series("a", [{}]).to_frame(),
+        pl.Series("a", [{}, None, {}]).to_frame(),
+        pl.Series("a", [[{}, None], [{}]], pl.List(pl.Struct([]))).to_frame(),
+        pl.Series("a", [[{}, None], None, []], pl.List(pl.Struct([]))).to_frame(),
+        pl.DataFrame(
+            {
+                "a": [{}, None, {}],
+                "b": [1, 2, 3],
+            }
+        ),
+        pl.DataFrame(
+            {
+                "b": [1, 2, 3],
+                "a": [{}, None, {}],
+            }
+        ),
+        pl.DataFrame(
+            {
+                "x": [2, 3, 4],
+                "a": [{}, None, {}],
+                "b": [1, 2, 3],
+            }
+        ),
+    ],
+)
+def test_empty_struct_roundtrip(df: pl.DataFrame, monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_ALLOW_PQ_EMPTY_STRUCT", "1")
+
+    f = io.BytesIO()
+    df.write_parquet(f)
+
+    f.seek(0)
+    assert_frame_equal(df, pl.read_parquet(f))

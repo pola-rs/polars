@@ -114,9 +114,7 @@ pub fn get_row_encoding_context(dtype: &DataType) -> Option<RowEncodingContext> 
         DataType::Object(_) => panic!("Unsupported in row encoding"),
 
         #[cfg(feature = "dtype-decimal")]
-        DataType::Decimal(precision, _) => {
-            Some(RowEncodingContext::Decimal(precision.unwrap_or(38)))
-        },
+        DataType::Decimal(precision, _) => Some(RowEncodingContext::Decimal(*precision)),
 
         #[cfg(feature = "dtype-array")]
         DataType::Array(dtype, _) => get_row_encoding_context(dtype),

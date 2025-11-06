@@ -118,13 +118,11 @@ type TwoParents = [Option<Node>; 2];
 // - Above the filters the caches are the same -> run predicate pd from the filter node -> finish
 // - There is a cache without predicates above the cache node -> run predicate form the cache nodes -> finish
 // - The predicates above the cache nodes are all different -> remove the cache nodes -> finish
-#[expect(clippy::too_many_arguments)]
 pub(super) fn set_cache_states(
     root: Node,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
-    expr_eval: ExprEval<'_>,
     verbose: bool,
     pushdown_maintain_errors: bool,
     new_streaming: bool,
@@ -258,9 +256,7 @@ pub(super) fn set_cache_states(
     // back to the cache node again
     if !cache_schema_and_children.is_empty() {
         let mut proj_pd = ProjectionPushDown::new();
-        let mut pred_pd =
-            PredicatePushDown::new(expr_eval, pushdown_maintain_errors, new_streaming)
-                .block_at_cache(false);
+        let mut pred_pd = PredicatePushDown::new(pushdown_maintain_errors, new_streaming);
         for (_cache_id, v) in cache_schema_and_children {
             // # CHECK IF WE NEED TO REMOVE CACHES
             // If we encounter multiple predicates we remove the cache nodes completely as we don't
@@ -372,6 +368,9 @@ pub(super) fn set_cache_states(
                 let node = get_filter_node(parents, lp_arena)
                     .expect("expected filter; this is an optimizer bug");
                 let start_lp = lp_arena.take(node);
+
+                let mut pred_pd = PredicatePushDown::new(pushdown_maintain_errors, new_streaming)
+                    .block_at_cache(1);
                 let lp = pred_pd.optimize(start_lp, lp_arena, expr_arena)?;
                 lp_arena.replace(node, lp.clone());
                 for &parents in &v.parents[1..] {

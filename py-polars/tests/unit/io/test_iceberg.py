@@ -2,8 +2,12 @@
 from __future__ import annotations
 
 import contextlib
+import io
 import itertools
 import os
+import pickle
+import sys
+import warnings
 import zoneinfo
 from datetime import date, datetime
 from decimal import Decimal as D
@@ -12,10 +16,9 @@ from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
+import pydantic
 import pyiceberg
 import pytest
-from pyiceberg.catalog.sql import SqlCatalog
-from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.partitioning import (
     BucketTransform,
     IdentityTransform,
@@ -49,6 +52,12 @@ from polars._utils.various import parse_version
 from polars.io.iceberg._utils import _convert_predicate, _to_ast
 from polars.io.iceberg.dataset import IcebergDataset, _NativeIcebergScanData
 from polars.testing import assert_frame_equal
+
+with warnings.catch_warnings():
+    # Upstream issue at https://github.com/apache/iceberg-python/issues/2648
+    warnings.simplefilter("ignore", pydantic.warnings.PydanticDeprecatedSince212)
+    from pyiceberg.catalog.sql import SqlCatalog
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
 
 
 @pytest.fixture
@@ -1101,6 +1110,7 @@ def test_scan_iceberg_nulls_nested(tmp_path: Path) -> None:
     assert_frame_equal(pl.scan_iceberg(tbl, reader_override="native").collect(), df)
 
 
+@pytest.mark.write_disk
 def test_scan_iceberg_parquet_prefilter_with_column_mapping(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1177,7 +1187,15 @@ def test_scan_iceberg_parquet_prefilter_with_column_mapping(
         ),
     )
 
-    q = pl.scan_iceberg(tbl, reader_override="native").filter(pl.col("column_3") == 5)
+    # Upstream issue - PyIceberg filter does not handle schema evolution
+    with pytest.raises(Exception, match="unpack requires a buffer of 8 bytes"):
+        pl.scan_iceberg(
+            tbl, reader_override="native", use_pyiceberg_filter=True
+        ).filter(pl.col("column_3") == 5).collect()
+
+    q = pl.scan_iceberg(
+        tbl, reader_override="native", use_pyiceberg_filter=False
+    ).filter(pl.col("column_3") == 5)
 
     with monkeypatch.context() as cx:
         cx.setenv("POLARS_VERBOSE", "1")
@@ -1197,9 +1215,8 @@ def test_scan_iceberg_parquet_prefilter_with_column_mapping(
     )
 
     # First file
-    assert (
-        "[ParquetFileReader]: Predicate pushdown: reading 0 / 1 row groups" in capture
-    )
+    assert "Source filter mask initialization via table statistics" in capture
+    assert "Predicate pushdown allows skipping 1 / 2 files" in capture
     # Second file
     assert (
         "[ParquetFileReader]: Predicate pushdown: reading 1 / 1 row groups" in capture
@@ -1212,6 +1229,7 @@ def test_scan_iceberg_parquet_prefilter_with_column_mapping(
 
 # Note: This test also generally covers primitive type round-tripping.
 @pytest.mark.parametrize("test_uuid", [True, False])
+@pytest.mark.write_disk
 def test_fill_missing_fields_with_identity_partition_values(
     test_uuid: bool, tmp_path: Path
 ) -> None:
@@ -1365,6 +1383,7 @@ def test_fill_missing_fields_with_identity_partition_values(
     assert_frame_equal(pl.scan_iceberg(tbl, reader_override="native").collect(), expect)
 
 
+@pytest.mark.write_disk
 def test_fill_missing_fields_with_identity_partition_values_nested(
     tmp_path: Path,
 ) -> None:
@@ -1478,7 +1497,12 @@ def test_fill_missing_fields_with_identity_partition_values_nested(
     )
 
 
-def test_scan_iceberg_min_max_statistics_filter(tmp_path: Path) -> None:
+@pytest.mark.write_disk
+def test_scan_iceberg_min_max_statistics_filter(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
     import datetime
 
     catalog = SqlCatalog(
@@ -1511,6 +1535,9 @@ def test_scan_iceberg_min_max_statistics_filter(tmp_path: Path) -> None:
                 NestedField(
                     next_field_id(), "DecimalTypeLargeValue", DecimalType(38, 0)
                 ),
+                NestedField(
+                    next_field_id(), "DecimalTypeLargeNegativeValue", DecimalType(38, 0)
+                ),
                 NestedField(next_field_id(), "FixedType", FixedType(1)),
             ]
             if test_decimal_and_fixed
@@ -1534,6 +1561,7 @@ def test_scan_iceberg_min_max_statistics_filter(tmp_path: Path) -> None:
             "BinaryType": pl.Binary(),
             "DecimalType": pl.Decimal(precision=18, scale=2),
             "DecimalTypeLargeValue": pl.Decimal(precision=38, scale=0),
+            "DecimalTypeLargeNegativeValue": pl.Decimal(precision=38, scale=0),
             "FixedType": pl.Binary(),
         }
     )
@@ -1556,6 +1584,9 @@ def test_scan_iceberg_min_max_statistics_filter(tmp_path: Path) -> None:
                 "DecimalType": [D("1.00")],
                 # This helps ensure loads are done with the correct endianness.
                 "DecimalTypeLargeValue": [D("73377733337777733333377777773333333377")],
+                "DecimalTypeLargeNegativeValue": [
+                    D("-73377733337777733333377777773333333377")
+                ],
                 "FixedType": [b"A"],
             }
             if test_decimal_and_fixed
@@ -1678,27 +1709,28 @@ def test_scan_iceberg_min_max_statistics_filter(tmp_path: Path) -> None:
                 ("TimestamptzType_nc", "0", "1"),
                 ("TimestamptzType_min", "2025-01-01 00:00:00.000000+00:00"),
                 ("TimestamptzType_max", "2025-01-01 00:00:00.000000+00:00"),
-                ("StringType_nc", "0", "1"),
+                ("StringType_nc", "0"),
                 ("StringType_min", "A"),
                 ("StringType_max", "A"),
-                ("BinaryType_nc", "0", "1"),
+                ("BinaryType_nc", "0"),
                 ("BinaryType_min", "A"),
                 ("BinaryType_max", "A"),
-                ("DecimalType_nc", "0", "1"),
-                ("DecimalType_min", "1.00", "0.00"),
-                ("DecimalType_max", "1.00", "0.00"),
+                ("DecimalType_nc", "0"),
+                ("DecimalType_min", "1.00"),
+                ("DecimalType_max", "1.00"),
                 ("DecimalTypeLargeValue_nc", "0", "1"),
+                ("DecimalTypeLargeValue_min", "73377733337777733333377777773333333377"),
+                ("DecimalTypeLargeValue_max", "73377733337777733333377777773333333377"),
+                ("DecimalTypeLargeNegativeValue_nc", "0"),
                 (
-                    "DecimalTypeLargeValue_min",
-                    "73377733337777733333377777773333333377",
-                    "0",
+                    "DecimalTypeLargeNegativeValue_min",
+                    "-73377733337777733333377777773333333377",
                 ),
                 (
-                    "DecimalTypeLargeValue_max",
-                    "73377733337777733333377777773333333377",
-                    "0",
+                    "DecimalTypeLargeNegativeValue_max",
+                    "-73377733337777733333377777773333333377",
                 ),
-                ("FixedType_nc", "0", "1"),
+                ("FixedType_nc", "0"),
                 ("FixedType_min", "A"),
                 ("FixedType_max", "A"),
             ],
@@ -1749,3 +1781,304 @@ def test_scan_iceberg_min_max_statistics_filter(tmp_path: Path) -> None:
             schema=coalesced_ne_non_coalesced.schema,
         ),
     )
+
+    dfiles = [x.file.file_path for x in tbl.scan().plan_files()]
+    assert len(dfiles) == 1
+
+    Path(dfiles[0].removeprefix("file://")).unlink()
+
+    expect_file_not_found_err = pytest.raises(
+        OSError,
+        match=(
+            "The system cannot find the file specified"
+            if sys.platform == "win32"
+            else "No such file or directory"
+        ),
+    )
+
+    with expect_file_not_found_err:
+        pl.scan_iceberg(tbl, reader_override="native").collect()
+
+    iceberg_table_filter_seen = False
+
+    def ensure_filter_skips_file(filter_expr: pl.Expr) -> None:
+        nonlocal iceberg_table_filter_seen
+
+        with monkeypatch.context() as cx:
+            cx.setenv("POLARS_VERBOSE", "1")
+            capfd.readouterr()
+
+            assert_frame_equal(
+                pl.scan_iceberg(tbl, reader_override="native").filter(filter_expr),
+                pl.LazyFrame(schema=pl_schema),
+            )
+
+            capture = capfd.readouterr().err
+
+            if "iceberg_table_filter: Some(<redacted>)" in capture:
+                assert "apply_scan_predicate_to_scan_ir: remove 0 / 0 files" in capture
+
+                # Scanning with pyiceberg can also skip the file if the predicate
+                # can be converted.
+                assert_frame_equal(
+                    pl.scan_iceberg(tbl, reader_override="pyiceberg").filter(
+                        filter_expr
+                    ),
+                    pl.LazyFrame(schema=pl_schema),
+                )
+
+                iceberg_table_filter_seen = True
+            else:
+                assert "apply_scan_predicate_to_scan_ir: remove 1 / 1 file" in capture
+
+            capfd.readouterr()
+
+            assert_frame_equal(
+                pl.scan_iceberg(tbl, reader_override="native")
+                .with_row_index()
+                .filter(filter_expr),
+                pl.LazyFrame(schema=pl_schema).with_row_index(),
+            )
+
+            capture = capfd.readouterr().err
+
+            assert "iceberg_table_filter: Some(<redacted>)" not in capture
+
+    # Check different operators
+    ensure_filter_skips_file(pl.col("IntegerType") > 1)
+    ensure_filter_skips_file(pl.col("IntegerType") != 1)
+    ensure_filter_skips_file(pl.col("IntegerType").is_in([0]))
+
+    # Ensure `use_metadata_statistics=False` does not skip based on statistics
+    with expect_file_not_found_err:
+        pl.scan_iceberg(
+            tbl,
+            reader_override="native",
+            use_metadata_statistics=False,
+        ).filter(pl.col("IntegerType") > 1).collect()
+
+    with expect_file_not_found_err:
+        pickle.loads(
+            pickle.dumps(
+                pl.scan_iceberg(
+                    tbl,
+                    reader_override="native",
+                    use_metadata_statistics=False,
+                ).filter(pl.col("IntegerType") > 1)
+            )
+        ).collect()
+
+    # Check different types
+    ensure_filter_skips_file(pl.col("BooleanType") < True)
+    ensure_filter_skips_file(pl.col("IntegerType") < 1)
+    ensure_filter_skips_file(pl.col("LongType") < 1)
+    ensure_filter_skips_file(pl.col("FloatType") < 1.0)
+    ensure_filter_skips_file(pl.col("DoubleType") < 1.0)
+    ensure_filter_skips_file(pl.col("DateType") < datetime.date(2025, 1, 1))
+    ensure_filter_skips_file(pl.col("TimeType") < datetime.time(11, 30))
+    ensure_filter_skips_file(pl.col("TimestampType") < datetime.datetime(2025, 1, 1))
+    ensure_filter_skips_file(
+        pl.col("TimestamptzType")
+        < pl.lit(datetime.datetime(2025, 1, 1), dtype=pl.Datetime("ms", "UTC"))
+    )
+    ensure_filter_skips_file(pl.col("StringType") < "A")
+    ensure_filter_skips_file(pl.col("BinaryType") < b"A")
+    ensure_filter_skips_file(pl.col("DecimalType") < D("1.00"))
+    ensure_filter_skips_file(
+        pl.col("DecimalTypeLargeValue") < D("73377733337777733333377777773333333377")
+    )
+    ensure_filter_skips_file(
+        pl.col("DecimalTypeLargeNegativeValue")
+        < D("-73377733337777733333377777773333333377")
+    )
+    ensure_filter_skips_file(pl.col("FixedType") < b"A")
+
+    # Check row index. It should have a null_count statistic column of 0.
+    assert_frame_equal(
+        pl.scan_iceberg(tbl, reader_override="native")
+        .with_row_index()
+        .filter(pl.col("index").is_null()),
+        pl.LazyFrame(schema={"index": pl.get_index_type(), **pl_schema}),
+    )
+
+    assert iceberg_table_filter_seen
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_categorical_24140(tmp_path: Path) -> None:
+    catalog = SqlCatalog(
+        "default",
+        uri="sqlite:///:memory:",
+        warehouse=f"file://{tmp_path}",
+    )
+    catalog.create_namespace("namespace")
+
+    next_field_id = partial(next, itertools.count(1))
+
+    iceberg_schema = IcebergSchema(
+        NestedField(
+            next_field_id(),
+            "values",
+            StringType(),
+        ),
+    )
+
+    tbl = catalog.create_table("namespace.table", iceberg_schema)
+
+    df = pl.DataFrame(
+        {"values": "A"},
+        schema={"values": pl.Categorical()},
+    )
+
+    arrow_tbl = df.to_arrow()
+
+    arrow_type = arrow_tbl.schema.field("values").type
+    assert arrow_type.index_type == pa.uint32()
+    assert arrow_type.value_type == pa.large_string()
+
+    tbl.append(arrow_tbl)
+
+    expect = pl.DataFrame({"values": "A"}, schema={"values": pl.String})
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl, reader_override="native").collect(),
+        expect,
+    )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_fast_count(tmp_path: Path) -> None:
+    catalog = SqlCatalog(
+        "default",
+        uri="sqlite:///:memory:",
+        warehouse=f"file://{tmp_path}",
+    )
+    catalog.create_namespace("namespace")
+
+    catalog.create_table(
+        "namespace.table",
+        IcebergSchema(NestedField(1, "a", LongType())),
+    )
+
+    tbl = catalog.load_table("namespace.table")
+
+    pl.DataFrame({"a": [0, 1, 2, 3, 4]}).write_iceberg(tbl, mode="append")
+
+    assert (
+        pl.scan_iceberg(tbl, reader_override="native", use_metadata_statistics=True)
+        .select(pl.len())
+        .collect()
+        .item()
+        == 5
+    )
+
+    assert (
+        pl.scan_iceberg(tbl, reader_override="native", use_metadata_statistics=True)
+        .filter(pl.col("a") <= 2)
+        .select(pl.len())
+        .collect()
+        .item()
+        == 3
+    )
+
+    assert (
+        pl.scan_iceberg(tbl, reader_override="native", use_metadata_statistics=True)
+        .head(3)
+        .select(pl.len())
+        .collect()
+        .item()
+        == 3
+    )
+
+    assert (
+        pl.scan_iceberg(tbl, reader_override="native", use_metadata_statistics=True)
+        .slice(1, 3)
+        .select(pl.len())
+        .collect()
+        .item()
+        == 3
+    )
+
+    dfiles = [*tbl.scan().plan_files()]
+
+    assert len(dfiles) == 1
+
+    p = dfiles[0].file.file_path.removeprefix("file://")
+
+    # Overwrite the data file with one that has a different number of rows
+    pq.write_table(
+        pa.Table.from_pydict(
+            {"a": [0, 1, 2]},
+            schema=schema_to_pyarrow(tbl.schema()),
+        ),
+        p,
+    )
+
+    # `use_metadata_statistics=False` should disable sourcing the row count from
+    # Iceberg metadata.
+    assert (
+        pl.scan_iceberg(tbl, reader_override="native", use_metadata_statistics=False)
+        .select(pl.len())
+        .collect()
+        .item()
+        == 3
+    )
+
+    assert (
+        pickle.loads(
+            pickle.dumps(
+                pl.scan_iceberg(
+                    tbl, reader_override="native", use_metadata_statistics=False
+                ).select(pl.len())
+            )
+        )
+        .collect()
+        .item()
+        == 3
+    )
+
+    Path(p).unlink()
+
+    with pytest.raises(
+        OSError,
+        match=(
+            "The system cannot find the file specified"
+            if sys.platform == "win32"
+            else "No such file or directory"
+        ),
+    ):
+        pl.scan_iceberg(tbl, reader_override="native").collect()
+
+    # `select(len())` should be able to return the result from the Iceberg metadata
+    # without looking at the underlying data files.
+    assert (
+        pl.scan_iceberg(tbl, reader_override="native").select(pl.len()).collect().item()
+        == 5
+    )
+
+
+def test_scan_iceberg_idxsize_limit() -> None:
+    if isinstance(pl.get_index_type(), pl.UInt64):
+        assert (
+            pl.scan_parquet([b""], schema={}, _row_count=(1 << 32, 0))
+            .select(pl.len())
+            .collect()
+            .item()
+            == 1 << 32
+        )
+
+        return
+
+    f = io.BytesIO()
+
+    pl.DataFrame({"x": 1}).write_parquet(f)
+
+    q = pl.scan_parquet([f.getvalue()], schema={"x": pl.Int64}, _row_count=(1 << 32, 0))
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"x": 1}))
+
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match=r"row count \(4294967296\) exceeded maximum supported of 4294967295.*Consider installing 'polars\[rt64\]'.",
+    ):
+        q.select(pl.len()).collect()

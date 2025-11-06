@@ -114,6 +114,7 @@ jobs:
           # https://github.com/astral-sh/uv/issues/6028#issuecomment-2287232150
           uv pip install -U typing-extensions 
           uv pip install --compile-bytecode -r requirements-dev.txt -r requirements-ci.txt --verbose
+          uv pip install --no-deps -e .
 
       - name: Set up Rust
         run: rustup component add llvm-tools-preview
@@ -130,7 +131,7 @@ jobs:
         run: cargo llvm-cov clean --workspace
 
       - name: Install Polars
-        run: maturin develop -m py-polars/Cargo.toml
+        run: make build
 
       - name: Run Python tests
         working-directory: py-polars

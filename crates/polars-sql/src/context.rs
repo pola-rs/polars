@@ -1,4 +1,4 @@
-use std::ops::Deref;
+use std::ops::{ControlFlow, Deref};
 
 use polars_core::frame::row::Row;
 use polars_core::prelude::*;
@@ -12,7 +12,7 @@ use sqlparser::ast::{
     FunctionArg, GroupByExpr, Ident, JoinConstraint, JoinOperator, ObjectName, ObjectType, Offset,
     OrderBy, Query, RenameSelectItem, Select, SelectItem, SetExpr, SetOperator, SetQuantifier,
     Statement, TableAlias, TableFactor, TableWithJoins, UnaryOperator, Value as SQLValue, Values,
-    WildcardAdditionalOptions,
+    Visit, Visitor, WildcardAdditionalOptions,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -169,8 +169,8 @@ impl SQLContext {
         Ok(res)
     }
 
-    /// add a function registry to the SQLContext
-    /// the registry provides the ability to add custom functions to the SQLContext
+    /// Add a function registry to the SQLContext.
+    /// The registry provides the ability to add custom functions to the SQLContext.
     pub fn with_function_registry(mut self, function_registry: Arc<dyn FunctionRegistry>) -> Self {
         self.function_registry = function_registry;
         self
@@ -222,14 +222,54 @@ impl SQLContext {
     }
 
     pub(super) fn get_table_from_current_scope(&self, name: &str) -> Option<LazyFrame> {
-        let table = self.table_map.get(name).cloned();
-        table
-            .or_else(|| self.cte_map.get(name).cloned())
+        // Resolve the table name in the current scope; multi-stage fallback
+        // * table name → cte name
+        // * table alias → cte alias
+        self.table_map
+            .get(name)
+            .or_else(|| self.cte_map.get(name))
             .or_else(|| {
-                self.table_aliases
-                    .get(name)
-                    .and_then(|alias| self.table_map.get(alias).cloned())
+                self.table_aliases.get(name).and_then(|alias| {
+                    self.table_map
+                        .get(alias.as_str())
+                        .or_else(|| self.cte_map.get(alias.as_str()))
+                })
             })
+            .cloned()
+    }
+
+    /// Execute a query in an isolated context. This prevents subqueries from mutating
+    /// arenas and other context state. Returns both the LazyFrame *and* its associated
+    /// Schema (so that the correct arenas are used when determining schema).
+    pub(crate) fn execute_isolated<F>(&mut self, query: F) -> PolarsResult<(LazyFrame, SchemaRef)>
+    where
+        F: FnOnce(&mut Self) -> PolarsResult<LazyFrame>,
+    {
+        // Save key state (arenas and lookups)
+        let (joined_aliases, table_aliases, lp_arena, expr_arena, table_map) = (
+            // "take" to ensure subqueries start with clean state
+            std::mem::take(&mut self.joined_aliases),
+            std::mem::take(&mut self.table_aliases),
+            std::mem::take(&mut self.lp_arena),
+            std::mem::take(&mut self.expr_arena),
+            // "clone" to allow subqueries to see registered tables
+            self.table_map.clone(),
+        );
+
+        // Execute query with clean state (eg: nested/subquery)
+        let mut lf = query(self)?;
+        let schema = self.get_frame_schema(&mut lf)?;
+
+        // Restore saved state
+        lf.set_cached_arena(
+            std::mem::replace(&mut self.lp_arena, lp_arena),
+            std::mem::replace(&mut self.expr_arena, expr_arena),
+        );
+        self.joined_aliases = joined_aliases;
+        self.table_aliases = table_aliases;
+        self.table_map = table_map;
+
+        Ok((lf, schema))
     }
 
     fn expr_or_ordinal(
@@ -363,28 +403,27 @@ impl SQLContext {
         };
         let mut lf = self.process_query(left, query)?;
         let mut rf = self.process_query(right, query)?;
-        let join = lf
-            .clone()
-            .join_builder()
-            .with(rf.clone())
-            .how(join_type)
-            .join_nulls(true);
-
         let lf_schema = self.get_frame_schema(&mut lf)?;
-        let lf_cols: Vec<_> = lf_schema.iter_names().map(|nm| col(nm.clone())).collect();
-        let joined_tbl = match quantifier {
-            SetQuantifier::ByName => join.on(lf_cols).finish(),
+
+        let lf_cols: Vec<_> = lf_schema.iter_names_cloned().map(col).collect();
+        let rf_cols = match quantifier {
+            SetQuantifier::ByName => None,
             SetQuantifier::Distinct | SetQuantifier::None => {
                 let rf_schema = self.get_frame_schema(&mut rf)?;
-                let rf_cols: Vec<_> = rf_schema.iter_names().map(|nm| col(nm.clone())).collect();
+                let rf_cols: Vec<_> = rf_schema.iter_names_cloned().map(col).collect();
                 if lf_cols.len() != rf_cols.len() {
                     polars_bail!(SQLInterface: "{} requires equal number of columns in each table (use '{} BY NAME' to combine mismatched tables)", op_name, op_name)
                 }
-                join.left_on(lf_cols).right_on(rf_cols).finish()
+                Some(rf_cols)
             },
             _ => {
                 polars_bail!(SQLInterface: "'{} {}' is not supported", op_name, quantifier.to_string())
             },
+        };
+        let join = lf.join_builder().with(rf).how(join_type).join_nulls(true);
+        let joined_tbl = match rf_cols {
+            Some(rf_cols) => join.left_on(lf_cols).right_on(rf_cols).finish(),
+            None => join.on(lf_cols).finish(),
         };
         Ok(joined_tbl.unique(None, UniqueKeepStrategy::Any))
     }
@@ -540,7 +579,7 @@ impl SQLContext {
                 .lazy())
             } else {
                 // apply constraint as inverted filter (drops rows matching the selection)
-                Ok(self.process_where(lf.clone(), selection, true)?)
+                Ok(self.process_where(lf.clone(), selection, true, None)?)
             }
         } else {
             polars_bail!(SQLInterface: "unexpected statement type; expected DELETE")
@@ -714,7 +753,7 @@ impl SQLContext {
 
         // Filter expression (WHERE clause)
         let schema = self.get_frame_schema(&mut lf)?;
-        lf = self.process_where(lf, &select_stmt.selection, false)?;
+        lf = self.process_where(lf, &select_stmt.selection, false, Some(schema.clone()))?;
 
         // 'SELECT *' modifiers
         let mut select_modifiers = SelectModifiers {
@@ -980,9 +1019,13 @@ impl SQLContext {
         mut lf: LazyFrame,
         expr: &Option<SQLExpr>,
         invert_filter: bool,
+        schema: Option<SchemaRef>,
     ) -> PolarsResult<LazyFrame> {
         if let Some(expr) = expr {
-            let schema = self.get_frame_schema(&mut lf)?;
+            let schema = match schema {
+                None => self.get_frame_schema(&mut lf)?,
+                Some(s) => s,
+            };
 
             // shortcut filter evaluation if given expression is just TRUE or FALSE
             let (all_true, all_false) = match expr {
@@ -1024,8 +1067,7 @@ impl SQLContext {
         constraint: &JoinConstraint,
         join_type: JoinType,
     ) -> PolarsResult<LazyFrame> {
-        let (left_on, right_on) = process_join_constraint(constraint, tbl_left, tbl_right)?;
-
+        let (left_on, right_on) = process_join_constraint(constraint, tbl_left, tbl_right, self)?;
         let joined = tbl_left
             .frame
             .clone()
@@ -1056,7 +1098,6 @@ impl SQLContext {
                 e => e,
             })
         }
-
         if contexts.is_empty() {
             lf
         } else {
@@ -1292,7 +1333,10 @@ impl SQLContext {
         projections: &[Expr],
     ) -> PolarsResult<LazyFrame> {
         let schema_before = self.get_frame_schema(&mut lf)?;
-        let group_by_keys_schema = expressions_to_schema(group_by_keys, &schema_before)?;
+        let group_by_keys_schema =
+            expressions_to_schema(group_by_keys, &schema_before, |duplicate_name: &str| {
+                format!("group_by keys contained duplicate output name '{duplicate_name}'")
+            })?;
 
         // Remove the group_by keys as polars adds those implicitly.
         let mut aggregation_projection = Vec::with_capacity(projections.len());
@@ -1359,7 +1403,10 @@ impl SQLContext {
             }
         }
         let aggregated = lf.group_by(group_by_keys).agg(&aggregation_projection);
-        let projection_schema = expressions_to_schema(projections, &schema_before)?;
+        let projection_schema =
+            expressions_to_schema(projections, &schema_before, |duplicate_name: &str| {
+                format!("group_by aggregations contained duplicate output name '{duplicate_name}'")
+            })?;
 
         // A final projection to get the proper order and any deferred transforms/aliases.
         let final_projection = projection_schema
@@ -1490,12 +1537,12 @@ impl SQLContext {
         // SELECT * RENAME
         if let Some(items) = &options.opt_rename {
             let renames = match items {
-                RenameSelectItem::Single(rename) => vec![rename],
-                RenameSelectItem::Multiple(renames) => renames.iter().collect(),
+                RenameSelectItem::Single(rename) => std::slice::from_ref(rename),
+                RenameSelectItem::Multiple(renames) => renames.as_slice(),
             };
             for rn in renames {
-                let (before, after) = (rn.ident.value.as_str(), rn.alias.value.as_str());
-                let (before, after) = (PlSmallStr::from_str(before), PlSmallStr::from_str(after));
+                let before = PlSmallStr::from_str(rn.ident.value.as_str());
+                let after = PlSmallStr::from_str(rn.alias.value.as_str());
                 if before != after {
                     modifiers.rename.insert(before, after);
                 }
@@ -1553,27 +1600,6 @@ impl SQLContext {
     }
 }
 
-fn collect_compound_identifiers(
-    left: &[Ident],
-    right: &[Ident],
-    left_name: &str,
-    right_name: &str,
-) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
-    if left.len() == 2 && right.len() == 2 {
-        let (tbl_a, col_name_a) = (left[0].value.as_str(), left[1].value.as_str());
-        let (tbl_b, col_name_b) = (right[0].value.as_str(), right[1].value.as_str());
-
-        // switch left/right operands if the caller has them in reverse
-        if left_name == tbl_b || right_name == tbl_a {
-            Ok((vec![col(col_name_b)], vec![col(col_name_a)]))
-        } else {
-            Ok((vec![col(col_name_a)], vec![col(col_name_b)]))
-        }
-    } else {
-        polars_bail!(SQLInterface: "collect_compound_identifiers: Expected left.len() == 2 && right.len() == 2, but found left.len() == {:?}, right.len() == {:?}", left.len(), right.len());
-    }
-}
-
 fn expand_exprs(expr: Expr, schema: &SchemaRef) -> Vec<Expr> {
     match expr {
         Expr::Column(nm) if is_regex_colname(nm.as_str()) => {
@@ -1598,36 +1624,110 @@ fn is_regex_colname(nm: &str) -> bool {
     nm.starts_with('^') && nm.ends_with('$')
 }
 
+/// Visitor that checks if an expression tree contains a reference to a specific table.
+struct FindTableIdentifier<'a> {
+    table_name: &'a str,
+    found: bool,
+}
+
+impl<'a> Visitor for FindTableIdentifier<'a> {
+    type Break = ();
+
+    fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<Self::Break> {
+        if let SQLExpr::CompoundIdentifier(idents) = expr {
+            if idents.len() >= 2 && idents[0].value.as_str() == self.table_name {
+                self.found = true; // return immediately on first match
+                return ControlFlow::Break(());
+            }
+        }
+        ControlFlow::Continue(())
+    }
+}
+
+/// Check if a SQL expression contains a reference to a specific table.
+fn expr_refers_to_table(expr: &SQLExpr, table_name: &str) -> bool {
+    let mut table_finder = FindTableIdentifier {
+        table_name,
+        found: false,
+    };
+    let _ = expr.visit(&mut table_finder);
+    table_finder.found
+}
+
 fn process_join_on(
     expression: &sqlparser::ast::Expr,
     tbl_left: &TableInfo,
     tbl_right: &TableInfo,
+    ctx: &mut SQLContext,
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
     match expression {
         SQLExpr::BinaryOp { left, op, right } => match op {
             BinaryOperator::And => {
-                let (mut left_i, mut right_i) = process_join_on(left, tbl_left, tbl_right)?;
-                let (mut left_j, mut right_j) = process_join_on(right, tbl_left, tbl_right)?;
+                let (mut left_i, mut right_i) = process_join_on(left, tbl_left, tbl_right, ctx)?;
+                let (mut left_j, mut right_j) = process_join_on(right, tbl_left, tbl_right, ctx)?;
                 left_i.append(&mut left_j);
                 right_i.append(&mut right_j);
                 Ok((left_i, right_i))
             },
-            BinaryOperator::Eq => match (left.as_ref(), right.as_ref()) {
-                (SQLExpr::CompoundIdentifier(left), SQLExpr::CompoundIdentifier(right)) => {
-                    collect_compound_identifiers(left, right, &tbl_left.name, &tbl_right.name)
-                },
-                _ => {
-                    polars_bail!(SQLInterface: "only equi-join constraints (on identifiers) are currently supported; found lhs={:?}, rhs={:?}", left, right)
-                },
+            BinaryOperator::Eq => {
+                // establish a unified schema with cols from both tables; needed
+                // for chained joins where the joined cols aren't in the original
+                let mut unified_schema =
+                    Schema::with_capacity(tbl_left.schema.len() + tbl_right.schema.len());
+                for (name, dtype) in tbl_left.schema.iter() {
+                    unified_schema.insert_at_index(
+                        unified_schema.len(),
+                        name.clone(),
+                        dtype.clone(),
+                    )?;
+                }
+                for (name, dtype) in tbl_right.schema.iter() {
+                    if !unified_schema.contains(name) {
+                        unified_schema.insert_at_index(
+                            unified_schema.len(),
+                            name.clone(),
+                            dtype.clone(),
+                        )?;
+                    }
+                }
+                let left_on = parse_sql_expr(left, ctx, Some(&unified_schema))?;
+                let right_on = parse_sql_expr(right, ctx, Some(&unified_schema))?;
+
+                // identify which side of the condition references which table/frame
+                let left_refs = (
+                    expr_refers_to_table(left, &tbl_left.name),
+                    expr_refers_to_table(left, &tbl_right.name),
+                );
+                let right_refs = (
+                    expr_refers_to_table(right, &tbl_left.name),
+                    expr_refers_to_table(right, &tbl_right.name),
+                );
+                match (left_refs, right_refs) {
+                    // swap left_on/right_on (if necessary)
+                    ((true, false), (false, true)) => Ok((vec![left_on], vec![right_on])),
+                    ((false, true), (true, false)) => Ok((vec![right_on], vec![left_on])),
+                    // unsupported: one side of the condition refers to *both* tables
+                    ((true, true), _) if tbl_left.name != tbl_right.name => polars_bail!(
+                        SQLInterface: "unsupported join condition: left side references both '{}' and '{}'",
+                        tbl_left.name, tbl_right.name
+                    ),
+                    (_, (true, true)) if tbl_left.name != tbl_right.name => polars_bail!(
+                        SQLInterface: "unsupported join condition: right side references both '{}' and '{}'",
+                        tbl_left.name, tbl_right.name
+                    ),
+                    // unqualified columns
+                    _ => Ok((vec![left_on], vec![right_on])),
+                }
             },
-            _ => {
-                polars_bail!(SQLInterface: "only equi-join constraints (combined with 'AND') are currently supported; found op = '{:?}'", op)
-            },
+            _ => polars_bail!(
+                // TODO: should be able to support more operators later via `join_where`
+                SQLInterface: "only equi-join constraints (combined with 'AND') are currently supported; found op = '{:?}'", op
+            ),
         },
-        SQLExpr::Nested(expr) => process_join_on(expr, tbl_left, tbl_right),
-        _ => {
-            polars_bail!(SQLInterface: "only equi-join constraints are currently supported; found expression = {:?}", expression)
-        },
+        SQLExpr::Nested(expr) => process_join_on(expr, tbl_left, tbl_right, ctx),
+        _ => polars_bail!(
+            SQLInterface: "only equi-join constraints are currently supported; found expression = {:?}", expression
+        ),
     }
 }
 
@@ -1635,10 +1735,11 @@ fn process_join_constraint(
     constraint: &JoinConstraint,
     tbl_left: &TableInfo,
     tbl_right: &TableInfo,
+    ctx: &mut SQLContext,
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
     match constraint {
         JoinConstraint::On(expr @ SQLExpr::BinaryOp { .. }) => {
-            process_join_on(expr, tbl_left, tbl_right)
+            process_join_on(expr, tbl_left, tbl_right, ctx)
         },
         JoinConstraint::Using(idents) if !idents.is_empty() => {
             let using: Vec<Expr> = idents.iter().map(|id| col(id.value.as_str())).collect();
@@ -1686,25 +1787,18 @@ impl ExprSqlProjectionHeightBehavior {
 
         for e in expr.into_iter() {
             use Expr::*;
-
             has_column |= matches!(e, Column(_) | Selector(_));
-
             has_independent |= match e {
                 // @TODO: This is broken now with functions.
                 AnonymousFunction { options, .. } => {
                     options.returns_scalar() || !options.is_length_preserving()
                 },
-
                 Literal(v) => !v.is_scalar(),
-
                 Explode { .. } | Filter { .. } | Gather { .. } | Slice { .. } => true,
-
                 Agg { .. } | Len => true,
-
                 _ => false,
             }
         }
-
         if has_independent {
             Self::Independent
         } else if has_column {

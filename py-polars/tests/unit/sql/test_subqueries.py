@@ -147,3 +147,39 @@ def test_in_subquery() -> None:
             """,
             eager=True,
         )
+
+
+def test_subquery_20732() -> None:
+    lf = pl.concat(  # noqa: F841
+        [
+            pl.LazyFrame([{"id": 1, "s": "a"}]),
+            pl.LazyFrame([{"id": 2, "s": "b"}]),
+        ]
+    )
+    res = pl.sql("SELECT * FROM lf WHERE id IN (SELECT MAX(id) FROM lf)", eager=True)
+    assert res.to_dict(as_series=False) == {"id": [2], "s": ["b"]}
+
+
+def test_unsupported_subquery_comparisons() -> None:
+    """Test that using = with a subquery gives a helpful error message."""
+    df = pl.DataFrame({"value": [2000, 2000]})  # noqa: F841
+
+    for op, suggestion in (("=", "IN"), ("!=", "NOT IN")):
+        with pytest.raises(
+            SQLSyntaxError,
+            match=rf"subquery comparisons with '{op}' are not supported; use '{suggestion}' instead",
+        ):
+            pl.sql(f"SELECT * FROM df WHERE value {op} (SELECT MAX(e) FROM df)")
+
+    for op in ("<", "<=", ">", ">="):
+        with pytest.raises(
+            SQLSyntaxError,
+            match=rf"subquery comparisons with '{op}' are not supported",
+        ):
+            pl.sql(f"SELECT * FROM df WHERE (SELECT MAX(e) FROM df) {op} value")
+
+        with pytest.raises(
+            SQLSyntaxError,
+            match=rf"subquery comparisons with '{op}' are not supported",
+        ):
+            pl.sql(f"SELECT * FROM df WHERE value {op} (SELECT MAX(value) FROM df)")

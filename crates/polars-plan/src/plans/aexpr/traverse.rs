@@ -13,7 +13,7 @@ impl AExpr {
         use AExpr::*;
 
         match self {
-            Column(_) | Literal(_) | Len => {},
+            Element | Column(_) | Literal(_) | Len => {},
             BinaryExpr { left, op: _, right } => {
                 container.extend([*right, *left]);
             },
@@ -41,7 +41,9 @@ impl AExpr {
             } => {
                 container.extend([*predicate, *falsy, *truthy]);
             },
-            AnonymousFunction { input, .. } | Function { input, .. } => {
+            AnonymousFunction { input, .. }
+            | Function { input, .. }
+            | AnonymousStreamingAgg { input, .. } => {
                 container.extend(input.iter().rev().map(|e| e.node()))
             },
             Explode { expr: e, .. } => container.extend([*e]),
@@ -85,7 +87,7 @@ impl AExpr {
         use AExpr::*;
 
         match self {
-            Column(_) | Literal(_) | Len => {},
+            Element | Column(_) | Literal(_) | Len => {},
             BinaryExpr { left, op: _, right } => {
                 container.extend([*right, *left]);
             },
@@ -113,7 +115,9 @@ impl AExpr {
             } => {
                 container.extend([*predicate, *falsy, *truthy]);
             },
-            AnonymousFunction { input, .. } | Function { input, .. } => {
+            AnonymousFunction { input, .. }
+            | Function { input, .. }
+            | AnonymousStreamingAgg { input, .. } => {
                 container.extend(input.iter().rev().map(|e| e.node()))
             },
             Explode { expr: e, .. } => container.extend([*e]),
@@ -147,7 +151,7 @@ impl AExpr {
     pub fn replace_inputs(mut self, inputs: &[Node]) -> Self {
         use AExpr::*;
         let input = match &mut self {
-            Column(_) | Literal(_) | Len => return self,
+            Element | Column(_) | Literal(_) | Len => return self,
             Cast { expr, .. } => expr,
             Explode { expr, .. } => expr,
             BinaryExpr { left, right, .. } => {
@@ -194,7 +198,9 @@ impl AExpr {
                 *predicate = inputs[2];
                 return self;
             },
-            AnonymousFunction { input, .. } | Function { input, .. } => {
+            AnonymousFunction { input, .. }
+            | Function { input, .. }
+            | AnonymousStreamingAgg { input, .. } => {
                 assert_eq!(input.len(), inputs.len());
                 for (e, node) in input.iter_mut().zip(inputs.iter()) {
                     e.set_node(*node);
@@ -245,6 +251,7 @@ impl IRAggExpr {
     pub fn get_input(&self) -> NodeInputs {
         use IRAggExpr::*;
         use NodeInputs::*;
+
         match self {
             Min { input, .. } => Single(*input),
             Max { input, .. } => Single(*input),
@@ -252,6 +259,7 @@ impl IRAggExpr {
             NUnique(input) => Single(*input),
             First(input) => Single(*input),
             Last(input) => Single(*input),
+            Item { input, .. } => Single(*input),
             Mean(input) => Single(*input),
             Implode(input) => Single(*input),
             Quantile { expr, quantile, .. } => Many(vec![*expr, *quantile]),
@@ -271,6 +279,7 @@ impl IRAggExpr {
             NUnique(input) => input,
             First(input) => input,
             Last(input) => input,
+            Item { input, .. } => input,
             Mean(input) => input,
             Implode(input) => input,
             Quantile { expr, .. } => expr,
