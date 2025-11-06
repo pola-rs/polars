@@ -891,6 +891,7 @@ fn create_physical_plan_impl(
             Ok(Box::new(exec))
         },
         Invalid => unreachable!(),
+        PlaceholderScan { .. } => unreachable!(),
     }
 }
 

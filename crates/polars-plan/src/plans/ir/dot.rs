@@ -327,6 +327,7 @@ impl<'a> IRDotDisplay<'a> {
                 write_label(f, id, |f| write!(f, "MERGE_SORTED ON '{key}'",))?;
             },
             Invalid => write_label(f, id, |f| f.write_str("INVALID"))?,
+            PlaceholderScan { .. } => write_label(f, id, |f| f.write_str("PLACEHOLDER"))?,
         }
 
         Ok(())

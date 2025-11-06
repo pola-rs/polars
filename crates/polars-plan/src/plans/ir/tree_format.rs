@@ -384,6 +384,7 @@ impl<'a> TreeFmtNode<'a> {
                             .collect(),
                     ),
                     Invalid => ND(wh(h, "INVALID"), vec![]),
+                    PlaceholderScan { .. } => ND(wh(h, "PLACEHOLDER"), vec![]),
                 }
             },
         }

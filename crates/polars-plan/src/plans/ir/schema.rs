@@ -46,6 +46,7 @@ impl IR {
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => "merge_sorted",
             Invalid => "invalid",
+            PlaceholderScan { .. } => "placeholder",
         }
     }
 
@@ -81,6 +82,11 @@ impl IR {
                 ..
             } => output_schema.as_ref().unwrap_or(&file_info.schema),
             DataFrameScan {
+                schema,
+                output_schema,
+                ..
+            } => output_schema.as_ref().unwrap_or(schema),
+            PlaceholderScan {
                 schema,
                 output_schema,
                 ..
@@ -153,6 +159,11 @@ impl IR {
                 ..
             } => output_schema.as_ref().unwrap_or(&file_info.schema).clone(),
             DataFrameScan {
+                schema,
+                output_schema,
+                ..
+            } => output_schema.as_ref().unwrap_or(schema).clone(),
+            PlaceholderScan {
                 schema,
                 output_schema,
                 ..

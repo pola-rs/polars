@@ -1690,3 +1690,164 @@ def test_cache_hit_child_removal() -> None:
     assert_frame_equal(df1.tail(3), df, check_row_order=False)
     assert_frame_equal(df2.head(3), df, check_row_order=False)
     assert_frame_equal(df2.tail(3), df, check_row_order=False)
+
+
+def test_to_template_from_template() -> None:
+    # Create a template with operations but no source data
+    template = (
+        pl.LazyFrame(schema={"a": pl.Int64, "b": pl.Int64})
+        .filter(pl.col("a") > 1)
+        .select(pl.col("b") * 2)
+        .to_template()
+    )
+
+    # Apply template to first data source
+    lf1 = pl.LazyFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    result1 = pl.LazyFrame.from_template(lf1, template).collect()
+    expected1 = pl.DataFrame({"b": [10, 12]})
+    assert_frame_equal(result1, expected1)
+
+    # Apply same template to different data source
+    lf2 = pl.LazyFrame({"a": [10, 20, 30], "b": [40, 50, 60]})
+    result2 = pl.LazyFrame.from_template(lf2, template).collect()
+    expected2 = pl.DataFrame({"b": [80, 100, 120]})
+    assert_frame_equal(result2, expected2)
+
+    # Test with DataFrame source
+    df3 = pl.DataFrame({"a": [5, 6, 7], "b": [8, 9, 10]})
+    result3 = pl.LazyFrame.from_template(df3, template).collect()
+    expected3 = pl.DataFrame({"b": [16, 18, 20]})
+    assert_frame_equal(result3, expected3)
+
+    # Test with aggregations
+    agg_template = (
+        pl.LazyFrame(schema={"category": pl.String, "amount": pl.Int64})
+        .group_by("category")
+        .agg(pl.sum("amount"))
+        .to_template()
+    )
+
+    df_agg = pl.DataFrame({
+        "category": ["A", "B", "A", "B"],
+        "amount": [100, 200, 300, 400],
+    })
+    result_agg = pl.LazyFrame.from_template(df_agg, agg_template).collect()
+    expected_agg = pl.DataFrame({
+        "category": ["A", "B"],
+        "amount": [400, 600],
+    })
+    assert_frame_equal(result_agg, expected_agg, check_row_order=False)
+
+
+def test_template_serialization_deserialization() -> None:
+    """Test that templates can be serialized and deserialized correctly."""
+    # Create a template with various operations
+    template = (
+        pl.LazyFrame(schema={"x": pl.Float64, "y": pl.Float64, "z": pl.String})
+        .filter(pl.col("x") > 0)
+        .with_columns((pl.col("y") * 2).alias("y_doubled"))
+        .select("x", "y_doubled", "z")
+        .to_template()
+    )
+
+    # Template should be bytes
+    assert isinstance(template, bytes)
+    assert len(template) > 0
+
+    # Apply template to first dataset
+    df1 = pl.DataFrame({
+        "x": [1.0, -1.0, 2.0, 0.0],
+        "y": [10.0, 20.0, 30.0, 40.0],
+        "z": ["a", "b", "c", "d"],
+    })
+    result1 = pl.LazyFrame.from_template(df1, template).collect()
+    expected1 = pl.DataFrame({
+        "x": [1.0, 2.0],
+        "y_doubled": [20.0, 60.0],
+        "z": ["a", "c"],
+    })
+    assert_frame_equal(result1, expected1)
+
+    # Apply same template to different dataset
+    df2 = pl.DataFrame({
+        "x": [5.0, -5.0, 10.0],
+        "y": [100.0, 200.0, 300.0],
+        "z": ["foo", "bar", "baz"],
+    })
+    result2 = pl.LazyFrame.from_template(df2, template).collect()
+    expected2 = pl.DataFrame({
+        "x": [5.0, 10.0],
+        "y_doubled": [200.0, 600.0],
+        "z": ["foo", "baz"],
+    })
+    assert_frame_equal(result2, expected2)
+
+
+def test_template_with_joins() -> None:
+    """Test templates with join operations."""
+    # This test ensures that templates work with more complex operations
+    template = (
+        pl.LazyFrame(schema={"id": pl.Int64, "value": pl.Float64})
+        .with_columns((pl.col("value") * 10).alias("scaled"))
+        .filter(pl.col("id") > 0)
+        .to_template()
+    )
+
+    df = pl.DataFrame({
+        "id": [-1, 1, 2, 3],
+        "value": [1.5, 2.5, 3.5, 4.5],
+    })
+
+    result = pl.LazyFrame.from_template(df, template).collect()
+    expected = pl.DataFrame({
+        "id": [1, 2, 3],
+        "value": [2.5, 3.5, 4.5],
+        "scaled": [25.0, 35.0, 45.0],
+    })
+    assert_frame_equal(result, expected)
+
+
+def test_template_with_sorting() -> None:
+    """Test templates with sort operations."""
+    template = (
+        pl.LazyFrame(schema={"name": pl.String, "age": pl.Int64, "score": pl.Float64})
+        .sort("age", descending=True)
+        .head(2)
+        .to_template()
+    )
+
+    df = pl.DataFrame({
+        "name": ["Alice", "Bob", "Charlie", "David"],
+        "age": [25, 30, 22, 35],
+        "score": [85.5, 90.0, 78.5, 92.5],
+    })
+
+    result = pl.LazyFrame.from_template(df, template).collect()
+    expected = pl.DataFrame({
+        "name": ["David", "Bob"],
+        "age": [35, 30],
+        "score": [92.5, 90.0],
+    })
+    assert_frame_equal(result, expected)
+
+
+def test_template_with_window_functions() -> None:
+    """Test templates with window functions."""
+    template = (
+        pl.LazyFrame(schema={"group": pl.String, "value": pl.Int64})
+        .with_columns(pl.col("value").sum().over("group").alias("group_sum"))
+        .to_template()
+    )
+
+    df = pl.DataFrame({
+        "group": ["A", "B", "A", "B", "A"],
+        "value": [1, 2, 3, 4, 5],
+    })
+
+    result = pl.LazyFrame.from_template(df, template).collect()
+    expected = pl.DataFrame({
+        "group": ["A", "B", "A", "B", "A"],
+        "value": [1, 2, 3, 4, 5],
+        "group_sum": [9, 6, 9, 6, 9],
+    })
+    assert_frame_equal(result, expected)

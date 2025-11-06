@@ -313,6 +313,7 @@ pub(super) fn pushdown_orders(
             },
 
             IR::SinkMultiple { .. } | IR::Invalid => unreachable!(),
+            IR::PlaceholderScan { .. } => unreachable!(),
         };
 
         let prev_value = orders.insert(node, node_ordering);

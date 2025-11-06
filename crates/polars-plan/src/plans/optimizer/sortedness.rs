@@ -118,6 +118,7 @@ fn is_sorted_rec(
         IR::MergeSorted { .. } => None,
         IR::Distinct { .. } => None,
         IR::Invalid => unreachable!(),
+        IR::PlaceholderScan { .. } => unreachable!(),
     };
 
     sortedness.insert(root, sorted.clone());

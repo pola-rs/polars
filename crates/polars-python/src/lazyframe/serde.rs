@@ -3,6 +3,7 @@ use std::io::{BufReader, BufWriter, Read};
 use pyo3::prelude::*;
 
 use super::PyLazyFrame;
+use crate::dataframe::PyDataFrame;
 use crate::exceptions::ComputeError;
 use crate::file::get_file_like;
 use crate::prelude::*;
@@ -68,5 +69,52 @@ impl PyLazyFrame {
                 .map_err(|err| ComputeError::new_err(err.to_string()))
         })?;
         Ok(LazyFrame::from(lp).into())
+    }
+
+    fn serialize_template(&self, py: Python<'_>) -> PyResult<Vec<u8>> {
+        py.enter_polars(|| {
+            let template = self.ldf.read().clone().to_template()?;
+            serde_json::to_vec(&template)
+                .map_err(|err| polars_err!(ComputeError: "serialization failed: {}", err))
+        })
+    }
+
+    #[staticmethod]
+    fn deserialize_template_and_bind(
+        py: Python<'_>,
+        data: Vec<u8>,
+        df: &PyDataFrame,
+    ) -> PyResult<Self> {
+        use polars_plan::plans::IRPlan;
+
+        py.enter_polars(|| -> PolarsResult<Self> {
+            let template: IRPlan = serde_json::from_slice(&data)
+                .map_err(|err| polars_err!(ComputeError: "deserialization failed: {}", err))?;
+
+            let bound = template.bind_to_df(std::sync::Arc::new(df.df.read().clone()))?;
+            Ok(LazyFrame::from(bound).into())
+        })
+    }
+
+    #[staticmethod]
+    fn deserialize_template_and_bind_multi(
+        py: Python<'_>,
+        data: Vec<u8>,
+        dfs: Vec<PyDataFrame>,
+    ) -> PyResult<Self> {
+        use polars_plan::plans::IRPlan;
+
+        py.enter_polars(|| -> PolarsResult<Self> {
+            let template: IRPlan = serde_json::from_slice(&data)
+                .map_err(|err| polars_err!(ComputeError: "deserialization failed: {}", err))?;
+
+            let dataframes: Vec<std::sync::Arc<DataFrame>> = dfs
+                .iter()
+                .map(|df| std::sync::Arc::new(df.df.read().clone()))
+                .collect();
+
+            let bound = template.bind_to_dfs(dataframes)?;
+            Ok(LazyFrame::from(bound).into())
+        })
     }
 }

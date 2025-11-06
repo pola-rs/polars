@@ -1237,6 +1237,7 @@ pub fn lower_ir(
         },
         IR::ExtContext { .. } => todo!(),
         IR::Invalid => unreachable!(),
+        IR::PlaceholderScan { .. } => unreachable!(),
     };
 
     let node_key = phys_sm.insert(PhysNode::new(output_schema, node_kind));

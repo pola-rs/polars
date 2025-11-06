@@ -719,5 +719,6 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
         }
         .into_py_any(py),
         IR::Invalid => Err(PyNotImplementedError::new_err("Invalid")),
+        IR::PlaceholderScan { .. } => Err(PyNotImplementedError::new_err("PlaceholderScan")),
     }
 }

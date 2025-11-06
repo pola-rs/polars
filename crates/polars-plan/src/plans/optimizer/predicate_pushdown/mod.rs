@@ -654,6 +654,7 @@ impl PredicatePushDown {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             },
             Invalid => unreachable!(),
+            PlaceholderScan { .. } => unreachable!(),
         }
     }
 

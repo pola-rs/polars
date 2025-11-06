@@ -975,6 +975,7 @@ pub fn write_ir_non_recursive(
             key,
         } => write!(f, "{:indent$}MERGE SORTED ON '{key}'", ""),
         IR::Invalid => write!(f, "{:indent$}INVALID", ""),
+        IR::PlaceholderScan { .. } => write!(f, "{:indent$}PLACEHOLDER", ""),
     }
 }
 

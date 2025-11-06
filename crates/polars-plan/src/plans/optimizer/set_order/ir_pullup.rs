@@ -210,6 +210,7 @@ pub(super) fn pullup_orders(
             },
 
             IR::SinkMultiple { .. } | IR::Invalid => unreachable!(),
+            IR::PlaceholderScan { .. } => unreachable!(),
         }
 
         stack.extend(node_outputs.iter().map(|v| v.0));

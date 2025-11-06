@@ -84,6 +84,25 @@ impl From<DslPlan> for LazyFrame {
     }
 }
 
+impl From<IRPlan> for LazyFrame {
+    fn from(ir_plan: IRPlan) -> Self {
+        // Create a DslPlan::IR wrapper to hold the IR
+        let dsl_plan = DslPlan::IR {
+            node: Some(ir_plan.lp_top),
+            dsl: Arc::new(DslPlan::default()), // placeholder
+            version: ir_plan.lp_arena.version(),
+        };
+
+        let lf = Self {
+            logical_plan: dsl_plan,
+            opt_state: OptFlags::default(),
+            cached_arena: Arc::new(Mutex::new(None)),
+        };
+        lf.set_cached_arena(ir_plan.lp_arena, ir_plan.expr_arena);
+        lf
+    }
+}
+
 impl LazyFrame {
     pub(crate) fn from_inner(
         logical_plan: DslPlan,
@@ -518,6 +537,55 @@ impl LazyFrame {
         )?;
         let plan = IRPlan::new(node, lp_arena, expr_arena);
         Ok(plan)
+    }
+
+    /// Convert LazyFrame to a template by replacing data sources with placeholders.
+    ///
+    /// This allows serializing the transformation logic without the actual data,
+    /// which can then be applied to different datasets later using `from_template()`.
+    ///
+    /// # Important: Templates are Created from Unoptimized Plans
+    ///
+    /// Templates are intentionally created from **unoptimized** IR plans. This means:
+    /// - Filter nodes remain as separate `IR::Filter` nodes (not pushed into Scans)
+    /// - Projection nodes remain as separate `IR::Select` nodes (not pushed into Scans)
+    /// - All transformation logic is preserved as explicit IR nodes in the template
+    ///
+    /// **Why this matters:**
+    /// If predicates were pushed down into `IR::Scan` nodes (via optimization), they would
+    /// be lost during template conversion because `PlaceholderScan` only preserves schema
+    /// information, not scan-specific metadata like predicates or projection pushdowns.
+    ///
+    /// By keeping the plan unoptimized, all transformations remain separate and are
+    /// correctly preserved in the template.
+    ///
+    /// # Example
+    /// ```ignore
+    /// // Create template from filtered scan
+    /// let template = lf.filter(col("x").gt(lit(5))).to_template()?;
+    ///
+    /// // Filter remains as separate IR::Filter node, so it's preserved
+    /// // When applied to new data, the filter will work correctly
+    /// let result = LazyFrame::from_template(new_data, template)?.collect()?;
+    /// ```
+    ///
+    /// # Multi-DataFrame Templates
+    ///
+    /// Templates can contain multiple placeholders for joins, unions, etc.:
+    /// ```ignore
+    /// let template = left.join(right, ...).to_template()?;
+    /// let result = LazyFrame::from_template(vec![new_left, new_right], template)?;
+    /// ```
+    pub fn to_template(mut self) -> PolarsResult<IRPlan> {
+        // Disable type checking and other validations for template creation
+        // This allows templates to be created from empty LazyFrames with unresolved columns
+        self.opt_state.remove(OptFlags::TYPE_CHECK);
+
+        // Convert to IR without running optimization passes
+        // This is critical: optimization (especially predicate pushdown) would move
+        // filters/projections into Scan nodes, and those would be lost during templating
+        let ir_plan = self.to_alp()?;
+        Ok(ir_plan.to_template())
     }
 
     pub(crate) fn optimize_with_scratch(

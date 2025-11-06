@@ -260,6 +260,7 @@ impl Hash for HashableEqLP<'_> {
                 key.hash(state);
             },
             IR::Invalid => unreachable!(),
+            IR::PlaceholderScan { .. } => unreachable!(),
         }
     }
 }
@@ -579,6 +580,7 @@ impl HashableEqLP<'_> {
             (IR::Invalid, IR::Invalid) => unreachable!(),
             #[cfg(feature = "merge_sorted")]
             (IR::MergeSorted { key: l, .. }, IR::MergeSorted { key: r, .. }) => l == r,
+            (IR::PlaceholderScan { .. }, IR::PlaceholderScan { .. }) => unreachable!(),
             _ => false,
         }
     }

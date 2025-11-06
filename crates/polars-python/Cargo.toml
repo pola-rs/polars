@@ -115,6 +115,7 @@ features = [
   "rows",
   "semi_anti_join",
   "serde-lazy",
+  "ir_serde",
   "string_encoding",
   "string_normalize",
   "string_reverse",
@@ -289,6 +290,7 @@ full = [
   "ffi_plugin",
   "polars_cloud_client",
   "new_streaming",
+  "serde_json",
 ]
 
 # we cannot conditionally activate simd
