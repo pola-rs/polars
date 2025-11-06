@@ -328,11 +328,13 @@ fn create_physical_expr_inner(
             node_to_expr(expression, expr_arena),
             schema.clone(),
         ))),
-        Element => Ok(Arc::new(ColumnExpr::new(
-            PL_ELEMENT_NAME.clone(),
-            node_to_expr(expression, expr_arena),
-            schema.clone(),
-        ))),
+        Element => {
+            let output_field = expr_arena
+                .get(expression)
+                .to_field(&ToFieldContext::new(expr_arena, schema))?;
+
+            Ok(Arc::new(ElementExpr::new(output_field)))
+        },
         Sort { expr, options } => {
             let phys_expr = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(SortExpr::new(

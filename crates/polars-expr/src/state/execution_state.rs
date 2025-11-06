@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Mutex, RwLock};
 use std::time::Duration;
 
+use arrow::bitmap::Bitmap;
 use bitflags::bitflags;
 use polars_core::config::verbose;
 use polars_core::prelude::*;
@@ -122,6 +123,7 @@ pub struct ExecutionState {
     pub branch_idx: usize,
     pub flags: RelaxedCell<u8>,
     pub ext_contexts: Arc<Vec<DataFrame>>,
+    pub element: Arc<Option<(Column, Option<Bitmap>)>>,
     node_timer: Option<NodeTimer>,
     stop: Arc<RelaxedCell<bool>>,
 }
@@ -139,6 +141,7 @@ impl ExecutionState {
             branch_idx: 0,
             flags: RelaxedCell::from(StateFlags::init().as_u8()),
             ext_contexts: Default::default(),
+            element: Default::default(),
             node_timer: None,
             stop: Arc::new(RelaxedCell::from(false)),
         }
@@ -203,6 +206,7 @@ impl ExecutionState {
             branch_idx: self.branch_idx,
             flags: self.flags.clone(),
             ext_contexts: self.ext_contexts.clone(),
+            element: self.element.clone(),
             node_timer: self.node_timer.clone(),
             stop: self.stop.clone(),
         }

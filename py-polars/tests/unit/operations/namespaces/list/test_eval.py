@@ -138,7 +138,7 @@ def test_list_eval_type_cast_11188() -> None:
 )
 def test_list_eval_list_output_18510(data: dict[str, Any], expr: pl.Expr) -> None:
     df = pl.DataFrame(data)
-    result = df.select(pl.col("a").list.eval(pl.lit("")))
+    result = df.select(pl.col("a").list.eval(expr))
     assert result.to_series().dtype == pl.List(pl.String)
 
 
@@ -398,3 +398,120 @@ def test_unique_in_list_agg() -> None:
         df,
         pl.DataFrame({"uniq": [[1]], "drop_nulls": [[1]]}),
     )
+
+
+@pytest.mark.parametrize(
+    ("df"),
+    [
+        pl.DataFrame({"a": [[1, 2, 3], [4], [5]]}),
+        pl.DataFrame({"a": [[1, 2, 3], None, [5]]}),
+        pl.DataFrame({"a": [[1, 2, 3], [None], [5]]}),
+        pl.DataFrame({"a": [[1, 2, 3], [], [5]]}),
+        pl.DataFrame({"a": [[None, None, 3], [4], [5]]}),
+    ],
+)
+@pytest.mark.parametrize("expr", [pl.element(), 2 * pl.element() - pl.element()])
+def test_list_eval_parametric_element(df: pl.DataFrame, expr: pl.Expr) -> None:
+    out = df.select(pl.col.a.list.eval(expr))
+    assert_frame_equal(out, df)
+
+    out = df.select(pl.col.a.list.eval(expr).over(42))
+    print(out)
+    print(df)
+    assert_frame_equal(out, df)
+
+
+@pytest.mark.parametrize(
+    ("df"),
+    [
+        pl.DataFrame({"a": [[1, 2, 3], [1], [1]]}),
+        pl.DataFrame({"a": [[1, 2, 3], None, [1]]}),
+        pl.DataFrame({"a": [[1, 2, 3], [None], [1]]}),
+        pl.DataFrame({"a": [[1, 2, 3], [], [1]]}),
+        pl.DataFrame({"a": [[None, None, 1], [1], [1]]}),
+    ],
+)
+@pytest.mark.parametrize("expr", [pl.element().rank()])
+def test_list_eval_parametric_rank(df: pl.DataFrame, expr: pl.Expr) -> None:
+    out = df.select(pl.col.a.list.eval(expr))
+    expected = df.cast(pl.List(pl.Float64))
+    assert_frame_equal(out, expected)
+
+    out = df.select(pl.col.a.list.eval(expr).over(42))
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    ("df", "expected"),
+    [
+        (
+            pl.DataFrame({"a": [[1, 2, 3], [1], [1]]}),
+            pl.DataFrame({"a": [[1], [1], [1]]}),
+        ),
+        (
+            pl.DataFrame({"a": [[1, 2, 3], None, [1]]}),
+            pl.DataFrame({"a": [[1], None, [1]]}),
+        ),
+        (
+            pl.DataFrame({"a": [[1, 2, 3], [None], [1]]}),
+            pl.DataFrame({"a": [[1], [None], [1]]}),
+        ),
+        (
+            pl.DataFrame({"a": [[1, 2, 3], [], [1]]}),
+            pl.DataFrame({"a": [[1], [None], [1]]}),
+        ),
+        (
+            pl.DataFrame({"a": [[None, None, 1], [1], [1]]}),
+            pl.DataFrame({"a": [[None], [1], [1]]}),
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "expr", [pl.element().first(), pl.element().get(0), pl.element().reverse().last()]
+)
+def test_list_eval_parametric_first_scalar(
+    df: pl.DataFrame, expected: pl.DataFrame, expr: pl.Expr
+) -> None:
+    out = df.select(pl.col.a.list.eval(expr))
+    assert_frame_equal(out, expected)
+
+    out = df.select(pl.col.a.list.eval(expr).over(42))
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    ("df", "expected"),
+    [
+        (
+            pl.DataFrame({"a": [[1, 2, 3], [1], [1]]}),
+            pl.DataFrame({"a": [[1], [1], [1]]}),
+        ),
+        (
+            pl.DataFrame({"a": [[1, 2, 3], None, [1]]}),
+            pl.DataFrame({"a": [[1], None, [1]]}),
+        ),
+        (
+            pl.DataFrame({"a": [[1, 2, 3], [None], [1]]}),
+            pl.DataFrame({"a": [[1], [None], [1]]}),
+        ),
+        (
+            pl.DataFrame({"a": [[1, 2, 3], [], [1]]}),
+            pl.DataFrame({"a": [[1], [], [1]]}),
+        ),
+        (
+            pl.DataFrame({"a": [[None, None, 1], [1], [1]]}),
+            pl.DataFrame({"a": [[None], [1], [1]]}),
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "expr", [pl.element().head(1), pl.element().reverse().slice(-1)]
+)
+def test_list_eval_parametric_first_slice(
+    df: pl.DataFrame, expected: pl.DataFrame, expr: pl.Expr
+) -> None:
+    out = df.select(pl.col.a.list.eval(expr))
+    assert_frame_equal(out, expected)
+
+    out = df.select(pl.col.a.list.eval(expr).over(42))
+    assert_frame_equal(out, expected)
