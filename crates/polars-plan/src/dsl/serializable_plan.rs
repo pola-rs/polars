@@ -636,7 +636,7 @@ mod _serde_impl {
                 _ => DataFrame::deserialize_from_reader(
                     &mut FixedSizeChunkedBytesCursor::try_new(
                         bytes.as_slice(),
-                        max_byte_slice_len(),
+                        max_byte_slice_len().try_into().unwrap(),
                     )
                     .unwrap(),
                 ),

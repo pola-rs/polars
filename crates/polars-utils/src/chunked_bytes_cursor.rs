@@ -1,3 +1,5 @@
+use std::num::NonZeroUsize;
+
 /// Cursor over fixed size chunks of bytes.
 pub struct FixedSizeChunkedBytesCursor<'a, T> {
     position: usize,
@@ -7,17 +9,27 @@ pub struct FixedSizeChunkedBytesCursor<'a, T> {
     chunked_bytes: &'a [T],
 }
 
+#[derive(Debug)]
+pub enum FixedSizeChunkedBytesCursorInitErr {
+    NoChunks,
+    ChunkLenMismatch { index: usize },
+}
+
 impl<'a, T> FixedSizeChunkedBytesCursor<'a, T>
 where
     T: AsRef<[u8]>,
 {
     /// Returns error if `chunked_bytes` is empty, or if a byte slice that is not the last one
     /// has a length != `chunk_size`;
-    pub fn try_new(chunked_bytes: &'a [T], chunk_size: usize) -> Result<Self, ()> {
-        assert!(chunk_size > 0);
+    pub fn try_new(
+        chunked_bytes: &'a [T],
+        chunk_size: NonZeroUsize,
+    ) -> Result<Self, FixedSizeChunkedBytesCursorInitErr> {
+        use FixedSizeChunkedBytesCursorInitErr as E;
+        let chunk_size = chunk_size.get();
 
         if chunked_bytes.is_empty() {
-            return Err(());
+            return Err(E::NoChunks);
         }
 
         let mut total_size: usize = 0;
@@ -26,7 +38,7 @@ where
             let bytes = bytes.as_ref();
 
             if bytes.len() != chunk_size && chunked_bytes.len() - i > 1 {
-                return Err(());
+                return Err(E::ChunkLenMismatch { index: i });
             }
 
             total_size = total_size.checked_add(bytes.len()).unwrap();
