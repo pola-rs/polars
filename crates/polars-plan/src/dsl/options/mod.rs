@@ -31,7 +31,7 @@ use serde::{Deserialize, Serialize};
 pub use sink::*;
 use strum_macros::IntoStaticStr;
 
-use super::ExprIR;
+use super::{Expr, ExprIR};
 use crate::dsl::Selector;
 
 #[derive(Copy, Clone, PartialEq, Debug, Eq, Hash)]
@@ -331,8 +331,8 @@ impl GroupbyOptions {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct DistinctOptionsDSL {
-    /// Subset of columns that will be taken into account.
-    pub subset: Option<Selector>,
+    /// Subset of columns/expressions that will be taken into account.
+    pub subset: Option<Vec<Expr>>,
     /// This will maintain the order of the input.
     /// Note that this is more expensive.
     /// `maintain_order` is not supported in the streaming
