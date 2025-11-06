@@ -588,7 +588,7 @@ pub(crate) struct DataFrameSerdeWrap(Arc<DataFrame>);
 
 #[cfg(feature = "serde")]
 mod _serde_impl {
-    use std::sync::{Arc, LazyLock};
+    use std::sync::Arc;
 
     use polars_core::frame::DataFrame;
     use polars_utils::chunked_bytes_cursor::FixedSizeChunkedBytesCursor;

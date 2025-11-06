@@ -3,6 +3,7 @@ pub struct FixedSizeChunkedBytesCursor<'a, T> {
     position: usize,
     total_size: usize,
     chunk_size: usize,
+    /// Note, the last chunk is allowed to have a length shorter than the `chunk_size`.
     chunked_bytes: &'a [T],
 }
 
@@ -45,45 +46,52 @@ where
     T: AsRef<[u8]>,
 {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let new_position =
-            self.position + buf.len().min(self.total_size.saturating_sub(self.position));
+        let available_bytes = self.total_size.saturating_sub(self.position);
+        let new_position = self.position + buf.len().min(available_bytes);
 
-        let byte_range = self.position..new_position;
+        let requested_byte_range = self.position..new_position;
 
-        if byte_range.is_empty() {
+        if requested_byte_range.is_empty() {
             return Ok(0);
         }
 
-        let mut bytes_read: usize = 0;
+        // First chunk needs special handling as the offset within the chunk can be non-zero.
+        let mut bytes_read = {
+            let (first_chunk_idx, offset_in_chunk) = (
+                requested_byte_range.start / self.chunk_size,
+                requested_byte_range.start % self.chunk_size,
+            );
+            let chunk_bytes = self.chunked_bytes[first_chunk_idx].as_ref();
+            let len = requested_byte_range
+                .len()
+                .min(chunk_bytes.len() - offset_in_chunk);
 
+            buf[..len].copy_from_slice(&chunk_bytes[offset_in_chunk..offset_in_chunk + len]);
+
+            len
+        };
+
+        assert!(
+            (requested_byte_range.start + bytes_read).is_multiple_of(self.chunk_size)
+                || bytes_read == requested_byte_range.len()
+        );
+
+        for chunk_idx in (requested_byte_range.start + bytes_read) / self.chunk_size
+            ..requested_byte_range.end.div_ceil(self.chunk_size)
         {
-            let chunk_bytes = self.chunked_bytes[byte_range.start / self.chunk_size].as_ref();
-            let offset_in_chunk = (byte_range.start % self.chunk_size).min(chunk_bytes.len());
-            let len = byte_range.len().min(chunk_bytes.len() - offset_in_chunk);
+            let chunk_bytes = self.chunked_bytes[chunk_idx].as_ref();
+            let len = (requested_byte_range.len() - bytes_read).min(chunk_bytes.len());
 
-            buf[..len].copy_from_slice(&chunk_bytes[offset_in_chunk..][..len]);
+            buf[bytes_read..bytes_read + len].copy_from_slice(&chunk_bytes[..len]);
 
             bytes_read += len;
         }
 
-        {
-            for chunk_idx in
-                byte_range.start.div_ceil(self.chunk_size)..byte_range.end.div_ceil(self.chunk_size)
-            {
-                let chunk_bytes = self.chunked_bytes[chunk_idx].as_ref();
-                let len = (byte_range.len() - bytes_read).min(chunk_bytes.len());
-
-                buf[bytes_read..][..len].copy_from_slice(&chunk_bytes[..len]);
-
-                bytes_read += len;
-            }
-        }
-
-        assert_eq!(bytes_read, byte_range.len());
+        assert_eq!(bytes_read, requested_byte_range.len());
 
         self.position = new_position;
 
-        Ok(byte_range.len())
+        Ok(requested_byte_range.len())
     }
 }
 
