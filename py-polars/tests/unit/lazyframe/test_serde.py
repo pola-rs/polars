@@ -157,7 +157,7 @@ def test_lf_serde_map_batches_on_lazyframe() -> None:
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.parametrize("max_byte_slice_len", [1, 2, 3, 100, 18446744073709551615])
+@pytest.mark.parametrize("max_byte_slice_len", [1, 2, 3, 100, 4294967295])
 def test_lf_serde_chunked_bytes(
     monkeypatch: pytest.MonkeyPatch, max_byte_slice_len: int
 ) -> None:
