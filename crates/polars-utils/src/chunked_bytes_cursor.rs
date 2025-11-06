@@ -4,41 +4,41 @@ use std::num::NonZeroUsize;
 pub struct FixedSizeChunkedBytesCursor<'a, T> {
     position: usize,
     total_size: usize,
-    chunk_size: usize,
+    chunk_size: NonZeroUsize,
     /// Note, the last chunk is allowed to have a length shorter than the `chunk_size`.
     chunked_bytes: &'a [T],
 }
 
 #[derive(Debug)]
 pub enum FixedSizeChunkedBytesCursorInitErr {
+    ChunkLengthMismatch { index: usize },
+    EmptyFirstChunk,
     NoChunks,
-    ChunkLenMismatch { index: usize },
 }
 
 impl<'a, T> FixedSizeChunkedBytesCursor<'a, T>
 where
     T: AsRef<[u8]>,
 {
-    /// Returns error if `chunked_bytes` is empty, or if a byte slice that is not the last one
-    /// has a length != `chunk_size`;
-    pub fn try_new(
-        chunked_bytes: &'a [T],
-        chunk_size: NonZeroUsize,
-    ) -> Result<Self, FixedSizeChunkedBytesCursorInitErr> {
+    /// Expects `chunked_bytes` to have a non-empty length `n`, where `chunked_bytes[..n - 1]` all have the same length.
+    pub fn try_new(chunked_bytes: &'a [T]) -> Result<Self, FixedSizeChunkedBytesCursorInitErr> {
         use FixedSizeChunkedBytesCursorInitErr as E;
-        let chunk_size = chunk_size.get();
 
         if chunked_bytes.is_empty() {
             return Err(E::NoChunks);
         }
+
+        let Ok(chunk_size) = NonZeroUsize::try_from(chunked_bytes[0].as_ref().len()) else {
+            return Err(E::EmptyFirstChunk);
+        };
 
         let mut total_size: usize = 0;
 
         for (i, bytes) in chunked_bytes.iter().enumerate() {
             let bytes = bytes.as_ref();
 
-            if bytes.len() != chunk_size && chunked_bytes.len() - i > 1 {
-                return Err(E::ChunkLenMismatch { index: i });
+            if bytes.len() != chunk_size.get() && chunked_bytes.len() - i > 1 {
+                return Err(E::ChunkLengthMismatch { index: i });
             }
 
             total_size = total_size.checked_add(bytes.len()).unwrap();
@@ -84,12 +84,12 @@ where
         };
 
         assert!(
-            (requested_byte_range.start + bytes_read).is_multiple_of(self.chunk_size)
+            (requested_byte_range.start + bytes_read).is_multiple_of(self.chunk_size.get())
                 || bytes_read == requested_byte_range.len()
         );
 
         for chunk_idx in (requested_byte_range.start + bytes_read) / self.chunk_size
-            ..requested_byte_range.end.div_ceil(self.chunk_size)
+            ..requested_byte_range.end.div_ceil(self.chunk_size.get())
         {
             let chunk_bytes = self.chunked_bytes[chunk_idx].as_ref();
             let len = (requested_byte_range.len() - bytes_read).min(chunk_bytes.len());
