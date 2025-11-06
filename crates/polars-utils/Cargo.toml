@@ -58,6 +58,7 @@ serde = [
   "dep:rmp-serde",
   "dep:bincode",
   "dep:flate2",
+  "half/serde",
   "dep:serde_json",
   "dep:serde_stacker",
   "uuid/serde",
