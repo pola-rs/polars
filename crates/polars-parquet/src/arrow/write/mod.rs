@@ -547,7 +547,6 @@ pub fn array_to_page_simple(
             );
         },
         ArrowDataType::Float16 => {
-            // TODO: [amber] Check if this code is covered
             let array: &PrimitiveArray<pf16> = array.as_any().downcast_ref().unwrap();
             let statistics = options
                 .has_statistics()
@@ -968,7 +967,6 @@ fn array_to_page_nested(
             primitive::nested_array_to_page::<i64, i64>(array, options, type_, nested)
         },
         Float16 => {
-            // TODO: [amber] Check if this code is covered
             let array: &PrimitiveArray<pf16> = array.as_any().downcast_ref().unwrap();
             let statistics = options
                 .has_statistics()
