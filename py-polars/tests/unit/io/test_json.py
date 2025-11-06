@@ -54,8 +54,10 @@ def test_write_json_example() -> None:
             pl.Decimal,
             pl.Duration,  # See #20198
             pl.Enum,
+            pl.Int128,
             pl.Struct,
             pl.Time,
+            pl.UInt128,
         ],
     )
 )
