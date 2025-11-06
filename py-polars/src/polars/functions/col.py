@@ -26,6 +26,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     import polars._plr as plr
 
 if TYPE_CHECKING:
+    from types import FrameType
+
     from polars._typing import PolarsDataType, PythonDataType
     from polars.expr.expr import Expr
 
@@ -102,6 +104,21 @@ def _create_col(
             f"\n\nExpected `str` or `DataType`, got {type(name).__name__!r}."
         )
         raise TypeError(msg)
+
+
+if sys.version_info >= (3, 11):
+    # note: using `co_qualname` is more robust; can additionally
+    # detect class scope from inside classmethods and staticmethods...
+    def _get_class_objname(f: FrameType) -> str:
+        return f.f_code.co_qualname.split(".")[-2:][0]
+
+    _have_qualname = True
+else:
+    # ... but it's not available until 3.11
+    def _get_class_objname(f: FrameType) -> str:
+        return type(f.f_locals.get("self")).__name__
+
+    _have_qualname = False
 
 
 def _python_dtype_match(tp: PythonDataType) -> list[PolarsDataType]:
@@ -368,27 +385,21 @@ class Col:
         └─────┘
         """
         # detect if "name" has been mangled by class scoping
+        # (this can only happen if the colname starts with a double-underscore)
         if re.match(r"^_\w+__", name):
             import inspect
 
-            have_qualname = sys.version_info >= (3, 11)
             frame = inspect.currentframe()
             while frame is not None:
                 if (frame := frame.f_back) is not None and (  # type: ignore[union-attr]
-                    have_qualname or "self" in frame.f_locals
+                    _have_qualname or "self" in frame.f_locals
                 ):
-                    # note: using `co_qualname` is more robust (can additionally
-                    # detect class scope inside classmethods and staticmethods)
-                    if class_name := (
-                        frame.f_code.co_qualname.split(".")[-2:][0]
-                        if have_qualname
-                        else type(frame.f_locals["self"]).__name__
-                    ):
-                        # if we are inside class scope confirm the col has been mangled
-                        # with the *specific* class name associated with that scope
+                    # if we are inside class scope confirm the col has been mangled
+                    # with the *specific* class name associated with that scope
+                    if object_name := _get_class_objname(frame):
                         if name.startswith(
-                            mangled_prefix := f"_{class_name}"
-                        ) and isinstance(frame.f_globals.get(class_name), type):
+                            mangled_prefix := f"_{object_name}"
+                        ) and isinstance(frame.f_globals.get(object_name), type):
                             name = name.removeprefix(mangled_prefix)
                             break
 
