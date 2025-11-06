@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from polars import Expr
     from polars._typing import IntoExpr
 
-__all__ = ["register_plugin_function", "register_plugin_v2_function"]
+__all__ = ["register_plugin_function", "register_plugin_v1_function"]
 
 
 def register_plugin_function(
@@ -158,7 +158,7 @@ def _resolve_file_path(path: Path, *, use_abs_path: bool = False) -> Path:
 T = TypeVar("T")
 
 
-def register_plugin_v2_function(
+def register_plugin_v1_function(
     *,
     plugin_path: Path | str,
     args: IntoExpr | Iterable[IntoExpr],
@@ -178,7 +178,7 @@ def register_plugin_v2_function(
     plugin_path = _resolve_plugin_path(plugin_path, use_abs_path=use_abs_path)
 
     return wrap_expr(
-        plr.register_plugin_v2_function(
+        plr.register_plugin_v1_function(
             plugin_path=str(plugin_path),
             args=pyexprs,
             name=info[0],

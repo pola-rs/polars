@@ -16,5 +16,8 @@ polars-core = { workspace = true }
 polars-error = { workspace = true }
 polars-utils = { workspace = true }
 
+[features]
+python = ["polars-error/python"]
+
 [lints]
 workspace = true

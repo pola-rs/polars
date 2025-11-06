@@ -64,7 +64,7 @@ pub fn register_plugin_function(
 
 #[cfg(feature = "ffi_plugin")]
 #[pyfunction]
-pub fn register_plugin_v2_function(
+pub fn register_plugin_v1_function(
     plugin_path: String,
     args: Vec<PyExpr>,
     name: String,

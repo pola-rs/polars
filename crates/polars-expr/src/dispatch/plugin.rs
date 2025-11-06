@@ -4,7 +4,6 @@ use std::sync::Arc;
 use arrow::array::{FixedSizeListArray, ListArray, PrimitiveArray};
 use arrow::datatypes::ArrowDataType;
 use arrow::offset::OffsetsBuffer;
-use num_traits::CheckedAdd;
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
@@ -275,6 +274,11 @@ pub fn call_on_groups<'a>(
                 _ => panic!("invalid groups type"),
             };
             let groups = groups.into_sliceable();
+
+            if returns_scalar {
+                dbg!("todo!");
+                todo!();
+            }
 
             Ok(AggregationContext {
                 state: AggState::NotAggregated(series.into_column()),

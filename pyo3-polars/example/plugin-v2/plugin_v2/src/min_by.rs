@@ -1,5 +1,6 @@
+use arrow::array::Array;
 use polars::error::{polars_bail, polars_err, PolarsResult};
-use polars::prelude::{AnyValue, ArgAgg, Field, PlSmallStr, Scalar, Schema, SchemaExt};
+use polars::prelude::{AnyValue, ArgAgg, ArrowDataType, Field, PlSmallStr, Scalar, Schema, SchemaExt};
 use polars::series::Series;
 use pyo3_polars::export::polars_ffi::version_1::PolarsPlugin;
 use pyo3_polars::polars_plugin_expr_info;

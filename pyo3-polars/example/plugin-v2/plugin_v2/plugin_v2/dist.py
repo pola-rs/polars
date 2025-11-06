@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import polars as pl
-from polars.plugins import register_plugin_v2_function
+from polars.plugins import register_plugin_v1_function
 
 from plugin_v2._utils import LIB
 
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 def min_by(expr: IntoExprColumn, *, by: IntoExprColumn) -> pl.Expr:
     from plugin_v2 import plugin_v2
 
-    return register_plugin_v2_function(
+    return register_plugin_v1_function(
         plugin_path=LIB,
         args=[expr, by],
         info=plugin_v2.min_by(),
@@ -28,7 +28,7 @@ def min_by(expr: IntoExprColumn, *, by: IntoExprColumn) -> pl.Expr:
 def rolling_product(expr: IntoExprColumn, *, n: int) -> pl.Expr:
     from plugin_v2 import plugin_v2
 
-    return register_plugin_v2_function(
+    return register_plugin_v1_function(
         plugin_path=LIB,
         args=[expr],
         info=plugin_v2.rolling_product(n),
@@ -42,7 +42,7 @@ def rolling_product(expr: IntoExprColumn, *, n: int) -> pl.Expr:
 def byte_rev(expr: IntoExprColumn) -> pl.Expr:
     from plugin_v2 import plugin_v2
 
-    return register_plugin_v2_function(
+    return register_plugin_v1_function(
         plugin_path=LIB,
         args=[expr],
         info=plugin_v2.byte_rev(),
@@ -57,7 +57,7 @@ def byte_rev(expr: IntoExprColumn) -> pl.Expr:
 def vertical_scan(expr: IntoExprColumn, *, init: int) -> pl.Expr:
     from plugin_v2 import plugin_v2
 
-    return register_plugin_v2_function(
+    return register_plugin_v1_function(
         plugin_path=LIB,
         args=[expr],
         info=plugin_v2.vertical_scan(init),
@@ -71,7 +71,7 @@ def vertical_scan(expr: IntoExprColumn, *, init: int) -> pl.Expr:
 def horizontal_count(*expr: pl.Expr) -> pl.Expr:
     from plugin_v2 import plugin_v2
 
-    return register_plugin_v2_function(
+    return register_plugin_v1_function(
         plugin_path=LIB,
         args=list(expr),
         info=plugin_v2.horizontal_count(),

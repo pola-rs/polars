@@ -3,6 +3,7 @@ use std::sync::Arc;
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, GroupPositions};
+use polars_plan::dsl::v1::PluginV1;
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
 use polars_plan::plans::{IRBooleanFunction, IRFunctionExpr, IRPowFunction};
 use polars_utils::IdxSize;
@@ -598,6 +599,24 @@ pub fn function_expr_to_groups_udf(func: &IRFunctionExpr) -> Option<SpecialEq<Ar
         },
         F::FillNullWithStrategy(polars_core::prelude::FillNullStrategy::Backward(limit)) => {
             wrap_groups!(groups_dispatch::backward_fill_null, (*limit, v: Option<IdxSize>))
+        },
+
+        F::PluginV1(plugin) => {
+            struct Wrap(Arc<PluginV1>);
+            impl GroupsUdf for Wrap {
+                fn evaluate_on_groups<'a>(
+                    &self,
+                    inputs: &[Arc<dyn PhysicalExpr>],
+                    df: &DataFrame,
+                    groups: &'a GroupPositions,
+                    state: &ExecutionState,
+                ) -> PolarsResult<AggregationContext<'a>> {
+                    let Wrap(plugin) = self;
+                    plugin::call_on_groups(inputs, df, groups, state, plugin.clone())
+                }
+            }
+
+            SpecialEq::new(Arc::new(Wrap((&**plugin).clone())) as Arc<dyn GroupsUdf>)
         },
 
         _ => return None,

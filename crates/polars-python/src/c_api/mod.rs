@@ -434,7 +434,7 @@ pub fn _polars_runtime_64(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::register_plugin_function))
         .unwrap();
     #[cfg(feature = "ffi_plugin")]
-    m.add_wrapped(wrap_pyfunction!(functions::register_plugin_v2_function))
+    m.add_wrapped(wrap_pyfunction!(functions::register_plugin_v1_function))
         .unwrap();
 
     // Capsules
