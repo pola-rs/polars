@@ -406,8 +406,8 @@ class Series:
              - The raw pointer to a C ArrowArray struct
              - The raw pointer to a C ArrowSchema struct
 
-        Warning
-        -------
+        Warnings
+        --------
         This will read the `array` pointer without moving it. The host process should
         garbage collect the heap pointer, but not its contents.
         """
@@ -433,16 +433,13 @@ class Series:
         The series should only contain a single chunk. If you want to export all chunks,
         first call `Series.get_chunks` to give you a list of chunks.
 
-        Warning
-        -------
-        Safety
-        This function will write to the pointers given in `out_ptr` and `out_schema_ptr`
-        and thus is highly unsafe.
-
-        Leaking
-        If you don't pass the ArrowArray struct to a consumer,
-        array memory will leak. This is a low-level function intended for
-        expert users.
+        Warnings
+        --------
+        * Safety: This function will write to the pointers given in `out_ptr`
+          and `out_schema_ptr` and thus is highly unsafe.
+        * Leaking: If you don't pass the ArrowArray struct to a consumer,
+          array memory will leak. This is a low-level function intended for
+          expert users.
         """
         self._s._export_arrow_to_c(out_ptr, out_schema_ptr)
 

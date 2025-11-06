@@ -293,7 +293,7 @@ def _check_empty(
 
 
 def looks_like_url(path: str) -> bool:
-    return re.match("^(ht|f)tps?://", path, re.IGNORECASE) is not None
+    return re.match(r"^(ht|f)tps?://", path, re.IGNORECASE) is not None
 
 
 def process_file_url(path: str, encoding: str | None = None) -> BytesIO:

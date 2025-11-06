@@ -11767,8 +11767,8 @@ class DataFrame:
         where possible, prefer export via one of the dedicated export/output methods
         that deals with columnar data.
 
-        Returns
-        -------
+        Yields
+        ------
         iterator of tuples (default) or dictionaries (if named) of python row values
 
         See Also
