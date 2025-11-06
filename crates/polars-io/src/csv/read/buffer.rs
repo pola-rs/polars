@@ -11,6 +11,8 @@ use polars_time::chunkedarray::string::Pattern;
 use polars_time::prelude::string::infer::{
     DatetimeInfer, StrpTimeParser, TryFromWithUnit, infer_pattern_single,
 };
+#[cfg(feature = "dtype-f16")]
+use polars_utils::float16::pf16;
 use polars_utils::vec::PushUnchecked;
 
 use super::options::CsvEncoding;
@@ -19,6 +21,16 @@ use super::utils::escape_field;
 
 pub(crate) trait PrimitiveParser: PolarsNumericType {
     fn parse(bytes: &[u8]) -> Option<Self::Native>;
+}
+
+#[cfg(feature = "dtype-f16")]
+impl PrimitiveParser for Float16Type {
+    #[inline]
+    fn parse(bytes: &[u8]) -> Option<pf16> {
+        use num_traits::FromPrimitive;
+
+        pf16::from_f32(fast_float2::parse(bytes).ok()?)
+    }
 }
 
 impl PrimitiveParser for Float32Type {
@@ -581,6 +593,17 @@ pub fn init_buffers(
                 &DataType::UInt64 => Buffer::UInt64(PrimitiveChunkedBuilder::new(name, capacity)),
                 #[cfg(feature = "dtype-u128")]
                 &DataType::UInt128 => Buffer::UInt128(PrimitiveChunkedBuilder::new(name, capacity)),
+                #[cfg(feature = "dtype-f16")]
+                &DataType::Float16 => {
+                    if decimal_comma {
+                        Buffer::DecimalFloat16(
+                            PrimitiveChunkedBuilder::new(name, capacity),
+                            Default::default(),
+                        )
+                    } else {
+                        Buffer::Float16(PrimitiveChunkedBuilder::new(name, capacity))
+                    }
+                },
                 &DataType::Float32 => {
                     if decimal_comma {
                         Buffer::DecimalFloat32(
@@ -677,6 +700,8 @@ pub enum Buffer {
     UInt64(PrimitiveChunkedBuilder<UInt64Type>),
     #[cfg(feature = "dtype-u128")]
     UInt128(PrimitiveChunkedBuilder<UInt128Type>),
+    #[cfg(feature = "dtype-f16")]
+    Float16(PrimitiveChunkedBuilder<Float16Type>),
     Float32(PrimitiveChunkedBuilder<Float32Type>),
     Float64(PrimitiveChunkedBuilder<Float64Type>),
     #[cfg(feature = "dtype-decimal")]
@@ -697,6 +722,8 @@ pub enum Buffer {
     Categorical16(CategoricalField<Categorical16Type>),
     #[cfg(feature = "dtype-categorical")]
     Categorical32(CategoricalField<Categorical32Type>),
+    #[cfg(feature = "dtype-f16")]
+    DecimalFloat16(PrimitiveChunkedBuilder<Float16Type>, Vec<u8>),
     DecimalFloat32(PrimitiveChunkedBuilder<Float32Type>, Vec<u8>),
     DecimalFloat64(PrimitiveChunkedBuilder<Float64Type>, Vec<u8>),
 }
@@ -721,8 +748,12 @@ impl Buffer {
             Buffer::UInt64(v) => v.finish().into_series(),
             #[cfg(feature = "dtype-u128")]
             Buffer::UInt128(v) => v.finish().into_series(),
+            #[cfg(feature = "dtype-f16")]
+            Buffer::Float16(v) => v.finish().into_series(),
             Buffer::Float32(v) => v.finish().into_series(),
             Buffer::Float64(v) => v.finish().into_series(),
+            #[cfg(feature = "dtype-f16")]
+            Buffer::DecimalFloat16(v, _) => v.finish().into_series(),
             Buffer::DecimalFloat32(v, _) => v.finish().into_series(),
             Buffer::DecimalFloat64(v, _) => v.finish().into_series(),
             #[cfg(feature = "dtype-decimal")]
@@ -791,10 +822,14 @@ impl Buffer {
             Buffer::UInt64(v) => v.append_null(),
             #[cfg(feature = "dtype-u128")]
             Buffer::UInt128(v) => v.append_null(),
+            #[cfg(feature = "dtype-f16")]
+            Buffer::Float16(v) => v.append_null(),
             Buffer::Float32(v) => v.append_null(),
             Buffer::Float64(v) => v.append_null(),
             #[cfg(feature = "dtype-decimal")]
             Buffer::Decimal(buf) => buf.builder.append_null(),
+            #[cfg(feature = "dtype-f16")]
+            Buffer::DecimalFloat16(v, _) => v.append_null(),
             Buffer::DecimalFloat32(v, _) => v.append_null(),
             Buffer::DecimalFloat64(v, _) => v.append_null(),
             Buffer::Utf8(v) => {
@@ -836,6 +871,8 @@ impl Buffer {
             Buffer::UInt64(_) => DataType::UInt64,
             #[cfg(feature = "dtype-u128")]
             Buffer::UInt128(_) => DataType::UInt128,
+            #[cfg(feature = "dtype-f16")]
+            Buffer::Float16(_) | Buffer::DecimalFloat16(_, _) => DataType::Float16,
             Buffer::Float32(_) | Buffer::DecimalFloat32(_, _) => DataType::Float32,
             Buffer::Float64(_) | Buffer::DecimalFloat64(_, _) => DataType::Float64,
             #[cfg(feature = "dtype-decimal")]
@@ -960,6 +997,15 @@ impl Buffer {
                 missing_is_null,
                 None,
             ),
+            #[cfg(feature = "dtype-f16")]
+            Float16(buf) => <PrimitiveChunkedBuilder<Float16Type> as ParsedBuffer>::parse_bytes(
+                buf,
+                bytes,
+                ignore_errors,
+                needs_escaping,
+                missing_is_null,
+                None,
+            ),
             Float32(buf) => <PrimitiveChunkedBuilder<Float32Type> as ParsedBuffer>::parse_bytes(
                 buf,
                 bytes,
@@ -976,6 +1022,18 @@ impl Buffer {
                 missing_is_null,
                 None,
             ),
+            #[cfg(feature = "dtype-f16")]
+            DecimalFloat16(buf, scratch) => {
+                prepare_decimal_comma(bytes, scratch);
+                <PrimitiveChunkedBuilder<Float16Type> as ParsedBuffer>::parse_bytes(
+                    buf,
+                    scratch,
+                    ignore_errors,
+                    needs_escaping,
+                    missing_is_null,
+                    None,
+                )
+            },
             DecimalFloat32(buf, scratch) => {
                 prepare_decimal_comma(bytes, scratch);
                 <PrimitiveChunkedBuilder<Float32Type> as ParsedBuffer>::parse_bytes(

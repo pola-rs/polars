@@ -1,10 +1,11 @@
 mod basic;
 mod nested;
 
-use arrow::array::{Array, FixedSizeBinaryArray, PrimitiveArray};
+use arrow::array::{Array, FixedSizeBinaryArray, Float16Array, PrimitiveArray};
 use arrow::types::{NativeType, i256};
 pub use basic::array_to_page;
 pub use nested::array_to_page as nested_array_to_page;
+use polars_compute::min_max::MinMaxKernel;
 
 use super::binary::ord_binary;
 use super::{EncodeNullability, StatisticsOptions};
@@ -55,6 +56,34 @@ pub(super) fn build_statistics(
                     .flatten()
                     .min_by(|x, y| ord_binary(x, y))
                     .map(|x| x.to_vec())
+            })
+            .flatten(),
+    }
+}
+
+pub(super) fn build_statistics_float16(
+    array: &Float16Array,
+    primitive_type: PrimitiveType,
+    options: &StatisticsOptions,
+) -> FixedLenStatistics {
+    FixedLenStatistics {
+        primitive_type,
+        null_count: options.null_count.then_some(array.null_count() as i64),
+        distinct_count: None,
+        max_value: options
+            .max_value
+            .then(|| {
+                array
+                    .max_propagate_nan_kernel()
+                    .map(|x| x.to_le_bytes().as_ref().to_vec())
+            })
+            .flatten(),
+        min_value: options
+            .min_value
+            .then(|| {
+                array
+                    .min_propagate_nan_kernel()
+                    .map(|x| x.to_le_bytes().as_ref().to_vec())
             })
             .flatten(),
     }

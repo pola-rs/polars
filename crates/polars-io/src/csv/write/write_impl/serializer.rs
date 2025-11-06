@@ -33,7 +33,7 @@
 use std::fmt::LowerExp;
 use std::io::Write;
 
-use arrow::array::{Array, BooleanArray, NullArray, PrimitiveArray, Utf8ViewArray};
+use arrow::array::{Array, BooleanArray, Float16Array, NullArray, PrimitiveArray, Utf8ViewArray};
 use arrow::legacy::time_zone::Tz;
 use arrow::types::NativeType;
 #[cfg(feature = "timezones")]
@@ -41,6 +41,7 @@ use chrono::TimeZone;
 use memchr::{memchr_iter, memchr3};
 use num_traits::NumCast;
 use polars_core::prelude::*;
+use polars_utils::float16::pf16;
 
 use crate::csv::write::{QuoteStyle, SerializeOptions};
 
@@ -125,6 +126,16 @@ fn integer_serializer<I: NativeType + itoa::Integer>(
     })
 }
 
+fn float_serializer_no_precision_autoformat_f16(array: &Float16Array) -> impl Serializer<'_> {
+    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+        let mut buffer = ryu::Buffer::new();
+        let cast: f32 = NumCast::from(item).unwrap();
+        let value = buffer.format(cast);
+        buf.extend_from_slice(value.as_bytes());
+    };
+    float_serializer_no_precision_autoformat_(array, f)
+}
+
 fn float_serializer_no_precision_autoformat<I: NativeType + ryu::Float>(
     array: &PrimitiveArray<I>,
 ) -> impl Serializer<'_> {
@@ -133,7 +144,17 @@ fn float_serializer_no_precision_autoformat<I: NativeType + ryu::Float>(
         let value = buffer.format(item);
         buf.extend_from_slice(value.as_bytes());
     };
+    float_serializer_no_precision_autoformat_(array, f)
+}
 
+fn float_serializer_no_precision_autoformat_<
+    'a,
+    I: NativeType,
+    F: Fn(&'a I, &mut Vec<u8>, &SerializeOptions),
+>(
+    array: &'a PrimitiveArray<I>,
+    f: F,
+) -> impl Serializer<'a> {
     make_serializer::<_, _, false>(f, array.iter(), |array| {
         array
             .as_any()
@@ -141,6 +162,21 @@ fn float_serializer_no_precision_autoformat<I: NativeType + ryu::Float>(
             .expect(ARRAY_MISMATCH_MSG)
             .iter()
     })
+}
+
+fn float_serializer_no_precision_autoformat_decimal_comma_f16(
+    array: &Float16Array,
+) -> impl Serializer<'_> {
+    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+        let mut buffer = ryu::Buffer::new();
+        let cast: f32 = NumCast::from(item).unwrap();
+        let value = buffer.format(cast);
+
+        for ch in value.as_bytes() {
+            buf.push(if *ch == b'.' { b',' } else { *ch });
+        }
+    };
+    float_serializer_no_precision_autoformat_decimal_comma_(array, f)
 }
 
 fn float_serializer_no_precision_autoformat_decimal_comma<I: NativeType + ryu::Float>(
@@ -154,7 +190,17 @@ fn float_serializer_no_precision_autoformat_decimal_comma<I: NativeType + ryu::F
             buf.push(if *ch == b'.' { b',' } else { *ch });
         }
     };
+    float_serializer_no_precision_autoformat_decimal_comma_(array, f)
+}
 
+fn float_serializer_no_precision_autoformat_decimal_comma_<
+    'a,
+    I: NativeType,
+    F: Fn(&'a I, &mut Vec<u8>, &SerializeOptions),
+>(
+    array: &'a PrimitiveArray<I>,
+    f: F,
+) -> impl Serializer<'a> {
     make_serializer::<_, _, false>(f, array.iter(), |array| {
         array
             .as_any()
@@ -651,7 +697,7 @@ pub(super) fn serializer_for<'a>(
     // The needs_quotes flag captures the quote logic for the quote_wrapper! macro
     // It is targeted at numerical types primarily; other types may required additional logic
     let needs_quotes = match dtype {
-        DataType::Float32 | DataType::Float64 => {
+        DataType::Float16 | DataType::Float32 | DataType::Float64 => {
             // When comma is used as both the field separator and decimal separator, quoting
             // may be required. Specifically, when:
             // - quote_style is Always, or
@@ -710,6 +756,55 @@ pub(super) fn serializer_for<'a>(
         DataType::UInt64 => quote_wrapper!(integer_serializer::<u64>),
         DataType::Int128 => quote_wrapper!(integer_serializer::<i128>),
         DataType::UInt128 => quote_wrapper!(integer_serializer::<u128>),
+        DataType::Float16 => {
+            match (
+                options.decimal_comma,
+                options.float_precision,
+                options.float_scientific,
+            ) {
+                // standard decimal separator (period)
+                (false, Some(precision), Some(true)) => {
+                    quote_wrapper!(
+                        float_serializer_with_precision_scientific::<pf16>,
+                        precision
+                    )
+                },
+                (false, Some(precision), _) => {
+                    quote_wrapper!(
+                        float_serializer_with_precision_positional::<pf16>,
+                        precision
+                    )
+                },
+                (false, None, Some(true)) => {
+                    quote_wrapper!(float_serializer_no_precision_scientific::<pf16>)
+                },
+                (false, None, Some(false)) => {
+                    quote_wrapper!(float_serializer_no_precision_positional::<pf16>)
+                },
+                (false, None, None) => {
+                    quote_wrapper!(float_serializer_no_precision_autoformat_f16)
+                },
+
+                // comma as the decimal separator
+                (true, Some(precision), Some(true)) => quote_wrapper!(
+                    float_serializer_with_precision_scientific_decimal_comma::<pf16>,
+                    precision
+                ),
+                (true, Some(precision), _) => quote_wrapper!(
+                    float_serializer_with_precision_positional_decimal_comma::<pf16>,
+                    precision
+                ),
+                (true, None, Some(true)) => {
+                    quote_wrapper!(float_serializer_no_precision_scientific_decimal_comma::<pf16>)
+                },
+                (true, None, Some(false)) => {
+                    quote_wrapper!(float_serializer_no_precision_positional_decimal_comma::<pf16>)
+                },
+                (true, None, None) => {
+                    quote_wrapper!(float_serializer_no_precision_autoformat_decimal_comma_f16)
+                },
+            }
+        },
         DataType::Float32 => {
             match (
                 options.decimal_comma,

@@ -24,6 +24,7 @@ if not _DOCUMENTING:
     _POLARS_TYPE_TO_CONSTRUCTOR: dict[
         PolarsDataType, Callable[[str, Sequence[Any], bool], PySeries]
     ] = {
+        dt.Float16: PySeries.new_opt_f16,
         dt.Float32: PySeries.new_opt_f32,
         dt.Float64: PySeries.new_opt_f64,
         dt.Int8: PySeries.new_opt_i8,
@@ -73,6 +74,7 @@ _NUMPY_TYPE_TO_CONSTRUCTOR = None
 def _set_numpy_to_constructor() -> None:
     global _NUMPY_TYPE_TO_CONSTRUCTOR
     _NUMPY_TYPE_TO_CONSTRUCTOR = {
+        np.float16: PySeries.new_f16,
         np.float32: PySeries.new_f32,
         np.float64: PySeries.new_f64,
         np.int8: PySeries.new_i8,

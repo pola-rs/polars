@@ -87,7 +87,10 @@ mod inner_mod {
 
             let ca = self.rechunk();
             if options.weights.is_some()
-                && !matches!(self.dtype(), DataType::Float64 | DataType::Float32)
+                && !matches!(
+                    self.dtype(),
+                    DataType::Float16 | DataType::Float32 | DataType::Float64
+                )
             {
                 let s = self.cast_with_options(&DataType::Float64, CastOptions::NonStrict)?;
                 return s.rolling_map(f, options);

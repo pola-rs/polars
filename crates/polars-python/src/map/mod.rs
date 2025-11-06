@@ -33,6 +33,7 @@ impl PyPolarsNumericType for Int16Type {}
 impl PyPolarsNumericType for Int32Type {}
 impl PyPolarsNumericType for Int64Type {}
 impl PyPolarsNumericType for Int128Type {}
+impl PyPolarsNumericType for Float16Type {}
 impl PyPolarsNumericType for Float32Type {}
 impl PyPolarsNumericType for Float64Type {}
 

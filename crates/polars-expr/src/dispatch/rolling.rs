@@ -103,6 +103,16 @@ fn det_count_x_y(window_size: usize, len: usize, dtype: &DataType) -> Series {
                 .collect::<Vec<_>>();
             Series::new(PlSmallStr::EMPTY, values)
         },
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            use num_traits::AsPrimitive;
+            use polars_utils::float16::pf16;
+            let values = (0..len)
+                .map(|v| std::cmp::min(window_size, v + 1))
+                .map(AsPrimitive::<pf16>::as_)
+                .collect::<Vec<_>>();
+            Series::new(PlSmallStr::EMPTY, values)
+        },
         _ => unreachable!(),
     }
 }

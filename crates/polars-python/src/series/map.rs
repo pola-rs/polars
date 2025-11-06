@@ -207,6 +207,17 @@ impl PySeries {
                     )?;
                     ca.into_series()
                 },
+                Some(DataType::Float16) => {
+                    let ca: Float16Chunked = dispatch_apply!(
+                        series,
+                        apply_lambda_with_primitive_out_type,
+                        py,
+                        function,
+                        0,
+                        None
+                    )?;
+                    ca.into_series()
+                },
                 Some(DataType::Float32) => {
                     let ca: Float32Chunked = dispatch_apply!(
                         series,

@@ -8777,7 +8777,8 @@ class Series:
         Returns
         -------
         Expr
-            Float32 if input is Float32, otherwise Float64.
+            :class:`Float16` if input is `Float16`, :class:`.Float32` if input is
+            `Float32`, otherwise :class:`.Float64`.
 
         Examples
         --------

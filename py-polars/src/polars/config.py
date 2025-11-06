@@ -681,8 +681,9 @@ class Config(contextlib.ContextDecorator):
         the limitations of floating point representations, and of the precision of the
         data that you are looking at.
 
-        This setting only applies to Float32 and Float64 dtypes; it does not cover
-        Decimal dtype values (which are displayed at their native level of precision).
+        This setting only applies to :class:`.Float16`, :class:`.Float32`, and
+        :class:`.Float64` dtypes; it does not cover :class:`.Decimal` dtype values
+        (which are displayed at their native level of precision).
 
         Examples
         --------

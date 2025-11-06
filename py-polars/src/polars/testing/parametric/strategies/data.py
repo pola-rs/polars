@@ -5,7 +5,7 @@ from __future__ import annotations
 import decimal
 from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 from zoneinfo import ZoneInfo
 
 import hypothesis.strategies as st
@@ -40,8 +40,10 @@ from polars.datatypes import (
     Duration,
     Enum,
     Field,
+    Float16,
     Float32,
     Float64,
+    FloatType,
     Int8,
     Int16,
     Int32,
@@ -103,7 +105,7 @@ def integers(
 
 
 def floats(
-    bit_width: Literal[32, 64] = 64,
+    bit_width: Literal[16, 32, 64] = 64,
     *,
     allow_nan: bool = True,
     allow_infinity: bool = True,
@@ -401,15 +403,11 @@ def data(
     """
     if (strategy := _STATIC_STRATEGIES.get(dtype.base_type())) is not None:
         strategy = strategy
-    elif dtype == Float32:
+    elif dtype.is_float():
+        dtype = cast(FloatType, dtype)
+        bit_width = {Float16: 16, Float32: 32, Float64: 64}[type(dtype)]
         strategy = floats(
-            32,
-            allow_nan=kwargs.pop("allow_nan", True),
-            allow_infinity=kwargs.pop("allow_infinity", True),
-        )
-    elif dtype == Float64:
-        strategy = floats(
-            64,
+            bit_width=cast(Literal[16, 32, 64], bit_width),
             allow_nan=kwargs.pop("allow_nan", True),
             allow_infinity=kwargs.pop("allow_infinity", True),
         )

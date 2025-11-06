@@ -173,9 +173,9 @@ pub struct CastColumnsPolicy {
     /// Allow casting when target dtype is lossless supertype
     pub integer_upcast: bool,
 
-    /// Allow Float32 -> Float64
+    /// Allow upcasting from small floats to bigger floats
     pub float_upcast: bool,
-    /// Allow Float64 -> Float32
+    /// Allow downcasting from big floats to smaller floats
     pub float_downcast: bool,
 
     /// Allow datetime[ns] to be casted to any lower precision. Important for
@@ -642,7 +642,9 @@ impl CastColumnsPolicy {
 
         if target_dtype.is_float() && incoming_dtype.is_float() {
             return match (target_dtype, incoming_dtype) {
-                (DataType::Float64, DataType::Float32) => {
+                (DataType::Float64, DataType::Float32)
+                | (DataType::Float64, DataType::Float16)
+                | (DataType::Float32, DataType::Float16) => {
                     if self.float_upcast {
                         Ok(true)
                     } else {
@@ -652,7 +654,9 @@ impl CastColumnsPolicy {
                     }
                 },
 
-                (DataType::Float32, DataType::Float64) => {
+                (DataType::Float16, DataType::Float32)
+                | (DataType::Float16, DataType::Float64)
+                | (DataType::Float32, DataType::Float64) => {
                     if self.float_downcast {
                         Ok(true)
                     } else {

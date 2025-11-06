@@ -81,6 +81,7 @@ dtype-i8 = ["polars-python/dtype-i8"]
 dtype-i16 = ["polars-python/dtype-i16"]
 dtype-u8 = ["polars-python/dtype-u8"]
 dtype-u16 = ["polars-python/dtype-u16"]
+dtype-f16 = ["polars-python/dtype-f16"]
 dtype-array = ["polars-python/dtype-array"]
 
 dtypes = ["polars-python/dtypes"]

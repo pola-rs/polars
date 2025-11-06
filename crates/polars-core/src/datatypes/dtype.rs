@@ -96,6 +96,7 @@ pub enum DataType {
     Int32,
     Int64,
     Int128,
+    Float16,
     Float32,
     Float64,
     /// Fixed point decimal type optional precision and non-negative scale.
@@ -663,7 +664,10 @@ impl DataType {
     pub fn is_float(&self) -> bool {
         matches!(
             self,
-            DataType::Float32 | DataType::Float64 | DataType::Unknown(UnknownKind::Float)
+            DataType::Float16
+                | DataType::Float32
+                | DataType::Float64
+                | DataType::Unknown(UnknownKind::Float)
         )
     }
 
@@ -798,6 +802,7 @@ impl DataType {
             UInt32 => Scalar::from(u32::MAX),
             UInt64 => Scalar::from(u64::MAX),
             UInt128 => Scalar::from(u128::MAX),
+            Float16 => Scalar::from(pf16::INFINITY),
             Float32 => Scalar::from(f32::INFINITY),
             Float64 => Scalar::from(f64::INFINITY),
             #[cfg(feature = "dtype-time")]
@@ -821,6 +826,7 @@ impl DataType {
             UInt32 => Scalar::from(u32::MIN),
             UInt64 => Scalar::from(u64::MIN),
             UInt128 => Scalar::from(u128::MIN),
+            Float16 => Scalar::from(pf16::NEG_INFINITY),
             Float32 => Scalar::from(f32::NEG_INFINITY),
             Float64 => Scalar::from(f64::NEG_INFINITY),
             #[cfg(feature = "dtype-time")]
@@ -851,6 +857,7 @@ impl DataType {
             Int32 => Ok(ArrowDataType::Int32),
             Int64 => Ok(ArrowDataType::Int64),
             Int128 => Ok(ArrowDataType::Int128),
+            Float16 => Ok(ArrowDataType::Float16),
             Float32 => Ok(ArrowDataType::Float32),
             Float64 => Ok(ArrowDataType::Float64),
             #[cfg(feature = "dtype-decimal")]
@@ -1066,6 +1073,7 @@ impl Display for DataType {
             DataType::Int32 => "i32",
             DataType::Int64 => "i64",
             DataType::Int128 => "i128",
+            DataType::Float16 => "f16",
             DataType::Float32 => "f32",
             DataType::Float64 => "f64",
             #[cfg(feature = "dtype-decimal")]
@@ -1125,6 +1133,7 @@ impl std::fmt::Debug for DataType {
             Int32 => write!(f, "Int32"),
             Int64 => write!(f, "Int64"),
             Int128 => write!(f, "Int128"),
+            Float16 => write!(f, "Float16"),
             Float32 => write!(f, "Float32"),
             Float64 => write!(f, "Float64"),
             String => write!(f, "String"),

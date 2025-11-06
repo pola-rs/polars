@@ -10,6 +10,8 @@ pub fn pct_change(s: &Series, n: &Series) -> PolarsResult<Series> {
     );
 
     match s.dtype() {
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {},
         DataType::Float64 | DataType::Float32 => {},
         _ => return pct_change(&s.cast(&DataType::Float64)?, n),
     }

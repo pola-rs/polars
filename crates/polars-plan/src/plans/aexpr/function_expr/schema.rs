@@ -83,6 +83,7 @@ impl IRFunctionExpr {
                     Map(_) => mapper.try_map_field(|field| {
                         if options.weights.is_some() {
                             let dtype = match field.dtype() {
+                                DataType::Float16 => DataType::Float16,
                                 DataType::Float32 => DataType::Float32,
                                 _ => DataType::Float64,
                             };
@@ -138,6 +139,7 @@ impl IRFunctionExpr {
             Product => mapper.map_dtype(|dtype| {
                 use DataType as T;
                 match dtype {
+                    T::Float16 => T::Float16,
                     T::Float32 => T::Float32,
                     T::Float64 => T::Float64,
                     T::UInt64 => T::UInt64,
@@ -247,7 +249,9 @@ impl IRFunctionExpr {
             }),
             #[cfg(feature = "pct_change")]
             PctChange => mapper.map_dtype(|dt| match dt {
-                DataType::Float64 | DataType::Float32 => dt.clone(),
+                #[cfg(feature = "dtype-f16")]
+                DataType::Float16 => dt.clone(),
+                DataType::Float32 => dt.clone(),
                 _ => DataType::Float64,
             }),
             #[cfg(feature = "interpolate")]
@@ -393,13 +397,13 @@ impl IRFunctionExpr {
             }),
             MeanHorizontal { .. } => mapper.map_to_supertype().map(|mut f| {
                 match f.dtype {
-                    dt @ DataType::Float32 => {
-                        f.dtype = dt;
-                    },
+                    #[cfg(feature = "dtype-f16")]
+                    DataType::Float16 => {},
+                    DataType::Float32 => {},
                     _ => {
                         f.dtype = DataType::Float64;
                     },
-                };
+                }
                 f
             }),
             #[cfg(feature = "ewma")]
@@ -513,6 +517,8 @@ impl<'a> FieldsMapper<'a> {
     pub fn moment_dtype(&self) -> PolarsResult<Field> {
         let map_inner = |dt: &DataType| match dt {
             DataType::Boolean => DataType::Float64,
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => DataType::Float16,
             DataType::Float32 => DataType::Float32,
             DataType::Float64 => DataType::Float64,
             dt if dt.is_primitive_numeric() => DataType::Float64,
@@ -540,6 +546,8 @@ impl<'a> FieldsMapper<'a> {
     /// Map to a float supertype.
     pub fn map_to_float_dtype(&self) -> PolarsResult<Field> {
         self.map_dtype(|dtype| match dtype {
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => DataType::Float16,
             DataType::Float32 => DataType::Float32,
             _ => DataType::Float64,
         })
@@ -549,6 +557,8 @@ impl<'a> FieldsMapper<'a> {
     pub fn map_numeric_to_float_dtype(&self, coerce_decimal: bool) -> PolarsResult<Field> {
         self.map_dtype(|dt| {
             let should_coerce = match dt {
+                #[cfg(feature = "dtype-f16")]
+                DataType::Float16 => false,
                 DataType::Float32 => false,
                 #[cfg(feature = "dtype-decimal")]
                 DataType::Decimal(..) => coerce_decimal,
@@ -701,6 +711,7 @@ impl<'a> FieldsMapper<'a> {
             #[cfg(feature = "dtype-datetime")]
             Date => Datetime(TimeUnit::Microseconds, None),
             dt if dt.is_temporal() => dt,
+            Float16 => Float16,
             Float32 => Float32,
             _ => Float64,
         };

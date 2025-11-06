@@ -52,6 +52,11 @@ pub fn rolling_skew(s: &Series, options: RollingOptionsFixedWindow) -> PolarsRes
             let ca = s.f32().unwrap();
             rolling_skew_ca(ca, window_size, min_periods, center, params).map(|ca| ca.into_series())
         },
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            let ca = s.f16().unwrap();
+            rolling_skew_ca(ca, window_size, min_periods, center, params).map(|ca| ca.into_series())
+        },
         dt if dt.is_primitive_numeric() => {
             let s = s.cast(&DataType::Float64).unwrap();
             rolling_skew(&s, options)
@@ -112,6 +117,12 @@ pub fn rolling_kurtosis(s: &Series, options: RollingOptionsFixedWindow) -> Polar
         },
         DataType::Float32 => {
             let ca = s.f32().unwrap();
+            rolling_kurtosis_ca(ca, window_size, params, min_periods, center)
+                .map(|ca| ca.into_series())
+        },
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            let ca = s.f16().unwrap();
             rolling_kurtosis_ca(ca, window_size, params, min_periods, center)
                 .map(|ca| ca.into_series())
         },

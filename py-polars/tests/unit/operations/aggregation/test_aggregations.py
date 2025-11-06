@@ -855,6 +855,7 @@ def test_agg_with_slice_then_cast_23682(
         pl.DataFrame({"a": [b"a"]}, schema={"a": pl.Binary}),
         pl.DataFrame({"a": ["a"]}, schema={"a": pl.Utf8}),
         pl.DataFrame({"a": [10]}, schema={"a": pl.Int32}),
+        pl.DataFrame({"a": [10]}, schema={"a": pl.Float16}),
         pl.DataFrame({"a": [10]}, schema={"a": pl.Float32}),
         pl.DataFrame({"a": [10]}, schema={"a": pl.Float64}),
         pl.DataFrame({"a": ["a"]}, schema={"a": pl.String}),

@@ -295,7 +295,7 @@ fn encoding_map(dtype: &ArrowDataType) -> Encoding {
         PhysicalType::Primitive(dt) => {
             use arrow::types::PrimitiveType::*;
             match dt {
-                Float32 | Float64 | Float16 => Encoding::Plain,
+                Float16 | Float32 | Float64 => Encoding::Plain,
                 _ => Encoding::RleDictionary,
             }
         },

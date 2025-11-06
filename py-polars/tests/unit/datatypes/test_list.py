@@ -326,6 +326,7 @@ def test_list_sum_and_dtypes() -> None:
         (pl.UInt32, pl.UInt32),
         (pl.UInt64, pl.UInt64),
         (pl.UInt128, pl.UInt128),
+        (pl.Float16, pl.Float16),
         (pl.Float32, pl.Float32),
         (pl.Float64, pl.Float64),
     ]:

@@ -5,9 +5,11 @@ use arrow::array::{
     PrimitiveArray, Utf8ViewArray,
 };
 use arrow::datatypes::{ArrowDataType, Field, IntegerType, IntervalUnit, TimeUnit};
-use arrow::types::{NativeType, days_ms, f16, i256};
+use arrow::types::{days_ms, i256};
 use ethnum::I256;
+use num_traits::{AsPrimitive, FromBytes};
 use polars_utils::IdxSize;
+use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::{ParquetTimeUnit, RowGroupMetadata};
@@ -131,7 +133,7 @@ impl ColumnStatistics {
                     $expect,
                     |x: Option<$from>| {
                         $(
-                        let x = x.map(|x| x as $to);
+                        let x = x.map(|x| AsPrimitive::<$to>::as_(x));
                         )?
                         $(
                         let x = x.map($map);
@@ -217,14 +219,13 @@ impl ColumnStatistics {
                 })
             },
 
-            // Read Float16, since we don't have a f16 type in Polars we read it to a Float32.
-            (_, PPT::FixedLenByteArray(2))
+            (D::Float16, PPT::FixedLenByteArray(2))
                 if matches!(
                     self.logical_type.as_ref(),
                     Some(PrimitiveLogicalType::Float16)
                 ) =>
             {
-                rmap!(expect_fixedlen, @prim Vec<u8>, |v| f16::from_le_bytes([v[0], v[1]]).to_f32())
+                rmap!(expect_fixedlen, @prim Vec<u8>, |v| pf16::from_le_bytes(&[v[0], v[1]]))
             },
             (D::Float32, _) => rmap!(expect_float, @prim f32),
             (D::Float64, _) => rmap!(expect_double, @prim f64),
@@ -362,7 +363,7 @@ pub fn deserialize_all(
                         $expect,
                         |x: Option<$from>| {
                             $(
-                            let x = x.map(|x| x as $to);
+                            let x = x.map(|x| AsPrimitive::<$to>::as_(x));
                             )?
                             $(
                             let x = x.map($map);
@@ -468,11 +469,11 @@ pub fn deserialize_all(
                     })
                 },
 
-                // Read Float16, since we don't have a f16 type in Polars we read it to a Float32.
-                (_, PPT::FixedLenByteArray(2))
-                    if matches!(logical_type.as_ref(), Some(PrimitiveLogicalType::Float16)) =>
-                {
-                    rmap!(expect_fixedlen, MutablePrimitiveArray::<f32>, @prim Vec<u8>, |v| f16::from_le_bytes([v[0], v[1]]).to_f32())
+                (D::Float16, _) => {
+                    rmap!(expect_fixedlen, MutablePrimitiveArray::<pf16>, @prim Vec<u8>, |v| {
+                        let le_bytes: [u8; 2] = [v[0], v[1]];
+                        pf16::from_le_bytes(&le_bytes)
+                    })
                 },
                 (D::Float32, _) => rmap!(expect_float, MutablePrimitiveArray::<f32>, @prim f32),
                 (D::Float64, _) => rmap!(expect_double, MutablePrimitiveArray::<f64>, @prim f64),
