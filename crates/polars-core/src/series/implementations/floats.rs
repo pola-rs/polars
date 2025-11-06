@@ -325,7 +325,7 @@ macro_rules! impl_dyn_series {
             fn mean_reduce(&self) -> PolarsResult<Scalar> {
                 let mean = self
                     .mean()
-                    .map(|m| AsPrimitive::<<$pdt as PolarsDataType>::OwnedPhysical>::as_(m));
+                    .map(AsPrimitive::<<$pdt as PolarsDataType>::OwnedPhysical>::as_);
                 Ok(Scalar::new(self.dtype().clone(), mean.into()))
             }
             fn median_reduce(&self) -> PolarsResult<Scalar> {
