@@ -175,8 +175,6 @@ impl DataType {
             ArrowDataType::Boolean => DataType::Boolean,
             #[cfg(feature = "dtype-f16")]
             ArrowDataType::Float16 => DataType::Float16,
-            #[cfg(not(feature = "dtype-f16"))]
-            ArrowDataType::Float16 => DataType::Float32,
             ArrowDataType::Float32 => DataType::Float32,
             ArrowDataType::Float64 => DataType::Float64,
             #[cfg(feature = "dtype-array")]

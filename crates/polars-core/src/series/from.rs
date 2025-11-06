@@ -241,12 +241,6 @@ impl Series {
                     cast_chunks(&chunks, &DataType::Float16, CastOptions::NonStrict).unwrap();
                 Ok(Float16Chunked::from_chunks(name, chunks).into_series())
             },
-            #[cfg(not(feature = "dtype-f16"))]
-            ArrowDataType::Float16 => {
-                let chunks =
-                    cast_chunks(&chunks, &DataType::Float32, CastOptions::NonStrict).unwrap();
-                Ok(Float32Chunked::from_chunks(name, chunks).into_series())
-            },
             ArrowDataType::Float32 => Ok(Float32Chunked::from_chunks(name, chunks).into_series()),
             ArrowDataType::Float64 => Ok(Float64Chunked::from_chunks(name, chunks).into_series()),
             #[cfg(feature = "dtype-date")]
