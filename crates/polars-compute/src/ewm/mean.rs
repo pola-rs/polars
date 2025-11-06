@@ -1,6 +1,7 @@
 use arrow::array::{Array, PrimitiveArray};
-use arrow::legacy::kernels::ewm::EwmStateUpdate;
 use arrow::types::NativeType;
+
+use crate::ewm::EwmStateUpdate;
 
 pub fn ewm_mean<I, T>(
     xs: I,

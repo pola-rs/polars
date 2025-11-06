@@ -1237,11 +1237,9 @@ fn to_graph_rec<'a>(
         ewm_variant @ EwmMean { input, options }
         | ewm_variant @ EwmVar { input, options }
         | ewm_variant @ EwmStd { input, options } => {
-            use arrow::legacy::kernels::ewm::{
-                EwmCovState, EwmStateUpdate, EwmStdState, EwmVarState,
-            };
             use nodes::ewm::EwmNode;
             use polars_compute::ewm::mean::EwmMeanState;
+            use polars_compute::ewm::{EwmCovState, EwmStateUpdate, EwmStdState, EwmVarState};
             use polars_core::with_match_physical_float_type;
 
             let input_key = to_graph_rec(input.node, ctx)?;
