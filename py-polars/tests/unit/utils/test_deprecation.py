@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 
 def test_issue_deprecation_warning() -> None:
-    with pytest.deprecated_call(match="(Deprecated in version 0.1.2)"):
+    with pytest.deprecated_call(match=r"\(Deprecated in version 0\.1\.2\)"):
         issue_deprecation_warning("deprecated function", version="0.1.2")
 
 

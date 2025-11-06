@@ -1436,7 +1436,9 @@ class Series:
             raise TypeError(msg)
 
     def __array__(
-        self, dtype: npt.DTypeLike | None = None, copy: bool | None = None
+        self,
+        dtype: npt.DTypeLike | None = None,
+        copy: bool | None = None,  # noqa: FBT001
     ) -> np.ndarray[Any, Any]:
         """
         Return a NumPy ndarray with the given data type.
@@ -4982,7 +4984,7 @@ class Series:
         """
         return self._s.len()
 
-    def set(self, filter: Series, value: int | float | str | bool | None) -> Series:
+    def set(self, filter: Series, value: int | float | str | bool | None) -> Series:  # noqa: FBT001
         """
         Set masked values.
 

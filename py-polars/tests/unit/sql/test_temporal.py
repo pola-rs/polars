@@ -255,7 +255,7 @@ def test_implicit_temporal_string_errors(dtval: str) -> None:
 
     with pytest.raises(
         InvalidOperationError,
-        match="(conversion.*failed)|(cannot compare.*string.*temporal)",
+        match=r"(conversion.*failed)|(cannot compare.*string.*temporal)",
     ):
         df.sql(f"SELECT * FROM self WHERE dt = '{dtval}'")
 
