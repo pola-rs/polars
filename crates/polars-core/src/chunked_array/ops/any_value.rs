@@ -1,7 +1,5 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
-use core::panic;
-
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
 use crate::prelude::*;
