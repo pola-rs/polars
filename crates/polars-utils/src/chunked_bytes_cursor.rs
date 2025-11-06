@@ -1,3 +1,4 @@
+/// Cursor over fixed size chunks of bytes.
 pub struct FixedSizeChunkedBytesCursor<'a, T> {
     position: usize,
     total_size: usize,
