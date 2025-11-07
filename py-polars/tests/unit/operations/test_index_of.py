@@ -152,7 +152,7 @@ def test_integer(dtype: IntegerType) -> None:
 
         # Can't cast floats:
         for f in [np.float32(3.1), np.float64(3.1), 50.9]:
-            with pytest.raises(InvalidOperationError, match="cannot cast.*"):
+            with pytest.raises(InvalidOperationError, match=r"cannot cast.*"):
                 s.index_of(f)  # type: ignore[arg-type]
 
 
