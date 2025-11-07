@@ -958,7 +958,9 @@ class DataFrame:
         return Schema(zip(self.columns, self.dtypes), check_dtypes=False)
 
     def __array__(
-        self, dtype: npt.DTypeLike | None = None, copy: bool | None = None
+        self,
+        dtype: npt.DTypeLike | None = None,
+        copy: bool | None = None,  # noqa: FBT001
     ) -> np.ndarray[Any, Any]:
         """
         Return a NumPy ndarray with the given data type.
@@ -11765,8 +11767,8 @@ class DataFrame:
         where possible, prefer export via one of the dedicated export/output methods
         that deals with columnar data.
 
-        Returns
-        -------
+        Yields
+        ------
         iterator of tuples (default) or dictionaries (if named) of python row values
 
         See Also

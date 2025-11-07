@@ -37,13 +37,13 @@ def test_merge_sorted_bad_input_type() -> None:
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .*to be a 'DataFrame'.* not 'Series'",
+        match=r"expected `other` .*to be a 'DataFrame'.* not 'Series'",
     ):
         a.merge_sorted(pl.Series(b), key="x")  # type: ignore[arg-type]
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
+        match=r"expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
     ):
         a.merge_sorted(b.lazy(), key="x")  # type: ignore[arg-type]
 

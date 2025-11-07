@@ -1178,7 +1178,7 @@ def test_replace_all() -> None:
     )
 
 
-def test_replace_all_literal_no_caputures() -> None:
+def test_replace_all_literal_no_captures() -> None:
     # When using literal = True, capture groups should be disabled
 
     # Single row code path in Rust
@@ -1206,7 +1206,7 @@ def test_replace_all_literal_no_caputures() -> None:
     assert df2.get_column("text2")[1] == "I lost $2 yesterday."
 
 
-def test_replace_literal_no_caputures() -> None:
+def test_replace_literal_no_captures() -> None:
     # When using literal = True, capture groups should be disabled
 
     # Single row code path in Rust

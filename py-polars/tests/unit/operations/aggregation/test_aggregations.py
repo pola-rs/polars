@@ -568,8 +568,8 @@ def test_min_max_2850() -> None:
         computed = permuted.select(
             pl.col("id").min().alias("min"), pl.col("id").max().alias("max")
         )
-        assert cast(int, computed[0, "min"]) == minimum
-        assert cast(float, computed[0, "max"]) == maximum
+        assert cast("int", computed[0, "min"]) == minimum
+        assert cast("float", computed[0, "max"]) == maximum
 
 
 def test_multi_arg_structify_15834() -> None:
