@@ -195,6 +195,10 @@ pub enum AExpr {
         options: ExplodeOptions,
     },
     Column(PlSmallStr),
+    /// Field values in the `struct` context.
+    /// 
+    /// Resolves to `pl.field()`.
+    StructFields, //kdn TODO: TBD do we want to retain the struct schema in here?
     Literal(LiteralValue),
     BinaryExpr {
         left: Node,
@@ -254,6 +258,10 @@ pub enum AExpr {
         evaluation: Node,
 
         variant: EvalVariant,
+    },
+    StructEval {
+        expr: Node,
+        evaluation: Vec<ExprIR>,
     },
     Function {
         /// Function arguments
@@ -329,6 +337,7 @@ impl AExpr {
             AExpr::Eval { expr, variant, .. } => {
                 variant.is_length_preserving() && is_scalar_ae(*expr, arena)
             },
+            AExpr::StructEval {..} => false, //kdn TODO
             AExpr::Sort { expr, .. } => is_scalar_ae(*expr, arena),
             AExpr::Gather { returns_scalar, .. } => *returns_scalar,
             AExpr::SortBy { expr, .. } => is_scalar_ae(*expr, arena),
@@ -340,6 +349,7 @@ impl AExpr {
 
             AExpr::Explode { .. }
             | AExpr::Column(_)
+            | AExpr::StructFields
             | AExpr::Filter { .. }
             | AExpr::Slice { .. } => false,
         }
@@ -372,6 +382,7 @@ impl AExpr {
         match self {
             AExpr::Element => true,
             AExpr::Column(_) => true,
+            AExpr::StructFields => true,
 
             // Over and Rolling implicitly zip with the context and thus should always be length
             // preserving
@@ -405,6 +416,7 @@ impl AExpr {
             AExpr::Eval { expr, variant, .. } => {
                 variant.is_length_preserving() && is_length_preserving_ae(*expr, arena)
             },
+            AExpr::StructEval { expr, evaluation } => todo!(), //kdn TODO
             AExpr::Sort { expr, .. } => is_length_preserving_ae(*expr, arena),
             AExpr::Gather {
                 expr: _,

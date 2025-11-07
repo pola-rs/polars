@@ -122,6 +122,7 @@ pub struct ExecutionState {
     // every join/union split gets an increment to distinguish between schema state
     pub branch_idx: usize,
     pub flags: RelaxedCell<u8>,
+    pub with_fields: Arc<Option<(Column, Option<Bitmap>)>>, // TODO: StructChunked
     pub ext_contexts: Arc<Vec<DataFrame>>,
     pub element: Arc<Option<(Column, Option<Bitmap>)>>,
     node_timer: Option<NodeTimer>,
@@ -140,6 +141,7 @@ impl ExecutionState {
             window_cache: Default::default(),
             branch_idx: 0,
             flags: RelaxedCell::from(StateFlags::init().as_u8()),
+            with_fields: Default::default(),
             ext_contexts: Default::default(),
             element: Default::default(),
             node_timer: None,
@@ -208,6 +210,7 @@ impl ExecutionState {
             ext_contexts: self.ext_contexts.clone(),
             // Retain input values for `pl.element` in Eval context
             element: self.element.clone(),
+            with_fields: self.with_fields.clone(),
             node_timer: self.node_timer.clone(),
             stop: self.stop.clone(),
         }

@@ -1,5 +1,5 @@
 use polars_core::prelude::*;
-use polars_plan::constants::{get_literal_name, get_pl_element_name};
+use polars_plan::constants::{{get_literal_name, get_pl_element_name}, PL_STRUCTFIELDS_NAME};
 use polars_plan::prelude::expr_ir::ExprIR;
 use polars_plan::prelude::*;
 use recursive::recursive;
@@ -310,6 +310,13 @@ fn create_physical_expr_inner(
 
             Ok(Arc::new(ElementExpr::new(output_field)))
         },
+        StructFields => {
+            let output_field = expr_arena
+                .get(expression)
+                .to_field(&ToFieldContext::new(expr_arena, schema))?;
+
+            Ok(Arc::new(StructFieldsExpr::new(output_field)))
+        },
         Sort { expr, options } => {
             let phys_expr = create_physical_expr_inner(expr, expr_arena, schema, state)?;
             Ok(Arc::new(SortExpr::new(
@@ -532,6 +539,34 @@ fn create_physical_expr_inner(
                 evaluation_is_scalar,
                 evaluation_is_elementwise,
                 evaluation_is_fallible,
+            )))
+        },
+        StructEval { expr, evaluation } => {
+            let output_field = expr_arena
+                .get(expression)
+                .to_field(&ToFieldContext::new(expr_arena, schema))?;
+            let input_field = expr_arena
+                .get(*expr)
+                .to_field(&ToFieldContext::new(expr_arena, schema))?;
+
+            let input =
+                create_physical_expr_inner(*expr, expr_arena, schema, state)?;
+
+            let mut eval_schema = schema.as_ref().clone();
+            eval_schema.insert(PL_STRUCTFIELDS_NAME.clone(), input_field.dtype().clone());
+            let eval_schema = Arc::new(eval_schema);
+
+            let evaluation = evaluation
+                .iter()
+                .map(|e| create_physical_expr(e, expr_arena, &eval_schema, state)) //kdn TODO: from exprir or node?
+                .collect::<PolarsResult<Vec<_>>>()?;
+
+            // output_field
+            Ok(Arc::new(StructEvalExpr::new(
+                input,
+                evaluation,
+                node_to_expr(expression, expr_arena),
+                output_field,
             )))
         },
         Function {

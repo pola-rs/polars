@@ -12,6 +12,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             options,
         },
         AExpr::Column(a) => Expr::Column(a),
+        AExpr::StructFields => Expr::Column("__PL_WIP".into()), //kdn TODO: WIP FOR NOW
         AExpr::Literal(s) => Expr::Literal(s),
         AExpr::BinaryExpr { left, op, right } => {
             let l = node_to_expr(left, expr_arena);
@@ -239,6 +240,16 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             expr: Arc::new(node_to_expr(expr, expr_arena)),
             evaluation: Arc::new(node_to_expr(evaluation, expr_arena)),
             variant,
+        },
+        AExpr::StructEval { expr, evaluation } => {
+            //kdn TODO: REVIEW
+            let input = std::iter::once(node_to_expr(expr, expr_arena))
+                .chain(expr_irs_to_exprs(evaluation, expr_arena))
+                .collect();
+            Expr::Function {
+                input,
+                function: FunctionExpr::StructExpr(StructFunction::WithFields),
+            }
         },
         AExpr::Function {
             input,

@@ -5,12 +5,14 @@ use polars_utils::format_pl_smallstr;
 use recursive::recursive;
 
 use super::*;
-use crate::constants::{POLARS_ELEMENT, get_literal_name, get_pl_element_name};
+// kdn TODO cleanup
+use crate::constants::{POLARS_ELEMENT, POLARS_STRUCTFIELDS, get_literal_name, get_pl_element_name};
 
 fn validate_expr(node: Node, ctx: &ToFieldContext) -> PolarsResult<()> {
     ctx.arena.get(node).to_field_impl(ctx).map(|_| ())
 }
 
+#[derive(Debug)]
 pub struct ToFieldContext<'a> {
     arena: &'a Arena<AExpr>,
     schema: &'a Schema,
@@ -39,6 +41,9 @@ impl AExpr {
     /// (e.g. `alias`, `cast`).
     #[recursive]
     pub fn to_field_impl(&self, ctx: &ToFieldContext) -> PolarsResult<Field> {
+        dbg!("start to_field_impl"); //kdn
+        dbg!(&self);
+        dbg!(&ctx.schema);
         use AExpr::*;
         use DataType::*;
         match self {
@@ -95,6 +100,10 @@ impl AExpr {
                 .schema
                 .get_field(name)
                 .ok_or_else(|| PolarsError::ColumnNotFound(name.to_string().into())),
+            StructFields => ctx
+                .schema
+                .get_field(POLARS_STRUCTFIELDS)
+                .ok_or_else(|| polars_err!(invalid_element_use)), //kdn TODO CHECK; TODO UPDATE error handling
             Literal(sv) => Ok(match sv {
                 LiteralValue::Series(s) => s.field().into_owned(),
                 _ => Field::new(sv.output_column_name(), sv.get_datatype()),
@@ -295,6 +304,57 @@ impl AExpr {
 
                 Ok(output_field)
             },
+            StructEval { expr, evaluation } => {
+                dbg!(&ctx);
+                dbg!(&expr);
+                dbg!(&evaluation);
+
+                let struct_field = ctx.arena.get(*expr).to_field_impl(ctx)?;
+                let mut evaluation_schema = ctx.schema.clone();
+                evaluation_schema
+                    .insert(PL_STRUCTFIELDS_NAME.clone(), struct_field.dtype().clone());
+
+                // kdn TODO NAMING
+                let output_fields = func_args_to_fields(
+                    &evaluation,
+                    &ToFieldContext::new(ctx.arena, &evaluation_schema),
+                )?;
+                // : Vec<Field> = evaluation
+                //     .iter()
+                //     .map(|e| {
+                //         ctx.arena
+                //             .get(*e)
+                //             .to_field_impl(&ToFieldContext::new(ctx.arena, &evaluation_schema))
+                //             .map(|f| )
+                //     })
+                //     .collect::<Result<Vec<_>, _>>()?;
+
+                // Merge evaluation fields into the expr struct
+                if let DataType::Struct(fields) = struct_field.dtype() {
+                    let mut fields_map = PlIndexMap::with_capacity(fields.len() * 2); //kdn CHECK
+                    for field in fields {
+                        fields_map.insert(field.name(), field.dtype());
+                    }
+                    for field in &output_fields {
+                        fields_map.insert(field.name(), field.dtype());
+                    }
+                    let dtype = DataType::Struct(
+                        fields_map
+                            .iter()
+                            .map(|(&name, &dtype)| Field::new(name.clone(), dtype.clone()))
+                            .collect(),
+                    );
+                    let mut out = struct_field.clone();
+                    out.coerce(dtype);
+                    dbg!(&out);
+                    Ok(out)
+                } else {
+                    let dt = struct_field.dtype();
+                    polars_bail!(op = "with_fields", got = dt, expected = "Struct")
+                }
+
+                // todo!(); //kdn TODO
+            },
             Function {
                 function,
                 input,
@@ -360,6 +420,7 @@ impl AExpr {
             | Cast { expr, .. }
             | Ternary { truthy: expr, .. }
             | Eval { expr, .. }
+            | StructEval { expr, .. } //kdn TODO
             | Slice { input: expr, .. }
             | Agg(Min { input: expr, .. })
             | Agg(Max { input: expr, .. })
@@ -396,7 +457,12 @@ impl AExpr {
                 None => input[0].output_name().clone(),
             },
             Column(name) => name.clone(),
+<<<<<<< HEAD
             Literal(lv) => lv.output_column_name(),
+=======
+            StructFields => PlSmallStr::EMPTY, //kdn TODO REVIEW
+            Literal(lv) => lv.output_column_name().clone(),
+>>>>>>> bf462adf8a (refactor: Make fields deterministic in `struct.with_fields` context)
         }
     }
 }

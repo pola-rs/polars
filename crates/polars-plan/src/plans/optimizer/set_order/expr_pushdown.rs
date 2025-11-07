@@ -153,6 +153,7 @@ impl<'a> ObservableOrdersResolver<'a> {
             AExpr::Explode { expr, .. } => rec!(*expr) | O::Independent,
 
             AExpr::Column(_) => self.column_ordering,
+            AExpr::StructFields => todo!(), //kdn TODO
             AExpr::Literal(lv) if lv.is_scalar() => O::None,
             AExpr::Literal(_) => O::Independent,
 
@@ -314,6 +315,8 @@ impl<'a> ObservableOrdersResolver<'a> {
                     expr
                 },
             },
+
+            AExpr::StructEval { expr, evaluation } => todo!(), //kdn TODO
 
             #[cfg(feature = "dynamic_group_by")]
             AExpr::Rolling {

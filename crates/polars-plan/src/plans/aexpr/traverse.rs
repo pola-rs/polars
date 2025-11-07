@@ -13,7 +13,7 @@ impl AExpr {
         use AExpr::*;
 
         match self {
-            Element | Column(_) | Literal(_) | Len => {},
+            Element | Column(_) | StructFields | Literal(_) | Len => {},
             BinaryExpr { left, op: _, right } => {
                 container.extend([*right, *left]);
             },
@@ -78,6 +78,10 @@ impl AExpr {
                 _ = evaluation;
                 container.extend([*expr]);
             },
+            StructEval { expr, evaluation } => {
+                container.extend([*expr]);
+                container.extend(evaluation.iter().rev().map(ExprIR::node)); //kdn TODO REVIEW
+            },
             Slice {
                 input,
                 offset,
@@ -97,7 +101,7 @@ impl AExpr {
         use AExpr::*;
 
         match self {
-            Element | Column(_) | Literal(_) | Len => {},
+            Element | Column(_) | StructFields | Literal(_) | Len => {},
             BinaryExpr { left, op: _, right } => {
                 container.extend([*right, *left]);
             },
@@ -158,6 +162,11 @@ impl AExpr {
                 evaluation,
                 variant: _,
             } => container.extend([*evaluation, *expr]),
+            StructEval { expr, evaluation } => {
+                //kdn: TODO check order
+                container.extend([*expr]);
+                container.extend(evaluation.iter().rev().map(ExprIR::node));
+            },
             Slice {
                 input,
                 offset,
@@ -171,7 +180,7 @@ impl AExpr {
     pub fn replace_inputs(mut self, inputs: &[Node]) -> Self {
         use AExpr::*;
         let input = match &mut self {
-            Element | Column(_) | Literal(_) | Len => return self,
+            Element | Column(_) | StructFields | Literal(_) | Len => return self,
             Cast { expr, .. } => expr,
             Explode { expr, .. } => expr,
             BinaryExpr { left, right, .. } => {
@@ -244,6 +253,14 @@ impl AExpr {
                 _ = evaluation; // Intentional.
                 return self;
             },
+            StructEval {
+                expr,
+                evaluation,
+            } => {
+                *expr = inputs[0];
+                _ = evaluation; // kdn TODO
+                return self;
+            },
             Slice {
                 input,
                 offset,
@@ -289,7 +306,7 @@ impl AExpr {
     pub fn replace_children(mut self, inputs: &[Node]) -> Self {
         use AExpr::*;
         let input = match &mut self {
-            Element | Column(_) | Literal(_) | Len => return self,
+            Element | Column(_) | Literal(_) | StructFields | Len => return self,
             Cast { expr, .. } => expr,
             Explode { expr, .. } => expr,
             BinaryExpr { left, right, .. } => {
@@ -362,6 +379,12 @@ impl AExpr {
                 *evaluation = inputs[1];
                 return self;
             },
+            StructEval {
+                expr,
+                evaluation,
+            } => {
+                todo!() //kdn TODO
+            }
             Slice {
                 input,
                 offset,
