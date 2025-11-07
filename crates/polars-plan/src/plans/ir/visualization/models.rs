@@ -236,4 +236,8 @@ pub enum IRNodeProperties {
         is_pure: bool,
         validate_schema: bool,
     },
+    PlaceholderScan {
+        id: usize,
+        schema_names: Vec<PlSmallStr>,
+    },
 }

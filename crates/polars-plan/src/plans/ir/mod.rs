@@ -7,7 +7,6 @@ pub(crate) mod tree_format;
 pub mod visualization;
 
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::fmt;
 
 pub use dot::{EscapeLabel, IRDotDisplay, PathsDisplay, ScanSourcesDisplay};
@@ -454,7 +453,7 @@ impl IRPlan {
                     .collect();
                 IR::Union {
                     inputs: new_inputs,
-                    options: options.clone(),
+                    options: *options,
                 }
             },
             IR::HConcat {
@@ -471,7 +470,7 @@ impl IRPlan {
                 IR::HConcat {
                     inputs: new_inputs,
                     schema: schema.clone(),
-                    options: options.clone(),
+                    options: *options,
                 }
             },
             IR::ExtContext {
@@ -539,7 +538,7 @@ impl IRPlan {
 
     pub fn bind_data(
         &self,
-        data_map: HashMap<usize, Node>,
+        data_map: PlHashMap<usize, Node>,
         data_arena: &Arena<IR>,
     ) -> PolarsResult<Self> {
         let mut new_arena = Arena::with_capacity(self.lp_arena.len());
@@ -574,7 +573,7 @@ impl IRPlan {
             schema,
             output_schema: None,
         });
-        let mut data_map = HashMap::new();
+        let mut data_map = PlHashMap::new();
         data_map.insert(0, data_node);
         self.bind_data(data_map, &data_arena)
     }
@@ -597,7 +596,7 @@ impl IRPlan {
         }
 
         let mut data_arena = Arena::with_capacity(dfs.len());
-        let mut data_map = HashMap::new();
+        let mut data_map = PlHashMap::new();
 
         for (id, df) in dfs.iter().enumerate() {
             let schema = df.schema().clone();
@@ -625,7 +624,6 @@ impl IRPlan {
             _ => {
                 // Sum placeholder counts from all input nodes
                 ir.inputs()
-                    .into_iter()
                     .map(|input| self.count_placeholders_recursive(input, arena))
                     .sum()
             },
@@ -635,7 +633,7 @@ impl IRPlan {
     #[recursive::recursive]
     fn replace_placeholder(
         node: Node,
-        data_map: &HashMap<usize, Node>,
+        data_map: &PlHashMap<usize, Node>,
         data_arena: &Arena<IR>,
         template_arena: &Arena<IR>,
         new_arena: &mut Arena<IR>,
@@ -659,7 +657,7 @@ impl IRPlan {
                 };
 
                 // Allow empty schemas to bind to any data (generic templates)
-                if schema.len() > 0 {
+                if !schema.is_empty() {
                     if schema.len() != data_schema.len() {
                         polars_bail!(SchemaMismatch:
                             "Schema mismatch: template expects {} columns, data has {}",
@@ -896,7 +894,7 @@ impl IRPlan {
                     .collect::<PolarsResult<_>>()?;
                 IR::Union {
                     inputs: new_inputs,
-                    options: options.clone(),
+                    options: *options,
                 }
             },
             IR::HConcat {
@@ -919,7 +917,7 @@ impl IRPlan {
                 IR::HConcat {
                     inputs: new_inputs,
                     schema: schema.clone(),
-                    options: options.clone(),
+                    options: *options,
                 }
             },
             IR::ExtContext {

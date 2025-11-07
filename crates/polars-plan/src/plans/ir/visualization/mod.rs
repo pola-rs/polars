@@ -716,6 +716,22 @@ impl IRVisualizationDataGenerator<'_> {
                     ..Default::default()
                 }
             },
+            IR::PlaceholderScan {
+                id,
+                schema,
+                output_schema: _,
+            } => {
+                let properties = IRNodeProperties::PlaceholderScan {
+                    id: *id,
+                    schema_names: schema.iter_names_cloned().collect(),
+                };
+
+                IRNodeInfo {
+                    title: properties.variant_name(),
+                    properties,
+                    ..Default::default()
+                }
+            },
         }
     }
 }

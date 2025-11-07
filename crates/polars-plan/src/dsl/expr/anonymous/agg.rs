@@ -5,7 +5,7 @@ use polars_core::prelude::Field;
 use polars_core::schema::Schema;
 use polars_error::{PolarsResult, feature_gated};
 #[cfg(feature = "ir_serde")]
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Serialize, Serializer};
 
 use super::SpecialEq;
 use crate::dsl::LazySerde;
