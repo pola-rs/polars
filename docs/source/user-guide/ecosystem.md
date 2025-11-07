@@ -98,7 +98,7 @@ Tables with Polars.
 applications. They have added a direct integration with Polars. LanceDB can ingest Polars
 dataframes, return results as polars dataframes, and export the entire table as a polars lazyframe.
 You can find a quick tutorial in their blog
-[LanceDB + Polars](https://blog.lancedb.com/lancedb-polars-2d5eb32a8aa3)
+[LanceDB + Polars](https://lancedb.com/docs/integrations/platforms/polars_arrow/)
 
 #### Mage
 

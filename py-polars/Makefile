@@ -51,23 +51,21 @@ fix:
 .PHONY: lint
 lint: .venv  ## Run lint checks (only)
 	$(VENV_BIN)/ruff check
+	$(VENV_BIN)/typos ..
 	-$(VENV_BIN)/mypy
 
 .PHONY: fmt
-fmt: .venv  ## Run autoformatting (and lint)
-	$(VENV_BIN)/ruff check
+fmt: .venv  ## Run autoformatting (python and rust)
 	$(VENV_BIN)/ruff format
-	$(VENV_BIN)/typos ..
 	cargo fmt --all
 	-dprint fmt
-	-$(VENV_BIN)/mypy
 
 .PHONY: clippy
 clippy:  ## Run clippy
 	cargo clippy --locked -- -D warnings -D clippy::dbg_macro
 
 .PHONY: pre-commit
-pre-commit: fmt clippy  ## Run all code formatting and lint/quality checks
+pre-commit: fmt lint clippy  ## Run all code formatting, lint, and clippy quality checks
 
 .PHONY: test
 test: .venv build  ## Run fast unittests
