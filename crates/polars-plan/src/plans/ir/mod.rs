@@ -647,7 +647,10 @@ impl IRPlan {
 
                 let data_ir = data_arena.get(*data_node);
                 let data_schema = match data_ir {
-                    IR::DataFrameScan { schema: data_schema, .. } => data_schema,
+                    IR::DataFrameScan {
+                        schema: data_schema,
+                        ..
+                    } => data_schema,
                     IR::Scan { file_info, .. } => &file_info.schema,
                     #[cfg(feature = "python")]
                     IR::PythonScan { options } => &options.schema,
