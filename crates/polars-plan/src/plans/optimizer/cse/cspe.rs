@@ -411,7 +411,7 @@ fn prune_unused_caches(lp_arena: &mut Arena<IR>, cid2c: &CacheId2Caches) {
     }
 }
 
-pub(crate) fn elim_cmn_subplans(
+pub(super) fn elim_cmn_subplans(
     root: Node,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
