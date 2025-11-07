@@ -611,9 +611,9 @@ pub fn find_starting_point(
         // Skip utf8 byte-order-mark (BOM)
         bytes = skip_bom(bytes);
 
-        // \n\n can be a empty string row of a single column
-        // in other cases we skip it.
-        if schema_len > 1 {
+        // \n\n can be an empty row in a single column without header,
+        // in other cases we skip leading empty lines.
+        if schema_len > 1 || has_header {
             bytes = skip_line_ending(bytes, eol_char)
         }
         bytes

@@ -74,9 +74,11 @@ impl TreeWalker for Expr {
             Function { input, function } => Function { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function },
             Explode { input, skip_empty } => Explode { input: am(input, f)?, skip_empty },
             Filter { input, by } => Filter { input: am(input, &mut f)?, by: am(by, f)? },
-            Window { function, partition_by, order_by, options } => {
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling { function, index_column, period, offset, closed_window  } => Rolling { function: am(function, &mut f)?, index_column: am(index_column, &mut f)?, period, offset, closed_window  },
+            Over { function, partition_by, order_by, mapping } => {
                 let partition_by = partition_by.into_iter().map(&mut f).collect::<Result<_, _>>()?;
-                Window { function: am(function, f)?, partition_by, order_by, options }
+                Over { function: am(function, f)?, partition_by, order_by, mapping }
             },
             Slice { input, offset, length } => Slice { input: am(input, &mut f)?, offset: am(offset, &mut f)?, length: am(length, f)? },
             KeepName(expr) => KeepName(am(expr, f)?),
@@ -156,7 +158,24 @@ impl AExpr {
         match (self, other) {
             (Column(l), Column(r)) => l == r,
             (Literal(l), Literal(r)) => l == r,
-            (Window { options: l, .. }, Window { options: r, .. }) => l == r,
+            #[cfg(feature = "dynamic_group_by")]
+            (
+                Rolling {
+                    function: _,
+                    index_column: _,
+                    period: l_period,
+                    offset: l_offset,
+                    closed_window: l_closed_window,
+                },
+                Rolling {
+                    function: _,
+                    index_column: _,
+                    period: r_period,
+                    offset: r_offset,
+                    closed_window: r_closed_window,
+                },
+            ) => l_period == r_period && l_offset == r_offset && l_closed_window == r_closed_window,
+            (Over { mapping: l, .. }, Over { mapping: r, .. }) => l == r,
             (
                 Cast {
                     options: strict_l,

@@ -68,7 +68,7 @@ def iceberg_path(io_files_path: Path) -> str:
     current_path = Path(__file__).parent.resolve()
 
     with contextlib.suppress(FileExistsError):
-        os.symlink(f"{current_path}/files/iceberg-table", "/tmp/iceberg/t1")
+        os.symlink(f"{current_path}/files/iceberg-table", "/tmp/iceberg/t1")  # noqa: PTH211
 
     iceberg_path = io_files_path / "iceberg-table" / "metadata" / "v2.metadata.json"
     return f"file://{iceberg_path.resolve()}"
@@ -1315,7 +1315,8 @@ def test_fill_missing_fields_with_identity_partition_values(
     if test_uuid:
         # Note: If this starts working one day we can include it in tests.
         with pytest.raises(
-            pa.ArrowNotImplementedError, match="Keys of type extension<arrow.uuid>"
+            pa.ArrowNotImplementedError,
+            match=r"Keys of type extension<arrow\.uuid>",
         ):
             tbl.append(arrow_tbl)
 

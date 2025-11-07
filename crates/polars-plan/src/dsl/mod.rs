@@ -811,7 +811,7 @@ impl Expr {
         self,
         partition_by: Option<E>,
         order_by: Option<(E, SortOptions)>,
-        options: WindowMapping,
+        mapping: WindowMapping,
     ) -> PolarsResult<Self> {
         polars_ensure!(partition_by.is_some() || order_by.is_some(), InvalidOperation: "At least one of `partition_by` and `order_by` must be specified in `over`");
         let partition_by = if let Some(partition_by) = partition_by {
@@ -837,24 +837,28 @@ impl Expr {
             (e, options)
         });
 
-        Ok(Expr::Window {
+        Ok(Expr::Over {
             function: Arc::new(self),
             partition_by,
             order_by,
-            options: options.into(),
+            mapping,
         })
     }
 
     #[cfg(feature = "dynamic_group_by")]
-    pub fn rolling(self, options: RollingGroupOptions) -> Self {
-        // We add the index column as `partition expr` so that the optimizer will
-        // not ignore it.
-        let index_col = col(options.index_column.clone());
-        Expr::Window {
+    pub fn rolling(
+        self,
+        index_column: impl Into<Expr>,
+        period: Duration,
+        offset: Duration,
+        closed_window: ClosedWindow,
+    ) -> Self {
+        Expr::Rolling {
             function: Arc::new(self),
-            partition_by: vec![index_col],
-            order_by: None,
-            options: WindowType::Rolling(options),
+            index_column: Arc::new(index_column.into()),
+            period,
+            offset,
+            closed_window,
         }
     }
 

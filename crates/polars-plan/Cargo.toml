@@ -40,7 +40,7 @@ pyo3 = { workspace = true, optional = true }
 rayon = { workspace = true }
 recursive = { workspace = true }
 regex = { workspace = true, optional = true }
-schemars = { workspace = true, features = ["either"], optional = true }
+schemars = { workspace = true, features = ["either1"], optional = true }
 serde = { workspace = true, features = ["rc"], optional = true }
 serde_json = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }

@@ -747,3 +747,14 @@ def test_rolling_non_aggregation_24012() -> None:
     q = df.lazy().select(pl.col("value").rolling("idx", period="2i"))
 
     assert q.collect_schema() == q.collect().schema
+
+
+def test_rolling_on_expressions() -> None:
+    df = pl.DataFrame({"a": [None, 1, 2, 3]}).with_row_index()
+
+    df = df.select(
+        df_ri=pl.col.a.mean().rolling("index", period="3i"),
+        in_ri=pl.col.a.mean().rolling(pl.row_index(), period="3i"),
+    )
+
+    assert_series_equal(df["df_ri"], df["in_ri"], check_names=False)

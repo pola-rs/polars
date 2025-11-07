@@ -514,8 +514,8 @@ def test_filter_eq_missing_13861() -> None:
 
     with pytest.warns(UserWarning, match="Comparisons with None always result in null"):
         lff = lf.filter(a=None)
-        assert lff.collect().rows() == []
-        assert " ==v " not in lff.explain()  # check no `eq_missing` op
+    assert lff.collect().rows() == []
+    assert " ==v " not in lff.explain()  # check no `eq_missing` op
 
     with pytest.warns(UserWarning, match="Comparisons with None always result in null"):
         assert_frame_equal(lf.collect().filter(a=None), lf_empty.collect())

@@ -219,21 +219,39 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             let input = expr_irs_to_exprs(input, expr_arena);
             ir_function_to_dsl(input, function)
         },
-        AExpr::Window {
+        #[cfg(feature = "dynamic_group_by")]
+        AExpr::Rolling {
+            function,
+            index_column,
+            period,
+            offset,
+            closed_window,
+        } => {
+            let function = Arc::new(node_to_expr(function, expr_arena));
+            let index_column = Arc::new(node_to_expr(index_column, expr_arena));
+            Expr::Rolling {
+                function,
+                index_column,
+                period,
+                offset,
+                closed_window,
+            }
+        },
+        AExpr::Over {
             function,
             partition_by,
             order_by,
-            options,
+            mapping,
         } => {
             let function = Arc::new(node_to_expr(function, expr_arena));
             let partition_by = nodes_to_exprs(&partition_by, expr_arena);
             let order_by =
                 order_by.map(|(n, options)| (Arc::new(node_to_expr(n, expr_arena)), options));
-            Expr::Window {
+            Expr::Over {
                 function,
                 partition_by,
                 order_by,
-                options,
+                mapping,
             }
         },
         AExpr::Slice {

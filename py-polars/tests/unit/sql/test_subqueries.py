@@ -150,7 +150,7 @@ def test_in_subquery() -> None:
 
 
 def test_subquery_20732() -> None:
-    lf = pl.concat(  # noqa: F841
+    lf = pl.concat(
         [
             pl.LazyFrame([{"id": 1, "s": "a"}]),
             pl.LazyFrame([{"id": 2, "s": "b"}]),
@@ -162,7 +162,7 @@ def test_subquery_20732() -> None:
 
 def test_unsupported_subquery_comparisons() -> None:
     """Test that using = with a subquery gives a helpful error message."""
-    df = pl.DataFrame({"value": [2000, 2000]})  # noqa: F841
+    df = pl.DataFrame({"value": [2000, 2000]})
 
     for op, suggestion in (("=", "IN"), ("!=", "NOT IN")):
         with pytest.raises(

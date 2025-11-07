@@ -1,8 +1,8 @@
 use polars_core::prelude::*;
+use polars_error::feature_gated;
 
 use crate::prelude::*;
 
-mod cache_states;
 mod delay_rechunk;
 
 mod cluster_with_columns;
@@ -65,10 +65,41 @@ pub(crate) fn pushdown_maintain_errors() -> bool {
     std::env::var("POLARS_PUSHDOWN_OPT_MAINTAIN_ERRORS").as_deref() == Ok("1")
 }
 
+pub(super) fn run_projection_predicate_pushdown(
+    root: Node,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    pushdown_maintain_errors: bool,
+    opt_flags: &OptFlags,
+) -> PolarsResult<()> {
+    // Should be run before predicate pushdown.
+    if opt_flags.projection_pushdown() {
+        let mut projection_pushdown_opt = ProjectionPushDown::new();
+        let ir = ir_arena.take(root);
+        let ir = projection_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
+        ir_arena.replace(root, ir);
+
+        if projection_pushdown_opt.is_count_star {
+            let mut count_star_opt = CountStar::new();
+            count_star_opt.optimize_plan(ir_arena, expr_arena, root)?;
+        }
+    }
+
+    if opt_flags.predicate_pushdown() {
+        let mut predicate_pushdown_opt =
+            PredicatePushDown::new(pushdown_maintain_errors, opt_flags.new_streaming());
+        let ir = ir_arena.take(root);
+        let ir = predicate_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
+        ir_arena.replace(root, ir);
+    }
+
+    Ok(())
+}
+
 pub fn optimize(
     logical_plan: DslPlan,
     mut opt_flags: OptFlags,
-    lp_arena: &mut Arena<IR>,
+    ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
     apply_scan_predicate_to_scan_ir: fn(
@@ -91,12 +122,16 @@ pub fn optimize(
     if opt_flags.contains(OptFlags::EAGER) {
         opt_flags &= !(OptFlags::COMM_SUBEXPR_ELIM | OptFlags::COMM_SUBEXPR_ELIM);
     }
-    let mut lp_top = to_alp(logical_plan, expr_arena, lp_arena, &mut opt_flags)?;
+    let mut root = to_alp(logical_plan, expr_arena, ir_arena, &mut opt_flags)?;
 
+    #[allow(unused_assignments)]
+    let mut comm_subplan_elim = false;
     // Don't run optimizations that don't make sense on a single node.
     // This keeps eager execution more snappy.
     #[cfg(feature = "cse")]
-    let comm_subplan_elim = opt_flags.contains(OptFlags::COMM_SUBPLAN_ELIM);
+    {
+        comm_subplan_elim = opt_flags.contains(OptFlags::COMM_SUBPLAN_ELIM);
+    }
 
     #[cfg(feature = "cse")]
     let comm_subexpr_elim = opt_flags.contains(OptFlags::COMM_SUBEXPR_ELIM);
@@ -108,19 +143,13 @@ pub fn optimize(
 
     // During debug we check if the optimizations have not modified the final schema.
     #[cfg(debug_assertions)]
-    let prev_schema = lp_arena.get(lp_top).schema(lp_arena).into_owned();
+    let prev_schema = ir_arena.get(root).schema(ir_arena).into_owned();
 
     let mut _opt_members: &mut Option<MemberCollector> = &mut None;
 
     macro_rules! get_or_init_members {
         () => {
-            _get_or_init_members(_opt_members, lp_top, lp_arena, expr_arena)
-        };
-    }
-
-    macro_rules! get_members_opt {
-        () => {
-            _opt_members.as_mut()
+            _get_or_init_members(_opt_members, root, ir_arena, expr_arena)
         };
     }
 
@@ -130,50 +159,51 @@ pub fn optimize(
         rules.push(Box::new(fused::FusedArithmetic {}));
     }
 
-    #[cfg(feature = "cse")]
-    let _cse_plan_changed = if comm_subplan_elim {
-        let members = get_or_init_members!();
-        if (members.has_sink_multiple || members.has_joins_or_unions)
-            && members.has_duplicate_scans()
-            && !members.has_cache
-        {
-            if verbose {
-                eprintln!("found multiple sources; run comm_subplan_elim")
+    let run_pushdowns = if comm_subplan_elim {
+        #[allow(unused_assignments)]
+        let mut run_pd = true;
+
+        feature_gated!("cse", {
+            let members = get_or_init_members!();
+            run_pd = if (members.has_sink_multiple || members.has_joins_or_unions)
+                && members.has_duplicate_scans()
+                && !members.has_cache
+            {
+                use self::cse::CommonSubPlanOptimizer;
+
+                if verbose {
+                    eprintln!("found multiple sources; run comm_subplan_elim")
+                }
+
+                root = CommonSubPlanOptimizer::new().optimize(
+                    root,
+                    ir_arena,
+                    expr_arena,
+                    members,
+                    pushdown_maintain_errors,
+                    &opt_flags,
+                    verbose,
+                    scratch,
+                )?;
+                false
+            } else {
+                true
             }
+        });
 
-            let (lp, changed) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
-
-            lp_top = lp;
-            members.has_cache |= changed;
-            changed
-        } else {
-            false
-        }
+        run_pd
     } else {
-        false
+        true
     };
-    #[cfg(not(feature = "cse"))]
-    let _cse_plan_changed = false;
 
-    // Should be run before predicate pushdown.
-    if opt_flags.projection_pushdown() {
-        let mut projection_pushdown_opt = ProjectionPushDown::new();
-        let alp = lp_arena.take(lp_top);
-        let alp = projection_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
-        lp_arena.replace(lp_top, alp);
-
-        if projection_pushdown_opt.is_count_star {
-            let mut count_star_opt = CountStar::new();
-            count_star_opt.optimize_plan(lp_arena, expr_arena, lp_top)?;
-        }
-    }
-
-    if opt_flags.predicate_pushdown() {
-        let mut predicate_pushdown_opt =
-            PredicatePushDown::new(pushdown_maintain_errors, opt_flags.new_streaming());
-        let alp = lp_arena.take(lp_top);
-        let alp = predicate_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
-        lp_arena.replace(lp_top, alp);
+    if run_pushdowns {
+        run_projection_predicate_pushdown(
+            root,
+            ir_arena,
+            expr_arena,
+            pushdown_maintain_errors,
+            &opt_flags,
+        )?;
     }
 
     // Make sure its before slice pushdown.
@@ -196,10 +226,10 @@ pub fn optimize(
             false, // maintain_errors
             opt_flags.new_streaming(),
         );
-        let alp = lp_arena.take(lp_top);
-        let alp = slice_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
+        let ir = ir_arena.take(root);
+        let ir = slice_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
 
-        lp_arena.replace(lp_top, alp);
+        ir_arena.replace(root, ir);
 
         // Expressions use the stack optimizer.
         rules.push(Box::new(slice_pushdown_opt));
@@ -215,37 +245,20 @@ pub fn optimize(
         rules.push(Box::new(FlattenUnionRule {}));
     }
 
-    lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top)?;
+    root = opt.optimize_loop(&mut rules, expr_arena, ir_arena, root)?;
 
     if opt_flags.cluster_with_columns() {
-        cluster_with_columns::optimize(lp_top, lp_arena, expr_arena)
-    }
-
-    if _cse_plan_changed
-        && get_members_opt!().is_some_and(|members| {
-            (members.has_joins_or_unions | members.has_sink_multiple) && members.has_cache
-        })
-    {
-        // We only want to run this on cse inserted caches
-        cache_states::set_cache_states(
-            lp_top,
-            lp_arena,
-            expr_arena,
-            scratch,
-            verbose,
-            pushdown_maintain_errors,
-            opt_flags.new_streaming(),
-        )?;
+        cluster_with_columns::optimize(root, ir_arena, expr_arena)
     }
 
     // This one should run (nearly) last as this modifies the projections
     #[cfg(feature = "cse")]
     if comm_subexpr_elim && !get_or_init_members!().has_ext_context {
         let mut optimizer = CommonSubExprOptimizer::new();
-        let alp_node = IRNode::new_mutate(lp_top);
+        let ir_node = IRNode::new_mutate(root);
 
-        lp_top = try_with_ir_arena(lp_arena, expr_arena, |arena| {
-            let rewritten = alp_node.rewrite(&mut optimizer, arena)?;
+        root = try_with_ir_arena(ir_arena, expr_arena, |arena| {
+            let rewritten = ir_node.rewrite(&mut optimizer, arena)?;
             Ok(rewritten.node())
         })?;
     }
@@ -257,39 +270,34 @@ pub fn optimize(
             | members.has_distinct
             | members.has_joins_or_unions
         {
-            match lp_arena.get(lp_top) {
+            match ir_arena.get(root) {
                 IR::SinkMultiple { inputs } => {
                     let mut roots = inputs.clone();
                     for root in &mut roots {
-                        if !matches!(lp_arena.get(*root), IR::Sink { .. }) {
-                            *root = lp_arena.add(IR::Sink {
+                        if !matches!(ir_arena.get(*root), IR::Sink { .. }) {
+                            *root = ir_arena.add(IR::Sink {
                                 input: *root,
                                 payload: SinkTypeIR::Memory,
                             });
                         }
                     }
-                    set_order::simplify_and_fetch_orderings(&roots, lp_arena, expr_arena);
+                    set_order::simplify_and_fetch_orderings(&roots, ir_arena, expr_arena);
                 },
                 ir => {
-                    let mut tmp_top = lp_top;
+                    let mut tmp_top = root;
                     if !matches!(ir, IR::Sink { .. }) {
-                        tmp_top = lp_arena.add(IR::Sink {
-                            input: lp_top,
+                        tmp_top = ir_arena.add(IR::Sink {
+                            input: root,
                             payload: SinkTypeIR::Memory,
                         });
                     }
-                    _ = set_order::simplify_and_fetch_orderings(&[tmp_top], lp_arena, expr_arena)
+                    _ = set_order::simplify_and_fetch_orderings(&[tmp_top], ir_arena, expr_arena)
                 },
             }
         }
     }
 
-    expand_datasets::expand_datasets(
-        lp_top,
-        lp_arena,
-        expr_arena,
-        apply_scan_predicate_to_scan_ir,
-    )?;
+    expand_datasets::expand_datasets(root, ir_arena, expr_arena, apply_scan_predicate_to_scan_ir)?;
 
     // During debug we check if the optimizations have not modified the final schema.
     #[cfg(debug_assertions)]
@@ -297,26 +305,26 @@ pub fn optimize(
         // only check by names because we may supercast types.
         assert_eq!(
             prev_schema.iter_names().collect::<Vec<_>>(),
-            lp_arena
-                .get(lp_top)
-                .schema(lp_arena)
+            ir_arena
+                .get(root)
+                .schema(ir_arena)
                 .iter_names()
                 .collect::<Vec<_>>()
         );
     };
 
-    Ok(lp_top)
+    Ok(root)
 }
 
 fn _get_or_init_members<'a>(
     opt_members: &'a mut Option<MemberCollector>,
-    lp_top: Node,
-    lp_arena: &mut Arena<IR>,
+    root: Node,
+    ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> &'a mut MemberCollector {
     opt_members.get_or_insert_with(|| {
         let mut members = MemberCollector::new();
-        members.collect(lp_top, lp_arena, expr_arena);
+        members.collect(root, ir_arena, expr_arena);
 
         members
     })

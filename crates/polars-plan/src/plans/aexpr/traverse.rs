@@ -4,7 +4,7 @@ impl AExpr {
     /// Push the inputs of this node to the given container, in reverse order.
     /// This ensures the primary node responsible for the name is pushed last.
     ///
-    /// This is subtlely different from `children_rev` as this only includes the input expressions,
+    /// This is subtly different from `children_rev` as this only includes the input expressions,
     /// not expressions used during evaluation.
     pub fn inputs_rev<E>(&self, container: &mut E)
     where
@@ -47,11 +47,21 @@ impl AExpr {
                 container.extend(input.iter().rev().map(|e| e.node()))
             },
             Explode { expr: e, .. } => container.extend([*e]),
-            Window {
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling {
+                function,
+                index_column,
+                period: _,
+                offset: _,
+                closed_window: _,
+            } => {
+                container.extend([*index_column, *function]);
+            },
+            Over {
                 function,
                 partition_by,
                 order_by,
-                options: _,
+                mapping: _,
             } => {
                 if let Some((n, _)) = order_by {
                     container.extend([*n]);
@@ -81,7 +91,7 @@ impl AExpr {
     /// Push the children of this node to the given container, in reverse order.
     /// This ensures the primary node responsible for the name is pushed last.
     ///
-    /// This is subtlely different from `input_rev` as this only all expressions included in the
+    /// This is subtly different from `input_rev` as this only all expressions included in the
     /// expression not only the input expressions,
     pub fn children_rev<E: Extend<Node>>(&self, container: &mut E) {
         use AExpr::*;
@@ -121,11 +131,21 @@ impl AExpr {
                 container.extend(input.iter().rev().map(|e| e.node()))
             },
             Explode { expr: e, .. } => container.extend([*e]),
-            Window {
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling {
+                function,
+                index_column,
+                period: _,
+                offset: _,
+                closed_window: _,
+            } => {
+                container.extend([*index_column, *function]);
+            },
+            Over {
                 function,
                 partition_by,
                 order_by,
-                options: _,
+                mapping: _,
             } => {
                 if let Some((n, _)) = order_by {
                     container.extend([*n]);
@@ -226,7 +246,19 @@ impl AExpr {
                 *length = inputs[2];
                 return self;
             },
-            Window {
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling {
+                function,
+                index_column,
+                period: _,
+                offset: _,
+                closed_window: _,
+            } => {
+                *function = inputs[0];
+                *index_column = inputs[1];
+                return self;
+            },
+            Over {
                 function,
                 partition_by,
                 order_by,

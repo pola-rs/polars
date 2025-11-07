@@ -1695,7 +1695,7 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
-    pub fn pipe_with_schema(self, callback: PlanCallback<(DslPlan, Schema), DslPlan>) -> Self {
+    pub fn pipe_with_schema(self, callback: PlanCallback<(DslPlan, SchemaRef), DslPlan>) -> Self {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().pipe_with_schema(callback).build();
         Self::from_logical_plan(lp, opt_state)
@@ -1828,12 +1828,13 @@ impl LazyFrame {
         subset: Option<Selector>,
         keep_strategy: UniqueKeepStrategy,
     ) -> LazyFrame {
+        let subset = subset.map(|s| vec![Expr::Selector(s)]);
         self.unique_stable_generic(subset, keep_strategy)
     }
 
     pub fn unique_stable_generic(
         self,
-        subset: Option<Selector>,
+        subset: Option<Vec<Expr>>,
         keep_strategy: UniqueKeepStrategy,
     ) -> LazyFrame {
         let opt_state = self.get_opt_state();
@@ -1854,12 +1855,13 @@ impl LazyFrame {
     /// `subset` is an optional `Vec` of column names to consider for uniqueness; if None,
     /// all columns are considered.
     pub fn unique(self, subset: Option<Selector>, keep_strategy: UniqueKeepStrategy) -> LazyFrame {
+        let subset = subset.map(|s| vec![Expr::Selector(s)]);
         self.unique_generic(subset, keep_strategy)
     }
 
     pub fn unique_generic(
         self,
-        subset: Option<Selector>,
+        subset: Option<Vec<Expr>>,
         keep_strategy: UniqueKeepStrategy,
     ) -> LazyFrame {
         let opt_state = self.get_opt_state();

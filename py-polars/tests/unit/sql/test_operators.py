@@ -189,7 +189,7 @@ def test_logical_not() -> None:
     for invalid_literal in ("'foo'", "'2026-12-31'::date"):
         with pytest.raises(
             InvalidOperationError,
-            match="cast.* to Boolean not supported",
+            match=r"cast.* to Boolean not supported",
         ):
             pl.sql(f"SELECT NOT {invalid_literal}", eager=True)
 

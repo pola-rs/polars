@@ -447,7 +447,9 @@ fn aexpr_to_skip_batch_predicate_rec(
                 },
                 _ => None,
             },
-            AExpr::Window { .. } => None,
+            #[cfg(feature = "dynamic_group_by")]
+            AExpr::Rolling { .. } => None,
+            AExpr::Over { .. } => None,
             AExpr::Slice { .. } => None,
             AExpr::Len => None,
         }

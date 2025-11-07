@@ -880,7 +880,7 @@ def test_selector_list_of_lists_18499() -> None:
     )
 
     with pytest.raises(TypeError, match="cannot turn 'list' into selector"):
-        lf.unique(subset=[["bar", "ham"]])  # type: ignore[list-item]
+        lf.unique(subset=[["bar", "ham"]])
 
 
 def test_selector_python_dtypes() -> None:

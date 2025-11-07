@@ -21,7 +21,7 @@ def foods_ipc_path() -> Path:
 
 
 def test_any_all() -> None:
-    df = pl.DataFrame(  # noqa: F841
+    df = pl.DataFrame(
         {
             "x": [-1, 0, 1, 2, 3, 4],
             "y": [1, 0, 0, 1, 2, 3],
@@ -135,8 +135,8 @@ def test_count() -> None:
 
 
 def test_cte_aliasing() -> None:
-    df1 = pl.DataFrame({"colx": ["aa", "bb"], "coly": [40, 30]})  # noqa: F841
-    df2 = pl.DataFrame({"colx": "aa", "colz": 20})  # noqa: F841
+    df1 = pl.DataFrame({"colx": ["aa", "bb"], "coly": [40, 30]})
+    df2 = pl.DataFrame({"colx": "aa", "colz": 20})
     df3 = pl.sql(
         query="""
             WITH
@@ -190,14 +190,14 @@ def test_distinct() -> None:
 
 def test_frame_sql_globals_error() -> None:
     df1 = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
-    df2 = pl.DataFrame({"a": [2, 3, 4], "b": [7, 6, 5]})  # noqa: F841
+    df2 = pl.DataFrame({"a": [2, 3, 4], "b": [7, 6, 5]})
 
     query = """
         SELECT df1.a, df2.b
         FROM df2 JOIN df1 ON df1.a = df2.a
         ORDER BY b DESC
     """
-    with pytest.raises(SQLInterfaceError, match="relation.*not found.*"):
+    with pytest.raises(SQLInterfaceError, match=r"relation.*not found.*"):
         df1.sql(query=query)
 
     res = pl.sql(query=query, eager=True)
@@ -209,7 +209,7 @@ def test_global_misc_lookup() -> None:
     # as supporting pycapsule (as it can look like it has *any* attr)
     from polars import col  # noqa: F401
 
-    df = pl.DataFrame({"col": [90, 80, 70]})  # noqa: F841
+    df = pl.DataFrame({"col": [90, 80, 70]})
     df_res = pl.sql("SELECT col FROM df WHERE col > 75", eager=True)
     assert df_res.rows() == [(90,), (80,)]
 
@@ -296,8 +296,8 @@ def test_sql_on_compatible_frame_types() -> None:
     # create various different frame types
     dfp = df.to_pandas()
     dfa = df.to_arrow()
-    dfb = dfa.to_batches()[0]  # noqa: F841
-    dfo = PyCapsuleStreamHolder(df)  # noqa: F841
+    dfb = dfa.to_batches()[0]
+    dfo = PyCapsuleStreamHolder(df)
 
     # run polars sql query against all frame types
     for dfs in (  # noqa: B007

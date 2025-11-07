@@ -60,7 +60,13 @@ where
 }
 
 pub fn has_aexpr_window(current_node: Node, arena: &Arena<AExpr>) -> bool {
-    has_aexpr(current_node, arena, |e| matches!(e, AExpr::Window { .. }))
+    has_aexpr(current_node, arena, |e| {
+        #[cfg(feature = "dynamic_group_by")]
+        if matches!(e, AExpr::Rolling { .. }) {
+            return true;
+        }
+        matches!(e, AExpr::Over { .. })
+    })
 }
 
 pub fn has_aexpr_literal(current_node: Node, arena: &Arena<AExpr>) -> bool {
@@ -97,31 +103,15 @@ pub fn has_null(current_expr: &Expr) -> bool {
     )
 }
 
-pub fn aexpr_output_name(node: Node, arena: &Arena<AExpr>) -> PolarsResult<PlSmallStr> {
-    for (_, ae) in arena.iter(node) {
-        match ae {
-            // don't follow the partition by branch
-            AExpr::Window { function, .. } => return aexpr_output_name(*function, arena),
-            AExpr::Column(name) => return Ok(name.clone()),
-            AExpr::Len => return Ok(get_len_name()),
-            AExpr::Literal(val) => return Ok(val.output_column_name().clone()),
-            AExpr::Ternary { truthy, .. } => return aexpr_output_name(*truthy, arena),
-            _ => {},
-        }
-    }
-    let expr = node_to_expr(node, arena);
-    polars_bail!(
-        ComputeError:
-        "unable to find root column name for expr '{expr:?}' when calling 'output_name'",
-    );
-}
-
 /// output name of expr
 pub fn expr_output_name(expr: &Expr) -> PolarsResult<PlSmallStr> {
     for e in expr {
         match e {
             // don't follow the partition by branch
-            Expr::Window { function, .. } => return expr_output_name(function),
+            #[cfg(feature = "dynamic_group_by")]
+            Expr::Rolling { function, .. } => return expr_output_name(function),
+            Expr::Over { function, .. } => return expr_output_name(function),
+
             Expr::Column(name) => return Ok(name.clone()),
             Expr::Alias(_, name) => return Ok(name.clone()),
             Expr::KeepName(_) => polars_bail!(nyi = "`name.keep` is not allowed here"),

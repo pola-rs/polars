@@ -2055,3 +2055,78 @@ def test_group_by_forward_backward_fill(
         df.select(expr(cl)),
         df.select(cl.implode().list.eval(expr(pl.element())).reshape((-1,))),
     )
+
+
+@given(s=series())
+def test_group_by_drop_nulls(s: pl.Series) -> None:
+    df = s.rename("f").to_frame()
+
+    data = (
+        df.group_by(lit=pl.lit(1))
+        .agg(pl.col.f.drop_nulls())
+        .drop("lit")
+        .select(pl.col.f.reshape((-1,)))
+    )
+    assert_frame_equal(df.select(pl.col.f.drop_nulls()), data)
+
+    assert_frame_equal(
+        df.select(pl.col.f.drop_nulls()),
+        df.select(
+            pl.col.f.implode().list.eval(pl.element().drop_nulls()).reshape((-1,))
+        ),
+    )
+
+    df = pl.Schema({"f": pl.Int64()}).to_frame()
+
+    data = (
+        pl.DataFrame({"x": [None]})
+        .group_by(lit=pl.lit(1))
+        .agg(pl.lit(pl.Series("f", [], pl.Int64())).drop_nulls())
+        .drop("lit")
+    )
+    data = data.select(cs.all().reshape((-1,)))
+    assert_frame_equal(df.select(pl.col.f.drop_nulls()), data)
+
+    assert_frame_equal(
+        df.select(pl.col.f.drop_nulls()),
+        df.select(
+            pl.col.f.implode().list.eval(pl.element().drop_nulls()).reshape((-1,))
+        ),
+    )
+
+
+@given(s=series())
+def test_group_by_drop_nans(s: pl.Series) -> None:
+    df = s.rename("f").to_frame()
+
+    data = (
+        df.group_by(lit=pl.lit(1))
+        .agg(pl.col.f.drop_nans())
+        .select(pl.col.f.reshape((-1,)))
+    )
+    assert_frame_equal(df.select(pl.col.f.drop_nans()), data)
+
+    assert_frame_equal(
+        df.select(pl.col.f.drop_nans()),
+        df.select(
+            pl.col.f.implode().list.eval(pl.element().drop_nans()).reshape((-1,))
+        ),
+    )
+
+    df = pl.Schema({"f": pl.Int64()}).to_frame()
+
+    data = (
+        pl.DataFrame({"x": [None]})
+        .group_by(lit=pl.lit(1))
+        .agg(pl.lit(pl.Series("f", [], pl.Int64())).drop_nans())
+        .drop("lit")
+    )
+    data = data.select(cs.all().reshape((-1,)))
+    assert_frame_equal(df.select(pl.col.f.drop_nans()), data)
+
+    assert_frame_equal(
+        df.select(pl.col.f.drop_nans()),
+        df.select(
+            pl.col.f.implode().list.eval(pl.element().drop_nans()).reshape((-1,))
+        ),
+    )
