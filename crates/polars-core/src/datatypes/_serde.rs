@@ -30,7 +30,7 @@ impl Serialize for DataType {
 
 #[cfg(feature = "dsl-schema")]
 impl schemars::JsonSchema for DataType {
-    fn schema_name() -> String {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
         SerializableDataType::schema_name()
     }
 
@@ -38,7 +38,7 @@ impl schemars::JsonSchema for DataType {
         SerializableDataType::schema_id()
     }
 
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         SerializableDataType::json_schema(generator)
     }
 }
