@@ -16,6 +16,8 @@ mod rolling;
 mod slice;
 mod sort;
 mod sortby;
+mod structeval;
+mod structfields;
 mod ternary;
 mod window;
 
@@ -45,6 +47,8 @@ pub(crate) use rolling::RollingExpr;
 pub(crate) use slice::*;
 pub(crate) use sort::*;
 pub(crate) use sortby::*;
+pub(crate) use structeval::*;
+pub(crate) use structfields::*;
 pub(crate) use ternary::*;
 pub use window::window_function_format_order_by;
 pub(crate) use window::*;

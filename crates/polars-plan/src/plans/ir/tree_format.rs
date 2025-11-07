@@ -36,6 +36,7 @@ impl fmt::Display for TreeFmtAExpr<'_> {
                 return f.write_char(')');
             },
             AExpr::Column(name) => return write!(f, "col({name})"),
+            AExpr::StructFields => todo!(), //kdn TODO
             AExpr::Literal(lv) => return write!(f, "lit({lv:?})"),
             AExpr::BinaryExpr { op, .. } => return write!(f, "binary: {op}"),
             AExpr::Cast { dtype, options, .. } => {
@@ -77,6 +78,7 @@ impl fmt::Display for TreeFmtAExpr<'_> {
                 return write!(f, "anonymous_streaming_agg: {fmt_str}");
             },
             AExpr::Eval { .. } => "list.eval",
+            AExpr::StructEval { .. } => todo!(), //kdn
             AExpr::Function { function, .. } => return write!(f, "function: {function}"),
             #[cfg(feature = "dynamic_group_by")]
             AExpr::Rolling { .. } => "rolling",

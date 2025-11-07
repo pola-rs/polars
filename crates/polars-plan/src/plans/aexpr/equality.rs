@@ -72,6 +72,7 @@ impl AExpr {
             E::AnonymousStreamingAgg { input: input_l, fmt_str: fmt_str_l, function: function_l } => matches!(other, E::AnonymousStreamingAgg { input: input_r, fmt_str: fmt_str_r, function: function_r} if input_l == input_r && function_l == function_r && fmt_str_l == fmt_str_r),
             E::AnonymousFunction { input: l_input, function: l_function, options: l_options, fmt_str: l_fmt_str } => matches!(other, E::AnonymousFunction { input: r_input, function: r_function, options: r_options, fmt_str: r_fmt_str } if l_input.len() == r_input.len() && l_function == r_function && l_options == r_options && l_fmt_str == r_fmt_str),
             E::Eval { expr: _, evaluation: _, variant: l_variant } => matches!(other, E::Eval { expr: _, evaluation: _, variant: r_variant } if l_variant == r_variant),
+            E::StructEval { expr, evaluation } => todo!(), //kdn TODO
             E::Function { input: l_input, function: l_function, options: l_options } => matches!(other, E::Function { input: r_input, function: r_function, options: r_options } if l_input.len() == r_input.len() && l_function == r_function && l_options == r_options),
             #[cfg(feature = "dynamic_group_by")]
             E::Rolling { function: _, index_column: _, period: l_period, offset: l_offset, closed_window: l_closed_window } => matches!(other, E::Rolling { function: _, index_column: _, period: r_period, offset: r_offset, closed_window: r_closed_window } if l_period == r_period && l_offset == r_offset && l_closed_window == r_closed_window),
@@ -79,6 +80,7 @@ impl AExpr {
 
             // Discriminant check done above.
             E::Element |
+            E::StructFields |
             E::Filter { input: _, by: _ } |
             E::Ternary { predicate: _, truthy: _, falsy: _ } |
             E::Slice { input: _, offset: _, length: _ } |

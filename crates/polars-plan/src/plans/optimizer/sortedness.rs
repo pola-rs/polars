@@ -396,6 +396,7 @@ pub fn aexpr_sortedness(
                 nulls_last: fst.nulls_last,
             })
         },
+        AExpr::StructFields => todo!(), //kdn
         AExpr::Literal(lv) if lv.is_scalar() => Some(AExprSorted {
             descending: Some(false),
             nulls_last: Some(false),
@@ -445,6 +446,7 @@ pub fn aexpr_sortedness(
         | AExpr::AnonymousFunction { .. }
         | AExpr::Eval { .. }
         | AExpr::Over { .. } => None,
+        AExpr::StructEval { .. } => todo!(), //kdn TODO
         #[cfg(feature = "dynamic_group_by")]
         AExpr::Rolling { .. } => None,
     }

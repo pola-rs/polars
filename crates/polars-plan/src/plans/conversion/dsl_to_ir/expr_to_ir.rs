@@ -521,6 +521,7 @@ pub(super) fn to_aexpr_impl(
         },
         #[cfg(feature = "dtype-struct")]
         Expr::Field(name) => {
+            dbg!("match arm Expr::Field in to_aexpr_impl"); //kdn
             assert_eq!(
                 name.len(),
                 1,
@@ -540,10 +541,11 @@ pub(super) fn to_aexpr_impl(
             }
 
             let function = IRFunctionExpr::StructExpr(IRStructFunction::FieldByName(name.clone()));
+            let input = ctx.arena.add(AExpr::StructFields); //kdn TBD: add Expr?
             let options = function.function_options();
             (
                 AExpr::Function {
-                    input: vec![ExprIR::new(*input, OutputName::Alias(PlSmallStr::EMPTY))],
+                    input: vec![ExprIR::new(input, OutputName::Alias(PlSmallStr::EMPTY))], //kdn TODO NAME
                     function,
                     options,
                 },

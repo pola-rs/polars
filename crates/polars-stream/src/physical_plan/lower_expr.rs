@@ -151,6 +151,7 @@ pub fn is_input_independent_rec(
             options: _,
         } => is_input_independent_rec(*inner, arena, cache),
         AExpr::Column(_) => false,
+        AExpr::StructFields => todo!(), //kdn TODO
         AExpr::Literal(_) => true,
         AExpr::BinaryExpr { left, op: _, right } => {
             is_input_independent_rec(*left, arena, cache)
@@ -219,6 +220,7 @@ pub fn is_input_independent_rec(
             evaluation: _,
             variant: _,
         } => is_input_independent_rec(*expr, arena, cache),
+        AExpr::StructEval { expr, evaluation } => todo!(), //kdn TODO
         #[cfg(feature = "dynamic_group_by")]
         AExpr::Rolling {
             function,
@@ -311,7 +313,7 @@ pub fn is_length_preserving_rec(
         | AExpr::Len
         | AExpr::Literal(_) => false,
 
-        AExpr::Column(_) => true,
+        AExpr::Column(_) | AExpr::StructFields => true,
 
         AExpr::Cast {
             expr: inner,
@@ -374,6 +376,7 @@ pub fn is_length_preserving_rec(
             offset: _,
             closed_window: _,
         } => true,
+        AExpr::StructEval { .. } => true, //kdn TODO REVIEW
         AExpr::Over {
             function: _, // Actually shouldn't matter for window functions.
             partition_by: _,
@@ -640,6 +643,7 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(exploded_name)));
             },
             AExpr::Column(_) => unreachable!("column should always be streamable"),
+            AExpr::StructFields => todo!(), //kdn TODO
             AExpr::Literal(_) => {
                 let out_name = unique_column_name();
                 let inner_expr = ExprIR::new(expr, OutputName::Alias(out_name.clone()));
@@ -1529,6 +1533,7 @@ fn lower_exprs_with_ctx(
                     transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
                 },
             },
+            AExpr::StructEval { expr, evaluation } => todo!(), //kdn
             AExpr::Ternary {
                 predicate,
                 truthy,

@@ -183,6 +183,10 @@ fn try_lower_elementwise_scalar_agg_expr(
             None
         },
 
+        AExpr::StructFields => {
+            todo!() //kdn TODO
+        }
+
         AExpr::Literal(lit) => {
             if lit.is_scalar() {
                 Some(expr)
@@ -226,6 +230,10 @@ fn try_lower_elementwise_scalar_agg_expr(
                 variant,
             }))
         },
+
+        AExpr::StructEval { expr, evaluation } => {
+            todo!();
+        }, //kdn TODO
 
         AExpr::Ternary {
             predicate,

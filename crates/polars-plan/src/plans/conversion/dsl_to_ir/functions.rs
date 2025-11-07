@@ -22,6 +22,9 @@ pub(super) fn convert_functions(
         function,
         FunctionExpr::StructExpr(StructFunction::WithFields)
     ) {
+        dbg!("start convert_functions for Expr::WithFields"); //kdn
+        dbg!(&ctx.arena);
+        dbg!(&ctx.schema);
         let mut input = input.into_iter();
         let struct_input = to_expr_ir(input.next().unwrap(), ctx)?;
         let dtype = struct_input.to_expr(ctx.arena).to_field(ctx.schema)?.dtype;
@@ -33,21 +36,27 @@ pub(super) fn convert_functions(
         let struct_node = struct_input.node();
         let struct_schema = Schema::from_iter(fields.iter().cloned());
 
-        let mut e = Vec::with_capacity(input.len());
-        e.push(struct_input);
+        let mut evaluation = Vec::with_capacity(input.len() - 1);
+        // e.push(struct_input);
 
         let prev = ctx.with_fields.replace((struct_node, struct_schema));
         for i in input {
-            e.push(to_expr_ir(i, ctx)?);
+            evaluation.push(to_expr_ir(i, ctx)?);
         }
         ctx.with_fields = prev;
 
-        let function = IRFunctionExpr::StructExpr(IRStructFunction::WithFields);
-        let options = function.function_options();
-        let out = ctx.arena.add(AExpr::Function {
-            input: e,
-            function,
-            options,
+        // let function = IRFunctionExpr::StructExpr(IRStructFunction::WithFields);
+        // let options = function.function_options();
+        // dbg!(&options); //kdn
+        // let out = ctx.arena.add(AExpr::Function {
+        //     input: e,
+        //     function,
+        //     options,
+        // });
+
+        let out = ctx.arena.add(AExpr::StructEval {
+            expr: struct_node,
+            evaluation,
         });
 
         return Ok((out, struct_name));
