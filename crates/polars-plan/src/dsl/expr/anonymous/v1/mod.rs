@@ -14,7 +14,7 @@ use polars_core::prelude::{CompatLevel, Field};
 use polars_core::schema::{Schema, SchemaExt};
 use polars_core::series::Series;
 use polars_error::{PolarsResult, polars_bail};
-use polars_ffi::version_1::{self as ffi, CowGroupPositions, GroupPositions};
+use polars_ffi::version_1 as ffi;
 use polars_utils::pl_str::PlSmallStr;
 
 #[cfg(feature = "serde")]
@@ -73,10 +73,12 @@ bitflags::bitflags! {
         ///
         /// Expressions that are both LENGTH_PRESERVING and ROW_SEPARABLE are never combined.
         const STATES_COMBINABLE   = 0x040;
+        /// Group evaluation is specialized.
+        const SPECIALIZE_GROUP_EVALUATION   = 0x080;
 
         // Expression expansion related flags.
         /// Expand selectors as individual inputs.
-        const SELECTOR_EXPANSION  = 0x080;
+        const SELECTOR_EXPANSION  = 0x100;
     }
 }
 
@@ -167,8 +169,8 @@ impl PluginV1 {
 
     pub fn evaluate_on_groups<'a>(
         &self,
-        inputs: &[(Series, &'a GroupPositions)],
-    ) -> PolarsResult<(Series, CowGroupPositions<'a>)> {
+        inputs: &[(Series, &'a ffi::GroupPositions)],
+    ) -> PolarsResult<(Series, ffi::CowGroupPositions<'a>)> {
         unsafe {
             self.vtable
                 .evaluate_on_groups(self.data.ptr_clone(), inputs)

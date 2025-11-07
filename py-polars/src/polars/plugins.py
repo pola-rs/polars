@@ -172,6 +172,7 @@ def register_plugin_v1_function(
     step_has_output: bool = True,
     needs_finalize: bool = True,
     states_combinable: bool = False,
+    specialize_group_evaluation: bool = False,
     selector_expansion: bool = False,
 ) -> Expr:
     pyexprs = parse_into_list_of_expressions(args)
@@ -191,6 +192,7 @@ def register_plugin_v1_function(
             step_has_output=step_has_output,
             needs_finalize=needs_finalize,
             states_combinable=states_combinable,
+            specialize_group_evaluation=specialize_group_evaluation,
             selector_expansion=selector_expansion,
         )
     )

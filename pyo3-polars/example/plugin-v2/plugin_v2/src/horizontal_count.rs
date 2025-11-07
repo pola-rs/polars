@@ -1,7 +1,9 @@
+use std::borrow::Cow;
+
 use polars::error::{polars_bail, PolarsResult};
 use polars::prelude::{ArithmeticChunked, ChunkCast, DataType, Field, IdxCa, Schema};
 use polars::series::{IntoSeries, Series};
-use pyo3_polars::export::polars_ffi::version_1::PolarsPlugin;
+use pyo3_polars::export::polars_ffi::version_1::{GroupPositions, PolarsPlugin};
 use pyo3_polars::polars_plugin_expr_info;
 use pyo3_polars::v1::PolarsPluginExprInfo;
 
@@ -70,6 +72,14 @@ impl PolarsPlugin for HorizontalCount {
     }
 
     fn combine(&self, _state: &mut Self::State, _other: &Self::State) -> PolarsResult<()> {
+        unreachable!()
+    }
+
+    fn evaluate_on_groups<'a>(
+        &self,
+        inputs: &[(Series, &'a GroupPositions)],
+    ) -> PolarsResult<(Series, Cow<'a, GroupPositions>)> {
+        _ = inputs;
         unreachable!()
     }
 }

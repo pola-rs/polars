@@ -20,7 +20,7 @@ def min_by(expr: IntoExprColumn, *, by: IntoExprColumn) -> pl.Expr:
         info=plugin_v2.min_by(),
         function_name="min_by",
         returns_scalar=True,
-        insert_has_output=False,
+        step_has_output=False,
         states_combinable=True,
     )
 
@@ -36,6 +36,7 @@ def rolling_product(expr: IntoExprColumn, *, n: int) -> pl.Expr:
         length_preserving=True,
         needs_finalize=False,
         states_combinable=False,
+        specialize_group_evaluation=False,
     )
 
 

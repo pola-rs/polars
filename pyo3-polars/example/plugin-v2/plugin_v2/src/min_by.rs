@@ -1,8 +1,9 @@
-use arrow::array::Array;
+use std::borrow::Cow;
+
 use polars::error::{polars_bail, polars_err, PolarsResult};
-use polars::prelude::{AnyValue, ArgAgg, ArrowDataType, Field, PlSmallStr, Scalar, Schema, SchemaExt};
+use polars::prelude::{AnyValue, ArgAgg, Field, PlSmallStr, Scalar, Schema, SchemaExt};
 use polars::series::Series;
-use pyo3_polars::export::polars_ffi::version_1::PolarsPlugin;
+use pyo3_polars::export::polars_ffi::version_1::{GroupPositions, PolarsPlugin};
 use pyo3_polars::polars_plugin_expr_info;
 use pyo3_polars::v1::PolarsPluginExprInfo;
 use serde::{Deserialize, Serialize};
@@ -105,6 +106,14 @@ impl PolarsPlugin for MinBy {
         *state.value.any_value_mut() = AnyValue::Null;
         *state.by.any_value_mut() = AnyValue::Null;
         Ok(())
+    }
+
+    fn evaluate_on_groups<'a>(
+        &self,
+        inputs: &[(Series, &'a GroupPositions)],
+    ) -> PolarsResult<(Series, Cow<'a, GroupPositions>)> {
+        _ = inputs;
+        unreachable!()
     }
 }
 

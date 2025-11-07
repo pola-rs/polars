@@ -77,6 +77,7 @@ pub fn register_plugin_v1_function(
     step_has_output: bool,
     needs_finalize: bool,
     states_combinable: bool,
+    specialize_group_evaluation: bool,
     selector_expansion: bool,
 ) -> PyResult<PyExpr> {
     use std::sync::Arc;
@@ -93,6 +94,7 @@ pub fn register_plugin_v1_function(
     flags.set(F::STEP_HAS_OUTPUT, step_has_output);
     flags.set(F::NEEDS_FINALIZE, needs_finalize);
     flags.set(F::STATES_COMBINABLE, states_combinable);
+    flags.set(F::SPECIALIZE_GROUP_EVALUATION, specialize_group_evaluation);
     flags.set(F::SELECTOR_EXPANSION, selector_expansion);
 
     let plugin = unsafe {

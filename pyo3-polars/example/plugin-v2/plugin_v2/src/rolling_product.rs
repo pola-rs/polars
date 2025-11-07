@@ -1,19 +1,17 @@
 use std::borrow::Cow;
 use std::collections::VecDeque;
 
-use arrow::array::{Array, FixedSizeListArray, ListArray, PrimitiveArray};
+use arrow::array::PrimitiveArray;
 use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::BitmapBuilder;
-use arrow::io::ipc::format::ipc::FixedSizeList;
-use arrow::types::NativeType;
 use polars::error::{polars_ensure, polars_err, PolarsResult};
 use polars::prelude::{
-    ArrowDataType, ChunkedArray, ChunkedBuilder, DataType, Field, Int64Type, PlSmallStr,
+    ArrowDataType, ChunkedArray, ChunkedBuilder, DataType, Field, Int64Type,
     PrimitiveChunkedBuilder, Schema, SchemaExt,
 };
 use polars::series::{IntoSeries, Series};
 use pyo3_polars::export::polars_ffi::version_1::{
-    GroupPositions, IndexGroups, PolarsPlugin, SliceGroup,
+    GroupPositions, PolarsPlugin, SliceGroup, SliceGroups,
 };
 use pyo3_polars::polars_plugin_expr_info;
 use pyo3_polars::v1::PolarsPluginExprInfo;
@@ -129,7 +127,7 @@ impl PolarsPlugin for RollingProduct {
         assert_eq!(inputs.len(), 1);
         let (data, groups) = &inputs[0];
 
-        if let GroupPositions::SharedAcrossGroups = groups {
+        if let GroupPositions::SharedAcrossGroups { .. } = groups {
             let mut state = self.new_state(&Schema::from_iter([data.field().into_owned()]))?;
             let data = self.step(&mut state, &[data.clone()])?.unwrap();
             return Ok((data, Cow::Borrowed(groups)));
@@ -145,15 +143,17 @@ impl PolarsPlugin for RollingProduct {
         let data = data.downcast_as_array();
 
         let num_groups = match groups {
-            GroupPositions::SharedAcrossGroups | GroupPositions::ScalarPerGroup => unreachable!(),
+            GroupPositions::SharedAcrossGroups { .. } | GroupPositions::ScalarPerGroup => {
+                unreachable!()
+            },
             GroupPositions::Slice(slice_groups) => slice_groups.len(),
             GroupPositions::Index(index_groups) => index_groups.ends.len(),
         };
         let num_values = match groups {
-            GroupPositions::SharedAcrossGroups | GroupPositions::ScalarPerGroup => unreachable!(),
-            GroupPositions::Slice(slice_groups) => {
-                slice_groups.iter().map(|s| s.length as usize).sum()
+            GroupPositions::SharedAcrossGroups { .. } | GroupPositions::ScalarPerGroup => {
+                unreachable!()
             },
+            GroupPositions::Slice(slice_groups) => slice_groups.lengths().sum(),
             GroupPositions::Index(index_groups) => {
                 index_groups.ends.last().copied().unwrap_or(0) as usize
             },
@@ -168,9 +168,11 @@ impl PolarsPlugin for RollingProduct {
         let mut past = VecDeque::with_capacity(self.n);
 
         match groups {
-            GroupPositions::ScalarPerGroup | GroupPositions::SharedAcrossGroups => unreachable!(),
+            GroupPositions::ScalarPerGroup | GroupPositions::SharedAcrossGroups { .. } => {
+                unreachable!()
+            },
             GroupPositions::Slice(groups) => {
-                for slice in groups {
+                for slice in &groups.0 {
                     past.clear();
                     let offset = out.len() as u64;
                     rolling_product_values(
@@ -222,7 +224,7 @@ impl PolarsPlugin for RollingProduct {
         }
         .into_series();
 
-        let groups = GroupPositions::Slice(out_slices.into());
+        let groups = GroupPositions::Slice(SliceGroups(out_slices.into()));
         Ok((data, Cow::Owned(groups)))
     }
 }

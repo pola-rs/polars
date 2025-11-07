@@ -8,7 +8,10 @@ use polars_core::schema::Schema;
 use polars_core::series::Series;
 use polars_error::PolarsResult;
 
+pub use self::groups::{CowGroupPositions, GroupPositions, IndexGroups, SliceGroup, SliceGroups};
 use crate::version_0::SeriesExport;
+
+mod groups;
 
 /// Symbol exposed in shared library to Polars.
 #[repr(C, align(8))]
@@ -103,79 +106,7 @@ pub trait PolarsPlugin: Send + Sync + Sized {
     fn evaluate_on_groups<'a>(
         &self,
         inputs: &[(Series, &'a GroupPositions)],
-    ) -> PolarsResult<(Series, Cow<'a, GroupPositions>)> {
-        _ = inputs;
-        dbg!();
-        todo!()
-    }
-}
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct SliceGroup {
-    pub offset: u64,
-    pub length: u64,
-}
-
-#[repr(C)]
-#[derive(Clone)]
-pub struct IndexGroups {
-    pub index: Box<[u64]>,
-    pub ends: Box<[u64]>,
-}
-
-#[repr(C)]
-#[derive(Clone)]
-pub enum GroupPositions {
-    /// Every group has all the data values.
-    SharedAcrossGroups,
-    /// Every group has 1 value in sequential order of the data.
-    ScalarPerGroup,
-    Slice(Box<[SliceGroup]>),
-    Index(IndexGroups),
-}
-
-pub struct CowGroupPositions<'a> {
-    groups: &'a GroupPositions,
-    drop: Option<unsafe extern "C" fn(*mut GroupPositions) -> u32>,
-}
-
-impl<'a> AsRef<GroupPositions> for CowGroupPositions<'a> {
-    fn as_ref(&self) -> &GroupPositions {
-        self.groups
-    }
-}
-
-impl<'a> Drop for CowGroupPositions<'a> {
-    fn drop(&mut self) {
-        if let Some(drop) = &self.drop {
-            let rv = unsafe { (drop)(self.groups as *const GroupPositions as *mut GroupPositions) };
-            match ReturnValue::from(rv) {
-                ReturnValue::Ok => {},
-                ReturnValue::Panic => panic!("plugin panicked"),
-                _ => panic!("did not expect error"),
-            }
-        }
-    }
-}
-
-impl IndexGroups {
-    pub fn lengths(&self) -> impl Iterator<Item = usize> {
-        (0..self.ends.len()).map(|i| {
-            let start = i.checked_sub(1).map_or(0, |i| self.ends[i]);
-            let end = self.ends[i];
-            (end - start) as usize
-        })
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = &[u64]> {
-        (0..self.ends.len()).map(|i| {
-            let start = i.checked_sub(1).map_or(0, |i| self.ends[i]);
-            let end = self.ends[i];
-
-            &self.index[start as usize..end as usize]
-        })
-    }
+    ) -> PolarsResult<(Series, Cow<'a, GroupPositions>)>;
 }
 
 #[derive(Clone)]
@@ -500,8 +431,8 @@ impl VTable {
             _finalize: _callee::finalize::<Data>,
             _combine: _callee::combine::<Data>,
 
-            _evaluate_on_groups: _callee::evaluate_on_groups::<Data>,
-            _drop_box_group_positions: _callee::drop_box_group_positions,
+            _evaluate_on_groups: groups::callee::evaluate_on_groups::<Data>,
+            _drop_box_group_positions: groups::callee::drop_box_group_positions,
 
             _to_field: _callee::to_field::<Data>,
             _drop_state: _callee::drop_state::<Data>,
@@ -539,7 +470,6 @@ impl From<u32> for ReturnValue {
 
 /// FFI Wrappers for all [`PolarsPlugin`] functions from the *callee* or Plugin's side.
 mod _callee {
-    use std::borrow::Cow;
     use std::cell::RefCell;
     use std::mem::MaybeUninit;
     use std::panic::UnwindSafe;
@@ -552,8 +482,8 @@ mod _callee {
     use polars_core::schema::SchemaExt;
     use polars_error::{PolarsError, PolarsResult, polars_bail};
 
-    use super::{DataPtr, GroupPositions, PolarsPlugin, ReturnValue, StatePtr, Value};
-    use crate::version_0::{SeriesExport, export_series, import_series, import_series_buffer};
+    use super::{DataPtr, PolarsPlugin, ReturnValue, StatePtr, Value};
+    use crate::version_0::{SeriesExport, export_series, import_series_buffer};
 
     /// Plugin version of the *caller*.
     ///
@@ -598,7 +528,7 @@ mod _callee {
         Ok(Schema::from_arrow_schema(&fields))
     }
 
-    fn wrap_callee_function(f: impl FnOnce() -> PolarsResult<()> + UnwindSafe) -> u32 {
+    pub fn wrap_callee_function(f: impl FnOnce() -> PolarsResult<()> + UnwindSafe) -> u32 {
         let result = std::panic::catch_unwind(f);
 
         let set_msg = match &result {
@@ -866,54 +796,6 @@ mod _callee {
     /// # Safety
     ///
     /// See VTable.
-    pub unsafe extern "C" fn evaluate_on_groups<Data: PolarsPlugin>(
-        data: DataPtr,
-        inputs_ptr: *mut (SeriesExport, NonNull<GroupPositions>),
-        inputs_len: usize,
-        output_series: NonNull<MaybeUninit<SeriesExport>>,
-        output_groups_owned: NonNull<MaybeUninit<bool>>,
-        output_groups: NonNull<MaybeUninit<NonNull<GroupPositions>>>,
-    ) -> u32 {
-        wrap_callee_function(|| {
-            let data = unsafe { data.as_ref::<Data>() };
-            let mut collected_inputs = Vec::with_capacity(inputs_len);
-            for i in 0..inputs_len {
-                let (series, groups) = unsafe { std::ptr::read(inputs_ptr.add(i)) };
-                let series = unsafe { import_series(series)? };
-                let groups = unsafe { groups.as_ref() };
-                collected_inputs.push((series, groups));
-            }
-            let (out_data, out_groups) = data.evaluate_on_groups(&collected_inputs)?;
-
-            let is_owned = matches!(out_groups, Cow::Owned(_));
-            unsafe { output_groups_owned.write(MaybeUninit::new(is_owned)) };
-            let out_groups = match out_groups {
-                Cow::Borrowed(ptr) => NonNull::from_ref(ptr),
-                Cow::Owned(out_groups) => {
-                    NonNull::new(Box::into_raw(Box::new(out_groups))).unwrap()
-                },
-            };
-            unsafe {
-                output_groups.write(MaybeUninit::new(out_groups));
-            }
-            let out_data = export_series(&out_data);
-            unsafe { output_series.write(MaybeUninit::new(out_data)) };
-
-            Ok(())
-        })
-    }
-
-    pub unsafe extern "C" fn drop_box_group_positions(ptr: *mut GroupPositions) -> u32 {
-        wrap_callee_function(|| {
-            let buffer = unsafe { Box::from_raw(ptr) };
-            drop(buffer);
-            Ok(())
-        })
-    }
-
-    /// # Safety
-    ///
-    /// See VTable.
     pub unsafe extern "C" fn combine<Data: PolarsPlugin>(
         data: DataPtr,
         state: StatePtr,
@@ -984,8 +866,16 @@ mod _caller {
     use polars_error::{PolarsResult, polars_bail};
     use polars_utils::pl_str::PlSmallStr;
 
-    use super::{CowGroupPositions, DataPtr, GroupPositions, ReturnValue, StatePtr, VTable, Value};
+    use super::{DataPtr, ReturnValue, StatePtr, VTable, Value};
     use crate::version_0::{export_series, import_series};
+
+    pub fn handle_return_value_panic(rv: u32) {
+        match ReturnValue::from(rv) {
+            ReturnValue::Ok => {},
+            ReturnValue::Panic => panic!("plugin panicked"),
+            _ => panic!("did not expect error"),
+        }
+    }
 
     impl VTable {
         /// # Safety
@@ -1010,7 +900,7 @@ mod _caller {
             unsafe { (self._set_version)(version) }
         }
 
-        fn handle_return_value(&self, rv: u32) -> PolarsResult<()> {
+        pub fn handle_return_value(&self, rv: u32) -> PolarsResult<()> {
             match ReturnValue::from(rv) {
                 ReturnValue::Ok => Ok(()),
                 ReturnValue::Panic => {
@@ -1039,14 +929,6 @@ mod _caller {
             }
         }
 
-        fn handle_return_value_panic(&self, rv: u32) {
-            match ReturnValue::from(rv) {
-                ReturnValue::Ok => {},
-                ReturnValue::Panic => panic!("plugin panicked"),
-                _ => panic!("did not expect error"),
-            }
-        }
-
         /// # Safety
         ///
         /// `data` is valid and belonging to this VTable.
@@ -1067,7 +949,7 @@ mod _caller {
             out.extend_from_slice(slice);
 
             let rv = unsafe { (self._drop_box_byte_slice)(buffer, length) };
-            self.handle_return_value_panic(rv);
+            handle_return_value_panic(rv);
             Ok(())
         }
 
@@ -1112,7 +994,7 @@ mod _caller {
             out.extend_from_slice(slice);
 
             let rv = unsafe { (self._drop_box_byte_slice)(buffer, length) };
-            self.handle_return_value_panic(rv);
+            handle_return_value_panic(rv);
             Ok(())
         }
 
@@ -1304,56 +1186,12 @@ mod _caller {
             Ok(Field::from(&field))
         }
 
-        pub unsafe fn evaluate_on_groups<'a>(
-            &self,
-            data: DataPtr,
-            inputs: &[(Series, &'a GroupPositions)],
-        ) -> PolarsResult<(Series, CowGroupPositions<'a>)> {
-            let mut out_series = MaybeUninit::uninit();
-            let mut out_groups_owned = MaybeUninit::uninit();
-            let mut out_groups = MaybeUninit::uninit();
-
-            let mut inputs_export = Vec::with_capacity(inputs.len());
-            for (series, groups) in inputs {
-                let series = export_series(series);
-                let groups = NonNull::from_ref(*groups);
-                inputs_export.push((series, groups));
-            }
-
-            let rv = unsafe {
-                (self._evaluate_on_groups)(
-                    data,
-                    inputs_export.as_mut_ptr(),
-                    inputs.len(),
-                    NonNull::from_mut(&mut out_series),
-                    NonNull::from_mut(&mut out_groups_owned),
-                    NonNull::from_mut(&mut out_groups),
-                )
-            };
-            // Already deallocated in step function
-            unsafe { inputs_export.set_len(0) };
-            self.handle_return_value(rv)?;
-
-            let out_series = unsafe { out_series.assume_init() };
-            let out_series = unsafe { import_series(out_series) }?;
-            let out_groups_owned = unsafe { out_groups_owned.assume_init() };
-            let out_groups = unsafe { out_groups.assume_init() };
-            let drop_fn = out_groups_owned.then_some(self._drop_box_group_positions);
-            Ok((
-                out_series,
-                CowGroupPositions {
-                    groups: unsafe { out_groups.as_ref() },
-                    drop: drop_fn,
-                },
-            ))
-        }
-
         /// # Safety
         ///
         /// `state` is valid and belonging to this VTable.
         pub unsafe fn drop_state(&self, state: StatePtr) {
             let rv = unsafe { (self._drop_state)(state) };
-            self.handle_return_value_panic(rv);
+            handle_return_value_panic(rv);
         }
 
         /// # Safety
@@ -1361,7 +1199,7 @@ mod _caller {
         /// `data` is valid and belonging to this VTable.
         pub unsafe fn drop_data(&self, data: DataPtr) {
             let rv = unsafe { (self._drop_data)(data) };
-            self.handle_return_value_panic(rv);
+            handle_return_value_panic(rv);
         }
     }
 }

@@ -3,12 +3,12 @@ use std::sync::Arc;
 
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Column, GroupPositions, GroupsIdx, GroupsType, IntoColumn};
+use polars_core::prelude::{Column, GroupPositions, GroupsType, IntoColumn};
 use polars_core::schema::Schema;
 use polars_core::series::Series;
 use polars_ffi::version_1 as ffi;
 use polars_plan::dsl::v1::{PluginV1, PluginV1Flags};
-use polars_utils::{IdxSize, UnitVec};
+use polars_utils::IdxSize;
 
 use crate::prelude::{AggState, AggregationContext, PhysicalExpr, UpdateGroups};
 use crate::state::ExecutionState;
@@ -62,7 +62,9 @@ pub fn call_on_groups<'a>(
             all_scalar &= i.is_scalar();
 
             let groups = match &out.state {
-                AggState::LiteralScalar(_) => ffi::GroupPositions::SharedAcrossGroups,
+                AggState::LiteralScalar(_) => ffi::GroupPositions::SharedAcrossGroups {
+                    num_groups: groups.len(),
+                },
                 AggState::AggregatedScalar(_) => ffi::GroupPositions::ScalarPerGroup,
                 AggState::NotAggregated(_) | AggState::AggregatedList(_) => {
                     out.groups();
@@ -95,7 +97,7 @@ pub fn call_on_groups<'a>(
                                     length: *length as u64,
                                 });
                             }
-                            ffi::GroupPositions::Slice(slices.into())
+                            ffi::GroupPositions::Slice(ffi::SliceGroups(slices.into()))
                         },
                     }
                 },
@@ -107,7 +109,7 @@ pub fn call_on_groups<'a>(
         .collect::<PolarsResult<Vec<_>>>()?;
     let input_data = input_data
         .iter()
-        .map(|(s, g)| (s.clone(), g))
+        .map(|(s, g): &(Series, ffi::GroupPositions)| (s.clone(), g))
         .collect::<Vec<_>>();
 
     let returns_scalar =
@@ -115,19 +117,19 @@ pub fn call_on_groups<'a>(
     let (series, out_groups) = plugin.evaluate_on_groups(&input_data)?;
 
     let num_groups = match out_groups.as_ref() {
-        ffi::GroupPositions::SharedAcrossGroups => groups.len(),
+        ffi::GroupPositions::SharedAcrossGroups { num_groups } => *num_groups,
         ffi::GroupPositions::ScalarPerGroup => series.len(),
         ffi::GroupPositions::Index(index) => index.ends.len(),
         ffi::GroupPositions::Slice(slices) => slices.len(),
     };
     assert_eq!(
-        num_groups,
         groups.len(),
-        "plugin implementation error: set as returns scalar, but does not return scalar"
+        num_groups,
+        "plugin implementation error: input groups is not equal to output groups",
     );
 
     match out_groups.as_ref() {
-        ffi::GroupPositions::SharedAcrossGroups => {
+        ffi::GroupPositions::SharedAcrossGroups { num_groups: _ } => {
             if returns_scalar {
                 assert_eq!(
                     series.len(),
@@ -197,18 +199,7 @@ pub fn call_on_groups<'a>(
                     original_len: false,
                 })
             } else {
-                let indices = index
-                    .iter()
-                    .map(|v| {
-                        (
-                            v.first().copied().unwrap_or(0) as IdxSize,
-                            UnitVec::from_iter(v.iter().copied().map(|v| v as IdxSize)),
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                let groups: GroupsIdx = indices.into();
-                let groups = GroupsType::Idx(groups).into_sliceable();
-
+                let groups = GroupsType::Idx(index.to_core()).into_sliceable();
                 Ok(AggregationContext {
                     state: AggState::NotAggregated(series.into_column()),
                     groups: Cow::Owned(groups),
@@ -220,11 +211,12 @@ pub fn call_on_groups<'a>(
         ffi::GroupPositions::Slice(slices) => {
             if returns_scalar {
                 assert!(
-                    slices.iter().all(|s| s.length == 1),
+                    slices.lengths().all(|l| l == 1),
                     "plugin implementation error: flagged as returns scalar, but num values != 1."
                 );
 
                 let indices = slices
+                    .0
                     .iter()
                     .map(|s| s.offset as IdxSize)
                     .collect::<Vec<_>>();
@@ -237,12 +229,8 @@ pub fn call_on_groups<'a>(
                     original_len: false,
                 })
             } else {
-                let slices = slices
-                    .iter()
-                    .map(|s| [s.offset as IdxSize, s.length as IdxSize])
-                    .collect::<Vec<_>>();
                 let groups = GroupsType::Slice {
-                    groups: slices,
+                    groups: slices.to_core(),
                     overlapping: true,
                 }
                 .into_sliceable();

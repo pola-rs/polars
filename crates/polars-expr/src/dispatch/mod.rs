@@ -3,7 +3,6 @@ use std::sync::Arc;
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, GroupPositions};
-use polars_plan::dsl::v1::PluginV1;
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
 use polars_plan::plans::{IRBooleanFunction, IRFunctionExpr, IRPowFunction};
 use polars_utils::IdxSize;
@@ -601,7 +600,13 @@ pub fn function_expr_to_groups_udf(func: &IRFunctionExpr) -> Option<SpecialEq<Ar
             wrap_groups!(groups_dispatch::backward_fill_null, (*limit, v: Option<IdxSize>))
         },
 
-        F::PluginV1(plugin) => {
+        #[cfg(feature = "ffi_plugin")]
+        F::PluginV1(plugin)
+            if plugin
+                .flags()
+                .contains(polars_plan::dsl::v1::PluginV1Flags::SPECIALIZE_GROUP_EVALUATION) =>
+        {
+            use polars_plan::dsl::v1::PluginV1;
             struct Wrap(Arc<PluginV1>);
             impl GroupsUdf for Wrap {
                 fn evaluate_on_groups<'a>(
