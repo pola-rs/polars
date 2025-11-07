@@ -6,18 +6,16 @@ use polars_core::prelude::{
 pub(super) fn temporal_series_to_i64_scalar(s: &Column) -> Option<i64> {
     s.to_physical_repr().get(0).unwrap().extract::<i64>()
 }
-pub(super) fn ensure_range_bounds_contain_exactly_one_value(
-    start: &Column,
-    end: &Column,
+pub(super) fn ensure_items_contain_exactly_one_value(
+    values: &[&Column],
+    names: &[&str],
 ) -> PolarsResult<()> {
-    polars_ensure!(
-        start.len() == 1,
-        ComputeError: "`start` must contain exactly one value, got {} values", start.len()
-    );
-    polars_ensure!(
-        end.len() == 1,
-        ComputeError: "`end` must contain exactly one value, got {} values", end.len()
-    );
+    for (value, name) in values.iter().zip(names.iter()) {
+        polars_ensure!(
+            value.len() == 1,
+            ComputeError: "`{name}` must contain exactly one value, got {} values", value.len()
+        )
+    }
     Ok(())
 }
 

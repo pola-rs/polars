@@ -604,51 +604,85 @@ pub(super) fn convert_functions(
                 closed,
                 array_width,
             },
-            #[cfg(feature = "dtype-date")]
-            RangeFunction::DateRange { interval, closed } => {
-                polars_ensure!(e[0].is_scalar(ctx.arena), ShapeMismatch: "non-scalar start passed to `date_range`");
-                polars_ensure!(e[1].is_scalar(ctx.arena), ShapeMismatch: "non-scalar end passed to `date_range`");
-                IRRangeFunction::DateRange { interval, closed }
+            #[cfg(all(feature = "range", feature = "dtype-date"))]
+            RangeFunction::DateRange {
+                interval,
+                closed,
+                arg_type,
+            } => {
+                use DateRangeArgs::*;
+                let arg_names = match arg_type {
+                    StartEndSamples => vec!["start", "end", "num_samples"],
+                    StartEndInterval => vec!["start", "end"],
+                    StartIntervalSamples => vec!["start", "num_samples"],
+                    EndIntervalSamples => vec!["end", "num_samples"],
+                };
+                for (idx, &name) in arg_names.iter().enumerate() {
+                    polars_ensure!(e[idx].is_scalar(ctx.arena), ShapeMismatch: "non-scalar {name} passed to `date_range`");
+                }
+                IRRangeFunction::DateRange {
+                    interval,
+                    closed,
+                    arg_type,
+                }
             },
-            #[cfg(feature = "dtype-date")]
-            RangeFunction::DateRanges { interval, closed } => {
-                IRRangeFunction::DateRanges { interval, closed }
+            #[cfg(all(feature = "range", feature = "dtype-date"))]
+            RangeFunction::DateRanges {
+                interval,
+                closed,
+                arg_type,
+            } => IRRangeFunction::DateRanges {
+                interval,
+                closed,
+                arg_type,
             },
-            #[cfg(feature = "dtype-datetime")]
+            #[cfg(all(feature = "range", feature = "dtype-datetime"))]
             RangeFunction::DatetimeRange {
                 interval,
                 closed,
                 time_unit,
                 time_zone,
+                arg_type,
             } => {
-                polars_ensure!(e[0].is_scalar(ctx.arena), ShapeMismatch: "non-scalar start passed to `datetime_range`");
-                polars_ensure!(e[1].is_scalar(ctx.arena), ShapeMismatch: "non-scalar end passed to `datetime_range`");
+                use DateRangeArgs::*;
+                let arg_names = match arg_type {
+                    StartEndSamples => vec!["start", "end", "num_samples"],
+                    StartEndInterval => vec!["start", "end"],
+                    StartIntervalSamples => vec!["start", "num_samples"],
+                    EndIntervalSamples => vec!["end", "num_samples"],
+                };
+                for (idx, &name) in arg_names.iter().enumerate() {
+                    polars_ensure!(e[idx].is_scalar(ctx.arena), ShapeMismatch: "non-scalar {name} passed to `datetime_range`");
+                }
                 IRRangeFunction::DatetimeRange {
                     interval,
                     closed,
                     time_unit,
                     time_zone,
+                    arg_type,
                 }
             },
-            #[cfg(feature = "dtype-datetime")]
+            #[cfg(all(feature = "range", feature = "dtype-datetime"))]
             RangeFunction::DatetimeRanges {
                 interval,
                 closed,
                 time_unit,
                 time_zone,
+                arg_type,
             } => IRRangeFunction::DatetimeRanges {
                 interval,
                 closed,
                 time_unit,
                 time_zone,
+                arg_type,
             },
-            #[cfg(feature = "dtype-time")]
+            #[cfg(all(feature = "range", feature = "dtype-time"))]
             RangeFunction::TimeRange { interval, closed } => {
                 polars_ensure!(e[0].is_scalar(ctx.arena), ShapeMismatch: "non-scalar start passed to `time_range`");
                 polars_ensure!(e[1].is_scalar(ctx.arena), ShapeMismatch: "non-scalar end passed to `time_range`");
                 IRRangeFunction::TimeRange { interval, closed }
             },
-            #[cfg(feature = "dtype-time")]
+            #[cfg(all(feature = "range", feature = "dtype-time"))]
             RangeFunction::TimeRanges { interval, closed } => {
                 IRRangeFunction::TimeRanges { interval, closed }
             },
