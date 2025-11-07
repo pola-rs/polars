@@ -157,15 +157,15 @@ impl<'de> serde::Deserialize<'de> for SinkTarget {
 
 #[cfg(feature = "dsl-schema")]
 impl schemars::JsonSchema for SinkTarget {
-    fn schema_name() -> String {
-        "SinkTarget".to_owned()
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "SinkTarget".into()
     }
 
     fn schema_id() -> std::borrow::Cow<'static, str> {
         std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "SinkTarget"))
     }
 
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         PathBuf::json_schema(generator)
     }
 }
@@ -437,15 +437,15 @@ impl<'de> serde::Deserialize<'de> for SinkFinishCallback {
 
 #[cfg(feature = "dsl-schema")]
 impl schemars::JsonSchema for SinkFinishCallback {
-    fn schema_name() -> String {
-        "PartitionTargetCallback".to_owned()
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "PartitionTargetCallback".into()
     }
 
     fn schema_id() -> std::borrow::Cow<'static, str> {
         std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "SinkFinishCallback"))
     }
 
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         Vec::<u8>::json_schema(generator)
     }
 }
@@ -491,15 +491,15 @@ impl serde::Serialize for PartitionTargetCallback {
 
 #[cfg(feature = "dsl-schema")]
 impl schemars::JsonSchema for PartitionTargetCallback {
-    fn schema_name() -> String {
-        "PartitionTargetCallback".to_owned()
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "PartitionTargetCallback".into()
     }
 
     fn schema_id() -> std::borrow::Cow<'static, str> {
         std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "PartitionTargetCallback"))
     }
 
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         Vec::<u8>::json_schema(generator)
     }
 }

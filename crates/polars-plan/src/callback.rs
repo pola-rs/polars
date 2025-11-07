@@ -60,15 +60,15 @@ impl<'de, Args, Out> serde::Deserialize<'de> for PlanCallback<Args, Out> {
 
 #[cfg(feature = "dsl-schema")]
 impl<Args, Out> schemars::JsonSchema for PlanCallback<Args, Out> {
-    fn schema_name() -> String {
-        "PlanCallback".to_owned()
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "PlanCallback".into()
     }
 
     fn schema_id() -> std::borrow::Cow<'static, str> {
         std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "PlanCallback"))
     }
 
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         Vec::<u8>::json_schema(generator)
     }
 }
