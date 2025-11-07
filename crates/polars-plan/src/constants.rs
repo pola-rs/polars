@@ -4,11 +4,19 @@ pub const CSE_REPLACED: &str = "__POLARS_CSER_";
 pub const POLARS_TMP_PREFIX: &str = "_POLARS_";
 pub const POLARS_PLACEHOLDER: &str = "_POLARS_<>";
 pub const POLARS_ELEMENT: &str = "__PL_ELEMENT";
+pub const POLARS_STRUCTFIELDS: &str = "__PL_STRUCTFIELDS";
 pub const LEN: &str = "len";
 
 const LITERAL_NAME: PlSmallStr = PlSmallStr::from_static("literal");
 const LEN_NAME: PlSmallStr = PlSmallStr::from_static(LEN);
 const PL_ELEMENT_NAME: PlSmallStr = PlSmallStr::from_static(POLARS_ELEMENT);
+const PL_STRUCTFIELDS_NAME: PlSmallStr = PlSmallStr::from_static(POLARS_STRUCTFIELDS);
+// kdn TODO RM
+// // Cache the often used LITERAL and LEN constants
+// static LITERAL_NAME_INIT: OnceLock<PlSmallStr> = OnceLock::new();
+// static LEN_INIT: OnceLock<PlSmallStr> = OnceLock::new();
+// pub static PL_ELEMENT_NAME: PlSmallStr = PlSmallStr::from_static(POLARS_ELEMENT);
+
 
 pub fn get_literal_name() -> PlSmallStr {
     LITERAL_NAME.clone()
