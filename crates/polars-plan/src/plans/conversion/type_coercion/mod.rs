@@ -15,7 +15,7 @@ use binary::process_binary;
 ))]
 use datetime::coerce_temporal_dt;
 #[cfg(all(feature = "range", feature = "dtype-datetime"))]
-use datetime::temporal_range_output_type;
+use datetime::{ensure_datetime, ensure_int, temporal_range_output_type};
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 #[cfg(all(
@@ -963,34 +963,66 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     ref function @ IRFunctionExpr::Range(IRRangeFunction::DateRange {
                         interval: _,
                         closed: _,
+                        arg_type,
                     })
                     | ref function @ IRFunctionExpr::Range(IRRangeFunction::DateRanges {
                         interval: _,
                         closed: _,
+                        arg_type,
                     }),
                 ref input,
                 options,
             } => {
+                let (from_types, to_types) = match arg_type {
+                    DateRangeArgs::StartEndInterval => {
+                        let start = try_get_dtype(expr_arena, input[0].node(), schema)?;
+                        let end = try_get_dtype(expr_arena, input[1].node(), schema)?;
+                        ensure_datetime!(start);
+                        ensure_datetime!(end);
+                        let from_types = vec![start, end];
+                        let to_types = vec![DataType::Date, DataType::Date];
+                        (from_types, to_types)
+                    },
+                    DateRangeArgs::StartEndSamples => {
+                        let start = try_get_dtype(expr_arena, input[0].node(), schema)?;
+                        let end = try_get_dtype(expr_arena, input[1].node(), schema)?;
+                        let num_samples = try_get_dtype(expr_arena, input[2].node(), schema)?;
+                        ensure_datetime!(start);
+                        ensure_datetime!(end);
+                        ensure_int!(num_samples);
+                        let from_types = vec![start, end, num_samples];
+                        let to_types = vec![DataType::Date, DataType::Date, DataType::Int64];
+                        (from_types, to_types)
+                    },
+                    DateRangeArgs::StartIntervalSamples => {
+                        let start = try_get_dtype(expr_arena, input[0].node(), schema)?;
+                        let num_samples = try_get_dtype(expr_arena, input[1].node(), schema)?;
+                        ensure_datetime!(start);
+                        ensure_int!(num_samples);
+                        let from_types = vec![start, num_samples];
+                        let to_types = vec![DataType::Date, DataType::Int64];
+                        (from_types, to_types)
+                    },
+                    DateRangeArgs::EndIntervalSamples => {
+                        let end = try_get_dtype(expr_arena, input[0].node(), schema)?;
+                        let num_samples = try_get_dtype(expr_arena, input[1].node(), schema)?;
+                        ensure_datetime!(end);
+                        ensure_int!(num_samples);
+                        let from_types = vec![end, num_samples];
+                        let to_types = vec![DataType::Date, DataType::Int64];
+                        (from_types, to_types)
+                    },
+                };
+
+                let from_iter = from_types.into_iter();
+                let to_iter = to_types.into_iter();
                 let mut input = input.clone();
                 let function = function.clone();
-
-                // Determine the current and target dtypes.
-                let type_start = try_get_dtype(expr_arena, input[0].node(), schema)?;
-                let type_end = try_get_dtype(expr_arena, input[1].node(), schema)?;
-                let from_types = [type_start, type_end];
-
-                // Upcast input expressions if necessary.
-                let from_iter = from_types.into_iter();
                 let mut modified = false;
-                for (i, from_dtype) in from_iter.enumerate() {
-                    if from_dtype != DataType::Date {
+                for (i, (from_dtype, to_dtype)) in from_iter.zip(to_iter).enumerate() {
+                    if from_dtype != to_dtype {
                         modified = true;
-                        coerce_temporal_dt(
-                            &from_dtype,
-                            &DataType::Date,
-                            &mut input[i],
-                            expr_arena,
-                        )?;
+                        coerce_temporal_dt(&from_dtype, &to_dtype, &mut input[i], expr_arena)?;
                     }
                 }
 
@@ -1012,33 +1044,75 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                         closed: _,
                         time_unit: ref tu,
                         time_zone: ref tz,
+                        arg_type,
                     })
                     | ref function @ IRFunctionExpr::Range(IRRangeFunction::DatetimeRanges {
                         ref interval,
                         closed: _,
                         time_unit: ref tu,
                         time_zone: ref tz,
+                        arg_type,
                     }),
                 ref input,
                 options,
             } => {
+                let (from_types, to_types) = match arg_type {
+                    DateRangeArgs::StartEndInterval => {
+                        let start = try_get_dtype(expr_arena, input[0].node(), schema)?;
+                        let end = try_get_dtype(expr_arena, input[1].node(), schema)?;
+                        ensure_datetime!(start);
+                        ensure_datetime!(end);
+                        let initial_st = try_get_supertype(&start, &end).unwrap();
+                        let supertype = temporal_range_output_type(initial_st, tu, tz, interval)?;
+                        let from_types = vec![start, end];
+                        let to_types = vec![supertype.clone(), supertype];
+                        (from_types, to_types)
+                    },
+                    DateRangeArgs::StartEndSamples => {
+                        let start = try_get_dtype(expr_arena, input[0].node(), schema)?;
+                        let end = try_get_dtype(expr_arena, input[1].node(), schema)?;
+                        let num_samples = try_get_dtype(expr_arena, input[2].node(), schema)?;
+                        ensure_datetime!(start);
+                        ensure_datetime!(end);
+                        ensure_int!(num_samples);
+                        let initial_st = try_get_supertype(&start, &end)?;
+                        let supertype = temporal_range_output_type(initial_st, tu, tz, interval)?;
+                        let from_types = vec![start, end, num_samples];
+                        let to_types = vec![supertype.clone(), supertype, DataType::Int64];
+                        (from_types, to_types)
+                    },
+                    DateRangeArgs::StartIntervalSamples => {
+                        let start = try_get_dtype(expr_arena, input[0].node(), schema)?;
+                        let num_samples = try_get_dtype(expr_arena, input[1].node(), schema)?;
+                        ensure_datetime!(start);
+                        ensure_int!(num_samples);
+                        let supertype =
+                            temporal_range_output_type(start.clone(), tu, tz, interval)?;
+                        let from_types = vec![start, num_samples];
+                        let to_types = vec![supertype, DataType::Int64];
+                        (from_types, to_types)
+                    },
+                    DateRangeArgs::EndIntervalSamples => {
+                        let end = try_get_dtype(expr_arena, input[0].node(), schema)?;
+                        let num_samples = try_get_dtype(expr_arena, input[1].node(), schema)?;
+                        ensure_datetime!(end);
+                        ensure_int!(num_samples);
+                        let supertype = temporal_range_output_type(end.clone(), tu, tz, interval)?;
+                        let from_types = vec![end, num_samples];
+                        let to_types = vec![supertype, DataType::Int64];
+                        (from_types, to_types)
+                    },
+                };
+
+                let from_iter = from_types.into_iter();
+                let to_iter = to_types.into_iter();
                 let mut input = input.clone();
                 let function = function.clone();
-
-                // Determine the current and target dtypes.
-                let type_start = try_get_dtype(expr_arena, input[0].node(), schema)?;
-                let type_end = try_get_dtype(expr_arena, input[1].node(), schema)?;
-                let default = try_get_supertype(&type_start, &type_end)?;
-                let supertype = temporal_range_output_type(default, tu, tz, interval)?;
-                let from_types = [type_start, type_end];
-
-                // Upcast input expressions if necessary.
-                let from_iter = from_types.into_iter();
                 let mut modified = false;
-                for (i, from_dtype) in from_iter.enumerate() {
-                    if from_dtype != supertype {
+                for (i, (from_dtype, to_dtype)) in from_iter.zip(to_iter).enumerate() {
+                    if from_dtype != to_dtype {
                         modified = true;
-                        coerce_temporal_dt(&from_dtype, &supertype, &mut input[i], expr_arena)?;
+                        coerce_temporal_dt(&from_dtype, &to_dtype, &mut input[i], expr_arena)?;
                     }
                 }
 
