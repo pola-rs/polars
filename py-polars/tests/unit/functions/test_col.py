@@ -33,6 +33,61 @@ def test_col_as_attribute_edge_cases() -> None:
         ]
 
 
+def test_col_as_attribute_class_mangling_25129() -> None:
+    # note: we have to run this test in a subprocess to prevent pytest
+    # itself from managing to inject "_pytestfixturefunction" as the
+    # col name/attribute, where we can't recover the original name
+    import subprocess
+    import sys
+
+    out = subprocess.check_output(
+        [
+            sys.executable,
+            "-c",
+            """\
+from sys import version_info
+import polars as pl
+df = pl.DataFrame({"__foo": [0]})
+
+class Mangler:
+    def __init__(self):
+        self._selected = df.select(pl.col.__foo)
+
+    def foo(self):
+        return df.select(pl.col.__foo)
+
+    @classmethod
+    def misc(cls):
+        def _nested():
+            return df.select(pl.col.__foo)
+        return _nested()
+
+    @staticmethod
+    def indirect():
+        return Mangler.misc()
+
+    @staticmethod
+    def testing1234():
+        return df.select(pl.col.__foo)
+
+
+# detect mangling in init/instancemethod
+assert Mangler()._selected.columns == ["__foo"]
+assert Mangler().foo().columns == ["__foo"]
+
+# additionally detect mangling in classmethod/staticmethod
+if version_info >= (3, 11):
+    assert Mangler.misc().columns == ["__foo"]
+    assert Mangler.indirect().columns == ["__foo"]
+    assert Mangler.testing1234().columns == ["__foo"]
+
+print("OK", end="")
+""",
+        ],
+    )
+    assert out == b"OK"
+
+
 def test_col_select() -> None:
     df = pl.DataFrame(
         {
