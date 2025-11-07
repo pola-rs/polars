@@ -647,13 +647,13 @@ impl IRPlan {
 
                 let data_ir = data_arena.get(*data_node);
                 let data_schema = match data_ir {
-                    IR::DataFrameScan {
-                        schema: data_schema,
-                        ..
-                    } => data_schema,
-                    _ => {
-                        polars_bail!(ComputeError: "bind_data requires data to be a DataFrameScan")
-                    },
+                    IR::DataFrameScan { schema: data_schema, .. } => data_schema,
+                    IR::Scan { file_info, .. } => &file_info.schema,
+                    #[cfg(feature = "python")]
+                    IR::PythonScan { options } => &options.schema,
+                    _ => polars_bail!(ComputeError:
+                        "bind_data requires data to be a data-source node (DataFrameScan, Scan, or PythonScan)"
+                    ),
                 };
 
                 // Allow empty schemas to bind to any data (generic templates)
