@@ -15,7 +15,7 @@ def test_init_nonexistent_attribute() -> None:
 
 def test_init_exceptions_deprecated() -> None:
     with pytest.deprecated_call(
-        match="accessing `ComputeError` from the top-level `polars` module was deprecated in version 1.0.0."
+        match=r"accessing `ComputeError` from the top-level `polars` module was deprecated in version 1\.0\.0"
     ):
         exc = pl.ComputeError  # type: ignore[attr-defined]
 
@@ -26,7 +26,7 @@ def test_init_exceptions_deprecated() -> None:
 
 def test_dtype_groups_deprecated() -> None:
     with pytest.deprecated_call(
-        match="`INTEGER_DTYPES` was deprecated in version 1.0.0."
+        match=r"`INTEGER_DTYPES` was deprecated in version 1\.0\.0"
     ):
         dtypes = pl.INTEGER_DTYPES  # type: ignore[attr-defined]
 
@@ -35,7 +35,7 @@ def test_dtype_groups_deprecated() -> None:
 
 def test_type_aliases_deprecated() -> None:
     with pytest.deprecated_call(
-        match="the `polars.type_aliases` module was deprecated in version 1.0.0."
+        match=r"the `polars\.type_aliases` module was deprecated in version 1.0.0."
     ):
         from polars.type_aliases import PolarsDataType
     assert str(PolarsDataType).startswith("typing.Union")

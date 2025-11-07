@@ -350,42 +350,43 @@ def test_parse_apply_functions(
         return_dtype = None
     else:
         return_dtype = dtype.to_dtype_expr()  # type: ignore[union-attr]
+
+    parser = BytecodeParser(eval(func), map_target="expr")
+    suggested_expression = parser.to_expression(col)
+    assert suggested_expression == expr_repr
+
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": ["AB", "cd", "eF"],
+            "c": ['{"a": 1}', '{"b": 2}', '{"c": 3}'],
+            "d": ["2020-01-01", "2020-01-02", "2020-01-03"],
+            "e": [0.5, 0.4, 0.1],
+            "f": [
+                datetime(1969, 12, 31),
+                datetime(2024, 5, 6),
+                datetime(2077, 10, 20),
+            ],
+        }
+    )
+
+    result_frame = df.select(
+        x=col,
+        y=eval(suggested_expression, EVAL_ENVIRONMENT),
+    )
     with pytest.warns(
         PolarsInefficientMapWarning,
         match=r"(?s)Expr\.map_elements.*with this one instead",
     ):
-        parser = BytecodeParser(eval(func), map_target="expr")
-        suggested_expression = parser.to_expression(col)
-        assert suggested_expression == expr_repr
-
-        df = pl.DataFrame(
-            {
-                "a": [1, 2, 3],
-                "b": ["AB", "cd", "eF"],
-                "c": ['{"a": 1}', '{"b": 2}', '{"c": 3}'],
-                "d": ["2020-01-01", "2020-01-02", "2020-01-03"],
-                "e": [0.5, 0.4, 0.1],
-                "f": [
-                    datetime(1969, 12, 31),
-                    datetime(2024, 5, 6),
-                    datetime(2077, 10, 20),
-                ],
-            }
-        )
-
-        result_frame = df.select(
-            x=col,
-            y=eval(suggested_expression, EVAL_ENVIRONMENT),
-        )
         expected_frame = df.select(
             x=pl.col(col),
             y=pl.col(col).map_elements(eval(func), return_dtype=return_dtype),
         )
-        assert_frame_equal(
-            result_frame,
-            expected_frame,
-            check_dtypes=(".dt." not in suggested_expression),
-        )
+    assert_frame_equal(
+        result_frame,
+        expected_frame,
+        check_dtypes=(".dt." not in suggested_expression),
+    )
 
 
 @pytest.mark.filterwarnings(
@@ -413,43 +414,25 @@ def test_parse_apply_raw_functions() -> None:
             df1 = lf.select(
                 pl.col("a").map_elements(func, return_dtype=pl.self_dtype())
             ).collect()
-            df2 = lf.select(getattr(pl.col("a"), func_name)()).collect()
-            assert_frame_equal(df1, df2)
+        df2 = lf.select(getattr(pl.col("a"), func_name)()).collect()
+        assert_frame_equal(df1, df2)
 
     # test bare 'json.loads'
-    result_frames = []
+    json_dtype = pl.Struct({"a": pl.Int64, "b": pl.Boolean, "c": pl.String})
+    expr_native = pl.col("value").str.json_decode(json_dtype)
     with pytest.warns(
         PolarsInefficientMapWarning,
         match=r"(?s)Expr\.map_elements.*with this one instead:.*\.str\.json_decode",
     ):
-        for expr in (
-            pl.col("value").str.json_decode(
-                pl.Struct(
-                    {
-                        "a": pl.Int64,
-                        "b": pl.Boolean,
-                        "c": pl.String,
-                    }
-                )
-            ),
-            pl.col("value").map_elements(
-                json.loads,
-                return_dtype=pl.Struct(
-                    {
-                        "a": pl.Int64,
-                        "b": pl.Boolean,
-                        "c": pl.String,
-                    }
-                ),
-            ),
-        ):
-            result_frames.append(  # noqa: PERF401
-                pl.LazyFrame({"value": ['{"a":1, "b": true, "c": "xx"}', None]})
-                .select(extracted=expr)
-                .unnest("extracted")
-                .collect()
-            )
+        expr_pyfunc = pl.col("value").map_elements(json.loads, return_dtype=json_dtype)
 
+    result_frames = [
+        pl.LazyFrame({"value": ['{"a":1, "b": true, "c": "xx"}', None]})
+        .select(extracted=expr)
+        .unnest("extracted")
+        .collect()
+        for expr in (expr_native, expr_pyfunc)
+    ]
     assert_frame_equal(*result_frames)
 
     # test primitive python casts
@@ -495,11 +478,11 @@ def test_parse_apply_miscellaneous() -> None:
     assert suggested_expression is None
 
     # literals as method parameters
+    s = pl.Series("srs", [0, 1, 2, 3, 4])
     with pytest.warns(
         PolarsInefficientMapWarning,
         match=r"(?s)Series\.map_elements.*with this one instead.*\(np\.cos\(3\) \+ s\) - abs\(-1\)",
     ):
-        s = pl.Series("srs", [0, 1, 2, 3, 4])
         assert_series_equal(
             s.map_elements(lambda x: np.cos(3) + x - abs(-1), return_dtype=pl.Float64),
             np.cos(3) + s - 1,
@@ -548,19 +531,20 @@ def test_parse_apply_series(
     name: str, data: list[Any], func: Callable[[Any], Any], expr_repr: str
 ) -> None:
     # expression/series generate same warning, with 's' as the series placeholder
+    s = pl.Series(name, data)
+
+    parser = BytecodeParser(func, map_target="series")
+    suggested_expression = parser.to_expression(s.name)
+    assert suggested_expression == expr_repr
+
     with pytest.warns(
         PolarsInefficientMapWarning,
         match=r"(?s)Series\.map_elements.*s\.\w+\(",
     ):
-        s = pl.Series(name, data)
-
-        parser = BytecodeParser(func, map_target="series")
-        suggested_expression = parser.to_expression(s.name)
-        assert suggested_expression == expr_repr
-
         expected_series = s.map_elements(func)
-        result_series = eval(suggested_expression)
-        assert_series_equal(expected_series, result_series, check_dtypes=False)
+
+    result_series = eval(suggested_expression)
+    assert_series_equal(expected_series, result_series, check_dtypes=False)
 
 
 @pytest.mark.may_fail_auto_streaming
@@ -581,11 +565,14 @@ def test_expr_exact_warning_message() -> None:
     )
 
     fn = lambda x: x + 1  # noqa: E731
+    df = pl.DataFrame({"a": [1, 2, 3]})
 
     # check the EXACT warning messages - if modifying the message in the future,
     # make sure to keep the `^` and `$`, and the assertion on `len(warnings)`
-    with pytest.warns(PolarsInefficientMapWarning, match=rf"^{msg}$") as warnings:
-        df = pl.DataFrame({"a": [1, 2, 3]})
+    with pytest.warns(  # noqa: PT031
+        PolarsInefficientMapWarning,
+        match=rf"^{msg}$",
+    ) as warnings:
         for _ in range(3):  # << loop a few times to exercise the caching path
             df.select(pl.col("a").map_elements(fn, return_dtype=pl.Int64))
 
