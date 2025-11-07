@@ -2158,7 +2158,7 @@ impl DataFrame {
             }
 
             polars_ensure!(
-                schema.contains(&to),
+                !schema.contains(&to),
                 Duplicate: "column rename attempted with already existing name \"{to}\""
             );
 
