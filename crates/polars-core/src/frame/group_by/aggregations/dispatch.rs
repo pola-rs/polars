@@ -127,6 +127,7 @@ impl Series {
                 .iter()
                 .map(|&[first, len]| {
                     let mask = BitMask::from_bitmap(&validity);
+                    // SAFETY: group slice is valid.
                     let validity = mask.sliced_unchecked(first as usize, len as usize);
                     let leading_zeros = validity.leading_zeros() as IdxSize;
                     if leading_zeros == len {
@@ -422,6 +423,7 @@ impl Series {
                     .iter()
                     .map(|&[first, len]| {
                         let mask = BitMask::from_bitmap(&validity);
+                        // SAFETY: group slice is valid.
                         let validity = mask.sliced_unchecked(first as usize, len as usize);
                         let trailing_zeros = validity.trailing_zeros() as IdxSize;
                         if trailing_zeros == len {
