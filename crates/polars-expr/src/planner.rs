@@ -168,11 +168,47 @@ fn create_physical_expr_inner(
 
     match expr_arena.get(expression) {
         Len => Ok(Arc::new(phys_expr::CountExpr::new())),
-        aexpr @ Window {
+        #[cfg(feature = "dynamic_group_by")]
+        aexpr @ Rolling {
+            function,
+            index_column,
+            period,
+            offset,
+            closed_window,
+        } => {
+            let index_column = create_physical_expr_inner(
+                *index_column,
+                Context::Default,
+                expr_arena,
+                schema,
+                state,
+            )?;
+
+            let output_field = aexpr.to_field(&ToFieldContext::new(expr_arena, schema))?;
+            let function = *function;
+            state.set_window();
+            let phys_function =
+                create_physical_expr_inner(function, Context::Default, expr_arena, schema, state)?;
+
+            let expr = node_to_expr(expression, expr_arena);
+
+            // set again as the state can be reset
+            state.set_window();
+            Ok(Arc::new(RollingExpr {
+                phys_function,
+                index_column,
+                period: *period,
+                offset: *offset,
+                closed_window: *closed_window,
+                expr,
+                output_field,
+            }))
+        },
+        aexpr @ Over {
             function,
             partition_by,
             order_by,
-            options,
+            mapping,
         } => {
             let output_field = aexpr.to_field(&ToFieldContext::new(expr_arena, schema))?;
             let function = *function;
@@ -199,80 +235,68 @@ fn create_physical_expr_inner(
 
             // set again as the state can be reset
             state.set_window();
-            match options {
-                WindowType::Over(mapping) => {
-                    // TODO! Order by
-                    let group_by = create_physical_expressions_from_nodes(
-                        partition_by,
-                        Context::Default,
-                        expr_arena,
-                        schema,
-                        state,
-                    )?;
-                    let mut apply_columns = aexpr_to_leaf_names(function, expr_arena);
-                    // sort and then dedup removes consecutive duplicates == all duplicates
-                    apply_columns.sort();
-                    apply_columns.dedup();
+            // TODO! Order by
+            let group_by = create_physical_expressions_from_nodes(
+                partition_by,
+                Context::Default,
+                expr_arena,
+                schema,
+                state,
+            )?;
+            let mut apply_columns = aexpr_to_leaf_names(function, expr_arena);
+            // sort and then dedup removes consecutive duplicates == all duplicates
+            apply_columns.sort();
+            apply_columns.dedup();
 
-                    if apply_columns.is_empty() {
-                        if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Literal(_))) {
-                            apply_columns.push(PlSmallStr::from_static("literal"))
-                        } else if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Len)) {
-                            apply_columns.push(PlSmallStr::from_static("len"))
-                        } else {
-                            let e = node_to_expr(function, expr_arena);
-                            polars_bail!(
-                                ComputeError:
-                                "cannot apply a window function, did not find a root column; \
-                                this is likely due to a syntax error in this expression: {:?}", e
-                            );
-                        }
-                    }
-
-                    // Check if the branches have an aggregation
-                    // when(a > sum)
-                    // then (foo)
-                    // otherwise(bar - sum)
-                    let mut has_arity = false;
-                    let mut agg_col = false;
-                    for (_, e) in expr_arena.iter(function) {
-                        match e {
-                            AExpr::Ternary { .. } | AExpr::BinaryExpr { .. } => {
-                                has_arity = true;
-                            },
-                            AExpr::Agg(_) => {
-                                agg_col = true;
-                            },
-                            AExpr::Function { options, .. }
-                            | AExpr::AnonymousFunction { options, .. } => {
-                                if options.flags.returns_scalar() {
-                                    agg_col = true;
-                                }
-                            },
-                            _ => {},
-                        }
-                    }
-                    let has_different_group_sources = has_arity && agg_col;
-
-                    Ok(Arc::new(WindowExpr {
-                        group_by,
-                        order_by,
-                        apply_columns,
-                        phys_function,
-                        mapping: *mapping,
-                        expr,
-                        has_different_group_sources,
-                        output_field,
-                    }))
-                },
-                #[cfg(feature = "dynamic_group_by")]
-                WindowType::Rolling(options) => Ok(Arc::new(RollingExpr {
-                    phys_function,
-                    options: options.clone(),
-                    expr,
-                    output_field,
-                })),
+            if apply_columns.is_empty() {
+                if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Literal(_))) {
+                    apply_columns.push(PlSmallStr::from_static("literal"))
+                } else if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Len)) {
+                    apply_columns.push(PlSmallStr::from_static("len"))
+                } else {
+                    let e = node_to_expr(function, expr_arena);
+                    polars_bail!(
+                        ComputeError:
+                        "cannot apply a window function, did not find a root column; \
+                        this is likely due to a syntax error in this expression: {:?}", e
+                    );
+                }
             }
+
+            // Check if the branches have an aggregation
+            // when(a > sum)
+            // then (foo)
+            // otherwise(bar - sum)
+            let mut has_arity = false;
+            let mut agg_col = false;
+            for (_, e) in expr_arena.iter(function) {
+                match e {
+                    AExpr::Ternary { .. } | AExpr::BinaryExpr { .. } => {
+                        has_arity = true;
+                    },
+                    AExpr::Agg(_) => {
+                        agg_col = true;
+                    },
+                    AExpr::Function { options, .. } | AExpr::AnonymousFunction { options, .. } => {
+                        if options.flags.returns_scalar() {
+                            agg_col = true;
+                        }
+                    },
+                    _ => {},
+                }
+            }
+            let has_different_group_sources = has_arity && agg_col;
+
+            Ok(Arc::new(WindowExpr {
+                group_by,
+                order_by,
+                apply_columns,
+                phys_function,
+                mapping: *mapping,
+                expr,
+                has_different_group_sources,
+                output_field,
+            }))
         },
         Literal(value) => {
             state.local.has_lit = true;

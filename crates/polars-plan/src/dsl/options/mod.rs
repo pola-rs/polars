@@ -162,29 +162,6 @@ impl From<JoinOptionsIR> for JoinOptions {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub enum WindowType {
-    /// Explode the aggregated list and just do a hstack instead of a join
-    /// this requires the groups to be sorted to make any sense
-    Over(WindowMapping),
-    #[cfg(feature = "dynamic_group_by")]
-    Rolling(RollingGroupOptions),
-}
-
-impl From<WindowMapping> for WindowType {
-    fn from(value: WindowMapping) -> Self {
-        Self::Over(value)
-    }
-}
-
-impl Default for WindowType {
-    fn default() -> Self {
-        Self::Over(WindowMapping::default())
-    }
-}
-
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -199,14 +176,6 @@ pub enum WindowMapping {
     /// Join the groups as 'List<group_dtype>' to the row positions.
     /// warning: this can be memory intensive
     Join,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum NestedType {
-    #[cfg(feature = "dtype-array")]
-    Array,
-    // List,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

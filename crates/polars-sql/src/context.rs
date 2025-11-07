@@ -809,7 +809,17 @@ impl SQLContext {
                         if !has_expr(expr, |e| {
                             matches!(e, Expr::Agg(_))
                                 || matches!(e, Expr::Len)
-                                || matches!(e, Expr::Window { .. })
+                                || matches!(e, Expr::Over { .. })
+                                || {
+                                    #[cfg(feature = "dynamic_group_by")]
+                                    {
+                                        matches!(e, Expr::Rolling { .. })
+                                    }
+                                    #[cfg(not(feature = "dynamic_group_by"))]
+                                    {
+                                        false
+                                    }
+                                }
                         }) {
                             group_by_keys.push(expr.clone())
                         }
@@ -1348,7 +1358,9 @@ impl SQLContext {
             // `Len` represents COUNT(*) so we treat as an aggregation here.
             let is_non_group_key_expr = has_expr(e, |e| {
                 match e {
-                    Expr::Agg(_) | Expr::Len | Expr::Window { .. } => true,
+                    Expr::Agg(_) | Expr::Len | Expr::Over { .. } => true,
+                    #[cfg(feature = "dynamic_group_by")]
+                    Expr::Rolling { .. } => true,
                     Expr::Function { function: func, .. }
                         if !matches!(func, FunctionExpr::StructExpr(_)) =>
                     {

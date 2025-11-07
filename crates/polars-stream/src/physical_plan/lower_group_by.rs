@@ -191,8 +191,11 @@ fn try_lower_elementwise_scalar_agg_expr(
             }
         },
 
+        #[cfg(feature = "dynamic_group_by")]
+        AExpr::Rolling { .. } => None,
+
         AExpr::Slice { .. }
-        | AExpr::Window { .. }
+        | AExpr::Over { .. }
         | AExpr::Sort { .. }
         | AExpr::SortBy { .. }
         | AExpr::Gather { .. } => None,

@@ -14,7 +14,7 @@ use polars_plan::plans::{
     IRStringFunction, IRStructFunction, IRTemporalFunction,
 };
 use polars_plan::prelude::{
-    AExpr, GroupbyOptions, IRAggExpr, LiteralValue, Operator, WindowMapping, WindowType,
+    AExpr, GroupbyOptions, IRAggExpr, LiteralValue, Operator, WindowMapping,
 };
 use polars_time::prelude::RollingGroupOptions;
 use polars_time::{Duration, DynamicGroupOptions};
@@ -1407,11 +1407,12 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
             options: py.None(),
         }
         .into_py_any(py),
-        AExpr::Window {
+        AExpr::Rolling { .. } => Err(PyNotImplementedError::new_err("rolling")),
+        AExpr::Over {
             function,
             partition_by,
             order_by,
-            options,
+            mapping,
         } => {
             let function = function.0;
             let partition_by = partition_by.iter().map(|n| n.0).collect();
@@ -1423,13 +1424,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 .unwrap_or(false);
             let order_by = order_by.map(|(n, _)| n.0);
 
-            let options = match options {
-                WindowType::Over(options) => PyWindowMapping { inner: *options }.into_py_any(py)?,
-                WindowType::Rolling(options) => PyRollingGroupOptions {
-                    inner: options.clone(),
-                }
-                .into_py_any(py)?,
-            };
+            let options = PyWindowMapping { inner: *mapping }.into_py_any(py)?;
             Window {
                 function,
                 partition_by,

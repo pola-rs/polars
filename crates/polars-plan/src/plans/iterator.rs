@@ -79,11 +79,17 @@ macro_rules! push_expr {
             },
             Function { input, .. } => input.$iter().rev().for_each(|e| $push_owned($c, e)),
             Explode { input, .. } => $push($c, input),
-            Window {
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling { function, .. } => $push($c, function),
+            Over {
                 function,
                 partition_by,
+                order_by,
                 ..
             } => {
+                if let Some((order_by, _)) = order_by {
+                    $push($c, order_by);
+                }
                 for e in partition_by.into_iter().rev() {
                     $push_owned($c, e)
                 }
