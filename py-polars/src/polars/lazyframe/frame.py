@@ -554,7 +554,7 @@ class LazyFrame:
         Examples
         --------
         >>> template = (
-        ...     pl.LazyFrame()
+        ...     pl.LazyFrame(schema={"a": pl.Int64, "b": pl.Int64})
         ...     .filter(pl.col("a") > 1)
         ...     .select(pl.col("b") * 2)
         ...     .to_template()
@@ -600,13 +600,23 @@ class LazyFrame:
         Single data source:
 
         >>> template = (
-        ...     pl.LazyFrame()
+        ...     pl.LazyFrame(schema={"a": pl.Int64, "b": pl.Int64})
         ...     .filter(pl.col("a") > 1)
         ...     .select(pl.col("b") * 2)
         ...     .to_template()
         ... )
         >>> lf = pl.LazyFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
         >>> result = pl.LazyFrame.from_template(lf, template).collect()
+        >>> result
+        shape: (2, 1)
+        ┌─────┐
+        │ b   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 10  │
+        │ 12  │
+        └─────┘
         """
         # Handle list/tuple of data sources
         if isinstance(data, (list, tuple)):
