@@ -25,7 +25,7 @@ from tests.unit.conftest import FLOAT_DTYPES, NUMERIC_DTYPES
 if TYPE_CHECKING:
     from _pytest.capture import CaptureFixture
 
-    from polars._typing import PolarsDataType
+    from polars._typing import MapElementsStrategy, PolarsDataType
 
 
 def test_init_signature_match() -> None:
@@ -83,16 +83,21 @@ def test_apply() -> None:
     assert_frame_equal(new, expected)
     assert_frame_equal(new.collect(), expected.collect())
 
-    with pytest.warns(PolarsInefficientMapWarning, match="with this one instead"):
-        for strategy in ["thread_local", "threading"]:
-            ldf = pl.LazyFrame({"a": [1, 2, 3] * 20, "b": [1.0, 2.0, 3.0] * 20})
-            new = ldf.with_columns(
+    ldf = pl.LazyFrame({"a": [1, 2, 3] * 20, "b": [1.0, 2.0, 3.0] * 20})
+    strategy: MapElementsStrategy
+    for strategy in ("thread_local", "threading"):
+        with pytest.warns(
+            PolarsInefficientMapWarning,
+            match="with this one instead",
+        ):
+            df_new = ldf.with_columns(
                 pl.col("a")
-                .map_elements(lambda s: s * 2, strategy=strategy, return_dtype=pl.Int64)  # type: ignore[arg-type]
+                .map_elements(lambda s: s * 2, strategy=strategy, return_dtype=pl.Int64)
                 .alias("foo")
-            )
-            expected = ldf.clone().with_columns((pl.col("a") * 2).alias("foo"))
-            assert_frame_equal(new.collect(), expected.collect())
+            ).collect()
+
+    df_expected = ldf.clone().with_columns((pl.col("a") * 2).alias("foo")).collect()
+    assert_frame_equal(df_new, df_expected)
 
 
 def test_add_eager_column() -> None:
@@ -360,7 +365,10 @@ def test_inspect(capsys: CaptureFixture[str]) -> None:
 
 @pytest.mark.may_fail_auto_streaming
 def test_fetch(fruits_cars: pl.DataFrame) -> None:
-    with pytest.warns(DeprecationWarning):
+    with pytest.warns(
+        DeprecationWarning,
+        match=r"use `LazyFrame\.collect` instead",
+    ):
         res = fruits_cars.lazy().select("*").fetch(2)
     assert_frame_equal(res, res[:2])
 
@@ -490,7 +498,7 @@ def test_is_finite_is_infinite() -> None:
 
 def test_len() -> None:
     ldf = pl.LazyFrame({"nrs": [1, 2, 3]})
-    assert cast(int, ldf.select(pl.col("nrs").len()).collect().item()) == 3
+    assert cast("int", ldf.select(pl.col("nrs").len()).collect().item()) == 3
 
 
 @pytest.mark.parametrize("dtype", NUMERIC_DTYPES)
@@ -576,7 +584,7 @@ def test_dot() -> None:
     ldf = pl.LazyFrame({"a": [1.8, 1.2, 3.0], "b": [3.2, 1, 2]}).select(
         pl.col("a").dot(pl.col("b"))
     )
-    assert cast(float, ldf.collect().item()) == 12.96
+    assert cast("float", ldf.collect().item()) == 12.96
 
 
 def test_sort() -> None:
@@ -666,7 +674,7 @@ def test_cast_frame() -> None:
     # test 'strict' mode
     lf = pl.LazyFrame({"a": [1000, 2000, 3000]})
 
-    with pytest.raises(InvalidOperationError, match="conversion .* failed"):
+    with pytest.raises(InvalidOperationError, match=r"conversion .* failed"):
         lf.cast(pl.UInt8).collect()
 
     assert lf.cast(pl.UInt8, strict=False).collect().rows() == [
@@ -763,8 +771,8 @@ def test_rolling(fruits_cars: pl.DataFrame) -> None:
         pl.col("A").rolling_var(3, min_samples=1).round(decimals=1).alias("var"),
     ).collect()
 
-    assert cast(float, out_single_val_variance[0, "std"]) is None
-    assert cast(float, out_single_val_variance[0, "var"]) is None
+    assert cast("float", out_single_val_variance[0, "std"]) is None
+    assert cast("float", out_single_val_variance[0, "var"]) is None
 
 
 def test_arr_namespace(fruits_cars: pl.DataFrame) -> None:
@@ -1520,13 +1528,13 @@ def test_join_bad_input_type() -> None:
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .*to be a 'LazyFrame'.* not 'DataFrame'",
+        match=r"expected `other` .*to be a 'LazyFrame'.* not 'DataFrame'",
     ):
         left.join(right.collect(), on="a")  # type: ignore[arg-type]
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .*to be a 'LazyFrame'.* not 'Series'",
+        match=r"expected `other` .*to be a 'LazyFrame'.* not 'Series'",
     ):
         left.join(pl.Series([1, 2, 3]), on="a")  # type: ignore[arg-type]
 
@@ -1597,7 +1605,7 @@ def test_join_where_bad_input_type() -> None:
     )
     with pytest.raises(
         TypeError,
-        match="expected `other` .*to be a 'LazyFrame'.* not 'DataFrame'",
+        match=r"expected `other` .*to be a 'LazyFrame'.* not 'DataFrame'",
     ):
         east.join_where(
             west.collect(),  # type: ignore[arg-type]
@@ -1607,7 +1615,7 @@ def test_join_where_bad_input_type() -> None:
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .*to be a 'LazyFrame'.* not 'Series'",
+        match=r"expected `other` .*to be a 'LazyFrame'.* not 'Series'",
     ):
         east.join_where(
             pl.Series(west.collect()),  # type: ignore[arg-type]

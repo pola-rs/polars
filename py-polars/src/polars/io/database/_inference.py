@@ -308,7 +308,7 @@ def timeunit_from_precision(precision: int | str | None) -> str | None:
         elif (precision := precision.lower()) in ("s", "ms", "us", "ns"):
             return "ms" if precision == "s" else precision
     try:
-        n = min(max(3, int(ceil(precision / 3)) * 3), 9)  # type: ignore[operator]
+        n = min(max(3, ceil(precision / 3) * 3), 9)  # type: ignore[operator]
         return {3: "ms", 6: "us", 9: "ns"}.get(n)
     except TypeError:
         return None

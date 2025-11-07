@@ -798,7 +798,7 @@ def test_read_database_uri_parameterised(
     #  no connectorx support for execute_options
     with pytest.raises(
         ValueError,
-        match="connectorx.*does not support.*execute_options",
+        match=r"connectorx.*does not support.*execute_options",
     ):
         pl.read_database_uri(
             query.format(n=":n"),
@@ -856,7 +856,7 @@ def test_read_database_uri_parameterised_multiple(
     #  no connectorx support for execute_options
     with pytest.raises(
         ValueError,
-        match="connectorx.*does not support.*execute_options",
+        match=r"connectorx.*does not support.*execute_options",
     ):
         pl.read_database_uri(
             query.format(param_1="?", param_2="?"),
@@ -938,7 +938,7 @@ def test_read_database_mocked(
         assert isinstance(res, GeneratorType)
         res = pl.concat(res)
 
-    res = cast(pl.DataFrame, res)
+    res = cast("pl.DataFrame", res)
     assert expected_call in mc.cursor().called
     assert res.rows() == [(1, "aa"), (2, "bb"), (3, "cc")]
 
@@ -1131,7 +1131,7 @@ def test_read_database_duplicate_column_error(tmp_sqlite_db: Path, query: str) -
     alchemy_conn = create_engine(f"sqlite:///{tmp_sqlite_db}").connect()
     with pytest.raises(
         DuplicateError,
-        match="column .+ appears more than once in the query/result cursor",
+        match=r"column .+ appears more than once in the query/result cursor",
     ):
         pl.read_database(query, connection=alchemy_conn)
 
@@ -1288,7 +1288,7 @@ def test_read_database_uri_pre_execution_not_supported_exception(
     with (
         pytest.raises(
             ValueError,
-            match="'pre_execution_query' is only supported in connectorx version 0.4.2 or later",
+            match=r"'pre_execution_query' is only supported in connectorx version 0\.4\.2 or later",
         ),
     ):
         pl.read_database_uri(

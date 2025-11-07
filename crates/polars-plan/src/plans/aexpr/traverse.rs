@@ -4,7 +4,7 @@ impl AExpr {
     /// Push the inputs of this node to the given container, in reverse order.
     /// This ensures the primary node responsible for the name is pushed last.
     ///
-    /// This is subtlely different from `children_rev` as this only includes the input expressions,
+    /// This is subtly different from `children_rev` as this only includes the input expressions,
     /// not expressions used during evaluation.
     pub fn inputs_rev<E>(&self, container: &mut E)
     where
@@ -81,7 +81,7 @@ impl AExpr {
     /// Push the children of this node to the given container, in reverse order.
     /// This ensures the primary node responsible for the name is pushed last.
     ///
-    /// This is subtlely different from `input_rev` as this only all expressions included in the
+    /// This is subtly different from `input_rev` as this only all expressions included in the
     /// expression not only the input expressions,
     pub fn children_rev<E: Extend<Node>>(&self, container: &mut E) {
         use AExpr::*;

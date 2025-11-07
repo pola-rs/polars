@@ -141,7 +141,7 @@ for T in ["T", " "]:
 
 @pytest.fixture(params=ISO8601_FORMATS_DATETIME)
 def iso8601_format_datetime(request: pytest.FixtureRequest) -> list[str]:
-    return cast(list[str], request.param)
+    return cast("list[str]", request.param)
 
 
 ISO8601_TZ_AWARE_FORMATS_DATETIME = []
@@ -164,7 +164,7 @@ for T in ["T", " "]:
 
 @pytest.fixture(params=ISO8601_TZ_AWARE_FORMATS_DATETIME)
 def iso8601_tz_aware_format_datetime(request: pytest.FixtureRequest) -> list[str]:
-    return cast(list[str], request.param)
+    return cast("list[str]", request.param)
 
 
 ISO8601_FORMATS_DATE = []
@@ -176,7 +176,7 @@ for date_sep in ("/", "-"):
 
 @pytest.fixture(params=ISO8601_FORMATS_DATE)
 def iso8601_format_date(request: pytest.FixtureRequest) -> list[str]:
-    return cast(list[str], request.param)
+    return cast("list[str]", request.param)
 
 
 class MemoryUsage:
