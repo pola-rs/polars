@@ -1,11 +1,11 @@
 mod cache_states;
-mod cse_expr;
-mod cse_lp;
+mod csee;
+mod cspe;
 
 pub(super) use cache_states::set_cache_states;
-pub(super) use cse_expr::CommonSubExprOptimizer;
-pub use cse_expr::NaiveExprMerger;
-pub(super) use cse_lp::elim_cmn_subplans;
+pub(super) use csee::CommonSubExprOptimizer;
+pub use csee::NaiveExprMerger;
+pub(super) use cspe::elim_cmn_subplans;
 
 use super::*;
 
