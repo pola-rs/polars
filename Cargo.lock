@@ -3912,6 +3912,7 @@ dependencies = [
 name = "pyo3-polars"
 version = "0.25.0"
 dependencies = [
+ "bincode",
  "libc",
  "once_cell",
  "polars",

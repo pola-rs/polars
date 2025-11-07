@@ -7,13 +7,13 @@ use polars::prelude::{
 use polars::series::{IntoSeries, Series};
 use pyo3_polars::export::polars_ffi::version_1::{GroupPositions, PolarsPlugin};
 use pyo3_polars::polars_plugin_expr_info;
-use pyo3_polars::v1::PolarsPluginExprInfo;
+use pyo3_polars::v1::{self, PolarsPluginExprInfo};
 use serde::{Deserialize, Serialize};
 
 // Implementation of https://github.com/pola-rs/polars/issues/12165#issuecomment-2766352413
 //
 // y[t] = (y[t-1] + 1) % x[t]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Default)]
 struct VerticalScan {
     init: i64,
 }
@@ -22,40 +22,8 @@ struct VerticalScanState {
     n: i64,
 }
 
-impl PolarsPlugin for VerticalScan {
+impl v1::scan::PolarsScanPlugin for VerticalScan {
     type State = VerticalScanState;
-
-    fn serialize(&self) -> PolarsResult<Box<[u8]>> {
-        Ok(
-            bincode::serde::encode_to_vec(self, bincode::config::standard())
-                .map_err(|err| polars_err!(InvalidOperation: "failed to serialize: {err}"))?
-                .into(),
-        )
-    }
-
-    fn deserialize(buff: &[u8]) -> PolarsResult<Self> {
-        let (data, num_bytes) =
-            bincode::serde::decode_from_slice(buff, bincode::config::standard())
-                .map_err(|err| polars_err!(InvalidOperation: "failed to deserialize: {err}"))?;
-        assert_eq!(num_bytes, buff.len());
-        Ok(data)
-    }
-
-    fn serialize_state(&self, state: &Self::State) -> PolarsResult<Box<[u8]>> {
-        Ok(
-            bincode::serde::encode_to_vec(state, bincode::config::standard())
-                .map_err(|err| polars_err!(InvalidOperation: "failed to serialize: {err}"))?
-                .into(),
-        )
-    }
-
-    fn deserialize_state(&self, buff: &[u8]) -> PolarsResult<Self::State> {
-        let (state, num_bytes) =
-            bincode::serde::decode_from_slice(buff, bincode::config::standard())
-                .map_err(|err| polars_err!(InvalidOperation: "failed to deserialize: {err}"))?;
-        assert_eq!(num_bytes, buff.len());
-        Ok(state)
-    }
 
     fn to_field(&self, fields: &Schema) -> PolarsResult<Field> {
         assert_eq!(fields.len(), 1);
@@ -72,7 +40,12 @@ impl PolarsPlugin for VerticalScan {
         Ok(VerticalScanState { n: self.init })
     }
 
-    fn step(&self, state: &mut Self::State, inputs: &[Series]) -> PolarsResult<Option<Series>> {
+    fn reset(&self, state: &mut Self::State) -> PolarsResult<()> {
+        state.n = self.init;
+        Ok(())
+    }
+
+    fn step(&self, state: &mut Self::State, inputs: &[Series]) -> PolarsResult<Series> {
         assert_eq!(inputs.len(), 1);
 
         let x = inputs[0].cast(&DataType::Int64)?;
@@ -89,38 +62,15 @@ impl PolarsPlugin for VerticalScan {
             state.n = value;
             builder.append_value(value);
         }
-        Ok(Some(builder.finish().into_series()))
-    }
-
-    fn finalize(&self, _state: &mut Self::State) -> PolarsResult<Option<Series>> {
-        unreachable!()
-    }
-
-    fn new_empty(&self, state: &Self::State) -> PolarsResult<Self::State> {
-        let mut state = state.clone();
-        self.reset(&mut state)?;
-        Ok(state)
-    }
-
-    fn reset(&self, state: &mut Self::State) -> PolarsResult<()> {
-        state.n = self.init;
-        Ok(())
-    }
-
-    fn combine(&self, _state: &mut Self::State, _other: &Self::State) -> PolarsResult<()> {
-        unreachable!()
-    }
-
-    fn evaluate_on_groups<'a>(
-        &self,
-        inputs: &[(Series, &'a GroupPositions)],
-    ) -> PolarsResult<(Series, Cow<'a, GroupPositions>)> {
-        _ = inputs;
-        unreachable!()
+        Ok(builder.finish().into_series())
     }
 }
 
 #[pyo3::pyfunction]
 pub fn vertical_scan(init: i64) -> PolarsPluginExprInfo {
-    polars_plugin_expr_info!("vertical_scan", VerticalScan { init }, VerticalScan)
+    polars_plugin_expr_info!(
+        "vertical_scan",
+        v1::scan::Plugin(VerticalScan { init }),
+        v1::scan::Plugin<VerticalScan>
+    )
 }

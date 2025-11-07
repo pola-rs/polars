@@ -1,63 +1,28 @@
-use std::borrow::Cow;
-
-use polars::error::{polars_bail, polars_err, PolarsResult};
+use polars::error::{polars_bail, PolarsResult};
 use polars::prelude::{AnyValue, ArgAgg, Field, PlSmallStr, Scalar, Schema, SchemaExt};
 use polars::series::Series;
-use pyo3_polars::export::polars_ffi::version_1::{GroupPositions, PolarsPlugin};
 use pyo3_polars::polars_plugin_expr_info;
-use pyo3_polars::v1::PolarsPluginExprInfo;
+use pyo3_polars::v1::{self, PolarsPluginExprInfo};
 use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize)]
 struct MinBy;
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Default, Clone)]
 struct MinByState {
     name: PlSmallStr,
     value: Scalar,
     by: Scalar,
 }
 
-impl PolarsPlugin for MinBy {
+impl v1::map_reduce::PolarsMapReducePlugin for MinBy {
     type State = MinByState;
-
-    fn serialize(&self) -> PolarsResult<Box<[u8]>> {
-        Ok(Default::default())
-    }
-
-    fn deserialize(_data: &[u8]) -> PolarsResult<Self> {
-        Ok(MinBy)
-    }
-
-    fn serialize_state(&self, state: &Self::State) -> PolarsResult<Box<[u8]>> {
-        Ok(
-            bincode::serde::encode_to_vec(state, bincode::config::standard())
-                .map_err(|err| polars_err!(InvalidOperation: "failed to serialize: {err}"))?
-                .into(),
-        )
-    }
-
-    fn deserialize_state(&self, data: &[u8]) -> PolarsResult<Self::State> {
-        let (state, num_bytes) =
-            bincode::serde::decode_from_slice(data, bincode::config::standard())
-                .map_err(|err| polars_err!(InvalidOperation: "failed to deserialize: {err}"))?;
-        assert_eq!(num_bytes, data.len());
-        Ok(state)
-    }
 
     fn to_field(&self, fields: &Schema) -> PolarsResult<Field> {
         assert_eq!(fields.len(), 2);
         Ok(fields.iter_fields().next().unwrap())
     }
 
-    fn new_state(&self, fields: &Schema) -> PolarsResult<Self::State> {
-        assert_eq!(fields.len(), 2);
-        let (name, dtype) = fields.get_at_index(0).unwrap();
-        let name = name.clone();
-        let value = Scalar::null(dtype.clone());
-        let by = Scalar::null(fields.get_at_index(1).unwrap().1.clone());
-        Ok(MinByState { name, value, by })
-    }
-
-    fn step(&self, state: &mut Self::State, inputs: &[Series]) -> PolarsResult<Option<Series>> {
+    fn map(&self, inputs: &[Series]) -> PolarsResult<Self::State> {
         assert_eq!(inputs.len(), 2);
 
         let mut inputs = inputs.to_vec();
@@ -73,51 +38,45 @@ impl PolarsPlugin for MinBy {
             }
         }
 
-        if let Some(arg_min) = inputs[1].arg_min() {
-            let new_by = inputs[1].get(arg_min)?;
+        let (value, by) = if let Some(arg_min) = inputs[1].arg_min() {
+            (
+                inputs[0].get(arg_min)?.into_static(),
+                inputs[1].get(arg_min)?.into_static(),
+            )
+        } else {
+            (AnyValue::Null, AnyValue::Null)
+        };
 
-            if state.by.is_null() || (!new_by.is_null() && &new_by < state.by.value()) {
-                *state.value.any_value_mut() = inputs[0].get(arg_min)?.into_static();
-                *state.by.any_value_mut() = new_by.into_static();
-            }
-        }
-        Ok(None)
+        let value = Scalar::new(inputs[0].dtype().clone(), value);
+        let by = Scalar::new(inputs[1].dtype().clone(), by);
+
+        Ok(MinByState {
+            name: inputs[0].name().clone(),
+            value,
+            by,
+        })
     }
 
-    fn finalize(&self, state: &mut Self::State) -> PolarsResult<Option<Series>> {
-        Ok(Some(state.value.clone().into_series(state.name.clone())))
+    fn reduce(&self, left: &Self::State, right: &Self::State) -> PolarsResult<Self::State> {
+        Ok(
+            if left.by.is_null() || (!right.by.is_null() && right.by.value() < left.by.value()) {
+                right.clone()
+            } else {
+                left.clone()
+            },
+        )
     }
 
-    fn new_empty(&self, state: &Self::State) -> PolarsResult<Self::State> {
-        let mut state = state.clone();
-        self.reset(&mut state)?;
-        Ok(state)
-    }
-
-    fn combine(&self, state: &mut Self::State, other: &Self::State) -> PolarsResult<()> {
-        if state.by.is_null() || (!other.by.is_null() && other.by.value() < state.by.value()) {
-            state.value = other.value.clone();
-            state.by = other.by.clone();
-        }
-        Ok(())
-    }
-
-    fn reset(&self, state: &mut Self::State) -> PolarsResult<()> {
-        *state.value.any_value_mut() = AnyValue::Null;
-        *state.by.any_value_mut() = AnyValue::Null;
-        Ok(())
-    }
-
-    fn evaluate_on_groups<'a>(
-        &self,
-        inputs: &[(Series, &'a GroupPositions)],
-    ) -> PolarsResult<(Series, Cow<'a, GroupPositions>)> {
-        _ = inputs;
-        unreachable!()
+    fn finalize(&self, state: Self::State) -> PolarsResult<Series> {
+        Ok(state.value.into_series(state.name))
     }
 }
 
 #[pyo3::pyfunction]
 pub fn min_by() -> PolarsPluginExprInfo {
-    polars_plugin_expr_info!("min_by", MinBy, MinBy)
+    polars_plugin_expr_info!(
+        "min_by",
+        v1::map_reduce::Plugin(MinBy),
+        v1::map_reduce::Plugin<MinBy>
+    )
 }

@@ -29,26 +29,6 @@ pub struct DataPtr(NonNull<u8>);
 #[repr(transparent)]
 pub struct StatePtr(NonNull<u8>);
 
-// pub trait ElementwisePlugin: Sereajfdlakjf + Dserajlkj {
-//     fn to_field() -> ...;
-//     fn evaluate(inputs: &[Series]) -> PolarsResult<Series>;
-// }
-//
-// pub trait MapReducePlugin: Sereajfdlakjf + Dserajlkj {
-//     fn to_field() -> ...;
-//
-//     fn insert(&self, inputs: &[Series]) -> PolarsResult<Self::State>;
-//     fn combine(&self, left: Self::State, right: Self::State) -> PolarsResult<Self::State>;
-//     fn finalize(&self, state: Self::State) -> PolarsResult<Series>;
-// }
-//
-// pub trait ScanPlugin: Sereajfdlakjf + Dserajlkj {
-//     fn to_field() -> PolarsResult<Field>;
-//
-//     fn step(&self, state: &mut Self::State, inputs: &[Series]) -> PolarsResult<Series>;
-//     fn finalize(&self, state: Self::State) -> PolarsResult<Option<Series>>;
-// }
-//
 pub trait PolarsPlugin: Send + Sync + Sized {
     type State: Send + Sync + Sized;
 

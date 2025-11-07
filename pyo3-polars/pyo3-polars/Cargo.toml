@@ -25,6 +25,7 @@ pyo3-polars-derive = { workspace = true, optional = true }
 serde = { version = "1", optional = true }
 serde-pickle = { version = "1", optional = true }
 thiserror = "1"
+bincode = { workspace = true, optional = true }
 
 [features]
 default = ["v1"]
@@ -38,4 +39,4 @@ dtype-decimal = ["polars/dtype-decimal"]
 dtype-struct = ["polars/dtype-struct"]
 dtype-array = ["polars/dtype-array"]
 dtype-categorical = ["polars/dtype-categorical"]
-v1 = ["ffi_plugin"]
+v1 = ["ffi_plugin", "bincode"]
