@@ -12,6 +12,6 @@
     {
       "pattern": "^cloud-storage.md"
     }
-        ],
+  ],
   "retryOn429": true
 }
