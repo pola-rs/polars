@@ -1,4 +1,5 @@
 use polars_core::prelude::*;
+use polars_error::feature_gated;
 
 use crate::prelude::*;
 
@@ -64,6 +65,37 @@ pub(crate) fn pushdown_maintain_errors() -> bool {
     std::env::var("POLARS_PUSHDOWN_OPT_MAINTAIN_ERRORS").as_deref() == Ok("1")
 }
 
+pub(super) fn run_projection_predicate_pushdown(
+    root: Node,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    pushdown_maintain_errors: bool,
+    opt_flags: &OptFlags,
+) -> PolarsResult<()> {
+    // Should be run before predicate pushdown.
+    if opt_flags.projection_pushdown() {
+        let mut projection_pushdown_opt = ProjectionPushDown::new();
+        let ir = ir_arena.take(root);
+        let ir = projection_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
+        ir_arena.replace(root, ir);
+
+        if projection_pushdown_opt.is_count_star {
+            let mut count_star_opt = CountStar::new();
+            count_star_opt.optimize_plan(ir_arena, expr_arena, root)?;
+        }
+    }
+
+    if opt_flags.predicate_pushdown() {
+        let mut predicate_pushdown_opt =
+            PredicatePushDown::new(pushdown_maintain_errors, opt_flags.new_streaming());
+        let ir = ir_arena.take(root);
+        let ir = predicate_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
+        ir_arena.replace(root, ir);
+    }
+
+    Ok(())
+}
+
 pub fn optimize(
     logical_plan: DslPlan,
     mut opt_flags: OptFlags,
@@ -117,78 +149,55 @@ pub fn optimize(
         };
     }
 
-    macro_rules! get_members_opt {
-        () => {
-            _opt_members.as_mut()
-        };
-    }
-
     // Run before slice pushdown
     if opt_flags.simplify_expr() {
         #[cfg(feature = "fused")]
         rules.push(Box::new(fused::FusedArithmetic {}));
     }
 
-    #[cfg(feature = "cse")]
-    let _cse_plan_changed = if comm_subplan_elim {
-        let members = get_or_init_members!();
-        if (members.has_sink_multiple || members.has_joins_or_unions)
-            && members.has_duplicate_scans()
-            && !members.has_cache
-        {
-            if verbose {
-                eprintln!("found multiple sources; run comm_subplan_elim")
+    let run_pushdowns = if comm_subplan_elim {
+        let mut run_pd = true;
+
+        feature_gated!("cse", {
+            let members = get_or_init_members!();
+            run_pd = if (members.has_sink_multiple || members.has_joins_or_unions)
+                && members.has_duplicate_scans()
+                && !members.has_cache
+            {
+                use self::cse::CommonSubPlanOptimizer;
+
+                if verbose {
+                    eprintln!("found multiple sources; run comm_subplan_elim")
+                }
+
+                lp_top = CommonSubPlanOptimizer::new().optimize(
+                    lp_top,
+                    lp_arena,
+                    expr_arena,
+                    members,
+                    pushdown_maintain_errors,
+                    &opt_flags,
+                    verbose,
+                    scratch,
+                )?;
+                false
+            } else {
+                true
             }
+        });
 
-            let (lp, changed) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
-
-            lp_top = lp;
-            members.has_cache |= changed;
-            changed
-        } else {
-            false
-        }
+        run_pd
     } else {
-        false
+        true
     };
-    #[cfg(not(feature = "cse"))]
-    let _cse_plan_changed = false;
 
-    // Should be run before predicate pushdown.
-    if opt_flags.projection_pushdown() {
-        let mut projection_pushdown_opt = ProjectionPushDown::new();
-        let alp = lp_arena.take(lp_top);
-        let alp = projection_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
-        lp_arena.replace(lp_top, alp);
-
-        if projection_pushdown_opt.is_count_star {
-            let mut count_star_opt = CountStar::new();
-            count_star_opt.optimize_plan(lp_arena, expr_arena, lp_top)?;
-        }
-    }
-
-    if opt_flags.predicate_pushdown() {
-        let mut predicate_pushdown_opt =
-            PredicatePushDown::new(pushdown_maintain_errors, opt_flags.new_streaming());
-        let alp = lp_arena.take(lp_top);
-        let alp = predicate_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
-        lp_arena.replace(lp_top, alp);
-    }
-
-    if _cse_plan_changed
-        && get_members_opt!().is_some_and(|members| {
-            (members.has_joins_or_unions | members.has_sink_multiple) && members.has_cache
-        })
-    {
-        // We only want to run this on cse inserted caches
-        cse::set_cache_states(
+    if run_pushdowns {
+        run_projection_predicate_pushdown(
             lp_top,
             lp_arena,
             expr_arena,
-            scratch,
-            verbose,
             pushdown_maintain_errors,
-            opt_flags.new_streaming(),
+            &opt_flags,
         )?;
     }
 
