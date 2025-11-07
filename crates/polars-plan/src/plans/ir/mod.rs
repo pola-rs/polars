@@ -578,6 +578,29 @@ impl IRPlan {
         self.bind_data(data_map, &data_arena)
     }
 
+    /// Bind multiple DataFrames to a template containing multiple placeholders.
+    ///
+    /// # Ordering Requirement
+    ///
+    /// **IMPORTANT:** DataFrames must be passed in the same order as data sources appear
+    /// during a depth-first traversal of the IR tree. This is the order in which placeholder
+    /// IDs are assigned (0, 1, 2, ...) when `to_template()` converts data sources.
+    ///
+    /// The i-th DataFrame in the vector will be mapped to placeholder ID `i`. If the template
+    /// was created from a query with multiple data sources, you must provide DataFrames in
+    /// the exact order those sources were encountered during traversal (typically from bottom
+    /// to top of the query, following input dependencies).
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Original query with two data sources (encountered in order: df1, df2)
+    /// let query = df1.lazy().join(df2.lazy(), ...).filter(...);
+    /// let template = query.to_template();
+    ///
+    /// // Must pass DataFrames in the same order: [df1_new, df2_new]
+    /// let result = template.bind_to_dfs(vec![df1_new, df2_new])?;
+    /// ```
     pub fn bind_to_dfs(&self, dfs: Vec<Arc<DataFrame>>) -> PolarsResult<Self> {
         if dfs.is_empty() {
             polars_bail!(ComputeError: "bind_to_dfs requires at least one DataFrame");
@@ -611,12 +634,19 @@ impl IRPlan {
         self.bind_data(data_map, &data_arena)
     }
 
-    /// Count the number of PlaceholderScan nodes in the IR plan
+    /// Count the number of PlaceholderScan nodes in the IR plan.
+    ///
+    /// Placeholders are encountered and assigned IDs (0, 1, 2, ...) during a depth-first
+    /// traversal of the IR tree in `to_template()`. This same traversal order determines
+    /// the mapping between DataFrame positions in `bind_to_dfs()` and placeholder IDs.
     fn count_placeholders(&self) -> usize {
         Self::count_placeholders_recursive(self.lp_top, &self.lp_arena)
     }
 
-    /// Recursively count PlaceholderScan nodes in the IR tree
+    /// Recursively count PlaceholderScan nodes in the IR tree.
+    ///
+    /// This traversal follows the same depth-first order used when assigning placeholder IDs,
+    /// ensuring consistent ordering across template creation and data binding operations.
     fn count_placeholders_recursive(node: Node, arena: &Arena<IR>) -> usize {
         let ir = arena.get(node);
         match ir {

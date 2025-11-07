@@ -290,7 +290,6 @@ full = [
   "ffi_plugin",
   "polars_cloud_client",
   "new_streaming",
-  "serde_json",
 ]
 
 # we cannot conditionally activate simd

@@ -74,7 +74,7 @@ impl PyLazyFrame {
     fn serialize_template(&self, py: Python<'_>) -> PyResult<Vec<u8>> {
         py.enter_polars(|| {
             let template = self.ldf.read().clone().to_template()?;
-            serde_json::to_vec(&template)
+            bincode::serialize(&template)
                 .map_err(|err| polars_err!(ComputeError: "serialization failed: {}", err))
         })
     }
@@ -88,7 +88,7 @@ impl PyLazyFrame {
         use polars_plan::plans::IRPlan;
 
         py.enter_polars(|| -> PolarsResult<Self> {
-            let template: IRPlan = serde_json::from_slice(&data)
+            let template: IRPlan = bincode::deserialize(&data)
                 .map_err(|err| polars_err!(ComputeError: "deserialization failed: {}", err))?;
 
             let bound = template.bind_to_df(std::sync::Arc::new(df.df.read().clone()))?;
@@ -105,7 +105,7 @@ impl PyLazyFrame {
         use polars_plan::plans::IRPlan;
 
         py.enter_polars(|| -> PolarsResult<Self> {
-            let template: IRPlan = serde_json::from_slice(&data)
+            let template: IRPlan = bincode::deserialize(&data)
                 .map_err(|err| polars_err!(ComputeError: "deserialization failed: {}", err))?;
 
             let dataframes: Vec<std::sync::Arc<DataFrame>> = dfs
