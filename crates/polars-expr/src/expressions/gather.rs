@@ -114,7 +114,7 @@ impl PhysicalExpr for GatherExpr {
                 .with_name(ac.get_values().name().clone())
         };
 
-        ac.with_values(taken.into_column(), true, Some(&self.expr))?;
+        ac.with_agg_state(AggState::AggregatedList(taken.into_column()));
         ac.with_update_groups(UpdateGroups::WithSeriesLen);
         Ok(ac)
     }

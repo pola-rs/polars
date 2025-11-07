@@ -33,7 +33,7 @@
 //! let df_read = IpcStreamReader::new(buf).finish().unwrap();
 //! assert!(df.equals(&df_read));
 //! ```
-use std::io::{Read, Write};
+use std::io::{Read, Seek, Write};
 use std::path::PathBuf;
 
 use arrow::datatypes::Metadata;
@@ -130,7 +130,7 @@ impl<R: Read> IpcStreamReader<R> {
 
 impl<R> ArrowReader for read::StreamReader<R>
 where
-    R: Read,
+    R: Read + Seek,
 {
     fn next_record_batch(&mut self) -> PolarsResult<Option<RecordBatch>> {
         self.next().map_or(Ok(None), |v| match v {
@@ -145,7 +145,7 @@ where
 
 impl<R> SerReader<R> for IpcStreamReader<R>
 where
-    R: Read,
+    R: Read + Seek,
 {
     fn new(reader: R) -> Self {
         IpcStreamReader {

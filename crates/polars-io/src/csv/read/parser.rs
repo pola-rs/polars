@@ -1,5 +1,4 @@
 use memchr::memchr2_iter;
-use num_traits::Pow;
 use polars_core::prelude::*;
 use polars_core::{POOL, config};
 use polars_error::feature_gated;
@@ -12,7 +11,6 @@ use super::CsvParseOptions;
 use super::buffer::Buffer;
 use super::options::{CommentPrefix, NullValuesCompiled};
 use super::splitfields::SplitFields;
-use super::utils::get_file_chunks;
 use crate::prelude::_csv_read_internal::find_starting_point;
 use crate::utils::compression::maybe_decompress_bytes;
 
@@ -21,7 +19,6 @@ use crate::utils::compression::maybe_decompress_bytes;
 #[allow(clippy::too_many_arguments)]
 pub fn count_rows(
     addr: PlPathRef<'_>,
-    separator: u8,
     quote_char: Option<u8>,
     comment_prefix: Option<&CommentPrefix>,
     eol_char: u8,
@@ -50,7 +47,6 @@ pub fn count_rows(
 
     count_rows_from_slice_par(
         reader_bytes,
-        separator,
         quote_char,
         comment_prefix,
         eol_char,
@@ -66,7 +62,6 @@ pub fn count_rows(
 #[allow(clippy::too_many_arguments)]
 pub fn count_rows_from_slice_par(
     mut bytes: &[u8],
-    separator: u8,
     quote_char: Option<u8>,
     comment_prefix: Option<&CommentPrefix>,
     eol_char: u8,
@@ -75,16 +70,6 @@ pub fn count_rows_from_slice_par(
     skip_rows_before_header: usize,
     skip_rows_after_header: usize,
 ) -> PolarsResult<usize> {
-    for _ in 0..bytes.len() {
-        if bytes[0] != eol_char {
-            break;
-        }
-
-        bytes = &bytes[1..];
-    }
-
-    // Skip lines and jump past header
-
     let start_offset = find_starting_point(
         bytes,
         quote_char,
@@ -103,75 +88,72 @@ pub fn count_rows_from_slice_par(
     )?;
     bytes = &bytes[start_offset..];
 
-    const MIN_ROWS_PER_THREAD: usize = 1024;
-    let max_threads = POOL.current_num_threads();
+    #[cfg(debug_assertions)]
+    const BYTES_PER_CHUNK: usize = 128;
+    #[cfg(not(debug_assertions))]
+    const BYTES_PER_CHUNK: usize = 1 << 16;
 
-    // Determine if parallelism is beneficial and how many threads
-    let n_threads = get_line_stats(
-        bytes,
-        MIN_ROWS_PER_THREAD,
-        eol_char,
-        None,
-        separator,
-        quote_char,
-    )
-    .map(|(mean, std)| {
-        let n_rows = (bytes.len() as f32 / (mean - 0.01 * std)) as usize;
-        (n_rows / MIN_ROWS_PER_THREAD).clamp(1, max_threads)
-    })
-    .unwrap_or(1);
-
-    if n_threads == 1 {
-        return count_rows_from_slice(bytes, quote_char, comment_prefix, eol_char, false);
-    }
-
-    let file_chunks: Vec<(usize, usize)> =
-        get_file_chunks(bytes, n_threads, None, separator, quote_char, eol_char);
-
-    let iter = file_chunks.into_par_iter().map(|(start, stop)| {
-        let bytes = &bytes[start..stop];
-
-        if comment_prefix.is_some() {
-            SplitLines::new(bytes, quote_char, eol_char, comment_prefix)
-                .filter(|line| !is_comment_line(line, comment_prefix))
-                .count()
+    let count = CountLines::new(quote_char, eol_char, comment_prefix.cloned());
+    POOL.install(|| {
+        let mut states = Vec::new();
+        if comment_prefix.is_none() {
+            bytes
+                .par_chunks(BYTES_PER_CHUNK)
+                .map(|chunk| count.analyze_chunk(chunk))
+                .collect_into_vec(&mut states);
         } else {
-            CountLines::new(quote_char, eol_char).count(bytes).0
-                + bytes.last().is_some_and(|x| *x != b'\n') as usize
+            let num_chunks = bytes.len().div_ceil(BYTES_PER_CHUNK);
+            (0..num_chunks)
+                .into_par_iter()
+                .map(|chunk_idx| {
+                    let mut start_offset = chunk_idx * BYTES_PER_CHUNK;
+                    let next_start_offset = (start_offset + BYTES_PER_CHUNK).min(bytes.len());
+
+                    if start_offset != 0 {
+                        // Ensure we start at the start of a line.
+                        if let Some(nl_off) = bytes[start_offset..next_start_offset]
+                            .iter()
+                            .position(|b| *b == eol_char)
+                        {
+                            start_offset += nl_off + 1;
+                        } else {
+                            return count.analyze_chunk(&[]);
+                        }
+                    }
+
+                    let stop_offset = if let Some(nl_off) = bytes[next_start_offset..]
+                        .iter()
+                        .position(|b| *b == eol_char)
+                    {
+                        next_start_offset + nl_off + 1
+                    } else {
+                        bytes.len()
+                    };
+
+                    count.analyze_chunk(&bytes[start_offset..stop_offset])
+                })
+                .collect_into_vec(&mut states);
         }
-    });
 
-    let n: usize = POOL.install(|| iter.sum());
-
-    Ok(n)
-}
-
-/// Read the number of rows without parsing columns
-pub fn count_rows_from_slice(
-    mut bytes: &[u8],
-    quote_char: Option<u8>,
-    comment_prefix: Option<&CommentPrefix>,
-    eol_char: u8,
-    has_header: bool,
-) -> PolarsResult<usize> {
-    for _ in 0..bytes.len() {
-        if bytes[0] != eol_char {
-            break;
+        let mut n = 0;
+        let mut in_string = false;
+        for pair in states {
+            n += pair[in_string as usize].newline_count;
+            in_string = pair[in_string as usize].end_inside_string;
+        }
+        if let Some(last) = bytes.last()
+            && *last != eol_char
+            && (comment_prefix.is_none()
+                || !is_comment_line(
+                    bytes.rsplit(|c| *c == eol_char).next().unwrap(),
+                    comment_prefix,
+                ))
+        {
+            n += 1
         }
 
-        bytes = &bytes[1..];
-    }
-
-    let n = if comment_prefix.is_some() {
-        SplitLines::new(bytes, quote_char, eol_char, comment_prefix)
-            .filter(|line| !is_comment_line(line, comment_prefix))
-            .count()
-    } else {
-        CountLines::new(quote_char, eol_char).count(bytes).0
-            + bytes.last().is_some_and(|x| *x != b'\n') as usize
-    };
-
-    Ok(n - (has_header as usize))
+        Ok(n)
+    })
 }
 
 /// Skip the utf-8 Byte Order Mark.
@@ -188,7 +170,7 @@ pub(super) fn skip_bom(input: &[u8]) -> &[u8] {
 ///
 /// This function is used during CSV parsing to determine whether a line should be ignored based on its starting characters.
 #[inline]
-pub(super) fn is_comment_line(line: &[u8], comment_prefix: Option<&CommentPrefix>) -> bool {
+pub fn is_comment_line(line: &[u8], comment_prefix: Option<&CommentPrefix>) -> bool {
     match comment_prefix {
         Some(CommentPrefix::Single(c)) => line.first() == Some(c),
         Some(CommentPrefix::Multi(s)) => line.starts_with(s.as_bytes()),
@@ -315,12 +297,24 @@ pub(super) fn next_line_position(
     }
 }
 
+#[inline(always)]
 pub(super) fn is_line_ending(b: u8, eol_char: u8) -> bool {
     b == eol_char || b == b'\r'
 }
 
+#[inline(always)]
 pub(super) fn is_whitespace(b: u8) -> bool {
     b == b' ' || b == b'\t'
+}
+
+/// May have false-positives, but not false negatives.
+#[inline(always)]
+pub(super) fn could_be_whitespace_fast(b: u8) -> bool {
+    // We're interested in \t (ASCII 9) and " " (ASCII 32), both of which are
+    // <= 32. In that range there aren't a lot of other common symbols (besides
+    // newline), so this is a quick test which can be worth doing to avoid the
+    // exact test.
+    b <= 32
 }
 
 #[inline]
@@ -349,53 +343,6 @@ pub(super) fn skip_whitespace(input: &[u8]) -> &[u8] {
 #[inline]
 pub(super) fn skip_line_ending(input: &[u8], eol_char: u8) -> &[u8] {
     skip_condition(input, |b| is_line_ending(b, eol_char))
-}
-
-/// Get the mean and standard deviation of length of lines in bytes
-pub(super) fn get_line_stats(
-    bytes: &[u8],
-    n_lines: usize,
-    eol_char: u8,
-    expected_fields: Option<usize>,
-    separator: u8,
-    quote_char: Option<u8>,
-) -> Option<(f32, f32)> {
-    let mut lengths = Vec::with_capacity(n_lines);
-
-    let mut bytes_trunc;
-    let n_lines_per_iter = n_lines / 2;
-
-    let mut n_read = 0;
-
-    // sample from start and 75% in the file
-    for offset in [0, (bytes.len() as f32 * 0.75) as usize] {
-        bytes_trunc = &bytes[offset..];
-        let pos = next_line_position(
-            bytes_trunc,
-            expected_fields,
-            separator,
-            quote_char,
-            eol_char,
-        )?;
-        bytes_trunc = &bytes_trunc[pos + 1..];
-
-        for _ in offset..(offset + n_lines_per_iter) {
-            let pos = next_line_position_naive(bytes_trunc, eol_char)? + 1;
-            n_read += pos;
-            lengths.push(pos);
-            bytes_trunc = &bytes_trunc[pos..];
-        }
-    }
-
-    let n_samples = lengths.len();
-
-    let mean = (n_read as f32) / (n_samples as f32);
-    let mut std = 0.0;
-    for &len in lengths.iter() {
-        std += (len as f32 - mean).pow(2.0)
-    }
-    std = (std / n_samples as f32).sqrt();
-    Some((mean, std))
 }
 
 /// An adapted version of std::iter::Split.
@@ -668,9 +615,10 @@ pub struct CountLines {
     #[cfg(feature = "simd")]
     simd_quote_char: SimdVec,
     quoting: bool,
+    comment_prefix: Option<CommentPrefix>,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct LineStats {
     newline_count: usize,
     last_newline_offset: usize,
@@ -678,7 +626,11 @@ pub struct LineStats {
 }
 
 impl CountLines {
-    pub fn new(quote_char: Option<u8>, eol_char: u8) -> Self {
+    pub fn new(
+        quote_char: Option<u8>,
+        eol_char: u8,
+        comment_prefix: Option<CommentPrefix>,
+    ) -> Self {
         let quoting = quote_char.is_some();
         let quote_char = quote_char.unwrap_or(b'\"');
         #[cfg(feature = "simd")]
@@ -693,6 +645,7 @@ impl CountLines {
             #[cfg(feature = "simd")]
             simd_quote_char,
             quoting,
+            comment_prefix,
         }
     }
 
@@ -701,8 +654,10 @@ impl CountLines {
     /// Returns (newline_count, last_newline_offset, end_inside_string) twice,
     /// the first is assuming the start of the chunk is *not* inside a string,
     /// the second assuming the start is inside a string.
+    ///
+    /// If comment_prefix is not None the start of bytes must be at the start of
+    /// a line (and thus not in the middle of a comment).
     pub fn analyze_chunk(&self, bytes: &[u8]) -> [LineStats; 2] {
-        let mut scan_offset = 0;
         let mut states = [
             LineStats {
                 newline_count: 0,
@@ -716,9 +671,17 @@ impl CountLines {
             },
         ];
 
-        // false if even number of quotes seen so far, true otherwise.
+        // If we have to deal with comments we can't use SIMD and have to explicitly do two passes.
+        if self.comment_prefix.is_some() {
+            states[0] = self.analyze_chunk_with_comment(bytes, false);
+            states[1] = self.analyze_chunk_with_comment(bytes, true);
+            return states;
+        }
+
+        // False if even number of quotes seen so far, true otherwise.
         #[allow(unused_assignments)]
         let mut global_quote_parity = false;
+        let mut scan_offset = 0;
 
         #[cfg(feature = "simd")]
         {
@@ -788,17 +751,63 @@ impl CountLines {
         states
     }
 
+    // bytes must begin at the start of a line.
+    fn analyze_chunk_with_comment(&self, bytes: &[u8], mut in_string: bool) -> LineStats {
+        let pre_s = match self.comment_prefix.as_ref().unwrap() {
+            CommentPrefix::Single(pc) => core::slice::from_ref(pc),
+            CommentPrefix::Multi(ps) => ps.as_bytes(),
+        };
+
+        let mut state = LineStats::default();
+        let mut scan_offset = 0;
+        while scan_offset < bytes.len() {
+            // Skip comment line if needed.
+            while bytes[scan_offset..].starts_with(pre_s) {
+                scan_offset += pre_s.len();
+                let Some(nl_off) = bytes[scan_offset..]
+                    .iter()
+                    .position(|c| *c == self.eol_char)
+                else {
+                    break;
+                };
+                scan_offset += nl_off + 1;
+            }
+
+            while scan_offset < bytes.len() {
+                let c = unsafe { *bytes.get_unchecked(scan_offset) };
+                in_string ^= (c == self.quote_char) & self.quoting;
+
+                if c == self.eol_char && !in_string {
+                    state.newline_count += 1;
+                    state.last_newline_offset = scan_offset;
+                    scan_offset += 1;
+                    break;
+                } else {
+                    scan_offset += 1;
+                }
+            }
+        }
+
+        state.end_inside_string = in_string;
+        state
+    }
+
     pub fn find_next(&self, bytes: &[u8], chunk_size: &mut usize) -> (usize, usize) {
         loop {
             let b = unsafe { bytes.get_unchecked(..(*chunk_size).min(bytes.len())) };
 
-            let (count, offset) = self.count(b);
+            let (count, offset) = if self.comment_prefix.is_some() {
+                let stats = self.analyze_chunk_with_comment(b, false);
+                (stats.newline_count, stats.last_newline_offset)
+            } else {
+                self.count(b)
+            };
 
             if count > 0 || b.len() == bytes.len() {
                 return (count, offset);
             }
 
-            *chunk_size *= 2;
+            *chunk_size = chunk_size.saturating_mul(2);
         }
     }
 

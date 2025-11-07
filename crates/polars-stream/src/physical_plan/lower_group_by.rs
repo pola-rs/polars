@@ -54,7 +54,7 @@ fn build_group_by_fallback(
         group_by_lp_node,
         &mut lp_arena,
         expr_arena,
-        None,
+        Some(crate::dispatch::build_streaming_query_executor),
     )?);
 
     let group_by_node = PhysNode {
@@ -73,6 +73,60 @@ fn build_group_by_fallback(
     Ok(PhysStream::first(phys_sm.insert(group_by_node)))
 }
 
+#[allow(clippy::too_many_arguments)]
+fn try_replace_agg_input_uniq(
+    expr: Node,
+    outer_name: Option<PlSmallStr>,
+    expr_merger: &NaiveExprMerger,
+    expr_cache: &mut ExprCache,
+    expr_arena: &mut Arena<AExpr>,
+    agg_exprs: &mut Vec<ExprIR>,
+    uniq_input_exprs: &mut PlIndexMap<u32, PlSmallStr>,
+    uniq_agg_exprs: &mut PlIndexMap<u32, PlSmallStr>,
+) -> Option<Node> {
+    let aexpr = expr_arena.get(expr).clone();
+    let mut inputs = Vec::new();
+    aexpr.inputs_rev(&mut inputs);
+
+    assert!(inputs.len() == 1);
+    let input = inputs[0];
+
+    if is_input_independent(input, expr_arena, expr_cache) {
+        // TODO: we could simply return expr here, but we first need an is_scalar function, because if
+        // it is not a scalar we need to return expr.implode().
+        return None;
+    }
+
+    if !is_elementwise_rec_cached(input, expr_arena, expr_cache) {
+        return None;
+    }
+
+    let agg_id = expr_merger.get_uniq_id(expr).unwrap();
+    let name = uniq_agg_exprs
+        .entry(agg_id)
+        .or_insert_with(|| {
+            let input_id = expr_merger.get_uniq_id(input).unwrap();
+            let input_col = uniq_input_exprs
+                .entry(input_id)
+                .or_insert_with(unique_column_name)
+                .clone();
+            let input_col_node = expr_arena.add(AExpr::Column(input_col));
+            let trans_agg_node = expr_arena.add(aexpr.replace_inputs(&[input_col_node]));
+
+            // Add to aggregation expressions and replace with a reference to its output.
+            let agg_expr = if let Some(name) = outer_name {
+                ExprIR::new(trans_agg_node, OutputName::Alias(name))
+            } else {
+                ExprIR::new(trans_agg_node, OutputName::Alias(unique_column_name()))
+            };
+            agg_exprs.push(agg_expr.clone());
+            agg_expr.output_name().clone()
+        })
+        .clone();
+    let result_node = expr_arena.add(AExpr::Column(name));
+    Some(result_node)
+}
+
 /// Tries to lower an expression as a 'elementwise scalar agg expression'.
 ///
 /// Such an expression is defined as the elementwise combination of scalar
@@ -89,7 +143,7 @@ fn try_lower_elementwise_scalar_agg_expr(
     uniq_input_exprs: &mut PlIndexMap<u32, PlSmallStr>,
     uniq_agg_exprs: &mut PlIndexMap<u32, PlSmallStr>,
 ) -> Option<Node> {
-    // Helper macro to simplify recursive calls.
+    // Helper macros to simplify (recursive) calls.
     macro_rules! lower_rec {
         ($input:expr) => {
             try_lower_elementwise_scalar_agg_expr(
@@ -105,7 +159,25 @@ fn try_lower_elementwise_scalar_agg_expr(
         };
     }
 
+    macro_rules! replace_agg_input {
+        ($input:expr) => {
+            try_replace_agg_input_uniq(
+                $input,
+                outer_name,
+                expr_merger,
+                expr_cache,
+                expr_arena,
+                agg_exprs,
+                uniq_input_exprs,
+                uniq_agg_exprs,
+            )
+        };
+    }
+
     match expr_arena.get(expr) {
+        // Should be handled separately in `Eval`.
+        AExpr::Element => unreachable!(),
+
         AExpr::Column(_) => {
             // Implicit implode not yet supported.
             None
@@ -170,114 +242,25 @@ fn try_lower_elementwise_scalar_agg_expr(
 
         #[cfg(feature = "bitwise")]
         AExpr::Function {
-            input: inner_exprs,
             function:
                 IRFunctionExpr::Bitwise(
-                    inner_fn @ (IRBitwiseFunction::And
-                    | IRBitwiseFunction::Or
-                    | IRBitwiseFunction::Xor),
+                    IRBitwiseFunction::And | IRBitwiseFunction::Or | IRBitwiseFunction::Xor,
                 ),
-            options,
-        } => {
-            assert!(inner_exprs.len() == 1);
+            ..
+        } => replace_agg_input!(expr),
 
-            let input = inner_exprs[0].clone().node();
-            let inner_fn = *inner_fn;
-            let options = *options;
-
-            if is_input_independent(input, expr_arena, expr_cache) {
-                // TODO: we could simply return expr here, but we first need an is_scalar function, because if
-                // it is not a scalar we need to return expr.implode().
-                return None;
-            }
-
-            if !is_elementwise_rec_cached(input, expr_arena, expr_cache) {
-                return None;
-            }
-
-            let agg_id = expr_merger.get_uniq_id(expr).unwrap();
-            let name = uniq_agg_exprs
-                .entry(agg_id)
-                .or_insert_with(|| {
-                    let input_id = expr_merger.get_uniq_id(input).unwrap();
-                    let input_col = uniq_input_exprs
-                        .entry(input_id)
-                        .or_insert_with(unique_column_name)
-                        .clone();
-                    let input_col_node = expr_arena.add(AExpr::Column(input_col));
-                    let trans_agg_node = expr_arena.add(AExpr::Function {
-                        input: vec![ExprIR::from_node(input_col_node, expr_arena)],
-                        function: IRFunctionExpr::Bitwise(inner_fn),
-                        options,
-                    });
-
-                    // Add to aggregation expressions and replace with a reference to its output.
-                    let agg_expr = if let Some(name) = outer_name {
-                        ExprIR::new(trans_agg_node, OutputName::Alias(name))
-                    } else {
-                        ExprIR::new(trans_agg_node, OutputName::Alias(unique_column_name()))
-                    };
-                    agg_exprs.push(agg_expr.clone());
-                    agg_expr.output_name().clone()
-                })
-                .clone();
-            let result_node = expr_arena.add(AExpr::Column(name));
-            Some(result_node)
-        },
+        #[cfg(feature = "approx_unique")]
+        AExpr::Function {
+            function: IRFunctionExpr::ApproxNUnique,
+            ..
+        } => replace_agg_input!(expr),
 
         AExpr::Function {
-            input: inner_exprs,
             function:
-                IRFunctionExpr::Boolean(
-                    inner_fn @ (IRBooleanFunction::Any { .. } | IRBooleanFunction::All { .. }),
-                ),
-            options,
-        } => {
-            assert!(inner_exprs.len() == 1);
-
-            let input = inner_exprs[0].clone().node();
-            let inner_fn = inner_fn.clone();
-            let options = *options;
-
-            if is_input_independent(input, expr_arena, expr_cache) {
-                // TODO: we could simply return expr here, but we first need an is_scalar function, because if
-                // it is not a scalar we need to return expr.implode().
-                return None;
-            }
-
-            if !is_elementwise_rec_cached(input, expr_arena, expr_cache) {
-                return None;
-            }
-
-            let agg_id = expr_merger.get_uniq_id(expr).unwrap();
-            let name = uniq_agg_exprs
-                .entry(agg_id)
-                .or_insert_with(|| {
-                    let input_id = expr_merger.get_uniq_id(input).unwrap();
-                    let input_col = uniq_input_exprs
-                        .entry(input_id)
-                        .or_insert_with(unique_column_name)
-                        .clone();
-                    let input_col_node = expr_arena.add(AExpr::Column(input_col));
-                    let trans_agg_node = expr_arena.add(AExpr::Function {
-                        input: vec![ExprIR::from_node(input_col_node, expr_arena)],
-                        function: IRFunctionExpr::Boolean(inner_fn),
-                        options,
-                    });
-
-                    // Add to aggregation expressions and replace with a reference to its output.
-                    let agg_expr = if let Some(name) = outer_name {
-                        ExprIR::new(trans_agg_node, OutputName::Alias(name))
-                    } else {
-                        ExprIR::new(trans_agg_node, OutputName::Alias(unique_column_name()))
-                    };
-                    agg_exprs.push(agg_expr.clone());
-                    agg_expr.output_name().clone()
-                })
-                .clone();
-            let result_node = expr_arena.add(AExpr::Column(name));
-            Some(result_node)
-        },
+                IRFunctionExpr::Boolean(IRBooleanFunction::Any { .. } | IRBooleanFunction::All { .. })
+                | IRFunctionExpr::NullCount,
+            ..
+        } => replace_agg_input!(expr),
 
         node @ AExpr::Function { input, options, .. }
         | node @ AExpr::AnonymousFunction { input, options, .. }
@@ -307,7 +290,9 @@ fn try_lower_elementwise_scalar_agg_expr(
             Some(expr_arena.add(new_node))
         },
 
-        AExpr::Function { .. } | AExpr::AnonymousFunction { .. } => None,
+        AExpr::Function { .. }
+        | AExpr::AnonymousFunction { .. }
+        | AExpr::AnonymousStreamingAgg { .. } => None,
 
         AExpr::Cast {
             expr,
@@ -325,54 +310,17 @@ fn try_lower_elementwise_scalar_agg_expr(
 
         AExpr::Agg(agg) => {
             match agg {
-                IRAggExpr::Min { input, .. }
-                | IRAggExpr::Max { input, .. }
-                | IRAggExpr::First(input)
-                | IRAggExpr::Last(input)
-                | IRAggExpr::Mean(input)
-                | IRAggExpr::Sum(input)
-                | IRAggExpr::Var(input, ..)
-                | IRAggExpr::Std(input, ..)
-                | IRAggExpr::Count { input, .. } => {
-                    let agg = agg.clone();
-                    let input = *input;
-                    if is_input_independent(input, expr_arena, expr_cache) {
-                        // TODO: we could simply return expr here, but we first need an is_scalar function, because if
-                        // it is not a scalar we need to return expr.implode().
-                        return None;
-                    }
-
-                    if !is_elementwise_rec_cached(input, expr_arena, expr_cache) {
-                        return None;
-                    }
-
-                    let agg_id = expr_merger.get_uniq_id(expr).unwrap();
-                    let name = uniq_agg_exprs
-                        .entry(agg_id)
-                        .or_insert_with(|| {
-                            let mut trans_agg = agg;
-                            let input_id = expr_merger.get_uniq_id(input).unwrap();
-                            let input_col = uniq_input_exprs
-                                .entry(input_id)
-                                .or_insert_with(unique_column_name)
-                                .clone();
-                            let input_col_node = expr_arena.add(AExpr::Column(input_col));
-                            trans_agg.set_input(input_col_node);
-                            let trans_agg_node = expr_arena.add(AExpr::Agg(trans_agg));
-
-                            // Add to aggregation expressions and replace with a reference to its output.
-                            let agg_expr = if let Some(name) = outer_name {
-                                ExprIR::new(trans_agg_node, OutputName::Alias(name))
-                            } else {
-                                ExprIR::new(trans_agg_node, OutputName::Alias(unique_column_name()))
-                            };
-                            agg_exprs.push(agg_expr.clone());
-                            agg_expr.output_name().clone()
-                        })
-                        .clone();
-
-                    let result_node = expr_arena.add(AExpr::Column(name));
-                    Some(result_node)
+                IRAggExpr::Min { .. }
+                | IRAggExpr::Max { .. }
+                | IRAggExpr::First(_)
+                | IRAggExpr::Last(_)
+                | IRAggExpr::Item { .. }
+                | IRAggExpr::Mean(_)
+                | IRAggExpr::Sum(_)
+                | IRAggExpr::Var(..)
+                | IRAggExpr::Std(..)
+                | IRAggExpr::Count { .. } => {
+                    replace_agg_input!(expr)
                 },
                 IRAggExpr::Median(..)
                 | IRAggExpr::NUnique(..)
@@ -581,6 +529,24 @@ pub fn build_group_by_stream(
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext,
 ) -> PolarsResult<PhysStream> {
+    #[cfg(feature = "dynamic_group_by")]
+    if let Some(options) = options.as_ref().rolling.as_ref()
+        && keys.is_empty()
+        && apply.is_none()
+    {
+        return Ok(PhysStream::first(phys_sm.insert(PhysNode::new(
+            output_schema.clone(),
+            PhysNodeKind::RollingGroupBy {
+                input,
+                index_column: options.index_column.clone(),
+                period: options.period,
+                offset: options.offset,
+                closed: options.closed_window,
+                aggs: aggs.to_vec(),
+            },
+        ))));
+    }
+
     let streaming = try_build_streaming_group_by(
         input,
         keys,

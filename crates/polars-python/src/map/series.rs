@@ -75,7 +75,7 @@ fn infer_and_finish<'py, A: ApplyLambda<'py>>(
         //     pl.Series(lambda(value))
         let lambda_owned = lambda.to_owned().unbind();
         let new_lambda = PyCFunction::new_closure(py, None, None, move |args, _kwargs| {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let out = lambda_owned.call1(py, args)?;
                 // check if Series, if not, call series constructor on it
                 pl_series(py).call1(py, (out,))
@@ -195,7 +195,7 @@ pub trait ApplyLambda<'py> {
     fn apply_lambda_with_list_out_type(
         &self,
         py: Python<'py>,
-        lambda: PyObject,
+        lambda: Py<PyAny>,
         init_null_count: usize,
         first_value: Option<&Series>,
         dt: &DataType,
@@ -442,7 +442,7 @@ impl<'py> ApplyLambda<'py> for BooleanChunked {
     fn apply_lambda_with_list_out_type(
         &self,
         py: Python<'py>,
-        lambda: PyObject,
+        lambda: Py<PyAny>,
         init_null_count: usize,
         first_value: Option<&Series>,
         dt: &DataType,
@@ -660,7 +660,7 @@ where
     fn apply_lambda_with_list_out_type(
         &self,
         py: Python<'py>,
-        lambda: PyObject,
+        lambda: Py<PyAny>,
         init_null_count: usize,
         first_value: Option<&Series>,
         dt: &DataType,
@@ -873,7 +873,7 @@ impl<'py> ApplyLambda<'py> for StringChunked {
     fn apply_lambda_with_list_out_type(
         &self,
         py: Python<'py>,
-        lambda: PyObject,
+        lambda: Py<PyAny>,
         init_null_count: usize,
         first_value: Option<&Series>,
         dt: &DataType,
@@ -1171,7 +1171,7 @@ impl<'py> ApplyLambda<'py> for ListChunked {
     fn apply_lambda_with_list_out_type(
         &self,
         py: Python<'py>,
-        lambda: PyObject,
+        lambda: Py<PyAny>,
         init_null_count: usize,
         first_value: Option<&Series>,
         dt: &DataType,
@@ -1486,7 +1486,7 @@ impl<'py> ApplyLambda<'py> for ArrayChunked {
     fn apply_lambda_with_list_out_type(
         &self,
         py: Python<'py>,
-        lambda: PyObject,
+        lambda: Py<PyAny>,
         init_null_count: usize,
         first_value: Option<&Series>,
         dt: &DataType,
@@ -1742,7 +1742,7 @@ impl<'py> ApplyLambda<'py> for ObjectChunked<ObjectValue> {
     fn apply_lambda_with_list_out_type(
         &self,
         py: Python<'py>,
-        lambda: PyObject,
+        lambda: Py<PyAny>,
         init_null_count: usize,
         first_value: Option<&Series>,
         dt: &DataType,
@@ -1946,7 +1946,7 @@ impl<'py> ApplyLambda<'py> for StructChunked {
     fn apply_lambda_with_list_out_type(
         &self,
         py: Python<'py>,
-        lambda: PyObject,
+        lambda: Py<PyAny>,
         init_null_count: usize,
         first_value: Option<&Series>,
         dt: &DataType,

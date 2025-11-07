@@ -136,6 +136,9 @@ pub fn is_input_independent_rec(
     }
 
     let ret = match arena.get(expr_key) {
+        // Handled separately in `Eval`.
+        AExpr::Element => unreachable!(),
+
         AExpr::Explode { expr: inner, .. }
         | AExpr::Cast {
             expr: inner,
@@ -196,6 +199,11 @@ pub fn is_input_independent_rec(
             input,
             function: _,
             options: _,
+            fmt_str: _,
+        }
+        | AExpr::AnonymousStreamingAgg {
+            input,
+            function: _,
             fmt_str: _,
         }
         | AExpr::Function {
@@ -280,6 +288,9 @@ pub fn is_length_preserving_rec(
     }
 
     let ret = match arena.get(expr_key) {
+        // Handled separately in `Eval`.
+        AExpr::Element => unreachable!(),
+
         AExpr::Gather { .. }
         | AExpr::Explode { .. }
         | AExpr::Filter { .. }
@@ -320,6 +331,7 @@ pub fn is_length_preserving_rec(
                 || is_length_preserving_rec(*truthy, arena, cache)
                 || is_length_preserving_rec(*falsy, arena, cache)
         },
+        AExpr::AnonymousStreamingAgg { .. } => false,
         AExpr::AnonymousFunction {
             input,
             function: _,
@@ -574,6 +586,9 @@ fn lower_exprs_with_ctx(
         }
 
         match ctx.expr_arena.get(expr).clone() {
+            // Handled separately in `Eval` expressions.
+            AExpr::Element => unreachable!(),
+
             AExpr::Explode {
                 expr: inner,
                 skip_empty,
@@ -870,6 +885,139 @@ fn lower_exprs_with_ctx(
                 input_streams.insert(stream);
             },
 
+            #[cfg(feature = "mode")]
+            AExpr::Function {
+                input: ref inner_exprs,
+                function: IRFunctionExpr::Mode,
+                options: _,
+            } => {
+                // Transform:
+                //    expr.mode()
+                //      ->
+                //    .select(_t = expr)
+                //    .group_by(_t)
+                //      .agg(count_name = pl.len())
+                //    .select(_t.filter(count_name == count_name.max())
+
+                assert_eq!(inner_exprs.len(), 1);
+
+                let tmp_value_name = unique_column_name();
+                let tmp_count_name = unique_column_name();
+
+                let stream = build_select_stream_with_ctx(
+                    input,
+                    &[inner_exprs[0].with_alias(tmp_value_name.clone())],
+                    ctx,
+                )?;
+
+                let mut group_by_output_schema =
+                    ctx.phys_sm[stream.node].output_schema.as_ref().clone();
+                group_by_output_schema.insert(tmp_count_name.clone(), IDX_DTYPE);
+
+                let keys = [AExprBuilder::col(tmp_value_name.clone(), ctx.expr_arena)
+                    .expr_ir(tmp_value_name.clone())];
+                let aggs = [ExprIR::new(
+                    ctx.expr_arena.add(AExpr::Len),
+                    OutputName::Alias(tmp_count_name.clone()),
+                )];
+
+                let stream = build_group_by_stream(
+                    stream,
+                    &keys,
+                    &aggs,
+                    Arc::new(group_by_output_schema),
+                    false,
+                    Default::default(),
+                    None,
+                    ctx.expr_arena,
+                    ctx.phys_sm,
+                    ctx.cache,
+                    StreamingLowerIRContext {
+                        prepare_visualization: ctx.prepare_visualization,
+                    },
+                )?;
+
+                let stream = build_select_stream_with_ctx(
+                    stream,
+                    &[AExprBuilder::col(tmp_value_name.clone(), ctx.expr_arena)
+                        .filter(
+                            AExprBuilder::col(tmp_count_name.clone(), ctx.expr_arena).eq(
+                                AExprBuilder::col(tmp_count_name.clone(), ctx.expr_arena)
+                                    .max(ctx.expr_arena),
+                                ctx.expr_arena,
+                            ),
+                            ctx.expr_arena,
+                        )
+                        .expr_ir(tmp_value_name.clone())],
+                    ctx,
+                )?;
+
+                transformed_exprs
+                    .push(AExprBuilder::col(tmp_value_name.clone(), ctx.expr_arena).node());
+                input_streams.insert(stream);
+            },
+
+            AExpr::Function {
+                input: ref inner_exprs,
+                function: IRFunctionExpr::ArgUnique,
+                options: _,
+            } => {
+                // Transform:
+                //    expr.arg_unique()
+                //      ->
+                //    .with_row_index(IDX)
+                //    .group_by(expr)
+                //    .agg(IDX = IDX.first())
+                //    .select(IDX.sort())
+
+                assert_eq!(inner_exprs.len(), 1);
+
+                let expr_name = unique_column_name();
+                let idx_name = unique_column_name();
+
+                let stream = build_select_stream_with_ctx(
+                    input,
+                    &[inner_exprs[0].with_alias(expr_name.clone())],
+                    ctx,
+                )?;
+
+                let mut group_by_output_schema =
+                    ctx.phys_sm[stream.node].output_schema.as_ref().clone();
+                group_by_output_schema.insert(idx_name.clone(), IDX_DTYPE);
+
+                let stream = build_row_idx_stream(stream, idx_name.clone(), None, ctx.phys_sm);
+
+                let keys =
+                    [AExprBuilder::col(expr_name.clone(), ctx.expr_arena).expr_ir(expr_name)];
+                let aggs = [AExprBuilder::col(idx_name.clone(), ctx.expr_arena)
+                    .first(ctx.expr_arena)
+                    .expr_ir(idx_name.clone())];
+
+                let stream = build_group_by_stream(
+                    stream,
+                    &keys,
+                    &aggs,
+                    Arc::new(group_by_output_schema),
+                    false,
+                    Default::default(),
+                    None,
+                    ctx.expr_arena,
+                    ctx.phys_sm,
+                    ctx.cache,
+                    StreamingLowerIRContext {
+                        prepare_visualization: ctx.prepare_visualization,
+                    },
+                )?;
+
+                let expr = AExprBuilder::col(idx_name.clone(), ctx.expr_arena)
+                    .sort(Default::default(), ctx.expr_arena)
+                    .expr_ir(idx_name.clone());
+                let stream = build_select_stream_with_ctx(stream, &[expr], ctx)?;
+
+                transformed_exprs.push(AExprBuilder::col(idx_name.clone(), ctx.expr_arena).node());
+                input_streams.insert(stream);
+            },
+
             #[cfg(feature = "is_in")]
             AExpr::Function {
                 input: ref inner_exprs,
@@ -938,7 +1086,7 @@ fn lower_exprs_with_ctx(
             },
 
             #[cfg(feature = "cum_agg")]
-            AExpr::Function {
+            ref agg_expr @ AExpr::Function {
                 input: ref inner_exprs,
                 function:
                     ref function @ (IRFunctionExpr::CumMin { reverse }
@@ -955,7 +1103,8 @@ fn lower_exprs_with_ctx(
                 let input_schema = &ctx.phys_sm[input.node].output_schema;
 
                 let value_key = unique_column_name();
-                let value_dtype = inner_exprs[0].dtype(input_schema, ctx.expr_arena)?;
+                let value_dtype =
+                    agg_expr.to_dtype(&ToFieldContext::new(ctx.expr_arena, input_schema))?;
 
                 let input = build_select_stream_with_ctx(
                     input,
@@ -1112,6 +1261,28 @@ fn lower_exprs_with_ctx(
 
             AExpr::Function {
                 input: ref inner_exprs,
+                function: IRFunctionExpr::GatherEvery { n, offset },
+                options: _,
+            } => {
+                assert_eq!(inner_exprs.len(), 1);
+
+                let value_key = unique_column_name();
+
+                let input = build_select_stream_with_ctx(
+                    input,
+                    &[inner_exprs[0].with_alias(value_key.clone())],
+                    ctx,
+                )?;
+                let node_kind = PhysNodeKind::GatherEvery { input, n, offset };
+
+                let output_schema = ctx.phys_sm[input.node].output_schema.clone();
+                let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, node_kind));
+                input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(value_key.clone())));
+            },
+
+            AExpr::Function {
+                input: ref inner_exprs,
                 function: ref function @ (IRFunctionExpr::PeakMin | IRFunctionExpr::PeakMax),
                 options: _,
             } => {
@@ -1133,6 +1304,92 @@ fn lower_exprs_with_ctx(
                     .insert(PhysNode::new(Arc::new(output_schema), node_kind));
                 input_streams.insert(PhysStream::first(node_key));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(value_key.clone())));
+            },
+
+            // pl.row_index() maps to this.
+            #[cfg(feature = "range")]
+            AExpr::Function {
+                input: ref inner_exprs,
+                function: IRFunctionExpr::Range(IRRangeFunction::IntRange { step: 1, dtype }),
+                options: _,
+            } if {
+                let start_is_zero = match ctx.expr_arena.get(inner_exprs[0].node()) {
+                    AExpr::Literal(lit) => lit.extract_usize().ok() == Some(0),
+                    _ => false,
+                };
+                let stop_is_len = matches!(ctx.expr_arena.get(inner_exprs[1].node()), AExpr::Len);
+
+                dtype == DataType::IDX_DTYPE && start_is_zero && stop_is_len
+            } =>
+            {
+                let out_name = unique_column_name();
+                let row_idx_col_aexpr = ctx.expr_arena.add(AExpr::Column(out_name.clone()));
+                let row_idx_col_expr_ir =
+                    ExprIR::new(row_idx_col_aexpr, OutputName::ColumnLhs(out_name.clone()));
+                let row_idx_stream = build_select_stream_with_ctx(
+                    build_row_idx_stream(input, out_name, None, ctx.phys_sm),
+                    &[row_idx_col_expr_ir],
+                    ctx,
+                )?;
+                input_streams.insert(row_idx_stream);
+                transformed_exprs.push(row_idx_col_aexpr);
+            },
+
+            #[cfg(feature = "range")]
+            AExpr::Function {
+                input: ref inner_exprs,
+                function: IRFunctionExpr::Range(IRRangeFunction::IntRange { step: 1, dtype }),
+                options: _,
+            } if {
+                let start_is_zero = match ctx.expr_arena.get(inner_exprs[0].node()) {
+                    AExpr::Literal(lit) => lit.extract_usize().ok() == Some(0),
+                    _ => false,
+                };
+                let stop_is_count = matches!(
+                    ctx.expr_arena.get(inner_exprs[1].node()),
+                    AExpr::Agg(IRAggExpr::Count { .. })
+                );
+
+                start_is_zero && stop_is_count
+            } =>
+            {
+                let AExpr::Agg(IRAggExpr::Count {
+                    input: input_expr,
+                    include_nulls,
+                }) = ctx.expr_arena.get(inner_exprs[1].node())
+                else {
+                    unreachable!();
+                };
+                let (input_expr, include_nulls) = (*input_expr, *include_nulls);
+
+                let out_name = unique_column_name();
+                let mut row_idx_col_aexpr = ctx.expr_arena.add(AExpr::Column(out_name.clone()));
+                if dtype != IDX_DTYPE {
+                    row_idx_col_aexpr = AExprBuilder::new_from_node(row_idx_col_aexpr)
+                        .cast(dtype, ctx.expr_arena)
+                        .node();
+                }
+                let row_idx_col_expr_ir =
+                    ExprIR::new(row_idx_col_aexpr, OutputName::ColumnLhs(out_name.clone()));
+
+                let mut input_expr = AExprBuilder::new_from_node(input_expr);
+                if !include_nulls {
+                    input_expr = input_expr.drop_nulls(ctx.expr_arena);
+                }
+                let input_expr = input_expr.expr_ir_retain_name(ctx.expr_arena);
+
+                let row_idx_stream = build_select_stream_with_ctx(
+                    build_row_idx_stream(
+                        build_select_stream_with_ctx(input, &[input_expr], ctx)?,
+                        out_name,
+                        None,
+                        ctx.phys_sm,
+                    ),
+                    &[row_idx_col_expr_ir],
+                    ctx,
+                )?;
+                input_streams.insert(row_idx_stream);
+                transformed_exprs.push(row_idx_col_aexpr);
             },
 
             // Lower arbitrary elementwise functions.
@@ -1215,7 +1472,10 @@ fn lower_exprs_with_ctx(
                 evaluation,
                 variant,
             } => match variant {
-                EvalVariant::List => {
+                EvalVariant::List
+                | EvalVariant::ListAgg
+                | EvalVariant::Array { as_list: _ }
+                | EvalVariant::ArrayAgg => {
                     let (trans_input, trans_expr) = lower_exprs_with_ctx(input, &[inner], ctx)?;
                     let eval_expr = AExpr::Eval {
                         expr: trans_expr[0],
@@ -1400,6 +1660,15 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
+            AExpr::AnonymousStreamingAgg {
+                input: _,
+                fmt_str: _,
+                function: _,
+            } => {
+                let (trans_stream, trans_expr) = lower_unary_reduce_node(input, expr, ctx)?;
+                input_streams.insert(trans_stream);
+                transformed_exprs.push(trans_expr);
+            },
             // Aggregates.
             AExpr::Agg(agg) => match agg {
                 // Change agg mutably so we can share the codepath for all of these.
@@ -1407,6 +1676,7 @@ fn lower_exprs_with_ctx(
                 | IRAggExpr::Max { .. }
                 | IRAggExpr::First(_)
                 | IRAggExpr::Last(_)
+                | IRAggExpr::Item { .. }
                 | IRAggExpr::Sum(_)
                 | IRAggExpr::Mean(_)
                 | IRAggExpr::Var { .. }
@@ -1481,11 +1751,22 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(trans_expr);
             },
 
+            #[cfg(feature = "approx_unique")]
+            AExpr::Function {
+                function: IRFunctionExpr::ApproxNUnique,
+                ..
+            } => {
+                let (trans_stream, trans_expr) = lower_unary_reduce_node(input, expr, ctx)?;
+                input_streams.insert(trans_stream);
+                transformed_exprs.push(trans_expr);
+            },
+
             AExpr::Function {
                 function:
                     IRFunctionExpr::Boolean(
                         IRBooleanFunction::Any { .. } | IRBooleanFunction::All { .. },
-                    ),
+                    )
+                    | IRFunctionExpr::NullCount,
                 ..
             } => {
                 let (trans_stream, trans_expr) = lower_unary_reduce_node(input, expr, ctx)?;
@@ -1565,35 +1846,6 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(AExprBuilder::col(out_name.clone(), ctx.expr_arena).node());
             },
 
-            // pl.row_index() maps to this.
-            #[cfg(feature = "range")]
-            AExpr::Function {
-                input: ref inner_exprs,
-                function: IRFunctionExpr::Range(IRRangeFunction::IntRange { step: 1, dtype }),
-                options: _,
-            } if {
-                let start_is_zero = match ctx.expr_arena.get(inner_exprs[0].node()) {
-                    AExpr::Literal(lit) => lit.extract_usize().ok() == Some(0),
-                    _ => false,
-                };
-                let stop_is_len = matches!(ctx.expr_arena.get(inner_exprs[1].node()), AExpr::Len);
-
-                dtype == DataType::IDX_DTYPE && start_is_zero && stop_is_len
-            } =>
-            {
-                let out_name = unique_column_name();
-                let row_idx_col_aexpr = ctx.expr_arena.add(AExpr::Column(out_name.clone()));
-                let row_idx_col_expr_ir =
-                    ExprIR::new(row_idx_col_aexpr, OutputName::ColumnLhs(out_name.clone()));
-                let row_idx_stream = build_select_stream_with_ctx(
-                    build_row_idx_stream(input, out_name, None, ctx.phys_sm),
-                    &[row_idx_col_expr_ir],
-                    ctx,
-                )?;
-                input_streams.insert(row_idx_stream);
-                transformed_exprs.push(row_idx_col_aexpr);
-            },
-
             AExpr::Slice {
                 input: inner,
                 offset,
@@ -1647,6 +1899,94 @@ fn lower_exprs_with_ctx(
                 ));
 
                 input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+            },
+
+            #[cfg(feature = "ewma")]
+            AExpr::Function {
+                input: input_exprs,
+                function:
+                    ewm_variant @ IRFunctionExpr::EwmMean { options }
+                    | ewm_variant @ IRFunctionExpr::EwmVar { options }
+                    | ewm_variant @ IRFunctionExpr::EwmStd { options },
+                options: _,
+            } => {
+                let out_name = unique_column_name();
+
+                let input = match input_exprs.as_slice() {
+                    [input_expr] => build_select_stream_with_ctx(
+                        input,
+                        &[input_expr.with_alias(out_name.clone())],
+                        ctx,
+                    )?,
+                    _ => panic!("{:?}", input_exprs),
+                };
+
+                let input_schema = ctx.phys_sm[input.node].output_schema.clone();
+                assert_eq!(input_schema.len(), 1);
+                let output_schema = input_schema;
+
+                let kind = match ewm_variant {
+                    IRFunctionExpr::EwmMean { .. } => PhysNodeKind::EwmMean { input, options },
+                    IRFunctionExpr::EwmVar { .. } => PhysNodeKind::EwmVar { input, options },
+                    IRFunctionExpr::EwmStd { .. } => PhysNodeKind::EwmStd { input, options },
+                    _ => unreachable!(),
+                };
+                let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
+                input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+            },
+
+            #[cfg(feature = "dynamic_group_by")]
+            AExpr::Window {
+                function,
+                partition_by,
+                order_by: None,
+                options: WindowType::Rolling(options),
+            } if partition_by.first().is_some_and(
+                |n| matches!(ctx.expr_arena.get(*n), AExpr::Column(c) if c == &options.index_column),
+            ) =>
+            {
+                let out_name = unique_column_name();
+
+                let input_columns = aexpr_to_leaf_names(function, ctx.expr_arena).into_iter()
+                    .chain(std::iter::once(options.index_column.clone()))
+                    .map(|n| AExprBuilder::col(n.clone(), ctx.expr_arena).expr_ir(n))
+                    .collect::<Vec<_>>();
+                let input = build_select_stream_with_ctx(input, &input_columns, ctx)?;
+
+                let input_schema = &ctx.phys_sm[input.node].output_schema;
+                let mut output_dtype = ctx
+                    .expr_arena
+                    .get(function)
+                    .to_dtype(&ToFieldContext::new(ctx.expr_arena, input_schema))?;
+                if !is_scalar_ae(function, ctx.expr_arena) {
+                    output_dtype = output_dtype.implode();
+                }
+                let output_schema = Schema::from_iter([
+                    input_schema.try_get_field(&options.index_column)?,
+                    Field::new(out_name.clone(), output_dtype),
+                ]);
+
+                let kind = PhysNodeKind::RollingGroupBy {
+                    input,
+                    index_column: options.index_column.clone(),
+                    period: options.period,
+                    offset: options.offset,
+                    closed: options.closed_window,
+                    aggs: vec![AExprBuilder::new_from_node(function).expr_ir(out_name.clone())],
+                };
+                let node_key = ctx
+                    .phys_sm
+                    .insert(PhysNode::new(Arc::new(output_schema), kind));
+                let input = PhysStream::first(node_key);
+
+                let input = build_select_stream_with_ctx(
+                    input,
+                    &[AExprBuilder::col(out_name.clone(), ctx.expr_arena).expr_ir(out_name.clone())],
+                    ctx
+                )?;
+                input_streams.insert(input);
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 

@@ -4,7 +4,7 @@ use crate::constants::POLARS_PLACEHOLDER;
 use crate::dsl::{DslPlan, FileScanDsl, ScanSources, SinkType};
 
 /// Assert that the given [`DslPlan`] is eligible to be executed on Polars Cloud.
-pub(super) fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
+pub(super) fn assert_cloud_eligible(dsl: &DslPlan, allow_local_scans: bool) -> PolarsResult<()> {
     if std::env::var("POLARS_SKIP_CLIENT_CHECK").as_deref() == Ok("1") {
         return Ok(());
     }
@@ -23,9 +23,10 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
             } => {
                 match sources {
                     ScanSources::Paths(addrs) => {
-                        if addrs
-                            .iter()
-                            .any(|p| !p.is_cloud_url() && p.to_str() != POLARS_PLACEHOLDER)
+                        if !allow_local_scans
+                            && addrs
+                                .iter()
+                                .any(|p| !p.is_cloud_url() && p.to_str() != POLARS_PLACEHOLDER)
                         {
                             return ineligible_error("contains scan of local file system");
                         }
@@ -47,12 +48,12 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
                     SinkType::Memory => {
                         return ineligible_error("contains memory sink");
                     },
-                    SinkType::File(_) => {
+                    SinkType::Callback(_) => {
+                        return ineligible_error("contains callback sink");
+                    },
+                    SinkType::File(_) | SinkType::Partition(_) => {
                         // The sink destination is passed around separately, can't check the
                         // eligibility here.
-                    },
-                    SinkType::Partition(_) => {
-                        return ineligible_error("contains partition sink");
                     },
                 }
             },

@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
@@ -11,6 +12,7 @@ use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
     CastColumnsPolicy, JoinTypeOptionsIR, MissingColumnsPolicy, PartitionTargetCallback,
     PartitionVariantIR, ScanSources, SinkFinishCallback, SinkOptions, SinkTarget, SortColumnIR,
+    TableStatistics,
 };
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::{AExpr, DataFrameUdf, IR};
@@ -22,9 +24,12 @@ mod lower_expr;
 mod lower_group_by;
 mod lower_ir;
 mod to_graph;
+#[cfg(feature = "physical_plan_visualization")]
+pub mod visualization;
 
 pub use fmt::visualize_plan;
-use polars_plan::prelude::FileType;
+use polars_plan::prelude::{FileType, PlanCallback};
+use polars_time::{ClosedWindow, Duration};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::plpath::PlPath;
@@ -76,7 +81,7 @@ pub struct PhysStream {
 }
 
 impl PhysStream {
-    #[expect(unused)]
+    #[allow(unused)]
     pub fn new(node: PhysNodeKey, port: usize) -> Self {
         Self { node, port }
     }
@@ -88,6 +93,10 @@ impl PhysStream {
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "physical_plan_visualization",
+    derive(strum_macros::IntoStaticStr)
+)]
 pub enum PhysNodeKind {
     InMemorySource {
         df: Arc<DataFrame>,
@@ -150,6 +159,13 @@ pub enum PhysNodeKind {
 
     InMemorySink {
         input: PhysStream,
+    },
+
+    CallbackSink {
+        input: PhysStream,
+        function: PlanCallback<DataFrame, bool>,
+        maintain_order: bool,
+        chunk_size: Option<NonZeroUsize>,
     },
 
     FileSink {
@@ -219,6 +235,11 @@ pub enum PhysNodeKind {
     },
 
     // Parameter is the input stream
+    GatherEvery {
+        input: PhysStream,
+        n: usize,
+        offset: usize,
+    },
     Rle(PhysStream),
     RleId(PhysStream),
     IsFirstDistinct(PhysStream),
@@ -259,6 +280,7 @@ pub enum PhysNodeKind {
         row_index: Option<RowIndex>,
         pre_slice: Option<Slice>,
         predicate: Option<ExprIR>,
+        predicate_file_skip_applied: Option<bool>,
 
         hive_parts: Option<HivePartitionsDf>,
         include_file_paths: Option<PlSmallStr>,
@@ -267,6 +289,7 @@ pub enum PhysNodeKind {
         forbid_extra_columns: Option<ForbidExtraColumns>,
 
         deletion_files: Option<DeletionFilesList>,
+        table_statistics: Option<TableStatistics>,
 
         /// Schema of columns contained in the file. Does not contain external columns (e.g. hive / row_index).
         file_schema: SchemaRef,
@@ -281,6 +304,16 @@ pub enum PhysNodeKind {
         input: PhysStream,
         key: Vec<ExprIR>,
         // Must be a 'simple' expression, a singular column feeding into a single aggregate, or Len.
+        aggs: Vec<ExprIR>,
+    },
+
+    #[cfg(feature = "dynamic_group_by")]
+    RollingGroupBy {
+        input: PhysStream,
+        index_column: PlSmallStr,
+        period: Duration,
+        offset: Duration,
+        closed: ClosedWindow,
         aggs: Vec<ExprIR>,
     },
 
@@ -324,6 +357,24 @@ pub enum PhysNodeKind {
         input_left: PhysStream,
         input_right: PhysStream,
     },
+
+    #[cfg(feature = "ewma")]
+    EwmMean {
+        input: PhysStream,
+        options: polars_ops::series::EWMOptions,
+    },
+
+    #[cfg(feature = "ewma")]
+    EwmVar {
+        input: PhysStream,
+        options: polars_ops::series::EWMOptions,
+    },
+
+    #[cfg(feature = "ewma")]
+    EwmStd {
+        input: PhysStream,
+        options: polars_ops::series::EWMOptions,
+    },
 }
 
 fn visit_node_inputs_mut(
@@ -357,17 +408,25 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::Filter { input, .. }
             | PhysNodeKind::SimpleProjection { input, .. }
             | PhysNodeKind::InMemorySink { input }
+            | PhysNodeKind::CallbackSink { input, .. }
             | PhysNodeKind::FileSink { input, .. }
             | PhysNodeKind::PartitionSink { input, .. }
             | PhysNodeKind::InMemoryMap { input, .. }
             | PhysNodeKind::Map { input, .. }
             | PhysNodeKind::Sort { input, .. }
             | PhysNodeKind::Multiplexer { input }
+            | PhysNodeKind::GatherEvery { input, .. }
             | PhysNodeKind::Rle(input)
             | PhysNodeKind::RleId(input)
             | PhysNodeKind::IsFirstDistinct(input)
             | PhysNodeKind::PeakMinMax { input, .. }
             | PhysNodeKind::GroupBy { input, .. } => {
+                rec!(input.node);
+                visit(input);
+            },
+
+            #[cfg(feature = "dynamic_group_by")]
+            PhysNodeKind::RollingGroupBy { input, .. } => {
                 rec!(input.node);
                 visit(input);
             },
@@ -472,6 +531,14 @@ fn visit_node_inputs_mut(
                     rec!(*sink);
                     visit(&mut PhysStream::first(*sink));
                 }
+            },
+
+            #[cfg(feature = "ewma")]
+            PhysNodeKind::EwmMean { input, options: _ }
+            | PhysNodeKind::EwmVar { input, options: _ }
+            | PhysNodeKind::EwmStd { input, options: _ } => {
+                rec!(input.node);
+                visit(input)
             },
         }
     }

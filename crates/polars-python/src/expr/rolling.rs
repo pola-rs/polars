@@ -322,6 +322,53 @@ impl PyExpr {
             .into())
     }
 
+    #[pyo3(signature = (window_size, method, seed, min_samples, center))]
+    fn rolling_rank(
+        &self,
+        window_size: usize,
+        method: Wrap<RollingRankMethod>,
+        seed: Option<u64>,
+        min_samples: Option<usize>,
+        center: bool,
+    ) -> Self {
+        let min_samples = min_samples.unwrap_or(window_size);
+        let options = RollingOptionsFixedWindow {
+            window_size,
+            min_periods: min_samples,
+            weights: None,
+            center,
+            fn_params: Some(RollingFnParams::Rank {
+                method: method.0,
+                seed,
+            }),
+        };
+
+        self.inner.clone().rolling_rank(options).into()
+    }
+
+    #[pyo3(signature = (by, window_size, method, seed, min_samples, closed))]
+    fn rolling_rank_by(
+        &self,
+        by: PyExpr,
+        window_size: &str,
+        method: Wrap<RollingRankMethod>,
+        seed: Option<u64>,
+        min_samples: usize,
+        closed: Wrap<ClosedWindow>,
+    ) -> PyResult<Self> {
+        let options = RollingOptionsDynamicWindow {
+            window_size: Duration::try_parse(window_size).map_err(PyPolarsErr::from)?,
+            min_periods: min_samples,
+            closed_window: closed.0,
+            fn_params: Some(RollingFnParams::Rank {
+                method: method.0,
+                seed,
+            }),
+        };
+
+        Ok(self.inner.clone().rolling_rank_by(by.inner, options).into())
+    }
+
     #[pyo3(signature = (window_size, bias, min_periods, center))]
     fn rolling_skew(
         &self,
@@ -366,7 +413,7 @@ impl PyExpr {
     #[pyo3(signature = (lambda, window_size, weights, min_periods, center))]
     fn rolling_map(
         &self,
-        lambda: PyObject,
+        lambda: Py<PyAny>,
         window_size: usize,
         weights: Option<Vec<f64>>,
         min_periods: Option<usize>,

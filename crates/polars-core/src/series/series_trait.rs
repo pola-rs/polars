@@ -36,8 +36,8 @@ pub enum BitRepr {
     U16(UInt16Chunked),
     U32(UInt32Chunked),
     U64(UInt64Chunked),
-    #[cfg(feature = "dtype-i128")]
-    I128(Int128Chunked),
+    #[cfg(feature = "dtype-u128")]
+    U128(UInt128Chunked),
 }
 
 pub(crate) mod private {
@@ -395,6 +395,8 @@ pub trait SeriesTrait:
         None
     }
 
+    fn deposit(&self, validity: &Bitmap) -> Series;
+
     /// Find the indices of elements where the null masks are different recursively.
     fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>);
 
@@ -512,6 +514,10 @@ pub trait SeriesTrait:
     /// Get the median of the Series as a new Series of length 1.
     fn median_reduce(&self) -> PolarsResult<Scalar> {
         polars_bail!(opq = median, self._dtype());
+    }
+    /// Get the mean of the Series as a new Scalar
+    fn mean_reduce(&self) -> PolarsResult<Scalar> {
+        polars_bail!(opq = mean, self._dtype());
     }
     /// Get the variance of the Series as a new Series of length 1.
     fn var_reduce(&self, _ddof: u8) -> PolarsResult<Scalar> {

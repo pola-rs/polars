@@ -225,6 +225,7 @@ impl<'a> IRDotDisplay<'a> {
                 file_info,
                 hive_parts: _,
                 predicate,
+                predicate_file_skip_applied: _,
                 scan_type,
                 unified_scan_args,
                 output_schema: _,
@@ -291,6 +292,7 @@ impl<'a> IRDotDisplay<'a> {
                 write_label(f, id, |f| {
                     f.write_str(match payload {
                         SinkTypeIR::Memory => "SINK (MEMORY)",
+                        SinkTypeIR::Callback { .. } => "SINK (CALLBACK)",
                         SinkTypeIR::File { .. } => "SINK (FILE)",
                         SinkTypeIR::Partition { .. } => "SINK (PARTITION)",
                     })
@@ -405,12 +407,11 @@ impl fmt::Write for EscapeLabel<'_> {
         loop {
             let mut char_indices = s.char_indices();
 
-            // This escapes quotes and new lines
-            // @NOTE: I am aware this does not work for \" and such. I am ignoring that fact as we
-            // are not really using such strings.
+            // This escapes quotes, new lines, and backslashes
             let f = char_indices.find_map(|(i, c)| match c {
                 '"' => Some((i, r#"\""#)),
                 '\n' => Some((i, r#"\n"#)),
+                '\\' => Some((i, r"\\")),
                 _ => None,
             });
 

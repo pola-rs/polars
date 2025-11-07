@@ -6,6 +6,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 
+@pytest.mark.may_fail_cloud  # reason: with_context
 def test_with_context() -> None:
     df_a = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "c", None]}).lazy()
     df_b = pl.DataFrame({"c": ["foo", "ham"]})
@@ -23,6 +24,7 @@ def test_with_context() -> None:
 
 
 # https://github.com/pola-rs/polars/issues/5867
+@pytest.mark.may_fail_cloud  # reason: with_context
 def test_with_context_ignore_5867() -> None:
     outer = pl.LazyFrame({"OtherCol": [1, 2, 3, 4]})
     with pytest.deprecated_call():
@@ -36,6 +38,7 @@ def test_with_context_ignore_5867() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.may_fail_cloud  # reason: with_context
 def test_predicate_pushdown_with_context_11014() -> None:
     df1 = pl.LazyFrame(
         {
@@ -61,6 +64,7 @@ def test_predicate_pushdown_with_context_11014() -> None:
     assert out.to_dict(as_series=False) == {"df1_c1": [2, 3], "df1_c2": [3, 4]}
 
 
+@pytest.mark.may_fail_cloud  # reason: with_context
 def test_no_cse_in_with_context() -> None:
     df1 = pl.DataFrame(
         {

@@ -355,6 +355,7 @@ fn parse_impl(
     bytes: &[u8],
     buffers: &mut PlIndexMap<BufferKey, Buffer>,
     scratch: &mut Scratch,
+    ignore_errors: bool,
 ) -> PolarsResult<usize> {
     scratch.json.clear();
     scratch.json.extend_from_slice(bytes);
@@ -371,8 +372,11 @@ fn parse_impl(
                 PolarsResult::Ok(())
             })?;
         },
-        _ => {
+        _ if ignore_errors => {
             buffers.iter_mut().for_each(|(_, inner)| inner.add_null());
+        },
+        v => {
+            polars_bail!(ComputeError: "NDJSON line expected to contain JSON object: {v}");
         },
     };
     Ok(n)
@@ -397,12 +401,16 @@ pub fn json_lines(bytes: &[u8]) -> impl Iterator<Item = &[u8]> {
     })
 }
 
-fn parse_lines(bytes: &[u8], buffers: &mut PlIndexMap<BufferKey, Buffer>) -> PolarsResult<()> {
+fn parse_lines(
+    bytes: &[u8],
+    buffers: &mut PlIndexMap<BufferKey, Buffer>,
+    ignore_errors: bool,
+) -> PolarsResult<()> {
     let mut scratch = Scratch::default();
 
     let iter = json_lines(bytes);
     for bytes in iter {
-        parse_impl(bytes, buffers, &mut scratch)?;
+        parse_impl(bytes, buffers, &mut scratch, ignore_errors)?;
     }
     Ok(())
 }
@@ -416,7 +424,7 @@ pub fn parse_ndjson(
     let capacity = n_rows_hint.unwrap_or_else(|| estimate_n_lines_in_chunk(bytes));
 
     let mut buffers = init_buffers(schema, capacity, ignore_errors)?;
-    parse_lines(bytes, &mut buffers)?;
+    parse_lines(bytes, &mut buffers, ignore_errors)?;
 
     DataFrame::new(
         buffers

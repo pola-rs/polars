@@ -18,14 +18,3 @@ impl Display for FusedOperator {
         write!(f, "{s}")
     }
 }
-
-pub(super) fn fused(input: &[Column], op: FusedOperator) -> PolarsResult<Column> {
-    let s0 = &input[0];
-    let s1 = &input[1];
-    let s2 = &input[2];
-    match op {
-        FusedOperator::MultiplyAdd => Ok(fma_columns(s0, s1, s2)),
-        FusedOperator::SubMultiply => Ok(fsm_columns(s0, s1, s2)),
-        FusedOperator::MultiplySub => Ok(fms_columns(s0, s1, s2)),
-    }
-}

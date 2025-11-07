@@ -1,6 +1,10 @@
+use arrow::bitmap::BitmapBuilder;
 use arrow::types::NativeType;
 
+use crate::parquet::error::ParquetResult;
 use crate::parquet::types::NativeType as ParquetNativeType;
+use crate::read::deserialize::utils::Decoded;
+use crate::read::expr::ParquetScalar;
 
 mod float;
 mod integer;
@@ -34,6 +38,28 @@ where
             intermediate: Vec::new(),
             _pd: std::marker::PhantomData,
         }
+    }
+
+    fn extend_constant(
+        &mut self,
+        decoded: &mut (Vec<T>, BitmapBuilder),
+        length: usize,
+        value: &ParquetScalar,
+    ) -> ParquetResult<()> {
+        if value.is_null() {
+            decoded.extend_nulls(length);
+            return Ok(());
+        }
+
+        let value = match P::try_from(value) {
+            Ok(v) => self.decoder.decode(v),
+            Err(_) => panic!(),
+        };
+
+        decoded.0.extend(std::iter::repeat_n(value, length));
+        decoded.1.extend_constant(length, false);
+
+        Ok(())
     }
 }
 

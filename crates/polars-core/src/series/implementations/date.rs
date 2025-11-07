@@ -263,6 +263,14 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
             .into_series()
     }
 
+    fn deposit(&self, validity: &Bitmap) -> Series {
+        self.0
+            .physical()
+            .deposit(validity)
+            .into_date()
+            .into_series()
+    }
+
     fn len(&self) -> usize {
         self.0.len()
     }
@@ -380,6 +388,14 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
+    fn mean_reduce(&self) -> PolarsResult<Scalar> {
+        let mean = self.mean().map(|v| (v * US_IN_DAY as f64) as i64);
+        Ok(Scalar::new(
+            DataType::Datetime(TimeUnit::Microseconds, None),
+            mean.into(),
+        ))
+    }
+
     fn median_reduce(&self) -> PolarsResult<Scalar> {
         let av: AnyValue = self
             .median()
@@ -389,6 +405,11 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
             DataType::Datetime(TimeUnit::Microseconds, None),
             av,
         ))
+    }
+
+    #[cfg(feature = "approx_unique")]
+    fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
+        Ok(ChunkApproxNUnique::approx_n_unique(self.0.physical()))
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

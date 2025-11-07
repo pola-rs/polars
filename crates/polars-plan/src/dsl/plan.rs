@@ -17,11 +17,12 @@ use super::*;
 // It is no longer needed to increment this. We use the schema hashes to check for compatibility.
 //
 // Only increment if you need to make a breaking change that doesn't change the schema hashes.
-pub const DSL_VERSION: (u16, u16) = (23, 0);
+pub const DSL_VERSION: (u16, u16) = (24, 0);
 const DSL_MAGIC_BYTES: &[u8] = b"DSL_VERSION";
 
 const DSL_SCHEMA_HASH: SchemaHash<'static> = SchemaHash::from_hash_file();
 
+#[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum DslPlan {
@@ -101,7 +102,7 @@ pub enum DslPlan {
     },
     PipeWithSchema {
         input: Arc<DslPlan>,
-        callback: PlanCallback<(DslPlan, Schema), DslPlan>,
+        callback: PlanCallback<(DslPlan, SchemaRef), DslPlan>,
     },
     /// Remove duplicates from the table
     Distinct {
@@ -267,7 +268,9 @@ impl DslPlan {
         writer.write_all(&le_major)?;
         writer.write_all(&le_minor)?;
         writer.write_all(DSL_SCHEMA_HASH.as_bytes())?;
-        pl_serialize::serialize_dsl(writer, self)
+        let serializable_plan = serializable_plan::SerializableDslPlan::from(self);
+        pl_serialize::serialize_dsl(writer, &serializable_plan)
+            .map_err(|e| polars_err!(ComputeError: "serialization failed\n\nerror: {e}"))
     }
 
     #[cfg(feature = "serde")]
@@ -316,6 +319,7 @@ impl DslPlan {
         reader.read_exact(&mut schema_hash).map_err(
             |e| polars_err!(ComputeError: "failed to read incoming DSL_SCHEMA_HASH: {e}"),
         )?;
+
         let incoming_hash = SchemaHash::new(&schema_hash).ok_or_else(
             || polars_err!(ComputeError: "failed to read incoming DSL schema hash, not a valid hex string")
         )?;
@@ -326,47 +330,46 @@ impl DslPlan {
             );
         }
 
-        if incoming_hash != DSL_SCHEMA_HASH {
+        if std::env::var("POLARS_SKIP_DSL_HASH_VERIFICATION").as_deref() != Ok("1")
+            && incoming_hash != DSL_SCHEMA_HASH
+        {
             polars_bail!(ComputeError:
                 "deserialization failed\n\ngiven DSL_SCHEMA_HASH: {incoming_hash} is not compatible with this Polars version which uses DSL_SCHEMA_HASH: {DSL_SCHEMA_HASH}\n{}",
                 "error: can't deserialize DSL with incompatible schema"
             );
         }
 
-        pl_serialize::deserialize_dsl(reader)
-            .map_err(|e| polars_err!(ComputeError: "deserialization failed\n\nerror: {e}"))
+        let serializable_plan: serializable_plan::SerializableDslPlan =
+            pl_serialize::deserialize_dsl(reader)
+                .map_err(|e| polars_err!(ComputeError: "deserialization failed\n\nerror: {e}"))?;
+        (&serializable_plan).try_into()
     }
 
     #[cfg(feature = "dsl-schema")]
-    pub fn dsl_schema() -> schemars::schema::RootSchema {
-        use schemars::r#gen::SchemaSettings;
-        use schemars::schema::SchemaObject;
-        use schemars::visit::{Visitor, visit_schema_object};
+    pub fn dsl_schema() -> schemars::Schema {
+        use schemars::Schema;
+        use schemars::generate::SchemaSettings;
+        use schemars::transform::{Transform, transform_subschemas};
 
         #[derive(Clone, Copy, Debug)]
-        struct MyVisitor;
+        struct MyTransform;
 
-        impl Visitor for MyVisitor {
-            fn visit_schema_object(&mut self, schema: &mut SchemaObject) {
+        impl Transform for MyTransform {
+            fn transform(&mut self, schema: &mut Schema) {
                 // Remove descriptions auto-generated from doc comments
-                if schema.metadata.is_some() {
-                    schema.metadata().description = None;
-                }
+                schema.remove("description");
 
-                visit_schema_object(self, schema);
+                transform_subschemas(self, schema);
             }
         }
 
         let mut schema = SchemaSettings::default()
-            .with_visitor(MyVisitor)
+            .with_transform(MyTransform)
             .into_generator()
             .into_root_schema_for::<DslPlan>();
 
         // Add the DSL schema hash as a top level field
-        schema
-            .schema
-            .extensions
-            .insert("hash".into(), DSL_SCHEMA_HASH.to_string().into());
+        schema.insert("hash".into(), DSL_SCHEMA_HASH.to_string().into());
 
         schema
     }

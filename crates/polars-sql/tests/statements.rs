@@ -590,14 +590,6 @@ fn test_compound_invalid_1() {
 #[should_panic]
 fn test_compound_invalid_2() {
     let mut ctx = prepare_compound_join_context();
-    let sql = "SELECT * FROM df1 LEFT JOIN df2 ON df1.a = df2.a AND b = b";
-    let _ = ctx.execute(sql).unwrap();
-}
-
-#[test]
-#[should_panic]
-fn test_compound_invalid_3() {
-    let mut ctx = prepare_compound_join_context();
     let sql = "SELECT * FROM df1 INNER JOIN df2 ON df1.a = df2.a AND b";
     let _ = ctx.execute(sql).unwrap();
 }

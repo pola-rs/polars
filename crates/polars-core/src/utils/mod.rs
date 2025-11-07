@@ -397,6 +397,8 @@ macro_rules! match_dtype_to_logical_apply_macro {
             DataType::UInt16 => $macro!(UInt16Type $(, $opt_args)*),
             DataType::UInt32 => $macro!(UInt32Type $(, $opt_args)*),
             DataType::UInt64 => $macro!(UInt64Type $(, $opt_args)*),
+            #[cfg(feature = "dtype-u128")]
+            DataType::UInt128 => $macro!(UInt128Type $(, $opt_args)*),
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => $macro!(Int8Type $(, $opt_args)*),
             #[cfg(feature = "dtype-i16")]
@@ -425,6 +427,8 @@ macro_rules! match_arrow_dtype_apply_macro_ca {
             DataType::UInt16 => $macro!($self.u16().unwrap() $(, $opt_args)*),
             DataType::UInt32 => $macro!($self.u32().unwrap() $(, $opt_args)*),
             DataType::UInt64 => $macro!($self.u64().unwrap() $(, $opt_args)*),
+            #[cfg(feature = "dtype-u128")]
+            DataType::UInt128 => $macro!($self.u128().unwrap() $(, $opt_args)*),
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => $macro!($self.i8().unwrap() $(, $opt_args)*),
             #[cfg(feature = "dtype-i16")]
@@ -461,6 +465,8 @@ macro_rules! with_match_physical_numeric_type {(
         UInt16 => __with_ty__! { u16 },
         UInt32 => __with_ty__! { u32 },
         UInt64 => __with_ty__! { u64 },
+        #[cfg(feature = "dtype-u128")]
+        UInt128 => __with_ty__! { u128 },
         Float32 => __with_ty__! { f32 },
         Float64 => __with_ty__! { f64 },
         dt => panic!("not implemented for dtype {:?}", dt),
@@ -488,6 +494,8 @@ macro_rules! with_match_physical_integer_type {(
         UInt16 => __with_ty__! { u16 },
         UInt32 => __with_ty__! { u32 },
         UInt64 => __with_ty__! { u64 },
+        #[cfg(feature = "dtype-u128")]
+        UInt128 => __with_ty__! { u128 },
         dt => panic!("not implemented for dtype {:?}", dt),
     }
 })}
@@ -539,6 +547,8 @@ macro_rules! with_match_physical_numeric_polars_type {(
         UInt16 => __with_ty__! { UInt16Type },
         UInt32 => __with_ty__! { UInt32Type },
         UInt64 => __with_ty__! { UInt64Type },
+            #[cfg(feature = "dtype-u128")]
+        UInt128 => __with_ty__! { UInt128Type },
         Float32 => __with_ty__! { Float32Type },
         Float64 => __with_ty__! { Float64Type },
         dt => panic!("not implemented for dtype {:?}", dt),
@@ -567,6 +577,8 @@ macro_rules! with_match_physical_integer_polars_type {(
         UInt16 => __with_ty__! { UInt16Type },
         UInt32 => __with_ty__! { UInt32Type },
         UInt64 => __with_ty__! { UInt64Type },
+        #[cfg(feature = "dtype-u128")]
+        UInt128 => __with_ty__! { UInt128Type },
         dt => panic!("not implemented for dtype {:?}", dt),
     }
 })}
@@ -595,6 +607,8 @@ macro_rules! downcast_as_macro_arg_physical {
             DataType::UInt16 => $macro!($self.u16().unwrap() $(, $opt_args)*),
             DataType::UInt32 => $macro!($self.u32().unwrap() $(, $opt_args)*),
             DataType::UInt64 => $macro!($self.u64().unwrap() $(, $opt_args)*),
+            #[cfg(feature = "dtype-u128")]
+            DataType::UInt128 => $macro!($self.u128().unwrap() $(, $opt_args)*),
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => $macro!($self.i8().unwrap() $(, $opt_args)*),
             #[cfg(feature = "dtype-i16")]
@@ -634,6 +648,11 @@ macro_rules! downcast_as_macro_arg_physical_mut {
             DataType::UInt64 => {
                 let ca: &mut UInt64Chunked = $self.as_mut();
                 $macro!(UInt64Type, ca $(, $opt_args)*)
+            },
+            #[cfg(feature = "dtype-u128")]
+            DataType::UInt128 => {
+                let ca: &mut UInt128Chunked = $self.as_mut();
+                $macro!(UInt128Type, ca $(, $opt_args)*)
             },
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => {
@@ -683,6 +702,8 @@ macro_rules! apply_method_all_arrow_series {
             DataType::UInt16 => $self.u16().unwrap().$method($($args),*),
             DataType::UInt32 => $self.u32().unwrap().$method($($args),*),
             DataType::UInt64 => $self.u64().unwrap().$method($($args),*),
+            #[cfg(feature = "dtype-u128")]
+            DataType::UInt128 => $self.u128().unwrap().$medthod($($args),*),
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => $self.i8().unwrap().$method($($args),*),
             #[cfg(feature = "dtype-i16")]
@@ -713,6 +734,8 @@ macro_rules! apply_method_physical_integer {
             DataType::UInt16 => $self.u16().unwrap().$method($($args),*),
             DataType::UInt32 => $self.u32().unwrap().$method($($args),*),
             DataType::UInt64 => $self.u64().unwrap().$method($($args),*),
+            #[cfg(feature = "dtype-u128")]
+            DataType::UInt128 => $self.u128().unwrap().$method($($args),*),
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => $self.i8().unwrap().$method($($args),*),
             #[cfg(feature = "dtype-i16")]
@@ -1294,22 +1317,6 @@ pub fn coalesce_nulls_columns(a: &Column, b: &Column) -> (Column, Column) {
         (a.into(), b.into())
     } else {
         (a.clone(), b.clone())
-    }
-}
-
-pub fn operation_exceeded_idxsize_msg(operation: &str) -> String {
-    if size_of::<IdxSize>() == size_of::<u32>() {
-        format!(
-            "{} exceeded the maximum supported limit of {} rows. Consider installing 'polars-u64-idx'.",
-            operation,
-            IdxSize::MAX,
-        )
-    } else {
-        format!(
-            "{} exceeded the maximum supported limit of {} rows.",
-            operation,
-            IdxSize::MAX,
-        )
     }
 }
 

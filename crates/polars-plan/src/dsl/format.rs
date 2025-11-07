@@ -12,6 +12,7 @@ impl fmt::Debug for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Expr::*;
         match self {
+            Element => f.write_str("element()"),
             Window {
                 function,
                 partition_by,
@@ -112,6 +113,13 @@ impl fmt::Debug for Expr {
                     Mean(expr) => write!(f, "{expr:?}.mean()"),
                     First(expr) => write!(f, "{expr:?}.first()"),
                     Last(expr) => write!(f, "{expr:?}.last()"),
+                    Item { input, allow_empty } => {
+                        if *allow_empty {
+                            write!(f, "{input:?}.item(allow_empty=true)")
+                        } else {
+                            write!(f, "{input:?}.item()")
+                        }
+                    },
                     Implode(expr) => write!(f, "{expr:?}.list()"),
                     NUnique(expr) => write!(f, "{expr:?}.n_unique()"),
                     Sum(expr) => write!(f, "{expr:?}.sum()"),
@@ -178,6 +186,14 @@ impl fmt::Debug for Expr {
                 variant,
             } => match variant {
                 EvalVariant::List => write!(f, "{input:?}.list.eval({evaluation:?})"),
+                EvalVariant::ListAgg => write!(f, "{input:?}.list.agg({evaluation:?})"),
+                EvalVariant::Array { as_list: false } => {
+                    write!(f, "{input:?}.arr.eval({evaluation:?})")
+                },
+                EvalVariant::Array { as_list: true } => {
+                    write!(f, "{input:?}.arr.eval({evaluation:?}, as_list=true)")
+                },
+                EvalVariant::ArrayAgg => write!(f, "{input:?}.arr.agg({evaluation:?})"),
                 EvalVariant::Cumulative { min_samples } => write!(
                     f,
                     "{input:?}.Cumulative_eval({evaluation:?}, min_samples={min_samples}"
@@ -190,13 +206,24 @@ impl fmt::Debug for Expr {
             } => write!(f, "{input:?}.slice(offset={offset:?}, length={length:?})",),
             KeepName(e) => write!(f, "{e:?}.name.keep()"),
             RenameAlias { expr, function } => match function {
-                RenameAliasFn::Prefix(s) => write!(f, "{expr:?}.prefix({s})"),
-                RenameAliasFn::Suffix(s) => write!(f, "{expr:?}.suffix({s})"),
-                RenameAliasFn::ToLowercase => write!(f, "{expr:?}.to_lowercase()"),
-                RenameAliasFn::ToUppercase => write!(f, "{expr:?}.to_uppercase()"),
-                #[cfg(feature = "python")]
-                RenameAliasFn::Python(_) => write!(f, "{expr:?}.rename_alias()"),
-                RenameAliasFn::Rust(_) => write!(f, "{expr:?}.rename_alias()"),
+                RenameAliasFn::Prefix(s) => write!(f, "{expr:?}.name.prefix({s})"),
+                RenameAliasFn::Suffix(s) => write!(f, "{expr:?}.name.suffix({s})"),
+                RenameAliasFn::ToLowercase => write!(f, "{expr:?}.name.to_lowercase()"),
+                RenameAliasFn::ToUppercase => write!(f, "{expr:?}.name.to_uppercase()"),
+                RenameAliasFn::Map(_) => write!(f, "{expr:?}.name.map()"),
+                RenameAliasFn::Replace {
+                    pattern,
+                    value,
+                    literal: false,
+                } => write!(f, "{expr:?}.replace(\"{pattern}\", \"{value}\")"),
+                RenameAliasFn::Replace {
+                    pattern,
+                    value,
+                    literal: true,
+                } => write!(
+                    f,
+                    "{expr:?}.replace(\"{pattern}\", \"{value}\", literal=true)"
+                ),
             },
             Selector(s) => fmt::Display::fmt(s, f),
             #[cfg(feature = "dtype-struct")]

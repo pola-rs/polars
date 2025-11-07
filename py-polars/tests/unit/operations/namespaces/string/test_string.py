@@ -10,6 +10,7 @@ from polars.exceptions import (
     ColumnNotFoundError,
     ComputeError,
     InvalidOperationError,
+    PolarsInefficientMapWarning,
     ShapeError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
@@ -1177,7 +1178,7 @@ def test_replace_all() -> None:
     )
 
 
-def test_replace_all_literal_no_caputures() -> None:
+def test_replace_all_literal_no_captures() -> None:
     # When using literal = True, capture groups should be disabled
 
     # Single row code path in Rust
@@ -1205,7 +1206,7 @@ def test_replace_all_literal_no_caputures() -> None:
     assert df2.get_column("text2")[1] == "I lost $2 yesterday."
 
 
-def test_replace_literal_no_caputures() -> None:
+def test_replace_literal_no_captures() -> None:
     # When using literal = True, capture groups should be disabled
 
     # Single row code path in Rust
@@ -1829,28 +1830,6 @@ def test_splitn_expr() -> None:
 def test_titlecase() -> None:
     df = pl.DataFrame(
         {
-            "misc": [
-                "welcome to my world",
-                "double  space",
-                "and\ta\t tab",
-                "by jean-paul sartre, 'esq'",
-                "SOMETIMES/life/gives/you/a/2nd/chance",
-            ],
-        }
-    )
-    expected = [
-        "Welcome To My World",
-        "Double  Space",
-        "And\tA\t Tab",
-        "By Jean-Paul Sartre, 'Esq'",
-        "Sometimes/Life/Gives/You/A/2nd/Chance",
-    ]
-    actual = df.select(pl.col("misc").str.to_titlecase()).to_series()
-    for ex, act in zip(expected, actual):
-        assert ex == act, f"{ex} != {act}"
-
-    df = pl.DataFrame(
-        {
             "quotes": [
                 "'e.t. phone home'",
                 "you talkin' to me?",
@@ -1858,23 +1837,20 @@ def test_titlecase() -> None:
                 "to infinity,and BEYOND!",
                 "say 'what' again!i dare you - I\u00a0double-dare you!",
                 "What.we.got.here... is#failure#to#communicate",
+                "welcome to my world",
+                "double  space",
+                "and\ta\t tab",
+                "by jean-paul sartre, 'esq'",
+                "SOMETIMES/life/gives/you/a/2nd/chance",
             ]
         }
     )
-    expected_str = [
-        "'E.T. Phone Home'",
-        "You Talkin' To Me?",
-        "I Feel The Need--The Need For Speed",
-        "To Infinity,And Beyond!",
-        "Say 'What' Again!I Dare You - I\u00a0Double-Dare You!",
-        "What.We.Got.Here... Is#Failure#To#Communicate",
-    ]
-    expected_py = [s.title() for s in df["quotes"].to_list()]
-    for ex_str, ex_py, act in zip(
-        expected_str, expected_py, df["quotes"].str.to_titlecase()
-    ):
-        assert ex_str == act, f"{ex_str} != {act}"
-        assert ex_py == act, f"{ex_py} != {act}"
+
+    with pytest.warns(PolarsInefficientMapWarning):
+        assert_frame_equal(
+            df.select(pl.col("quotes").str.to_titlecase()),
+            df.select(pl.col("quotes").map_elements(lambda s: s.title())),
+        )
 
 
 def test_string_replace_with_nulls_10124() -> None:
@@ -2118,3 +2094,12 @@ def test_str_replace_n_zero_23570() -> None:
 
     out = df.with_columns(pl.col("a").str.replace("abc", pl.col("b"), n=0))
     assert_frame_equal(out, expected)
+
+
+def test_str_replace_null_19601() -> None:
+    df = pl.DataFrame({"key": ["1", "2"], "1": ["---", None]})
+
+    assert_frame_equal(
+        df.select(result=pl.col("key").str.replace("1", pl.col("1"))),
+        pl.DataFrame({"result": ["---", "2"]}),
+    )

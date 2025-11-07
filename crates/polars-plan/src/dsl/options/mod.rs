@@ -31,7 +31,7 @@ use serde::{Deserialize, Serialize};
 pub use sink::*;
 use strum_macros::IntoStaticStr;
 
-use super::ExprIR;
+use super::{Expr, ExprIR};
 use crate::dsl::Selector;
 
 #[derive(Copy, Clone, PartialEq, Debug, Eq, Hash)]
@@ -87,7 +87,9 @@ impl Hash for JoinTypeOptionsIR {
         match self {
             #[cfg(feature = "iejoin")]
             IEJoin(opt) => opt.hash(state),
-            CrossAndFilter { predicate } => predicate.node().hash(state),
+            CrossAndFilter { predicate } => {
+                predicate.node().hash(state);
+            },
         }
     }
 }
@@ -117,10 +119,6 @@ pub struct JoinOptionsIR {
     pub force_parallel: bool,
     pub args: JoinArgs,
     pub options: Option<JoinTypeOptionsIR>,
-    /// Proxy of the number of rows in both sides of the joins
-    /// Holds `(Option<known_size>, estimated_size)`
-    pub rows_left: (Option<usize>, usize),
-    pub rows_right: (Option<usize>, usize),
 }
 
 impl From<JoinOptions> for JoinOptionsIR {
@@ -130,8 +128,6 @@ impl From<JoinOptions> for JoinOptionsIR {
             force_parallel: opts.force_parallel,
             args: opts.args,
             options: Default::default(),
-            rows_left: (None, usize::MAX),
-            rows_right: (None, usize::MAX),
         }
     }
 }
@@ -335,8 +331,8 @@ impl GroupbyOptions {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct DistinctOptionsDSL {
-    /// Subset of columns that will be taken into account.
-    pub subset: Option<Selector>,
+    /// Subset of columns/expressions that will be taken into account.
+    pub subset: Option<Vec<Expr>>,
     /// This will maintain the order of the input.
     /// Note that this is more expensive.
     /// `maintain_order` is not supported in the streaming
@@ -365,7 +361,7 @@ pub struct AnonymousScanOptions {
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, strum_macros::IntoStaticStr)]
 pub enum FileType {
     #[cfg(feature = "parquet")]
     Parquet(ParquetWriteOptions),

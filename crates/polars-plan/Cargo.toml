@@ -12,7 +12,7 @@ description = "Lazy query engine for the Polars DataFrame library"
 doctest = false
 
 [dependencies]
-libloading = { version = "0.8.0", optional = true }
+libloading = { workspace = true, optional = true }
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
 polars-error = { workspace = true }
@@ -40,10 +40,11 @@ pyo3 = { workspace = true, optional = true }
 rayon = { workspace = true }
 recursive = { workspace = true }
 regex = { workspace = true, optional = true }
-schemars = { workspace = true, features = ["either"], optional = true }
+schemars = { workspace = true, features = ["either1"], optional = true }
 serde = { workspace = true, features = ["rc"], optional = true }
 serde_json = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
+slotmap = { workspace = true }
 strum_macros = { workspace = true }
 
 [build-dependencies]
@@ -64,12 +65,14 @@ serde = [
   "polars-utils/serde",
   "polars-compute/serde",
   "either/serde",
+  "slotmap/serde",
 ]
 parquet = ["polars-io/parquet", "polars-parquet"]
 async = ["polars-io/async", "futures"]
 cloud = ["async", "polars-io/cloud"]
 ipc = ["polars-io/ipc"]
 json = ["polars-io/json", "polars-json"]
+scan_lines = []
 csv = ["polars-io/csv"]
 temporal = [
   "chrono",
@@ -86,6 +89,7 @@ strings = ["polars-core/strings", "polars-ops/strings"]
 future = []
 dtype-u8 = ["polars-core/dtype-u8"]
 dtype-u16 = ["polars-core/dtype-u16"]
+dtype-u128 = ["polars-core/dtype-u128", "polars-ops/dtype-u128"]
 dtype-i8 = ["polars-core/dtype-i8"]
 dtype-i128 = ["polars-core/dtype-i128"]
 dtype-i16 = ["polars-core/dtype-i16"]
@@ -124,6 +128,15 @@ dsl-schema = [
   "polars-utils/dsl-schema",
   "polars-compute/dsl-schema",
 ]
+ir_visualization = [
+  "dep:serde_json",
+  "ir_serde",
+  "serde",
+]
+ir_visualization_schema = [
+  "ir_visualization",
+  "dsl-schema",
+]
 
 # operations
 bitwise = ["polars-core/bitwise", "polars-ops/bitwise"]
@@ -141,7 +154,7 @@ asof_join = ["polars-time", "polars-ops/asof_join"]
 iejoin = ["polars-ops/iejoin"]
 concat_str = []
 business = ["polars-ops/business"]
-range = []
+range = ["dtype-array"]
 mode = ["polars-ops/mode"]
 cum_agg = ["polars-ops/cum_agg"]
 interpolate = ["polars-ops/interpolate"]

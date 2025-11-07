@@ -7,7 +7,6 @@ mod delay_rechunk;
 
 mod cluster_with_columns;
 mod collapse_and_project;
-mod collapse_joins;
 mod collect_members;
 mod count_star;
 #[cfg(feature = "cse")]
@@ -26,6 +25,7 @@ pub mod set_order;
 mod simplify_expr;
 mod slice_pushdown_expr;
 mod slice_pushdown_lp;
+mod sortedness;
 mod stack_opt;
 
 use collapse_and_project::SimpleProjectionAndCollapse;
@@ -34,7 +34,6 @@ pub use cse::NaiveExprMerger;
 use delay_rechunk::DelayRechunk;
 pub use expand_datasets::ExpandedDataset;
 use polars_core::config::verbose;
-use polars_io::predicates::PhysicalIoExpr;
 pub use predicate_pushdown::PredicatePushDown;
 pub use projection_pushdown::ProjectionPushDown;
 pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
@@ -47,9 +46,6 @@ pub use crate::plans::conversion::type_coercion::TypeCoercionRule;
 use crate::plans::optimizer::count_star::CountStar;
 #[cfg(feature = "cse")]
 use crate::plans::optimizer::cse::CommonSubExprOptimizer;
-#[cfg(feature = "cse")]
-use crate::plans::optimizer::cse::prune_unused_caches;
-use crate::plans::optimizer::predicate_pushdown::ExprEval;
 #[cfg(feature = "cse")]
 use crate::plans::visitor::*;
 use crate::prelude::optimizer::collect_members::MemberCollector;
@@ -75,7 +71,11 @@ pub fn optimize(
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
-    expr_eval: ExprEval<'_>,
+    apply_scan_predicate_to_scan_ir: fn(
+        Node,
+        &mut Arena<IR>,
+        &mut Arena<AExpr>,
+    ) -> PolarsResult<()>,
 ) -> PolarsResult<Node> {
     #[allow(dead_code)]
     let verbose = verbose();
@@ -110,7 +110,7 @@ pub fn optimize(
     #[cfg(debug_assertions)]
     let prev_schema = lp_arena.get(lp_top).schema(lp_arena).into_owned();
 
-    let mut _opt_members = &mut None;
+    let mut _opt_members: &mut Option<MemberCollector> = &mut None;
 
     macro_rules! get_or_init_members {
         () => {
@@ -125,40 +125,6 @@ pub fn optimize(
     }
 
     // Run before slice pushdown
-    if opt_flags.contains(OptFlags::CHECK_ORDER_OBSERVE) {
-        let members = get_or_init_members!();
-        if members.has_group_by
-            | members.has_sort
-            | members.has_distinct
-            | members.has_joins_or_unions
-        {
-            match lp_arena.get(lp_top) {
-                IR::SinkMultiple { inputs } => {
-                    let mut roots = inputs.clone();
-                    for root in &mut roots {
-                        if !matches!(lp_arena.get(*root), IR::Sink { .. }) {
-                            *root = lp_arena.add(IR::Sink {
-                                input: *root,
-                                payload: SinkTypeIR::Memory,
-                            });
-                        }
-                    }
-                    set_order::simplify_and_fetch_orderings(&roots, lp_arena, expr_arena);
-                },
-                ir => {
-                    let mut tmp_top = lp_top;
-                    if !matches!(ir, IR::Sink { .. }) {
-                        tmp_top = lp_arena.add(IR::Sink {
-                            input: lp_top,
-                            payload: SinkTypeIR::Memory,
-                        });
-                    }
-                    _ = set_order::simplify_and_fetch_orderings(&[tmp_top], lp_arena, expr_arena)
-                },
-            }
-        }
-    }
-
     if opt_flags.simplify_expr() {
         #[cfg(feature = "fused")]
         rules.push(Box::new(fused::FusedArithmetic {}));
@@ -175,9 +141,7 @@ pub fn optimize(
                 eprintln!("found multiple sources; run comm_subplan_elim")
             }
 
-            let (lp, changed, cid2c) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
-
-            prune_unused_caches(lp_arena, cid2c);
+            let (lp, changed) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
 
             lp_top = lp;
             members.has_cache |= changed;
@@ -205,19 +169,11 @@ pub fn optimize(
     }
 
     if opt_flags.predicate_pushdown() {
-        let mut predicate_pushdown_opt = PredicatePushDown::new(
-            expr_eval,
-            pushdown_maintain_errors,
-            opt_flags.new_streaming(),
-        );
+        let mut predicate_pushdown_opt =
+            PredicatePushDown::new(pushdown_maintain_errors, opt_flags.new_streaming());
         let alp = lp_arena.take(lp_top);
         let alp = predicate_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
         lp_arena.replace(lp_top, alp);
-    }
-
-    // Make sure it is after predicate pushdown
-    if opt_flags.collapse_joins() && get_or_init_members!().has_filter_with_join_input {
-        collapse_joins::optimize(lp_top, lp_arena, expr_arena, opt_flags.new_streaming());
     }
 
     // Make sure its before slice pushdown.
@@ -259,9 +215,6 @@ pub fn optimize(
         rules.push(Box::new(FlattenUnionRule {}));
     }
 
-    // Note: ExpandDatasets must run after slice and predicate pushdown.
-    rules.push(Box::new(expand_datasets::ExpandDatasets {}) as Box<dyn OptimizationRule>);
-
     lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top)?;
 
     if opt_flags.cluster_with_columns() {
@@ -279,7 +232,6 @@ pub fn optimize(
             lp_arena,
             expr_arena,
             scratch,
-            expr_eval,
             verbose,
             pushdown_maintain_errors,
             opt_flags.new_streaming(),
@@ -297,6 +249,47 @@ pub fn optimize(
             Ok(rewritten.node())
         })?;
     }
+
+    if opt_flags.contains(OptFlags::CHECK_ORDER_OBSERVE) {
+        let members = get_or_init_members!();
+        if members.has_group_by
+            | members.has_sort
+            | members.has_distinct
+            | members.has_joins_or_unions
+        {
+            match lp_arena.get(lp_top) {
+                IR::SinkMultiple { inputs } => {
+                    let mut roots = inputs.clone();
+                    for root in &mut roots {
+                        if !matches!(lp_arena.get(*root), IR::Sink { .. }) {
+                            *root = lp_arena.add(IR::Sink {
+                                input: *root,
+                                payload: SinkTypeIR::Memory,
+                            });
+                        }
+                    }
+                    set_order::simplify_and_fetch_orderings(&roots, lp_arena, expr_arena);
+                },
+                ir => {
+                    let mut tmp_top = lp_top;
+                    if !matches!(ir, IR::Sink { .. }) {
+                        tmp_top = lp_arena.add(IR::Sink {
+                            input: lp_top,
+                            payload: SinkTypeIR::Memory,
+                        });
+                    }
+                    _ = set_order::simplify_and_fetch_orderings(&[tmp_top], lp_arena, expr_arena)
+                },
+            }
+        }
+    }
+
+    expand_datasets::expand_datasets(
+        lp_top,
+        lp_arena,
+        expr_arena,
+        apply_scan_predicate_to_scan_ir,
+    )?;
 
     // During debug we check if the optimizations have not modified the final schema.
     #[cfg(debug_assertions)]

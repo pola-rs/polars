@@ -55,6 +55,18 @@ impl AExprBuilder {
         )
     }
 
+    pub fn map_as_expr_ir<F: Fn(ExprIR, &mut Arena<AExpr>) -> AExpr>(
+        self,
+        mapper: F,
+        arena: &mut Arena<AExpr>,
+    ) -> Self {
+        let eir = ExprIR::from_node(self.node, arena);
+
+        let ae = mapper(eir, arena);
+        let node = arena.add(ae);
+        Self { node }
+    }
+
     pub fn row_encode_unary(
         self,
         variant: RowEncodingVariant,
@@ -95,6 +107,14 @@ impl AExprBuilder {
 
     pub fn agg(agg: IRAggExpr, arena: &mut Arena<AExpr>) -> Self {
         Self::new_from_aexpr(AExpr::Agg(agg), arena)
+    }
+
+    pub fn first(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::agg(IRAggExpr::First(self.node()), arena)
+    }
+
+    pub fn last(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::agg(IRAggExpr::Last(self.node()), arena)
     }
 
     pub fn min(self, arena: &mut Arena<AExpr>) -> Self {
@@ -373,6 +393,22 @@ impl AExprBuilder {
         nc.gt(idx_zero, arena)
     }
 
+    pub fn drop_nulls(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::function(
+            vec![self.expr_ir_retain_name(arena)],
+            IRFunctionExpr::DropNulls,
+            arena,
+        )
+    }
+
+    pub fn drop_nans(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::function(
+            vec![self.expr_ir_retain_name(arena)],
+            IRFunctionExpr::DropNans,
+            arena,
+        )
+    }
+
     pub fn eq(self, other: impl IntoAExprBuilder, arena: &mut Arena<AExpr>) -> Self {
         self.binary_op(other, Operator::Eq, arena)
     }
@@ -455,6 +491,10 @@ impl AExprBuilder {
 
     pub fn expr_ir(self, name: impl Into<PlSmallStr>) -> ExprIR {
         ExprIR::new(self.node(), OutputName::Alias(name.into()))
+    }
+
+    pub fn expr_ir_retain_name(self, arena: &Arena<AExpr>) -> ExprIR {
+        ExprIR::from_node(self.node(), arena)
     }
 
     pub fn expr_ir_unnamed(self) -> ExprIR {
