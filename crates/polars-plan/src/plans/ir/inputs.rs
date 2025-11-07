@@ -119,7 +119,7 @@ impl IR {
             },
 
             Invalid => unreachable!(),
-            PlaceholderScan { .. } => unreachable!(),
+            PlaceholderScan { .. } => Exprs::Empty,
         }
     }
 
@@ -193,7 +193,7 @@ impl IR {
             },
 
             Invalid => unreachable!(),
-            PlaceholderScan { .. } => unreachable!(),
+            PlaceholderScan { .. } => ExprsMut::Empty,
         }
     }
 
