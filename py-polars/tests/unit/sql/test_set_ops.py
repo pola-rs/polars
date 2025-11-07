@@ -114,7 +114,7 @@ def test_update_statement_error() -> None:
 
     with pytest.raises(
         SQLInterfaceError,
-        match="'UPDATE large SET FQDN = u.FQDN, NS1 = u.NS1, NS2 = u.NS2, NS3 = u.NS3 FROM u WHERE large.FQDN = u.FQDN' operation is currently unsupported",
+        match=r"'UPDATE large SET FQDN = u\.FQDN, NS1 = u\.NS1, NS2 = u\.NS2, NS3 = u\.NS3 FROM u WHERE large\.FQDN = u\.FQDN' operation is currently unsupported",
     ):
         ctx.execute("""
             WITH u AS (

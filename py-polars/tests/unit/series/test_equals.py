@@ -32,13 +32,13 @@ def test_equals() -> None:
 
     with pytest.raises(
         TypeError,
-        match="expected `other` to be a 'Series'.* not 'DataFrame'",
+        match=r"expected `other` to be a 'Series'.* not 'DataFrame'",
     ):
         s1.equals(pl.DataFrame(s2), check_names=False)  # type: ignore[arg-type]
 
     with pytest.raises(
         TypeError,
-        match="expected `other` to be a 'Series'.* not 'LazyFrame'",
+        match=r"expected `other` to be a 'Series'.* not 'LazyFrame'",
     ):
         s1.equals(pl.DataFrame(s2).lazy(), check_names=False)  # type: ignore[arg-type]
 

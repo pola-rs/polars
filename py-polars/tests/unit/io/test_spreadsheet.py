@@ -1201,7 +1201,7 @@ def test_excel_write_worksheet_object() -> None:
 
     with pytest.raises(  # noqa: SIM117
         ValueError,
-        match="the given workbook object .* is not the parent of worksheet 'frame_data'",
+        match=r"the given workbook object .* is not the parent of worksheet 'frame_data'",
     ):
         with Workbook(BytesIO()) as wb:
             df.write_excel(wb, worksheet=ws)

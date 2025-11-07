@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 def num_cse_occurrences(explanation: str) -> int:
     """The number of unique CSE columns in an explain string."""
-    return len(set(re.findall('__POLARS_CSER_0x[^"]+"', explanation)))
+    return len(set(re.findall(r'__POLARS_CSER_0x[^"]+"', explanation)))
 
 
 def create_dataframe_source(
