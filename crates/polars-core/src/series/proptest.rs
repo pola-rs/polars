@@ -12,9 +12,11 @@ use crate::chunked_array::builder::AnonymousListBuilder;
 #[cfg(feature = "dtype-categorical")]
 use crate::chunked_array::builder::CategoricalChunkedBuilder;
 use crate::prelude::{Int32Chunked, Int64Chunked, Int128Chunked, NamedFrom, Series, TimeUnit};
+#[cfg(feature = "dtype-struct")]
 use crate::series::StructChunked;
+use crate::series::from::IntoSeries;
 #[cfg(feature = "dtype-categorical")]
-use crate::series::{Categorical8Type, DataType, IntoSeries};
+use crate::series::{Categorical8Type, DataType};
 
 // A global, thread-safe counter that will be used to ensure unique column names when the Series are created
 // This is especially useful for when the Series strategies are combined to create a DataFrame strategy
