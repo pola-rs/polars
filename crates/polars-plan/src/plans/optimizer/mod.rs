@@ -2,7 +2,6 @@ use polars_core::prelude::*;
 
 use crate::prelude::*;
 
-mod cache_states;
 mod delay_rechunk;
 
 mod cluster_with_columns;
@@ -176,6 +175,23 @@ pub fn optimize(
         lp_arena.replace(lp_top, alp);
     }
 
+    if _cse_plan_changed
+        && get_members_opt!().is_some_and(|members| {
+            (members.has_joins_or_unions | members.has_sink_multiple) && members.has_cache
+        })
+    {
+        // We only want to run this on cse inserted caches
+        cse::set_cache_states(
+            lp_top,
+            lp_arena,
+            expr_arena,
+            scratch,
+            verbose,
+            pushdown_maintain_errors,
+            opt_flags.new_streaming(),
+        )?;
+    }
+
     // Make sure its before slice pushdown.
     if opt_flags.fast_projection() {
         rules.push(Box::new(SimpleProjectionAndCollapse::new(
@@ -219,23 +235,6 @@ pub fn optimize(
 
     if opt_flags.cluster_with_columns() {
         cluster_with_columns::optimize(lp_top, lp_arena, expr_arena)
-    }
-
-    if _cse_plan_changed
-        && get_members_opt!().is_some_and(|members| {
-            (members.has_joins_or_unions | members.has_sink_multiple) && members.has_cache
-        })
-    {
-        // We only want to run this on cse inserted caches
-        cache_states::set_cache_states(
-            lp_top,
-            lp_arena,
-            expr_arena,
-            scratch,
-            verbose,
-            pushdown_maintain_errors,
-            opt_flags.new_streaming(),
-        )?;
     }
 
     // This one should run (nearly) last as this modifies the projections
