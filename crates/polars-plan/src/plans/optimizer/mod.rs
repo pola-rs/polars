@@ -124,10 +124,14 @@ pub fn optimize(
     }
     let mut root = to_alp(logical_plan, expr_arena, ir_arena, &mut opt_flags)?;
 
+    #[allow(unused_assignments)]
+    let mut comm_subplan_elim = false;
     // Don't run optimizations that don't make sense on a single node.
     // This keeps eager execution more snappy.
     #[cfg(feature = "cse")]
-    let comm_subplan_elim = opt_flags.contains(OptFlags::COMM_SUBPLAN_ELIM);
+    {
+        comm_subplan_elim = opt_flags.contains(OptFlags::COMM_SUBPLAN_ELIM);
+    }
 
     #[cfg(feature = "cse")]
     let comm_subexpr_elim = opt_flags.contains(OptFlags::COMM_SUBEXPR_ELIM);
