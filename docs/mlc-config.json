@@ -8,7 +8,10 @@
     },
     {
       "pattern": "^https://marketplace.visualstudio.com/"
+    },
+    {
+      "pattern": "^cloud-storage.md"
     }
-  ],
+        ],
   "retryOn429": true
 }
