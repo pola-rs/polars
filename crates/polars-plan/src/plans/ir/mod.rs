@@ -617,6 +617,7 @@ impl IRPlan {
     }
 
     /// Recursively count PlaceholderScan nodes in the IR tree
+    /// #[allow(clippy::only_used_in_recursion)]
     fn count_placeholders_recursive(&self, node: Node, arena: &Arena<IR>) -> usize {
         let ir = arena.get(node);
         match ir {
