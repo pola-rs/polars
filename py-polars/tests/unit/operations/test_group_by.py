@@ -2335,7 +2335,7 @@ def test_group_by_first_last(
                     *[None] * 4, *list(range(5, n - 3)), *[None] * 4,  # idx = 5
                 ],
                 dtype=pl.Int32,
-            )
+            ),
         }
     )  # fmt: skip
     if group_as_slice:

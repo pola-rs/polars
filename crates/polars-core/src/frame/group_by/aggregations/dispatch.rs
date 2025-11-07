@@ -1,3 +1,4 @@
+use arrow::bitmap::bitmask::BitMask;
 use polars_compute::unique::{AmortizedUnique, amortized_unique_from_dtype};
 
 use super::*;
@@ -122,24 +123,20 @@ impl Series {
                     })
                     .collect_ca(PlSmallStr::EMPTY)
             },
-            GroupsType::Slice { groups, .. } => {
-                let null_s = s.is_not_null();
-                let values = null_s.downcast_as_array();
-                groups
-                    .iter()
-                    .map(|&[first, len]| {
-                        let mut this_idx = None;
-                        for ii in first..first + len {
-                            // SAFETY: null_values has no null values
-                            if values.value_unchecked(ii as usize) {
-                                this_idx = Some(ii);
-                                break;
-                            }
-                        }
-                        this_idx
-                    })
-                    .collect_ca(PlSmallStr::EMPTY)
-            },
+            GroupsType::Slice { groups, .. } => groups
+                .iter()
+                .map(|&[first, len]| {
+                    let mask = BitMask::from_bitmap(&validity);
+                    let validity = mask.sliced_unchecked(first as usize, len as usize);
+                    let leading_zeros = validity.leading_zeros() as IdxSize;
+                    if leading_zeros == len {
+                        // All values are null, we have no first non-null.
+                        None
+                    } else {
+                        Some(leading_zeros)
+                    }
+                })
+                .collect_ca(PlSmallStr::EMPTY),
         };
         // SAFETY: groups are always in bounds.
         let mut out = s.take_unchecked(&indices);
@@ -401,39 +398,38 @@ impl Series {
             self.clone()
         };
 
+        let validity = s.rechunk_validity().unwrap();
         let indices = match groups {
             GroupsType::Idx(groups) => {
-                let validity = s.rechunk_validity().unwrap();
                 groups
                     .iter()
                     .map(|(_, idx)| {
-                        let mut this_idx = None;
+                        // We may or may not find a valid value.
+                        let mut opt_idx = None;
                         for &ii in idx.iter().rev() {
-                            // SAFETY: null_values has no null values
+                            // SAFETY: index is always in range.
                             if validity.get_bit_unchecked(ii as usize) {
-                                this_idx = Some(ii);
+                                opt_idx = Some(ii);
                                 break;
                             }
                         }
-                        this_idx
+                        opt_idx
                     })
                     .collect_ca(PlSmallStr::EMPTY)
             },
             GroupsType::Slice { groups, .. } => {
-                let validity = s.is_not_null();
-                let validity = validity.downcast_as_array();
                 groups
                     .iter()
                     .map(|&[first, len]| {
-                        let mut this_idx = None;
-                        for ii in (first..first + len).rev() {
-                            // SAFETY: null_values has no null values
-                            if validity.value_unchecked(ii as usize) {
-                                this_idx = Some(ii);
-                                break;
-                            }
+                        let mask = BitMask::from_bitmap(&validity);
+                        let validity = mask.sliced_unchecked(first as usize, len as usize);
+                        let trailing_zeros = validity.trailing_zeros() as IdxSize;
+                        if trailing_zeros == len {
+                            // All values are null, we have no last non-null.
+                            None
+                        } else {
+                            Some(len - trailing_zeros - 1)
                         }
-                        this_idx
                     })
                     .collect_ca(PlSmallStr::EMPTY)
             },
