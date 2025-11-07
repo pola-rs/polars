@@ -74,7 +74,7 @@ impl PyLazyFrame {
     fn serialize_template(&self, py: Python<'_>) -> PyResult<Vec<u8>> {
         use polars_utils::pl_serialize;
 
-        py.enter_polars(|| {
+        py.enter_polars(|| -> PolarsResult<Vec<u8>> {
             let template = self.ldf.read().clone().to_template()?;
             let mut buffer = Vec::new();
             pl_serialize::serialize_dsl(&mut buffer, &template)?;
