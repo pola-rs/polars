@@ -105,3 +105,11 @@ SQL Functions
            :maxdepth: 2
 
            types
+
+        **Window**
+        ^^^^^^^^^^
+
+        .. toctree::
+           :maxdepth: 2
+
+           window
