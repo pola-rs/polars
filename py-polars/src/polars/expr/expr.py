@@ -895,44 +895,45 @@ class Expr:
         │ c: 3 ┆ 15   │
         │ d: 4 ┆ -20  │
         └──────┴──────┘
-
         '''
         return function(self, *args, **kwargs)
 
     def not_(self) -> Expr:
         """
-        Negate a boolean expression.
+        Method equivalent of bitwise "not" operator `~expr`.
+
+        This has the effect of negating logical boolean expressions,
+        but operates bitwise on integers.
 
         Examples
         --------
         >>> df = pl.DataFrame(
         ...     {
-        ...         "a": [True, False, False],
-        ...         "b": ["a", "b", None],
+        ...         "label": ["aa", "bb", "cc", "dd", "ee"],
+        ...         "valid": [True, False, None, False, True],
+        ...         "int_code": [1, 0, 2, None, -1],
         ...     }
         ... )
-        >>> df
-        shape: (3, 2)
-        ┌───────┬──────┐
-        │ a     ┆ b    │
-        │ ---   ┆ ---  │
-        │ bool  ┆ str  │
-        ╞═══════╪══════╡
-        │ true  ┆ a    │
-        │ false ┆ b    │
-        │ false ┆ null │
-        └───────┴──────┘
-        >>> df.select(pl.col("a").not_())
-        shape: (3, 1)
-        ┌───────┐
-        │ a     │
-        │ ---   │
-        │ bool  │
-        ╞═══════╡
-        │ false │
-        │ true  │
-        │ true  │
-        └───────┘
+
+        Apply "not" to boolean expression (negates the value) and
+        integer expression (operates bitwise):
+
+        >>> df.with_columns(
+        ...     not_valid=pl.col("valid").not_(),
+        ...     not_int_code=pl.col("int_code").not_(),
+        ... )
+        shape: (5, 5)
+        ┌───────┬───────┬──────────┬───────────┬──────────────┐
+        │ label ┆ valid ┆ int_code ┆ not_valid ┆ not_int_code │
+        │ ---   ┆ ---   ┆ ---      ┆ ---       ┆ ---          │
+        │ str   ┆ bool  ┆ i64      ┆ bool      ┆ i64          │
+        ╞═══════╪═══════╪══════════╪═══════════╪══════════════╡
+        │ aa    ┆ true  ┆ 1        ┆ false     ┆ -2           │
+        │ bb    ┆ false ┆ 0        ┆ true      ┆ -1           │
+        │ cc    ┆ null  ┆ 2        ┆ null      ┆ -3           │
+        │ dd    ┆ false ┆ null     ┆ true      ┆ null         │
+        │ ee    ┆ true  ┆ -1       ┆ false     ┆ 0            │
+        └───────┴───────┴──────────┴───────────┴──────────────┘
         """
         return wrap_expr(self._pyexpr.not_())
 
@@ -3472,11 +3473,16 @@ class Expr:
         return wrap_expr(self._pyexpr.last())
 
     @unstable()
-    def item(self) -> Expr:
+    def item(self, *, allow_empty: bool = False) -> Expr:
         """
         Get the single value.
 
         This raises an error if there is not exactly one value.
+
+        Parameters
+        ----------
+        allow_empty
+            Allow having no values to return `null`.
 
         See Also
         --------
@@ -3499,8 +3505,17 @@ class Expr:
         Traceback (most recent call last):
         ...
         polars.exceptions.ComputeError: aggregation 'item' expected a single value, got 3 values
+        >>> df.head(0).select(pl.col("a").item(allow_empty=True))
+        shape: (1, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ i64  │
+        ╞══════╡
+        │ null │
+        └──────┘
         """  # noqa: W505
-        return wrap_expr(self._pyexpr.item())
+        return wrap_expr(self._pyexpr.item(allow_empty=allow_empty))
 
     def over(
         self,
@@ -3732,7 +3747,7 @@ class Expr:
 
     def rolling(
         self,
-        index_column: str,
+        index_column: IntoExprColumn,
         *,
         period: str | timedelta,
         offset: str | timedelta | None = None,
@@ -3827,13 +3842,16 @@ class Expr:
         │ 2020-01-08 23:16:43 ┆ 1   ┆ 1     ┆ 1     ┆ 1     │
         └─────────────────────┴─────┴───────┴───────┴───────┘
         """
+        index_column_pyexpr = parse_into_expression(index_column)
         if offset is None:
             offset = negate_duration_string(parse_as_duration_string(period))
 
         period = parse_as_duration_string(period)
         offset = parse_as_duration_string(offset)
 
-        return wrap_expr(self._pyexpr.rolling(index_column, period, offset, closed))
+        return wrap_expr(
+            self._pyexpr.rolling(index_column_pyexpr, period, offset, closed)
+        )
 
     def is_unique(self) -> Expr:
         """
@@ -5104,6 +5122,9 @@ Consider using {self}.implode() instead"""
         """
         Method equivalent of bitwise "and" operator `expr & other & ...`.
 
+        This has the effect of combining logical boolean expressions,
+        but operates bitwise on integers.
+
         Parameters
         ----------
         *others
@@ -5118,6 +5139,9 @@ Consider using {self}.implode() instead"""
         ...         "z": [-9, 2, -1, 4, 8],
         ...     }
         ... )
+
+        Combine logical "and" conditions:
+
         >>> df.select(
         ...     (pl.col("x") >= pl.col("z"))
         ...     .and_(
@@ -5140,12 +5164,31 @@ Consider using {self}.implode() instead"""
         │ false │
         │ false │
         └───────┘
+
+        Bitwise "and" operation on integer columns:
+
+        >>> df.select("x", "z", x_and_z=pl.col("x").and_(pl.col("z")))
+        shape: (5, 3)
+        ┌─────┬─────┬─────────┐
+        │ x   ┆ z   ┆ x_and_z │
+        │ --- ┆ --- ┆ ---     │
+        │ i64 ┆ i64 ┆ i64     │
+        ╞═════╪═════╪═════════╡
+        │ 5   ┆ -9  ┆ 5       │
+        │ 6   ┆ 2   ┆ 2       │
+        │ 7   ┆ -1  ┆ 7       │
+        │ 4   ┆ 4   ┆ 4       │
+        │ 8   ┆ 8   ┆ 8       │
+        └─────┴─────┴─────────┘
         """
         return reduce(operator.and_, (self, *others))
 
     def or_(self, *others: Any) -> Expr:
         """
         Method equivalent of bitwise "or" operator `expr | other | ...`.
+
+        This has the effect of combining logical boolean expressions,
+        but operates bitwise on integers.
 
         Parameters
         ----------
@@ -5161,6 +5204,9 @@ Consider using {self}.implode() instead"""
         ...         "z": [-9, 2, -1, 4, 8],
         ...     }
         ... )
+
+        Combine logical "or" conditions:
+
         >>> df.select(
         ...     (pl.col("x") == pl.col("y"))
         ...     .or_(
@@ -5182,6 +5228,22 @@ Consider using {self}.implode() instead"""
         │ true  │
         │ false │
         └───────┘
+
+        Bitwise "or" operation on integer columns:
+
+        >>> df.select("x", "z", x_or_z=pl.col("x").or_(pl.col("z")))
+        shape: (5, 3)
+        ┌─────┬─────┬────────┐
+        │ x   ┆ z   ┆ x_or_z │
+        │ --- ┆ --- ┆ ---    │
+        │ i64 ┆ i64 ┆ i64    │
+        ╞═════╪═════╪════════╡
+        │ 5   ┆ -9  ┆ -9     │
+        │ 6   ┆ 2   ┆ 6      │
+        │ 7   ┆ -1  ┆ -1     │
+        │ 4   ┆ 4   ┆ 4      │
+        │ 8   ┆ 8   ┆ 8      │
+        └─────┴─────┴────────┘
         """
         return reduce(operator.or_, (self,) + others)
 

@@ -244,7 +244,9 @@ enum VisitRecord {
 
 fn skip_pre_visit(ae: &AExpr, is_groupby: bool) -> bool {
     match ae {
-        AExpr::Window { .. } => true,
+        #[cfg(feature = "dynamic_group_by")]
+        AExpr::Rolling { .. } => true,
+        AExpr::Over { .. } => true,
         #[cfg(feature = "dtype-struct")]
         AExpr::Ternary { .. } => is_groupby,
         _ => false,
@@ -365,7 +367,9 @@ impl ExprIdentifierVisitor<'_> {
         match ae {
             // window expressions should `evaluate_on_groups`, not `evaluate`
             // so we shouldn't cache the children as they are evaluated incorrectly
-            AExpr::Window { .. } => REFUSE_SKIP,
+            #[cfg(feature = "dynamic_group_by")]
+            AExpr::Rolling { .. } => REFUSE_SKIP,
+            AExpr::Over { .. } => REFUSE_SKIP,
             // Don't allow this for now, as we can get `null().cast()` in ternary expressions.
             // TODO! Add a typed null
             AExpr::Literal(LiteralValue::Scalar(sc)) if sc.is_null() => REFUSE_NO_MEMBER,

@@ -1334,7 +1334,7 @@ def _row_encode(
     return wrap_expr(result)
 
 
-def _wrap_acc_lamba(
+def _wrap_acc_lambda(
     function: Callable[[Series, Series], Series],
 ) -> Callable[[tuple[plr.PySeries, plr.PySeries]], plr.PySeries]:
     def wrapper(t: tuple[plr.PySeries, plr.PySeries]) -> plr.PySeries:
@@ -1466,7 +1466,7 @@ def fold(
     return wrap_expr(
         plr.fold(
             pyacc,
-            _wrap_acc_lamba(function),
+            _wrap_acc_lambda(function),
             pyexprs,
             returns_scalar=returns_scalar,
             return_dtype=rt,
@@ -1549,7 +1549,7 @@ def reduce(
     pyexprs = parse_into_list_of_expressions(exprs)
     return wrap_expr(
         plr.reduce(
-            _wrap_acc_lamba(function),
+            _wrap_acc_lambda(function),
             pyexprs,
             returns_scalar=returns_scalar,
             return_dtype=rt,
@@ -1631,7 +1631,7 @@ def cum_fold(
     return wrap_expr(
         plr.cum_fold(
             pyacc,
-            _wrap_acc_lamba(function),
+            _wrap_acc_lambda(function),
             pyexprs,
             returns_scalar=returns_scalar,
             return_dtype=rt,
@@ -1699,7 +1699,7 @@ def cum_reduce(
     pyexprs = parse_into_list_of_expressions(exprs)
     return wrap_expr(
         plr.cum_reduce(
-            _wrap_acc_lamba(function),
+            _wrap_acc_lambda(function),
             pyexprs,
             returns_scalar=returns_scalar,
             return_dtype=rt,

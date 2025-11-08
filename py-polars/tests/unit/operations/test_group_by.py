@@ -1943,3 +1943,190 @@ def test_group_by_rolling_fill_null_25036() -> None:
     )
 
     assert_frame_equal(result, expected)
+
+
+exprs = [
+    pl.col.a,
+    pl.col.a.filter(pl.col.a <= 1),
+    pl.col.a.first(),
+    pl.lit(1).alias("one"),
+    pl.lit(pl.Series([1])),
+]
+
+
+@pytest.mark.parametrize("lhs", exprs)
+@pytest.mark.parametrize("rhs", exprs)
+@pytest.mark.parametrize("op", [pl.Expr.add, pl.Expr.pow])
+def test_group_broadcast_binary_apply_expr_25046(
+    lhs: pl.Expr, rhs: pl.Expr, op: Any
+) -> None:
+    df = pl.DataFrame({"g": [10, 10, 20], "a": [1, 2, 3]})
+    groups = pl.lit(1)
+    out = df.group_by(groups).agg((op(lhs, rhs)).implode()).to_series(1)
+    expected = df.select((op(lhs, rhs)).implode()).to_series()
+    assert_series_equal(out, expected)
+
+
+def test_group_by_explode_none_dtype_25045() -> None:
+    df = pl.DataFrame({"a": [None, None, None], "b": [1.0, 2.0, None]})
+    out_a = df.group_by(pl.lit(1)).agg(pl.col.a.explode())
+    expected_a = pl.DataFrame({"literal": 1, "a": [[None, None, None]]})
+    assert_frame_equal(out_a, expected_a)
+
+    out_b = df.group_by(pl.lit(1)).agg(pl.col.b.explode())
+    assert len(out_a["a"][0]) == len(out_b["b"][0])
+
+    out_c = df.select(
+        pl.coalesce(pl.col.a.explode(), pl.col.b.explode())
+        .implode()
+        .over(pl.int_range(pl.len()))
+    )
+    expected_c = pl.DataFrame({"a": [[1.0], [2.0], [None]]})
+    assert_frame_equal(out_c, expected_c)
+
+
+@pytest.mark.parametrize(
+    ("expr", "is_scalar"),
+    [
+        (pl.Expr.forward_fill, False),
+        (pl.Expr.backward_fill, False),
+        (lambda e: e.forward_fill(1), False),
+        (lambda e: e.backward_fill(1), False),
+        (lambda e: e.forward_fill(2), False),
+        (lambda e: e.backward_fill(2), False),
+        (lambda e: e.forward_fill().min(), True),
+        (lambda e: e.backward_fill().min(), True),
+        (lambda e: e.forward_fill().first(), True),
+        (lambda e: e.backward_fill().first(), True),
+    ],
+)
+def test_group_by_forward_backward_fill(
+    expr: Callable[[pl.Expr], pl.Expr], is_scalar: bool
+) -> None:
+    combinations = [
+        [1, None, 2, None, None],
+        [None, 1, 2, 3, 4],
+        [None, None, None, None, None],
+        [1, 2, 3, 4, 5],
+        [1, None, 2, 3, 4],
+        [None, None, None, None, 1],
+        [1, None, None, None, None],
+        [None, None, None, 1, None],
+        [None, 1, None, None, None],
+    ]
+
+    cl = cs.starts_with("x")
+    df = pl.DataFrame(
+        [pl.Series("g", [1] * 5)]
+        + [pl.Series(f"x{i}", c, pl.Int64()) for i, c in enumerate(combinations)]
+    )
+
+    # verify that we are actually calculating something
+    assert len(df.lazy().select(expr(cl)).collect_schema()) == len(combinations)
+
+    data = df.group_by(lit=pl.lit(1)).agg(expr(cl)).drop("lit")
+    if not is_scalar:
+        data = data.explode(cs.all())
+    assert_frame_equal(df.select(expr(cl)), data)
+
+    data = df.group_by("g").agg(expr(cl)).drop("g")
+    if not is_scalar:
+        data = data.explode(cs.all())
+    assert_frame_equal(df.select(expr(cl)), data)
+
+    assert_frame_equal(
+        df.select(expr(cl)),
+        df.select(cl.implode().list.eval(expr(pl.element())).explode()),
+    )
+
+    df = pl.Schema({"x": pl.Int64()}).to_frame()
+
+    data = (
+        pl.DataFrame({"x": [None]})
+        .group_by(lit=pl.lit(1))
+        .agg(expr(pl.lit(pl.Series("x", [], pl.Int64()))))
+        .drop("lit")
+    )
+    if not is_scalar:
+        data = data.select(cs.all().reshape((-1,)))
+    assert_frame_equal(df.select(expr(cl)), data)
+
+    assert_frame_equal(
+        df.select(expr(cl)),
+        df.select(cl.implode().list.eval(expr(pl.element())).reshape((-1,))),
+    )
+
+
+@given(s=series())
+def test_group_by_drop_nulls(s: pl.Series) -> None:
+    df = s.rename("f").to_frame()
+
+    data = (
+        df.group_by(lit=pl.lit(1))
+        .agg(pl.col.f.drop_nulls())
+        .drop("lit")
+        .select(pl.col.f.reshape((-1,)))
+    )
+    assert_frame_equal(df.select(pl.col.f.drop_nulls()), data)
+
+    assert_frame_equal(
+        df.select(pl.col.f.drop_nulls()),
+        df.select(
+            pl.col.f.implode().list.eval(pl.element().drop_nulls()).reshape((-1,))
+        ),
+    )
+
+    df = pl.Schema({"f": pl.Int64()}).to_frame()
+
+    data = (
+        pl.DataFrame({"x": [None]})
+        .group_by(lit=pl.lit(1))
+        .agg(pl.lit(pl.Series("f", [], pl.Int64())).drop_nulls())
+        .drop("lit")
+    )
+    data = data.select(cs.all().reshape((-1,)))
+    assert_frame_equal(df.select(pl.col.f.drop_nulls()), data)
+
+    assert_frame_equal(
+        df.select(pl.col.f.drop_nulls()),
+        df.select(
+            pl.col.f.implode().list.eval(pl.element().drop_nulls()).reshape((-1,))
+        ),
+    )
+
+
+@given(s=series())
+def test_group_by_drop_nans(s: pl.Series) -> None:
+    df = s.rename("f").to_frame()
+
+    data = (
+        df.group_by(lit=pl.lit(1))
+        .agg(pl.col.f.drop_nans())
+        .select(pl.col.f.reshape((-1,)))
+    )
+    assert_frame_equal(df.select(pl.col.f.drop_nans()), data)
+
+    assert_frame_equal(
+        df.select(pl.col.f.drop_nans()),
+        df.select(
+            pl.col.f.implode().list.eval(pl.element().drop_nans()).reshape((-1,))
+        ),
+    )
+
+    df = pl.Schema({"f": pl.Int64()}).to_frame()
+
+    data = (
+        pl.DataFrame({"x": [None]})
+        .group_by(lit=pl.lit(1))
+        .agg(pl.lit(pl.Series("f", [], pl.Int64())).drop_nans())
+        .drop("lit")
+    )
+    data = data.select(cs.all().reshape((-1,)))
+    assert_frame_equal(df.select(pl.col.f.drop_nans()), data)
+
+    assert_frame_equal(
+        df.select(pl.col.f.drop_nans()),
+        df.select(
+            pl.col.f.implode().list.eval(pl.element().drop_nans()).reshape((-1,))
+        ),
+    )

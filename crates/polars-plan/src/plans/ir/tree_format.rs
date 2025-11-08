@@ -1,7 +1,7 @@
 use std::fmt;
 
 use polars_core::error::*;
-use polars_utils::{format_list_container_truncated, format_list_truncated};
+use polars_utils::format_list_truncated;
 
 use crate::constants;
 use crate::plans::ir::IRPlanRef;
@@ -71,9 +71,14 @@ impl fmt::Display for TreeFmtAExpr<'_> {
             AExpr::AnonymousFunction { fmt_str, .. } => {
                 return write!(f, "anonymous_function: {fmt_str}");
             },
+            AExpr::AnonymousStreamingAgg { fmt_str, .. } => {
+                return write!(f, "anonymous_streaming_agg: {fmt_str}");
+            },
             AExpr::Eval { .. } => "list.eval",
             AExpr::Function { function, .. } => return write!(f, "function: {function}"),
-            AExpr::Window { .. } => "window",
+            #[cfg(feature = "dynamic_group_by")]
+            AExpr::Rolling { .. } => "rolling",
+            AExpr::Over { .. } => "window",
             AExpr::Slice { .. } => "slice",
             AExpr::Len => constants::LEN,
         };

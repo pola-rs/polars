@@ -223,7 +223,7 @@ impl WindowExpr {
         // col("foo").min()
         let mut explicit_list = false;
         for e in &self.expr {
-            if let Expr::Window { function, .. } = e {
+            if let Expr::Over { function, .. } = e {
                 // or list().alias
                 let mut finishes_list = false;
                 for e in &**function {
@@ -247,7 +247,7 @@ impl WindowExpr {
         // or col().alias()
         let mut simple_col = false;
         for e in &self.expr {
-            if let Expr::Window { function, .. } = e {
+            if let Expr::Over { function, .. } = e {
                 // or list().alias
                 for e in &**function {
                     match e {
@@ -268,7 +268,7 @@ impl WindowExpr {
         // or col().agg()
         let mut agg_col = false;
         for e in &self.expr {
-            if let Expr::Window { function, .. } = e {
+            if let Expr::Over { function, .. } = e {
                 // or list().alias
                 for e in &**function {
                     match e {

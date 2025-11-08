@@ -6,6 +6,7 @@ use polars_plan::constants::CSE_REPLACED;
 use super::*;
 use crate::expressions::{AggregationContext, PhysicalExpr};
 
+#[derive(Debug)]
 pub struct ColumnExpr {
     name: PlSmallStr,
     expr: Expr,
@@ -154,5 +155,9 @@ impl PhysicalExpr for ColumnExpr {
     }
     fn is_scalar(&self) -> bool {
         false
+    }
+
+    fn as_column(&self) -> Option<PlSmallStr> {
+        Some(self.name.clone())
     }
 }

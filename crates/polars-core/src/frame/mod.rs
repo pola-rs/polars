@@ -391,6 +391,13 @@ impl DataFrame {
     }
 
     /// Create an empty `DataFrame` with empty columns as per the `schema`.
+    pub fn empty_with_arc_schema(schema: Arc<Schema>) -> Self {
+        let mut df = Self::empty_with_schema(&schema);
+        df.cached_schema = OnceLock::from(schema);
+        df
+    }
+
+    /// Create an empty `DataFrame` with empty columns as per the `schema`.
     pub fn empty_with_schema(schema: &Schema) -> Self {
         let cols = schema
             .iter()
@@ -2108,6 +2115,8 @@ impl DataFrame {
 
     /// Rename a column in the [`DataFrame`].
     ///
+    /// Should not be called in a loop as that can lead to quadratic behavior.
+    ///
     /// # Example
     ///
     /// ```
@@ -2133,6 +2142,37 @@ impl DataFrame {
             .map(|c| c.rename(name))?;
         self.clear_schema();
 
+        Ok(self)
+    }
+
+    pub fn rename_many<'a>(
+        &mut self,
+        renames: impl Iterator<Item = (&'a str, PlSmallStr)>,
+    ) -> PolarsResult<&mut Self> {
+        let mut schema = self.schema().as_ref().clone();
+        self.clear_schema();
+
+        for (from, to) in renames {
+            if from == to.as_str() {
+                continue;
+            }
+
+            polars_ensure!(
+                !schema.contains(&to),
+                Duplicate: "column rename attempted with already existing name \"{to}\""
+            );
+
+            match schema.get_full(from) {
+                None => polars_bail!(col_not_found = from),
+                Some((idx, _, _)) => {
+                    let (n, _) = schema.get_at_index_mut(idx).unwrap();
+                    *n = to.clone();
+                    self.columns.get_mut(idx).unwrap().rename(to);
+                },
+            }
+        }
+
+        self.cached_schema = OnceLock::from(Arc::new(schema));
         Ok(self)
     }
 
@@ -2761,6 +2801,7 @@ impl DataFrame {
         (a, b)
     }
 
+    #[must_use]
     pub fn clear(&self) -> Self {
         let col = self.columns.iter().map(|s| s.clear()).collect::<Vec<_>>();
         unsafe { DataFrame::new_no_checks(0, col) }

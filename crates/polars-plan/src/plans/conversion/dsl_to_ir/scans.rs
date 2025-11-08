@@ -58,6 +58,8 @@ pub(super) fn dsl_to_ir(
                 // so we just give a dummy path here.
                 ScanSources::Paths(Buffer::from_iter([PlPath::from_str("dummy")]))
             },
+            #[cfg(feature = "scan_lines")]
+            FileScanDsl::Lines { .. } => sources.expand_paths(unified_scan_args)?,
             FileScanDsl::Anonymous { .. } => sources.clone(),
         };
 
@@ -715,6 +717,21 @@ this scan to succeed with an empty DataFrame.",
                 ))
             })()
             .map_err(|e| e.context(failed_here!(python dataset scan)))?,
+            #[cfg(feature = "scan_lines")]
+            FileScanDsl::Lines { name } => {
+                // We were passed a schema, we don't have to call `parquet_file_info`,
+                // but this does mean we don't have `row_estimation` and `first_metadata`.
+                let schema = Arc::new(Schema::from_iter([(name.clone(), DataType::String)]));
+
+                (
+                    FileInfo {
+                        schema: schema.clone(),
+                        reader_schema: Some(either::Either::Right(schema.clone())),
+                        row_estimation: (None, usize::MAX),
+                    },
+                    FileScanIR::Lines { name },
+                )
+            },
             FileScanDsl::Anonymous {
                 file_info,
                 options,

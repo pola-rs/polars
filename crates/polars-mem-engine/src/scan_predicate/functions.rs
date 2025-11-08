@@ -5,6 +5,7 @@ use polars_core::config;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::{IDX_DTYPE, IdxCa, InitHashMaps, PlHashMap, PlIndexMap, PlIndexSet};
 use polars_core::schema::Schema;
+use polars_error::polars_warn;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
 use polars_io::predicates::ScanIOPredicate;
 use polars_plan::dsl::default_values::{
@@ -222,6 +223,8 @@ pub fn initialize_scan_predicate<'a>(
             break;
         };
 
+        let expected_mask_len: usize;
+
         let (skip_files_mask, send_predicate_to_readers) = if let Some(hive_parts) = hive_parts
             && let Some(hive_predicate) = &predicate.hive_predicate
         {
@@ -230,6 +233,8 @@ pub fn initialize_scan_predicate<'a>(
                     "initialize_scan_predicate: Source filter mask initialization via hive partitions"
                 );
             }
+
+            expected_mask_len = hive_parts.df().height();
 
             let inclusion_mask = hive_predicate
                 .evaluate_io(hive_parts.df())?
@@ -255,12 +260,28 @@ pub fn initialize_scan_predicate<'a>(
                 );
             }
 
+            expected_mask_len = table_statsitics.0.height();
+
             let exclusion_mask = skip_batch_predicate.evaluate_with_stat_df(&table_statsitics.0)?;
 
             (SkipFilesMask::Exclusion(exclusion_mask), true)
         } else {
             break;
         };
+
+        if skip_files_mask.len() != expected_mask_len {
+            let msg = format!(
+                "WARNING: \
+                initialize_scan_predicate: \
+                filter mask length mismatch (length: {}, expected: {}). Files \
+                will not be skipped. This is a bug; please open an issue with \
+                a reproducible example if possible.",
+                skip_files_mask.len(),
+                expected_mask_len
+            );
+            polars_warn!(msg);
+            return Ok((None, Some(predicate)));
+        }
 
         if verbose {
             eprintln!(
@@ -469,6 +490,9 @@ where
                 dataset_object: _,
                 cached_ir,
             } => *cached_ir.lock().unwrap() = None,
+
+            #[cfg(feature = "scan_lines")]
+            FileScanIR::Lines { name: _ } => {},
 
             FileScanIR::Anonymous {
                 options: _,

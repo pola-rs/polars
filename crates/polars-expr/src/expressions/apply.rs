@@ -170,7 +170,7 @@ impl ApplyExpr {
             let lst = agg.list().unwrap();
             let iter = lst.par_iter().map(f);
 
-            if self.output_field.dtype.is_known() && !self.output_field.dtype.is_null() {
+            if self.output_field.dtype.is_known() {
                 let dtype = self.output_field.dtype.clone();
                 let dtype = dtype.implode();
                 POOL.install(|| {
@@ -500,15 +500,16 @@ impl PhysicalExpr for ApplyExpr {
                     // - el + agg = elementwise, but must aggregate() NotAgg
                     // - ga = group_aware
                     // - alit = all_literal
+                    // - * = broadcast falls back to group_aware
                     // - ~ = same a smirror pair (symmetric)
                     //
-                    //              | AggList | NotAgg  | AggScalar | LitScalar
+                    //              | AggList | NotAgg   | AggScalar | LitScalar
                     //   --------------------------------------------------------
-                    //    AggList   |    el   | depends |    ga     |     el
-                    //    NotAgg    |    ~    | depends |    ga     |     el
-                    //    AggScalar |    ~    |    ~    |    el     |     el
-                    //    LitScalar |    ~    |    ~    |     ~     |    alit
-
+                    //    AggList   |   el*   | depends* |    ga     |     el
+                    //    NotAgg    |    ~    | depends* |    ga     |     el
+                    //    AggScalar |    ~    |    ~     |    el     |     el
+                    //    LitScalar |    ~    |    ~     |     ~     |    alit
+                    //
                     // In case it depends, extending to any combination of multiple aggstates
                     // (a) Multiple NotAggs, w/o AggList
                     //
@@ -523,6 +524,8 @@ impl PhysicalExpr for ApplyExpr {
                     //   -------------------------------------------------
                     //    groups match   |    el+agg    |     ga
                     //    groups diverge |    el+agg    |     ga
+                    //
+                    //  * Finally, when broadcast is required in non-scalar we switch to group_aware
 
                     // Collect statistics on input aggstates
                     let mut has_agg_list = false;
@@ -572,7 +575,31 @@ impl PhysicalExpr for ApplyExpr {
                         // Fallible expression and there are elements that are masked out.
                         self.apply_multiple_group_aware(acs, df)
                     } else {
-                        self.apply_multiple_elementwise(acs, elementwise_must_aggregate)
+                        // Broadcast in NotAgg or AggList requires group_aware
+                        acs.iter_mut().filter(|ac| !ac.is_literal()).for_each(|ac| {
+                            ac.groups();
+                        });
+                        let has_broadcast =
+                            if let Some(base_ac_idx) = acs.iter().position(|ac| !ac.is_literal()) {
+                                acs.iter()
+                                    .enumerate()
+                                    .filter(|(i, ac)| *i != base_ac_idx && !ac.is_literal())
+                                    .any(|(_, ac)| {
+                                        acs[base_ac_idx].groups.iter().zip(ac.groups.iter()).any(
+                                            |(l, r)| {
+                                                l.len() != r.len() && (l.len() == 1 || r.len() == 1)
+                                            },
+                                        )
+                                    })
+                            } else {
+                                false
+                            };
+                        if has_broadcast {
+                            //  Broadcast fall-back.
+                            self.apply_multiple_group_aware(acs, df)
+                        } else {
+                            self.apply_multiple_elementwise(acs, elementwise_must_aggregate)
+                        }
                     }
                 },
             }

@@ -14,6 +14,7 @@ async-channel = { workspace = true }
 async-trait = { workspace = true }
 atomic-waker = { workspace = true }
 bitflags = { workspace = true }
+chrono-tz = { workspace = true }
 crossbeam-channel = { workspace = true }
 crossbeam-deque = { workspace = true }
 crossbeam-queue = { workspace = true }
@@ -24,6 +25,7 @@ parking_lot = { workspace = true }
 percent-encoding = { workspace = true }
 pin-project-lite = { workspace = true }
 polars-io = { workspace = true, features = ["async", "file_cache"] }
+polars-time = { workspace = true }
 polars-utils = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rand = { workspace = true }
@@ -63,6 +65,7 @@ ipc = ["polars-mem-engine/ipc", "polars-plan/ipc", "polars-io/ipc"]
 parquet = ["polars-mem-engine/parquet", "polars-plan/parquet", "cloud"]
 csv = ["polars-mem-engine/csv", "polars-plan/csv", "polars-io/csv"]
 json = ["polars-mem-engine/json", "polars-plan/json", "polars-io/json"]
+scan_lines = ["polars-mem-engine/scan_lines", "polars-plan/scan_lines", "polars-io/scan_lines"]
 cloud = ["polars-mem-engine/cloud", "polars-plan/cloud", "polars-io/cloud"]
 diff = ["polars-ops/diff", "polars-plan/diff", "polars-plan/abs"]
 dtype-array = ["polars-core/dtype-array"]

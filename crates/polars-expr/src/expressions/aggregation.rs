@@ -125,9 +125,10 @@ impl PhysicalExpr for AggregationExpr {
             } else {
                 s.tail(Some(1))
             }),
-            GroupByMethod::Item => Ok(match s.len() {
+            GroupByMethod::Item { allow_empty } => Ok(match s.len() {
+                0 if allow_empty => Column::full_null(s.name().clone(), 1, s.dtype()),
                 1 => s,
-                n => polars_bail!(item_agg_count_not_one = n),
+                n => polars_bail!(item_agg_count_not_one = n, allow_empty = allow_empty),
             }),
             GroupByMethod::Sum => parallel_op_columns(
                 |s| s.sum_reduce().map(|sc| sc.into_column(s.name().clone())),
@@ -336,13 +337,14 @@ impl PhysicalExpr for AggregationExpr {
                     let agg_s = s.agg_last(&groups);
                     AggregatedScalar(agg_s.with_name(keep_name))
                 },
-                GroupByMethod::Item => {
+                GroupByMethod::Item { allow_empty } => {
                     let (s, groups) = ac.get_final_aggregation();
                     for gc in groups.group_count().iter() {
                         match gc {
+                            Some(0) if allow_empty => continue,
                             None | Some(1) => continue,
                             Some(n) => {
-                                polars_bail!(item_agg_count_not_one = n);
+                                polars_bail!(item_agg_count_not_one = n, allow_empty = allow_empty);
                             },
                         }
                     }

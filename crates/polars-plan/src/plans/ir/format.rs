@@ -343,34 +343,37 @@ impl Display for ExprIRDisplay<'_> {
         use AExpr::*;
         match root {
             Element => f.write_str("element()"),
-            Window {
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling {
+                function,
+                index_column,
+                period,
+                offset,
+                closed_window: _,
+            } => {
+                let function = self.with_root(function);
+                let index_column = self.with_root(index_column);
+                write!(
+                    f,
+                    "{function}.rolling(by='{index_column}', offset={offset}, period={period})",
+                )
+            },
+            Over {
                 function,
                 partition_by,
                 order_by,
-                options,
+                mapping: _,
             } => {
                 let function = self.with_root(function);
                 let partition_by = self.with_slice(partition_by);
-                match options {
-                    #[cfg(feature = "dynamic_group_by")]
-                    WindowType::Rolling(options) => {
-                        write!(
-                            f,
-                            "{function}.rolling(by='{}', offset={}, period={})",
-                            options.index_column, options.offset, options.period
-                        )
-                    },
-                    _ => {
-                        if let Some((order_by, _)) = order_by {
-                            let order_by = self.with_root(order_by);
-                            write!(
-                                f,
-                                "{function}.over(partition_by: {partition_by}, order_by: {order_by})"
-                            )
-                        } else {
-                            write!(f, "{function}.over({partition_by})")
-                        }
-                    },
+                if let Some((order_by, _)) = order_by {
+                    let order_by = self.with_root(order_by);
+                    write!(
+                        f,
+                        "{function}.over(partition_by: {partition_by}, order_by: {order_by})"
+                    )
+                } else {
+                    write!(f, "{function}.over({partition_by})")
                 }
             },
             Len => write!(f, "len()"),
@@ -456,7 +459,14 @@ impl Display for ExprIRDisplay<'_> {
                     Mean(expr) => write!(f, "{}.mean()", self.with_root(expr)),
                     First(expr) => write!(f, "{}.first()", self.with_root(expr)),
                     Last(expr) => write!(f, "{}.last()", self.with_root(expr)),
-                    Item(expr) => write!(f, "{}.item()", self.with_root(expr)),
+                    Item { input, allow_empty } => {
+                        self.with_root(input).fmt(f)?;
+                        if *allow_empty {
+                            write!(f, ".item(allow_empty=true)")
+                        } else {
+                            write!(f, ".item()")
+                        }
+                    },
                     Implode(expr) => write!(f, "{}.implode()", self.with_root(expr)),
                     NUnique(expr) => write!(f, "{}.n_unique()", self.with_root(expr)),
                     Sum(expr) => write!(f, "{}.sum()", self.with_root(expr)),
@@ -517,7 +527,8 @@ impl Display for ExprIRDisplay<'_> {
                     write!(f, ".{function}()")
                 }
             },
-            AnonymousFunction { input, fmt_str, .. } => {
+            AnonymousFunction { input, fmt_str, .. }
+            | AnonymousStreamingAgg { input, fmt_str, .. } => {
                 let fst = self.with_root(&input[0]);
                 fst.fmt(f)?;
                 if input.len() >= 2 {

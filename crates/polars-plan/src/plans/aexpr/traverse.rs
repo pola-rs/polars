@@ -4,7 +4,7 @@ impl AExpr {
     /// Push the inputs of this node to the given container, in reverse order.
     /// This ensures the primary node responsible for the name is pushed last.
     ///
-    /// This is subtlely different from `children_rev` as this only includes the input expressions,
+    /// This is subtly different from `children_rev` as this only includes the input expressions,
     /// not expressions used during evaluation.
     pub fn inputs_rev<E>(&self, container: &mut E)
     where
@@ -41,15 +41,27 @@ impl AExpr {
             } => {
                 container.extend([*predicate, *falsy, *truthy]);
             },
-            AnonymousFunction { input, .. } | Function { input, .. } => {
+            AnonymousFunction { input, .. }
+            | Function { input, .. }
+            | AnonymousStreamingAgg { input, .. } => {
                 container.extend(input.iter().rev().map(|e| e.node()))
             },
             Explode { expr: e, .. } => container.extend([*e]),
-            Window {
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling {
+                function,
+                index_column,
+                period: _,
+                offset: _,
+                closed_window: _,
+            } => {
+                container.extend([*index_column, *function]);
+            },
+            Over {
                 function,
                 partition_by,
                 order_by,
-                options: _,
+                mapping: _,
             } => {
                 if let Some((n, _)) = order_by {
                     container.extend([*n]);
@@ -79,7 +91,7 @@ impl AExpr {
     /// Push the children of this node to the given container, in reverse order.
     /// This ensures the primary node responsible for the name is pushed last.
     ///
-    /// This is subtlely different from `input_rev` as this only all expressions included in the
+    /// This is subtly different from `input_rev` as this only all expressions included in the
     /// expression not only the input expressions,
     pub fn children_rev<E: Extend<Node>>(&self, container: &mut E) {
         use AExpr::*;
@@ -113,15 +125,27 @@ impl AExpr {
             } => {
                 container.extend([*predicate, *falsy, *truthy]);
             },
-            AnonymousFunction { input, .. } | Function { input, .. } => {
+            AnonymousFunction { input, .. }
+            | Function { input, .. }
+            | AnonymousStreamingAgg { input, .. } => {
                 container.extend(input.iter().rev().map(|e| e.node()))
             },
             Explode { expr: e, .. } => container.extend([*e]),
-            Window {
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling {
+                function,
+                index_column,
+                period: _,
+                offset: _,
+                closed_window: _,
+            } => {
+                container.extend([*index_column, *function]);
+            },
+            Over {
                 function,
                 partition_by,
                 order_by,
-                options: _,
+                mapping: _,
             } => {
                 if let Some((n, _)) = order_by {
                     container.extend([*n]);
@@ -194,7 +218,9 @@ impl AExpr {
                 *predicate = inputs[2];
                 return self;
             },
-            AnonymousFunction { input, .. } | Function { input, .. } => {
+            AnonymousFunction { input, .. }
+            | Function { input, .. }
+            | AnonymousStreamingAgg { input, .. } => {
                 assert_eq!(input.len(), inputs.len());
                 for (e, node) in input.iter_mut().zip(inputs.iter()) {
                     e.set_node(*node);
@@ -220,7 +246,19 @@ impl AExpr {
                 *length = inputs[2];
                 return self;
             },
-            Window {
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling {
+                function,
+                index_column,
+                period: _,
+                offset: _,
+                closed_window: _,
+            } => {
+                *function = inputs[0];
+                *index_column = inputs[1];
+                return self;
+            },
+            Over {
                 function,
                 partition_by,
                 order_by,
@@ -253,7 +291,7 @@ impl IRAggExpr {
             NUnique(input) => Single(*input),
             First(input) => Single(*input),
             Last(input) => Single(*input),
-            Item(input) => Single(*input),
+            Item { input, .. } => Single(*input),
             Mean(input) => Single(*input),
             Implode(input) => Single(*input),
             Quantile { expr, quantile, .. } => Many(vec![*expr, *quantile]),
@@ -273,7 +311,7 @@ impl IRAggExpr {
             NUnique(input) => input,
             First(input) => input,
             Last(input) => input,
-            Item(input) => input,
+            Item { input, .. } => input,
             Mean(input) => input,
             Implode(input) => input,
             Quantile { expr, .. } => expr,

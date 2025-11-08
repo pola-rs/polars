@@ -106,7 +106,12 @@ impl Series {
             InvalidOperation: "at least one dimension must be specified"
         );
 
-        let leaf_array = self.get_leaf_array().rechunk();
+        let leaf_array = self
+            .trim_lists_to_normalized_offsets()
+            .as_ref()
+            .unwrap_or(self)
+            .get_leaf_array()
+            .rechunk();
         let size = leaf_array.len();
 
         let mut total_dim_size = 1;

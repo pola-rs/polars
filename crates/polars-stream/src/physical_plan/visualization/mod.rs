@@ -186,6 +186,31 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     ..Default::default()
                 }
             },
+            #[cfg(feature = "dynamic_group_by")]
+            PhysNodeKind::RollingGroupBy {
+                input,
+                index_column,
+                period,
+                offset,
+                closed,
+                aggs,
+            } => {
+                phys_node_inputs.push(input.node);
+
+                let properties = PhysNodeProperties::RollingGroupBy {
+                    index_column: index_column.clone(),
+                    period: format_pl_smallstr!("{period}"),
+                    offset: format_pl_smallstr!("{offset}"),
+                    closed_window: PlSmallStr::from_static(closed.into()),
+                    aggs: expr_list(aggs, self.expr_arena),
+                };
+
+                PhysNodeInfo {
+                    title: properties.variant_name(),
+                    properties,
+                    ..Default::default()
+                }
+            },
             PhysNodeKind::InMemoryMap {
                 input,
                 map: _, // dyn DataFrameUdf
@@ -445,6 +470,10 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                 table_statistics,
                 file_schema: _,
             } => {
+                let pre_slice = pre_slice
+                    .clone()
+                    .map(|x| <(i64, usize)>::try_from(x).unwrap());
+
                 let properties = PhysNodeProperties::MultiScan {
                     scan_type: file_reader_builder.reader_name().into(),
                     num_sources: scan_sources.len().try_into().unwrap(),
@@ -461,10 +490,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     row_index_name: row_index.as_ref().map(|ri| ri.name.clone()),
                     #[allow(clippy::useless_conversion)]
                     row_index_offset: row_index.as_ref().map(|ri| ri.offset.into()),
-                    pre_slice: pre_slice.clone().map(|x| {
-                        let (offset, len) = <(i128, i128)>::from(x);
-                        [offset, len]
-                    }),
+                    pre_slice: convert_opt_slice(&pre_slice),
                     predicate: predicate
                         .as_ref()
                         .map(|e| format_pl_smallstr!("{}", e.display(self.expr_arena))),
@@ -503,7 +529,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                 phys_node_inputs.push(input.node);
 
                 let properties = PhysNodeProperties::NegativeSlice {
-                    offset: (*offset).into(),
+                    offset: (*offset),
                     length: (*length).try_into().unwrap(),
                 };
 
@@ -865,20 +891,21 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                 }
             },
             #[cfg(feature = "ewma")]
-            PhysNodeKind::EwmMean {
-                input,
-                options:
-                    polars_ops::series::EWMOptions {
-                        alpha,
-                        adjust,
-                        bias,
-                        min_periods,
-                        ignore_nulls,
-                    },
-            } => {
+            PhysNodeKind::EwmMean { input, options }
+            | PhysNodeKind::EwmVar { input, options }
+            | PhysNodeKind::EwmStd { input, options } => {
                 phys_node_inputs.push(input.node);
 
-                let properties = PhysNodeProperties::EwmMean {
+                let polars_ops::series::EWMOptions {
+                    alpha,
+                    adjust,
+                    bias,
+                    min_periods,
+                    ignore_nulls,
+                } = options;
+
+                let properties = PhysNodeProperties::Ewm {
+                    variant: PlSmallStr::from_static(phys_node.kind().into()),
                     alpha: *alpha,
                     adjust: *adjust,
                     bias: *bias,
@@ -992,14 +1019,14 @@ where
         .collect()
 }
 
-fn convert_opt_slice<T, U>(slice: &Option<(T, U)>) -> Option<[i128; 2]>
+fn convert_opt_slice<T, U>(slice: &Option<(T, U)>) -> Option<(i64, u64)>
 where
-    T: Copy + TryInto<i128>,
-    U: Copy + TryInto<i128>,
-    <T as TryInto<i128>>::Error: std::fmt::Debug,
-    <U as TryInto<i128>>::Error: std::fmt::Debug,
+    T: Copy + TryInto<i64>,
+    U: Copy + TryInto<u64>,
+    <T as TryInto<i64>>::Error: std::fmt::Debug,
+    <U as TryInto<u64>>::Error: std::fmt::Debug,
 {
-    slice.map(|(offset, len)| [offset.try_into().unwrap(), len.try_into().unwrap()])
+    slice.map(|(offset, len)| (offset.try_into().unwrap(), len.try_into().unwrap()))
 }
 
 fn expr_list(exprs: &[ExprIR], expr_arena: &Arena<AExpr>) -> Vec<PlSmallStr> {

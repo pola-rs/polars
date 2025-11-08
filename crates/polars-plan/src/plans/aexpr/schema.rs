@@ -47,11 +47,21 @@ impl AExpr {
                 .ok_or_else(|| polars_err!(invalid_element_use)),
 
             Len => Ok(Field::new(PlSmallStr::from_static(LEN), IDX_DTYPE)),
-            Window {
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling { function, .. } => {
+                let e = ctx.arena.get(*function);
+                let mut field = e.to_field_impl(ctx)?;
+                // Implicit implode
+                if !is_scalar_ae(*function, ctx.arena) {
+                    field.dtype = field.dtype.implode();
+                }
+                Ok(field)
+            },
+            Over {
                 function,
-                options,
                 partition_by,
                 order_by,
+                mapping,
             } => {
                 for node in partition_by {
                     validate_expr(*node, ctx)?;
@@ -63,15 +73,7 @@ impl AExpr {
                 let e = ctx.arena.get(*function);
                 let mut field = e.to_field_impl(ctx)?;
 
-                let mut implicit_implode = false;
-
-                implicit_implode |= matches!(options, WindowType::Over(WindowMapping::Join));
-                #[cfg(feature = "dynamic_group_by")]
-                {
-                    implicit_implode |= matches!(options, WindowType::Rolling(_));
-                }
-
-                if implicit_implode && !is_scalar_ae(*function, ctx.arena) {
+                if matches!(mapping, WindowMapping::Join) && !is_scalar_ae(*function, ctx.arena) {
                     field.dtype = field.dtype.implode();
                 }
 
@@ -140,7 +142,7 @@ impl AExpr {
                     | Min { input: expr, .. }
                     | First(expr)
                     | Last(expr)
-                    | Item(expr) => ctx.arena.get(*expr).to_field_impl(ctx),
+                    | Item { input: expr, .. } => ctx.arena.get(*expr).to_field_impl(ctx),
                     Sum(expr) => {
                         let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
                         let dt = match field.dtype() {
@@ -247,6 +249,18 @@ impl AExpr {
                 let out = function.get_field(ctx.schema, &fields)?;
                 Ok(out)
             },
+            AnonymousStreamingAgg {
+                input,
+                function,
+                fmt_str,
+                ..
+            } => {
+                let fields = func_args_to_fields(input, ctx)?;
+                polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", fmt_str);
+                let function = function.clone().materialize()?;
+                let out = function.get_field(ctx.schema, &fields)?;
+                Ok(out)
+            },
             Eval {
                 expr,
                 evaluation,
@@ -300,11 +314,19 @@ impl AExpr {
         match self {
             Element => PlSmallStr::EMPTY,
             Len => crate::constants::get_len_name(),
-            Window {
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling {
+                function,
+                index_column: _,
+                period: _,
+                offset: _,
+                closed_window: _,
+            } => expr_arena.get(*function).to_name(expr_arena),
+            Over {
                 function: expr,
-                options: _,
                 partition_by: _,
                 order_by: _,
+                mapping: _,
             }
             | BinaryExpr { left: expr, .. }
             | Explode { expr, .. }
@@ -320,7 +342,7 @@ impl AExpr {
             | Agg(Min { input: expr, .. })
             | Agg(First(expr))
             | Agg(Last(expr))
-            | Agg(Item(expr))
+            | Agg(Item { input: expr, .. })
             | Agg(Sum(expr))
             | Agg(Median(expr))
             | Agg(Mean(expr))
@@ -331,7 +353,8 @@ impl AExpr {
             | Agg(Count { input: expr, .. })
             | Agg(AggGroups(expr))
             | Agg(Quantile { expr, .. }) => expr_arena.get(*expr).to_name(expr_arena),
-            AnonymousFunction { input, fmt_str, .. } => {
+            AnonymousFunction { input, fmt_str, .. }
+            | AnonymousStreamingAgg { input, fmt_str, .. } => {
                 if input.is_empty() {
                     fmt_str.as_ref().clone()
                 } else {

@@ -5,16 +5,12 @@ mod hconcat;
 mod hstack;
 mod joins;
 mod projection;
-#[cfg(feature = "semi_anti_join")]
-mod semi_anti_join;
 
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
 use polars_io::RowIndex;
 use polars_utils::idx_vec::UnitVec;
 use recursive::recursive;
-#[cfg(feature = "semi_anti_join")]
-use semi_anti_join::process_semi_anti_join;
 
 use crate::prelude::optimizer::projection_pushdown::generic::process_generic;
 use crate::prelude::optimizer::projection_pushdown::group_by::process_group_by;
@@ -277,6 +273,7 @@ impl ProjectionPushDown {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[allow(unused)]
     fn join_push_down(
         &mut self,
         schema_left: &Schema,
@@ -458,6 +455,8 @@ impl ProjectionPushDown {
                     FileScanIR::Csv { .. } => true,
                     #[cfg(feature = "parquet")]
                     FileScanIR::Parquet { .. } => true,
+                    #[cfg(feature = "scan_lines")]
+                    FileScanIR::Lines { .. } => true,
                     // MultiScan will handle it if the PythonDataset cannot do projections.
                     #[cfg(feature = "python")]
                     FileScanIR::PythonDataset { .. } => true,
@@ -658,39 +657,7 @@ impl ProjectionPushDown {
                 lp_arena,
                 expr_arena,
             ),
-            Join {
-                input_left,
-                input_right,
-                left_on,
-                right_on,
-                options,
-                schema,
-            } => match options.args.how {
-                #[cfg(feature = "semi_anti_join")]
-                JoinType::Semi | JoinType::Anti => process_semi_anti_join(
-                    self,
-                    input_left,
-                    input_right,
-                    left_on,
-                    right_on,
-                    options,
-                    ctx,
-                    lp_arena,
-                    expr_arena,
-                ),
-                _ => process_join(
-                    self,
-                    input_left,
-                    input_right,
-                    left_on,
-                    right_on,
-                    options,
-                    ctx,
-                    lp_arena,
-                    expr_arena,
-                    &schema,
-                ),
-            },
+            join_ir @ Join { .. } => process_join(join_ir, ctx, self, lp_arena, expr_arena),
             HStack {
                 input,
                 exprs,

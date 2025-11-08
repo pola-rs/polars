@@ -139,7 +139,7 @@ where
 }
 
 pub type OpaqueColumnUdf = LazySerde<SpecialEq<Arc<dyn AnonymousColumnsUdf>>>;
-pub(crate) fn new_column_udf<F: AnonymousColumnsUdf + 'static>(func: F) -> OpaqueColumnUdf {
+pub fn new_column_udf<F: AnonymousColumnsUdf + 'static>(func: F) -> OpaqueColumnUdf {
     LazySerde::Deserialized(SpecialEq::new(Arc::new(func)))
 }
 

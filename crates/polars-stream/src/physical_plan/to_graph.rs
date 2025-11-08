@@ -789,6 +789,39 @@ fn to_graph_rec<'a>(
             )
         },
 
+        #[cfg(feature = "dynamic_group_by")]
+        RollingGroupBy {
+            input,
+            index_column,
+            period,
+            offset,
+            closed,
+            aggs,
+        } => {
+            let input_schema = &ctx.phys_sm[input.node].output_schema;
+            let input_key = to_graph_rec(input.node, ctx)?;
+            let aggs = aggs
+                .iter()
+                .map(|e| {
+                    Ok((
+                        e.output_name().clone(),
+                        create_stream_expr(e, ctx, input_schema)?,
+                    ))
+                })
+                .collect::<PolarsResult<Arc<[_]>>>()?;
+            ctx.graph.add_node(
+                nodes::rolling_group_by::RollingGroupBy::new(
+                    input_schema.clone(),
+                    index_column.clone(),
+                    *period,
+                    *offset,
+                    *closed,
+                    aggs,
+                )?,
+                [(input_key, input.port)],
+            )
+        },
+
         InMemoryJoin {
             input_left,
             input_right,
@@ -820,8 +853,6 @@ fn to_graph_rec<'a>(
                     force_parallel: false,
                     args: args.clone(),
                     options: options.clone(),
-                    rows_left: (None, 0),
-                    rows_right: (None, 0),
                 }),
             });
 
@@ -1203,14 +1234,58 @@ fn to_graph_rec<'a>(
         },
 
         #[cfg(feature = "ewma")]
-        EwmMean { input, options } => {
+        ewm_variant @ EwmMean { input, options }
+        | ewm_variant @ EwmVar { input, options }
+        | ewm_variant @ EwmStd { input, options } => {
+            use nodes::ewm::EwmNode;
+            use polars_compute::ewm::mean::EwmMeanState;
+            use polars_compute::ewm::{EwmCovState, EwmStateUpdate, EwmStdState, EwmVarState};
+            use polars_core::with_match_physical_float_type;
+
             let input_key = to_graph_rec(input.node, ctx)?;
             let input_schema = &ctx.phys_sm[input.node].output_schema;
             let (_, dtype) = input_schema.get_at_index(0).unwrap();
-            ctx.graph.add_node(
-                nodes::ewm_mean::EwmMeanNode::new(dtype.clone(), options),
-                [(input_key, input.port)],
-            )
+
+            let state: Box<dyn EwmStateUpdate + Send> = match ewm_variant {
+                EwmMean { .. } => {
+                    with_match_physical_float_type!(dtype, |$T| {
+                        let state: EwmMeanState<$T> = EwmMeanState::new(
+                            options.alpha as $T,
+                            options.adjust,
+                            options.min_periods,
+                            options.ignore_nulls,
+                        );
+
+                        Box::new(state)
+                    })
+                },
+                _ => with_match_physical_float_type!(dtype, |$T| {
+                    let state: EwmCovState<$T> = EwmCovState::new(
+                        options.alpha as $T,
+                        options.adjust,
+                        options.bias,
+                        options.min_periods,
+                        options.ignore_nulls,
+                    );
+
+                    match ewm_variant {
+                        EwmVar { .. } => Box::new(EwmVarState::new(state)),
+                        EwmStd { .. } => Box::new(EwmStdState::new(state)),
+                        _ => unreachable!(),
+                    }
+                }),
+            };
+
+            let name = match ewm_variant {
+                EwmMean { .. } => "ewm-mean",
+                EwmVar { .. } => "ewm-var",
+                EwmStd { .. } => "ewm-std",
+                _ => unreachable!(),
+            };
+
+            let node = EwmNode::new(name, state);
+
+            ctx.graph.add_node(node, [(input_key, input.port)])
         },
     };
 
