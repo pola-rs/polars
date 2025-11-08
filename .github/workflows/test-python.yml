@@ -2,21 +2,21 @@ name: Test Python
 
 on:
   pull_request:
-    paths:
-      - Cargo.lock
-      - py-polars/**
-      - docs/source/src/python/**
-      - crates/**
-      - .github/workflows/test-python.yml
+    # paths:
+    #   - Cargo.lock
+    #   - py-polars/**
+    #   - docs/source/src/python/**
+    #   - crates/**
+    #   - .github/workflows/test-python.yml
   push:
-    branches:
-      - main
-    paths:
-      - Cargo.lock
-      - crates/**
-      - docs/source/src/python/**
-      - py-polars/**
-      - .github/workflows/test-python.yml
+    # branches:
+    #   - main
+    # paths:
+    #   - Cargo.lock
+    #   - crates/**
+    #   - docs/source/src/python/**
+    #   - py-polars/**
+    #   - .github/workflows/test-python.yml
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

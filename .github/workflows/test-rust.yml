@@ -2,19 +2,19 @@ name: Test Rust
 
 on:
   pull_request:
-    paths:
-      - crates/**
-      - examples/**
-      - Cargo.toml
-      - .github/workflows/test-rust.yml
+    # paths:
+    #   - crates/**
+    #   - examples/**
+    #   - Cargo.toml
+    #   - .github/workflows/test-rust.yml
   push:
-    branches:
-      - main
-    paths:
-      - crates/**
-      - examples/**
-      - Cargo.toml
-      - .github/workflows/test-rust.yml
+    # branches:
+    #   - main
+    # paths:
+    #   - crates/**
+    #   - examples/**
+    #   - Cargo.toml
+    #   - .github/workflows/test-rust.yml
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
