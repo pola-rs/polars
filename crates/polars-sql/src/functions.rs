@@ -1883,6 +1883,25 @@ impl SQLFunctionVisitor<'_> {
         .and_then(|e| self.apply_window_spec(e, &self.func.over))
     }
 
+    /// Resolve a WindowType to a concrete WindowSpec (handles named window references)
+    fn resolve_window_spec(&self, window_type: &WindowType) -> PolarsResult<WindowSpec> {
+        match window_type {
+            WindowType::WindowSpec(spec) => Ok(spec.clone()),
+            WindowType::NamedWindow(name) => self
+                .ctx
+                .named_windows
+                .get(&name.value)
+                .cloned()
+                .ok_or_else(|| {
+                    polars_err!(
+                        SQLInterface:
+                        "named window '{}' was not found",
+                        name.value
+                    )
+                }),
+        }
+    }
+
     /// Some functions have cumulative equivalents that can be applied to window specs
     /// e.g. SUM(a) OVER (ORDER BY b DESC) -> CUMSUM(a, false)
     fn visit_unary_with_opt_cumulative(
@@ -1891,14 +1910,11 @@ impl SQLFunctionVisitor<'_> {
         cumulative_fn: impl Fn(Expr, bool) -> Expr,
     ) -> PolarsResult<Expr> {
         match self.func.over.as_ref() {
-            Some(WindowType::WindowSpec(spec)) => {
-                self.apply_cumulative_window(f, cumulative_fn, spec)
+            Some(window_type) => {
+                let spec = self.resolve_window_spec(window_type)?;
+                self.apply_cumulative_window(f, cumulative_fn, &spec)
             },
-            Some(WindowType::NamedWindow(named_window)) => polars_bail!(
-                SQLInterface: "named windows are not (yet) supported; found {:?}",
-                named_window
-            ),
-            _ => self.visit_unary(f),
+            None => self.visit_unary(f),
         }
     }
 
@@ -2163,44 +2179,36 @@ impl SQLFunctionVisitor<'_> {
         expr: Expr,
         window_type: &Option<WindowType>,
     ) -> PolarsResult<Expr> {
-        Ok(match &window_type {
-            Some(WindowType::WindowSpec(window_spec)) => {
-                self.validate_window_frame(&window_spec.window_frame)?;
+        let Some(window_type) = window_type else {
+            return Ok(expr);
+        };
+        let window_spec = self.resolve_window_spec(window_type)?;
+        self.validate_window_frame(&window_spec.window_frame)?;
 
-                let partition_by = if window_spec.partition_by.is_empty() {
-                    None
-                } else {
-                    Some(
-                        window_spec
-                            .partition_by
-                            .iter()
-                            .map(|p| parse_sql_expr(p, self.ctx, self.active_schema))
-                            .collect::<PolarsResult<Vec<_>>>()?,
-                    )
-                };
-                let order_by = if window_spec.order_by.is_empty() {
-                    None
-                } else {
-                    let (order_exprs, all_desc) =
-                        self.parse_order_by_in_window(&window_spec.order_by)?;
-                    let sort_opts = SortOptions::default().with_order_descending(all_desc);
-                    Some((order_exprs, sort_opts))
-                };
+        let partition_by = if window_spec.partition_by.is_empty() {
+            None
+        } else {
+            Some(
+                window_spec
+                    .partition_by
+                    .iter()
+                    .map(|p| parse_sql_expr(p, self.ctx, self.active_schema))
+                    .collect::<PolarsResult<Vec<_>>>()?,
+            )
+        };
+        let order_by = if window_spec.order_by.is_empty() {
+            None
+        } else {
+            let (order_exprs, all_desc) = self.parse_order_by_in_window(&window_spec.order_by)?;
+            let sort_opts = SortOptions::default().with_order_descending(all_desc);
+            Some((order_exprs, sort_opts))
+        };
 
-                // Apply window spec
-                match (partition_by, order_by) {
-                    (None, None) => expr,
-                    (Some(part), None) => expr.over(part),
-                    (part, Some(order)) => {
-                        expr.over_with_options(part, Some(order), Default::default())?
-                    },
-                }
-            },
-            Some(WindowType::NamedWindow(named_window)) => polars_bail!(
-                SQLInterface: "named windows are not (yet) supported; found {:?}",
-                named_window
-            ),
-            None => expr,
+        // Apply window spec
+        Ok(match (partition_by, order_by) {
+            (None, None) => expr,
+            (Some(part), None) => expr.over(part),
+            (part, Some(order)) => expr.over_with_options(part, Some(order), Default::default())?,
         })
     }
 

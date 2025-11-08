@@ -555,7 +555,6 @@ def test_select_explode_height_filter_order_by() -> None:
             "SELECT UNNEST(list_long) as list FROM self WHERE filter_mask ORDER BY sort_key"
         ),
         pl.Series("list", [4, 5, 6]).to_frame(),
-        check_row_order=False,  # this is wrong at the moment
     )
 
     assert_frame_equal(
