@@ -82,8 +82,8 @@ pub fn resolve_join(
         options.args.validation.is_valid_join(&options.args.how)?;
 
         #[cfg(feature = "asof_join")]
-        if let JoinType::AsOf(opt) = &options.args.how {
-            match (&opt.left_by, &opt.right_by) {
+        if let JoinType::AsOf(options) = &options.args.how {
+            match (&options.left_by, &options.right_by) {
                 (None, None) => {},
                 (Some(l), Some(r)) => {
                     polars_ensure!(l.len() == r.len(), InvalidOperation: "expected equal number of columns in 'by_left' and 'by_right' in 'asof_join'");
@@ -325,6 +325,50 @@ pub fn resolve_join(
         all_elementwise(&left_on, ctxt.expr_arena) && all_elementwise(&right_on, ctxt.expr_arena),
         InvalidOperation: "all join key expressions must be elementwise."
     );
+
+    #[cfg(feature = "asof_join")]
+    if let JoinType::AsOf(options) = &mut options.args.how {
+        use polars_core::utils::arrow::temporal_conversions::MILLISECONDS_IN_DAY;
+
+        // prepare the tolerance
+        // we must ensure that we use the right units
+        if let Some(tol) = &options.tolerance_str {
+            let duration = polars_time::Duration::try_parse(tol)?;
+            polars_ensure!(
+                duration.months() == 0,
+                ComputeError: "cannot use month offset in timedelta of an asof join; \
+                consider using 4 weeks"
+            );
+            use DataType::*;
+            match ctxt
+                .expr_arena
+                .get(left_on[0].node())
+                .to_dtype(&ToFieldContext::new(ctxt.expr_arena, &schema_left))?
+            {
+                Datetime(tu, _) | Duration(tu) => {
+                    let tolerance = match tu {
+                        TimeUnit::Nanoseconds => duration.duration_ns(),
+                        TimeUnit::Microseconds => duration.duration_us(),
+                        TimeUnit::Milliseconds => duration.duration_ms(),
+                    };
+                    options.tolerance = Some(Scalar::from(tolerance))
+                },
+                Date => {
+                    let days = (duration.duration_ms() / MILLISECONDS_IN_DAY) as i32;
+                    options.tolerance = Some(Scalar::from(days))
+                },
+                Time => {
+                    let tolerance = duration.duration_ns();
+                    options.tolerance = Some(Scalar::from(tolerance))
+                },
+                _ => {
+                    panic!(
+                        "can only use timedelta string language with Date/Datetime/Duration/Time dtypes"
+                    )
+                },
+            }
+        }
+    }
 
     // These are Arc<Schema>, into_owned is free.
     let schema_left = schema_left.into_owned();

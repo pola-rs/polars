@@ -13,6 +13,7 @@ pub mod cast;
 pub mod comparisons;
 #[cfg(feature = "dtype-decimal")]
 pub mod decimal;
+pub mod ewm;
 pub mod filter;
 #[cfg(feature = "cast")]
 pub mod find_validity_mismatch;

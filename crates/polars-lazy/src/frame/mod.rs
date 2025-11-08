@@ -26,8 +26,8 @@ use polars_compute::rolling::QuantileMethod;
 use polars_core::POOL;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
-use polars_expr::{ExpressionConversionState, create_physical_expr};
 use polars_io::RowIndex;
+use polars_mem_engine::scan_predicate::functions::apply_scan_predicate_to_scan_ir;
 use polars_mem_engine::{Executor, create_multiple_physical_plans, create_physical_plan};
 use polars_ops::frame::{JoinCoalesce, MaintainOrderJoin};
 #[cfg(feature = "is_between")]
@@ -543,18 +543,7 @@ impl LazyFrame {
             lp_arena,
             expr_arena,
             scratch,
-            Some(&|expr, expr_arena, schema| {
-                let phys_expr = create_physical_expr(
-                    expr,
-                    Context::Default,
-                    expr_arena,
-                    schema,
-                    &mut ExpressionConversionState::new(true),
-                )
-                .ok()?;
-                let io_expr = phys_expr_to_io_expr(phys_expr);
-                Some(io_expr)
-            }),
+            apply_scan_predicate_to_scan_ir,
         )?;
 
         Ok(lp_top)
@@ -1706,7 +1695,7 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
-    pub fn pipe_with_schema(self, callback: PlanCallback<(DslPlan, Schema), DslPlan>) -> Self {
+    pub fn pipe_with_schema(self, callback: PlanCallback<(DslPlan, SchemaRef), DslPlan>) -> Self {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().pipe_with_schema(callback).build();
         Self::from_logical_plan(lp, opt_state)
@@ -1839,12 +1828,13 @@ impl LazyFrame {
         subset: Option<Selector>,
         keep_strategy: UniqueKeepStrategy,
     ) -> LazyFrame {
+        let subset = subset.map(|s| vec![Expr::Selector(s)]);
         self.unique_stable_generic(subset, keep_strategy)
     }
 
     pub fn unique_stable_generic(
         self,
-        subset: Option<Selector>,
+        subset: Option<Vec<Expr>>,
         keep_strategy: UniqueKeepStrategy,
     ) -> LazyFrame {
         let opt_state = self.get_opt_state();
@@ -1865,12 +1855,13 @@ impl LazyFrame {
     /// `subset` is an optional `Vec` of column names to consider for uniqueness; if None,
     /// all columns are considered.
     pub fn unique(self, subset: Option<Selector>, keep_strategy: UniqueKeepStrategy) -> LazyFrame {
+        let subset = subset.map(|s| vec![Expr::Selector(s)]);
         self.unique_generic(subset, keep_strategy)
     }
 
     pub fn unique_generic(
         self,
-        subset: Option<Selector>,
+        subset: Option<Vec<Expr>>,
         keep_strategy: UniqueKeepStrategy,
     ) -> LazyFrame {
         let opt_state = self.get_opt_state();
@@ -2088,6 +2079,14 @@ impl LazyFrame {
             input_left: Arc::new(self.logical_plan),
             input_right: Arc::new(other.logical_plan),
             key,
+        };
+        Ok(LazyFrame::from_logical_plan(lp, self.opt_state))
+    }
+
+    pub fn hint(self, hint: HintIR) -> PolarsResult<LazyFrame> {
+        let lp = DslPlan::MapFunction {
+            input: Arc::new(self.logical_plan),
+            function: DslFunction::Hint(hint),
         };
         Ok(LazyFrame::from_logical_plan(lp, self.opt_state))
     }

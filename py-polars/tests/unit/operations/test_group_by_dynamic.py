@@ -1253,3 +1253,42 @@ def test_group_by_dynamic_sparse_count_small_24541(
     total = out.select("count").sum().item()
 
     assert total == expected
+
+
+def test_group_by_dynamic_negative_time_25039() -> None:
+    df = pl.DataFrame(
+        {"y": [1950, 1960, 1970], "m": [1, 1, 1], "d": [1, 1, 1], "n": [1, 2, 3]}
+    )
+    df = df.select(pl.date("y", "m", "d"), "n")
+
+    out = df.group_by_dynamic("date", every="1mo").agg(pl.col.n.mean()).select(pl.col.n)
+    expected = pl.DataFrame({"n": [1.0, 2.0, 3.0]})
+    assert_frame_equal(out, expected)
+
+
+def test_group_by_multiple_chunks_25063() -> None:
+    df = (
+        pl.DataFrame(
+            {
+                "date": pl.date_range(
+                    date(2020, 1, 1), date(2020, 6, 1), "1d", eager=True
+                )
+            }
+        )
+        .join(pl.DataFrame({"id": range(2)}), how="cross")
+        .with_columns(pl.lit(1.0).alias("value"))
+    )
+    result = df.group_by_dynamic("date", every="1d", group_by="id").agg(
+        pl.col("value").sum()
+    )
+
+    assert_frame_equal(df.select("id", "date", "value"), result, check_row_order=False)
+
+
+@pytest.mark.parametrize("col", ["g", "index"])
+def test_group_by_iterate_index_column_name_25137(col: pl.Expr) -> None:
+    df = pl.DataFrame({"g": [10, 20, 30], "index": [0, 1, 2]})
+
+    assert len(list(df.group_by(col))) == 3
+    assert len(list(df.group_by_dynamic(col, every="1i"))) == 3
+    assert len(list(df.rolling(col, period="1i"))) == 3

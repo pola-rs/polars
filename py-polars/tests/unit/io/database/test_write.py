@@ -211,7 +211,7 @@ class TestWriteDatabase:
         df = pl.DataFrame({"colx": [1, 2, 3]})
 
         with pytest.raises(
-            ValueError, match="`table_name` appears to be invalid: 'w.x.y.z'"
+            ValueError, match=r"`table_name` appears to be invalid: 'w.x.y.z'"
         ):
             df.write_database(
                 connection="sqlite:///:memory:",
@@ -221,7 +221,7 @@ class TestWriteDatabase:
 
         with pytest.raises(
             ValueError,
-            match="`if_table_exists` must be one of .* got 'do_something'",
+            match=r"`if_table_exists` must be one of .* got 'do_something'",
         ):
             df.write_database(
                 connection="sqlite:///:memory:",
@@ -232,7 +232,7 @@ class TestWriteDatabase:
 
         with pytest.raises(
             TypeError,
-            match="unrecognised connection type.*",
+            match=r"unrecognised connection type.*",
         ):
             df.write_database(connection=True, table_name="misc", engine=engine)  # type: ignore[arg-type]
 
@@ -244,7 +244,7 @@ class TestWriteDatabase:
             return
         df = pl.DataFrame({"colx": [1, 2, 3]})
         with pytest.raises(
-            ModuleNotFoundError, match="ADBC 'adbc_driver_mysql' driver not detected."
+            ModuleNotFoundError, match=r"ADBC 'adbc_driver_mysql' driver not detected."
         ):
             df.write_database(
                 table_name="my_schema.my_table",

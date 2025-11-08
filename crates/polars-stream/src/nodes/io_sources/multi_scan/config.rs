@@ -32,6 +32,7 @@ pub struct MultiScanConfig {
     pub row_index: Option<RowIndex>,
     pub pre_slice: Option<Slice>,
     pub predicate: Option<ScanIOPredicate>,
+    pub predicate_file_skip_applied: Option<bool>,
 
     pub hive_parts: Option<Arc<HivePartitionsDf>>,
     pub include_file_paths: Option<PlSmallStr>,

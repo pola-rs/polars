@@ -67,7 +67,7 @@ pub enum IRNodeProperties {
         subset: Option<Vec<PlSmallStr>>,
         maintain_order: bool,
         keep_strategy: UniqueKeepStrategy,
-        slice: Option<[i128; 2]>,
+        slice: Option<(i64, u64)>,
     },
     ExtContext {
         num_contexts: u64,
@@ -80,7 +80,7 @@ pub enum IRNodeProperties {
         keys: Vec<PlSmallStr>,
         aggs: Vec<PlSmallStr>,
         maintain_order: bool,
-        slice: Option<[i128; 2]>,
+        slice: Option<(i64, u64)>,
         plan_callback: Option<PlSmallStr>,
     },
     HConcat {
@@ -105,13 +105,13 @@ pub enum IRNodeProperties {
         maintain_order: MaintainOrderJoin,
         validation: JoinValidation,
         suffix: Option<PlSmallStr>,
-        slice: Option<[i128; 2]>,
+        slice: Option<(i64, u64)>,
         allow_parallel: bool,
         force_parallel: bool,
     },
     CrossJoin {
         maintain_order: MaintainOrderJoin,
-        slice: Option<[i128; 2]>,
+        slice: Option<(i64, u64)>,
         predicate: Option<PlSmallStr>,
         suffix: Option<PlSmallStr>,
     },
@@ -126,7 +126,7 @@ pub enum IRNodeProperties {
         projection: Option<Vec<PlSmallStr>>,
         row_index_name: Option<PlSmallStr>,
         row_index_offset: Option<u64>,
-        pre_slice: Option<[i128; 2]>,
+        pre_slice: Option<(i64, u64)>,
         predicate: Option<PlSmallStr>,
         has_table_statistics: bool,
         include_file_paths: Option<PlSmallStr>,
@@ -152,12 +152,12 @@ pub enum IRNodeProperties {
         num_inputs: u64,
     },
     Slice {
-        offset: i128,
+        offset: i64,
         len: u64,
     },
     Sort {
         by_exprs: Vec<PlSmallStr>,
-        slice: Option<[i128; 2]>,
+        slice: Option<(i64, u64)>,
         descending: Vec<bool>,
         nulls_last: Vec<bool>,
         multithreaded: bool,
@@ -168,7 +168,7 @@ pub enum IRNodeProperties {
         maintain_order: bool,
         parallel: bool,
         rechunk: bool,
-        slice: Option<[i128; 2]>,
+        slice: Option<(i64, u64)>,
         from_partitioned_ds: bool,
         flattened_by_opt: bool,
     },
@@ -185,7 +185,7 @@ pub enum IRNodeProperties {
         /// [value, dtype_str]
         tolerance: Option<[PlSmallStr; 2]>,
         suffix: Option<PlSmallStr>,
-        slice: Option<[i128; 2]>,
+        slice: Option<(i64, u64)>,
         coalesce: JoinCoalesce,
         allow_eq: bool,
         check_sortedness: bool,
@@ -196,7 +196,7 @@ pub enum IRNodeProperties {
         right_on: Vec<PlSmallStr>,
         inequality_operators: Vec<polars_ops::frame::InequalityOperator>,
         suffix: Option<PlSmallStr>,
-        slice: Option<[i128; 2]>,
+        slice: Option<(i64, u64)>,
     },
     #[cfg(feature = "dynamic_group_by")]
     DynamicGroupBy {
@@ -219,7 +219,7 @@ pub enum IRNodeProperties {
         period: PlSmallStr,
         offset: PlSmallStr,
         closed_window: polars_time::ClosedWindow,
-        slice: Option<[i128; 2]>,
+        slice: Option<(i64, u64)>,
         plan_callback: Option<PlSmallStr>,
     },
     #[cfg(feature = "merge_sorted")]

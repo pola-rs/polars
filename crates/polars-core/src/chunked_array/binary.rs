@@ -59,7 +59,7 @@ where
                     .into_par_iter()
                     .map(|(offset, len)| {
                         let ca = self.slice(offset as i64, len);
-                        let byte_hashes = fill_bytes_hashes(&ca, null_h, hb);
+                        let byte_hashes = fill_bytes_hashes(&ca, null_h, hb.clone());
 
                         // SAFETY:
                         // the underlying data is tied to self

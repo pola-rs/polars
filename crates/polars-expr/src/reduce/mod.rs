@@ -219,7 +219,7 @@ pub struct VecGroupedReduction<R: Reducer> {
 }
 
 impl<R: Reducer> VecGroupedReduction<R> {
-    fn new(in_dtype: DataType, reducer: R) -> Self {
+    pub fn new(in_dtype: DataType, reducer: R) -> Self {
         Self {
             values: Vec::new(),
             evicted_values: Vec::new(),
@@ -486,7 +486,7 @@ where
 }
 
 #[derive(Clone)]
-struct NullGroupedReduction {
+pub struct NullGroupedReduction {
     num_groups: IdxSize,
     num_evictions: IdxSize,
     output: Scalar,

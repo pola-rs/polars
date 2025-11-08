@@ -229,7 +229,7 @@ def test_select_literals_no_table() -> None:
 
 
 def test_select_from_table_with_reserved_names() -> None:
-    select = pl.DataFrame({"select": [1, 2, 3], "from": [4, 5, 6]})  # noqa: F841
+    select = pl.DataFrame({"select": [1, 2, 3], "from": [4, 5, 6]})
     out = pl.sql(
         """
         SELECT "from", "select"

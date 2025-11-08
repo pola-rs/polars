@@ -69,6 +69,7 @@ json = [
   "dtype-struct",
   "csv",
 ]
+scan_lines = []
 serde = ["dep:serde", "polars-core/serde-lazy", "polars-parquet/serde", "polars-utils/serde"]
 dsl-schema = ["dep:schemars", "polars-core/dsl-schema", "polars-parquet/dsl-schema", "polars-utils/dsl-schema"]
 # support for arrows ipc file parsing

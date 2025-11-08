@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import Collection, Iterable, Mapping
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, overload
 
 import polars._reexport as pl
 from polars import functions as F
@@ -25,6 +25,7 @@ def parse_into_expression(
     list_as_series: bool = False,
     structify: bool = False,
     dtype: PolarsDataType | None = None,
+    require_selector: bool = False,
 ) -> PyExpr:
     """
     Parse a single input into an expression.
@@ -44,6 +45,8 @@ def parse_into_expression(
     dtype
         If the input is expected to resolve to a literal with a known dtype, pass
         this to the `lit` constructor.
+    require_selector
+        Require that the input is a valid selector (eg: column name or selector).
 
     Returns
     -------
@@ -53,13 +56,16 @@ def parse_into_expression(
         expr = input
         if structify:
             expr = _structify_expression(expr)
-
     elif isinstance(input, str) and not str_as_lit:
         expr = F.col(input)
-    elif isinstance(input, list) and list_as_series:
-        expr = F.lit(pl.Series(input), dtype=dtype)
     else:
-        expr = F.lit(input, dtype=dtype)
+        if require_selector:
+            msg = f"cannot turn {qualified_type_name(input)!r} into selector"
+            raise TypeError(msg)
+        elif isinstance(input, list) and list_as_series:
+            expr = F.lit(pl.Series(input), dtype=dtype)
+        else:
+            expr = F.lit(input, dtype=dtype)
 
     return expr._pyexpr
 
@@ -79,6 +85,7 @@ def _structify_expression(expr: Expr) -> Expr:
 def parse_into_list_of_expressions(
     *inputs: IntoExpr | Iterable[IntoExpr],
     __structify: bool = False,
+    __require_selectors: bool = False,
     **named_inputs: IntoExpr,
 ) -> list[PyExpr]:
     """
@@ -93,24 +100,49 @@ def parse_into_list_of_expressions(
         The expressions will be renamed to the keyword used.
     __structify
         Convert multi-column expressions to a single struct expression.
+    __require_selectors
+        Require that all inputs are valid selectors (eg: column names or selector
+        expressions), disallowing literals.
 
     Returns
     -------
     list of PyExpr
     """
-    exprs = _parse_positional_inputs(inputs, structify=__structify)  # type: ignore[arg-type]
+    exprs = _parse_positional_inputs(
+        inputs,  # type: ignore[arg-type]
+        require_selectors=__require_selectors,
+        structify=__structify,
+    )
     if named_inputs:
         named_exprs = _parse_named_inputs(named_inputs, structify=__structify)
         exprs.extend(named_exprs)
-
     return exprs
+
+
+@overload
+def parse_into_selector(
+    i: ColumnNameOrSelector,
+    *,
+    strict: bool = ...,
+    raise_if_not_selector: Literal[False] = False,
+) -> pl.Selector: ...
+
+
+@overload
+def parse_into_selector(
+    i: ColumnNameOrSelector,
+    *,
+    strict: bool = ...,
+    raise_if_not_selector: Literal[True],
+) -> pl.Selector | None: ...
 
 
 def parse_into_selector(
     i: ColumnNameOrSelector,
     *,
     strict: bool = True,
-) -> pl.Selector:
+    raise_if_not_selector: bool = True,
+) -> pl.Selector | None:
     if isinstance(i, str):
         import polars.selectors as cs
 
@@ -119,9 +151,10 @@ def parse_into_selector(
         return i
     elif isinstance(i, pl.Expr):
         return i.meta.as_selector()
-    else:
+    elif raise_if_not_selector:
         msg = f"cannot turn {qualified_type_name(i)!r} into selector"
         raise TypeError(msg)
+    return None
 
 
 def parse_list_into_selector(
@@ -152,10 +185,18 @@ def parse_list_into_selector(
 def _parse_positional_inputs(
     inputs: tuple[IntoExpr, ...] | tuple[Iterable[IntoExpr]],
     *,
+    require_selectors: bool = False,
     structify: bool = False,
 ) -> list[PyExpr]:
     inputs_iter = _parse_inputs_as_iterable(inputs)
-    return [parse_into_expression(e, structify=structify) for e in inputs_iter]
+    return [
+        parse_into_expression(
+            e,
+            structify=structify,
+            require_selector=require_selectors,
+        )
+        for e in inputs_iter
+    ]
 
 
 def _parse_inputs_as_iterable(

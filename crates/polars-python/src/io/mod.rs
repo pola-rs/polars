@@ -66,7 +66,7 @@ impl PyScanOptions<'_> {
             retries: usize,
             deletion_files: Option<Wrap<DeletionFilesList>>,
             table_statistics: Option<Wrap<TableStatistics>>,
-            row_count: Option<(IdxSize, IdxSize)>,
+            row_count: Option<(u64, u64)>,
         }
 
         let Extract {

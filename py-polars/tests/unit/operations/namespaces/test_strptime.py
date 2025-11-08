@@ -684,7 +684,7 @@ def test_to_time_subseconds(data: str, format: str, expected: time) -> None:
 
 def test_to_time_format_warning() -> None:
     s = pl.Series(["05:10:10.074000"])
-    with pytest.warns(ChronoFormatWarning, match=".%f"):
+    with pytest.warns(ChronoFormatWarning, match=r".%f"):
         result = s.str.to_time("%H:%M:%S.%f").item()
     assert result == time(5, 10, 10, 74)
 
@@ -754,7 +754,7 @@ def test_strptime_ambiguous_earliest(exact: bool) -> None:
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_to_datetime_out_of_range_13401(time_unit: TimeUnit) -> None:
     s = pl.Series(["2020-January-01 12:34:66"])
-    with pytest.raises(InvalidOperationError, match="conversion .* failed"):
+    with pytest.raises(InvalidOperationError, match=r"conversion .* failed"):
         s.str.to_datetime("%Y-%B-%d %H:%M:%S", time_unit=time_unit)
     assert (
         s.str.to_datetime("%Y-%B-%d %H:%M:%S", strict=False, time_unit=time_unit).item()

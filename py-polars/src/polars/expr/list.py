@@ -685,11 +685,16 @@ class ExprListNameSpace:
         return self.get(-1, null_on_oob=True)
 
     @unstable()
-    def item(self) -> Expr:
+    def item(self, *, allow_empty: bool = False) -> Expr:
         """
         Get the single value of the sublists.
 
         This errors if the sublist length is not exactly one.
+
+        Parameters
+        ----------
+        allow_empty
+            Allow having no values to return `null`.
 
         See Also
         --------
@@ -714,8 +719,20 @@ class ExprListNameSpace:
         Traceback (most recent call last):
         ...
         polars.exceptions.ComputeError: aggregation 'item' expected a single value, got 3 values
+        >>> df = pl.DataFrame({"a": [[], [1], [2]]})
+        >>> df.select(pl.col("a").list.item(allow_empty=True))
+        shape: (3, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ i64  │
+        ╞══════╡
+        │ null │
+        │ 1    │
+        │ 2    │
+        └──────┘
         """  # noqa: W505
-        return self.agg(F.element().item())
+        return self.agg(F.element().item(allow_empty=allow_empty))
 
     def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Expr:
         """

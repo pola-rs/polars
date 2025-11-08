@@ -878,15 +878,15 @@ def test_fill_nan() -> None:
 
 
 def test_map_elements() -> None:
+    a = pl.Series("a", [1, 2, None])
     with pytest.warns(PolarsInefficientMapWarning):
-        a = pl.Series("a", [1, 2, None])
         b = a.map_elements(lambda x: x**2, return_dtype=pl.Int64)
-        assert list(b) == [1, 4, None]
+    assert list(b) == [1, 4, None]
 
+    a = pl.Series("a", ["foo", "bar", None])
     with pytest.warns(PolarsInefficientMapWarning):
-        a = pl.Series("a", ["foo", "bar", None])
         b = a.map_elements(lambda x: x + "py", return_dtype=pl.String)
-        assert list(b) == ["foopy", "barpy", None]
+    assert list(b) == ["foopy", "barpy", None]
 
     b = a.map_elements(lambda x: len(x), return_dtype=pl.Int32)
     assert list(b) == [3, 3, None]
@@ -1055,21 +1055,6 @@ def test_diff_negative() -> None:
         s.diff(-1, null_behavior="drop"),
         pl.Series("a", [-1, -1, 1, 0, -1, 3]),
     )
-
-
-def test_pct_change() -> None:
-    s = pl.Series("a", [1, 2, 4, 8, 16, 32, 64])
-    expected = pl.Series("a", [None, None, 3.0, 3.0, 3.0, 3.0, 3.0])
-    assert_series_equal(s.pct_change(2), expected)
-    assert_series_equal(s.pct_change(pl.Series([2])), expected)
-    # negative
-    assert pl.Series(range(5)).pct_change(-1).to_list() == [
-        -1.0,
-        -0.5,
-        -0.3333333333333333,
-        -0.25,
-        None,
-    ]
 
 
 def test_skew() -> None:

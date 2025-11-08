@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import contextlib
+import io
 import itertools
 import os
 import pickle
 import sys
+import warnings
 import zoneinfo
 from datetime import date, datetime
 from decimal import Decimal as D
@@ -14,10 +16,9 @@ from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
+import pydantic
 import pyiceberg
 import pytest
-from pyiceberg.catalog.sql import SqlCatalog
-from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.partitioning import (
     BucketTransform,
     IdentityTransform,
@@ -52,6 +53,12 @@ from polars.io.iceberg._utils import _convert_predicate, _to_ast
 from polars.io.iceberg.dataset import IcebergDataset, _NativeIcebergScanData
 from polars.testing import assert_frame_equal
 
+with warnings.catch_warnings():
+    # Upstream issue at https://github.com/apache/iceberg-python/issues/2648
+    warnings.simplefilter("ignore", pydantic.warnings.PydanticDeprecatedSince212)
+    from pyiceberg.catalog.sql import SqlCatalog
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
+
 
 @pytest.fixture
 def iceberg_path(io_files_path: Path) -> str:
@@ -61,7 +68,7 @@ def iceberg_path(io_files_path: Path) -> str:
     current_path = Path(__file__).parent.resolve()
 
     with contextlib.suppress(FileExistsError):
-        os.symlink(f"{current_path}/files/iceberg-table", "/tmp/iceberg/t1")
+        os.symlink(f"{current_path}/files/iceberg-table", "/tmp/iceberg/t1")  # noqa: PTH211
 
     iceberg_path = io_files_path / "iceberg-table" / "metadata" / "v2.metadata.json"
     return f"file://{iceberg_path.resolve()}"
@@ -1208,10 +1215,8 @@ def test_scan_iceberg_parquet_prefilter_with_column_mapping(
     )
 
     # First file
-    assert (
-        "[MultiScan]: Source filter mask initialization via table statistics" in capture
-    )
-    assert "[MultiScan]: Predicate pushdown allows skipping 1 / 2 files" in capture
+    assert "Source filter mask initialization via table statistics" in capture
+    assert "Predicate pushdown allows skipping 1 / 2 files" in capture
     # Second file
     assert (
         "[ParquetFileReader]: Predicate pushdown: reading 1 / 1 row groups" in capture
@@ -1310,7 +1315,8 @@ def test_fill_missing_fields_with_identity_partition_values(
     if test_uuid:
         # Note: If this starts working one day we can include it in tests.
         with pytest.raises(
-            pa.ArrowNotImplementedError, match="Keys of type extension<arrow.uuid>"
+            pa.ArrowNotImplementedError,
+            match=r"Keys of type extension<arrow\.uuid>",
         ):
             tbl.append(arrow_tbl)
 
@@ -1811,8 +1817,7 @@ def test_scan_iceberg_min_max_statistics_filter(
             capture = capfd.readouterr().err
 
             if "iceberg_table_filter: Some(<redacted>)" in capture:
-                assert "scan IR lowered as empty InMemorySource" in capture
-                assert "[MultiScan]: " not in capture
+                assert "apply_scan_predicate_to_scan_ir: remove 0 / 0 files" in capture
 
                 # Scanning with pyiceberg can also skip the file if the predicate
                 # can be converted.
@@ -1825,7 +1830,7 @@ def test_scan_iceberg_min_max_statistics_filter(
 
                 iceberg_table_filter_seen = True
             else:
-                assert "[MultiScan]: " in capture
+                assert "apply_scan_predicate_to_scan_ir: remove 1 / 1 file" in capture
 
             capfd.readouterr()
 
@@ -1960,6 +1965,41 @@ def test_scan_iceberg_fast_count(tmp_path: Path) -> None:
 
     pl.DataFrame({"a": [0, 1, 2, 3, 4]}).write_iceberg(tbl, mode="append")
 
+    assert (
+        pl.scan_iceberg(tbl, reader_override="native", use_metadata_statistics=True)
+        .select(pl.len())
+        .collect()
+        .item()
+        == 5
+    )
+
+    assert (
+        pl.scan_iceberg(tbl, reader_override="native", use_metadata_statistics=True)
+        .filter(pl.col("a") <= 2)
+        .select(pl.len())
+        .collect()
+        .item()
+        == 3
+    )
+
+    assert (
+        pl.scan_iceberg(tbl, reader_override="native", use_metadata_statistics=True)
+        .head(3)
+        .select(pl.len())
+        .collect()
+        .item()
+        == 3
+    )
+
+    assert (
+        pl.scan_iceberg(tbl, reader_override="native", use_metadata_statistics=True)
+        .slice(1, 3)
+        .select(pl.len())
+        .collect()
+        .item()
+        == 3
+    )
+
     dfiles = [*tbl.scan().plan_files()]
 
     assert len(dfiles) == 1
@@ -2016,3 +2056,30 @@ def test_scan_iceberg_fast_count(tmp_path: Path) -> None:
         pl.scan_iceberg(tbl, reader_override="native").select(pl.len()).collect().item()
         == 5
     )
+
+
+def test_scan_iceberg_idxsize_limit() -> None:
+    if isinstance(pl.get_index_type(), pl.UInt64):
+        assert (
+            pl.scan_parquet([b""], schema={}, _row_count=(1 << 32, 0))
+            .select(pl.len())
+            .collect()
+            .item()
+            == 1 << 32
+        )
+
+        return
+
+    f = io.BytesIO()
+
+    pl.DataFrame({"x": 1}).write_parquet(f)
+
+    q = pl.scan_parquet([f.getvalue()], schema={"x": pl.Int64}, _row_count=(1 << 32, 0))
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"x": 1}))
+
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match=r"row count \(4294967296\) exceeded maximum supported of 4294967295.*Consider installing 'polars\[rt64\]'.",
+    ):
+        q.select(pl.len()).collect()

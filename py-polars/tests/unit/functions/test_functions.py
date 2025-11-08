@@ -656,7 +656,7 @@ def test_escape_regex() -> None:
     df = pl.DataFrame({"text": ["abc", "def", None, "abc(\\w+)"]})
     with pytest.raises(
         TypeError,
-        match="escape_regex function is unsupported for `Expr`, you may want use `Expr.str.escape_regex` instead",
+        match=r"escape_regex function is unsupported for `Expr`, you may want use `Expr\.str\.escape_regex` instead",
     ):
         df.with_columns(escaped=pl.escape_regex(pl.col("text")))  # type: ignore[arg-type]
 

@@ -101,7 +101,7 @@ def test_len_expr() -> None:
 
     out = df.select(pl.len())
     assert out.shape == (1, 1)
-    assert cast(int, out.item()) == 5
+    assert cast("int", out.item()) == 5
 
     out = df.group_by("b", maintain_order=True).agg(pl.len())
     assert out["b"].to_list() == ["a", "b"]
@@ -748,7 +748,10 @@ def test_slice() -> None:
 @pytest.mark.may_fail_cloud  # reason: shrink_dtype
 def test_function_expr_scalar_identification_18755() -> None:
     # The function uses `ApplyOptions::GroupWise`, however the input is scalar.
-    with pytest.warns(DeprecationWarning):
+    with pytest.warns(
+        DeprecationWarning,
+        match=r"use `Series\.shrink_dtype` instead",
+    ):
         assert_frame_equal(
             pl.DataFrame({"a": [1, 2]}).with_columns(
                 pl.lit(5, pl.Int64).shrink_dtype().alias("b")
@@ -758,7 +761,7 @@ def test_function_expr_scalar_identification_18755() -> None:
 
 
 def test_concat_deprecation() -> None:
-    with pytest.deprecated_call(match="`str.concat` is deprecated."):
+    with pytest.deprecated_call(match=r"`str\.concat` is deprecated."):
         pl.Series(["foo"]).str.concat()
-    with pytest.deprecated_call(match="`str.concat` is deprecated."):
+    with pytest.deprecated_call(match=r"`str\.concat` is deprecated."):
         pl.DataFrame({"foo": ["bar"]}).select(pl.all().str.concat())

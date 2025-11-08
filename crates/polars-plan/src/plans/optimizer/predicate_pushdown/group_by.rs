@@ -36,11 +36,15 @@ pub(super) fn process_group_by(
         return opt.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena);
     }
 
-    // If the predicate only resolves to the keys we can push it down.
+    // If the predicate only resolves to the keys we can push it down, on the condition
+    // that the key values are not modified from their original values.
     // When it filters the aggregations, the predicate should be done after aggregation.
     let mut local_predicates = Vec::with_capacity(acc_predicates.len());
+    let eligible_keys = keys.iter().filter(
+        |&key| matches!(expr_arena.get(key.node()), AExpr::Column(c) if c == key.output_name()),
+    );
     let key_schema = aexprs_to_schema(
-        &keys,
+        eligible_keys,
         lp_arena.get(input).schema(lp_arena).as_ref(),
         expr_arena,
     );

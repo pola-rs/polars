@@ -108,7 +108,7 @@ impl Display for Duration {
 
 impl Duration {
     /// Create a new integer size `Duration`
-    pub fn new(fixed_slots: i64) -> Self {
+    pub const fn new(fixed_slots: i64) -> Self {
         Duration {
             months: 0,
             weeks: 0,

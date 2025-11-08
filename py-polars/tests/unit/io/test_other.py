@@ -70,7 +70,7 @@ def test_read_missing_file_path_truncated() -> None:
 
     with pytest.raises(
         FileNotFoundError,
-        match="\\.\\.\\.lskdfj14lskdfj15lskdfj16lskdfj17lskdfj18lskdfj19lskdfj20lskdfj21lskdfj22lskdfj23lskdfj24 \\(set POLARS_VERBOSE=1 to see full path\\)",
+        match=r"\.\.\.lskdfj14lskdfj15lskdfj16lskdfj17lskdfj18lskdfj19lskdfj20lskdfj21lskdfj22lskdfj23lskdfj24 \(set POLARS_VERBOSE=1 to see full path\)",
     ):
         pl.read_csv(content)
 
@@ -106,7 +106,7 @@ def test_categorical_round_trip() -> None:
     tbl = df.to_arrow()
     assert "dictionary" in str(tbl["cat"].type)
 
-    df2 = cast(pl.DataFrame, pl.from_arrow(tbl))
+    df2 = cast("pl.DataFrame", pl.from_arrow(tbl))
     assert df2.dtypes == [pl.Int64, pl.Categorical]
 
 

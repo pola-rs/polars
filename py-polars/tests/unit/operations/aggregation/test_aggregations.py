@@ -568,8 +568,8 @@ def test_min_max_2850() -> None:
         computed = permuted.select(
             pl.col("id").min().alias("min"), pl.col("id").max().alias("max")
         )
-        assert cast(int, computed[0, "min"]) == minimum
-        assert cast(float, computed[0, "max"]) == maximum
+        assert cast("int", computed[0, "min"]) == minimum
+        assert cast("float", computed[0, "max"]) == maximum
 
 
 def test_multi_arg_structify_15834() -> None:
@@ -1015,3 +1015,23 @@ def test_item_on_groups_too_many() -> None:
         q.collect()
     with pytest.raises(pl.exceptions.ComputeError, match=match):
         q.collect(engine="streaming")
+
+
+def test_all_any_on_list_raises_error() -> None:
+    # Ensure boolean reductions on non-boolean columns raise an error.
+    # (regression for #24942).
+    lf = pl.LazyFrame({"x": [[True]]}, schema={"x": pl.List(pl.Boolean)})
+
+    # for in-memory engine
+    for expr in (pl.col("x").all(), pl.col("x").any()):
+        with pytest.raises(
+            pl.exceptions.InvalidOperationError, match=r"expected boolean"
+        ):
+            lf.select(expr).collect()
+
+    # for streaming engine
+    for expr in (pl.col("x").all(), pl.col("x").any()):
+        with pytest.raises(
+            pl.exceptions.InvalidOperationError, match=r"expected boolean"
+        ):
+            lf.select(expr).collect(engine="streaming")

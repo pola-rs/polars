@@ -241,19 +241,14 @@ pub fn pushdown_eligibility(
             let ae = expr_arena.get(node);
 
             match ae {
-                AExpr::Window {
+                #[cfg(feature = "dynamic_group_by")]
+                AExpr::Rolling { .. } => return ExprPushdownGroup::Barrier,
+                AExpr::Over {
+                    function: _,
                     partition_by,
-                    #[cfg(feature = "dynamic_group_by")]
-                    options,
-                    // The function is not checked for groups-sensitivity because
-                    // it is applied over the windows.
-                    ..
+                    order_by: _,
+                    mapping: _,
                 } => {
-                    #[cfg(feature = "dynamic_group_by")]
-                    if matches!(options, WindowType::Rolling(..)) {
-                        return ExprPushdownGroup::Barrier;
-                    };
-
                     partition_by_names.clear();
                     partition_by_names.reserve(partition_by.len());
 

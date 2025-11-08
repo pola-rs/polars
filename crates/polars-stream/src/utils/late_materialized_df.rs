@@ -30,6 +30,7 @@ impl LateMaterializedDataFrame {
             file_info: FileInfo::new(schema, None, (None, usize::MAX)),
             hive_parts: None,
             predicate: None,
+            predicate_file_skip_applied: None,
             output_schema: None,
             scan_type: Box::new(FileScanIR::Anonymous {
                 options,

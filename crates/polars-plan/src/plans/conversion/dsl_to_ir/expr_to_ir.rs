@@ -253,9 +253,9 @@ pub(super) fn to_aexpr_impl(
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::Last(input), output_name)
                 },
-                AggExpr::Item(input) => {
+                AggExpr::Item { input, allow_empty } => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
-                    (IRAggExpr::Item(input), output_name)
+                    (IRAggExpr::Item { input, allow_empty }, output_name)
                 },
                 AggExpr::Mean(input) => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
@@ -370,11 +370,32 @@ pub(super) fn to_aexpr_impl(
         Expr::Function { input, function } => {
             return convert_functions(input, function, ctx);
         },
-        Expr::Window {
+        #[cfg(feature = "dynamic_group_by")]
+        Expr::Rolling {
+            function,
+            index_column,
+            period,
+            offset,
+            closed_window,
+        } => {
+            let (function, output_name) = recurse_arc!(function)?;
+            let (index_column, _) = to_aexpr_mat_lit_arc!(index_column)?;
+            (
+                AExpr::Rolling {
+                    function,
+                    index_column,
+                    period,
+                    offset,
+                    closed_window,
+                },
+                output_name,
+            )
+        },
+        Expr::Over {
             function,
             partition_by,
             order_by,
-            options,
+            mapping,
         } => {
             let (function, output_name) = recurse_arc!(function)?;
             let order_by = if let Some((e, options)) = order_by {
@@ -384,14 +405,14 @@ pub(super) fn to_aexpr_impl(
             };
 
             (
-                AExpr::Window {
+                AExpr::Over {
                     function,
                     partition_by: partition_by
                         .into_iter()
                         .map(|e| Ok(to_aexpr_impl_materialized_lit(e, ctx)?.0))
                         .collect::<PolarsResult<_>>()?,
                     order_by,
-                    options,
+                    mapping,
                 },
                 output_name,
             )

@@ -1,4 +1,4 @@
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(feature = "nightly", feature(unicode_internals))]
 #![cfg_attr(feature = "nightly", allow(internal_features))]
 #![cfg_attr(

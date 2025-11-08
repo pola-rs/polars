@@ -110,6 +110,7 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
             *elem_idx += 1;
             if i + 1 != output_length && *elem_idx == arr.len() {
                 *arr = iter.next().unwrap();
+                *elem_idx = 0;
             }
         }
 

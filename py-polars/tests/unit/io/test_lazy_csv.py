@@ -179,7 +179,7 @@ def test_scan_csv_schema_new_columns_dtypes(
         ).collect()
 
     # cannot set both 'new_columns' and 'with_column_names'
-    with pytest.raises(ValueError, match="mutually.exclusive"):
+    with pytest.raises(ValueError, match=r"mutually.exclusive"):
         pl.scan_csv(
             file_path,
             schema_overrides=[pl.String, pl.String],
@@ -490,7 +490,7 @@ a,b,c
 a,b,c
 """
 
-    schema = {x: pl.String for x in ["a", "b", "c", "d", "e"]}
+    schema = dict.fromkeys(["a", "b", "c", "d", "e"], pl.String)
 
     assert_frame_equal(
         pl.scan_csv(data, schema=schema).collect(),

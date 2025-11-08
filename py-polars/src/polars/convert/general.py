@@ -829,11 +829,11 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
     lines = m.group().split("\n")[1:-1]
     rows = [
         [re.sub(r"^[\W+]*│", "", elem).strip() for elem in row]
-        for row in [re.split("[│┆|]", row.lstrip("#. ").rstrip("│ ")) for row in lines]
-        if len(row) > 1 or not re.search("├[╌┼]+┤", row[0])
+        for row in (re.split(r"[│┆|]", row.lstrip("#. ").rstrip("│ ")) for row in lines)
+        if len(row) > 1 or not re.search(r"├[╌┼]+┤", row[0])
     ]
 
-    # determine beginning/end of the header block
+    # determine the beginning /end of the header block
     table_body_start = 2
     found_header_divider = False
     for idx, (elem, *_) in enumerate(rows):

@@ -532,6 +532,7 @@ impl Column {
         }
     }
 
+    #[must_use]
     pub fn clear(&self) -> Self {
         match self {
             Column::Series(s) => s.clear().into(),

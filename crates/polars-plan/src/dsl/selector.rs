@@ -10,30 +10,28 @@ use super::*;
 
 #[cfg(feature = "dsl-schema")]
 impl schemars::JsonSchema for TimeUnitSet {
-    fn schema_name() -> String {
-        "TimeUnitSet".to_owned()
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "TimeUnitSet".into()
     }
 
     fn schema_id() -> std::borrow::Cow<'static, str> {
         std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "TimeUnitSet"))
     }
 
-    fn json_schema(_generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        use schemars::json_schema;
         use serde_json::{Map, Value};
 
+        // Add a map of flag names and bit patterns to detect schema changes
         let name_to_bits: Map<String, Value> = Self::all()
             .iter_names()
             .map(|(name, flag)| (name.to_owned(), flag.bits().into()))
             .collect();
 
-        schemars::schema::Schema::Object(schemars::schema::SchemaObject {
-            instance_type: Some(schemars::schema::InstanceType::String.into()),
-            format: Some("bitflags".to_owned()),
-            extensions: schemars::Map::from_iter([
-                // Add a map of flag names and bit patterns to detect schema changes
-                ("bitflags".to_owned(), Value::Object(name_to_bits)),
-            ]),
-            ..Default::default()
+        json_schema!({
+            "type": "string",
+            "format": "bitflags",
+            "bitflags": name_to_bits
         })
     }
 }

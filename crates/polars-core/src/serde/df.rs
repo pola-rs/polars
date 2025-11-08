@@ -1,3 +1,4 @@
+use std::io::{Read, Seek};
 use std::sync::Arc;
 
 use arrow::datatypes::Metadata;
@@ -72,7 +73,7 @@ impl DataFrame {
         Ok(buf)
     }
 
-    pub fn deserialize_from_reader(reader: &mut dyn std::io::Read) -> PolarsResult<Self> {
+    pub fn deserialize_from_reader<T: Read + Seek>(reader: &mut T) -> PolarsResult<Self> {
         let mut md = read_stream_metadata(reader)?;
 
         let custom_metadata = md.custom_schema_metadata.take();
@@ -167,7 +168,8 @@ impl<'de> Deserialize<'de> for DataFrame {
     {
         deserialize_map_bytes(deserializer, |b| {
             let v = &mut b.as_ref();
-            Self::deserialize_from_reader(v)
+            let mut reader = std::io::Cursor::new(v);
+            Self::deserialize_from_reader(&mut reader)
         })?
         .map_err(D::Error::custom)
     }
@@ -175,15 +177,15 @@ impl<'de> Deserialize<'de> for DataFrame {
 
 #[cfg(feature = "dsl-schema")]
 impl schemars::JsonSchema for DataFrame {
-    fn schema_name() -> String {
-        "DataFrame".to_owned()
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "DataFrame".into()
     }
 
     fn schema_id() -> std::borrow::Cow<'static, str> {
         std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "DataFrame"))
     }
 
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         Vec::<u8>::json_schema(generator)
     }
 }

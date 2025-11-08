@@ -190,8 +190,12 @@ fn get_retry_config(max_retries: usize) -> RetryConfig {
     }
 }
 
+pub static USER_AGENT: &str = concat!("polars", "/", env!("CARGO_PKG_VERSION"),);
+
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
 pub(super) fn get_client_options() -> ClientOptions {
+    use reqwest::header::HeaderValue;
+
     ClientOptions::new()
         // We set request timeout super high as the timeout isn't reset at ACK,
         // but starts from the moment we start downloading a body.
@@ -199,6 +203,7 @@ pub(super) fn get_client_options() -> ClientOptions {
         .with_timeout_disabled()
         // Concurrency can increase connection latency, so set to None, similar to default.
         .with_connect_timeout_disabled()
+        .with_user_agent(HeaderValue::from_static(USER_AGENT))
         .with_allow_http(true)
 }
 
@@ -361,6 +366,7 @@ impl CloudOptions {
                         );
                         let result = with_concurrency_budget(1, || async {
                             reqwest::Client::builder()
+                                .user_agent(USER_AGENT)
                                 .build()
                                 .unwrap()
                                 .head(format!("https://{bucket}.s3.amazonaws.com"))

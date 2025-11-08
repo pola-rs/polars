@@ -203,8 +203,10 @@ impl<T: Copy> UnitVec<T> {
             }
         }
 
-        if i <= 1 {
-            *self = Self::from_slice(&[self[i]]);
+        if i == 0 {
+            *self = Self::new();
+        } else if i == 1 {
+            *self = Self::from_slice(&[self[0]]);
         } else {
             self.len = i as IdxSize;
         }

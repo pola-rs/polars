@@ -289,9 +289,9 @@ impl BooleanChunked {
                 if values.intersects_with(validity) {
                     Some(true)
                 } else if validity.unset_bits() == 0 {
-                    None
+                    Some(false)
                 } else {
-                    Some(true)
+                    None
                 }
             },
         )

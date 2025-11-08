@@ -316,10 +316,10 @@ class IdentityTransformedPartitionValuesBuilder:
                 partition_spec_id
             ]
         except KeyError:
-            self.partition_values = {
-                k: f"partition spec ID not found: {partition_spec_id}"
-                for k in self.partition_values
-            }
+            self.partition_values = dict.fromkeys(
+                self.partition_values,
+                f"partition spec ID not found: {partition_spec_id}",
+            )
             return
 
         for i, source_field_id in identity_transforms:

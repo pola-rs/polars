@@ -40,4 +40,7 @@ Repository = "https://github.com/pola-rs/polars"
 Changelog = "https://github.com/pola-rs/polars/releases"
 
 [tool.maturin]
-include = [{ path = "rust-toolchain.toml", format = "sdist" }]
+include = [
+  { path = "rust-toolchain.toml", format = "sdist" },
+  { path = "_polars_runtime_*/build_feature_flags.py", format = ["sdist", "wheel"] },
+]

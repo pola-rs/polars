@@ -225,6 +225,7 @@ impl<'a> IRDotDisplay<'a> {
                 file_info,
                 hive_parts: _,
                 predicate,
+                predicate_file_skip_applied: _,
                 scan_type,
                 unified_scan_args,
                 output_schema: _,

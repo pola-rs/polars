@@ -1,11 +1,11 @@
+pub mod anonymous;
 mod datatype_fn;
-mod expr_dyn_fn;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 
+pub use anonymous::*;
 use bytes::Bytes;
 pub use datatype_fn::*;
-pub use expr_dyn_fn::*;
 use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
@@ -13,10 +13,6 @@ use polars_core::prelude::*;
 use polars_utils::format_pl_smallstr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "serde")]
-pub mod named_serde;
-#[cfg(feature = "serde")]
-mod serde_expr;
 
 use super::datatype_expr::DataTypeExpr;
 use crate::prelude::*;
@@ -37,7 +33,10 @@ pub enum AggExpr {
     NUnique(Arc<Expr>),
     First(Arc<Expr>),
     Last(Arc<Expr>),
-    Item(Arc<Expr>),
+    Item {
+        input: Arc<Expr>,
+        allow_empty: bool,
+    },
     Mean(Arc<Expr>),
     Implode(Arc<Expr>),
     Count {
@@ -65,7 +64,7 @@ impl AsRef<Expr> for AggExpr {
             NUnique(e) => e,
             First(e) => e,
             Last(e) => e,
-            Item(e) => e,
+            Item { input, .. } => input,
             Mean(e) => e,
             Implode(e) => e,
             Count { input, .. } => input,
@@ -144,12 +143,20 @@ pub enum Expr {
         by: Arc<Expr>,
     },
     /// Polars flavored window functions.
-    Window {
+    Over {
         /// Also has the input. i.e. avg("foo")
         function: Arc<Expr>,
         partition_by: Vec<Expr>,
         order_by: Option<(Arc<Expr>, SortOptions)>,
-        options: WindowType,
+        mapping: WindowMapping,
+    },
+    #[cfg(feature = "dynamic_group_by")]
+    Rolling {
+        function: Arc<Expr>,
+        index_column: Arc<Expr>,
+        period: Duration,
+        offset: Duration,
+        closed_window: ClosedWindow,
     },
     Slice {
         input: Arc<Expr>,
@@ -336,16 +343,30 @@ impl Hash for Expr {
                 skip_empty.hash(state);
                 input.hash(state)
             },
-            Expr::Window {
+            #[cfg(feature = "dynamic_group_by")]
+            Expr::Rolling {
+                function,
+                index_column,
+                period,
+                offset,
+                closed_window,
+            } => {
+                function.hash(state);
+                index_column.hash(state);
+                period.hash(state);
+                offset.hash(state);
+                closed_window.hash(state);
+            },
+            Expr::Over {
                 function,
                 partition_by,
                 order_by,
-                options,
+                mapping,
             } => {
                 function.hash(state);
                 partition_by.hash(state);
                 order_by.hash(state);
-                options.hash(state);
+                mapping.hash(state);
             },
             Expr::Slice {
                 input,
@@ -738,11 +759,13 @@ impl Operator {
             Operator::NotEq => Operator::NotEq,
             Operator::EqValidity => Operator::EqValidity,
             Operator::NotEqValidity => Operator::NotEqValidity,
-            Operator::Divide => Operator::Multiply,
-            Operator::Multiply => Operator::Divide,
+            // Operator::Divide requires modifying the right operand: left / right == 1/right * left
+            Operator::Divide => unimplemented!(),
+            Operator::Multiply => Operator::Multiply,
             Operator::And => Operator::And,
-            Operator::Plus => Operator::Minus,
-            Operator::Minus => Operator::Plus,
+            Operator::Plus => Operator::Plus,
+            // Operator::Minus requires modifying the right operand: left - right == -right + left
+            Operator::Minus => unimplemented!(),
             Operator::Lt => Operator::Gt,
             _ => unimplemented!(),
         }

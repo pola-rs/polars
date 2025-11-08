@@ -293,7 +293,7 @@ def _check_empty(
 
 
 def looks_like_url(path: str) -> bool:
-    return re.match("^(ht|f)tps?://", path, re.IGNORECASE) is not None
+    return re.match(r"^(ht|f)tps?://", path, re.IGNORECASE) is not None
 
 
 def process_file_url(path: str, encoding: str | None = None) -> BytesIO:
@@ -341,6 +341,8 @@ def get_sources(
     if not isinstance(source, Sequence) or isinstance(source, (str, bytes)):
         out: list[bytes | str | IO[bytes] | IO[str]] = [source]
 
-        return cast(Union[list[bytes], list[str], list[IO[bytes]], list[IO[str]]], out)
+        return cast(
+            "Union[list[bytes], list[str], list[IO[bytes]], list[IO[str]]]", out
+        )
 
     return source

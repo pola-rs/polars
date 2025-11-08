@@ -563,7 +563,7 @@ class _PyIcebergScanData(_ResolvedScanDataBase):
 
 def _redact_dict_values(obj: Any) -> Any:
     return (
-        {k: "REDACTED" for k in obj.keys()}  # noqa: SIM118
+        dict.fromkeys(obj.keys(), "REDACTED")
         if isinstance(obj, dict)
         else f"<{type(obj).__name__} object>"
         if obj is not None

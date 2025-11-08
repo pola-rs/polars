@@ -110,6 +110,8 @@ object = ["polars-core/object", "polars-lazy?/object", "polars-io/object"]
 # support for arrows json parsing
 json = ["polars-io", "polars-io/json", "polars-lazy?/json", "polars-sql?/json", "dtype-struct", "new_streaming"]
 
+scan_lines = ["polars-io", "polars-io/scan_lines", "polars-lazy?/scan_lines", "new_streaming"]
+
 # support for arrows ipc file parsing
 ipc = ["polars-io", "polars-io/ipc", "polars-lazy?/ipc", "polars-sql?/ipc", "new_streaming"]
 
@@ -174,7 +176,7 @@ diagonal_concat = ["polars-core/diagonal_concat", "polars-lazy?/diagonal_concat"
 diff = ["polars-ops/diff", "polars-lazy?/diff"]
 dot_diagram = ["polars-lazy?/dot_diagram"]
 dot_product = ["polars-core/dot_product"]
-dynamic_group_by = ["polars-core/dynamic_group_by", "polars-lazy?/dynamic_group_by"]
+dynamic_group_by = ["polars-core/dynamic_group_by", "polars-lazy?/dynamic_group_by", "polars-sql?/dynamic_group_by"]
 ewma = ["polars-ops/ewma", "polars-lazy?/ewma"]
 ewma_by = ["polars-ops/ewma_by", "polars-lazy?/ewma_by"]
 extract_groups = ["polars-lazy?/extract_groups"]

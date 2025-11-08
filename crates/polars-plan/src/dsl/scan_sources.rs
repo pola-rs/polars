@@ -314,6 +314,15 @@ impl ScanSources {
     pub fn at(&self, idx: usize) -> ScanSourceRef<'_> {
         self.get(idx).unwrap()
     }
+
+    /// Returns `None` if `self` is a `::File` variant.
+    pub fn gather(&self, indices: impl Iterator<Item = usize>) -> Option<Self> {
+        Some(match self {
+            Self::Paths(paths) => Self::Paths(indices.map(|i| paths[i].clone()).collect()),
+            Self::Buffers(buffers) => Self::Buffers(indices.map(|i| buffers[i].clone()).collect()),
+            Self::Files(_) => return None,
+        })
+    }
 }
 
 impl ScanSourceRef<'_> {

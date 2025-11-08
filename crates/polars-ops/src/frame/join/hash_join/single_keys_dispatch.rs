@@ -701,8 +701,8 @@ where
         (ca, other, false)
     };
     let hb = PlRandomState::default();
-    let bh_a = a.to_bytes_hashes(true, hb);
-    let bh_b = b.to_bytes_hashes(true, hb);
+    let bh_a = a.to_bytes_hashes(true, hb.clone());
+    let bh_b = b.to_bytes_hashes(true, hb.clone());
 
     (bh_a, bh_b, swapped, hb)
 }

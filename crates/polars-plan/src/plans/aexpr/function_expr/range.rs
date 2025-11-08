@@ -152,10 +152,18 @@ impl IRRangeFunction {
             R::DateRange { .. } => {
                 FunctionOptions::row_separable().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
             },
+            #[cfg(feature = "dtype-date")]
+            R::DateRanges { .. } => {
+                FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
+            },
             #[cfg(feature = "dtype-datetime")]
-            R::DatetimeRange { .. } => FunctionOptions::row_separable()
-                .with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
-                .with_supertyping(Default::default()),
+            R::DatetimeRange { .. } => {
+                FunctionOptions::row_separable().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
+            },
+            #[cfg(feature = "dtype-datetime")]
+            R::DatetimeRanges { .. } => {
+                FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
+            },
             #[cfg(feature = "dtype-time")]
             R::TimeRange { .. } => {
                 FunctionOptions::row_separable().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
@@ -166,14 +174,6 @@ impl IRRangeFunction {
             R::LinearSpaces { .. } => {
                 FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
             },
-            #[cfg(feature = "dtype-date")]
-            R::DateRanges { .. } => {
-                FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
-            },
-            #[cfg(feature = "dtype-datetime")]
-            R::DatetimeRanges { .. } => FunctionOptions::elementwise()
-                .with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
-                .with_supertyping(Default::default()),
             #[cfg(feature = "dtype-time")]
             R::TimeRanges { .. } => {
                 FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
@@ -192,7 +192,7 @@ impl Display for IRRangeFunction {
             LinearSpaces { .. } => "linear_spaces",
             #[cfg(feature = "dtype-date")]
             DateRange { .. } => "date_range",
-            #[cfg(feature = "temporal")]
+            #[cfg(feature = "dtype-date")]
             DateRanges { .. } => "date_ranges",
             #[cfg(feature = "dtype-datetime")]
             DatetimeRange { .. } => "datetime_range",

@@ -90,7 +90,7 @@ def test_dtype_to_polars_dtype_unsupported_type() -> None:
     dtype = (DtypeKind.FLOAT, 16, "e", NE)
     with pytest.raises(
         NotImplementedError,
-        match="unsupported data type: \\(<DtypeKind.FLOAT: 2>, 16, 'e', '='\\)",
+        match=r"unsupported data type: \(<DtypeKind\.FLOAT: 2>, 16, 'e', '='\)",
     ):
         dtype_to_polars_dtype(dtype)
 
@@ -99,7 +99,7 @@ def test_dtype_to_polars_dtype_unsupported_temporal_type() -> None:
     dtype = (DtypeKind.DATETIME, 64, "tss:", NE)
     with pytest.raises(
         NotImplementedError,
-        match="unsupported temporal data type: \\(<DtypeKind.DATETIME: 22>, 64, 'tss:', '='\\)",
+        match=r"unsupported temporal data type: \(<DtypeKind\.DATETIME: 22>, 64, 'tss:', '='\)",
     ):
         dtype_to_polars_dtype(dtype)
 
@@ -119,7 +119,7 @@ def test_get_buffer_length_in_elements_unsupported_dtype() -> None:
     dtype = (DtypeKind.BOOL, 1, "b", NE)
     with pytest.raises(
         ValueError,
-        match="cannot get buffer length for buffer with dtype \\(<DtypeKind.BOOL: 20>, 1, 'b', '='\\)",
+        match=r"cannot get buffer length for buffer with dtype \(<DtypeKind\.BOOL: 20>, 1, 'b', '='\)",
     ):
         get_buffer_length_in_elements(24, dtype)
 

@@ -1,4 +1,4 @@
-use polars_time::{PolarsTemporalGroupby, RollingGroupOptions};
+use polars_time::{ClosedWindow, Duration, PolarsTemporalGroupby, RollingGroupOptions};
 
 use super::*;
 
@@ -12,30 +12,55 @@ pub(crate) struct RollingExpr {
     ///
     /// A function Expr. i.e. Mean, Median, Max, etc.
     pub(crate) phys_function: Arc<dyn PhysicalExpr>,
-    pub(crate) options: RollingGroupOptions,
+    pub(crate) index_column: Arc<dyn PhysicalExpr>,
+    pub(crate) period: Duration,
+    pub(crate) offset: Duration,
+    pub(crate) closed_window: ClosedWindow,
     pub(crate) expr: Expr,
     pub(crate) output_field: Field,
 }
 
 impl PhysicalExpr for RollingExpr {
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
-        let groups_key = format!("{:?}", &self.options);
+        let groups = if let Some(index_column_name) = self.index_column.as_column() {
+            let options = RollingGroupOptions {
+                index_column: index_column_name.clone(),
+                period: self.period,
+                offset: self.offset,
+                closed_window: self.closed_window,
+            };
+            let groups_key = format!("{options:?}");
+            let groups = {
+                // Groups must be set by expression runner.
+                state.window_cache.get_groups(&groups_key)
+            };
 
-        let groups = {
-            // Groups must be set by expression runner.
-            state.window_cache.get_groups(&groups_key)
-        };
+            // There can be multiple rolling expressions in a single expr.
+            // E.g. `min().rolling() + max().rolling()`
+            // So if we hit that we will compute them here.
+            match groups {
+                Some(groups) => groups,
+                None => {
+                    let (_time_key, groups) = df.rolling(None, &options)?;
+                    state.window_cache.insert_groups(groups_key, groups.clone());
+                    groups
+                },
+            }
+        } else {
+            let index_column_name = PlSmallStr::from_static("__PL_INDEX_COL");
+            let options = RollingGroupOptions {
+                index_column: index_column_name.clone(),
+                period: self.period,
+                offset: self.offset,
+                closed_window: self.closed_window,
+            };
 
-        // There can be multiple rolling expressions in a single expr.
-        // E.g. `min().rolling() + max().rolling()`
-        // So if we hit that we will compute them here.
-        let groups = match groups {
-            Some(groups) => groups,
-            None => {
-                let (_time_key, groups) = df.rolling(None, &self.options)?;
-                state.window_cache.insert_groups(groups_key, groups.clone());
-                groups
-            },
+            let index_column = self.index_column.evaluate(df, state)?;
+
+            let mut df = df.clone();
+            df.with_column(index_column.with_name(index_column_name))?;
+            let (_time_key, groups) = df.rolling(None, &options)?;
+            groups
         };
 
         let out = self

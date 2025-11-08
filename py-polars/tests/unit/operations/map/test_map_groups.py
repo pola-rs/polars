@@ -236,3 +236,23 @@ def test_map_groups_multiple_all_literal_elementwise_raises() -> None:
     # different error message in streaming, not specific to the problem
     with pytest.raises(ShapeError):
         q.collect(engine="streaming")
+
+
+def test_nested_query_with_streaming_dispatch_25172() -> None:
+    def simple(_: Any) -> pl.Series:
+        import io
+
+        pl.LazyFrame({}).sink_parquet(
+            pl.PartitionMaxSize("", file_path=lambda _: io.BytesIO(), max_size=1),
+            engine="in-memory",
+        )
+        return pl.Series([1])
+
+    assert_frame_equal(
+        pl.LazyFrame({"a": ["A", "B"] * 1000, "b": [1] * 2000})
+        .group_by("a")
+        .agg(pl.map_groups(["b"], simple, pl.Int64(), returns_scalar=True))
+        .collect(engine="in-memory")
+        .sort("a"),
+        pl.DataFrame({"a": ["A", "B"], "b": [1, 1]}, schema_overrides={"b": pl.Int64}),
+    )

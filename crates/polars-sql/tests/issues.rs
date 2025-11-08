@@ -19,7 +19,7 @@ fn iss_7437() -> PolarsResult<()> {
             SELECT "category" as category
             FROM foods
             GROUP BY "category"
-    "#,
+        "#,
         )?
         .collect()?
         .sort(["category"], SortMultipleOptions::default())?;
@@ -126,6 +126,7 @@ fn iss_8419() {
     }
     .unwrap()
     .lazy();
+
     let expected = df
         .clone()
         .select(&[
@@ -140,6 +141,7 @@ fn iss_8419() {
         .sort(["SalesCumulative"], Default::default())
         .collect()
         .unwrap();
+
     let mut ctx = SQLContext::new();
     ctx.register("df", df);
 

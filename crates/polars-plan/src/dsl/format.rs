@@ -13,30 +13,34 @@ impl fmt::Debug for Expr {
         use Expr::*;
         match self {
             Element => f.write_str("element()"),
-            Window {
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling {
+                function,
+                index_column,
+                period,
+                offset,
+                closed_window: _,
+            } => {
+                write!(
+                    f,
+                    "{:?}.rolling(by='{}', offset={}, period={})",
+                    function, index_column, offset, period
+                )
+            },
+            Over {
                 function,
                 partition_by,
                 order_by,
-                options,
-            } => match options {
-                #[cfg(feature = "dynamic_group_by")]
-                WindowType::Rolling(options) => {
+                mapping: _,
+            } => {
+                if let Some((order_by, _)) = order_by {
                     write!(
                         f,
-                        "{:?}.rolling(by='{}', offset={}, period={})",
-                        function, options.index_column, options.offset, options.period
+                        "{function:?}.over(partition_by: {partition_by:?}, order_by: {order_by:?})"
                     )
-                },
-                _ => {
-                    if let Some((order_by, _)) = order_by {
-                        write!(
-                            f,
-                            "{function:?}.over(partition_by: {partition_by:?}, order_by: {order_by:?})"
-                        )
-                    } else {
-                        write!(f, "{function:?}.over({partition_by:?})")
-                    }
-                },
+                } else {
+                    write!(f, "{function:?}.over({partition_by:?})")
+                }
             },
             DataTypeFunction(dtype_fn) => fmt::Debug::fmt(dtype_fn, f),
             Len => write!(f, "len()"),
@@ -113,7 +117,13 @@ impl fmt::Debug for Expr {
                     Mean(expr) => write!(f, "{expr:?}.mean()"),
                     First(expr) => write!(f, "{expr:?}.first()"),
                     Last(expr) => write!(f, "{expr:?}.last()"),
-                    Item(expr) => write!(f, "{expr:?}.item()"),
+                    Item { input, allow_empty } => {
+                        if *allow_empty {
+                            write!(f, "{input:?}.item(allow_empty=true)")
+                        } else {
+                            write!(f, "{input:?}.item()")
+                        }
+                    },
                     Implode(expr) => write!(f, "{expr:?}.list()"),
                     NUnique(expr) => write!(f, "{expr:?}.n_unique()"),
                     Sum(expr) => write!(f, "{expr:?}.sum()"),

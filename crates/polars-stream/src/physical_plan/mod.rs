@@ -29,6 +29,7 @@ pub mod visualization;
 
 pub use fmt::visualize_plan;
 use polars_plan::prelude::{FileType, PlanCallback};
+use polars_time::{ClosedWindow, Duration};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::plpath::PlPath;
@@ -92,6 +93,10 @@ impl PhysStream {
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "physical_plan_visualization",
+    derive(strum_macros::IntoStaticStr)
+)]
 pub enum PhysNodeKind {
     InMemorySource {
         df: Arc<DataFrame>,
@@ -273,6 +278,7 @@ pub enum PhysNodeKind {
         row_index: Option<RowIndex>,
         pre_slice: Option<Slice>,
         predicate: Option<ExprIR>,
+        predicate_file_skip_applied: Option<bool>,
 
         hive_parts: Option<HivePartitionsDf>,
         include_file_paths: Option<PlSmallStr>,
@@ -296,6 +302,16 @@ pub enum PhysNodeKind {
         input: PhysStream,
         key: Vec<ExprIR>,
         // Must be a 'simple' expression, a singular column feeding into a single aggregate, or Len.
+        aggs: Vec<ExprIR>,
+    },
+
+    #[cfg(feature = "dynamic_group_by")]
+    RollingGroupBy {
+        input: PhysStream,
+        index_column: PlSmallStr,
+        period: Duration,
+        offset: Duration,
+        closed: ClosedWindow,
         aggs: Vec<ExprIR>,
     },
 
@@ -338,6 +354,24 @@ pub enum PhysNodeKind {
     MergeSorted {
         input_left: PhysStream,
         input_right: PhysStream,
+    },
+
+    #[cfg(feature = "ewma")]
+    EwmMean {
+        input: PhysStream,
+        options: polars_ops::series::EWMOptions,
+    },
+
+    #[cfg(feature = "ewma")]
+    EwmVar {
+        input: PhysStream,
+        options: polars_ops::series::EWMOptions,
+    },
+
+    #[cfg(feature = "ewma")]
+    EwmStd {
+        input: PhysStream,
+        options: polars_ops::series::EWMOptions,
     },
 }
 
@@ -384,6 +418,12 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::RleId(input)
             | PhysNodeKind::PeakMinMax { input, .. }
             | PhysNodeKind::GroupBy { input, .. } => {
+                rec!(input.node);
+                visit(input);
+            },
+
+            #[cfg(feature = "dynamic_group_by")]
+            PhysNodeKind::RollingGroupBy { input, .. } => {
                 rec!(input.node);
                 visit(input);
             },
@@ -488,6 +528,14 @@ fn visit_node_inputs_mut(
                     rec!(*sink);
                     visit(&mut PhysStream::first(*sink));
                 }
+            },
+
+            #[cfg(feature = "ewma")]
+            PhysNodeKind::EwmMean { input, options: _ }
+            | PhysNodeKind::EwmVar { input, options: _ }
+            | PhysNodeKind::EwmStd { input, options: _ } => {
+                rec!(input.node);
+                visit(input)
             },
         }
     }

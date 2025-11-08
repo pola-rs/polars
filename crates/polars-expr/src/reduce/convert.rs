@@ -51,7 +51,9 @@ pub fn into_reduction(
             },
             IRAggExpr::First(input) => (new_first_reduction(get_dt(*input)?), *input),
             IRAggExpr::Last(input) => (new_last_reduction(get_dt(*input)?), *input),
-            IRAggExpr::Item(input) => (new_item_reduction(get_dt(*input)?), *input),
+            IRAggExpr::Item { input, allow_empty } => {
+                (new_item_reduction(get_dt(*input)?, *allow_empty), *input)
+            },
             IRAggExpr::Count {
                 input,
                 include_nulls,
@@ -140,6 +142,20 @@ pub fn into_reduction(
                 },
                 _ => unreachable!(),
             }
+        },
+        AExpr::AnonymousStreamingAgg {
+            input: inner_exprs,
+            fmt_str: _,
+            function,
+        } => {
+            let ann_agg = function.materialize()?;
+            assert!(inner_exprs.len() == 1);
+            let input = inner_exprs[0].node();
+            let reduction = ann_agg.as_any();
+            let reduction = reduction
+                .downcast_ref::<Box<dyn GroupedReduction>>()
+                .unwrap();
+            (reduction.new_empty(), input)
         },
         _ => unreachable!(),
     };

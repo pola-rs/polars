@@ -258,8 +258,10 @@ pub fn and_scalar(array: &BooleanArray, scalar: &BooleanScalar) -> BooleanArray 
 pub fn any(array: &BooleanArray) -> Option<bool> {
     if array.is_empty() {
         Some(false)
-    } else if array.null_count() > 0 {
-        if array.into_iter().any(|v| v == Some(true)) {
+    } else if let Some(validity) = array.validity()
+        && validity.unset_bits() > 0
+    {
+        if array.values().intersects_with(validity) {
             Some(true)
         } else {
             None

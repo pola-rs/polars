@@ -152,8 +152,8 @@ impl PyExpr {
     fn last(&self) -> Self {
         self.inner.clone().last().into()
     }
-    fn item(&self) -> Self {
-        self.inner.clone().item().into()
+    fn item(&self, allow_empty: bool) -> Self {
+        self.inner.clone().item(allow_empty).into()
     }
     fn implode(&self) -> Self {
         self.inner.clone().implode().into()
@@ -618,19 +618,20 @@ impl PyExpr {
 
     fn rolling(
         &self,
-        index_column: &str,
+        index_column: PyExpr,
         period: &str,
         offset: &str,
         closed: Wrap<ClosedWindow>,
     ) -> PyResult<Self> {
-        let options = RollingGroupOptions {
-            index_column: index_column.into(),
-            period: Duration::try_parse(period).map_err(PyPolarsErr::from)?,
-            offset: Duration::try_parse(offset).map_err(PyPolarsErr::from)?,
-            closed_window: closed.0,
-        };
+        let period = Duration::try_parse(period).map_err(PyPolarsErr::from)?;
+        let offset = Duration::try_parse(offset).map_err(PyPolarsErr::from)?;
+        let closed = closed.0;
 
-        Ok(self.inner.clone().rolling(options).into())
+        Ok(self
+            .inner
+            .clone()
+            .rolling(index_column.inner, period, offset, closed)
+            .into())
     }
 
     fn and_(&self, expr: Self) -> Self {

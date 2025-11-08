@@ -20,8 +20,12 @@ fn main() {
 fn generate_schema_hash() {
     let hash_hexstr = {
         let mut digest = sha2::Sha256::new();
+        // Read as UTF-8 text and normalize CRLF to LF to make hashing
+        // invariant to Git EOL conversion on Windows.
+        let content = include_str!("dsl-schema-hashes.json");
+        let normalized = content.replace("\r\n", "\n");
         digest
-            .write_all(include_bytes!("dsl-schema-hashes.json"))
+            .write_all(normalized.as_bytes())
             .expect("failed to hash the schema hashes file");
         let hash = digest.finalize();
 

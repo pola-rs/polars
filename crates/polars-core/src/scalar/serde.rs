@@ -10,19 +10,19 @@ use crate::series::Series;
 
 #[cfg(feature = "dsl-schema")]
 impl schemars::JsonSchema for Scalar {
-    fn is_referenceable() -> bool {
-        <SerializableScalar as schemars::JsonSchema>::is_referenceable()
+    fn inline_schema() -> bool {
+        <SerializableScalar as schemars::JsonSchema>::inline_schema()
     }
 
     fn schema_id() -> std::borrow::Cow<'static, str> {
         <SerializableScalar as schemars::JsonSchema>::schema_id()
     }
 
-    fn schema_name() -> String {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
         <SerializableScalar as schemars::JsonSchema>::schema_name()
     }
 
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         <SerializableScalar as schemars::JsonSchema>::json_schema(generator)
     }
 }

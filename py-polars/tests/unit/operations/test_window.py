@@ -833,3 +833,32 @@ def test_over_literal_or_scalar_24756(expr: pl.Expr, over: pl.Expr) -> None:
 
     out = df.select(expr.over(over))
     assert out.shape == (3, 1)
+
+
+def test_shape_mismatch_group_by_slice() -> None:
+    q = pl.LazyFrame(
+        {
+            "x": [True, True, False],
+            "t": [1, 1, 3],
+        }
+    ).select(pl.col.t.mode().over(pl.col("x").rle_id()))
+
+    with pytest.raises(
+        ShapeError, match="expressions must have matching group lengths"
+    ):
+        q.collect()
+
+
+def test_shape_mismatch_group_by_unique_slice() -> None:
+    q = pl.LazyFrame(
+        {
+            "x": [True, True, False],
+            "t": [1, 1, 3],
+        }
+    ).select(pl.col.t.unique().over(pl.col("x").rle_id()))
+
+    with pytest.raises(
+        ShapeError,
+        match="the length of the window expression did not match that of the group",
+    ):
+        q.collect()

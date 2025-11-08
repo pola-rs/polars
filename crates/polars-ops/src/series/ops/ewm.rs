@@ -1,7 +1,6 @@
-pub use arrow::legacy::kernels::ewm::EWMOptions;
-use arrow::legacy::kernels::ewm::{
-    ewm_mean as kernel_ewm_mean, ewm_std as kernel_ewm_std, ewm_var as kernel_ewm_var,
-};
+pub use polars_compute::ewm::EWMOptions;
+use polars_compute::ewm::mean::ewm_mean as kernel_ewm_mean;
+use polars_compute::ewm::{ewm_std as kernel_ewm_std, ewm_var as kernel_ewm_var};
 use polars_core::prelude::*;
 
 fn check_alpha(alpha: f64) -> PolarsResult<()> {
@@ -10,7 +9,11 @@ fn check_alpha(alpha: f64) -> PolarsResult<()> {
 }
 
 pub fn ewm_mean(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
-    check_alpha(options.alpha)?;
+    check_alpha(options.alpha).inspect_err(|_| {
+        if cfg!(debug_assertions) {
+            panic!()
+        }
+    })?;
     match s.dtype() {
         DataType::Float32 => {
             let xs = s.f32().unwrap();
@@ -34,6 +37,7 @@ pub fn ewm_mean(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
             );
             Series::try_from((s.name().clone(), Box::new(result) as ArrayRef))
         },
+        dt if cfg!(debug_assertions) => panic!("{:?}", dt),
         _ => ewm_mean(&s.cast(&DataType::Float64)?, options),
     }
 }

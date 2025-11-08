@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+import polars.selectors as cs
 from polars.exceptions import ColumnNotFoundError
 from polars.testing import assert_frame_equal, assert_series_equal
 
@@ -22,14 +23,22 @@ def test_unique_predicate_pd() -> None:
             "z": [True, False],
         }
     )
-
-    result = (
-        lf.unique(subset=["x", "y"], maintain_order=True, keep="last")
-        .filter(pl.col("z"))
-        .collect()
-    )
-    expected = pl.DataFrame(schema={"x": pl.String, "y": pl.String, "z": pl.Boolean})
-    assert_frame_equal(result, expected)
+    for subset in (
+        ["x", "y"],
+        pl.exclude("z"),
+        pl.col("x", "y"),
+        ~cs.starts_with("z"),
+        [pl.col("x"), pl.col("y").str.len_bytes()],
+    ):
+        result = (
+            lf.unique(subset=subset, maintain_order=True, keep="last")
+            .filter(pl.col("z"))
+            .collect()
+        )
+        expected = pl.DataFrame(
+            schema={"x": pl.String, "y": pl.String, "z": pl.Boolean}
+        )
+        assert_frame_equal(result, expected)
 
     result = (
         lf.unique(subset=["x", "y"], maintain_order=True, keep="any")
@@ -125,7 +134,6 @@ def test_struct_unique_df() -> None:
             "struct": [{"x": 1, "y": 2}, {"x": 3, "y": 4}, {"x": 1, "y": 2}],
         }
     )
-
     df.select("numerical", "struct").unique().sort("numerical")
 
 
@@ -234,7 +242,18 @@ def test_categorical_updated_revmap_unique_20233() -> None:
     assert_series_equal(s.unique(), pl.Series("a", ["D"], pl.Categorical))
 
 
-def test_unique_check_order_20480() -> None:
+@pytest.mark.parametrize(
+    "subset",
+    [
+        "key",
+        ["key"],
+        pl.col("key"),
+        pl.col("key").str.extract(r"^([a-z]+)_"),
+        pl.exclude("value", "number"),
+        cs.exclude("number", "value"),
+    ],
+)
+def test_unique_check_order_20480(subset: Any) -> None:
     df = pl.DataFrame(
         [
             {
@@ -252,7 +271,7 @@ def test_unique_check_order_20480() -> None:
     assert (
         df.lazy()
         .sort("key", "number")
-        .unique(subset="key", keep="first")
+        .unique(subset=subset, keep="first")
         .collect()["number"]
         .item()
         == 1

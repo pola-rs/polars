@@ -28,7 +28,15 @@ def _import_timings() -> bytes:
     # assemble suitable command to get polars module import timing;
     # run in a separate process to ensure clean timing results.
     cmd = f'{sys.executable} -S -X importtime -c "import polars"'
-    output = subprocess.run(cmd, shell=True, capture_output=True).stderr
+    python_path = (
+        f"{Path(pl.__file__).parent.parent}:{Path(pl._plr.__file__).parent.parent}"
+    )
+    output = subprocess.run(
+        cmd,
+        shell=True,
+        capture_output=True,
+        env={"PYTHONPATH": python_path},
+    ).stderr
     if b"Traceback" in output:
         msg = f"measuring import timings failed\n\nCommand output:\n{output.decode()}"
         raise RuntimeError(msg)

@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 def prepare_cloud_plan(
     lf: LazyFrame,
     *,
+    allow_local_scans: bool,
     optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
 ) -> bytes:
     """
@@ -21,6 +22,8 @@ def prepare_cloud_plan(
     ----------
     lf
         The LazyFrame to prepare.
+    allow_local_scans
+        Whether or not to allow local scans in the plan.
     optimizations
         Optimizations to enable or disable in the query optimizer.
 
@@ -37,4 +40,4 @@ def prepare_cloud_plan(
     """
     optimizations = optimizations.__copy__()
     pylf = lf._ldf.with_optimizations(optimizations._pyoptflags)
-    return plr.prepare_cloud_plan(pylf)
+    return plr.prepare_cloud_plan(pylf, allow_local_scans=allow_local_scans)

@@ -1625,13 +1625,13 @@ def test_join_bad_input_type() -> None:
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
+        match=r"expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
     ):
         left.join(right.lazy(), on="a")  # type: ignore[arg-type]
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .*to be a 'DataFrame'.* not 'Series'",
+        match=r"expected `other` .*to be a 'DataFrame'.* not 'Series'",
     ):
         left.join(pl.Series([1, 2, 3]), on="a")  # type: ignore[arg-type]
 
@@ -1701,7 +1701,7 @@ def test_join_where_bad_input_type() -> None:
     )
     with pytest.raises(
         TypeError,
-        match="expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
+        match=r"expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
     ):
         east.join_where(
             west.lazy(),  # type: ignore[arg-type]
@@ -1711,7 +1711,7 @@ def test_join_where_bad_input_type() -> None:
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .*to be a 'DataFrame'.* not 'Series'",
+        match=r"expected `other` .*to be a 'DataFrame'.* not 'Series'",
     ):
         east.join_where(
             pl.Series(west),  # type: ignore[arg-type]
@@ -1790,7 +1790,7 @@ def test_reproducible_hash_with_seeds() -> None:
     seeds = (11, 22, 33, 44)
     expected = pl.Series(
         "s",
-        [10832467230526607564, 3044502640115867787, 17228373233104406792],
+        [7829205897147972687, 10151361788274345728, 17508017346787321581],
         dtype=pl.UInt64,
     )
     result = df.hash_rows(*seeds)
@@ -2480,13 +2480,13 @@ def test_asof_bad_input_type() -> None:
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
+        match=r"expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
     ):
         lhs.join_asof(rhs.lazy(), on="a")  # type: ignore[arg-type]
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .*to be a 'DataFrame'.* not 'Series'",
+        match=r"expected `other` .*to be a 'DataFrame'.* not 'Series'",
     ):
         lhs.join_asof(pl.Series([1, 2, 3]), on="a")  # type: ignore[arg-type]
 

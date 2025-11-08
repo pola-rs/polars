@@ -248,7 +248,7 @@ impl GroupedReduction for AnyKleeneNullGroupedReduction {
         if ca.any() {
             self.seen_true.set(group_idx as usize, true);
         }
-        if ca.len() != ca.null_count() {
+        if ca.has_nulls() {
             self.seen_null.set(group_idx as usize, true);
         }
         Ok(())
@@ -319,7 +319,7 @@ impl GroupedReduction for AnyKleeneNullGroupedReduction {
     fn finalize(&mut self) -> PolarsResult<Series> {
         let seen_true = core::mem::take(&mut self.seen_true);
         let mut mask = core::mem::take(&mut self.seen_null);
-        binary_assign_mut(&mut mask, &seen_true, |mi: u64, ti: u64| mi & !ti);
+        binary_assign_mut(&mut mask, &seen_true, |mi: u64, ti: u64| ti | !mi);
         let arr = BooleanArray::from(seen_true.freeze())
             .with_validity(Some(mask.freeze()))
             .boxed();
@@ -372,7 +372,7 @@ impl GroupedReduction for AllKleeneNullGroupedReduction {
         if !ca.all() {
             self.seen_false.set(group_idx as usize, true);
         }
-        if ca.len() != ca.null_count() {
+        if ca.has_nulls() {
             self.seen_null.set(group_idx as usize, true);
         }
         Ok(())
@@ -443,7 +443,7 @@ impl GroupedReduction for AllKleeneNullGroupedReduction {
     fn finalize(&mut self) -> PolarsResult<Series> {
         let seen_false = core::mem::take(&mut self.seen_false);
         let mut mask = core::mem::take(&mut self.seen_null);
-        binary_assign_mut(&mut mask, &seen_false, |mi: u64, fi: u64| mi & !fi);
+        binary_assign_mut(&mut mask, &seen_false, |mi: u64, fi: u64| fi | !mi);
         let arr = BooleanArray::from((!seen_false).freeze())
             .with_validity(Some(mask.freeze()))
             .boxed();

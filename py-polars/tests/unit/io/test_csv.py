@@ -2654,7 +2654,7 @@ x"y,b,c
         pl.read_csv(malformed, has_header=False)
     with pytest.raises(pl.exceptions.ComputeError):
         pl.scan_csv(malformed, has_header=False).collect()
-    with pytest.warns(UserWarning):
+    with pytest.warns(UserWarning, match="CSV malformed:"):
         pl.read_csv(malformed, has_header=False, ignore_errors=True)
 
     # long: trigger SIMD code path (> 64 bytes)

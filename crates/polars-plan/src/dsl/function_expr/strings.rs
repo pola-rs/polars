@@ -159,7 +159,7 @@ impl Display for StringFunction {
             #[cfg(feature = "extract_jsonpath")]
             JsonPathMatch => "json_path_match",
             LenBytes => "len_bytes",
-            Lowercase => "lowercase",
+            Lowercase => "to_lowercase",
             LenChars => "len_chars",
             #[cfg(feature = "string_pad")]
             PadEnd { .. } => "pad_end",
@@ -206,10 +206,10 @@ impl Display for StringFunction {
                 }
             },
             #[cfg(feature = "nightly")]
-            Titlecase => "titlecase",
+            Titlecase => "to_titlecase",
             #[cfg(feature = "dtype-decimal")]
             ToDecimal { .. } => "to_decimal",
-            Uppercase => "uppercase",
+            Uppercase => "to_uppercase",
             #[cfg(feature = "string_pad")]
             ZFill => "zfill",
             #[cfg(feature = "find_many")]

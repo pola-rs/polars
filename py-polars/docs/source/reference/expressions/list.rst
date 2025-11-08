@@ -9,6 +9,7 @@ The following methods are available under the `expr.list` attribute.
    :toctree: api/
    :template: autosummary/accessor_method.rst
 
+    Expr.list.agg
     Expr.list.all
     Expr.list.any
     Expr.list.arg_max

@@ -71,6 +71,7 @@ json = [
   "polars-stream?/json",
 ]
 csv = ["polars-io/csv", "polars-plan/csv", "polars-mem-engine/csv", "polars-stream?/csv"]
+scan_lines = ["polars-stream?/scan_lines"]
 temporal = [
   "dtype-datetime",
   "dtype-date",
@@ -242,7 +243,7 @@ dynamic_group_by = [
   "polars-mem-engine/dynamic_group_by",
   "polars-stream?/dynamic_group_by",
 ]
-ewma = ["polars-expr/ewma"]
+ewma = ["polars-expr/ewma", "polars-stream?/ewma"]
 ewma_by = ["polars-expr/ewma_by"]
 dot_diagram = ["polars-plan/dot_diagram"]
 diagonal_concat = []

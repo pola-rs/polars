@@ -34,6 +34,7 @@ async = [
 python = ["pyo3", "polars-plan/python", "polars-core/python", "polars-io/python", "polars-error/python"]
 ipc = ["polars-io/ipc", "polars-plan/ipc"]
 json = ["polars-io/json", "polars-plan/json", "polars-json"]
+scan_lines = ["polars-plan/scan_lines", "polars-io/scan_lines"]
 csv = ["polars-io/csv", "polars-plan/csv"]
 cloud = ["async", "polars-plan/cloud", "tokio", "futures"]
 parquet = ["polars-io/parquet", "polars-plan/parquet"]

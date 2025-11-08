@@ -58,6 +58,8 @@ pub(super) fn dsl_to_ir(
                 // so we just give a dummy path here.
                 ScanSources::Paths(Buffer::from_iter([PlPath::from_str("dummy")]))
             },
+            #[cfg(feature = "scan_lines")]
+            FileScanDsl::Lines { .. } => sources.expand_paths(unified_scan_args)?,
             FileScanDsl::Anonymous { .. } => sources.clone(),
         };
 
@@ -157,6 +159,7 @@ pub(super) fn dsl_to_ir(
                 file_info,
                 hive_parts,
                 predicate: None,
+                predicate_file_skip_applied: None,
                 scan_type: Box::new(scan_type_ir),
                 output_schema: None,
                 unified_scan_args,
@@ -218,6 +221,7 @@ pub(super) fn parquet_file_info(
     first_scan_source: ScanSourceRef<'_>,
     row_index: Option<&RowIndex>,
     #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
+    n_sources: usize,
 ) -> PolarsResult<(FileInfo, Option<FileMetadataRef>)> {
     use polars_core::error::feature_gated;
 
@@ -231,8 +235,8 @@ pub(super) fn parquet_file_info(
 
                     PolarsResult::Ok((
                         reader.schema().await?,
-                        Some(reader.num_rows().await?),
-                        Some(reader.get_metadata().await?.clone()),
+                        reader.num_rows().await?,
+                        reader.get_metadata().await?.clone(),
                     ))
                 })?
             })
@@ -241,8 +245,8 @@ pub(super) fn parquet_file_info(
             let mut reader = ParquetReader::new(std::io::Cursor::new(memslice));
             (
                 reader.schema()?,
-                Some(reader.num_rows()?),
-                Some(reader.get_metadata()?.clone()),
+                reader.num_rows()?,
+                reader.get_metadata()?.clone(),
             )
         }
     };
@@ -250,13 +254,15 @@ pub(super) fn parquet_file_info(
     let schema =
         prepare_output_schema(Schema::from_arrow_schema(reader_schema.as_ref()), row_index)?;
 
+    let known_size = if n_sources == 1 { Some(num_rows) } else { None };
+
     let file_info = FileInfo::new(
         schema,
         Some(Either::Left(reader_schema)),
-        (num_rows, num_rows.unwrap_or(0)),
+        (known_size, num_rows * n_sources),
     );
 
-    Ok((file_info, metadata))
+    Ok((file_info, Some(metadata)))
 }
 
 pub fn max_metadata_scan_cached() -> usize {
@@ -313,7 +319,7 @@ pub(super) fn ipc_file_info(
             row_index,
         )?,
         Some(Either::Left(Arc::clone(&metadata.schema))),
-        (None, 0),
+        (None, usize::MAX),
     );
 
     Ok((file_info, metadata))
@@ -541,6 +547,7 @@ impl SourcesToFileInfo {
             )
         };
 
+        let n_sources = sources.len();
         let cloud_options = unified_scan_args.cloud_options.as_ref();
 
         Ok(match scan_type {
@@ -556,7 +563,7 @@ impl SourcesToFileInfo {
                             reader_schema: Some(either::Either::Left(Arc::new(
                                 schema.to_arrow(CompatLevel::newest()),
                             ))),
-                            row_estimation: (None, 0),
+                            row_estimation: (None, usize::MAX),
                         },
                         FileScanIR::Parquet {
                             options,
@@ -579,11 +586,17 @@ this scan to succeed with an empty DataFrame.",
                             )
                         }
 
-                        let (file_info, mut metadata) = scans::parquet_file_info(
+                        let (mut file_info, mut metadata) = scans::parquet_file_info(
                             first_scan_source,
                             unified_scan_args.row_index.as_ref(),
                             cloud_options,
+                            n_sources,
                         )?;
+
+                        if let Some((total, deleted)) = unified_scan_args.row_count {
+                            let size = (total - deleted) as usize;
+                            file_info.row_estimation = (Some(size), size);
+                        }
 
                         if self.inner.len() > max_metadata_scan_cached() {
                             _ = metadata.take();
@@ -704,6 +717,21 @@ this scan to succeed with an empty DataFrame.",
                 ))
             })()
             .map_err(|e| e.context(failed_here!(python dataset scan)))?,
+            #[cfg(feature = "scan_lines")]
+            FileScanDsl::Lines { name } => {
+                // We were passed a schema, we don't have to call `parquet_file_info`,
+                // but this does mean we don't have `row_estimation` and `first_metadata`.
+                let schema = Arc::new(Schema::from_iter([(name.clone(), DataType::String)]));
+
+                (
+                    FileInfo {
+                        schema: schema.clone(),
+                        reader_schema: Some(either::Either::Right(schema.clone())),
+                        row_estimation: (None, usize::MAX),
+                    },
+                    FileScanIR::Lines { name },
+                )
+            },
             FileScanDsl::Anonymous {
                 file_info,
                 options,

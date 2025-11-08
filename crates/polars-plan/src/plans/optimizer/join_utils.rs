@@ -1,3 +1,4 @@
+#![allow(unused)]
 use polars_core::error::{PolarsResult, polars_bail};
 use polars_core::schema::*;
 use polars_utils::arena::{Arena, Node};
@@ -28,9 +29,9 @@ pub(crate) enum ExprOrigin {
 impl ExprOrigin {
     /// Errors with ColumnNotFound if a column cannot be found on either side.
     ///
-    /// The origin of coalesced join columns will be `Left`, except for right-joins.
-    /// For coalescing right-joins, `is_coalesced_to_right` must be passed to
-    /// properly identify the origin.
+    /// Note, for right-joins an `is_coalesced_to_right` function must be passed
+    /// to properly identify coalesced key columns as originating from the `ExprOrigin::Right`.
+    /// Otherwise they will be identified as `ExprOrigin::Left`.
     pub(crate) fn get_expr_origin(
         root: Node,
         expr_arena: &Arena<AExpr>,
@@ -58,9 +59,9 @@ impl ExprOrigin {
 
     /// Errors with ColumnNotFound if a column cannot be found on either side.
     ///
-    /// The origin of coalesced join columns will be `Left`, except for right-joins.
-    /// For coalescing right-joins, `is_coalesced_to_right` must be passed to
-    /// properly identify the origin.
+    /// Note, for right-joins an `is_coalesced_to_right` function must be passed
+    /// to properly identify coalesced key columns as originating from the `ExprOrigin::Right`.
+    /// Otherwise they will be identified as `ExprOrigin::Left`.
     pub(crate) fn get_column_origin(
         column_name: &str,
         left_schema: &Schema,
@@ -164,9 +165,4 @@ pub(super) fn remove_suffix<'a>(
             )))))
         }
     }
-}
-
-pub(super) fn split_suffix<'a>(name: &'a str, suffix: &str) -> &'a str {
-    let (original, _) = name.split_at(name.len() - suffix.len());
-    original
 }

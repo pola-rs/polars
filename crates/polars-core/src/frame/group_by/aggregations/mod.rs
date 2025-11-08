@@ -27,6 +27,7 @@ use polars_utils::kahan_sum::KahanSum;
 use polars_utils::min_max::MinMax;
 use rayon::prelude::*;
 
+use crate::POOL;
 use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::create_extension;
@@ -37,7 +38,6 @@ use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::series::implementations::SeriesWrap;
 use crate::utils::NoNull;
-use crate::{POOL, apply_method_physical_integer};
 
 fn idx2usize(idx: &[IdxSize]) -> impl ExactSizeIterator<Item = usize> + '_ {
     idx.iter().map(|i| *i as usize)
@@ -189,17 +189,6 @@ where
 {
     let ca: ChunkedArray<T> = POOL.install(|| groups.all().into_par_iter().map(f).collect());
     ca.into_series()
-}
-
-/// Same as `agg_helper_idx_on_all` but for aggregations that don't return an Option.
-fn agg_helper_idx_on_all_no_null<T, F>(groups: &GroupsIdx, f: F) -> Series
-where
-    F: Fn(&IdxVec) -> T::Native + Send + Sync,
-    T: PolarsNumericType,
-{
-    let ca: NoNull<ChunkedArray<T>> =
-        POOL.install(|| groups.all().into_par_iter().map(f).collect());
-    ca.into_inner().into_series()
 }
 
 pub fn _agg_helper_slice<T, F>(groups: &[[IdxSize; 2]], f: F) -> Series

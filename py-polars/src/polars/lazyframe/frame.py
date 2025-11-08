@@ -7408,32 +7408,31 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def unique(
         self,
-        subset: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
+        subset: IntoExpr | Collection[IntoExpr] | None = None,
         *,
         keep: UniqueKeepStrategy = "any",
         maintain_order: bool = False,
     ) -> LazyFrame:
-        """
-        Drop duplicate rows from this DataFrame.
+        r"""
+        Drop duplicate rows from this LazyFrame.
 
         Parameters
         ----------
         subset
-            Column name(s) or selector(s), to consider when identifying
-            duplicate rows. If set to `None` (default), use all columns.
+            Column name(s), selector(s), or expressions to consider when identifying
+            duplicate rows. If set to `None` (default), all columns are considered.
         keep : {'first', 'last', 'any', 'none'}
             Which of the duplicate rows to keep.
 
             * 'any': Does not give any guarantee of which row is kept.
                      This allows more optimizations.
             * 'none': Don't keep duplicate rows.
-            * 'first': Keep first unique row.
-            * 'last': Keep last unique row.
+            * 'first': Keep the first unique row.
+            * 'last': Keep the last unique row.
         maintain_order
-            Keep the same order as the original DataFrame. This is more expensive to
-            compute.
-            Settings this to `True` blocks the possibility
-            to run on the streaming engine.
+            Keep the same order as the original DataFrame. This is more expensive
+            to compute. Settings this to `True` blocks the possibility to run on
+            the streaming engine.
 
         Returns
         -------
@@ -7442,24 +7441,43 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Warnings
         --------
-        This method will fail if there is a column of type `List` in the DataFrame or
-        subset.
+        This method will fail if there is a column of type `List` in the DataFrame (or
+        in the "subset" parameter).
 
         Notes
         -----
-        If you're coming from pandas, this is similar to
+        If you're coming from Pandas, this is similar to
         `pandas.DataFrame.drop_duplicates`.
 
         Examples
         --------
         >>> lf = pl.LazyFrame(
         ...     {
-        ...         "foo": [1, 2, 3, 1],
-        ...         "bar": ["a", "a", "a", "a"],
-        ...         "ham": ["b", "b", "b", "b"],
+        ...         "foo": [1, 2, 3, 1, 1],
+        ...         "bar": ["a", "a", "a", "x", "x"],
+        ...         "ham": ["b", "b", "b", "y", "y"],
         ...     }
         ... )
+
+        By default, all columns are considered when determining which rows are unique:
+
         >>> lf.unique(maintain_order=True).collect()
+        shape: (4, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ str ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ a   ┆ b   │
+        │ 2   ┆ a   ┆ b   │
+        │ 3   ┆ a   ┆ b   │
+        │ 1   ┆ x   ┆ y   │
+        └─────┴─────┴─────┘
+
+        We can also consider only a subset of columns when determining uniqueness,
+        controlling which row we keep when duplicates are found:
+
+        >>> lf.unique(subset="foo", keep="first", maintain_order=True).collect()
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -7470,16 +7488,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2   ┆ a   ┆ b   │
         │ 3   ┆ a   ┆ b   │
         └─────┴─────┴─────┘
-        >>> lf.unique(subset=["bar", "ham"], maintain_order=True).collect()
-        shape: (1, 3)
-        ┌─────┬─────┬─────┐
-        │ foo ┆ bar ┆ ham │
-        │ --- ┆ --- ┆ --- │
-        │ i64 ┆ str ┆ str │
-        ╞═════╪═════╪═════╡
-        │ 1   ┆ a   ┆ b   │
-        └─────┴─────┴─────┘
-        >>> lf.unique(keep="last", maintain_order=True).collect()
+        >>> lf.unique(subset="foo", keep="last", maintain_order=True).collect()
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -7488,13 +7497,63 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ╞═════╪═════╪═════╡
         │ 2   ┆ a   ┆ b   │
         │ 3   ┆ a   ┆ b   │
-        │ 1   ┆ a   ┆ b   │
+        │ 1   ┆ x   ┆ y   │
         └─────┴─────┴─────┘
+        >>> lf.unique(subset="foo", keep="none", maintain_order=True).collect()
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ str ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 2   ┆ a   ┆ b   │
+        │ 3   ┆ a   ┆ b   │
+        └─────┴─────┴─────┘
+
+        Selectors can be used to define the "subset" parameter:
+
+        >>> import polars.selectors as cs
+        >>> lf.unique(subset=cs.string(), maintain_order=True).collect()
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ str ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ a   ┆ b   │
+        │ 1   ┆ x   ┆ y   │
+        └─────┴─────┴─────┘
+
+        We can also use an arbitrary expression in the "subset" parameter; in this
+        example we use the part of the label in front of ":" to determine uniqueness:
+
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "label": ["xx:1", "xx:2", "yy:3", "yy:4"],
+        ...         "value": [100, 200, 300, 400],
+        ...     }
+        ... )
+        >>> lf.unique(
+        ...     subset=pl.col("label").str.extract(r"^(\w+):"),
+        ...     maintain_order=True,
+        ...     keep="first",
+        ... ).collect()
+        shape: (2, 2)
+        ┌───────┬───────┐
+        │ label ┆ value │
+        │ ---   ┆ ---   │
+        │ str   ┆ i64   │
+        ╞═══════╪═══════╡
+        │ xx:1  ┆ 100   │
+        │ yy:3  ┆ 300   │
+        └───────┴───────┘
         """
-        selector_subset: PySelector | None = None
+        parsed_subset: list[PyExpr] | None = None
         if subset is not None:
-            selector_subset = parse_list_into_selector(subset)._pyselector
-        return self._from_pyldf(self._ldf.unique(maintain_order, selector_subset, keep))
+            parsed_subset = parse_into_list_of_expressions(
+                subset, __require_selectors=True
+            )
+        return self._from_pyldf(self._ldf.unique(maintain_order, parsed_subset, keep))
 
     def drop_nans(
         self,
@@ -8051,8 +8110,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def set_sorted(
         self,
         column: str,
-        *,
-        descending: bool = False,
+        *more_columns: str,
+        descending: bool | list[bool] = False,
+        nulls_last: bool | list[bool] = False,
     ) -> LazyFrame:
         """
         Flag a column as sorted.
@@ -8063,8 +8123,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         column
             Column that is sorted
+        more_columns
+            Columns that are sorted over after `column`.
         descending
             Whether the column is sorted in descending order.
+        nulls_last
+            Whether the nulls are at the end.
 
         Warnings
         --------
@@ -8077,7 +8141,23 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if not isinstance(column, str):
             msg = "expected a 'str' for argument 'column' in 'set_sorted'"
             raise TypeError(msg)
-        return self.with_columns(F.col(column).set_sorted(descending=descending))
+
+        ds: list[bool]
+        nl: list[bool]
+        if isinstance(descending, bool):
+            ds = [descending]
+        else:
+            ds = descending
+        if isinstance(nulls_last, bool):
+            nl = [nulls_last]
+        else:
+            nl = nulls_last
+
+        return self._from_pyldf(
+            self._ldf.hint_sorted(
+                [column] + list(more_columns), descending=ds, nulls_last=nl
+            )
+        )
 
     @unstable()
     def update(
@@ -8395,7 +8475,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def remote(
         self,
         context: pc.ComputeContext | None = None,
+        *,
         plan_type: pc._typing.PlanTypePreference = "dot",
+        n_retries: int = 0,
+        engine: pc._typing.Engine = "auto",
+        scaling_mode: pc._typing.ScalingMode = "auto",
     ) -> pc.LazyFrameRemote:
         """
         Run a query remotely on Polars Cloud.
@@ -8414,6 +8498,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         plan_type: {'plain', 'dot'}
             Whether to give a dot diagram of a plain text
             version of logical plan.
+        n_retries:
+            How often a stage should be retried on failure.
+        engine: {'auto', 'streaming', 'in-memory'}
+            This will serve as a hint that tells Polars which engine
+            to prefer. It doesn't have to be respected.
+        scaling_mode: {'auto', 'single-node', 'distributed'}
+            If set to auto, a query that doesn't explicitly specify
+            a scaling mode via `remote().distributed()` or
+            `remote().single_node()` will run in distributed mode
+            if the cluster has more than 1 node.
+
 
         Examples
         --------
@@ -8432,7 +8527,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 6        │
         └──────────┘
 
-        Run a query distributed.
+        Explicitly run a query distributed.
 
         >>> lf = (
         ...     pl.scan_parquet("s3://my_bucket/").group_by("key").agg(pl.sum("values"))

@@ -75,16 +75,6 @@ jobs:
           [[ "$VERSION" == "${RT64_VERSION[2]}" ]] || (echo "Incorrect rt64 version" && exit 1)
           [[ "$VERSION" == "${COMPAT_VERSION[2]}" ]] || (echo "Incorrect rtcompat version" && exit 1)
 
-      - name: Update features in PLR
-        if: matrix.architecture == 'x86-64'
-        env:
-          PLR_PATH: py-polars/src/polars/_plr.py
-        run: |
-          set -e
-
-          sed -i "s/^RT_COMPAT_FEATURE_FLAGS = \"\"\$/RT_COMPAT_FEATURE_FLAGS = \"$COMPAT_FEATURES\"/g" $PLR_PATH
-          sed -i "s/^RT_NONCOMPAT_FEATURE_FLAGS = \"\"\$/RT_NONCOMPAT_FEATURE_FLAGS = \"$NONCOMPAT_FEATURES\"/g" $PLR_PATH
-
       - name: Install uv
         run: pip install uv
 

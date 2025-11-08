@@ -1485,3 +1485,27 @@ def test_join_asof_int_dtypes_24383(dtype: PolarsIntegerType) -> None:
     )
     assert result.collect_schema() == expected.schema
     assert_frame_equal(result.collect(), expected)
+
+
+@pytest.mark.parametrize("by", [None, "one"])
+def test_join_asof_on_cast_expr_24999(by: str | None) -> None:
+    q = pl.LazyFrame({"x": date(2025, 10, 13), "one": 1}).join_asof(
+        pl.LazyFrame({"x_right": datetime(2025, 10, 10, 2), "one": 1}),
+        left_on=pl.col("x").cast(pl.Datetime),
+        right_on=pl.col("x_right"),
+        tolerance=timedelta(days=100),
+        by=by,
+    )
+
+    expect = pl.DataFrame(
+        {
+            "x": date(2025, 10, 13),
+            "one": 1,
+            "x_right": datetime(2025, 10, 10, 2),
+        }
+    )
+
+    if by is None:
+        expect = expect.with_columns(pl.col("one").alias("one_right"))
+
+    assert_frame_equal(q.collect(), expect)

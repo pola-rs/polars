@@ -1320,22 +1320,6 @@ pub fn coalesce_nulls_columns(a: &Column, b: &Column) -> (Column, Column) {
     }
 }
 
-pub fn operation_exceeded_idxsize_msg(operation: &str) -> String {
-    if size_of::<IdxSize>() == size_of::<u32>() {
-        format!(
-            "{} exceeded the maximum supported limit of {} rows. Consider installing 'polars[rt64]'.",
-            operation,
-            IdxSize::MAX,
-        )
-    } else {
-        format!(
-            "{} exceeded the maximum supported limit of {} rows.",
-            operation,
-            IdxSize::MAX,
-        )
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::*;

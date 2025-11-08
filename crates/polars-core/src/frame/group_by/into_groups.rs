@@ -263,7 +263,51 @@ impl IntoGroupsType for BinaryOffsetChunked {
                 groups: out,
                 overlapping: false,
             });
+        } else if self.is_sorted_any() {
+            let mut groups = Vec::new();
+
+            let Some(y) = self.chunks().iter().position(|k| !k.as_ref().is_empty()) else {
+                return Ok(GroupsType::Slice {
+                    groups,
+                    overlapping: false,
+                });
+            };
+
+            let mut start_idx = 0;
+            let mut i = 1;
+            let mut x = 1;
+            let mut start_value = self.downcast_chunks().get(y).unwrap().get(0);
+
+            for keys in self.downcast_iter().skip(y) {
+                if keys.has_nulls() {
+                    for k in keys.iter().skip(x) {
+                        if k != start_value {
+                            groups.push([start_idx, i - start_idx]);
+                            start_idx = i;
+                            start_value = k;
+                        }
+                        i += 1;
+                    }
+                } else {
+                    for k in keys.values_iter().skip(x) {
+                        if Some(k) != start_value {
+                            groups.push([start_idx, i - start_idx]);
+                            start_idx = i;
+                            start_value = Some(k);
+                        }
+                        i += 1;
+                    }
+                }
+                x = 0;
+            }
+
+            groups.push([start_idx, i - start_idx]);
+            return Ok(GroupsType::Slice {
+                groups,
+                overlapping: false,
+            });
         }
+
         multithreaded &= POOL.current_num_threads() > 1;
         let bh = self.to_bytes_hashes(multithreaded, Default::default());
 

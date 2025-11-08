@@ -214,7 +214,7 @@ def test_add_business_days_invalid() -> None:
         )
     with pytest.raises(
         ValueError,
-        match="`roll` must be one of {'raise', 'forward', 'backward'}, got cabbage",
+        match=r"`roll` must be one of {'raise', 'forward', 'backward'}, got cabbage",
     ):
         df.select(result=pl.col("start").dt.add_business_days(1, roll="cabbage"))  # type: ignore[arg-type]
 

@@ -51,7 +51,7 @@ impl<T> Default for ApproxNUniqueReducer<T> {
 impl<T> Clone for ApproxNUniqueReducer<T> {
     fn clone(&self) -> Self {
         Self {
-            hasher: self.hasher,
+            hasher: self.hasher.clone(),
             marker: PhantomData,
         }
     }

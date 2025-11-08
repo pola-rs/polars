@@ -3,7 +3,7 @@
 import polars as pl
 import polars_cloud as pc
 
-lineitem_sf100 = pl.scan_parquet("s3://polars-cloud-samples-us-east-2-prdv/pdsh/sf100/lineitem/*.parquet",
+lineitem_sf100 = pl.scan_parquet("s3://polars-cloud-samples-us-east-2-prd/pdsh/sf100/lineitem/*.parquet",
         storage_options={"request_payer": "true"})
 customer_sf100 = pl.scan_parquet("s3://polars-cloud-samples-us-east-2-prd/pdsh/sf100/customer/*.parquet",
         storage_options={"request_payer": "true"})
