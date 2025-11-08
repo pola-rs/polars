@@ -255,3 +255,18 @@ def test_physical_row_encoding() -> None:
             "files": ["AGG_202307.xlsx"],
         }
     ]
+
+
+def test_row_with_no_arguments() -> None:
+    # confirm that calling bare `.row()` on a single-row frame behaves
+    # consistently with calling `item()` on a single element frame
+    df = pl.DataFrame({"tag": ["xx"], "n": [1]})
+    assert df.row() == ("xx", 1)
+
+    # however, cannot call bare '.row()' if the frame does NOT have a single row
+    df = pl.DataFrame({"tag": ["xx", "yy"], "n": [1, 2]})
+    with pytest.raises(
+        ValueError,
+        match=r'can only call `\.row\(\)` without "index" or "by_predicate"',
+    ):
+        df.row()

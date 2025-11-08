@@ -1683,9 +1683,8 @@ class DataFrame:
         if row is None and column is None:
             if self.shape != (1, 1):
                 msg = (
-                    "can only call `.item()` if the dataframe is of shape (1, 1),"
-                    " or if explicit row/col values are provided;"
-                    f" frame has shape {self.shape!r}"
+                    'can only call `.item()` without "row" or "column" values if the '
+                    f"DataFrame has a single element; shape={self.shape!r}"
                 )
                 raise ValueError(msg)
             return self._df.to_series(0).get_index(0)
@@ -11450,7 +11449,16 @@ class DataFrame:
         >>> df.row(by_predicate=(pl.col("ham") == "b"))
         (2, 7, 'b')
         """
-        if index is not None and by_predicate is not None:
+        if index is None and by_predicate is None:
+            if self.height == 1:
+                index = 0
+            else:
+                msg = (
+                    'can only call `.row()` without "index" or "by_predicate" values '
+                    f"if the DataFrame has a single row; shape={self.shape!r}"
+                )
+                raise ValueError(msg)
+        elif index is not None and by_predicate is not None:
             msg = "cannot set both 'index' and 'by_predicate'; mutually exclusive"
             raise ValueError(msg)
         elif isinstance(index, pl.Expr):
