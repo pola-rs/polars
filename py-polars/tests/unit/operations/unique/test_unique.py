@@ -363,4 +363,4 @@ def test_unique_column_subset_25233() -> None:
 
     result = df.unique(subset="op_type")
     assert result.height == 2
-    assert result.select(pl.col.op_type.n_unique).item() == 2
+    assert result.select(pl.col.op_type.n_unique()).item() == 2
