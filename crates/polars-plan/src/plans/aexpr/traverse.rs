@@ -356,7 +356,19 @@ impl AExpr {
                 *length = inputs[2];
                 return self;
             },
-            Window {
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling {
+                function,
+                index_column,
+                period: _,
+                offset: _,
+                closed_window: _,
+            } => {
+                *function = inputs[0];
+                *index_column = inputs[1];
+                return self;
+            },
+            Over {
                 function,
                 partition_by,
                 order_by,
