@@ -1424,6 +1424,31 @@ impl PyLazyFrame {
     }
 
     #[cfg(feature = "pivot")]
+    #[pyo3(signature = (on, on_columns, index, values, agg, maintain_order, separator))]
+    fn pivot(
+        &self,
+        on: PySelector,
+        on_columns: PyDataFrame,
+        index: PySelector,
+        values: PySelector,
+        agg: PyExpr,
+        maintain_order: bool,
+        separator: String,
+    ) -> Self {
+        let ldf = self.ldf.read().clone();
+        ldf.pivot(
+            on.inner,
+            Arc::new(on_columns.df.read().clone()),
+            index.inner,
+            values.inner,
+            agg.inner,
+            maintain_order,
+            separator.into(),
+        )
+        .into()
+    }
+
+    #[cfg(feature = "pivot")]
     #[pyo3(signature = (on, index, value_name, variable_name))]
     fn unpivot(
         &self,

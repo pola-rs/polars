@@ -106,6 +106,8 @@ impl DslPlan {
             },
             IR { dsl, .. } => scratch.push(dsl),
             Scan { .. } | DataFrameScan { .. } => (),
+            #[cfg(feature = "pivot")]
+            Pivot { input, .. } => scratch.push(input),
             #[cfg(feature = "python")]
             PythonScan { .. } => (),
             #[cfg(feature = "merge_sorted")]

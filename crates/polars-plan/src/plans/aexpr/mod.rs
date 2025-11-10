@@ -51,6 +51,7 @@ pub enum IRAggExpr {
     Last(Node),
     Item {
         input: Node,
+        /// Return a missing value if there are no values.
         allow_empty: bool,
     },
     Mean(Node),
@@ -456,4 +457,18 @@ impl AExpr {
             _ => false,
         }
     }
+}
+
+#[recursive::recursive]
+pub fn deep_clone_ae(ae: Node, arena: &mut Arena<AExpr>) -> Node {
+    let slf = arena.get(ae).clone();
+
+    let mut children = vec![];
+    slf.children_rev(&mut children);
+    for child in &mut children {
+        *child = deep_clone_ae(*child, arena);
+    }
+    children.reverse();
+
+    arena.add(slf.replace_children(&children))
 }

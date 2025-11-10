@@ -6,8 +6,6 @@ mod cached_arenas;
 mod err;
 #[cfg(not(target_arch = "wasm32"))]
 mod exitable;
-#[cfg(feature = "pivot")]
-pub mod pivot;
 
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
@@ -1929,6 +1927,34 @@ impl LazyFrame {
     pub fn tail(self, n: IdxSize) -> LazyFrame {
         let neg_tail = -(n as i64);
         self.slice(neg_tail, n)
+    }
+
+    #[cfg(feature = "pivot")]
+    #[expect(clippy::too_many_arguments)]
+    pub fn pivot(
+        self,
+        on: Selector,
+        on_columns: Arc<DataFrame>,
+        index: Selector,
+        values: Selector,
+        agg: Expr,
+        maintain_order: bool,
+        separator: PlSmallStr,
+    ) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self
+            .get_plan_builder()
+            .pivot(
+                on,
+                on_columns,
+                index,
+                values,
+                agg,
+                maintain_order,
+                separator,
+            )
+            .build();
+        Self::from_logical_plan(lp, opt_state)
     }
 
     /// Unpivot the DataFrame from wide to long format.
