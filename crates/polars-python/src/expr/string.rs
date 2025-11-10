@@ -303,8 +303,12 @@ impl PyExpr {
         self.inner.clone().str().splitn(by.inner, n).into()
     }
 
-    fn str_to_decimal(&self, scale: usize) -> Self {
-        self.inner.clone().str().to_decimal(scale).into()
+    fn str_to_decimal(&self, precision: usize, scale: usize) -> Self {
+        let mut expr = self.inner.clone().str().to_decimal(scale);
+        if precision != 38 {
+            expr = expr.cast(DataType::Decimal(precision, scale));
+        }
+        expr.into()
     }
 
     #[cfg(feature = "find_many")]

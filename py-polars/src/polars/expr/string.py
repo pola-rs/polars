@@ -324,14 +324,9 @@ class ExprStringNameSpace:
             raise ValueError(msg)
 
     @deprecate_nonkeyword_arguments(allowed_args=["self"], version="1.20.0")
-    @unstable()
-    def to_decimal(self, *, scale: int) -> Expr:
+    def to_decimal(self, *, precision: int | None = None, scale: int) -> Expr:
         """
         Convert a String column into a Decimal column.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         .. versionchanged:: 1.20.0
             Parameter `inference_length` should now be passed as a keyword argument.
@@ -341,6 +336,11 @@ class ExprStringNameSpace:
 
         Parameters
         ----------
+        precision
+            Number of digits after the comma to use for the decimals.
+
+            If set to `None` (default), the precision is set to 38 (the maximum
+            supported by Polars).
         scale
             Number of digits after the comma to use for the decimals.
 
@@ -375,7 +375,24 @@ class ExprStringNameSpace:
         │ 143.9     ┆ 143.90          │
         └───────────┴─────────────────┘
         """
-        return wrap_expr(self._pyexpr.str_to_decimal(scale=scale))
+        if precision is None:
+            precision = 38
+
+        if precision <= 0 or precision > 38:
+            msg = (
+                "invalid `precision`"
+                f"\n\nValue can be between `0` and `38`, got {precision!r}."
+            )
+            raise ValueError(msg)
+
+        if scale > precision:
+            msg = (
+                "invalid `scale` larger than `precision`"
+                f"\n\nValue for `scale` can be between `0` and `{precision}`, got {scale!r}."
+            )
+            raise ValueError(msg)
+
+        return wrap_expr(self._pyexpr.str_to_decimal(precision=precision, scale=scale))
 
     def len_bytes(self) -> Expr:
         """
