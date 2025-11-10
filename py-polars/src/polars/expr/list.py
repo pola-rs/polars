@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import copy
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from typing import TYPE_CHECKING, Any, Callable
 
 import polars._reexport as pl
@@ -421,11 +421,11 @@ class ExprListNameSpace:
         *more_by
             Additional expressions to sort by.
         descending
-            Sort in descending order. When sorting by multiple expressions, can be specified
-            per expression by passing a sequence of booleans.
+            Sort in descending order. When sorting by multiple expressions, can be
+            specified per expression by passing a sequence of booleans.
         nulls_last
-            Place null values last; can specify a single boolean applying to all expressions
-            or a sequence of booleans for per-expression control.
+            Place null values last; can specify a single boolean applying to all
+            expressions or a sequence of booleans for per-expression control.
         multithreaded
             Sort using multiple threads.
         maintain_order
@@ -465,7 +465,8 @@ class ExprListNameSpace:
         Sorting by more complex expressions is also supported.
 
         >>> lf.select(pl.col('items').list.sort_by(
-        ...     pl.element().struct.field("a") + pl.element().struct.field("b") * 2, nulls_last=True
+        ...     pl.element().struct.field("a") + pl.element().struct.field("b") * 2,
+        ...     nulls_last=True,
         ... )).collect()
         shape: (1, 1)
         ┌──────────────────┐
