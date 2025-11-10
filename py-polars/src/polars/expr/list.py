@@ -515,9 +515,9 @@ class ExprListNameSpace:
         │ ---              │
         │ list[struct[3]]  │
         ╞══════════════════╡
-        │ [{2,5.0,"c"},    │
+        │ [{1,6.0,"a"},    │
         │ {null,4.0,"b"},  │
-        │ {1,6.0,"a"}]     │
+        │ {2,5.0,"c"}]     │
         └──────────────────┘
 
         Or sort a list of strings by length then alphabetically.
