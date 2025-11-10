@@ -438,7 +438,9 @@ class ExprListNameSpace:
         Pass a single struct field to sort by that field.
 
         >>> pl.Config.set_tbl_width_chars(20)
+        <class 'polars.config.Config'>
         >>> pl.Config.set_fmt_str_lengths(80)
+        <class 'polars.config.Config'>
         >>> lf = pl.LazyFrame(
         ...     {
         ...         "items": [
@@ -446,7 +448,7 @@ class ExprListNameSpace:
         ...                 {"a": 1, "b": 6.0, "c": "a"},
         ...                 {"a": 2, "b": 5.0, "c": "c"},
         ...                 {"a": None, "b": 4.0, "c": "b"},
-        ...         ]
+        ...             ]
         ..          ]
         ...     }
         ... )
@@ -524,7 +526,9 @@ class ExprListNameSpace:
         Or sort a list of strings by length then alphabetically.
 
         >>> pl.Config.set_tbl_width_chars(30)
+        <class 'polars.config.Config'>
         >>> pl.Config.set_fmt_str_lengths(80)
+        <class 'polars.config.Config'>
         >>> lf = pl.LazyFrame(
         ...     {
         ...         "strings": [
