@@ -43,7 +43,7 @@ def test_date_func() -> None:
 
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_datetime_to_time(time_unit: Literal["ns", "us", "ms"]) -> None:
-    df = pl.DataFrame(  # noqa: F841
+    df = pl.DataFrame(
         {
             "dtm": [
                 datetime(2099, 12, 31, 23, 59, 59),

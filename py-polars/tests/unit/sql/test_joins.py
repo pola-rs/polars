@@ -99,9 +99,9 @@ def test_join_cross() -> None:
 
 
 def test_join_cross_11927() -> None:
-    df1 = pl.DataFrame({"id": [1, 2, 3]})  # noqa: F841
-    df2 = pl.DataFrame({"id": [3, 4, 5]})  # noqa: F841
-    df3 = pl.DataFrame({"id": [4, 5, 6]})  # noqa: F841
+    df1 = pl.DataFrame({"id": [1, 2, 3]})
+    df2 = pl.DataFrame({"id": [3, 4, 5]})
+    df3 = pl.DataFrame({"id": [4, 5, 6]})
 
     res = pl.sql("SELECT df1.id FROM df1 CROSS JOIN df2 WHERE df1.id = df2.id")
     assert_frame_equal(res.collect(), pl.DataFrame({"id": [3]}))
@@ -120,7 +120,7 @@ def test_join_cross_11927() -> None:
 )
 def test_join_inner(foods_ipc_path: Path, join_clause: str) -> None:
     foods1 = pl.scan_ipc(foods_ipc_path)
-    foods2 = foods1  # noqa: F841
+    foods2 = foods1
     schema = foods1.collect_schema()
 
     sort_clause = ", ".join(f'{c} ASC, "{c}:foods2" DESC' for c in schema)
@@ -182,8 +182,8 @@ def test_join_inner_multi(join_clause: str) -> None:
 
 
 def test_join_inner_15663() -> None:
-    df_a = pl.DataFrame({"LOCID": [1, 2, 3], "VALUE": [0.1, 0.2, 0.3]})  # noqa: F841
-    df_b = pl.DataFrame({"LOCID": [1, 2, 3], "VALUE": [25.6, 53.4, 12.7]})  # noqa: F841
+    df_a = pl.DataFrame({"LOCID": [1, 2, 3], "VALUE": [0.1, 0.2, 0.3]})
+    df_b = pl.DataFrame({"LOCID": [1, 2, 3], "VALUE": [25.6, 53.4, 12.7]})
     df_expected = pl.DataFrame(
         {
             "LOCID": [1, 2, 3],
@@ -295,8 +295,8 @@ def test_join_misc_13618() -> None:
 
 
 def test_join_misc_16255() -> None:
-    df1 = pl.read_csv(BytesIO(b"id,data\n1,open"))  # noqa: F841
-    df2 = pl.read_csv(BytesIO(b"id,data\n1,closed"))  # noqa: F841
+    df1 = pl.read_csv(BytesIO(b"id,data\n1,open"))
+    df2 = pl.read_csv(BytesIO(b"id,data\n1,closed"))
     res = pl.sql(
         """
         SELECT a.id, a.data AS d1, b.data AS d2
@@ -446,8 +446,8 @@ def test_implicit_joins() -> None:
 def test_wildcard_resolution_and_join_order(
     query: str, expected: dict[str, Any]
 ) -> None:
-    df1 = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"], "c": [100, 200, 300]})  # noqa: F841
-    df2 = pl.DataFrame({"a": [1, 3, 4], "b": ["qq", "pp", "oo"], "c": [400, 500, 600]})  # noqa: F841
+    df1 = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"], "c": [100, 200, 300]})
+    df2 = pl.DataFrame({"a": [1, 3, 4], "b": ["qq", "pp", "oo"], "c": [400, 500, 600]})
 
     res = pl.sql(query).collect()
     assert_frame_equal(
@@ -576,13 +576,13 @@ def test_natural_joins_01() -> None:
     ],
 )
 def test_natural_joins_02(cols_constraint: str, expect_data: list[tuple[int]]) -> None:
-    df1 = pl.DataFrame(  # noqa: F841
+    df1 = pl.DataFrame(
         {
             "x": [1, 5, 3, 8, 6, 7, 4, 0, 2],
             "y": [3, 4, 6, 8, 3, 4, 1, 7, 8],
         }
     )
-    df2 = pl.DataFrame(  # noqa: F841
+    df2 = pl.DataFrame(
         {
             "y": [0, 4, 0, 8, 0, 4, 0, 7, None],
             "z": [9, 8, 7, 6, 5, 4, 3, 2, 1],
@@ -762,13 +762,13 @@ def test_nulls_equal_19624() -> None:
 
 
 def test_join_on_literal_string_comparison() -> None:
-    df1 = pl.DataFrame(  # noqa: F841
+    df1 = pl.DataFrame(
         {
             "name": ["alice", "bob", "adam", "charlie"],
             "role": ["admin", "user", "admin", "user"],
         }
     )
-    df2 = pl.DataFrame(  # noqa: F841
+    df2 = pl.DataFrame(
         {
             "name": ["alice", "bob", "charlie", "adam"],
             "dept": ["IT", "HR", "IT", "SEC"],
@@ -798,13 +798,13 @@ def test_join_on_literal_string_comparison() -> None:
     ],
 )
 def test_join_on_expression_conditions(expression: str, expected_length: int) -> None:
-    df1 = pl.DataFrame(  # noqa: F841
+    df1 = pl.DataFrame(
         {
             "text": ["HELLO", "WORLD", "FOO"],
             "code": ["ABC", "DEF", "GHI"],
         }
     )
-    df2 = pl.DataFrame(  # noqa: F841
+    df2 = pl.DataFrame(
         {
             "text": ["hello", "world", "bar"],
             "code": ["ABX", "DEY", "GHZ"],
@@ -1096,6 +1096,43 @@ def test_join_on_unqualified_expressions(
     assert_frame_equal(res, df_expected)
 
 
+def test_multiway_join_chain_with_aliased_cols() -> None:
+    # tracking/resolving constraints for 3-way (or more) joins can be... "fun" :)
+    # ref: https://github.com/pola-rs/polars/issues/25126
+
+    df1 = pl.DataFrame({"a": [111, 222], "x1": ["df1", "df1"]})
+    df2 = pl.DataFrame({"a": [333, 111], "b": [444, 222], "x2": ["df2", "df2"]})
+    df3 = pl.DataFrame({"a": [222, 111], "x3": ["df3", "df3"]})
+
+    for query, expected_cols, expected_row in (
+        (
+            # three-way join where "a" exists in all three frames (df1, df2, df3)
+            """
+            SELECT * FROM df3
+            INNER JOIN df2 ON df2.b = df3.a
+            INNER JOIN df1 ON df1.a = df2.a
+            """,
+            ["a", "x3", "a:df2", "b", "x2", "a:df1", "x1"],
+            (222, "df3", 111, 222, "df2", 111, "df1"),
+        ),
+        (
+            # almost the same, but the final constraint on "a" refers back to df1
+            """
+            SELECT * FROM df3
+            INNER JOIN df2 ON df2.b = df3.a
+            INNER JOIN df1 ON df1.a = df3.a
+            """,
+            ["a", "x3", "a:df2", "b", "x2", "a:df1", "x1"],
+            (222, "df3", 111, 222, "df2", 222, "df1"),
+        ),
+    ):
+        res = pl.sql(query, eager=True)
+
+        assert res.height == 1
+        assert res.columns == expected_cols
+        assert res.row(0) == expected_row
+
+
 @pytest.mark.parametrize(
     ("join_condition", "expected_error"),
     [
@@ -1111,8 +1148,8 @@ def test_join_on_unqualified_expressions(
 )
 def test_unsupported_join_conditions(join_condition: str, expected_error: str) -> None:
     # note: this is technically valid (if unusual) SQL, but we don't support it
-    df1 = pl.DataFrame({"id": [1, 2, 3], "val": [10, 20, 30]})  # noqa: F841
-    df2 = pl.DataFrame({"id": [2, 3, 4], "val": [20, 30, 40]})  # noqa: F841
+    df1 = pl.DataFrame({"id": [1, 2, 3], "val": [10, 20, 30]})
+    df2 = pl.DataFrame({"id": [2, 3, 4], "val": [20, 30, 40]})
 
     with pytest.raises(SQLInterfaceError, match=expected_error):
         pl.sql(f"SELECT * FROM df1 INNER JOIN df2 ON {join_condition}")

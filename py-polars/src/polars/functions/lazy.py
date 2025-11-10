@@ -154,7 +154,7 @@ def element() -> Expr:
     │ 3   ┆ 2   ┆ [2]       │
     └─────┴─────┴───────────┘
     """
-    return F.col("")
+    return wrap_expr(plr.element())
 
 
 def count(*columns: str) -> Expr:

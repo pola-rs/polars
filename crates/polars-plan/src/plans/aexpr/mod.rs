@@ -51,6 +51,7 @@ pub enum IRAggExpr {
     Last(Node),
     Item {
         input: Node,
+        /// Return a missing value if there are no values.
         allow_empty: bool,
     },
     Mean(Node),
@@ -249,11 +250,19 @@ pub enum AExpr {
         function: IRFunctionExpr,
         options: FunctionOptions,
     },
-    Window {
+    Over {
         function: Node,
         partition_by: Vec<Node>,
         order_by: Option<(Node, SortOptions)>,
-        options: WindowType,
+        mapping: WindowMapping,
+    },
+    #[cfg(feature = "dynamic_group_by")]
+    Rolling {
+        function: Node,
+        index_column: Node,
+        period: Duration,
+        offset: Duration,
+        closed_window: ClosedWindow,
     },
     Slice {
         input: Node,
@@ -308,7 +317,9 @@ impl AExpr {
             AExpr::Sort { expr, .. } => is_scalar_ae(*expr, arena),
             AExpr::Gather { returns_scalar, .. } => *returns_scalar,
             AExpr::SortBy { expr, .. } => is_scalar_ae(*expr, arena),
-            AExpr::Window { function, .. } => is_scalar_ae(*function, arena),
+            AExpr::Over { function, .. } => is_scalar_ae(*function, arena),
+            #[cfg(feature = "dynamic_group_by")]
+            AExpr::Rolling { function, .. } => is_scalar_ae(*function, arena),
             AExpr::Explode { .. }
             | AExpr::Column(_)
             | AExpr::Filter { .. }
@@ -379,7 +390,9 @@ impl AExpr {
                 std::iter::once(*expr).chain(by.iter().copied()),
                 arena,
             ),
-            AExpr::Window { function, .. } => is_length_preserving_ae(*function, arena),
+            AExpr::Over { function, .. } => is_length_preserving_ae(*function, arena),
+            #[cfg(feature = "dynamic_group_by")]
+            AExpr::Rolling { function, .. } => is_length_preserving_ae(*function, arena),
 
             AExpr::Explode { .. } | AExpr::Filter { .. } | AExpr::Slice { .. } => false,
         }
@@ -444,4 +457,18 @@ impl AExpr {
             _ => false,
         }
     }
+}
+
+#[recursive::recursive]
+pub fn deep_clone_ae(ae: Node, arena: &mut Arena<AExpr>) -> Node {
+    let slf = arena.get(ae).clone();
+
+    let mut children = vec![];
+    slf.children_rev(&mut children);
+    for child in &mut children {
+        *child = deep_clone_ae(*child, arena);
+    }
+    children.reverse();
+
+    arena.add(slf.replace_children(&children))
 }

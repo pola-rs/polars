@@ -2103,3 +2103,11 @@ def test_str_replace_null_19601() -> None:
         df.select(result=pl.col("key").str.replace("1", pl.col("1"))),
         pl.DataFrame({"result": ["---", "2"]}),
     )
+
+
+def test_str_json_decode_25237() -> None:
+    s = pl.Series(['[{"a": 0, "b": 1}, {"b": 2}]'])
+
+    dtypes = {s.str.json_decode().dtype for _ in range(20)}
+
+    assert len(dtypes) == 1

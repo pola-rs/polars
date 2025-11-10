@@ -3747,7 +3747,7 @@ class Expr:
 
     def rolling(
         self,
-        index_column: str,
+        index_column: IntoExprColumn,
         *,
         period: str | timedelta,
         offset: str | timedelta | None = None,
@@ -3842,13 +3842,16 @@ class Expr:
         │ 2020-01-08 23:16:43 ┆ 1   ┆ 1     ┆ 1     ┆ 1     │
         └─────────────────────┴─────┴───────┴───────┴───────┘
         """
+        index_column_pyexpr = parse_into_expression(index_column)
         if offset is None:
             offset = negate_duration_string(parse_as_duration_string(period))
 
         period = parse_as_duration_string(period)
         offset = parse_as_duration_string(offset)
 
-        return wrap_expr(self._pyexpr.rolling(index_column, period, offset, closed))
+        return wrap_expr(
+            self._pyexpr.rolling(index_column_pyexpr, period, offset, closed)
+        )
 
     def is_unique(self) -> Expr:
         """

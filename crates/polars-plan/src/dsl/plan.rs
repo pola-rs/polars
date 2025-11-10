@@ -104,6 +104,17 @@ pub enum DslPlan {
         input: Arc<DslPlan>,
         callback: PlanCallback<(DslPlan, SchemaRef), DslPlan>,
     },
+    #[cfg(feature = "pivot")]
+    Pivot {
+        input: Arc<DslPlan>,
+        on: Selector,
+        on_columns: Arc<DataFrame>,
+        index: Selector,
+        values: Selector,
+        agg: Expr,
+        maintain_order: bool,
+        separator: PlSmallStr,
+    },
     /// Remove duplicates from the table
     Distinct {
         input: Arc<DslPlan>,
@@ -193,6 +204,8 @@ impl Clone for DslPlan {
             Self::ExtContext { input, contexts, } => Self::ExtContext { input: input.clone(), contexts: contexts.clone() },
             Self::Sink { input, payload } => Self::Sink { input: input.clone(), payload: payload.clone() },
             Self::SinkMultiple { inputs } => Self::SinkMultiple { inputs: inputs.clone() },
+            #[cfg(feature = "pivot")]
+            Self::Pivot { input, on, on_columns, index, values, agg, separator, maintain_order }  => Self::Pivot { input: input.clone(), on: on.clone(), on_columns: on_columns.clone(), index: index.clone(), values: values.clone(), agg: agg.clone(), separator: separator.clone(), maintain_order: *maintain_order },
             #[cfg(feature = "merge_sorted")]
             Self::MergeSorted { input_left, input_right, key } => Self::MergeSorted { input_left: input_left.clone(), input_right: input_right.clone(), key: key.clone() },
             Self::IR {node, dsl, version} => Self::IR {node: *node, dsl: dsl.clone(), version: *version},
@@ -346,35 +359,30 @@ impl DslPlan {
     }
 
     #[cfg(feature = "dsl-schema")]
-    pub fn dsl_schema() -> schemars::schema::RootSchema {
-        use schemars::r#gen::SchemaSettings;
-        use schemars::schema::SchemaObject;
-        use schemars::visit::{Visitor, visit_schema_object};
+    pub fn dsl_schema() -> schemars::Schema {
+        use schemars::Schema;
+        use schemars::generate::SchemaSettings;
+        use schemars::transform::{Transform, transform_subschemas};
 
         #[derive(Clone, Copy, Debug)]
-        struct MyVisitor;
+        struct MyTransform;
 
-        impl Visitor for MyVisitor {
-            fn visit_schema_object(&mut self, schema: &mut SchemaObject) {
+        impl Transform for MyTransform {
+            fn transform(&mut self, schema: &mut Schema) {
                 // Remove descriptions auto-generated from doc comments
-                if schema.metadata.is_some() {
-                    schema.metadata().description = None;
-                }
+                schema.remove("description");
 
-                visit_schema_object(self, schema);
+                transform_subschemas(self, schema);
             }
         }
 
         let mut schema = SchemaSettings::default()
-            .with_visitor(MyVisitor)
+            .with_transform(MyTransform)
             .into_generator()
             .into_root_schema_for::<DslPlan>();
 
         // Add the DSL schema hash as a top level field
-        schema
-            .schema
-            .extensions
-            .insert("hash".into(), DSL_SCHEMA_HASH.to_string().into());
+        schema.insert("hash".into(), DSL_SCHEMA_HASH.to_string().into());
 
         schema
     }

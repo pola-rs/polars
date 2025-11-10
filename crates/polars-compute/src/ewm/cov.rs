@@ -1,36 +1,11 @@
 use std::ops::{AddAssign, DivAssign, MulAssign};
 
+use arrow::array::{Array, PrimitiveArray};
+use arrow::trusted_len::TrustedLen;
+use arrow::types::NativeType;
 use num_traits::Float;
 
-use crate::array::{Array, PrimitiveArray};
-use crate::legacy::kernels::ewm::EwmStateUpdate;
-use crate::trusted_len::TrustedLen;
-use crate::types::NativeType;
-
-#[allow(clippy::too_many_arguments)]
-fn ewm_cov_internal<I, T>(
-    xs: I,
-    ys: I,
-    alpha: T,
-    adjust: bool,
-    bias: bool,
-    min_periods: usize,
-    ignore_nulls: bool,
-    do_sqrt: bool,
-) -> PrimitiveArray<T>
-where
-    I: IntoIterator<Item = Option<T>>,
-    T: Float + NativeType + AddAssign + MulAssign + DivAssign,
-{
-    let mut state = EwmCovState::new(alpha, adjust, bias, min_periods, ignore_nulls);
-    let iter = state.update_iter(xs.into_iter().zip(ys).map(|(x, y)| x.zip(y)));
-
-    if do_sqrt {
-        iter.map(|opt_x| opt_x.map(|x| x.sqrt())).collect()
-    } else {
-        iter.collect()
-    }
-}
+use crate::ewm::EwmStateUpdate;
 
 pub struct EwmCovState<T> {
     weight: T,
@@ -209,32 +184,6 @@ where
     }
 }
 
-pub fn ewm_cov<I, T>(
-    xs: I,
-    ys: I,
-    alpha: T,
-    adjust: bool,
-    bias: bool,
-    min_periods: usize,
-    ignore_nulls: bool,
-) -> PrimitiveArray<T>
-where
-    I: IntoIterator<Item = Option<T>>,
-    I::IntoIter: TrustedLen,
-    T: Float + NativeType + AddAssign + MulAssign + DivAssign,
-{
-    ewm_cov_internal(
-        xs,
-        ys,
-        alpha,
-        adjust,
-        bias,
-        min_periods,
-        ignore_nulls,
-        false,
-    )
-}
-
 pub fn ewm_var<I, T>(
     xs: I,
     alpha: T,
@@ -248,16 +197,10 @@ where
     I::IntoIter: TrustedLen,
     T: Float + NativeType + AddAssign + MulAssign + DivAssign,
 {
-    ewm_cov_internal(
-        xs.clone(),
-        xs,
-        alpha,
-        adjust,
-        bias,
-        min_periods,
-        ignore_nulls,
-        false,
-    )
+    let mut state = EwmCovState::new(alpha, adjust, bias, min_periods, ignore_nulls);
+    let iter = state.update_iter(xs.into_iter().map(|x| x.map(|x| (x, x))));
+
+    iter.collect()
 }
 
 pub fn ewm_std<I, T>(
@@ -269,20 +212,17 @@ pub fn ewm_std<I, T>(
     ignore_nulls: bool,
 ) -> PrimitiveArray<T>
 where
-    I: IntoIterator<Item = Option<T>> + Clone,
-    I::IntoIter: TrustedLen,
-    T: Float + NativeType + AddAssign + MulAssign + DivAssign,
+    I: IntoIterator<Item = Option<T>>,
+    T: NativeType
+        + num_traits::Float
+        + std::ops::AddAssign
+        + std::ops::DivAssign
+        + std::ops::MulAssign,
 {
-    ewm_cov_internal(
-        xs.clone(),
-        xs,
-        alpha,
-        adjust,
-        bias,
-        min_periods,
-        ignore_nulls,
-        true,
-    )
+    let mut state = EwmCovState::new(alpha, adjust, bias, min_periods, ignore_nulls);
+    let iter = state.update_iter(xs.into_iter().map(|x| x.map(|x| (x, x))));
+
+    iter.map(|opt_x| opt_x.map(|x| x.sqrt())).collect()
 }
 
 #[cfg(test)]
@@ -303,6 +243,26 @@ mod test {
         Some(4.0),
     ];
     const YS: [Option<f64>; 7] = [None, Some(5.0), Some(7.0), None, None, Some(1.0), Some(4.0)];
+
+    fn ewm_cov<I, T>(
+        xs: I,
+        ys: I,
+        alpha: T,
+        adjust: bool,
+        bias: bool,
+        min_periods: usize,
+        ignore_nulls: bool,
+    ) -> PrimitiveArray<T>
+    where
+        I: IntoIterator<Item = Option<T>>,
+        I::IntoIter: TrustedLen,
+        T: Float + NativeType + AddAssign + MulAssign + DivAssign,
+    {
+        let mut state = EwmCovState::new(alpha, adjust, bias, min_periods, ignore_nulls);
+        let iter = state.update_iter(xs.into_iter().zip(ys).map(|(x, y)| x.zip(y)));
+
+        iter.collect()
+    }
 
     #[test]
     fn test_ewm_var() {

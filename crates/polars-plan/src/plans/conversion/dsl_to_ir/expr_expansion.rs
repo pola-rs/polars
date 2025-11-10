@@ -704,11 +704,34 @@ fn expand_expression_rec(
                 },
             )?
         },
-        Expr::Window {
+        #[cfg(feature = "dynamic_group_by")]
+        Expr::Rolling {
+            function,
+            index_column,
+            period,
+            offset,
+            closed_window,
+        } => {
+            _ = expand_expression_by_combination(
+                &[function.as_ref().clone(), index_column.as_ref().clone()],
+                ignored_selector_columns,
+                schema,
+                out,
+                opt_flags,
+                |e| Expr::Rolling {
+                    function: Arc::new(e[0].clone()),
+                    index_column: Arc::new(e[1].clone()),
+                    period: *period,
+                    offset: *offset,
+                    closed_window: *closed_window,
+                },
+            )?
+        },
+        Expr::Over {
             function,
             partition_by,
             order_by,
-            options,
+            mapping,
         } => {
             let mut exprs =
                 Vec::with_capacity(partition_by.len() + 1 + usize::from(order_by.is_some()));
@@ -723,13 +746,13 @@ fn expand_expression_rec(
                 schema,
                 out,
                 opt_flags,
-                |e| Expr::Window {
+                |e| Expr::Over {
                     function: Arc::new(e[0].clone()),
                     partition_by: e[1..e.len() - usize::from(order_by.is_some())].to_vec(),
                     order_by: order_by
                         .as_ref()
                         .map(|(_, options)| (Arc::new(e.last().unwrap().clone()), *options)),
-                    options: options.clone(),
+                    mapping: *mapping,
                 },
             )?
         },

@@ -442,3 +442,6 @@ class ExprMetaNameSpace:
             raw_output=raw_output,
             figsize=figsize,
         )
+
+    def _replace_element(self, expr: Expr) -> Expr:
+        return wrap_expr(self._pyexpr.meta_replace_element(expr._pyexpr))

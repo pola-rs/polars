@@ -428,7 +428,7 @@ class Decimal(NumericType):
         Number of digits to the right of the decimal point in each number.
     """
 
-    precision: int | None
+    precision: int
     scale: int
 
     def __init__(

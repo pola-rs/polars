@@ -144,7 +144,7 @@ ParquetCompression: TypeAlias = Literal[
     "lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"
 ]
 PivotAgg: TypeAlias = Literal[
-    "min", "max", "first", "last", "sum", "mean", "median", "len"
+    "min", "max", "first", "last", "sum", "mean", "median", "len", "item"
 ]
 QuantileMethod: TypeAlias = Literal[
     "nearest", "higher", "lower", "midpoint", "linear", "equiprobable"

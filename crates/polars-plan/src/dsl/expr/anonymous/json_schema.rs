@@ -6,7 +6,7 @@ use super::{AnonymousColumnsUdf, SpecialEq};
 use crate::dsl::LazySerde;
 
 impl<T: schemars::JsonSchema> schemars::JsonSchema for SpecialEq<Arc<T>> {
-    fn schema_name() -> String {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
         T::schema_name()
     }
 
@@ -14,13 +14,13 @@ impl<T: schemars::JsonSchema> schemars::JsonSchema for SpecialEq<Arc<T>> {
         T::schema_id()
     }
 
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         T::json_schema(generator)
     }
 }
 
 impl<T: schemars::JsonSchema + Clone> schemars::JsonSchema for LazySerde<T> {
-    fn schema_name() -> String {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
         T::schema_name()
     }
 
@@ -28,13 +28,13 @@ impl<T: schemars::JsonSchema + Clone> schemars::JsonSchema for LazySerde<T> {
         T::schema_id()
     }
 
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         Vec::<u8>::json_schema(generator)
     }
 }
 
 impl schemars::JsonSchema for SpecialEq<Series> {
-    fn schema_name() -> String {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
         Series::schema_name()
     }
 
@@ -42,21 +42,21 @@ impl schemars::JsonSchema for SpecialEq<Series> {
         Series::schema_id()
     }
 
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         Series::json_schema(generator)
     }
 }
 
 impl schemars::JsonSchema for SpecialEq<Arc<dyn AnonymousColumnsUdf>> {
-    fn schema_name() -> String {
-        "AnonymousColumnsUdf".to_owned()
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "AnonymousColumnsUdf".into()
     }
 
     fn schema_id() -> std::borrow::Cow<'static, str> {
         std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "AnonymousColumnsUdf"))
     }
 
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         Vec::<u8>::json_schema(generator)
     }
 }

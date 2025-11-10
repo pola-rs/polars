@@ -25,7 +25,7 @@ new_key_type! {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub(crate) struct SerializableDslPlan {
     pub(crate) root: DslPlanKey,
-    pub(crate) dataframes: SlotMap<DataFrameKey, DataFrame>,
+    pub(crate) dataframes: SlotMap<DataFrameKey, DataFrameSerdeWrap>,
     pub(crate) dsl_plans: SlotMap<DslPlanKey, SerializableDslPlanNode>,
 }
 
@@ -88,6 +88,17 @@ pub(crate) enum SerializableDslPlanNode {
         input: DslPlanKey,
         callback: PlanCallback<(DslPlan, SchemaRef), DslPlan>,
     },
+    #[cfg(feature = "pivot")]
+    Pivot {
+        input: DslPlanKey,
+        on: Selector,
+        on_columns: DataFrameKey,
+        index: Selector,
+        values: Selector,
+        agg: Expr,
+        maintain_order: bool,
+        separator: PlSmallStr,
+    },
     Distinct {
         input: DslPlanKey,
         options: DistinctOptionsDSL,
@@ -140,7 +151,7 @@ pub(crate) enum SerializableDslPlanNode {
 
 #[derive(Debug, Default)]
 struct SerializeArenas {
-    dataframes: SlotMap<DataFrameKey, DataFrame>,
+    dataframes: SlotMap<DataFrameKey, DataFrameSerdeWrap>,
     dataframes_keys_table: PlIndexMap<*const DataFrame, DataFrameKey>,
     dsl_plans: SlotMap<DslPlanKey, SerializableDslPlanNode>,
     dsl_plans_keys_table: PlIndexMap<*const DslPlan, DslPlanKey>,
@@ -257,6 +268,26 @@ fn convert_dsl_plan_to_serializable_plan(
             input: dsl_plan_key(input, arenas),
             callback: callback.clone(),
         },
+        #[cfg(feature = "pivot")]
+        DP::Pivot {
+            input,
+            on,
+            on_columns,
+            index,
+            values,
+            agg,
+            maintain_order,
+            separator,
+        } => SP::Pivot {
+            input: dsl_plan_key(input, arenas),
+            on: on.clone(),
+            on_columns: dataframe_key(on_columns, arenas),
+            index: index.clone(),
+            values: values.clone(),
+            agg: agg.clone(),
+            maintain_order: *maintain_order,
+            separator: separator.clone(),
+        },
         DP::Distinct { input, options } => SP::Distinct {
             input: dsl_plan_key(input, arenas),
             options: options.clone(),
@@ -338,7 +369,7 @@ fn dataframe_key(df: &Arc<DataFrame>, arenas: &mut SerializeArenas) -> DataFrame
     if let Some(key) = arenas.dataframes_keys_table.get(&ptr) {
         *key
     } else {
-        let key = arenas.dataframes.insert((**df).clone());
+        let key = arenas.dataframes.insert(DataFrameSerdeWrap(df.clone()));
         arenas.dataframes_keys_table.insert(ptr, key);
         key
     }
@@ -358,7 +389,7 @@ fn dsl_plan_key(plan: &Arc<DslPlan>, arenas: &mut SerializeArenas) -> DslPlanKey
 
 #[derive(Debug, Default)]
 struct DeserializeArenas {
-    dataframes: SecondaryMap<DataFrameKey, Arc<DataFrame>>,
+    dataframes: SecondaryMap<DataFrameKey, DataFrameSerdeWrap>,
     dsl_plans: SecondaryMap<DslPlanKey, Arc<DslPlan>>,
 }
 
@@ -473,6 +504,26 @@ fn try_convert_serializable_plan_to_dsl_plan(
             input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
             callback: callback.clone(),
         }),
+        #[cfg(feature = "pivot")]
+        SP::Pivot {
+            input,
+            on,
+            on_columns,
+            index,
+            values,
+            agg,
+            maintain_order,
+            separator,
+        } => Ok(DP::Pivot {
+            input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
+            on: on.clone(),
+            on_columns: get_dataframe(*on_columns, ser_dsl_plan, arenas)?,
+            index: index.clone(),
+            values: values.clone(),
+            agg: agg.clone(),
+            maintain_order: *maintain_order,
+            separator: separator.clone(),
+        }),
         SP::Distinct { input, options } => Ok(DP::Distinct {
             input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
             options: options.clone(),
@@ -555,14 +606,13 @@ fn get_dataframe(
     arenas: &mut DeserializeArenas,
 ) -> Result<Arc<DataFrame>, PolarsError> {
     if let Some(df) = arenas.dataframes.get(key) {
-        Ok(df.clone())
+        Ok(df.0.clone())
     } else {
         let df = ser_dsl_plan.dataframes.get(key).ok_or(polars_err!(
             ComputeError: "Could not find DataFrame at index {:?} in serialized plan", key
         ))?;
-        let arc_df = Arc::new(df.clone());
-        arenas.dataframes.insert(key, arc_df.clone());
-        Ok(arc_df)
+        arenas.dataframes.insert(key, df.clone());
+        Ok(df.0.clone())
     }
 }
 
@@ -581,6 +631,69 @@ fn get_dsl_plan(
         let arc_dsl_plan = Arc::new(dsl_plan);
         arenas.dsl_plans.insert(key, arc_dsl_plan.clone());
         Ok(arc_dsl_plan)
+    }
+}
+
+/// Serialization wrapper that splits large serialized byte values into chunks.
+#[derive(Debug, Clone)]
+pub(crate) struct DataFrameSerdeWrap(Arc<DataFrame>);
+
+#[cfg(feature = "serde")]
+mod _serde_impl {
+    use std::sync::Arc;
+
+    use polars_core::frame::DataFrame;
+    use polars_utils::chunked_bytes_cursor::FixedSizeChunkedBytesCursor;
+    use serde::de::Error;
+    use serde::{Deserialize, Serialize};
+
+    use super::DataFrameSerdeWrap;
+
+    fn max_byte_slice_len() -> usize {
+        std::env::var("POLARS_SERIALIZE_LAZYFRAME_MAX_BYTE_SLICE_LEN")
+            .as_deref()
+            .map_or(
+                usize::try_from(u32::MAX).unwrap(), // Limit for rmp_serde
+                |x| x.parse().unwrap(),
+            )
+    }
+
+    impl Serialize for DataFrameSerdeWrap {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            use serde::ser::Error;
+
+            let mut bytes: Vec<u8> = vec![];
+            self.0
+                .as_ref()
+                .clone()
+                .serialize_into_writer(&mut bytes)
+                .map_err(S::Error::custom)?;
+
+            serializer.collect_seq(bytes.chunks(max_byte_slice_len()))
+        }
+    }
+
+    impl<'de> Deserialize<'de> for DataFrameSerdeWrap {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            let bytes: Vec<Vec<u8>> = Vec::deserialize(deserializer)?;
+
+            let result = match bytes.as_slice() {
+                [v] => DataFrame::deserialize_from_reader(&mut std::io::Cursor::new(v.as_slice())),
+                _ => DataFrame::deserialize_from_reader(
+                    &mut FixedSizeChunkedBytesCursor::try_new(bytes.as_slice()).unwrap(),
+                ),
+            };
+
+            result
+                .map(|x| DataFrameSerdeWrap(Arc::new(x)))
+                .map_err(D::Error::custom)
+        }
     }
 }
 

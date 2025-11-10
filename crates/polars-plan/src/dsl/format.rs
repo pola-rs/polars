@@ -13,30 +13,34 @@ impl fmt::Debug for Expr {
         use Expr::*;
         match self {
             Element => f.write_str("element()"),
-            Window {
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling {
+                function,
+                index_column,
+                period,
+                offset,
+                closed_window: _,
+            } => {
+                write!(
+                    f,
+                    "{:?}.rolling(by='{}', offset={}, period={})",
+                    function, index_column, offset, period
+                )
+            },
+            Over {
                 function,
                 partition_by,
                 order_by,
-                options,
-            } => match options {
-                #[cfg(feature = "dynamic_group_by")]
-                WindowType::Rolling(options) => {
+                mapping: _,
+            } => {
+                if let Some((order_by, _)) = order_by {
                     write!(
                         f,
-                        "{:?}.rolling(by='{}', offset={}, period={})",
-                        function, options.index_column, options.offset, options.period
+                        "{function:?}.over(partition_by: {partition_by:?}, order_by: {order_by:?})"
                     )
-                },
-                _ => {
-                    if let Some((order_by, _)) = order_by {
-                        write!(
-                            f,
-                            "{function:?}.over(partition_by: {partition_by:?}, order_by: {order_by:?})"
-                        )
-                    } else {
-                        write!(f, "{function:?}.over({partition_by:?})")
-                    }
-                },
+                } else {
+                    write!(f, "{function:?}.over({partition_by:?})")
+                }
             },
             DataTypeFunction(dtype_fn) => fmt::Debug::fmt(dtype_fn, f),
             Len => write!(f, "len()"),

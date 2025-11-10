@@ -156,4 +156,8 @@ impl PhysicalExpr for ColumnExpr {
     fn is_scalar(&self) -> bool {
         false
     }
+
+    fn as_column(&self) -> Option<PlSmallStr> {
+        Some(self.name.clone())
+    }
 }
