@@ -484,7 +484,7 @@ class ExprListNameSpace:
         Sort by multiple expressions by passing a list of expressions.
 
         >>> df.select(
-        ...     pl.col('items').list.sort_by(
+        ...     pl.col("items").list.sort_by(
         ...         [pl.element().struct.field("c"), pl.element().struct.field("a")],
         ...         descending=True,
         ...     )
