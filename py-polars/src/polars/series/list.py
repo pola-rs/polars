@@ -337,7 +337,7 @@ class ListNameSpace:
         nulls_last: bool | Sequence[bool] = False,
         multithreaded: bool = True,
         maintain_order: bool = False,
-    ) -> Expr:
+    ) -> Series:
         """
         Sort the arrays in this list by the given element-wise expressions.
 
