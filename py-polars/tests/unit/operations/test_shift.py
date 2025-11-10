@@ -190,7 +190,13 @@ def test_streaming_shift_25226() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4]})
 
     q = df.lazy().with_columns(b=pl.col("a").shift(), c=pl.col("a").min())
-    assert_frame_equal(q.collect(), df.with_columns(b=pl.Series([None, 1, 2, 3]), c=1))
+    assert_frame_equal(
+        q.collect(),
+        df.with_columns(b=pl.Series([None, 1, 2, 3]), c=pl.lit(1, pl.Int64)),
+    )
 
     q = df.lazy().with_columns(b=pl.col("a").shift(n=-1), c=pl.col("a").min())
-    assert_frame_equal(q.collect(), df.with_columns(b=pl.Series([2, 3, 4, None]), c=1))
+    assert_frame_equal(
+        q.collect(),
+        df.with_columns(b=pl.Series([2, 3, 4, None]), c=pl.lit(1, pl.Int64)),
+    )
