@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import copy
-from collections.abc import Collection, Iterable, Sequence
+from collections.abc import Collection, Sequence
 from typing import TYPE_CHECKING, Any, Callable
 
 import polars._reexport as pl
@@ -13,6 +13,8 @@ from polars._utils.various import issue_warning
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from polars import Expr, Series
     from polars._typing import (
         IntoExpr,
