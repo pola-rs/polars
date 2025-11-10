@@ -360,11 +360,15 @@ class ListNameSpace:
 
         Examples
         --------
-        >>> s = pl.Series([[
-        ...     {"a": 1, "b": 6.0, "c": "a"},
-        ...     {"a": 2, "b": 5.0, "c": "c"},
-        ...     {"a": None, "b": 4.0, "c": "b"},
-        ... ]])
+        >>> s = pl.Series(
+        ...     [
+        ...         [
+        ...             {"a": 1, "b": 6.0, "c": "a"},
+        ...             {"a": 2, "b": 5.0, "c": "c"},
+        ...             {"a": None, "b": 4.0, "c": "b"},
+        ...         ]
+        ...     ]
+        ... )
         >>> s.list.sort_by(pl.element().struct.field("c"), descending=True)
         shape: (1,)
         Series: '' [list[struct[3]]]
