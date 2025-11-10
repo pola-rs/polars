@@ -437,11 +437,9 @@ class ExprListNameSpace:
         --------
         Pass a single struct field to sort by that field.
 
-        >>> pl.Config.set_tbl_width_chars(20)
-        <class 'polars.config.Config'>
-        >>> pl.Config.set_fmt_str_lengths(80)
-        <class 'polars.config.Config'>
-        >>> lf = pl.LazyFrame(
+        >>> pl.Config.set_tbl_width_chars(20)  # doctest: +IGNORE_RESULT
+        >>> pl.Config.set_fmt_str_lengths(80)  # doctest: +IGNORE_RESULT
+        >>> df = pl.DataFrame(
         ...     {
         ...         "items": [
         ...             [
@@ -452,9 +450,9 @@ class ExprListNameSpace:
         ..          ]
         ...     }
         ... )
-        >>> lf.select(
+        >>> df.select(
         ...     pl.col("items").list.sort_by(pl.element().struct.field("a"))
-        ... ).collect()
+        ... )
         shape: (1, 1)
         ┌──────────────────┐
         │ items            │
@@ -468,12 +466,12 @@ class ExprListNameSpace:
 
         Sorting by more complex expressions is also supported.
 
-        >>> lf.select(
+        >>> df.select(
         ...     pl.col("items").list.sort_by(
         ...         pl.element().struct.field("a") + pl.element().struct.field("b") * 2,
         ...         nulls_last=True,
         ...     )
-        ... ).collect()
+        ... )
         shape: (1, 1)
         ┌──────────────────┐
         │ items            │
@@ -487,11 +485,13 @@ class ExprListNameSpace:
 
         Sort by multiple expressions by passing a list of expressions.
 
-        >>>     lf.select(pl.col('items').list.sort_by(
+        >>> df.select(
+        ...     pl.col('items').list.sort_by(
         ...         [pl.element().struct.field("c"),
         ...          pl.element().struct.field("a")],
         ...         descending=True,
-        ...     )).collect()
+        ...     )
+        ... )
         shape: (1, 1)
         ┌──────────────────┐
         │ items            │
@@ -505,13 +505,13 @@ class ExprListNameSpace:
 
         Or use positional arguments to sort by multiple expressions in the same way.
 
-        >>> lf.select(
+        >>> df.select(
         ...     pl.col("items").list.sort_by(
         ...         pl.element().struct.field("c"),
         ...         pl.element().struct.field("a"),
         ...         descending=[False, True],
         ...     )
-        ... ).collect()
+        ... )
         shape: (1, 1)
         ┌──────────────────┐
         │ items            │
@@ -525,11 +525,9 @@ class ExprListNameSpace:
 
         Or sort a list of strings by length then alphabetically.
 
-        >>> pl.Config.set_tbl_width_chars(30)
-        <class 'polars.config.Config'>
-        >>> pl.Config.set_fmt_str_lengths(80)
-        <class 'polars.config.Config'>
-        >>> lf = pl.LazyFrame(
+        >>> pl.Config.set_tbl_width_chars(30)  # doctest: +IGNORE_RESULT
+        >>> pl.Config.set_fmt_str_lengths(80)  # doctest: +IGNORE_RESULT
+        >>> df = pl.DataFrame(
         ...     {
         ...         "strings": [
         ...             ["abcdef", "xyz", "jkl"],
@@ -537,12 +535,12 @@ class ExprListNameSpace:
         ...         ]
         ...     }
         ... )
-        >>> lf.select(
+        >>> df.select(
         ...     pl.col("strings").list.sort_by(
         ...         pl.element().str.len_chars(),
         ...         pl.element(),
         ...     )
-        ... ).collect()
+        ... )
         shape: (2, 1)
         ┌──────────────────────────┐
         │ strings                  │
