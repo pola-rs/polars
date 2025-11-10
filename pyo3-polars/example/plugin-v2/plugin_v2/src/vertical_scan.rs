@@ -1,11 +1,8 @@
-use std::borrow::Cow;
-
-use polars::error::{polars_ensure, polars_err, PolarsResult};
+use polars::error::{polars_ensure, PolarsResult};
 use polars::prelude::{
     ChunkedBuilder, DataType, Field, Int64Type, PrimitiveChunkedBuilder, Schema, SchemaExt,
 };
 use polars::series::{IntoSeries, Series};
-use pyo3_polars::export::polars_ffi::version_1::{GroupPositions, PolarsPlugin};
 use pyo3_polars::polars_plugin_expr_info;
 use pyo3_polars::v1::{self, PolarsPluginExprInfo};
 use serde::{Deserialize, Serialize};

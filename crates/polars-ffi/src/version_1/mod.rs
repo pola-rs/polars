@@ -8,6 +8,7 @@ use polars_core::schema::Schema;
 use polars_core::series::Series;
 use polars_error::PolarsResult;
 
+use self::groups::GroupPositionsFfi;
 pub use self::groups::{CowGroupPositions, GroupPositions, IndexGroups, SliceGroup, SliceGroups};
 use crate::version_0::SeriesExport;
 
@@ -83,7 +84,7 @@ pub trait PolarsPlugin: Send + Sync + Sized {
     /// This indicates that this state will not `step` anymore.
     fn finalize(&self, state: &mut Self::State) -> PolarsResult<Option<Series>>;
 
-    fn evaluate_on_groups<'a>(
+    unsafe fn evaluate_on_groups<'a>(
         &self,
         inputs: &[(Series, &'a GroupPositions)],
     ) -> PolarsResult<(Series, Cow<'a, GroupPositions>)>;
@@ -263,15 +264,27 @@ pub struct VTable {
         out_series: NonNull<MaybeUninit<SeriesExport>>,
     ) -> u32,
 
+    /// Perform evaluation on a bunch of small groups.
+    ///
+    /// Returns a `ReturnValue` to handle panics and errors.
+    #[expect(clippy::type_complexity)]
     _evaluate_on_groups: unsafe extern "C" fn(
         data: DataPtr,
-        inputs_ptr: *mut (SeriesExport, NonNull<GroupPositions>),
+        inputs_ptr: *mut (SeriesExport, GroupPositionsFfi),
         inputs_len: usize,
         output_series: NonNull<MaybeUninit<SeriesExport>>,
         output_groups_owned: NonNull<MaybeUninit<bool>>,
-        output_groups: NonNull<MaybeUninit<NonNull<GroupPositions>>>,
+        output_groups: NonNull<MaybeUninit<GroupPositionsFfi>>,
     ) -> u32,
-    _drop_box_group_positions: unsafe extern "C" fn(ptr: *mut GroupPositions) -> u32,
+    /// Drop `GroupPositions`.
+    ///
+    /// Returns a `ReturnValue` to handle panics.
+    ///
+    /// # Safety
+    ///
+    /// - `ptr` should belong to a exclusive reference to a GroupPositions and that GroupPositions
+    ///   should not be used afterwards.
+    _drop_box_group_positions: unsafe extern "C" fn(ptr: GroupPositionsFfi) -> u32,
 
     /// Get the output field.
     ///

@@ -125,7 +125,7 @@ pub mod elementwise {
             unreachable!()
         }
 
-        fn evaluate_on_groups<'a>(
+        unsafe fn evaluate_on_groups<'a>(
             &self,
             _inputs: &[(Series, &'a GroupPositions)],
         ) -> PolarsResult<(Series, Cow<'a, GroupPositions>)> {
@@ -223,7 +223,7 @@ pub mod map_reduce {
             Ok(Some(self.0.finalize(std::mem::take(state))?))
         }
 
-        fn evaluate_on_groups<'a>(
+        unsafe fn evaluate_on_groups<'a>(
             &self,
             _inputs: &[(Series, &'a GroupPositions)],
         ) -> PolarsResult<(Series, Cow<'a, GroupPositions>)> {
@@ -319,7 +319,7 @@ pub mod scan {
             unreachable!()
         }
 
-        fn evaluate_on_groups<'a>(
+        unsafe fn evaluate_on_groups<'a>(
             &self,
             _inputs: &[(Series, &'a GroupPositions)],
         ) -> PolarsResult<(Series, Cow<'a, GroupPositions>)> {

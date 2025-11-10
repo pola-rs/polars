@@ -83,3 +83,19 @@ def horizontal_count(*expr: pl.Expr) -> pl.Expr:
         states_combinable=False,
         selector_expansion=True,
     )
+
+def count(expr: pl.Expr) -> pl.Expr:
+    from plugin_v2 import plugin_v2
+
+    return register_plugin_v1_function(
+        plugin_path=LIB,
+        args=[expr],
+        info=plugin_v2.count(),
+        function_name="count",
+        returns_scalar=True,
+        needs_finalize=True,
+        step_has_output=False,
+        states_combinable=True,
+        specialize_group_evaluation=True,
+        selector_expansion=False,
+    )

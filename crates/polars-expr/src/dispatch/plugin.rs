@@ -78,6 +78,7 @@ pub fn call_on_groups<'a>(
                             }));
                             let mut index = Vec::with_capacity(*ends.last().unwrap() as usize);
                             for i in idxs.all() {
+                                #[allow(clippy::unnecessary_cast)]
                                 index.extend(i.iter().copied().map(|v| v as u64));
                             }
 
@@ -92,6 +93,7 @@ pub fn call_on_groups<'a>(
                         } => {
                             let mut slices = Vec::with_capacity(groups.len());
                             for [offset, length] in groups {
+                                #[allow(clippy::unnecessary_cast)]
                                 slices.push(ffi::SliceGroup {
                                     offset: *offset as u64,
                                     length: *length as u64,
@@ -120,7 +122,7 @@ pub fn call_on_groups<'a>(
         ffi::GroupPositions::SharedAcrossGroups { num_groups } => *num_groups,
         ffi::GroupPositions::ScalarPerGroup => series.len(),
         ffi::GroupPositions::Index(index) => index.ends.len(),
-        ffi::GroupPositions::Slice(slices) => slices.len(),
+        ffi::GroupPositions::Slice(slices) => slices.num_groups(),
     };
     assert_eq!(
         groups.len(),

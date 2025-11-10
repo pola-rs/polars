@@ -621,7 +621,7 @@ pub fn function_expr_to_groups_udf(func: &IRFunctionExpr) -> Option<SpecialEq<Ar
                 }
             }
 
-            SpecialEq::new(Arc::new(Wrap((&**plugin).clone())) as Arc<dyn GroupsUdf>)
+            SpecialEq::new(Arc::new(Wrap((**plugin).clone())) as Arc<dyn GroupsUdf>)
         },
 
         _ => return None,

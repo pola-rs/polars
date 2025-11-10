@@ -1,3 +1,6 @@
+use std::marker::PhantomData;
+use std::mem::ManuallyDrop;
+
 use polars_core::prelude::{ChunkExpandAtIndex, GroupsIdx, GroupsType, ListChunked};
 use polars_core::series::Series;
 use polars_utils::{IdxSize, UnitVec};
@@ -35,21 +38,100 @@ pub enum GroupPositions {
     Index(IndexGroups),
 }
 
+#[repr(C)]
+pub struct GroupPositionsFfi {
+    tag: u64,
+    index_or_slices_ptr: *mut u64,
+    index_or_slices_len: usize,
+    ends_ptr: *mut u64,
+    ends_len_or_num_groups: usize,
+}
+
+impl GroupPositionsFfi {
+    pub fn from_ref(groups: &GroupPositions) -> GroupPositionsFfi {
+        match groups {
+            GroupPositions::SharedAcrossGroups { num_groups } => GroupPositionsFfi {
+                tag: 0,
+                index_or_slices_ptr: std::ptr::null_mut(),
+                index_or_slices_len: 0,
+                ends_ptr: std::ptr::null_mut(),
+                ends_len_or_num_groups: *num_groups,
+            },
+            GroupPositions::ScalarPerGroup => GroupPositionsFfi {
+                tag: 1,
+                index_or_slices_ptr: std::ptr::null_mut(),
+                index_or_slices_len: 0,
+                ends_ptr: std::ptr::null_mut(),
+                ends_len_or_num_groups: 0,
+            },
+            GroupPositions::Slice(slice_groups) => GroupPositionsFfi {
+                tag: 2,
+                index_or_slices_ptr: slice_groups.0.as_ptr() as *mut u64,
+                index_or_slices_len: slice_groups.0.len(),
+                ends_ptr: std::ptr::null_mut(),
+                ends_len_or_num_groups: 0,
+            },
+            GroupPositions::Index(index_groups) => GroupPositionsFfi {
+                tag: 3,
+                index_or_slices_ptr: index_groups.index.as_ptr() as *mut u64,
+                index_or_slices_len: index_groups.index.len(),
+                ends_ptr: index_groups.ends.as_ptr() as *mut u64,
+                ends_len_or_num_groups: index_groups.ends.len(),
+            },
+        }
+    }
+
+    pub fn to_groups(&self) -> ManuallyDrop<GroupPositions> {
+        ManuallyDrop::new(match self.tag {
+            0 => GroupPositions::SharedAcrossGroups {
+                num_groups: self.ends_len_or_num_groups,
+            },
+            1 => GroupPositions::ScalarPerGroup,
+            2 => {
+                let slice = unsafe {
+                    Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                        self.index_or_slices_ptr as *mut SliceGroup,
+                        self.index_or_slices_len,
+                    ))
+                };
+                GroupPositions::Slice(SliceGroups(slice))
+            },
+            3 => {
+                let index = unsafe {
+                    Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                        self.index_or_slices_ptr,
+                        self.index_or_slices_len,
+                    ))
+                };
+                let ends = unsafe {
+                    Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                        self.ends_ptr,
+                        self.ends_len_or_num_groups,
+                    ))
+                };
+                GroupPositions::Index(IndexGroups { index, ends })
+            },
+            t => panic!("unknown grouppositions tag '{t}'"),
+        })
+    }
+}
+
 pub struct CowGroupPositions<'a> {
-    groups: &'a GroupPositions,
-    drop: Option<unsafe extern "C" fn(*mut GroupPositions) -> u32>,
+    groups: ManuallyDrop<GroupPositions>,
+    drop: Option<unsafe extern "C" fn(GroupPositionsFfi) -> u32>,
+    _pd: PhantomData<&'a ()>,
 }
 
 impl<'a> AsRef<GroupPositions> for CowGroupPositions<'a> {
     fn as_ref(&self) -> &GroupPositions {
-        self.groups
+        &self.groups
     }
 }
 
 impl<'a> Drop for CowGroupPositions<'a> {
     fn drop(&mut self) {
         if let Some(drop) = &self.drop {
-            let rv = unsafe { (drop)(self.groups as *const GroupPositions as *mut GroupPositions) };
+            let rv = unsafe { (drop)(GroupPositionsFfi::from_ref(&self.groups)) };
             match ReturnValue::from(rv) {
                 ReturnValue::Ok => {},
                 ReturnValue::Panic => panic!("plugin panicked"),
@@ -91,7 +173,7 @@ impl SliceGroups {
             .collect::<Vec<_>>()
     }
 
-    pub fn len(&self) -> usize {
+    pub fn num_groups(&self) -> usize {
         self.0.len()
     }
 
@@ -137,10 +219,10 @@ impl IndexGroups {
 
 pub mod callee {
     use std::borrow::Cow;
-    use std::mem::MaybeUninit;
+    use std::mem::{ManuallyDrop, MaybeUninit};
     use std::ptr::NonNull;
 
-    use super::GroupPositions;
+    use super::GroupPositionsFfi;
     use crate::version_0::{SeriesExport, export_series, import_series};
     use crate::version_1::_callee::wrap_callee_function;
     use crate::version_1::{DataPtr, PolarsPlugin};
@@ -150,31 +232,34 @@ pub mod callee {
     /// See VTable.
     pub unsafe extern "C" fn evaluate_on_groups<Data: PolarsPlugin>(
         data: DataPtr,
-        inputs_ptr: *mut (SeriesExport, NonNull<GroupPositions>),
+        inputs_ptr: *mut (SeriesExport, GroupPositionsFfi),
         inputs_len: usize,
         output_series: NonNull<MaybeUninit<SeriesExport>>,
         output_groups_owned: NonNull<MaybeUninit<bool>>,
-        output_groups: NonNull<MaybeUninit<NonNull<GroupPositions>>>,
+        output_groups: NonNull<MaybeUninit<GroupPositionsFfi>>,
     ) -> u32 {
         wrap_callee_function(|| {
             let data = unsafe { data.as_ref::<Data>() };
-            let mut collected_inputs = Vec::with_capacity(inputs_len);
+            let mut collected_series = Vec::with_capacity(inputs_len);
+            let mut collected_groups = Vec::with_capacity(inputs_len);
             for i in 0..inputs_len {
                 let (series, groups) = unsafe { std::ptr::read(inputs_ptr.add(i)) };
                 let series = unsafe { import_series(series)? };
-                let groups = unsafe { groups.as_ref() };
-                collected_inputs.push((series, groups));
+                let groups = groups.to_groups();
+                collected_series.push(series);
+                collected_groups.push(groups);
             }
+
+            let collected_inputs = collected_series
+                .into_iter()
+                .zip(collected_groups.iter())
+                .map(|(s, g)| (s, &**g))
+                .collect::<Vec<_>>();
             let (out_data, out_groups) = data.evaluate_on_groups(&collected_inputs)?;
 
             let is_owned = matches!(out_groups, Cow::Owned(_));
             unsafe { output_groups_owned.write(MaybeUninit::new(is_owned)) };
-            let out_groups = match out_groups {
-                Cow::Borrowed(ptr) => NonNull::from_ref(ptr),
-                Cow::Owned(out_groups) => {
-                    NonNull::new(Box::into_raw(Box::new(out_groups))).unwrap()
-                },
-            };
+            let out_groups = GroupPositionsFfi::from_ref(out_groups.as_ref());
             unsafe {
                 output_groups.write(MaybeUninit::new(out_groups));
             }
@@ -185,27 +270,30 @@ pub mod callee {
         })
     }
 
-    pub unsafe extern "C" fn drop_box_group_positions(ptr: *mut GroupPositions) -> u32 {
+    pub unsafe extern "C" fn drop_box_group_positions(ptr: GroupPositionsFfi) -> u32 {
         wrap_callee_function(|| {
-            let buffer = unsafe { Box::from_raw(ptr) };
-            drop(buffer);
+            ManuallyDrop::drop(&mut ptr.to_groups());
             Ok(())
         })
     }
 }
 
 mod caller {
+    use std::marker::PhantomData;
     use std::mem::MaybeUninit;
     use std::ptr::NonNull;
 
     use polars_core::series::Series;
     use polars_error::PolarsResult;
 
-    use super::{CowGroupPositions, GroupPositions};
+    use super::{CowGroupPositions, GroupPositions, GroupPositionsFfi};
     use crate::version_0::{export_series, import_series};
     use crate::version_1::{DataPtr, VTable};
 
     impl VTable {
+        /// # Safety
+        ///
+        /// `data` is valid and belonging to this VTable.
         pub unsafe fn evaluate_on_groups<'a>(
             &self,
             data: DataPtr,
@@ -218,7 +306,7 @@ mod caller {
             let mut inputs_export = Vec::with_capacity(inputs.len());
             for (series, groups) in inputs {
                 let series = export_series(series);
-                let groups = NonNull::from_ref(*groups);
+                let groups = GroupPositionsFfi::from_ref(groups);
                 inputs_export.push((series, groups));
             }
 
@@ -244,8 +332,9 @@ mod caller {
             Ok((
                 out_series,
                 CowGroupPositions {
-                    groups: unsafe { out_groups.as_ref() },
+                    groups: out_groups.to_groups(),
                     drop: drop_fn,
+                    _pd: PhantomData,
                 },
             ))
         }

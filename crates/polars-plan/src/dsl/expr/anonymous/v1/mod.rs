@@ -1,17 +1,9 @@
 use core::str;
-use std::alloc::Layout;
-use std::marker::PhantomData;
-use std::mem::MaybeUninit;
 use std::ptr::NonNull;
 use std::sync::Arc;
 
-use arrow::array::Array;
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::{ArrowDataType, Field as ArrowField};
-use arrow::ffi::ArrowSchema;
-use polars_core::frame::DataFrame;
-use polars_core::prelude::{CompatLevel, Field};
-use polars_core::schema::{Schema, SchemaExt};
+use polars_core::prelude::Field;
+use polars_core::schema::Schema;
 use polars_core::series::Series;
 use polars_error::{PolarsResult, polars_bail};
 use polars_ffi::version_1 as ffi;
@@ -36,6 +28,9 @@ pub struct PluginV1State {
 struct LibrarySymbol {
     lib: PlSmallStr,
     symbol: PlSmallStr,
+
+    // Put in here to ensure the shared library says alive.
+    #[expect(unused)]
     library: libloading::Library,
 }
 
@@ -124,7 +119,7 @@ fn load_vtable(lib: &str, symbol: &str) -> PolarsResult<(libloading::Library, ff
     let plugin: libloading::Symbol<NonNull<ffi::PluginSymbol>> =
         unsafe { lib.get(name.as_bytes()) }.unwrap();
     let vtable = unsafe { plugin.as_ref() }.vtable.clone();
-    unsafe { vtable.set_version(ffi::VERSION) };
+    vtable.set_version(ffi::VERSION);
     Ok((lib, vtable))
 }
 

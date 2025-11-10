@@ -59,7 +59,7 @@ impl TryFrom<PluginV2Serde> for PluginV1 {
         } = value;
 
         let (library, vtable) = super::load_vtable(&lib, &symbol)?;
-        let data_ptr = unsafe { vtable.deserialize_data(&data) }?;
+        let data_ptr = vtable.deserialize_data(&data)?;
 
         Ok(PluginV1 {
             flags,
