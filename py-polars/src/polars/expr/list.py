@@ -402,6 +402,129 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.list_sort(descending, nulls_last))
 
+    def sort_by(
+        self,
+        by: Expr | Iterable[Expr],
+        *more_by: Expr,
+        descending: bool | Sequence[bool] = False,
+        nulls_last: bool | Sequence[bool] = False,
+        multithreaded: bool = True,
+        maintain_order: bool = False,
+    ) -> Expr:
+        """
+        Sort the lists in this column by the given element-wise expressions.
+
+        Parameters
+        ----------
+        by
+            Expression(s) to sort by.
+        *more_by
+            Additional expressions to sort by.
+        descending
+            Sort in descending order. When sorting by multiple expressions, can be specified
+            per expression by passing a sequence of booleans.
+        nulls_last
+            Place null values last; can specify a single boolean applying to all expressions
+            or a sequence of booleans for per-expression control.
+        multithreaded
+            Sort using multiple threads.
+        maintain_order
+            Whether the order should be maintained if elements are equal.
+
+        Examples
+        --------
+        Pass a single struct field to sort by that field.
+
+        >>> pl.Config.set_tbl_width_chars(20)
+        >>> pl.Config.set_fmt_str_lengths(80)
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "items": [
+        ...             [
+        ...                 {"a": 1, "b": 6.0, "c": "a"},
+        ...                 {"a": 2, "b": 5.0, "c": "c"},
+        ...                 {"a": None, "b": 4.0, "c": "b"},
+        ...         ]
+        ..          ]
+        ...     }
+        ... )
+        >>> lf.select(pl.col('items').list.sort_by(
+        ...     pl.element().struct.field("a")
+        ... )).collect()
+        shape: (1, 1)
+        ┌──────────────────┐
+        │ items            │
+        │ ---              │
+        │ list[struct[3]]  │
+        ╞══════════════════╡
+        │ [{null,4.0,"b"}, │
+        │ {1,6.0,"a"},     │
+        │ {2,5.0,"c"}]     │
+        └──────────────────┘
+
+        Sorting by more complex expressions is also supported.
+
+        >>> lf.select(pl.col('items').list.sort_by(
+        ...     pl.element().struct.field("a") + pl.element().struct.field("b") * 2, nulls_last=True
+        ... )).collect()
+        shape: (1, 1)
+        ┌──────────────────┐
+        │ items            │
+        │ ---              │
+        │ list[struct[3]]  │
+        ╞══════════════════╡
+        │ [{2,5.0,"c"},    │
+        │ {1,6.0,"a"},     │
+        │ {null,4.0,"b"}]  │
+        └──────────────────┘
+
+        Sort by multiple expressions by passing a list of expressions.
+
+        >>>     lf.select(pl.col('items').list.sort_by(
+        ...         [pl.element().struct.field("c"),
+        ...          pl.element().struct.field("a")],
+        ...         descending=True,
+        ...     )).collect()
+        shape: (1, 1)
+        ┌──────────────────┐
+        │ items            │
+        │ ---              │
+        │ list[struct[3]]  │
+        ╞══════════════════╡
+        │ [{2,5.0,"c"},    │
+        │ {null,4.0,"b"},  │
+        │ {1,6.0,"a"}]     │
+        └──────────────────┘
+
+        Or use positional arguments to sort by multiple expressions in the same way.
+
+        >>> lf.select(pl.col('items').list.sort_by(
+        ...     pl.element().struct.field("c"),
+        ...     pl.element().struct.field("a"),
+        ...     descending=[False, True],
+        ... )).collect()
+        shape: (1, 1)
+        ┌──────────────────┐
+        │ items            │
+        │ ---              │
+        │ list[struct[3]]  │
+        ╞══════════════════╡
+        │ [{2,5.0,"c"},    │
+        │ {null,4.0,"b"},  │
+        │ {1,6.0,"a"}]     │
+        └──────────────────┘
+        """
+        return self._pyexpr.list.eval(
+            F.element().sort_by(
+                by,
+                *more_by,
+                descending=descending,
+                nulls_last=nulls_last,
+                multithreaded=multithreaded,
+                maintain_order=maintain_order,
+            )
+        )
+
     def reverse(self) -> Expr:
         """
         Reverse the arrays in the list.
