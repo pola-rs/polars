@@ -450,9 +450,7 @@ class ExprListNameSpace:
         ..          ]
         ...     }
         ... )
-        >>> df.select(
-        ...     pl.col("items").list.sort_by(pl.element().struct.field("a"))
-        ... )
+        >>> df.select(pl.col("items").list.sort_by(pl.element().struct.field("a")))
         shape: (1, 1)
         ┌──────────────────┐
         │ items            │
@@ -487,8 +485,7 @@ class ExprListNameSpace:
 
         >>> df.select(
         ...     pl.col('items').list.sort_by(
-        ...         [pl.element().struct.field("c"),
-        ...          pl.element().struct.field("a")],
+        ...         [pl.element().struct.field("c"), pl.element().struct.field("a")],
         ...         descending=True,
         ...     )
         ... )
