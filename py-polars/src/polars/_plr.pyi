@@ -2226,26 +2226,22 @@ def register_plugin_function(
     pass_name_to_apply: bool,
     changes_length: bool,
 ) -> PyExpr: ...
-def __register_startup_deps() -> None: ...
-
-# functions.plugin
-def plugin_v2_generate[T](
-    inputs: list[PyExpr],
+def register_plugin_v1_function(
+    plugin_path: str,
     *,
-    data: T,
-    initialize: Callable[[T, Schema], Any],
-    new_empty: Callable[[T, Any], Any],
-    insert: Callable[[T, Any, list[PySeries]], PySeries | None],
-    finalize: Callable[[T, Any], PySeries | None],
-    combine: Callable[[T, Any, Any], Any] | None,
-    to_field: Callable[[T, Schema], tuple[str, DataType]],
-    format: str,
+    args: Sequence[PyExpr],
+    name: str,
+    data_ptr: int,
+    function_name: str,
     length_preserving: bool,
     row_separable: bool,
     returns_scalar: bool,
     zippable_inputs: bool,
-    insert_has_output: bool,
-    selection_expansion: bool,
+    step_has_output: bool,
+    needs_finalize: bool,
+    states_combinable: bool,
+    specialize_group_evaluation: bool,
+    selector_expansion: bool,
 ) -> PyExpr: ...
 
 # functions.random
