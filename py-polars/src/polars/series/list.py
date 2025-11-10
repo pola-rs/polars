@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Iterable
 
 from polars import functions as F
 from polars._utils.unstable import unstable
@@ -348,11 +348,11 @@ class ListNameSpace:
         *more_by
             Additional expressions to sort by.
         descending
-            Sort in descending order. When sorting by multiple expressions, can be specified
-            per expression by passing a sequence of booleans.
+            Sort in descending order. When sorting by multiple expressions, can be
+            specified per expression by passing a sequence of booleans.
         nulls_last
-            Place null values last; can specify a single boolean applying to all expressions
-            or a sequence of booleans for per-expression control.
+            Place null values last; can specify a single boolean applying to all
+            expressions or a sequence of booleans for per-expression control.
         multithreaded
             Sort using multiple threads.
         maintain_order
