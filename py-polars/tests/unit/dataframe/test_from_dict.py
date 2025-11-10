@@ -257,8 +257,8 @@ def test_from_dict_cast_logical_type(dtype: pl.DataType, data: Any) -> None:
     assert_frame_equal(df_from_dicts, df)
 
 
-def test_from_dict_upcast_scalars() -> None:
-    dicts = [
+def test_from_dict_upcast_scalars_25232() -> None:
+    dicts: list[dict[str, int | float | list[float]]] = [
         {
             "a": 0,
             "b": 0.64134,

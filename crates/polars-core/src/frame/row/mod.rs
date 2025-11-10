@@ -177,7 +177,7 @@ pub fn rows_to_supertypes(
     let row_len = rows[0].0.len();
     let (count, row_mask) = match row_mask {
         Some(mask) => {
-            let count = mask.into_iter().filter(|&&b| b).count();
+            let count = mask.iter().filter(|&&b| b).count();
             // If all items are included in the mask, we can discard it.
             if count == row_len {
                 (count, None)
@@ -195,7 +195,7 @@ pub fn rows_to_supertypes(
                 let row_iter = row
                     .0
                     .iter()
-                    .zip(mask.into_iter())
+                    .zip(mask.iter())
                     .filter_map(|(v, &use_value)| if use_value { Some(v) } else { None });
                 for (val, dtypes_set) in row_iter.zip(dtypes.iter_mut()) {
                     dtypes_set.insert(val.into());

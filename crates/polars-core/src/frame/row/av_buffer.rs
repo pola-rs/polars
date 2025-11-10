@@ -137,7 +137,7 @@ impl<'a> AnyValueBuffer<'a> {
                     let s = Series::from_any_values_and_dtype(
                         PlSmallStr::EMPTY,
                         &[v],
-                        &dt.inner_dtype().unwrap(),
+                        dt.inner_dtype().unwrap(),
                         true,
                     )
                     .ok()?;
