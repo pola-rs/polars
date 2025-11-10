@@ -889,7 +889,7 @@ def test_list_sort_by() -> None:
         s.list.sort_by(pl.element().str.len_chars()),
         pl.Series("a", [["3", "22", "111"], ["x", "yz", "abc"]])
     )
-    
+
 
 def test_list_get_logical_type() -> None:
     s = pl.Series(
