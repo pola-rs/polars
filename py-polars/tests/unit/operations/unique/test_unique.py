@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -345,3 +345,22 @@ def test_unique_keep_none_24260() -> None:
     data = pl.DataFrame({"a": [1, 3, 2], "b": [4, 4, 6]})
     out = data.lazy().unique(subset="b", keep="none").collect()
     assert_frame_equal(out, pl.DataFrame({"a": [2], "b": [6]}))
+
+
+def test_unique_column_subset_25233() -> None:
+    df = pl.DataFrame(
+        {
+            "time": pl.datetime_range(
+                start=datetime(2021, 12, 16),
+                end=datetime(2021, 12, 16, 1, 30),
+                interval="15m",
+                eager=True,
+            ),
+            "op_type": ["x", "y", "x", "y", "x", "x", "y"],
+            "value": [1, 2, 3, 4, 6, 7, 8],
+        }
+    )
+
+    result = df.unique(subset="op_type")
+    assert result.height == 2
+    assert result.select(pl.col.op_type.n_unique).item() == 2
