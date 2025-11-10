@@ -513,6 +513,32 @@ class ExprListNameSpace:
         │ {null,4.0,"b"},  │
         │ {1,6.0,"a"}]     │
         └──────────────────┘
+
+        Or sort a list of strings by length then alphabetically.
+
+        >>> pl.Config.set_tbl_width_chars(30)
+        >>> pl.Config.set_fmt_str_lengths(80)
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "strings": [
+        ...             ["abcdef", "xyz", "jkl"],
+        ...             ["ab", "b", "a"],
+        ...         ]
+        ...     }
+        ... )
+        >>> lf.select(pl.col('strings').list.sort_by(
+        ...     pl.element().str.len_chars(),
+        ...     pl.element(),
+        ... )).collect()
+        shape: (2, 1)
+        ┌──────────────────────────┐
+        │ strings                  │
+        │ ---                      │
+        │ list[str]                │
+        ╞══════════════════════════╡
+        │ ["jkl", "xyz", "abcdef"] │
+        │ ["a", "b", "ab"]         │
+        └──────────────────────────┘
         """
         return self._pyexpr.list.eval(
             F.element().sort_by(
