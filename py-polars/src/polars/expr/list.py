@@ -549,7 +549,7 @@ class ExprListNameSpace:
         │ ["a", "b", "ab"]         │
         └──────────────────────────┘
         """
-        return self._pyexpr.list.eval(
+        return wrap_expr(self._pyexpr).list.eval(
             F.element().sort_by(
                 by,
                 *more_by,
