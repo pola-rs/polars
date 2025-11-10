@@ -184,3 +184,13 @@ def test_shift_array_list_eval_24672() -> None:
     expected = pl.Series([[None, [1], [2]]], dtype=pl.List(pl.Array(pl.Int64, 1)))
     out = s.list.eval(pl.element().shift())
     assert_series_equal(expected, out)
+
+
+def test_streaming_shift_25226() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4]})
+
+    q = df.lazy().with_columns(b=pl.col("a").shift(), c=pl.col("a").min())
+    assert_frame_equal(q.collect(), df.with_columns(b=pl.Series([None, 1, 2, 3]), c=1))
+
+    q = df.lazy().with_columns(b=pl.col("a").shift(n=-1), c=pl.col("a").min())
+    assert_frame_equal(q.collect(), df.with_columns(b=pl.Series([2, 3, 4, None]), c=1))
