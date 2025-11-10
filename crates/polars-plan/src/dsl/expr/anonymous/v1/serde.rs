@@ -99,30 +99,31 @@ impl<'de> Deserialize<'de> for PluginV1 {
 
 #[cfg(feature = "dsl-schema")]
 impl schemars::JsonSchema for PluginV1 {
-    fn schema_name() -> String {
-        "StatefulUdf".to_owned()
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "PluginV1".into()
     }
 
     fn schema_id() -> std::borrow::Cow<'static, str> {
-        std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "StatefulUdf"))
+        std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "PluginV1"))
     }
 
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         PluginV2Serde::json_schema(generator)
     }
 }
 
 #[cfg(feature = "dsl-schema")]
 impl schemars::JsonSchema for PluginV1Flags {
-    fn schema_name() -> String {
-        "UdfV2Flags".to_owned()
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "UdfV2Flags".into()
     }
 
     fn schema_id() -> std::borrow::Cow<'static, str> {
         std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "UdfV2Flags"))
     }
 
-    fn json_schema(_generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        use schemars::json_schema;
         use serde_json::{Map, Value};
 
         let name_to_bits: Map<String, Value> = Self::all()
@@ -130,14 +131,10 @@ impl schemars::JsonSchema for PluginV1Flags {
             .map(|(name, flag)| (name.to_owned(), flag.bits().into()))
             .collect();
 
-        schemars::schema::Schema::Object(schemars::schema::SchemaObject {
-            instance_type: Some(schemars::schema::InstanceType::String.into()),
-            format: Some("bitflags".to_owned()),
-            extensions: schemars::Map::from_iter([
-                // Add a map of flag names and bit patterns to detect schema changes
-                ("bitflags".to_owned(), Value::Object(name_to_bits)),
-            ]),
-            ..Default::default()
+        json_schema!({
+            "type": "string",
+            "format": "bitflags",
+            "bitflags": name_to_bits
         })
     }
 }
