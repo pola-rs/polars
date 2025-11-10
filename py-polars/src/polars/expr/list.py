@@ -447,7 +447,7 @@ class ExprListNameSpace:
         ...                 {"a": 2, "b": 5.0, "c": "c"},
         ...                 {"a": None, "b": 4.0, "c": "b"},
         ...             ]
-        ..          ]
+        ...         ]
         ...     }
         ... )
         >>> df.select(pl.col("items").list.sort_by(pl.element().struct.field("a")))
