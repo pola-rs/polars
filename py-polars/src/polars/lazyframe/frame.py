@@ -7737,7 +7737,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         aggregate_function: PivotAgg | Expr | None = None,
-        maintain_order: bool = True,
+        maintain_order: bool = False,
         separator: str = "_",
     ) -> LazyFrame:
         """
