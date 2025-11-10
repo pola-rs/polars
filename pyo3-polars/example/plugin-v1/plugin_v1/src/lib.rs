@@ -14,7 +14,7 @@ static ALLOC: PolarsAllocator = PolarsAllocator::new();
 
 /// A Python module implemented in Rust.
 #[pyo3::pymodule]
-fn plugin_v2(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
+fn plugin_v1(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(min_by::min_by, m)?)?;
     m.add_function(wrap_pyfunction!(rolling_product::rolling_product, m)?)?;
     m.add_function(wrap_pyfunction!(byte_rev::byte_rev, m)?)?;

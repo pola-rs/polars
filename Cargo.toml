@@ -5,7 +5,7 @@ members = [
   "docs/source/src/rust",
   "py-polars/runtime",
   "pyo3-polars/example/derive_expression/expression_lib",
-  "pyo3-polars/example/plugin-v2/plugin_v2",
+  "pyo3-polars/example/plugin-v1/plugin_v1",
   "pyo3-polars/example/extend_polars_python_dispatch/extend_polars",
   "pyo3-polars/example/io_plugin/io_plugin",
   "pyo3-polars/pyo3-polars",

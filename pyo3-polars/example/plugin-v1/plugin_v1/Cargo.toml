@@ -1,11 +1,11 @@
 [package]
-name = "plugin_v2"
+name = "plugin_v1"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
-name = "plugin_v2"
+name = "plugin_v1"
 crate-type = ["cdylib"]
 
 [dependencies]
