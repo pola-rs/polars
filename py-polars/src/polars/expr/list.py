@@ -450,9 +450,9 @@ class ExprListNameSpace:
         ..          ]
         ...     }
         ... )
-        >>> lf.select(pl.col('items').list.sort_by(
-        ...     pl.element().struct.field("a")
-        ... )).collect()
+        >>> lf.select(
+        ...     pl.col("items").list.sort_by(pl.element().struct.field("a"))
+        ... ).collect()
         shape: (1, 1)
         ┌──────────────────┐
         │ items            │
@@ -466,10 +466,12 @@ class ExprListNameSpace:
 
         Sorting by more complex expressions is also supported.
 
-        >>> lf.select(pl.col('items').list.sort_by(
-        ...     pl.element().struct.field("a") + pl.element().struct.field("b") * 2,
-        ...     nulls_last=True,
-        ... )).collect()
+        >>> lf.select(
+        ...     pl.col("items").list.sort_by(
+        ...         pl.element().struct.field("a") + pl.element().struct.field("b") * 2,
+        ...         nulls_last=True,
+        ...     )
+        ... ).collect()
         shape: (1, 1)
         ┌──────────────────┐
         │ items            │
@@ -501,11 +503,13 @@ class ExprListNameSpace:
 
         Or use positional arguments to sort by multiple expressions in the same way.
 
-        >>> lf.select(pl.col('items').list.sort_by(
-        ...     pl.element().struct.field("c"),
-        ...     pl.element().struct.field("a"),
-        ...     descending=[False, True],
-        ... )).collect()
+        >>> lf.select(
+        ...     pl.col("items").list.sort_by(
+        ...         pl.element().struct.field("c"),
+        ...         pl.element().struct.field("a"),
+        ...         descending=[False, True],
+        ...     )
+        ... ).collect()
         shape: (1, 1)
         ┌──────────────────┐
         │ items            │
@@ -529,10 +533,12 @@ class ExprListNameSpace:
         ...         ]
         ...     }
         ... )
-        >>> lf.select(pl.col('strings').list.sort_by(
-        ...     pl.element().str.len_chars(),
-        ...     pl.element(),
-        ... )).collect()
+        >>> lf.select(
+        ...     pl.col("strings").list.sort_by(
+        ...         pl.element().str.len_chars(),
+        ...         pl.element(),
+        ...     )
+        ... ).collect()
         shape: (2, 1)
         ┌──────────────────────────┐
         │ strings                  │
