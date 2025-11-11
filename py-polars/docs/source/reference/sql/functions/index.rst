@@ -96,20 +96,26 @@ SQL Functions
 
            trigonometry
 
-    .. grid-item-card::
+    .. grid-item::
 
-        **Types**
-        ^^^^^^^^^
+            .. grid-item-card::
 
-        .. toctree::
-           :maxdepth: 2
+                **Types**
+                ^^^^^^^^^
 
-           types
+                .. toctree::
+                   :maxdepth: 2
 
-        **Window**
-        ^^^^^^^^^^
+                   types
 
-        .. toctree::
-           :maxdepth: 2
+            |
 
-           window
+            .. grid-item-card::
+
+                **Window**
+                ^^^^^^^^^^
+
+                .. toctree::
+                   :maxdepth: 2
+
+                   window

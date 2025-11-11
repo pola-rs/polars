@@ -7,8 +7,33 @@ Window
 
    * - Function
      - Description
+   * - :ref:`FIRST_VALUE <first_value>`
+     - Returns the first value in an ordered set of values with respect to the window declared in `OVER`.
+   * - :ref:`LAST_VALUE <last_value>`
+     - Returns the last value in an ordered set of values with respect to the window declared in `OVER`.
    * - :ref:`OVER <over>`
      - Define a window (a set of rows) within which a function is applied.
+
+
+.. note::
+
+    As a DataFrame engine Polars defaults to `ROWS` framing semantics for window functions when an explicit
+    window specification is omitted; specifically, `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`. This
+    differs from the default `RANGE` framing semantics typically used by database engines.
+
+
+.. _first_value:
+
+FIRST_VALUE
+-----------
+Returns the first value in an ordered set of values with respect to the window declared in `OVER`.
+
+
+.. _last_value:
+
+LAST_VALUE
+----------
+Returns the last value in an ordered set of values with respect to the window declared in `OVER`.
 
 
 .. _over:
@@ -24,6 +49,7 @@ functions when an explicit window specification is omitted; specifically,
 default `RANGE` framing semantics typically used by database engines.
 
 **Example:**
+
 .. code-block:: python
 
     df = pl.DataFrame(
@@ -36,9 +62,18 @@ default `RANGE` framing semantics typically used by database engines.
     df.sql("""
       SELECT
         *,
-        FIRST_VALUE(value) OVER (PARTITION BY label ORDER BY idx) AS first_val,
-        LAST_VALUE(value) OVER (PARTITION BY label ORDER BY idx) AS last_val,
-        SUM(value) OVER (PARTITION BY label ORDER BY idx) AS running_total_by_label
+        FIRST_VALUE(value) OVER (
+          PARTITION BY label ORDER BY idx
+          ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        ) AS first_val,
+        LAST_VALUE(value) OVER (
+          PARTITION BY label ORDER BY idx
+          ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        ) AS last_val,
+        SUM(value) OVER (
+          PARTITION BY label ORDER BY idx
+          ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        ) AS running_total_by_label
       FROM self
       ORDER BY label, idx
     """)
