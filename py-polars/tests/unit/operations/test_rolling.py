@@ -758,3 +758,83 @@ def test_rolling_on_expressions() -> None:
     )
 
     assert_series_equal(df["df_ri"], df["in_ri"], check_names=False)
+
+
+def test_rolling_in_group_by() -> None:
+    q = pl.LazyFrame({"b": [1, 1, 2], "a": [1, 2, 3]})
+
+    a_sum = pl.col.a.sum()
+    assert_frame_equal(
+        q.select(a_sum.rolling(pl.row_index(), period="2i")).collect(),
+        pl.Series("a", [1, 3, 5]).to_frame(),
+    )
+    assert_frame_equal(
+        q.group_by("b")
+        .agg(a_sum.rolling(pl.row_index(), period="2i") + pl.col.a.first())
+        .collect(),
+        pl.DataFrame(
+            {
+                "b": [1, 2],
+                "a": [[2, 4], [6]],
+            }
+        ),
+        check_row_order=False,
+    )
+    assert_frame_equal(
+        q.select(pl.col.a.implode())
+        .select(
+            pl.col.a.list.eval(pl.element().sum().rolling(pl.row_index(), period="2i"))
+        )
+        .collect(),
+        pl.Series("a", [[1, 3, 5]]).to_frame(),
+    )
+    assert_frame_equal(
+        q.group_by(pl.lit(1))
+        .agg(
+            a_sum.rolling(pl.row_index(), period="2i").rolling(
+                pl.row_index(), period="2i"
+            )
+        )
+        .drop("literal")
+        .collect(),
+        pl.Series("a", [[[1], [1, 3], [2, 5]]]).to_frame(),
+    )
+
+    a_uniq = pl.col.a.unique()
+    assert_frame_equal(
+        q.select(a_uniq.rolling(pl.row_index(), period="2i")).collect(),
+        pl.Series("a", [[1], [1, 2], [2, 3]]).to_frame(),
+    )
+    assert_frame_equal(
+        q.group_by("b")
+        .agg(a_uniq.rolling(pl.row_index(), period="2i") + pl.col.a.first())
+        .collect(),
+        pl.DataFrame(
+            {
+                "b": [1, 2],
+                "a": [[[2], [2, 3]], [[6]]],
+            }
+        ),
+        check_row_order=False,
+    )
+    assert_frame_equal(
+        q.select(pl.col.a.implode())
+        .select(
+            pl.col.a.list.eval(
+                pl.element().unique().rolling(pl.row_index(), period="2i")
+            )
+        )
+        .collect(),
+        pl.Series("a", [[[1], [1, 2], [2, 3]]]).to_frame(),
+    )
+    assert_frame_equal(
+        q.group_by(pl.lit(1))
+        .agg(
+            a_uniq.rolling(pl.row_index(), period="2i").rolling(
+                pl.row_index(), period="2i"
+            )
+        )
+        .drop("literal")
+        .collect(),
+        pl.Series("a", [[[[1]], [[1], [1, 2]], [[2], [2, 3]]]]).to_frame(),
+    )
