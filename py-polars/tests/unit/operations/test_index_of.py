@@ -501,3 +501,15 @@ def test_lossy_casts_are_rejected_nested_dtypes() -> None:
         {"key": value},
         pl.Struct({"key": value_dtype}),
     )
+
+
+def test_decimal_search_for_int() -> None:
+    values = [Decimal(-12), Decimal(12), Decimal(30)]
+    series = pl.Series(values, dtype=pl.Decimal(4, 1))
+    for i, value in enumerate(values):
+        assert series.index_of(value) == i
+        assert series.index_of(int(value)) == i
+        assert series.index_of(np.int8(value)) == i
+    # Decimal's integer range is 3 digits (3 == 4 - 1), so int8 fits:
+    assert series.index_of(np.int8(127)) is None
+    assert series.index_of(np.int8(-128)) is None

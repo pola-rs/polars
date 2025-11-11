@@ -1332,12 +1332,14 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
             ((p_to - s_to) >= (p_from - s_from)) && (s_to >= s_from)
         },
         #[cfg(feature = "dtype-decimal")]
-        (DataType::Decimal(p_to, _), dt) if dt.is_primitive_numeric() => {
-            // Match numbers in DataType::try_to_arrow():
-            let max_value = 10i128.pow(*p_to as u32) - 1;
-            let min_value = max_value - 1;
-            max_value >= dt.max().unwrap().value().extract::<i128>().unwrap()
-                && min_value <= dt.min().unwrap().value().extract::<i128>().unwrap()
+        (DataType::Decimal(p_to, s_to), dt) if dt.is_primitive_numeric() => {
+            // Given the precision and scale of decimals, figure out the ranges
+            // of expressible integers:
+            let max_int_value = 10i128.pow((*p_to - *s_to) as u32) - 1;
+            let min_int_value = -max_int_value;
+            // The datatype's range must fit in the decimal datatypes's range:
+            max_int_value >= dt.max().unwrap().value().extract::<i128>().unwrap()
+                && min_int_value <= dt.min().unwrap().value().extract::<i128>().unwrap()
         },
         // Can't check for more granular time_unit in less-granular time_unit
         // data, or we'll cast away valid/necessary precision (eg: nanosecs to
