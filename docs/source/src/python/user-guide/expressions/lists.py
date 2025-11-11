@@ -123,6 +123,54 @@ result2 = weather.with_columns(
 print(result.equals(result2))
 # --8<-- [end:element-wise-regex]
 
+# --8<-- [start:children]
+from datetime import datetime
+import polars as pl
+
+df = pl.DataFrame(
+    {
+        "names": [
+            ["Anne", "Averill"],
+            ["Brandon", "Brooke", "Borden", "Branson"],
+            ["Camila"],
+            ["Dennis", "Doyle", "Dalton"],
+        ],
+        "children_ages": [
+            [5, 7],
+            [12, 11, 13, 9],
+            [19],
+            [8, 11, 18],
+        ],
+    }
+)
+
+print(df)
+# --8<-- [end:list-example]
+
+# --8<-- [start:list-aggregation]
+result = df.select(
+    pl.col("names")
+    .list.eval(pl.element().sort_by(pl.col("children_ages"), descending=True)
+    .alias("names_by_age"),
+    pl.col("children_ages")
+    .list.eval(pl.element().min())
+    .alias("min_age"),
+    pl.col("children_ages")
+    .list.eval(pl.element().max())
+    .alias("max_age"),
+)
+print(result)
+# --8<-- [end:list-aggregation]
+
+# --8<-- [start:list-entropy]
+result = df.with_columns(
+    pl.col("children_ages")
+    .list.eval(pl.element().entropy())
+    .alias("age_entropy"),
+)
+print(result)
+# --8<-- [end:list-entropy]
+
 # --8<-- [start:weather_by_day]
 weather_by_day = pl.DataFrame(
     {
