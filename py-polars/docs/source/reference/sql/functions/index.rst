@@ -7,6 +7,9 @@ SQL Functions
 
     <style>
       div.sd-card-body.docutils li.toctree-l1 > :first-child {display: none;}
+      .invisible-card {
+        visibility: hidden;
+      }
     </style>
 
 
@@ -96,26 +99,30 @@ SQL Functions
 
            trigonometry
 
-    .. grid-item::
+    .. grid-item-card::
 
-            .. grid-item-card::
+        **Types**
+        ^^^^^^^^^
 
-                **Types**
-                ^^^^^^^^^
+        .. toctree::
+           :maxdepth: 2
 
-                .. toctree::
-                   :maxdepth: 2
+           types
 
-                   types
+.. grid::
 
-            |
+    .. grid-item-card::
 
-            .. grid-item-card::
+        **Window**
+        ^^^^^^^^^^
 
-                **Window**
-                ^^^^^^^^^^
+        .. toctree::
+           :maxdepth: 2
 
-                .. toctree::
-                   :maxdepth: 2
+           window
 
-                   window
+    .. grid-item-card::
+        :class-card: invisible-card
+
+    .. grid-item-card::
+        :class-card: invisible-card
