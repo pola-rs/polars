@@ -979,8 +979,8 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                         let end = try_get_dtype(expr_arena, input[1].node(), schema)?;
                         ensure_datetime!(start);
                         ensure_datetime!(end);
-                        let from_types = vec![start, end];
-                        let to_types = vec![DataType::Date, DataType::Date];
+                        let from_types = [Some(start), Some(end), None];
+                        let to_types = [Some(DataType::Date), Some(DataType::Date), None];
                         (from_types, to_types)
                     },
                     DateRangeArgs::StartEndSamples => {
@@ -990,8 +990,12 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                         ensure_datetime!(start);
                         ensure_datetime!(end);
                         ensure_int!(num_samples);
-                        let from_types = vec![start, end, num_samples];
-                        let to_types = vec![DataType::Date, DataType::Date, DataType::Int64];
+                        let from_types = [Some(start), Some(end), Some(num_samples)];
+                        let to_types = [
+                            Some(DataType::Date),
+                            Some(DataType::Date),
+                            Some(DataType::Int64),
+                        ];
                         (from_types, to_types)
                     },
                     DateRangeArgs::StartIntervalSamples => {
@@ -999,8 +1003,8 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                         let num_samples = try_get_dtype(expr_arena, input[1].node(), schema)?;
                         ensure_datetime!(start);
                         ensure_int!(num_samples);
-                        let from_types = vec![start, num_samples];
-                        let to_types = vec![DataType::Date, DataType::Int64];
+                        let from_types = [Some(start), Some(num_samples), None];
+                        let to_types = [Some(DataType::Date), Some(DataType::Int64), None];
                         (from_types, to_types)
                     },
                     DateRangeArgs::EndIntervalSamples => {
@@ -1008,8 +1012,8 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                         let num_samples = try_get_dtype(expr_arena, input[1].node(), schema)?;
                         ensure_datetime!(end);
                         ensure_int!(num_samples);
-                        let from_types = vec![end, num_samples];
-                        let to_types = vec![DataType::Date, DataType::Int64];
+                        let from_types = [Some(end), Some(num_samples), None];
+                        let to_types = [Some(DataType::Date), Some(DataType::Int64), None];
                         (from_types, to_types)
                     },
                 };
@@ -1020,9 +1024,11 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 let function = function.clone();
                 let mut modified = false;
                 for (i, (from_dtype, to_dtype)) in from_iter.zip(to_iter).enumerate() {
-                    if from_dtype != to_dtype {
-                        modified = true;
-                        coerce_temporal_dt(&from_dtype, &to_dtype, &mut input[i], expr_arena)?;
+                    if let (Some(from_dt), Some(to_dt)) = (from_dtype, to_dtype) {
+                        if from_dt != to_dt {
+                            modified = true;
+                            coerce_temporal_dt(&from_dt, &to_dt, &mut input[i], expr_arena)?;
+                        }
                     }
                 }
 
@@ -1064,8 +1070,8 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                         ensure_datetime!(end);
                         let initial_st = try_get_supertype(&start, &end).unwrap();
                         let supertype = temporal_range_output_type(initial_st, tu, tz, interval)?;
-                        let from_types = vec![start, end];
-                        let to_types = vec![supertype.clone(), supertype];
+                        let from_types = [Some(start), Some(end), None];
+                        let to_types = [Some(supertype.clone()), Some(supertype), None];
                         (from_types, to_types)
                     },
                     DateRangeArgs::StartEndSamples => {
@@ -1077,8 +1083,12 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                         ensure_int!(num_samples);
                         let initial_st = try_get_supertype(&start, &end)?;
                         let supertype = temporal_range_output_type(initial_st, tu, tz, interval)?;
-                        let from_types = vec![start, end, num_samples];
-                        let to_types = vec![supertype.clone(), supertype, DataType::Int64];
+                        let from_types = [Some(start), Some(end), Some(num_samples)];
+                        let to_types = [
+                            Some(supertype.clone()),
+                            Some(supertype),
+                            Some(DataType::Int64),
+                        ];
                         (from_types, to_types)
                     },
                     DateRangeArgs::StartIntervalSamples => {
@@ -1088,8 +1098,8 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                         ensure_int!(num_samples);
                         let supertype =
                             temporal_range_output_type(start.clone(), tu, tz, interval)?;
-                        let from_types = vec![start, num_samples];
-                        let to_types = vec![supertype, DataType::Int64];
+                        let from_types = [Some(start), Some(num_samples), None];
+                        let to_types = [Some(supertype), Some(DataType::Int64), None];
                         (from_types, to_types)
                     },
                     DateRangeArgs::EndIntervalSamples => {
@@ -1098,8 +1108,8 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                         ensure_datetime!(end);
                         ensure_int!(num_samples);
                         let supertype = temporal_range_output_type(end.clone(), tu, tz, interval)?;
-                        let from_types = vec![end, num_samples];
-                        let to_types = vec![supertype, DataType::Int64];
+                        let from_types = [Some(end), Some(num_samples), None];
+                        let to_types = [Some(supertype), Some(DataType::Int64), None];
                         (from_types, to_types)
                     },
                 };
@@ -1110,9 +1120,11 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 let function = function.clone();
                 let mut modified = false;
                 for (i, (from_dtype, to_dtype)) in from_iter.zip(to_iter).enumerate() {
-                    if from_dtype != to_dtype {
-                        modified = true;
-                        coerce_temporal_dt(&from_dtype, &to_dtype, &mut input[i], expr_arena)?;
+                    if let (Some(from_dt), Some(to_dt)) = (from_dtype, to_dtype) {
+                        if from_dt != to_dt {
+                            modified = true;
+                            coerce_temporal_dt(&from_dt, &to_dt, &mut input[i], expr_arena)?;
+                        }
                     }
                 }
 
