@@ -151,10 +151,10 @@ If you are unfamiliar with the namespace `str` or the notation `(?i)` in the reg
 time to
 [look at how to work with strings and regular expressions in Polars](strings.md#check-for-the-existence-of-a-pattern).
 
-### Aggregation & sorting 
+### Aggregation & sorting
 
-Like `select` on data frames, the function `eval` can also be used to aggregate over or sort the
-the list elements.
+Like `select` on data frames, the function `eval` can also be used to aggregate over or sort the list
+elements.
 
 We'll reuse a slightly modified version of the example data from the very beginning:
 
@@ -172,9 +172,8 @@ Using `eval`, we can sort the list elements or compute some aggregations:
 --8<-- "python/user-guide/expressions/lists.py:list-aggregation"
 ```
 
-While some aggregation functions like `.list.sum()` are directly available in
-the `list` namespace, you can access more exotic aggregations like `entropy`
-via `eval` only:
+While some aggregation functions like `.list.sum()` are directly available in the `list` namespace,
+you can access more exotic aggregations like `entropy` via `eval` only:
 
 {{code_block('user-guide/expressions/lists', 'list-entropy', ['List'])}}
 
