@@ -111,14 +111,24 @@ impl IRRangeFunction {
                 mapper.with_dtype(dt)
             },
             #[cfg(feature = "dtype-date")]
-            DateRange { .. } => mapper.with_dtype(DataType::Date),
+            DateRange {
+                interval: _,
+                closed: _,
+                arg_type: _,
+            } => mapper.with_dtype(DataType::Date),
             #[cfg(feature = "dtype-date")]
-            DateRanges { .. } => mapper.with_dtype(DataType::List(Box::new(DataType::Date))),
+            DateRanges {
+                interval: _,
+                closed: _,
+                arg_type: _,
+            } => mapper.with_dtype(DataType::List(Box::new(DataType::Date))),
             #[cfg(feature = "dtype-datetime")]
             DatetimeRange {
+                interval: _,
+                closed: _,
                 time_unit,
                 time_zone,
-                ..
+                arg_type: _,
             } => {
                 // Output dtype may change based on `interval`, `time_unit`, and `time_zone`.
                 let dtype =
@@ -127,9 +137,11 @@ impl IRRangeFunction {
             },
             #[cfg(feature = "dtype-datetime")]
             DatetimeRanges {
+                interval: _,
+                closed: _,
                 time_unit,
                 time_zone,
-                ..
+                arg_type: _,
             } => {
                 // output dtype may change based on `interval`, `time_unit`, and `time_zone`
                 let inner_dtype =
