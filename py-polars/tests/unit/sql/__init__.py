@@ -65,7 +65,7 @@ def _execute_with_duckdb(
     with duckdb.connect(":memory:") as conn:
         for name, df in frames.items():
             conn.register(name, df)
-        return conn.execute(query).pl()
+        return conn.execute(query).pl()  # type: ignore[no-any-return]
 
 
 _COMPARISON_BACKENDS_ = {
