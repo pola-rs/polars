@@ -85,9 +85,9 @@ def test_float(dtype: pl.DataType) -> None:
             assert_index_of(s, value)
 
     # -np.nan should match np.nan:
-    assert series.index_of(-np.float32("nan")) == 1
+    assert series.index_of(-np.float32("nan")) == 1  # type: ignore[arg-type]
     # -0.0 should match 0.0:
-    assert series.index_of(-np.float32(0.0)) == 6
+    assert series.index_of(-np.float32(0.0)) == 6  # type: ignore[arg-type]
 
 
 def test_null() -> None:
@@ -509,7 +509,7 @@ def test_decimal_search_for_int() -> None:
     for i, value in enumerate(values):
         assert series.index_of(value) == i
         assert series.index_of(int(value)) == i
-        assert series.index_of(np.int8(value)) == i
+        assert series.index_of(np.int8(value)) == i  # type: ignore[arg-type]
     # Decimal's integer range is 3 digits (3 == 4 - 1), so int8 fits:
-    assert series.index_of(np.int8(127)) is None
-    assert series.index_of(np.int8(-128)) is None
+    assert series.index_of(np.int8(127)) is None  # type: ignore[arg-type]
+    assert series.index_of(np.int8(-128)) is None  # type: ignore[arg-type]

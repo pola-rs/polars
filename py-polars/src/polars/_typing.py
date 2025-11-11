@@ -89,7 +89,7 @@ SchemaDefinition: TypeAlias = Union[
 ]
 SchemaDict: TypeAlias = Mapping[str, PolarsDataType]
 
-NumericLiteral: TypeAlias = Union[int, float, "Decimal", "np.number"]
+NumericLiteral: TypeAlias = Union[int, float, "Decimal"]
 TemporalLiteral: TypeAlias = Union["date", "time", "datetime", "timedelta"]
 NonNestedLiteral: TypeAlias = Union[NumericLiteral, TemporalLiteral, str, bool, bytes]
 # Python literal types (can convert into a `lit` expression)
