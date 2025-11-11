@@ -85,9 +85,9 @@ def test_float(dtype: pl.DataType) -> None:
             assert_index_of(s, value)
 
     # -np.nan should match np.nan:
-    assert series.index_of(-np.float32("nan")) == 1  # type: ignore[arg-type]
+    assert series.index_of(-np.float32("nan")) == 1
     # -0.0 should match 0.0:
-    assert series.index_of(-np.float32(0.0)) == 6  # type: ignore[arg-type]
+    assert series.index_of(-np.float32(0.0)) == 6
 
 
 def test_null() -> None:

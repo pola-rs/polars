@@ -48,6 +48,8 @@ from polars._utils.various import (
 from polars._utils.wrap import wrap_expr, wrap_s
 from polars.datatypes import (
     Decimal as PolarsDecimal,
+)
+from polars.datatypes import (
     Int64,
     parse_into_datatype_expr,
 )
@@ -2431,7 +2433,8 @@ class Expr:
         # minimal required precision.
         if isinstance(element, Decimal):
             _, digits, exponent = element.as_tuple()
-            dtype = PolarsDecimal(len(digits), -exponent)
+            if isinstance(exponent, int):  # can also be 'n'/'N'/'F'
+                dtype = PolarsDecimal(len(digits), -exponent)
         element_pyexpr = parse_into_expression(element, str_as_lit=True, dtype=dtype)
         return wrap_expr(self._pyexpr.index_of(element_pyexpr))
 
