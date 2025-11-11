@@ -150,7 +150,7 @@ print(df)
 # --8<-- [start:list-aggregation]
 result = df.select(
     pl.col("names")
-    .list.eval(pl.element().sort_by(pl.col("children_ages"), descending=True)
+    .list.eval(pl.element().sort_by(pl.col("children_ages"), descending=True))
     .alias("names_by_age"),
     pl.col("children_ages")
     .list.eval(pl.element().min())
