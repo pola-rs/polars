@@ -151,10 +151,41 @@ If you are unfamiliar with the namespace `str` or the notation `(?i)` in the reg
 time to
 [look at how to work with strings and regular expressions in Polars](strings.md#check-for-the-existence-of-a-pattern).
 
+### Aggregation & sorting 
+
+Like `select` on data frames, the function `eval` can also be used to aggregate over or sort the
+the list elements.
+
+We'll reuse a slightly modified version of the example data from the very beginning:
+
+{{code_block('user-guide/expressions/lists', 'children', ['List'])}}
+
+```python exec="on" result="text" session="expressions/lists"
+--8<-- "python/user-guide/expressions/lists.py:children"
+```
+
+Using `eval`, we can sort the list elements or compute some aggregations:
+
+{{code_block('user-guide/expressions/lists', 'list-aggregation', ['List'])}}
+
+```python exec="on" result="text" session="expressions/lists"
+--8<-- "python/user-guide/expressions/lists.py:list-aggregation"
+```
+
+While some aggregation functions like `.list.sum()` are directly available in
+the `list` namespace, you can access more exotic aggregations like `entropy`
+via `eval` only:
+
+{{code_block('user-guide/expressions/lists', 'list-entropy', ['List'])}}
+
+```python exec="on" result="text" session="expressions/lists"
+--8<-- "python/user-guide/expressions/lists.py:list-entropy"
+```
+
 ### Row-wise computations
 
-The function `eval` gives us access to the list elements and `pl.element` refers to each individual
-element, but we can also use `pl.all()` to refer to all of the elements of the list.
+Combining `pl.all()` can be combined with `pl.concat_list(...)` to perform row-wise aggregations
+over a subset of columns.
 
 To show this in action, we will start by creating another dataframe with some more weather data:
 
