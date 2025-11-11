@@ -271,7 +271,14 @@ ENUM = pl.Enum(["a", "b", "c"])
             False,
         ),
         (pl.Series([b"abc", None, b"xxx"]), [b"\x0025"], True),
-        (pl.Series([Decimal(12), None, Decimal(3)]), [Decimal(4)], True),
+        (
+            pl.Series(
+                [Decimal(12), None, Decimal(3), Decimal(-12), Decimal(1) / Decimal(10)],
+                dtype=pl.Decimal(20, 4),
+            ),
+            [Decimal(4), Decimal(-2), Decimal(1) / Decimal(4), Decimal(1) / Decimal(8)],
+            True,
+        ),
     ],
 )
 def test_other_types(
