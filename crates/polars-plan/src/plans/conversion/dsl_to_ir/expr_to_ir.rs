@@ -48,7 +48,7 @@ fn to_aexpr_impl_materialized_lit(
 }
 
 pub struct ExprToIRContext<'a> {
-    pub(super) with_fields: Option<(Node, Schema)>,
+    pub(super) with_fields: Option<(Node, &'a Schema)>,
     pub arena: &'a mut Arena<AExpr>,
     pub schema: &'a Schema,
 
@@ -527,7 +527,7 @@ pub(super) fn to_aexpr_impl(
 
             for e in evaluation {
                 let mut eval_ctx = ExprToIRContext {
-                    with_fields: Some((expr, struct_schema.clone())), //kdn TODO PERFORMANCE ref schema?
+                    with_fields: Some((expr, &struct_schema)), //kdn TODO PERFORMANCE ref schema?
                     arena: ctx.arena,
                     schema: &eval_schema,
                     allow_unknown: ctx.allow_unknown,

@@ -115,7 +115,7 @@ impl AExpr {
                         return Ok(f.clone());
                     }
                 }
-                Err(polars_err!(InvalidOperation: "`field({name})` not found in Struct")) //kdn TODO TBD FieldNotFound?
+                Err(PolarsError::StructFieldNotFound(name.to_string().into()))
             },
             Literal(sv) => Ok(match sv {
                 LiteralValue::Series(s) => s.field().into_owned(),
