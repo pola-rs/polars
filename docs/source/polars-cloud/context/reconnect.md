@@ -1,16 +1,18 @@
 # Reconnect to compute cluster
 
 Polars Cloud allows you to reconnect to active compute clusters. This lets you reconnect to run
-multiple queries in a short time span, without having to wait for machines to spin up. 
-
+multiple queries in a short time span, without having to wait for machines to spin up.
 
 ## Reconnect with a Manifest (Recommended)
 
-The preferred approach for creating a ComputeContext is through a manifest. A manifest defines all compute cluster properties and stores them under a unique name. This unique name lets you easily start or reconnect to a compute cluster. Each manifest can only have one active compute cluster at a time. Attempting to start an already active manifest will reconnect you to the existing cluster rather than spinning up a new one. Manifests can be created either through the cloud portal's Compute tab or by calling `.register(name="WorkspaceName")` on a `ComputeContext`.
-
+The preferred approach for creating a ComputeContext is through a manifest. A manifest defines all
+compute cluster properties and stores them under a unique name. This unique name lets you easily
+start or reconnect to a compute cluster. Each manifest can only have one active compute cluster at a
+time. Attempting to start an already active manifest will reconnect you to the existing cluster
+rather than spinning up a new one. Manifests can be created either through the cloud portal's
+Compute tab or by calling `.register(name="WorkspaceName")` on a `ComputeContext`.
 
 {{code_block('polars-cloud/reconnect','manifest',['ComputeContext'])}}
-
 
 ### Manual
 
@@ -33,7 +35,6 @@ ComputeContext(id=0198e107-xxxx-xxxx-xxxx-xxxxxxxxxxxx, cpus=4, memory=16, insta
 
 If you lose connection or want to connect to a running cluster in your workspace, use `.connect` on
 `pc.ComputeContext`. This connects directly using the `compute_id` of the running cluster:
-
 
 {{code_block('polars-cloud/reconnect','connect_id',[])}}
 

@@ -44,7 +44,11 @@ have specific hardware requirements in a production environment.
 
 ## Saving the compute context
 
-To simplify configuration and enable cluster sharing, you can save your settings under a unique identifier called a manifest in Polars Cloud. This eliminates the need to specify all settings in every script and makes it easy to reconnect to or collaborate on the same compute cluster. You can create a manifest either programmatically by calling `register` on a `ComputeContext` or through the cloud portal interface.
+To simplify configuration and enable cluster sharing, you can save your settings under a unique
+identifier called a manifest in Polars Cloud. This eliminates the need to specify all settings in
+every script and makes it easy to reconnect to or collaborate on the same compute cluster. You can
+create a manifest either programmatically by calling `register` on a `ComputeContext` or through the
+cloud portal interface.
 
 {{code_block('polars-cloud/compute-context','manifest',['register', 'ComputeContext'])}}
 
