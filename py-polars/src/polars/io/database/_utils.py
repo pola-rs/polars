@@ -29,7 +29,7 @@ def _run_async(co: Coroutine[Any, Any, Any]) -> Any:
         # inside running loop; use vendored `nest_asyncio` (for now)
         import polars._utils.nest_asyncio
 
-        polars._utils.nest_asyncio.apply()
+        polars._utils.nest_asyncio.apply()  # type: ignore[attr-defined]
         return running_loop.run_until_complete(co)
 
 

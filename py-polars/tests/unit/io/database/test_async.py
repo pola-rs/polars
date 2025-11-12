@@ -212,16 +212,17 @@ def test_async_index_error_25209(tmp_sqlite_db: Path) -> None:
         if_table_exists="replace",
     )
 
-    async def run_async_query() -> pl.DataFrame:
+    async def run_async_query() -> Any:
         async_engine = create_async_engine(f"sqlite+aio{base_uri}")
         try:
             return pl.read_database(
-                query=f"SELECT * FROM {table_name}", connection=async_engine
+                query=f"SELECT * FROM {table_name}",
+                connection=async_engine,
             )
         finally:
             await async_engine.dispose()
 
-    async def testing() -> list[pl.DataFrame]:
+    async def testing() -> Any:
         # return/await multiple queries
         return await asyncio.gather(*(run_async_query(), run_async_query()))
 

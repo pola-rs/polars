@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from decimal import Decimal
 
     from sqlalchemy.engine import Connection, Engine
+    from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession
     from sqlalchemy.orm import Session
 
     from polars import DataFrame, Expr, LazyFrame, Series
@@ -299,8 +300,11 @@ class Cursor(BasicCursor):
 
 
 AlchemyConnection: TypeAlias = Union["Connection", "Engine", "Session"]
+AlchemyAsyncConnection: TypeAlias = Union[
+    "AsyncConnection", "AsyncEngine", "AsyncSession"
+]
 ConnectionOrCursor: TypeAlias = Union[
-    BasicConnection, BasicCursor, Cursor, AlchemyConnection
+    BasicConnection, BasicCursor, Cursor, AlchemyConnection, AlchemyAsyncConnection
 ]
 
 # Annotations for `__getitem__` methods
