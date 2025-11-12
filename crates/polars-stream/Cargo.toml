@@ -78,6 +78,7 @@ dtype-i128 = ["polars-core/dtype-i128", "polars-plan/dtype-i128"]
 dtype-categorical = ["polars-core/dtype-categorical", "polars-plan/dtype-categorical"]
 dtype-decimal = ["polars-core/dtype-decimal", "polars-plan/dtype-decimal"]
 ewma = ["polars-plan/ewma"]
+ffi_plugin = ["polars-plan/ffi_plugin"]
 mode = ["polars-plan/mode"]
 object = ["polars-ops/object"]
 physical_plan_visualization = [

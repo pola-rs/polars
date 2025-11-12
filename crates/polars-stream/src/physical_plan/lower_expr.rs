@@ -11,6 +11,7 @@ use polars_expr::state::ExecutionState;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
 use polars_ops::frame::{JoinArgs, JoinType};
 use polars_ops::series::{RLE_LENGTH_COLUMN_NAME, RLE_VALUE_COLUMN_NAME};
+use polars_plan::dsl::v1::PluginV1Flags;
 use polars_plan::plans::AExpr;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::prelude::*;
@@ -1897,6 +1898,31 @@ fn lower_exprs_with_ctx(
                 ));
 
                 input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+            },
+
+            AExpr::Function {
+                input: input_exprs,
+                function: IRFunctionExpr::PluginV1(plugin),
+                options: _,
+            } if plugin.flags().contains(PluginV1Flags::ZIPPABLE_INPUTS) => {
+                let out_name = unique_column_name();
+                let stream = build_select_stream_with_ctx(input, &input_exprs, ctx)?;
+
+                let input_schema = ctx.phys_sm[stream.node].output_schema.clone();
+                let output_field = plugin.to_field(&input_schema)?;
+                let output_schema =
+                    Schema::from_iter([Field::new(out_name.clone(), output_field.dtype)]);
+                let stream = PhysStream::first(ctx.phys_sm.insert(PhysNode::new(
+                    Arc::new(output_schema),
+                    PhysNodeKind::Plugin {
+                        input: stream,
+                        plugin,
+                        output_name: out_name.clone(),
+                    },
+                )));
+
+                input_streams.insert(stream);
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 

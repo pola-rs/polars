@@ -110,6 +110,8 @@ mod groups_dispatch;
 mod horizontal;
 mod list;
 mod misc;
+#[cfg(feature = "ffi_plugin")]
+mod plugin;
 mod pow;
 #[cfg(feature = "random")]
 mod random;
@@ -441,6 +443,10 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
                 kwargs.as_ref()
             )
         },
+        #[cfg(feature = "ffi_plugin")]
+        F::PluginV1(plugin) => {
+            map_as_slice!(plugin::call, (*plugin).clone())
+        },
 
         F::FoldHorizontal {
             callback,
@@ -592,6 +598,30 @@ pub fn function_expr_to_groups_udf(func: &IRFunctionExpr) -> Option<SpecialEq<Ar
         },
         F::FillNullWithStrategy(polars_core::prelude::FillNullStrategy::Backward(limit)) => {
             wrap_groups!(groups_dispatch::backward_fill_null, (*limit, v: Option<IdxSize>))
+        },
+
+        #[cfg(feature = "ffi_plugin")]
+        F::PluginV1(plugin)
+            if plugin
+                .flags()
+                .contains(polars_plan::dsl::v1::PluginV1Flags::SPECIALIZE_GROUP_EVALUATION) =>
+        {
+            use polars_plan::dsl::v1::PluginV1;
+            struct Wrap(Arc<PluginV1>);
+            impl GroupsUdf for Wrap {
+                fn evaluate_on_groups<'a>(
+                    &self,
+                    inputs: &[Arc<dyn PhysicalExpr>],
+                    df: &DataFrame,
+                    groups: &'a GroupPositions,
+                    state: &ExecutionState,
+                ) -> PolarsResult<AggregationContext<'a>> {
+                    let Wrap(plugin) = self;
+                    plugin::call_on_groups(inputs, df, groups, state, plugin.clone())
+                }
+            }
+
+            SpecialEq::new(Arc::new(Wrap((**plugin).clone())) as Arc<dyn GroupsUdf>)
         },
 
         _ => return None,

@@ -9,10 +9,11 @@ use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::deletion::DeletionFilesList;
+use polars_plan::dsl::v1::PluginV1;
 use polars_plan::dsl::{
     CastColumnsPolicy, JoinTypeOptionsIR, MissingColumnsPolicy, PartitionTargetCallback,
     PartitionVariantIR, ScanSources, SinkFinishCallback, SinkOptions, SinkTarget, SortColumnIR,
-    TableStatistics,
+    SpecialEq, TableStatistics,
 };
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::{AExpr, DataFrameUdf, IR};
@@ -251,6 +252,12 @@ pub enum PhysNodeKind {
         inputs: Vec<PhysStream>,
     },
 
+    Plugin {
+        input: PhysStream,
+        plugin: SpecialEq<Arc<PluginV1>>,
+        output_name: PlSmallStr,
+    },
+
     Zip {
         inputs: Vec<PhysStream>,
         /// If true shorter inputs are extended with nulls to the longest input,
@@ -410,6 +417,7 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::FileSink { input, .. }
             | PhysNodeKind::PartitionSink { input, .. }
             | PhysNodeKind::InMemoryMap { input, .. }
+            | PhysNodeKind::Plugin { input, .. }
             | PhysNodeKind::Map { input, .. }
             | PhysNodeKind::Sort { input, .. }
             | PhysNodeKind::Multiplexer { input }

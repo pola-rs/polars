@@ -81,6 +81,8 @@ pub use self::struct_::IRStructFunction;
 #[cfg(feature = "trigonometry")]
 pub use self::trigonometry::IRTrigonometricFunction;
 use super::*;
+#[cfg(feature = "ffi_plugin")]
+use crate::dsl::v1::{PluginV1, PluginV1Flags};
 
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, Debug)]
@@ -309,6 +311,8 @@ pub enum IRFunctionExpr {
         /// Pickle serialized keyword arguments.
         kwargs: Arc<[u8]>,
     },
+    #[cfg(feature = "ffi_plugin")]
+    PluginV1(SpecialEq<Arc<PluginV1>>),
 
     FoldHorizontal {
         callback: PlanCallback<(Series, Series), Series>,
@@ -437,6 +441,8 @@ impl Hash for IRFunctionExpr {
                 lib.hash(state);
                 symbol.hash(state);
             },
+            #[cfg(feature = "ffi_plugin")]
+            PluginV1(plugin) => plugin.hash(state),
 
             FoldHorizontal {
                 callback,
@@ -843,6 +849,8 @@ impl Display for IRFunctionExpr {
             SetSortedFlag(_) => "set_sorted",
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin { lib, symbol, .. } => return write!(f, "{lib}:{symbol}"),
+            #[cfg(feature = "ffi_plugin")]
+            PluginV1(plugin) => return f.write_str(plugin.function_name()),
 
             FoldHorizontal { .. } => "fold",
             ReduceHorizontal { .. } => "reduce",
@@ -1151,6 +1159,29 @@ impl IRFunctionExpr {
             F::SetSortedFlag(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "ffi_plugin")]
             F::FfiPlugin { flags, .. } => *flags,
+            #[cfg(feature = "ffi_plugin")]
+            F::PluginV1(plugin) => {
+                let flags = plugin.flags();
+                FunctionOptions::groupwise().with_flags(|mut f: FunctionFlags| {
+                    f.set(
+                        FunctionFlags::LENGTH_PRESERVING,
+                        flags.contains(PluginV1Flags::LENGTH_PRESERVING),
+                    );
+                    f.set(
+                        FunctionFlags::ROW_SEPARABLE,
+                        flags.contains(PluginV1Flags::ROW_SEPARABLE),
+                    );
+                    f.set(
+                        FunctionFlags::RETURNS_SCALAR,
+                        flags.contains(PluginV1Flags::RETURNS_SCALAR),
+                    );
+                    f.set(
+                        FunctionFlags::INPUT_WILDCARD_EXPANSION,
+                        flags.contains(PluginV1Flags::SELECTOR_EXPANSION),
+                    );
+                    f
+                })
+            },
             F::MaxHorizontal | F::MinHorizontal => FunctionOptions::elementwise().with_flags(|f| {
                 f | FunctionFlags::INPUT_WILDCARD_EXPANSION | FunctionFlags::ALLOW_RENAME
             }),

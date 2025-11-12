@@ -1,5 +1,6 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 pub mod version_0;
+pub mod version_1;
 
 use std::mem::ManuallyDrop;
 

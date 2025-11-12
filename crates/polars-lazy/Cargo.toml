@@ -177,7 +177,7 @@ dtype-u16 = [
 dtype-u8 = ["polars-plan/dtype-u8", "polars-expr/dtype-u8", "polars-mem-engine/dtype-u8", "polars-stream?/dtype-u8"]
 
 object = ["polars-plan/object", "polars-mem-engine/object", "polars-stream?/object"]
-ffi_plugin = ["polars-expr/ffi_plugin"]
+ffi_plugin = ["polars-plan/ffi_plugin", "polars-stream?/ffi_plugin", "polars-expr/ffi_plugin"]
 find_many = ["polars-expr/find_many"]
 month_start = ["polars-expr/month_start"]
 month_end = ["polars-expr/month_end"]

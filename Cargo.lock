@@ -3032,6 +3032,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "plugin_v1"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "num",
+ "polars",
+ "polars-arrow",
+ "pyo3",
+ "pyo3-polars",
+ "rayon",
+ "serde",
+]
+
+[[package]]
 name = "polars"
 version = "0.52.0"
 dependencies = [
@@ -3246,6 +3260,7 @@ dependencies = [
  "polars-arrow",
  "polars-compute",
  "polars-core",
+ "polars-ffi",
  "polars-io",
  "polars-json",
  "polars-ops",
@@ -3266,6 +3281,8 @@ version = "0.52.0"
 dependencies = [
  "polars-arrow",
  "polars-core",
+ "polars-error",
+ "polars-utils",
 ]
 
 [[package]]
@@ -3896,6 +3913,7 @@ dependencies = [
 name = "pyo3-polars"
 version = "0.25.0"
 dependencies = [
+ "bincode",
  "libc",
  "once_cell",
  "polars",

@@ -2226,7 +2226,23 @@ def register_plugin_function(
     pass_name_to_apply: bool,
     changes_length: bool,
 ) -> PyExpr: ...
-def __register_startup_deps() -> None: ...
+def register_plugin_v1_function(
+    plugin_path: str,
+    *,
+    args: Sequence[PyExpr],
+    name: str,
+    data_ptr: int,
+    function_name: str,
+    length_preserving: bool,
+    row_separable: bool,
+    returns_scalar: bool,
+    zippable_inputs: bool,
+    step_has_output: bool,
+    needs_finalize: bool,
+    states_combinable: bool,
+    specialize_group_evaluation: bool,
+    selector_expansion: bool,
+) -> PyExpr: ...
 
 # functions.random
 def set_random_seed(seed: int) -> None: ...

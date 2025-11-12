@@ -935,6 +935,8 @@ pub(super) fn convert_functions(
             symbol,
             kwargs,
         },
+        #[cfg(feature = "ffi_plugin")]
+        F::PluginV1(udf) => I::PluginV1(udf),
 
         F::FoldHorizontal {
             callback,

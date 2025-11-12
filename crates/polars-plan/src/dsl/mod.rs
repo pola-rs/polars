@@ -20,7 +20,7 @@ pub use builder_dsl::*;
 mod datatype_expr;
 #[cfg(feature = "temporal")]
 pub mod dt;
-mod expr;
+pub mod expr;
 mod format;
 mod from;
 pub mod function_expr;

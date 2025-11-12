@@ -20,6 +20,7 @@ libloading = { workspace = true, optional = true }
 num-traits = { workspace = true }
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
+polars-ffi = { workspace = true, optional = true }
 polars-io = { workspace = true, features = ["lazy"] }
 polars-json = { workspace = true, optional = true }
 polars-ops = { workspace = true, features = ["chunked_ids"] }
@@ -114,7 +115,7 @@ top_k = ["polars-plan/top_k"]
 cum_agg = ["polars-plan/cum_agg"]
 log = ["polars-plan/log"]
 fused = ["polars-plan/fused"]
-ffi_plugin = ["polars-plan/ffi_plugin", "libloading"]
+ffi_plugin = ["polars-plan/ffi_plugin", "polars-ffi", "libloading"]
 regex = ["polars-plan/regex", "dep:regex"]
 extract_groups = ["regex", "polars-plan/extract_groups"]
 find_many = ["polars-ops/find_many", "polars-plan/find_many"]

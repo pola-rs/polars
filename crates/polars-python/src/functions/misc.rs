@@ -62,6 +62,52 @@ pub fn register_plugin_function(
     .into())
 }
 
+#[cfg(feature = "ffi_plugin")]
+#[pyfunction]
+pub fn register_plugin_v1_function(
+    plugin_path: String,
+    args: Vec<PyExpr>,
+    name: String,
+    data_ptr: usize,
+    function_name: String,
+    length_preserving: bool,
+    row_separable: bool,
+    returns_scalar: bool,
+    zippable_inputs: bool,
+    step_has_output: bool,
+    needs_finalize: bool,
+    states_combinable: bool,
+    specialize_group_evaluation: bool,
+    selector_expansion: bool,
+) -> PyResult<PyExpr> {
+    use std::sync::Arc;
+
+    use PluginV1Flags as F;
+    use polars::prelude::v1::{PluginV1, PluginV1Flags};
+
+    use crate::error::PyPolarsErr;
+    let mut flags = F::empty();
+    flags.set(F::LENGTH_PRESERVING, length_preserving);
+    flags.set(F::ROW_SEPARABLE, row_separable);
+    flags.set(F::RETURNS_SCALAR, returns_scalar);
+    flags.set(F::ZIPPABLE_INPUTS, zippable_inputs);
+    flags.set(F::STEP_HAS_OUTPUT, step_has_output);
+    flags.set(F::NEEDS_FINALIZE, needs_finalize);
+    flags.set(F::STATES_COMBINABLE, states_combinable);
+    flags.set(F::SPECIALIZE_GROUP_EVALUATION, specialize_group_evaluation);
+    flags.set(F::SELECTOR_EXPANSION, selector_expansion);
+
+    let plugin = unsafe {
+        PluginV1::new_shared_object(&plugin_path, &name, data_ptr, flags, function_name.into())
+    }
+    .map_err(PyPolarsErr::from)?;
+    Ok(Expr::Function {
+        input: args.to_exprs(),
+        function: FunctionExpr::PluginV1(SpecialEq::new(Arc::new(plugin))),
+    }
+    .into())
+}
+
 #[pyfunction]
 pub fn __register_startup_deps() {
     #[cfg(feature = "object")]

@@ -186,6 +186,7 @@ extract_jsonpath = [
   "polars-ops/strings",
   "polars-lazy?/extract_jsonpath",
 ]
+ffi_plugin = ["polars-lazy?/ffi_plugin", "polars-expr/ffi_plugin"]
 find_many = ["polars-expr/find_many", "polars-lazy?/find_many"]
 fused = ["polars-ops/fused", "polars-lazy?/fused"]
 interpolate = ["polars-ops/interpolate", "polars-lazy?/interpolate"]

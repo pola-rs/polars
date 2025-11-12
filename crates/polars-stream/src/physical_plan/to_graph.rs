@@ -614,6 +614,23 @@ fn to_graph_rec<'a>(
             )
         },
 
+        Plugin {
+            input,
+            plugin,
+            output_name,
+        } => {
+            let input_key = to_graph_rec(input.node, ctx)?;
+            let input_schema = &ctx.phys_sm[input.node].output_schema;
+            ctx.graph.add_node(
+                nodes::plugin::PluginNode::new(
+                    (**plugin).clone(),
+                    input_schema.clone(),
+                    output_name.clone(),
+                )?,
+                [(input_key, input.port)],
+            )
+        },
+
         PeakMinMax { input, is_peak_max } => {
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.graph.add_node(

@@ -114,6 +114,24 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     ..Default::default()
                 }
             },
+            PhysNodeKind::Plugin {
+                input,
+                plugin,
+                output_name,
+            } => {
+                phys_node_inputs.push(input.node);
+
+                let properties = PhysNodeProperties::Plugin {
+                    name: plugin.as_ref().function_name().into(),
+                    output_name: output_name.clone(),
+                };
+
+                PhysNodeInfo {
+                    title: properties.variant_name(),
+                    properties,
+                    ..Default::default()
+                }
+            },
             PhysNodeKind::FileSink {
                 target,
                 sink_options:

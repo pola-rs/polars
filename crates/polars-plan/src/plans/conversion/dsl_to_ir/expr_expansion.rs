@@ -108,8 +108,10 @@ fn function_input_wildcard_expansion(function: &FunctionExpr) -> FunctionExpansi
     #[cfg(feature = "ffi_plugin")]
     {
         expand_into_inputs |= matches!(function, F::FfiPlugin { flags, .. } if flags.flags.contains(FunctionFlags::INPUT_WILDCARD_EXPANSION));
+        expand_into_inputs |= matches!(function, F::PluginV1(plugin) if plugin.flags().contains(crate::dsl::v1::PluginV1Flags::SELECTOR_EXPANSION));
         allow_empty_inputs |= matches!(function, F::FfiPlugin { flags, .. } if flags.flags.contains(FunctionFlags::ALLOW_EMPTY_INPUTS));
     }
+
     #[cfg(feature = "concat_str")]
     {
         expand_into_inputs |= matches!(

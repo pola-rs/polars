@@ -4,7 +4,7 @@ import contextlib
 import sys
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from polars._utils.parse import parse_into_list_of_expressions
 from polars._utils.wrap import wrap_expr
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from polars import Expr
     from polars._typing import IntoExpr
 
-__all__ = ["register_plugin_function"]
+__all__ = ["register_plugin_function", "register_plugin_v1_function"]
 
 
 def register_plugin_function(
@@ -153,3 +153,46 @@ def _resolve_file_path(path: Path, *, use_abs_path: bool = False) -> Path:
             file_path = path.resolve()
 
     return file_path
+
+
+T = TypeVar("T")
+
+
+def register_plugin_v1_function(
+    *,
+    plugin_path: Path | str,
+    args: IntoExpr | Iterable[IntoExpr],
+    info: (str, int),
+    function_name: str,
+    use_abs_path: bool = False,
+    length_preserving: bool = False,
+    row_separable: bool = False,
+    returns_scalar: bool = False,
+    zippable_inputs: bool = True,
+    step_has_output: bool = True,
+    needs_finalize: bool = True,
+    states_combinable: bool = False,
+    specialize_group_evaluation: bool = False,
+    selector_expansion: bool = False,
+) -> Expr:
+    pyexprs = parse_into_list_of_expressions(args)
+    plugin_path = _resolve_plugin_path(plugin_path, use_abs_path=use_abs_path)
+
+    return wrap_expr(
+        plr.register_plugin_v1_function(
+            plugin_path=str(plugin_path),
+            args=pyexprs,
+            name=info[0],
+            data_ptr=info[1],
+            function_name=function_name,
+            length_preserving=length_preserving,
+            row_separable=row_separable,
+            returns_scalar=returns_scalar,
+            zippable_inputs=zippable_inputs,
+            step_has_output=step_has_output,
+            needs_finalize=needs_finalize,
+            states_combinable=states_combinable,
+            specialize_group_evaluation=specialize_group_evaluation,
+            selector_expansion=selector_expansion,
+        )
+    )

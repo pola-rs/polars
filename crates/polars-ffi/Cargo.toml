@@ -13,6 +13,11 @@ description = "FFI utils for the Polars project."
 [dependencies]
 arrow = { workspace = true }
 polars-core = { workspace = true }
+polars-error = { workspace = true }
+polars-utils = { workspace = true }
+
+[features]
+python = ["polars-error/python"]
 
 [lints]
 workspace = true
