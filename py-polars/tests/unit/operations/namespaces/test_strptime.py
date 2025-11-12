@@ -69,7 +69,9 @@ def test_to_datetime_precision() -> None:
     test_data = zip(time_units, suffixes, input_strings, expected_values_list)
     for time_unit, suffix, strings, expected_values in test_data:
         test_series = pl.Series("date", strings)
-        ds = test_series.str.to_datetime(f"%Y-%m-%d %H:%M:%S{suffix}", time_unit=time_unit)
+        ds = test_series.str.to_datetime(
+            f"%Y-%m-%d %H:%M:%S{suffix}", time_unit=time_unit
+        )
         assert getattr(ds.dtype, "time_unit", None) == time_unit
         assert ds.dt.nanosecond().to_list() == expected_values
 
