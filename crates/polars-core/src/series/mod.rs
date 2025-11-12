@@ -578,6 +578,13 @@ impl Series {
             _ => panic!("invalid from_physical({dtype:?}) for {:?}", self.dtype()),
         }
     }
+    
+    #[cfg(feature = "dtype-extension")]
+    pub fn into_extension(self, typ: ExtensionTypeInstance) -> Series {
+        assert!(!self.dtype().is_extension());
+        let ext = ExtensionChunked::from_storage(typ, self);
+        ext.into_series()
+    }
 
     /// Cast numerical types to f64, and keep floats as is.
     pub fn to_float(&self) -> PolarsResult<Series> {
@@ -714,6 +721,7 @@ impl Series {
     /// * List(inner) -> List(physical of inner)
     /// * Array(inner) -> Array(physical of inner)
     /// * Struct -> Struct with physical repr of each struct column
+    /// * Extension -> physical of storage type
     pub fn to_physical_repr(&self) -> Cow<'_, Series> {
         use DataType::*;
         match self.dtype() {
@@ -750,8 +758,22 @@ impl Series {
                 Cow::Borrowed(_) => Cow::Borrowed(self),
                 Cow::Owned(ca) => Cow::Owned(ca.into_series()),
             },
+            #[cfg(feature = "dtype-extension")]
+            Extension(_, _) => self.ext().unwrap().storage().to_physical_repr(),
             _ => Cow::Borrowed(self),
         }
+    }
+    
+    /// If the Series is an Extension type, return its storage Series.
+    /// Otherwise, return itself.
+    pub fn to_storage(&self) -> &Series {
+        #[cfg(feature = "dtype-extension")]
+        {
+            if let DataType::Extension(_, _) = self.dtype() {
+                return self.ext().unwrap().storage()
+            }
+        }
+        self
     }
 
     /// Traverse and collect every nth element in a new array.

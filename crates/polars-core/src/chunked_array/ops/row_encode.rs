@@ -144,6 +144,8 @@ pub fn get_row_encoding_context(dtype: &DataType) -> Option<RowEncodingContext> 
 
             Some(RowEncodingContext::Struct(ctxts))
         },
+        #[cfg(feature = "dtype-extension")]
+        DataType::Extension(_, storage) => get_row_encoding_context(storage),
     }
 }
 

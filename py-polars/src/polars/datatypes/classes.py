@@ -6,7 +6,7 @@ from collections import OrderedDict
 from collections.abc import Mapping
 from datetime import tzinfo
 from inspect import isclass
-from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Callable, Generic, Self, TypeVar, overload
 
 import polars._reexport as pl
 import polars.datatypes
@@ -1204,3 +1204,80 @@ class Struct(NestedType):
     def to_schema(self) -> OrderedDict[str, PolarsDataType]:
         """Return Struct dtype as a schema dict."""
         return OrderedDict(self)
+
+
+class BaseExtension(DataType):
+    """Base class for extension data types."""
+
+    def __init__(
+        self, name: str, storage: DataType, metadata: str | None = None
+    ) -> None:
+        self._name = name
+        self._storage = storage
+        self._metadata = metadata
+
+    @classmethod
+    def ext_from_params(
+        cls, name: str, storage: DataType, metadata: str | None
+    ) -> Self:
+        """Creates an Extension type instance from its parameters."""
+        slf = cls.__new__(cls)
+        slf._name = name
+        slf._storage = storage
+        slf._metadata = metadata
+        return slf
+
+    def ext_name(self) -> str:
+        """Returns the name of this extension type."""
+        return self._name
+
+    def ext_storage(self) -> DataType:
+        """Returns the storage type for this extension type."""
+        return self._storage
+
+    def ext_metadata(self) -> str | None:
+        """Returns the metadata for this extension type."""
+        return self._metadata
+
+    def _string_repr(self) -> str:
+        """
+        Return a short string representation of the extension type.
+
+        This should be lowercase and if feasible show parameters in brackets,
+        for example i64, str, datetime[ns], etc. This is used when displaying
+        dataframes in a human-readable format, so brevity is important.
+        """
+        s = self.ext_name().lower()
+        if len(s) <= 12:
+            return s
+        else:
+            return s[:10] + ".."
+
+    def __repr__(self) -> str:
+        md = self.ext_metadata()
+        if md is not None:
+            return f"{self.__class__.__name__}({self.ext_name()!r}, {self.ext_storage()!r}, {md!r})"
+        else:
+            return f"{self.__class__.__name__}({self.ext_name()!r}, {self.ext_storage()!r})"
+
+    # It's not recommended to override the below methods.
+    def __hash__(self) -> int:
+        return hash((self.ext_name(), self.ext_storage(), self.ext_metadata()))
+
+    def __eq__(self, other: object) -> bool:
+        return (
+            isinstance(other, BaseExtension)
+            and self.ext_name() == other.ext_name()
+            and self.ext_storage() == other.ext_storage()
+            and self.ext_metadata() == other.ext_metadata()
+        )
+
+    def __getstate__(self) -> tuple[str, PolarsDataType, str | None]:
+        return self.ext_name(), self.ext_storage(), self.ext_metadata()
+
+    def __setstate__(self, state: tuple[str, PolarsDataType, str | None]) -> None:
+        self.__dict__ = self.ext_from_params(*state).__dict__
+
+
+class Extension(BaseExtension):
+    """Generic extension data type for non-registered extensions."""

@@ -399,6 +399,10 @@ dtype-struct = [
   "polars-lazy?/dtype-struct",
   "polars-ops/dtype-struct",
 ]
+dtype-extension = [
+  "polars-core/dtype-extension",
+  "polars-ops/dtype-extension",
+]
 hist = ["polars-ops/hist", "polars-lazy/hist"]
 
 docs-selection = [

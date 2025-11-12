@@ -35,6 +35,7 @@ from polars._utils.various import (
 from polars._utils.wrap import wrap_s
 from polars.datatypes import (
     Array,
+    BaseExtension,
     Boolean,
     Categorical,
     Date,
@@ -83,6 +84,11 @@ def sequence_to_pyseries(
 ) -> PySeries:
     """Construct a PySeries from a sequence."""
     python_dtype: type | None = None
+
+    if isinstance(dtype, BaseExtension):
+        storage = dtype.ext_storage()
+        pys = sequence_to_pyseries(name, values, storage, strict=strict, nan_to_null=nan_to_null)
+        return pys.ext_from_storage(dtype)
 
     if isinstance(values, range):
         return range_to_series(name, values, dtype=dtype)._s

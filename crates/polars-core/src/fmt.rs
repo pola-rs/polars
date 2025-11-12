@@ -160,7 +160,7 @@ macro_rules! format_array {
         )?;
 
         let ellipsis = get_ellipsis();
-        let truncate = match $a.dtype() {
+        let truncate = match $a.dtype().to_storage() {
             DataType::String => true,
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_, _) | DataType::Enum(_, _) => true,
@@ -443,6 +443,11 @@ impl Debug for Series {
                     "Series"
                 )
             },
+            DataType::Extension(_, _) => {
+                let dt = format!("{}", self.dtype());
+                format_array!(f, self.ext().unwrap(), &dt, self.name(), "Series")
+
+            }
             dt => panic!("{dt:?} not impl"),
         }
     }
@@ -1213,6 +1218,10 @@ impl Display for AnyValue<'_> {
             AnyValue::StructOwned(payload) => fmt_struct(f, &payload.0),
             #[cfg(feature = "dtype-decimal")]
             AnyValue::Decimal(v, _prec, scale) => fmt_decimal(f, *v, *scale),
+            #[cfg(feature = "dtype-extension")]
+            AnyValue::Extension(_, storage) => write!(f, "{storage}"),
+            #[cfg(feature = "dtype-extension")]
+            AnyValue::ExtensionOwned(_, storage) => write!(f, "{storage}"),
         }
     }
 }

@@ -81,7 +81,9 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
     /// The [`ArrowDataType`] of the [`Array`]. In combination with [`Array::as_any`], this can be
     /// used to downcast trait objects (`dyn Array`) to concrete arrays.
     fn dtype(&self) -> &ArrowDataType;
-
+    
+    fn dtype_mut(&mut self) -> &mut ArrowDataType;
+    
     /// The validity of the [`Array`]: every array has an optional [`Bitmap`] that, when available
     /// specifies whether the array slot is valid or not (null).
     /// When the validity is [`None`], all slots are valid.
@@ -579,6 +581,11 @@ macro_rules! impl_common_array {
         #[inline]
         fn dtype(&self) -> &ArrowDataType {
             &self.dtype
+        }
+
+        #[inline]
+        fn dtype_mut(&mut self) -> &mut ArrowDataType {
+            &mut self.dtype
         }
 
         #[inline]
