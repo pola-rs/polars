@@ -1417,3 +1417,17 @@ def test_struct_equal_missing_null_25360() -> None:
             ne_missing=False,
         ),
     )
+
+
+def test_struct_with_fields_col_and_field() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "s": [{"x": 10}, {"x": 20}, {"x": 30}]})
+
+    eval = pl.col.a + pl.field("x")
+    out = df.select(pl.col.s.struct.with_fields(eval)).select(pl.col.s.struct.unnest())
+    expected = pl.DataFrame({"x": [10, 20, 30], "a": [11, 22, 33]})
+    assert_frame_equal(out, expected)
+
+    eval = pl.field("x") + pl.col.a
+    out = df.select(pl.col.s.struct.with_fields(eval)).select(pl.col.s.struct.unnest())
+    expected = pl.DataFrame({"x": [11, 22, 33]})
+    assert_frame_equal(out, expected)
