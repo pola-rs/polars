@@ -186,6 +186,12 @@ impl Series {
         self.try_cat::<Categorical32Type>()
     }
 
+    /// Unpack to [`ExtensionChunked`] of dtype [`DataType::Extension`].
+    #[cfg(feature = "dtype-extension")]
+    pub fn try_ext(&self) -> Option<&ExtensionChunked> {
+        try_unpack_chunked!(self, DataType::Extension(_, _) => ExtensionChunked)
+    }
+
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Struct`]
     #[cfg(feature = "dtype-struct")]
     pub fn try_struct(&self) -> Option<&StructChunked> {
@@ -404,6 +410,13 @@ impl Series {
 
         self.try_struct()
             .ok_or_else(|| unpack_chunked_err!(self => "Struct"))
+    }
+
+    /// Unpack to [`ExtensionChunked`] of dtype [`DataType::Extension`].
+    #[cfg(feature = "dtype-categorical")]
+    pub fn ext(&self) -> PolarsResult<&ExtensionChunked> {
+        self.try_ext()
+            .ok_or_else(|| unpack_chunked_err!(self => "Extension"))
     }
 
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Null`]

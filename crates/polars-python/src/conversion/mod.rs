@@ -27,6 +27,7 @@ use polars_core::schema::iceberg::IcebergSchema;
 use polars_core::utils::arrow::array::Array;
 use polars_core::utils::arrow::types::NativeType;
 use polars_core::utils::materialize_dyn_int;
+use polars_core::datatypes::extension::get_extension_type_or_generic;
 use polars_lazy::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::write::StatisticsOptions;
@@ -306,6 +307,18 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
                 let class = pl.getattr(intern!(py, "Null"))?;
                 class.call0()
             },
+            DataType::Extension(typ, storage) => {
+                let py_storage = Wrap((**storage).clone()).into_pyobject(py)?;
+                let py_typ = pl.getattr(intern!(py, "get_extension_type"))?
+                    .call1((typ.name(),))?;
+                let class = if py_typ.is_none() || py_typ.str().map(|s| s == "storage").ok() == Some(true) {
+                    pl.getattr(intern!(py, "Extension"))?
+                } else {
+                    py_typ
+                };
+                let from_params = class.getattr(intern!(py, "ext_from_params"))?;
+                from_params.call1((typ.name(), py_storage, typ.serialize_metadata()))
+            },
             DataType::Unknown(UnknownKind::Int(v)) => {
                 Wrap(materialize_dyn_int(*v).dtype()).into_pyobject(py)
             },
@@ -467,6 +480,21 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
             "Object" => DataType::Object(OBJECT_NAME),
             "Unknown" => DataType::Unknown(Default::default()),
             dt => {
+                let base_ext = polars(py).getattr(py, intern!(py, "BaseExtension")).unwrap();
+                if ob.is_instance(base_ext.bind(py))? {
+                    let ext_name_f = ob.getattr(intern!(py, "ext_name"))?;
+                    let ext_metadata_f = ob.getattr(intern!(py, "ext_metadata"))?;
+                    let ext_storage_f = ob.getattr(intern!(py, "ext_storage"))?;
+                    let name: String = ext_name_f.call0()?.extract()?;
+                    let metadata: Option<String> = ext_metadata_f.call0()?.extract()?;
+                    let storage: Wrap<DataType> = ext_storage_f.call0()?.extract()?;
+                    let ext_typ = get_extension_type_or_generic(&name, &storage.0, metadata.as_deref());
+                    return Ok(Wrap(DataType::Extension(
+                        ext_typ,
+                        Box::new(storage.0),
+                    )));
+                }
+
                 return Err(PyTypeError::new_err(format!(
                     "'{dt}' is not a Polars data type",
                 )));

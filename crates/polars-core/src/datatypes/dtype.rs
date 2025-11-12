@@ -10,6 +10,8 @@ use polars_utils::itertools::Itertools;
 #[cfg(any(feature = "serde-lazy", feature = "serde"))]
 use serde::{Deserialize, Serialize};
 pub use temporal::time_zone::TimeZone;
+#[cfg(feature = "dtype-extension")]
+pub use crate::datatypes::extension::ExtensionTypeInstance;
 
 use super::*;
 #[cfg(feature = "object")]
@@ -134,6 +136,8 @@ pub enum DataType {
     Enum(Arc<FrozenCategories>, Arc<CategoricalMapping>),
     #[cfg(feature = "dtype-struct")]
     Struct(Vec<Field>),
+    #[cfg(feature = "dtype-extension")]
+    Extension(ExtensionTypeInstance, Box<DataType>),
     // some logical types we cannot know statically, e.g. Datetime
     Unknown(UnknownKind),
 }
@@ -466,6 +470,18 @@ impl DataType {
                     .collect();
                 Struct(new_fields)
             },
+            #[cfg(feature = "dtype-extension")]
+            Extension(_, storage) => storage.to_physical(),
+            _ => self.clone(),
+        }
+    }
+    
+    #[must_use]
+    pub fn to_storage(&self) -> DataType {
+        use DataType::*;
+        match self {
+            #[cfg(feature = "dtype-extension")]
+            Extension(_, storage) => storage.to_storage(),
             _ => self.clone(),
         }
     }
@@ -729,6 +745,10 @@ impl DataType {
             false
         }
     }
+    
+    pub fn is_extension(&self) -> bool {
+        matches!(self, DataType::Extension(_, _))
+    }
 
     /// Convert to an Arrow Field.
     pub fn to_arrow_field(&self, name: PlSmallStr, compat_level: CompatLevel) -> ArrowField {
@@ -921,6 +941,16 @@ impl DataType {
                 Ok(ArrowDataType::Struct(fields))
             },
             BinaryOffset => Ok(ArrowDataType::LargeBinary),
+            #[cfg(feature = "dtype-extension")]
+            Extension(typ, inner) => {
+                Ok(ArrowDataType::Extension(Box::new(
+                    arrow::datatypes::ExtensionType {
+                        name: typ.name().into(),
+                        inner: inner.try_to_arrow(compat_level)?,
+                        metadata: typ.serialize_metadata().map(|m| m.into()),
+                    }
+                )))
+            },
             Unknown(kind) => {
                 let dt = match kind {
                     UnknownKind::Any => ArrowDataType::Unknown,
@@ -1072,6 +1102,7 @@ impl Display for DataType {
             DataType::Decimal(p, s) => return write!(f, "decimal[{p},{s}]"),
             DataType::String => "str",
             DataType::Binary => "binary",
+            DataType::BinaryOffset => "binary[offset]",
             DataType::Date => "date",
             DataType::Datetime(tu, None) => return write!(f, "datetime[{tu}]"),
             DataType::Datetime(tu, Some(tz)) => return write!(f, "datetime[{tu}, {tz}]"),
@@ -1098,13 +1129,14 @@ impl Display for DataType {
             DataType::Enum(_, _) => "enum",
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => return write!(f, "struct[{}]", fields.len()),
+            #[cfg(feature = "dtype-extension")]
+            DataType::Extension(typ, _) => return write!(f, "ext[{}]", typ.0.dyn_display()),
             DataType::Unknown(kind) => match kind {
                 UnknownKind::Any => "unknown",
                 UnknownKind::Int(_) => "dyn int",
                 UnknownKind::Float => "dyn float",
                 UnknownKind::Str => "dyn str",
             },
-            DataType::BinaryOffset => "binary[offset]",
         };
         f.write_str(s)
     }
@@ -1180,6 +1212,8 @@ impl std::fmt::Debug for DataType {
             #[cfg(feature = "object")]
             Object(_) => write!(f, "Object"),
             Null => write!(f, "Null"),
+            #[cfg(feature = "dtype-extension")]
+            Extension(typ, inner) => write!(f, "Extension({}, {inner:?})", typ.0.dyn_debug()),
             Unknown(kind) => write!(f, "Unknown({kind:?})"),
         }
     }

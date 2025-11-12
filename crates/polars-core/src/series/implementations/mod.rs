@@ -14,6 +14,8 @@ mod datetime;
 mod decimal;
 #[cfg(feature = "dtype-duration")]
 mod duration;
+#[cfg(feature = "dtype-extension")]
+mod extension;
 mod floats;
 mod list;
 pub(crate) mod null;
@@ -40,6 +42,7 @@ use crate::chunked_array::ops::compare_inner::{
 };
 
 // Utility wrapper struct
+#[repr(transparent)]
 pub(crate) struct SeriesWrap<T>(pub T);
 
 impl<T: PolarsDataType> From<ChunkedArray<T>> for SeriesWrap<ChunkedArray<T>> {

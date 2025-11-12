@@ -131,6 +131,13 @@ pub enum SerializableScalar {
 
     #[cfg(feature = "dtype-struct")]
     Struct(Vec<(PlSmallStr, SerializableScalar)>),
+    
+    #[cfg(feature = "dtype-extension")]
+    Extension {
+        name: PlSmallStr,
+        metadata: Option<PlSmallStr>,
+        storage: Box<SerializableScalar>,
+    },
 }
 
 impl TryFrom<Scalar> for SerializableScalar {
@@ -258,6 +265,32 @@ impl TryFrom<Scalar> for SerializableScalar {
 
             #[cfg(feature = "dtype-decimal")]
             AnyValue::Decimal(v, prec, scale) => Self::Decimal(v, prec, scale),
+
+            #[cfg(feature = "dtype-extension")]
+            AnyValue::Extension(typ, storage) => {
+                let storage_serializable = SerializableScalar::try_from(Scalar::new(
+                    storage.dtype(),
+                    storage.clone().into_static(),
+                ))?;
+                Self::Extension {
+                    name: PlSmallStr::from(typ.name()),
+                    metadata: typ.serialize_metadata().map(PlSmallStr::from),
+                    storage: Box::new(storage_serializable),
+                }
+            },
+
+            #[cfg(feature = "dtype-extension")]
+            AnyValue::ExtensionOwned(typ, storage) => {
+                let storage_serializable = SerializableScalar::try_from(Scalar::new(
+                    storage.dtype(),
+                    *storage,
+                ))?;
+                Self::Extension {
+                    name: PlSmallStr::from(typ.name()),
+                    metadata: typ.serialize_metadata().map(PlSmallStr::from),
+                    storage: Box::new(storage_serializable),
+                }
+            },
         };
         Ok(out)
     }
@@ -323,6 +356,18 @@ impl TryFrom<SerializableScalar> for Scalar {
                 let dtype = DataType::Struct(fields.clone());
                 Self::new(dtype, AnyValue::StructOwned(Box::new((avs, fields))))
             },
+            
+            #[cfg(feature = "dtype-extension")]
+            S::Extension { name, metadata, storage } => {
+                let storage_scalar = Scalar::try_from(*storage)?;
+                let storage_av = storage_scalar.value;
+                let storage_dtype = storage_scalar.dtype;
+                let ext_type = crate::datatypes::extension::get_extension_type_or_generic(&name, &storage_dtype, metadata.as_deref());
+                Self::new(
+                    DataType::Extension(ext_type.clone(), Box::new(storage_dtype)),
+                    AnyValue::ExtensionOwned(ext_type, Box::new(storage_av)),
+                )
+            }
         })
     }
 }
