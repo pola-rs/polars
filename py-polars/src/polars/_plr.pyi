@@ -632,16 +632,6 @@ class PyDataFrame:
         value_name: str | None,
         variable_name: str | None,
     ) -> PyDataFrame: ...
-    def pivot_expr(
-        self,
-        on: Sequence[str],
-        index: Sequence[str] | None,
-        values: Sequence[str] | None,
-        maintain_order: bool,
-        sort_columns: bool,
-        aggregate_expr: Any | None,
-        separator: str | None,
-    ) -> PyDataFrame: ...
     def partition_by(
         self, by: Sequence[str], maintain_order: bool, include_key: bool
     ) -> list[PyDataFrame]: ...
@@ -1083,6 +1073,16 @@ class PyLazyFrame:
     def drop_nulls(self, subset: PySelector | None) -> PyLazyFrame: ...
     def slice(self, offset: int, len: int | None) -> PyLazyFrame: ...
     def tail(self, n: int) -> PyLazyFrame: ...
+    def pivot(
+        self,
+        on: PySelector,
+        on_columns: PyDataFrame,
+        index: PySelector,
+        values: PySelector,
+        agg: PyExpr,
+        maintain_order: bool,
+        separator: str,
+    ) -> PyLazyFrame: ...
     def unpivot(
         self,
         on: PySelector,
@@ -1589,6 +1589,7 @@ class PyExpr:
     ) -> str: ...
     def meta_tree_format(self, schema: Schema | None = None) -> str: ...
     def meta_show_graph(self, schema: Schema | None = None) -> str: ...
+    def meta_replace_element(self, expr: PyExpr) -> PyExpr: ...
 
     # name
     def name_keep(self) -> PyExpr: ...

@@ -378,4 +378,12 @@ impl<'a> IRBuilder<'a> {
         };
         self.add_alp(lp)
     }
+
+    pub fn hint(self, hint: HintIR) -> Self {
+        let lp = IR::MapFunction {
+            input: self.root,
+            function: FunctionIR::Hint(hint),
+        };
+        self.add_alp(lp)
+    }
 }
