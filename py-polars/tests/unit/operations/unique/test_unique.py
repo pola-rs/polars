@@ -364,3 +364,20 @@ def test_unique_column_subset_25233() -> None:
     result = df.unique(subset="op_type")
     assert result.height == 2
     assert result.select(pl.col.op_type.n_unique()).item() == 2
+
+
+@pytest.mark.parametrize("stable", [False, True])
+def test_unique_list_arr_non_numeric(stable: bool) -> None:
+    assert_series_equal(
+        pl.Series([["A"], ["B"], ["A"]]).unique(maintain_order=stable),
+        pl.Series([["A"], ["B"]]),
+        check_order=stable,
+    )
+
+    assert_series_equal(
+        pl.Series([["A"], ["B"], ["A"]], dtype=pl.Array(pl.String, 1)).unique(
+            maintain_order=stable
+        ),
+        pl.Series([["A"], ["B"]], dtype=pl.Array(pl.String, 1)),
+        check_order=stable,
+    )
