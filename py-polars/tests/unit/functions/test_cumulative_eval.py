@@ -51,3 +51,16 @@ def test_cumulative_eval_samples() -> None:
         ),
         pl.Series("a", [None, None, None, None, 1, 1, 1], pl.Int64),
     )
+
+
+def test_cumulative_eval_length_preserving_streaming_25293() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    q = df.lazy().with_columns(
+        pl.col("a")
+        .first()
+        .cumulative_eval(
+            pl.element().map_batches(lambda x: x.max(), pl.Int64, returns_scalar=True)
+        )
+    )
+    expected = pl.DataFrame({"a": [1, 1, 1]})
+    assert_frame_equal(q.collect(), expected)
