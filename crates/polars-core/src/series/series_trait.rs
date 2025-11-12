@@ -563,7 +563,7 @@ pub trait SeriesTrait:
             AnyValue::Null
         } else {
             let idx = if self.has_nulls() {
-                first_non_null(self.chunks().iter().map(|c| c.validity())).unwrap_or(0)
+                first_non_null(self.chunks().iter().map(|c| c.as_ref())).unwrap_or(0)
             } else {
                 0
             };
@@ -596,7 +596,7 @@ pub trait SeriesTrait:
             AnyValue::Null
         } else {
             let idx = if self.has_nulls() {
-                last_non_null(self.chunks().iter().map(|c| c.validity()), n).unwrap_or(n - 1)
+                last_non_null(self.chunks().iter().map(|c| c.as_ref()), n).unwrap_or(n - 1)
             } else {
                 n - 1
             };
