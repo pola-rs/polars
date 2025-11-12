@@ -6,7 +6,9 @@ use recursive::recursive;
 
 use super::*;
 // kdn TODO cleanup
-use crate::constants::{POLARS_ELEMENT, POLARS_STRUCTFIELDS, get_literal_name, get_pl_element_name};
+use crate::constants::{
+    POLARS_ELEMENT, POLARS_STRUCTFIELDS, get_literal_name, get_pl_element_name,
+};
 
 fn validate_expr(node: Node, ctx: &ToFieldContext) -> PolarsResult<()> {
     ctx.arena.get(node).to_field_impl(ctx).map(|_| ())
@@ -41,9 +43,6 @@ impl AExpr {
     /// (e.g. `alias`, `cast`).
     #[recursive]
     pub fn to_field_impl(&self, ctx: &ToFieldContext) -> PolarsResult<Field> {
-        dbg!("start to_field_impl"); //kdn
-        dbg!(&self);
-        dbg!(&ctx.schema);
         use AExpr::*;
         use DataType::*;
         match self {
@@ -100,10 +99,24 @@ impl AExpr {
                 .schema
                 .get_field(name)
                 .ok_or_else(|| PolarsError::ColumnNotFound(name.to_string().into())),
-            StructFields => ctx
-                .schema
-                .get_field(POLARS_STRUCTFIELDS)
-                .ok_or_else(|| polars_err!(invalid_element_use)), //kdn TODO CHECK; TODO UPDATE error handling
+            StructField(name) => {
+                let struct_field = ctx
+                    .schema
+                    .get_field(POLARS_STRUCTFIELDS)
+                    .ok_or_else(|| polars_err!(invalid_field_use))?;
+                let DataType::Struct(fields) = struct_field.dtype() else {
+                    return Err(polars_err!(
+                        InvalidOperation: "expected `Struct` dtype for `with_fields` Expr, got `{}`", 
+                        struct_field.dtype())); // kdn TODO ERROR HANDLING
+                };
+                //kdn: TODO PERFORMANCE: remove linear search
+                for f in fields {
+                    if f.name() == name {
+                        return Ok(f.clone());
+                    }
+                }
+                Err(polars_err!(InvalidOperation: "`field({name})` not found in Struct")) //kdn TODO TBD FieldNotFound?
+            },
             Literal(sv) => Ok(match sv {
                 LiteralValue::Series(s) => s.field().into_owned(),
                 _ => Field::new(sv.output_column_name(), sv.get_datatype()),
@@ -305,37 +318,24 @@ impl AExpr {
                 Ok(output_field)
             },
             StructEval { expr, evaluation } => {
-                dbg!(&ctx);
-                dbg!(&expr);
-                dbg!(&evaluation);
-
                 let struct_field = ctx.arena.get(*expr).to_field_impl(ctx)?;
                 let mut evaluation_schema = ctx.schema.clone();
                 evaluation_schema
                     .insert(PL_STRUCTFIELDS_NAME.clone(), struct_field.dtype().clone());
 
-                // kdn TODO NAMING
-                let output_fields = func_args_to_fields(
+                let eval_fields = func_args_to_fields(
                     &evaluation,
                     &ToFieldContext::new(ctx.arena, &evaluation_schema),
                 )?;
-                // : Vec<Field> = evaluation
-                //     .iter()
-                //     .map(|e| {
-                //         ctx.arena
-                //             .get(*e)
-                //             .to_field_impl(&ToFieldContext::new(ctx.arena, &evaluation_schema))
-                //             .map(|f| )
-                //     })
-                //     .collect::<Result<Vec<_>, _>>()?;
 
-                // Merge evaluation fields into the expr struct
-                if let DataType::Struct(fields) = struct_field.dtype() {
-                    let mut fields_map = PlIndexMap::with_capacity(fields.len() * 2); //kdn CHECK
-                    for field in fields {
+                // Merge evaluation fields into the expr Struct
+                if let DataType::Struct(expr_fields) = struct_field.dtype() {
+                    let mut fields_map =
+                        PlIndexMap::with_capacity(expr_fields.len() + eval_fields.len());
+                    for field in expr_fields {
                         fields_map.insert(field.name(), field.dtype());
                     }
-                    for field in &output_fields {
+                    for field in &eval_fields {
                         fields_map.insert(field.name(), field.dtype());
                     }
                     let dtype = DataType::Struct(
@@ -346,14 +346,11 @@ impl AExpr {
                     );
                     let mut out = struct_field.clone();
                     out.coerce(dtype);
-                    dbg!(&out);
                     Ok(out)
                 } else {
                     let dt = struct_field.dtype();
                     polars_bail!(op = "with_fields", got = dt, expected = "Struct")
                 }
-
-                // todo!(); //kdn TODO
             },
             Function {
                 function,
@@ -420,7 +417,7 @@ impl AExpr {
             | Cast { expr, .. }
             | Ternary { truthy: expr, .. }
             | Eval { expr, .. }
-            | StructEval { expr, .. } //kdn TODO
+            | StructEval { expr, .. }
             | Slice { input: expr, .. }
             | Agg(Min { input: expr, .. })
             | Agg(Max { input: expr, .. })
@@ -449,6 +446,8 @@ impl AExpr {
                     input[0].output_name().clone()
                 }
             },
+            #[cfg(feature = "dtype-struct")]
+            StructEval { expr, .. } => expr_arena.get(*expr).to_name(expr_arena),
             Function {
                 input, function, ..
             } => match function.output_name().and_then(|v| v.into_inner()) {
@@ -457,12 +456,9 @@ impl AExpr {
                 None => input[0].output_name().clone(),
             },
             Column(name) => name.clone(),
-<<<<<<< HEAD
-            Literal(lv) => lv.output_column_name(),
-=======
-            StructFields => PlSmallStr::EMPTY, //kdn TODO REVIEW
+            #[cfg(feature = "dtype-struct")]
+            StructField(name) => name.clone(),
             Literal(lv) => lv.output_column_name().clone(),
->>>>>>> bf462adf8a (refactor: Make fields deterministic in `struct.with_fields` context)
         }
     }
 }

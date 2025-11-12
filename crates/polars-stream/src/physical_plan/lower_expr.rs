@@ -151,7 +151,8 @@ pub fn is_input_independent_rec(
             options: _,
         } => is_input_independent_rec(*inner, arena, cache),
         AExpr::Column(_) => false,
-        AExpr::StructFields => todo!(), //kdn TODO
+        // Handled separately in `StructEval`.
+        AExpr::StructField(_) => unreachable!(), //kdn TODO STREAMING REVIEW
         AExpr::Literal(_) => true,
         AExpr::BinaryExpr { left, op: _, right } => {
             is_input_independent_rec(*left, arena, cache)
@@ -221,7 +222,10 @@ pub fn is_input_independent_rec(
             evaluation: _,
             variant: _,
         } => is_input_independent_rec(*expr, arena, cache),
-        AExpr::StructEval { expr, evaluation } => todo!(), //kdn TODO
+        AExpr::StructEval {
+            expr,
+            evaluation: _,
+        } => is_input_independent_rec(*expr, arena, cache), //kdn TODO STREAMING REVIEW
         #[cfg(feature = "dynamic_group_by")]
         AExpr::Rolling {
             function,
@@ -306,6 +310,8 @@ pub fn is_length_preserving_rec(
         // Handled separately in `Eval`.
         AExpr::Element => unreachable!(),
 
+        AExpr::StructField(_) => unreachable!(), //kdn TODO STREAMING REVIEW
+
         AExpr::Gather { .. }
         | AExpr::Explode { .. }
         | AExpr::Filter { .. }
@@ -314,7 +320,7 @@ pub fn is_length_preserving_rec(
         | AExpr::Len
         | AExpr::Literal(_) => false,
 
-        AExpr::Column(_) | AExpr::StructFields => true,
+        AExpr::Column(_) => true,
 
         AExpr::Cast {
             expr: inner,
@@ -377,7 +383,7 @@ pub fn is_length_preserving_rec(
             offset: _,
             closed_window: _,
         } => true,
-        AExpr::StructEval { .. } => true, //kdn TODO REVIEW
+        AExpr::StructEval { .. } => true, //kdn TODO STREAMING .. expected is_length_preserving_rec(expr.node(), arena, cache)?
         AExpr::Over {
             function: _, // Actually shouldn't matter for window functions.
             partition_by: _,
@@ -645,7 +651,7 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(exploded_name)));
             },
             AExpr::Column(_) => unreachable!("column should always be streamable"),
-            AExpr::StructFields => todo!(), //kdn TODO
+            AExpr::StructField(_) => unreachable!(), //kdn TODO STREAMING REVIEW
             AExpr::Literal(_) => {
                 let out_name = unique_column_name();
                 let inner_expr = ExprIR::new(expr, OutputName::Alias(out_name.clone()));
@@ -1535,7 +1541,11 @@ fn lower_exprs_with_ctx(
                     transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
                 },
             },
-            AExpr::StructEval { expr, evaluation } => todo!(), //kdn
+            AExpr::StructEval { .. } => {  //kdn TODO STREAMING REVIEW
+                let out_name = unique_column_name();
+                fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+            },
             AExpr::Ternary {
                 predicate,
                 truthy,

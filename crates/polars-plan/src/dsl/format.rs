@@ -252,6 +252,12 @@ impl fmt::Debug for Expr {
                     "{input:?}.Cumulative_eval({evaluation:?}, min_samples={min_samples}"
                 ),
             },
+            StructEval {
+                expr: input,
+                evaluation,
+            } => {
+                write!(f, "{input:?}.struct.eval({evaluation:?}")
+            }
             Slice {
                 input,
                 offset,

@@ -92,7 +92,7 @@ pub(super) fn to_json(col: &Column) -> PolarsResult<Column> {
     Ok(StringChunked::from_chunk_iter(s.name().clone(), iter).into_column())
 }
 
-pub(crate) fn with_fields(args: &[Column]) -> PolarsResult<Column> { //kdn TODO
+pub(crate) fn with_fields(args: &[Column]) -> PolarsResult<Column> {
     let s = &args[0];
 
     let ca = s.struct_()?;

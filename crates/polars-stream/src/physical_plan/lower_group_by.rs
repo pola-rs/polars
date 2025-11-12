@@ -192,9 +192,7 @@ fn try_lower_elementwise_scalar_agg_expr(
             None
         },
 
-        AExpr::StructFields => {
-            todo!() //kdn TODO
-        }
+        AExpr::StructField(_) => unreachable!(), //kdn TODO STREAMING REVIEW
 
         AExpr::Literal(lit) => {
             if lit.is_scalar() {
@@ -241,8 +239,10 @@ fn try_lower_elementwise_scalar_agg_expr(
         },
 
         AExpr::StructEval { expr, evaluation } => {
-            todo!();
-        }, //kdn TODO
+            let (expr, evaluation) = (*expr, evaluation.clone());
+            let expr = lower_rec!(expr)?;
+            Some(expr_arena.add(AExpr::StructEval { expr, evaluation }))
+        }, //kdn TODO STREAMING REVIEW
 
         AExpr::Ternary {
             predicate,

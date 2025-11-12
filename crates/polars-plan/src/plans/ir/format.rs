@@ -389,7 +389,7 @@ impl Display for ExprIRDisplay<'_> {
                 f.write_char(')')
             },
             Column(name) => write!(f, "col(\"{name}\")"),
-            StructFields => todo!(), //kdn
+            StructField(name) => write!(f, "field(\"{name}\")"),
             Literal(v) => write!(f, "{v:?}"),
             BinaryExpr { left, op, right } => {
                 let left = self.with_root(left);
@@ -577,7 +577,11 @@ impl Display for ExprIRDisplay<'_> {
                     ),
                 }
             },
-            StructEval { expr, evaluation } => todo!(), //kdn
+            StructEval { expr, evaluation } => {
+                let expr = self.with_root(expr);
+                let evaluation = self.with_slice(evaluation);
+                write!(f, "{expr}.struct.with_fields({evaluation})")
+            },
             Slice {
                 input,
                 offset,

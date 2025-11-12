@@ -310,12 +310,16 @@ fn create_physical_expr_inner(
 
             Ok(Arc::new(ElementExpr::new(output_field)))
         },
-        StructFields => {
+        StructField(field) => {
             let output_field = expr_arena
                 .get(expression)
                 .to_field(&ToFieldContext::new(expr_arena, schema))?;
 
-            Ok(Arc::new(StructFieldsExpr::new(output_field)))
+            Ok(Arc::new(FieldExpr::new(
+                field.clone(),
+                node_to_expr(expression, expr_arena),
+                output_field,
+            )))
         },
         Sort { expr, options } => {
             let phys_expr = create_physical_expr_inner(expr, expr_arena, schema, state)?;
@@ -561,7 +565,6 @@ fn create_physical_expr_inner(
                 .map(|e| create_physical_expr(e, expr_arena, &eval_schema, state)) //kdn TODO: from exprir or node?
                 .collect::<PolarsResult<Vec<_>>>()?;
 
-            // output_field
             Ok(Arc::new(StructEvalExpr::new(
                 input,
                 evaluation,

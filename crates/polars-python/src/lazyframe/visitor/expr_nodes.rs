@@ -561,7 +561,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
             name: name.into_py_any(py)?,
         }
         .into_py_any(py),
-        AExpr::StructFields => todo!(), //kdn TODO
+        AExpr::StructField(_) => Err(PyNotImplementedError::new_err("field")), //kdn TODO ASK
         AExpr::Literal(lit) => {
             use polars_core::prelude::AnyValue;
             let dtype: Py<PyAny> = Wrap(lit.get_datatype()).into_py_any(py)?;
@@ -1480,6 +1480,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
         .into_py_any(py),
         AExpr::Len => Len {}.into_py_any(py),
         AExpr::Eval { .. } => Err(PyNotImplementedError::new_err("list.eval")),
-        AExpr::StructEval { .. } => todo!(), //kdn
+        AExpr::StructEval { .. } => Err(PyNotImplementedError::new_err("struct.with_fields")), //kdn TODO ASK
     }
 }

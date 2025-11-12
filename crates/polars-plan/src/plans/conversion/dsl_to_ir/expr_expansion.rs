@@ -1,7 +1,7 @@
 //! this contains code used for rewriting projections, expanding wildcards, regex selection etc.
 
 use super::*;
-use crate::constants::{POLARS_ELEMENT, get_pl_element_name};
+use crate::constants::{get_pl_element_name, PL_STRUCTFIELDS_NAME, POLARS_ELEMENT, POLARS_STRUCTFIELDS};
 
 pub fn prepare_projection(
     exprs: Vec<Expr>,
@@ -287,9 +287,13 @@ fn expand_expression_rec(
         Expr::Column(_) => out.push(expr.clone()),
         Expr::Selector(selector) => {
             let mut schema = std::borrow::Cow::Borrowed(schema);
-            // Remove `element()` for selectors.
+
+            // Remove `element()` and `field()` for selectors.
             if schema.contains(POLARS_ELEMENT) {
                 schema.to_mut().remove(POLARS_ELEMENT);
+            }
+            if schema.contains(POLARS_STRUCTFIELDS) {
+                schema.to_mut().remove(POLARS_STRUCTFIELDS);
             }
             let columns = selector.into_columns(schema.as_ref(), ignored_selector_columns)?;
             out.extend(columns.into_iter().map(Expr::Column));
@@ -920,6 +924,36 @@ fn expand_expression_rec(
                         variant: *variant,
                     };
                 }
+            }
+        },
+        Expr::StructEval { expr, evaluation } => {
+            let mut expr_out = Vec::with_capacity(1);
+            expand_expression_rec(expr, ignored_selector_columns, schema, &mut expr_out, opt_flags)?;
+
+            for expr in expr_out {
+                let expr = Arc::new(expr);
+
+                let expr_dtype = expr.to_field(schema)?.dtype;
+                let mut evaluation_schema = schema.clone();
+                evaluation_schema.insert(PL_STRUCTFIELDS_NAME.clone(), expr_dtype.clone());
+
+                // let start_length = out.len(); // kdn TODO REVIEW
+
+                let mut eval = Vec::with_capacity(evaluation.len());
+                for e in evaluation {
+                    _ = expand_expression_rec(
+                        e,
+                        &Default::default(),
+                        &evaluation_schema,
+                        &mut eval,
+                        opt_flags,
+                    )?
+                }
+
+                out.push(Expr::StructEval {
+                    expr: expr,
+                    evaluation: eval,
+                });
             }
         },
         Expr::RenameAlias { expr, function } => {

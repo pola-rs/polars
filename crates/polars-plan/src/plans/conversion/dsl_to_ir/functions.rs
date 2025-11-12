@@ -7,7 +7,7 @@ use super::expr_to_ir::ExprToIRContext;
 use super::*;
 use crate::constants::get_literal_name;
 use crate::dsl::{Expr, FunctionExpr};
-use crate::plans::conversion::dsl_to_ir::expr_to_ir::{to_expr_ir, to_expr_irs};
+use crate::plans::conversion::dsl_to_ir::expr_to_ir::to_expr_irs;
 use crate::plans::{AExpr, IRFunctionExpr};
 
 pub(super) fn convert_functions(
@@ -22,44 +22,34 @@ pub(super) fn convert_functions(
         function,
         FunctionExpr::StructExpr(StructFunction::WithFields)
     ) {
-        dbg!("start convert_functions for Expr::WithFields"); //kdn
-        dbg!(&ctx.arena);
-        dbg!(&ctx.schema);
-        let mut input = input.into_iter();
-        let struct_input = to_expr_ir(input.next().unwrap(), ctx)?;
-        let dtype = struct_input.to_expr(ctx.arena).to_field(ctx.schema)?.dtype;
-        let DataType::Struct(fields) = &dtype else {
-            polars_bail!(op = "struct.with_fields", dtype);
-        };
+        //kdn TODO remove WithFields
+        unreachable!(); //kdn 
+        // let mut input = input.into_iter();
+        // let struct_input = to_expr_ir(input.next().unwrap(), ctx)?;
+        // let dtype = struct_input.to_expr(ctx.arena).to_field(ctx.schema)?.dtype;
+        // let DataType::Struct(fields) = &dtype else {
+        //     polars_bail!(op = "struct.with_fields", dtype);
+        // };
 
-        let struct_name = struct_input.output_name().clone();
-        let struct_node = struct_input.node();
-        let struct_schema = Schema::from_iter(fields.iter().cloned());
+        // let struct_name = struct_input.output_name().clone();
+        // let struct_node = struct_input.node();
+        // let struct_schema = Schema::from_iter(fields.iter().cloned());
 
-        let mut evaluation = Vec::with_capacity(input.len() - 1);
-        // e.push(struct_input);
+        // let mut evaluation = Vec::with_capacity(input.len() - 1);
+        // // e.push(struct_input);
 
-        let prev = ctx.with_fields.replace((struct_node, struct_schema));
-        for i in input {
-            evaluation.push(to_expr_ir(i, ctx)?);
-        }
-        ctx.with_fields = prev;
+        // let prev = ctx.with_fields.replace((struct_node, struct_schema));
+        // for i in input {
+        //     evaluation.push(to_expr_ir(i, ctx)?);
+        // }
+        // ctx.with_fields = prev;
 
-        // let function = IRFunctionExpr::StructExpr(IRStructFunction::WithFields);
-        // let options = function.function_options();
-        // dbg!(&options); //kdn
-        // let out = ctx.arena.add(AExpr::Function {
-        //     input: e,
-        //     function,
-        //     options,
+        // let out = ctx.arena.add(AExpr::StructEval {
+        //     expr: struct_node,
+        //     evaluation,
         // });
 
-        let out = ctx.arena.add(AExpr::StructEval {
-            expr: struct_node,
-            evaluation,
-        });
-
-        return Ok((out, struct_name));
+        // return Ok((out, struct_name));
     }
 
     let input_is_empty = input.is_empty();

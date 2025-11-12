@@ -25,9 +25,13 @@ impl AExpr {
 
             Eval { variant, .. } => variant.is_elementwise(),
 
-            StructEval { .. } => true, //kdn TODO REVIEW
-
-            Element | BinaryExpr { .. } | Column(_) | StructFields | Ternary { .. } | Cast { .. } => true,
+            Element
+            | BinaryExpr { .. }
+            | Column(_)
+            | StructEval { .. }
+            | StructField(_)
+            | Ternary { .. }
+            | Cast { .. } => true,
 
             #[cfg(feature = "dynamic_group_by")]
             Rolling { .. } => false,

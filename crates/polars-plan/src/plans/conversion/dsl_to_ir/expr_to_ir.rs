@@ -1,6 +1,6 @@
 use super::functions::convert_functions;
 use super::*;
-use crate::constants::get_pl_element_name;
+use crate::constants::{get_pl_element_name, PL_STRUCTFIELDS_NAME};
 use crate::plans::iterator::ArenaExprIter;
 
 pub fn to_expr_ir(expr: Expr, ctx: &mut ExprToIRContext) -> PolarsResult<ExprIR> {
@@ -510,6 +510,40 @@ pub(super) fn to_aexpr_impl(
                 output_name,
             )
         },
+        Expr::StructEval { expr, evaluation } => {
+
+            let (expr, output_name) = recurse_arc!(expr)?;
+            let expr_dtype = ctx.arena.get(expr).to_dtype(&ctx.to_field_ctx())?;
+
+            let DataType::Struct(fields) = &expr_dtype else {
+                polars_bail!(op = "struct.with_fields", expr_dtype);
+            };
+
+            let struct_schema = Schema::from_iter(fields.iter().cloned());
+            let mut eval_schema = ctx.schema.clone();
+            eval_schema.insert(PL_STRUCTFIELDS_NAME.clone(), expr_dtype.clone());
+
+            let mut eval_ir = Vec::with_capacity(evaluation.len());
+
+            for e in evaluation {
+                let mut eval_ctx = ExprToIRContext {
+                    with_fields: Some((expr, struct_schema.clone())), //kdn TODO PERFORMANCE ref schema?
+                    arena: ctx.arena,
+                    schema: &eval_schema,
+                    allow_unknown: ctx.allow_unknown,
+                    check_column_names: ctx.check_column_names,
+                };
+                eval_ir.push(to_expr_ir(e, &mut eval_ctx)?);
+            }
+
+            (
+                AExpr::StructEval {
+                    expr,
+                    evaluation: eval_ir,
+                },
+                output_name,
+            )
+        },
         Expr::Len => (AExpr::Len, get_len_name()),
         Expr::KeepName(expr) => {
             let (expr, _) = to_aexpr_impl(owned(expr), ctx)?;
@@ -533,7 +567,6 @@ pub(super) fn to_aexpr_impl(
         },
         #[cfg(feature = "dtype-struct")]
         Expr::Field(name) => {
-            dbg!("match arm Expr::Field in to_aexpr_impl"); //kdn
             assert_eq!(
                 name.len(),
                 1,
@@ -541,7 +574,7 @@ pub(super) fn to_aexpr_impl(
             );
             let name = &name[0];
 
-            let Some((input, with_fields)) = &ctx.with_fields else {
+            let Some((_input, with_fields)) = &ctx.with_fields else {
                 polars_bail!(InvalidOperation: "`pl.field()` called outside of struct context");
             };
 
@@ -552,17 +585,7 @@ pub(super) fn to_aexpr_impl(
                 );
             }
 
-            let function = IRFunctionExpr::StructExpr(IRStructFunction::FieldByName(name.clone()));
-            let input = ctx.arena.add(AExpr::StructFields); //kdn TBD: add Expr?
-            let options = function.function_options();
-            (
-                AExpr::Function {
-                    input: vec![ExprIR::new(input, OutputName::Alias(PlSmallStr::EMPTY))], //kdn TODO NAME
-                    function,
-                    options,
-                },
-                name.clone(),
-            )
+            (AExpr::StructField(name.clone()), name.clone())
         },
 
         e @ Expr::SubPlan { .. } | e @ Expr::Selector(_) => {

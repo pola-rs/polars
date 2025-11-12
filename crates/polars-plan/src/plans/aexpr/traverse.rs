@@ -13,7 +13,7 @@ impl AExpr {
         use AExpr::*;
 
         match self {
-            Element | Column(_) | StructFields | Literal(_) | Len => {},
+            Element | Column(_) | StructField(_) | Literal(_) | Len => {},
             BinaryExpr { left, op: _, right } => {
                 container.extend([*right, *left]);
             },
@@ -79,8 +79,9 @@ impl AExpr {
                 container.extend([*expr]);
             },
             StructEval { expr, evaluation } => {
+                // We don't use the evaluation here because it does not contain inputs.
+                _ = evaluation;
                 container.extend([*expr]);
-                container.extend(evaluation.iter().rev().map(ExprIR::node)); //kdn TODO REVIEW
             },
             Slice {
                 input,
@@ -101,7 +102,7 @@ impl AExpr {
         use AExpr::*;
 
         match self {
-            Element | Column(_) | StructFields | Literal(_) | Len => {},
+            Element | Column(_) | StructField(_) | Literal(_) | Len => {},
             BinaryExpr { left, op: _, right } => {
                 container.extend([*right, *left]);
             },
@@ -163,9 +164,8 @@ impl AExpr {
                 variant: _,
             } => container.extend([*evaluation, *expr]),
             StructEval { expr, evaluation } => {
-                //kdn: TODO check order
-                container.extend([*expr]);
                 container.extend(evaluation.iter().rev().map(ExprIR::node));
+                container.extend([*expr]);
             },
             Slice {
                 input,
@@ -180,7 +180,7 @@ impl AExpr {
     pub fn replace_inputs(mut self, inputs: &[Node]) -> Self {
         use AExpr::*;
         let input = match &mut self {
-            Element | Column(_) | StructFields | Literal(_) | Len => return self,
+            Element | Column(_) | StructField(_) | Literal(_) | Len => return self,
             Cast { expr, .. } => expr,
             Explode { expr, .. } => expr,
             BinaryExpr { left, right, .. } => {
@@ -253,12 +253,9 @@ impl AExpr {
                 _ = evaluation; // Intentional.
                 return self;
             },
-            StructEval {
-                expr,
-                evaluation,
-            } => {
+            StructEval { expr, evaluation } => {
                 *expr = inputs[0];
-                _ = evaluation; // kdn TODO
+                _ = evaluation; // Intentional.
                 return self;
             },
             Slice {

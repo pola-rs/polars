@@ -195,10 +195,10 @@ pub enum AExpr {
         options: ExplodeOptions,
     },
     Column(PlSmallStr),
-    /// Field values in the `struct` context.
-    /// 
-    /// Resolves to `pl.field()`.
-    StructFields, //kdn TODO: TBD do we want to retain the struct schema in here?
+    /// Struct field value in a `struct.with_fields` context.
+    ///
+    /// Equivalent of `pl.field(name)`.
+    StructField(PlSmallStr),
     Literal(LiteralValue),
     BinaryExpr {
         left: Node,
@@ -337,7 +337,7 @@ impl AExpr {
             AExpr::Eval { expr, variant, .. } => {
                 variant.is_length_preserving() && is_scalar_ae(*expr, arena)
             },
-            AExpr::StructEval {..} => false, //kdn TODO
+            AExpr::StructEval { expr, .. } => is_scalar_ae(*expr, arena),
             AExpr::Sort { expr, .. } => is_scalar_ae(*expr, arena),
             AExpr::Gather { returns_scalar, .. } => *returns_scalar,
             AExpr::SortBy { expr, .. } => is_scalar_ae(*expr, arena),
@@ -349,7 +349,7 @@ impl AExpr {
 
             AExpr::Explode { .. }
             | AExpr::Column(_)
-            | AExpr::StructFields
+            | AExpr::StructField(_)
             | AExpr::Filter { .. }
             | AExpr::Slice { .. } => false,
         }
@@ -382,7 +382,7 @@ impl AExpr {
         match self {
             AExpr::Element => true,
             AExpr::Column(_) => true,
-            AExpr::StructFields => true,
+            AExpr::StructField(_) => true,
 
             // Over and Rolling implicitly zip with the context and thus should always be length
             // preserving
@@ -416,7 +416,7 @@ impl AExpr {
             AExpr::Eval { expr, variant, .. } => {
                 variant.is_length_preserving() && is_length_preserving_ae(*expr, arena)
             },
-            AExpr::StructEval { expr, evaluation } => todo!(), //kdn TODO
+            AExpr::StructEval { expr, .. } => is_length_preserving_ae(*expr, arena),
             AExpr::Sort { expr, .. } => is_length_preserving_ae(*expr, arena),
             AExpr::Gather {
                 expr: _,
