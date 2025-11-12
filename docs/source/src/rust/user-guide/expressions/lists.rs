@@ -38,15 +38,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:children]
     // Contribute the Rust translation of the Python example by opening a PR.
     // --8<-- [end:children]
-    
+
     // --8<-- [start:list-aggregation]
     // Contribute the Rust translation of the Python example by opening a PR.
     // --8<-- [end:list-aggregation]
-    
+
     // --8<-- [start:list-entropy]
     // Contribute the Rust translation of the Python example by opening a PR.
     // --8<-- [end:list-entropy]
-    
+
     // --8<-- [start:weather_by_day]
     // Contribute the Rust translation of the Python example by opening a PR.
     // --8<-- [end:weather_by_day]
