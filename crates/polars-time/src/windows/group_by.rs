@@ -954,6 +954,13 @@ impl RollingWindower {
         self.end = 0;
         self.length = 0;
     }
+
+    pub fn reset(&mut self) {
+        self.active.clear();
+        self.start = 0;
+        self.end = 0;
+        self.length = 0;
+    }
 }
 
 #[cfg(test)]

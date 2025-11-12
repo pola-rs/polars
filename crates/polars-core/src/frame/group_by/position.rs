@@ -513,6 +513,16 @@ impl GroupsType {
         let len = self.len();
         slice_groups(Arc::new(self), 0, len)
     }
+
+    pub fn num_elements(&self) -> usize {
+        match self {
+            GroupsType::Idx(i) => i.all().iter().map(|v| v.len()).sum(),
+            GroupsType::Slice {
+                groups,
+                overlapping: _,
+            } => groups.iter().map(|[_, l]| *l as usize).sum(),
+        }
+    }
 }
 
 impl From<GroupsIdx> for GroupsType {
