@@ -1894,9 +1894,9 @@ def test_first_last() -> None:
     s3 = pl.Series("a", [None, None], dtype=pl.Int32)
     s = s1.append(s2).append(s3)
     assert s.first() is None
-    assert s.first_non_null() == 3
+    assert s.first(ignore_nulls=True) == 3
     assert s.last() is None
-    assert s.last_non_null() == 4
+    assert s.last(ignore_nulls=True) == 4
 
 
 def test_clip() -> None:

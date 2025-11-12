@@ -412,37 +412,16 @@ class LazyGroupBy:
         """
         return self.agg(F.len().alias("count"))
 
-    def first(self) -> LazyFrame:
+    def first(self, *, ignore_nulls: bool = False) -> LazyFrame:
         """
         Aggregate the first values in the group.
 
-        Examples
-        --------
-        >>> ldf = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2, 2, 3, 4, 5],
-        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
-        ...         "c": [True, True, True, False, False, True],
-        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
-        ...     }
-        ... ).lazy()
-        >>> ldf.group_by("d", maintain_order=True).first().collect()
-        shape: (3, 4)
-        ┌────────┬─────┬──────┬───────┐
-        │ d      ┆ a   ┆ b    ┆ c     │
-        │ ---    ┆ --- ┆ ---  ┆ ---   │
-        │ str    ┆ i64 ┆ f64  ┆ bool  │
-        ╞════════╪═════╪══════╪═══════╡
-        │ Apple  ┆ 1   ┆ 0.5  ┆ true  │
-        │ Orange ┆ 2   ┆ 0.5  ┆ true  │
-        │ Banana ┆ 4   ┆ 13.0 ┆ false │
-        └────────┴─────┴──────┴───────┘
-        """
-        return self.agg(F.all().first())
-
-    def first_non_null(self) -> LazyFrame:
-        """
-        Aggregate the first non-null values in the group.
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the first non-null value for each aggregation is returned,
+            otherwise `None` is returned if no non-null value exists.
 
         Examples
         --------
@@ -454,7 +433,18 @@ class LazyGroupBy:
         ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
         ...     }
         ... ).lazy()
-        >>> ldf.group_by("d", maintain_order=True).first_non_null().collect()
+        >>> ldf.group_by("d", maintain_order=True).first().collect()
+        shape: (3, 4)
+        ┌────────┬─────┬──────┬───────┐
+        │ d      ┆ a   ┆ b    ┆ c     │
+        │ ---    ┆ --- ┆ ---  ┆ ---   │
+        │ str    ┆ i64 ┆ f64  ┆ bool  │
+        ╞════════╪═════╪══════╪═══════╡
+        │ Apple  ┆ 1   ┆ 0.5  ┆ null  │
+        │ Orange ┆ 2   ┆ 0.5  ┆ true  │
+        │ Banana ┆ 4   ┆ 13.0 ┆ false │
+        └────────┴─────┴──────┴───────┘
+        >>> ldf.group_by("d", maintain_order=True).first(ignore_nulls=True).collect()
         shape: (3, 4)
         ┌────────┬─────┬──────┬───────┐
         │ d      ┆ a   ┆ b    ┆ c     │
@@ -466,39 +456,18 @@ class LazyGroupBy:
         │ Banana ┆ 4   ┆ 13.0 ┆ false │
         └────────┴─────┴──────┴───────┘
         """
-        return self.agg(F.all().first_non_null())
+        return self.agg(F.all().first(ignore_nulls=ignore_nulls))
 
-    def last(self) -> LazyFrame:
+    def last(self, *, ignore_nulls: bool = False) -> LazyFrame:
         """
         Aggregate the last values in the group.
 
-        Examples
-        --------
-        >>> ldf = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2, 2, 3, 4, 5],
-        ...         "b": [0.5, 0.5, 4, 10, 14, 13],
-        ...         "c": [True, True, True, False, False, True],
-        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
-        ...     }
-        ... ).lazy()
-        >>> ldf.group_by("d", maintain_order=True).last().collect()
-        shape: (3, 4)
-        ┌────────┬─────┬──────┬───────┐
-        │ d      ┆ a   ┆ b    ┆ c     │
-        │ ---    ┆ --- ┆ ---  ┆ ---   │
-        │ str    ┆ i64 ┆ f64  ┆ bool  │
-        ╞════════╪═════╪══════╪═══════╡
-        │ Apple  ┆ 3   ┆ 10.0 ┆ false │
-        │ Orange ┆ 2   ┆ 0.5  ┆ true  │
-        │ Banana ┆ 5   ┆ 13.0 ┆ true  │
-        └────────┴─────┴──────┴───────┘
-        """
-        return self.agg(F.all().last())
-
-    def last_non_null(self) -> LazyFrame:
-        """
-        Aggregate the last non-null values in the group.
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the last non-null value for each aggregation is returned,
+            otherwise `None` is returned if no non-null value exists.
 
         Examples
         --------
@@ -510,7 +479,18 @@ class LazyGroupBy:
         ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
         ...     }
         ... ).lazy()
-        >>> ldf.group_by("d", maintain_order=True).last_non_null().collect()
+        >>> ldf.group_by("d", maintain_order=True).last().collect()
+        shape: (3, 4)
+        ┌────────┬─────┬──────┬──────┐
+        │ d      ┆ a   ┆ b    ┆ c    │
+        │ ---    ┆ --- ┆ ---  ┆ ---  │
+        │ str    ┆ i64 ┆ f64  ┆ bool │
+        ╞════════╪═════╪══════╪══════╡
+        │ Apple  ┆ 3   ┆ 10.0 ┆ null │
+        │ Orange ┆ 2   ┆ 0.5  ┆ true │
+        │ Banana ┆ 5   ┆ 13.0 ┆ true │
+        └────────┴─────┴──────┴──────┘
+        >>> ldf.group_by("d", maintain_order=True).last(ignore_nulls=True).collect()
         shape: (3, 4)
         ┌────────┬─────┬──────┬───────┐
         │ d      ┆ a   ┆ b    ┆ c     │
@@ -522,7 +502,7 @@ class LazyGroupBy:
         │ Banana ┆ 5   ┆ 13.0 ┆ true  │
         └────────┴─────┴──────┴───────┘
         """
-        return self.agg(F.all().last_non_null())
+        return self.agg(F.all().last(ignore_nulls=ignore_nulls))
 
     def max(self) -> LazyFrame:
         """

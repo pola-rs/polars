@@ -140,7 +140,7 @@ def test_first_last_over() -> None:
     )
     assert_frame_equal(result, expected)
 
-    result = df.select(pl.col("b").first_non_null().over("a"))
+    result = df.select(pl.col("b").first(ignore_nulls=True).over("a"))
     expected = pl.DataFrame({"b": pl.Series([1, 1, 1, 1, 4, 4, 4, 4], dtype=pl.Int32)})
     assert_frame_equal(result, expected)
 
@@ -150,6 +150,6 @@ def test_first_last_over() -> None:
     )
     assert_frame_equal(result, expected)
 
-    result = df.select(pl.col("b").last_non_null().over("a"))
+    result = df.select(pl.col("b").last(ignore_nulls=True).over("a"))
     expected = pl.DataFrame({"b": pl.Series([3, 3, 3, 3, 6, 6, 6, 6], dtype=pl.Int32)})
     assert_frame_equal(result, expected)

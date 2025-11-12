@@ -671,7 +671,7 @@ def test_first_last(dtype: PolarsDataType) -> None:
     expected = expected_value.cast(dtype).to_frame()
     assert_frame_equal(result, expected)
 
-    result = lf.select(pl.col("a").first_non_null()).collect()
+    result = lf.select(pl.col("a").first(ignore_nulls=True)).collect()
     expected_value = pl.Series("a", [3])
     if dtype == pl.Categorical:
         # For categorical, we must go through String
@@ -688,7 +688,7 @@ def test_first_last(dtype: PolarsDataType) -> None:
     expected = expected_value.cast(dtype).to_frame()
     assert_frame_equal(result, expected)
 
-    result = lf.select(pl.col("a").last_non_null()).collect()
+    result = lf.select(pl.col("a").last(ignore_nulls=True)).collect()
     expected_value = pl.Series("a", [4])
     if dtype == pl.Categorical:
         # For categorical, we must go through String
@@ -703,13 +703,13 @@ def test_first_last(dtype: PolarsDataType) -> None:
     result = lf.select(pl.col("a").first()).collect()
     assert_frame_equal(result, expected)
 
-    result = lf.select(pl.col("a").first_non_null()).collect()
+    result = lf.select(pl.col("a").first(ignore_nulls=True)).collect()
     assert_frame_equal(result, expected)
 
     result = lf.select(pl.col("a").last()).collect()
     assert_frame_equal(result, expected)
 
-    result = lf.select(pl.col("a").last_non_null()).collect()
+    result = lf.select(pl.col("a").last(ignore_nulls=True)).collect()
     assert_frame_equal(result, expected)
 
     # Test with no nulls
@@ -726,7 +726,7 @@ def test_first_last(dtype: PolarsDataType) -> None:
     result = lf.select(pl.col("a").first()).collect()
     assert_frame_equal(result, expected)
 
-    result = lf.select(pl.col("a").first_non_null()).collect()
+    result = lf.select(pl.col("a").first(ignore_nulls=True)).collect()
     assert_frame_equal(result, expected)
 
     expected_value = pl.Series("a", [5])
@@ -738,7 +738,7 @@ def test_first_last(dtype: PolarsDataType) -> None:
     result = lf.select(pl.col("a").last()).collect()
     assert_frame_equal(result, expected)
 
-    result = lf.select(pl.col("a").last_non_null()).collect()
+    result = lf.select(pl.col("a").last(ignore_nulls=True)).collect()
     assert_frame_equal(result, expected)
 
 

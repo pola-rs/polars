@@ -2359,10 +2359,10 @@ def test_group_by_first_last(
     result = lf.group_by("idx", maintain_order=True).first().collect()
     assert_frame_equal(result, expected)
 
-    # first_non_null()
+    # first(ignore_nulls=True)
     result = (
         lf.group_by("idx", maintain_order=True)
-        .agg(pl.col("a").first_non_null())
+        .agg(pl.col("a").first(ignore_nulls=True))
         .collect()
     )
     expected_vals = pl.Series([1, 2, 3, 4, 5])
@@ -2373,7 +2373,7 @@ def test_group_by_first_last(
     expected_vals = expected_vals.cast(dtype)
     expected = pl.DataFrame({"idx": idx, "a": expected_vals})
     assert_frame_equal(result, expected)
-    result = lf.group_by("idx", maintain_order=True).first_non_null().collect()
+    result = lf.group_by("idx", maintain_order=True).first(ignore_nulls=True).collect()
     assert_frame_equal(result, expected)
 
     # last()
@@ -2392,7 +2392,7 @@ def test_group_by_first_last(
     # last_non_null
     result = (
         lf.group_by("idx", maintain_order=True)
-        .agg(pl.col("a").last_non_null())
+        .agg(pl.col("a").last(ignore_nulls=True))
         .collect()
     )
     expected_vals = pl.Series([n, n - 1, n - 2, n - 3, n - 4])
@@ -2403,7 +2403,7 @@ def test_group_by_first_last(
     expected_vals = expected_vals.cast(dtype)
     expected = pl.DataFrame({"idx": idx, "a": expected_vals})
     assert_frame_equal(result, expected)
-    result = lf.group_by("idx", maintain_order=True).last_non_null().collect()
+    result = lf.group_by("idx", maintain_order=True).last(ignore_nulls=True).collect()
     assert_frame_equal(result, expected)
 
     # Test with no nulls
@@ -2449,11 +2449,11 @@ def test_group_by_first_last(
     # first_non_null
     result = (
         lf.group_by("idx", maintain_order=True)
-        .agg(pl.col("a").first_non_null())
+        .agg(pl.col("a").first(ignore_nulls=True))
         .collect()
     )
     assert_frame_equal(result, expected)
-    result = lf.group_by("idx", maintain_order=True).first_non_null().collect()
+    result = lf.group_by("idx", maintain_order=True).first(ignore_nulls=True).collect()
     assert_frame_equal(result, expected)
 
     # last()
@@ -2472,9 +2472,9 @@ def test_group_by_first_last(
     # last_non_null
     result = (
         lf.group_by("idx", maintain_order=True)
-        .agg(pl.col("a").last_non_null())
+        .agg(pl.col("a").last(ignore_nulls=True))
         .collect()
     )
     assert_frame_equal(result, expected)
-    result = lf.group_by("idx", maintain_order=True).last_non_null().collect()
+    result = lf.group_by("idx", maintain_order=True).last(ignore_nulls=True).collect()
     assert_frame_equal(result, expected)
