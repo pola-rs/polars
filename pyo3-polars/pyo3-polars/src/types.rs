@@ -393,7 +393,8 @@ impl<'py> IntoPyObject<'py> for PyExpr {
             .map_err(|err| {
                 let msg = format!("deserialization failed: {err}");
                 PyValueError::new_err(msg)
-            })
+            });
+        Ok(instance)
     }
 }
 
