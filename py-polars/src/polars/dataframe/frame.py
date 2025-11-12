@@ -1683,9 +1683,8 @@ class DataFrame:
         if row is None and column is None:
             if self.shape != (1, 1):
                 msg = (
-                    "can only call `.item()` if the dataframe is of shape (1, 1),"
-                    " or if explicit row/col values are provided;"
-                    f" frame has shape {self.shape!r}"
+                    'can only call `.item()` without "row" or "column" values if the '
+                    f"DataFrame has a single element; shape={self.shape!r}"
                 )
                 raise ValueError(msg)
             return self._df.to_series(0).get_index(0)
@@ -8863,10 +8862,10 @@ class DataFrame:
         │ null ┆ null ┆ null │
         └──────┴──────┴──────┘
         """
-        if n < 0:
-            msg = f"`n` should be greater than or equal to 0, got {n}"
-            raise ValueError(msg)
-        # faster path
+        if not (is_int := isinstance(n, int)) or n < 0:  # type: ignore[redundant-expr]
+            msg = f"`n` should be an integer >= 0, got {n}"
+            err = TypeError if not is_int else ValueError
+            raise err(msg)
         if n == 0:
             return self._from_pydf(self._df.clear())
         return self.__class__(
@@ -9249,6 +9248,7 @@ class DataFrame:
     def pivot(
         self,
         on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
+        on_columns: Sequence[Any] | pl.Series | pl.DataFrame | None = None,
         *,
         index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
@@ -9271,6 +9271,8 @@ class DataFrame:
         on
             The column(s) whose values will be used as the new columns of the output
             DataFrame.
+        on_columns
+            What value combinations will be considered for the output table.
         index
             The column(s) that remain from the input to the output. The output DataFrame will have one row
             for each unique combination of the `index`'s values.
@@ -9347,6 +9349,26 @@ class DataFrame:
         │ Karen ┆ 61    ┆ 58      │
         └───────┴───────┴─────────┘
 
+        If you want to only pivot over a limited set of `subject` values or already
+        know the `subject` values ahead of time, you can provide these using the
+        `on_columns` argument.
+
+        >>> df.pivot(
+        ...     "subject",
+        ...     on_columns=["maths", "physics"],
+        ...     index="name",
+        ...     values="test_1",
+        ... )
+        shape: (2, 3)
+        ┌───────┬───────┬─────────┐
+        │ name  ┆ maths ┆ physics │
+        │ ---   ┆ ---   ┆ ---     │
+        │ str   ┆ i64   ┆ i64     │
+        ╞═══════╪═══════╪═════════╡
+        │ Cady  ┆ 98    ┆ 99      │
+        │ Karen ┆ 61    ┆ 58      │
+        └───────┴───────┴─────────┘
+
         You can use selectors too - here we include all test scores in the pivoted table:
 
         >>> import polars.selectors as cs
@@ -9409,77 +9431,33 @@ class DataFrame:
         │ b    ┆ 0.964028 ┆ 0.999954 │
         └──────┴──────────┴──────────┘
 
-        Note that `pivot` is only available in eager mode. If you know the unique
-        column values in advance, you can use :meth:`polars.LazyFrame.group_by` to
-        get the same result as above in lazy mode:
-
-        >>> index = pl.col("col1")
-        >>> on = pl.col("col2")
-        >>> values = pl.col("col3")
-        >>> unique_column_values = ["x", "y"]
-        >>> aggregate_function = lambda col: col.tanh().mean()
-        >>> df.lazy().group_by(index).agg(
-        ...     aggregate_function(values.filter(on == value)).alias(value)
-        ...     for value in unique_column_values
-        ... ).collect()  # doctest: +IGNORE_RESULT
-        shape: (2, 3)
-        ┌──────┬──────────┬──────────┐
-        │ col1 ┆ x        ┆ y        │
-        │ ---  ┆ ---      ┆ ---      │
-        │ str  ┆ f64      ┆ f64      │
-        ╞══════╪══════════╪══════════╡
-        │ a    ┆ 0.998347 ┆ null     │
-        │ b    ┆ 0.964028 ┆ 0.999954 │
-        └──────┴──────────┴──────────┘
+        See Also
+        --------
+        LazyFrame.pivot
         """  # noqa: W505
-        on = _expand_selectors(self, on)
-        if values is not None:
-            values = _expand_selectors(self, values)
-        if index is not None:
-            index = _expand_selectors(self, index)
+        from polars.lazyframe.opt_flags import QueryOptFlags
 
-        if isinstance(aggregate_function, str):
-            if aggregate_function == "first":
-                aggregate_expr = F.element().first()._pyexpr
-            elif aggregate_function == "sum":
-                aggregate_expr = F.element().sum()._pyexpr
-            elif aggregate_function == "max":
-                aggregate_expr = F.element().max()._pyexpr
-            elif aggregate_function == "min":
-                aggregate_expr = F.element().min()._pyexpr
-            elif aggregate_function == "mean":
-                aggregate_expr = F.element().mean()._pyexpr
-            elif aggregate_function == "median":
-                aggregate_expr = F.element().median()._pyexpr
-            elif aggregate_function == "last":
-                aggregate_expr = F.element().last()._pyexpr
-            elif aggregate_function == "len":
-                aggregate_expr = F.len()._pyexpr
-            elif aggregate_function == "count":
-                issue_deprecation_warning(
-                    "`aggregate_function='count'` input for `pivot` is deprecated."
-                    " Please use `aggregate_function='len'`.",
-                    version="0.20.5",
-                )
-                aggregate_expr = F.len()._pyexpr
-            else:
-                msg = f"invalid input for `aggregate_function` argument: {aggregate_function!r}"
-                raise ValueError(msg)
-        elif aggregate_function is None:
-            aggregate_expr = None
+        on_cols: Sequence[Any] | pl.Series | pl.DataFrame
+        if on_columns is None:
+            cols = self.select(on).unique(maintain_order=True)
+            if sort_columns:
+                cols = cols.sort(on)
+            on_cols = cols
         else:
-            aggregate_expr = aggregate_function._pyexpr
+            on_cols = on_columns
 
-        return self._from_pydf(
-            self._df.pivot_expr(
-                on,
-                index,
-                values,
-                maintain_order,
-                sort_columns,
-                aggregate_expr,
-                separator,
+        return (
+            self.lazy()
+            .pivot(
+                on=on,
+                on_columns=on_cols,
+                index=index,
+                values=values,
+                aggregate_function=aggregate_function,
+                maintain_order=maintain_order,
+                separator=separator,
             )
+            .collect(optimizations=QueryOptFlags._eager())
         )
 
     def unpivot(
@@ -11450,7 +11428,16 @@ class DataFrame:
         >>> df.row(by_predicate=(pl.col("ham") == "b"))
         (2, 7, 'b')
         """
-        if index is not None and by_predicate is not None:
+        if index is None and by_predicate is None:
+            if self.height == 1:
+                index = 0
+            else:
+                msg = (
+                    'can only call `.row()` without "index" or "by_predicate" values '
+                    f"if the DataFrame has a single row; shape={self.shape!r}"
+                )
+                raise ValueError(msg)
+        elif index is not None and by_predicate is not None:
             msg = "cannot set both 'index' and 'by_predicate'; mutually exclusive"
             raise ValueError(msg)
         elif isinstance(index, pl.Expr):

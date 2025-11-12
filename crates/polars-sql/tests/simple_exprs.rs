@@ -448,7 +448,7 @@ fn test_create_table() {
         FROM df"#;
     let df_sql = context.execute(sql).unwrap().collect().unwrap();
     let create_tbl_res = df! {
-        "Response" => ["CREATE TABLE"]
+        "Response" => ["CREATE TABLE df2"]
     }
     .unwrap();
 

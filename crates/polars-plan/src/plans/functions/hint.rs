@@ -1,6 +1,7 @@
 use std::fmt;
 use std::sync::Arc;
 
+use polars_core::prelude::PlHashSet;
 use polars_utils::pl_str::PlSmallStr;
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -18,6 +19,33 @@ pub struct Sorted {
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum HintIR {
     Sorted(Arc<[Sorted]>),
+}
+
+impl HintIR {
+    pub fn project(&self, projected_names: &PlHashSet<PlSmallStr>) -> Option<HintIR> {
+        match self {
+            Self::Sorted(s) => {
+                let num_matches = s
+                    .iter()
+                    .filter(|i| projected_names.contains(&i.column))
+                    .count();
+
+                if num_matches == s.len() {
+                    return Some(Self::Sorted(s.clone()));
+                } else if num_matches == 0 {
+                    return None;
+                }
+
+                let mut sorted = Vec::with_capacity(num_matches);
+                sorted.extend(
+                    s.iter()
+                        .filter(|i| projected_names.contains(&i.column))
+                        .cloned(),
+                );
+                Some(Self::Sorted(sorted.into()))
+            },
+        }
+    }
 }
 
 impl fmt::Display for Sorted {

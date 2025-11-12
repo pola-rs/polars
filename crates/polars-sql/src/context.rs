@@ -22,6 +22,7 @@ use crate::sql_expr::{
     parse_sql_array, parse_sql_expr, resolve_compound_identifier, to_sql_interface_err,
 };
 use crate::table_functions::PolarsTableFunctions;
+use crate::types::map_sql_dtype_to_polars;
 
 #[derive(Clone)]
 pub struct TableInfo {
@@ -742,8 +743,58 @@ impl SQLContext {
         Ok(lf)
     }
 
+    /// Check that the SELECT statement only contains supported clauses.
+    fn validate_select(&self, select_stmt: &Select) -> PolarsResult<()> {
+        // Destructure "Select" exhaustively; that way if/when new fields are added in
+        // future sqlparser versions, we'll get a compilation error and can handle them
+        let Select {
+            // Supported clauses
+            distinct: _,
+            from: _,
+            group_by: _,
+            having: _,
+            projection: _,
+            selection: _,
+
+            // Metadata/token fields (can ignore)
+            select_token: _,
+            top_before_distinct: _,
+            window_before_qualify: _,
+
+            // Unsupported clauses
+            ref cluster_by,
+            ref connect_by,
+            ref distribute_by,
+            ref into,
+            ref lateral_views,
+            ref named_window,
+            ref prewhere,
+            ref qualify,
+            ref sort_by,
+            ref top,
+            ref value_table_mode,
+        } = *select_stmt;
+
+        // Raise specific error messages for unsupported attributes
+        polars_ensure!(cluster_by.is_empty(), SQLInterface: "CLUSTER BY clause is not supported");
+        polars_ensure!(connect_by.is_none(), SQLInterface: "CONNECT BY clause is not supported");
+        polars_ensure!(distribute_by.is_empty(), SQLInterface: "DISTRIBUTE BY clause is not supported");
+        polars_ensure!(into.is_none(), SQLInterface: "SELECT INTO clause is not supported");
+        polars_ensure!(lateral_views.is_empty(), SQLInterface: "LATERAL VIEW clause is not supported");
+        polars_ensure!(named_window.is_empty(), SQLInterface: "WINDOW clause support is coming soon");
+        polars_ensure!(prewhere.is_none(), SQLInterface: "PREWHERE clause is not supported");
+        polars_ensure!(qualify.is_none(), SQLInterface: "QUALIFY clause is not currently supported");
+        polars_ensure!(sort_by.is_empty(), SQLInterface: "SORT BY clause is not supported; use ORDER BY instead");
+        polars_ensure!(top.is_none(), SQLInterface: "TOP clause is not supported; use LIMIT instead");
+        polars_ensure!(value_table_mode.is_none(), SQLInterface: "SELECT AS VALUE/STRUCT is not supported");
+        Ok(())
+    }
+
     /// Execute the 'SELECT' part of the query.
     fn execute_select(&mut self, select_stmt: &Select, query: &Query) -> PolarsResult<LazyFrame> {
+        // Check that the statement doesn't contain unsupported SELECT clauses
+        self.validate_select(select_stmt)?;
+
         let mut lf = if select_stmt.from.is_empty() {
             DataFrame::empty().lazy()
         } else {
@@ -1125,27 +1176,65 @@ impl SQLContext {
             if_not_exists,
             name,
             query,
+            columns,
+            like,
             ..
         }) = stmt
         {
             let tbl_name = name.0.first().unwrap().value.as_str();
-            // CREATE TABLE IF NOT EXISTS
             if *if_not_exists && self.table_map.contains_key(tbl_name) {
                 polars_bail!(SQLInterface: "relation '{}' already exists", tbl_name);
-                // CREATE OR REPLACE TABLE
             }
-            if let Some(query) = query {
-                let lf = self.execute_query(query)?;
-                self.register(tbl_name, lf);
-                let out = df! {
-                    "Response" => ["CREATE TABLE"]
-                }
-                .unwrap()
-                .lazy();
-                Ok(out)
-            } else {
-                polars_bail!(SQLInterface: "only `CREATE TABLE AS SELECT ...` is currently supported");
-            }
+            let lf = match (query, columns.is_empty(), like) {
+                (Some(query), true, None) => {
+                    // ----------------------------------------------------
+                    // CREATE TABLE [IF NOT EXISTS] <name> AS <query>
+                    // ----------------------------------------------------
+                    self.execute_query(query)?
+                },
+                (None, false, None) => {
+                    // ----------------------------------------------------
+                    // CREATE TABLE [IF NOT EXISTS] <name> (<coldef>, ...)
+                    // ----------------------------------------------------
+                    let mut schema = Schema::with_capacity(columns.len());
+                    for col in columns {
+                        let col_name = col.name.value.as_str();
+                        let dtype = map_sql_dtype_to_polars(&col.data_type)?;
+                        schema.insert_at_index(schema.len(), col_name.into(), dtype)?;
+                    }
+                    DataFrame::empty_with_schema(&schema).lazy()
+                },
+                (None, true, Some(from_name)) => {
+                    // ----------------------------------------------------
+                    // CREATE TABLE [IF NOT EXISTS] <name> LIKE <table>
+                    // ----------------------------------------------------
+                    let like_table = from_name.0.first().unwrap().value.as_str();
+                    if let Some(mut table) = self.table_map.get(like_table).cloned() {
+                        let schema = self.get_frame_schema(&mut table)?;
+                        DataFrame::empty_with_schema(&schema).lazy()
+                    } else {
+                        polars_bail!(SQLInterface: "table given in LIKE does not exist: {}", like_table)
+                    }
+                },
+                // No valid options provided
+                (None, true, None) => {
+                    polars_bail!(SQLInterface: "CREATE TABLE expected a query, column definitions, or LIKE clause")
+                },
+                // Mutually exclusive options
+                _ => {
+                    polars_bail!(
+                        SQLInterface: "CREATE TABLE received mutually exclusive options:\nquery = {:?}\ncolumns = {:?}\nlike = {:?}",
+                        query,
+                        columns,
+                        like,
+                    )
+                },
+            };
+            self.register(tbl_name, lf);
+
+            let df_created =
+                df! { "Response" => [format!("CREATE TABLE {}", name.0.first().unwrap().value)] };
+            Ok(df_created.unwrap().lazy())
         } else {
             unreachable!()
         }
@@ -1241,7 +1330,6 @@ impl SQLContext {
 
                     if *with_offset {
                         // TODO: support 'WITH ORDINALITY|OFFSET' modifier.
-                        //  (note that 'WITH OFFSET' is BigQuery-specific syntax, not PostgreSQL)
                         polars_bail!(SQLInterface: "UNNEST tables do not (yet) support WITH ORDINALITY|OFFSET");
                     }
                     let table_name = alias.name.value.clone();

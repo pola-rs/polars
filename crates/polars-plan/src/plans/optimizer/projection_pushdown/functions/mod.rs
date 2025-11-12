@@ -35,6 +35,16 @@ pub(super) fn process_functions(
 
             process_unpivot(proj_pd, lp, args, input, ctx, lp_arena, expr_arena)
         },
+        Hint(hint) => {
+            let hint = hint.project(&ctx.projected_names);
+            proj_pd.pushdown_and_assign(input, ctx, lp_arena, expr_arena)?;
+            Ok(match hint {
+                None => lp_arena.get(input).clone(),
+                Some(hint) => IRBuilder::new(input, expr_arena, lp_arena)
+                    .hint(hint)
+                    .build(),
+            })
+        },
         _ => {
             if function.allow_projection_pd() && ctx.has_pushed_down() {
                 let original_acc_projection_len = ctx.acc_projections.len();

@@ -3239,6 +3239,7 @@ name = "polars-expr"
 version = "0.52.0"
 dependencies = [
  "bitflags",
+ "chrono-tz",
  "hashbrown 0.16.0",
  "libloading",
  "num-traits",
