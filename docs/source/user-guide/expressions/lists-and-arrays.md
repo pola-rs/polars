@@ -166,7 +166,7 @@ We'll reuse a slightly modified version of the example data from the very beginn
 
 Using `eval`, we can sort the list elements or compute some aggregations:
 
-{{code_block('user-guide/expressions/lists', 'list-aggregation', ['List'])}}
+{{code_block('user-guide/expressions/lists', 'list-aggregation', ['list.eval', 'Expr.sort_by'])}}
 
 ```python exec="on" result="text" session="expressions/lists"
 --8<-- "python/user-guide/expressions/lists.py:list-aggregation"
@@ -175,7 +175,7 @@ Using `eval`, we can sort the list elements or compute some aggregations:
 While some aggregation functions like `.list.sum()` are directly available in the `list` namespace,
 you can access more exotic aggregations like `entropy` via `eval` only:
 
-{{code_block('user-guide/expressions/lists', 'list-entropy', ['List'])}}
+{{code_block('user-guide/expressions/lists', 'list-entropy', ['list.eval', 'Expr.entropy'])}}
 
 ```python exec="on" result="text" session="expressions/lists"
 --8<-- "python/user-guide/expressions/lists.py:list-entropy"
@@ -183,7 +183,7 @@ you can access more exotic aggregations like `entropy` via `eval` only:
 
 ### Row-wise computations
 
-Combining `pl.all()` can be combined with `pl.concat_list(...)` to perform row-wise aggregations
+`pl.all()` can be combined with `pl.concat_list(...)` to perform row-wise aggregations
 over a subset of columns.
 
 To show this in action, we will start by creating another dataframe with some more weather data:
