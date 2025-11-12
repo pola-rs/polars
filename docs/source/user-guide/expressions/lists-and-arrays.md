@@ -183,8 +183,8 @@ you can access more exotic aggregations like `entropy` via `eval` only:
 
 ### Row-wise computations
 
-`pl.all()` can be combined with `pl.concat_list(...)` to perform row-wise aggregations
-over a subset of columns.
+`pl.all()` can be combined with `pl.concat_list(...)` to perform row-wise aggregations over a subset
+of columns.
 
 To show this in action, we will start by creating another dataframe with some more weather data:
 
