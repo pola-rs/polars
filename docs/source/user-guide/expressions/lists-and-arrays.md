@@ -158,10 +158,10 @@ list elements.
 
 We'll reuse a slightly modified version of the example data from the very beginning:
 
-{{code_block('user-guide/expressions/lists', 'children', ['List'])}}
+{{code_block('user-guide/expressions/lists', 'struct-list-example', ['List'])}}
 
 ```python exec="on" result="text" session="expressions/lists"
---8<-- "python/user-guide/expressions/lists.py:children"
+--8<-- "python/user-guide/expressions/lists.py:struct-list-example"
 ```
 
 Using `eval`, we can sort the list elements or compute some aggregations:
