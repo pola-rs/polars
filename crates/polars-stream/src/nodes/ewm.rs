@@ -1,9 +1,7 @@
-use polars_compute::ewm::mean::{DynEwmMeanState, EwmMeanState};
-use polars_core::prelude::{DataType, IntoColumn};
+use polars_compute::ewm::EwmStateUpdate;
+use polars_core::prelude::IntoColumn;
 use polars_core::series::Series;
-use polars_core::with_match_physical_float_type;
 use polars_error::PolarsResult;
-use polars_ops::series::EWMOptions;
 
 use super::ComputeNode;
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
@@ -11,30 +9,20 @@ use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::pipe::{RecvPort, SendPort};
 
-pub struct EwmMeanNode {
-    state: DynEwmMeanState,
+pub struct EwmNode {
+    name: &'static str,
+    state: Box<dyn EwmStateUpdate + Send>,
 }
 
-impl EwmMeanNode {
-    pub fn new(dtype: DataType, options: &EWMOptions) -> Self {
-        let state: DynEwmMeanState = with_match_physical_float_type!(dtype, |$T| {
-            let state: EwmMeanState<$T> = EwmMeanState::new(
-                options.alpha as $T,
-                options.adjust,
-                options.min_periods,
-                options.ignore_nulls,
-            );
-
-            state.into()
-        });
-
-        Self { state }
+impl EwmNode {
+    pub fn new(name: &'static str, state: Box<dyn EwmStateUpdate + Send>) -> Self {
+        Self { name, state }
     }
 }
 
-impl ComputeNode for EwmMeanNode {
+impl ComputeNode for EwmNode {
     fn name(&self) -> &str {
-        "ewm-mean"
+        self.name
     }
 
     fn update_state(
@@ -73,10 +61,9 @@ impl ComputeNode for EwmMeanNode {
 
                     *c = Series::from_chunks_and_dtype_unchecked(
                         c.name().clone(),
-                        vec![
-                            self.state
-                                .update(c.as_materialized_series().rechunk().chunks()[0].as_ref()),
-                        ],
+                        vec![self.state.ewm_state_update(
+                            c.as_materialized_series().rechunk().chunks()[0].as_ref(),
+                        )],
                         c.dtype(),
                     )
                     .into_column()

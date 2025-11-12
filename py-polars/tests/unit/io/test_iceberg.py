@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import contextlib
+import io
 import itertools
 import os
 import pickle
@@ -67,7 +68,7 @@ def iceberg_path(io_files_path: Path) -> str:
     current_path = Path(__file__).parent.resolve()
 
     with contextlib.suppress(FileExistsError):
-        os.symlink(f"{current_path}/files/iceberg-table", "/tmp/iceberg/t1")
+        os.symlink(f"{current_path}/files/iceberg-table", "/tmp/iceberg/t1")  # noqa: PTH211
 
     iceberg_path = io_files_path / "iceberg-table" / "metadata" / "v2.metadata.json"
     return f"file://{iceberg_path.resolve()}"
@@ -1314,7 +1315,8 @@ def test_fill_missing_fields_with_identity_partition_values(
     if test_uuid:
         # Note: If this starts working one day we can include it in tests.
         with pytest.raises(
-            pa.ArrowNotImplementedError, match="Keys of type extension<arrow.uuid>"
+            pa.ArrowNotImplementedError,
+            match=r"Keys of type extension<arrow\.uuid>",
         ):
             tbl.append(arrow_tbl)
 
@@ -2054,3 +2056,30 @@ def test_scan_iceberg_fast_count(tmp_path: Path) -> None:
         pl.scan_iceberg(tbl, reader_override="native").select(pl.len()).collect().item()
         == 5
     )
+
+
+def test_scan_iceberg_idxsize_limit() -> None:
+    if isinstance(pl.get_index_type(), pl.UInt64):
+        assert (
+            pl.scan_parquet([b""], schema={}, _row_count=(1 << 32, 0))
+            .select(pl.len())
+            .collect()
+            .item()
+            == 1 << 32
+        )
+
+        return
+
+    f = io.BytesIO()
+
+    pl.DataFrame({"x": 1}).write_parquet(f)
+
+    q = pl.scan_parquet([f.getvalue()], schema={"x": pl.Int64}, _row_count=(1 << 32, 0))
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"x": 1}))
+
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match=r"row count \(4294967296\) exceeded maximum supported of 4294967295.*Consider installing 'polars\[rt64\]'.",
+    ):
+        q.select(pl.len()).collect()

@@ -191,8 +191,11 @@ fn try_lower_elementwise_scalar_agg_expr(
             }
         },
 
+        #[cfg(feature = "dynamic_group_by")]
+        AExpr::Rolling { .. } => None,
+
         AExpr::Slice { .. }
-        | AExpr::Window { .. }
+        | AExpr::Over { .. }
         | AExpr::Sort { .. }
         | AExpr::SortBy { .. }
         | AExpr::Gather { .. } => None,
@@ -290,7 +293,9 @@ fn try_lower_elementwise_scalar_agg_expr(
             Some(expr_arena.add(new_node))
         },
 
-        AExpr::Function { .. } | AExpr::AnonymousFunction { .. } => None,
+        AExpr::Function { .. }
+        | AExpr::AnonymousFunction { .. }
+        | AExpr::AnonymousStreamingAgg { .. } => None,
 
         AExpr::Cast {
             expr,
@@ -527,6 +532,24 @@ pub fn build_group_by_stream(
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext,
 ) -> PolarsResult<PhysStream> {
+    #[cfg(feature = "dynamic_group_by")]
+    if let Some(options) = options.as_ref().rolling.as_ref()
+        && keys.is_empty()
+        && apply.is_none()
+    {
+        return Ok(PhysStream::first(phys_sm.insert(PhysNode::new(
+            output_schema.clone(),
+            PhysNodeKind::RollingGroupBy {
+                input,
+                index_column: options.index_column.clone(),
+                period: options.period,
+                offset: options.offset,
+                closed: options.closed_window,
+                aggs: aggs.to_vec(),
+            },
+        ))));
+    }
+
     let streaming = try_build_streaming_group_by(
         input,
         keys,

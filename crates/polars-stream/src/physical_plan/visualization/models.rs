@@ -93,6 +93,14 @@ pub enum PhysNodeProperties {
         keys: Vec<PlSmallStr>,
         aggs: Vec<PlSmallStr>,
     },
+    #[cfg(feature = "dynamic_group_by")]
+    RollingGroupBy {
+        index_column: PlSmallStr,
+        period: PlSmallStr,
+        offset: PlSmallStr,
+        closed_window: PlSmallStr,
+        aggs: Vec<PlSmallStr>,
+    },
     InMemoryMap {
         format_str: PlSmallStr,
     },
@@ -128,7 +136,7 @@ pub enum PhysNodeProperties {
         maintain_order: MaintainOrderJoin,
         validation: JoinValidation,
         suffix: Option<PlSmallStr>,
-        slice: Option<[i128; 2]>,
+        slice: Option<(i64, u64)>,
     },
     InMemoryAsOfJoin {
         left_on: PlSmallStr,
@@ -139,7 +147,7 @@ pub enum PhysNodeProperties {
         /// [value, dtype_str]
         tolerance: Option<[PlSmallStr; 2]>,
         suffix: Option<PlSmallStr>,
-        slice: Option<[i128; 2]>,
+        slice: Option<(i64, u64)>,
         coalesce: JoinCoalesce,
         allow_eq: bool,
         check_sortedness: bool,
@@ -149,7 +157,7 @@ pub enum PhysNodeProperties {
         right_on: Vec<PlSmallStr>,
         inequality_operators: Vec<polars_ops::frame::InequalityOperator>,
         suffix: Option<PlSmallStr>,
-        slice: Option<[i128; 2]>,
+        slice: Option<(i64, u64)>,
     },
     Map {
         display_str: PlSmallStr,
@@ -162,7 +170,7 @@ pub enum PhysNodeProperties {
         file_projection_builder_type: PlSmallStr,
         row_index_name: Option<PlSmallStr>,
         row_index_offset: Option<u64>,
-        pre_slice: Option<[i128; 2]>,
+        pre_slice: Option<(i64, u64)>,
         predicate: Option<PlSmallStr>,
         has_table_statistics: bool,
         include_file_paths: Option<PlSmallStr>,
@@ -171,8 +179,8 @@ pub enum PhysNodeProperties {
     },
     Multiplexer,
     NegativeSlice {
-        offset: i128,
-        length: i128,
+        offset: i64,
+        length: u64,
     },
     OrderedUnion {
         num_inputs: u64,
@@ -216,7 +224,7 @@ pub enum PhysNodeProperties {
     },
     Sort {
         by_exprs: Vec<PlSmallStr>,
-        slice: Option<[i128; 2]>,
+        slice: Option<(i64, u64)>,
         descending: Vec<bool>,
         nulls_last: Vec<bool>,
         multithreaded: bool,
@@ -224,8 +232,8 @@ pub enum PhysNodeProperties {
         limit: Option<u64>,
     },
     Slice {
-        offset: i128,
-        length: i128,
+        offset: i64,
+        length: u64,
     },
     TopK {
         by_exprs: Vec<PlSmallStr>,
@@ -248,7 +256,8 @@ pub enum PhysNodeProperties {
         kind: PlSmallStr,
     },
     #[cfg(feature = "ewma")]
-    EwmMean {
+    Ewm {
+        variant: PlSmallStr,
         alpha: f64,
         adjust: bool,
         bias: bool,

@@ -632,16 +632,6 @@ class PyDataFrame:
         value_name: str | None,
         variable_name: str | None,
     ) -> PyDataFrame: ...
-    def pivot_expr(
-        self,
-        on: Sequence[str],
-        index: Sequence[str] | None,
-        values: Sequence[str] | None,
-        maintain_order: bool,
-        sort_columns: bool,
-        aggregate_expr: Any | None,
-        separator: str | None,
-    ) -> PyDataFrame: ...
     def partition_by(
         self, by: Sequence[str], maintain_order: bool, include_key: bool
     ) -> list[PyDataFrame]: ...
@@ -893,21 +883,6 @@ class PyLazyFrame:
     def describe_optimized_plan_tree(self) -> str: ...
     def to_dot(self, optimized: bool) -> str: ...
     def to_dot_streaming_phys(self, optimized: bool) -> str: ...
-    def optimization_toggle(
-        self,
-        type_coercion: bool,
-        type_check: bool,
-        predicate_pushdown: bool,
-        projection_pushdown: bool,
-        simplify_expression: bool,
-        slice_pushdown: bool,
-        comm_subplan_elim: bool,
-        comm_subexpr_elim: bool,
-        cluster_with_columns: bool,
-        _eager: bool,
-        _check_order: bool,
-        new_streaming: bool,
-    ) -> PyLazyFrame: ...
     def sort(
         self,
         by_column: str,
@@ -1091,13 +1066,23 @@ class PyLazyFrame:
     def unique(
         self,
         maintain_order: bool,
-        subset: PySelector | None,
+        subset: list[PyExpr] | None,
         keep: UniqueKeepStrategy,
     ) -> PyLazyFrame: ...
     def drop_nans(self, subset: PySelector | None) -> PyLazyFrame: ...
     def drop_nulls(self, subset: PySelector | None) -> PyLazyFrame: ...
     def slice(self, offset: int, len: int | None) -> PyLazyFrame: ...
     def tail(self, n: int) -> PyLazyFrame: ...
+    def pivot(
+        self,
+        on: PySelector,
+        on_columns: PyDataFrame,
+        index: PySelector,
+        values: PySelector,
+        agg: PyExpr,
+        maintain_order: bool,
+        separator: str,
+    ) -> PyLazyFrame: ...
     def unpivot(
         self,
         on: PySelector,
@@ -1308,7 +1293,7 @@ class PyExpr:
         mapping_strategy: Any,
     ) -> PyExpr: ...
     def rolling(
-        self, index_column: str, period: str, offset: str, closed: Any
+        self, index_column: PyExpr, period: str, offset: str, closed: Any
     ) -> PyExpr: ...
     def and_(self, expr: PyExpr) -> PyExpr: ...
     def or_(self, expr: PyExpr) -> PyExpr: ...
@@ -1604,6 +1589,7 @@ class PyExpr:
     ) -> str: ...
     def meta_tree_format(self, schema: Schema | None = None) -> str: ...
     def meta_show_graph(self, schema: Schema | None = None) -> str: ...
+    def meta_replace_element(self, expr: PyExpr) -> PyExpr: ...
 
     # name
     def name_keep(self) -> PyExpr: ...

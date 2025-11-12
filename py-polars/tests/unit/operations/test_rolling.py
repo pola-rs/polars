@@ -266,6 +266,7 @@ def test_rolling_non_negative_offset_9077(
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_rolling_dynamic_sortedness_check() -> None:
     # when the by argument is passed, the sortedness flag
     # will be unset as the take shuffles data, so we must explicitly
@@ -746,3 +747,113 @@ def test_rolling_non_aggregation_24012() -> None:
     q = df.lazy().select(pl.col("value").rolling("idx", period="2i"))
 
     assert q.collect_schema() == q.collect().schema
+
+
+def test_rolling_on_expressions() -> None:
+    df = pl.DataFrame({"a": [None, 1, 2, 3]}).with_row_index()
+
+    df = df.select(
+        df_ri=pl.col.a.mean().rolling("index", period="3i"),
+        in_ri=pl.col.a.mean().rolling(pl.row_index(), period="3i"),
+    )
+
+    assert_series_equal(df["df_ri"], df["in_ri"], check_names=False)
+
+
+def test_rolling_in_group_by() -> None:
+    q = pl.LazyFrame({"b": [1, 1, 2], "a": [1, 2, 3]})
+
+    a_sum = pl.col.a.sum()
+    assert_frame_equal(
+        q.select(a_sum.rolling(pl.row_index(), period="2i")).collect(),
+        pl.Series("a", [1, 3, 5]).to_frame(),
+    )
+    assert_frame_equal(
+        q.group_by("b")
+        .agg(a_sum.rolling(pl.row_index(), period="2i") + pl.col.a.first())
+        .collect(),
+        pl.DataFrame(
+            {
+                "b": [1, 2],
+                "a": [[2, 4], [6]],
+            }
+        ),
+        check_row_order=False,
+    )
+    assert_frame_equal(
+        q.select(pl.col.a.implode())
+        .select(
+            pl.col.a.list.eval(pl.element().sum().rolling(pl.row_index(), period="2i"))
+        )
+        .collect(),
+        pl.Series("a", [[1, 3, 5]]).to_frame(),
+    )
+    assert_frame_equal(
+        q.group_by(pl.lit(1))
+        .agg(
+            a_sum.rolling(pl.row_index(), period="2i").rolling(
+                pl.row_index(), period="2i"
+            )
+        )
+        .drop("literal")
+        .collect(),
+        pl.Series("a", [[[1], [1, 3], [2, 5]]]).to_frame(),
+    )
+
+    a_uniq = pl.col.a.unique()
+    assert_frame_equal(
+        q.select(a_uniq.rolling(pl.row_index(), period="2i")).collect(),
+        pl.Series("a", [[1], [1, 2], [2, 3]]).to_frame(),
+    )
+    assert_frame_equal(
+        q.group_by("b")
+        .agg(a_uniq.rolling(pl.row_index(), period="2i") + pl.col.a.first())
+        .collect(),
+        pl.DataFrame(
+            {
+                "b": [1, 2],
+                "a": [[[2], [2, 3]], [[6]]],
+            }
+        ),
+        check_row_order=False,
+    )
+    assert_frame_equal(
+        q.select(pl.col.a.implode())
+        .select(
+            pl.col.a.list.eval(
+                pl.element().unique().rolling(pl.row_index(), period="2i")
+            )
+        )
+        .collect(),
+        pl.Series("a", [[[1], [1, 2], [2, 3]]]).to_frame(),
+    )
+    assert_frame_equal(
+        q.group_by(pl.lit(1))
+        .agg(
+            a_uniq.rolling(pl.row_index(), period="2i").rolling(
+                pl.row_index(), period="2i"
+            )
+        )
+        .drop("literal")
+        .collect(),
+        pl.Series("a", [[[[1]], [[1], [1, 2]], [[2], [2, 3]]]]).to_frame(),
+    )
+
+
+def test_rolling_in_over_25280() -> None:
+    dates = [
+        "2020-01-01",
+        "2020-01-02",
+    ]
+
+    df = pl.DataFrame(
+        {"dt": dates, "train_line": ["a", "b"], "num_passengers": [3, 7]}
+    ).with_columns(pl.col("dt").str.to_date())
+
+    result = df.with_columns(
+        pl.col("num_passengers")
+        .sum()
+        .rolling(index_column="dt", period="1d")
+        .over("train_line")
+    )
+    assert_frame_equal(df, result)

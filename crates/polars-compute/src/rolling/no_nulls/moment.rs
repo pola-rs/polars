@@ -5,84 +5,6 @@ use polars_error::polars_ensure;
 pub use super::super::moment::*;
 use super::*;
 
-pub struct MomentWindow<'a, T, M: StateUpdate> {
-    slice: &'a [T],
-    moment: M,
-    last_start: usize,
-    last_end: usize,
-    params: Option<RollingFnParams>,
-}
-
-impl<T: ToPrimitive + Copy, M: StateUpdate> MomentWindow<'_, T, M> {
-    fn compute_var(&mut self, start: usize, end: usize) {
-        self.moment = M::new(self.params);
-        for value in &self.slice[start..end] {
-            let value: f64 = NumCast::from(*value).unwrap();
-            self.moment.insert_one(value);
-        }
-    }
-}
-
-impl<'a, T: NativeType + IsFloat + Float + ToPrimitive + FromPrimitive, M: StateUpdate>
-    RollingAggWindowNoNulls<'a, T> for MomentWindow<'a, T, M>
-{
-    fn new(
-        slice: &'a [T],
-        start: usize,
-        end: usize,
-        params: Option<RollingFnParams>,
-        _window_size: Option<usize>,
-    ) -> Self {
-        let mut out = Self {
-            slice,
-            moment: M::new(params),
-            last_start: start,
-            last_end: end,
-            params,
-        };
-        out.compute_var(start, end);
-        out
-    }
-
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
-        let recompute_var = if start >= self.last_end {
-            true
-        } else {
-            // remove elements that should leave the window
-            let mut recompute_var = false;
-            for idx in self.last_start..start {
-                // SAFETY: we are in bounds
-                let leaving_value = *self.slice.get_unchecked(idx);
-
-                // if the leaving value is nan we need to recompute the window
-                if T::is_float() && !leaving_value.is_finite() {
-                    recompute_var = true;
-                    break;
-                }
-                let leaving_value: f64 = NumCast::from(leaving_value).unwrap();
-                self.moment.remove_one(leaving_value);
-            }
-            recompute_var
-        };
-
-        self.last_start = start;
-
-        // we traverse all values and compute
-        if recompute_var {
-            self.compute_var(start, end);
-        } else {
-            for idx in self.last_end..end {
-                let entering_value = *self.slice.get_unchecked(idx);
-                let entering_value: f64 = NumCast::from(entering_value).unwrap();
-
-                self.moment.insert_one(entering_value);
-            }
-        }
-        self.last_end = end;
-        self.moment.finalize().map(|v| T::from_f64(v).unwrap())
-    }
-}
-
 pub fn rolling_var<T>(
     values: &[T],
     window_size: usize,
@@ -219,7 +141,7 @@ mod test {
                     Some(f64::nan()),
                     Some(f64::nan()),
                     Some(f64::nan()),
-                    Some(1.0)
+                    Some(0.9999999999999911)
                 ]
             )
         );

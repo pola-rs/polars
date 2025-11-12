@@ -587,6 +587,12 @@ pub fn function_expr_to_groups_udf(func: &IRFunctionExpr) -> Option<SpecialEq<Ar
         },
 
         F::Unique(stable) => wrap_groups!(groups_dispatch::unique, (*stable, v: bool)),
+        F::FillNullWithStrategy(polars_core::prelude::FillNullStrategy::Forward(limit)) => {
+            wrap_groups!(groups_dispatch::forward_fill_null, (*limit, v: Option<IdxSize>))
+        },
+        F::FillNullWithStrategy(polars_core::prelude::FillNullStrategy::Backward(limit)) => {
+            wrap_groups!(groups_dispatch::backward_fill_null, (*limit, v: Option<IdxSize>))
+        },
 
         _ => return None,
     })

@@ -367,6 +367,36 @@ impl PyLazyFrame {
         Ok(lf.into())
     }
 
+    #[cfg(feature = "scan_lines")]
+    #[staticmethod]
+    #[pyo3(signature = (sources, scan_options, name, file_cache_ttl))]
+    fn new_from_scan_lines(
+        sources: Wrap<ScanSources>,
+        scan_options: PyScanOptions,
+        name: PyBackedStr,
+        file_cache_ttl: Option<u64>,
+    ) -> PyResult<Self> {
+        let sources = sources.0;
+        let first_path = sources.first_path().map(|p| p.into_owned());
+
+        let mut unified_scan_args =
+            scan_options.extract_unified_scan_args(first_path.as_ref().map(|p| p.as_ref()))?;
+
+        if let Some(file_cache_ttl) = file_cache_ttl {
+            unified_scan_args
+                .cloud_options
+                .get_or_insert_default()
+                .file_cache_ttl = file_cache_ttl;
+        }
+
+        let dsl: DslPlan = DslBuilder::scan_lines(sources, unified_scan_args, (&*name).into())
+            .map_err(to_py_err)?
+            .build();
+        let lf: LazyFrame = dsl.into();
+
+        Ok(lf.into())
+    }
+
     #[staticmethod]
     #[pyo3(signature = (
         dataset_object
@@ -462,47 +492,6 @@ impl PyLazyFrame {
     #[cfg(feature = "new_streaming")]
     fn to_dot_streaming_phys(&self, py: Python, optimized: bool) -> PyResult<String> {
         py.enter_polars(|| self.ldf.read().to_dot_streaming_phys(optimized))
-    }
-
-    fn optimization_toggle(
-        &self,
-        type_coercion: bool,
-        type_check: bool,
-        predicate_pushdown: bool,
-        projection_pushdown: bool,
-        simplify_expression: bool,
-        slice_pushdown: bool,
-        comm_subplan_elim: bool,
-        comm_subexpr_elim: bool,
-        cluster_with_columns: bool,
-        _eager: bool,
-        _check_order: bool,
-        #[allow(unused_variables)] new_streaming: bool,
-    ) -> Self {
-        let ldf = self.ldf.read().clone();
-        let mut ldf = ldf
-            .with_type_coercion(type_coercion)
-            .with_type_check(type_check)
-            .with_predicate_pushdown(predicate_pushdown)
-            .with_simplify_expr(simplify_expression)
-            .with_slice_pushdown(slice_pushdown)
-            .with_cluster_with_columns(cluster_with_columns)
-            .with_check_order(_check_order)
-            ._with_eager(_eager)
-            .with_projection_pushdown(projection_pushdown);
-
-        #[cfg(feature = "new_streaming")]
-        {
-            ldf = ldf.with_new_streaming(new_streaming);
-        }
-
-        #[cfg(feature = "cse")]
-        {
-            ldf = ldf.with_comm_subplan_elim(comm_subplan_elim);
-            ldf = ldf.with_comm_subexpr_elim(comm_subexpr_elim);
-        }
-
-        ldf.into()
     }
 
     fn sort(
@@ -1395,11 +1384,11 @@ impl PyLazyFrame {
     fn unique(
         &self,
         maintain_order: bool,
-        subset: Option<PySelector>,
+        subset: Option<Vec<PyExpr>>,
         keep: Wrap<UniqueKeepStrategy>,
     ) -> Self {
         let ldf = self.ldf.read().clone();
-        let subset = subset.map(|e| e.inner);
+        let subset = subset.map(|exprs| exprs.into_iter().map(|e| e.inner).collect());
         match maintain_order {
             true => ldf.unique_stable_generic(subset, keep.0),
             false => ldf.unique_generic(subset, keep.0),
@@ -1432,6 +1421,31 @@ impl PyLazyFrame {
     fn tail(&self, n: IdxSize) -> Self {
         let ldf = self.ldf.read().clone();
         ldf.tail(n).into()
+    }
+
+    #[cfg(feature = "pivot")]
+    #[pyo3(signature = (on, on_columns, index, values, agg, maintain_order, separator))]
+    fn pivot(
+        &self,
+        on: PySelector,
+        on_columns: PyDataFrame,
+        index: PySelector,
+        values: PySelector,
+        agg: PyExpr,
+        maintain_order: bool,
+        separator: String,
+    ) -> Self {
+        let ldf = self.ldf.read().clone();
+        ldf.pivot(
+            on.inner,
+            Arc::new(on_columns.df.read().clone()),
+            index.inner,
+            values.inner,
+            agg.inner,
+            maintain_order,
+            separator.into(),
+        )
+        .into()
     }
 
     #[cfg(feature = "pivot")]

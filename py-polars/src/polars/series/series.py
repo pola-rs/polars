@@ -406,8 +406,8 @@ class Series:
              - The raw pointer to a C ArrowArray struct
              - The raw pointer to a C ArrowSchema struct
 
-        Warning
-        -------
+        Warnings
+        --------
         This will read the `array` pointer without moving it. The host process should
         garbage collect the heap pointer, but not its contents.
         """
@@ -433,16 +433,13 @@ class Series:
         The series should only contain a single chunk. If you want to export all chunks,
         first call `Series.get_chunks` to give you a list of chunks.
 
-        Warning
-        -------
-        Safety
-        This function will write to the pointers given in `out_ptr` and `out_schema_ptr`
-        and thus is highly unsafe.
-
-        Leaking
-        If you don't pass the ArrowArray struct to a consumer,
-        array memory will leak. This is a low-level function intended for
-        expert users.
+        Warnings
+        --------
+        * Safety: This function will write to the pointers given in `out_ptr`
+          and `out_schema_ptr` and thus is highly unsafe.
+        * Leaking: If you don't pass the ArrowArray struct to a consumer,
+          array memory will leak. This is a low-level function intended for
+          expert users.
         """
         self._s._export_arrow_to_c(out_ptr, out_schema_ptr)
 
@@ -1436,7 +1433,9 @@ class Series:
             raise TypeError(msg)
 
     def __array__(
-        self, dtype: npt.DTypeLike | None = None, copy: bool | None = None
+        self,
+        dtype: npt.DTypeLike | None = None,
+        copy: bool | None = None,  # noqa: FBT001
     ) -> np.ndarray[Any, Any]:
         """
         Return a NumPy ndarray with the given data type.
@@ -4982,7 +4981,7 @@ class Series:
         """
         return self._s.len()
 
-    def set(self, filter: Series, value: int | float | str | bool | None) -> Series:
+    def set(self, filter: Series, value: int | float | str | bool | None) -> Series:  # noqa: FBT001
         """
         Set masked values.
 
@@ -5150,10 +5149,10 @@ class Series:
             null
         ]
         """
-        if n < 0:
-            msg = f"`n` should be greater than or equal to 0, got {n}"
-            raise ValueError(msg)
-        # faster path
+        if not (is_int := isinstance(n, int)) or n < 0:  # type: ignore[redundant-expr]
+            msg = f"`n` should be an integer >= 0, got {n}"
+            err = TypeError if not is_int else ValueError
+            raise err(msg)
         if n == 0:
             return self._from_pyseries(self._s.clear())
         s = (
@@ -8350,14 +8349,15 @@ class Series:
             Accepts expression input. Non-expression inputs are parsed as literals.
 
             .. deprecated:: 0.20.31
-                Use :meth:`replace_all` instead to set a default while replacing values.
+                Use :meth:`replace_strict` instead to set a default while
+                replacing values.
 
         return_dtype
             The data type of the resulting expression. If set to `None` (default),
             the data type is determined automatically based on the other inputs.
 
             .. deprecated:: 0.20.31
-                Use :meth:`replace_all` instead to set a return data type while
+                Use :meth:`replace_strict` instead to set a return data type while
                 replacing values.
 
 

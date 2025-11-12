@@ -4,12 +4,14 @@ use expr_expansion::rewrite_projections;
 use hive::hive_partitions_from_paths;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::config::verbose;
+use polars_utils::format_pl_smallstr;
 use polars_utils::plpath::PlPath;
 use polars_utils::unique_id::UniqueId;
 
 use super::convert_utils::SplitPredicates;
 use super::stack_opt::ConversionOptimizer;
 use super::*;
+use crate::constants::PL_ELEMENT_NAME;
 
 mod concat;
 mod datatype_fn_to_ir;
@@ -64,11 +66,9 @@ pub fn to_alp(
                 // where in the query plan it went wrong. It is clear from the backtrace anyway.
                 return Err(err.remove_context());
             };
-
             let Some(ir_until_then) = lp_arena.last_node() else {
                 return Err(err);
             };
-
             let node_name = if let PolarsError::Context { msg, .. } = &err {
                 msg
             } else {
@@ -683,34 +683,275 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             };
 
             // Adjust the input and start conversion again
-            let input_adjusted =
-                callback.call((input_owned, Arc::unwrap_or_clone(input_schema.into_owned())))?;
+            let input_adjusted = callback.call((input_owned, input_schema.into_owned()))?;
             return to_alp_impl(input_adjusted, ctxt);
         },
-        DslPlan::Distinct { input, options } => {
+        #[cfg(feature = "pivot")]
+        DslPlan::Pivot {
+            input,
+            on,
+            on_columns,
+            index,
+            values,
+            agg,
+            maintain_order,
+            separator,
+        } => {
             let input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(unique)))?;
             let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
 
-            let subset = options
-                .subset
-                .map(|s| {
-                    PolarsResult::Ok(
-                        s.into_columns(input_schema.as_ref(), &Default::default())?
-                            .into_iter()
-                            .collect(),
-                    )
-                })
-                .transpose()?;
+            let on = on.into_columns(input_schema.as_ref(), &Default::default())?;
+            let index = index.into_columns(input_schema.as_ref(), &Default::default())?;
+            let values = values.into_columns(input_schema.as_ref(), &Default::default())?;
 
-            let options = DistinctOptionsIR {
-                subset,
-                maintain_order: options.maintain_order,
-                keep_strategy: options.keep_strategy,
-                slice: None,
+            polars_ensure!(!on.is_empty(), InvalidOperation: "`pivot` called without `on` columns.");
+            polars_ensure!(on.len() == on_columns.width(), InvalidOperation: "`pivot` expected `on` and `on_columns` to have the same amount of columns.");
+            if on.len() > 1 {
+                polars_ensure!(
+                    on_columns.get_columns().iter().zip(on.iter()).all(|(c, o)| o == c.name()),
+                    InvalidOperation: "`pivot` has mismatching column names between `on` and `on_columns`."
+                );
+            }
+            polars_ensure!(!values.is_empty(), InvalidOperation: "`pivot` called without `values` columns.");
+
+            let on_titles = if on_columns.width() == 1 {
+                on_columns.get_columns()[0].cast(&DataType::String)?
+            } else {
+                on_columns
+                    .as_ref()
+                    .clone()
+                    .into_struct(PlSmallStr::EMPTY)
+                    .cast(&DataType::String)?
+                    .into_column()
+            };
+            let on_titles = on_titles.str()?;
+
+            let mut expr_schema = input_schema.as_ref().as_ref().clone();
+            let mut out = Vec::with_capacity(1);
+            let mut aggs = Vec::<ExprIR>::with_capacity(values.len() * on_columns.height());
+            for value in values.iter() {
+                out.clear();
+                let value_dtype = input_schema.try_get(value)?;
+                expr_schema.insert(PL_ELEMENT_NAME.clone(), value_dtype.clone());
+                expand_expression(
+                    &agg,
+                    &Default::default(),
+                    &expr_schema,
+                    &mut out,
+                    ctxt.opt_flags,
+                )?;
+                polars_ensure!(
+                    out.len() == 1,
+                    InvalidOperation: "Pivot expression are not allowed to expand to more than 1 expression"
+                );
+                let agg = out.pop().unwrap();
+                let agg_ae = to_expr_ir(
+                    agg,
+                    &mut ExprToIRContext::new_with_opt_eager(
+                        ctxt.expr_arena,
+                        &expr_schema,
+                        ctxt.opt_flags,
+                    ),
+                )?
+                .node();
+
+                polars_ensure!(
+                    aexpr_to_leaf_names_iter(agg_ae, ctxt.expr_arena).count() == 0,
+                    InvalidOperation: "explicit column references are not allowed in the `aggregate_function` of `pivot`"
+                );
+
+                for i in 0..on_columns.height() {
+                    let mut name = String::new();
+                    if values.len() > 1 {
+                        name.push_str(value.as_str());
+                        name.push_str(separator.as_str());
+                    }
+
+                    name.push_str(on_titles.get(i).unwrap_or("null"));
+
+                    fn on_predicate(
+                        on: &PlSmallStr,
+                        on_column: &Column,
+                        i: usize,
+                        expr_arena: &mut Arena<AExpr>,
+                    ) -> AExprBuilder {
+                        let e = AExprBuilder::col(on.clone(), expr_arena);
+                        e.eq(
+                            AExprBuilder::lit_scalar(
+                                Scalar::new(
+                                    on_column.dtype().clone(),
+                                    on_column.get(i).unwrap().into_static(),
+                                ),
+                                expr_arena,
+                            ),
+                            expr_arena,
+                        )
+                    }
+
+                    let predicate = if on.len() == 1 {
+                        on_predicate(&on[0], &on_columns.get_columns()[0], i, ctxt.expr_arena)
+                    } else {
+                        AExprBuilder::function(
+                            on.iter()
+                                .enumerate()
+                                .map(|(j, on_col)| {
+                                    on_predicate(
+                                        on_col,
+                                        &on_columns.get_columns()[j],
+                                        i,
+                                        ctxt.expr_arena,
+                                    )
+                                    .expr_ir(on_col.clone())
+                                })
+                                .collect::<Vec<_>>(),
+                            IRFunctionExpr::Boolean(IRBooleanFunction::AllHorizontal),
+                            ctxt.expr_arena,
+                        )
+                    };
+
+                    let replacement_element = AExprBuilder::col(value.clone(), ctxt.expr_arena)
+                        .filter(predicate, ctxt.expr_arena)
+                        .node();
+
+                    #[recursive::recursive]
+                    fn deep_clone_element_replace(
+                        ae: Node,
+                        arena: &mut Arena<AExpr>,
+                        replacement: Node,
+                    ) -> Node {
+                        let slf = arena.get(ae).clone();
+                        if matches!(slf, AExpr::Element) {
+                            return deep_clone_ae(replacement, arena);
+                        } else if matches!(slf, AExpr::Len) {
+                            // For backwards-compatibility, we support providing `pl.len()` to mean
+                            // the length of the group here.
+                            let element = deep_clone_ae(replacement, arena);
+                            return AExprBuilder::new_from_node(element).len(arena).node();
+                        }
+
+                        let mut children = vec![];
+                        slf.children_rev(&mut children);
+                        for child in &mut children {
+                            *child = deep_clone_element_replace(*child, arena, replacement);
+                        }
+                        children.reverse();
+
+                        arena.add(slf.replace_children(&children))
+                    }
+                    aggs.push(ExprIR::new(
+                        deep_clone_element_replace(agg_ae, ctxt.expr_arena, replacement_element),
+                        OutputName::Alias(name.into()),
+                    ));
+                }
+            }
+
+            let keys = index
+                .into_iter()
+                .map(|i| AExprBuilder::col(i.clone(), ctxt.expr_arena).expr_ir(i))
+                .collect();
+            IRBuilder::new(input, ctxt.expr_arena, ctxt.lp_arena)
+                .group_by(keys, aggs, None, maintain_order, Default::default())
+                .build()
+        },
+        DslPlan::Distinct { input, options } => {
+            let input =
+                to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(unique)))?;
+            let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena).into_owned();
+
+            // "subset" param supports cols and/or arbitrary expressions
+            let (input, subset, temp_cols) = if let Some(exprs) = options.subset {
+                let exprs = rewrite_projections(
+                    exprs,
+                    &PlHashSet::default(),
+                    &input_schema,
+                    ctxt.opt_flags,
+                )?;
+
+                // identify cols and exprs in "subset" param
+                let mut subset_colnames = vec![];
+                let mut subset_exprs = vec![];
+                for expr in &exprs {
+                    match expr {
+                        Expr::Column(name) => {
+                            polars_ensure!(
+                                input_schema.contains(name),
+                                ColumnNotFound: "{name:?} not found"
+                            );
+                            subset_colnames.push(name.clone());
+                        },
+                        _ => subset_exprs.push(expr.clone()),
+                    }
+                }
+
+                if subset_exprs.is_empty() {
+                    // "subset" is a collection of basic cols (or empty)
+                    (input, Some(subset_colnames.into_iter().collect()), vec![])
+                } else {
+                    // "subset" contains exprs; add them as temporary cols
+                    let (aliased_exprs, temp_names): (Vec<_>, Vec<_>) = subset_exprs
+                        .into_iter()
+                        .enumerate()
+                        .map(|(idx, expr)| {
+                            let temp_name = format_pl_smallstr!("__POLARS_UNIQUE_SUBSET_{}", idx);
+                            (expr.alias(temp_name.clone()), temp_name)
+                        })
+                        .unzip();
+
+                    subset_colnames.extend_from_slice(&temp_names);
+
+                    // integrate the temporary cols with the existing "input" node
+                    let (temp_expr_irs, schema) = resolve_with_columns(
+                        aliased_exprs,
+                        input,
+                        ctxt.lp_arena,
+                        ctxt.expr_arena,
+                        ctxt.opt_flags,
+                    )?;
+                    ctxt.conversion_optimizer
+                        .fill_scratch(&temp_expr_irs, ctxt.expr_arena);
+
+                    let input_with_exprs = ctxt.lp_arena.add(IR::HStack {
+                        input,
+                        exprs: temp_expr_irs,
+                        schema,
+                        options: ProjectionOptions {
+                            run_parallel: false,
+                            duplicate_check: false,
+                            should_broadcast: true,
+                        },
+                    });
+                    (
+                        input_with_exprs,
+                        Some(subset_colnames.into_iter().collect()),
+                        temp_names,
+                    )
+                }
+            } else {
+                (input, None, vec![])
             };
 
-            IR::Distinct { input, options }
+            // `distinct` definition (will contain temporary cols if we have "subset" exprs)
+            let distinct_node = ctxt.lp_arena.add(IR::Distinct {
+                input,
+                options: DistinctOptionsIR {
+                    subset,
+                    maintain_order: options.maintain_order,
+                    keep_strategy: options.keep_strategy,
+                    slice: None,
+                },
+            });
+
+            // if no temporary cols (eg: we had no "subset" exprs), we're done...
+            if temp_cols.is_empty() {
+                return Ok(distinct_node);
+            }
+
+            // ...otherwise, drop them by projecting the original schema
+            return Ok(ctxt.lp_arena.add(IR::SimpleProjection {
+                input: distinct_node,
+                columns: input_schema,
+            }));
         },
         DslPlan::MapFunction { input, function } => {
             let input = to_alp_impl(owned(input), ctxt)

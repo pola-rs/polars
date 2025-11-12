@@ -96,7 +96,7 @@ from polars.datatypes import (
     parse_into_dtype,
 )
 from polars.datatypes.group import DataTypeGroup
-from polars.exceptions import PerformanceWarning
+from polars.exceptions import InvalidOperationError, PerformanceWarning
 from polars.interchange.protocol import CompatLevel
 from polars.lazyframe.engine_config import GPUEngine
 from polars.lazyframe.group_by import LazyGroupBy
@@ -143,6 +143,7 @@ if TYPE_CHECKING:
         MaintainOrderJoin,
         Orientation,
         ParquetMetadata,
+        PivotAgg,
         PlanStage,
         PolarsDataType,
         PythonDataType,
@@ -7408,32 +7409,31 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def unique(
         self,
-        subset: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
+        subset: IntoExpr | Collection[IntoExpr] | None = None,
         *,
         keep: UniqueKeepStrategy = "any",
         maintain_order: bool = False,
     ) -> LazyFrame:
-        """
-        Drop duplicate rows from this DataFrame.
+        r"""
+        Drop duplicate rows from this LazyFrame.
 
         Parameters
         ----------
         subset
-            Column name(s) or selector(s), to consider when identifying
-            duplicate rows. If set to `None` (default), use all columns.
+            Column name(s), selector(s), or expressions to consider when identifying
+            duplicate rows. If set to `None` (default), all columns are considered.
         keep : {'first', 'last', 'any', 'none'}
             Which of the duplicate rows to keep.
 
             * 'any': Does not give any guarantee of which row is kept.
                      This allows more optimizations.
             * 'none': Don't keep duplicate rows.
-            * 'first': Keep first unique row.
-            * 'last': Keep last unique row.
+            * 'first': Keep the first unique row.
+            * 'last': Keep the last unique row.
         maintain_order
-            Keep the same order as the original DataFrame. This is more expensive to
-            compute.
-            Settings this to `True` blocks the possibility
-            to run on the streaming engine.
+            Keep the same order as the original DataFrame. This is more expensive
+            to compute. Settings this to `True` blocks the possibility to run on
+            the streaming engine.
 
         Returns
         -------
@@ -7442,24 +7442,43 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Warnings
         --------
-        This method will fail if there is a column of type `List` in the DataFrame or
-        subset.
+        This method will fail if there is a column of type `List` in the DataFrame (or
+        in the "subset" parameter).
 
         Notes
         -----
-        If you're coming from pandas, this is similar to
+        If you're coming from Pandas, this is similar to
         `pandas.DataFrame.drop_duplicates`.
 
         Examples
         --------
         >>> lf = pl.LazyFrame(
         ...     {
-        ...         "foo": [1, 2, 3, 1],
-        ...         "bar": ["a", "a", "a", "a"],
-        ...         "ham": ["b", "b", "b", "b"],
+        ...         "foo": [1, 2, 3, 1, 1],
+        ...         "bar": ["a", "a", "a", "x", "x"],
+        ...         "ham": ["b", "b", "b", "y", "y"],
         ...     }
         ... )
+
+        By default, all columns are considered when determining which rows are unique:
+
         >>> lf.unique(maintain_order=True).collect()
+        shape: (4, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ str ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ a   ┆ b   │
+        │ 2   ┆ a   ┆ b   │
+        │ 3   ┆ a   ┆ b   │
+        │ 1   ┆ x   ┆ y   │
+        └─────┴─────┴─────┘
+
+        We can also consider only a subset of columns when determining uniqueness,
+        controlling which row we keep when duplicates are found:
+
+        >>> lf.unique(subset="foo", keep="first", maintain_order=True).collect()
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -7470,16 +7489,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2   ┆ a   ┆ b   │
         │ 3   ┆ a   ┆ b   │
         └─────┴─────┴─────┘
-        >>> lf.unique(subset=["bar", "ham"], maintain_order=True).collect()
-        shape: (1, 3)
-        ┌─────┬─────┬─────┐
-        │ foo ┆ bar ┆ ham │
-        │ --- ┆ --- ┆ --- │
-        │ i64 ┆ str ┆ str │
-        ╞═════╪═════╪═════╡
-        │ 1   ┆ a   ┆ b   │
-        └─────┴─────┴─────┘
-        >>> lf.unique(keep="last", maintain_order=True).collect()
+        >>> lf.unique(subset="foo", keep="last", maintain_order=True).collect()
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -7488,13 +7498,63 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ╞═════╪═════╪═════╡
         │ 2   ┆ a   ┆ b   │
         │ 3   ┆ a   ┆ b   │
-        │ 1   ┆ a   ┆ b   │
+        │ 1   ┆ x   ┆ y   │
         └─────┴─────┴─────┘
+        >>> lf.unique(subset="foo", keep="none", maintain_order=True).collect()
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ str ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 2   ┆ a   ┆ b   │
+        │ 3   ┆ a   ┆ b   │
+        └─────┴─────┴─────┘
+
+        Selectors can be used to define the "subset" parameter:
+
+        >>> import polars.selectors as cs
+        >>> lf.unique(subset=cs.string(), maintain_order=True).collect()
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ str ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ a   ┆ b   │
+        │ 1   ┆ x   ┆ y   │
+        └─────┴─────┴─────┘
+
+        We can also use an arbitrary expression in the "subset" parameter; in this
+        example we use the part of the label in front of ":" to determine uniqueness:
+
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "label": ["xx:1", "xx:2", "yy:3", "yy:4"],
+        ...         "value": [100, 200, 300, 400],
+        ...     }
+        ... )
+        >>> lf.unique(
+        ...     subset=pl.col("label").str.extract(r"^(\w+):"),
+        ...     maintain_order=True,
+        ...     keep="first",
+        ... ).collect()
+        shape: (2, 2)
+        ┌───────┬───────┐
+        │ label ┆ value │
+        │ ---   ┆ ---   │
+        │ str   ┆ i64   │
+        ╞═══════╪═══════╡
+        │ xx:1  ┆ 100   │
+        │ yy:3  ┆ 300   │
+        └───────┴───────┘
         """
-        selector_subset: PySelector | None = None
+        parsed_subset: list[PyExpr] | None = None
         if subset is not None:
-            selector_subset = parse_list_into_selector(subset)._pyselector
-        return self._from_pyldf(self._ldf.unique(maintain_order, selector_subset, keep))
+            parsed_subset = parse_into_list_of_expressions(
+                subset, __require_selectors=True
+            )
+        return self._from_pyldf(self._ldf.unique(maintain_order, parsed_subset, keep))
 
     def drop_nans(
         self,
@@ -7668,6 +7728,245 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if subset is not None:
             selector_subset = parse_list_into_selector(subset)._pyselector
         return self._from_pyldf(self._ldf.drop_nulls(subset=selector_subset))
+
+    def pivot(
+        self,
+        on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
+        on_columns: Sequence[Any] | pl.Series | pl.DataFrame,
+        *,
+        index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        aggregate_function: PivotAgg | Expr | None = None,
+        maintain_order: bool = False,
+        separator: str = "_",
+    ) -> LazyFrame:
+        """
+        Create a spreadsheet-style pivot table as a DataFrame.
+
+        Parameters
+        ----------
+        on
+            The column(s) whose values will be used as the new columns of the output
+            DataFrame.
+        on_columns
+            What value combinations will be considered for the output table.
+        index
+            The column(s) that remain from the input to the output. The output DataFrame will have one row
+            for each unique combination of the `index`'s values.
+            If None, all remaining columns not specified on `on` and `values` will be used. At least one
+            of `index` and `values` must be specified.
+        values
+            The existing column(s) of values which will be moved under the new columns from index. If an
+            aggregation is specified, these are the values on which the aggregation will be computed.
+            If None, all remaining columns not specified on `on` and `index` will be used.
+            At least one of `index` and `values` must be specified.
+        aggregate_function
+            Choose from:
+
+            - None: no aggregation takes place, will raise error if multiple values are in group.
+            - A predefined aggregate function string, one of
+              {'min', 'max', 'first', 'last', 'sum', 'mean', 'median', 'len', 'item'}
+            - An expression to do the aggregation. The expression can only access data from the respective
+              'values' columns as generated by pivot, through `pl.element()`.
+        maintain_order
+            Ensure the values of `index` are sorted by discovery order.
+        separator
+            Used as separator/delimiter in generated column names in case of multiple
+            `values` columns.
+
+        Returns
+        -------
+        DataFrame
+
+        Notes
+        -----
+        In some other frameworks, you might know this operation as `pivot_wider`.
+
+        Examples
+        --------
+        You can use `pivot` to reshape a dataframe from "long" to "wide" format.
+
+        For example, suppose we have a dataframe of test scores achieved by some
+        students, where each row represents a distinct test.
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "name": ["Cady", "Cady", "Karen", "Karen"],
+        ...         "subject": ["maths", "physics", "maths", "physics"],
+        ...         "test_1": [98, 99, 61, 58],
+        ...         "test_2": [100, 100, 60, 60],
+        ...     }
+        ... )
+        >>> df
+        shape: (4, 4)
+        ┌───────┬─────────┬────────┬────────┐
+        │ name  ┆ subject ┆ test_1 ┆ test_2 │
+        │ ---   ┆ ---     ┆ ---    ┆ ---    │
+        │ str   ┆ str     ┆ i64    ┆ i64    │
+        ╞═══════╪═════════╪════════╪════════╡
+        │ Cady  ┆ maths   ┆ 98     ┆ 100    │
+        │ Cady  ┆ physics ┆ 99     ┆ 100    │
+        │ Karen ┆ maths   ┆ 61     ┆ 60     │
+        │ Karen ┆ physics ┆ 58     ┆ 60     │
+        └───────┴─────────┴────────┴────────┘
+
+        Using `pivot`, we can reshape so we have one row per student, with different
+        subjects as columns, and their `test_1` scores as values:
+
+        >>> df.lazy().pivot(
+        ...     "subject",
+        ...     on_columns=["maths", "physics"],
+        ...     index="name",
+        ...     values="test_1",
+        ... ).collect()  # doctest: +IGNORE_RESULT
+        shape: (2, 3)
+        ┌───────┬───────┬─────────┐
+        │ name  ┆ maths ┆ physics │
+        │ ---   ┆ ---   ┆ ---     │
+        │ str   ┆ i64   ┆ i64     │
+        ╞═══════╪═══════╪═════════╡
+        │ Cady  ┆ 98    ┆ 99      │
+        │ Karen ┆ 61    ┆ 58      │
+        └───────┴───────┴─────────┘
+
+        You can use selectors too - here we include all test scores in the pivoted table:
+
+        >>> import polars.selectors as cs
+        >>> df.lazy().pivot(
+        ...     "subject",
+        ...     on_columns=["maths", "physics"],
+        ...     values=cs.starts_with("test"),
+        ... ).collect()  # doctest: +IGNORE_RESULT
+        shape: (2, 5)
+        ┌───────┬──────────────┬────────────────┬──────────────┬────────────────┐
+        │ name  ┆ test_1_maths ┆ test_1_physics ┆ test_2_maths ┆ test_2_physics │
+        │ ---   ┆ ---          ┆ ---            ┆ ---          ┆ ---            │
+        │ str   ┆ i64          ┆ i64            ┆ i64          ┆ i64            │
+        ╞═══════╪══════════════╪════════════════╪══════════════╪════════════════╡
+        │ Cady  ┆ 98           ┆ 99             ┆ 100          ┆ 100            │
+        │ Karen ┆ 61           ┆ 58             ┆ 60           ┆ 60             │
+        └───────┴──────────────┴────────────────┴──────────────┴────────────────┘
+
+        If you end up with multiple values per cell, you can specify how to aggregate
+        them with `aggregate_function`:
+
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "ix": [1, 1, 2, 2, 1, 2],
+        ...         "col": ["a", "a", "a", "a", "b", "b"],
+        ...         "foo": [0, 1, 2, 2, 7, 1],
+        ...         "bar": [0, 2, 0, 0, 9, 4],
+        ...     }
+        ... )
+        >>> lf.pivot(
+        ...     "col", on_columns=["a", "b"], index="ix", aggregate_function="sum"
+        ... ).collect()  # doctest: +IGNORE_RESULT
+        shape: (2, 5)
+        ┌─────┬───────┬───────┬───────┬───────┐
+        │ ix  ┆ foo_a ┆ foo_b ┆ bar_a ┆ bar_b │
+        │ --- ┆ ---   ┆ ---   ┆ ---   ┆ ---   │
+        │ i64 ┆ i64   ┆ i64   ┆ i64   ┆ i64   │
+        ╞═════╪═══════╪═══════╪═══════╪═══════╡
+        │ 1   ┆ 1     ┆ 7     ┆ 2     ┆ 9     │
+        │ 2   ┆ 4     ┆ 1     ┆ 0     ┆ 4     │
+        └─────┴───────┴───────┴───────┴───────┘
+
+        You can also pass a custom aggregation function using
+        :meth:`polars.element`:
+
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "col1": ["a", "a", "a", "b", "b", "b"],
+        ...         "col2": ["x", "x", "x", "x", "y", "y"],
+        ...         "col3": [6, 7, 3, 2, 5, 7],
+        ...     }
+        ... )
+        >>> lf.pivot(
+        ...     "col2",
+        ...     on_columns=["x", "y"],
+        ...     index="col1",
+        ...     values="col3",
+        ...     aggregate_function=pl.element().tanh().mean(),
+        ... ).collect()  # doctest: +IGNORE_RESULT
+        shape: (2, 3)
+        ┌──────┬──────────┬──────────┐
+        │ col1 ┆ x        ┆ y        │
+        │ ---  ┆ ---      ┆ ---      │
+        │ str  ┆ f64      ┆ f64      │
+        ╞══════╪══════════╪══════════╡
+        │ a    ┆ 0.998347 ┆ null     │
+        │ b    ┆ 0.964028 ┆ 0.999954 │
+        └──────┴──────────┴──────────┘
+        """  # noqa: W505
+        if index is None and values is None:
+            msg = "`pivot` needs either `index or `values` needs to be specified"
+            raise InvalidOperationError(msg)
+
+        on_selector = parse_list_into_selector(on)
+        if values is not None:
+            values_selector = parse_list_into_selector(values)
+        if index is not None:
+            index_selector = parse_list_into_selector(index)
+
+        if values is None:
+            values_selector = cs.all() - on_selector - index_selector
+        if index is None:
+            index_selector = cs.all() - on_selector - values_selector
+
+        agg = F.element()
+        if isinstance(aggregate_function, str):
+            if aggregate_function == "first":
+                agg = agg.first()
+            elif aggregate_function == "item":
+                agg = agg.item()
+            elif aggregate_function == "sum":
+                agg = agg.sum()
+            elif aggregate_function == "max":
+                agg = agg.max()
+            elif aggregate_function == "min":
+                agg = agg.min()
+            elif aggregate_function == "mean":
+                agg = agg.mean()
+            elif aggregate_function == "median":
+                agg = agg.median()
+            elif aggregate_function == "last":
+                agg = agg.last()
+            elif aggregate_function == "len":
+                agg = agg.len()
+            elif aggregate_function == "count":
+                issue_deprecation_warning(
+                    "`aggregate_function='count'` input for `pivot` is deprecated."
+                    " Please use `aggregate_function='len'`.",
+                    version="0.20.5",
+                )
+                agg = agg.len()
+            else:
+                msg = f"invalid input for `aggregate_function` argument: {aggregate_function!r}"
+                raise ValueError(msg)
+        elif aggregate_function is None:
+            agg = agg.item(allow_empty=True)
+        else:
+            agg = aggregate_function
+
+        on_cols: pl.DataFrame
+        if isinstance(on_columns, pl.DataFrame):
+            on_cols = on_columns
+        elif isinstance(on_columns, pl.Series):
+            on_cols = on_columns.to_frame()
+        else:
+            on_cols = pl.Series(on_columns).to_frame()
+
+        return self._from_pyldf(
+            self._ldf.pivot(
+                on=on_selector._pyselector,
+                on_columns=on_cols._df,
+                index=index_selector._pyselector,
+                values=values_selector._pyselector,
+                agg=agg._pyexpr,
+                maintain_order=maintain_order,
+                separator=separator,
+            )
+        )
 
     def unpivot(
         self,
@@ -8416,7 +8715,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def remote(
         self,
         context: pc.ComputeContext | None = None,
+        *,
         plan_type: pc._typing.PlanTypePreference = "dot",
+        n_retries: int = 0,
+        engine: pc._typing.Engine = "auto",
+        scaling_mode: pc._typing.ScalingMode = "auto",
     ) -> pc.LazyFrameRemote:
         """
         Run a query remotely on Polars Cloud.
@@ -8435,6 +8738,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         plan_type: {'plain', 'dot'}
             Whether to give a dot diagram of a plain text
             version of logical plan.
+        n_retries:
+            How often a stage should be retried on failure.
+        engine: {'auto', 'streaming', 'in-memory'}
+            This will serve as a hint that tells Polars which engine
+            to prefer. It doesn't have to be respected.
+        scaling_mode: {'auto', 'single-node', 'distributed'}
+            If set to auto, a query that doesn't explicitly specify
+            a scaling mode via `remote().distributed()` or
+            `remote().single_node()` will run in distributed mode
+            if the cluster has more than 1 node.
+
 
         Examples
         --------
@@ -8453,7 +8767,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 6        │
         └──────────┘
 
-        Run a query distributed.
+        Explicitly run a query distributed.
 
         >>> lf = (
         ...     pl.scan_parquet("s3://my_bucket/").group_by("key").agg(pl.sum("values"))

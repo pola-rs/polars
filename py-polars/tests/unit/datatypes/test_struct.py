@@ -1382,3 +1382,10 @@ def test_struct_notagg_partial_sort_24499() -> None:
         {"g": [10], "a": [[{"a": 1, "b": 4}, {"a": 2, "b": 5}, {"a": 3, "b": 6}]]}
     )
     assert_frame_equal(out, expected)
+
+
+def test_struct_reverse_chunked_25269() -> None:
+    s = pl.Series([None, {"a": None}])
+    assert_series_equal(
+        pl.concat([s.head(1), s.tail(1)]).reverse(), pl.Series([{"a": None}, None])
+    )

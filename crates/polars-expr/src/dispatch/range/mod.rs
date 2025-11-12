@@ -43,31 +43,19 @@ pub fn function_expr_to_udf(func: IRRangeFunction) -> SpecialEq<Arc<dyn ColumnsU
         DatetimeRange {
             interval,
             closed,
-            time_unit,
-            time_zone,
+            time_unit: _,
+            time_zone: _,
         } => {
-            map_as_slice!(
-                datetime_range::datetime_range,
-                interval,
-                closed,
-                time_unit,
-                time_zone.clone()
-            )
+            map_as_slice!(datetime_range::datetime_range, interval, closed)
         },
         #[cfg(feature = "dtype-datetime")]
         DatetimeRanges {
             interval,
             closed,
-            time_unit,
-            time_zone,
+            time_unit: _,
+            time_zone: _,
         } => {
-            map_as_slice!(
-                datetime_range::datetime_ranges,
-                interval,
-                closed,
-                time_unit,
-                time_zone.clone()
-            )
+            map_as_slice!(datetime_range::datetime_ranges, interval, closed)
         },
         #[cfg(feature = "dtype-time")]
         TimeRange { interval, closed } => {

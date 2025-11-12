@@ -15,7 +15,7 @@ from polars import Expr
 from polars.exceptions import ColumnNotFoundError
 from polars.meta import get_index_type
 from polars.testing import assert_frame_equal, assert_series_equal
-from polars.testing.parametric import series
+from polars.testing.parametric import column, dataframes, series
 
 if TYPE_CHECKING:
     from typing import Callable
@@ -1965,3 +1965,348 @@ def test_group_broadcast_binary_apply_expr_25046(
     out = df.group_by(groups).agg((op(lhs, rhs)).implode()).to_series(1)
     expected = df.select((op(lhs, rhs)).implode()).to_series()
     assert_series_equal(out, expected)
+
+
+def test_group_by_explode_none_dtype_25045() -> None:
+    df = pl.DataFrame({"a": [None, None, None], "b": [1.0, 2.0, None]})
+    out_a = df.group_by(pl.lit(1)).agg(pl.col.a.explode())
+    expected_a = pl.DataFrame({"literal": 1, "a": [[None, None, None]]})
+    assert_frame_equal(out_a, expected_a)
+
+    out_b = df.group_by(pl.lit(1)).agg(pl.col.b.explode())
+    assert len(out_a["a"][0]) == len(out_b["b"][0])
+
+    out_c = df.select(
+        pl.coalesce(pl.col.a.explode(), pl.col.b.explode())
+        .implode()
+        .over(pl.int_range(pl.len()))
+    )
+    expected_c = pl.DataFrame({"a": [[1.0], [2.0], [None]]})
+    assert_frame_equal(out_c, expected_c)
+
+
+@pytest.mark.parametrize(
+    ("expr", "is_scalar"),
+    [
+        (pl.Expr.forward_fill, False),
+        (pl.Expr.backward_fill, False),
+        (lambda e: e.forward_fill(1), False),
+        (lambda e: e.backward_fill(1), False),
+        (lambda e: e.forward_fill(2), False),
+        (lambda e: e.backward_fill(2), False),
+        (lambda e: e.forward_fill().min(), True),
+        (lambda e: e.backward_fill().min(), True),
+        (lambda e: e.forward_fill().first(), True),
+        (lambda e: e.backward_fill().first(), True),
+    ],
+)
+def test_group_by_forward_backward_fill(
+    expr: Callable[[pl.Expr], pl.Expr], is_scalar: bool
+) -> None:
+    combinations = [
+        [1, None, 2, None, None],
+        [None, 1, 2, 3, 4],
+        [None, None, None, None, None],
+        [1, 2, 3, 4, 5],
+        [1, None, 2, 3, 4],
+        [None, None, None, None, 1],
+        [1, None, None, None, None],
+        [None, None, None, 1, None],
+        [None, 1, None, None, None],
+    ]
+
+    cl = cs.starts_with("x")
+    df = pl.DataFrame(
+        [pl.Series("g", [1] * 5)]
+        + [pl.Series(f"x{i}", c, pl.Int64()) for i, c in enumerate(combinations)]
+    )
+
+    # verify that we are actually calculating something
+    assert len(df.lazy().select(expr(cl)).collect_schema()) == len(combinations)
+
+    data = df.group_by(lit=pl.lit(1)).agg(expr(cl)).drop("lit")
+    if not is_scalar:
+        data = data.explode(cs.all())
+    assert_frame_equal(df.select(expr(cl)), data)
+
+    data = df.group_by("g").agg(expr(cl)).drop("g")
+    if not is_scalar:
+        data = data.explode(cs.all())
+    assert_frame_equal(df.select(expr(cl)), data)
+
+    assert_frame_equal(
+        df.select(expr(cl)),
+        df.select(cl.implode().list.eval(expr(pl.element())).explode()),
+    )
+
+    df = pl.Schema({"x": pl.Int64()}).to_frame()
+
+    data = (
+        pl.DataFrame({"x": [None]})
+        .group_by(lit=pl.lit(1))
+        .agg(expr(pl.lit(pl.Series("x", [], pl.Int64()))))
+        .drop("lit")
+    )
+    if not is_scalar:
+        data = data.select(cs.all().reshape((-1,)))
+    assert_frame_equal(df.select(expr(cl)), data)
+
+    assert_frame_equal(
+        df.select(expr(cl)),
+        df.select(cl.implode().list.eval(expr(pl.element())).reshape((-1,))),
+    )
+
+
+@given(s=series())
+def test_group_by_drop_nulls(s: pl.Series) -> None:
+    df = s.rename("f").to_frame()
+
+    data = (
+        df.group_by(lit=pl.lit(1))
+        .agg(pl.col.f.drop_nulls())
+        .drop("lit")
+        .select(pl.col.f.reshape((-1,)))
+    )
+    assert_frame_equal(df.select(pl.col.f.drop_nulls()), data)
+
+    assert_frame_equal(
+        df.select(pl.col.f.drop_nulls()),
+        df.select(
+            pl.col.f.implode().list.eval(pl.element().drop_nulls()).reshape((-1,))
+        ),
+    )
+
+    df = pl.Schema({"f": pl.Int64()}).to_frame()
+
+    data = (
+        pl.DataFrame({"x": [None]})
+        .group_by(lit=pl.lit(1))
+        .agg(pl.lit(pl.Series("f", [], pl.Int64())).drop_nulls())
+        .drop("lit")
+    )
+    data = data.select(cs.all().reshape((-1,)))
+    assert_frame_equal(df.select(pl.col.f.drop_nulls()), data)
+
+    assert_frame_equal(
+        df.select(pl.col.f.drop_nulls()),
+        df.select(
+            pl.col.f.implode().list.eval(pl.element().drop_nulls()).reshape((-1,))
+        ),
+    )
+
+
+@given(s=series())
+def test_group_by_drop_nans(s: pl.Series) -> None:
+    df = s.rename("f").to_frame()
+
+    data = (
+        df.group_by(lit=pl.lit(1))
+        .agg(pl.col.f.drop_nans())
+        .select(pl.col.f.reshape((-1,)))
+    )
+    assert_frame_equal(df.select(pl.col.f.drop_nans()), data)
+
+    assert_frame_equal(
+        df.select(pl.col.f.drop_nans()),
+        df.select(
+            pl.col.f.implode().list.eval(pl.element().drop_nans()).reshape((-1,))
+        ),
+    )
+
+    df = pl.Schema({"f": pl.Int64()}).to_frame()
+
+    data = (
+        pl.DataFrame({"x": [None]})
+        .group_by(lit=pl.lit(1))
+        .agg(pl.lit(pl.Series("f", [], pl.Int64())).drop_nans())
+        .drop("lit")
+    )
+    data = data.select(cs.all().reshape((-1,)))
+    assert_frame_equal(df.select(pl.col.f.drop_nans()), data)
+
+    assert_frame_equal(
+        df.select(pl.col.f.drop_nans()),
+        df.select(
+            pl.col.f.implode().list.eval(pl.element().drop_nans()).reshape((-1,))
+        ),
+    )
+
+
+@given(
+    df=dataframes(
+        min_size=1,
+        include_cols=[column(name="key", dtype=pl.UInt8, allow_null=False)],
+    ),
+)
+@pytest.mark.parametrize(
+    ("expr", "check_order", "returns_scalar"),
+    [
+        (pl.Expr.unique, False, False),
+        (lambda e: e.unique(maintain_order=True), True, False),
+        (pl.Expr.drop_nans, True, False),
+        (pl.Expr.drop_nulls, True, False),
+        (pl.Expr.null_count, True, False),
+        (pl.Expr.n_unique, True, True),
+        (lambda e: e.filter(pl.int_range(0, e.len()) % 3 == 0), True, False),
+        (pl.Expr.shift, True, False),
+        (pl.Expr.forward_fill, True, False),
+        (pl.Expr.backward_fill, True, False),
+        # (pl.Expr.reverse, True, False), # bug: issue #25269
+        (
+            lambda e: (pl.int_range(e.len() - e.len(), e.len()) % 3 == 0).any(),
+            True,
+            True,
+        ),
+        (
+            lambda e: (pl.int_range(e.len() - e.len(), e.len()) % 3 == 0).all(),
+            True,
+            True,
+        ),
+        (pl.Expr.first, True, True),
+        (pl.Expr.mode, False, False),
+    ],
+)
+def test_grouped_agg_parametric(
+    df: pl.DataFrame,
+    expr: Callable[[pl.Expr], pl.Expr],
+    check_order: bool,
+    returns_scalar: bool,
+) -> None:
+    df = df.with_columns(pl.col.key % 4)
+    gb = df.group_by("key").agg(expr(pl.all()))
+    ls = (
+        df.group_by("key")
+        .agg(pl.all())
+        .select(pl.col.key, (~cs.by_name("key")).list.agg(expr(pl.element())))
+    )
+
+    def verify_index(i: int) -> None:
+        idx_df = df.filter(pl.col.key == pl.lit(i, pl.UInt8))
+        idx_gb = gb.filter(pl.col.key == pl.lit(i, pl.UInt8))
+        idx_ls = ls.filter(pl.col.key == pl.lit(i, pl.UInt8))
+
+        for col in df.columns:
+            if col == "key":
+                continue
+
+            df_s = idx_df.select(expr(pl.col(col))).to_series()
+            gb_s = idx_gb[col]
+            ls_s = idx_ls[col]
+
+            if not returns_scalar:
+                gb_s = gb_s.reshape((-1,))
+                ls_s = ls_s.reshape((-1,))
+
+            assert_series_equal(df_s, gb_s, check_order=check_order)
+            assert_series_equal(df_s, ls_s, check_order=check_order)
+
+    if 0 in df["key"]:
+        verify_index(0)
+    if 1 in df["key"]:
+        verify_index(1)
+    if 2 in df["key"]:
+        verify_index(2)
+    if 3 in df["key"]:
+        verify_index(3)
+
+
+@pytest.mark.parametrize("maintain_order", [False, True])
+@pytest.mark.parametrize(
+    ("df", "out"),
+    [
+        (
+            pl.DataFrame(
+                {
+                    "key": [0, 0, 0, 0, 1],
+                    "a": [True, False, False, False, False],
+                }
+            ).with_columns(
+                a=pl.when(pl.Series([False, False, False, False, True])).then(pl.col.a)
+            ),
+            pl.DataFrame(
+                {
+                    "key": [0, 1],
+                    "a": [1, 1],
+                },
+                schema_overrides={"a": pl.get_index_type()},
+            ),
+        ),
+        (
+            pl.DataFrame(
+                {
+                    "key": [0, 0, 1, 1],
+                    "a": [False, False, False, False],
+                }
+            ).with_columns(
+                a=pl.when(pl.Series([False, False, True, True])).then(pl.col.a)
+            ),
+            pl.DataFrame(
+                {
+                    "key": [0, 1],
+                    "a": [1, 1],
+                },
+                schema_overrides={"a": pl.get_index_type()},
+            ),
+        ),
+    ],
+)
+def test_n_unique_masked_bools(
+    maintain_order: bool, df: pl.DataFrame, out: pl.DataFrame
+) -> None:
+    df = df
+
+    assert_frame_equal(
+        df.group_by("key", maintain_order=maintain_order).agg(pl.col.a.n_unique()),
+        out,
+        check_row_order=maintain_order,
+    )
+    assert_frame_equal(
+        df.group_by("key", maintain_order=maintain_order)
+        .agg(pl.col.a)
+        .with_columns(pl.col.a.list.agg(pl.element().n_unique())),
+        out,
+        check_row_order=maintain_order,
+    )
+
+
+@pytest.mark.parametrize("maintain_order", [False, True])
+@pytest.mark.parametrize("stable", [False, True])
+def test_group_bool_unique_25267(maintain_order: bool, stable: bool) -> None:
+    df = pl.DataFrame(
+        {
+            "id": ["A", "A", "B", "B", "C", "C"],
+            "str_values": ["D", "E", "F", "F", "G", "G"],
+            "bool_values": [True, False, True, True, False, False],
+        }
+    )
+
+    gb = df.group_by("id", maintain_order=maintain_order).agg(
+        pl.col("str_values", "bool_values").unique(maintain_order=stable),
+    )
+
+    ls = (
+        df.group_by("id", maintain_order=maintain_order)
+        .agg("str_values", "bool_values")
+        .with_columns(
+            pl.col("str_values", "bool_values").list.agg(
+                pl.element().unique(maintain_order=stable)
+            )
+        )
+    )
+
+    for i in ["A", "B", "C"]:
+        for c in ["str_values", "bool_values"]:
+            df_s = (
+                df.select(pl.col(c).filter(pl.col.id == pl.lit(i)))
+                .to_series()
+                .unique(maintain_order=stable)
+            )
+            gb_s = gb.select(
+                pl.col(c).filter(pl.col.id == pl.lit(i)).reshape((-1,))
+            ).to_series()
+            ls_s = ls.select(
+                pl.col(c).filter(pl.col.id == pl.lit(i)).reshape((-1,))
+            ).to_series()
+
+            assert_series_equal(df_s, gb_s, check_order=stable)
+            assert_series_equal(df_s, ls_s, check_order=stable)

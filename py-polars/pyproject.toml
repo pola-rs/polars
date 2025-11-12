@@ -10,7 +10,7 @@ authors = [
   { name = "Ritchie Vink", email = "ritchie46@gmail.com" },
 ]
 # example: 1.35.0b1
-version = "1.35.0"
+version = "1.35.1"
 license = { file = "LICENSE" }
 requires-python = ">=3.9"
 
@@ -34,7 +34,7 @@ classifiers = [
   "Typing :: Typed",
 ]
 # example: 1.35.0b1
-dependencies = ["polars-runtime-32 == 1.35.0"]
+dependencies = ["polars-runtime-32 == 1.35.1"]
 
 [project.urls]
 Homepage = "https://www.pola.rs/"
@@ -45,11 +45,11 @@ Changelog = "https://github.com/pola-rs/polars/releases"
 [project.optional-dependencies]
 # Runtimes
 # example: 1.35.0b1
-rt64 = ["polars-runtime-64 == 1.35.0"]
-rtcompat = ["polars-runtime-compat == 1.35.0"]
+rt64 = ["polars-runtime-64 == 1.35.1"]
+rtcompat = ["polars-runtime-compat == 1.35.1"]
 
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
-polars_cloud = ["polars_cloud >= 0.0.1a1"]
+polars_cloud = ["polars_cloud >= 0.4.0"]
 # Interop
 numpy = ["numpy >= 1.16.0"]
 pandas = ["pandas", "polars[pyarrow]"]
@@ -214,7 +214,8 @@ allowed-confusables = ["µ"]
 
 [tool.ruff.lint.per-file-ignores]
 "_dependencies.py" = ["ICN001"]
-"tests/**/*.py" = ["D100", "D102", "D103", "B018", "FBT001"]
+"config.py" = ["FBT001"]
+"tests/**/*.py" = ["D100", "D102", "D103", "B018", "F841", "FBT001"]
 
 [tool.ruff.lint.pycodestyle]
 max-doc-length = 88

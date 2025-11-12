@@ -4,7 +4,7 @@ pub mod allocator;
 // Since Python Polars cannot share its version into here and we need to be able to build this
 // package correctly without `py-polars`, we need to mirror the version here.
 // example: 1.35.0-beta.1
-pub static PYPOLARS_VERSION: &str = "1.35.0";
+pub static PYPOLARS_VERSION: &str = "1.35.1";
 pub static RUNTIME_REPR: &str = "unknown";
 
 use pyo3::prelude::*;

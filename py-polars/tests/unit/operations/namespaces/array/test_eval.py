@@ -1,3 +1,5 @@
+from typing import Callable
+
 import pytest
 
 import polars as pl
@@ -141,18 +143,20 @@ def test_arr_agg_sum(sum_expr: pl.Expr) -> None:
 @pytest.mark.parametrize(
     ("expr", "is_scalar"),
     [
-        (pl.element().null_count(), True),
-        (pl.element().rank().null_count(), True),
-        (pl.element().rank(), False),
-        (pl.element() + pl.lit(1), False),
-        (pl.element().filter(pl.element() != 0), False),
-        (pl.element().drop_nulls(), False),
-        (pl.element().n_unique(), True),
+        (pl.Expr.null_count, True),
+        (lambda e: e.rank().null_count(), True),
+        (pl.Expr.rank, False),
+        (lambda e: e + pl.lit(1), False),
+        (lambda e: e.filter(e != 0), False),
+        (pl.Expr.drop_nulls, False),
+        (pl.Expr.n_unique, True),
     ],
 )
-def test_arr_agg_parametric(expr: pl.Expr, is_scalar: bool) -> None:
+def test_arr_agg_parametric(
+    expr: Callable[[pl.Expr], pl.Expr], is_scalar: bool
+) -> None:
     def test_case(s: pl.Series) -> None:
-        out = s.arr.agg(expr)
+        out = s.arr.agg(expr(pl.element()))
 
         for i, v in enumerate(s):
             if v is None:
@@ -162,7 +166,7 @@ def test_arr_agg_parametric(expr: pl.Expr, is_scalar: bool) -> None:
             assert isinstance(v, pl.Series)
 
             v = v.rename("")
-            v = v.to_frame().select(expr).to_series()
+            v = v.to_frame().select(expr(pl.col(""))).to_series()
 
             if not is_scalar:
                 v = v.implode()

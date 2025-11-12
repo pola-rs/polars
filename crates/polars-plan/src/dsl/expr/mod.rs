@@ -35,6 +35,7 @@ pub enum AggExpr {
     Last(Arc<Expr>),
     Item {
         input: Arc<Expr>,
+        /// Give a missing value if there are no values.
         allow_empty: bool,
     },
     Mean(Arc<Expr>),
@@ -143,12 +144,20 @@ pub enum Expr {
         by: Arc<Expr>,
     },
     /// Polars flavored window functions.
-    Window {
+    Over {
         /// Also has the input. i.e. avg("foo")
         function: Arc<Expr>,
         partition_by: Vec<Expr>,
         order_by: Option<(Arc<Expr>, SortOptions)>,
-        options: WindowType,
+        mapping: WindowMapping,
+    },
+    #[cfg(feature = "dynamic_group_by")]
+    Rolling {
+        function: Arc<Expr>,
+        index_column: Arc<Expr>,
+        period: Duration,
+        offset: Duration,
+        closed_window: ClosedWindow,
     },
     Slice {
         input: Arc<Expr>,
@@ -335,16 +344,30 @@ impl Hash for Expr {
                 skip_empty.hash(state);
                 input.hash(state)
             },
-            Expr::Window {
+            #[cfg(feature = "dynamic_group_by")]
+            Expr::Rolling {
+                function,
+                index_column,
+                period,
+                offset,
+                closed_window,
+            } => {
+                function.hash(state);
+                index_column.hash(state);
+                period.hash(state);
+                offset.hash(state);
+                closed_window.hash(state);
+            },
+            Expr::Over {
                 function,
                 partition_by,
                 order_by,
-                options,
+                mapping,
             } => {
                 function.hash(state);
                 partition_by.hash(state);
                 order_by.hash(state);
-                options.hash(state);
+                mapping.hash(state);
             },
             Expr::Slice {
                 input,

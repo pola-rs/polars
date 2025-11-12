@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+use polars_core::SchemaExtPl;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
 use polars_core::prelude::{DataType, PlHashMap, PlHashSet};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
-use polars_core::{SchemaExtPl, config};
 use polars_error::{PolarsResult, polars_bail};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
@@ -24,7 +24,7 @@ use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
 use polars_utils::unique_id::UniqueId;
-use polars_utils::{IdxSize, unique_column_name};
+use polars_utils::{IdxSize, format_pl_smallstr, unique_column_name};
 use slotmap::SlotMap;
 
 use super::lower_expr::build_hstack_stream;
@@ -32,7 +32,6 @@ use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
 use crate::nodes::io_sources::multi_scan;
 use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
-use crate::nodes::io_sources::multi_scan::components::row_counter::RowCounter;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::physical_plan::lower_expr::{ExprCache, build_select_stream, lower_exprs};
 use crate::physical_plan::lower_group_by::build_group_by_stream;
@@ -518,9 +517,15 @@ pub fn lower_ir(
                     },
                 ));
 
-                let trans_by_column;
+                let mut trans_by_column;
                 (stream, trans_by_column) =
                     lower_exprs(stream, &by_column, expr_arena, phys_sm, expr_cache, ctx)?;
+
+                trans_by_column = trans_by_column
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, expr)| expr.with_alias(format_pl_smallstr!("__POLARS_KEYCOL_{}", i)))
+                    .collect_vec();
 
                 stream = PhysStream::first(phys_sm.insert(PhysNode {
                     output_schema: phys_sm[stream.node].output_schema.clone(),
@@ -607,308 +612,271 @@ pub fn lower_ir(
                 unreachable!();
             };
 
-            if scan_sources.is_empty()
-                || unified_scan_args
-                    .pre_slice
-                    .as_ref()
-                    .is_some_and(|slice| slice.len() == 0)
-            {
-                if config::verbose() {
-                    eprintln!("lower_ir: scan IR lowered as empty InMemorySource")
-                }
-
-                // If there are no sources, just provide an empty in-memory source with the right
-                // schema.
-                PhysNodeKind::InMemorySource {
-                    df: Arc::new(DataFrame::empty_with_schema(output_schema.as_ref())),
-                }
-            } else if output_schema.is_empty()
-                && let Some((physical_rows, deleted_rows)) = unified_scan_args.row_count
-            {
-                // Fast-count for scan_iceberg will hit here.
-
-                // Note: These are currently always `None`, as projection pushdown runs before slice /
-                // predicate pushdown.
-                assert!(unified_scan_args.pre_slice.is_none() && predicate.is_none());
-
-                let row_counter = RowCounter::new(physical_rows, deleted_rows);
-                let num_rows = row_counter.num_rows()?;
-
-                if config::verbose() {
-                    eprintln!(
-                        "lower_ir: scan IR lowered as 0-width InMemorySource with height {} ({:?})",
-                        num_rows, &row_counter
-                    )
-                }
-
-                PhysNodeKind::InMemorySource {
-                    df: Arc::new(DataFrame::empty_with_height(num_rows)),
-                }
-            } else {
-                let file_reader_builder: Arc<dyn FileReaderBuilder> = match &*scan_type {
-                    #[cfg(feature = "parquet")]
-                    FileScanIR::Parquet {
-                        options,
-                        metadata: first_metadata,
-                    } => Arc::new(
-                        crate::nodes::io_sources::parquet::builder::ParquetReaderBuilder {
-                            options: Arc::new(options.clone()),
-                            first_metadata: first_metadata.clone(),
-                        },
-                    ) as _,
-
-                    #[cfg(feature = "ipc")]
-                    FileScanIR::Ipc {
-                        options: polars_io::ipc::IpcScanOptions {},
-                        metadata: first_metadata,
-                    } => Arc::new(crate::nodes::io_sources::ipc::builder::IpcReaderBuilder {
+            let file_reader_builder: Arc<dyn FileReaderBuilder> = match &*scan_type {
+                #[cfg(feature = "parquet")]
+                FileScanIR::Parquet {
+                    options,
+                    metadata: first_metadata,
+                } => Arc::new(
+                    crate::nodes::io_sources::parquet::builder::ParquetReaderBuilder {
+                        options: Arc::new(options.clone()),
                         first_metadata: first_metadata.clone(),
-                    }) as _,
-
-                    #[cfg(feature = "csv")]
-                    FileScanIR::Csv { options } => Arc::new(Arc::new(options.clone())) as _,
-
-                    #[cfg(feature = "json")]
-                    FileScanIR::NDJson { options } => Arc::new(Arc::new(options.clone())) as _,
-
-                    #[cfg(feature = "python")]
-                    FileScanIR::PythonDataset {
-                        dataset_object: _,
-                        cached_ir,
-                    } => {
-                        use crate::physical_plan::io::python_dataset::python_dataset_scan_to_reader_builder;
-                        let guard = cached_ir.lock().unwrap();
-
-                        let expanded_scan = guard
-                            .as_ref()
-                            .expect("python dataset should be resolved")
-                            .python_scan()
-                            .expect("should be python scan");
-
-                        python_dataset_scan_to_reader_builder(expanded_scan)
                     },
+                ) as _,
 
-                    FileScanIR::Anonymous { .. } => todo!("unimplemented: AnonymousScan"),
+                #[cfg(feature = "ipc")]
+                FileScanIR::Ipc {
+                    options: polars_io::ipc::IpcScanOptions {},
+                    metadata: first_metadata,
+                } => Arc::new(crate::nodes::io_sources::ipc::builder::IpcReaderBuilder {
+                    first_metadata: first_metadata.clone(),
+                }) as _,
+
+                #[cfg(feature = "csv")]
+                FileScanIR::Csv { options } => Arc::new(Arc::new(options.clone())) as _,
+
+                #[cfg(feature = "json")]
+                FileScanIR::NDJson { options } => Arc::new(Arc::new(options.clone())) as _,
+
+                #[cfg(feature = "python")]
+                FileScanIR::PythonDataset {
+                    dataset_object: _,
+                    cached_ir,
+                } => {
+                    use crate::physical_plan::io::python_dataset::python_dataset_scan_to_reader_builder;
+                    let guard = cached_ir.lock().unwrap();
+
+                    let expanded_scan = guard
+                        .as_ref()
+                        .expect("python dataset should be resolved")
+                        .python_scan()
+                        .expect("should be python scan");
+
+                    python_dataset_scan_to_reader_builder(expanded_scan)
+                },
+
+                #[cfg(feature = "scan_lines")]
+                FileScanIR::Lines { name: _ } => todo!(),
+
+                FileScanIR::Anonymous { .. } => todo!("unimplemented: AnonymousScan"),
+            };
+
+            {
+                let cloud_options = &unified_scan_args.cloud_options;
+                let output_schema =
+                    if std::env::var("POLARS_FORCE_EMPTY_PROJECT").as_deref() == Ok("1") {
+                        Default::default()
+                    } else {
+                        output_schema
+                    };
+
+                let cloud_options = cloud_options.clone().map(Arc::new);
+                let file_schema = file_info.schema;
+
+                let (projected_schema, file_schema) =
+                    multi_scan::functions::resolve_projections::resolve_projections(
+                        &output_schema,
+                        &file_schema,
+                        &mut hive_parts,
+                        unified_scan_args
+                            .row_index
+                            .as_ref()
+                            .map(|ri| ri.name.as_str()),
+                        unified_scan_args
+                            .include_file_paths
+                            .as_ref()
+                            .map(|x| x.as_str()),
+                    );
+
+                let file_projection_builder = ProjectionBuilder::new(
+                    projected_schema,
+                    unified_scan_args.column_mapping.as_ref(),
+                    unified_scan_args
+                        .default_values
+                        .filter(|DefaultFieldValues::Iceberg(v)| !v.is_empty())
+                        .map(|DefaultFieldValues::Iceberg(v)| v),
+                );
+
+                // TODO: We ignore the parameter for some scan types to maintain old behavior,
+                // as they currently don't expose an API for it to be configured.
+                let extra_columns_policy = match &*scan_type {
+                    #[cfg(feature = "parquet")]
+                    FileScanIR::Parquet { .. } => unified_scan_args.extra_columns_policy,
+
+                    _ => {
+                        if unified_scan_args.projection.is_some() {
+                            ExtraColumnsPolicy::Ignore
+                        } else {
+                            ExtraColumnsPolicy::Raise
+                        }
+                    },
                 };
 
+                let forbid_extra_columns = ForbidExtraColumns::opt_new(
+                    &extra_columns_policy,
+                    &file_schema,
+                    unified_scan_args.column_mapping.as_ref(),
+                );
+
+                let pre_slice = unified_scan_args.pre_slice.clone();
+
+                let mut multi_scan_node = PhysNodeKind::MultiScan {
+                    scan_sources,
+                    file_reader_builder,
+                    cloud_options,
+                    file_projection_builder,
+                    output_schema: output_schema.clone(),
+                    row_index: None,
+                    pre_slice,
+                    predicate,
+                    predicate_file_skip_applied,
+                    hive_parts,
+                    cast_columns_policy: unified_scan_args.cast_columns_policy,
+                    missing_columns_policy: unified_scan_args.missing_columns_policy,
+                    forbid_extra_columns,
+                    include_file_paths: unified_scan_args.include_file_paths,
+                    // Set to None if empty for performance.
+                    deletion_files: DeletionFilesList::filter_empty(
+                        unified_scan_args.deletion_files,
+                    ),
+                    table_statistics: unified_scan_args.table_statistics,
+                    file_schema,
+                };
+
+                let PhysNodeKind::MultiScan {
+                    output_schema: multi_scan_output_schema,
+                    row_index: row_index_to_multiscan,
+                    pre_slice: pre_slice_to_multiscan,
+                    predicate: predicate_to_multiscan,
+                    ..
+                } = &mut multi_scan_node
+                else {
+                    unreachable!()
+                };
+
+                let mut row_index_post = unified_scan_args.row_index;
+
+                // * If a predicate was pushed then we always push row index
+                if predicate_to_multiscan.is_some()
+                    || matches!(pre_slice_to_multiscan, Some(Slice::Negative { .. }))
                 {
-                    let cloud_options = &unified_scan_args.cloud_options;
-                    let output_schema =
-                        if std::env::var("POLARS_FORCE_EMPTY_PROJECT").as_deref() == Ok("1") {
-                            Default::default()
-                        } else {
-                            output_schema
-                        };
-
-                    let cloud_options = cloud_options.clone().map(Arc::new);
-                    let file_schema = file_info.schema;
-
-                    let (projected_schema, file_schema) =
-                        multi_scan::functions::resolve_projections::resolve_projections(
-                            &output_schema,
-                            &file_schema,
-                            &mut hive_parts,
-                            unified_scan_args
-                                .row_index
-                                .as_ref()
-                                .map(|ri| ri.name.as_str()),
-                            unified_scan_args
-                                .include_file_paths
-                                .as_ref()
-                                .map(|x| x.as_str()),
-                        );
-
-                    let file_projection_builder = ProjectionBuilder::new(
-                        projected_schema,
-                        unified_scan_args.column_mapping.as_ref(),
-                        unified_scan_args
-                            .default_values
-                            .filter(|DefaultFieldValues::Iceberg(v)| !v.is_empty())
-                            .map(|DefaultFieldValues::Iceberg(v)| v),
-                    );
-
-                    // TODO: We ignore the parameter for some scan types to maintain old behavior,
-                    // as they currently don't expose an API for it to be configured.
-                    let extra_columns_policy = match &*scan_type {
-                        #[cfg(feature = "parquet")]
-                        FileScanIR::Parquet { .. } => unified_scan_args.extra_columns_policy,
-
-                        _ => {
-                            if unified_scan_args.projection.is_some() {
-                                ExtraColumnsPolicy::Ignore
-                            } else {
-                                ExtraColumnsPolicy::Raise
-                            }
-                        },
-                    };
-
-                    let forbid_extra_columns = ForbidExtraColumns::opt_new(
-                        &extra_columns_policy,
-                        &file_schema,
-                        unified_scan_args.column_mapping.as_ref(),
-                    );
-
-                    let pre_slice = unified_scan_args.pre_slice.clone();
-
-                    let mut multi_scan_node = PhysNodeKind::MultiScan {
-                        scan_sources,
-                        file_reader_builder,
-                        cloud_options,
-                        file_projection_builder,
-                        output_schema: output_schema.clone(),
-                        row_index: None,
-                        pre_slice,
-                        predicate,
-                        predicate_file_skip_applied,
-                        hive_parts,
-                        cast_columns_policy: unified_scan_args.cast_columns_policy,
-                        missing_columns_policy: unified_scan_args.missing_columns_policy,
-                        forbid_extra_columns,
-                        include_file_paths: unified_scan_args.include_file_paths,
-                        // Set to None if empty for performance.
-                        deletion_files: DeletionFilesList::filter_empty(
-                            unified_scan_args.deletion_files,
-                        ),
-                        table_statistics: unified_scan_args.table_statistics,
-                        file_schema,
-                    };
-
-                    let PhysNodeKind::MultiScan {
-                        output_schema: multi_scan_output_schema,
-                        row_index: row_index_to_multiscan,
-                        pre_slice: pre_slice_to_multiscan,
-                        predicate: predicate_to_multiscan,
-                        ..
-                    } = &mut multi_scan_node
-                    else {
-                        unreachable!()
-                    };
-
-                    let mut row_index_post = unified_scan_args.row_index;
-
-                    // * If a predicate was pushed then we always push row index
-                    if predicate_to_multiscan.is_some()
-                        || matches!(pre_slice_to_multiscan, Some(Slice::Negative { .. }))
-                    {
-                        *row_index_to_multiscan = row_index_post.take();
-                    }
-
-                    // TODO
-                    // Projection pushdown could change the row index column position. Ideally it shouldn't,
-                    // and instead just put a projection on top of the scan node in the IR. But for now
-                    // we do that step here.
-                    let mut schema_after_row_index_post = multi_scan_output_schema.clone();
-                    let mut reorder_after_row_index_post = false;
-
-                    // Remove row index from multiscan schema if not pushed.
-                    if let Some(ri) = row_index_post.as_ref() {
-                        let row_index_post_position =
-                            multi_scan_output_schema.index_of(&ri.name).unwrap();
-                        let (_, dtype) = Arc::make_mut(multi_scan_output_schema)
-                            .shift_remove_index(row_index_post_position)
-                            .unwrap();
-
-                        if row_index_post_position != 0 {
-                            reorder_after_row_index_post = true;
-                            let mut schema =
-                                Schema::with_capacity(multi_scan_output_schema.len() + 1);
-                            schema.extend([(ri.name.clone(), dtype)]);
-                            schema.extend(
-                                multi_scan_output_schema
-                                    .iter()
-                                    .map(|(k, v)| (k.clone(), v.clone())),
-                            );
-                            schema_after_row_index_post = Arc::new(schema);
-                        }
-                    }
-
-                    // If we have no predicate and no slice or positive slice, we can reorder the row index to after
-                    // the slice by adjusting the offset. This can remove a serial synchronization step in multiscan
-                    // and allow the reader to still skip rows.
-                    let row_index_post_after_slice = (|| {
-                        let mut row_index = row_index_post.take()?;
-
-                        let positive_offset = match pre_slice_to_multiscan {
-                            Some(Slice::Positive { offset, .. }) => Some(*offset),
-                            None => Some(0),
-                            Some(Slice::Negative { .. }) => unreachable!(),
-                        }?;
-
-                        row_index.offset = row_index.offset.saturating_add(
-                            IdxSize::try_from(positive_offset).unwrap_or(IdxSize::MAX),
-                        );
-
-                        Some(row_index)
-                    })();
-
-                    let mut stream = {
-                        let node_key = phys_sm.insert(PhysNode::new(
-                            multi_scan_output_schema.clone(),
-                            multi_scan_node,
-                        ));
-                        PhysStream::first(node_key)
-                    };
-
-                    if let Some(ri) = row_index_post {
-                        let node = PhysNodeKind::WithRowIndex {
-                            input: stream,
-                            name: ri.name,
-                            offset: Some(ri.offset),
-                        };
-
-                        let node_key = phys_sm.insert(PhysNode {
-                            output_schema: schema_after_row_index_post.clone(),
-                            kind: node,
-                        });
-
-                        stream = PhysStream::first(node_key);
-
-                        if reorder_after_row_index_post {
-                            let node = PhysNodeKind::SimpleProjection {
-                                input: stream,
-                                columns: output_schema.iter_names_cloned().collect(),
-                            };
-
-                            let node_key = phys_sm.insert(PhysNode {
-                                output_schema: output_schema.clone(),
-                                kind: node,
-                            });
-
-                            stream = PhysStream::first(node_key);
-                        }
-                    }
-
-                    if let Some(ri) = row_index_post_after_slice {
-                        let node = PhysNodeKind::WithRowIndex {
-                            input: stream,
-                            name: ri.name,
-                            offset: Some(ri.offset),
-                        };
-
-                        let node_key = phys_sm.insert(PhysNode {
-                            output_schema: schema_after_row_index_post,
-                            kind: node,
-                        });
-
-                        stream = PhysStream::first(node_key);
-
-                        if reorder_after_row_index_post {
-                            let node = PhysNodeKind::SimpleProjection {
-                                input: stream,
-                                columns: output_schema.iter_names_cloned().collect(),
-                            };
-
-                            let node_key = phys_sm.insert(PhysNode {
-                                output_schema: output_schema.clone(),
-                                kind: node,
-                            });
-
-                            stream = PhysStream::first(node_key);
-                        }
-                    }
-
-                    return Ok(stream);
+                    *row_index_to_multiscan = row_index_post.take();
                 }
+
+                // TODO
+                // Projection pushdown could change the row index column position. Ideally it shouldn't,
+                // and instead just put a projection on top of the scan node in the IR. But for now
+                // we do that step here.
+                let mut schema_after_row_index_post = multi_scan_output_schema.clone();
+                let mut reorder_after_row_index_post = false;
+
+                // Remove row index from multiscan schema if not pushed.
+                if let Some(ri) = row_index_post.as_ref() {
+                    let row_index_post_position =
+                        multi_scan_output_schema.index_of(&ri.name).unwrap();
+                    let (_, dtype) = Arc::make_mut(multi_scan_output_schema)
+                        .shift_remove_index(row_index_post_position)
+                        .unwrap();
+
+                    if row_index_post_position != 0 {
+                        reorder_after_row_index_post = true;
+                        let mut schema = Schema::with_capacity(multi_scan_output_schema.len() + 1);
+                        schema.extend([(ri.name.clone(), dtype)]);
+                        schema.extend(
+                            multi_scan_output_schema
+                                .iter()
+                                .map(|(k, v)| (k.clone(), v.clone())),
+                        );
+                        schema_after_row_index_post = Arc::new(schema);
+                    }
+                }
+
+                // If we have no predicate and no slice or positive slice, we can reorder the row index to after
+                // the slice by adjusting the offset. This can remove a serial synchronization step in multiscan
+                // and allow the reader to still skip rows.
+                let row_index_post_after_slice = (|| {
+                    let mut row_index = row_index_post.take()?;
+
+                    let positive_offset = match pre_slice_to_multiscan {
+                        Some(Slice::Positive { offset, .. }) => Some(*offset),
+                        None => Some(0),
+                        Some(Slice::Negative { .. }) => unreachable!(),
+                    }?;
+
+                    row_index.offset = row_index
+                        .offset
+                        .saturating_add(IdxSize::try_from(positive_offset).unwrap_or(IdxSize::MAX));
+
+                    Some(row_index)
+                })();
+
+                let mut stream = {
+                    let node_key = phys_sm.insert(PhysNode::new(
+                        multi_scan_output_schema.clone(),
+                        multi_scan_node,
+                    ));
+                    PhysStream::first(node_key)
+                };
+
+                if let Some(ri) = row_index_post {
+                    let node = PhysNodeKind::WithRowIndex {
+                        input: stream,
+                        name: ri.name,
+                        offset: Some(ri.offset),
+                    };
+
+                    let node_key = phys_sm.insert(PhysNode {
+                        output_schema: schema_after_row_index_post.clone(),
+                        kind: node,
+                    });
+
+                    stream = PhysStream::first(node_key);
+
+                    if reorder_after_row_index_post {
+                        let node = PhysNodeKind::SimpleProjection {
+                            input: stream,
+                            columns: output_schema.iter_names_cloned().collect(),
+                        };
+
+                        let node_key = phys_sm.insert(PhysNode {
+                            output_schema: output_schema.clone(),
+                            kind: node,
+                        });
+
+                        stream = PhysStream::first(node_key);
+                    }
+                }
+
+                if let Some(ri) = row_index_post_after_slice {
+                    let node = PhysNodeKind::WithRowIndex {
+                        input: stream,
+                        name: ri.name,
+                        offset: Some(ri.offset),
+                    };
+
+                    let node_key = phys_sm.insert(PhysNode {
+                        output_schema: schema_after_row_index_post,
+                        kind: node,
+                    });
+
+                    stream = PhysStream::first(node_key);
+
+                    if reorder_after_row_index_post {
+                        let node = PhysNodeKind::SimpleProjection {
+                            input: stream,
+                            columns: output_schema.iter_names_cloned().collect(),
+                        };
+
+                        let node_key = phys_sm.insert(PhysNode {
+                            output_schema: output_schema.clone(),
+                            kind: node,
+                        });
+
+                        stream = PhysStream::first(node_key);
+                    }
+                }
+
+                return Ok(stream);
             }
         },
 

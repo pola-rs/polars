@@ -1,7 +1,8 @@
 use std::fmt::Debug;
 
 use polars_error::{PolarsResult, polars_err};
-use polars_utils::IdxSize;
+
+use crate::IdxSize;
 
 /// Tracker counting physical and deleted rows.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -14,7 +15,6 @@ pub struct RowCounter {
 
 impl RowCounter {
     /// `usize::MAX` physical rows, 0 deleted rows
-    #[expect(unused)]
     pub const MAX: Self = Self {
         physical_rows: usize::MAX,
         deleted_rows: 0,
@@ -75,7 +75,7 @@ impl RowCounter {
     ///
     /// # Panics
     /// Panics if there are deleted rows and addition overflows.
-    #[inline]
+    #[allow(clippy::should_implement_trait)]
     pub fn add(self, other: Self) -> Self {
         (|| {
             let physical_rows = self.physical_rows.checked_add(other.physical_rows);
@@ -99,7 +99,7 @@ impl RowCounter {
 
     /// # Panics
     /// Panics if subtraction overflows.
-    #[inline]
+    #[allow(clippy::should_implement_trait)]
     pub fn sub(self, other: Self) -> Self {
         let func = |a: usize, b: usize| {
             a.checked_sub(b)
@@ -128,13 +128,23 @@ impl RowCounter {
     }
 
     /// Returns [`RowCounter::num_rows`] as a usize.
-    ///
-    /// # Panics
-    /// Panics if `usize` to `IdxSize` conversion fails.
     #[inline]
-    #[expect(unused)]
     pub fn num_rows_idxsize(&self) -> PolarsResult<IdxSize> {
-        self.num_rows().map(|x| IdxSize::try_from(x).unwrap())
+        self.num_rows().and_then(|x| {
+            IdxSize::try_from(x).map_err(|_| {
+                let consider_installing_64 = if cfg!(feature = "bigidx") {
+                    ""
+                } else {
+                    ". Consider installing 'polars[rt64]'."
+                };
+
+                polars_err!(
+                    ComputeError:
+                    "row count ({}) exceeded maximum supported of {} (counter: {:?}){}",
+                    x, IdxSize::MAX, self, consider_installing_64
+                )
+            })
+        })
     }
 
     #[inline]
@@ -151,7 +161,6 @@ impl RowCounter {
     }
 
     #[inline]
-    #[expect(unused)]
     pub fn num_physical_rows_idxsize_saturating(&self) -> IdxSize {
         IdxSize::try_from(self.physical_rows).unwrap_or(IdxSize::MAX)
     }

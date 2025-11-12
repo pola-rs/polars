@@ -52,7 +52,6 @@ impl DslBuilder {
     }
 
     #[cfg(feature = "parquet")]
-    #[allow(clippy::too_many_arguments)]
     pub fn scan_parquet(
         sources: ScanSources,
         options: ParquetOptions,
@@ -68,7 +67,6 @@ impl DslBuilder {
     }
 
     #[cfg(feature = "ipc")]
-    #[allow(clippy::too_many_arguments)]
     pub fn scan_ipc(
         sources: ScanSources,
         options: IpcScanOptions,
@@ -78,6 +76,21 @@ impl DslBuilder {
             sources,
             unified_scan_args: Box::new(unified_scan_args),
             scan_type: Box::new(FileScanDsl::Ipc { options }),
+            cached_ir: Default::default(),
+        }
+        .into())
+    }
+
+    #[cfg(feature = "scan_lines")]
+    pub fn scan_lines(
+        sources: ScanSources,
+        unified_scan_args: UnifiedScanArgs,
+        name: PlSmallStr,
+    ) -> PolarsResult<Self> {
+        Ok(DslPlan::Scan {
+            sources,
+            unified_scan_args: Box::new(unified_scan_args),
+            scan_type: Box::new(FileScanDsl::Lines { name }),
             cached_ir: Default::default(),
         }
         .into())
@@ -193,7 +206,7 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn pipe_with_schema(self, callback: PlanCallback<(DslPlan, Schema), DslPlan>) -> Self {
+    pub fn pipe_with_schema(self, callback: PlanCallback<(DslPlan, SchemaRef), DslPlan>) -> Self {
         DslPlan::PipeWithSchema {
             input: Arc::new(self.0),
             callback,
@@ -287,6 +300,31 @@ impl DslBuilder {
                 columns,
                 allow_empty,
             },
+        }
+        .into()
+    }
+
+    #[cfg(feature = "pivot")]
+    #[expect(clippy::too_many_arguments)]
+    pub fn pivot(
+        self,
+        on: Selector,
+        on_columns: Arc<DataFrame>,
+        index: Selector,
+        values: Selector,
+        agg: Expr,
+        maintain_order: bool,
+        separator: PlSmallStr,
+    ) -> Self {
+        DslPlan::Pivot {
+            input: Arc::new(self.0),
+            on,
+            on_columns,
+            index,
+            values,
+            agg,
+            maintain_order,
+            separator,
         }
         .into()
     }

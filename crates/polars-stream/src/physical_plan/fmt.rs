@@ -4,6 +4,7 @@ use polars_plan::dsl::PartitionVariantIR;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, EscapeLabel};
 use polars_plan::prelude::FileType;
+use polars_time::ClosedWindow;
 use polars_utils::arena::Arena;
 use polars_utils::slice_enum::Slice;
 use slotmap::{Key, SecondaryMap, SlotMap};
@@ -474,6 +475,22 @@ fn visualize_plan_rec(
             ),
             from_ref(input),
         ),
+        #[cfg(feature = "dynamic_group_by")]
+        PhysNodeKind::RollingGroupBy {
+            input,
+            index_column,
+            period,
+            offset,
+            closed,
+            aggs,
+        } => (
+            format!(
+                "rolling-group-by\\nindex column: {index_column}\\nperiod: {period}\\noffset: {offset}\\nclosed: {}\\naggs:\\n{}",
+                <ClosedWindow as Into<&'static str>>::into(*closed),
+                fmt_exprs_to_label(aggs, expr_arena, FormatExprStyle::Select)
+            ),
+            from_ref(input),
+        ),
         PhysNodeKind::InMemoryJoin {
             input_left,
             input_right,
@@ -553,6 +570,10 @@ fn visualize_plan_rec(
         } => ("merge-sorted".to_string(), &[*input_left, *input_right][..]),
         #[cfg(feature = "ewma")]
         PhysNodeKind::EwmMean { input, options: _ } => ("ewm-mean".to_string(), &[*input][..]),
+        #[cfg(feature = "ewma")]
+        PhysNodeKind::EwmVar { input, options: _ } => ("ewm-var".to_string(), &[*input][..]),
+        #[cfg(feature = "ewma")]
+        PhysNodeKind::EwmStd { input, options: _ } => ("ewm-std".to_string(), &[*input][..]),
     };
 
     let node_id = node_key.data().as_ffi();

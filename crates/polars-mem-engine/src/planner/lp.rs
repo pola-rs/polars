@@ -396,16 +396,7 @@ fn create_physical_plan_impl(
                         input, builder, root, lp_arena, expr_arena,
                     ));
 
-                    // Use cache so that this runs during the cache pre-filling stage and not on the
-                    // thread pool, it could deadlock since the streaming engine uses the thread
-                    // pool internally.
-                    let mut prefill = executors::CachePrefill::new_sink(executor);
-                    let exec = prefill.make_exec();
-                    let existing = cache_nodes.insert(prefill.id(), prefill);
-
-                    assert!(existing.is_none());
-
-                    Ok(Box::new(exec))
+                    Ok(executor)
                 },
             }
         },
@@ -527,16 +518,7 @@ fn create_physical_plan_impl(
                     let build_func = build_streaming_executor
                         .expect("invalid build. Missing feature new-streaming");
 
-                    let executor = build_func(root, lp_arena, expr_arena)?;
-
-                    let mut prefill = executors::CachePrefill::new_scan(executor);
-                    let exec = prefill.make_exec();
-
-                    let existing = cache_nodes.insert(prefill.id(), prefill);
-
-                    assert!(existing.is_none());
-
-                    Ok(Box::new(exec))
+                    build_func(root, lp_arena, expr_arena)
                 },
                 #[allow(unreachable_patterns)]
                 _ => unreachable!(),
@@ -710,16 +692,7 @@ fn create_physical_plan_impl(
                     from_partitioned_ds,
                 ));
 
-                // Use cache so that this runs during the cache pre-filling stage and not on the
-                // thread pool, it could deadlock since the streaming engine uses the thread
-                // pool internally.
-                let mut prefill = executors::CachePrefill::new_sink(executor);
-                let exec = prefill.make_exec();
-                let existing = cache_nodes.insert(prefill.id(), prefill);
-
-                assert!(existing.is_none());
-
-                Ok(Box::new(exec))
+                Ok(executor)
             } else {
                 let input = recurse!(input, state)?;
                 Ok(Box::new(executors::GroupByExec::new(
