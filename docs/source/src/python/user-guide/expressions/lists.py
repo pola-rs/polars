@@ -158,15 +158,21 @@ result = df.select(
         .struct.field("name")
     )
     .alias("names_by_age"),
-    pl.col("children").list.eval(pl.element().struct.field("age").min()).alias("min_age"),
-    pl.col("children").list.eval(pl.element().struct.field("age").max()).alias("max_age"),
+    pl.col("children")
+    .list.eval(pl.element().struct.field("age").min())
+    .alias("min_age"),
+    pl.col("children")
+    .list.eval(pl.element().struct.field("age").max())
+    .alias("max_age"),
 )
 print(result)
 # --8<-- [end:list-aggregation]
 
 # --8<-- [start:list-entropy]
 result = df.with_columns(
-    pl.col("children").list.eval(pl.element().struct.field("age").entropy()).alias("age_entropy"),
+    pl.col("children")
+    .list.eval(pl.element().struct.field("age").entropy())
+    .alias("age_entropy"),
 )
 print(result)
 # --8<-- [end:list-entropy]
