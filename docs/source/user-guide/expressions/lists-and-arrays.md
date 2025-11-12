@@ -158,10 +158,10 @@ list elements.
 
 We'll reuse a slightly modified version of the example data from the very beginning:
 
-{{code_block('user-guide/expressions/lists', 'struct-list-example', ['List'])}}
+{{code_block('user-guide/expressions/lists', 'element-wise-regex', ['List'])}}
 
 ```python exec="on" result="text" session="expressions/lists"
---8<-- "python/user-guide/expressions/lists.py:struct-list-example"
+--8<-- "python/user-guide/expressions/lists.py:element-wise-regex"
 ```
 
 Using `eval`, we can sort the list elements or compute some aggregations:
@@ -169,7 +169,7 @@ Using `eval`, we can sort the list elements or compute some aggregations:
 {{code_block('user-guide/expressions/lists', 'list-aggregation', ['list.eval', 'Expr.sort_by'])}}
 
 ```python exec="on" result="text" session="expressions/lists"
---8<-- "python/user-guide/expressions/lists.py:list-aggregation"
+--8<-- "python/user-guide/expressions/lists.py:element-wise-regex"
 ```
 
 While some aggregation functions like `.list.sum()` are directly available in the `list` namespace,
@@ -178,7 +178,7 @@ you can access more exotic aggregations like `entropy` via `eval` only:
 {{code_block('user-guide/expressions/lists', 'list-entropy', ['list.eval', 'Expr.entropy'])}}
 
 ```python exec="on" result="text" session="expressions/lists"
---8<-- "python/user-guide/expressions/lists.py:list-entropy"
+--8<-- "python/user-guide/expressions/lists.py:element-wise-regex"
 ```
 
 ### Row-wise computations
