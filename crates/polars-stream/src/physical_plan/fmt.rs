@@ -329,9 +329,9 @@ fn visualize_plan_rec(
             }
             (label, from_ref(input))
         },
-        PhysNodeKind::RangeGroupBy { input, key, aggs } => (
+        PhysNodeKind::SortedGroupBy { input, key, aggs } => (
             format!(
-                "range-group-by\\nkey: {key}\\naggs:\\n{}",
+                "sorted-group-by\\nkey: {key}\\naggs:\\n{}",
                 fmt_exprs_to_label(aggs, expr_arena, FormatExprStyle::Select)
             ),
             from_ref(input),

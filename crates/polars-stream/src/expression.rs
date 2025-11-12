@@ -66,30 +66,4 @@ impl StreamExpr {
             self.inner.evaluate_on_groups(df, groups, state)
         }
     }
-
-    pub async fn evaluate_on_groups<'a>(
-        &self,
-        df: &DataFrame,
-        groups: &'a GroupPositions,
-        state: &ExecutionState,
-    ) -> PolarsResult<AggregationContext<'a>> {
-        if self.reentrant {
-            let state = state.split();
-            let groups = <GroupPositions as Clone>::clone(groups);
-            let phys_expr = self.inner.clone();
-            let df = df.clone();
-            polars_io::pl_async::get_runtime()
-                .spawn_blocking(move || {
-                    POOL.without_threading(|| {
-                        Ok(phys_expr
-                            .evaluate_on_groups(&df, &groups, &state)?
-                            .into_static())
-                    })
-                })
-                .await
-                .unwrap()
-        } else {
-            POOL.without_threading(|| self.inner.evaluate_on_groups(df, groups, state))
-        }
-    }
 }

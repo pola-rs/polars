@@ -102,7 +102,7 @@ pub enum PhysNodeProperties {
         slice: Option<(u64, u64)>,
         aggs: Vec<PlSmallStr>,
     },
-    RangeGroupBy {
+    SortedGroupBy {
         key: PlSmallStr,
         aggs: Vec<PlSmallStr>,
     },

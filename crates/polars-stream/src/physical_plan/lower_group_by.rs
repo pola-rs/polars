@@ -521,7 +521,7 @@ fn try_build_streaming_group_by(
 }
 
 #[expect(clippy::too_many_arguments)]
-pub fn try_build_range_group_by(
+pub fn try_build_sorted_group_by(
     input: PhysStream,
     keys: &[ExprIR],
     aggs: &[ExprIR],
@@ -642,7 +642,7 @@ pub fn try_build_range_group_by(
     }
     input = PhysStream::first(phys_sm.insert(PhysNode {
         output_schema: Arc::new(gb_output_schema.clone()),
-        kind: PhysNodeKind::RangeGroupBy {
+        kind: PhysNodeKind::SortedGroupBy {
             input,
             key: input_column.clone(),
             aggs: aggs.to_vec(),
@@ -749,8 +749,8 @@ pub fn build_group_by_stream(
         return Ok(input);
     }
 
-    if std::env::var("POLARS_FORCE_RANGE_GROUP_BY").is_ok_and(|v| v == "1")
-        && let Some(stream) = try_build_range_group_by(
+    if std::env::var("POLARS_FORCE_SORTED_GROUP_BY").is_ok_and(|v| v == "1")
+        && let Some(stream) = try_build_sorted_group_by(
             input,
             keys,
             aggs,
@@ -780,7 +780,7 @@ pub fn build_group_by_stream(
     ) {
         stream
     } else if are_keys_sorted
-        && let Some(stream) = try_build_range_group_by(
+        && let Some(stream) = try_build_sorted_group_by(
             input,
             keys,
             aggs,

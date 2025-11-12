@@ -20,12 +20,12 @@ use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::pipe::{RecvPort, SendPort};
 
-pub struct RangeGroupBy {
+pub struct SortedGroupBy {
     buffer: Option<(DataFrame, MorselSeq, SourceToken)>,
     key: PlSmallStr,
     aggs: Arc<[(PlSmallStr, StreamExpr)]>,
 }
-impl RangeGroupBy {
+impl SortedGroupBy {
     pub fn new(key: PlSmallStr, aggs: Arc<[(PlSmallStr, StreamExpr)]>) -> Self {
         Self {
             buffer: None,
@@ -78,7 +78,7 @@ impl RangeGroupBy {
     }
 }
 
-impl ComputeNode for RangeGroupBy {
+impl ComputeNode for SortedGroupBy {
     fn name(&self) -> &str {
         "range-group-by"
     }

@@ -499,7 +499,7 @@ fn to_graph_rec<'a>(
             )
         },
 
-        RangeGroupBy { input, key, aggs } => {
+        SortedGroupBy { input, key, aggs } => {
             let input_schema = ctx.phys_sm[input.node].output_schema.clone();
             let input_key = to_graph_rec(input.node, ctx)?;
             let aggs = aggs
@@ -512,7 +512,7 @@ fn to_graph_rec<'a>(
                 })
                 .collect::<PolarsResult<Arc<[_]>>>()?;
             ctx.graph.add_node(
-                nodes::range_group_by::RangeGroupBy::new(key.clone(), aggs),
+                nodes::sorted_group_by::SortedGroupBy::new(key.clone(), aggs),
                 [(input_key, input.port)],
             )
         },

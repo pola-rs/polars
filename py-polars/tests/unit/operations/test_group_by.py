@@ -2537,7 +2537,7 @@ def test_group_by_first_last(
     assert_frame_equal(result, expected)
 
 
-def test_range_group_by() -> None:
+def test_sorted_group_by() -> None:
     lf = pl.LazyFrame(
         {
             "a": [1, 1, 2, 2, 3, 3, 3],

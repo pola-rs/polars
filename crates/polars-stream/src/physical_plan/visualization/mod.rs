@@ -213,10 +213,10 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     ..Default::default()
                 }
             },
-            PhysNodeKind::RangeGroupBy { input, key, aggs } => {
+            PhysNodeKind::SortedGroupBy { input, key, aggs } => {
                 phys_node_inputs.push(input.node);
 
-                let properties = PhysNodeProperties::RangeGroupBy {
+                let properties = PhysNodeProperties::SortedGroupBy {
                     key: key.clone(),
                     aggs: expr_list(aggs, self.expr_arena),
                 };
