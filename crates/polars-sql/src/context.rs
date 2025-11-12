@@ -743,8 +743,80 @@ impl SQLContext {
         Ok(lf)
     }
 
+    /// Check that the SELECT statement only contains supported clauses.
+    fn validate_select(&self, select_stmt: &Select) -> PolarsResult<()> {
+        // Destructure "Select" exhaustively; that way if/when new fields are added in
+        // future sqlparser versions, we'll get a compilation error and can handle them
+        let Select {
+            // Supported clauses
+            distinct: _,
+            from: _,
+            group_by: _,
+            having: _,
+            projection: _,
+            selection: _,
+
+            // Metadata/token fields (can ignore)
+            select_token: _,
+            top_before_distinct: _,
+            window_before_qualify: _,
+
+            // Unsupported clauses
+            ref cluster_by,
+            ref connect_by,
+            ref distribute_by,
+            ref into,
+            ref lateral_views,
+            ref named_window,
+            ref prewhere,
+            ref qualify,
+            ref sort_by,
+            ref top,
+            ref value_table_mode,
+        } = *select_stmt;
+
+        // Raise specific error messages for unsupported attributes
+        if top.is_some() {
+            polars_bail!(SQLInterface: "TOP clause is not supported; use LIMIT instead")
+        }
+        if into.is_some() {
+            polars_bail!(SQLInterface: "SELECT INTO clause is not supported")
+        }
+        if !lateral_views.is_empty() {
+            polars_bail!(SQLInterface: "LATERAL VIEW clause is not supported")
+        }
+        if prewhere.is_some() {
+            polars_bail!(SQLInterface: "PREWHERE clause is not supported")
+        }
+        if !cluster_by.is_empty() {
+            polars_bail!(SQLInterface: "CLUSTER BY clause is not supported")
+        }
+        if !distribute_by.is_empty() {
+            polars_bail!(SQLInterface: "DISTRIBUTE BY clause is not supported")
+        }
+        if !sort_by.is_empty() {
+            polars_bail!(SQLInterface: "SORT BY clause is not supported; use ORDER BY instead")
+        }
+        if !named_window.is_empty() {
+            polars_bail!(SQLInterface: "WINDOW clause support is coming soon")
+        }
+        if qualify.is_some() {
+            polars_bail!(SQLInterface: "QUALIFY clause is not currently supported")
+        }
+        if value_table_mode.is_some() {
+            polars_bail!(SQLInterface: "SELECT AS VALUE/STRUCT is not supported")
+        }
+        if connect_by.is_some() {
+            polars_bail!(SQLInterface: "CONNECT BY clause is not supported")
+        }
+        Ok(())
+    }
+
     /// Execute the 'SELECT' part of the query.
     fn execute_select(&mut self, select_stmt: &Select, query: &Query) -> PolarsResult<LazyFrame> {
+        // Check that we don't have unsupported SELECT clauses
+        self.validate_select(select_stmt)?;
+
         let mut lf = if select_stmt.from.is_empty() {
             DataFrame::empty().lazy()
         } else {
