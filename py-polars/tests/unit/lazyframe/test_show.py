@@ -4,7 +4,6 @@ from unittest.mock import patch
 import pytest
 
 import polars as pl
-from polars.exceptions import PerformanceWarning
 
 
 def test_show_signature_match() -> None:
@@ -40,7 +39,7 @@ def test_lf_show_calls_df_show() -> None:
     )
 
 
-def test_lf_show_no_limit_issues_warning() -> None:
+def test_lf_show_no_limit_raises() -> None:
     lf = pl.LazyFrame({})
-    with pytest.warns(PerformanceWarning):
+    with pytest.raises(ValueError):
         lf.show(limit=None)

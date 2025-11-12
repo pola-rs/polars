@@ -9026,7 +9026,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Parameters
         ----------
         limit : int
-            Number of rows to show. If None is passed, return all rows.
+            Number of rows to show. If None is passed, raises a ValueError. This is done
+            to match the signature of :func:`DataFrame.show`.
         ascii_tables : bool
             Use ASCII characters to display table outlines. Set False to revert to the
             default UTF8_FULL_CONDENSED formatting style. See
@@ -9157,17 +9158,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┘
         """
         if limit is None:
-            lf = self
-            issue_warning(
-                "Showing a LazyFrame without a limit requires collecting the whole "
-                "LazyFrame, which could be an expensive operation. Set a limit to "
-                "show the LazyFrame without this warning.",
-                category=PerformanceWarning,
-            )
-        else:
-            lf = self.head(limit)
+            msg = "`limit` cannot be None. If you want to show the complete lazyframe, call `.collect().show()` on it."
+            raise ValueError(msg)
 
-        lf.collect().show(
+        self.head(limit).collect().show(
             limit,
             ascii_tables=ascii_tables,
             decimal_separator=decimal_separator,
