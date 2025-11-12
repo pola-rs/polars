@@ -122,7 +122,7 @@ pub struct ExecutionState {
     // every join/union split gets an increment to distinguish between schema state
     pub branch_idx: usize,
     pub flags: RelaxedCell<u8>,
-    pub with_fields: Arc<Option<(Column, Option<Bitmap>)>>, // TODO: StructChunked
+    pub with_fields: Arc<Option<(StructChunked, Option<Bitmap>)>>, // kdn TODO TBD - drop validity..
     pub ext_contexts: Arc<Vec<DataFrame>>,
     pub element: Arc<Option<(Column, Option<Bitmap>)>>,
     node_timer: Option<NodeTimer>,
