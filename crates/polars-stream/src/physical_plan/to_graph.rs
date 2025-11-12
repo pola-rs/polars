@@ -512,7 +512,7 @@ fn to_graph_rec<'a>(
                 })
                 .collect::<PolarsResult<Arc<[_]>>>()?;
             ctx.graph.add_node(
-                nodes::sorted_group_by::SortedGroupBy::new(key.clone(), aggs),
+                nodes::sorted_group_by::SortedGroupBy::new(key.clone(), aggs, input_schema),
                 [(input_key, input.port)],
             )
         },

@@ -535,7 +535,9 @@ pub fn try_build_sorted_group_by(
     ctx: StreamingLowerIRContext,
     are_keys_sorted: bool,
 ) -> Option<PolarsResult<PhysStream>> {
+    dbg!(&output_schema);
     let input_schema = phys_sm[input.node].output_schema.as_ref();
+    dbg!(&input_schema);
 
     if keys.is_empty()
         || apply.is_some()
@@ -605,6 +607,8 @@ pub fn try_build_sorted_group_by(
     let key = AExprBuilder::col(input_column.clone(), expr_arena).expr_ir(input_column.clone());
 
     let schema = phys_sm[input.node].output_schema.clone();
+    dbg!(&schema);
+    dbg!(&input_column);
     if !are_keys_sorted {
         let row_idx_name = unique_column_name();
         input = build_row_idx_stream(input, row_idx_name.clone(), None, phys_sm);
@@ -613,7 +617,7 @@ pub fn try_build_sorted_group_by(
             AExprBuilder::col(row_idx_name.clone(), expr_arena).expr_ir(row_idx_name.clone());
 
         input = PhysStream::first(phys_sm.insert(PhysNode {
-            output_schema: schema.clone(),
+            output_schema: phys_sm[input.node].output_schema.clone(),
             kind: PhysNodeKind::Sort {
                 input,
                 by_column: vec![key, row_idx_expr],

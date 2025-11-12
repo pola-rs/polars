@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
 use polars_core::prelude::GroupsType;
+use polars_core::schema::Schema;
 use polars_core::series::ChunkCompareEq;
 use polars_error::{PolarsError, PolarsResult};
 use polars_expr::state::ExecutionState;
@@ -21,14 +22,23 @@ use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::pipe::{RecvPort, SendPort};
 
 pub struct SortedGroupBy {
-    buffer: Option<(DataFrame, MorselSeq, SourceToken)>,
+    buf_df: DataFrame,
+
+    seq: MorselSeq,
+
     key: PlSmallStr,
     aggs: Arc<[(PlSmallStr, StreamExpr)]>,
 }
 impl SortedGroupBy {
-    pub fn new(key: PlSmallStr, aggs: Arc<[(PlSmallStr, StreamExpr)]>) -> Self {
+    pub fn new(
+        key: PlSmallStr,
+        aggs: Arc<[(PlSmallStr, StreamExpr)]>,
+        input_schema: Arc<Schema>,
+    ) -> Self {
+        let buf_df = DataFrame::empty_with_arc_schema(input_schema.clone());
         Self {
-            buffer: None,
+            buf_df,
+            seq: MorselSeq::default(),
             key,
             aggs,
         }
@@ -80,7 +90,7 @@ impl SortedGroupBy {
 
 impl ComputeNode for SortedGroupBy {
     fn name(&self) -> &str {
-        "range-group-by"
+        "sorted-group-by"
     }
 
     fn update_state(
@@ -93,12 +103,12 @@ impl ComputeNode for SortedGroupBy {
 
         if send[0] == PortState::Done {
             recv[0] = PortState::Done;
-            self.buffer.take();
+            std::mem::take(&mut self.buf_df);
         } else if recv[0] == PortState::Done {
-            if self.buffer.is_some() {
-                send[0] = PortState::Ready;
-            } else {
+            if self.buf_df.is_empty() {
                 send[0] = PortState::Done;
+            } else {
+                send[0] = PortState::Ready;
             }
         } else {
             recv.swap_with_slice(send);
@@ -118,19 +128,23 @@ impl ComputeNode for SortedGroupBy {
         assert!(recv_ports.len() == 1 && send_ports.len() == 1);
 
         let Some(recv) = recv_ports[0].take() else {
+            // We no longer have to receive data. Finalize and send all remaining data.
+            assert!(!self.buf_df.is_empty());
             let mut send = send_ports[0].take().unwrap().serial();
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                let (df, seq, src) = self.buffer.take().unwrap();
                 let df = Self::evaluate_one(
                     &self.key,
                     &self.aggs,
                     &state.in_memory_exec_state,
                     &mut Vec::new(),
-                    df,
+                    std::mem::take(&mut self.buf_df),
                 )
                 .await?;
 
-                _ = send.send(Morsel::new(df, seq, src)).await;
+                _ = send
+                    .send(Morsel::new(df, self.seq.successor(), SourceToken::new()))
+                    .await;
+
                 Ok(())
             }));
             return;
@@ -174,61 +188,42 @@ impl ComputeNode for SortedGroupBy {
         //
         // This finds boundaries to distribute to worker threads over.
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-            while self.buffer.is_none()
-                && let Ok(m) = recv.recv().await
-            {
-                if m.df().height() == 0 {
-                    continue;
-                }
-                let (df, seq, source, _) = m.into_inner();
-                self.buffer = Some((df, seq, source));
-            }
+            while let Ok(morsel) = recv.recv().await {
+                let (df, seq, source_token, wait_token) = morsel.into_inner();
+                self.seq = seq;
+                drop(wait_token);
 
-            if self.buffer.is_none() {
-                return Ok(());
-            }
-
-            let (buf_df, buf_seq, buf_src) = self.buffer.as_mut().unwrap();
-
-            while let Ok(mut morsel) = recv.recv().await {
-                if morsel.df().height() == 0 {
+                if df.height() == 0 {
                     continue;
                 }
 
-                drop(morsel.take_consume_token());
+                self.buf_df.vstack_mut_owned(df).unwrap();
 
-                let buf_key_column = buf_df.column(&self.key).unwrap();
-                let morsel_key_column = morsel.df().column(&self.key).unwrap();
-                let buf_val = buf_key_column.get(buf_key_column.len() - 1).unwrap();
-                let morsel_key_val = morsel_key_column.get(morsel_key_column.len() - 1).unwrap();
+                let buf_key_column = self.buf_df.column(&self.key).unwrap();
+                let fst = buf_key_column.get(0).unwrap();
+                let lst = buf_key_column.get(buf_key_column.len() - 1).unwrap();
 
-                if buf_val == morsel_key_val {
-                    buf_df.vstack_mut_owned(morsel.into_df()).unwrap();
+                if fst == lst {
                     continue;
                 }
 
-                let mut num_eq_to_buf_last = buf_key_column
+                let mut last_group_size = buf_key_column
                     .tail(Some(1))
-                    .equal_missing(morsel_key_column)
+                    .equal_missing(buf_key_column)
                     .unwrap();
-                num_eq_to_buf_last.rechunk_mut();
-                let num_eq_to_buf_last = num_eq_to_buf_last
-                    .downcast_as_array()
-                    .values()
-                    .leading_ones();
+                last_group_size.rechunk_mut();
+                let last_group_size = last_group_size.downcast_as_array().values().trailing_ones();
 
-                morsel = morsel.map(|df| {
-                    let (head, tail) = df.split_at(num_eq_to_buf_last as i64);
-                    buf_df.vstack_mut_owned(head).unwrap();
-                    tail
-                });
+                let offset = self.buf_df.height() - last_group_size;
 
-                let (m_df, m_seq, m_src, _) = morsel.into_inner();
-                let df = std::mem::replace(buf_df, m_df);
-                let seq = std::mem::replace(buf_seq, m_seq);
-                let src = std::mem::replace(buf_src, m_src);
+                let df;
+                (df, self.buf_df) = self.buf_df.split_at(offset as i64);
 
-                if distributor.send(Morsel::new(df, seq, src)).await.is_err() {
+                if distributor
+                    .send(Morsel::new(df, seq, source_token))
+                    .await
+                    .is_err()
+                {
                     break;
                 }
             }
