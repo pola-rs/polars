@@ -124,43 +124,49 @@ print(result.equals(result2))
 # --8<-- [end:element-wise-regex]
 
 # --8<-- [start:children]
-from datetime import datetime
-import polars as pl
-
 df = pl.DataFrame(
     {
-        "names": [
-            ["Anne", "Averill"],
-            ["Brandon", "Brooke", "Borden", "Branson"],
-            ["Camila"],
-            ["Dennis", "Doyle", "Dalton"],
-        ],
-        "children_ages": [
-            [5, 7],
-            [12, 11, 13, 9],
-            [19],
-            [8, 11, 18],
+        "children": [
+            [
+                {"name": "Anne", "age": 5},
+                {"name": "Averill", "age": 7},
+            ],
+            [
+                {"name": "Brandon", "age": 12},
+                {"name": "Brooke", "age": 9},
+                {"name": "Branson", "age": 11},
+            ],
+            [{"name": "Camila", "age": 19}],
+            [
+                {"name": "Dennis", "age": 8},
+                {"name": "Doyle", "age": 11},
+                {"name": "Dina", "age": 18},
+            ],
         ],
     }
 )
 
 print(df)
-# --8<-- [end:list-example]
+# --8<-- [end:children]
 
 # --8<-- [start:list-aggregation]
 result = df.select(
-    pl.col("names")
-    .list.eval(pl.element().sort_by(pl.col("children_ages"), descending=True))
+    pl.col("children")
+    .list.eval(
+        pl.element()
+        .sort_by(pl.element().struct.field("age"), descending=True)
+        .struct.field("name")
+    )
     .alias("names_by_age"),
-    pl.col("children_ages").list.eval(pl.element().min()).alias("min_age"),
-    pl.col("children_ages").list.eval(pl.element().max()).alias("max_age"),
+    pl.col("children").list.eval(pl.element().struct.field("age").min()).alias("min_age"),
+    pl.col("children").list.eval(pl.element().struct.field("age").max()).alias("max_age"),
 )
 print(result)
 # --8<-- [end:list-aggregation]
 
 # --8<-- [start:list-entropy]
 result = df.with_columns(
-    pl.col("children_ages").list.eval(pl.element().entropy()).alias("age_entropy"),
+    pl.col("children").list.eval(pl.element().struct.field("age").entropy()).alias("age_entropy"),
 )
 print(result)
 # --8<-- [end:list-entropy]
