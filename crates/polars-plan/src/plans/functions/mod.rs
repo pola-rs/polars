@@ -234,7 +234,7 @@ impl FunctionIR {
             Explode { columns, .. } => df.explode(columns.iter().cloned()),
             #[cfg(feature = "pivot")]
             Unpivot { args, .. } => {
-                use polars_ops::pivot::UnpivotDF;
+                use polars_ops::unpivot::UnpivotDF;
                 let args = (**args).clone();
                 df.unpivot2(args)
             },

@@ -176,10 +176,10 @@ impl AmortizedUnique for BooleanUnique {
             *idxs = match idxs[1..]
                 .iter()
                 // SAFETY: function invariant.
-                .position(|&i| fst == unsafe { values.get_bit_unchecked(i as usize) })
+                .position(|&i| fst != unsafe { values.get_bit_unchecked(i as usize) })
             {
                 None => UnitVec::from_slice(&[idxs[0]]),
-                Some(i) => UnitVec::from_slice(&[idxs[0], idxs[i]]),
+                Some(i) => UnitVec::from_slice(&[idxs[0], idxs[1 + i]]),
             };
         }
     }
@@ -296,16 +296,20 @@ impl AmortizedUnique for BooleanUnique {
             let validity = BitMask::from_bitmap(values.validity().unwrap());
             let values = BitMask::from_bitmap(values.values());
 
+            let validity = validity.sliced(start as usize, length as usize);
+            let values = values.sliced(start as usize, length as usize);
+
             let num_valid = validity.set_bits();
             if num_valid == 0 {
                 return 1;
             }
 
-            let num_intersections = values.num_intersections_with(validity);
-            if num_intersections == num_valid || num_intersections == 0 {
-                2
+            if num_valid as IdxSize == length {
+                let num_trues = values.set_bits() as IdxSize;
+                1 + IdxSize::from(num_trues != length && num_trues != 0)
             } else {
-                3
+                let num_trues = values.num_intersections_with(validity);
+                2 + IdxSize::from(num_trues != num_valid && num_trues != 0)
             }
         } else {
             let values = values.values();
@@ -314,12 +318,9 @@ impl AmortizedUnique for BooleanUnique {
             }
 
             let values = BitMask::from_bitmap(values);
+            let values = values.sliced(start as usize, length as usize);
             let num_trues = values.set_bits();
-            if num_trues == 0 || num_trues == values.len() {
-                1
-            } else {
-                2
-            }
+            1 + IdxSize::from(num_trues != 0 && num_trues != values.len())
         }
     }
 }

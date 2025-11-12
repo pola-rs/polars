@@ -88,6 +88,17 @@ pub(crate) enum SerializableDslPlanNode {
         input: DslPlanKey,
         callback: PlanCallback<(DslPlan, SchemaRef), DslPlan>,
     },
+    #[cfg(feature = "pivot")]
+    Pivot {
+        input: DslPlanKey,
+        on: Selector,
+        on_columns: DataFrameKey,
+        index: Selector,
+        values: Selector,
+        agg: Expr,
+        maintain_order: bool,
+        separator: PlSmallStr,
+    },
     Distinct {
         input: DslPlanKey,
         options: DistinctOptionsDSL,
@@ -256,6 +267,26 @@ fn convert_dsl_plan_to_serializable_plan(
         DP::PipeWithSchema { input, callback } => SP::PipeWithSchema {
             input: dsl_plan_key(input, arenas),
             callback: callback.clone(),
+        },
+        #[cfg(feature = "pivot")]
+        DP::Pivot {
+            input,
+            on,
+            on_columns,
+            index,
+            values,
+            agg,
+            maintain_order,
+            separator,
+        } => SP::Pivot {
+            input: dsl_plan_key(input, arenas),
+            on: on.clone(),
+            on_columns: dataframe_key(on_columns, arenas),
+            index: index.clone(),
+            values: values.clone(),
+            agg: agg.clone(),
+            maintain_order: *maintain_order,
+            separator: separator.clone(),
         },
         DP::Distinct { input, options } => SP::Distinct {
             input: dsl_plan_key(input, arenas),
@@ -472,6 +503,26 @@ fn try_convert_serializable_plan_to_dsl_plan(
         SP::PipeWithSchema { input, callback } => Ok(DP::PipeWithSchema {
             input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
             callback: callback.clone(),
+        }),
+        #[cfg(feature = "pivot")]
+        SP::Pivot {
+            input,
+            on,
+            on_columns,
+            index,
+            values,
+            agg,
+            maintain_order,
+            separator,
+        } => Ok(DP::Pivot {
+            input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
+            on: on.clone(),
+            on_columns: get_dataframe(*on_columns, ser_dsl_plan, arenas)?,
+            index: index.clone(),
+            values: values.clone(),
+            agg: agg.clone(),
+            maintain_order: *maintain_order,
+            separator: separator.clone(),
         }),
         SP::Distinct { input, options } => Ok(DP::Distinct {
             input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,

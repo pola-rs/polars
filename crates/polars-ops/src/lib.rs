@@ -8,7 +8,7 @@
 
 pub mod chunked_array;
 #[cfg(feature = "pivot")]
-pub use frame::pivot;
+pub use frame::unpivot;
 pub mod frame;
 pub mod prelude;
 pub mod series;

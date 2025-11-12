@@ -35,6 +35,7 @@ pub enum AggExpr {
     Last(Arc<Expr>),
     Item {
         input: Arc<Expr>,
+        /// Give a missing value if there are no values.
         allow_empty: bool,
     },
     Mean(Arc<Expr>),

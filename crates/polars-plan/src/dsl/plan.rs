@@ -104,6 +104,17 @@ pub enum DslPlan {
         input: Arc<DslPlan>,
         callback: PlanCallback<(DslPlan, SchemaRef), DslPlan>,
     },
+    #[cfg(feature = "pivot")]
+    Pivot {
+        input: Arc<DslPlan>,
+        on: Selector,
+        on_columns: Arc<DataFrame>,
+        index: Selector,
+        values: Selector,
+        agg: Expr,
+        maintain_order: bool,
+        separator: PlSmallStr,
+    },
     /// Remove duplicates from the table
     Distinct {
         input: Arc<DslPlan>,
@@ -193,6 +204,8 @@ impl Clone for DslPlan {
             Self::ExtContext { input, contexts, } => Self::ExtContext { input: input.clone(), contexts: contexts.clone() },
             Self::Sink { input, payload } => Self::Sink { input: input.clone(), payload: payload.clone() },
             Self::SinkMultiple { inputs } => Self::SinkMultiple { inputs: inputs.clone() },
+            #[cfg(feature = "pivot")]
+            Self::Pivot { input, on, on_columns, index, values, agg, separator, maintain_order }  => Self::Pivot { input: input.clone(), on: on.clone(), on_columns: on_columns.clone(), index: index.clone(), values: values.clone(), agg: agg.clone(), separator: separator.clone(), maintain_order: *maintain_order },
             #[cfg(feature = "merge_sorted")]
             Self::MergeSorted { input_left, input_right, key } => Self::MergeSorted { input_left: input_left.clone(), input_right: input_right.clone(), key: key.clone() },
             Self::IR {node, dsl, version} => Self::IR {node: *node, dsl: dsl.clone(), version: *version},
