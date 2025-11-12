@@ -598,3 +598,33 @@ def test_count_partition_22665(query: str, result: list[Any]) -> None:
     out = df.sql(query).select("b")
     expected = pl.DataFrame({"b": result}).cast({"b": pl.get_index_type()})
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # No support for QUALIFY (yet)
+        "SELECT x FROM df QUALIFY ROW_NUMBER() OVER (PARTITION BY y ORDER BY z) = 1",
+        # ClickHouse-specific PREWHERE clause
+        "SELECT x, y FROM df PREWHERE z IS NOT NULL",
+        # LATERAL VIEW syntax
+        "SELECT * FROM person LATERAL VIEW EXPLODE(ARRAY(0,125)) tableName AS age",
+        # Oracle-style hierarchical queries
+        """
+        SELECT employee_id, employee_name, manager_id, LEVEL AS hierarchy_level
+        FROM employees
+        START WITH manager_id IS NULL
+        CONNECT BY PRIOR employee_id = manager_id
+        """,
+    ],
+)
+def test_unsupported_select_clauses(query: str) -> None:
+    # ensure we're actively catching unsupported clauses
+    with (
+        pl.SQLContext() as ctx,
+        pytest.raises(
+            SQLInterfaceError,
+            match=r"not.*supported",
+        ),
+    ):
+        ctx.execute(query)
