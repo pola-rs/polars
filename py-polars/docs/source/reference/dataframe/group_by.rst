@@ -13,10 +13,8 @@ This namespace becomes available by calling `DataFrame.group_by(...)`.
     GroupBy.all
     GroupBy.count
     GroupBy.first
-    GroupBy.first_non_null
     GroupBy.head
     GroupBy.last
-    GroupBy.last_non_null
     GroupBy.len
     GroupBy.map_groups
     GroupBy.max
