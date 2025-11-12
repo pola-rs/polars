@@ -135,6 +135,10 @@ impl ExprIR {
                     out.output_name = OutputName::ColumnLhs(name.clone());
                     break;
                 },
+                AExpr::StructField(name) => {
+                    out.output_name = OutputName::Field(name.clone());
+                    break;
+                },
                 AExpr::Literal(lv) => {
                     if let LiteralValue::Series(s) = lv {
                         out.output_name = OutputName::LiteralLhs(s.name().clone());
