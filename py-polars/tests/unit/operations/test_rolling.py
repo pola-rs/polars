@@ -838,3 +838,22 @@ def test_rolling_in_group_by() -> None:
         .collect(),
         pl.Series("a", [[[[1]], [[1], [1, 2]], [[2], [2, 3]]]]).to_frame(),
     )
+
+
+def test_rolling_in_over_25280() -> None:
+    dates = [
+        "2020-01-01",
+        "2020-01-02",
+    ]
+
+    df = pl.DataFrame(
+        {"dt": dates, "train_line": ["a", "b"], "num_passengers": [3, 7]}
+    ).with_columns(pl.col("dt").str.to_date())
+
+    result = df.with_columns(
+        pl.col("num_passengers")
+        .sum()
+        .rolling(index_column="dt", period="1d")
+        .over("train_line")
+    )
+    assert_frame_equal(df, result)

@@ -131,8 +131,8 @@ impl PhysicalExpr for RollingExpr {
                 let mut data = Vec::with_capacity(num_elements);
                 let mut slices = Vec::with_capacity(groups.len());
                 for i in idx.all() {
-                    data.extend(i.iter().map(|i| index_column_data[*i as usize]));
                     slices.push([data.len() as IdxSize, i.len() as IdxSize]);
+                    data.extend(i.iter().map(|i| index_column_data[*i as usize]));
                 }
                 index_column_data = Cow::Owned(data);
                 (Cow::Owned(slices), false)
