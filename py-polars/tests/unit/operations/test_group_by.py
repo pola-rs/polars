@@ -2310,6 +2310,8 @@ def test_group_bool_unique_25267(maintain_order: bool, stable: bool) -> None:
 
             assert_series_equal(df_s, gb_s, check_order=stable)
             assert_series_equal(df_s, ls_s, check_order=stable)
+
+
 @pytest.mark.parametrize("group_as_slice", [False, True])
 @pytest.mark.parametrize("n", [10, 100, 1_000, 10_000])
 @pytest.mark.parametrize(
