@@ -7,6 +7,7 @@ import sys
 import warnings
 from collections.abc import Collection, Mapping, Sequence
 from datetime import timedelta
+from decimal import Decimal
 from functools import reduce
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -45,6 +46,9 @@ from polars._utils.various import (
     warn_null_comparison,
 )
 from polars._utils.wrap import wrap_expr, wrap_s
+from polars.datatypes import (
+    Decimal as PolarsDecimal,
+)
 from polars.datatypes import (
     Int64,
     parse_into_datatype_expr,
@@ -2423,7 +2427,15 @@ class Expr:
         │ 2         ┆ 1    ┆ null      │
         └───────────┴──────┴───────────┘
         """
-        element_pyexpr = parse_into_expression(element, str_as_lit=True)
+        dtype = None
+        # Decimals by default are converted with maximum precision, but that
+        # makes lossless casting hard. So for Decimals we manually specify the
+        # minimal required precision.
+        if isinstance(element, Decimal):
+            _, digits, exponent = element.as_tuple()
+            if isinstance(exponent, int):  # can also be 'n'/'N'/'F'
+                dtype = PolarsDecimal(len(digits), -exponent)
+        element_pyexpr = parse_into_expression(element, str_as_lit=True, dtype=dtype)
         return wrap_expr(self._pyexpr.index_of(element_pyexpr))
 
     def search_sorted(
