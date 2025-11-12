@@ -63,4 +63,5 @@ def test_cumulative_eval_length_preserving_streaming_25293() -> None:
         )
     )
     expected = pl.DataFrame({"a": [1, 1, 1]})
-    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(q.collect(engine="in-memory"), expected)
+    assert_frame_equal(q.collect(engine="streaming"), expected)
