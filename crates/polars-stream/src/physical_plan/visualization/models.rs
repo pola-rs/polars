@@ -101,7 +101,7 @@ pub enum PhysNodeProperties {
         closed_window: PlSmallStr,
         aggs: Vec<PlSmallStr>,
     },
-    RangeGroupBy {
+    SortedGroupBy {
         key: PlSmallStr,
         aggs: Vec<PlSmallStr>,
     },
