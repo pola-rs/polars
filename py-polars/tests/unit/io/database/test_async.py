@@ -199,3 +199,33 @@ def test_async_nested_captured_loop_21263() -> None:
         await task
 
     asyncio.run(test_impl())
+
+
+def test_async_index_error_25209(tmp_sqlite_db: Path) -> None:
+    base_uri = f"sqlite:///{tmp_sqlite_db}"
+    table_name = "test_25209"
+
+    pl.select(x=1, y=2, z=3).write_database(
+        table_name,
+        connection=base_uri,
+        engine="sqlalchemy",
+        if_table_exists="replace",
+    )
+
+    async def run_async_query() -> pl.DataFrame:
+        async_engine = create_async_engine(f"sqlite+aio{base_uri}")
+        try:
+            return pl.read_database(
+                query=f"SELECT * FROM {table_name}", connection=async_engine
+            )
+        finally:
+            await async_engine.dispose()
+
+    async def testing() -> list[pl.DataFrame]:
+        # return/await multiple queries
+        return await asyncio.gather(*(run_async_query(), run_async_query()))
+
+    df1, df2 = asyncio.run(testing())
+
+    assert_frame_equal(df1, df2)
+    assert df1.rows() == [(1, 2, 3)]

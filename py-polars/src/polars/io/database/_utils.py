@@ -20,10 +20,17 @@ def _run_async(co: Coroutine[Any, Any, Any]) -> Any:
     """Run asynchronous code as if it was synchronous."""
     import asyncio
 
-    import polars._utils.nest_asyncio
+    try:
+        running_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # no running loop; can use asyncio "as-is"
+        return asyncio.run(co)
+    else:
+        # inside running loop; use vendored `nest_asyncio` (for now)
+        import polars._utils.nest_asyncio
 
-    polars._utils.nest_asyncio.apply()  # type: ignore[attr-defined]
-    return asyncio.run(co)
+        polars._utils.nest_asyncio.apply()
+        return running_loop.run_until_complete(co)
 
 
 def _read_sql_connectorx(
