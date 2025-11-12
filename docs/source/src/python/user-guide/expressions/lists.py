@@ -123,7 +123,7 @@ result2 = weather.with_columns(
 print(result.equals(result2))
 # --8<-- [end:element-wise-regex]
 
-# --8<-- [start:children]
+# --8<-- [start:struct-list-example]
 df = pl.DataFrame(
     {
         "children": [
@@ -147,7 +147,7 @@ df = pl.DataFrame(
 )
 
 print(df)
-# --8<-- [end:children]
+# --8<-- [end:struct-list-example]
 
 # --8<-- [start:list-aggregation]
 result = df.select(
