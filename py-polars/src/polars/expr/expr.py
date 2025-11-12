@@ -4936,7 +4936,7 @@ Consider using {self}.implode() instead"""
         │ b     ┆ [2, 3, 4] │
         └───────┴───────────┘
         """
-        return wrap_expr(self._pyexpr.explode())
+        return self.explode(skip_empty=False, skip_nulls=False)
 
     def explode(self, *, skip_empty: bool = False, skip_nulls: bool = False) -> Expr:
         """

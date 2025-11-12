@@ -817,7 +817,7 @@ class ListNameSpace:
         ]
         """
 
-    def explode(self, *, skip_empty: bool = False, skip_nulls: bool = False) -> Expr:
+    def explode(self, *, skip_empty: bool = False, skip_nulls: bool = False) -> Series:
         """
         Returns a column with a separate row for every list element.
 
