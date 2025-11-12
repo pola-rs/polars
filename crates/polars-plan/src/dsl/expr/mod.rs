@@ -137,7 +137,7 @@ pub enum Expr {
     },
     Explode {
         input: Arc<Expr>,
-        skip_empty: bool,
+        options: ExplodeOptions,
     },
     Filter {
         input: Arc<Expr>,
@@ -340,8 +340,8 @@ impl Hash for Expr {
                 sort_options.hash(state);
             },
             Expr::Agg(input) => input.hash(state),
-            Expr::Explode { input, skip_empty } => {
-                skip_empty.hash(state);
+            Expr::Explode { input, options } => {
+                options.hash(state);
                 input.hash(state)
             },
             #[cfg(feature = "dynamic_group_by")]

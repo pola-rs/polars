@@ -1,4 +1,4 @@
-use std::fmt;
+use std::fmt::{self, Write};
 
 use crate::prelude::*;
 
@@ -46,12 +46,20 @@ impl fmt::Debug for Expr {
             Len => write!(f, "len()"),
             Explode {
                 input: expr,
-                skip_empty: false,
-            } => write!(f, "{expr:?}.explode()"),
-            Explode {
-                input: expr,
-                skip_empty: true,
-            } => write!(f, "{expr:?}.explode(skip_empty)"),
+                options,
+            } => {
+                write!(f, "{expr:?}.explode(")?;
+                if options.skip_empty {
+                    f.write_str("skip_empty")?;
+                }
+                if options.skip_nulls {
+                    if options.skip_empty {
+                        f.write_str(", ")?;
+                    }
+                    f.write_str("skip_nulls")?;
+                }
+                f.write_char(')')
+            },
             Alias(expr, name) => write!(f, "{expr:?}.alias(\"{name}\")"),
             Column(name) => write!(f, "col(\"{name}\")"),
             Literal(v) => write!(f, "{v:?}"),

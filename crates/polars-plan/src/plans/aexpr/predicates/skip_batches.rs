@@ -314,6 +314,8 @@ fn aexpr_to_skip_batch_predicate_rec(
                             constant_evaluate(lv_node, arena, schema, 0),
                         ) {
                             (Some(col), Some(_)) => {
+                                use polars_core::prelude::ExplodeOptions;
+
                                 let dtype = schema.get(col)?;
                                 if !does_dtype_have_sufficient_order(dtype) {
                                     return None;
@@ -328,7 +330,13 @@ fn aexpr_to_skip_batch_predicate_rec(
                                 let col = col.clone();
                                 let lv_node = lv_node.into_aexpr_builder();
 
-                                let lv_node_exploded = lv_node.explode_skip_empty(arena);
+                                let lv_node_exploded = lv_node.explode(
+                                    arena,
+                                    ExplodeOptions {
+                                        skip_empty: true,
+                                        skip_nulls: false,
+                                    },
+                                );
                                 let lv_min = lv_node_exploded.min(arena);
                                 let lv_max = lv_node_exploded.max(arena);
 

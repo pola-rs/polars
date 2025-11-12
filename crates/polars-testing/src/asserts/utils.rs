@@ -446,8 +446,14 @@ fn assert_series_nested_values_equal(
                 let s2_series = Series::new("".into(), std::slice::from_ref(&s2));
 
                 match assert_series_values_equal(
-                    &s1_series.explode(false)?,
-                    &s2_series.explode(false)?,
+                    &s1_series.explode(ExplodeOptions {
+                        skip_empty: false,
+                        skip_nulls: false,
+                    })?,
+                    &s2_series.explode(ExplodeOptions {
+                        skip_empty: false,
+                        skip_nulls: false,
+                    })?,
                     true,
                     check_exact,
                     check_dtypes,

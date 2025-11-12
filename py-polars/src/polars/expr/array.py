@@ -759,9 +759,16 @@ class ExprArrayNameSpace:
         separator_pyexpr = parse_into_expression(separator, str_as_lit=True)
         return wrap_expr(self._pyexpr.arr_join(separator_pyexpr, ignore_nulls))
 
-    def explode(self) -> Expr:
+    def explode(self, *, skip_empty: bool = False, skip_nulls: bool = False) -> Expr:
         """
         Returns a column with a separate row for every array element.
+
+        Parameters
+        ----------
+        skip_empty
+            If `False`, empty arrays explode to a `null`.
+        skip_nulls
+            If `False`, a `null` explodes a `null`.
 
         Returns
         -------
@@ -788,7 +795,9 @@ class ExprArrayNameSpace:
         │ 6   │
         └─────┘
         """
-        return wrap_expr(self._pyexpr.arr_explode())
+        return wrap_expr(
+            self._pyexpr.arr_explode(skip_empty=skip_empty, skip_nulls=skip_nulls)
+        )
 
     def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Expr:
         """

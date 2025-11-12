@@ -88,7 +88,7 @@ pub(super) fn convert_functions(
                 #[cfg(feature = "array_count")]
                 A::CountMatches => IA::CountMatches,
                 A::Shift => IA::Shift,
-                A::Explode { skip_empty } => IA::Explode { skip_empty },
+                A::Explode(options) => IA::Explode(options),
                 A::Concat => IA::Concat,
                 A::Slice(offset, length) => IA::Slice(offset, length),
                 #[cfg(feature = "array_to_struct")]

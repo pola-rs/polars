@@ -1250,9 +1250,9 @@ impl Column {
         }
     }
 
-    pub fn explode(&self, skip_empty: bool) -> PolarsResult<Column> {
+    pub fn explode(&self, options: ExplodeOptions) -> PolarsResult<Column> {
         self.as_materialized_series()
-            .explode(skip_empty)
+            .explode(options)
             .map(Column::from)
     }
     pub fn implode(&self) -> PolarsResult<ListChunked> {

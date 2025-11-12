@@ -133,7 +133,10 @@ pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Polars
                     .sum_reduce()
                     .map(|sc| sc.into_series(PlSmallStr::EMPTY))
             })?
-            .explode(false)
+            .explode(ExplodeOptions {
+                skip_empty: false,
+                skip_nulls: false,
+            })
             .unwrap()
             .into_series()
             .cast(dt)?,

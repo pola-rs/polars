@@ -4186,11 +4186,18 @@ class Series:
         ]
         """
 
-    def explode(self) -> Series:
+    def explode(self, *, skip_empty: bool = False, skip_nulls: bool = False) -> Series:
         """
         Explode a list Series.
 
         This means that every item is expanded to a new row.
+
+        Parameters
+        ----------
+        skip_empty
+            If `False`, empty lists explode to a `null`.
+        skip_nulls
+            If `False`, a `null` explodes a `null`.
 
         Returns
         -------

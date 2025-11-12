@@ -39,8 +39,14 @@ pub fn replace(s: &Series, old: &ListChunked, new: &ListChunked) -> PolarsResult
         nyi = "`replace` with a replacement pattern per row"
     );
 
-    let old = old.explode(true)?;
-    let new = new.explode(true)?;
+    let old = old.explode(ExplodeOptions {
+        skip_empty: true,
+        skip_nulls: false,
+    })?;
+    let new = new.explode(ExplodeOptions {
+        skip_empty: true,
+        skip_nulls: false,
+    })?;
 
     if old.is_empty() {
         return Ok(s.clone());
@@ -83,8 +89,14 @@ pub fn replace_or_default(
         nyi = "`replace_strict` with a replacement pattern per row"
     );
 
-    let old = old.explode(true)?;
-    let new = new.explode(true)?;
+    let old = old.explode(ExplodeOptions {
+        skip_empty: true,
+        skip_nulls: false,
+    })?;
+    let new = new.explode(ExplodeOptions {
+        skip_empty: true,
+        skip_nulls: false,
+    })?;
 
     polars_ensure!(
         default.len() == s.len() || default.len() == 1,
@@ -136,8 +148,14 @@ pub fn replace_strict(
         nyi = "`replace_strict` with a replacement pattern per row"
     );
 
-    let old = old.explode(true)?;
-    let new = new.explode(true)?;
+    let old = old.explode(ExplodeOptions {
+        skip_empty: true,
+        skip_nulls: false,
+    })?;
+    let new = new.explode(ExplodeOptions {
+        skip_empty: true,
+        skip_nulls: false,
+    })?;
 
     if old.is_empty() {
         polars_ensure!(

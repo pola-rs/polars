@@ -1,4 +1,4 @@
-use std::fmt::{self, Display, Formatter};
+use std::fmt::{self, Display, Formatter, Write};
 
 use polars_core::frame::DataFrame;
 use polars_core::schema::Schema;
@@ -377,13 +377,16 @@ impl Display for ExprIRDisplay<'_> {
                 }
             },
             Len => write!(f, "len()"),
-            Explode { expr, skip_empty } => {
+            Explode { expr, options } => {
                 let expr = self.with_root(expr);
-                if *skip_empty {
-                    write!(f, "{expr}.explode(skip_empty)")
-                } else {
-                    write!(f, "{expr}.explode()")
+                write!(f, "{expr}.explode(")?;
+                match (options.skip_empty, options.skip_nulls) {
+                    (true, true) => f.write_str("skip_empty, skip_nulls")?,
+                    (true, false) => f.write_str("skip_empty")?,
+                    (false, true) => f.write_str("skip_nulls")?,
+                    (false, false) => {},
                 }
+                f.write_char(')')
             },
             Column(name) => write!(f, "col(\"{name}\")"),
             Literal(v) => write!(f, "{v:?}"),

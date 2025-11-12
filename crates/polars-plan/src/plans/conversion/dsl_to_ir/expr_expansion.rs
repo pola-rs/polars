@@ -678,7 +678,7 @@ fn expand_expression_rec(
                 }
             }
         },
-        Expr::Explode { input, skip_empty } => {
+        Expr::Explode { input, options } => {
             _ = expand_single(
                 input.as_ref(),
                 ignored_selector_columns,
@@ -687,7 +687,7 @@ fn expand_expression_rec(
                 opt_flags,
                 |e| Expr::Explode {
                     input: Arc::new(e),
-                    skip_empty: *skip_empty,
+                    options: *options,
                 },
             )?
         },

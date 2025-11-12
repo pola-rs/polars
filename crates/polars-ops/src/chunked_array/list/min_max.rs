@@ -96,7 +96,10 @@ pub(super) fn list_min_function(ca: &ListChunked) -> PolarsResult<Series> {
                     let sc = s.min_reduce()?;
                     Ok(sc.into_series(s.name().clone()))
                 })?
-                .explode(false)
+                .explode(ExplodeOptions {
+                    skip_empty: false,
+                    skip_nulls: false,
+                })
                 .unwrap()
                 .into_series()
                 .cast(dt),
@@ -208,7 +211,10 @@ pub(super) fn list_max_function(ca: &ListChunked) -> PolarsResult<Series> {
                     let sc = s.max_reduce()?;
                     Ok(sc.into_series(s.name().clone()))
                 })?
-                .explode(false)
+                .explode(ExplodeOptions {
+                    skip_empty: false,
+                    skip_nulls: false,
+                })
                 .unwrap()
                 .into_series()
                 .cast(dt),

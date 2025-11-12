@@ -178,7 +178,7 @@ pub enum AExpr {
     Element,
     Explode {
         expr: Node,
-        skip_empty: bool,
+        options: ExplodeOptions,
     },
     Column(PlSmallStr),
     Literal(LiteralValue),

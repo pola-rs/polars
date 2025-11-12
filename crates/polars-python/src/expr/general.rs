@@ -439,8 +439,14 @@ impl PyExpr {
         self.inner.clone().is_last_distinct().into()
     }
 
-    fn explode(&self) -> Self {
-        self.inner.clone().explode().into()
+    fn explode(&self, skip_empty: bool, skip_nulls: bool) -> Self {
+        self.inner
+            .clone()
+            .explode(ExplodeOptions {
+                skip_empty,
+                skip_nulls,
+            })
+            .into()
     }
 
     fn gather_every(&self, n: usize, offset: usize) -> Self {

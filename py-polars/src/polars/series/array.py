@@ -605,9 +605,16 @@ class ArrayNameSpace:
 
         """
 
-    def explode(self) -> Series:
+    def explode(self, *, skip_empty: bool = False, skip_nulls: bool = False) -> Expr:
         """
         Returns a column with a separate row for every array element.
+
+        Parameters
+        ----------
+        skip_empty
+            If `False`, empty arrays explode to a `null`.
+        skip_nulls
+            If `False`, a `null` explodes a `null`.
 
         Returns
         -------

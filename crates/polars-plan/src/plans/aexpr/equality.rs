@@ -60,7 +60,7 @@ impl AExpr {
         // match to be exhaustive.
         #[rustfmt::skip]
         let is_equal = match self {
-            E::Explode { expr: _, skip_empty: l_skip_empty } => matches!(other, E::Explode { expr: _, skip_empty: r_skip_empty } if l_skip_empty == r_skip_empty),
+            E::Explode { expr: _, options: l_options } => matches!(other, E::Explode { expr: _, options: r_options } if l_options == r_options),
             E::Column(l_name) => matches!(other, E::Column(r_name) if l_name == r_name),
             E::Literal(l_lit) => matches!(other, E::Literal(r_lit) if l_lit == r_lit),
             E::BinaryExpr { left: _, op: l_op, right: _ } => matches!(other, E::BinaryExpr { left: _, op: r_op, right: _ } if l_op == r_op),

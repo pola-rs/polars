@@ -152,8 +152,15 @@ impl PyExpr {
         self.inner.clone().arr().shift(n.inner).into()
     }
 
-    fn arr_explode(&self) -> Self {
-        self.inner.clone().arr().explode().into()
+    fn arr_explode(&self, skip_empty: bool, skip_nulls: bool) -> Self {
+        self.inner
+            .clone()
+            .arr()
+            .explode(ExplodeOptions {
+                skip_empty,
+                skip_nulls,
+            })
+            .into()
     }
 
     fn arr_eval(&self, expr: PyExpr, as_list: bool) -> Self {

@@ -4938,11 +4938,18 @@ Consider using {self}.implode() instead"""
         """
         return wrap_expr(self._pyexpr.explode())
 
-    def explode(self) -> Expr:
+    def explode(self, *, skip_empty: bool = False, skip_nulls: bool = False) -> Expr:
         """
         Explode a list expression.
 
         This means that every item is expanded to a new row.
+
+        Parameters
+        ----------
+        skip_empty
+            If `False`, empty lists explode to a `null`.
+        skip_nulls
+            If `False`, a `null` explodes a `null`.
 
         Returns
         -------
@@ -4977,7 +4984,9 @@ Consider using {self}.implode() instead"""
         │ 4      │
         └────────┘
         """
-        return wrap_expr(self._pyexpr.explode())
+        return wrap_expr(
+            self._pyexpr.explode(skip_empty=skip_empty, skip_nulls=skip_nulls)
+        )
 
     def implode(self) -> Expr:
         """

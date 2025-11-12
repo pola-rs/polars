@@ -81,13 +81,24 @@ pub trait ChunkAnyValue {
     fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue<'_>>;
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub struct ExplodeOptions {
+    pub skip_empty: bool,
+    pub skip_nulls: bool,
+}
+
 /// Explode/flatten a List or String Series
 pub trait ChunkExplode {
-    fn explode(&self, skip_empty: bool) -> PolarsResult<Series> {
-        self.explode_and_offsets(skip_empty).map(|t| t.0)
+    fn explode(&self, options: ExplodeOptions) -> PolarsResult<Series> {
+        self.explode_and_offsets(options).map(|t| t.0)
     }
     fn offsets(&self) -> PolarsResult<OffsetsBuffer<i64>>;
-    fn explode_and_offsets(&self, skip_empty: bool) -> PolarsResult<(Series, OffsetsBuffer<i64>)>;
+    fn explode_and_offsets(
+        &self,
+        options: ExplodeOptions,
+    ) -> PolarsResult<(Series, OffsetsBuffer<i64>)>;
 }
 
 pub trait ChunkBytes {

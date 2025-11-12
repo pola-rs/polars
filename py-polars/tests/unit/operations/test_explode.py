@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import pyarrow as pa
 import pytest
+from hypothesis import given
 
 import polars as pl
 import polars.selectors as cs
 from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing.parametric import series
 
 
 def test_explode_multiple() -> None:
@@ -458,3 +460,106 @@ def test_explode_17648() -> None:
 def test_explode_struct_nulls() -> None:
     df = pl.DataFrame({"A": [[{"B": 1}], [None], []]})
     assert df.explode("A").to_dict(as_series=False) == {"A": [{"B": 1}, None, None]}
+
+
+def test_explode_basic() -> None:
+    s = pl.Series
+
+    assert_series_equal(s([[1, 2, 3]]).explode(), pl.Series([1, 2, 3]))
+    assert_series_equal(s([[1, 2, 3], None]).explode(), pl.Series([1, 2, 3, None]))
+    assert_series_equal(s([[1, 2, 3], []]).explode(), pl.Series([1, 2, 3, None]))
+    masked = (
+        s([[1, 2, 3], [1, 2], [1, 2]])
+        .to_frame()
+        .select(pl.when(pl.Series([True, False, True])).then(pl.col("")))
+        .to_series()
+    )
+    assert_series_equal(masked.explode(), pl.Series([1, 2, 3, None, 1, 2]))
+    masked = (
+        s([[1, 2, 3], [], [1, 2]])
+        .to_frame()
+        .select(pl.when(pl.Series([True, False, True])).then(pl.col("")))
+        .to_series()
+    )
+    assert_series_equal(masked.explode(), pl.Series([1, 2, 3, None, 1, 2]))
+
+    assert_series_equal(
+        s([[1, 2, 3]]).explode(skip_empty=True, skip_nulls=True), pl.Series([1, 2, 3])
+    )
+
+    assert_series_equal(s([[1, 2, 3], None]).explode(), pl.Series([1, 2, 3, None]))
+    assert_series_equal(
+        s([[1, 2, 3], None]).explode(skip_nulls=True), pl.Series([1, 2, 3])
+    )
+    assert_series_equal(
+        s([[1, 2, 3], [None]]).explode(skip_nulls=True), pl.Series([1, 2, 3, None])
+    )
+
+    assert_series_equal(s([[1, 2, 3], []]).explode(), pl.Series([1, 2, 3, None]))
+    assert_series_equal(
+        s([[1, 2, 3], []]).explode(skip_empty=True), pl.Series([1, 2, 3])
+    )
+    assert_series_equal(
+        s([[1, 2, 3], [None]]).explode(skip_empty=True), pl.Series([1, 2, 3, None])
+    )
+
+
+@given(s=series(min_size=1))
+@pytest.mark.parametrize("skip_empty", [False, True])
+@pytest.mark.parametrize("skip_nulls", [False, True])
+def test_explode_parametric(s: pl.Series, skip_empty: bool, skip_nulls: bool) -> None:
+    a = {"skip_empty": skip_empty, "skip_nulls": skip_nulls}
+    si = s.implode()
+
+    empty_list_item = s.clear() if skip_empty else s.clear(1)
+    null_list_item = s.clear() if skip_nulls else s.clear(1)
+
+    assert_series_equal(si.explode(**a), s)
+    assert_series_equal(s.clear().implode().explode(**a), empty_list_item)
+    assert_series_equal(si.clear(1).explode(**a), null_list_item)
+
+    assert_series_equal(
+        pl.concat([si, s.clear().implode(), si]).explode(**a),
+        pl.concat([s, empty_list_item, s]),
+    )
+    assert_series_equal(
+        pl.concat([si, si.clear(1), si]).explode(**a), pl.concat([s, null_list_item, s])
+    )
+
+    for mask in [
+        (False, False, False),
+        (True, False, True),
+        (False, False, True),
+        (True, False, False),
+        (False, True, False),
+    ]:
+        masked = (
+            pl.concat([si, si, si])
+            .to_frame()
+            .select(pl.when(pl.Series(mask)).then(pl.col(s.name)).alias(s.name))
+            .to_series()
+        )
+        assert_series_equal(
+            masked.explode(**a), pl.concat([s if m else null_list_item for m in mask])
+        )
+
+    for size in [2, 3, 7, 15]:
+        assert_series_equal(pl.concat([si] * size).explode(**a), pl.concat([s] * size))
+
+        assert_series_equal(
+            pl.concat([s.clear().implode()] + [si] * size).explode(**a),
+            pl.concat([empty_list_item] + [s] * size),
+        )
+        assert_series_equal(
+            pl.concat([si] * size + [s.clear().implode()]).explode(**a),
+            pl.concat([s] * size + [empty_list_item]),
+        )
+
+        assert_series_equal(
+            pl.concat([si.clear(1)] + [si] * size).explode(**a),
+            pl.concat([null_list_item] + [s] * size),
+        )
+        assert_series_equal(
+            pl.concat([si] * size + [si.clear(1)]).explode(**a),
+            pl.concat([s] * size + [null_list_item]),
+        )
