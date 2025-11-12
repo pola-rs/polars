@@ -2149,7 +2149,7 @@ def test_group_by_drop_nans(s: pl.Series) -> None:
         (pl.Expr.n_unique, True, True),
         (lambda e: e.filter(pl.int_range(0, e.len()) % 3 == 0), True, False),
         (pl.Expr.shift, True, False),
-        # (pl.Expr.forward_fill, True, False), # bug: issue #25273
+        (pl.Expr.forward_fill, True, False),
         (pl.Expr.backward_fill, True, False),
         # (pl.Expr.reverse, True, False), # bug: issue #25269
         (

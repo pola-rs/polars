@@ -1,6 +1,5 @@
 //! The typed heart of every Series column.
 #![allow(unsafe_op_in_unsafe_fn)]
-use std::iter::Map;
 use std::sync::Arc;
 
 use arrow::array::*;
@@ -49,8 +48,6 @@ mod struct_;
 pub mod temporal;
 mod to_vec;
 mod trusted_len;
-
-use std::slice::Iter;
 
 use arrow::legacy::prelude::*;
 #[cfg(feature = "dtype-struct")]
@@ -306,7 +303,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
             Some(out)
         } else {
-            first_non_null(self.iter_validities())
+            first_non_null(self.chunks().iter().map(|arr| arr.as_ref()))
         }
     }
 
@@ -335,7 +332,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
             Some(out)
         } else {
-            last_non_null(self.iter_validities(), self.len())
+            last_non_null(self.chunks().iter().map(|arr| arr.as_ref()), self.len())
         }
     }
 
@@ -367,7 +364,9 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     /// Get the buffer of bits representing null values
     #[inline]
     #[allow(clippy::type_complexity)]
-    pub fn iter_validities(&self) -> Map<Iter<'_, ArrayRef>, fn(&ArrayRef) -> Option<&Bitmap>> {
+    pub fn iter_validities(
+        &self,
+    ) -> impl ExactSizeIterator<Item = Option<&Bitmap>> + DoubleEndedIterator {
         fn to_validity(arr: &ArrayRef) -> Option<&Bitmap> {
             arr.validity()
         }

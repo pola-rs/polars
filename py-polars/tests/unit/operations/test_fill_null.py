@@ -121,3 +121,25 @@ def test_self_broadcast() -> None:
         pl.Series([None]).fill_null(pl.Series(range(3))),
         pl.Series(range(3)),
     )
+
+
+def test_forward_fill_chunking_25273() -> None:
+    df = pl.DataFrame(
+        {
+            "key": [0, 1, 1],
+            "a": [None, None, 0],
+        }
+    )
+
+    df = df.with_columns(a=pl.concat([pl.col.a.head(1), pl.col.a.tail(2)]))
+    df = df.select(pl.col.a.filter(pl.col.key == 1))
+    df = df.with_columns(ff=pl.col.a.forward_fill())
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {
+                "a": [None, 0],
+                "ff": [None, 0],
+            }
+        ),
+    )

@@ -1235,18 +1235,18 @@ pub(crate) fn index_to_chunked_index_rev<
 
 pub fn first_non_null<'a, I>(iter: I) -> Option<usize>
 where
-    I: Iterator<Item = Option<&'a Bitmap>>,
+    I: Iterator<Item = &'a dyn Array>,
 {
     let mut offset = 0;
-    for validity in iter {
-        if let Some(mask) = validity {
+    for arr in iter {
+        if let Some(mask) = arr.validity() {
             let len_mask = mask.len();
             let n = mask.leading_zeros();
             if n < len_mask {
                 return Some(offset + n);
             }
             offset += len_mask
-        } else {
+        } else if !arr.is_empty() {
             return Some(offset);
         }
     }
@@ -1255,21 +1255,21 @@ where
 
 pub fn last_non_null<'a, I>(iter: I, len: usize) -> Option<usize>
 where
-    I: DoubleEndedIterator<Item = Option<&'a Bitmap>>,
+    I: DoubleEndedIterator<Item = &'a dyn Array>,
 {
     if len == 0 {
         return None;
     }
     let mut offset = 0;
-    for validity in iter.rev() {
-        if let Some(mask) = validity {
+    for arr in iter.rev() {
+        if let Some(mask) = arr.validity() {
             let len_mask = mask.len();
             let n = mask.trailing_zeros();
             if n < len_mask {
                 return Some(len - offset - n - 1);
             }
             offset += len_mask;
-        } else {
+        } else if !arr.is_empty() {
             return Some(len - offset - 1);
         }
     }
