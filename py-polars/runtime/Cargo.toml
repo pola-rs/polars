@@ -10,8 +10,8 @@ crate-type = ["cdylib"]
 
 [dependencies]
 libc = { workspace = true }
-# Explicit dependency is needed to add bigidx in CI during release
-polars = { workspace = true }
+# Explicit dependency is needed to add bigidx. CI removes the feature during the release of polars-runtime-32
+polars = { workspace = true, features = ["bigidx"] }
 polars-python = { workspace = true, features = ["allocator", "c_api", "pymethods", "iejoin"] }
 pyo3 = { workspace = true, features = ["abi3-py39", "chrono", "extension-module", "multiple-pymethods"] }
 
