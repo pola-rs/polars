@@ -3,10 +3,9 @@ use std::sync::Arc;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::GroupsType;
 use polars_core::schema::Schema;
-use polars_core::series::ChunkCompareEq;
 use polars_error::{PolarsError, PolarsResult};
 use polars_expr::state::ExecutionState;
-use polars_ops::series::rle_lengths;
+use polars_ops::series::{SearchSortedSide, rle_lengths, search_sorted};
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -207,17 +206,20 @@ impl ComputeNode for SortedGroupBy {
                     continue;
                 }
 
-                let mut last_group_size = buf_key_column
-                    .tail(Some(1))
-                    .equal_missing(buf_key_column)
-                    .unwrap();
-                last_group_size.rechunk_mut();
-                let last_group_size = last_group_size.downcast_as_array().values().trailing_ones();
+                let buf_key_column = buf_key_column.as_materialized_series();
 
-                let offset = self.buf_df.height() - last_group_size;
+                let descending = fst > lst;
+                let num_flushable = search_sorted(
+                    buf_key_column,
+                    &buf_key_column.tail(Some(1)),
+                    SearchSortedSide::Left,
+                    descending,
+                )
+                .unwrap();
+                let num_flushable = unsafe { num_flushable.get_unchecked(0) }.unwrap();
 
                 let df;
-                (df, self.buf_df) = self.buf_df.split_at(offset as i64);
+                (df, self.buf_df) = self.buf_df.split_at(num_flushable as i64);
 
                 if distributor
                     .send(Morsel::new(df, seq, source_token))
