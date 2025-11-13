@@ -22,7 +22,7 @@ use crate::expr::ToExprs;
 use crate::expr::datatype::PyDataTypeExpr;
 use crate::expr::selector::PySelector;
 use crate::interop::arrow::to_rust::pyarrow_schema_to_rust;
-use crate::io::PyScanOptions;
+use crate::io::scan_options::PyScanOptions;
 use crate::io::sink_options::PySinkOptions;
 use crate::io::sink_output::PySinkOutputType;
 use crate::lazyframe::visit::NodeTraverser;
