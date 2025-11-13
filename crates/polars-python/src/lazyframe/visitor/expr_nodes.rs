@@ -782,6 +782,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::Categorical(_) => {
                     return Err(PyNotImplementedError::new_err("categorical expr"));
                 },
+                IRFunctionExpr::Extension(_) => {
+                    return Err(PyNotImplementedError::new_err("extension expr"));
+                },
                 IRFunctionExpr::ListExpr(_) => {
                     return Err(PyNotImplementedError::new_err("list expr"));
                 },

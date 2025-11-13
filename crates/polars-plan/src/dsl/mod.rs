@@ -2,9 +2,9 @@
 //! Domain specific language for the Lazy API.
 #[cfg(feature = "dtype-categorical")]
 pub mod cat;
-
 #[cfg(feature = "dtype-categorical")]
 pub use cat::*;
+
 #[cfg(feature = "rolling_window_by")]
 pub(crate) use polars_time::prelude::*;
 
@@ -21,6 +21,8 @@ mod datatype_expr;
 #[cfg(feature = "temporal")]
 pub mod dt;
 mod expr;
+#[cfg(feature = "dtype-extension")]
+mod extension;
 mod format;
 mod from;
 pub mod function_expr;
@@ -55,6 +57,8 @@ pub use arity::*;
 pub use array::*;
 pub use datatype_expr::DataTypeExpr;
 pub use expr::*;
+#[cfg(feature = "dtype-extension")]
+pub use extension::*;
 pub use function_expr::*;
 pub use functions::*;
 pub use list::*;
@@ -1638,6 +1642,12 @@ impl Expr {
     #[cfg(feature = "dtype-categorical")]
     pub fn cat(self) -> cat::CategoricalNameSpace {
         cat::CategoricalNameSpace(self)
+    }
+
+    /// Get the [`extension::ExtensionNameSpace`].
+    #[cfg(feature = "dtype-extension")]
+    pub fn ext(self) -> extension::ExtensionNameSpace {
+        extension::ExtensionNameSpace(self)
     }
 
     /// Get the [`struct_::StructNameSpace`].

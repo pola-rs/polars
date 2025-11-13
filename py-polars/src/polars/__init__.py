@@ -111,9 +111,9 @@ from polars.datatypes import (
     Utf8,
 )
 from polars.datatypes.extension import (
+    get_extension_type,
     register_extension_type,
     unregister_extension_type,
-    get_extension_type,
 )
 from polars.expr import Expr
 from polars.functions import (
