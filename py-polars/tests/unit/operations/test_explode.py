@@ -506,14 +506,14 @@ def test_explode_basic() -> None:
 
 
 @given(s=series(min_size=1))
-@pytest.mark.parametrize("skip_empty", [False, True])
-@pytest.mark.parametrize("skip_nulls", [False, True])
-def test_explode_parametric(s: pl.Series, skip_empty: bool, skip_nulls: bool) -> None:
-    a = {"skip_empty": skip_empty, "skip_nulls": skip_nulls}
+@pytest.mark.parametrize("empty_as_null", [False, True])
+@pytest.mark.parametrize("keep_nulls", [False, True])
+def test_explode_parametric(s: pl.Series, empty_as_null: bool, keep_nulls: bool) -> None:
+    a = {"empty_as_null": empty_as_null, "keep_nulls": keep_nulls}
     si = s.implode()
 
-    empty_list_item = s.clear() if skip_empty else s.clear(1)
-    null_list_item = s.clear() if skip_nulls else s.clear(1)
+    empty_list_item = s.clear(1) if empty_as_null else s.clear()
+    null_list_item = s.clear(1) if keep_nulls else s.clear()
 
     assert_series_equal(si.explode(**a), s)
     assert_series_equal(s.clear().implode().explode(**a), empty_list_item)
