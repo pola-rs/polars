@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use polars::prelude::{LazyFrame, PlHashMap, PlSmallStr, Schema};
+use polars::prelude::{CloudScheme, LazyFrame, PlHashMap, PlSmallStr, Schema};
 use polars_io::catalog::unity::client::{CatalogClient, CatalogClientBuilder};
 use polars_io::catalog::unity::models::{
     CatalogInfo, ColumnInfo, DataSourceFormat, NamespaceInfo, TableInfo, TableType,
@@ -257,12 +257,14 @@ impl PyCatalogClient {
             ));
         };
 
-        let cloud_options =
-            parse_cloud_options(storage_location, cloud_options.unwrap_or_default())?
-                .with_max_retries(retries)
-                .with_credential_provider(
-                    credential_provider.map(PlCredentialProvider::from_python_builder),
-                );
+        let cloud_options = parse_cloud_options(
+            CloudScheme::from_uri(storage_location),
+            cloud_options.unwrap_or_default(),
+        )?
+        .with_max_retries(retries)
+        .with_credential_provider(
+            credential_provider.map(PlCredentialProvider::from_python_builder),
+        );
 
         Ok(
             LazyFrame::scan_catalog_table(&table_info, Some(cloud_options))

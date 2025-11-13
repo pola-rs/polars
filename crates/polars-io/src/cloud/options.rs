@@ -160,7 +160,7 @@ pub enum CloudType {
 }
 
 impl CloudType {
-    pub fn from_cloud_scheme(scheme: &CloudScheme) -> Self {
+    pub fn from_cloud_scheme(scheme: CloudScheme) -> Self {
         match scheme {
             CloudScheme::Abfs
             | CloudScheme::Abfss
@@ -557,7 +557,7 @@ impl CloudOptions {
     /// Parse a configuration from a Hashmap. This is the interface from Python.
     #[allow(unused_variables)]
     pub fn from_untyped_config<I: IntoIterator<Item = (impl AsRef<str>, impl Into<String>)>>(
-        scheme: Option<&CloudScheme>,
+        scheme: Option<CloudScheme>,
         config: I,
     ) -> PolarsResult<Self> {
         match scheme.map_or(CloudType::File, CloudType::from_cloud_scheme) {
