@@ -401,7 +401,9 @@ fn create_physical_expr_inner(
                         I::Median(_) => GBM::Median,
                         I::NUnique(_) => GBM::NUnique,
                         I::First(_) => GBM::First,
+                        I::FirstNonNull(_) => GBM::FirstNonNull,
                         I::Last(_) => GBM::Last,
+                        I::LastNonNull(_) => GBM::LastNonNull,
                         I::Item { allow_empty, .. } => GBM::Item {
                             allow_empty: *allow_empty,
                         },

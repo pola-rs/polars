@@ -14,6 +14,7 @@ use polars_utils::relaxed_cell::RelaxedCell;
 use slotmap::{SecondaryMap, SlotMap};
 
 use crate::graph::{Graph, GraphNodeKey};
+use crate::metrics::GraphMetrics;
 use crate::physical_plan::{PhysNode, PhysNodeKey, PhysNodeKind, StreamingLowerIRContext};
 
 /// Executes the IR with the streaming engine.
@@ -60,6 +61,7 @@ pub struct StreamingQuery {
     root_phys_node: PhysNodeKey,
     phys_sm: SlotMap<PhysNodeKey, PhysNode>,
     phys_to_graph: SecondaryMap<PhysNodeKey, GraphNodeKey>,
+    pub metrics: Option<Arc<Mutex<GraphMetrics>>>,
 }
 
 /// Configures if IR lowering creates the `format_str` for `InMemoryMap`.
@@ -117,12 +119,20 @@ impl StreamingQuery {
 
         let top_ir = ir_arena.get(node).clone();
 
+        let metrics = if std::env::var("POLARS_TRACK_METRICS").as_deref() == Ok("1") {
+            crate::async_executor::track_task_metrics(true);
+            Some(Arc::default())
+        } else {
+            None
+        };
+
         let out = StreamingQuery {
             top_ir,
             graph,
             root_phys_node,
             phys_sm,
             phys_to_graph,
+            metrics,
         };
 
         Ok(out)
@@ -135,14 +145,8 @@ impl StreamingQuery {
             root_phys_node,
             phys_sm,
             phys_to_graph,
+            metrics,
         } = self;
-
-        let metrics = if std::env::var("POLARS_TRACK_METRICS").as_deref() == Ok("1") {
-            crate::async_executor::track_task_metrics(true);
-            Some(Arc::default())
-        } else {
-            None
-        };
 
         let query_start = Instant::now();
         let mut results = crate::execute::execute_graph(&mut graph, metrics.clone())?;

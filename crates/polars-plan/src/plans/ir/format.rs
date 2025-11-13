@@ -458,7 +458,9 @@ impl Display for ExprIRDisplay<'_> {
                     Median(expr) => write!(f, "{}.median()", self.with_root(expr)),
                     Mean(expr) => write!(f, "{}.mean()", self.with_root(expr)),
                     First(expr) => write!(f, "{}.first()", self.with_root(expr)),
+                    FirstNonNull(expr) => write!(f, "{}.first_non_null()", self.with_root(expr)),
                     Last(expr) => write!(f, "{}.last()", self.with_root(expr)),
+                    LastNonNull(expr) => write!(f, "{}.last_non_null()", self.with_root(expr)),
                     Item { input, allow_empty } => {
                         self.with_root(input).fmt(f)?;
                         if *allow_empty {

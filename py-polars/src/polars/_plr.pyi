@@ -33,7 +33,7 @@ NullValues: TypeAlias = Any
 DataType: TypeAlias = Any
 SyncOnCloseType: TypeAlias = Literal["none", "data", "all"]
 SinkOptions: TypeAlias = dict[str, Any]
-SinkTarget: TypeAlias = str | Any | PyPartitioning
+SinkTarget: TypeAlias = Any
 AsofStrategy: TypeAlias = Literal["backward", "forward", "nearest"]
 InterpolationMethod: TypeAlias = Literal["linear", "nearest"]
 AvroCompression: TypeAlias = Literal["uncompressed", "snappy", "deflate"]
@@ -209,8 +209,8 @@ class PySeries:
     def std(self, ddof: int) -> Any: ...
     def var(self, ddof: int) -> Any: ...
     def sum(self) -> Any: ...
-    def first(self) -> Any: ...
-    def last(self) -> Any: ...
+    def first(self, ignore_nulls: bool) -> Any: ...
+    def last(self, ignore_nulls: bool) -> Any: ...
     def approx_n_unique(self) -> int: ...
     def bitwise_and(self) -> Any: ...
     def bitwise_or(self) -> Any: ...
@@ -915,31 +915,26 @@ class PyLazyFrame:
     def sink_parquet(
         self,
         target: SinkTarget,
+        sink_options: Any,
         compression: str,
         compression_level: int | None,
         statistics: StatisticsOptions,
         row_group_size: int | None,
         data_page_size: int | None,
-        cloud_options: dict[str, Any] | None,
-        credential_provider: Any | None,
-        retries: int,
-        sink_options: Any,
         metadata: KeyValueMetadata | None,
         field_overwrites: Sequence[ParquetFieldOverwrites],
     ) -> PyLazyFrame: ...
     def sink_ipc(
         self,
         target: SinkTarget,
+        sink_options: Any,
         compression: IpcCompression | None,
         compat_level: CompatLevel,
-        cloud_options: dict[str, Any] | None,
-        credential_provider: Any | None,
-        retries: int,
-        sink_options: Any,
     ) -> PyLazyFrame: ...
     def sink_csv(
         self,
         target: SinkTarget,
+        sink_options: Any,
         include_bom: bool,
         include_header: bool,
         separator: int,
@@ -954,17 +949,10 @@ class PyLazyFrame:
         decimal_comma: bool,
         null_value: str | None,
         quote_style: QuoteStyle | None,
-        cloud_options: dict[str, Any] | None,
-        credential_provider: Any | None,
-        retries: int,
-        sink_options: Any,
     ) -> PyLazyFrame: ...
     def sink_json(
         self,
         target: SinkTarget,
-        cloud_options: dict[str, Any] | None,
-        credential_provider: Any | None,
-        retries: int,
         sink_options: Any,
     ) -> PyLazyFrame: ...
     def sink_batches(
@@ -1170,8 +1158,8 @@ class PyExpr:
     def arg_unique(self) -> PyExpr: ...
     def unique(self) -> PyExpr: ...
     def unique_stable(self) -> PyExpr: ...
-    def first(self) -> PyExpr: ...
-    def last(self) -> PyExpr: ...
+    def first(self, ignore_nulls: bool) -> PyExpr: ...
+    def last(self, ignore_nulls: bool) -> PyExpr: ...
     def item(self, *, allow_empty: bool) -> PyExpr: ...
     def implode(self) -> PyExpr: ...
     def quantile(self, quantile: PyExpr, interpolation: Any) -> PyExpr: ...
@@ -2029,37 +2017,6 @@ class PyOptFlags:
     def streaming(self) -> bool: ...
     @streaming.setter
     def streaming(self, value: bool) -> None: ...
-
-class PyPartitioning:
-    def __init__(self) -> None: ...
-    base_path: Any
-
-    @staticmethod
-    def new_max_size(
-        base_path: Any,
-        file_path_cb: Any | None,
-        max_size: int,
-        per_partition_sort_by: Sequence[PyExpr] | None,
-        finish_callback: Any | None,
-    ) -> PyPartitioning: ...
-    @staticmethod
-    def new_by_key(
-        base_path: Any,
-        file_path_cb: Any | None,
-        by: Sequence[PyExpr],
-        include_key: bool,
-        per_partition_sort_by: Sequence[PyExpr] | None,
-        finish_callback: Any | None,
-    ) -> PyPartitioning: ...
-    @staticmethod
-    def new_parted(
-        base_path: Any,
-        file_path_cb: Any | None,
-        by: Sequence[PyExpr],
-        include_key: bool,
-        per_partition_sort_by: Sequence[PyExpr] | None,
-        finish_callback: Any | None,
-    ) -> PyPartitioning: ...
 
 # functions.lazy
 def rolling_corr(

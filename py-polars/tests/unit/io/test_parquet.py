@@ -3599,3 +3599,24 @@ def test_empty_struct_roundtrip(df: pl.DataFrame, monkeypatch: Any) -> None:
 
     f.seek(0)
     assert_frame_equal(df, pl.read_parquet(f))
+
+
+def test_parquet_is_in_multiple_pages_25312() -> None:
+    tbl = pl.DataFrame(
+        {
+            "a": ["a"] * 5000 + [None],
+        }
+    ).to_arrow()
+
+    f = io.BytesIO()
+    pq.write_table(tbl, f, data_page_size=1, use_dictionary=False)
+    f.seek(0)
+
+    assert_frame_equal(
+        pl.scan_parquet(f).filter(pl.col.a.is_in(["a"])).collect(),
+        pl.DataFrame(
+            {
+                "a": ["a"] * 5000,
+            }
+        ),
+    )

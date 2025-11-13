@@ -114,7 +114,9 @@ impl IRAggExpr {
             A::Median(_) |
             A::NUnique(_) |
             A::First(_) |
+            A::FirstNonNull(_) |
             A::Last(_) |
+            A::LastNonNull(_) |
             A::Mean(_) |
             A::Implode(_) |
             A::Sum(_) |

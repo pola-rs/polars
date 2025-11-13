@@ -679,8 +679,18 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 arguments: vec![n.0],
                 options: py.None(),
             },
+            IRAggExpr::FirstNonNull(n) => Agg {
+                name: "first_non_null".into_py_any(py)?,
+                arguments: vec![n.0],
+                options: py.None(),
+            },
             IRAggExpr::Last(n) => Agg {
                 name: "last".into_py_any(py)?,
+                arguments: vec![n.0],
+                options: py.None(),
+            },
+            IRAggExpr::LastNonNull(n) => Agg {
+                name: "last_non_null".into_py_any(py)?,
                 arguments: vec![n.0],
                 options: py.None(),
             },

@@ -146,11 +146,19 @@ impl PyExpr {
     fn unique_stable(&self) -> Self {
         self.inner.clone().unique_stable().into()
     }
-    fn first(&self) -> Self {
-        self.inner.clone().first().into()
+    fn first(&self, ignore_nulls: bool) -> Self {
+        if ignore_nulls {
+            self.inner.clone().first_non_null().into()
+        } else {
+            self.inner.clone().first().into()
+        }
     }
-    fn last(&self) -> Self {
-        self.inner.clone().last().into()
+    fn last(&self, ignore_nulls: bool) -> Self {
+        if ignore_nulls {
+            self.inner.clone().last_non_null().into()
+        } else {
+            self.inner.clone().last().into()
+        }
     }
     fn item(&self, allow_empty: bool) -> Self {
         self.inner.clone().item(allow_empty).into()
