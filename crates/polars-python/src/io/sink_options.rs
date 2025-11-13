@@ -12,7 +12,7 @@ pub struct PySinkOptions<'py>(Bound<'py, pyo3::PyAny>);
 impl<'py> FromPyObject<'py> for PySinkOptions<'py> {
     fn extract_bound(ob: &Bound<'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
         Ok(Self(ob.clone()))
-    }
+    } 
 }
 
 impl PySinkOptions<'_> {
