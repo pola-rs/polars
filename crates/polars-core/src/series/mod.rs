@@ -576,7 +576,7 @@ impl Series {
             },
             
             #[cfg(feature = "dtype-extension")]
-            (D::Extension(typ, storage), to) => {
+            (_, D::Extension(typ, storage)) => {
                 let storage_series = self.from_physical_unchecked(storage.as_ref())?;
                 let ext = ExtensionChunked::from_storage(typ.clone(), storage_series);
                 Ok(ext.into_series())

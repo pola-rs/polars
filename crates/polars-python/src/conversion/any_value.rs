@@ -127,8 +127,6 @@ pub(crate) fn any_value_into_py_object<'py>(
             let s = buf.format_dec128(v, scale, false, false);
             convert.call1((prec, s))
         },
-        AnyValue::Extension(_, storage) => any_value_into_py_object(storage.clone(), py),
-        AnyValue::ExtensionOwned(_, storage) => any_value_into_py_object(*storage, py),
     }
 }
 

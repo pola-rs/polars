@@ -110,10 +110,6 @@ pub enum AnyValue<'a> {
     /// A 128-bit fixed point decimal number with a precision and scale.
     #[cfg(feature = "dtype-decimal")]
     Decimal(i128, usize, usize),
-    #[cfg(feature = "dtype-extension")]
-    Extension(&'a ExtensionTypeInstance, &'a AnyValue<'a>),
-    #[cfg(feature = "dtype-extension")]
-    ExtensionOwned(ExtensionTypeInstance, Box<AnyValue<'a>>),
 }
 
 impl AnyValue<'static> {
@@ -216,9 +212,8 @@ impl AnyValue<'static> {
                 fields.clone(),
             ))),
             #[cfg(feature = "dtype-extension")]
-            DT::Extension(typ, storage) => {
-                let inner_value = AnyValue::default_value(storage, numeric_to_one, num_list_values);
-                AV::ExtensionOwned(typ.clone(), Box::new(inner_value))
+            DT::Extension(_typ, storage) => {
+                AnyValue::default_value(storage, numeric_to_one, num_list_values)
             },
             DT::Unknown(_) => unreachable!(),
         }
@@ -280,10 +275,6 @@ impl<'a> AnyValue<'a> {
             Object(o) => DataType::Object(o.type_name()),
             #[cfg(feature = "object")]
             ObjectOwned(o) => DataType::Object(o.0.type_name()),
-            #[cfg(feature = "dtype-extension")]
-            Extension(typ, storage) => DataType::Extension((*typ).clone(), Box::new(storage.dtype())),
-            #[cfg(feature = "dtype-extension")]
-            ExtensionOwned(typ, storage) => DataType::Extension(typ.clone(), Box::new(storage.dtype())),
         }
     }
 
@@ -750,11 +741,6 @@ impl<'a> AnyValue<'a> {
 
             #[cfg(feature = "dtype-decimal")]
             Self::Decimal(v, _, _) => Self::Int128(v),
-
-            #[cfg(feature = "dtype-extension")]
-            Self::Extension(_typ, storage) => storage.clone().to_physical(),
-            #[cfg(feature = "dtype-extension")]
-            Self::ExtensionOwned(_typ, storage) => storage.to_physical(),
         }
     }
 
@@ -875,16 +861,6 @@ impl AnyValue<'_> {
                 v.hash(state);
                 s.hash(state);
                 p.hash(state);
-            },
-            #[cfg(feature = "dtype-extension")]
-            Extension(typ, storage) => {
-                typ.hash(state);
-                storage.hash_impl(state, cheap);
-            },
-            #[cfg(feature = "dtype-extension")]
-            ExtensionOwned(typ, storage) => {
-                typ.hash(state);
-                storage.hash_impl(state, cheap);
             },
             Null => {},
 
@@ -1090,17 +1066,6 @@ impl<'a> AnyValue<'a> {
             Enum(cat, map) => EnumOwned(cat, map.clone()),
             #[cfg(feature = "dtype-categorical")]
             EnumOwned(cat, map) => EnumOwned(cat, map),
-            #[cfg(feature = "dtype-extension")]
-            Extension(typ, storage) => {
-                let inner_static = storage.clone().into_static();
-                ExtensionOwned(typ.clone(), Box::new(inner_static))
-            },
-            #[cfg(feature = "dtype-extension")]
-            ExtensionOwned(typ, storage) => {
-                let av = ExtensionOwned(typ, storage);
-                // SAFETY: owned is already static
-                unsafe { std::mem::transmute::<AnyValue<'a>, AnyValue<'static>>(av) }
-            },
         }
     }
 

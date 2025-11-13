@@ -1218,10 +1218,6 @@ impl Display for AnyValue<'_> {
             AnyValue::StructOwned(payload) => fmt_struct(f, &payload.0),
             #[cfg(feature = "dtype-decimal")]
             AnyValue::Decimal(v, _prec, scale) => fmt_decimal(f, *v, *scale),
-            #[cfg(feature = "dtype-extension")]
-            AnyValue::Extension(_, storage) => write!(f, "{storage}"),
-            #[cfg(feature = "dtype-extension")]
-            AnyValue::ExtensionOwned(_, storage) => write!(f, "{storage}"),
         }
     }
 }
