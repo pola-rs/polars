@@ -73,6 +73,13 @@ fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> PolarsR
             let rhs = rhs.binary().unwrap();
             merge_ca(lhs, rhs, merge_indicator).into_series()
         },
+        #[cfg(feature = "dtype-extension")]
+        Extension(typ, _) => {
+            let lhs = lhs.ext().unwrap();
+            let rhs = rhs.ext().unwrap();
+            merge_series(lhs.storage(), rhs.storage(), merge_indicator)?
+                .into_extension(typ.clone())
+        },
         #[cfg(feature = "dtype-struct")]
         Struct(_) => {
             let lhs = lhs.struct_().unwrap();
@@ -179,7 +186,8 @@ where
 }
 
 fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> PolarsResult<Vec<bool>> {
-    if let Ok(cat_phys) = lhs.dtype().cat_physical() {
+    if lhs.dtype().is_categorical() || lhs.dtype().is_enum() {
+        let cat_phys = lhs.dtype().cat_physical().unwrap();
         with_match_categorical_physical_type!(cat_phys, |$C| {
             let lhs = lhs.cat::<$C>().unwrap();
             let rhs = rhs.cat::<$C>().unwrap();

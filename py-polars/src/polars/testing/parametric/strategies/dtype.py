@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 import hypothesis.strategies as st
 from hypothesis.errors import InvalidArgument
 
+from polars import register_extension_type
 from polars.datatypes import (
     Array,
     Binary,
@@ -45,6 +46,13 @@ if TYPE_CHECKING:
     from polars._typing import PolarsDataType, TimeUnit
     from polars.datatypes import DataTypeClass
 
+TestExtension = Extension(
+    name="testing.test_extension",
+    storage=Int32,
+    metadata="A test extension type",
+)
+
+register_extension_type("testing.test_extension", Extension)
 
 # Supported data type classes which do not take any arguments
 _SIMPLE_DTYPES: list[DataTypeClass] = [
@@ -66,7 +74,7 @@ _SIMPLE_DTYPES: list[DataTypeClass] = [
     Date,
     Time,
     Null,
-    Extension("some_extension", metadata="some metadata", storage=Int8),
+    TestExtension,
     # TODO: Enable Object types by default when various issues are solved.
     # Object,
 ]
