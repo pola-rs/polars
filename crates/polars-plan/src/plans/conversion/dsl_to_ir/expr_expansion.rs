@@ -110,8 +110,9 @@ fn function_input_wildcard_expansion(function: &FunctionExpr) -> FunctionExpansi
         expand_into_inputs |= matches!(function, F::FfiPlugin { flags, .. } if flags.flags.contains(FunctionFlags::INPUT_WILDCARD_EXPANSION));
         allow_empty_inputs |= matches!(function, F::FfiPlugin { flags, .. } if flags.flags.contains(FunctionFlags::ALLOW_EMPTY_INPUTS));
     }
-    #[cfg(feature = "concat_str")]
+    #[cfg(all(feature = "strings", feature = "concat_str"))]
     {
+        use crate::dsl::StringFunction;
         expand_into_inputs |= matches!(
             function,
             F::StringExpr(StringFunction::ConcatHorizontal { .. })

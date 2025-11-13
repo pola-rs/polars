@@ -5,7 +5,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 mod sink;
-
+pub mod sink2;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::*;
 #[cfg(feature = "csv")]
@@ -29,6 +29,7 @@ use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 pub use sink::*;
+pub use sink2::*;
 use strum_macros::IntoStaticStr;
 
 use super::{Expr, ExprIR};
@@ -331,6 +332,7 @@ pub struct AnonymousScanOptions {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, strum_macros::IntoStaticStr)]
+/// TODO: Rename to `FileWriteOptions`
 pub enum FileType {
     #[cfg(feature = "parquet")]
     Parquet(ParquetWriteOptions),

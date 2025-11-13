@@ -3,6 +3,9 @@ use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::format_pl_smallstr;
+use crate::pl_str::PlSmallStr;
+
 /// A Path or URI
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -123,6 +126,13 @@ macro_rules! impl_cloud_scheme {
             pub const fn as_str(&self) -> &'static str {
                 match self {
                     $(Self::$t => $n,)+
+                }
+            }
+
+            /// TODO: This is a temporary hack to satisfy `parse_cloud_options` needing a path. Remove in the future.
+            pub fn dummy_uri(&self) -> PlSmallStr {
+                match self {
+                    $(Self::$t => format_pl_smallstr!("{}://", $n),)+
                 }
             }
         }

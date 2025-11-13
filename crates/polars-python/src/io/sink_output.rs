@@ -1,0 +1,133 @@
+use polars::prelude::{
+    DirectorySinkOptions, PartitionTargetCallback, PartitionVariant2, PlPath, SinkFinishCallback,
+    SinkOutputType, SortColumn,
+};
+use polars_utils::IdxSize;
+use polars_utils::python_function::PythonObject;
+use pyo3::exceptions::PyValueError;
+use pyo3::types::PyAnyMethods;
+use pyo3::{Bound, FromPyObject, Py, PyAny, PyResult, intern};
+
+use crate::PyExpr;
+use crate::prelude::Wrap;
+
+pub struct PySinkOutputType<'py>(Bound<'py, pyo3::PyAny>);
+
+impl<'py> FromPyObject<'py> for PySinkOutputType<'py> {
+    fn extract_bound(ob: &Bound<'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
+        Ok(Self(ob.clone()))
+    }
+}
+
+impl PySinkOutputType<'_> {
+    pub fn extract_sink_output_type(&self) -> PyResult<SinkOutputType> {
+        let py = self.0.py();
+
+        let Ok(sink_output_dataclass) = self.0.getattr(intern!(py, "_pl_sink_directory")) else {
+            let v: Wrap<polars_plan::dsl::SinkTarget> = self.0.extract()?;
+
+            return Ok(SinkOutputType::Single(v.0));
+        };
+
+        /// Extract from `SinkOutputTypeInner` dataclass.
+        #[derive(FromPyObject)]
+        struct Extract {
+            base_path: Wrap<PlPath>,
+            file_path_provider: Option<Py<PyAny>>,
+            partition_by: Option<Vec<PyExpr>>,
+            partition_keys_sorted: Option<bool>,
+            include_keys: Option<bool>,
+            per_partition_sort_by: Option<Vec<PyExpr>>,
+            per_file_sort_by: Option<Vec<PyExpr>>,
+            max_rows_per_file: Option<IdxSize>,
+            finish_callback: Option<Py<PyAny>>,
+        }
+
+        let Extract {
+            base_path,
+            file_path_provider,
+            partition_by,
+            partition_keys_sorted,
+            include_keys,
+            per_partition_sort_by,
+            per_file_sort_by,
+            max_rows_per_file,
+            finish_callback,
+        } = sink_output_dataclass.extract()?;
+
+        if per_partition_sort_by.is_some() && per_file_sort_by.is_some() {
+            return Err(PyValueError::new_err(
+                "cannot specify both 'per_partition_sort_by' and 'per_file_sort_by'",
+            ));
+        }
+
+        let sink_type: PartitionVariant2 = if let Some(partition_by) = partition_by {
+            if max_rows_per_file.is_some() {
+                return Err(PyValueError::new_err(
+                    "unimplemented: 'max_rows_per_file' with 'partition_by'",
+                ));
+            }
+
+            if per_file_sort_by.is_some() {
+                return Err(PyValueError::new_err(
+                    "unimplemented: 'per_file_sort_by' with 'partition_by'",
+                ));
+            }
+
+            PartitionVariant2::PartitionBy {
+                keys: partition_by.into_iter().map(|x| x.inner).collect(),
+                include_keys: include_keys.unwrap_or(true),
+                keys_sorted: partition_keys_sorted.unwrap_or(false),
+                per_partition_sort_by: per_partition_sort_by
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|x| SortColumn {
+                        expr: x.inner,
+                        descending: false,
+                        nulls_last: false,
+                    })
+                    .collect(),
+            }
+        } else if let Some(parameter_name) = partition_keys_sorted
+            .as_ref()
+            .is_some()
+            .then_some("partition_keys_sorted")
+            .or(include_keys.is_some().then_some("include_keys"))
+            .or(per_partition_sort_by
+                .is_some()
+                .then_some("per_partition_sort_by"))
+        {
+            return Err(PyValueError::new_err(format!(
+                "cannot use '{parameter_name}' without specifying `partition_by`"
+            )));
+        } else if let Some(max_rows_per_file) = max_rows_per_file {
+            PartitionVariant2::MaxSize {
+                max_rows_per_file,
+                per_file_sort_by: per_file_sort_by
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|x| SortColumn {
+                        expr: x.inner,
+                        descending: false,
+                        nulls_last: false,
+                    })
+                    .collect(),
+            }
+        } else {
+            return Err(PyValueError::new_err(
+                "at least one of ('partition_by', 'max_rows_per_file') \
+                must be specified for SinkDirectory",
+            ));
+        };
+
+        let target = DirectorySinkOptions {
+            base_path: base_path.0,
+            file_path_provider: file_path_provider
+                .map(|x| PartitionTargetCallback::Python(PythonObject(x))),
+            sink_type,
+            finish_callback: finish_callback.map(|x| SinkFinishCallback::Python(PythonObject(x))),
+        };
+
+        Ok(SinkOutputType::Multiple(target))
+    }
+}
