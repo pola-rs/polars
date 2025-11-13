@@ -59,16 +59,13 @@ jobs:
       - name: Check runtime versions
         env:
           POLARS_PYPROJECT_TOML: py-polars/pyproject.toml
-          POLARS_CARGO_32_TOML: py-polars/runtime/polars-runtime-32/Cargo.toml
-          POLARS_CARGO_64_TOML: py-polars/runtime/polars-runtime-64/Cargo.toml
-          POLARS_CARGO_COMPAT_TOML: py-polars/runtime/polars-runtime-compat/Cargo.toml
         run: |
           set -e
 
           VERSION=$(tomlq '.project.version' "$POLARS_PYPROJECT_TOML" | tr -d '"')
-          CARGO_32_VERSION=$(tomlq '.package.version' "$POLARS_32_CARGO_TOML" | tr -d '"')
-          CARGO_64_VERSION=$(tomlq '.package.version' "$POLARS_64_CARGO_TOML" | tr -d '"')
-          CARGO_COMPAT_VERSION=$(tomlq '.package.version' "$POLARS_COMPAT_CARGO_TOML" | tr -d '"')
+          CARGO_32_VERSION=$(tomlq '.package.version' py-polars/runtime/polars-runtime-32/Cargo.toml | tr -d '"')
+          CARGO_64_VERSION=$(tomlq '.package.version' py-polars/runtime/polars-runtime-64/Cargo.toml | tr -d '"')
+          CARGO_COMPAT_VERSION=$(tomlq '.package.version' py-polars/runtime/polars-runtime-compat/Cargo.toml | tr -d '"')
 
           RT32_VERSION=($(tomlq '.project.dependencies[0]' "$POLARS_PYPROJECT_TOML" | tr -d '"'))
           RT64_VERSION=($(tomlq '.project."optional-dependencies".rt64[0]' "$POLARS_PYPROJECT_TOML" | tr -d '"'))
