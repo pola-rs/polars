@@ -33,7 +33,6 @@ from polars._dependencies import polars_cloud as pc
 from polars._dependencies import pyarrow as pa
 from polars._typing import (
     ParquetMetadata,
-    PartitioningScheme,
 )
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
 from polars._utils.convert import negate_duration_string, parse_as_duration_string
@@ -115,10 +114,11 @@ if TYPE_CHECKING:
     from io import IOBase
     from typing import IO, Literal
 
+    from polars.io.partition import _SinkDirectory
     from polars.lazyframe.opt_flags import QueryOptFlags
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
-        from polars._plr import PyExpr, PyPartitioning, PySelector
+        from polars._plr import PyExpr, PySelector
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
         import polars._plr as plr
@@ -185,14 +185,16 @@ def _select_engine(engine: EngineType) -> EngineType:
 
 
 def _to_sink_target(
-    path: str | Path | IO[bytes] | IO[str] | PartitioningScheme,
-) -> str | Path | IO[bytes] | IO[str] | PyPartitioning:
+    path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
+) -> str | Path | IO[bytes] | IO[str] | _SinkDirectory:
+    from polars.io.partition import _SinkDirectory
+
     if isinstance(path, (str, Path)):
         return normalize_filepath(path)
     elif isinstance(path, io.IOBase):
-        return path  # type: ignore[return-value]
-    elif isinstance(path, PartitioningScheme):
-        return path._py_partitioning
+        return path
+    elif isinstance(path, _SinkDirectory):
+        return path
     elif callable(getattr(path, "write", None)):
         # This allows for custom writers
         return path
@@ -2578,7 +2580,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_parquet(
         self,
-        path: str | Path | IO[bytes] | PartitioningScheme,
+        path: str | Path | IO[bytes] | _SinkDirectory,
         *,
         compression: str = "zstd",
         compression_level: int | None = None,
@@ -2606,7 +2608,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_parquet(
         self,
-        path: str | Path | IO[bytes] | PartitioningScheme,
+        path: str | Path | IO[bytes] | _SinkDirectory,
         *,
         compression: str = "zstd",
         compression_level: int | None = None,
@@ -2633,7 +2635,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def sink_parquet(
         self,
-        path: str | Path | IO[bytes] | PartitioningScheme,
+        path: str | Path | IO[bytes] | _SinkDirectory,
         *,
         compression: str = "zstd",
         compression_level: int | None = None,
@@ -2844,18 +2846,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         del credential_provider
 
-        if storage_options:
-            storage_options = list(storage_options.items())  # type: ignore[assignment]
-        else:
-            # Handle empty dict input
-            storage_options = None
-
         target = _to_sink_target(path)
-        sink_options = {
-            "sync_on_close": sync_on_close or "none",
-            "maintain_order": maintain_order,
-            "mkdir": mkdir,
-        }
 
         if isinstance(metadata, dict):
             if metadata:
@@ -2893,17 +2884,27 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 msg = f"field_overwrites got the wrong type {type(field_overwrites)}"
                 raise TypeError(msg)
 
+        from polars.io.partition import _SinkOptions
+
+        sink_options = _SinkOptions(
+            mkdir=mkdir,
+            maintain_order=maintain_order,
+            sync_on_close=sync_on_close,
+            storage_options=(
+                list(storage_options.items()) if storage_options is not None else None
+            ),
+            credential_provider=credential_provider_builder,
+            retries=retries,
+        )
+
         ldf_py = self._ldf.sink_parquet(
             target=target,
+            sink_options=sink_options,
             compression=compression,
             compression_level=compression_level,
             statistics=statistics,
             row_group_size=row_group_size,
             data_page_size=data_page_size,
-            cloud_options=storage_options,
-            credential_provider=credential_provider_builder,
-            retries=retries,
-            sink_options=sink_options,
             metadata=metadata,
             field_overwrites=field_overwrites_dicts,
         )
@@ -2918,7 +2919,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_ipc(
         self,
-        path: str | Path | IO[bytes] | PartitioningScheme,
+        path: str | Path | IO[bytes] | _SinkDirectory,
         *,
         compression: IpcCompression | None = "uncompressed",
         compat_level: CompatLevel | None = None,
@@ -2938,7 +2939,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_ipc(
         self,
-        path: str | Path | IO[bytes] | PartitioningScheme,
+        path: str | Path | IO[bytes] | _SinkDirectory,
         *,
         compression: IpcCompression | None = "uncompressed",
         compat_level: CompatLevel | None = None,
@@ -2957,7 +2958,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def sink_ipc(
         self,
-        path: str | Path | IO[bytes] | PartitioningScheme,
+        path: str | Path | IO[bytes] | _SinkDirectory,
         *,
         compression: IpcCompression | None = "uncompressed",
         compat_level: CompatLevel | None = None,
@@ -3098,18 +3099,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         del credential_provider
 
-        if storage_options:
-            storage_options = list(storage_options.items())  # type: ignore[assignment]
-        else:
-            # Handle empty dict input
-            storage_options = None
-
         target = _to_sink_target(path)
-        sink_options = {
-            "sync_on_close": sync_on_close or "none",
-            "maintain_order": maintain_order,
-            "mkdir": mkdir,
-        }
 
         compat_level_py: int | bool
         if compat_level is None:
@@ -3123,14 +3113,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if compression is None:
             compression = "uncompressed"
 
-        ldf_py = self._ldf.sink_ipc(
-            target=target,
-            compression=compression,
-            compat_level=compat_level_py,
-            cloud_options=storage_options,
+        from polars.io.partition import _SinkOptions
+
+        sink_options = _SinkOptions(
+            mkdir=mkdir,
+            maintain_order=maintain_order,
+            sync_on_close=sync_on_close,
+            storage_options=(
+                list(storage_options.items()) if storage_options is not None else None
+            ),
             credential_provider=credential_provider_builder,
             retries=retries,
+        )
+
+        ldf_py = self._ldf.sink_ipc(
+            target=target,
             sink_options=sink_options,
+            compression=compression,
+            compat_level=compat_level_py,
         )
 
         if not lazy:
@@ -3143,7 +3143,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_csv(
         self,
-        path: str | Path | IO[bytes] | IO[str] | PartitioningScheme,
+        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
         *,
         include_bom: bool = False,
         include_header: bool = True,
@@ -3175,7 +3175,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_csv(
         self,
-        path: str | Path | IO[bytes] | IO[str] | PartitioningScheme,
+        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
         *,
         include_bom: bool = False,
         include_header: bool = True,
@@ -3206,7 +3206,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def sink_csv(
         self,
-        path: str | Path | IO[bytes] | IO[str] | PartitioningScheme,
+        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
         *,
         include_bom: bool = False,
         include_header: bool = True,
@@ -3410,21 +3410,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         del credential_provider
 
-        if storage_options:
-            storage_options = list(storage_options.items())  # type: ignore[assignment]
-        else:
-            # Handle empty dict input
-            storage_options = None
-
         target = _to_sink_target(path)
-        sink_options = {
-            "sync_on_close": sync_on_close or "none",
-            "maintain_order": maintain_order,
-            "mkdir": mkdir,
-        }
+
+        from polars.io.partition import _SinkOptions
+
+        sink_options = _SinkOptions(
+            mkdir=mkdir,
+            maintain_order=maintain_order,
+            sync_on_close=sync_on_close,
+            storage_options=(
+                list(storage_options.items()) if storage_options is not None else None
+            ),
+            credential_provider=credential_provider_builder,
+            retries=retries,
+        )
 
         ldf_py = self._ldf.sink_csv(
             target=target,
+            sink_options=sink_options,
             include_bom=include_bom,
             include_header=include_header,
             separator=ord(separator),
@@ -3439,10 +3442,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             decimal_comma=decimal_comma,
             null_value=null_value,
             quote_style=quote_style,
-            cloud_options=storage_options,
-            credential_provider=credential_provider_builder,
-            retries=retries,
-            sink_options=sink_options,
         )
 
         if not lazy:
@@ -3455,7 +3454,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_ndjson(
         self,
-        path: str | Path | IO[bytes] | IO[str] | PartitioningScheme,
+        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
         *,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
@@ -3473,7 +3472,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_ndjson(
         self,
-        path: str | Path | IO[bytes] | IO[str] | PartitioningScheme,
+        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
         *,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
@@ -3490,7 +3489,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def sink_ndjson(
         self,
-        path: str | Path | IO[bytes] | IO[str] | PartitioningScheme,
+        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
         *,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
@@ -3620,26 +3619,22 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         del credential_provider
 
-        if storage_options:
-            storage_options = list(storage_options.items())  # type: ignore[assignment]
-        else:
-            # Handle empty dict input
-            storage_options = None
-
         target = _to_sink_target(path)
-        sink_options = {
-            "sync_on_close": sync_on_close or "none",
-            "maintain_order": maintain_order,
-            "mkdir": mkdir,
-        }
 
-        ldf_py = self._ldf.sink_json(
-            target=target,
-            cloud_options=storage_options,
+        from polars.io.partition import _SinkOptions
+
+        sink_options = _SinkOptions(
+            mkdir=mkdir,
+            maintain_order=maintain_order,
+            sync_on_close=sync_on_close,
+            storage_options=(
+                list(storage_options.items()) if storage_options is not None else None
+            ),
             credential_provider=credential_provider_builder,
             retries=retries,
-            sink_options=sink_options,
         )
+
+        ldf_py = self._ldf.sink_json(target=target, sink_options=sink_options)
 
         if not lazy:
             ldf_py = ldf_py.with_optimizations(optimizations._pyoptflags)
