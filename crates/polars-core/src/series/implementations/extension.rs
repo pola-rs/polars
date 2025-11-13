@@ -82,6 +82,14 @@ impl private::PrivateSeries for SeriesWrap<ExtensionChunked> {
             s.zip_with_same_type(mask, other.ext()?.storage())
         })
     }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
+        let list = self.0.storage().agg_list(groups);
+        let mut list = list.list().unwrap().clone();
+        unsafe { list.to_logical(self.dtype().clone()) };
+        list.into_series()
+    }
     
     fn arg_sort_multiple(
         &self,
