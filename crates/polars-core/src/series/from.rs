@@ -116,6 +116,14 @@ impl Series {
             Float32 => Float32Chunked::from_chunks(name, chunks).into_series(),
             Float64 => Float64Chunked::from_chunks(name, chunks).into_series(),
             BinaryOffset => BinaryOffsetChunked::from_chunks(name, chunks).into_series(),
+            #[cfg(feature = "dtype-extension")]
+            Extension(typ, storage) => {
+                ExtensionChunked::from_storage(
+                    typ.clone(),
+                    Series::from_chunks_and_dtype_unchecked(name, chunks, storage)
+                )
+                .into_series()
+            }
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
                 let mut ca =

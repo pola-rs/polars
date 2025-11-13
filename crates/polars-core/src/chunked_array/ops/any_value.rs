@@ -133,6 +133,11 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
             let v = arr.value_unchecked(idx);
             AnyValue::Decimal(v, *precision, *scale)
         },
+        #[cfg(feature = "dtype-extension")]
+        DataType::Extension(typ, storage) => {
+            let storage_av = arr_to_any_value(arr, idx, &storage);
+            AnyValue::ExtensionOwned(typ.clone(), Box::new(storage_av))
+        }
         #[cfg(feature = "object")]
         DataType::Object(_) => {
             // We should almost never hit this. The only known exception is when we put objects in

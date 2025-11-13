@@ -18,10 +18,8 @@ struct PyExtensionTypeFactory {
 
 #[derive(Clone)]
 struct PyExtensionTypeImpl {
-    obj: Arc<Py<PyAny>>,
     name: String,
     display: String,
-    debug: String,
     metadata: Option<String>,
 }
 
@@ -44,7 +42,6 @@ impl ExtensionTypeFactory for PyExtensionTypeFactory {
                 .unwrap()
                 .extract()
                 .unwrap();
-            let debug = typ_obj.call_method0("__repr__").unwrap().extract().unwrap();
             let metadata = typ_obj
                 .call_method0("ext_metadata")
                 .unwrap()
@@ -52,10 +49,8 @@ impl ExtensionTypeFactory for PyExtensionTypeFactory {
                 .unwrap();
 
             Box::new(PyExtensionTypeImpl {
-                obj: Arc::new(typ_obj.into()),
                 name: name.to_string(),
                 display,
-                debug,
                 metadata,
             })
         })
