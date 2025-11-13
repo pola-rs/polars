@@ -6,12 +6,11 @@ use std::sync::Arc;
 use polars::prelude::default_values::DefaultFieldValues;
 use polars::prelude::deletion::DeletionFilesList;
 use polars::prelude::{
-    CastColumnsPolicy, ColumnMapping, ExtraColumnsPolicy, MissingColumnsPolicy, PlSmallStr, Schema,
-    TableStatistics, UnifiedScanArgs,
+    CastColumnsPolicy, CloudScheme, ColumnMapping, ExtraColumnsPolicy, MissingColumnsPolicy,
+    PlSmallStr, Schema, TableStatistics, UnifiedScanArgs,
 };
 use polars_io::{HiveOptions, RowIndex};
 use polars_utils::IdxSize;
-use polars_utils::plpath::PlPathRef;
 use polars_utils::slice_enum::Slice;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::PyAnyMethods;
@@ -46,8 +45,7 @@ impl<'py> FromPyObject<'py> for Wrap<TableStatistics> {
 impl PyScanOptions<'_> {
     pub fn extract_unified_scan_args(
         &self,
-        // For cloud_options init
-        first_path: Option<PlPathRef>,
+        cloud_scheme: Option<CloudScheme>,
     ) -> PyResult<UnifiedScanArgs> {
         #[derive(FromPyObject)]
         struct Extract {
@@ -99,7 +97,7 @@ impl PyScanOptions<'_> {
         } = self.0.extract()?;
 
         let cloud_options =
-            parse_cloud_options(first_path, storage_options, credential_provider, retries)?;
+            parse_cloud_options(cloud_scheme, storage_options, credential_provider, retries)?;
 
         let hive_schema = hive_schema.map(|s| Arc::new(s.0));
 

@@ -2,7 +2,7 @@ use std::io::BufReader;
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 use polars::prelude::ArrowSchema;
-use polars::prelude::PlPathRef;
+use polars::prelude::CloudScheme;
 use polars_io::cloud::CloudOptions;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -52,7 +52,7 @@ pub fn read_parquet_metadata(
         },
         PythonScanSourceInput::Path(p) => {
             let cloud_options = parse_cloud_options(
-                Some(p.as_ref()),
+                CloudScheme::from_uri(p.to_str()),
                 storage_options,
                 credential_provider,
                 retries,
@@ -130,23 +130,21 @@ pub fn write_clipboard_string(s: &str) -> PyResult<()> {
     Ok(())
 }
 
-pub fn parse_cloud_options<'a>(
-    // TODO: Take CloudScheme (or CloudType) here instead of an entire path.
-    first_path: Option<PlPathRef<'a>>,
+pub fn parse_cloud_options(
+    cloud_scheme: Option<CloudScheme>,
     storage_options: Option<Vec<(String, String)>>,
     credential_provider: Option<Py<PyAny>>,
     retries: usize,
 ) -> PyResult<Option<CloudOptions>> {
-    let result = if let Some(first_path) = first_path {
+    let result: Option<CloudOptions> = {
         #[cfg(feature = "cloud")]
         {
             use polars_io::cloud::credential_provider::PlCredentialProvider;
 
             use crate::prelude::parse_cloud_options;
 
-            let first_path_url = first_path.to_str();
             let cloud_options =
-                parse_cloud_options(first_path_url, storage_options.unwrap_or_default())?;
+                parse_cloud_options(cloud_scheme, storage_options.unwrap_or_default())?;
 
             Some(
                 cloud_options
@@ -161,8 +159,6 @@ pub fn parse_cloud_options<'a>(
         {
             None
         }
-    } else {
-        None
     };
     Ok(result)
 }

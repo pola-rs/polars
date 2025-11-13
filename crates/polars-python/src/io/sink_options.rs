@@ -1,5 +1,5 @@
 use polars::prelude::sync_on_close::SyncOnCloseType;
-use polars::prelude::{CloudScheme, PlPath, UnifiedSinkArgs};
+use polars::prelude::{CloudScheme, UnifiedSinkArgs};
 use pyo3::types::PyAnyMethods;
 use pyo3::{Bound, FromPyObject, Py, PyAny, PyResult};
 
@@ -39,15 +39,8 @@ impl PySinkOptions<'_> {
             retries,
         } = self.0.extract()?;
 
-        let cloud_options = parse_cloud_options(
-            cloud_scheme
-                .map(|x| PlPath::new(&x.dummy_uri()))
-                .as_ref()
-                .map(|x| x.as_ref()),
-            storage_options,
-            credential_provider,
-            retries,
-        )?;
+        let cloud_options =
+            parse_cloud_options(cloud_scheme, storage_options, credential_provider, retries)?;
 
         let sync_on_close = sync_on_close.map_or(SyncOnCloseType::default(), |x| x.0);
 
