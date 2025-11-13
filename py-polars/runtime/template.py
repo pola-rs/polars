@@ -15,7 +15,10 @@ if __name__ == "__main__":
         basedir = this_dir / Path("polars-runtime-" + rt)
         shutil.rmtree(basedir, ignore_errors=True)
         shutil.copytree(this_dir / "template", basedir)
-        shutil.copyfile(this_dir / ".." / ".." / "rust-toolchain.toml", basedir / "rust-toolchain.toml")
+        shutil.copyfile(
+            this_dir / ".." / ".." / "rust-toolchain.toml",
+            basedir / "rust-toolchain.toml",
+        )
         shutil.move(
             basedir / "_polars_runtime_mod", basedir / ("_polars_runtime_" + rt)
         )
