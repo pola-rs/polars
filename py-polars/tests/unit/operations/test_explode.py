@@ -508,7 +508,9 @@ def test_explode_basic() -> None:
 @given(s=series(min_size=1))
 @pytest.mark.parametrize("empty_as_null", [False, True])
 @pytest.mark.parametrize("keep_nulls", [False, True])
-def test_explode_parametric(s: pl.Series, empty_as_null: bool, keep_nulls: bool) -> None:
+def test_explode_parametric(
+    s: pl.Series, empty_as_null: bool, keep_nulls: bool
+) -> None:
     a = {"empty_as_null": empty_as_null, "keep_nulls": keep_nulls}
     si = s.implode()
 
