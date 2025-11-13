@@ -123,21 +123,23 @@ impl Series {
                     })
                     .collect_ca(PlSmallStr::EMPTY)
             },
-            GroupsType::Slice { groups, .. } => groups
-                .iter()
-                .map(|&[first, len]| {
-                    let mask = BitMask::from_bitmap(&validity);
-                    // SAFETY: group slice is valid.
-                    let validity = mask.sliced_unchecked(first as usize, len as usize);
-                    let leading_zeros = validity.leading_zeros() as IdxSize;
-                    if leading_zeros == len {
-                        // All values are null, we have no first non-null.
-                        None
-                    } else {
-                        Some(leading_zeros)
-                    }
-                })
-                .collect_ca(PlSmallStr::EMPTY),
+            GroupsType::Slice { groups, .. } => {
+                let mask = BitMask::from_bitmap(&validity);
+                groups
+                    .iter()
+                    .map(|&[first, len]| {
+                        // SAFETY: group slice is valid.
+                        let validity = mask.sliced_unchecked(first as usize, len as usize);
+                        let leading_zeros = validity.leading_zeros() as IdxSize;
+                        if leading_zeros == len {
+                            // All values are null, we have no first non-null.
+                            None
+                        } else {
+                            Some(leading_zeros)
+                        }
+                    })
+                    .collect_ca(PlSmallStr::EMPTY)
+            },
         };
         // SAFETY: groups are always in bounds.
         let mut out = s.take_unchecked(&indices);
