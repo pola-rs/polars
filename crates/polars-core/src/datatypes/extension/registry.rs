@@ -8,7 +8,6 @@ use polars_utils::pl_str::PlSmallStr;
 
 use super::{ExtensionTypeFactory, ExtensionTypeInstance};
 use crate::prelude::DataType;
-use crate::prelude::extension::ExtensionTypeImpl;
 
 #[repr(u8)]
 pub enum UnknownExtensionTypeBehavior {
