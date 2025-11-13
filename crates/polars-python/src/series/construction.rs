@@ -371,24 +371,4 @@ impl PySeries {
             },
         }
     }
-    
-    fn ext_from_storage(&self, dtype: Wrap<DataType>) -> PyResult<Self> {
-        let DataType::Extension(typ, storage) = &dtype.0 else {
-            return Err(PyTypeError::new_err(
-                "ext_from_storage can only be used with Extension dtypes",
-            ));
-        };
-        
-        let s = self.series.read();
-        
-        if storage.as_ref() != s.dtype() {
-            return Err(PyTypeError::new_err(format!(
-                "storage type mismatch in ext_from_storage: expected {}, got {}",
-                storage,
-                s.dtype()
-            )));
-        }
-
-        Ok(s.clone().into_extension(typ.clone()).into())
-    }
 }

@@ -232,5 +232,17 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
         if catch_keyboard_interrupt {
             register_polars_keyboard_interrupt_hook();
         }
+        
+        use polars_core::datatypes::extension::UnknownExtensionTypeBehavior;
+        let behavior = match std::env::var("POLARS_UNKNOWN_EXTENSION_TYPE_BEHAVIOR").as_deref() {
+            Ok("load_as_storage") => UnknownExtensionTypeBehavior::LoadAsStorage,
+            Ok("load_as_extension") => UnknownExtensionTypeBehavior::LoadAsGeneric,
+            Ok("") | Err(_) => UnknownExtensionTypeBehavior::WarnAndLoadAsStorage,
+            _ => {
+                polars_warn!("Invalid value for 'POLARS_UNKNOWN_EXTENSION_TYPE_BEHAVIOR' environment variable. Expected one of 'load_as_storage' or 'load_as_extension'.");
+                UnknownExtensionTypeBehavior::WarnAndLoadAsStorage
+            },
+        };
+        polars_core::datatypes::extension::set_unknown_extension_type_behavior(behavior);
     });
 }

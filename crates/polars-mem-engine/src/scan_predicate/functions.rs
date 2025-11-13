@@ -265,7 +265,7 @@ pub fn initialize_scan_predicate<'a>(
         };
 
         if skip_files_mask.len() != expected_mask_len {
-            let msg = format!(
+            polars_warn!(
                 "WARNING: \
                 initialize_scan_predicate: \
                 filter mask length mismatch (length: {}, expected: {}). Files \
@@ -274,7 +274,6 @@ pub fn initialize_scan_predicate<'a>(
                 skip_files_mask.len(),
                 expected_mask_len
             );
-            polars_warn!(msg);
             return Ok((None, Some(predicate)));
         }
 
