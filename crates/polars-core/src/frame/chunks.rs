@@ -55,9 +55,7 @@ impl DataFrame {
                 .iter()
                 .map(|col| match col {
                     Column::Series(s) => Column::from(s.select_chunk(i)),
-                    Column::Scalar(_) => {
-                        col.slice(prev_height as i64, chunk_size)
-                    },
+                    Column::Scalar(_) => col.slice(prev_height as i64, chunk_size),
                 })
                 .collect::<Vec<_>>();
 
