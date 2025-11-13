@@ -135,8 +135,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         },
         #[cfg(feature = "dtype-extension")]
         DataType::Extension(typ, storage) => {
-            let storage_av = arr_to_any_value(arr, idx, &storage);
-            AnyValue::ExtensionOwned(typ.clone(), Box::new(storage_av))
+            arr_to_any_value(arr, idx, &storage)
         }
         #[cfg(feature = "object")]
         DataType::Object(_) => {

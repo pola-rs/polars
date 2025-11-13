@@ -55,8 +55,7 @@ impl ExtensionChunked {
     }
 
     pub fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
-        let av = self.storage().get(i)?;
-        Ok(AnyValue::ExtensionOwned(self.extension_type().clone(), Box::new(av)))
+        self.storage().get(i)
     }
 
     pub fn cast_with_options(&self, dtype: &DataType, _options: CastOptions) -> PolarsResult<Series> {

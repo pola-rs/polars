@@ -202,8 +202,7 @@ impl SeriesTrait for SeriesWrap<ExtensionChunked> {
     }
 
     unsafe fn get_unchecked(&self, index: usize) -> AnyValue<'_> {
-        let av = self.0.storage().get_unchecked(index);
-        AnyValue::ExtensionOwned(self.0.extension_type().clone(), Box::new(av.clone()))
+        self.0.storage().get_unchecked(index)
     }
 
     fn null_count(&self) -> usize {
