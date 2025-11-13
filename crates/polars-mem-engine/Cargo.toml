@@ -30,6 +30,7 @@ tokio = { workspace = true, optional = true }
 async = [
   "polars-plan/async",
   "polars-io/cloud",
+  "tokio",
 ]
 python = ["pyo3", "polars-plan/python", "polars-core/python", "polars-io/python", "polars-error/python"]
 ipc = ["polars-io/ipc", "polars-plan/ipc"]
