@@ -468,7 +468,7 @@ fn aexpr_to_skip_batch_predicate_rec(
 
     let live_columns = PlIndexMap::from_iter(aexpr_to_leaf_names_iter(e, arena).map(|col| {
         let min_name = format_pl_smallstr!("{col}_min");
-        (col, min_name)
+        (col.clone(), min_name)
     }));
 
     // We cannot do proper equalities for these.

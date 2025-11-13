@@ -411,7 +411,9 @@ fn build_fallback_node_with_ctx(
     let input_schema = &ctx.phys_sm[input.node].output_schema;
     let mut select_names: PlHashSet<_> = exprs
         .iter()
-        .flat_map(|expr| polars_plan::utils::aexpr_to_leaf_names_iter(expr.node(), ctx.expr_arena))
+        .flat_map(|expr| {
+            polars_plan::utils::aexpr_to_leaf_names_iter(expr.node(), ctx.expr_arena).cloned()
+        })
         .collect();
     // To keep the length correct we have to ensure we select at least one
     // column.
@@ -422,7 +424,7 @@ fn build_fallback_node_with_ctx(
     }
     let input_stream = if input_schema
         .iter_names()
-        .any(|name| !select_names.contains(name.as_str()))
+        .any(|name| !select_names.contains(name))
     {
         let select_exprs = select_names
             .into_iter()
