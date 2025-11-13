@@ -320,10 +320,10 @@ struct GenericFirstLastNonNullGroupedReduction<P: NonNullPolicy> {
     policy: P,
     values: Vec<AnyValue<'static>>,
     seqs: Vec<u64>,
-    seens: Vec<bool>,
+    seen: MutableBitmap,
     evicted_values: Vec<AnyValue<'static>>,
     evicted_seqs: Vec<u64>,
-    evicted_seens: Vec<bool>,
+    evicted_seen: BitmapBuilder,
 }
 
 impl<P: NonNullPolicy> GenericFirstLastNonNullGroupedReduction<P> {
@@ -333,10 +333,10 @@ impl<P: NonNullPolicy> GenericFirstLastNonNullGroupedReduction<P> {
             policy,
             values: Vec::new(),
             seqs: Vec::new(),
-            seens: Vec::new(),
+            seen: MutableBitmap::new(),
             evicted_values: Vec::new(),
             evicted_seqs: Vec::new(),
-            evicted_seens: Vec::new(),
+            evicted_seen: BitmapBuilder::new(),
         }
     }
 }
@@ -349,13 +349,13 @@ impl<P: NonNullPolicy + 'static> GroupedReduction for GenericFirstLastNonNullGro
     fn reserve(&mut self, additional: usize) {
         self.values.reserve(additional);
         self.seqs.reserve(additional);
-        self.seens.reserve(additional);
+        self.seen.reserve(additional);
     }
 
     fn resize(&mut self, num_groups: IdxSize) {
         self.values.resize(num_groups as usize, AnyValue::Null);
         self.seqs.resize(num_groups as usize, 0);
-        self.seens.resize(num_groups as usize, false);
+        self.seen.resize(num_groups as usize, false);
     }
 
     fn update_group(
@@ -370,7 +370,7 @@ impl<P: NonNullPolicy + 'static> GroupedReduction for GenericFirstLastNonNullGro
             if self.policy.might_replace(
                 seq_id,
                 self.seqs[group_idx as usize],
-                self.seens[group_idx as usize],
+                self.seen.get(group_idx as usize),
             ) {
                 let val = if values.has_nulls() {
                     match self.policy.is_first_or_last() {
@@ -392,7 +392,7 @@ impl<P: NonNullPolicy + 'static> GroupedReduction for GenericFirstLastNonNullGro
                 if !val.is_null() {
                     self.values[group_idx as usize] = val;
                     self.seqs[group_idx as usize] = seq_id;
-                    self.seens[group_idx as usize] = true;
+                    self.seen.set(group_idx as usize, true);
                 }
             }
         }
@@ -413,19 +413,22 @@ impl<P: NonNullPolicy + 'static> GroupedReduction for GenericFirstLastNonNullGro
             let idx = g.idx();
             let grp_val = self.values.get_unchecked_mut(idx);
             let grp_seq = self.seqs.get_unchecked_mut(idx);
-            let grp_seen = self.seens.get_unchecked_mut(idx);
             if g.should_evict() {
                 self.evicted_values
                     .push(core::mem::replace(grp_val, AnyValue::Null));
                 self.evicted_seqs.push(core::mem::replace(grp_seq, 0));
-                self.evicted_seens.push(core::mem::replace(grp_seen, false));
+                self.evicted_seen.push(self.seen.get_unchecked(idx));
+                self.seen.set_unchecked(idx, false);
             }
-            if self.policy.might_replace(seq_id, *grp_seq, *grp_seen) {
+            if self
+                .policy
+                .might_replace(seq_id, *grp_seq, self.seen.get_unchecked(idx))
+            {
                 let val = values.get_unchecked(*i as usize).into_static();
                 if !val.is_null() {
                     *grp_val = values.get_unchecked(*i as usize).into_static();
                     *grp_seq = seq_id;
-                    *grp_seen = true;
+                    self.seen.set_unchecked(idx, true);
                 }
             }
         }
@@ -446,13 +449,13 @@ impl<P: NonNullPolicy + 'static> GroupedReduction for GenericFirstLastNonNullGro
             if self.policy.might_replace(
                 *other.seqs.get_unchecked(si),
                 *self.seqs.get_unchecked(*g as usize),
-                *self.seens.get_unchecked(*g as usize),
+                self.seen.get_unchecked(*g as usize),
             ) {
                 let val = other.values.get_unchecked(si);
                 if !val.is_null() {
                     *self.values.get_unchecked_mut(*g as usize) = val.clone();
                     *self.seqs.get_unchecked_mut(*g as usize) = *other.seqs.get_unchecked(si);
-                    *self.seens.get_unchecked_mut(*g as usize) = true;
+                    self.seen.set_unchecked(*g as usize, true);
                 }
             }
         }
@@ -465,10 +468,10 @@ impl<P: NonNullPolicy + 'static> GroupedReduction for GenericFirstLastNonNullGro
             policy: self.policy,
             values: core::mem::take(&mut self.evicted_values),
             seqs: core::mem::take(&mut self.evicted_seqs),
-            seens: core::mem::take(&mut self.evicted_seens),
+            seen: core::mem::take(&mut self.evicted_seen).into_mut(),
             evicted_values: Vec::new(),
             evicted_seqs: Vec::new(),
-            evicted_seens: Vec::new(),
+            evicted_seen: BitmapBuilder::new(),
         })
     }
 
