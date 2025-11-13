@@ -1042,8 +1042,8 @@ fn test_group_by_cum_sum() -> PolarsResult<()> {
         Vec::from(
             out.column("vals")?
                 .explode(ExplodeOptions {
-                    skip_empty: false,
-                    skip_nulls: false
+                    empty_as_null: true,
+                    keep_nulls: true
                 })?
                 .i32()?
         ),
@@ -1309,8 +1309,8 @@ fn test_sort_by() -> PolarsResult<()> {
         .agg([col("a").sort_by([col("b"), col("c")], SortMultipleOptions::default())])
         .collect()?;
     let a = out.column("a")?.explode(ExplodeOptions {
-        skip_empty: false,
-        skip_nulls: false,
+        empty_as_null: true,
+        keep_nulls: true,
     })?;
     assert_eq!(
         Vec::from(a.i32().unwrap()),
@@ -1325,8 +1325,8 @@ fn test_sort_by() -> PolarsResult<()> {
         .collect()?;
 
     let a = out.column("a")?.explode(ExplodeOptions {
-        skip_empty: false,
-        skip_nulls: false,
+        empty_as_null: true,
+        keep_nulls: true,
     })?;
     assert_eq!(
         Vec::from(a.i32().unwrap()),
@@ -1705,8 +1705,8 @@ fn test_single_ranked_group() -> PolarsResult<()> {
         .collect()?;
 
     let out = out.column("value")?.explode(ExplodeOptions {
-        skip_empty: false,
-        skip_nulls: false,
+        empty_as_null: true,
+        keep_nulls: true,
     })?;
     let out = out.f64()?;
     assert_eq!(
@@ -1777,8 +1777,8 @@ fn test_is_in() -> PolarsResult<()> {
         .collect()?;
     let out = out.column("cars").unwrap();
     let out = out.explode(ExplodeOptions {
-        skip_empty: false,
-        skip_nulls: false,
+        empty_as_null: true,
+        keep_nulls: true,
     })?;
     let out = out.bool().unwrap();
     assert_eq!(
@@ -1798,8 +1798,8 @@ fn test_is_in() -> PolarsResult<()> {
 
     let out = out.column("cars").unwrap();
     let out = out.explode(ExplodeOptions {
-        skip_empty: false,
-        skip_nulls: false,
+        empty_as_null: true,
+        keep_nulls: true,
     })?;
     let out = out.bool().unwrap();
     assert_eq!(

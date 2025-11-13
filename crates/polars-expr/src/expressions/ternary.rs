@@ -68,8 +68,8 @@ fn finish_as_iters<'a>(
         list_vals_len == ac_truthy.groups.len()
     {
         out = out.explode(ExplodeOptions {
-            skip_empty: false,
-            skip_nulls: false,
+            empty_as_null: true,
+            keep_nulls: true,
         })?
     }
 

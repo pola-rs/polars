@@ -42,8 +42,8 @@ pub fn contains_any(
     }
 
     let patterns = patterns.explode(ExplodeOptions {
-        skip_empty: true,
-        skip_nulls: false,
+        empty_as_null: false,
+        keep_nulls: true,
     })?;
     let patterns = patterns.str()?;
     let ac = build_ac(patterns, ascii_case_insensitive)?;
@@ -92,13 +92,13 @@ pub fn replace_all(
     }
 
     let patterns = patterns.explode(ExplodeOptions {
-        skip_empty: true,
-        skip_nulls: false,
+        empty_as_null: false,
+        keep_nulls: true,
     })?;
     let patterns = patterns.str()?;
     let replace_with = replace_with.explode(ExplodeOptions {
-        skip_empty: true,
-        skip_nulls: false,
+        empty_as_null: false,
+        keep_nulls: true,
     })?;
     let replace_with = replace_with.str()?;
 
@@ -175,8 +175,8 @@ pub fn extract_many(
         },
         (_, 1) => {
             let patterns = patterns.explode(ExplodeOptions {
-                skip_empty: true,
-                skip_nulls: false,
+                empty_as_null: false,
+                keep_nulls: true,
             })?;
             let patterns = patterns.str()?;
             let ac = build_ac(patterns, ascii_case_insensitive)?;
@@ -269,8 +269,8 @@ pub fn find_many(
         },
         (_, 1) => {
             let patterns = patterns.explode(ExplodeOptions {
-                skip_empty: true,
-                skip_nulls: false,
+                empty_as_null: false,
+                keep_nulls: true,
             })?;
             let patterns = patterns.str()?;
             let ac = build_ac(patterns, ascii_case_insensitive)?;

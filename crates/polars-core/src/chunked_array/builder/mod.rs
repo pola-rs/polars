@@ -241,8 +241,8 @@ mod test {
         let out = builder.finish();
         let out = out
             .explode(ExplodeOptions {
-                skip_empty: false,
-                skip_nulls: false,
+                empty_as_null: true,
+                keep_nulls: true,
             })
             .unwrap();
         assert_eq!(out.len(), 7);

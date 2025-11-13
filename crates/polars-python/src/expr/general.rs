@@ -439,12 +439,12 @@ impl PyExpr {
         self.inner.clone().is_last_distinct().into()
     }
 
-    fn explode(&self, skip_empty: bool, skip_nulls: bool) -> Self {
+    fn explode(&self, empty_as_null: bool, keep_nulls: bool) -> Self {
         self.inner
             .clone()
             .explode(ExplodeOptions {
-                skip_empty,
-                skip_nulls,
+                empty_as_null,
+                keep_nulls,
             })
             .into()
     }

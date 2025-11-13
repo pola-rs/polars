@@ -49,14 +49,14 @@ impl fmt::Debug for Expr {
                 options,
             } => {
                 write!(f, "{expr:?}.explode(")?;
-                if options.skip_empty {
-                    f.write_str("skip_empty")?;
+                if !options.empty_as_null {
+                    f.write_str("empty_as_null=false")?;
                 }
-                if options.skip_nulls {
-                    if options.skip_empty {
+                if !options.keep_nulls {
+                    if options.empty_as_null {
                         f.write_str(", ")?;
                     }
-                    f.write_str("skip_nulls")?;
+                    f.write_str("keep_nulls=false")?;
                 }
                 f.write_char(')')
             },

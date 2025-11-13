@@ -484,23 +484,24 @@ def test_explode_basic() -> None:
     assert_series_equal(masked.explode(), pl.Series([1, 2, 3, None, 1, 2]))
 
     assert_series_equal(
-        s([[1, 2, 3]]).explode(skip_empty=True, skip_nulls=True), pl.Series([1, 2, 3])
+        s([[1, 2, 3]]).explode(empty_as_null=False, keep_nulls=False),
+        pl.Series([1, 2, 3]),
     )
 
     assert_series_equal(s([[1, 2, 3], None]).explode(), pl.Series([1, 2, 3, None]))
     assert_series_equal(
-        s([[1, 2, 3], None]).explode(skip_nulls=True), pl.Series([1, 2, 3])
+        s([[1, 2, 3], None]).explode(keep_nulls=False), pl.Series([1, 2, 3])
     )
     assert_series_equal(
-        s([[1, 2, 3], [None]]).explode(skip_nulls=True), pl.Series([1, 2, 3, None])
+        s([[1, 2, 3], [None]]).explode(keep_nulls=False), pl.Series([1, 2, 3, None])
     )
 
     assert_series_equal(s([[1, 2, 3], []]).explode(), pl.Series([1, 2, 3, None]))
     assert_series_equal(
-        s([[1, 2, 3], []]).explode(skip_empty=True), pl.Series([1, 2, 3])
+        s([[1, 2, 3], []]).explode(empty_as_null=False), pl.Series([1, 2, 3])
     )
     assert_series_equal(
-        s([[1, 2, 3], [None]]).explode(skip_empty=True), pl.Series([1, 2, 3, None])
+        s([[1, 2, 3], [None]]).explode(empty_as_null=False), pl.Series([1, 2, 3, None])
     )
 
 

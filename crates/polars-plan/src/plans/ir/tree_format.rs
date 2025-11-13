@@ -27,11 +27,11 @@ impl fmt::Display for TreeFmtAExpr<'_> {
             AExpr::Element => "element()",
             AExpr::Explode { expr: _, options } => {
                 f.write_str("explode(")?;
-                match (options.skip_empty, options.skip_nulls) {
-                    (true, true) => f.write_str("skip_empty, skip_nulls")?,
-                    (true, false) => f.write_str("skip_empty")?,
-                    (false, true) => f.write_str("skip_nulls")?,
-                    (false, false) => {},
+                match (options.empty_as_null, options.keep_nulls) {
+                    (true, true) => {},
+                    (true, false) => f.write_str("keep_nulls=false")?,
+                    (false, true) => f.write_str("empty_as_null=false")?,
+                    (false, false) => f.write_str("empty_as_null=false, keep_nulls=false")?,
                 }
                 return f.write_char(')');
             },

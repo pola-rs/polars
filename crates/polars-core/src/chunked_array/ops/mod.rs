@@ -85,8 +85,8 @@ pub trait ChunkAnyValue {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct ExplodeOptions {
-    pub skip_empty: bool,
-    pub skip_nulls: bool,
+    pub empty_as_null: bool,
+    pub keep_nulls: bool,
 }
 
 /// Explode/flatten a List or String Series

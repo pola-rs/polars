@@ -40,12 +40,12 @@ pub fn replace(s: &Series, old: &ListChunked, new: &ListChunked) -> PolarsResult
     );
 
     let old = old.explode(ExplodeOptions {
-        skip_empty: true,
-        skip_nulls: false,
+        empty_as_null: false,
+        keep_nulls: true,
     })?;
     let new = new.explode(ExplodeOptions {
-        skip_empty: true,
-        skip_nulls: false,
+        empty_as_null: false,
+        keep_nulls: true,
     })?;
 
     if old.is_empty() {
@@ -90,12 +90,12 @@ pub fn replace_or_default(
     );
 
     let old = old.explode(ExplodeOptions {
-        skip_empty: true,
-        skip_nulls: false,
+        empty_as_null: false,
+        keep_nulls: true,
     })?;
     let new = new.explode(ExplodeOptions {
-        skip_empty: true,
-        skip_nulls: false,
+        empty_as_null: false,
+        keep_nulls: true,
     })?;
 
     polars_ensure!(
@@ -149,12 +149,12 @@ pub fn replace_strict(
     );
 
     let old = old.explode(ExplodeOptions {
-        skip_empty: true,
-        skip_nulls: false,
+        empty_as_null: false,
+        keep_nulls: true,
     })?;
     let new = new.explode(ExplodeOptions {
-        skip_empty: true,
-        skip_nulls: false,
+        empty_as_null: false,
+        keep_nulls: true,
     })?;
 
     if old.is_empty() {

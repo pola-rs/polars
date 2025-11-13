@@ -250,8 +250,8 @@ fn test_binary_agg_context_0() -> PolarsResult<()> {
 
     let out = out.column("foo")?;
     let out = out.explode(ExplodeOptions {
-        skip_empty: false,
-        skip_nulls: false,
+        empty_as_null: true,
+        keep_nulls: true,
     })?;
     let out = out.str()?;
     assert_eq!(
@@ -297,8 +297,8 @@ fn test_binary_agg_context_1() -> PolarsResult<()> {
     // [7, 90]
     let out = out.column("vals")?;
     let out = out.explode(ExplodeOptions {
-        skip_empty: false,
-        skip_nulls: false,
+        empty_as_null: true,
+        keep_nulls: true,
     })?;
     let out = out.i32()?;
     assert_eq!(
@@ -321,8 +321,8 @@ fn test_binary_agg_context_1() -> PolarsResult<()> {
     // [90, 7]
     let out = out.column("vals")?;
     let out = out.explode(ExplodeOptions {
-        skip_empty: false,
-        skip_nulls: false,
+        empty_as_null: true,
+        keep_nulls: true,
     })?;
     let out = out.i32()?;
     assert_eq!(
@@ -354,8 +354,8 @@ fn test_binary_agg_context_2() -> PolarsResult<()> {
     // 5 - [5, 6] = [0, -1]
     let out = out.column("vals")?;
     let out = out.explode(ExplodeOptions {
-        skip_empty: false,
-        skip_nulls: false,
+        empty_as_null: true,
+        keep_nulls: true,
     })?;
     let out = out.i32()?;
     assert_eq!(
@@ -375,8 +375,8 @@ fn test_binary_agg_context_2() -> PolarsResult<()> {
     // [5, 6] - 5 = [0, 1]
     let out = out.column("vals")?;
     let out = out.explode(ExplodeOptions {
-        skip_empty: false,
-        skip_nulls: false,
+        empty_as_null: true,
+        keep_nulls: true,
     })?;
     let out = out.i32()?;
     assert_eq!(
@@ -465,8 +465,8 @@ fn take_aggregations() -> PolarsResult<()> {
         .collect()?;
     let s = out.column("ordered")?;
     let flat = s.explode(ExplodeOptions {
-        skip_empty: false,
-        skip_nulls: false,
+        empty_as_null: true,
+        keep_nulls: true,
     })?;
     let flat = flat.str()?;
     let vals = flat.into_no_null_iter().collect::<Vec<_>>();

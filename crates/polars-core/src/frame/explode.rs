@@ -12,13 +12,13 @@ use crate::series::IsSorted;
 fn get_exploded(series: &Series) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
     match series.dtype() {
         DataType::List(_) => series.list().unwrap().explode_and_offsets(ExplodeOptions {
-            skip_empty: false,
-            skip_nulls: false,
+            empty_as_null: true,
+            keep_nulls: true,
         }),
         #[cfg(feature = "dtype-array")]
         DataType::Array(_, _) => series.array().unwrap().explode_and_offsets(ExplodeOptions {
-            skip_empty: false,
-            skip_nulls: false,
+            empty_as_null: true,
+            keep_nulls: true,
         }),
         _ => polars_bail!(opq = explode, series.dtype()),
     }
@@ -41,8 +41,8 @@ impl DataFrame {
         if self.is_empty() {
             for s in &columns {
                 df.with_column(s.as_materialized_series().explode(ExplodeOptions {
-                    skip_empty: false,
-                    skip_nulls: false,
+                    empty_as_null: true,
+                    keep_nulls: true,
                 })?)?;
             }
             return Ok(df);

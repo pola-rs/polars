@@ -1059,16 +1059,16 @@ class ExprListNameSpace:
         n_pyexpr = parse_into_expression(n)
         return wrap_expr(self._pyexpr.list_tail(n_pyexpr))
 
-    def explode(self, *, skip_empty: bool = False, skip_nulls: bool = False) -> Expr:
+    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Expr:
         """
         Returns a column with a separate row for every list element.
 
         Parameters
         ----------
-        skip_empty
-            If `False`, empty lists explode to a `null`.
-        skip_nulls
-            If `False`, a `null` explodes a `null`.
+        empty_as_null
+            Explode an empty list into a `null`.
+        keep_nulls
+            Explode a `null` list into a `null`.
 
         Returns
         -------
@@ -1098,7 +1098,7 @@ class ExprListNameSpace:
         └─────┘
         """
         return wrap_expr(
-            self._pyexpr.explode(skip_empty=skip_empty, skip_nulls=skip_nulls)
+            self._pyexpr.explode(empty_as_null=empty_as_null, keep_nulls=keep_nulls)
         )
 
     def count_matches(self, element: IntoExpr) -> Expr:

@@ -4936,9 +4936,9 @@ Consider using {self}.implode() instead"""
         │ b     ┆ [2, 3, 4] │
         └───────┴───────────┘
         """
-        return self.explode(skip_empty=False, skip_nulls=False)
+        return self.explode(empty_as_null=True, keep_nulls=True)
 
-    def explode(self, *, skip_empty: bool = False, skip_nulls: bool = False) -> Expr:
+    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Expr:
         """
         Explode a list expression.
 
@@ -4946,10 +4946,10 @@ Consider using {self}.implode() instead"""
 
         Parameters
         ----------
-        skip_empty
-            If `False`, empty lists explode to a `null`.
-        skip_nulls
-            If `False`, a `null` explodes a `null`.
+        empty_as_null
+            Explode an empty list/array into a `null`.
+        keep_nulls
+            Explode a `null` list/array into a `null`.
 
         Returns
         -------
@@ -4985,7 +4985,7 @@ Consider using {self}.implode() instead"""
         └────────┘
         """
         return wrap_expr(
-            self._pyexpr.explode(skip_empty=skip_empty, skip_nulls=skip_nulls)
+            self._pyexpr.explode(empty_as_null=empty_as_null, keep_nulls=keep_nulls)
         )
 
     def implode(self) -> Expr:

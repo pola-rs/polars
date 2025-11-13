@@ -175,8 +175,8 @@ fn test_literal_window_fn() -> PolarsResult<()> {
     let out = out.column("foo")?;
     assert!(matches!(out.dtype(), DataType::List(_)));
     let flat = out.explode(ExplodeOptions {
-        skip_empty: false,
-        skip_nulls: false,
+        empty_as_null: true,
+        keep_nulls: true,
     })?;
     let flat = flat.i32()?;
     assert_eq!(

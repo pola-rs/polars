@@ -1530,8 +1530,8 @@ impl SQLFunctionVisitor<'_> {
             ArrayUnique => self.visit_unary(|e| e.list().unique()),
             Explode => self.visit_unary(|e| {
                 e.explode(ExplodeOptions {
-                    skip_empty: false,
-                    skip_nulls: false,
+                    empty_as_null: true,
+                    keep_nulls: true,
                 })
             }),
 

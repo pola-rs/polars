@@ -239,8 +239,8 @@ where
                 }
 
                 let other = other.explode(ExplodeOptions {
-                    skip_empty: true,
-                    skip_nulls: false,
+                    empty_as_null: false,
+                    keep_nulls: true,
                 })?;
                 let other = other.as_ref().as_ref();
                 is_in_helper_ca(ca_in, other, nulls_equal)
@@ -257,8 +257,8 @@ where
                 }
 
                 let other = other.explode(ExplodeOptions {
-                    skip_empty: true,
-                    skip_nulls: false,
+                    empty_as_null: false,
+                    keep_nulls: true,
                 })?;
                 let other = other.as_ref().as_ref();
                 is_in_helper_ca(ca_in, other, nulls_equal)
@@ -319,8 +319,8 @@ fn is_in_binary(
                 }
 
                 let other = other.explode(ExplodeOptions {
-                    skip_empty: true,
-                    skip_nulls: false,
+                    empty_as_null: false,
+                    keep_nulls: true,
                 })?;
                 let other = other.binary()?;
                 is_in_helper_ca(ca_in, other, nulls_equal)
@@ -337,8 +337,8 @@ fn is_in_binary(
                 }
 
                 let other = other.explode(ExplodeOptions {
-                    skip_empty: true,
-                    skip_nulls: false,
+                    empty_as_null: false,
+                    keep_nulls: true,
                 })?;
                 let other = other.binary()?;
                 is_in_helper_ca(ca_in, other, nulls_equal)
@@ -393,8 +393,8 @@ fn is_in_boolean(
                 }
 
                 let other = other.explode(ExplodeOptions {
-                    skip_empty: true,
-                    skip_nulls: false,
+                    empty_as_null: false,
+                    keep_nulls: true,
                 })?;
                 let other = other.bool()?;
                 is_in_boolean_broadcast(ca_in, other, nulls_equal)
@@ -411,8 +411,8 @@ fn is_in_boolean(
                 }
 
                 let other = other.explode(ExplodeOptions {
-                    skip_empty: true,
-                    skip_nulls: false,
+                    empty_as_null: false,
+                    keep_nulls: true,
                 })?;
                 let other = other.bool()?;
                 is_in_boolean_broadcast(ca_in, other, nulls_equal)
@@ -483,8 +483,8 @@ fn is_in_null(s: &Series, other: &Series, nulls_equal: bool) -> PolarsResult<Boo
                     }
 
                     let other = other.explode(ExplodeOptions {
-                        skip_empty: true,
-                        skip_nulls: false,
+                        empty_as_null: false,
+                        keep_nulls: true,
                     })?;
                     BooleanChunked::from_iter_values(
                         ca_in.name().clone(),
@@ -505,8 +505,8 @@ fn is_in_null(s: &Series, other: &Series, nulls_equal: bool) -> PolarsResult<Boo
                     }
 
                     let other = other.explode(ExplodeOptions {
-                        skip_empty: true,
-                        skip_nulls: false,
+                        empty_as_null: false,
+                        keep_nulls: true,
                     })?;
                     BooleanChunked::from_iter_values(
                         ca_in.name().clone(),
@@ -592,8 +592,8 @@ fn is_in_row_encoded(
                 }
 
                 let other = other.explode(ExplodeOptions {
-                    skip_empty: true,
-                    skip_nulls: false,
+                    empty_as_null: false,
+                    keep_nulls: true,
                 })?;
                 let other = other.binary_offset()?;
                 is_in_helper_ca(&ca_in, other, nulls_equal)
@@ -616,8 +616,8 @@ fn is_in_row_encoded(
                 }
 
                 let other = other.explode(ExplodeOptions {
-                    skip_empty: true,
-                    skip_nulls: false,
+                    empty_as_null: false,
+                    keep_nulls: true,
                 })?;
                 let other = other.binary_offset()?;
                 is_in_helper_ca(&ca_in, other, nulls_equal)

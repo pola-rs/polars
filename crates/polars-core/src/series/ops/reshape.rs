@@ -223,8 +223,8 @@ impl Series {
         let s = self;
         let s = if let DataType::List(_) = s.dtype() {
             Cow::Owned(s.explode(ExplodeOptions {
-                skip_empty: true,
-                skip_nulls: false,
+                empty_as_null: false,
+                keep_nulls: true,
             })?)
         } else {
             Cow::Borrowed(s)
@@ -338,8 +338,8 @@ mod test {
             assert!(matches!(out.dtype(), DataType::List(_)));
             assert_eq!(
                 out.explode(ExplodeOptions {
-                    skip_empty: false,
-                    skip_nulls: false,
+                    empty_as_null: true,
+                    keep_nulls: true,
                 })?
                 .len(),
                 4

@@ -87,8 +87,8 @@ impl ApplyExpr {
         let c = if self.is_scalar() {
             let out = ca
                 .explode(ExplodeOptions {
-                    skip_empty: false,
-                    skip_nulls: false,
+                    empty_as_null: true,
+                    keep_nulls: true,
                 })
                 .unwrap();
             // if the explode doesn't return the same len, it wasn't scalar.

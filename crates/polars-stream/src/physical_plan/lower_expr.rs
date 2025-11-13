@@ -1057,8 +1057,8 @@ fn lower_exprs_with_ctx(
                         .explode(
                             ctx.expr_arena,
                             ExplodeOptions {
-                                skip_empty: true,
-                                skip_nulls: false,
+                                empty_as_null: false,
+                                keep_nulls: true,
                             },
                         )
                         .node(),

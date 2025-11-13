@@ -12,8 +12,8 @@ fn test_to_list_logical() -> PolarsResult<()> {
 
     let expl = out
         .explode(ExplodeOptions {
-            skip_empty: false,
-            skip_nulls: false,
+            empty_as_null: true,
+            keep_nulls: true,
         })
         .unwrap();
     assert_eq!(expl.dtype(), &DataType::Date);

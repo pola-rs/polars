@@ -123,8 +123,8 @@ fn test_group_by_agg_list_with_not_aggregated() -> PolarsResult<()> {
 
     let out = out.column("value")?;
     let out = out.explode(ExplodeOptions {
-        skip_empty: false,
-        skip_nulls: false,
+        empty_as_null: true,
+        keep_nulls: true,
     })?;
     assert_eq!(
         out,

@@ -333,8 +333,8 @@ fn aexpr_to_skip_batch_predicate_rec(
                                 let lv_node_exploded = lv_node.explode(
                                     arena,
                                     ExplodeOptions {
-                                        skip_empty: true,
-                                        skip_nulls: false,
+                                        empty_as_null: false,
+                                        keep_nulls: true,
                                     },
                                 );
                                 let lv_min = lv_node_exploded.min(arena);

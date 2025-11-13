@@ -359,8 +359,8 @@ fn test_binary_group_consistency() -> PolarsResult<()> {
     assert_eq!(out.dtype(), &DataType::List(Box::new(DataType::String)));
     assert_eq!(
         out.explode(ExplodeOptions {
-            skip_empty: false,
-            skip_nulls: false
+            empty_as_null: true,
+            keep_nulls: true
         })?
         .str()?
         .into_no_null_iter()

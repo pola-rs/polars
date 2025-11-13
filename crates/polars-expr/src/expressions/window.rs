@@ -506,8 +506,8 @@ impl PhysicalExpr for WindowExpr {
                     ac.get_values().clone()
                 } else {
                     ac.aggregated().explode(ExplodeOptions {
-                        skip_empty: false,
-                        skip_nulls: false,
+                        empty_as_null: true,
+                        keep_nulls: true,
                     })?
                 };
                 Ok(out.into_column())
@@ -517,8 +517,8 @@ impl PhysicalExpr for WindowExpr {
                 // investigate if sorted arrays can be return directly
                 let out_column = ac.aggregated();
                 let flattened = out_column.explode(ExplodeOptions {
-                    skip_empty: false,
-                    skip_nulls: false,
+                    empty_as_null: true,
+                    keep_nulls: true,
                 })?;
                 // we extend the lifetime as we must convince the compiler that ac lives
                 // long enough. We drop `GrouBy` when we are done with `ac`.

@@ -18,8 +18,8 @@ fn test_slice_args() -> PolarsResult<()> {
     .collect()?;
 
     let out = df.column("vals")?.explode(ExplodeOptions {
-        skip_empty: false,
-        skip_nulls: false,
+        empty_as_null: true,
+        keep_nulls: true,
     })?;
     let out = out.i32().unwrap();
     assert_eq!(

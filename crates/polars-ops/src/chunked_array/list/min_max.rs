@@ -97,8 +97,8 @@ pub(super) fn list_min_function(ca: &ListChunked) -> PolarsResult<Series> {
                     Ok(sc.into_series(s.name().clone()))
                 })?
                 .explode(ExplodeOptions {
-                    skip_empty: false,
-                    skip_nulls: false,
+                    empty_as_null: true,
+                    keep_nulls: true,
                 })
                 .unwrap()
                 .into_series()
@@ -212,8 +212,8 @@ pub(super) fn list_max_function(ca: &ListChunked) -> PolarsResult<Series> {
                     Ok(sc.into_series(s.name().clone()))
                 })?
                 .explode(ExplodeOptions {
-                    skip_empty: false,
-                    skip_nulls: false,
+                    empty_as_null: true,
+                    keep_nulls: true,
                 })
                 .unwrap()
                 .into_series()

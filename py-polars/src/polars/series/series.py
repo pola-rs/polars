@@ -4186,7 +4186,7 @@ class Series:
         ]
         """
 
-    def explode(self, *, skip_empty: bool = False, skip_nulls: bool = False) -> Series:
+    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Series:
         """
         Explode a list Series.
 
@@ -4194,10 +4194,10 @@ class Series:
 
         Parameters
         ----------
-        skip_empty
-            If `False`, empty lists explode to a `null`.
-        skip_nulls
-            If `False`, a `null` explodes a `null`.
+        empty_as_null
+            Explode an empty list into a `null`.
+        keep_nulls
+            Explode a `null` list into a `null`.
 
         Returns
         -------

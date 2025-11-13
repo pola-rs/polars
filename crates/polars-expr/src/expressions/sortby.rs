@@ -414,8 +414,8 @@ impl PhysicalExpr for SortByExpr {
             let s = ac_in.aggregated();
             ac_in.with_values(
                 s.explode(ExplodeOptions {
-                    skip_empty: false,
-                    skip_nulls: false,
+                    empty_as_null: true,
+                    keep_nulls: true,
                 })
                 .unwrap(),
                 false,

@@ -67,7 +67,7 @@ where
 
             for &o in &offsets[1..] {
                 let o = o as usize;
-                if !options.skip_empty && o == last {
+                if options.empty_as_null && o == last {
                     if start != last {
                         #[cfg(debug_assertions)]
                         new_values.extend_from_slice(&values[start..last]);
@@ -114,7 +114,7 @@ where
         } else {
             for &o in &offsets[1..] {
                 let o = o as usize;
-                if !options.skip_empty && o == last {
+                if options.empty_as_null && o == last {
                     if start != last {
                         unsafe { new_values.extend_from_slice(values.get_unchecked(start..last)) };
                     }
@@ -174,7 +174,7 @@ impl ExplodeByOffsets for NullChunked {
         for &offset in &offsets[1..] {
             // If offset == last_offset we have an empty list and a new row is inserted,
             // therefore we always increase at least 1.
-            len += std::cmp::max(offset - last_offset, i64::from(!options.skip_empty)) as usize;
+            len += std::cmp::max(offset - last_offset, i64::from(options.empty_as_null)) as usize;
             last_offset = offset;
         }
         NullChunked::new(self.name.clone(), len).into_series()
@@ -193,7 +193,7 @@ impl ExplodeByOffsets for BooleanChunked {
         let mut last = start;
         for &o in &offsets[1..] {
             let o = o as usize;
-            if !options.skip_empty && o == last {
+            if options.empty_as_null && o == last {
                 if start != last {
                     let vals = arr.slice_typed(start, last - start);
 
@@ -284,16 +284,16 @@ mod test {
 
         // normal explode
         let exploded = ca.explode(ExplodeOptions {
-            skip_empty: false,
-            skip_nulls: false,
+            empty_as_null: true,
+            keep_nulls: true,
         })?;
         let out: Vec<_> = exploded.i32()?.into_no_null_iter().collect();
         assert_eq!(out, &[1, 2, 3, 3, 1, 2]);
 
         // sliced explode
         let exploded = ca.slice(0, 1).explode(ExplodeOptions {
-            skip_empty: false,
-            skip_nulls: false,
+            empty_as_null: true,
+            keep_nulls: true,
         })?;
         let out: Vec<_> = exploded.i32()?.into_no_null_iter().collect();
         assert_eq!(out, &[1, 2, 3, 3]);
@@ -317,8 +317,8 @@ mod test {
 
         let ca = builder.finish();
         let exploded = ca.explode(ExplodeOptions {
-            skip_empty: false,
-            skip_nulls: false,
+            empty_as_null: true,
+            keep_nulls: true,
         })?;
         assert_eq!(
             Vec::from(exploded.i32()?),
@@ -345,8 +345,8 @@ mod test {
 
         let ca = builder.finish();
         let exploded = ca.explode(ExplodeOptions {
-            skip_empty: false,
-            skip_nulls: false,
+            empty_as_null: true,
+            keep_nulls: true,
         })?;
         assert_eq!(
             Vec::from(exploded.i32()?),
@@ -394,8 +394,8 @@ mod test {
 
         let ca = builder.finish();
         let exploded = ca.explode(ExplodeOptions {
-            skip_empty: false,
-            skip_nulls: false,
+            empty_as_null: true,
+            keep_nulls: true,
         })?;
         assert_eq!(
             Vec::from(exploded.str()?),
@@ -422,8 +422,8 @@ mod test {
 
         let ca = builder.finish();
         let exploded = ca.explode(ExplodeOptions {
-            skip_empty: false,
-            skip_nulls: false,
+            empty_as_null: true,
+            keep_nulls: true,
         })?;
         assert_eq!(
             Vec::from(exploded.bool()?),

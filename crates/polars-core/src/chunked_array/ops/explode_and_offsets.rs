@@ -70,8 +70,8 @@ impl ChunkExplode for ListChunked {
         let mut values = listarr.values().clone();
 
         let (mut s, offsets) = if ca._can_fast_explode()
-            && (options.skip_empty || !ca.has_empty_lists())
-            && (options.skip_nulls || !ca.has_nulls())
+            && (!options.empty_as_null || !ca.has_empty_lists())
+            && (!options.keep_nulls || !ca.has_nulls())
         {
             // ensure that the value array is sliced
             // as a list only slices its offsets on a slice operation
@@ -133,7 +133,7 @@ impl ChunkExplode for ListChunked {
                         let start = previous as IdxSize;
                         let end = offset as IdxSize;
 
-                        if !options.skip_empty && len == 0 {
+                        if options.empty_as_null && len == 0 {
                             indices.push_null();
                         } else {
                             indices.extend_trusted_len_values(start..end);
@@ -162,13 +162,13 @@ impl ChunkExplode for ListChunked {
                         // SAFETY: we are within bounds
                         if unsafe { validity.get_bit_unchecked(i) } {
                             // explode expects null value if sublist is empty.
-                            if !options.skip_empty && len == 0 {
+                            if options.empty_as_null && len == 0 {
                                 indices.push_null();
                             } else {
                                 indices.extend_trusted_len_values(start..end);
                             }
                             current_offset += len;
-                        } else if !options.skip_nulls {
+                        } else if options.keep_nulls {
                             indices.push_null();
                         }
                         previous = offset;
@@ -287,7 +287,7 @@ impl ChunkExplode for ArrayChunked {
                 let end = start + width as IdxSize;
                 indices.extend_trusted_len_values(start..end);
                 current_offset += width as i64;
-            } else if !options.skip_nulls {
+            } else if options.keep_nulls {
                 indices.push_null();
             }
             offsets.push(current_offset);

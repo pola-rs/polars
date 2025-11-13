@@ -490,8 +490,8 @@ pub trait ListNameSpaceImpl: AsList {
                     )
                 } else {
                     let s = list_ca.explode(ExplodeOptions {
-                        skip_empty: false,
-                        skip_nulls: false,
+                        empty_as_null: true,
+                        keep_nulls: true,
                     })?;
                     idx_ca
                         .into_iter()
@@ -507,8 +507,8 @@ pub trait ListNameSpaceImpl: AsList {
             },
             (_, 1) => {
                 let idx_ca = idx_ca.explode(ExplodeOptions {
-                    skip_empty: false,
-                    skip_nulls: false,
+                    empty_as_null: true,
+                    keep_nulls: true,
                 })?;
 
                 use DataType as D;

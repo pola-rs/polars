@@ -515,8 +515,8 @@ impl<'a> AggregationContext<'a> {
             AggState::AggregatedList(c) => {
                 let flattened = c
                     .explode(ExplodeOptions {
-                        skip_empty: true,
-                        skip_nulls: false,
+                        empty_as_null: false,
+                        keep_nulls: true,
                     })
                     .unwrap();
                 let groups = groups.into_owned();
@@ -574,8 +574,8 @@ impl<'a> AggregationContext<'a> {
                 // We should not insert nulls, otherwise the offsets in the groups will not be correct.
                 Cow::Owned(
                     c.explode(ExplodeOptions {
-                        skip_empty: true,
-                        skip_nulls: false,
+                        empty_as_null: false,
+                        keep_nulls: true,
                     })
                     .unwrap(),
                 )

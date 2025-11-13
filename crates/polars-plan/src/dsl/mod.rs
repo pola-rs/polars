@@ -208,8 +208,8 @@ impl Expr {
     /// Alias for `explode`.
     pub fn flatten(self) -> Self {
         self.explode(ExplodeOptions {
-            skip_empty: false,
-            skip_nulls: false,
+            empty_as_null: true,
+            keep_nulls: true,
         })
     }
 
