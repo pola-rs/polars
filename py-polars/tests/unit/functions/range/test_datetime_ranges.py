@@ -411,6 +411,878 @@ def test_datetime_ranges_start_end_interval_forwards(
     assert_frame_equal(result, s_expected.to_frame())
 
 
+@pytest.mark.parametrize(
+    ("closed", "expected"),
+    [
+        (
+            "both",
+            [
+                [
+                    datetime(2025, 1, 10),
+                    datetime(2025, 1, 8, 12),
+                    datetime(2025, 1, 7),
+                    datetime(2025, 1, 5, 12),
+                    datetime(2025, 1, 4),
+                    datetime(2025, 1, 2, 12),
+                    datetime(2025, 1, 1),
+                ],
+                [
+                    datetime(2025, 1, 17),
+                    datetime(2025, 1, 15, 12),
+                    datetime(2025, 1, 14),
+                    datetime(2025, 1, 12, 12),
+                    datetime(2025, 1, 11),
+                    datetime(2025, 1, 9, 12),
+                    datetime(2025, 1, 8),
+                ],
+            ],
+        ),
+        (
+            "left",
+            [
+                [
+                    datetime(2025, 1, 10),
+                    datetime(2025, 1, 8, 12),
+                    datetime(2025, 1, 7),
+                    datetime(2025, 1, 5, 12),
+                    datetime(2025, 1, 4),
+                    datetime(2025, 1, 2, 12),
+                ],
+                [
+                    datetime(2025, 1, 17),
+                    datetime(2025, 1, 15, 12),
+                    datetime(2025, 1, 14),
+                    datetime(2025, 1, 12, 12),
+                    datetime(2025, 1, 11),
+                    datetime(2025, 1, 9, 12),
+                ],
+            ],
+        ),
+        (
+            "right",
+            [
+                [
+                    datetime(2025, 1, 8, 12),
+                    datetime(2025, 1, 7),
+                    datetime(2025, 1, 5, 12),
+                    datetime(2025, 1, 4),
+                    datetime(2025, 1, 2, 12),
+                    datetime(2025, 1, 1),
+                ],
+                [
+                    datetime(2025, 1, 15, 12),
+                    datetime(2025, 1, 14),
+                    datetime(2025, 1, 12, 12),
+                    datetime(2025, 1, 11),
+                    datetime(2025, 1, 9, 12),
+                    datetime(2025, 1, 8),
+                ],
+            ],
+        ),
+        (
+            "none",
+            [
+                [
+                    datetime(2025, 1, 8, 12),
+                    datetime(2025, 1, 7),
+                    datetime(2025, 1, 5, 12),
+                    datetime(2025, 1, 4),
+                    datetime(2025, 1, 2, 12),
+                ],
+                [
+                    datetime(2025, 1, 15, 12),
+                    datetime(2025, 1, 14),
+                    datetime(2025, 1, 12, 12),
+                    datetime(2025, 1, 11),
+                    datetime(2025, 1, 9, 12),
+                ],
+            ],
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Date,
+        pl.Datetime("ms"),
+        pl.Datetime("us"),
+        pl.Datetime("ns"),
+        pl.Datetime("ms", time_zone="Asia/Kathmandu"),
+        pl.Datetime("us", time_zone="Asia/Kathmandu"),
+        pl.Datetime("ns", time_zone="Asia/Kathmandu"),
+    ],
+)
+def test_datetime_ranges_start_end_interval_backwards(
+    closed: ClosedInterval,
+    expected: list[list[datetime]],
+    dtype: PolarsDataType,
+) -> None:
+    tu = dtype.time_unit if dtype == pl.Datetime else None  # type: ignore[union-attr]
+    tz = dtype.time_zone if dtype == pl.Datetime else None  # type: ignore[union-attr]
+    if tz is not None:
+        time_zone = ZoneInfo(tz)
+        expected = [[e.replace(tzinfo=time_zone) for e in x] for x in expected]
+    df = pl.DataFrame(
+        {
+            "start": [date(2025, 1, 10), date(2025, 1, 17)],
+            "end": [date(2025, 1, 1), date(2025, 1, 8)],
+        }
+    )
+    result = df.select(
+        dates=pl.datetime_ranges(
+            start="start",
+            end="end",
+            interval="-1d12h",
+            closed=closed,
+            time_unit=tu,
+            time_zone=tz,
+        )
+    )
+    dt_out = pl.List(pl.Datetime("us")) if dtype == pl.Date else pl.List(dtype)
+    s_expected = pl.Series("dates", expected, dtype=dt_out)
+    assert_frame_equal(result, s_expected.to_frame())
+
+
+@pytest.mark.parametrize(
+    ("closed", "expected"),
+    [
+        (
+            "both",
+            [
+                [  # (1, 10, 5)
+                    datetime(2025, 1, 1),
+                    datetime(2025, 1, 3, 6),
+                    datetime(2025, 1, 5, 12),
+                    datetime(2025, 1, 7, 18),
+                    datetime(2025, 1, 10),
+                ],
+                [  # (10, 11, 6)
+                    datetime(2025, 1, 10),
+                    datetime(2025, 1, 10, 4, 48),
+                    datetime(2025, 1, 10, 9, 36),
+                    datetime(2025, 1, 10, 14, 24),
+                    datetime(2025, 1, 10, 19, 12),
+                    datetime(2025, 1, 11),
+                ],
+            ],
+        ),
+        (
+            "left",
+            [
+                [  # (1, 10, 5)
+                    datetime(2025, 1, 1),
+                    datetime(2025, 1, 2, 19, 12),
+                    datetime(2025, 1, 4, 14, 24),
+                    datetime(2025, 1, 6, 9, 36),
+                    datetime(2025, 1, 8, 4, 48),
+                ],
+                [  # (10, 11, 6)
+                    datetime(2025, 1, 10),
+                    datetime(2025, 1, 10, 4),
+                    datetime(2025, 1, 10, 8),
+                    datetime(2025, 1, 10, 12),
+                    datetime(2025, 1, 10, 16),
+                    datetime(2025, 1, 10, 20),
+                ],
+            ],
+        ),
+        (
+            "right",
+            [
+                [  # (1, 10, 5)
+                    datetime(2025, 1, 2, 19, 12),
+                    datetime(2025, 1, 4, 14, 24),
+                    datetime(2025, 1, 6, 9, 36),
+                    datetime(2025, 1, 8, 4, 48),
+                    datetime(2025, 1, 10),
+                ],
+                [  # (10, 11, 6)
+                    datetime(2025, 1, 10, 4),
+                    datetime(2025, 1, 10, 8),
+                    datetime(2025, 1, 10, 12),
+                    datetime(2025, 1, 10, 16),
+                    datetime(2025, 1, 10, 20),
+                    datetime(2025, 1, 11),
+                ],
+            ],
+        ),
+        (
+            "none",
+            [
+                [  # (1, 10, 5)
+                    datetime(2025, 1, 2, 12),
+                    datetime(2025, 1, 4),
+                    datetime(2025, 1, 5, 12),
+                    datetime(2025, 1, 7),
+                    datetime(2025, 1, 8, 12),
+                ],
+                [  # (10, 11, 6)
+                    datetime(2025, 1, 10, 3, 25, 42, 857142),
+                    datetime(2025, 1, 10, 6, 51, 25, 714285),
+                    datetime(2025, 1, 10, 10, 17, 8, 571428),
+                    datetime(2025, 1, 10, 13, 42, 51, 428571),
+                    datetime(2025, 1, 10, 17, 8, 34, 285714),
+                    datetime(2025, 1, 10, 20, 34, 17, 142857),
+                ],
+            ],
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        # we disable ns for this test, as it's hard to provide the expected value
+        pl.Date,
+        pl.Datetime("ms"),
+        pl.Datetime("us"),
+        # pl.Datetime("ns"),
+        pl.Datetime("ms", time_zone="Asia/Kathmandu"),
+        pl.Datetime("us", time_zone="Asia/Kathmandu"),
+        # pl.Datetime("ns", time_zone="Asia/Kathmandu"),
+    ],
+)
+def test_date_ranges_start_end_samples_forwards(
+    closed: ClosedInterval,
+    expected: list[list[datetime]],
+    dtype: PolarsDataType,
+) -> None:
+    tu = dtype.time_unit if dtype == pl.Datetime else None  # type: ignore[union-attr]
+    tz = dtype.time_zone if dtype == pl.Datetime else None  # type: ignore[union-attr]
+    if tz is not None:
+        time_zone = ZoneInfo(tz)
+        expected = [[e.replace(tzinfo=time_zone) for e in x] for x in expected]
+    df = pl.DataFrame(
+        {
+            "start": [date(2025, 1, 1), date(2025, 1, 10)],
+            "end": [date(2025, 1, 10), date(2025, 1, 11)],
+            "samples": [5, 6],
+        }
+    )
+    result = df.select(
+        dates=pl.datetime_ranges(
+            start="start",
+            end="end",
+            num_samples="samples",
+            closed=closed,
+            time_unit=tu,
+            time_zone=tz,
+        )
+    )
+    dt_out = pl.List(pl.Datetime("us")) if dtype == pl.Date else pl.List(dtype)
+    s_expected = pl.Series("dates", expected, dtype=dt_out)
+    assert_frame_equal(result, s_expected.to_frame())
+
+
+@pytest.mark.parametrize(
+    ("closed", "expected"),
+    [
+        (
+            "both",
+            [
+                [  # (1, 10, 5)
+                    datetime(2025, 1, 10),
+                    datetime(2025, 1, 7, 18),
+                    datetime(2025, 1, 5, 12),
+                    datetime(2025, 1, 3, 6),
+                    datetime(2025, 1, 1),
+                ],
+                [  # (10, 11, 6)
+                    datetime(2025, 1, 11),
+                    datetime(2025, 1, 10, 19, 12),
+                    datetime(2025, 1, 10, 14, 24),
+                    datetime(2025, 1, 10, 9, 36),
+                    datetime(2025, 1, 10, 4, 48),
+                    datetime(2025, 1, 10),
+                ],
+            ],
+        ),
+        (
+            "left",
+            [
+                [  # (1, 10, 5)
+                    datetime(2025, 1, 10),
+                    datetime(2025, 1, 8, 4, 48),
+                    datetime(2025, 1, 6, 9, 36),
+                    datetime(2025, 1, 4, 14, 24),
+                    datetime(2025, 1, 2, 19, 12),
+                ],
+                [  # (10, 11, 6)
+                    datetime(2025, 1, 11),
+                    datetime(2025, 1, 10, 20),
+                    datetime(2025, 1, 10, 16),
+                    datetime(2025, 1, 10, 12),
+                    datetime(2025, 1, 10, 8),
+                    datetime(2025, 1, 10, 4),
+                ],
+            ],
+        ),
+        (
+            "right",
+            [
+                [  # (1, 10, 5)
+                    datetime(2025, 1, 8, 4, 48),
+                    datetime(2025, 1, 6, 9, 36),
+                    datetime(2025, 1, 4, 14, 24),
+                    datetime(2025, 1, 2, 19, 12),
+                    datetime(2025, 1, 1),
+                ],
+                [  # (10, 11, 6)
+                    datetime(2025, 1, 10, 20),
+                    datetime(2025, 1, 10, 16),
+                    datetime(2025, 1, 10, 12),
+                    datetime(2025, 1, 10, 8),
+                    datetime(2025, 1, 10, 4),
+                    datetime(2025, 1, 10),
+                ],
+            ],
+        ),
+        (
+            "none",
+            [
+                [  # (1, 10, 5)
+                    datetime(2025, 1, 8, 12),
+                    datetime(2025, 1, 7),
+                    datetime(2025, 1, 5, 12),
+                    datetime(2025, 1, 4),
+                    datetime(2025, 1, 2, 12),
+                ],
+                [  # (10, 11, 6)
+                    datetime(2025, 1, 10, 20, 34, 17, 142857),
+                    datetime(2025, 1, 10, 17, 8, 34, 285714),
+                    datetime(2025, 1, 10, 13, 42, 51, 428571),
+                    datetime(2025, 1, 10, 10, 17, 8, 571428),
+                    datetime(2025, 1, 10, 6, 51, 25, 714285),
+                    datetime(2025, 1, 10, 3, 25, 42, 857143),
+                ],
+            ],
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        # we disable ns for this test, as it's hard to provide the expected value
+        pl.Date,
+        pl.Datetime("ms"),
+        pl.Datetime("us"),
+        # pl.Datetime("ns"),
+        pl.Datetime("ms", time_zone="Asia/Kathmandu"),
+        pl.Datetime("us", time_zone="Asia/Kathmandu"),
+        # pl.Datetime("ns", time_zone="Asia/Kathmandu"),
+    ],
+)
+def test_date_ranges_start_end_samples_backwards(
+    closed: ClosedInterval,
+    expected: list[list[datetime]],
+    dtype: PolarsDataType,
+) -> None:
+    tu = dtype.time_unit if dtype == pl.Datetime else None  # type: ignore[union-attr]
+    tz = dtype.time_zone if dtype == pl.Datetime else None  # type: ignore[union-attr]
+    if tz is not None:
+        time_zone = ZoneInfo(tz)
+        expected = [[e.replace(tzinfo=time_zone) for e in x] for x in expected]
+    df = pl.DataFrame(
+        {
+            "start": [date(2025, 1, 10), date(2025, 1, 11)],
+            "end": [date(2025, 1, 1), date(2025, 1, 10)],
+            "samples": [5, 6],
+        }
+    )
+    result = df.select(
+        dates=pl.datetime_ranges(
+            start="start",
+            end="end",
+            num_samples="samples",
+            closed=closed,
+            time_unit=tu,
+            time_zone=tz,
+        )
+    )
+    dt_out = pl.List(pl.Datetime("us")) if dtype == pl.Date else pl.List(dtype)
+    s_expected = pl.Series("dates", expected, dtype=dt_out)
+    assert_frame_equal(result, s_expected.to_frame())
+
+
+@pytest.mark.parametrize(
+    ("closed", "expected"),
+    [
+        (
+            "both",
+            [
+                [
+                    datetime(2025, 1, 1),
+                    datetime(2025, 1, 2, 12),
+                    datetime(2025, 1, 4),
+                    datetime(2025, 1, 5, 12),
+                ],
+                [
+                    datetime(2025, 1, 11),
+                    datetime(2025, 1, 12, 12),
+                    datetime(2025, 1, 14),
+                    datetime(2025, 1, 15, 12),
+                    datetime(2025, 1, 17),
+                ],
+            ],
+        ),
+        (
+            "left",
+            [
+                [
+                    datetime(2025, 1, 1),
+                    datetime(2025, 1, 2, 12),
+                    datetime(2025, 1, 4),
+                    datetime(2025, 1, 5, 12),
+                ],
+                [
+                    datetime(2025, 1, 11),
+                    datetime(2025, 1, 12, 12),
+                    datetime(2025, 1, 14),
+                    datetime(2025, 1, 15, 12),
+                    datetime(2025, 1, 17),
+                ],
+            ],
+        ),
+        (
+            "right",
+            [
+                [
+                    datetime(2025, 1, 2, 12),
+                    datetime(2025, 1, 4),
+                    datetime(2025, 1, 5, 12),
+                    datetime(2025, 1, 7),
+                ],
+                [
+                    datetime(2025, 1, 12, 12),
+                    datetime(2025, 1, 14),
+                    datetime(2025, 1, 15, 12),
+                    datetime(2025, 1, 17),
+                    datetime(2025, 1, 18, 12),
+                ],
+            ],
+        ),
+        (
+            "none",
+            [
+                [
+                    datetime(2025, 1, 2, 12),
+                    datetime(2025, 1, 4),
+                    datetime(2025, 1, 5, 12),
+                    datetime(2025, 1, 7),
+                ],
+                [
+                    datetime(2025, 1, 12, 12),
+                    datetime(2025, 1, 14),
+                    datetime(2025, 1, 15, 12),
+                    datetime(2025, 1, 17),
+                    datetime(2025, 1, 18, 12),
+                ],
+            ],
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Date,
+        pl.Datetime("ms"),
+        pl.Datetime("us"),
+        pl.Datetime("ns"),
+        pl.Datetime("ms", time_zone="Asia/Kathmandu"),
+        pl.Datetime("us", time_zone="Asia/Kathmandu"),
+        pl.Datetime("ns", time_zone="Asia/Kathmandu"),
+    ],
+)
+def test_datetime_ranges_start_interval_samples_forwards(
+    closed: ClosedInterval,
+    expected: list[list[datetime]],
+    dtype: PolarsDataType,
+) -> None:
+    tu = dtype.time_unit if dtype == pl.Datetime else None  # type: ignore[union-attr]
+    tz = dtype.time_zone if dtype == pl.Datetime else None  # type: ignore[union-attr]
+    if tz is not None:
+        time_zone = ZoneInfo(tz)
+        expected = [[e.replace(tzinfo=time_zone) for e in x] for x in expected]
+    df = pl.DataFrame(
+        {
+            "start": [date(2025, 1, 1), date(2025, 1, 11)],
+            "samples": [4, 5],
+        }
+    )
+    result = df.select(
+        dates=pl.datetime_ranges(
+            start="start",
+            num_samples="samples",
+            interval="1d12h",
+            closed=closed,
+            time_unit=tu,
+            time_zone=tz,
+        )
+    )
+    dt_out = pl.List(pl.Datetime("us")) if dtype == pl.Date else pl.List(dtype)
+    s_expected = pl.Series("dates", expected, dtype=dt_out)
+    assert_frame_equal(result, s_expected.to_frame())
+
+
+@pytest.mark.parametrize(
+    ("closed", "expected"),
+    [
+        (
+            "both",
+            [
+                [
+                    datetime(2025, 1, 1),
+                    datetime(2024, 12, 30, 12),
+                    datetime(2024, 12, 29),
+                    datetime(2024, 12, 27, 12),
+                ],
+                [
+                    datetime(2025, 1, 11),
+                    datetime(2025, 1, 9, 12),
+                    datetime(2025, 1, 8),
+                    datetime(2025, 1, 6, 12),
+                    datetime(2025, 1, 5),
+                ],
+            ],
+        ),
+        (
+            "left",
+            [
+                [
+                    datetime(2025, 1, 1),
+                    datetime(2024, 12, 30, 12),
+                    datetime(2024, 12, 29),
+                    datetime(2024, 12, 27, 12),
+                ],
+                [
+                    datetime(2025, 1, 11),
+                    datetime(2025, 1, 9, 12),
+                    datetime(2025, 1, 8),
+                    datetime(2025, 1, 6, 12),
+                    datetime(2025, 1, 5),
+                ],
+            ],
+        ),
+        (
+            "right",
+            [
+                [
+                    datetime(2024, 12, 30, 12),
+                    datetime(2024, 12, 29),
+                    datetime(2024, 12, 27, 12),
+                    datetime(2024, 12, 26),
+                ],
+                [
+                    datetime(2025, 1, 9, 12),
+                    datetime(2025, 1, 8),
+                    datetime(2025, 1, 6, 12),
+                    datetime(2025, 1, 5),
+                    datetime(2025, 1, 3, 12),
+                ],
+            ],
+        ),
+        (
+            "none",
+            [
+                [
+                    datetime(2024, 12, 30, 12),
+                    datetime(2024, 12, 29),
+                    datetime(2024, 12, 27, 12),
+                    datetime(2024, 12, 26),
+                ],
+                [
+                    datetime(2025, 1, 9, 12),
+                    datetime(2025, 1, 8),
+                    datetime(2025, 1, 6, 12),
+                    datetime(2025, 1, 5),
+                    datetime(2025, 1, 3, 12),
+                ],
+            ],
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Date,
+        pl.Datetime("ms"),
+        pl.Datetime("us"),
+        pl.Datetime("ns"),
+        pl.Datetime("ms", time_zone="Asia/Kathmandu"),
+        pl.Datetime("us", time_zone="Asia/Kathmandu"),
+        pl.Datetime("ns", time_zone="Asia/Kathmandu"),
+    ],
+)
+def test_datetime_ranges_start_interval_samples_backwards(
+    closed: ClosedInterval,
+    expected: list[list[datetime]],
+    dtype: PolarsDataType,
+) -> None:
+    tu = dtype.time_unit if dtype == pl.Datetime else None  # type: ignore[union-attr]
+    tz = dtype.time_zone if dtype == pl.Datetime else None  # type: ignore[union-attr]
+    if tz is not None:
+        time_zone = ZoneInfo(tz)
+        expected = [[e.replace(tzinfo=time_zone) for e in x] for x in expected]
+    df = pl.DataFrame(
+        {
+            "start": [date(2025, 1, 1), date(2025, 1, 11)],
+            "samples": [4, 5],
+        }
+    )
+    result = df.select(
+        dates=pl.datetime_ranges(
+            start="start",
+            num_samples="samples",
+            interval="-1d12h",
+            closed=closed,
+            time_unit=tu,
+            time_zone=tz,
+        )
+    )
+    dt_out = pl.List(pl.Datetime("us")) if dtype == pl.Date else pl.List(dtype)
+    s_expected = pl.Series("dates", expected, dtype=dt_out)
+    assert_frame_equal(result, s_expected.to_frame())
+
+
+@pytest.mark.parametrize(
+    ("closed", "expected"),
+    [
+        (
+            "both",
+            [
+                [
+                    datetime(2024, 12, 27, 12),
+                    datetime(2024, 12, 29),
+                    datetime(2024, 12, 30, 12),
+                    datetime(2025, 1, 1),
+                ],
+                [
+                    datetime(2025, 1, 5),
+                    datetime(2025, 1, 6, 12),
+                    datetime(2025, 1, 8),
+                    datetime(2025, 1, 9, 12),
+                    datetime(2025, 1, 11),
+                ],
+            ],
+        ),
+        (
+            "left",
+            [
+                [
+                    datetime(2024, 12, 26),
+                    datetime(2024, 12, 27, 12),
+                    datetime(2024, 12, 29),
+                    datetime(2024, 12, 30, 12),
+                ],
+                [
+                    datetime(2025, 1, 3, 12),
+                    datetime(2025, 1, 5),
+                    datetime(2025, 1, 6, 12),
+                    datetime(2025, 1, 8),
+                    datetime(2025, 1, 9, 12),
+                ],
+            ],
+        ),
+        (
+            "right",
+            [
+                [
+                    datetime(2024, 12, 27, 12),
+                    datetime(2024, 12, 29),
+                    datetime(2024, 12, 30, 12),
+                    datetime(2025, 1, 1),
+                ],
+                [
+                    datetime(2025, 1, 5),
+                    datetime(2025, 1, 6, 12),
+                    datetime(2025, 1, 8),
+                    datetime(2025, 1, 9, 12),
+                    datetime(2025, 1, 11),
+                ],
+            ],
+        ),
+        (
+            "none",
+            [
+                [
+                    datetime(2024, 12, 26),
+                    datetime(2024, 12, 27, 12),
+                    datetime(2024, 12, 29),
+                    datetime(2024, 12, 30, 12),
+                ],
+                [
+                    datetime(2025, 1, 3, 12),
+                    datetime(2025, 1, 5),
+                    datetime(2025, 1, 6, 12),
+                    datetime(2025, 1, 8),
+                    datetime(2025, 1, 9, 12),
+                ],
+            ],
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Date,
+        pl.Datetime("ms"),
+        pl.Datetime("us"),
+        pl.Datetime("ns"),
+        pl.Datetime("ms", time_zone="Asia/Kathmandu"),
+        pl.Datetime("us", time_zone="Asia/Kathmandu"),
+        pl.Datetime("ns", time_zone="Asia/Kathmandu"),
+    ],
+)
+def test_datetime_ranges_end_interval_samples_forwards(
+    closed: ClosedInterval,
+    expected: list[list[datetime]],
+    dtype: PolarsDataType,
+) -> None:
+    tu = dtype.time_unit if dtype == pl.Datetime else None  # type: ignore[union-attr]
+    tz = dtype.time_zone if dtype == pl.Datetime else None  # type: ignore[union-attr]
+    if tz is not None:
+        time_zone = ZoneInfo(tz)
+        expected = [[e.replace(tzinfo=time_zone) for e in x] for x in expected]
+    df = pl.DataFrame(
+        {
+            "end": [date(2025, 1, 1), date(2025, 1, 11)],
+            "samples": [4, 5],
+        }
+    )
+    result = df.select(
+        dates=pl.datetime_ranges(
+            end="end",
+            num_samples="samples",
+            interval="1d12h",
+            closed=closed,
+            time_unit=tu,
+            time_zone=tz,
+        )
+    )
+    dt_out = pl.List(pl.Datetime("us")) if dtype == pl.Date else pl.List(dtype)
+    s_expected = pl.Series("dates", expected, dtype=dt_out)
+    assert_frame_equal(result, s_expected.to_frame())
+
+
+@pytest.mark.parametrize(
+    ("closed", "expected"),
+    [
+        (
+            "both",
+            [
+                [
+                    datetime(2025, 1, 5, 12),
+                    datetime(2025, 1, 4),
+                    datetime(2025, 1, 2, 12),
+                    datetime(2025, 1, 1),
+                ],
+                [
+                    datetime(2025, 1, 17),
+                    datetime(2025, 1, 15, 12),
+                    datetime(2025, 1, 14),
+                    datetime(2025, 1, 12, 12),
+                    datetime(2025, 1, 11),
+                ],
+            ],
+        ),
+        (
+            "left",
+            [
+                [
+                    datetime(2025, 1, 7),
+                    datetime(2025, 1, 5, 12),
+                    datetime(2025, 1, 4),
+                    datetime(2025, 1, 2, 12),
+                ],
+                [
+                    datetime(2025, 1, 18, 12),
+                    datetime(2025, 1, 17),
+                    datetime(2025, 1, 15, 12),
+                    datetime(2025, 1, 14),
+                    datetime(2025, 1, 12, 12),
+                ],
+            ],
+        ),
+        (
+            "right",
+            [
+                [
+                    datetime(2025, 1, 5, 12),
+                    datetime(2025, 1, 4),
+                    datetime(2025, 1, 2, 12),
+                    datetime(2025, 1, 1),
+                ],
+                [
+                    datetime(2025, 1, 17),
+                    datetime(2025, 1, 15, 12),
+                    datetime(2025, 1, 14),
+                    datetime(2025, 1, 12, 12),
+                    datetime(2025, 1, 11),
+                ],
+            ],
+        ),
+        (
+            "none",
+            [
+                [
+                    datetime(2025, 1, 7),
+                    datetime(2025, 1, 5, 12),
+                    datetime(2025, 1, 4),
+                    datetime(2025, 1, 2, 12),
+                ],
+                [
+                    datetime(2025, 1, 18, 12),
+                    datetime(2025, 1, 17),
+                    datetime(2025, 1, 15, 12),
+                    datetime(2025, 1, 14),
+                    datetime(2025, 1, 12, 12),
+                ],
+            ],
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Date,
+        pl.Datetime("ms"),
+        pl.Datetime("us"),
+        pl.Datetime("ns"),
+        pl.Datetime("ms", time_zone="Asia/Kathmandu"),
+        pl.Datetime("us", time_zone="Asia/Kathmandu"),
+        pl.Datetime("ns", time_zone="Asia/Kathmandu"),
+    ],
+)
+def test_datetime_ranges_end_interval_samples_backwards(
+    closed: ClosedInterval,
+    expected: list[list[datetime]],
+    dtype: PolarsDataType,
+) -> None:
+    tu = dtype.time_unit if dtype == pl.Datetime else None  # type: ignore[union-attr]
+    tz = dtype.time_zone if dtype == pl.Datetime else None  # type: ignore[union-attr]
+    if tz is not None:
+        time_zone = ZoneInfo(tz)
+        expected = [[e.replace(tzinfo=time_zone) for e in x] for x in expected]
+    df = pl.DataFrame(
+        {
+            "end": [date(2025, 1, 1), date(2025, 1, 11)],
+            "samples": [4, 5],
+        }
+    )
+    result = df.select(
+        dates=pl.datetime_ranges(
+            end="end",
+            num_samples="samples",
+            interval="-1d12h",
+            closed=closed,
+            time_unit=tu,
+            time_zone=tz,
+        )
+    )
+    dt_out = pl.List(pl.Datetime("us")) if dtype == pl.Date else pl.List(dtype)
+    s_expected = pl.Series("dates", expected, dtype=dt_out)
+    assert_frame_equal(result, s_expected.to_frame())
+
+
 def test_datetime_ranges_lit_combinations_start_end_interval() -> None:
     df = pl.DataFrame(
         {
@@ -448,4 +1320,179 @@ def test_datetime_ranges_null_lit_combinations_start_end_interval() -> None:
     )
     s = pl.Series([None, None], dtype=pl.List(pl.Datetime("us")))
     expected = pl.DataFrame({"start_lit": s, "end_lit": s, "all_lit": s})
+    assert_frame_equal(result, expected)
+
+
+def test_datetime_ranges_lit_combinations_start_end_samples() -> None:
+    df = pl.DataFrame(
+        {
+            "start": [date(2025, 1, 1), date(2025, 1, 1)],
+            "end": [date(2025, 1, 3), date(2025, 1, 3)],
+            "samples": [3, 3],
+        }
+    )
+    start = date(2025, 1, 1)
+    end = date(2025, 1, 3)
+    result = df.select(
+        start_lit=pl.datetime_ranges(start=start, end="end", num_samples="samples"),
+        end_lit=pl.datetime_ranges(start="start", end=end, num_samples="samples"),
+        samples_lit=pl.datetime_ranges(start="start", end="end", num_samples=3),
+        start_end_lit=pl.datetime_ranges(start=start, end=end, num_samples="samples"),
+        start_samples_lit=pl.datetime_ranges(start=start, end="end", num_samples=3),
+        end_samples_lit=pl.datetime_ranges(start="start", end=end, num_samples=3),
+        all_lit=pl.datetime_ranges(start=start, end=end, num_samples=3),
+    )
+    dt = [datetime(2025, 1, 1), datetime(2025, 1, 2), datetime(2025, 1, 3)]
+    s = pl.Series([dt, dt], dtype=pl.List(pl.Datetime("us")))
+    expected = pl.DataFrame(
+        {
+            "start_lit": s,
+            "end_lit": s,
+            "samples_lit": s,
+            "start_end_lit": s,
+            "start_samples_lit": s,
+            "end_samples_lit": s,
+            "all_lit": s,
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_datetime_ranges_null_lit_combinations_start_end_samples() -> None:
+    df = pl.DataFrame(
+        {
+            "start": [date(2025, 1, 1), date(2025, 1, 1)],
+            "end": [date(2025, 1, 3), date(2025, 1, 3)],
+            "samples": [3, 3],
+        }
+    )
+    lit_dt = pl.lit(None, dtype=pl.Date)
+    lit_n = pl.lit(None, dtype=pl.Int64)
+    result = df.select(
+        start_lit=pl.datetime_ranges(start=lit_dt, end="end", num_samples="samples"),
+        end_lit=pl.datetime_ranges(start="start", end=lit_dt, num_samples="samples"),
+        samples_lit=pl.datetime_ranges(start="start", end="end", num_samples=lit_n),
+        start_end_lit=pl.datetime_ranges(
+            start=lit_dt, end=lit_dt, num_samples="samples"
+        ),
+        start_samples_lit=pl.datetime_ranges(
+            start=lit_dt, end="end", num_samples=lit_n
+        ),
+        end_samples_lit=pl.datetime_ranges(
+            start="start", end=lit_dt, num_samples=lit_n
+        ),
+        all_lit=pl.datetime_ranges(start=lit_dt, end=lit_dt, num_samples=lit_n),
+    )
+    s = pl.Series([None, None], dtype=pl.List(pl.Datetime("us")))
+    expected = pl.DataFrame(
+        {
+            "start_lit": s,
+            "end_lit": s,
+            "samples_lit": s,
+            "start_end_lit": s,
+            "start_samples_lit": s,
+            "end_samples_lit": s,
+            "all_lit": s,
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_datetime_ranges_lit_combinations_start_interval_samples() -> None:
+    df = pl.DataFrame(
+        {
+            "start": [date(2025, 1, 1), date(2025, 1, 1)],
+            "samples": [3, 3],
+        }
+    )
+    result = df.select(
+        start_lit=pl.datetime_ranges(
+            start=date(2025, 1, 1), interval="1d", num_samples="samples"
+        ),
+        samples_lit=pl.datetime_ranges(start="start", interval="1d", num_samples=3),
+    )
+    dt = [datetime(2025, 1, 1), datetime(2025, 1, 2), datetime(2025, 1, 3)]
+    s = pl.Series([dt, dt], dtype=pl.List(pl.Datetime("us")))
+    expected = pl.DataFrame(
+        {
+            "start_lit": s,
+            "samples_lit": s,
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_datetime_ranges_null_lit_combinations_start_interval_samples() -> None:
+    df = pl.DataFrame(
+        {
+            "start": [date(2025, 1, 1), date(2025, 1, 1)],
+            "samples": [3, 3],
+        }
+    )
+    lit_dt = pl.lit(None, dtype=pl.Date)
+    lit_n = pl.lit(None, dtype=pl.Int64)
+    result = df.select(
+        start_lit=pl.datetime_ranges(
+            start=lit_dt, interval="1d", num_samples="samples"
+        ),
+        samples_lit=pl.datetime_ranges(start="start", interval="1d", num_samples=lit_n),
+        all_lit=pl.datetime_ranges(start=lit_dt, interval="1d", num_samples=lit_n),
+    )
+    s = pl.Series([None, None], dtype=pl.List(pl.Datetime("us")))
+    expected = pl.DataFrame(
+        {
+            "start_lit": s,
+            "samples_lit": s,
+            "all_lit": s,
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_datetime_ranges_lit_combinations_end_interval_samples() -> None:
+    df = pl.DataFrame(
+        {
+            "end": [date(2025, 1, 3), date(2025, 1, 3)],
+            "samples": [3, 3],
+        }
+    )
+    result = df.select(
+        end_lit=pl.datetime_ranges(
+            end=date(2025, 1, 3), num_samples="samples", interval="1d"
+        ),
+        samples_lit=pl.datetime_ranges(end="end", num_samples=3, interval="1d"),
+    )
+    dt = [datetime(2025, 1, 1), datetime(2025, 1, 2), datetime(2025, 1, 3)]
+    s = pl.Series([dt, dt], dtype=pl.List(pl.Datetime("us")))
+    expected = pl.DataFrame(
+        {
+            "end_lit": s,
+            "samples_lit": s,
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_datetime_ranges_null_lit_combinations_end_interval_samples() -> None:
+    df = pl.DataFrame(
+        {
+            "end": [date(2025, 1, 3), date(2025, 1, 3)],
+            "samples": [3, 3],
+        }
+    )
+    lit_dt = pl.lit(None, dtype=pl.Date)
+    lit_n = pl.lit(None, dtype=pl.Int64)
+    result = df.select(
+        end_lit=pl.datetime_ranges(end=lit_dt, num_samples="samples", interval="1d"),
+        samples_lit=pl.datetime_ranges(end="end", num_samples=lit_n, interval="1d"),
+        all_lit=pl.datetime_ranges(end=lit_dt, num_samples=lit_n, interval="1d"),
+    )
+    s = pl.Series([None, None], dtype=pl.List(pl.Datetime("us")))
+    expected = pl.DataFrame(
+        {
+            "end_lit": s,
+            "samples_lit": s,
+            "all_lit": s,
+        }
+    )
     assert_frame_equal(result, expected)

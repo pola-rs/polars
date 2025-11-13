@@ -15,7 +15,7 @@ fn test_date_range() {
         .unwrap()
         .and_hms_opt(0, 0, 0)
         .unwrap();
-    let dates = datetime_range_i64(
+    let dates = datetime_range_i64_start_end_interval(
         start.and_utc().timestamp_nanos_opt().unwrap(),
         end.and_utc().timestamp_nanos_opt().unwrap(),
         Duration::parse("1mo"),
@@ -52,7 +52,7 @@ fn test_feb_date_range() {
         .unwrap()
         .and_hms_opt(0, 0, 0)
         .unwrap();
-    let dates = datetime_range_i64(
+    let dates = datetime_range_i64_start_end_interval(
         start.and_utc().timestamp_nanos_opt().unwrap(),
         end.and_utc().timestamp_nanos_opt().unwrap(),
         Duration::parse("1mo"),
@@ -194,7 +194,7 @@ fn test_boundaries() {
         .and_hms_opt(3, 0, 0)
         .unwrap();
 
-    let ts = datetime_range_i64(
+    let ts = datetime_range_i64_start_end_interval(
         start.and_utc().timestamp_nanos_opt().unwrap(),
         stop.and_utc().timestamp_nanos_opt().unwrap(),
         Duration::parse("30m"),
@@ -383,7 +383,7 @@ fn test_boundaries_2() {
         .and_hms_opt(4, 0, 0)
         .unwrap();
 
-    let ts = datetime_range_i64(
+    let ts = datetime_range_i64_start_end_interval(
         start.and_utc().timestamp_nanos_opt().unwrap(),
         stop.and_utc().timestamp_nanos_opt().unwrap(),
         Duration::parse("30m"),
@@ -517,7 +517,7 @@ fn test_boundaries_ms() {
         .and_hms_opt(3, 0, 0)
         .unwrap();
 
-    let ts = datetime_range_i64(
+    let ts = datetime_range_i64_start_end_interval(
         start.and_utc().timestamp_millis(),
         stop.and_utc().timestamp_millis(),
         Duration::parse("30m"),
@@ -706,7 +706,7 @@ fn test_rolling_lookback() {
         .unwrap()
         .and_hms_opt(4, 0, 0)
         .unwrap();
-    let dates = datetime_range_i64(
+    let dates = datetime_range_i64_start_end_interval(
         start.and_utc().timestamp_millis(),
         end.and_utc().timestamp_millis(),
         Duration::parse("30m"),

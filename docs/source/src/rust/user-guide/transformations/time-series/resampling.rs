@@ -9,13 +9,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "time".into(),
         NaiveDate::from_ymd_opt(2021, 12, 16)
             .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap(),
+            .and_hms_opt(0, 0, 0),
         NaiveDate::from_ymd_opt(2021, 12, 16)
             .unwrap()
-            .and_hms_opt(3, 0, 0)
-            .unwrap(),
-        Duration::parse("30m"),
+            .and_hms_opt(3, 0, 0),
+        Some(Duration::parse("30m")),
+        None,
         ClosedWindow::Both,
         TimeUnit::Milliseconds,
         None,
