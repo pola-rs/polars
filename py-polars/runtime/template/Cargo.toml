@@ -1,18 +1,16 @@
 [package]
-name = "py-polars"
+name = "polars-runtime-{{%RT_SUFFIX%}}"
 # example: 1.35.0-beta.1
 version = "1.35.1"
 edition = "2021"
 
 [lib]
-name = "_polars_runtime_64"
+name = "_polars_runtime"
 crate-type = ["cdylib"]
 
 [dependencies]
 libc = { workspace = true }
-# Explicit dependency is needed to add bigidx in CI during release
-polars = { workspace = true }
-polars-python = { workspace = true, features = ["allocator", "c_api", "pymethods", "iejoin"] }
+polars-python = { workspace = true, features = ["allocator", "c_api", "pymethods", "iejoin", "rt{{%RT_SUFFIX%}}"] }
 pyo3 = { workspace = true, features = ["abi3-py39", "chrono", "extension-module", "multiple-pymethods"] }
 
 either = { workspace = true }

@@ -3571,6 +3571,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-runtime-32"
+version = "1.35.1"
+dependencies = [
+ "either",
+ "libc",
+ "polars-python",
+ "pyo3",
+ "rustflags",
+]
+
+[[package]]
+name = "polars-runtime-64"
+version = "1.35.1"
+dependencies = [
+ "either",
+ "libc",
+ "polars-python",
+ "pyo3",
+ "rustflags",
+]
+
+[[package]]
+name = "polars-runtime-compat"
+version = "1.35.1"
+dependencies = [
+ "either",
+ "libc",
+ "polars-python",
+ "pyo3",
+ "rustflags",
+]
+
+[[package]]
 name = "polars-schema"
 version = "0.52.0"
 dependencies = [
@@ -3814,18 +3847,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6e944464ec8536cd1beb0bbfd96987eb5e3b72f2ecdafdc5c769a37f1fa2ae1f"
 dependencies = [
  "cc",
-]
-
-[[package]]
-name = "py-polars"
-version = "1.35.1"
-dependencies = [
- "either",
- "libc",
- "polars",
- "polars-python",
- "pyo3",
- "rustflags",
 ]
 
 [[package]]

@@ -5,6 +5,20 @@ pub mod allocator;
 // package correctly without `py-polars`, we need to mirror the version here.
 // example: 1.35.0-beta.1
 pub static PYPOLARS_VERSION: &str = "1.35.1";
+
+// We allow multiple features to be set simultaneously so checking with all-features
+// is possible. In the case multiple are set or none at all, we set the repr to "unknown".
+#[cfg(all(feature = "rtcompat", not(any(feature = "rt32", feature = "rt64"))))]
+pub static RUNTIME_REPR: &str = "rtcompat";
+#[cfg(all(feature = "rt32", not(any(feature = "rt64", feature = "rtcompat"))))]
+pub static RUNTIME_REPR: &str = "rt32";
+#[cfg(all(feature = "rt64", not(any(feature = "rt32", feature = "rtcompat"))))]
+pub static RUNTIME_REPR: &str = "rt64";
+#[cfg(not(any(
+    all(feature = "rtcompat", not(any(feature = "rt32", feature = "rt64"))),
+    all(feature = "rt32", not(any(feature = "rt64", feature = "rtcompat"))),
+    all(feature = "rt64", not(any(feature = "rt32", feature = "rtcompat")))
+)))]
 pub static RUNTIME_REPR: &str = "unknown";
 
 use pyo3::prelude::*;
@@ -93,7 +107,7 @@ fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
 }
 
 #[pymodule]
-pub fn _polars_runtime_64(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
+pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     // Classes
     m.add_class::<PySeries>().unwrap();
     m.add_class::<PyDataFrame>().unwrap();

@@ -291,6 +291,10 @@ full = [
   "new_streaming",
 ]
 
+rt32 = []
+rt64 = ["polars/bigidx"]
+rtcompat = ["polars/bigidx"]
+
 # we cannot conditionally activate simd
 # https://github.com/rust-lang/cargo/issues/1197
 # so we have an indirection and compile
