@@ -12,7 +12,7 @@ use sqlparser::ast::{
     FunctionArg, GroupByExpr, Ident, JoinConstraint, JoinOperator, NamedWindowDefinition,
     NamedWindowExpr, ObjectName, ObjectType, Offset, OrderBy, Query, RenameSelectItem, Select,
     SelectItem, SetExpr, SetOperator, SetQuantifier, Statement, TableAlias, TableFactor,
-    TableWithJoins, UnaryOperator, Value as SQLValue, Values, Visit, Visitor,
+    TableWithJoins, UnaryOperator, Value as SQLValue, Values, Visit, Visitor as SQLVisitor,
     WildcardAdditionalOptions, WindowSpec,
 };
 use sqlparser::dialect::GenericDialect;
@@ -803,6 +803,7 @@ impl SQLContext {
             having: _,
             named_window: _,
             projection: _,
+            qualify: _,
             selection: _,
 
             // Metadata/token fields (can ignore)
@@ -817,7 +818,6 @@ impl SQLContext {
             ref into,
             ref lateral_views,
             ref prewhere,
-            ref qualify,
             ref sort_by,
             ref top,
             ref value_table_mode,
@@ -830,7 +830,6 @@ impl SQLContext {
         polars_ensure!(into.is_none(), SQLInterface: "`SELECT INTO`clause  is not supported");
         polars_ensure!(lateral_views.is_empty(), SQLInterface: "`LATERAL VIEW` clause is not supported");
         polars_ensure!(prewhere.is_none(), SQLInterface: "`PREWHERE` clause is not supported");
-        polars_ensure!(qualify.is_none(), SQLInterface: "`QUALIFY` clause is not supported");
         polars_ensure!(sort_by.is_empty(), SQLInterface: "SORT BY` clause is not supported; use `ORDER BY` instead");
         polars_ensure!(top.is_none(), SQLInterface: "`TOP` clause is not supported; use `LIMIT` instead");
         polars_ensure!(value_table_mode.is_none(), SQLInterface: "`SELECT AS VALUE/STRUCT` is not supported");
@@ -869,6 +868,25 @@ impl SQLContext {
             exclude: PlHashSet::new(),
             rename: PlHashMap::new(),
             replace: vec![],
+        };
+
+        // Collect window function cols if QUALIFY is present (we check at the
+        // SQL level because empty OVER() clauses don't create Expr::Over)
+        let window_fn_columns = if select_stmt.qualify.is_some() {
+            select_stmt
+                .projection
+                .iter()
+                .filter_map(|item| match item {
+                    SelectItem::ExprWithAlias { expr, alias }
+                        if expr_has_window_functions(expr) =>
+                    {
+                        Some(alias.value.clone())
+                    },
+                    _ => None,
+                })
+                .collect::<PlHashSet<_>>()
+        } else {
+            PlHashSet::new()
         };
 
         let mut projections =
@@ -1120,6 +1138,9 @@ impl SQLContext {
             lf.select(&output_cols)
         };
 
+        // Apply optional QUALIFY clause (filters on window functions).
+        lf = self.process_qualify(lf, &select_stmt.qualify, &window_fn_columns)?;
+
         // Apply optional DISTINCT clause.
         lf = match &select_stmt.distinct {
             Some(Distinct::Distinct) => lf.unique_stable(None, UniqueKeepStrategy::Any),
@@ -1274,6 +1295,34 @@ impl SQLContext {
             .finish();
 
         Ok(joined)
+    }
+
+    fn process_qualify(
+        &mut self,
+        mut lf: LazyFrame,
+        qualify_expr: &Option<SQLExpr>,
+        window_fn_columns: &PlHashSet<String>,
+    ) -> PolarsResult<LazyFrame> {
+        if let Some(expr) = qualify_expr {
+            // Check the QUALIFY expression to identify window functions
+            // and collect column refs (for looking up aliases from SELECT)
+            let (has_window_fns, column_refs) = QualifyExpression::analyze(expr);
+            let references_window_alias = column_refs.iter().any(|c| window_fn_columns.contains(c));
+            if !has_window_fns && !references_window_alias {
+                polars_bail!(
+                    SQLSyntax:
+                    "QUALIFY clause must reference window functions either explicitly or via SELECT aliases"
+                );
+            }
+            let schema = self.get_frame_schema(&mut lf)?;
+            let mut filter_expression = parse_sql_expr(expr, self, Some(&schema))?;
+            if filter_expression.clone().meta().has_multiple_outputs() {
+                filter_expression = all_horizontal([filter_expression])?;
+            }
+            lf = self.process_subqueries(lf, vec![&mut filter_expression]);
+            lf = lf.filter(filter_expression);
+        }
+        Ok(lf)
     }
 
     fn process_subqueries(&self, lf: LazyFrame, exprs: Vec<&mut Expr>) -> LazyFrame {
@@ -1976,7 +2025,7 @@ struct FindTableIdentifier<'a> {
     found: bool,
 }
 
-impl<'a> Visitor for FindTableIdentifier<'a> {
+impl<'a> SQLVisitor for FindTableIdentifier<'a> {
     type Break = ();
 
     fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<Self::Break> {
@@ -1988,6 +2037,66 @@ impl<'a> Visitor for FindTableIdentifier<'a> {
         }
         ControlFlow::Continue(())
     }
+}
+
+/// Visitor used to check a SQL expression used in a QUALIFY clause.
+/// (Confirms window functions are present and collects column refs in one pass).
+struct QualifyExpression {
+    has_window_functions: bool,
+    column_refs: PlHashSet<String>,
+}
+
+impl QualifyExpression {
+    fn new() -> Self {
+        Self {
+            has_window_functions: false,
+            column_refs: PlHashSet::new(),
+        }
+    }
+
+    fn analyze(expr: &SQLExpr) -> (bool, PlHashSet<String>) {
+        let mut analyzer = Self::new();
+        let _ = expr.visit(&mut analyzer);
+        (analyzer.has_window_functions, analyzer.column_refs)
+    }
+}
+
+impl SQLVisitor for QualifyExpression {
+    type Break = ();
+
+    fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<Self::Break> {
+        match expr {
+            SQLExpr::Function(func) if func.over.is_some() => {
+                self.has_window_functions = true;
+            },
+            SQLExpr::Identifier(ident) => {
+                self.column_refs.insert(ident.value.clone());
+            },
+            SQLExpr::CompoundIdentifier(idents) if !idents.is_empty() => {
+                self.column_refs
+                    .insert(idents.last().unwrap().value.clone());
+            },
+            _ => {},
+        }
+        ControlFlow::Continue(())
+    }
+}
+
+/// Check if a SQL expression contains explicit window functions.
+/// Uses early-exit for efficiency when only the boolean result is needed.
+fn expr_has_window_functions(expr: &SQLExpr) -> bool {
+    struct WindowFunctionFinder;
+    impl SQLVisitor for WindowFunctionFinder {
+        type Break = ();
+        fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+            if matches!(expr, SQLExpr::Function(f) if f.over.is_some()) {
+                ControlFlow::Break(())
+            } else {
+                ControlFlow::Continue(())
+            }
+        }
+    }
+    expr.visit(&mut WindowFunctionFinder).is_break()
 }
 
 /// Check if an expression is a simple column reference (with optional alias) to the given name.
@@ -2057,7 +2166,7 @@ fn expr_refers_to_table(expr: &SQLExpr, table_name: &str) -> bool {
 /// This needs to be handled carefully because in SQL joins you can write "join on" constraints
 /// either way round, and in joins with more than two tables you can also join against an earlier
 /// table (e.g.: you could be joining `df1` to `df2` to `df3`, but the final join condition where
-/// we join  `df2` to `df3` could refer to `df1.a = df3.b`; this takes a little more work to
+/// we join `df2` to `df3` could refer to `df1.a = df3.b`; this takes a little more work to
 /// resolve as our native `join` function operates on only two tables at a time.
 fn determine_left_right_join_on(
     ctx: &mut SQLContext,
