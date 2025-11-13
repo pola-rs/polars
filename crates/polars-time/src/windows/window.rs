@@ -45,8 +45,8 @@ pub struct Window {
     // The ith window start is expressed via this equation:
     //   window_start_i = zero + every * i
     //   window_stop_i = zero + every * i + period
-    every: Duration,
-    period: Duration,
+    pub(crate) every: Duration,
+    pub(crate) period: Duration,
     pub offset: Duration,
 }
 
