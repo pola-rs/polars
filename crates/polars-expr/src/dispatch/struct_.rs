@@ -19,7 +19,6 @@ pub fn function_expr_to_udf(func: IRStructFunction) -> SpecialEq<Arc<dyn Columns
         SuffixFields(suffix) => map!(suffix_fields, suffix.as_str()),
         #[cfg(feature = "json")]
         JsonEncode => map!(to_json),
-        WithFields => map_as_slice!(with_fields),
         MapFieldNames(function) => map!(map_field_names, &function),
     }
 }

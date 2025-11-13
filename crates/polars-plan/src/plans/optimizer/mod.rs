@@ -109,6 +109,8 @@ pub fn optimize(
         &mut Arena<AExpr>,
     ) -> PolarsResult<()>,
 ) -> PolarsResult<Node> {
+    dbg!("start optimize"); //kdn
+    dbg!(&opt_flags);
     #[allow(dead_code)]
     let verbose = verbose();
 
