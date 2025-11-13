@@ -17,6 +17,7 @@ use crate::expr::PyExpr;
 use crate::prelude::Wrap;
 
 #[derive(Clone)]
+// TODO: Remove
 pub enum SinkTarget {
     File(polars_plan::dsl::SinkTarget),
     Partition(PyPartitioning),
@@ -187,6 +188,7 @@ impl<'py> FromPyObject<'py> for SinkTarget {
 }
 
 impl SinkTarget {
+    #[expect(unused)]
     pub fn base_path(&self) -> Option<PlPathRef<'_>> {
         match self {
             Self::File(t) => match t {
