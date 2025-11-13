@@ -88,7 +88,7 @@ def sequence_to_pyseries(
     if isinstance(dtype, BaseExtension):
         storage = dtype.ext_storage()
         pys = sequence_to_pyseries(name, values, storage, strict=strict, nan_to_null=nan_to_null)
-        return pys.ext_from_storage(dtype)
+        return pys.ext_to(dtype)
 
     if isinstance(values, range):
         return range_to_series(name, values, dtype=dtype)._s
