@@ -32,7 +32,6 @@ use polars_ops::frame::{JoinCoalesce, MaintainOrderJoin};
 use polars_ops::prelude::ClosedInterval;
 pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::plpath::PlPath;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 
 use crate::frame::cached_arenas::CachedArena;
@@ -933,118 +932,6 @@ impl LazyFrame {
         }))
     }
 
-    /// Stream a query result into a parquet file in a partitioned manner. This is useful if the
-    /// final result doesn't fit into memory. This methods will return an error if the query cannot
-    /// be completely done in a streaming fashion.
-    #[cfg(feature = "parquet")]
-    #[allow(clippy::too_many_arguments)]
-    pub fn sink_parquet_partitioned(
-        self,
-        base_path: Arc<PlPath>,
-        file_path_cb: Option<PartitionTargetCallback>,
-        variant: PartitionVariant,
-        options: ParquetWriteOptions,
-        cloud_options: Option<polars_io::cloud::CloudOptions>,
-        sink_options: SinkOptions,
-        per_partition_sort_by: Option<Vec<SortColumn>>,
-        finish_callback: Option<SinkFinishCallback>,
-    ) -> PolarsResult<Self> {
-        self.sink(SinkType::Partition(PartitionSinkType {
-            base_path,
-            file_path_cb,
-            sink_options,
-            variant,
-            file_type: FileType::Parquet(options),
-            cloud_options,
-            per_partition_sort_by,
-            finish_callback,
-        }))
-    }
-
-    /// Stream a query result into an ipc/arrow file in a partitioned manner. This is useful if the
-    /// final result doesn't fit into memory. This methods will return an error if the query cannot
-    /// be completely done in a streaming fashion.
-    #[cfg(feature = "ipc")]
-    #[allow(clippy::too_many_arguments)]
-    pub fn sink_ipc_partitioned(
-        self,
-        base_path: Arc<PlPath>,
-        file_path_cb: Option<PartitionTargetCallback>,
-        variant: PartitionVariant,
-        options: IpcWriterOptions,
-        cloud_options: Option<polars_io::cloud::CloudOptions>,
-        sink_options: SinkOptions,
-        per_partition_sort_by: Option<Vec<SortColumn>>,
-        finish_callback: Option<SinkFinishCallback>,
-    ) -> PolarsResult<Self> {
-        self.sink(SinkType::Partition(PartitionSinkType {
-            base_path,
-            file_path_cb,
-            sink_options,
-            variant,
-            file_type: FileType::Ipc(options),
-            cloud_options,
-            per_partition_sort_by,
-            finish_callback,
-        }))
-    }
-
-    /// Stream a query result into an csv file in a partitioned manner. This is useful if the final
-    /// result doesn't fit into memory. This methods will return an error if the query cannot be
-    /// completely done in a streaming fashion.
-    #[cfg(feature = "csv")]
-    #[allow(clippy::too_many_arguments)]
-    pub fn sink_csv_partitioned(
-        self,
-        base_path: Arc<PlPath>,
-        file_path_cb: Option<PartitionTargetCallback>,
-        variant: PartitionVariant,
-        options: CsvWriterOptions,
-        cloud_options: Option<polars_io::cloud::CloudOptions>,
-        sink_options: SinkOptions,
-        per_partition_sort_by: Option<Vec<SortColumn>>,
-        finish_callback: Option<SinkFinishCallback>,
-    ) -> PolarsResult<Self> {
-        self.sink(SinkType::Partition(PartitionSinkType {
-            base_path,
-            file_path_cb,
-            sink_options,
-            variant,
-            file_type: FileType::Csv(options),
-            cloud_options,
-            per_partition_sort_by,
-            finish_callback,
-        }))
-    }
-
-    /// Stream a query result into a JSON file in a partitioned manner. This is useful if the final
-    /// result doesn't fit into memory. This methods will return an error if the query cannot be
-    /// completely done in a streaming fashion.
-    #[cfg(feature = "json")]
-    #[allow(clippy::too_many_arguments)]
-    pub fn sink_json_partitioned(
-        self,
-        base_path: Arc<PlPath>,
-        file_path_cb: Option<PartitionTargetCallback>,
-        variant: PartitionVariant,
-        options: JsonWriterOptions,
-        cloud_options: Option<polars_io::cloud::CloudOptions>,
-        sink_options: SinkOptions,
-        per_partition_sort_by: Option<Vec<SortColumn>>,
-        finish_callback: Option<SinkFinishCallback>,
-    ) -> PolarsResult<Self> {
-        self.sink(SinkType::Partition(PartitionSinkType {
-            base_path,
-            file_path_cb,
-            sink_options,
-            variant,
-            file_type: FileType::Json(options),
-            cloud_options,
-            per_partition_sort_by,
-            finish_callback,
-        }))
-    }
-
     pub fn sink_batches(
         self,
         function: PlanCallback<DataFrame, bool>,
@@ -1109,6 +996,7 @@ impl LazyFrame {
         None
     }
 
+    // TODO: Rename to sink_payload (or can potentially remove altogether pending sink IR refactor).
     fn sink(mut self, payload: SinkType) -> Result<LazyFrame, PolarsError> {
         polars_ensure!(
             !matches!(self.logical_plan, DslPlan::Sink { .. }),
@@ -1119,6 +1007,89 @@ impl LazyFrame {
             payload,
         };
         Ok(self)
+    }
+
+    // TODO: Rename to `sink` after existing `sinks` is renamed to `sink_payload`.
+    pub fn sink2(
+        self,
+        target: SinkOutputType,
+        file_write_options: FileType,
+        unified_sink_args: UnifiedSinkArgs,
+    ) -> PolarsResult<Self> {
+        // TODO
+        // Temporarily converts to existing IR format - in the future we should be able to just pass
+        // the parameters through.
+        let sink_options = SinkOptions {
+            sync_on_close: unified_sink_args.sync_on_close,
+            maintain_order: unified_sink_args.maintain_order,
+            mkdir: unified_sink_args.mkdir,
+        };
+
+        let file_type = file_write_options;
+
+        match target {
+            SinkOutputType::Single(target) => self.sink(SinkType::File(FileSinkType {
+                target,
+                file_type,
+                sink_options,
+                cloud_options: unified_sink_args.cloud_options,
+            })),
+            SinkOutputType::Multiple(DirectorySinkOptions {
+                base_path,
+                file_path_provider,
+                sink_type,
+                finish_callback,
+            }) => {
+                let (variant, per_partition_sort_by) = match sink_type {
+                    PartitionVariant2::PartitionBy {
+                        keys,
+                        include_keys,
+                        keys_sorted,
+                        per_partition_sort_by,
+                    } => {
+                        let variant = if keys_sorted {
+                            PartitionVariant::Parted {
+                                key_exprs: keys,
+                                include_key: include_keys,
+                            }
+                        } else {
+                            PartitionVariant::ByKey {
+                                key_exprs: keys,
+                                include_key: include_keys,
+                            }
+                        };
+
+                        (variant, per_partition_sort_by)
+                    },
+                    PartitionVariant2::MaxSize {
+                        max_rows_per_file,
+                        per_file_sort_by,
+                    } => (
+                        PartitionVariant::MaxSize(max_rows_per_file),
+                        // FIXME
+                        // Existing implementation takes per-file sort_by as the
+                        // per-partition sort_by.
+                        per_file_sort_by,
+                    ),
+                };
+
+                self.sink(SinkType::Partition(PartitionSinkType {
+                    base_path: Arc::new(base_path),
+                    file_path_cb: file_path_provider,
+                    sink_options: SinkOptions {
+                        sync_on_close: unified_sink_args.sync_on_close,
+                        maintain_order: unified_sink_args.maintain_order,
+                        mkdir: unified_sink_args.mkdir,
+                    },
+                    variant,
+                    file_type,
+                    cloud_options: unified_sink_args.cloud_options,
+                    per_partition_sort_by: (!per_partition_sort_by.is_empty())
+                        .then_some(per_partition_sort_by),
+                    finish_callback,
+                }))
+            },
+        }
     }
 
     /// Filter frame rows that match a predicate expression.

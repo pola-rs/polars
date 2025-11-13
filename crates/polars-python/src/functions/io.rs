@@ -131,6 +131,7 @@ pub fn write_clipboard_string(s: &str) -> PyResult<()> {
 }
 
 pub fn parse_cloud_options<'a>(
+    // TODO: Take CloudScheme (or CloudType) here instead of an entire path.
     first_path: Option<PlPathRef<'a>>,
     storage_options: Option<Vec<(String, String)>>,
     credential_provider: Option<Py<PyAny>>,

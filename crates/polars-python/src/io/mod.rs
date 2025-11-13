@@ -1,3 +1,6 @@
+pub mod sink_options;
+pub mod sink_output;
+
 use std::sync::Arc;
 
 use polars::prelude::default_values::DefaultFieldValues;
@@ -17,6 +20,8 @@ use pyo3::{Bound, FromPyObject, Py, PyAny, PyResult, intern};
 use crate::PyDataFrame;
 use crate::functions::parse_cloud_options;
 use crate::prelude::Wrap;
+
+// TODO: Move all below code to `scan_options.rs`
 
 /// Interface to `class ScanOptions` on the Python side
 pub struct PyScanOptions<'py>(Bound<'py, pyo3::PyAny>);

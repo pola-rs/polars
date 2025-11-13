@@ -163,7 +163,6 @@ if TYPE_CHECKING:
         Orientation,
         ParquetCompression,
         ParquetMetadata,
-        PartitioningScheme,
         PivotAgg,
         PolarsDataType,
         PythonDataType,
@@ -183,6 +182,7 @@ if TYPE_CHECKING:
     from polars._utils.various import NoDefault
     from polars.interchange.dataframe import PolarsDataFrame
     from polars.io.cloud import CredentialProviderFunction
+    from polars.io.partition import _SinkDirectory
     from polars.ml.torch import PolarsDataset
 
     if sys.version_info >= (3, 10):
@@ -4161,7 +4161,7 @@ class DataFrame:
 
             return
 
-        target: str | Path | IO[bytes] | PartitioningScheme = file
+        target: str | Path | IO[bytes] | _SinkDirectory = file
         engine: EngineType = "in-memory"
         if partition_by is not None:
             if not isinstance(file, str):
