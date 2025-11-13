@@ -208,9 +208,9 @@ fn decode_plain(
         append_validity(page_validity, filter.as_ref(), validity, max_num_values);
     }
 
-    if let Some(equals_one_of_state) = equals_one_of_state {
-        assert!(page_validity.is_none());
-
+    if let Some(equals_one_of_state) = equals_one_of_state
+        && page_validity.is_none()
+    {
         let mut total_bytes_len = 0;
         match equals_one_of_state {
             EqualsOneOfState::Empty => {},
