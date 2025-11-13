@@ -55,7 +55,7 @@ impl DataFrame {
                 .iter()
                 .map(|col| match col {
                     Column::Series(s) => Column::from(s.select_chunk(i)),
-                    Column::Partitioned(_) | Column::Scalar(_) => {
+                    Column::Scalar(_) => {
                         col.slice(prev_height as i64, chunk_size)
                     },
                 })
