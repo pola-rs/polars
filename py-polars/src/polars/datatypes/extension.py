@@ -2,11 +2,19 @@ from __future__ import annotations
 
 from polars import datatypes as dt
 from polars._plr import _register_extension_type, _unregister_extension_type
+from polars._utils.unstable import unstable
 
 _REGISTRY = {}
 
+@unstable()
 def register_extension_type(ext_name: str, ext_class: type[dt.BaseExtension] | None = None, *, as_storage: bool = False) -> None:
-    """Register the extension type for the given extension name."""
+    """
+    Register the extension type for the given extension name.
+
+    .. warning::
+        This functionality is currently considered **unstable**. It may be
+        changed at any point without it being considered a breaking change.
+    """
     if "ext_name" in _REGISTRY:
         msg = f"extension type '{ext_name}' is already registered"
         raise ValueError(msg)
@@ -22,16 +30,28 @@ def register_extension_type(ext_name: str, ext_class: type[dt.BaseExtension] | N
         _REGISTRY[ext_name] = ext_class
         _register_extension_type(ext_name, ext_class)
 
+@unstable()
 def unregister_extension_type(ext_name: str) -> None:
-    """Unregister the extension type for the given extension name."""
+    """
+    Unregister the extension type for the given extension name.
+
+    .. warning::
+        This functionality is currently considered **unstable**. It may be
+        changed at any point without it being considered a breaking change.
+    """
     _REGISTRY.pop(ext_name)
     _unregister_extension_type(ext_name)
 
+@unstable()
 def get_extension_type(ext_name: str) -> type[dt.BaseExtension] | str | None:
     """
     Get the extension type class for the given extension name.
 
     If an extension is registered to be passed through as storage, this returns
     the string "storage".
+
+    .. warning::
+        This functionality is currently considered **unstable**. It may be
+        changed at any point without it being considered a breaking change.
     """
     return _REGISTRY.get(ext_name)

@@ -16,6 +16,7 @@ from polars.datatypes import (
     Decimal,
     Duration,
     Enum,
+    Extension,
     Field,
     Float32,
     Float64,
@@ -65,6 +66,7 @@ _SIMPLE_DTYPES: list[DataTypeClass] = [
     Date,
     Time,
     Null,
+    Extension("some_extension", metadata="some metadata", storage=Int8),
     # TODO: Enable Object types by default when various issues are solved.
     # Object,
 ]

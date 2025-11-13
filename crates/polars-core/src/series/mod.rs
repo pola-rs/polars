@@ -574,6 +574,13 @@ impl Series {
                     .from_physical_unchecked(to.as_slice())
                     .map(|ca| ca.into_series())
             },
+            
+            #[cfg(feature = "dtype-extension")]
+            (D::Extension(typ, storage), to) => {
+                let storage_series = self.from_physical_unchecked(storage.as_ref())?;
+                let ext = ExtensionChunked::from_storage(typ.clone(), storage_series);
+                Ok(ext.into_series())
+            },
 
             _ => panic!("invalid from_physical({dtype:?}) for {:?}", self.dtype()),
         }
