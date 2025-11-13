@@ -13,23 +13,13 @@ use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;
 use polars_core::utils::flatten::flatten_par;
+pub use polars_ops::series::{ClosedInterval, ClosedWindow};
 use rayon::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
 use crate::prelude::*;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, IntoStaticStr)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[strum(serialize_all = "snake_case")]
-pub enum ClosedWindow {
-    Left,
-    Right,
-    Both,
-    None,
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

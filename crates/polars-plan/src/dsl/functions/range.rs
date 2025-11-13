@@ -48,13 +48,6 @@ pub fn date_range(
         ComputeError: "`interval` input for `date_range` must consist of full days, got: {:?}", interval.unwrap(),
     );
 
-    // Only "both" is supported for date_range(start, end, num_samples).
-    polars_ensure!(
-            !(arg_type == DateRangeArgs::StartEndSamples && closed != ClosedWindow::Both),
-            InvalidOperation: "date_range does not support 'left', 'right', or 'none' for the \
-                'closed' parameter when 'start', 'end', and 'num_samples' is provided.",
-    );
-
     Ok(Expr::n_ary(
         RangeFunction::DateRange {
             interval,
@@ -79,13 +72,6 @@ pub fn date_ranges(
     polars_ensure!(
         interval.is_none_or(|i| i.is_full_days()),
         ComputeError: "`interval` input for `date_range` must consist of full days, got: {:?}", interval.unwrap(),
-    );
-
-    // Only "both" is supported for date_ranges(start, end, num_samples).
-    polars_ensure!(
-        !(arg_type == DateRangeArgs::StartEndSamples && closed != ClosedWindow::Both),
-        InvalidOperation: "date_range does not support 'left', 'right', or 'none' for the \
-            'closed' parameter when 'start', 'end', and 'num_samples' is provided.",
     );
 
     Ok(Expr::n_ary(
