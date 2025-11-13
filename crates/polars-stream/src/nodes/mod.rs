@@ -1,6 +1,7 @@
 pub mod callback_sink;
 #[cfg(feature = "cum_agg")]
 pub mod cum_agg;
+pub mod dynamic_group_by;
 pub mod dynamic_slice;
 #[cfg(feature = "ewma")]
 pub mod ewm;

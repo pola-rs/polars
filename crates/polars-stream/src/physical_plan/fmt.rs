@@ -489,6 +489,24 @@ fn visualize_plan_rec(
             from_ref(input),
         ),
         #[cfg(feature = "dynamic_group_by")]
+        PhysNodeKind::DynamicGroupBy {
+            input,
+            index_column,
+            period,
+            every,
+            offset,
+            start_by,
+            closed,
+            aggs,
+        } => (
+            format!(
+                "dynamic-group-by\\nindex column: {index_column}\\nperiod: {period}\\nevery: {every}\\noffset: {offset}\\nclosed: {}\\naggs:\\n{}",
+                <ClosedWindow as Into<&'static str>>::into(*closed),
+                fmt_exprs_to_label(aggs, expr_arena, FormatExprStyle::Select)
+            ),
+            from_ref(input),
+        ),
+        #[cfg(feature = "dynamic_group_by")]
         PhysNodeKind::RollingGroupBy {
             input,
             index_column,

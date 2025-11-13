@@ -799,6 +799,42 @@ fn to_graph_rec<'a>(
         },
 
         #[cfg(feature = "dynamic_group_by")]
+        DynamicGroupBy {
+            input,
+            index_column,
+            period,
+            every,
+            offset,
+            start_by,
+            closed,
+            aggs,
+        } => {
+            let input_schema = &ctx.phys_sm[input.node].output_schema;
+            let input_key = to_graph_rec(input.node, ctx)?;
+            let aggs = aggs
+                .iter()
+                .map(|e| {
+                    Ok((
+                        e.output_name().clone(),
+                        create_stream_expr(e, ctx, input_schema)?,
+                    ))
+                })
+                .collect::<PolarsResult<Arc<[_]>>>()?;
+            ctx.graph.add_node(
+                nodes::dynamic_group_by::DynamicGroupBy::new(
+                    input_schema.clone(),
+                    index_column.clone(),
+                    *period,
+                    *offset,
+                    *every,
+                    *start_by,
+                    *closed,
+                    aggs,
+                )?,
+                [(input_key, input.port)],
+            )
+        },
+        #[cfg(feature = "dynamic_group_by")]
         RollingGroupBy {
             input,
             index_column,
