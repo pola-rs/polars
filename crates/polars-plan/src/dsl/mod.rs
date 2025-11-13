@@ -171,9 +171,19 @@ impl Expr {
         AggExpr::First(Arc::new(self)).into()
     }
 
+    /// Get the first non-nullvalue in the group.
+    pub fn first_non_null(self) -> Self {
+        AggExpr::FirstNonNull(Arc::new(self)).into()
+    }
+
     /// Get the last value in the group.
     pub fn last(self) -> Self {
         AggExpr::Last(Arc::new(self)).into()
+    }
+
+    /// Get the last non-null value in the group.
+    pub fn last_non_null(self) -> Self {
+        AggExpr::LastNonNull(Arc::new(self)).into()
     }
 
     /// Get the single value in the group. If there are multiple values, an error is returned.

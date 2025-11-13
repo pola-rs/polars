@@ -141,8 +141,10 @@ impl AExpr {
                     Max { input: expr, .. }
                     | Min { input: expr, .. }
                     | First(expr)
+                    | FirstNonNull(expr)
                     | Last(expr)
-                    | Item { input: expr, .. } => ctx.arena.get(*expr).to_field_impl(ctx),
+                    | LastNonNull(expr) => ctx.arena.get(*expr).to_field_impl(ctx),
+                    Item { input: expr, .. } => ctx.arena.get(*expr).to_field_impl(ctx),
                     Sum(expr) => {
                         let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
                         let dt = match field.dtype() {
@@ -341,7 +343,9 @@ impl AExpr {
             | Agg(Max { input: expr, .. })
             | Agg(Min { input: expr, .. })
             | Agg(First(expr))
+            | Agg(FirstNonNull(expr))
             | Agg(Last(expr))
+            | Agg(LastNonNull(expr))
             | Agg(Item { input: expr, .. })
             | Agg(Sum(expr))
             | Agg(Median(expr))

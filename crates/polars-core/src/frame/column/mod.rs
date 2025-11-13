@@ -854,8 +854,24 @@ impl Column {
     ///
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "algorithm_group_by")]
+    pub unsafe fn agg_first_non_null(&self, groups: &GroupsType) -> Self {
+        self.agg_with_unit_scalar(groups, |s, g| unsafe { s.agg_first_non_null(g) })
+    }
+
+    /// # Safety
+    ///
+    /// Does no bounds checks, groups must be correct.
+    #[cfg(feature = "algorithm_group_by")]
     pub unsafe fn agg_last(&self, groups: &GroupsType) -> Self {
         self.agg_with_unit_scalar(groups, |s, g| unsafe { s.agg_last(g) })
+    }
+
+    /// # Safety
+    ///
+    /// Does no bounds checks, groups must be correct.
+    #[cfg(feature = "algorithm_group_by")]
+    pub unsafe fn agg_last_non_null(&self, groups: &GroupsType) -> Self {
+        self.agg_with_unit_scalar(groups, |s, g| unsafe { s.agg_last_non_null(g) })
     }
 
     /// # Safety

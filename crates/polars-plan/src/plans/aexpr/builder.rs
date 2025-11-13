@@ -113,8 +113,16 @@ impl AExprBuilder {
         Self::agg(IRAggExpr::First(self.node()), arena)
     }
 
+    pub fn first_non_null(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::agg(IRAggExpr::FirstNonNull(self.node()), arena)
+    }
+
     pub fn last(self, arena: &mut Arena<AExpr>) -> Self {
         Self::agg(IRAggExpr::Last(self.node()), arena)
+    }
+
+    pub fn last_non_null(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::agg(IRAggExpr::LastNonNull(self.node()), arena)
     }
 
     pub fn min(self, arena: &mut Arena<AExpr>) -> Self {
