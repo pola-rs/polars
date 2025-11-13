@@ -11,7 +11,6 @@ pub enum IRStructFunction {
     SuffixFields(PlSmallStr),
     #[cfg(feature = "json")]
     JsonEncode,
-    WithFields,
     MapFieldNames(PlanCallback<PlSmallStr, PlSmallStr>),
 }
 
@@ -78,33 +77,6 @@ impl IRStructFunction {
             }),
             #[cfg(feature = "json")]
             JsonEncode => mapper.with_dtype(DataType::String),
-            WithFields => {
-                let args = mapper.args();
-                let struct_ = &args[0];
-
-                if let DataType::Struct(fields) = struct_.dtype() {
-                    let mut name_2_dtype = PlIndexMap::with_capacity(fields.len() * 2);
-
-                    for field in fields {
-                        name_2_dtype.insert(field.name(), field.dtype());
-                    }
-                    for arg in &args[1..] {
-                        name_2_dtype.insert(arg.name(), arg.dtype());
-                    }
-                    let dtype = DataType::Struct(
-                        name_2_dtype
-                            .iter()
-                            .map(|(&name, &dtype)| Field::new(name.clone(), dtype.clone()))
-                            .collect(),
-                    );
-                    let mut out = struct_.clone();
-                    out.coerce(dtype);
-                    Ok(out)
-                } else {
-                    let dt = struct_.dtype();
-                    polars_bail!(op = "with_fields", got = dt, expected = "Struct")
-                }
-            },
             MapFieldNames(function) => mapper.try_map_dtype(|dt| match dt {
                 DataType::Struct(fields) => {
                     let fields = fields
@@ -133,9 +105,6 @@ impl IRStructFunction {
             },
             #[cfg(feature = "json")]
             S::JsonEncode => FunctionOptions::elementwise(),
-            S::WithFields => FunctionOptions::elementwise().with_flags(|f| {
-                f | FunctionFlags::INPUT_WILDCARD_EXPANSION | FunctionFlags::PASS_NAME_TO_APPLY
-            }),
             S::MapFieldNames(_) => FunctionOptions::elementwise(),
         }
     }
@@ -151,7 +120,6 @@ impl Display for IRStructFunction {
             SuffixFields(_) => write!(f, "name.suffixFields"),
             #[cfg(feature = "json")]
             JsonEncode => write!(f, "struct.to_json"),
-            WithFields => write!(f, "with_fields"),
             MapFieldNames(_) => write!(f, "map_field_names"),
         }
     }

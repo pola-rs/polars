@@ -107,8 +107,11 @@ pub fn resolve_observable_orders(
     aexpr: &AExpr,
     expr_arena: &Arena<AExpr>,
 ) -> Result<ObservableOrders, ColumnOrderObserved> {
-    ObservableOrdersResolver::new(ObservableOrders::Column, expr_arena)
-        .resolve_observable_orders(aexpr)
+    dbg!("start resolve_observable_orders"); //kdn
+    let out = ObservableOrdersResolver::new(ObservableOrders::Column, expr_arena)
+        .resolve_observable_orders(aexpr);
+    dbg!(&out);
+    out
 }
 
 pub(super) struct ObservableOrdersResolver<'a> {
@@ -129,6 +132,9 @@ impl<'a> ObservableOrdersResolver<'a> {
         &self,
         aexpr: &AExpr,
     ) -> Result<ObservableOrders, ColumnOrderObserved> {
+        dbg!("start resolve_observable_orders for ObservableOrderResolver"); //kdn
+        dbg!(&self.column_ordering);
+        dbg!(&aexpr);
         macro_rules! rec {
             ($expr:expr) => {{ self.resolve_observable_orders(self.expr_arena.get($expr))? }};
         }
@@ -138,7 +144,7 @@ impl<'a> ObservableOrdersResolver<'a> {
         }
 
         use ObservableOrders as O;
-        Ok(match aexpr {
+        let out = Ok(match aexpr {
             // This should never reached as we don't recurse on the Eval evaluation expression.
             AExpr::Element => unreachable!(),
 
@@ -153,7 +159,7 @@ impl<'a> ObservableOrdersResolver<'a> {
             AExpr::Explode { expr, .. } => rec!(*expr) | O::Independent,
 
             AExpr::Column(_) => self.column_ordering,
-            AExpr::StructField(_) => todo!(), //kdn TODO ASK
+            AExpr::StructField(_) => self.column_ordering, //kdn TODO ORDER REVIEW
             AExpr::Literal(lv) if lv.is_scalar() => O::None,
             AExpr::Literal(_) => O::Independent,
 
@@ -316,8 +322,18 @@ impl<'a> ObservableOrdersResolver<'a> {
                 },
             },
 
-            AExpr::StructEval { .. } => todo!(), //kdn TODO
-
+            AExpr::StructEval { expr, evaluation } => {
+                //kdn TODO ORDER REVIEW - THIS IS PROBABLY NOT RIGHT
+                let mut zipped = rec!(*expr);
+                for e in evaluation {
+                    zipped = zipped.zip_with(rec!(e.node()))?;
+                }
+                // let evaluation: Vec<_> = evaluation.iter().map(|e| rec!(e.node())).collect();
+                if zipped.column_ordering_observable() {
+                    return Err(ColumnOrderObserved);
+                }
+                zipped
+            },
             #[cfg(feature = "dynamic_group_by")]
             AExpr::Rolling {
                 function,
@@ -382,6 +398,8 @@ impl<'a> ObservableOrdersResolver<'a> {
                 input
             },
             AExpr::Len => O::None,
-        })
+        });
+        dbg!(&out);
+        out
     }
 }

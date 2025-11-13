@@ -17,40 +17,40 @@ pub(super) fn convert_functions(
 ) -> PolarsResult<(Node, PlSmallStr)> {
     use {FunctionExpr as F, IRFunctionExpr as I};
 
-    #[cfg(feature = "dtype-struct")]
-    if matches!(
-        function,
-        FunctionExpr::StructExpr(StructFunction::WithFields)
-    ) {
-        //kdn TODO remove WithFields
-        unreachable!(); //kdn 
-        // let mut input = input.into_iter();
-        // let struct_input = to_expr_ir(input.next().unwrap(), ctx)?;
-        // let dtype = struct_input.to_expr(ctx.arena).to_field(ctx.schema)?.dtype;
-        // let DataType::Struct(fields) = &dtype else {
-        //     polars_bail!(op = "struct.with_fields", dtype);
-        // };
+    // #[cfg(feature = "dtype-struct")]
+    // if matches!(
+    //     function,
+    //     FunctionExpr::StructExpr(StructFunction::WithFields)
+    // ) {
+    //     //kdn TODO remove WithFields
+    //     unreachable!(); //kdn 
+    //     // let mut input = input.into_iter();
+    //     // let struct_input = to_expr_ir(input.next().unwrap(), ctx)?;
+    //     // let dtype = struct_input.to_expr(ctx.arena).to_field(ctx.schema)?.dtype;
+    //     // let DataType::Struct(fields) = &dtype else {
+    //     //     polars_bail!(op = "struct.with_fields", dtype);
+    //     // };
 
-        // let struct_name = struct_input.output_name().clone();
-        // let struct_node = struct_input.node();
-        // let struct_schema = Schema::from_iter(fields.iter().cloned());
+    //     // let struct_name = struct_input.output_name().clone();
+    //     // let struct_node = struct_input.node();
+    //     // let struct_schema = Schema::from_iter(fields.iter().cloned());
 
-        // let mut evaluation = Vec::with_capacity(input.len() - 1);
-        // // e.push(struct_input);
+    //     // let mut evaluation = Vec::with_capacity(input.len() - 1);
+    //     // // e.push(struct_input);
 
-        // let prev = ctx.with_fields.replace((struct_node, struct_schema));
-        // for i in input {
-        //     evaluation.push(to_expr_ir(i, ctx)?);
-        // }
-        // ctx.with_fields = prev;
+    //     // let prev = ctx.with_fields.replace((struct_node, struct_schema));
+    //     // for i in input {
+    //     //     evaluation.push(to_expr_ir(i, ctx)?);
+    //     // }
+    //     // ctx.with_fields = prev;
 
-        // let out = ctx.arena.add(AExpr::StructEval {
-        //     expr: struct_node,
-        //     evaluation,
-        // });
+    //     // let out = ctx.arena.add(AExpr::StructEval {
+    //     //     expr: struct_node,
+    //     //     evaluation,
+    //     // });
 
-        // return Ok((out, struct_name));
-    }
+    //     // return Ok((out, struct_name));
+    // }
 
     let input_is_empty = input.is_empty();
 
@@ -380,7 +380,6 @@ pub(super) fn convert_functions(
                 S::SelectFields(_) => unreachable!("handled by expression expansion"),
                 #[cfg(feature = "json")]
                 S::JsonEncode => IS::JsonEncode,
-                S::WithFields => unreachable!("handled before"),
                 S::MapFieldNames(f) => IS::MapFieldNames(f),
             })
         },

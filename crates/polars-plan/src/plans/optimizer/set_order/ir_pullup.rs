@@ -21,6 +21,7 @@ pub(super) fn pullup_orders(
     orders: &mut PlHashMap<Node, UnitVec<bool>>,
     cache_proxy: &PlHashMap<UniqueId, Vec<Node>>,
 ) {
+    dbg!("start pullup_orders"); //kdn
     let mut hits: PlHashMap<Node, usize> = PlHashMap::default();
     let mut stack = Vec::new();
 

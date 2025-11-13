@@ -1419,15 +1419,53 @@ def test_struct_equal_missing_null_25360() -> None:
     )
 
 
-def test_struct_with_fields_col_and_field() -> None:
+@pytest.mark.parametrize(
+    ("eval", "expected"),
+    [
+        (
+            pl.col("a"),
+            pl.DataFrame({"x": [10, 20, 30], "a": [1, 2, 3]}),
+        ),
+        (
+            pl.col("a").alias("x"),
+            pl.DataFrame({"x": [1, 2, 3]}),
+        ),
+        (
+            pl.col("a").alias("z"),
+            pl.DataFrame({"x": [10, 20, 30], "z": [1, 2, 3]}),
+        ),
+        (
+            pl.col("a") + pl.field("x"),
+            pl.DataFrame({"x": [10, 20, 30], "a": [11, 22, 33]}),
+        ),
+        (
+            pl.field("x") + pl.col("a"),
+            pl.DataFrame({"x": [11, 22, 33]}),
+        ),
+        (
+            pl.col("a").alias("z") + pl.field("x"),
+            pl.DataFrame({"x": [10, 20, 30], "z": [11, 22, 33]}),
+        ),
+        (
+            pl.field("x").alias("z") + pl.col("a"),
+            pl.DataFrame({"x": [10, 20, 30], "z": [11, 22, 33]}),
+        ),
+    ],
+)
+@pytest.mark.parametrize("inject_none", [True, False])
+def test_struct_with_fields_col_and_field(
+    eval: pl.Expr, expected: pl.DataFrame, inject_none: bool
+) -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "s": [{"x": 10}, {"x": 20}, {"x": 30}]})
 
-    eval = pl.col.a + pl.field("x")
-    out = df.select(pl.col.s.struct.with_fields(eval)).select(pl.col.s.struct.unnest())
-    expected = pl.DataFrame({"x": [10, 20, 30], "a": [11, 22, 33]})
-    assert_frame_equal(out, expected)
+    if inject_none:
+        df = df.select(
+            pl.when(pl.arange(0, pl.len()) != 1).then(pl.all()).otherwise(None)
+        )
+        expected = expected.select(
+            pl.when(pl.arange(0, pl.len()) != 1).then(pl.all()).otherwise(None)
+        )
 
-    eval = pl.field("x") + pl.col.a
-    out = df.select(pl.col.s.struct.with_fields(eval)).select(pl.col.s.struct.unnest())
-    expected = pl.DataFrame({"x": [11, 22, 33]})
+    out = df.select(pl.col.s.struct.with_fields(eval))
+    out = out.select(pl.col.s.struct.unnest())
     assert_frame_equal(out, expected)

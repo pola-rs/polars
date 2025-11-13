@@ -241,14 +241,9 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             evaluation: Arc::new(node_to_expr(evaluation, expr_arena)),
             variant,
         },
-        AExpr::StructEval { expr, evaluation } => {
-            let input = std::iter::once(node_to_expr(expr, expr_arena))
-                .chain(expr_irs_to_exprs(evaluation, expr_arena))
-                .collect();
-            Expr::Function {
-                input,
-                function: FunctionExpr::StructExpr(StructFunction::WithFields),
-            }
+        AExpr::StructEval { expr, evaluation } => Expr::StructEval {
+            expr: Arc::new(node_to_expr(expr, expr_arena)),
+            evaluation: expr_irs_to_exprs(evaluation, expr_arena),
         },
         AExpr::Function {
             input,
@@ -588,7 +583,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::SuffixFields(pl_small_str) => B::SuffixFields(pl_small_str),
                 #[cfg(feature = "json")]
                 IB::JsonEncode => B::JsonEncode,
-                IB::WithFields => B::WithFields,
                 IB::MapFieldNames(f) => B::MapFieldNames(f),
             })
         },

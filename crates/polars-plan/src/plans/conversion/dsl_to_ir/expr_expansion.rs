@@ -99,7 +99,6 @@ fn function_input_wildcard_expansion(function: &FunctionExpr) -> FunctionExpansi
     #[cfg(feature = "dtype-struct")]
     {
         expand_into_inputs |= matches!(function, F::AsStruct);
-        expand_into_inputs |= matches!(function, F::StructExpr(StructFunction::WithFields));
         expand_into_inputs |= matches!(
             function,
             F::CumReduceHorizontal { .. } | F::CumFoldHorizontal { .. }
@@ -972,7 +971,6 @@ fn expand_expression_rec(
 
         #[cfg(feature = "dtype-struct")]
         Expr::Field(names) => {
-            toggle_cse_for_structs(opt_flags);
             out.extend(names.iter().cloned().map(|n| Expr::Field([n].into())));
         },
 
