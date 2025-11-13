@@ -21,6 +21,7 @@ pub(super) fn pushdown_orders(
     outputs: &mut PlHashMap<Node, Vec<(Node, usize)>>,
     cache_proxy: &PlHashMap<UniqueId, Vec<Node>>,
 ) -> PlHashMap<Node, UnitVec<bool>> {
+    dbg!("start pushdown_orders"); //kdn
     let mut orders: PlHashMap<Node, UnitVec<bool>> = PlHashMap::default();
     let mut node_hits: PlHashMap<Node, usize> = PlHashMap::default();
     let mut stack = Vec::new();
@@ -28,6 +29,7 @@ pub(super) fn pushdown_orders(
     stack.extend(roots.iter().copied());
 
     while let Some(node) = stack.pop() {
+        dbg!(&orders); //kdn
         // @Hack. The IR creates caches for every path at the moment. That is super hacky. So is
         // this, but we need to work around it.
         let node = match ir_arena.get(node) {
@@ -253,7 +255,7 @@ pub(super) fn pushdown_orders(
                 let observing = zip(exprs
                     .iter()
                     .map(|e| resolve_observable_orders(expr_arena.get(e.node()), expr_arena)));
-                let is_order_observing = match observing {
+                let is_order_observing = match dbg!(observing) { //kdn
                     Ok(o) => o.column_ordering_observable() && !all_outputs_unordered,
                     Err(ColumnOrderObserved) => true,
                 };
@@ -331,5 +333,5 @@ pub(super) fn pushdown_orders(
         stack.extend(ir.inputs());
     }
 
-    orders
+    dbg!(orders) //kdn
 }
