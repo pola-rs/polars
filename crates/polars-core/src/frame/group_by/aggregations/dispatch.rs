@@ -421,10 +421,10 @@ impl Series {
                     .collect_ca(PlSmallStr::EMPTY)
             },
             GroupsType::Slice { groups, .. } => {
+                let mask = BitMask::from_bitmap(&validity);
                 groups
                     .iter()
                     .map(|&[first, len]| {
-                        let mask = BitMask::from_bitmap(&validity);
                         // SAFETY: group slice is valid.
                         let validity = mask.sliced_unchecked(first as usize, len as usize);
                         let trailing_zeros = validity.trailing_zeros() as IdxSize;
