@@ -360,7 +360,11 @@ pub fn is_length_preserving_rec(
                     .iter()
                     .all(|expr| is_length_preserving_rec(expr.node(), arena, cache))
         },
-        AExpr::Eval { .. } => true,
+        AExpr::Eval {
+            expr,
+            evaluation: _,
+            variant: _,
+        } => is_length_preserving_rec(*expr, arena, cache),
         #[cfg(feature = "dynamic_group_by")]
         AExpr::Rolling {
             function: _,
