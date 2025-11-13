@@ -245,10 +245,10 @@ pub(super) fn process_join(
             .unwrap();
 
             push_left &= matches!(origin, ExprOrigin::Left | ExprOrigin::None)
-                || output_key_to_left_input_map.contains_key(&col_name);
+                || output_key_to_left_input_map.contains_key(col_name);
 
             push_right &= matches!(origin, ExprOrigin::Right | ExprOrigin::None)
-                || output_key_to_right_input_map.contains_key(&col_name);
+                || output_key_to_right_input_map.contains_key(col_name);
         }
 
         // Note: If `push_left` and `push_right` are both `true`, it means the predicate refers only
