@@ -408,3 +408,11 @@ def test_categorical_lit_18874() -> None:
             ]
         ),
     )
+
+
+def test_float_to_string_precision_25257() -> None:
+    with pl.Config(float_precision=1):
+        s = pl.Series(["", 0.123, 0.123456789], strict=False)
+
+    # Float64 should have ~17 digits of precision preserved in its string repr
+    assert (s[1:] == pl.Series(["0.123", "0.123456789"])).all()
