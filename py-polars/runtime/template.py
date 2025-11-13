@@ -6,11 +6,7 @@ this_dir = Path(__file__).parent
 
 def template(s: str, rt: str) -> str:
     """Apply the runtime template substitutions."""
-    polars_features = '"bigidx"' if rt != "32" else ""
-    polars_python_features = f'"rt{rt}"'
     s = s.replace("{{%RT_SUFFIX%}}", rt)
-    s = s.replace('"POLARS_FEATURES"', polars_features)
-    s = s.replace('"POLARS_PYTHON_FEATURES"', polars_python_features)
     return s
 
 

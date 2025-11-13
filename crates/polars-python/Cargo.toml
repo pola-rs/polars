@@ -292,8 +292,8 @@ full = [
 ]
 
 rt32 = []
-rt64 = []
-rtcompat = []
+rt64 = ["polars/bigidx"]
+rtcompat = ["polars/bigidx"]
 
 # we cannot conditionally activate simd
 # https://github.com/rust-lang/cargo/issues/1197

@@ -3576,7 +3576,6 @@ version = "1.35.1"
 dependencies = [
  "either",
  "libc",
- "polars",
  "polars-python",
  "pyo3",
  "rustflags",
@@ -3588,7 +3587,6 @@ version = "1.35.1"
 dependencies = [
  "either",
  "libc",
- "polars",
  "polars-python",
  "pyo3",
  "rustflags",
@@ -3600,7 +3598,6 @@ version = "1.35.1"
 dependencies = [
  "either",
  "libc",
- "polars",
  "polars-python",
  "pyo3",
  "rustflags",

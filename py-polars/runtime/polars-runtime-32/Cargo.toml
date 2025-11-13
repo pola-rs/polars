@@ -10,7 +10,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 libc = { workspace = true }
-polars = { workspace = true, features = [] }
 polars-python = { workspace = true, features = ["allocator", "c_api", "pymethods", "iejoin", "rt32"] }
 pyo3 = { workspace = true, features = ["abi3-py39", "chrono", "extension-module", "multiple-pymethods"] }
 
