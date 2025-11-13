@@ -10,5 +10,6 @@ pub(crate) fn get_global_random_u64() -> u64 {
 }
 
 pub fn set_global_random_seed(seed: u64) {
+    polars_utils::aliases::set_hash_seed(seed);
     *POLARS_GLOBAL_RNG_STATE.lock().unwrap() = SmallRng::seed_from_u64(seed);
 }
