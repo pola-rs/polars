@@ -66,10 +66,10 @@ pub use self::boolean::IRBooleanFunction;
 pub use self::business::IRBusinessFunction;
 #[cfg(feature = "dtype-categorical")]
 pub use self::cat::IRCategoricalFunction;
-#[cfg(feature = "dtype-extension")]
-pub use self::extension::IRExtensionFunction;
 #[cfg(feature = "temporal")]
 pub use self::datetime::IRTemporalFunction;
+#[cfg(feature = "dtype-extension")]
+pub use self::extension::IRExtensionFunction;
 pub use self::pow::IRPowFunction;
 #[cfg(feature = "range")]
 pub use self::range::IRRangeFunction;

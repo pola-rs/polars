@@ -139,7 +139,9 @@ impl PySeries {
                 DataType::BinaryOffset => {
                     unreachable!()
                 },
-                DataType::Extension(_, _) => return to_list_recursive(py, series.ext().unwrap().storage()),
+                DataType::Extension(_, _) => {
+                    return to_list_recursive(py, series.ext().unwrap().storage());
+                },
             };
             Ok(pylist.into_any())
         }

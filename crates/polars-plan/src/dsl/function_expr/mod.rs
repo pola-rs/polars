@@ -54,10 +54,10 @@ pub use self::boolean::BooleanFunction;
 pub use self::business::BusinessFunction;
 #[cfg(feature = "dtype-categorical")]
 pub use self::cat::CategoricalFunction;
-#[cfg(feature = "dtype-extension")]
-pub use self::extension::ExtensionFunction;
 #[cfg(feature = "temporal")]
 pub use self::datetime::TemporalFunction;
+#[cfg(feature = "dtype-extension")]
+pub use self::extension::ExtensionFunction;
 pub use self::pow::PowFunction;
 #[cfg(feature = "range")]
 pub use self::range::{DateRangeArgs, RangeFunction};

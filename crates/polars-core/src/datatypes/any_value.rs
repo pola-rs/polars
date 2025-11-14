@@ -857,7 +857,6 @@ impl AnyValue<'_> {
                 p.hash(state);
             },
             Null => {},
-
         }
     }
 }

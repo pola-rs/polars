@@ -564,11 +564,11 @@ impl PySeries {
                 "ext.to(dtype) can only be used with Extension dtypes",
             ));
         };
-        
+
         let s = self.series.read();
-        
+
         if storage.as_ref() != s.dtype() {
-            return Err(PyErr::from(PyPolarsErr::from(polars_err!(SchemaMismatch: 
+            return Err(PyErr::from(PyPolarsErr::from(polars_err!(SchemaMismatch:
                 "storage type mismatch in ext.to(): expected {}, got {}",
                 storage,
                 s.dtype()

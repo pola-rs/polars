@@ -1,5 +1,5 @@
-use crate::prelude::*;
 use super::*;
+use crate::prelude::*;
 
 unsafe impl IntoSeries for ExtensionChunked {
     fn into_series(self) -> Series {
@@ -67,20 +67,14 @@ impl private::PrivateSeries for SeriesWrap<ExtensionChunked> {
     ) -> PolarsResult<()> {
         self.0.storage().vec_hash_combine(build_hasher, hashes)
     }
-    
+
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
         self.0.storage().group_tuples(multithreaded, sorted)
     }
-    
-    fn zip_with_same_type(
-        &self,
-        mask: &BooleanChunked,
-        other: &Series,
-    ) -> PolarsResult<Series> {
+
+    fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
         assert!(self._dtype() == other.dtype());
-        self.try_apply_on_storage(|s| {
-            s.zip_with_same_type(mask, other.ext()?.storage())
-        })
+        self.try_apply_on_storage(|s| s.zip_with_same_type(mask, other.ext()?.storage()))
     }
 
     #[cfg(feature = "algorithm_group_by")]
@@ -90,7 +84,7 @@ impl private::PrivateSeries for SeriesWrap<ExtensionChunked> {
         unsafe { list.to_logical(self.dtype().clone()) };
         list.into_series()
     }
-    
+
     fn arg_sort_multiple(
         &self,
         by: &[Column],
@@ -128,7 +122,10 @@ impl SeriesTrait for SeriesWrap<ExtensionChunked> {
     }
 
     fn slice(&self, offset: i64, length: usize) -> Series {
-        self.0.storage().slice(offset, length).into_extension(self.0.extension_type().clone())
+        self.0
+            .storage()
+            .slice(offset, length)
+            .into_extension(self.0.extension_type().clone())
     }
 
     fn split_at(&self, offset: i64) -> (Series, Series) {
@@ -202,7 +199,9 @@ impl SeriesTrait for SeriesWrap<ExtensionChunked> {
 
     fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>) {
         assert!(self.0.dtype() == other.dtype());
-        self.0.storage().find_validity_mismatch(other.ext().unwrap().storage(), idxs)
+        self.0
+            .storage()
+            .find_validity_mismatch(other.ext().unwrap().storage(), idxs)
     }
 
     fn cast(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
@@ -256,57 +255,57 @@ impl SeriesTrait for SeriesWrap<ExtensionChunked> {
     fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
         self
     }
-    
+
     fn field(&self) -> Cow<'_, Field> {
         Cow::Owned(self.0.field())
     }
-    
+
     fn dtype(&self) -> &DataType {
         self.0.dtype()
     }
-    
+
     fn n_chunks(&self) -> usize {
         self.0.storage().n_chunks()
     }
-    
+
     fn shrink_to_fit(&mut self) {
         // no-op
     }
-    
+
     fn trim_lists_to_normalized_offsets(&self) -> Option<Series> {
         let trimmed = self.0.storage().trim_lists_to_normalized_offsets()?;
         Some(trimmed.into_extension(self.0.extension_type().clone()))
     }
-    
+
     fn propagate_nulls(&self) -> Option<Series> {
         let propagated = self.0.storage().propagate_nulls()?;
         Some(propagated.into_extension(self.0.extension_type().clone()))
     }
-    
+
     fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
         self.try_apply_on_storage(|s| s.sort_with(options))
     }
-    
+
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
         self.0.storage().arg_sort(options)
     }
-    
+
     fn unique(&self) -> PolarsResult<Series> {
         self.try_apply_on_storage(|s| s.unique())
     }
-    
+
     fn n_unique(&self) -> PolarsResult<usize> {
         self.0.storage().n_unique()
     }
-    
+
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         self.0.storage().arg_unique()
     }
-    
+
     fn as_single_ptr(&mut self) -> PolarsResult<usize> {
         self.0.storage_mut().as_single_ptr()
     }
-    
+
     fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
         self.0.storage().approx_n_unique()
     }

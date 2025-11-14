@@ -217,7 +217,7 @@ pub fn columns_to_iter_recursive(
                     Ok((nested.unwrap(), arr, ptm))
                 }
             },
-            
+
             ArrowDataType::Extension(ext) => {
                 // Perform deserialization for the storage type.
                 let (nested, mut array, ptm) = columns_to_iter_recursive(
@@ -227,7 +227,7 @@ pub fn columns_to_iter_recursive(
                     init,
                     filter,
                 )?;
-                
+
                 // Restore the extension type.
                 for arr in &mut array {
                     assert!(arr.dtype() == &ext.inner);

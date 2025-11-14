@@ -77,8 +77,7 @@ fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> PolarsR
         Extension(typ, _) => {
             let lhs = lhs.ext().unwrap();
             let rhs = rhs.ext().unwrap();
-            merge_series(lhs.storage(), rhs.storage(), merge_indicator)?
-                .into_extension(typ.clone())
+            merge_series(lhs.storage(), rhs.storage(), merge_indicator)?.into_extension(typ.clone())
         },
         #[cfg(feature = "dtype-struct")]
         Struct(_) => {

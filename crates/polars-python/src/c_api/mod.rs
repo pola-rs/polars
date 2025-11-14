@@ -340,7 +340,7 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(datatypes::_known_timezones))
         .unwrap();
-    
+
     // Extension type registry.
     m.add_wrapped(wrap_pyfunction!(extension::_register_extension_type))
         .unwrap();

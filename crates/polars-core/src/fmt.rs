@@ -446,8 +446,7 @@ impl Debug for Series {
             DataType::Extension(_, _) => {
                 let dt = format!("{}", self.dtype());
                 format_array!(f, self.ext().unwrap(), &dt, self.name(), "Series")
-
-            }
+            },
             dt => panic!("{dt:?} not impl"),
         }
     }
