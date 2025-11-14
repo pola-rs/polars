@@ -747,7 +747,14 @@ impl DataType {
     }
 
     pub fn is_extension(&self) -> bool {
-        matches!(self, DataType::Extension(_, _))
+        #[cfg(feature = "dtype-extension")]
+        {
+            matches!(self, DataType::Extension(_, _))
+        }
+        #[cfg(not(feature = "dtype-extension"))]
+        {
+            false
+        }
     }
 
     /// Convert to an Arrow Field.
