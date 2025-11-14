@@ -1307,20 +1307,30 @@ def test_group_by_iterate_index_column_name_25137(col: pl.Expr) -> None:
     assert len(list(df.rolling(col, period="1i"))) == 3
 
 
-def test_group_by_dynamic_with_slice() -> None:
+@pytest.mark.parametrize("include_boundaries", [False, True])
+def test_group_by_dynamic_with_slice(include_boundaries: bool) -> None:
     lf = (
         pl.LazyFrame({"a": [0, 5, 2, 1, 3, 7, 1, 2, 3, 4]})
         .with_row_index()
-        .group_by_dynamic(pl.col.index.cast(pl.Int64), every="2i")
+        .group_by_dynamic(
+            pl.col.index.cast(pl.Int64),
+            every="2i",
+            include_boundaries=include_boundaries,
+        )
         .agg(pl.col.a.sum())
     )
 
     expected = pl.DataFrame(
         {
+            "_lower_boundary": [0, 2, 4, 6, 8],
+            "_upper_boundary": [2, 4, 6, 8, 10],
             "index": [0, 2, 4, 6, 8],
             "a": [5, 3, 10, 3, 7],
         }
     )
+
+    if not include_boundaries:
+        expected = expected.select("index", "a")
 
     assert_frame_equal(lf.head(2).collect(), expected.head(2))
     assert_frame_equal(lf.slice(1, 3).collect(), expected.slice(1, 3))
