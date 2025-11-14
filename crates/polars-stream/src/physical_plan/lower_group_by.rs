@@ -568,12 +568,7 @@ pub fn build_group_by_stream(
             output_schema.clone(),
             PhysNodeKind::DynamicGroupBy {
                 input,
-                index_column: options.index_column.clone(),
-                period: options.period,
-                every: options.every,
-                offset: options.offset,
-                start_by: options.start_by,
-                closed: options.closed_window,
+                options: options.clone(),
                 aggs: aggs.to_vec(),
             },
         ))));

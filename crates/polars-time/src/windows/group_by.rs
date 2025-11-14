@@ -236,26 +236,6 @@ pub fn group_by_windows(
         },
     };
 
-    let mut windower = GroupByDynamicWindower::new(
-        window.period,
-        window.offset,
-        window.every,
-        start_by,
-        closed_window,
-        tu,
-        tz.clone().map(|t| t.parse().unwrap()),
-    );
-
-    let mut t_windows = Vec::new();
-    let mut t_lower_bound = Vec::new();
-    let mut t_upper_bound = Vec::new();
-    windower.insert(time, &mut t_windows, &mut t_lower_bound, &mut t_upper_bound)?;
-    windower.finalize(&mut t_windows, &mut t_lower_bound, &mut t_upper_bound);
-
-    assert_eq!(groups, t_windows);
-    // assert_eq!(lower_bound, t_lower_bound);
-    // assert_eq!(upper_bound, t_upper_bound);
-
     Ok((groups, lower_bound, upper_bound))
 }
 
@@ -1018,12 +998,16 @@ pub struct GroupByDynamicWindower {
     tu: TimeUnit,
     tz: Option<Tz>,
 
+    include_lower_bound: bool,
+    include_upper_bound: bool,
+
     num_seen: IdxSize,
     next_lower_bound: i64,
     active: VecDeque<ActiveDynWindow>,
 }
 
 impl GroupByDynamicWindower {
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         period: Duration,
         offset: Duration,
@@ -1032,6 +1016,8 @@ impl GroupByDynamicWindower {
         closed: ClosedWindow,
         tu: TimeUnit,
         tz: Option<Tz>,
+        include_lower_bound: bool,
+        include_upper_bound: bool,
     ) -> Self {
         Self {
             period,
@@ -1048,6 +1034,9 @@ impl GroupByDynamicWindower {
             },
             tu,
             tz,
+
+            include_lower_bound,
+            include_upper_bound,
 
             num_seen: 0,
             next_lower_bound: 0,
@@ -1217,8 +1206,12 @@ impl GroupByDynamicWindower {
             {
                 let w = self.active.pop_front().unwrap();
                 windows.push([w.start, self.num_seen - w.start]);
-                lower_bound.push(w.lower_bound);
-                upper_bound.push(w.upper_bound);
+                if self.include_lower_bound {
+                    lower_bound.push(w.lower_bound);
+                }
+                if self.include_upper_bound {
+                    upper_bound.push(w.upper_bound);
+                }
             }
 
             while is_above_lower_bound(t, self.next_lower_bound, self.closed) {
@@ -1257,8 +1250,12 @@ impl GroupByDynamicWindower {
     ) {
         for w in self.active.drain(..) {
             windows.push([w.start, self.num_seen - w.start]);
-            lower_bound.push(w.lower_bound);
-            upper_bound.push(w.upper_bound);
+            if self.include_lower_bound {
+                lower_bound.push(w.lower_bound);
+            }
+            if self.include_upper_bound {
+                upper_bound.push(w.upper_bound);
+            }
         }
 
         self.next_lower_bound = 0;
@@ -1267,6 +1264,10 @@ impl GroupByDynamicWindower {
 
     pub fn num_seen(&self) -> IdxSize {
         self.num_seen
+    }
+
+    pub fn time_unit(&self) -> TimeUnit {
+        self.tu
     }
 }
 

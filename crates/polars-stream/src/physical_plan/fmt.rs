@@ -4,6 +4,9 @@ use polars_plan::dsl::PartitionVariantIR;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, EscapeLabel};
 use polars_plan::prelude::FileType;
+use polars_time::ClosedWindow;
+#[cfg(feature = "dynamic_group_by")]
+use polars_time::DynamicGroupOptions;
 use polars_utils::arena::Arena;
 use polars_utils::slice_enum::Slice;
 use slotmap::{Key, SecondaryMap, SlotMap};
@@ -491,21 +494,59 @@ fn visualize_plan_rec(
         #[cfg(feature = "dynamic_group_by")]
         PhysNodeKind::DynamicGroupBy {
             input,
-            index_column,
-            period,
-            every,
-            offset,
-            start_by,
-            closed,
+            options,
             aggs,
-        } => (
-            format!(
-                "dynamic-group-by\\nindex column: {index_column}\\nperiod: {period}\\nevery: {every}\\noffset: {offset}\\nclosed: {}\\naggs:\\n{}",
-                <ClosedWindow as Into<&'static str>>::into(*closed),
+        } => {
+            use polars_time::prelude::{Label, StartBy};
+
+            let DynamicGroupOptions {
+                index_column,
+                every,
+                period,
+                offset,
+                label,
+                include_boundaries,
+                closed_window,
+                start_by,
+            } = options;
+            let mut s = String::new();
+            let f = &mut s;
+            f.write_str("dynamic-group-by\\n").unwrap();
+            write!(f, "index column: {index_column}\\n").unwrap();
+            write!(f, "every: {every}").unwrap();
+            if every != period {
+                write!(f, ", period: {period}").unwrap();
+            }
+            if !offset.is_zero() {
+                write!(f, ", offset: {offset}").unwrap();
+            }
+            f.write_str("\\n").unwrap();
+            if *label != Label::Left {
+                write!(f, "label: {}\\n", <&'static str>::from(label)).unwrap();
+            }
+            if *include_boundaries {
+                write!(f, "include_boundaries: true\\n").unwrap();
+            }
+            if *start_by != StartBy::WindowBound {
+                write!(f, "start_by: {}\\n", <&'static str>::from(start_by)).unwrap();
+            }
+            if *closed_window != ClosedWindow::Left {
+                write!(
+                    f,
+                    "closed_window: {}\\n",
+                    <&'static str>::from(closed_window)
+                )
+                .unwrap();
+            }
+            write!(
+                f,
+                "aggs:\\n{}",
                 fmt_exprs_to_label(aggs, expr_arena, FormatExprStyle::Select)
-            ),
-            from_ref(input),
-        ),
+            )
+            .unwrap();
+
+            (s, from_ref(input))
+        },
         #[cfg(feature = "dynamic_group_by")]
         PhysNodeKind::RollingGroupBy {
             input,

@@ -100,6 +100,8 @@ pub enum PhysNodeProperties {
         every: PlSmallStr,
         offset: PlSmallStr,
         start_by: PlSmallStr,
+        label: PlSmallStr,
+        include_boundaries: bool,
         closed_window: PlSmallStr,
         aggs: Vec<PlSmallStr>,
     },

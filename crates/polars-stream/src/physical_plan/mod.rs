@@ -30,7 +30,7 @@ pub mod visualization;
 pub use fmt::visualize_plan;
 use polars_plan::prelude::{FileType, PlanCallback};
 #[cfg(feature = "dynamic_group_by")]
-use polars_time::prelude::StartBy;
+use polars_time::DynamicGroupOptions;
 use polars_time::{ClosedWindow, Duration};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
@@ -313,12 +313,7 @@ pub enum PhysNodeKind {
     #[cfg(feature = "dynamic_group_by")]
     DynamicGroupBy {
         input: PhysStream,
-        index_column: PlSmallStr,
-        period: Duration,
-        every: Duration,
-        offset: Duration,
-        closed: ClosedWindow,
-        start_by: StartBy,
+        options: DynamicGroupOptions,
         aggs: Vec<ExprIR>,
     },
 

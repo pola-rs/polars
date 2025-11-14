@@ -189,15 +189,23 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
             #[cfg(feature = "dynamic_group_by")]
             PhysNodeKind::DynamicGroupBy {
                 input,
-                index_column,
-                period,
-                every,
-                offset,
-                start_by,
-                closed,
+                options,
                 aggs,
             } => {
+                use polars_time::DynamicGroupOptions;
+
                 phys_node_inputs.push(input.node);
+
+                let DynamicGroupOptions {
+                    index_column,
+                    every,
+                    period,
+                    offset,
+                    label,
+                    include_boundaries,
+                    closed_window,
+                    start_by,
+                } = options;
 
                 let properties = PhysNodeProperties::DynamicGroupBy {
                     index_column: index_column.clone(),
@@ -205,7 +213,9 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     every: format_pl_smallstr!("{every}"),
                     offset: format_pl_smallstr!("{offset}"),
                     start_by: PlSmallStr::from_static(start_by.into()),
-                    closed_window: PlSmallStr::from_static(closed.into()),
+                    label: PlSmallStr::from_static(label.into()),
+                    include_boundaries: *include_boundaries,
+                    closed_window: PlSmallStr::from_static(closed_window.into()),
                     aggs: expr_list(aggs, self.expr_arena),
                 };
 
