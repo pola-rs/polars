@@ -1,7 +1,9 @@
 //! this contains code used for rewriting projections, expanding wildcards, regex selection etc.
 
 use super::*;
-use crate::constants::{PL_ELEMENT_NAME, PL_STRUCTFIELDS_NAME, POLARS_ELEMENT, POLARS_STRUCTFIELDS};
+use crate::constants::{
+    PL_ELEMENT_NAME, PL_STRUCTFIELDS_NAME, POLARS_ELEMENT, POLARS_STRUCTFIELDS,
+};
 
 pub fn prepare_projection(
     exprs: Vec<Expr>,
@@ -899,7 +901,13 @@ fn expand_expression_rec(
         },
         Expr::StructEval { expr, evaluation } => {
             let mut expr_out = Vec::with_capacity(1);
-            expand_expression_rec(expr, ignored_selector_columns, schema, &mut expr_out, opt_flags)?;
+            expand_expression_rec(
+                expr,
+                ignored_selector_columns,
+                schema,
+                &mut expr_out,
+                opt_flags,
+            )?;
 
             for expr in expr_out {
                 let expr = Arc::new(expr);
@@ -922,7 +930,7 @@ fn expand_expression_rec(
                 }
 
                 out.push(Expr::StructEval {
-                    expr: expr,
+                    expr,
                     evaluation: eval,
                 });
             }

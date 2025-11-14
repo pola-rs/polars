@@ -3,7 +3,6 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Mutex, RwLock};
 use std::time::Duration;
 
-use arrow::bitmap::Bitmap;
 use bitflags::bitflags;
 use polars_core::config::verbose;
 use polars_core::prelude::*;
@@ -11,9 +10,8 @@ use polars_ops::prelude::ChunkJoinOptIds;
 use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::unique_id::UniqueId;
 
-use crate::prelude::AggregationContext;
-
 use super::NodeTimer;
+use crate::prelude::AggregationContext;
 
 pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, ChunkJoinOptIds>>>;
 
@@ -125,7 +123,7 @@ pub struct ExecutionState {
     pub branch_idx: usize,
     pub flags: RelaxedCell<u8>,
     pub with_fields: Arc<Option<StructChunked>>,
-    // pub with_fields_ac: Arc<Option<AggregationContext<'a>>>,
+    pub with_fields_ac: Arc<Option<AggregationContext<'static>>>,
     pub ext_contexts: Arc<Vec<DataFrame>>,
     pub element: Arc<Option<(Column, Option<Bitmap>)>>,
     node_timer: Option<NodeTimer>,
@@ -145,6 +143,7 @@ impl ExecutionState {
             branch_idx: 0,
             flags: RelaxedCell::from(StateFlags::init().as_u8()),
             with_fields: Default::default(),
+            with_fields_ac: Default::default(),
             ext_contexts: Default::default(),
             element: Default::default(),
             node_timer: None,
@@ -214,6 +213,7 @@ impl ExecutionState {
             // Retain input values for `pl.element` in Eval context
             element: self.element.clone(),
             with_fields: self.with_fields.clone(),
+            with_fields_ac: self.with_fields_ac.clone(),
             node_timer: self.node_timer.clone(),
             stop: self.stop.clone(),
         }
