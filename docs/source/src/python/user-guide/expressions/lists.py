@@ -190,7 +190,7 @@ print(result)
 # --8<-- [start:list-entropy]
 result = df.with_columns(
     pl.col("children")
-    .list.eval(pl.element().struct.field("age").entropy())
+    .list.agg(pl.element().struct.field("age").entropy())
     .alias("age_entropy"),
 )
 print(result)
