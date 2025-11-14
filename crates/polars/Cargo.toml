@@ -402,6 +402,7 @@ dtype-struct = [
 dtype-extension = [
   "polars-core/dtype-extension",
   "polars-expr/dtype-extension",
+  "polars-lazy?/dtype-extension",
   "polars-ops/dtype-extension",
   "polars-plan/dtype-extension",
 ]
