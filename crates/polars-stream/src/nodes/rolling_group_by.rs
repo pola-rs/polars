@@ -168,6 +168,7 @@ impl RollingGroupBy {
 
         let key;
         (key, self.buf_key_column) = self.buf_key_column.split_at(windows.len() as i64);
+        let key = key.slice(self.slice_offset as i64, self.slice_length as usize);
 
         let offset = windows[0][0];
         let end = windows.last().unwrap();
