@@ -39,6 +39,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Contribute the Rust translation of the Python example by opening a PR.
     // --8<-- [end:children]
 
+    // --8<-- [start:list-sorting]
+    // Contribute the Rust translation of the Python example by opening a PR.
+    // --8<-- [end:list-sorting]
+
     // --8<-- [start:list-aggregation]
     // Contribute the Rust translation of the Python example by opening a PR.
     // --8<-- [end:list-aggregation]
