@@ -306,6 +306,7 @@ impl SeriesTrait for SeriesWrap<ExtensionChunked> {
         self.0.storage_mut().as_single_ptr()
     }
 
+    #[cfg(feature = "approx_unique")]
     fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
         self.0.storage().approx_n_unique()
     }
