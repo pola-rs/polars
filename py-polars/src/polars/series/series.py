@@ -266,6 +266,7 @@ class Series:
         "bin",
         "cat",
         "dt",
+        "ext",
         "list",
         "plot",
         "str",

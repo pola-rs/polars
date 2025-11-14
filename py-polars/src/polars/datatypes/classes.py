@@ -6,7 +6,7 @@ from collections import OrderedDict
 from collections.abc import Mapping
 from datetime import tzinfo
 from inspect import isclass
-from typing import TYPE_CHECKING, Any, Callable, Generic, Self, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar, overload
 
 import polars._reexport as pl
 import polars.datatypes
@@ -1219,7 +1219,7 @@ class BaseExtension(DataType):
     @classmethod
     def ext_from_params(
         cls, name: str, storage: PolarsDataType, metadata: str | None
-    ) -> Self:
+    ) -> Any:
         """Creates an Extension type instance from its parameters."""
         slf = cls.__new__(cls)
         slf._name = name
