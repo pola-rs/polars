@@ -900,9 +900,9 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
     # anyway, indicating a wrap has occurred.
     str_schema = [(k, String) for k in schema]
     tmp_df = pl.DataFrame(data=data, orient="col", schema=str_schema)
-    out_rows = []
-    for row in tmp_df.iter_rows():
-        row = pl.Series(row, dtype=String)
+    out_rows: list[Series] = []
+    for row_list in tmp_df.iter_rows():
+        row = pl.Series(row_list, dtype=String)
         if out_rows and any(
             col == "" and dtype is not None and dtype != String and dtype != Categorical
             for col, dtype in zip(row, schema.values())
