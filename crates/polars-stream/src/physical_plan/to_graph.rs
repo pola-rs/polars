@@ -797,12 +797,7 @@ fn to_graph_rec<'a>(
         #[cfg(feature = "dynamic_group_by")]
         DynamicGroupBy {
             input,
-            index_column,
-            period,
-            every,
-            offset,
-            start_by,
-            closed,
+            options,
             aggs,
         } => {
             let input_schema = &ctx.phys_sm[input.node].output_schema;
@@ -819,12 +814,7 @@ fn to_graph_rec<'a>(
             ctx.graph.add_node(
                 nodes::dynamic_group_by::DynamicGroupBy::new(
                     input_schema.clone(),
-                    index_column.clone(),
-                    *period,
-                    *offset,
-                    *every,
-                    *start_by,
-                    *closed,
+                    options.clone(),
                     aggs,
                 )?,
                 [(input_key, input.port)],

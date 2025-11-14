@@ -327,6 +327,7 @@ def test_rolling_kernels_group_by_dynamic_7548() -> None:
     }
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_rolling_dynamic_sortedness_check() -> None:
     # when the by argument is passed, the sortedness flag
     # will be unset as the take shuffles data, so we must explicitly
@@ -871,21 +872,33 @@ def test_group_by_dynamic_12414() -> None:
             "b": [1, 2, 3, 4],
         }
     ).sort("today")
-    assert df.group_by_dynamic(
-        "today",
-        every="6mo",
-        period="3d",
-        closed="left",
-        start_by="datapoint",
-        include_boundaries=True,
-    ).agg(
-        gt_min_count=(pl.col.b >= (pl.col.b.min())).sum(),
-    ).to_dict(as_series=False) == {
-        "_lower_boundary": [datetime(2023, 3, 3, 0, 0), datetime(2023, 9, 3, 0, 0)],
-        "_upper_boundary": [datetime(2023, 3, 6, 0, 0), datetime(2023, 9, 6, 0, 0)],
-        "today": [date(2023, 3, 3), date(2023, 9, 3)],
-        "gt_min_count": [1, 1],
-    }
+    assert_frame_equal(
+        df.group_by_dynamic(
+            "today",
+            every="6mo",
+            period="3d",
+            closed="left",
+            start_by="datapoint",
+            include_boundaries=True,
+        ).agg(
+            gt_min_count=(pl.col.b >= (pl.col.b.min())).sum(),
+        ),
+        pl.DataFrame(
+            {
+                "_lower_boundary": [
+                    datetime(2023, 3, 3, 0, 0),
+                    datetime(2023, 9, 3, 0, 0),
+                ],
+                "_upper_boundary": [
+                    datetime(2023, 3, 6, 0, 0),
+                    datetime(2023, 9, 6, 0, 0),
+                ],
+                "today": [date(2023, 3, 3), date(2023, 9, 3)],
+                "gt_min_count": [1, 1],
+            },
+            schema_overrides={"gt_min_count": pl.get_index_type()},
+        ),
+    )
 
 
 @pytest.mark.parametrize("input", [[pl.col("b").sum()], pl.col("b").sum()])
