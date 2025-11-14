@@ -560,18 +560,28 @@ pub fn build_group_by_stream(
             input = build_slice_stream(input, *offset, *length, phys_sm);
         }
         return Ok(input);
-    } else if let Some(options) = options.as_ref().dynamic.as_ref()
+    } else if let Some(dynamic_options) = options.as_ref().dynamic.as_ref()
         && keys.is_empty()
         && apply.is_none()
     {
-        return Ok(PhysStream::first(phys_sm.insert(PhysNode::new(
-            output_schema.clone(),
-            PhysNodeKind::DynamicGroupBy {
-                input,
-                options: options.clone(),
-                aggs: aggs.to_vec(),
-            },
-        ))));
+        let mut input = PhysStream::first(
+            phys_sm.insert(PhysNode::new(
+                output_schema.clone(),
+                PhysNodeKind::DynamicGroupBy {
+                    input,
+                    options: dynamic_options.clone(),
+                    aggs: aggs.to_vec(),
+                    slice: options
+                        .slice
+                        .filter(|(o, _)| *o >= 0)
+                        .map(|(o, l)| (o as IdxSize, l as IdxSize)),
+                },
+            )),
+        );
+        if let Some((offset, length)) = options.slice.as_ref().filter(|(o, _)| *o < 0) {
+            input = build_slice_stream(input, *offset, *length, phys_sm);
+        }
+        return Ok(input);
     }
 
     let streaming = try_build_streaming_group_by(

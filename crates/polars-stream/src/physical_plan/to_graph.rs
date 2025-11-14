@@ -803,6 +803,7 @@ fn to_graph_rec<'a>(
             input,
             options,
             aggs,
+            slice,
         } => {
             let input_schema = &ctx.phys_sm[input.node].output_schema;
             let input_key = to_graph_rec(input.node, ctx)?;
@@ -820,6 +821,7 @@ fn to_graph_rec<'a>(
                     input_schema.clone(),
                     options.clone(),
                     aggs,
+                    *slice,
                 )?,
                 [(input_key, input.port)],
             )

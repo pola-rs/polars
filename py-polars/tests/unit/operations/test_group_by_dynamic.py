@@ -1305,3 +1305,26 @@ def test_group_by_iterate_index_column_name_25137(col: pl.Expr) -> None:
     assert len(list(df.group_by(col))) == 3
     assert len(list(df.group_by_dynamic(col, every="1i"))) == 3
     assert len(list(df.rolling(col, period="1i"))) == 3
+
+
+def test_group_by_dynamic_with_slice() -> None:
+    lf = (
+        pl.LazyFrame({"a": [0, 5, 2, 1, 3, 7, 1, 2, 3, 4]})
+        .with_row_index()
+        .group_by_dynamic(pl.col.index.cast(pl.Int64), every="2i")
+        .agg(pl.col.a.sum())
+    )
+
+    expected = pl.DataFrame(
+        {
+            "index": [0, 2, 4, 6, 8],
+            "a": [5, 3, 10, 3, 7],
+        }
+    )
+
+    assert_frame_equal(lf.head(2).collect(), expected.head(2))
+    assert_frame_equal(lf.slice(1, 3).collect(), expected.slice(1, 3))
+    assert_frame_equal(lf.tail(2).collect(), expected.tail(2))
+    assert_frame_equal(lf.slice(5, 1).collect(), expected.slice(5, 1))
+    assert_frame_equal(lf.slice(5, 0).collect(), expected.slice(5, 0))
+    assert_frame_equal(lf.slice(2, 1).collect(), expected.slice(2, 1))

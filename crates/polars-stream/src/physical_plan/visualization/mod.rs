@@ -191,8 +191,10 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                 input,
                 options,
                 aggs,
+                slice,
             } => {
                 use polars_time::DynamicGroupOptions;
+                use polars_utils::IdxSize;
 
                 phys_node_inputs.push(input.node);
 
@@ -217,6 +219,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     include_boundaries: *include_boundaries,
                     closed_window: PlSmallStr::from_static(closed_window.into()),
                     aggs: expr_list(aggs, self.expr_arena),
+                    slice: slice.map(|(o, l)| (IdxSize::into(o), IdxSize::into(l))),
                 };
 
                 PhysNodeInfo {
