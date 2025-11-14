@@ -588,6 +588,16 @@ unsafe fn to_physical_and_dtype(
                 (s.chunks().clone(), s.dtype().clone())
             })
         },
+        dt @ ArrowDataType::Extension(_) => {
+            feature_gated!("dtype-extension", {
+                let s = unsafe {
+                    let dt = dt.clone();
+                    Series::_try_from_arrow_unchecked_with_md(PlSmallStr::EMPTY, arrays, &dt, md)
+                }
+                .unwrap();
+                (s.chunks().clone(), s.dtype().clone())
+            })
+        }
         ArrowDataType::List(field) => {
             let out = convert(&arrays, |arr| {
                 cast(arr, &ArrowDataType::LargeList(field.clone())).unwrap()
