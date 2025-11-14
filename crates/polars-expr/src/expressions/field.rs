@@ -30,7 +30,7 @@ impl PhysicalExpr for FieldExpr {
     }
 
     fn evaluate(&self, _df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
-        let (ca, _validity) = state.with_fields.as_ref().clone().ok_or_else(
+        let ca = state.with_fields.as_ref().clone().ok_or_else(
             || polars_err!(invalid_field_use),
         )?;
 
