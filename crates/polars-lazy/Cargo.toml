@@ -94,6 +94,7 @@ dtype-full = [
   "dtype-datetime",
   "dtype-decimal",
   "dtype-duration",
+  "dtype-extension",
   "dtype-i16",
   "dtype-i128",
   "dtype-i8",
@@ -140,6 +141,10 @@ dtype-duration = [
   "temporal",
   "polars-expr/dtype-duration",
   "polars-mem-engine/dtype-duration",
+]
+dtype-extension = [
+  "polars-plan/dtype-extension",
+  "polars-expr/dtype-extension",
 ]
 dtype-i16 = [
   "polars-plan/dtype-i16",
