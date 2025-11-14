@@ -6,8 +6,8 @@ use polars_plan::dsl::{JoinTypeOptionsIR, PartitionVariantIR, SinkOptions, SinkT
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::prelude::AExpr;
 use polars_utils::arena::Arena;
-use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::{IdxSize, format_pl_smallstr};
 
 pub mod models;
 pub use models::{PhysNodeInfo, PhysicalPlanVisualizationData};
@@ -211,12 +211,18 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     ..Default::default()
                 }
             },
-            PhysNodeKind::SortedGroupBy { input, key, aggs } => {
+            PhysNodeKind::SortedGroupBy {
+                input,
+                key,
+                aggs,
+                slice,
+            } => {
                 phys_node_inputs.push(input.node);
 
                 let properties = PhysNodeProperties::SortedGroupBy {
                     key: key.clone(),
                     aggs: expr_list(aggs, self.expr_arena),
+                    slice: slice.map(|(o, l)| (IdxSize::into(o), IdxSize::into(l))),
                 };
 
                 PhysNodeInfo {

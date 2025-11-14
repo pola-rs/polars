@@ -3,6 +3,7 @@ use std::sync::Arc;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::GroupsType;
 use polars_core::schema::Schema;
+use polars_core::series::IsSorted;
 use polars_error::{PolarsError, PolarsResult};
 use polars_expr::state::ExecutionState;
 use polars_ops::series::{SearchSortedSide, rle_lengths, search_sorted};
@@ -27,11 +28,14 @@ pub struct SortedGroupBy {
 
     key: PlSmallStr,
     aggs: Arc<[(PlSmallStr, StreamExpr)]>,
+
+    slice: Option<(IdxSize, IdxSize)>,
 }
 impl SortedGroupBy {
     pub fn new(
         key: PlSmallStr,
         aggs: Arc<[(PlSmallStr, StreamExpr)]>,
+        slice: Option<(IdxSize, IdxSize)>,
         input_schema: Arc<Schema>,
     ) -> Self {
         let buf_df = DataFrame::empty_with_arc_schema(input_schema.clone());
@@ -40,6 +44,7 @@ impl SortedGroupBy {
             seq: MorselSeq::default(),
             key,
             aggs,
+            slice,
         }
     }
 
@@ -49,9 +54,22 @@ impl SortedGroupBy {
         state: &ExecutionState,
         idxs: &mut Vec<IdxSize>,
         df: DataFrame,
+        windows_slice: (IdxSize, IdxSize),
     ) -> PolarsResult<DataFrame> {
         let column = df.column(key).unwrap();
         rle_lengths(column, idxs).unwrap();
+
+        let windows_offset = windows_slice.0 as usize;
+        let windows_length = (windows_slice.1 as usize).min(idxs.len() - windows_offset);
+
+        let df_offset = idxs[..windows_offset].iter().sum::<IdxSize>();
+        let df_height = idxs[windows_offset..][..windows_length]
+            .iter()
+            .sum::<IdxSize>();
+
+        let df = df.slice(df_offset as i64, df_height as usize);
+        idxs.truncate(windows_offset + windows_length);
+        idxs.drain(..windows_offset);
 
         let mut offset = 0;
         let groups = GroupsType::Slice {
@@ -75,6 +93,7 @@ impl SortedGroupBy {
         });
 
         let mut columns = Vec::with_capacity(1 + aggs.len());
+        let column = df.column(key).unwrap();
         columns.push(unsafe { column.take_slice_unchecked(idxs) });
 
         for (name, agg) in aggs.iter() {
@@ -99,6 +118,12 @@ impl ComputeNode for SortedGroupBy {
         _state: &StreamingExecutionState,
     ) -> PolarsResult<()> {
         assert!(recv.len() == 1 && send.len() == 1);
+
+        if self.slice.is_some_and(|(_, l)| l == 0) {
+            recv[0] = PortState::Done;
+            send[0] = PortState::Done;
+            std::mem::take(&mut self.buf_df);
+        }
 
         if send[0] == PortState::Done {
             recv[0] = PortState::Done;
@@ -129,6 +154,7 @@ impl ComputeNode for SortedGroupBy {
         let Some(recv) = recv_ports[0].take() else {
             // We no longer have to receive data. Finalize and send all remaining data.
             assert!(!self.buf_df.is_empty());
+            assert!(self.slice.is_none_or(|(_, l)| l > 0));
             let mut send = send_ports[0].take().unwrap().serial();
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 let df = Self::evaluate_one(
@@ -137,6 +163,7 @@ impl ComputeNode for SortedGroupBy {
                     &state.in_memory_exec_state,
                     &mut Vec::new(),
                     std::mem::take(&mut self.buf_df),
+                    self.slice.unwrap_or((0, IdxSize::MAX)),
                 )
                 .await?;
 
@@ -152,8 +179,10 @@ impl ComputeNode for SortedGroupBy {
         let mut recv = recv.serial();
         let send = send_ports[0].take().unwrap().parallel();
 
-        let (mut distributor, rxs) =
-            distributor_channel::<Morsel>(send.len(), *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
+        let (mut distributor, rxs) = distributor_channel::<(Morsel, (IdxSize, IdxSize))>(
+            send.len(),
+            *DEFAULT_DISTRIBUTOR_BUFFER_SIZE,
+        );
 
         // Worker tasks.
         //
@@ -165,10 +194,11 @@ impl ComputeNode for SortedGroupBy {
             let state = state.in_memory_exec_state.split();
             let mut idxs = Vec::<IdxSize>::new();
             scope.spawn_task(TaskPriority::High, async move {
-                while let Ok(mut morsel) = rx.recv().await {
+                while let Ok((mut morsel, windows_slice)) = rx.recv().await {
                     morsel = morsel
                         .async_try_map::<PolarsError, _, _>(async |df| {
-                            Self::evaluate_one(&key, &aggs, &state, &mut idxs, df).await
+                            Self::evaluate_one(&key, &aggs, &state, &mut idxs, df, windows_slice)
+                                .await
                         })
                         .await?;
                     morsel.set_consume_token(wg.token());
@@ -187,7 +217,9 @@ impl ComputeNode for SortedGroupBy {
         //
         // This finds boundaries to distribute to worker threads over.
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-            while let Ok(morsel) = recv.recv().await {
+            while let Ok(morsel) = recv.recv().await
+                && self.slice.is_none_or(|(_, l)| l > 0)
+            {
                 let (df, seq, source_token, wait_token) = morsel.into_inner();
                 self.seq = seq;
                 drop(wait_token);
@@ -206,11 +238,12 @@ impl ComputeNode for SortedGroupBy {
                     continue;
                 }
 
-                let buf_key_column = buf_key_column.as_materialized_series();
+                let mut buf_key_column = buf_key_column.as_materialized_series().clone();
+                buf_key_column.set_sorted_flag(IsSorted::Ascending);
 
                 let descending = fst > lst;
                 let num_flushable = search_sorted(
-                    buf_key_column,
+                    &buf_key_column,
                     &buf_key_column.tail(Some(1)),
                     SearchSortedSide::Left,
                     descending,
@@ -221,8 +254,34 @@ impl ComputeNode for SortedGroupBy {
                 let df;
                 (df, self.buf_df) = self.buf_df.split_at(num_flushable as i64);
 
+                let mut windows_offset = 0;
+                let mut windows_length = IdxSize::MAX;
+
+                if let Some((offset, length)) = self.slice.as_mut() {
+                    let buf_key_column = buf_key_column.head(Some(num_flushable as usize));
+
+                    // Since `buf_key_column` is flagged as sorted, this is simply a linear scan.
+                    let num_uniq_values = buf_key_column.n_unique()? as IdxSize;
+
+                    // Fast path: Slice allows skipping the entire morsel.
+                    if *offset >= num_uniq_values {
+                        *offset -= num_uniq_values;
+                        continue;
+                    }
+
+                    windows_offset = *offset;
+                    windows_length = *length;
+
+                    let num_skipped_values = (*offset).min(num_uniq_values);
+                    *offset -= num_skipped_values;
+                    *length = (*length).saturating_sub(num_uniq_values - num_skipped_values);
+                }
+
                 if distributor
-                    .send(Morsel::new(df, seq, source_token))
+                    .send((
+                        Morsel::new(df, seq, source_token),
+                        (windows_offset, windows_length),
+                    ))
                     .await
                     .is_err()
                 {
