@@ -262,8 +262,8 @@ impl DynamicGroupBy {
             let offset = self.slice_offset as usize;
             self.slice_offset = self.slice_offset.saturating_sub(windows.len() as IdxSize);
             windows.drain(..offset);
-            lower_bound.drain(..offset);
-            upper_bound.drain(..offset);
+            lower_bound.drain(..offset.min(lower_bound.len()));
+            upper_bound.drain(..offset.min(upper_bound.len()));
         }
 
         let trunc_length = windows.len().min(self.slice_length as usize);
