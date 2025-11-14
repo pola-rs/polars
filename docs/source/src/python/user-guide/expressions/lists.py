@@ -149,7 +149,7 @@ df = pl.DataFrame(
 print(df)
 # --8<-- [end:children]
 
-# --8<-- [start:list-aggregation]
+# --8<-- [start:list-sorting]
 result = df.select(
     pl.col("children")
     .list.eval(
@@ -163,6 +163,25 @@ result = df.select(
     .alias("min_age"),
     pl.col("children")
     .list.eval(pl.element().struct.field("age").max())
+    .alias("max_age"),
+)
+print(result)
+# --8<-- [end:list-sorting]
+
+# --8<-- [start:list-aggregation]
+result = df.select(
+    pl.col("children")
+    .list.eval(
+        pl.element()
+        .sort_by(pl.element().struct.field("age"), descending=True)
+        .struct.field("name")
+    )
+    .alias("names_by_age"),
+    pl.col("children")
+    .list.agg(pl.element().struct.field("age").min())
+    .alias("min_age"),
+    pl.col("children")
+    .list.agg(pl.element().struct.field("age").max())
     .alias("max_age"),
 )
 print(result)
