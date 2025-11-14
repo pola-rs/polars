@@ -70,8 +70,8 @@ impl ChunkExplode for ListChunked {
         let mut values = listarr.values().clone();
 
         let (mut s, offsets) = if ca._can_fast_explode()
-            && (!options.empty_as_null || !ca.has_empty_lists())
             && (!options.keep_nulls || !ca.has_nulls())
+            && (!options.empty_as_null || !ca.has_empty_lists())
         {
             // ensure that the value array is sliced
             // as a list only slices its offsets on a slice operation
