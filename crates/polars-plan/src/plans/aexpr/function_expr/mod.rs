@@ -1044,7 +1044,13 @@ impl IRFunctionExpr {
                 FunctionOptions::aggregation().flag(FunctionFlags::NON_ORDER_OBSERVING)
             },
             #[cfg(feature = "dtype-array")]
-            F::Reshape(_) => FunctionOptions::groupwise(),
+            F::Reshape(dims) => {
+                if dims.len() == 1 && dims[0] == ReshapeDimension::Infer {
+                    FunctionOptions::row_separable()
+                } else {
+                    FunctionOptions::groupwise()
+                }
+            },
             #[cfg(feature = "repeat_by")]
             F::RepeatBy => FunctionOptions::elementwise(),
             F::ArgUnique => FunctionOptions::groupwise(),
