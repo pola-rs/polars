@@ -246,6 +246,27 @@ impl ChunkExplode for ArrayChunked {
         &self,
         options: ExplodeOptions,
     ) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
+        if self.width() == 0 {
+            let mut num_nulls = 0;
+            if options.empty_as_null {
+                num_nulls += self.len() - self.null_count();
+            }
+            if options.keep_nulls {
+                num_nulls += self.null_count();
+            }
+            let offsets = (0..num_nulls as i64 + 1).collect::<Vec<i64>>();
+            // SAFETY: monotonically increasing
+            let offsets = unsafe { OffsetsBuffer::new_unchecked(offsets.into()) };
+            let s = Column::new_scalar(
+                self.name().clone(),
+                Scalar::null(self.inner_dtype().clone()),
+                num_nulls,
+            )
+            .take_materialized_series();
+
+            return Ok((s, offsets));
+        }
+
         let ca = self.rechunk();
         let arr = ca.downcast_iter().next().unwrap();
         // fast-path for non-null array.

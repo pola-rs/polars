@@ -566,3 +566,28 @@ def test_explode_parametric(
             pl.concat([si] * size + [si.clear(1)]).explode(**a),
             pl.concat([s] * size + [null_list_item]),
         )
+
+
+def test_explode_array_parameters() -> None:
+    s = pl.Series("a", [[1, 2, 3], [4, 5, 6], [7, 8, 9]], pl.Array(pl.Int64, 3))
+    assert_series_equal(s.explode(), pl.Series("a", list(range(1, 10)), pl.Int64))
+
+    s = pl.Series("a", [[1, 2, 3], [4, 5, 6], None], pl.Array(pl.Int64, 3))
+    assert_series_equal(
+        s.explode(), pl.Series("a", list(range(1, 7)) + [None], pl.Int64)
+    )
+    assert_series_equal(
+        s.explode(keep_nulls=False), pl.Series("a", list(range(1, 7)), pl.Int64)
+    )
+
+    s = pl.Series("a", [[], [], None], pl.Array(pl.Int64, 0))
+    assert_series_equal(s.explode(), pl.Series("a", [None] * 3, pl.Int64))
+    assert_series_equal(
+        s.explode(keep_nulls=False), pl.Series("a", [None] * 2, pl.Int64)
+    )
+    assert_series_equal(
+        s.explode(empty_as_null=False), pl.Series("a", [None], pl.Int64)
+    )
+    assert_series_equal(
+        s.explode(empty_as_null=False, keep_nulls=False), pl.Series("a", [], pl.Int64)
+    )
