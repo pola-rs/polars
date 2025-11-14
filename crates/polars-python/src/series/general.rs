@@ -557,6 +557,26 @@ impl PySeries {
         .map_err(PyPolarsErr::from)
         .map_err(PyErr::from)
     }
+
+    fn set(&self, py: Python<'_>, mask: PySeries, value: PySeries) -> PyResult<Self> {
+        assert_eq!(value.len(), 1);
+        py.enter_polars(|| {
+            let slf = self.series.read();
+            let mask = mask.series.read();
+            let value = value.series.read();
+
+            let mask = mask.bool()?;
+
+            PolarsResult::Ok(
+                value
+                    .zip_with_same_type(mask, &slf)?
+                    .with_name(slf.name().clone()),
+            )
+        })
+        .map(Into::into)
+        .map_err(PyPolarsErr::from)
+        .map_err(PyErr::from)
+    }
 }
 
 macro_rules! impl_get {

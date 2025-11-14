@@ -5026,12 +5026,8 @@ class Series:
         │ 3       │
         └─────────┘
         """
-        return F.select(
-            F.when(F.lit(filter))
-            .then(F.lit(value))
-            .otherwise(F.lit(self))
-            .alias(self.name)
-        ).to_series()
+        value_s = Series([value], dtype=self.dtype)
+        return wrap_s(self._s.set(filter._s, value_s._s))
 
     def scatter(
         self,
