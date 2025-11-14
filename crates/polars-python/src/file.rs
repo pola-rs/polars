@@ -45,7 +45,7 @@ impl DynWriteable for PyFileLikeObject {
         Ok(())
     }
     fn sync_on_close(&mut self, _sync_on_close: SyncOnCloseType) -> io::Result<()> {
-        Ok(())
+        self.flush()
     }
 }
 
