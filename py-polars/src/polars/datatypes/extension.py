@@ -6,8 +6,14 @@ from polars._utils.unstable import unstable
 
 _REGISTRY = {}
 
+
 @unstable()
-def register_extension_type(ext_name: str, ext_class: type[dt.BaseExtension] | None = None, *, as_storage: bool = False) -> None:
+def register_extension_type(
+    ext_name: str,
+    ext_class: type[dt.BaseExtension] | None = None,
+    *,
+    as_storage: bool = False,
+) -> None:
     """
     Register the extension type for the given extension name.
 
@@ -30,6 +36,7 @@ def register_extension_type(ext_name: str, ext_class: type[dt.BaseExtension] | N
         _REGISTRY[ext_name] = ext_class
         _register_extension_type(ext_name, ext_class)
 
+
 @unstable()
 def unregister_extension_type(ext_name: str) -> None:
     """
@@ -41,6 +48,7 @@ def unregister_extension_type(ext_name: str) -> None:
     """
     _REGISTRY.pop(ext_name)
     _unregister_extension_type(ext_name)
+
 
 @unstable()
 def get_extension_type(ext_name: str) -> type[dt.BaseExtension] | str | None:

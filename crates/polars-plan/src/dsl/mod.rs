@@ -4,7 +4,6 @@
 pub mod cat;
 #[cfg(feature = "dtype-categorical")]
 pub use cat::*;
-
 #[cfg(feature = "rolling_window_by")]
 pub(crate) use polars_time::prelude::*;
 

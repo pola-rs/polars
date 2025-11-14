@@ -12,11 +12,9 @@ impl IRExtensionFunction {
         use IRExtensionFunction::*;
         match self {
             To(dtype) => mapper.with_dtype(dtype.clone()),
-            Storage => mapper.map_dtype(|dt| {
-                match dt {
-                    DataType::Extension(_, storage) => (**storage).clone(),
-                    dt => dt.clone(),
-                }
+            Storage => mapper.map_dtype(|dt| match dt {
+                DataType::Extension(_, storage) => (**storage).clone(),
+                dt => dt.clone(),
             }),
         }
     }

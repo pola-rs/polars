@@ -157,7 +157,7 @@ impl From<&DataType> for SerializableDataType {
                 name: typ.name().to_string(),
                 metadata: typ.serialize_metadata().map(|s| s.into_owned()),
                 storage: Box::new(SerializableDataType::from(storage.as_ref())),
-            }
+            },
         }
     }
 }
@@ -218,11 +218,19 @@ impl From<SerializableDataType> for DataType {
             #[cfg(feature = "object")]
             Object(_) => Self::Object("unknown"),
             #[cfg(feature = "dtype-extension")]
-            Extension { name, metadata, storage } => {
+            Extension {
+                name,
+                metadata,
+                storage,
+            } => {
                 let storage = DataType::from(*storage);
-                let ext_type = crate::datatypes::extension::get_extension_type_or_generic(&name, &storage, metadata.as_deref());
+                let ext_type = crate::datatypes::extension::get_extension_type_or_generic(
+                    &name,
+                    &storage,
+                    metadata.as_deref(),
+                );
                 Self::Extension(ext_type, Box::new(storage))
-            }
+            },
         }
     }
 }

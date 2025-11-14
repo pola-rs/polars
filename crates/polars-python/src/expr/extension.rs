@@ -1,7 +1,7 @@
 use pyo3::prelude::*;
 
-use crate::expr::datatype::PyDataTypeExpr;
 use crate::PyExpr;
+use crate::expr::datatype::PyDataTypeExpr;
 
 #[pymethods]
 impl PyExpr {

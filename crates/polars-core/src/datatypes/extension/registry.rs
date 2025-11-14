@@ -3,7 +3,7 @@ use std::collections::hash_map::Entry;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, LazyLock, RwLock};
 
-use polars_error::{polars_bail, polars_err, polars_warn, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_err, polars_warn};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::{ExtensionTypeFactory, ExtensionTypeInstance};
@@ -16,19 +16,15 @@ pub enum UnknownExtensionTypeBehavior {
     WarnAndLoadAsStorage,
 }
 
-static UNKNOWN_EXTENSION_TYPE_BEHAVIOR: AtomicU8 = AtomicU8::new(
-    UnknownExtensionTypeBehavior::LoadAsGeneric as u8,
-);
+static UNKNOWN_EXTENSION_TYPE_BEHAVIOR: AtomicU8 =
+    AtomicU8::new(UnknownExtensionTypeBehavior::LoadAsGeneric as u8);
 
-pub fn set_unknown_extension_type_behavior(
-    behavior: UnknownExtensionTypeBehavior,
-) {
+pub fn set_unknown_extension_type_behavior(behavior: UnknownExtensionTypeBehavior) {
     UNKNOWN_EXTENSION_TYPE_BEHAVIOR.store(behavior as u8, Ordering::Relaxed);
 }
 
 pub fn get_unknown_extension_type_behavior() -> UnknownExtensionTypeBehavior {
-    match UNKNOWN_EXTENSION_TYPE_BEHAVIOR.load(Ordering::Relaxed)
-    {
+    match UNKNOWN_EXTENSION_TYPE_BEHAVIOR.load(Ordering::Relaxed) {
         0 => UnknownExtensionTypeBehavior::LoadAsGeneric,
         1 => UnknownExtensionTypeBehavior::LoadAsStorage,
         2 => UnknownExtensionTypeBehavior::WarnAndLoadAsStorage,
@@ -47,28 +43,30 @@ pub fn get_extension_type_or_storage(
             factory.create_type_instance(name, storage, metadata),
         )),
         Some(None) => None,
-        None => {
-            match get_unknown_extension_type_behavior() {
-                UnknownExtensionTypeBehavior::LoadAsStorage => None,
-                UnknownExtensionTypeBehavior::LoadAsGeneric => {
-                    let typ = super::GenericExtensionType::new(name.to_string(), metadata.map(|s| s.to_string()));
-                    Some(ExtensionTypeInstance(Box::new(typ)))
-                }
-                UnknownExtensionTypeBehavior::WarnAndLoadAsStorage => {
-                    if UNKNOWN_EXTENSION_TYPE_BEHAVIOR.swap(
-                        UnknownExtensionTypeBehavior::LoadAsStorage as u8,
-                        Ordering::Relaxed,
-                    ) == UnknownExtensionTypeBehavior::WarnAndLoadAsStorage as u8 {
-                        polars_warn!("Extension type '{name}' is not registered; loading as its storage type.
+        None => match get_unknown_extension_type_behavior() {
+            UnknownExtensionTypeBehavior::LoadAsStorage => None,
+            UnknownExtensionTypeBehavior::LoadAsGeneric => {
+                let typ = super::GenericExtensionType::new(
+                    name.to_string(),
+                    metadata.map(|s| s.to_string()),
+                );
+                Some(ExtensionTypeInstance(Box::new(typ)))
+            },
+            UnknownExtensionTypeBehavior::WarnAndLoadAsStorage => {
+                if UNKNOWN_EXTENSION_TYPE_BEHAVIOR.swap(
+                    UnknownExtensionTypeBehavior::LoadAsStorage as u8,
+                    Ordering::Relaxed,
+                ) == UnknownExtensionTypeBehavior::WarnAndLoadAsStorage as u8
+                {
+                    polars_warn!("Extension type '{name}' is not registered; loading as its storage type.
 
 To avoid this warning, register the extension type or set environment variable 'POLARS_UNKNOWN_EXTENSION_TYPE_BEHAVIOR' to 'load_as_storage' or 'load_as_extension'.
 
 In Polars 2.0, the default behavior will change to 'load_as_extension'.");
-                    }
-                    None
-                },
-            }
-        }
+                }
+                None
+            },
+        },
     }
 }
 

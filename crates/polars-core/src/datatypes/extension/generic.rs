@@ -1,12 +1,10 @@
 use std::any::Any;
 use std::borrow::Cow;
-use std::hash::{Hash, Hasher, BuildHasher};
+use std::hash::{BuildHasher, Hash, Hasher};
 
 use polars_utils::aliases::PlFixedStateQuality;
 
 use super::ExtensionTypeImpl;
-
-
 
 /// A generic extension type used when the specific extension type is not registered.
 pub struct GenericExtensionType {
@@ -63,10 +61,7 @@ impl ExtensionTypeImpl for GenericExtensionType {
                 self.name, md
             ))
         } else {
-            Cow::Owned(format!(
-                "ExtensionType(name='{}')",
-                self.name
-            ))
+            Cow::Owned(format!("ExtensionType(name='{}')", self.name))
         }
     }
 }

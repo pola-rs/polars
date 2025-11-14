@@ -651,7 +651,7 @@ pub trait SeriesTrait:
     fn as_phys_any(&self) -> &dyn Any;
 
     fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
-    
+
     #[cfg(feature = "checked_arithmetic")]
     fn checked_div(&self, _rhs: &Series) -> PolarsResult<Series> {
         polars_bail!(opq = checked_div, self._dtype());

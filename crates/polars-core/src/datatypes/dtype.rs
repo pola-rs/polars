@@ -10,12 +10,12 @@ use polars_utils::itertools::Itertools;
 #[cfg(any(feature = "serde-lazy", feature = "serde"))]
 use serde::{Deserialize, Serialize};
 pub use temporal::time_zone::TimeZone;
-#[cfg(feature = "dtype-extension")]
-pub use crate::datatypes::extension::ExtensionTypeInstance;
 
 use super::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::get_object_physical_type;
+#[cfg(feature = "dtype-extension")]
+pub use crate::datatypes::extension::ExtensionTypeInstance;
 use crate::utils::materialize_dyn_int;
 
 pub trait MetaDataExt: IntoMetadata {
@@ -475,7 +475,7 @@ impl DataType {
             _ => self.clone(),
         }
     }
-    
+
     #[must_use]
     pub fn to_storage(&self) -> DataType {
         use DataType::*;
@@ -745,7 +745,7 @@ impl DataType {
             false
         }
     }
-    
+
     pub fn is_extension(&self) -> bool {
         matches!(self, DataType::Extension(_, _))
     }
@@ -942,15 +942,13 @@ impl DataType {
             },
             BinaryOffset => Ok(ArrowDataType::LargeBinary),
             #[cfg(feature = "dtype-extension")]
-            Extension(typ, inner) => {
-                Ok(ArrowDataType::Extension(Box::new(
-                    arrow::datatypes::ExtensionType {
-                        name: typ.name().into(),
-                        inner: inner.try_to_arrow(compat_level)?,
-                        metadata: typ.serialize_metadata().map(|m| m.into()),
-                    }
-                )))
-            },
+            Extension(typ, inner) => Ok(ArrowDataType::Extension(Box::new(
+                arrow::datatypes::ExtensionType {
+                    name: typ.name().into(),
+                    inner: inner.try_to_arrow(compat_level)?,
+                    metadata: typ.serialize_metadata().map(|m| m.into()),
+                },
+            ))),
             Unknown(kind) => {
                 let dt = match kind {
                     UnknownKind::Any => ArrowDataType::Unknown,

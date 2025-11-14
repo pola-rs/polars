@@ -574,7 +574,7 @@ impl Series {
                     .from_physical_unchecked(to.as_slice())
                     .map(|ca| ca.into_series())
             },
-            
+
             #[cfg(feature = "dtype-extension")]
             (_, D::Extension(typ, storage)) => {
                 let storage_series = self.from_physical_unchecked(storage.as_ref())?;
@@ -585,7 +585,7 @@ impl Series {
             _ => panic!("invalid from_physical({dtype:?}) for {:?}", self.dtype()),
         }
     }
-    
+
     #[cfg(feature = "dtype-extension")]
     pub fn into_extension(self, typ: ExtensionTypeInstance) -> Series {
         assert!(!self.dtype().is_extension());
@@ -770,14 +770,14 @@ impl Series {
             _ => Cow::Borrowed(self),
         }
     }
-    
+
     /// If the Series is an Extension type, return its storage Series.
     /// Otherwise, return itself.
     pub fn to_storage(&self) -> &Series {
         #[cfg(feature = "dtype-extension")]
         {
             if let DataType::Extension(_, _) = self.dtype() {
-                return self.ext().unwrap().storage()
+                return self.ext().unwrap().storage();
             }
         }
         self

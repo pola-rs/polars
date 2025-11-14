@@ -117,13 +117,11 @@ impl Series {
             Float64 => Float64Chunked::from_chunks(name, chunks).into_series(),
             BinaryOffset => BinaryOffsetChunked::from_chunks(name, chunks).into_series(),
             #[cfg(feature = "dtype-extension")]
-            Extension(typ, storage) => {
-                ExtensionChunked::from_storage(
-                    typ.clone(),
-                    Series::from_chunks_and_dtype_unchecked(name, chunks, storage)
-                )
-                .into_series()
-            }
+            Extension(typ, storage) => ExtensionChunked::from_storage(
+                typ.clone(),
+                Series::from_chunks_and_dtype_unchecked(name, chunks, storage),
+            )
+            .into_series(),
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
                 let mut ca =
@@ -472,13 +470,24 @@ impl Series {
                     debug_assert!(chunk.dtype() == dtype);
                     *chunk.dtype_mut() = ext.inner.clone();
                 }
-                let storage = Series::_try_from_arrow_unchecked_with_md(name.clone(), chunks, &ext.inner, md)?;
-                
-                Ok(match get_extension_type_or_storage(&ext.name, storage.dtype(), ext.metadata.as_deref()) {
-                    Some(typ) => ExtensionChunked::from_storage(typ, storage).into_series(),
-                    None => storage,
-                })
-            }
+                let storage = Series::_try_from_arrow_unchecked_with_md(
+                    name.clone(),
+                    chunks,
+                    &ext.inner,
+                    md,
+                )?;
+
+                Ok(
+                    match get_extension_type_or_storage(
+                        &ext.name,
+                        storage.dtype(),
+                        ext.metadata.as_deref(),
+                    ) {
+                        Some(typ) => ExtensionChunked::from_storage(typ, storage).into_series(),
+                        None => storage,
+                    },
+                )
+            },
 
             #[cfg(feature = "dtype-struct")]
             ArrowDataType::Struct(_) => {
@@ -597,7 +606,7 @@ unsafe fn to_physical_and_dtype(
                 .unwrap();
                 (s.chunks().clone(), s.dtype().clone())
             })
-        }
+        },
         ArrowDataType::List(field) => {
             let out = convert(&arrays, |arr| {
                 cast(arr, &ArrowDataType::LargeList(field.clone())).unwrap()
