@@ -4,7 +4,7 @@ from polars import datatypes as dt
 from polars._plr import _register_extension_type, _unregister_extension_type
 from polars._utils.unstable import unstable
 
-_REGISTRY = {}
+_REGISTRY: dict[str, str | type[dt.BaseExtension]] = {}
 
 
 @unstable()

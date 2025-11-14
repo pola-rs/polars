@@ -56,6 +56,10 @@ impl ExtensionChunked {
         self.storage.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.storage.is_empty()
+    }
+
     pub fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
         self.storage().get(i)
     }

@@ -1210,7 +1210,7 @@ class BaseExtension(DataType):
     """Base class for extension data types."""
 
     def __init__(
-        self, name: str, storage: DataType, metadata: str | None = None
+        self, name: str, storage: PolarsDataType, metadata: str | None = None
     ) -> None:
         self._name = name
         self._storage = storage
@@ -1218,7 +1218,7 @@ class BaseExtension(DataType):
 
     @classmethod
     def ext_from_params(
-        cls, name: str, storage: DataType, metadata: str | None
+        cls, name: str, storage: PolarsDataType, metadata: str | None
     ) -> Self:
         """Creates an Extension type instance from its parameters."""
         slf = cls.__new__(cls)
@@ -1231,7 +1231,7 @@ class BaseExtension(DataType):
         """Returns the name of this extension type."""
         return self._name
 
-    def ext_storage(self) -> DataType:
+    def ext_storage(self) -> PolarsDataType:
         """Returns the storage type for this extension type."""
         return self._storage
 
@@ -1264,19 +1264,28 @@ class BaseExtension(DataType):
     def __hash__(self) -> int:
         return hash((self.ext_name(), self.ext_storage(), self.ext_metadata()))
 
-    def __eq__(self, other: object) -> bool:
-        return (
-            isinstance(other, BaseExtension)
-            and self.ext_name() == other.ext_name()
-            and self.ext_storage() == other.ext_storage()
-            and self.ext_metadata() == other.ext_metadata()
-        )
+    @overload  # type: ignore[override]
+    def __eq__(self, other: pl.DataTypeExpr) -> pl.Expr: ...
+
+    @overload
+    def __eq__(self, other: PolarsDataType) -> bool: ...
+
+    def __eq__(self, other: pl.DataTypeExpr | PolarsDataType) -> pl.Expr | bool:
+        if isinstance(other, pl.DataTypeExpr):
+            return self.to_dtype_expr() == other
+        else:
+            return (
+                isinstance(other, BaseExtension)
+                and self.ext_name() == other.ext_name()
+                and self.ext_storage() == other.ext_storage()
+                and self.ext_metadata() == other.ext_metadata()
+            )
 
     def __getstate__(self) -> tuple[str, PolarsDataType, str | None]:
         return self.ext_name(), self.ext_storage(), self.ext_metadata()
 
     def __setstate__(self, state: tuple[str, PolarsDataType, str | None]) -> None:
-        self.__dict__ = self.ext_from_params(*state).__dict__
+        self.__dict__ = type(self).ext_from_params(*state).__dict__
 
 
 class Extension(BaseExtension):

@@ -36,8 +36,8 @@ class ExprExtensionNameSpace:
             This functionality is currently considered **unstable**. It may be
             changed at any point without it being considered a breaking change.
         """
-        dtype = parse_into_datatype_expr(dtype)._pydatatype_expr
-        return wrap_expr(self._pyexpr.ext_to(dtype))
+        py_dtype = parse_into_datatype_expr(dtype)._pydatatype_expr
+        return wrap_expr(self._pyexpr.ext_to(py_dtype))
 
     @unstable()
     def storage(self) -> Expr:

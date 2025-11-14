@@ -51,7 +51,7 @@ impl ExtensionTypeImpl for GenericExtensionType {
     }
 
     fn dyn_display(&self) -> Cow<'_, str> {
-        Cow::Owned(format!("{}", self.name))
+        Cow::Borrowed(&self.name)
     }
 
     fn dyn_debug(&self) -> Cow<'_, str> {
