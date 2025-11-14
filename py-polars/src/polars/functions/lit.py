@@ -16,7 +16,7 @@ from polars._dependencies import (
 )
 from polars._dependencies import numpy as np
 from polars._utils.wrap import wrap_expr
-from polars.datatypes import Date, Datetime, Duration, BaseExtension
+from polars.datatypes import BaseExtension, Date, Datetime, Duration
 from polars.datatypes.convert import DataTypeMappings
 
 with contextlib.suppress(ImportError):  # Module not available when building docs

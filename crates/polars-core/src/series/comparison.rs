@@ -139,7 +139,7 @@ macro_rules! impl_ineq_compare {
             lhs.name(), lhs.len(),
             rhs.name(), rhs.len()
         );
-        
+
         match (lhs.dtype(), rhs.dtype()) {
             #[cfg(feature = "dtype-categorical")]
             (Categorical(lcats, _), Categorical(rcats, _)) => {
