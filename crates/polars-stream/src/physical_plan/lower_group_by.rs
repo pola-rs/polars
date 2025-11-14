@@ -667,7 +667,13 @@ pub fn try_build_sorted_group_by(
                 AExprBuilder::col(input_column.clone(), expr_arena).expr_ir(input_column.clone());
             let expr = AExprBuilder::function(
                 vec![expr],
-                IRFunctionExpr::RowDecode(key_fields, RowEncodingVariant::Unordered),
+                IRFunctionExpr::RowDecode(
+                    key_fields,
+                    RowEncodingVariant::Ordered {
+                        descending: None,
+                        nulls_last: None,
+                    },
+                ),
                 expr_arena,
             )
             .expr_ir(input_column.clone());
