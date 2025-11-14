@@ -102,7 +102,7 @@ static FROZEN_CATEGORIES_REGISTRY: LazyLock<Mutex<HashTable<(u64, Weak<FrozenCat
     LazyLock::new(|| Mutex::new(HashTable::new()));
 
 static FROZEN_CATEGORIES_HASHER: LazyLock<PlSeedableRandomStateQuality> =
-    LazyLock::new(PlSeedableRandomStateQuality::random);
+    LazyLock::new(PlSeedableRandomStateQuality::default);
 
 static GLOBAL_CATEGORIES: LazyLock<Arc<Categories>> = LazyLock::new(|| {
     let mut registry = CATEGORIES_REGISTRY.lock().unwrap();
