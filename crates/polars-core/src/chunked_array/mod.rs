@@ -1,6 +1,5 @@
 //! The typed heart of every Series column.
 #![allow(unsafe_op_in_unsafe_fn)]
-use std::iter::Map;
 use std::sync::Arc;
 
 use arrow::array::*;
@@ -8,7 +7,7 @@ use arrow::bitmap::Bitmap;
 use arrow::compute::concatenate::concatenate_unchecked;
 use polars_compute::filter::filter_with_bitmap;
 
-use crate::prelude::*;
+use crate::prelude::{ChunkTakeUnchecked, *};
 
 pub mod ops;
 #[macro_use]
@@ -26,6 +25,7 @@ pub(crate) mod ndarray;
 #[cfg(feature = "dtype-array")]
 pub(crate) mod array;
 mod binary;
+mod binary_offset;
 mod bitwise;
 #[cfg(feature = "object")]
 mod drop;
@@ -48,8 +48,6 @@ mod struct_;
 pub mod temporal;
 mod to_vec;
 mod trusted_len;
-
-use std::slice::Iter;
 
 use arrow::legacy::prelude::*;
 #[cfg(feature = "dtype-struct")]
@@ -171,27 +169,15 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         &self,
         series: &'a Series,
     ) -> PolarsResult<&'a ChunkedArray<T>> {
-        match self.dtype() {
-            #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(_, _) => {
-                let logical = series.decimal()?;
+        polars_ensure!(
+            self.dtype() == series.dtype(),
+            SchemaMismatch: "cannot unpack series of type `{}` into `{}`",
+            series.dtype(),
+            self.dtype(),
+        );
 
-                let ca = logical.physical();
-                Ok(ca.as_any().downcast_ref::<ChunkedArray<T>>().unwrap())
-            },
-            dt => {
-                polars_ensure!(
-                    dt == series.dtype(),
-                    SchemaMismatch: "cannot unpack series of type `{}` into `{}`",
-                    series.dtype(),
-                    dt,
-                );
-
-                // SAFETY:
-                // dtype will be correct.
-                Ok(unsafe { self.unpack_series_matching_physical_type(series) })
-            },
-        }
+        // SAFETY: dtype will be correct.
+        Ok(unsafe { self.unpack_series_matching_physical_type(series) })
     }
 
     /// Create a new [`ChunkedArray`] and compute its `length` and `null_count`.
@@ -317,7 +303,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
             Some(out)
         } else {
-            first_non_null(self.iter_validities())
+            first_non_null(self.chunks().iter().map(|arr| arr.as_ref()))
         }
     }
 
@@ -346,7 +332,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
             Some(out)
         } else {
-            last_non_null(self.iter_validities(), self.len())
+            last_non_null(self.chunks().iter().map(|arr| arr.as_ref()), self.len())
         }
     }
 
@@ -378,7 +364,9 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     /// Get the buffer of bits representing null values
     #[inline]
     #[allow(clippy::type_complexity)]
-    pub fn iter_validities(&self) -> Map<Iter<'_, ArrayRef>, fn(&ArrayRef) -> Option<&Bitmap>> {
+    pub fn iter_validities(
+        &self,
+    ) -> impl ExactSizeIterator<Item = Option<&Bitmap>> + DoubleEndedIterator {
         fn to_validity(arr: &ArrayRef) -> Option<&Bitmap> {
             arr.validity()
         }
@@ -579,6 +567,55 @@ where
             arr.get_unchecked(arr.len().checked_sub(1)?)
         }
     }
+
+    pub fn set_validity(&mut self, validity: &Bitmap) {
+        assert_eq!(self.len(), validity.len());
+        let mut i = 0;
+        for chunk in unsafe { self.chunks_mut() } {
+            *chunk = chunk.with_validity(Some(validity.clone().sliced(i, chunk.len())));
+            i += chunk.len();
+        }
+        self.null_count = validity.unset_bits();
+        self.set_fast_explode_list(false);
+    }
+}
+
+impl<T> ChunkedArray<T>
+where
+    T: PolarsDataType,
+    ChunkedArray<T>: ChunkTakeUnchecked<[IdxSize]>,
+{
+    /// Deposit values into nulls with a certain validity mask.
+    pub fn deposit(&self, validity: &Bitmap) -> Self {
+        let set_bits = validity.set_bits();
+
+        assert_eq!(self.null_count(), 0);
+        assert_eq!(self.len(), set_bits);
+
+        if set_bits == validity.len() {
+            return self.clone();
+        }
+
+        if set_bits == 0 {
+            return Self::full_null_like(self, validity.len());
+        }
+
+        let mut null_mask = validity.clone();
+
+        let mut gather_idxs = Vec::with_capacity(validity.len());
+        let leading_nulls = null_mask.take_leading_zeros();
+        gather_idxs.extend(std::iter::repeat_n(0, leading_nulls + 1));
+
+        let mut i = 0 as IdxSize;
+        gather_idxs.extend(null_mask.iter().skip(1).map(|v| {
+            i += IdxSize::from(v);
+            i
+        }));
+
+        let mut ca = unsafe { ChunkTakeUnchecked::take_unchecked(self, &gather_idxs) };
+        ca.set_validity(validity);
+        ca
+    }
 }
 
 impl ListChunked {
@@ -591,6 +628,34 @@ impl ListChunked {
                 &self.inner_dtype().to_physical(),
             ))
         }
+    }
+
+    pub fn has_masked_out_values(&self) -> bool {
+        for arr in self.downcast_iter() {
+            if arr.is_empty() {
+                continue;
+            }
+
+            if *arr.offsets().first() != 0 || *arr.offsets().last() != arr.values().len() as i64 {
+                return true;
+            }
+
+            let Some(validity) = arr.validity() else {
+                continue;
+            };
+            if validity.set_bits() == 0 {
+                continue;
+            }
+
+            // @Performance: false_idx_iter
+            for i in (!validity).true_idx_iter() {
+                if arr.offsets().length_at(i) > 0 {
+                    return true;
+                }
+            }
+        }
+
+        false
     }
 }
 
@@ -605,6 +670,82 @@ impl ArrayChunked {
                 &self.inner_dtype().to_physical(),
             ))
         }
+    }
+
+    pub fn from_aligned_values(
+        name: PlSmallStr,
+        inner_dtype: &DataType,
+        width: usize,
+        chunks: Vec<ArrayRef>,
+        length: usize,
+    ) -> Self {
+        let dtype = DataType::Array(Box::new(inner_dtype.clone()), width);
+        let arrow_dtype = dtype.to_arrow(CompatLevel::newest());
+        let field = Arc::new(Field::new(name, dtype));
+        if width == 0 {
+            use arrow::array::builder::{ArrayBuilder, make_builder};
+            let values = make_builder(&inner_dtype.to_arrow(CompatLevel::newest())).freeze();
+            return ArrayChunked::new_with_compute_len(
+                field,
+                vec![FixedSizeListArray::new(arrow_dtype, length, values, None).into_boxed()],
+            );
+        }
+
+        let chunks = chunks
+            .into_iter()
+            .map(|chunk| {
+                debug_assert_eq!(chunk.len() % width, 0);
+                FixedSizeListArray::new(arrow_dtype.clone(), length, chunk, None).into_boxed()
+            })
+            .collect();
+
+        unsafe { Self::new_with_dims(field, chunks, length, 0) }
+    }
+
+    /// Turn the ArrayChunked into the ListChunked with the same items.
+    ///
+    /// This will always zero copy the values into the ListChunked.
+    pub fn to_list(&self) -> ListChunked {
+        let inner_dtype = self.inner_dtype();
+        let chunks = self
+            .downcast_iter()
+            .map(|chunk| {
+                use arrow::offset::OffsetsBuffer;
+
+                let inner_dtype = chunk.dtype().inner_dtype().unwrap();
+                let dtype = inner_dtype.clone().to_large_list(true);
+
+                let offsets = (0..=chunk.len())
+                    .map(|i| (i * self.width()) as i64)
+                    .collect::<Vec<i64>>();
+
+                // SAFETY: We created our offsets in ascending manner.
+                let offsets = unsafe { OffsetsBuffer::new_unchecked(offsets.into()) };
+
+                ListArray::<i64>::new(
+                    dtype,
+                    offsets,
+                    chunk.values().clone(),
+                    chunk.validity().cloned(),
+                )
+                .into_boxed()
+            })
+            .collect();
+
+        // SAFETY: All the items were mapped 1-1 with the validity staying the same.
+        let mut ca = unsafe {
+            ListChunked::new_with_dims(
+                Arc::new(Field::new(
+                    self.name().clone(),
+                    DataType::List(Box::new(inner_dtype.clone())),
+                )),
+                chunks,
+                self.len(),
+                self.null_count(),
+            )
+        };
+        ca.set_fast_explode_list(!self.has_nulls());
+        ca
     }
 }
 

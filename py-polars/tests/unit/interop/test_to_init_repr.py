@@ -3,10 +3,13 @@ from __future__ import annotations
 import zoneinfo  # noqa: F401
 from datetime import date, datetime, time, timedelta, timezone
 
+import pytest
+
 import polars as pl
 from polars.testing import assert_frame_equal
 
 
+@pytest.mark.may_fail_cloud  # reason: Object type serialization
 def test_to_init_repr() -> None:
     # round-trip various types
     df = (

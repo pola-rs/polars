@@ -72,6 +72,7 @@ jobs:
           uv venv
           echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
           echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> $GITHUB_ENV
+          uv pip install --no-deps -e py-polars
 
       - name: Install Python dependencies
         working-directory: py-polars/docs

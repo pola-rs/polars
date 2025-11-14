@@ -2,8 +2,6 @@ pub mod infer;
 use chrono::DateTime;
 mod patterns;
 mod strptime;
-use chrono::ParseError;
-use chrono::format::ParseErrorKind;
 pub use patterns::Pattern;
 #[cfg(feature = "dtype-time")]
 use polars_core::chunked_array::temporal::time_to_time64ns;
@@ -50,14 +48,6 @@ where
         .chain(patterns::DATE_D_M_Y)
         .find(|fmt| convert(val, fmt).is_ok())
         .copied()
-}
-
-struct ParseErrorByteCopy(ParseErrorKind);
-
-impl From<ParseError> for ParseErrorByteCopy {
-    fn from(e: ParseError) -> Self {
-        ParseErrorByteCopy(e.kind())
-    }
 }
 
 fn get_first_val(ca: &StringChunked) -> PolarsResult<&str> {
@@ -123,24 +113,17 @@ pub trait StringMethods: AsString {
         };
         let ca = unary_elementwise(string_ca, |opt_s| {
             let mut s = opt_s?;
-            let fmt_len = fmt.len();
-
-            for i in 1..(s.len().saturating_sub(fmt_len)) {
-                if s.is_empty() {
-                    return None;
-                }
-                match NaiveDate::parse_from_str(s, fmt).map(naive_date_to_date) {
-                    Ok(nd) => return Some(nd),
-                    Err(e) => match ParseErrorByteCopy::from(e).0 {
-                        ParseErrorKind::TooLong => {
-                            s = &s[..s.len() - 1];
-                        },
-                        _ => {
-                            s = &s[i..];
-                        },
+            while !s.is_empty() {
+                match NaiveDate::parse_and_remainder(s, fmt) {
+                    Ok((nd, _)) => return Some(naive_date_to_date(nd)),
+                    Err(_) => {
+                        let mut it = s.chars();
+                        it.next();
+                        s = it.as_str();
                     },
                 }
             }
+
             None
         });
         Ok(ca.with_name(string_ca.name().clone()).into_date())
@@ -157,8 +140,11 @@ pub trait StringMethods: AsString {
         tz_aware: bool,
         tz: Option<&TimeZone>,
         _ambiguous: &StringChunked,
+        // Ensure that the inferred time_zone matches the given time_zone.
+        ensure_matching_tz: bool,
     ) -> PolarsResult<DatetimeChunked> {
         let string_ca = self.as_string();
+        let had_format = fmt.is_some();
         let fmt = match fmt {
             Some(fmt) => fmt,
             None => sniff_fmt_datetime(string_ca)?,
@@ -172,35 +158,30 @@ pub trait StringMethods: AsString {
 
         let ca = unary_elementwise(string_ca, |opt_s| {
             let mut s = opt_s?;
-            let fmt_len = fmt.len();
-
-            for i in 1..(s.len().saturating_sub(fmt_len)) {
-                if s.is_empty() {
-                    return None;
-                }
+            while !s.is_empty() {
                 let timestamp = if tz_aware {
-                    DateTime::parse_from_str(s, fmt).map(|dt| func(dt.naive_utc()))
+                    DateTime::parse_and_remainder(s, fmt).map(|(dt, _r)| func(dt.naive_utc()))
                 } else {
-                    NaiveDateTime::parse_from_str(s, fmt).map(func)
+                    NaiveDateTime::parse_and_remainder(s, fmt).map(|(nd, _r)| func(nd))
                 };
                 match timestamp {
                     Ok(ts) => return Some(ts),
-                    Err(e) => {
-                        let e: ParseErrorByteCopy = e.into();
-                        match e.0 {
-                            ParseErrorKind::TooLong => {
-                                s = &s[..s.len() - 1];
-                            },
-                            _ => {
-                                s = &s[i..];
-                            },
-                        }
+                    Err(_) => {
+                        let mut it = s.chars();
+                        it.next();
+                        s = it.as_str();
                     },
                 }
             }
             None
         })
         .with_name(string_ca.name().clone());
+
+        polars_ensure!(
+            !ensure_matching_tz || had_format || !(tz_aware && tz.is_none()),
+            to_datetime_tz_mismatch
+        );
+
         match (tz_aware, tz) {
             #[cfg(feature = "timezones")]
             (false, Some(tz)) => polars_ops::prelude::replace_time_zone(
@@ -270,7 +251,7 @@ pub trait StringMethods: AsString {
         let string_ca = self.as_string();
         let fmt = match fmt {
             Some(fmt) => fmt,
-            None => return infer::to_datetime(string_ca, tu, tz, ambiguous),
+            None => return infer::to_datetime(string_ca, tu, tz, ambiguous, true),
         };
         let fmt = strptime::compile_fmt(fmt)?;
         let use_cache = use_cache && string_ca.len() > 50;

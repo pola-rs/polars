@@ -10,6 +10,7 @@ from polars.exceptions import (
     ColumnNotFoundError,
     ComputeError,
     InvalidOperationError,
+    PolarsInefficientMapWarning,
     ShapeError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
@@ -812,10 +813,8 @@ def test_json_decode_nested_struct() -> None:
         '[{"key_1": "a2", "key_2": 2}]',
         '[{"key_1": "a3", "key_2": 3, "key_3": "c"}]',
     ]
-    df = pl.DataFrame({"json_str": json})
-    df_parsed = df.with_columns(
-        pl.col("json_str").str.json_decode().alias("parsed_list_json")
-    )
+    s = pl.Series("json_str", json)
+    s_parsed = s.str.json_decode().rename("parsed_list_json")
 
     expected_dtype = pl.List(
         pl.Struct(
@@ -826,9 +825,9 @@ def test_json_decode_nested_struct() -> None:
             ]
         )
     )
-    assert df_parsed.get_column("parsed_list_json").dtype == expected_dtype
+    assert s_parsed.dtype == expected_dtype
 
-    key_1_values = df_parsed.select(
+    key_1_values = s_parsed.to_frame().select(
         pl.col("parsed_list_json")
         .list.get(0)
         .struct.field("key_1")
@@ -1179,7 +1178,7 @@ def test_replace_all() -> None:
     )
 
 
-def test_replace_all_literal_no_caputures() -> None:
+def test_replace_all_literal_no_captures() -> None:
     # When using literal = True, capture groups should be disabled
 
     # Single row code path in Rust
@@ -1207,7 +1206,7 @@ def test_replace_all_literal_no_caputures() -> None:
     assert df2.get_column("text2")[1] == "I lost $2 yesterday."
 
 
-def test_replace_literal_no_caputures() -> None:
+def test_replace_literal_no_captures() -> None:
     # When using literal = True, capture groups should be disabled
 
     # Single row code path in Rust
@@ -1463,6 +1462,18 @@ def test_extract_all_many() -> None:
     assert broad.schema == {"a": pl.List(pl.String), "null": pl.List(pl.String)}
 
 
+@pytest.mark.may_fail_cloud  # reason: zero-field struct
+def test_extract_groups_empty() -> None:
+    df = pl.DataFrame({"iso_code": ["ISO 80000-1:2009", "ISO/IEC/IEEE 29148:2018"]})
+
+    assert df.select(pl.col("iso_code").str.extract_groups("")).to_dict(
+        as_series=False
+    ) == {"iso_code": [{}, {}]}
+
+    q = df.lazy().select(pl.col("iso_code").str.extract_groups(""))
+    assert q.collect_schema() == q.collect().schema
+
+
 def test_extract_groups() -> None:
     def _named_groups_builder(pattern: str, groups: dict[str, str]) -> str:
         return pattern.format(
@@ -1494,13 +1505,6 @@ def test_extract_groups() -> None:
         .to_dict(as_series=False)
         == expected
     )
-
-    assert df.select(pl.col("iso_code").str.extract_groups("")).to_dict(
-        as_series=False
-    ) == {"iso_code": [{}, {}]}
-
-    q = df.lazy().select(pl.col("iso_code").str.extract_groups(""))
-    assert q.collect_schema() == q.collect().schema
 
     assert df.select(
         pl.col("iso_code").str.extract_groups(r"\A(ISO\S*).*?(\d+)")
@@ -1826,28 +1830,6 @@ def test_splitn_expr() -> None:
 def test_titlecase() -> None:
     df = pl.DataFrame(
         {
-            "misc": [
-                "welcome to my world",
-                "double  space",
-                "and\ta\t tab",
-                "by jean-paul sartre, 'esq'",
-                "SOMETIMES/life/gives/you/a/2nd/chance",
-            ],
-        }
-    )
-    expected = [
-        "Welcome To My World",
-        "Double  Space",
-        "And\tA\t Tab",
-        "By Jean-Paul Sartre, 'Esq'",
-        "Sometimes/Life/Gives/You/A/2nd/Chance",
-    ]
-    actual = df.select(pl.col("misc").str.to_titlecase()).to_series()
-    for ex, act in zip(expected, actual):
-        assert ex == act, f"{ex} != {act}"
-
-    df = pl.DataFrame(
-        {
             "quotes": [
                 "'e.t. phone home'",
                 "you talkin' to me?",
@@ -1855,23 +1837,20 @@ def test_titlecase() -> None:
                 "to infinity,and BEYOND!",
                 "say 'what' again!i dare you - I\u00a0double-dare you!",
                 "What.we.got.here... is#failure#to#communicate",
+                "welcome to my world",
+                "double  space",
+                "and\ta\t tab",
+                "by jean-paul sartre, 'esq'",
+                "SOMETIMES/life/gives/you/a/2nd/chance",
             ]
         }
     )
-    expected_str = [
-        "'E.T. Phone Home'",
-        "You Talkin' To Me?",
-        "I Feel The Need--The Need For Speed",
-        "To Infinity,And Beyond!",
-        "Say 'What' Again!I Dare You - I\u00a0Double-Dare You!",
-        "What.We.Got.Here... Is#Failure#To#Communicate",
-    ]
-    expected_py = [s.title() for s in df["quotes"].to_list()]
-    for ex_str, ex_py, act in zip(
-        expected_str, expected_py, df["quotes"].str.to_titlecase()
-    ):
-        assert ex_str == act, f"{ex_str} != {act}"
-        assert ex_py == act, f"{ex_py} != {act}"
+
+    with pytest.warns(PolarsInefficientMapWarning):
+        assert_frame_equal(
+            df.select(pl.col("quotes").str.to_titlecase()),
+            df.select(pl.col("quotes").map_elements(lambda s: s.title())),
+        )
 
 
 def test_string_replace_with_nulls_10124() -> None:
@@ -2115,3 +2094,20 @@ def test_str_replace_n_zero_23570() -> None:
 
     out = df.with_columns(pl.col("a").str.replace("abc", pl.col("b"), n=0))
     assert_frame_equal(out, expected)
+
+
+def test_str_replace_null_19601() -> None:
+    df = pl.DataFrame({"key": ["1", "2"], "1": ["---", None]})
+
+    assert_frame_equal(
+        df.select(result=pl.col("key").str.replace("1", pl.col("1"))),
+        pl.DataFrame({"result": ["---", "2"]}),
+    )
+
+
+def test_str_json_decode_25237() -> None:
+    s = pl.Series(['[{"a": 0, "b": 1}, {"b": 2}]'])
+
+    dtypes = {s.str.json_decode().dtype for _ in range(20)}
+
+    assert len(dtypes) == 1

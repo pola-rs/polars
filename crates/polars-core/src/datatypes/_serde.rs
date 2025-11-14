@@ -5,8 +5,6 @@
 //! [rust_96956](https://github.com/rust-lang/rust/issues/96956), so we make a dummy type without static
 
 use polars_dtype::categorical::CategoricalPhysical;
-#[cfg(feature = "dtype-categorical")]
-use serde::de::SeqAccess;
 use serde::{Deserialize, Serialize};
 
 use super::*;
@@ -32,7 +30,7 @@ impl Serialize for DataType {
 
 #[cfg(feature = "dsl-schema")]
 impl schemars::JsonSchema for DataType {
-    fn schema_name() -> String {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
         SerializableDataType::schema_name()
     }
 
@@ -40,53 +38,8 @@ impl schemars::JsonSchema for DataType {
         SerializableDataType::schema_id()
     }
 
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         SerializableDataType::json_schema(generator)
-    }
-}
-
-#[cfg(feature = "dtype-categorical")]
-struct Wrap<T>(T);
-
-#[cfg(feature = "dtype-categorical")]
-impl serde::Serialize for Wrap<Utf8ViewArray> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.collect_seq(self.0.values_iter())
-    }
-}
-
-#[cfg(feature = "dtype-categorical")]
-impl<'de> serde::Deserialize<'de> for Wrap<Utf8ViewArray> {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct Utf8Visitor;
-
-        impl<'de> Visitor<'de> for Utf8Visitor {
-            type Value = Wrap<Utf8ViewArray>;
-
-            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                formatter.write_str("Utf8Visitor string sequence.")
-            }
-
-            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-            where
-                A: SeqAccess<'de>,
-            {
-                let mut utf8array = MutablePlString::with_capacity(seq.size_hint().unwrap_or(10));
-                while let Some(key) = seq.next_element()? {
-                    let key: Option<String> = key;
-                    utf8array.push(key)
-                }
-                Ok(Wrap(utf8array.into()))
-            }
-        }
-
-        deserializer.deserialize_seq(Utf8Visitor)
     }
 }
 
@@ -99,6 +52,7 @@ enum SerializableDataType {
     UInt16,
     UInt32,
     UInt64,
+    UInt128,
     Int8,
     Int16,
     Int32,
@@ -138,7 +92,7 @@ enum SerializableDataType {
         strings: Series,
     },
     #[cfg(feature = "dtype-decimal")]
-    Decimal(Option<usize>, Option<usize>),
+    Decimal(usize, usize),
     #[cfg(feature = "object")]
     Object(String),
 }
@@ -152,6 +106,7 @@ impl From<&DataType> for SerializableDataType {
             UInt16 => Self::UInt16,
             UInt32 => Self::UInt32,
             UInt64 => Self::UInt64,
+            UInt128 => Self::UInt128,
             Int8 => Self::Int8,
             Int16 => Self::Int16,
             Int32 => Self::Int32,
@@ -203,6 +158,7 @@ impl From<SerializableDataType> for DataType {
             UInt16 => Self::UInt16,
             UInt32 => Self::UInt32,
             UInt64 => Self::UInt64,
+            UInt128 => Self::UInt128,
             Int8 => Self::Int8,
             Int16 => Self::Int16,
             Int32 => Self::Int32,

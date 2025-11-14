@@ -3,6 +3,7 @@ from __future__ import annotations
 import gzip
 import io
 import json
+import re
 import zlib
 from collections import OrderedDict
 from datetime import datetime
@@ -23,6 +24,7 @@ from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
+@pytest.mark.may_fail_cloud  # reason: object
 def test_write_json() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", None]})
     out = df.write_json()
@@ -218,6 +220,7 @@ def test_json_supertype_infer() -> None:
     assert_frame_equal(python_infer, polars_infer)
 
 
+@pytest.mark.may_fail_cloud  # reason: object
 def test_ndjson_sliced_list_serialization() -> None:
     data = {"col1": [0, 2], "col2": [[3, 4, 5], [6, 7, 8]]}
     df = pl.DataFrame(data)
@@ -357,6 +360,7 @@ def test_ndjson_expected_null_got_object_inference_22807() -> None:
     )
 
 
+@pytest.mark.may_fail_cloud  # reason: object
 @pytest.mark.write_disk
 def test_json_wrong_input_handle_textio(tmp_path: Path) -> None:
     # This shouldn't be passed, but still we test if we can handle it gracefully
@@ -506,7 +510,7 @@ def test_json_infer_3_dtypes() -> None:
     df = pl.DataFrame({"a": ["{}", "1", "[1, 2]"]})
 
     with pytest.raises(pl.exceptions.ComputeError):
-        df.select(pl.col("a").str.json_decode())
+        df.select(pl.col("a").str.json_decode(pl.Int64))
 
     df = pl.DataFrame({"a": [None, "1", "[1, 2]"]})
     out = df.select(pl.col("a").str.json_decode(dtype=pl.List(pl.String)))
@@ -600,6 +604,7 @@ def test_read_json_utf_8_sig_encoding() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.may_fail_cloud  # reason: object
 def test_write_masked_out_list_22202() -> None:
     df = pl.DataFrame({"x": [1, 2], "y": [None, 3]})
 
@@ -654,4 +659,63 @@ def test_json_encode_enum_23826() -> None:
     assert_series_equal(
         s.to_frame().select(c=pl.struct("a").struct.json_encode()).to_series(),
         pl.Series("c", ['{"a":"0"}'], pl.String),
+    )
+
+
+@pytest.mark.parametrize(
+    "ndjson_str", ["10", "null", "true", "false", "1.5", "[]", "[1, 2]"]
+)
+def test_ndjson_row_not_an_object_24267(ndjson_str: str) -> None:
+    with pytest.raises(
+        ComputeError, match="NDJSON line expected to contain JSON object: "
+    ):
+        pl.read_ndjson(
+            io.StringIO(ndjson_str), ignore_errors=False, infer_schema_length=100
+        )
+
+    with pytest.raises(
+        ComputeError, match="NDJSON line expected to contain JSON object: "
+    ):
+        pl.read_ndjson(
+            io.StringIO('{"a": 10}\n' + ndjson_str),
+            ignore_errors=False,
+            infer_schema_length=1,
+        )
+
+    assert_frame_equal(
+        pl.read_ndjson(
+            io.StringIO('{"a": 10}\n' + ndjson_str),
+            infer_schema_length=1,
+            ignore_errors=True,
+        ),
+        pl.DataFrame({"a": [10, None]}),
+    )
+
+
+def test_ndjson_no_cast_int_to_float_19138() -> None:
+    with pytest.raises(
+        ComputeError, match=re.escape("cannot parse '2.7' (f64) as Int64")
+    ):
+        pl.read_ndjson(
+            io.StringIO('{"a": 1}\n{"a": 2.7}\n'),
+            infer_schema_length=1,
+            ignore_errors=False,
+        )
+
+    assert_frame_equal(
+        pl.read_ndjson(
+            io.StringIO('{"a": 1}\n{"a": 2.7}\n'),
+            infer_schema_length=1,
+            ignore_errors=True,
+        ),
+        pl.DataFrame({"a": [1, None]}),
+    )
+
+    assert_frame_equal(
+        pl.read_ndjson(
+            io.StringIO('{"a": 2.7}\n{"a": 1}\n'),
+            infer_schema_length=1,
+            ignore_errors=False,
+        ),
+        pl.DataFrame({"a": [2.7, 1]}),
     )

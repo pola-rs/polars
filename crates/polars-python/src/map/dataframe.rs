@@ -32,7 +32,7 @@ pub fn apply_lambda_unknown<'py>(
     py: Python<'py>,
     lambda: Bound<'py, PyAny>,
     inference_size: usize,
-) -> PyResult<(PyObject, bool)> {
+) -> PyResult<(Py<PyAny>, bool)> {
     let mut null_count = 0;
     let mut iters = get_iters(df);
 
@@ -99,7 +99,11 @@ pub fn apply_lambda_unknown<'py>(
             ));
         } else if out.hasattr("_s")? {
             let py_pyseries = out.getattr("_s").unwrap();
-            let series = py_pyseries.extract::<PySeries>().unwrap().series;
+            let series = py_pyseries
+                .extract::<PySeries>()
+                .unwrap()
+                .series
+                .into_inner();
             let dt = series.dtype();
             return Ok((
                 PySeries::new(
@@ -262,7 +266,9 @@ pub fn apply_lambda_with_list_out_type(
             let tpl = (PyTuple::new(py, iter).unwrap(),);
             let val = lambda.call1(tpl)?;
             match val.getattr("_s") {
-                Ok(val) => val.extract::<PySeries>().map(|s| Some(s.series)),
+                Ok(val) => val
+                    .extract::<PySeries>()
+                    .map(|s| Some(s.series.into_inner())),
                 Err(_) => {
                     if val.is_none() {
                         Ok(None)

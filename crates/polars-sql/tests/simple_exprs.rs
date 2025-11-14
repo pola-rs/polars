@@ -448,7 +448,7 @@ fn test_create_table() {
         FROM df"#;
     let df_sql = context.execute(sql).unwrap().collect().unwrap();
     let create_tbl_res = df! {
-        "Response" => ["CREATE TABLE"]
+        "Response" => ["CREATE TABLE df2"]
     }
     .unwrap();
 
@@ -608,6 +608,7 @@ fn test_group_by_2() -> PolarsResult<()> {
     let df_sql = df_sql.collect()?;
     let expected = LazyFrame::scan_ipc(
         PlPath::new("../../examples/datasets/foods1.ipc"),
+        Default::default(),
         Default::default(),
     )?
     .select(&[col("*")])

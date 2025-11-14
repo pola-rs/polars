@@ -106,7 +106,12 @@ impl Series {
             InvalidOperation: "at least one dimension must be specified"
         );
 
-        let leaf_array = self.get_leaf_array().rechunk();
+        let leaf_array = self
+            .trim_lists_to_normalized_offsets()
+            .as_ref()
+            .unwrap_or(self)
+            .get_leaf_array()
+            .rechunk();
         let size = leaf_array.len();
 
         let mut total_dim_size = 1;
@@ -173,7 +178,7 @@ impl Series {
         );
 
         polars_ensure!(
-            size % total_dim_size == 0,
+            size.is_multiple_of(total_dim_size),
             InvalidOperation: "cannot reshape array of size {} into shape {}", size, format_tuple!(dimensions)
         );
 

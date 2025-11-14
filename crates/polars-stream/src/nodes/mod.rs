@@ -1,5 +1,11 @@
+pub mod callback_sink;
+#[cfg(feature = "cum_agg")]
+pub mod cum_agg;
 pub mod dynamic_slice;
+#[cfg(feature = "ewma")]
+pub mod ewm;
 pub mod filter;
+pub mod gather_every;
 pub mod group_by;
 pub mod in_memory_map;
 pub mod in_memory_sink;
@@ -14,11 +20,15 @@ pub mod merge_sorted;
 pub mod multiplexer;
 pub mod negative_slice;
 pub mod ordered_union;
+pub mod peak_minmax;
 pub mod reduce;
 pub mod repeat;
 pub mod rle;
 pub mod rle_id;
+#[cfg(feature = "dynamic_group_by")]
+pub mod rolling_group_by;
 pub mod select;
+pub mod shift;
 pub mod simple_projection;
 pub mod streaming_slice;
 pub mod top_k;
@@ -36,7 +46,7 @@ mod compute_node_prelude {
     pub use crate::execute::StreamingExecutionState;
     pub use crate::graph::PortState;
     pub use crate::morsel::{Morsel, MorselSeq};
-    pub use crate::pipe::{RecvPort, SendPort};
+    pub use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 }
 
 use compute_node_prelude::*;

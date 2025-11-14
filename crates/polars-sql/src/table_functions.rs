@@ -48,7 +48,7 @@ impl FromStr for PolarsTableFunctions {
 
     #[allow(unreachable_code)]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(match s {
+        Ok(match s.to_lowercase().as_str() {
             #[cfg(feature = "csv")]
             "read_csv" => PolarsTableFunctions::ReadCsv,
             #[cfg(feature = "parquet")]
@@ -105,7 +105,7 @@ impl PolarsTableFunctions {
         polars_ensure!(args.len() == 1, SQLSyntax: "`read_ipc` expects a single file path; found {:?} arguments", args.len());
 
         let path = self.get_file_path_from_arg(&args[0])?;
-        let lf = LazyFrame::scan_ipc(path.clone(), Default::default())?;
+        let lf = LazyFrame::scan_ipc(path.clone(), Default::default(), Default::default())?;
         Ok((path, lf))
     }
     #[cfg(feature = "json")]

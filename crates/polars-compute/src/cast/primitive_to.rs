@@ -6,13 +6,16 @@ use arrow::compute::arity::unary;
 use arrow::datatypes::{ArrowDataType, TimeUnit};
 use arrow::offset::{Offset, Offsets};
 use arrow::types::{NativeType, f16};
-use num_traits::{AsPrimitive, Float, ToPrimitive};
+#[cfg(feature = "dtype-decimal")]
+use num_traits::{AsPrimitive, Float};
 use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::vec::PushUnchecked;
 
 use super::CastOptionsImpl;
 use super::temporal::*;
+#[cfg(feature = "dtype-decimal")]
+use crate::decimal::{dec128_verify_prec_scale, f64_to_dec128, i128_to_dec128};
 
 pub trait SerPrimitive {
     fn write(f: &mut Vec<u8>, val: Self) -> usize
@@ -45,6 +48,7 @@ impl_ser_primitive!(u8);
 impl_ser_primitive!(u16);
 impl_ser_primitive!(u32);
 impl_ser_primitive!(u64);
+impl_ser_primitive!(u128);
 
 impl SerPrimitive for f32 {
     fn write(f: &mut Vec<u8>, val: Self) -> usize
@@ -224,34 +228,21 @@ where
 }
 
 /// Returns a [`PrimitiveArray<i128>`] with the cast values. Values are `None` on overflow
+#[cfg(feature = "dtype-decimal")]
 pub fn integer_to_decimal<T: NativeType + AsPrimitive<i128>>(
     from: &PrimitiveArray<T>,
     to_precision: usize,
     to_scale: usize,
 ) -> PrimitiveArray<i128> {
-    let multiplier = 10_i128.pow(to_scale as u32);
-
-    let min_for_precision = 9_i128
-        .saturating_pow(1 + to_precision as u32)
-        .saturating_neg();
-    let max_for_precision = 9_i128.saturating_pow(1 + to_precision as u32);
-
-    let values = from.iter().map(|x| {
-        x.and_then(|x| {
-            x.as_().checked_mul(multiplier).and_then(|x| {
-                if x > max_for_precision || x < min_for_precision {
-                    None
-                } else {
-                    Some(x)
-                }
-            })
-        })
-    });
-
+    assert!(dec128_verify_prec_scale(to_precision, to_scale).is_ok());
+    let values = from
+        .iter()
+        .map(|x| i128_to_dec128(x?.as_(), to_precision, to_scale));
     PrimitiveArray::<i128>::from_trusted_len_iter(values)
         .to(ArrowDataType::Decimal(to_precision, to_scale))
 }
 
+#[cfg(feature = "dtype-decimal")]
 pub(super) fn integer_to_decimal_dyn<T>(
     from: &dyn Array,
     precision: usize,
@@ -265,47 +256,26 @@ where
 }
 
 /// Returns a [`PrimitiveArray<i128>`] with the cast values. Values are `None` on overflow
-pub fn float_to_decimal<T>(
+#[cfg(feature = "dtype-decimal")]
+pub fn float_to_decimal<T: NativeType + Float + AsPrimitive<f64>>(
     from: &PrimitiveArray<T>,
     to_precision: usize,
     to_scale: usize,
-) -> PrimitiveArray<i128>
-where
-    T: NativeType + Float + ToPrimitive,
-    f64: AsPrimitive<T>,
-{
-    // 1.2 => 12
-    let multiplier: T = (10_f64).powi(to_scale as i32).as_();
-
-    let min_for_precision = 9_i128
-        .saturating_pow(1 + to_precision as u32)
-        .saturating_neg();
-    let max_for_precision = 9_i128.saturating_pow(1 + to_precision as u32);
-
-    let values = from.iter().map(|x| {
-        x.and_then(|x| {
-            let x = (*x * multiplier).to_i128()?;
-            if x > max_for_precision || x < min_for_precision {
-                None
-            } else {
-                Some(x)
-            }
-        })
-    });
-
+) -> PrimitiveArray<i128> {
+    assert!(dec128_verify_prec_scale(to_precision, to_scale).is_ok());
+    let values = from
+        .iter()
+        .map(|x| f64_to_dec128(x?.as_(), to_precision, to_scale));
     PrimitiveArray::<i128>::from_trusted_len_iter(values)
         .to(ArrowDataType::Decimal(to_precision, to_scale))
 }
 
-pub(super) fn float_to_decimal_dyn<T>(
+#[cfg(feature = "dtype-decimal")]
+pub(super) fn float_to_decimal_dyn<T: NativeType + Float + AsPrimitive<f64>>(
     from: &dyn Array,
     precision: usize,
     scale: usize,
-) -> PolarsResult<Box<dyn Array>>
-where
-    T: NativeType + Float + ToPrimitive,
-    f64: AsPrimitive<T>,
-{
+) -> PolarsResult<Box<dyn Array>> {
     let from = from.as_any().downcast_ref().unwrap();
     Ok(Box::new(float_to_decimal::<T>(from, precision, scale)))
 }
@@ -516,7 +486,7 @@ pub fn timestamp_to_date64(from: &PrimitiveArray<i64>, from_unit: TimeUnit) -> P
     // math rounding down to zero
 
     match to_size.cmp(&from_size) {
-        std::cmp::Ordering::Less => unary(from, |x| (x / (from_size / to_size)), to_type),
+        std::cmp::Ordering::Less => unary(from, |x| x / (from_size / to_size), to_type),
         std::cmp::Ordering::Equal => primitive_to_same_primitive(from, &to_type),
         std::cmp::Ordering::Greater => fallible_unary(
             from,
@@ -578,7 +548,7 @@ pub fn timestamp_to_timestamp(
     let to_type = ArrowDataType::Timestamp(to_unit, tz.clone());
     // we either divide or multiply, depending on size of each unit
     if from_size >= to_size {
-        unary(from, |x| (x / (from_size / to_size)), to_type)
+        unary(from, |x| x / (from_size / to_size), to_type)
     } else {
         fallible_unary(
             from,

@@ -10,6 +10,7 @@ from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal
 
 
+@pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 def test_map_return_py_object() -> None:
     df = pl.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6]})
 
@@ -25,6 +26,7 @@ def test_map_return_py_object() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 def test_map_no_dtype_set_8531() -> None:
     df = pl.DataFrame({"a": [1]})
 
@@ -116,7 +118,7 @@ def test_lazy_map_schema() -> None:
 
     with pytest.raises(
         ComputeError,
-        match="Expected 'LazyFrame.map' to return a 'DataFrame', got a",
+        match=r"Expected 'LazyFrame\.map' to return a 'DataFrame', got a",
     ):
         df.lazy().map_batches(custom).collect()  # type: ignore[arg-type]
 
@@ -128,7 +130,7 @@ def test_lazy_map_schema() -> None:
 
     with pytest.raises(
         ComputeError,
-        match="The output schema of 'LazyFrame.map' is incorrect. Expected",
+        match=r"The output schema of 'LazyFrame\.map' is incorrect\. Expected",
     ):
         df.lazy().map_batches(custom2).collect()
 

@@ -36,10 +36,15 @@ capabilities:
 
 ## What are the main use cases for Polars Cloud?
 
-Polars Cloud offers both a batch as an interactive mode to users. Batch mode can be used for ETL
-workloads or one-off large scale analytic jobs. Interactive mode is for users that are looking to do
-data exploration on a larger scale data processing that requires more compute than their own machine
-can offer.
+Polars Cloud enables data teams to scale their existing Polars queries beyond local machine
+limitations. Teams should use it when datasets exceed local memory, when computationally intensive
+operations require more processing power, or when data resides in cloud storage and shouldn't or
+can't be downloaded locally.
+
+The platform allows the same query to run on appropriately sized compute instances while being
+executable from any environment (e.g. notebooks, serverless functions, or orchestration platforms).
+This eliminates the need for teams to refactor their code into different tools or coordinate
+handovers between analytics and infrastructure teams when moving from development to production.
 
 ## How can Polars Cloud integrate with my workflow?
 
@@ -53,9 +58,16 @@ your queries wherever it best fits your workflow.
 
 ## What is the pricing model of Polars Cloud?
 
-Polars Cloud is available at no additional cost in this early stage. You only pay for the resources
-you use in your own cloud environment. We are exploring different usage based pricing models that
-are geared towards running queries as fast and efficient as possible.
+Polars Cloud has a 'Pay-as-you-go' model. You pay a fixed price per vCPU per hour and only for the
+resources you use for executing your queries. This is on top of AWS related costs for used compute
+instances. Polars Cloud scales down to zero if no queries run. Find more information on our
+[Payment and Billing](organization/billing.md) page.
+
+## Can I try Polars Cloud for my use case?
+
+Yes, Polars Cloud offers a 30 day free trial. The 30 day free trial will start, when you connect
+your first workspace to your cloud environment. During the trial period you can make full use of
+Polars Cloud features. See [the Trial page](organization/start-trial.md) for more details.
 
 ## Will the distributed engine be available in open source?
 

@@ -158,6 +158,10 @@ where
         self.0.take_unchecked(indices).into_series()
     }
 
+    fn deposit(&self, validity: &Bitmap) -> Series {
+        self.0.deposit(validity).into_series()
+    }
+
     fn len(&self) -> usize {
         ObjectChunked::len(&self.0)
     }

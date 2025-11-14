@@ -3,6 +3,7 @@ use std::ops::Div;
 use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and;
+use arrow::temporal_conversions::MICROSECONDS_IN_DAY as US_IN_DAY;
 use arrow::types::NativeType;
 use num_traits::{NumCast, ToPrimitive};
 
@@ -56,6 +57,7 @@ pub(super) fn sum_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Ser
                 UInt16 => dispatch_sum::<u16, i64>(values, offsets, arr.validity()),
                 UInt32 => dispatch_sum::<u32, u32>(values, offsets, arr.validity()),
                 UInt64 => dispatch_sum::<u64, u64>(values, offsets, arr.validity()),
+                UInt128 => dispatch_sum::<u128, u128>(values, offsets, arr.validity()),
                 Float32 => dispatch_sum::<f32, f32>(values, offsets, arr.validity()),
                 Float64 => dispatch_sum::<f64, f64>(values, offsets, arr.validity()),
                 _ => unimplemented!(),
@@ -68,11 +70,20 @@ pub(super) fn sum_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Ser
 
 pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> PolarsResult<Series> {
     use DataType::*;
-    // TODO: add fast path for smaller ints?
     let mut out = match inner_dtype {
         Boolean => {
             let out: IdxCa =
                 ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().sum::<IdxSize>().unwrap()));
+            out.into_series()
+        },
+        UInt8 => {
+            let out: Int64Chunked =
+                ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().sum::<i64>().unwrap()));
+            out.into_series()
+        },
+        UInt16 => {
+            let out: Int64Chunked =
+                ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().sum::<i64>().unwrap()));
             out.into_series()
         },
         UInt32 => {
@@ -83,6 +94,16 @@ pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Polars
         UInt64 => {
             let out: UInt64Chunked =
                 ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().sum::<u64>().unwrap()));
+            out.into_series()
+        },
+        Int8 => {
+            let out: Int64Chunked =
+                ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().sum::<i64>().unwrap()));
+            out.into_series()
+        },
+        Int16 => {
+            let out: Int64Chunked =
+                ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().sum::<i64>().unwrap()));
             out.into_series()
         },
         Int32 => {
@@ -167,6 +188,7 @@ pub(super) fn mean_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Se
                 UInt16 => dispatch_mean::<u16, f64>(values, offsets, arr.validity()),
                 UInt32 => dispatch_mean::<u32, f64>(values, offsets, arr.validity()),
                 UInt64 => dispatch_mean::<u64, f64>(values, offsets, arr.validity()),
+                UInt128 => dispatch_mean::<u128, f64>(values, offsets, arr.validity()),
                 Float32 => dispatch_mean::<f32, f32>(values, offsets, arr.validity()),
                 Float64 => dispatch_mean::<f64, f64>(values, offsets, arr.validity()),
                 _ => unimplemented!(),
@@ -187,13 +209,12 @@ pub(super) fn mean_with_nulls(ca: &ListChunked) -> Series {
         },
         #[cfg(feature = "dtype-datetime")]
         DataType::Date => {
-            const MS_IN_DAY: i64 = 86_400_000;
             let out: Int64Chunked = ca
                 .apply_amortized_generic(|s| {
-                    s.and_then(|s| s.as_ref().mean().map(|v| (v * (MS_IN_DAY as f64)) as i64))
+                    s.and_then(|s| s.as_ref().mean().map(|v| (v * (US_IN_DAY as f64)) as i64))
                 })
                 .with_name(ca.name().clone());
-            out.into_datetime(TimeUnit::Milliseconds, None)
+            out.into_datetime(TimeUnit::Microseconds, None)
                 .into_series()
         },
         dt if dt.is_temporal() => {

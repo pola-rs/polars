@@ -1,11 +1,11 @@
+pub mod anonymous;
 mod datatype_fn;
-mod expr_dyn_fn;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 
+pub use anonymous::*;
 use bytes::Bytes;
 pub use datatype_fn::*;
-pub use expr_dyn_fn::*;
 use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
@@ -13,10 +13,6 @@ use polars_core::prelude::*;
 use polars_utils::format_pl_smallstr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "serde")]
-pub mod named_serde;
-#[cfg(feature = "serde")]
-mod serde_expr;
 
 use super::datatype_expr::DataTypeExpr;
 use crate::prelude::*;
@@ -36,11 +32,20 @@ pub enum AggExpr {
     Median(Arc<Expr>),
     NUnique(Arc<Expr>),
     First(Arc<Expr>),
+    FirstNonNull(Arc<Expr>),
     Last(Arc<Expr>),
+    LastNonNull(Arc<Expr>),
+    Item {
+        input: Arc<Expr>,
+        /// Give a missing value if there are no values.
+        allow_empty: bool,
+    },
     Mean(Arc<Expr>),
     Implode(Arc<Expr>),
-    // include_nulls
-    Count(Arc<Expr>, bool),
+    Count {
+        input: Arc<Expr>,
+        include_nulls: bool,
+    },
     Quantile {
         expr: Arc<Expr>,
         quantile: Arc<Expr>,
@@ -61,10 +66,13 @@ impl AsRef<Expr> for AggExpr {
             Median(e) => e,
             NUnique(e) => e,
             First(e) => e,
+            FirstNonNull(e) => e,
             Last(e) => e,
+            LastNonNull(e) => e,
+            Item { input, .. } => input,
             Mean(e) => e,
             Implode(e) => e,
-            Count(e, _) => e,
+            Count { input, .. } => input,
             Quantile { expr, .. } => expr,
             Sum(e) => e,
             AggGroups(e) => e,
@@ -84,6 +92,10 @@ impl AsRef<Expr> for AggExpr {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum Expr {
+    /// Values in a `eval` context.
+    ///
+    /// Equivalent of `pl.element()`.
+    Element,
     Alias(Arc<Expr>, PlSmallStr),
     Column(PlSmallStr),
     Selector(Selector),
@@ -136,12 +148,20 @@ pub enum Expr {
         by: Arc<Expr>,
     },
     /// Polars flavored window functions.
-    Window {
+    Over {
         /// Also has the input. i.e. avg("foo")
         function: Arc<Expr>,
         partition_by: Vec<Expr>,
         order_by: Option<(Arc<Expr>, SortOptions)>,
-        options: WindowType,
+        mapping: WindowMapping,
+    },
+    #[cfg(feature = "dynamic_group_by")]
+    Rolling {
+        function: Arc<Expr>,
+        index_column: Arc<Expr>,
+        period: Duration,
+        offset: Duration,
+        closed_window: ClosedWindow,
     },
     Slice {
         input: Arc<Expr>,
@@ -184,7 +204,11 @@ pub enum Expr {
 pub enum LazySerde<T: Clone> {
     Deserialized(T),
     Bytes(Bytes),
-    // Used by cloud
+    /// Named functions allow for serializing arbitrary Rust functions as long as both sides know
+    /// ahead of time which function it is. There is a registry of functions that both sides know
+    /// and every time we need serialize we serialize the function by name in the registry.
+    ///
+    /// Used by cloud.
     Named {
         // Name and payload are used by the NamedRegistry
         // To load the function `T` at runtime.
@@ -309,7 +333,7 @@ impl Hash for Expr {
                 returns_scalar.hash(state);
             },
             // already hashed by discriminant
-            Expr::Len => {},
+            Expr::Element | Expr::Len => {},
             Expr::SortBy {
                 expr,
                 by,
@@ -324,16 +348,30 @@ impl Hash for Expr {
                 skip_empty.hash(state);
                 input.hash(state)
             },
-            Expr::Window {
+            #[cfg(feature = "dynamic_group_by")]
+            Expr::Rolling {
+                function,
+                index_column,
+                period,
+                offset,
+                closed_window,
+            } => {
+                function.hash(state);
+                index_column.hash(state);
+                period.hash(state);
+                offset.hash(state);
+                closed_window.hash(state);
+            },
+            Expr::Over {
                 function,
                 partition_by,
                 order_by,
-                options,
+                mapping,
             } => {
                 function.hash(state);
                 partition_by.hash(state);
                 order_by.hash(state);
-                options.hash(state);
+                mapping.hash(state);
             },
             Expr::Slice {
                 input,
@@ -410,7 +448,9 @@ impl Expr {
         ctx.allow_unknown = true;
         let expr = to_expr_ir(self.clone(), &mut ctx)?;
         let (node, output_name) = expr.into_inner();
-        let dtype = expr_arena.get(node).to_dtype(schema, expr_arena)?;
+        let dtype = expr_arena
+            .get(node)
+            .to_dtype(&ToFieldContext::new(expr_arena, schema))?;
         Ok(Field::new(output_name.into_inner().unwrap(), dtype))
     }
 
@@ -533,6 +573,17 @@ impl Expr {
 pub enum EvalVariant {
     /// `list.eval`
     List,
+    /// `list.agg`
+    ListAgg,
+
+    /// `array.eval`
+    Array {
+        /// If set to true, evaluation can output variable amount of items and output datatype will
+        /// be `List`.
+        as_list: bool,
+    },
+    /// `arr.agg`
+    ArrayAgg,
 
     /// `cumulative_eval`
     Cumulative { min_samples: usize },
@@ -542,6 +593,9 @@ impl EvalVariant {
     pub fn to_name(&self) -> &'static str {
         match self {
             Self::List => "list.eval",
+            Self::ListAgg => "list.agg",
+            Self::Array { .. } => "array.eval",
+            Self::ArrayAgg => "array.agg",
             Self::Cumulative { min_samples: _ } => "cumulative_eval",
         }
     }
@@ -549,9 +603,74 @@ impl EvalVariant {
     /// Get the `DataType` of the `pl.element()` value.
     pub fn element_dtype<'a>(&self, dtype: &'a DataType) -> PolarsResult<&'a DataType> {
         match (self, dtype) {
-            (Self::List, DataType::List(inner)) => Ok(inner.as_ref()),
+            (Self::List | Self::ListAgg, DataType::List(inner)) => Ok(inner.as_ref()),
+            #[cfg(feature = "dtype-array")]
+            (Self::Array { .. } | Self::ArrayAgg, DataType::Array(inner, _)) => Ok(inner.as_ref()),
             (Self::Cumulative { min_samples: _ }, dt) => Ok(dt),
             _ => polars_bail!(op = self.to_name(), dtype),
+        }
+    }
+
+    /// Get the output datatype from the output element datatype
+    pub fn output_dtype(
+        &self,
+        dtype: &'_ DataType,
+        output_element_dtype: DataType,
+        eval_is_scalar: bool,
+    ) -> PolarsResult<DataType> {
+        match (self, dtype) {
+            (Self::List, DataType::List(_)) => Ok(DataType::List(Box::new(output_element_dtype))),
+            (Self::ListAgg, DataType::List(_)) => {
+                if eval_is_scalar {
+                    Ok(output_element_dtype)
+                } else {
+                    Ok(DataType::List(Box::new(output_element_dtype)))
+                }
+            },
+            #[cfg(feature = "dtype-array")]
+            (Self::Array { as_list: false }, DataType::Array(_, width)) => {
+                Ok(DataType::Array(Box::new(output_element_dtype), *width))
+            },
+            #[cfg(feature = "dtype-array")]
+            (Self::Array { as_list: true }, DataType::Array(_, _)) => {
+                Ok(DataType::List(Box::new(output_element_dtype)))
+            },
+            #[cfg(feature = "dtype-array")]
+            (Self::ArrayAgg, DataType::Array(_, _)) => {
+                if eval_is_scalar {
+                    Ok(output_element_dtype)
+                } else {
+                    Ok(DataType::List(Box::new(output_element_dtype)))
+                }
+            },
+            (Self::Cumulative { min_samples: _ }, _) => Ok(output_element_dtype),
+            _ => polars_bail!(op = self.to_name(), dtype),
+        }
+    }
+
+    pub fn is_elementwise(&self) -> bool {
+        match self {
+            EvalVariant::List | EvalVariant::ListAgg => true,
+            EvalVariant::Array { .. } | EvalVariant::ArrayAgg => true,
+            EvalVariant::Cumulative { min_samples: _ } => false,
+        }
+    }
+
+    pub fn is_row_separable(&self) -> bool {
+        match self {
+            EvalVariant::List | EvalVariant::ListAgg => true,
+            EvalVariant::Array { .. } | EvalVariant::ArrayAgg => true,
+            EvalVariant::Cumulative { min_samples: _ } => false,
+        }
+    }
+
+    pub fn is_length_preserving(&self) -> bool {
+        match self {
+            EvalVariant::List
+            | EvalVariant::ListAgg
+            | EvalVariant::Array { .. }
+            | EvalVariant::ArrayAgg
+            | EvalVariant::Cumulative { .. } => true,
         }
     }
 }
@@ -645,11 +764,13 @@ impl Operator {
             Operator::NotEq => Operator::NotEq,
             Operator::EqValidity => Operator::EqValidity,
             Operator::NotEqValidity => Operator::NotEqValidity,
-            Operator::Divide => Operator::Multiply,
-            Operator::Multiply => Operator::Divide,
+            // Operator::Divide requires modifying the right operand: left / right == 1/right * left
+            Operator::Divide => unimplemented!(),
+            Operator::Multiply => Operator::Multiply,
             Operator::And => Operator::And,
-            Operator::Plus => Operator::Minus,
-            Operator::Minus => Operator::Plus,
+            Operator::Plus => Operator::Plus,
+            // Operator::Minus requires modifying the right operand: left - right == -right + left
+            Operator::Minus => unimplemented!(),
             Operator::Lt => Operator::Gt,
             _ => unimplemented!(),
         }
@@ -668,10 +789,12 @@ pub enum RenameAliasFn {
     Suffix(PlSmallStr),
     ToLowercase,
     ToUppercase,
-    #[cfg(feature = "python")]
-    Python(SpecialEq<Arc<polars_utils::python_function::PythonObject>>),
-    #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
-    Rust(SpecialEq<Arc<RenameAliasRustFn>>),
+    Map(PlanCallback<PlSmallStr, PlSmallStr>),
+    Replace {
+        pattern: PlSmallStr,
+        value: PlSmallStr,
+        literal: bool,
+    },
 }
 
 impl RenameAliasFn {
@@ -681,19 +804,21 @@ impl RenameAliasFn {
             Self::Suffix(suffix) => format_pl_smallstr!("{name}{suffix}"),
             Self::ToLowercase => PlSmallStr::from_string(name.to_lowercase()),
             Self::ToUppercase => PlSmallStr::from_string(name.to_uppercase()),
-            #[cfg(feature = "python")]
-            Self::Python(lambda) => {
-                let name = name.as_str();
-                pyo3::marker::Python::with_gil(|py| {
-                    let out: PlSmallStr = lambda
-                        .call1(py, (name,))?
-                        .extract::<std::borrow::Cow<str>>(py)?
-                        .as_ref()
-                        .into();
-                    pyo3::PyResult::<_>::Ok(out)
-                }).map_err(|e| polars_err!(ComputeError: "Python function in 'name.map' produced an error: {e}."))?
+            Self::Map(f) => f.call(name.clone())?,
+            Self::Replace {
+                pattern,
+                value,
+                literal,
+            } => {
+                if *literal {
+                    name.replace(pattern.as_str(), value.as_str()).into()
+                } else {
+                    feature_gated!("regex", {
+                        let rx = polars_utils::regex_cache::compile_regex(pattern)?;
+                        rx.replace_all(name, value.as_str()).into()
+                    })
+                }
             },
-            Self::Rust(f) => f(name)?,
         };
         Ok(out)
     }

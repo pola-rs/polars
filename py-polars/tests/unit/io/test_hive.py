@@ -104,6 +104,7 @@ def test_hive_partitioned_predicate_pushdown_single_threaded_async_17155(
 
 @pytest.mark.write_disk
 @pytest.mark.may_fail_auto_streaming
+@pytest.mark.may_fail_cloud  # reason: inspects logs
 def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
     tmp_path: Path, monkeypatch: Any, capfd: Any
 ) -> None:
@@ -723,7 +724,7 @@ def test_hive_partition_dates(tmp_path: Path) -> None:
             pl.col("date2").cast(pl.String).fill_null("__HIVE_DEFAULT_PARTITION__"),
         ):
             if perc_escape:
-                date2 = urllib.parse.quote(date2)  # type: ignore[call-overload]
+                date2 = urllib.parse.quote(date2)
 
             path = root / f"date1={date1}/date2={date2}/data.bin"
             path.parent.mkdir(exist_ok=True, parents=True)
@@ -896,6 +897,7 @@ def test_hive_write_dates(tmp_path: Path) -> None:
 
 @pytest.mark.write_disk
 @pytest.mark.may_fail_auto_streaming
+@pytest.mark.may_fail_cloud  # reason: inspects logs
 def test_hive_predicate_dates_14712(
     tmp_path: Path, monkeypatch: Any, capfd: Any
 ) -> None:
@@ -997,9 +999,8 @@ def test_hive_file_as_uri_with_hive_start_idx_23830(
 
     # ensure we have a trailing "/"
     uri = tmp_path.resolve().as_posix().rstrip("/") + "/"
-    uri = "file://" + uri
 
-    lf = pl.scan_parquet(uri, hive_schema={"a": pl.UInt8})
+    lf = pl.scan_parquet(f"file://{uri}", hive_schema={"a": pl.UInt8})
 
     assert_frame_equal(
         lf.collect(),
@@ -1008,6 +1009,19 @@ def test_hive_file_as_uri_with_hive_start_idx_23830(
             pl.Series("a", [1], dtype=pl.UInt8),
         ),
     )
+
+    if sys.platform != "win32":
+        # https://github.com/pola-rs/polars/issues/24506
+        # `file:` URI with `//hostname` component omitted
+        lf = pl.scan_parquet(f"file:{uri}", hive_schema={"a": pl.UInt8})
+
+        assert_frame_equal(
+            lf.collect(),
+            pl.select(
+                pl.Series("x", [1]),
+                pl.Series("a", [1], dtype=pl.UInt8),
+            ),
+        )
 
 
 @pytest.mark.write_disk
@@ -1070,3 +1084,108 @@ print("OK", end="")
     )
 
     assert out == b"OK"
+
+
+def test_hive_decode_reserved_ascii_23241(tmp_path: Path) -> None:
+    partitioned_tbl_uri = (tmp_path / "partitioned_data").resolve()
+    start, stop = 32, 127
+    df = pl.DataFrame(
+        {
+            "a": list(range(start, stop)),
+            "strings": [chr(i) for i in range(start, stop)],
+        }
+    )
+    df.write_delta(partitioned_tbl_uri, delta_write_options={"partition_by": "strings"})
+    out = pl.read_delta(str(partitioned_tbl_uri)).sort("a").select(pl.col("strings"))
+
+    assert_frame_equal(df.sort(by=pl.col("a")).select(pl.col("strings")), out)
+
+
+def test_hive_decode_utf8_23241(tmp_path: Path) -> None:
+    df = pl.DataFrame(
+        {
+            "strings": [
+                "Türkiye And Egpyt",
+                "résumé père forêt Noël",
+                "😊",
+                "北极熊",  # a polar bear perhaps ?!
+            ],
+            "a": [10, 20, 30, 40],
+        }
+    )
+    partitioned_tbl_uri = (tmp_path / "partitioned_data").resolve()
+    df.write_delta(partitioned_tbl_uri, delta_write_options={"partition_by": "strings"})
+    out = pl.read_delta(str(partitioned_tbl_uri)).sort("a").select(pl.col("strings"))
+
+    assert_frame_equal(df.sort(by=pl.col("a")).select(pl.col("strings")), out)
+
+
+@pytest.mark.write_disk
+def test_hive_filter_lit_true_24235(tmp_path: Path) -> None:
+    df = pl.DataFrame({"p": [1, 2, 3, 4, 5], "x": [1, 1, 2, 2, 3]})
+    df.lazy().sink_parquet(pl.PartitionByKey(tmp_path, by="p"), mkdir=True)
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path).filter(True).collect(),
+        df,
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path).filter(pl.lit(True)).collect(),
+        df,
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path).filter(False).collect(),
+        df.clear(),
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path).filter(pl.lit(False)).collect(),
+        df.clear(),
+    )
+
+
+def test_hive_filter_in_ir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "a=1").mkdir()
+    pl.DataFrame({"x": [0, 1, 2, 3, 4]}).write_parquet(tmp_path / "a=1/data.parquet")
+    (tmp_path / "a=2").mkdir()
+    pl.DataFrame({"x": [5, 6, 7, 8, 9]}).write_parquet(tmp_path / "a=2/data.parquet")
+
+    with monkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
+
+        capfd.readouterr()
+
+        assert_frame_equal(
+            pl.scan_parquet(tmp_path).filter(pl.col("a") == 1).collect(),
+            pl.DataFrame({"x": [0, 1, 2, 3, 4], "a": [1, 1, 1, 1, 1]}),
+        )
+
+        capture = capfd.readouterr().err
+
+        # Ensure this only happens once.
+        assert (
+            capture.count(
+                "initialize_scan_predicate: Predicate pushdown allows skipping 1 / 2 files"
+            )
+            == 1
+        )
+
+    plan = pl.scan_parquet(tmp_path).filter(pl.col("a") < 0).explain()
+    assert plan.startswith("DF [")
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path).with_row_index().filter(pl.col("a") == 2).collect(),
+        pl.DataFrame(
+            {"index": [5, 6, 7, 8, 9], "x": [5, 6, 7, 8, 9], "a": [2, 2, 2, 2, 2]},
+            schema_overrides={"index": pl.get_index_type()},
+        ),
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path).tail(1).filter(pl.col("a") == 1).collect(),
+        pl.DataFrame(schema={"x": pl.Int64, "a": pl.Int64}),
+    )

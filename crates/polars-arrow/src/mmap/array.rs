@@ -300,14 +300,20 @@ fn mmap_primitive<P: NativeType, T: AsRef<[u8]>>(
             )
         }
     } else {
-        let mut values = vec![P::default(); num_rows];
+        let mut values: Vec<P> = Vec::with_capacity(num_rows);
+        let num_bytes = num_rows * std::mem::size_of::<P>();
+
+        assert!(bytes.len() >= num_bytes);
         unsafe {
             std::ptr::copy_nonoverlapping(
                 bytes.as_ptr(),
                 values.as_mut_ptr() as *mut u8,
-                bytes.len(),
-            )
+                num_bytes,
+            );
+
+            values.set_len(num_rows);
         };
+
         // Now we need to keep the new buffer alive
         let owned_data = Arc::new((
             // We can drop the original ref if we don't have a validity

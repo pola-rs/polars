@@ -105,15 +105,19 @@ static FROZEN_CATEGORIES_HASHER: LazyLock<PlSeedableRandomStateQuality> =
     LazyLock::new(PlSeedableRandomStateQuality::random);
 
 static GLOBAL_CATEGORIES: LazyLock<Arc<Categories>> = LazyLock::new(|| {
-    let categories = Arc::new(Categories {
+    let mut registry = CATEGORIES_REGISTRY.lock().unwrap();
+    let global_id = CategoricalId::global();
+    if let Some(cats_ref) = registry.get(&global_id) {
+        if let Some(cats) = cats_ref.upgrade() {
+            return cats;
+        }
+    }
+    let global = Arc::new(Categories {
         id: CategoricalId::global(),
         mapping: Mutex::new(Weak::new()),
     });
-    CATEGORIES_REGISTRY
-        .lock()
-        .unwrap()
-        .insert(CategoricalId::global(), Arc::downgrade(&categories));
-    categories
+    registry.insert(global_id, Arc::downgrade(&global));
+    global
 });
 
 /// A (named) object which is used to indicate which categorical data types have the same mapping.
@@ -237,7 +241,7 @@ impl FrozenCategories {
     /// It is guaranteed that the nth string ends up with category n (0-indexed).
     pub fn new<'a, I: IntoIterator<Item = &'a str>>(strings: I) -> PolarsResult<Arc<Self>> {
         let strings = strings.into_iter();
-        let hasher = *FROZEN_CATEGORIES_HASHER;
+        let hasher = FROZEN_CATEGORIES_HASHER.clone();
         let mut mapping = CategoricalMapping::with_hasher(usize::MAX, hasher);
         let mut builder = Utf8ViewArrayBuilder::new(ArrowDataType::Utf8);
         builder.reserve(strings.size_hint().0);

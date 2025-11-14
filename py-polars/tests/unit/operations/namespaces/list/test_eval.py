@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 import pytest
 
@@ -166,3 +166,223 @@ def test_list_eval_in_filter_23300() -> None:
         ).height
         == 1
     )
+
+
+@pytest.mark.parametrize(
+    "ldf",
+    [
+        pl.LazyFrame(
+            {"a": [[1, 2, 3], [6, 4, 5], [7, 9, 8]], "id": [1, 1, 2]},
+        ),
+        pl.LazyFrame(
+            {"a": [[{"b": 5}, {"b": 6}], [{"c": 7}]], "id": [1, 2]},
+        ),
+        pl.LazyFrame(
+            {"a": [[]], "id": [1]},
+        ),
+        pl.LazyFrame(
+            {"a": [[{}]], "id": [1]},
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.lit(""),
+        pl.element(),
+        pl.element().is_not_null(),
+        pl.element().first(),
+        pl.element().sum(),
+        pl.element().min(),
+        pl.element().rank(),
+        pl.element().get(0),
+        pl.element().gather([0]),
+    ],
+)
+def test_list_eval_in_group_by_schema(ldf: pl.LazyFrame, expr: pl.Expr) -> None:
+    q_select = ldf.select(x=pl.col("a").list.eval(expr))
+    q_group_by = ldf.group_by("id").agg(x=pl.col("a").list.eval(expr))
+    q_over = ldf.select(x=pl.col("a").list.eval(expr).over("id"))
+
+    # skip index 0 on the empty list
+    skip = ("get" in str(expr) or "gather" in str(expr)) and ldf.select(
+        pl.col("a").first().list.len()
+    ).collect().to_series()[0] == 0
+
+    for q in [q_select, q_group_by, q_over]:
+        if not skip:
+            assert q.collect_schema() == q.collect().schema
+
+
+def test_list_eval_in_group_by_value() -> None:
+    ldf = pl.LazyFrame(
+        {"a": [[1, 2, 3], [6, 4, 5], [7, 9, 8]], "id": [1, 1, 2]},
+    )
+
+    expr = pl.element().first()
+
+    # select
+    q = ldf.select(x=pl.col("a").list.eval(expr))
+    expected = pl.Series("x", [[1], [6], [7]])
+    assert_series_equal(q.collect().to_series(), expected)
+
+    # group_by
+    q = ldf.group_by("id").agg(x=pl.col("a").list.eval(expr)).select("x")
+    expected = pl.Series("x", [[[1], [6]], [[7]]])
+    assert_series_equal(q.collect().to_series().sort(), expected.sort())
+
+    # over
+    q = ldf.select(x=pl.col("a").list.eval(expr).over("id"))
+    expected = pl.Series("x", [[1], [6], [7]])
+    assert_series_equal(q.collect().to_series().sort(), expected.sort())
+
+
+def test_list_eval_struct_in_group_by_23846() -> None:
+    dict = {"b": 5}
+    ldf = pl.LazyFrame(
+        {"a": [[dict, dict], [dict]], "id": [1, 2]},
+    )
+
+    expr = pl.element().struct.field("b")
+
+    # select
+    q = ldf.select(x=pl.col("a").list.eval(expr))
+    expected = pl.Series("x", [[5, 5], [5]])
+    assert_series_equal(q.collect().to_series(), expected)
+    assert q.collect_schema() == q.collect().schema
+
+    # group_by
+    q = ldf.group_by("id").agg(x=pl.col("a").list.eval(expr)).select("x")
+    expected = pl.Series("x", [[[5, 5]], [[5]]])
+    assert_series_equal(q.collect().to_series().sort(), expected.sort())
+    assert q.collect_schema() == q.collect().schema
+
+    # over
+    q = ldf.select(x=pl.col("a").list.eval(expr).over("id"))
+    expected = pl.Series("x", [[5, 5], [5]])
+    assert_series_equal(q.collect().to_series().sort(), expected.sort())
+    assert q.collect_schema() == q.collect().schema
+
+
+@pytest.mark.parametrize("filter_flag", [True, False])
+@pytest.mark.parametrize(
+    "col",
+    [
+        [],
+        [1, 2, 3],
+        [[1, 2], [3]],
+    ],
+)
+def test_cumulative_eval_on_empty_list_schema_24635(
+    col: list[Any], filter_flag: bool
+) -> None:
+    df = pl.DataFrame({"n": col})
+
+    # over
+    q = (
+        df.lazy()
+        # Force empty with a filter that removes everything
+        .filter(pl.lit(filter_flag))
+        .select(pl.col("n").cumulative_eval(pl.element().last()).over(1))
+    )
+    expected = df.head(df.height if filter_flag else 0)
+    assert_frame_equal(q.collect(), expected)
+    assert q.collect_schema() == q.collect().schema
+
+    # group_by
+    q = (
+        df.lazy()
+        # Force empty with a filter that removes everything
+        .filter(pl.lit(filter_flag))
+        .group_by([1])
+        .agg(pl.col("n").cumulative_eval(pl.element().last()))
+    )
+    assert q.collect_schema() == q.collect().schema
+
+
+def set_validity(s: pl.Series, validity: list[bool]) -> pl.Series:
+    return s.zip_with(pl.Series(validity), pl.Series([None], dtype=s.dtype))
+
+
+@pytest.mark.parametrize(
+    "sum_expr",
+    [pl.element().sum(), pl.element().unique().sum(), pl.element().fill_null(1).sum()],
+)
+def test_list_agg_sum(sum_expr: pl.Expr) -> None:
+    assert_series_equal(
+        pl.Series("a", [], pl.List(pl.Int64)).list.agg(sum_expr),
+        pl.Series("a", [], pl.Int64),
+    )
+
+    assert_series_equal(
+        pl.Series("a", [[0, 1, 2], [1, 3, 5]]).list.agg(sum_expr),
+        pl.Series("a", [3, 9]),
+    )
+
+    assert_series_equal(
+        pl.Series("a", [[], []], pl.List(pl.Int64)).list.agg(sum_expr),
+        pl.Series("a", [0, 0]),
+    )
+
+    assert_series_equal(
+        pl.Series("a", [None, [1, 3, 5]]).list.agg(sum_expr),
+        pl.Series("a", [None, 9]),
+    )
+
+    assert_series_equal(
+        set_validity(
+            pl.Series("a", [[1, 2, 3], [3], [1, 3, 5]]), [True, False, True]
+        ).list.agg(sum_expr),
+        pl.Series("a", [6, None, 9]),
+    )
+
+
+@pytest.mark.parametrize(
+    ("expr", "is_scalar"),
+    [
+        (pl.Expr.null_count, True),
+        (lambda e: e.rank().null_count(), True),
+        (pl.Expr.rank, False),
+        (lambda e: e + pl.lit(1), False),
+        (lambda e: e.filter(e != 0), False),
+        (pl.Expr.drop_nulls, False),
+        (pl.Expr.n_unique, True),
+    ],
+)
+def test_list_agg_parametric(
+    expr: Callable[[pl.Expr], pl.Expr], is_scalar: bool
+) -> None:
+    def test_case(s: pl.Series) -> None:
+        out = s.list.agg(expr(pl.element()))
+
+        for i, v in enumerate(s):
+            if v is None:
+                assert out[i] is None
+                continue
+
+            assert isinstance(v, pl.Series)
+
+            v = v.to_frame().select(expr(pl.col(""))).to_series()
+
+            if not is_scalar:
+                v = v.implode()
+
+            assert_series_equal(out.rename("").slice(i, 1), v)
+
+    test_case(pl.Series("a", [], pl.List(pl.Int64)))
+    test_case(pl.Series("a", [[]], pl.List(pl.Int64)))
+    test_case(pl.Series("a", [[], [0]]))
+    test_case(pl.Series("a", [[], [0], None]))
+    test_case(pl.Series("a", [None, [0], None]))
+    test_case(pl.Series("a", [[1, 2, 3], [4, 5]]))
+
+
+def test_list_eval_matching_slice_lengths() -> None:
+    df = pl.DataFrame({"a": [[1, 2], [3, 4]]})
+    out = df.select(
+        pl.col.a.list.eval(
+            (pl.element().slice(0, 1) * (pl.element().slice(1, 1))).sum()
+        )
+    )
+    expected = pl.DataFrame({"a": [[2], [12]]})
+    assert_frame_equal(out, expected)

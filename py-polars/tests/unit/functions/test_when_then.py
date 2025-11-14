@@ -751,8 +751,8 @@ def test_when_then_to_decimal_18375() -> None:
     df = pl.DataFrame({"a": ["1.23", "4.56"]})
 
     result = df.with_columns(
-        b=pl.when(False).then(None).otherwise(pl.col("a").str.to_decimal()),
-        c=pl.when(True).then(pl.col("a").str.to_decimal()),
+        b=pl.when(False).then(None).otherwise(pl.col("a").str.to_decimal(scale=2)),
+        c=pl.when(True).then(pl.col("a").str.to_decimal(scale=2)),
     )
     expected = pl.DataFrame(
         {
@@ -760,7 +760,7 @@ def test_when_then_to_decimal_18375() -> None:
             "b": ["1.23", "4.56"],
             "c": ["1.23", "4.56"],
         },
-        schema={"a": pl.String, "b": pl.Decimal, "c": pl.Decimal},
+        schema={"a": pl.String, "b": pl.Decimal(scale=2), "c": pl.Decimal(scale=2)},
     )
     assert_frame_equal(result, expected)
 

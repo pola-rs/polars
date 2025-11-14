@@ -34,7 +34,7 @@ def test_null_count_optimization_23031() -> None:
 
     expected = pl.DataFrame(
         [
-            pl.Series("count_all", [3], pl.UInt32()),
+            pl.Series("count_all", [3], pl.get_index_type()),
             pl.Series("sum_all", [12], pl.Int64()),
         ]
     )

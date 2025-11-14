@@ -1,7 +1,7 @@
 use std::fmt;
 
 use polars_core::error::*;
-use polars_utils::{format_list_container_truncated, format_list_truncated};
+use polars_utils::format_list_truncated;
 
 use crate::constants;
 use crate::plans::ir::IRPlanRef;
@@ -24,6 +24,7 @@ pub struct TreeFmtAExpr<'a>(&'a AExpr);
 impl fmt::Display for TreeFmtAExpr<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self.0 {
+            AExpr::Element => "element()",
             AExpr::Explode {
                 expr: _,
                 skip_empty: false,
@@ -70,9 +71,14 @@ impl fmt::Display for TreeFmtAExpr<'_> {
             AExpr::AnonymousFunction { fmt_str, .. } => {
                 return write!(f, "anonymous_function: {fmt_str}");
             },
+            AExpr::AnonymousStreamingAgg { fmt_str, .. } => {
+                return write!(f, "anonymous_streaming_agg: {fmt_str}");
+            },
             AExpr::Eval { .. } => "list.eval",
             AExpr::Function { function, .. } => return write!(f, "function: {function}"),
-            AExpr::Window { .. } => "window",
+            #[cfg(feature = "dynamic_group_by")]
+            AExpr::Rolling { .. } => "rolling",
+            AExpr::Over { .. } => "window",
             AExpr::Slice { .. } => "slice",
             AExpr::Len => constants::LEN,
         };
@@ -237,15 +243,8 @@ impl<'a> TreeFmtNode<'a> {
                             .map(|(i, lp_root)| self.lp_node(Some(format!("PLAN {i}:")), *lp_root))
                             .collect(),
                     ),
-                    Cache {
-                        input,
-                        id,
-                        cache_hits,
-                    } => ND(
-                        wh(
-                            h,
-                            &format!("CACHE[id: {}, cache_hits: {}]", id, *cache_hits),
-                        ),
+                    Cache { input, id } => ND(
+                        wh(h, &format!("CACHE[id: {id}]")),
                         vec![self.lp_node(None, *input)],
                     ),
                     Filter { input, predicate } => ND(
@@ -346,6 +345,7 @@ impl<'a> TreeFmtNode<'a> {
                             h,
                             match payload {
                                 SinkTypeIR::Memory => "SINK (memory)",
+                                SinkTypeIR::Callback(..) => "SINK (callback)",
                                 SinkTypeIR::File { .. } => "SINK (file)",
                                 SinkTypeIR::Partition { .. } => "SINK (partition)",
                             },
@@ -823,7 +823,11 @@ impl From<TreeView<'_>> for Canvas {
         }
 
         fn even_odd(a: usize, b: usize) -> usize {
-            if a % 2 == 0 && b % 2 == 1 { 1 } else { 0 }
+            if a.is_multiple_of(2) && b % 2 == 1 {
+                1
+            } else {
+                0
+            }
         }
 
         for (i, row) in value.matrix.iter().enumerate() {

@@ -37,6 +37,7 @@ impl IR {
             ExtContext { .. } => "ext_context",
             Sink { payload, .. } => match payload {
                 SinkTypeIR::Memory => "sink (memory)",
+                SinkTypeIR::Callback(..) => "sink (callback)",
                 SinkTypeIR::File { .. } => "sink (file)",
                 SinkTypeIR::Partition { .. } => "sink (partition)",
             },
