@@ -21,6 +21,7 @@ arange = "arange"
 ser = "ser"
 splitted = "splitted"
 strat = "strat"
+typ = "typ"
 
 [type.py.extend-identifiers]
 ba = "ba"
@@ -41,4 +42,3 @@ NDJsonReadOptions = "NDJsonReadOptions"
 NDJsonFileReader = "NDJsonFileReader"
 opt_nd = "opt_nd"
 tpe = "tpe"
-typ = "typ"
