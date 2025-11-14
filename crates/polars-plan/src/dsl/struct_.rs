@@ -86,7 +86,7 @@ impl StructNameSpace {
     pub fn with_fields(self, fields: Vec<Expr>) -> Expr {
         Expr::StructEval {
             expr: Arc::new(self.0),
-            evaluation: fields.iter().cloned().collect(),
+            evaluation: fields,
         }
     }
 }

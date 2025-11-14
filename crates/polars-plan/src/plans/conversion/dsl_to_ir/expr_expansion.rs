@@ -899,7 +899,13 @@ fn expand_expression_rec(
         },
         Expr::StructEval { expr, evaluation } => {
             let mut expr_out = Vec::with_capacity(1);
-            expand_expression_rec(expr, ignored_selector_columns, schema, &mut expr_out, opt_flags)?;
+            expand_expression_rec(
+                expr,
+                ignored_selector_columns,
+                schema,
+                &mut expr_out,
+                opt_flags,
+            )?;
 
             for expr in expr_out {
                 let expr = Arc::new(expr);
@@ -922,7 +928,7 @@ fn expand_expression_rec(
                 }
 
                 out.push(Expr::StructEval {
-                    expr: expr,
+                    expr,
                     evaluation: eval,
                 });
             }
