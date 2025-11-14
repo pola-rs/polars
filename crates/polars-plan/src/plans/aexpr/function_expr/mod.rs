@@ -1017,7 +1017,7 @@ impl IRFunctionExpr {
             F::FillNullWithStrategy(strategy) if strategy.is_elementwise() => {
                 FunctionOptions::elementwise()
             },
-            F::FillNullWithStrategy(_) => FunctionOptions::groupwise(),
+            F::FillNullWithStrategy(_) => FunctionOptions::length_preserving(),
             #[cfg(feature = "rolling_window")]
             F::RollingExpr { .. } => FunctionOptions::length_preserving(),
             #[cfg(feature = "rolling_window_by")]

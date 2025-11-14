@@ -143,3 +143,10 @@ def test_forward_fill_chunking_25273() -> None:
             }
         ),
     )
+
+
+def test_forward_fill_is_length_preserving() -> None:
+    assert_series_equal(
+        pl.Series([[1]]).list.agg(pl.element().first().forward_fill()),
+        pl.Series([1]),
+    )
