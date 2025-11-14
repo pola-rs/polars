@@ -245,7 +245,7 @@ def linkcode_resolve(domain: str, info: dict[str, Any]) -> str | None:
     polars_root = (conf_dir_path.parent.parent / "polars").absolute()
 
     fn = os.path.relpath(fn, start=polars_root)
-    return f"{github_root}/blob/{git_ref}/py-polars/src/{fn}{linespec}"
+    return f"{github_root}/blob/{git_ref}/py-polars/{fn}{linespec}"
 
 
 def _minify_classpaths(s: str) -> str:
