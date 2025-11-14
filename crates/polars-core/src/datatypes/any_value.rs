@@ -703,10 +703,16 @@ impl<'a> AnyValue<'a> {
             Self::Time(v) => Self::Int64(v),
 
             #[cfg(feature = "dtype-categorical")]
-            Self::Categorical(v, _)
-            | Self::CategoricalOwned(v, _)
-            | Self::Enum(v, _)
-            | Self::EnumOwned(v, _) => Self::UInt32(v),
+            Self::Categorical(v, &ref m)
+            | Self::CategoricalOwned(v, ref m)
+            | Self::Enum(v, &ref m)
+            | Self::EnumOwned(v, ref m) => {
+                match CategoricalPhysical::smallest_physical(m.max_categories()).unwrap() {
+                    CategoricalPhysical::U8 => Self::UInt8(v as u8),
+                    CategoricalPhysical::U16 => Self::UInt16(v as u16),
+                    CategoricalPhysical::U32 => Self::UInt32(v),
+                }
+            },
             Self::List(series) => Self::List(series.to_physical_repr().into_owned()),
 
             #[cfg(feature = "dtype-array")]
