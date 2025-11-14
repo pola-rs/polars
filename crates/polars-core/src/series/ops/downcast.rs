@@ -413,7 +413,7 @@ impl Series {
     }
 
     /// Unpack to [`ExtensionChunked`] of dtype [`DataType::Extension`].
-    #[cfg(feature = "dtype-categorical")]
+    #[cfg(feature = "dtype-extension")]
     pub fn ext(&self) -> PolarsResult<&ExtensionChunked> {
         self.try_ext()
             .ok_or_else(|| unpack_chunked_err!(self => "Extension"))
