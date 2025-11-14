@@ -153,8 +153,8 @@ time to
 
 ### Aggregation & sorting
 
-Like `select` on data frames, the function `eval` can also be used to aggregate over or sort the
-list elements.
+Like `select` on data frames, the two related functions `eval` and `agg` can also be
+used to aggregate over or sort the list elements.
 
 We'll reuse a slightly modified version of the example data from the very beginning:
 
@@ -166,16 +166,30 @@ We'll reuse a slightly modified version of the example data from the very beginn
 
 Using `eval`, we can sort the list elements or compute some aggregations:
 
-{{code_block('user-guide/expressions/lists', 'list-aggregation', ['list.eval', 'Expr.sort_by'])}}
+{{code_block('user-guide/expressions/lists', 'list-sorting', ['list.eval', 'Expr.sort_by'])}}
+
+```python exec="on" result="text" session="expressions/lists"
+--8<-- "python/user-guide/expressions/lists.py:list-sorting"
+```
+
+`eval` will always return a list. Use `agg` to get `min_age` and `max_age` as scalar
+values instead of single-element lists:
+
+{{code_block('user-guide/expressions/lists', 'list-aggregation', ['list.agg'])}}
 
 ```python exec="on" result="text" session="expressions/lists"
 --8<-- "python/user-guide/expressions/lists.py:list-aggregation"
 ```
 
-While some aggregation functions like `.list.sum()` are directly available in the `list` namespace,
-you can access more exotic aggregations like `entropy` via `eval` only:
+If the evaluated expression is statically determined to return only one value, `agg`
+will automatically explode the resulting list into the inner values. This matches what
+`df.group_by(...).agg(...)` does, hence the name. This is in contrast with `eval`, which
+will not perform such unwrapping.
 
-{{code_block('user-guide/expressions/lists', 'list-entropy', ['list.eval', 'Expr.entropy'])}}
+While some aggregation functions like `.list.sum()` are directly available in the `list` namespace,
+you can access more exotic aggregations like `entropy` via `agg`/`eval` only:
+
+{{code_block('user-guide/expressions/lists', 'list-entropy', ['list.agg', 'Expr.entropy'])}}
 
 ```python exec="on" result="text" session="expressions/lists"
 --8<-- "python/user-guide/expressions/lists.py:list-entropy"
