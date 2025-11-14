@@ -122,9 +122,9 @@ pub(super) fn to_aexpr_impl(
 
     let (v, output_name) = match expr {
         Expr::Element => (AExpr::Element, PlSmallStr::EMPTY),
-        Expr::Explode { input, skip_empty } => {
+        Expr::Explode { input, options } => {
             let (expr, output_name) = recurse_arc!(input)?;
-            (AExpr::Explode { expr, skip_empty }, output_name)
+            (AExpr::Explode { expr, options }, output_name)
         },
         Expr::Alias(e, name) => return Ok((recurse_arc!(e)?.0, name)),
         Expr::Literal(lv) => {

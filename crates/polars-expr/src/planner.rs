@@ -636,11 +636,11 @@ fn create_physical_expr_inner(
                 expr: node_to_expr(expression, expr_arena),
             }))
         },
-        Explode { expr, skip_empty } => {
+        Explode { expr, options } => {
             let input = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
-            let skip_empty = *skip_empty;
+            let options = *options;
             let function = SpecialEq::new(Arc::new(
-                move |c: &mut [polars_core::frame::column::Column]| c[0].explode(skip_empty),
+                move |c: &mut [polars_core::frame::column::Column]| c[0].explode(options),
             ) as Arc<dyn ColumnsUdf>);
 
             let output_field = expr_arena

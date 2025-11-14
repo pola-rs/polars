@@ -630,6 +630,27 @@ impl ListChunked {
         }
     }
 
+    pub fn has_empty_lists(&self) -> bool {
+        for arr in self.downcast_iter() {
+            if arr.is_empty() {
+                continue;
+            }
+
+            if match arr.validity() {
+                None => arr.offsets().lengths().any(|l| l == 0),
+                Some(validity) => arr
+                    .offsets()
+                    .lengths()
+                    .enumerate()
+                    .any(|(i, l)| l == 0 && unsafe { validity.get_bit_unchecked(i) }),
+            } {
+                return true;
+            }
+        }
+
+        false
+    }
+
     pub fn has_masked_out_values(&self) -> bool {
         for arr in self.downcast_iter() {
             if arr.is_empty() {

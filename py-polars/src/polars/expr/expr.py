@@ -4959,13 +4959,20 @@ Consider using {self}.implode() instead"""
         │ b     ┆ [2, 3, 4] │
         └───────┴───────────┘
         """
-        return wrap_expr(self._pyexpr.explode())
+        return self.explode(empty_as_null=True, keep_nulls=True)
 
-    def explode(self) -> Expr:
+    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Expr:
         """
         Explode a list expression.
 
         This means that every item is expanded to a new row.
+
+        Parameters
+        ----------
+        empty_as_null
+            Explode an empty list/array into a `null`.
+        keep_nulls
+            Explode a `null` list/array into a `null`.
 
         Returns
         -------
@@ -5000,7 +5007,9 @@ Consider using {self}.implode() instead"""
         │ 4      │
         └────────┘
         """
-        return wrap_expr(self._pyexpr.explode())
+        return wrap_expr(
+            self._pyexpr.explode(empty_as_null=empty_as_null, keep_nulls=keep_nulls)
+        )
 
     def implode(self) -> Expr:
         """

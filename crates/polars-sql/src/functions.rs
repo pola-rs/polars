@@ -2,7 +2,8 @@ use std::ops::Sub;
 
 use polars_core::chunked_array::ops::{SortMultipleOptions, SortOptions};
 use polars_core::prelude::{
-    DataType, PolarsResult, QuantileMethod, Schema, TimeUnit, polars_bail, polars_err,
+    DataType, ExplodeOptions, PolarsResult, QuantileMethod, Schema, TimeUnit, polars_bail,
+    polars_err,
 };
 use polars_lazy::dsl::Expr;
 use polars_ops::chunked_array::UnicodeForm;
@@ -1527,7 +1528,12 @@ impl SQLFunctionVisitor<'_> {
             ArraySum => self.visit_unary(|e| e.list().sum()),
             ArrayToString => self.visit_arr_to_string(),
             ArrayUnique => self.visit_unary(|e| e.list().unique()),
-            Explode => self.visit_unary(|e| e.explode()),
+            Explode => self.visit_unary(|e| {
+                e.explode(ExplodeOptions {
+                    empty_as_null: true,
+                    keep_nulls: true,
+                })
+            }),
 
             // ----
             // Column selection
