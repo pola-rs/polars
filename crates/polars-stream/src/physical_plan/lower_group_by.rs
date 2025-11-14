@@ -573,7 +573,10 @@ pub fn try_build_sorted_group_by(
             keys.to_vec(),
             IRFunctionExpr::RowEncode(
                 key_fields.iter().map(|k| k.dtype().clone()).collect(),
-                RowEncodingVariant::Unordered,
+                RowEncodingVariant::Ordered {
+                    descending: None,
+                    nulls_last: None,
+                },
             ),
             expr_arena,
         )
@@ -640,14 +643,23 @@ pub fn try_build_sorted_group_by(
         };
         gb_output_schema.insert(field.name, dtype);
     }
-    input = PhysStream::first(phys_sm.insert(PhysNode {
-        output_schema: Arc::new(gb_output_schema.clone()),
-        kind: PhysNodeKind::SortedGroupBy {
-            input,
-            key: input_column.clone(),
-            aggs: aggs.to_vec(),
-        },
-    }));
+    input = PhysStream::first(
+        phys_sm.insert(PhysNode {
+            output_schema: Arc::new(gb_output_schema.clone()),
+            kind: PhysNodeKind::SortedGroupBy {
+                input,
+                key: input_column.clone(),
+                aggs: aggs.to_vec(),
+                slice: options
+                    .slice
+                    .filter(|(o, _)| *o >= 0)
+                    .map(|(o, l)| (o as IdxSize, l as IdxSize)),
+            },
+        }),
+    );
+    if let Some((offset, length)) = options.slice.as_ref().filter(|(o, _)| *o < 0) {
+        input = build_slice_stream(input, *offset, *length, phys_sm);
+    }
 
     if projected {
         if let Some(key_fields) = row_encoded {
@@ -749,7 +761,7 @@ pub fn build_group_by_stream(
         return Ok(input);
     }
 
-    if std::env::var("POLARS_FORCE_SORTED_GROUP_BY").is_ok_and(|v| v == "1")
+    if (are_keys_sorted || std::env::var("POLARS_FORCE_SORTED_GROUP_BY").is_ok_and(|v| v == "1"))
         && let Some(stream) = try_build_sorted_group_by(
             input,
             keys,
@@ -762,7 +774,7 @@ pub fn build_group_by_stream(
             phys_sm,
             expr_cache,
             ctx,
-            false,
+            are_keys_sorted,
         )
     {
         stream
@@ -778,23 +790,6 @@ pub fn build_group_by_stream(
         expr_cache,
         ctx,
     ) {
-        stream
-    } else if are_keys_sorted
-        && let Some(stream) = try_build_sorted_group_by(
-            input,
-            keys,
-            aggs,
-            output_schema.clone(),
-            maintain_order,
-            options.clone(),
-            apply.clone(),
-            expr_arena,
-            phys_sm,
-            expr_cache,
-            ctx,
-            true,
-        )
-    {
         stream
     } else {
         let format_str = ctx.prepare_visualization.then(|| {

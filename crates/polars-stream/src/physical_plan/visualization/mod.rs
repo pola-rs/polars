@@ -213,12 +213,18 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     ..Default::default()
                 }
             },
-            PhysNodeKind::SortedGroupBy { input, key, aggs } => {
+            PhysNodeKind::SortedGroupBy {
+                input,
+                key,
+                aggs,
+                slice,
+            } => {
                 phys_node_inputs.push(input.node);
 
                 let properties = PhysNodeProperties::SortedGroupBy {
                     key: key.clone(),
                     aggs: expr_list(aggs, self.expr_arena),
+                    slice: slice.map(|(o, l)| (IdxSize::into(o), IdxSize::into(l))),
                 };
 
                 PhysNodeInfo {

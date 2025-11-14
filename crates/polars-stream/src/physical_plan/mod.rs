@@ -215,6 +215,7 @@ pub enum PhysNodeKind {
         input: PhysStream,
         key: PlSmallStr,
         aggs: Vec<ExprIR>,
+        slice: Option<(IdxSize, IdxSize)>,
     },
 
     Sort {

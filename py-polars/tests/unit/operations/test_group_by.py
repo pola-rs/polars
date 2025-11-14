@@ -2571,3 +2571,32 @@ def test_sorted_group_by() -> None:
         ],
         check_row_order=False,
     )
+
+
+def test_sorted_group_by_slice() -> None:
+    lf = (
+        pl.DataFrame({"a": [0, 5, 2, 1, 3] * 50})
+        .with_row_index()
+        .with_columns(pl.col.index // 5)
+        .lazy()
+        .set_sorted("index")
+        .group_by("index", maintain_order=True)
+        .agg(pl.col.a.sum() + pl.col.index.first())
+    )
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("index", range(50), pl.get_index_type()),
+            pl.Series("a", range(11, 11 + 50), pl.Int64),
+        ]
+    )
+
+    assert_frame_equal(lf.head(2).collect(), expected.head(2))
+    assert_frame_equal(lf.slice(1, 3).collect(), expected.slice(1, 3))
+    assert_frame_equal(lf.tail(2).collect(), expected.tail(2))
+    assert_frame_equal(lf.slice(5, 1).collect(), expected.slice(5, 1))
+    assert_frame_equal(lf.slice(5, 0).collect(), expected.slice(5, 0))
+    assert_frame_equal(lf.slice(2, 1).collect(), expected.slice(2, 1))
+    assert_frame_equal(lf.slice(50, 1).collect(), expected.slice(50, 1))
+    assert_frame_equal(lf.slice(20, 30).collect(), expected.slice(20, 30))
+    assert_frame_equal(lf.slice(20, 30).collect(), expected.slice(20, 30))
