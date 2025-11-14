@@ -48,14 +48,14 @@ if TYPE_CHECKING:
 
 TestExtension = Extension(
     name="testing.test_extension",
-    storage=Int32,
+    storage=Int32(),
     metadata="A test extension type",
 )
 
 register_extension_type("testing.test_extension", Extension)
 
 # Supported data type classes which do not take any arguments
-_SIMPLE_DTYPES: list[DataTypeClass] = [
+_SIMPLE_DTYPES: list[PolarsDataType] = [
     Int8,
     Int16,
     Int32,

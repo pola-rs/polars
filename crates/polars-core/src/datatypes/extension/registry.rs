@@ -1,9 +1,9 @@
-use std::collections::HashMap;
-use std::collections::hash_map::Entry;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, LazyLock, RwLock};
 
+use hashbrown::hash_map::Entry;
 use polars_error::{PolarsResult, polars_bail, polars_err, polars_warn};
+use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::{ExtensionTypeFactory, ExtensionTypeInstance};
@@ -84,8 +84,9 @@ pub fn get_extension_type_or_generic(
     ExtensionTypeInstance(Box::new(typ))
 }
 
-static REGISTRY: LazyLock<RwLock<HashMap<PlSmallStr, Option<Arc<dyn ExtensionTypeFactory>>>>> =
-    LazyLock::new(|| RwLock::default());
+#[allow(clippy::type_complexity)]
+static REGISTRY: LazyLock<RwLock<PlHashMap<PlSmallStr, Option<Arc<dyn ExtensionTypeFactory>>>>> =
+    LazyLock::new(RwLock::default);
 
 pub fn register_extension_type(
     name: &str,
