@@ -1087,3 +1087,17 @@ def test_first_last_nested(
         }
     )
     assert_frame_equal(result, expected)
+
+
+def test_struct_enum_agg_streaming_24936() -> None:
+    s = (
+        pl.Series(
+            "a",
+            [{"f0": "c0"}],
+            dtype=pl.Struct({"f0": pl.Enum(categories=["c0"])}),
+        ),
+    )
+    df = pl.DataFrame(s)
+
+    q = df.lazy().select(pl.all(ignore_nulls=False).first())
+    assert_frame_equal(q.collect(), df)
