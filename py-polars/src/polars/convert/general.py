@@ -896,8 +896,29 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
             )
             raise NotImplementedError(msg)
 
+    # Deal with line wrapping by detecting columns which may not be empty, but are
+    # anyway, indicating a wrap has occurred.
+    str_schema = [(k, String) for k in schema]
+    tmp_df = pl.DataFrame(data=data, orient="col", schema=str_schema)
+    out_rows = []
+    for row in tmp_df.iter_rows():
+        row = pl.Series(row, dtype=String)
+        if out_rows and any(
+            col == "" and dtype is not None and dtype != String and dtype != Categorical
+            for col, dtype in zip(row, schema.values())
+        ):
+            pad = pl.Series(
+                ["" if x == "" or y == "" else " " for x, y in zip(out_rows[-1], row)],
+                dtype=String,
+            )
+            out_rows[-1] = out_rows[-1] + pad + row
+        else:
+            out_rows.append(row)
+    df = from_records(
+        data=[r.to_list() for r in out_rows], orient="row", schema=str_schema
+    )
+
     # construct DataFrame from string series and cast from repr to native dtype
-    df = pl.DataFrame(data=data, orient="col", schema=list(schema))
     if no_dtypes:
         if df.is_empty():
             # if no dtypes *and* empty, default to string
