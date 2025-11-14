@@ -11,6 +11,8 @@ use polars_ops::prelude::ChunkJoinOptIds;
 use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::unique_id::UniqueId;
 
+use crate::prelude::AggregationContext;
+
 use super::NodeTimer;
 
 pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, ChunkJoinOptIds>>>;
@@ -122,7 +124,8 @@ pub struct ExecutionState {
     // every join/union split gets an increment to distinguish between schema state
     pub branch_idx: usize,
     pub flags: RelaxedCell<u8>,
-    pub with_fields: Arc<Option<(StructChunked, Option<Bitmap>)>>, // kdn TODO TBD - drop validity..
+    pub with_fields: Arc<Option<StructChunked>>,
+    // pub with_fields_ac: Arc<Option<AggregationContext<'a>>>,
     pub ext_contexts: Arc<Vec<DataFrame>>,
     pub element: Arc<Option<(Column, Option<Bitmap>)>>,
     node_timer: Option<NodeTimer>,

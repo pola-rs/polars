@@ -45,12 +45,12 @@ impl PhysicalExpr for StructEvalExpr {
         let input = self.input.evaluate(df, state)?;
         let validity = input.rechunk_validity();
 
-        // Update ExecutionState.
+        // Set ExecutionState.
         let mut state = state.clone();
         let mut eval = Vec::with_capacity(self.evaluation.len() + 1);
         let input_len = input.len();
 
-        state.with_fields = Arc::new(Some((input.struct_()?.clone(), validity)));
+        state.with_fields = Arc::new(Some(input.struct_()?.clone()));
 
         // Collect evaluation fields.
         eval.push(input);
@@ -59,9 +59,6 @@ impl PhysicalExpr for StructEvalExpr {
             polars_ensure!(result.len() == input_len || result.len() == 1,
                 ShapeMismatch: "struct.with_fields expressions must have matching or unit length"
             );
-            // kdn TODO TEST
-            // let name = column_to_field.get(result.name()).unwrap();
-            // eval.push(result.with_name(name.clone()));
             eval.push(result);
         }
 
@@ -76,8 +73,43 @@ impl PhysicalExpr for StructEvalExpr {
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         //kdn: TODO TEST
-        let c = self.evaluate(df, state)?;
-        Ok(AggregationContext::new(c, Cow::Borrowed(groups), false))
+        // - elementwise: sum
+        // - not row-separable: cum_sum
+        // - aggregations: first
+        // - window..
+
+        // Evaluate input.
+        let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
+        let input = ac.get_values().clone();
+        let validity = input.rechunk_validity();
+        dbg!(&ac);
+
+        // Set ExecutionState.
+        let mut state = state.clone();
+        let mut eval = Vec::with_capacity(self.evaluation.len() + 1);
+        let input_len = input.len();
+
+        state.with_fields = Arc::new(Some(input.struct_()?.clone()));
+
+        // TBD which groups?
+
+        // Collect evaluation fields.
+        eval.push(input);
+        for e in self.evaluation.iter() {
+            let result = e.evaluate_on_groups(&df, ac.groups(), &state)?;
+            dbg!(&result);
+            //kdn TODO length check
+            // polars_ensure!(result.len() == input_len || result.len() == 1,
+            //     ShapeMismatch: "struct.with_fields expressions must have matching or unit length"
+            // );
+            let result = result.flat_naive();
+            dbg!(&result);
+            eval.push(result.into_owned());
+        }
+
+        // Apply with_fields.
+        ac.with_values(with_fields(&eval)?, false, Some(&self.expr))?;
+        Ok(ac)
     }
 
     fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {

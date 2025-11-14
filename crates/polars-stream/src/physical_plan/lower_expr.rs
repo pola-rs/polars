@@ -139,7 +139,7 @@ pub fn is_input_independent_rec(
     let ret = match arena.get(expr_key) {
         // Handled separately in `Eval`.
         AExpr::Element => unreachable!(),
-
+        AExpr::StructField(_) => true, //kdn TODO STREAMING REVIEW
         AExpr::Explode { expr: inner, .. }
         | AExpr::Cast {
             expr: inner,
@@ -151,8 +151,7 @@ pub fn is_input_independent_rec(
             options: _,
         } => is_input_independent_rec(*inner, arena, cache),
         AExpr::Column(_) => false,
-        // Handled separately in `StructEval`.
-        AExpr::StructField(_) => unreachable!(), //kdn TODO STREAMING REVIEW
+
         AExpr::Literal(_) => true,
         AExpr::BinaryExpr { left, op: _, right } => {
             is_input_independent_rec(*left, arena, cache)
@@ -226,18 +225,7 @@ pub fn is_input_independent_rec(
             expr,
             evaluation: _,
         } => is_input_independent_rec(*expr, arena, cache), //kdn TODO STREAMING REVIEW
-        #[cfg(feature = "dynamic_group_by")]
-        AExpr::Rolling {
-            function,
-            index_column,
-            period: _,
-            offset: _,
-            closed_window: _,
-        } => {
-            is_input_independent_rec(*function, arena, cache)
-                && is_input_independent_rec(*index_column, arena, cache)
-        },
-        AExpr::Over {
+        AExpr::Window {
             function,
             partition_by,
             order_by,
@@ -309,7 +297,6 @@ pub fn is_length_preserving_rec(
     let ret = match arena.get(expr_key) {
         // Handled separately in `Eval`.
         AExpr::Element => unreachable!(),
-
         AExpr::StructField(_) => unreachable!(), //kdn TODO STREAMING REVIEW
 
         AExpr::Gather { .. }
@@ -383,7 +370,10 @@ pub fn is_length_preserving_rec(
             offset: _,
             closed_window: _,
         } => true,
-        AExpr::StructEval { .. } => true, //kdn TODO STREAMING .. expected is_length_preserving_rec(expr.node(), arena, cache)?
+        AExpr::StructEval {
+            expr,
+            evaluation: _,
+        } => is_length_preserving_rec(*expr, arena, cache), //kdn TODO STREAMING REVIEW
         AExpr::Over {
             function: _, // Actually shouldn't matter for window functions.
             partition_by: _,
@@ -624,6 +614,7 @@ fn lower_exprs_with_ctx(
         match ctx.expr_arena.get(expr).clone() {
             // Handled separately in `Eval` expressions.
             AExpr::Element => unreachable!(),
+            AExpr::StructField(_) => unreachable!(), //kdn TODO STREAMING REVIEW
 
             AExpr::Explode {
                 expr: inner,
@@ -651,7 +642,6 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(exploded_name)));
             },
             AExpr::Column(_) => unreachable!("column should always be streamable"),
-            AExpr::StructField(_) => unreachable!(), //kdn TODO STREAMING REVIEW
             AExpr::Literal(_) => {
                 let out_name = unique_column_name();
                 let inner_expr = ExprIR::new(expr, OutputName::Alias(out_name.clone()));

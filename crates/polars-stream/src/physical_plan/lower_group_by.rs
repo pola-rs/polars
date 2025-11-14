@@ -187,12 +187,12 @@ fn try_lower_elementwise_scalar_agg_expr(
         // Should be handled separately in `Eval`.
         AExpr::Element => unreachable!(),
 
+        AExpr::StructField(_) => unreachable!(), //kdn TODO STREAMING REVIEW
+
         AExpr::Column(_) => {
             // Implicit implode not yet supported.
             None
         },
-
-        AExpr::StructField(_) => unreachable!(), //kdn TODO STREAMING REVIEW
 
         AExpr::Literal(lit) => {
             if lit.is_scalar() {
@@ -242,7 +242,7 @@ fn try_lower_elementwise_scalar_agg_expr(
             let (expr, evaluation) = (*expr, evaluation.clone());
             let expr = lower_rec!(expr)?;
             Some(expr_arena.add(AExpr::StructEval { expr, evaluation }))
-        }, //kdn TODO STREAMING REVIEW
+        }, //kdn TODO STREAMING REVIEW - PROBABLY WRONG.. evaluation can be pl.col.x.cum_sum() etc
 
         AExpr::Ternary {
             predicate,
