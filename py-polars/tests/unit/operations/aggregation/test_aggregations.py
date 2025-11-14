@@ -954,6 +954,7 @@ def test_invalid_agg_dtypes_should_raise(
     )
 )
 def test_single(df: pl.DataFrame) -> None:
+    df.write_parquet("test_single.pqt")
     q = df.lazy().select(pl.all(ignore_nulls=False).item())
     assert_frame_equal(q.collect(), df)
     assert_frame_equal(q.collect(engine="streaming"), df)
@@ -1035,3 +1036,68 @@ def test_all_any_on_list_raises_error() -> None:
             pl.exceptions.InvalidOperationError, match=r"expected boolean"
         ):
             lf.select(expr).collect(engine="streaming")
+
+
+@pytest.mark.parametrize("null_endpoints", [True, False])
+@pytest.mark.parametrize(
+    ("dtype", "first_value", "last_value"),
+    [
+        # Struct
+        (
+            pl.Struct({"x": pl.Enum(["c0", "c1"]), "y": pl.Float32}),
+            {"x": "c0", "y": 1.2},
+            {"x": "c1", "y": 3.4},
+        ),
+        # List
+        (pl.List(pl.UInt8), [1], [2]),
+        # Array
+        (pl.Array(pl.Int16, 2), [1, 2], [3, 4]),
+        # Date (logical test)
+        (pl.Date, date(2025, 1, 1), date(2025, 1, 2)),
+        # Float (primitive test)
+        (pl.Float32, 1.0, 2.0),
+    ],
+)
+def test_first_last_nested(
+    null_endpoints: bool,
+    dtype: PolarsDataType,
+    first_value: Any,
+    last_value: Any,
+) -> None:
+    s = pl.Series([first_value, last_value], dtype=dtype)
+    if null_endpoints:
+        # Test the case where the first/last value is null
+        null = pl.Series([None], dtype=dtype)
+        s = pl.concat((null, s, null))
+
+    lf = pl.LazyFrame({"a": s})
+
+    # first
+    result = lf.select(pl.col("a").first()).collect()
+    expected = pl.DataFrame(
+        {"a": pl.Series([None if null_endpoints else first_value], dtype=dtype)}
+    )
+    assert_frame_equal(result, expected)
+
+    # last
+    result = lf.select(pl.col("a").last()).collect()
+    expected = pl.DataFrame(
+        {
+            "a": pl.Series([None if null_endpoints else last_value], dtype=dtype),
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_struct_enum_agg_streaming_24936() -> None:
+    s = (
+        pl.Series(
+            "a",
+            [{"f0": "c0"}],
+            dtype=pl.Struct({"f0": pl.Enum(categories=["c0"])}),
+        ),
+    )
+    df = pl.DataFrame(s)
+
+    q = df.lazy().select(pl.all(ignore_nulls=False).first())
+    assert_frame_equal(q.collect(), df)
