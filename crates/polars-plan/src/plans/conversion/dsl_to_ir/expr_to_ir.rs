@@ -17,12 +17,12 @@ pub(super) fn to_expr_irs(
     input: Vec<Expr>,
     ctx: &mut ExprToIRContext,
 ) -> PolarsResult<Vec<ExprIR>> {
-    let original_with_fields = ctx.with_fields.clone();
+    let original_with_fields = ctx.with_fields;
     input
         .into_iter()
         .map(|e| {
             let e = to_expr_ir(e, ctx)?;
-            ctx.with_fields = original_with_fields.clone();
+            ctx.with_fields = original_with_fields;
             Ok(e)
         })
         .collect()
@@ -511,7 +511,6 @@ pub(super) fn to_aexpr_impl(
             )
         },
         Expr::StructEval { expr, evaluation } => {
-
             let (expr, output_name) = recurse_arc!(expr)?;
             let expr_dtype = ctx.arena.get(expr).to_dtype(&ctx.to_field_ctx())?;
 
@@ -527,7 +526,7 @@ pub(super) fn to_aexpr_impl(
 
             for e in evaluation {
                 let mut eval_ctx = ExprToIRContext {
-                    with_fields: Some((expr, &struct_schema)), //kdn TODO PERFORMANCE ref schema?
+                    with_fields: Some((expr, &struct_schema)),
                     arena: ctx.arena,
                     schema: &eval_schema,
                     allow_unknown: ctx.allow_unknown,

@@ -324,7 +324,7 @@ impl AExpr {
                     .insert(PL_STRUCTFIELDS_NAME.clone(), struct_field.dtype().clone());
 
                 let eval_fields = func_args_to_fields(
-                    &evaluation,
+                    evaluation,
                     &ToFieldContext::new(ctx.arena, &evaluation_schema),
                 )?;
 

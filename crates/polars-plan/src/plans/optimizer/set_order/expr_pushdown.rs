@@ -107,11 +107,8 @@ pub fn resolve_observable_orders(
     aexpr: &AExpr,
     expr_arena: &Arena<AExpr>,
 ) -> Result<ObservableOrders, ColumnOrderObserved> {
-    dbg!("start resolve_observable_orders"); //kdn
-    let out = ObservableOrdersResolver::new(ObservableOrders::Column, expr_arena)
-        .resolve_observable_orders(aexpr);
-    dbg!(&out);
-    out
+    ObservableOrdersResolver::new(ObservableOrders::Column, expr_arena)
+        .resolve_observable_orders(aexpr)
 }
 
 pub(super) struct ObservableOrdersResolver<'a> {
@@ -132,9 +129,6 @@ impl<'a> ObservableOrdersResolver<'a> {
         &self,
         aexpr: &AExpr,
     ) -> Result<ObservableOrders, ColumnOrderObserved> {
-        dbg!("start resolve_observable_orders for ObservableOrderResolver"); //kdn
-        dbg!(&self.column_ordering);
-        dbg!(&aexpr);
         macro_rules! rec {
             ($expr:expr) => {{ self.resolve_observable_orders(self.expr_arena.get($expr))? }};
         }
@@ -144,7 +138,7 @@ impl<'a> ObservableOrdersResolver<'a> {
         }
 
         use ObservableOrders as O;
-        let out = Ok(match aexpr {
+        Ok(match aexpr {
             // This should never reached as we don't recurse on the Eval evaluation expression.
             AExpr::Element => unreachable!(),
 
@@ -398,8 +392,6 @@ impl<'a> ObservableOrdersResolver<'a> {
                 input
             },
             AExpr::Len => O::None,
-        });
-        dbg!(&out);
-        out
+        })
     }
 }

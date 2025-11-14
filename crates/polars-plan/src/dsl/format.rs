@@ -257,7 +257,7 @@ impl fmt::Debug for Expr {
                 evaluation,
             } => {
                 write!(f, "{input:?}.struct.eval({evaluation:?}")
-            }
+            },
             Slice {
                 input,
                 offset,

@@ -433,7 +433,7 @@ impl Hash for Expr {
             } => {
                 input.hash(state);
                 evaluation.hash(state);
-            }
+            },
             Expr::SubPlan(_, names) => names.hash(state),
             #[cfg(feature = "dtype-struct")]
             Expr::Field(names) => names.hash(state),

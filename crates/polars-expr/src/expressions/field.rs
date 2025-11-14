@@ -30,21 +30,33 @@ impl PhysicalExpr for FieldExpr {
     }
 
     fn evaluate(&self, _df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
-        let ca = state.with_fields.as_ref().clone().ok_or_else(
-            || polars_err!(invalid_field_use),
-        )?;
+        let ca = state
+            .with_fields
+            .as_ref()
+            .as_ref()
+            .ok_or_else(|| polars_err!(invalid_field_use))?;
 
         ca.field_by_name(self.name.as_str()).map(Column::from)
     }
 
     fn evaluate_on_groups<'a>(
         &self,
-        df: &DataFrame,
-        groups: &'a GroupPositions,
+        _df: &DataFrame,
+        _groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let c = self.evaluate(df, state)?;
-        Ok(AggregationContext::new(c, Cow::Borrowed(groups), false))
+        //kdn TODO REVIEW
+        let ac = state
+            .with_fields_ac
+            .as_ref()
+            .as_ref()
+            .ok_or_else(|| polars_err!(invalid_field_use))?;
+
+        let col = ac.flat_naive().clone();
+        let ca = col.struct_()?;
+        let out = ca.field_by_name(self.name.as_str()).map(Column::from)?;
+
+        Ok(AggregationContext::new(out, ac.groups.clone(), false))
     }
 
     fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {

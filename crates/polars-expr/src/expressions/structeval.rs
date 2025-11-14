@@ -1,15 +1,14 @@
-use std::borrow::Cow;
 use std::sync::Arc;
 
 use polars_core::error::{PolarsResult, polars_ensure};
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Column, Field, GroupPositions};
+use polars_core::prelude::*;
 use polars_core::schema::Schema;
 use polars_plan::dsl::Expr;
 
 use super::PhysicalExpr;
 use crate::dispatch::struct_::with_fields;
-use crate::prelude::AggregationContext;
+use crate::prelude::{AggState, AggregationContext, UpdateGroups};
 use crate::state::ExecutionState;
 
 #[derive(Clone)]
@@ -43,7 +42,6 @@ impl PhysicalExpr for StructEvalExpr {
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let input = self.input.evaluate(df, state)?;
-        let validity = input.rechunk_validity();
 
         // Set ExecutionState.
         let mut state = state.clone();
@@ -55,7 +53,7 @@ impl PhysicalExpr for StructEvalExpr {
         // Collect evaluation fields.
         eval.push(input);
         for e in self.evaluation.iter() {
-            let result = e.evaluate(&df, &state)?;
+            let result = e.evaluate(df, &state)?;
             polars_ensure!(result.len() == input_len || result.len() == 1,
                 ShapeMismatch: "struct.with_fields expressions must have matching or unit length"
             );
@@ -80,35 +78,55 @@ impl PhysicalExpr for StructEvalExpr {
 
         // Evaluate input.
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
-        let input = ac.get_values().clone();
-        let validity = input.rechunk_validity();
-        dbg!(&ac);
+        ac.groups();
 
         // Set ExecutionState.
         let mut state = state.clone();
-        let mut eval = Vec::with_capacity(self.evaluation.len() + 1);
-        let input_len = input.len();
-
-        state.with_fields = Arc::new(Some(input.struct_()?.clone()));
-
-        // TBD which groups?
+        state.with_fields_ac = Arc::new(Some(ac.into_static()));
 
         // Collect evaluation fields.
-        eval.push(input);
+        //kdn TODO check lengths and error handling
+        //kdn TODO check validity
+
+        let mut acs = Vec::with_capacity(self.evaluation.len() + 1);
+        acs.push(ac);
         for e in self.evaluation.iter() {
-            let result = e.evaluate_on_groups(&df, ac.groups(), &state)?;
-            dbg!(&result);
-            //kdn TODO length check
-            // polars_ensure!(result.len() == input_len || result.len() == 1,
-            //     ShapeMismatch: "struct.with_fields expressions must have matching or unit length"
-            // );
-            let result = result.flat_naive();
-            dbg!(&result);
-            eval.push(result.into_owned());
+            let ac = e.evaluate_on_groups(df, groups, &state)?;
+            acs.push(ac);
         }
 
         // Apply with_fields.
-        ac.with_values(with_fields(&eval)?, false, Some(&self.expr))?;
+        let mut iters = acs
+            .iter_mut()
+            .map(|ac| ac.iter_groups(true))
+            .collect::<Vec<_>>();
+        let len = iters[0].size_hint().0;
+        let ca = (0..len)
+            .map(|_| {
+                let series: PolarsResult<Vec<_>> = iters
+                    .iter_mut()
+                    .map(|i| {
+                        i.next()
+                            .flatten()
+                            .ok_or_else(|| polars_err!(InvalidOperation: "kdn TODO"))
+                    })
+                    .collect();
+                let series = series?;
+                let cols: Vec<_> = series
+                    .iter()
+                    .map(|s| s.as_ref().clone().into_column())
+                    .collect();
+                let out = with_fields(&cols)?;
+                Ok(Some(out))
+            })
+            .collect::<PolarsResult<ListChunked>>()?;
+
+        drop(iters);
+
+        // Update AC.
+        let mut ac = acs.swap_remove(0);
+        ac.with_agg_state(AggState::AggregatedList(ca.into_column()));
+        ac.with_update_groups(UpdateGroups::WithSeriesLen);
         Ok(ac)
     }
 

@@ -693,10 +693,6 @@ impl LazyFrame {
                 Err(polars_err!(InvalidOperation: "sink is not supported for the gpu engine"))
             },
             Engine::InMemory => {
-                dbg!("has logical plan"); //kdn
-                dbg!(&alp_plan.lp_top);
-                dbg!(&alp_plan.lp_arena);
-                dbg!(&alp_plan.expr_arena);
                 let mut physical_plan = create_physical_plan(
                     alp_plan.lp_top,
                     &mut alp_plan.lp_arena,
