@@ -138,6 +138,7 @@ class Expr:
         "bin",
         "cat",
         "dt",
+        "ext",
         "list",
         "meta",
         "name",

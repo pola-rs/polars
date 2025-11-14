@@ -46,6 +46,7 @@ if TYPE_CHECKING:
     from polars._typing import PolarsDataType, TimeUnit
     from polars.datatypes import DataTypeClass
 
+# A simple test extension type for parametric tests.
 TestExtension = Extension(
     name="testing.test_extension",
     storage=Int32(),
@@ -181,6 +182,8 @@ def _parse_dtype_restrictions(
         for dt in excluded_dtypes:
             if isinstance(dt, DataType):
                 excluded_dtypes_instance.append(dt)
+            elif dt == Extension:
+                excluded_dtypes_class.append(TestExtension)
             else:
                 excluded_dtypes_class.append(dt)
 
