@@ -1987,6 +1987,7 @@ fn lower_exprs_with_ctx(
                     period,
                     offset,
                     closed: closed_window,
+                    slice: None,
                     aggs: vec![AExprBuilder::new_from_node(function).expr_ir(out_name.clone())],
                 };
                 let node_key = ctx

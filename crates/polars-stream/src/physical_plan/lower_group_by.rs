@@ -12,7 +12,7 @@ use polars_plan::plans::{AExpr, IR, IRAggExpr, IRFunctionExpr, NaiveExprMerger, 
 use polars_plan::prelude::{GroupbyOptions, *};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::unique_column_name;
+use polars_utils::{IdxSize, unique_column_name};
 use recursive::recursive;
 use slotmap::SlotMap;
 
@@ -535,21 +535,31 @@ pub fn build_group_by_stream(
     ctx: StreamingLowerIRContext,
 ) -> PolarsResult<PhysStream> {
     #[cfg(feature = "dynamic_group_by")]
-    if let Some(options) = options.as_ref().rolling.as_ref()
+    if let Some(rolling_options) = options.as_ref().rolling.as_ref()
         && keys.is_empty()
         && apply.is_none()
     {
-        return Ok(PhysStream::first(phys_sm.insert(PhysNode::new(
-            output_schema.clone(),
-            PhysNodeKind::RollingGroupBy {
-                input,
-                index_column: options.index_column.clone(),
-                period: options.period,
-                offset: options.offset,
-                closed: options.closed_window,
-                aggs: aggs.to_vec(),
-            },
-        ))));
+        let mut input = PhysStream::first(
+            phys_sm.insert(PhysNode::new(
+                output_schema.clone(),
+                PhysNodeKind::RollingGroupBy {
+                    input,
+                    index_column: rolling_options.index_column.clone(),
+                    period: rolling_options.period,
+                    offset: rolling_options.offset,
+                    closed: rolling_options.closed_window,
+                    slice: options
+                        .slice
+                        .filter(|(o, _)| *o >= 0)
+                        .map(|(o, l)| (o as IdxSize, l as IdxSize)),
+                    aggs: aggs.to_vec(),
+                },
+            )),
+        );
+        if let Some((offset, length)) = options.slice.as_ref().filter(|(o, _)| *o < 0) {
+            input = build_slice_stream(input, *offset, *length, phys_sm);
+        }
+        return Ok(input);
     }
 
     let streaming = try_build_streaming_group_by(

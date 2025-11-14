@@ -312,6 +312,7 @@ pub enum PhysNodeKind {
         period: Duration,
         offset: Duration,
         closed: ClosedWindow,
+        slice: Option<(IdxSize, IdxSize)>,
         aggs: Vec<ExprIR>,
     },
 

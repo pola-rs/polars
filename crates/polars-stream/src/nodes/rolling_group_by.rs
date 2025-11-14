@@ -35,6 +35,9 @@ pub struct RollingGroupBy {
 
     seq: MorselSeq,
 
+    slice_offset: IdxSize,
+    slice_length: IdxSize,
+
     index_column: PlSmallStr,
     windower: RollingWindower,
     aggs: Arc<[(PlSmallStr, StreamExpr)]>,
@@ -46,6 +49,7 @@ impl RollingGroupBy {
         period: Duration,
         offset: Duration,
         closed: ClosedWindow,
+        slice: Option<(IdxSize, IdxSize)>,
         aggs: Arc<[(PlSmallStr, StreamExpr)]>,
     ) -> PolarsResult<Self> {
         polars_ensure!(
@@ -79,12 +83,16 @@ impl RollingGroupBy {
         let tz = tz.and_then(|tz| tz.parse::<Tz>().ok());
         let windower = RollingWindower::new(period, offset, closed, tu, tz);
 
+        let (slice_offset, slice_length) = slice.unwrap_or((0, IdxSize::MAX));
+
         Ok(Self {
             buf_df,
             buf_df_offset: 0,
             buf_index_column,
             buf_key_column,
             seq: MorselSeq::default(),
+            slice_offset,
+            slice_length,
             index_column,
             windower,
             aggs,
@@ -158,18 +166,35 @@ impl RollingGroupBy {
             return Ok(None);
         }
 
-        // Prune the data that is not covered by the windows and update the windows accordingly.
+        let key;
+        (key, self.buf_key_column) = self.buf_key_column.split_at(windows.len() as i64);
+
         let offset = windows[0][0];
         let end = windows.last().unwrap();
         let end = end[0] + end[1];
+
+        if self.slice_offset as usize > windows.len() {
+            self.slice_offset -= windows.len() as IdxSize;
+            windows.clear();
+        } else if self.slice_offset > 0 {
+            let offset = self.slice_offset as usize;
+            self.slice_offset = self.slice_offset.saturating_sub(windows.len() as IdxSize);
+            windows.drain(..offset);
+        }
+
+        windows.truncate(windows.len().min(self.slice_length as usize));
+        self.slice_length -= windows.len() as IdxSize;
+
+        if windows.is_empty() {
+            return Ok(None);
+        }
+
+        // Prune the data that is not covered by the windows and update the windows accordingly.
         windows.iter_mut().for_each(|[s, _]| *s -= offset);
         let data = data.slice(
             (offset - start_row_offset) as i64,
             (end - start_row_offset) as usize,
         );
-
-        let key;
-        (key, self.buf_key_column) = self.buf_key_column.split_at(windows.len() as i64);
 
         Ok(Some((windows, data, key)))
     }
@@ -187,6 +212,13 @@ impl ComputeNode for RollingGroupBy {
         _state: &StreamingExecutionState,
     ) -> PolarsResult<()> {
         assert!(recv.len() == 1 && send.len() == 1);
+
+        if self.slice_length == 0 {
+            recv[0] = PortState::Done;
+            send[0] = PortState::Done;
+            std::mem::take(&mut self.buf_df);
+            return Ok(());
+        }
 
         if send[0] == PortState::Done {
             recv[0] = PortState::Done;
@@ -217,6 +249,7 @@ impl ComputeNode for RollingGroupBy {
         let Some(recv) = recv_ports[0].take() else {
             // We no longer have to receive data. Finalize and send all remaining data.
             assert!(!self.buf_df.is_empty());
+            assert!(self.slice_length > 0);
             let mut send = send_ports[0].take().unwrap().serial();
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 if let Some((windows, df, key)) = self.next_windows(true)? {
@@ -281,7 +314,9 @@ impl ComputeNode for RollingGroupBy {
         //
         // This finds boundaries to distribute to worker threads over.
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-            while let Ok(morsel) = recv.recv().await {
+            while let Ok(morsel) = recv.recv().await
+                && self.slice_length > 0
+            {
                 let (df, seq, source_token, wait_token) = morsel.into_inner();
                 self.seq = seq;
                 drop(wait_token);
