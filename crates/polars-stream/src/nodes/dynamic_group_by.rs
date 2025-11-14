@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use chrono_tz::Tz;
+use arrow::legacy::time_zone::Tz;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, DataType, GroupsType, Int64Chunked, IntoColumn, TimeUnit};
 use polars_core::schema::Schema;
