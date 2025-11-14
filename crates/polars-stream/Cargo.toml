@@ -59,6 +59,8 @@ dynamic_group_by = [
   "polars-plan/dynamic_group_by",
   "polars-expr/dynamic_group_by",
   "polars-mem-engine/dynamic_group_by",
+  "polars-time/dtype-date",
+  "polars-time/dtype-datetime",
 ]
 strings = []
 ipc = ["polars-mem-engine/ipc", "polars-plan/ipc", "polars-io/ipc"]
