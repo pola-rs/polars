@@ -482,6 +482,7 @@ fn visualize_plan_rec(
             input,
             options,
             aggs,
+            slice,
         } => {
             use polars_time::prelude::{Label, StartBy};
 
@@ -523,6 +524,9 @@ fn visualize_plan_rec(
                     <&'static str>::from(closed_window)
                 )
                 .unwrap();
+            }
+            if let Some((offset, length)) = slice {
+                write!(f, "slice: {offset}, {length}\\n").unwrap();
             }
             write!(
                 f,

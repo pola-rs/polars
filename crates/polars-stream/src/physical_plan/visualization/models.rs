@@ -104,6 +104,7 @@ pub enum PhysNodeProperties {
         include_boundaries: bool,
         closed_window: PlSmallStr,
         aggs: Vec<PlSmallStr>,
+        slice: Option<(u64, u64)>,
     },
     #[cfg(feature = "dynamic_group_by")]
     RollingGroupBy {

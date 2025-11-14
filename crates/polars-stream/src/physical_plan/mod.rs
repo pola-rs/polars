@@ -312,6 +312,7 @@ pub enum PhysNodeKind {
         input: PhysStream,
         options: DynamicGroupOptions,
         aggs: Vec<ExprIR>,
+        slice: Option<(IdxSize, IdxSize)>,
     },
 
     #[cfg(feature = "dynamic_group_by")]
