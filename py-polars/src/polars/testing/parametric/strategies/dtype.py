@@ -177,7 +177,7 @@ def _parse_dtype_restrictions(
     """
     # Split excluded dtypes into instances and classes
     excluded_dtypes_instance = []
-    excluded_dtypes_class = []
+    excluded_dtypes_class: list[PolarsDataType] = []
     if excluded_dtypes:
         for dt in excluded_dtypes:
             if isinstance(dt, DataType):
