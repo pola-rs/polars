@@ -413,13 +413,18 @@ def test_categorical_lit_18874() -> None:
 @pytest.mark.parametrize(
     ("values", "expected"),
     [
-        # Float64 should have ~17; Float32 ~6 digits of precision preserved in its string repr
+        # Float64 should have ~17; Float32 ~6 digits of precision preserved
         (["", 0.123, 0.123456789], ["", "0.123", "0.123456789"]),
-        ([{"a": ""}, {"a": 0.123}, {"a": 0.123456789}], [{"a": ""}, {"a": "0.123"}, {"a": "0.123456789"}]),
+        (
+            [{"a": ""}, {"a": 0.123}, {"a": 0.123456789}],
+            [{"a": ""}, {"a": "0.123"}, {"a": "0.123456789"}],
+        ),
         ([[""], [0.123], [0.123456789]], [[""], ["0.123"], ["0.123456789"]]),
-    ]
+    ],
 )
-def test_float_to_string_precision_25257(values, expected) -> None:
+def test_float_to_string_precision_25257(
+    values: list[Any], expected: list[Any]
+) -> None:
     with pl.Config(float_precision=1):
         s = pl.Series(values, strict=False)
 
