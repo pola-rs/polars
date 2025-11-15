@@ -172,8 +172,8 @@ Using `eval`, we can sort the list elements or compute some aggregations:
 --8<-- "python/user-guide/expressions/lists.py:list-sorting"
 ```
 
-`eval` will always return a list. Use `agg` to get `min_age` and `max_age` as scalar
-values instead of single-element lists:
+`eval` will always return a list. Use `agg` to get `min_age` and `max_age` as scalar values instead
+of single-element lists:
 
 {{code_block('user-guide/expressions/lists', 'list-aggregation', ['list.agg'])}}
 
@@ -181,10 +181,10 @@ values instead of single-element lists:
 --8<-- "python/user-guide/expressions/lists.py:list-aggregation"
 ```
 
-If the evaluated expression is statically determined to return only one value, `agg`
-will automatically explode the resulting list into the inner values. This matches what
-`df.group_by(...).agg(...)` does, hence the name. This is in contrast with `eval`, which
-will not perform such unwrapping.
+If the evaluated expression is statically determined to return only one value, `agg` will
+automatically explode the resulting list into the inner values. This matches what
+`df.group_by(...).agg(...)` does, hence the name. This is in contrast with `eval`, which will not
+perform such unwrapping.
 
 While some aggregation functions like `.list.sum()` are directly available in the `list` namespace,
 you can access more exotic aggregations like `entropy` via `agg`/`eval` only:
