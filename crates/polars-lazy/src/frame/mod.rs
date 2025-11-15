@@ -1769,16 +1769,21 @@ impl LazyFrame {
     }
 
     /// Apply explode operation. [See eager explode](polars_core::frame::DataFrame::explode).
-    pub fn explode(self, columns: Selector) -> LazyFrame {
-        self.explode_impl(columns, false)
+    pub fn explode(self, columns: Selector, options: ExplodeOptions) -> LazyFrame {
+        self.explode_impl(columns, options, false)
     }
 
     /// Apply explode operation. [See eager explode](polars_core::frame::DataFrame::explode).
-    fn explode_impl(self, columns: Selector, allow_empty: bool) -> LazyFrame {
+    fn explode_impl(
+        self,
+        columns: Selector,
+        options: ExplodeOptions,
+        allow_empty: bool,
+    ) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self
             .get_plan_builder()
-            .explode(columns, allow_empty)
+            .explode(columns, options, allow_empty)
             .build();
         Self::from_logical_plan(lp, opt_state)
     }
@@ -2162,8 +2167,14 @@ impl LazyGroupBy {
             .filter_map(|expr| expr_output_name(expr).ok())
             .collect::<Vec<_>>();
 
-        self.agg([all().as_expr().head(n)])
-            .explode_impl(all() - by_name(keys.iter().cloned(), false), true)
+        self.agg([all().as_expr().head(n)]).explode_impl(
+            all() - by_name(keys.iter().cloned(), false),
+            ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            },
+            true,
+        )
     }
 
     /// Return last n rows of each group
@@ -2174,8 +2185,14 @@ impl LazyGroupBy {
             .filter_map(|expr| expr_output_name(expr).ok())
             .collect::<Vec<_>>();
 
-        self.agg([all().as_expr().tail(n)])
-            .explode_impl(all() - by_name(keys.iter().cloned(), false), true)
+        self.agg([all().as_expr().tail(n)]).explode_impl(
+            all() - by_name(keys.iter().cloned(), false),
+            ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            },
+            true,
+        )
     }
 
     /// Apply a function over the groups as a new DataFrame.

@@ -287,7 +287,13 @@ fn test_lazy_query_4() -> PolarsResult<()> {
                 .apply(|s: Column| &s - &(s.shift(1)), |_, f| Ok(f.clone()))
                 .alias("diff_cases"),
         ])
-        .explode(by_name(["day", "diff_cases"], true))
+        .explode(
+            by_name(["day", "diff_cases"], true),
+            ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            },
+        )
         .join(
             base_df,
             [col("uid"), col("day")],
@@ -1107,7 +1113,13 @@ fn test_multiple_explode() -> PolarsResult<()> {
         .lazy()
         .group_by([col("a")])
         .agg([col("b").alias("b_list"), col("c").alias("c_list")])
-        .explode(by_name(["c_list", "b_list"], true))
+        .explode(
+            by_name(["c_list", "b_list"], true),
+            ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            },
+        )
         .collect()?;
     assert_eq!(out.shape(), (5, 3));
 

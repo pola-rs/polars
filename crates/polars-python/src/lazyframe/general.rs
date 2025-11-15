@@ -1274,8 +1274,18 @@ impl PyLazyFrame {
         out.into()
     }
 
-    fn explode(&self, subset: PySelector) -> Self {
-        self.ldf.read().clone().explode(subset.inner).into()
+    fn explode(&self, subset: PySelector, empty_as_null: bool, keep_nulls: bool) -> Self {
+        self.ldf
+            .read()
+            .clone()
+            .explode(
+                subset.inner,
+                ExplodeOptions {
+                    empty_as_null,
+                    keep_nulls,
+                },
+            )
+            .into()
     }
 
     fn null_count(&self) -> Self {

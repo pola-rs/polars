@@ -85,7 +85,9 @@ pub trait ChunkAnyValue {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct ExplodeOptions {
+    /// Explode an empty list into a `null`.
     pub empty_as_null: bool,
+    /// Explode a `null` into a `null`.
     pub keep_nulls: bool,
 }
 
