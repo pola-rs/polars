@@ -487,7 +487,11 @@ fn to_graph_rec<'a>(
             )
         },
 
-        Map { input, map } => {
+        Map {
+            input,
+            map,
+            format_str: _,
+        } => {
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.graph.add_node(
                 nodes::map::MapNode::new(map.clone()),

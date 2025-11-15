@@ -162,6 +162,7 @@ pub enum PhysNodeProperties {
     },
     Map {
         display_str: PlSmallStr,
+        format_str: PlSmallStr,
     },
     MultiScan {
         scan_type: PlSmallStr,

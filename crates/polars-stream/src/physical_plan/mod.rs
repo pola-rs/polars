@@ -206,6 +206,9 @@ pub enum PhysNodeKind {
     Map {
         input: PhysStream,
         map: Arc<dyn DataFrameUdf>,
+
+        /// A formatted explain of what the in-memory map. This usually calls format on the IR.
+        format_str: Option<String>,
     },
 
     Sort {
