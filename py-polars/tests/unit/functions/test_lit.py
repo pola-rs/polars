@@ -255,20 +255,32 @@ def test_lit_structs(item: Any) -> None:
 
 
 @pytest.mark.parametrize(
-    ("value", "expected_dtype"),
+    ("value", "expected_dtype", "override_dtypes"),
     [
-        (np.float32(1.2), pl.Float32),
-        (np.float64(1.2), pl.Float64),
-        (np.int8(1), pl.Int8),
-        (np.uint8(1), pl.UInt8),
-        (np.int16(1), pl.Int16),
-        (np.uint16(1), pl.UInt16),
-        (np.int32(1), pl.Int32),
-        (np.uint32(1), pl.UInt32),
-        (np.int64(1), pl.Int64),
-        (np.uint64(1), pl.UInt64),
+        (np.float32(1.2), pl.Float32, []),
+        (np.float64(1.2), pl.Float64, [pl.Float32]),
+        (np.int8(1), pl.Int8, [pl.Int16, pl.Int32, pl.Int64]),
+        (np.uint8(1), pl.UInt8, [pl.UInt16, pl.UInt32, pl.UInt64]),
+        (np.int16(1), pl.Int16, [pl.Int32, pl.Int64]),
+        (np.uint16(1), pl.UInt16, [pl.UInt32, pl.UInt64]),
+        (np.int32(1), pl.Int32, [pl.Int64]),
+        (np.uint32(1), pl.UInt32, [pl.UInt64]),
+        (np.int64(1), pl.Int64, []),
+        (np.uint64(1), pl.UInt64, []),
     ],
 )
-def test_numpy_lit(value: Any, expected_dtype: PolarsDataType) -> None:
+def test_numpy_lit(
+    value: Any, expected_dtype: PolarsDataType, override_dtypes: list[PolarsDataType]
+) -> None:
     result = pl.select(pl.lit(value)).get_column("literal")
     assert result.dtype == expected_dtype
+
+    for override_dtype in override_dtypes:
+        result = pl.select(pl.lit(value, dtype=override_dtype)).get_column("literal")
+        assert result.dtype == override_dtype
+
+
+@pytest.mark.skipif(not hasattr(np, "float128"), reason="no float128")
+def test_numpy_float128() -> None:
+    with pytest.raises(ValueError, match="float128 is not supported"):
+        pl.select(pl.lit(np.float128(1)))
