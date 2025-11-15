@@ -1389,3 +1389,29 @@ def test_struct_reverse_chunked_25269() -> None:
     assert_series_equal(
         pl.concat([s.head(1), s.tail(1)]).reverse(), pl.Series([{"a": None}, None])
     )
+
+
+def test_struct_equal_missing_null_25360() -> None:
+    lf = pl.LazyFrame({"a": [{"x": 0}]})
+
+    q1 = lf.select(a1=pl.col.a.slice(1, 1).first())
+    q2 = lf.group_by(pl.lit(1)).agg(a2=pl.col.a.slice(1, 1).first()).drop("literal")
+
+    q = pl.concat([q1, q2], how="horizontal").collect()
+
+    result = q.select(
+        eq=pl.col.a1.eq(pl.col.a2),
+        eq_missing=pl.col.a1.eq_missing(pl.col.a2),
+        ne=pl.col.a1.ne(pl.col.a2),
+        ne_missing=pl.col.a1.ne_missing(pl.col.a2),
+    )
+
+    assert_frame_equal(
+        result,
+        pl.select(
+            eq=pl.lit(None, pl.Boolean),
+            eq_missing=True,
+            ne=pl.lit(None, pl.Boolean),
+            ne_missing=False,
+        ),
+    )

@@ -106,7 +106,6 @@ pub struct ExpressionConversionState {
 
 #[derive(Copy, Clone, Default)]
 struct LocalConversionState {
-    has_implode: bool,
     has_window: bool,
     has_lit: bool,
 }
@@ -124,10 +123,6 @@ impl ExpressionConversionState {
 
     fn reset(&mut self) {
         self.local = LocalConversionState::default();
-    }
-
-    fn has_implode(&self) -> bool {
-        self.local.has_implode
     }
 
     fn set_window(&mut self) {
@@ -382,8 +377,6 @@ fn create_physical_expr_inner(
         Agg(agg) => {
             let expr = agg.get_input().first();
             let input = create_physical_expr_inner(expr, ctxt, expr_arena, schema, state)?;
-            polars_ensure!(!(state.has_implode() && matches!(ctxt, Context::Aggregation)), InvalidOperation: "'implode' followed by an aggregation is not allowed");
-            state.local.has_implode |= matches!(agg, IRAggExpr::Implode(_));
             let allow_threading = state.allow_threading;
 
             match ctxt {
@@ -627,8 +620,6 @@ fn create_physical_expr_inner(
             let input = create_physical_expr_inner(*input, ctxt, expr_arena, schema, state)?;
             let offset = create_physical_expr_inner(*offset, ctxt, expr_arena, schema, state)?;
             let length = create_physical_expr_inner(*length, ctxt, expr_arena, schema, state)?;
-            polars_ensure!(!(state.has_implode() && matches!(ctxt, Context::Aggregation)),
-                InvalidOperation: "'implode' followed by a slice during aggregation is not allowed");
             Ok(Arc::new(SliceExpr {
                 input,
                 offset,

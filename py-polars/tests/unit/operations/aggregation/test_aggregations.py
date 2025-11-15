@@ -8,7 +8,6 @@ import pytest
 from hypothesis import given
 
 import polars as pl
-from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
 from polars.testing.parametric import dataframes
 
@@ -242,12 +241,16 @@ def test_online_variance() -> None:
 def test_implode_and_agg() -> None:
     df = pl.DataFrame({"type": ["water", "fire", "water", "earth"]})
 
-    # this would OOB
-    with pytest.raises(
-        InvalidOperationError,
-        match=r"'implode' followed by an aggregation is not allowed",
-    ):
-        df.group_by("type").agg(pl.col("type").implode().first().alias("foo"))
+    assert_frame_equal(
+        df.group_by("type").agg(pl.col("type").implode().first().alias("foo")),
+        pl.DataFrame(
+            {
+                "type": ["water", "fire", "earth"],
+                "foo": [["water", "water"], ["fire"], ["earth"]],
+            }
+        ),
+        check_row_order=False,
+    )
 
     # implode + function should be allowed in group_by
     assert df.group_by("type", maintain_order=True).agg(
@@ -748,11 +751,13 @@ def test_sort_by_over_multiple_nulls_last() -> None:
     assert_frame_equal(out, expected)
 
 
-def test_slice_after_agg_raises() -> None:
-    with pytest.raises(
-        InvalidOperationError, match=r"cannot slice\(\) an aggregated scalar value"
-    ):
-        pl.select(a=1, b=1).group_by("a").agg(pl.col("b").first().slice(99, 0))
+def test_slice_after_agg() -> None:
+    assert_frame_equal(
+        pl.select(a=pl.lit(1, dtype=pl.Int64), b=pl.lit(1, dtype=pl.Int64))
+        .group_by("a")
+        .agg(pl.col("b").first().slice(99, 0)),
+        pl.DataFrame({"a": [1], "b": [[]]}, schema_overrides={"b": pl.List(pl.Int64)}),
+    )
 
 
 def test_agg_scalar_empty_groups_20115() -> None:
