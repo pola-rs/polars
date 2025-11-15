@@ -4988,7 +4988,7 @@ class Series:
         """
         return self._s.len()
 
-    def set(self, filter: Series, value: int | float | str | bool | None) -> Series:  # noqa: FBT001
+    def set(self, filter: Series, value: Any) -> Series:
         """
         Set masked values.
 
@@ -5033,11 +5033,8 @@ class Series:
         │ 3       │
         └─────────┘
         """
-        f = get_ffi_func("set_with_mask_<>", self.dtype, self._s)
-        if f is None:
-            msg = f"Series of type {self.dtype} can not be set"
-            raise NotImplementedError(msg)
-        return self._from_pyseries(f(filter._s, value))
+        value_s = Series([value], dtype=self.dtype)
+        return wrap_s(self._s.set(filter._s, value_s._s))
 
     def scatter(
         self,
