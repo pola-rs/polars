@@ -8,7 +8,6 @@ import pytest
 from hypothesis import given
 
 import polars as pl
-from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
 from polars.testing.parametric import dataframes
 
