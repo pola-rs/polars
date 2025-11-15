@@ -365,6 +365,7 @@ impl Display for FunctionIR {
                 f.write_str("EXPLODE ")?;
                 fmt_column_delimited(f, columns, "[", "]")
             },
+            #[cfg(feature = "pivot")]
             Unpivot { args, schema: _ } => {
                 let UnpivotArgsIR {
                     on,
@@ -384,7 +385,9 @@ impl Display for FunctionIR {
                 }
                 Ok(())
             },
-            OpaquePython(_) | Rechunk => f.write_str(<&'static str>::from(self)),
+            #[cfg(feature = "python")]
+            OpaquePython(_) => f.write_str(<&'static str>::from(self)),
+            Rechunk => f.write_str(<&'static str>::from(self)),
         }
     }
 }
