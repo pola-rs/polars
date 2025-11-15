@@ -127,7 +127,7 @@ impl SinkNode for ParquetSinkNode {
         let output_file_size = self.file_size.clone();
         let io_task = polars_io::pl_async::get_runtime().spawn(async move {
             let mut file = target
-                .open_into_writeable_async(&sink_options, cloud_options.as_ref())
+                .open_into_writeable_async(cloud_options.as_ref(), sink_options.mkdir)
                 .await?;
 
             let writer = BufWriter::new(&mut *file);

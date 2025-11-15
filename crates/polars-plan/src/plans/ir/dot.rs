@@ -294,7 +294,7 @@ impl<'a> IRDotDisplay<'a> {
                         SinkTypeIR::Memory => "SINK (MEMORY)",
                         SinkTypeIR::Callback { .. } => "SINK (CALLBACK)",
                         SinkTypeIR::File { .. } => "SINK (FILE)",
-                        SinkTypeIR::Partition { .. } => "SINK (PARTITION)",
+                        SinkTypeIR::Partitioned { .. } => "SINK (PARTITION)",
                     })
                 })?;
             },

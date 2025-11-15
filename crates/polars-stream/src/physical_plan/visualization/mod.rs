@@ -556,7 +556,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     ..Default::default()
                 }
             },
-            PhysNodeKind::PartitionSink {
+            PhysNodeKind::PartitionedSink {
                 input,
                 base_path,
                 file_path_cb,

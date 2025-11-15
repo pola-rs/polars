@@ -86,8 +86,12 @@ pub(super) fn pullup_orders(
                     // Set maintain order to false if input is unordered
                     match payload {
                         SinkTypeIR::Memory => {},
-                        SinkTypeIR::File(s) => s.sink_options.maintain_order = false,
-                        SinkTypeIR::Partition(s) => s.sink_options.maintain_order = false,
+                        SinkTypeIR::File {
+                            unified_sink_args, ..
+                        }
+                        | SinkTypeIR::Partitioned {
+                            unified_sink_args, ..
+                        } => unified_sink_args.maintain_order = false,
                         SinkTypeIR::Callback(s) => s.maintain_order = false,
                     }
                 }

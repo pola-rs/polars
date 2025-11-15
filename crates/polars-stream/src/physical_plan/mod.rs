@@ -176,7 +176,7 @@ pub enum PhysNodeKind {
         cloud_options: Option<CloudOptions>,
     },
 
-    PartitionSink {
+    PartitionedSink {
         input: PhysStream,
         base_path: Arc<PlPath>,
         file_path_cb: Option<PartitionTargetCallback>,
@@ -409,7 +409,7 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::InMemorySink { input }
             | PhysNodeKind::CallbackSink { input, .. }
             | PhysNodeKind::FileSink { input, .. }
-            | PhysNodeKind::PartitionSink { input, .. }
+            | PhysNodeKind::PartitionedSink { input, .. }
             | PhysNodeKind::InMemoryMap { input, .. }
             | PhysNodeKind::Map { input, .. }
             | PhysNodeKind::Sort { input, .. }

@@ -13,8 +13,8 @@ use polars_plan::constants::get_literal_name;
 use polars_plan::dsl::default_values::DefaultFieldValues;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
-    CallbackSinkType, ExtraColumnsPolicy, FileScanIR, FileSinkType, PartitionSinkTypeIR,
-    PartitionVariantIR, SinkTypeIR,
+    CallbackSinkType, ExtraColumnsPolicy, FileScanIR, PartitionStrategyIR, PartitionVariantIR,
+    PartitionedSinkOptionsIR, SinkOptions, SinkTypeIR, UnifiedSinkArgs,
 };
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{AExpr, FunctionIR, IR, IRAggExpr, LiteralValue, write_ir_non_recursive};
@@ -259,16 +259,28 @@ pub fn lower_ir(
                     chunk_size,
                 }
             },
-            SinkTypeIR::File(FileSinkType {
+            SinkTypeIR::File {
                 target,
-                sink_options,
-                file_type,
-                cloud_options,
-            }) => {
+                file_format,
+                unified_sink_args,
+            } => {
+                // Convert to old parameters for now
+
                 let target = target.clone();
-                let sink_options = sink_options.clone();
-                let file_type = file_type.clone();
-                let cloud_options = cloud_options.clone();
+
+                let UnifiedSinkArgs {
+                    mkdir,
+                    maintain_order,
+                    sync_on_close,
+                    cloud_options,
+                } = unified_sink_args.clone();
+
+                let sink_options = SinkOptions {
+                    sync_on_close,
+                    maintain_order,
+                    mkdir,
+                };
+                let file_type = file_format.as_ref().clone();
 
                 let phys_input = lower_ir!(*input)?;
                 PhysNodeKind::FileSink {
@@ -279,24 +291,68 @@ pub fn lower_ir(
                     cloud_options,
                 }
             },
-            SinkTypeIR::Partition(PartitionSinkTypeIR {
-                base_path,
-                file_path_cb,
-                sink_options,
-                variant,
-                file_type,
-                cloud_options,
-                per_partition_sort_by,
-                finish_callback,
-            }) => {
+            SinkTypeIR::Partitioned {
+                options:
+                    PartitionedSinkOptionsIR {
+                        base_path,
+                        file_path_provider,
+                        partition_strategy,
+                        finish_callback,
+                    },
+                file_format,
+                unified_sink_args,
+            } => {
+                // Convert to old parameters for now
+
                 let base_path = base_path.clone();
-                let file_path_cb = file_path_cb.clone();
-                let sink_options = sink_options.clone();
-                let variant = variant.clone();
-                let file_type = file_type.clone();
-                let cloud_options = cloud_options.clone();
-                let per_partition_sort_by = per_partition_sort_by.clone();
+                let file_path_cb = file_path_provider.clone();
+                let file_type = file_format.as_ref().clone();
                 let finish_callback = finish_callback.clone();
+
+                let (variant, per_partition_sort_by) = match partition_strategy {
+                    PartitionStrategyIR::Keyed {
+                        keys,
+                        include_keys,
+                        keys_sorted,
+                        per_partition_sort_by,
+                    } => {
+                        let v = if *keys_sorted {
+                            PartitionVariantIR::Parted {
+                                key_exprs: keys.clone(),
+                                include_key: *include_keys,
+                            }
+                        } else {
+                            PartitionVariantIR::ByKey {
+                                key_exprs: keys.clone(),
+                                include_key: *include_keys,
+                            }
+                        };
+
+                        (v, per_partition_sort_by)
+                    },
+                    PartitionStrategyIR::MaxRowsPerFile {
+                        max_rows_per_file,
+                        per_file_sort_by,
+                    } => (
+                        PartitionVariantIR::MaxSize(*max_rows_per_file),
+                        per_file_sort_by,
+                    ),
+                };
+
+                let per_partition_sort_by = per_partition_sort_by.clone();
+
+                let UnifiedSinkArgs {
+                    mkdir,
+                    maintain_order,
+                    sync_on_close,
+                    cloud_options,
+                } = unified_sink_args.clone();
+
+                let sink_options = SinkOptions {
+                    sync_on_close,
+                    maintain_order,
+                    mkdir,
+                };
 
                 let mut input = lower_ir!(*input)?;
                 match &variant {
@@ -335,15 +391,16 @@ pub fn lower_ir(
                     },
                 };
 
-                PhysNodeKind::PartitionSink {
+                PhysNodeKind::PartitionedSink {
                     input,
-                    base_path,
+                    base_path: Arc::new(base_path),
                     file_path_cb,
                     sink_options,
                     variant,
                     file_type,
                     cloud_options,
-                    per_partition_sort_by,
+                    per_partition_sort_by: (!per_partition_sort_by.is_empty())
+                        .then_some(per_partition_sort_by),
                     finish_callback,
                 }
             },

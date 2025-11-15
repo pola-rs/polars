@@ -4,7 +4,7 @@ use std::num::NonZeroUsize;
 use std::str::FromStr;
 use std::sync::Arc;
 
-mod sink;
+pub mod sink;
 pub mod sink2;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::*;
@@ -28,8 +28,15 @@ use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-pub use sink::*;
-pub use sink2::*;
+pub use sink::{
+    CallbackSinkType, PartitionTargetCallback, PartitionTargetCallbackResult,
+    PartitionTargetContext, PartitionTargetContextKey, PartitionVariantIR, PartitionedSinkTypeIR,
+    SinkFinishCallback, SinkOptions, SinkTarget, SinkType, SinkTypeIR, SortColumn, SortColumnIR,
+};
+pub use sink2::{
+    FileSinkType, PartitionStrategy, PartitionStrategyIR, PartitionedSinkOptions,
+    PartitionedSinkOptionsIR, UnifiedSinkArgs,
+};
 use strum_macros::IntoStaticStr;
 
 use super::{Expr, ExprIR};
@@ -332,7 +339,7 @@ pub struct AnonymousScanOptions {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, strum_macros::IntoStaticStr)]
-/// TODO: Rename to `FileWriteOptions`
+/// TODO: Rename to `FileWriteFormat`
 pub enum FileType {
     #[cfg(feature = "parquet")]
     Parquet(ParquetWriteOptions),
