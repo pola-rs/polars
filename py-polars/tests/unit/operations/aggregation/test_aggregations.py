@@ -751,11 +751,13 @@ def test_sort_by_over_multiple_nulls_last() -> None:
     assert_frame_equal(out, expected)
 
 
-def test_slice_after_agg_raises() -> None:
-    with pytest.raises(
-        InvalidOperationError, match=r"cannot slice\(\) an aggregated scalar value"
-    ):
-        pl.select(a=1, b=1).group_by("a").agg(pl.col("b").first().slice(99, 0))
+def test_slice_after_agg() -> None:
+    assert_frame_equal(
+        pl.select(a=pl.lit(1, dtype=pl.Int64), b=pl.lit(1, dtype=pl.Int64))
+        .group_by("a")
+        .agg(pl.col("b").first().slice(99, 0)),
+        pl.DataFrame({"a": [1], "b": [[]]}, schema_overrides={"b": pl.List(pl.Int64)}),
+    )
 
 
 def test_agg_scalar_empty_groups_20115() -> None:
