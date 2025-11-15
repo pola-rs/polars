@@ -35,6 +35,15 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
     let mut num_scalar_inputs = 0;
     for c in cs.iter_mut() {
         if let Some(c_validity) = c.rechunk_validity() {
+            // Column with only nulls means output is only nulls.
+            if c.null_count() == c.len() {
+                return Ok(Column::full_null(
+                    output_name,
+                    output_length,
+                    &DataType::String,
+                ));
+            }
+
             match &mut validity {
                 v @ None => *v = Some(c_validity),
                 Some(v) => *v = arrow::bitmap::and(v, &c_validity),
