@@ -28,6 +28,15 @@ pub(super) fn process_hconcat(
                     input_pushdown.push(*proj);
                 }
             }
+            // for inputs that don't have any projections to push down, we just read a single column
+            // (needed to have the correct height)
+            if input_pushdown.is_empty() {
+                if let Some((name, _)) = input_schema.get_at_index(0) {
+                    // add a node that contains the column to project
+                    let node = expr_arena.add(AExpr::Column(name.clone()));
+                    input_pushdown.push(ColumnNode(node));
+                }
+            }
 
             let mut input_names = PlHashSet::new();
             for proj in &input_pushdown {
