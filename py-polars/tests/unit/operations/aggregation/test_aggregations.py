@@ -242,12 +242,16 @@ def test_online_variance() -> None:
 def test_implode_and_agg() -> None:
     df = pl.DataFrame({"type": ["water", "fire", "water", "earth"]})
 
-    # this would OOB
-    with pytest.raises(
-        InvalidOperationError,
-        match=r"'implode' followed by an aggregation is not allowed",
-    ):
-        df.group_by("type").agg(pl.col("type").implode().first().alias("foo"))
+    assert_frame_equal(
+        df.group_by("type").agg(pl.col("type").implode().first().alias("foo")),
+        pl.DataFrame(
+            {
+                "type": ["water", "fire", "earth"],
+                "foo": [["water", "water"], ["fire"], ["earth"]],
+            }
+        ),
+        check_row_order=False,
+    )
 
     # implode + function should be allowed in group_by
     assert df.group_by("type", maintain_order=True).agg(
