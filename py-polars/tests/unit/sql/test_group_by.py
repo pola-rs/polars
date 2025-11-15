@@ -8,6 +8,7 @@ import pytest
 import polars as pl
 from polars.exceptions import SQLSyntaxError
 from polars.testing import assert_frame_equal
+from tests.unit.sql import assert_sql_matches
 
 
 @pytest.fixture
@@ -301,4 +302,33 @@ def test_group_by_struct_cat_24049(maintain_order: bool) -> None:
         df.group_by("x", maintain_order=maintain_order).agg(pl.col.y.sum()),
         expected,
         check_row_order=maintain_order,
+    )
+
+
+def test_group_by_aggregate_name_is_group_key() -> None:
+    """Unaliased aggregation with a column that's also used in the GROUP BY key."""
+    df = pl.DataFrame({"c0": [1, 2]})
+
+    # 'COUNT(col)' where 'col' is also part of the the group key
+    for query in (
+        "SELECT COUNT(c0) FROM self GROUP BY c0",
+        "SELECT COUNT(c0) AS c0 FROM self GROUP BY c0",
+    ):
+        assert_sql_matches(
+            df,
+            query=query,
+            compare_with="sqlite",
+            check_column_names=False,
+            expected={"c0": [1, 1]},
+        )
+
+    # Same condition with a table prefix (and a different aggfunc)
+    query = "SELECT SUM(self.c0) FROM self GROUP BY self.c0"
+    assert_sql_matches(
+        df,
+        query=query,
+        compare_with="sqlite",
+        check_row_order=False,
+        check_column_names=False,
+        expected={"c0": [1, 2]},
     )
