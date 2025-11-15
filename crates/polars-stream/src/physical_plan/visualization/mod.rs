@@ -187,6 +187,48 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                 }
             },
             #[cfg(feature = "dynamic_group_by")]
+            PhysNodeKind::DynamicGroupBy {
+                input,
+                options,
+                aggs,
+                slice,
+            } => {
+                use polars_time::DynamicGroupOptions;
+                use polars_utils::IdxSize;
+
+                phys_node_inputs.push(input.node);
+
+                let DynamicGroupOptions {
+                    index_column,
+                    every,
+                    period,
+                    offset,
+                    label,
+                    include_boundaries,
+                    closed_window,
+                    start_by,
+                } = options;
+
+                let properties = PhysNodeProperties::DynamicGroupBy {
+                    index_column: index_column.clone(),
+                    period: format_pl_smallstr!("{period}"),
+                    every: format_pl_smallstr!("{every}"),
+                    offset: format_pl_smallstr!("{offset}"),
+                    start_by: PlSmallStr::from_static(start_by.into()),
+                    label: PlSmallStr::from_static(label.into()),
+                    include_boundaries: *include_boundaries,
+                    closed_window: PlSmallStr::from_static(closed_window.into()),
+                    aggs: expr_list(aggs, self.expr_arena),
+                    slice: slice.map(|(o, l)| (IdxSize::into(o), IdxSize::into(l))),
+                };
+
+                PhysNodeInfo {
+                    title: properties.variant_name(),
+                    properties,
+                    ..Default::default()
+                }
+            },
+            #[cfg(feature = "dynamic_group_by")]
             PhysNodeKind::RollingGroupBy {
                 input,
                 index_column,

@@ -79,8 +79,8 @@ fn check_sortedness_slice(v: &[i64]) -> PolarsResult<()> {
     Ok(())
 }
 
-const LB_NAME: &str = "_lower_boundary";
-const UP_NAME: &str = "_upper_boundary";
+pub const LB_NAME: &str = "_lower_boundary";
+pub const UB_NAME: &str = "_upper_boundary";
 
 pub trait PolarsTemporalGroupby {
     fn rolling(
@@ -227,7 +227,7 @@ impl Wrap<&DataFrame> {
                 )?;
                 let out = out.cast(&Int64).unwrap().cast(&Int32).unwrap();
                 for k in &mut keys {
-                    if k.name().as_str() == UP_NAME || k.name().as_str() == LB_NAME {
+                    if k.name().as_str() == UB_NAME || k.name().as_str() == LB_NAME {
                         *k = k.cast(&Int64).unwrap().cast(&Int32).unwrap()
                     }
                 }
@@ -245,7 +245,7 @@ impl Wrap<&DataFrame> {
                 )?;
                 let out = out.cast(&Int64).unwrap();
                 for k in &mut keys {
-                    if k.name().as_str() == UP_NAME || k.name().as_str() == LB_NAME {
+                    if k.name().as_str() == UB_NAME || k.name().as_str() == LB_NAME {
                         *k = k.cast(&Int64).unwrap()
                     }
                 }
@@ -391,7 +391,7 @@ impl Wrap<&DataFrame> {
         let lower =
             lower_bound.map(|lower| Int64Chunked::new_vec(PlSmallStr::from_static(LB_NAME), lower));
         let upper =
-            upper_bound.map(|upper| Int64Chunked::new_vec(PlSmallStr::from_static(UP_NAME), upper));
+            upper_bound.map(|upper| Int64Chunked::new_vec(PlSmallStr::from_static(UB_NAME), upper));
 
         if options.label == Label::Left {
             let mut lower = lower.clone().unwrap();
