@@ -1,6 +1,7 @@
 use std::fmt::Write;
 
 use arrow::bitmap::MutableBitmap;
+use polars_compute::cast::SerPrimitive;
 
 #[cfg(feature = "dtype-categorical")]
 use crate::chunked_array::builder::CategoricalChunkedBuilder;
@@ -279,12 +280,25 @@ fn any_values_to_string(values: &[AnyValue], strict: bool) -> PolarsResult<Strin
     fn any_values_to_string_nonstrict(values: &[AnyValue]) -> StringChunked {
         let mut builder = StringChunkedBuilder::new(PlSmallStr::EMPTY, values.len());
         let mut owned = String::new(); // Amortize allocations.
+        let mut float_buf = vec![];
         for av in values {
             match av {
                 AnyValue::String(s) => builder.append_value(s),
                 AnyValue::StringOwned(s) => builder.append_value(s),
                 AnyValue::Null => builder.append_null(),
                 AnyValue::Binary(_) | AnyValue::BinaryOwned(_) => builder.append_null(),
+                AnyValue::Float64(f) => {
+                    float_buf.clear();
+                    SerPrimitive::write(&mut float_buf, *f);
+                    let s = std::str::from_utf8(&float_buf).unwrap();
+                    builder.append_value(s);
+                },
+                AnyValue::Float32(f) => {
+                    float_buf.clear();
+                    SerPrimitive::write(&mut float_buf, *f as f64); // promote to f64 for serialization
+                    let s = std::str::from_utf8(&float_buf).unwrap();
+                    builder.append_value(s);
+                },
                 av => {
                     owned.clear();
                     write!(owned, "{av}").unwrap();
