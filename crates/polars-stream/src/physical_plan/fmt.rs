@@ -307,14 +307,28 @@ fn visualize_plan_rec(
             let mut label = String::new();
             label.push_str("in-memory-map");
             if let Some(format_str) = format_str {
-                label.push('\n');
+                label.write_str("\\n").unwrap();
 
                 let mut f = EscapeLabel(&mut label);
-                write!(f, "{format_str}").unwrap();
+                f.write_str(format_str).unwrap();
             }
             (label, from_ref(input))
         },
-        PhysNodeKind::Map { input, map: _ } => ("map".to_string(), from_ref(input)),
+        PhysNodeKind::Map {
+            input,
+            map: _,
+            format_str,
+        } => {
+            let mut label = String::new();
+            label.push_str("map");
+            if let Some(format_str) = format_str {
+                label.push_str("\\n");
+
+                let mut f = EscapeLabel(&mut label);
+                f.write_str(format_str).unwrap();
+            }
+            (label, from_ref(input))
+        },
         PhysNodeKind::Sort {
             input,
             by_column,

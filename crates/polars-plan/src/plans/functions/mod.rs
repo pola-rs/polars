@@ -324,10 +324,14 @@ impl Display for FunctionIR {
                 write!(f, "hint.{hint}")
             },
             Opaque { fmt_str, .. } => write!(f, "{fmt_str}"),
-            Unnest { columns, .. } => {
+            Unnest { columns, separator } => {
                 write!(f, "UNNEST by:")?;
                 let columns = columns.as_ref();
-                fmt_column_delimited(f, columns, "[", "]")
+                fmt_column_delimited(f, columns, "[", "]")?;
+                if let Some(separator) = separator {
+                    write!(f, ", separator: {separator}")?;
+                }
+                Ok(())
             },
             FastCount {
                 sources,
@@ -345,10 +349,45 @@ impl Display for FunctionIR {
                     ScanSourcesDisplay(sources)
                 )
             },
-            v => {
-                let s: &str = v.into();
-                write!(f, "{s}")
+            RowIndex {
+                name,
+                offset,
+                schema: _,
+            } => {
+                write!(f, "ROW INDEX name: {name}")?;
+                if let Some(offset) = offset {
+                    write!(f, ", offset: {offset}")?;
+                }
+
+                Ok(())
             },
+            Explode { columns, schema: _ } => {
+                f.write_str("EXPLODE ")?;
+                fmt_column_delimited(f, columns, "[", "]")
+            },
+            #[cfg(feature = "pivot")]
+            Unpivot { args, schema: _ } => {
+                let UnpivotArgsIR {
+                    on,
+                    index,
+                    variable_name,
+                    value_name,
+                } = args.as_ref();
+
+                f.write_str("UNPIVOT on: ")?;
+                fmt_column_delimited(f, on, "[", "]")?;
+                fmt_column_delimited(f, index, "[", "]")?;
+                if let Some(variable_name) = variable_name {
+                    write!(f, ", variable_name: {variable_name}")?;
+                }
+                if let Some(value_name) = value_name {
+                    write!(f, ", value_name: {value_name}")?;
+                }
+                Ok(())
+            },
+            #[cfg(feature = "python")]
+            OpaquePython(_) => f.write_str(<&'static str>::from(self)),
+            Rechunk => f.write_str(<&'static str>::from(self)),
         }
     }
 }

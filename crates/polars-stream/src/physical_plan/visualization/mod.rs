@@ -440,11 +440,21 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     ..Default::default()
                 }
             },
-            PhysNodeKind::Map { input, map } => {
+            PhysNodeKind::Map {
+                input,
+                map,
+                format_str,
+            } => {
                 phys_node_inputs.push(input.node);
 
                 let properties = PhysNodeProperties::Map {
                     display_str: map.display_str(),
+                    format_str: format_str.as_deref().map_or(
+                        PlSmallStr::from_static(
+                            "error: prepare_visualization was not set during conversion",
+                        ),
+                        PlSmallStr::from_str,
+                    ),
                 };
 
                 PhysNodeInfo {
