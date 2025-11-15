@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PartitionVariant2","SinkOutputType"],"struct":["DirectorySinkOptions","UnifiedSinkArgs"]};
