@@ -45,8 +45,10 @@ def test_drop_nulls_in_agg_25349(maintain_order: bool) -> None:
 def test_drop_nulls_on_literal_25355(maintain_order: bool) -> None:
     df = pl.DataFrame({"key": [0, 1]})
     result = df.group_by("key", maintain_order=maintain_order).agg(
-        x=pl.lit(0).drop_nulls()
+        x=pl.lit(0, dtype=pl.Int64).drop_nulls()
     )
     assert_frame_equal(
-        result, df.with_columns(x=pl.lit([0])), check_row_order=maintain_order
+        result,
+        df.with_columns(x=pl.lit([0], dtype=pl.List(pl.Int64))),
+        check_row_order=maintain_order,
     )
