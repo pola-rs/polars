@@ -184,7 +184,7 @@ async fn open_new_sink(
     let target = if let Some(file_path_cb) = file_path_cb {
         let keys = keys.map_or(Vec::new(), |keys| {
             keys.iter()
-                .map(|k| polars_plan::dsl::PartitionTargetContextKey {
+                .map(|k| polars_plan::dsl::sink::PartitionTargetContextKey {
                     name: k.name().clone(),
                     raw_value: Scalar::new(k.dtype().clone(), k.get(0).unwrap().into_static()),
                 })

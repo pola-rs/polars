@@ -38,7 +38,12 @@ impl PartitionedSinkExecutor {
         let name = {
             let IR::Sink {
                 input: sink_input,
-                payload: SinkTypeIR::Partition(part),
+                payload:
+                    SinkTypeIR::Partitioned {
+                        options: _,
+                        file_format,
+                        unified_sink_args: _,
+                    },
             } = lp_arena.get_mut(root)
             else {
                 unreachable!();
@@ -48,7 +53,7 @@ impl PartitionedSinkExecutor {
             *sink_input = scan;
 
             // Generate a name based on the sink file type
-            format!("sink_{}[partitioned]", sink_name(&part.file_type))
+            format!("sink_{}[partitioned]", sink_name(file_format))
         };
 
         // Prune the subplan into separate arenas
