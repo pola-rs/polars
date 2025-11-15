@@ -1886,6 +1886,7 @@ def test_group_by_any_all(expr: Callable[[pl.Expr], pl.Expr]) -> None:
         allow_chunks=False,  # bug: See #24960
     )
 )
+@pytest.mark.may_fail_auto_streaming  # bug: See #24960
 def test_group_by_skew_kurtosis(s: pl.Series) -> None:
     df = s.to_frame()
 
