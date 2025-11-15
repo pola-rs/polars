@@ -281,6 +281,8 @@ pub fn drop_items<'a>(
     if predicate.unset_bits() == 0 {
         if let AggState::AggregatedScalar(c) | AggState::LiteralScalar(c) = &mut ac.state {
             *c = c.as_list().into_column();
+            ac.state = AggState::AggregatedList(std::mem::take(c));
+            ac.update_groups = UpdateGroups::WithSeriesLen;
         }
         return Ok(ac);
     }
@@ -551,6 +553,8 @@ pub fn unique<'a>(
 
     if let AggState::AggregatedScalar(c) | AggState::LiteralScalar(c) = &mut ac.state {
         *c = c.as_list().into_column();
+        ac.state = AggState::AggregatedList(std::mem::take(c));
+        ac.update_groups = UpdateGroups::WithSeriesLen;
         return Ok(ac);
     }
 

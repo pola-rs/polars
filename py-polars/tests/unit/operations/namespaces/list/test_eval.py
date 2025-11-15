@@ -386,3 +386,15 @@ def test_list_eval_matching_slice_lengths() -> None:
     )
     expected = pl.DataFrame({"a": [[2], [12]]})
     assert_frame_equal(out, expected)
+
+
+def test_unique_in_list_agg() -> None:
+    df = pl.DataFrame({"a": [[1, 2, 3]]}).select(
+        uniq=pl.col.a.list.agg(pl.element().first().unique()),
+        drop_nulls=pl.col.a.list.agg(pl.element().first().drop_nulls()),
+    )
+
+    assert_frame_equal(
+        df,
+        pl.DataFrame({"uniq": [[1]], "drop_nulls": [[1]]}),
+    )
