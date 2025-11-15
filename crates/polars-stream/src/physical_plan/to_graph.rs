@@ -801,6 +801,7 @@ fn to_graph_rec<'a>(
             period,
             offset,
             closed,
+            slice,
             aggs,
         } => {
             let input_schema = &ctx.phys_sm[input.node].output_schema;
@@ -821,6 +822,7 @@ fn to_graph_rec<'a>(
                     *period,
                     *offset,
                     *closed,
+                    *slice,
                     aggs,
                 )?,
                 [(input_key, input.port)],

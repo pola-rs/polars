@@ -4,7 +4,6 @@ use polars_plan::dsl::PartitionVariantIR;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, EscapeLabel};
 use polars_plan::prelude::FileType;
-use polars_time::ClosedWindow;
 use polars_utils::arena::Arena;
 use polars_utils::slice_enum::Slice;
 use slotmap::{Key, SecondaryMap, SlotMap};
@@ -482,15 +481,27 @@ fn visualize_plan_rec(
             period,
             offset,
             closed,
+            slice,
             aggs,
-        } => (
-            format!(
-                "rolling-group-by\\nindex column: {index_column}\\nperiod: {period}\\noffset: {offset}\\nclosed: {}\\naggs:\\n{}",
-                <ClosedWindow as Into<&'static str>>::into(*closed),
+        } => {
+            let mut s = String::new();
+            let f = &mut s;
+            f.write_str("rolling-group-by\\n").unwrap();
+            write!(f, "index column: {index_column}\\n").unwrap();
+            write!(f, "period: {period}, offset: {offset}\\n").unwrap();
+            write!(f, "closed: {}\\n", <&'static str>::from(*closed)).unwrap();
+            if let Some((offset, length)) = slice {
+                write!(f, "slice: {offset}, {length}\\n").unwrap();
+            }
+            write!(
+                f,
+                "aggs:\\n{}",
                 fmt_exprs_to_label(aggs, expr_arena, FormatExprStyle::Select)
-            ),
-            from_ref(input),
-        ),
+            )
+            .unwrap();
+
+            (s, from_ref(input))
+        },
         PhysNodeKind::InMemoryJoin {
             input_left,
             input_right,
