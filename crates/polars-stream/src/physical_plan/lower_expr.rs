@@ -774,6 +774,7 @@ fn lower_exprs_with_ctx(
                     ctx.phys_sm,
                     ctx.cache,
                     StreamingLowerIRContext::from(&*ctx),
+                    false,
                 )?;
                 input_streams.insert(group_by_stream);
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(tmp_name)));
@@ -826,6 +827,7 @@ fn lower_exprs_with_ctx(
                     StreamingLowerIRContext {
                         prepare_visualization: ctx.prepare_visualization,
                     },
+                    false,
                 )?;
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(tmp_count_name)));
                 input_streams.insert(stream);
@@ -888,6 +890,7 @@ fn lower_exprs_with_ctx(
                     StreamingLowerIRContext {
                         prepare_visualization: ctx.prepare_visualization,
                     },
+                    false,
                 )?;
 
                 let value = ExprIR::new(
@@ -960,6 +963,7 @@ fn lower_exprs_with_ctx(
                     StreamingLowerIRContext {
                         prepare_visualization: ctx.prepare_visualization,
                     },
+                    false,
                 )?;
 
                 let stream = build_select_stream_with_ctx(
@@ -1032,6 +1036,7 @@ fn lower_exprs_with_ctx(
                     StreamingLowerIRContext {
                         prepare_visualization: ctx.prepare_visualization,
                     },
+                    false,
                 )?;
 
                 let expr = AExprBuilder::col(idx_name.clone(), ctx.expr_arena)
@@ -1744,6 +1749,7 @@ fn lower_exprs_with_ctx(
                         ctx.phys_sm,
                         ctx.cache,
                         StreamingLowerIRContext::from(&*ctx),
+                        false,
                     )?;
 
                     let len_node = ctx.expr_arena.add(AExpr::Len);

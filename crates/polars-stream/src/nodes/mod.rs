@@ -30,6 +30,7 @@ pub mod rolling_group_by;
 pub mod select;
 pub mod shift;
 pub mod simple_projection;
+pub mod sorted_group_by;
 pub mod streaming_slice;
 pub mod top_k;
 pub mod with_row_index;
