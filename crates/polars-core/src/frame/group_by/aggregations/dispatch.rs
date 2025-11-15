@@ -10,9 +10,9 @@ impl Series {
         self.slice(first as i64, len as usize)
     }
 
-    fn restore_logical(&self, out: Series) -> Series {
-        if self.dtype().is_logical() {
-            out.cast(self.dtype()).unwrap()
+    unsafe fn restore_logical(&self, out: Series) -> Series {
+        if self.dtype().is_logical() && !out.dtype().is_logical() {
+            out.from_physical_unchecked(self.dtype()).unwrap()
         } else {
             out
         }

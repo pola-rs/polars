@@ -205,11 +205,6 @@ def test_merge_sorted_parametric_struct(lhs: pl.Series, rhs: pl.Series) -> None:
 @given(
     s=series(
         name="a",
-        excluded_dtypes=[
-            pl.Categorical(
-                ordering="lexical"
-            ),  # Bug. See https://github.com/pola-rs/polars/issues/21025
-        ],
         allow_null=False,  # See: https://github.com/pola-rs/polars/issues/20991
     ),
 )

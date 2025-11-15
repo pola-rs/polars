@@ -95,6 +95,12 @@ enum SerializableDataType {
     Decimal(usize, usize),
     #[cfg(feature = "object")]
     Object(String),
+    #[cfg(feature = "dtype-extension")]
+    Extension {
+        name: String,
+        metadata: Option<String>,
+        storage: Box<SerializableDataType>,
+    },
 }
 
 impl From<&DataType> for SerializableDataType {
@@ -146,6 +152,12 @@ impl From<&DataType> for SerializableDataType {
             Decimal(precision, scale) => Self::Decimal(*precision, *scale),
             #[cfg(feature = "object")]
             Object(name) => Self::Object(name.to_string()),
+            #[cfg(feature = "dtype-extension")]
+            Extension(typ, storage) => Self::Extension {
+                name: typ.name().to_string(),
+                metadata: typ.serialize_metadata().map(|s| s.into_owned()),
+                storage: Box::new(SerializableDataType::from(storage.as_ref())),
+            },
         }
     }
 }
@@ -205,6 +217,20 @@ impl From<SerializableDataType> for DataType {
             Decimal(precision, scale) => Self::Decimal(precision, scale),
             #[cfg(feature = "object")]
             Object(_) => Self::Object("unknown"),
+            #[cfg(feature = "dtype-extension")]
+            Extension {
+                name,
+                metadata,
+                storage,
+            } => {
+                let storage = DataType::from(*storage);
+                let ext_type = crate::datatypes::extension::get_extension_type_or_generic(
+                    &name,
+                    &storage,
+                    metadata.as_deref(),
+                );
+                Self::Extension(ext_type, Box::new(storage))
+            },
         }
     }
 }

@@ -211,6 +211,10 @@ impl AnyValue<'static> {
                     .collect(),
                 fields.clone(),
             ))),
+            #[cfg(feature = "dtype-extension")]
+            DT::Extension(_typ, storage) => {
+                AnyValue::default_value(storage, numeric_to_one, num_list_values)
+            },
             DT::Unknown(_) => unreachable!(),
         }
     }

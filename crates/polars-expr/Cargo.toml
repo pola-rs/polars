@@ -52,6 +52,7 @@ dtype-full = [
   "dtype-datetime",
   "dtype-decimal",
   "dtype-duration",
+  "dtype-extension",
   "dtype-i16",
   "dtype-i128",
   "dtype-i8",
@@ -69,6 +70,7 @@ dtype-date = ["polars-plan/dtype-date", "polars-time/dtype-date", "temporal"]
 dtype-datetime = ["polars-plan/dtype-datetime", "polars-time/dtype-datetime", "temporal"]
 dtype-decimal = ["polars-plan/dtype-decimal", "dtype-i128"]
 dtype-duration = ["polars-plan/dtype-duration", "polars-time/dtype-duration", "temporal"]
+dtype-extension = ["polars-plan/dtype-extension", "polars-ops/dtype-extension"]
 dtype-i16 = ["polars-plan/dtype-i16"]
 dtype-i8 = ["polars-plan/dtype-i8"]
 dtype-i128 = ["polars-plan/dtype-i128"]

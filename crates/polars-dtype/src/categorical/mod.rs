@@ -243,7 +243,7 @@ impl FrozenCategories {
         let strings = strings.into_iter();
         let hasher = FROZEN_CATEGORIES_HASHER.clone();
         let mut mapping = CategoricalMapping::with_hasher(usize::MAX, hasher);
-        let mut builder = Utf8ViewArrayBuilder::new(ArrowDataType::Utf8);
+        let mut builder = Utf8ViewArrayBuilder::new(ArrowDataType::Utf8View);
         builder.reserve(strings.size_hint().0);
 
         let mut combined_hasher = PlFixedStateQuality::default().build_hasher();

@@ -123,7 +123,7 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
 
     let physical_type = ArrowDataType::FixedSizeBinary(t_size);
     let extension_type = ArrowDataType::Extension(Box::new(ExtensionType {
-        name: PlSmallStr::from_static(EXTENSION_NAME),
+        name: PlSmallStr::from_static(POLARS_OBJECT_EXTENSION_NAME),
         inner: physical_type,
         metadata: Some(metadata),
     }));

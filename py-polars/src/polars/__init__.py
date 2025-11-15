@@ -76,6 +76,7 @@ from polars.dataframe import DataFrame
 from polars.datatype_expr import DataTypeExpr
 from polars.datatypes import (
     Array,
+    BaseExtension,
     Binary,
     Boolean,
     Categorical,
@@ -86,6 +87,7 @@ from polars.datatypes import (
     Decimal,
     Duration,
     Enum,
+    Extension,
     Field,
     Float32,
     Float64,
@@ -107,6 +109,11 @@ from polars.datatypes import (
     UInt128,
     Unknown,
     Utf8,
+)
+from polars.datatypes.extension import (
+    get_extension_type,
+    register_extension_type,
+    unregister_extension_type,
 )
 from polars.expr import Expr
 from polars.functions import (
@@ -284,6 +291,7 @@ __all__ = [
     "DataTypeExpr",
     # datatypes
     "Array",
+    "BaseExtension",
     "Binary",
     "Boolean",
     "Categorical",
@@ -294,6 +302,7 @@ __all__ = [
     "Decimal",
     "Duration",
     "Enum",
+    "Extension",
     "Field",
     "Float32",
     "Float64",
@@ -315,6 +324,10 @@ __all__ = [
     "UInt128",
     "Unknown",
     "Utf8",
+    # datatypes.extension
+    "register_extension_type",
+    "unregister_extension_type",
+    "get_extension_type",
     # polars.io
     "defer",
     "KeyedPartition",
