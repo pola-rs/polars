@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import contextlib
 import sqlite3
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import polars as pl
 from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from polars.type_aliases import PolarsDataType
 
 _POLARS_TO_SQLITE_: dict[PolarsDataType, str] = {
@@ -81,7 +83,8 @@ def assert_sql_matches(
     compare_with: Literal["sqlite", "duckdb"],
     check_dtypes: bool = False,
     check_row_order: bool = True,
-    expected: pl.DataFrame | None = None,
+    check_column_names: bool = True,
+    expected: pl.DataFrame | dict[str, Sequence[Any]] | None = None,
 ) -> bool:
     """
     Assert that a Polars SQL query produces the same result as a reference backend.
@@ -105,11 +108,14 @@ def assert_sql_matches(
         Require that the comparison frame dtypes match; defaults to False, as different
         backends may use different type systems, and we care about the values.
     check_row_order
-        Whether to check that the row order in the Polars/comparison frames matches.
+        Set False to ignore the row order in the Polars/comparison frame match.
+    check_column_names
+        Set False to ignore the column names in the Polars/comparison frame match
+        (but still compare each column in the same expected order).
     expected
-        An optional DataFrame containing the expected result; this way we confirm
-        both that the result matches the reference implementation and that these
-        results match expectation.
+        An optional DataFrame (or dictionary) containing the expected result; with
+        this we can confirm both that the result matches the reference implementation
+        *and* that these results match expectation.
 
     Examples
     --------
@@ -149,8 +155,11 @@ def assert_sql_matches(
             )
             raise ValueError(msg)
 
-        comparison_result = execute_comparison(frames, query)
         polars_result = ctx.execute(query=query, eager=True)
+        comparison_result = execute_comparison(frames, query)
+        if not check_column_names:
+            n_comparison_cols = comparison_result.width
+            comparison_result.columns = polars_result.columns[:n_comparison_cols]
 
     # validate against the reference engine/backend
     assert_frame_equal(
@@ -163,6 +172,12 @@ def assert_sql_matches(
     # confirm that these values are not just consistent
     # but also match a specific/expected result
     if expected is not None:
+        if isinstance(expected, dict):
+            expected = pl.from_dict(
+                data=expected,
+                schema=polars_result.schema,
+            )
+
         assert_frame_equal(
             polars_result,
             expected,

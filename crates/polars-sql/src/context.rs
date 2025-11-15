@@ -1500,7 +1500,7 @@ impl SQLContext {
                         e = (**expr).clone().alias(name.clone());
                     }
                 }
-                // If aggregation name conflicts with a group key,
+                // If aggregation colname conflicts with a group key,
                 // alias it to avoid duplicate/mis-tracked columns
                 if group_by_keys_schema.get(&field.name).is_some() {
                     let alias_name = format!("__POLARS_AGG_{}", field.name);
