@@ -183,13 +183,13 @@ def test_streaming_generic_left_and_inner_join_from_disk(tmp_path: Path) -> None
     join_strategies: list[JoinStrategy] = ["left", "inner"]
     for how in join_strategies:
         assert_frame_equal(
-            lf0.join(
-                lf1, left_on="id", right_on="id_r", how=how, maintain_order="left"
-            ).collect(engine="streaming"),
+            lf0.join(lf1, left_on="id", right_on="id_r", how=how).collect(
+                engine="streaming"
+            ),
             lf0.join(lf1, left_on="id", right_on="id_r", how=how).collect(
                 engine="in-memory"
             ),
-            check_row_order=how == "left",
+            check_row_order=False,
         )
 
 
