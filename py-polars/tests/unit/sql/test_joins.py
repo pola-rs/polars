@@ -113,8 +113,8 @@ def test_join_cross_11927() -> None:
 @pytest.mark.parametrize(
     "join_clause",
     [
-        "ON foods1.category = foods2.category",
-        "ON foods2.category = foods1.category",
+        "ON f1.category = f2.category",
+        "ON f2.category = f1.category",
         "USING (category)",
     ],
 )
@@ -123,34 +123,32 @@ def test_join_inner(foods_ipc_path: Path, join_clause: str) -> None:
     foods2 = foods1
     schema = foods1.collect_schema()
 
-    sort_clause = ", ".join(f'{c} ASC, "{c}:foods2" DESC' for c in schema)
     out = pl.sql(
         f"""
         SELECT *
-        FROM foods1
-        INNER JOIN foods2 {join_clause}
-        ORDER BY {sort_clause}
+        FROM
+          (SELECT * FROM foods1 WHERE fats_g != 0) f1
+        INNER JOIN
+          (SELECT * FROM foods2 WHERE fats_g = 0) f2
+        {join_clause}
+        ORDER BY ALL
         LIMIT 2
         """,
         eager=True,
     )
-
-    assert_frame_equal(
-        out,
-        pl.DataFrame(
-            {
-                "category": ["fruit", "fruit"],
-                "calories": [30, 30],
-                "fats_g": [0.0, 0.0],
-                "sugars_g": [3, 5],
-                "category:foods2": ["fruit", "fruit"],
-                "calories:foods2": [130, 130],
-                "fats_g:foods2": [0.0, 0.0],
-                "sugars_g:foods2": [25, 25],
-            }
-        ),
-        check_dtypes=False,
+    expected = pl.DataFrame(
+        {
+            "category": ["fruit", "fruit"],
+            "calories": [50, 50],
+            "fats_g": [4.5, 4.5],
+            "sugars_g": [0, 0],
+            "category:f2": ["fruit", "fruit"],
+            "calories:f2": [30, 30],
+            "fats_g:f2": [0.0, 0.0],
+            "sugars_g:f2": [3, 5],
+        }
     )
+    assert_frame_equal(expected, out, check_dtypes=False)
 
 
 @pytest.mark.parametrize(
@@ -499,11 +497,9 @@ def test_natural_joins_01() -> None:
     with pl.SQLContext(
         {"df1": df1, "df2": df2, "df3": df3, "df4": df4}, eager=True
     ) as ctx:
-        # note: use of 'COLUMNS' is a neat way to drop
-        # all non-coalesced "<name>:<suffix>" cols
         res = ctx.execute(
             """
-            SELECT COLUMNS('^[^:]*$')
+            SELECT *
             FROM df1
             NATURAL LEFT JOIN df2
             NATURAL INNER JOIN df3
@@ -590,7 +586,7 @@ def test_natural_joins_02(cols_constraint: str, expect_data: list[tuple[int]]) -
     )
     actual = pl.sql(
         f"""
-        SELECT * EXCLUDE "y:df2"
+        SELECT *
         FROM df1 NATURAL JOIN df2
         WHERE COLUMNS(*) {cols_constraint}
         """
