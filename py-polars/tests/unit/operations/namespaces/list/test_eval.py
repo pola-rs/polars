@@ -529,7 +529,7 @@ def test_list_eval_ternary() -> None:
     q = df.lazy().select(expr.over([1]))
     assert_frame_equal(q.collect(), expected)
 
-    q = df.lazy().select(expr.filter(True).over([1]))
+    q = df.lazy().select(expr.filter(pl.lit(True)).over([1]))
     assert_frame_equal(q.collect(), expected)
 
     expected = pl.DataFrame({"a": [[2, 4, 5], [1], [8]]})
