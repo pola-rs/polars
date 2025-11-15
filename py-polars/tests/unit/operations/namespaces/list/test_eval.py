@@ -416,8 +416,6 @@ def test_list_eval_parametric_element(df: pl.DataFrame, expr: pl.Expr) -> None:
     assert_frame_equal(out, df)
 
     out = df.select(pl.col.a.list.eval(expr).over(42))
-    print(out)
-    print(df)
     assert_frame_equal(out, df)
 
 
@@ -515,3 +513,25 @@ def test_list_eval_parametric_first_slice(
 
     out = df.select(pl.col.a.list.eval(expr).over(42))
     assert_frame_equal(out, expected)
+
+
+def test_list_eval_ternary() -> None:
+    df = pl.DataFrame({"a": [[1, 2, 3], [4], [5]]})
+    expr = pl.col.a.list.eval(
+        pl.when(pl.element() % 2 == 0)
+        .then(pl.element() // 2)
+        .otherwise(pl.element() + pl.element() + pl.element() + 1)
+    )
+    expected = pl.DataFrame({"a": [[4, 1, 10], [2], [16]]})
+    q = df.lazy().select(expr)
+    assert_frame_equal(q.collect(), expected)
+
+    q = df.lazy().select(expr.over([1]))
+    assert_frame_equal(q.collect(), expected)
+
+    q = df.lazy().select(expr.filter(True).over([1]))
+    assert_frame_equal(q.collect(), expected)
+
+    expected = pl.DataFrame({"a": [[2, 4, 5], [1], [8]]})
+    q = df.lazy().select(expr).lazy().select(expr)
+    assert_frame_equal(q.collect(), expected)

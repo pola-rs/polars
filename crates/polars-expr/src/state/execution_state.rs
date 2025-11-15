@@ -206,6 +206,7 @@ impl ExecutionState {
             branch_idx: self.branch_idx,
             flags: self.flags.clone(),
             ext_contexts: self.ext_contexts.clone(),
+            // Retain input values for `pl.element` in Eval context
             element: self.element.clone(),
             node_timer: self.node_timer.clone(),
             stop: self.stop.clone(),
