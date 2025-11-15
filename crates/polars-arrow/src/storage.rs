@@ -5,6 +5,7 @@ use std::ptr::NonNull;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use bytemuck::Pod;
+use polars_utils::mmap::MemSlice;
 
 // Allows us to transmute between types while also keeping the original
 // stats and drop method of the Vec around.
@@ -40,6 +41,8 @@ enum BackingStorage {
         vtable: &'static VecVTable,
     },
     InternalArrowArray(InternalArrowArray),
+
+    Dyn(Box<dyn Send + Sync>),
 
     /// Backed by some external method which we do not need to take care of,
     /// but we still should refcount and drop the SharedStorageInner.
@@ -82,6 +85,21 @@ impl<T> SharedStorageInner<T> {
     }
 }
 
+impl SharedStorageInner<u8> {
+    pub fn from_mem_slice(mem_slice: MemSlice) -> Self {
+        let length_in_bytes = mem_slice.len();
+        let ptr = mem_slice.as_ptr().cast_mut();
+
+        Self {
+            ref_count: AtomicU64::new(1),
+            ptr,
+            length_in_bytes,
+            backing: BackingStorage::Dyn(Box::new(mem_slice.into_backing())),
+            phantom: PhantomData,
+        }
+    }
+}
+
 impl<T> Drop for SharedStorageInner<T> {
     fn drop(&mut self) {
         match core::mem::replace(&mut self.backing, BackingStorage::External) {
@@ -103,6 +121,7 @@ impl<T> Drop for SharedStorageInner<T> {
                     (vtable.drop_buffer)(self.ptr.cast(), original_capacity);
                 }
             },
+            BackingStorage::Dyn(v) => drop(v),
             BackingStorage::External | BackingStorage::Leaked => {},
         }
     }
@@ -197,6 +216,18 @@ impl<T> SharedStorage<T> {
                 &mut inner.backing,
                 BackingStorage::Leaked,
             ));
+        }
+    }
+}
+
+impl SharedStorage<u8> {
+    pub fn from_mem_slice(v: MemSlice) -> Self {
+        Self {
+            inner: NonNull::new(Box::into_raw(Box::new(SharedStorageInner::from_mem_slice(
+                v,
+            ))))
+            .unwrap(),
+            phantom: PhantomData,
         }
     }
 }
