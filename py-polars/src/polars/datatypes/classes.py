@@ -439,6 +439,20 @@ class Decimal(NumericType):
         if precision is None:
             precision = 38
 
+        if precision <= 0 or precision > 38:
+            msg = (
+                "invalid `precision`"
+                f"\n\nValue can be between `0` and `38`, got {precision!r}."
+            )
+            raise ValueError(msg)
+
+        if scale > precision:
+            msg = (
+                "invalid `scale` larger than `precision`"
+                f"\n\nValue for `scale` can be between `0` and `{precision}`, got {scale!r}."
+            )
+            raise ValueError(msg)
+
         self.precision = precision
         self.scale = scale
 
