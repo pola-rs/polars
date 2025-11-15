@@ -186,3 +186,24 @@ fn test_join_duplicate_7314() -> PolarsResult<()> {
     assert_eq!(out.get_column_names(), &["a", "c"]);
     Ok(())
 }
+
+// #[test]
+// fn test_empty_concat_side_25263() -> PolarsResult<()> {
+//     let df_a: DataFrame = df![
+//         "a" => [1, 2, 2],
+//         "b" => [4, 5, 6],
+//     ]?;
+
+//     let df_b: DataFrame = df![
+//         "d" => [1, 2],
+//     ]?;
+
+//     let out = concat([df_a.lazy(), df_b.lazy()], UnionArgs::default())?
+//             .select([col("d")])
+//             .collect()?;
+
+//     assert_eq!(out, df![
+//         "d" => [Some(1), Some(2), None]
+//     ]?);
+//     Ok(())
+// }

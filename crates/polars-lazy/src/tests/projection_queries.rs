@@ -173,3 +173,32 @@ fn test_coalesce_toggle_projection_pushdown() -> PolarsResult<()> {
 
     Ok(())
 }
+
+
+#[test]
+fn test_empty_concat_side_25263() -> PolarsResult<()> {
+    let df_a  = df![
+        "a" => [1, 2, 2],
+        "b" => [4, 5, 6],
+    ]?.lazy();
+
+    let df_b = df![
+        "d" => [1, 2],
+    ]?.lazy();
+
+    let plan = concat_lf_horizontal([df_a, df_b], UnionArgs::default())?
+            .select([col("d")])
+            .to_alp_optimized()?;
+
+    let node = plan.lp_top;
+    let lp_arena = plan.lp_arena;
+
+    assert!(lp_arena.iter(node).all(|(_, plan)| match plan {
+        IR::DataFrameScan { output_schema, .. } => {
+            dbg!(output_schema);
+            true
+        },
+        _ => true,
+    }));
+    Ok(())
+}
