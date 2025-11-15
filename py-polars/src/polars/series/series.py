@@ -5512,6 +5512,12 @@ class Series:
             1.0
             1.2246e-16
         ]
+
+        Notes
+        -----
+        The argument must be in radians.
+        To convert from degrees to radians,
+        call :meth:`.radians() <polars.Series.radians>`.
         """
 
     def cos(self) -> Series:
@@ -5530,6 +5536,12 @@ class Series:
             6.1232e-17
             -1.0
         ]
+
+        Notes
+        -----
+        The argument must be in radians.
+        To convert from degrees to radians,
+        call :meth:`.radians() <polars.Series.radians>`.
         """
 
     def tan(self) -> Series:
@@ -5548,6 +5560,12 @@ class Series:
             1.6331e16
             -1.2246e-16
         ]
+
+        Notes
+        -----
+        The argument must be in radians.
+        To convert from degrees to radians,
+        call :meth:`.radians() <polars.Series.radians>`.
         """
 
     def cot(self) -> Series:
@@ -5566,6 +5584,12 @@ class Series:
             6.1232e-17
             -8.1656e15
         ]
+
+        Notes
+        -----
+        The argument must be in radians.
+        To convert from degrees to radians,
+        call :meth:`.radians() <polars.Series.radians>`.
         """
 
     def arcsin(self) -> Series:
@@ -5583,6 +5607,13 @@ class Series:
             0.0
             -1.570796
         ]
+
+        Notes
+        -----
+        The returned value is in radians.
+        To convert from radians to degrees,
+        call :meth:`.degrees() <polars.Series.degrees>`.
+
         """
 
     def arccos(self) -> Series:
@@ -5600,6 +5631,12 @@ class Series:
             1.570796
             3.141593
         ]
+
+        Notes
+        -----
+        The returned value is in radians.
+        To convert from radians to degrees,
+        call :meth:`.degrees() <polars.Series.degrees>`.
         """
 
     def arctan(self) -> Series:
@@ -5617,6 +5654,12 @@ class Series:
             0.0
             -0.785398
         ]
+
+        Notes
+        -----
+        The returned value is in radians.
+        To convert from radians to degrees,
+        call :meth:`.degrees() <polars.Series.degrees>`.
         """
 
     def arcsinh(self) -> Series:
@@ -8569,6 +8612,53 @@ class Series:
                 3
         ]
         """  # noqa: W505
+
+    def degrees(self) -> Series:
+        """
+        Convert from radians to degrees.
+
+        Examples
+        --------
+        >>> import math
+        >>> s = pl.Series("a", [x * math.pi for x in range(-4, 5)])
+        >>> s.degrees()
+        shape: (9,)
+        Series: 'a' [f64]
+        [
+            -720.0
+            -540.0
+            -360.0
+            -180.0
+            0.0
+            180.0
+            360.0
+            540.0
+            720.0
+        ]
+        """
+
+    def radians(self) -> Series:
+        """
+        Convert from degrees to radians.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [-720, -540, -360, -180, 0, 180, 360, 540, 720])
+        >>> s.radians()
+        shape: (9,)
+        Series: 'a' [f64]
+        [
+            -12.566371
+            -9.424778
+            -6.283185
+            -3.141593
+            0.0
+            3.141593
+            6.283185
+            9.424778
+            12.566371
+        ]
+        """
 
     def reshape(self, dimensions: tuple[int, ...]) -> Series:
         """
