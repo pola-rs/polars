@@ -1,4 +1,4 @@
-use std::ops::Sub;
+use std::ops::{Add, Sub};
 
 use polars_core::chunked_array::ops::{SortMultipleOptions, SortOptions};
 use polars_core::prelude::{
@@ -8,7 +8,9 @@ use polars_core::prelude::{
 use polars_lazy::dsl::Expr;
 use polars_ops::chunked_array::UnicodeForm;
 use polars_ops::series::RoundMode;
-use polars_plan::dsl::{coalesce, concat_str, element, len, max_horizontal, min_horizontal, when};
+use polars_plan::dsl::{
+    coalesce, concat_str, element, int_range, len, max_horizontal, min_horizontal, when,
+};
 use polars_plan::plans::{DynLiteralValue, LiteralValue, typed_lit};
 use polars_plan::prelude::{StrptimeOptions, col, cols, lit};
 use polars_utils::pl_str::PlSmallStr;
@@ -16,7 +18,8 @@ use sqlparser::ast::helpers::attached_token::AttachedToken;
 use sqlparser::ast::{
     DateTimeField, DuplicateTreatment, Expr as SQLExpr, Function as SQLFunction, FunctionArg,
     FunctionArgExpr, FunctionArgumentClause, FunctionArgumentList, FunctionArguments, Ident,
-    OrderByExpr, Value as SQLValue, WindowSpec, WindowType,
+    OrderByExpr, Value as SQLValue, WindowFrame, WindowFrameBound, WindowFrameUnits, WindowSpec,
+    WindowType,
 };
 use sqlparser::tokenizer::Span;
 
@@ -562,12 +565,25 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT FIRST(column_1) FROM df;
     /// ```
     First,
+    /// SQL 'first_value' window function.
+    /// Returns the first value in an ordered set of values (respecting window frame).
+    /// ```sql
+    /// SELECT FIRST_VALUE(column_1) OVER (PARTITION BY category ORDER BY id) FROM df;
+    /// ```
+    FirstValue,
     /// SQL 'last' function.
     /// Returns the last element of the grouping.
     /// ```sql
     /// SELECT LAST(column_1) FROM df;
     /// ```
     Last,
+    /// SQL 'last_value' window function.
+    /// Returns the last value in an ordered set of values (respecting window frame).
+    /// With default frame, returns the current row's value.
+    /// ```sql
+    /// SELECT LAST_VALUE(column_1) OVER (PARTITION BY category ORDER BY id) FROM df;
+    /// ```
+    LastValue,
     /// SQL 'max' function.
     /// Returns the greatest (maximum) of all the elements in the grouping.
     /// ```sql
@@ -758,12 +774,16 @@ impl PolarsSQLFunctions {
             "ends_with",
             "exp",
             "first",
+            "first_value",
             "floor",
             "greatest",
             "if",
             "ifnull",
             "initcap",
+            "lag",
             "last",
+            "last_value",
+            "lead",
             "least",
             "left",
             "length",
@@ -931,7 +951,9 @@ impl PolarsSQLFunctions {
             "covar_pop" => Self::CovarPop,
             "covar" | "covar_samp" => Self::CovarSamp,
             "first" => Self::First,
+            "first_value" => Self::FirstValue,
             "last" => Self::Last,
+            "last_value" => Self::LastValue,
             "max" => Self::Max,
             "median" => Self::Median,
             "quantile_cont" => Self::QuantileCont,
@@ -1448,7 +1470,23 @@ impl SQLFunctionVisitor<'_> {
             CovarPop => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 0)),
             CovarSamp => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 1)),
             First => self.visit_unary(Expr::first),
+            FirstValue => self.visit_unary(Expr::first),
             Last => self.visit_unary(Expr::last),
+            LastValue => {
+                // With the default window frame (ROWS UNBOUNDED PRECEDING TO CURRENT ROW),
+                // LAST_VALUE returns the last value from the start of the partition up
+                // to the current row - which is simply the current row's value.
+                let args = extract_args(function)?;
+                match args.as_slice() {
+                    [FunctionArgExpr::Expr(sql_expr)] => {
+                        parse_sql_expr(sql_expr, self.ctx, self.active_schema)
+                    },
+                    _ => polars_bail!(
+                        SQLSyntax: "LAST_VALUE expects exactly 1 argument, got {}",
+                        args.len()
+                    ),
+                }
+            },
             Max => self.visit_unary_with_opt_cumulative(Expr::max, Expr::cum_max),
             Median => self.visit_unary(Expr::median),
             QuantileCont => {
@@ -1604,40 +1642,127 @@ impl SQLFunctionVisitor<'_> {
             .call(args))
     }
 
-    /// Window specs without partition bys are essentially cumulative functions
-    /// e.g. SUM(a) OVER (ORDER BY b DESC) -> CUMSUM(a, false)
+    /// Validate window frame specifications.
+    ///
+    /// Polars only supports ROWS frame semantics, and does
+    /// not currently support customising the window.
+    ///
+    /// **Supported Frame Spec**
+    /// - `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
+    ///
+    /// **Unsupported Frame Spec**
+    /// - `RANGE ...` (peer group semantics not implemented)
+    /// - `GROUPS ...` (peer group semantics not implemented)
+    /// - `ROWS` with other bounds (e.g., `<n> PRECEDING`, `FOLLOWING`, etc)
+    fn validate_window_frame(&self, window_frame: &Option<WindowFrame>) -> PolarsResult<()> {
+        if let Some(frame) = window_frame {
+            match frame.units {
+                WindowFrameUnits::Range => {
+                    polars_bail!(
+                        SQLInterface:
+                        "RANGE-based window frames are not supported"
+                    );
+                },
+                WindowFrameUnits::Groups => {
+                    polars_bail!(
+                        SQLInterface:
+                        "GROUPS-based window frames are not supported"
+                    );
+                },
+                WindowFrameUnits::Rows => {
+                    if !matches!(
+                        (&frame.start_bound, &frame.end_bound),
+                        (
+                            WindowFrameBound::Preceding(None),         // UNBOUNDED PRECEDING
+                            None | Some(WindowFrameBound::CurrentRow)  // CURRENT ROW
+                        )
+                    ) {
+                        polars_bail!(
+                            SQLInterface:
+                            "only 'ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW' is currently supported; found 'ROWS BETWEEN {} AND {}'",
+                            frame.start_bound,
+                            frame.end_bound.as_ref().map_or("CURRENT ROW", |b| {
+                                match b {
+                                    WindowFrameBound::CurrentRow => "CURRENT ROW",
+                                    WindowFrameBound::Preceding(_) => "N PRECEDING",
+                                    WindowFrameBound::Following(_) => "N FOLLOWING",
+                                }
+                            })
+                        );
+                    }
+                },
+            }
+        }
+        Ok(())
+    }
+
+    /// Window specs that map to cumulative functions.
+    ///
+    /// Converts SQL window functions with ORDER BY to compatible cumulative ops:
+    /// - `SUM(a) OVER (ORDER BY b)` → `a.cum_sum().over(order_by=b)`
+    /// - `MAX(a) OVER (ORDER BY b)` → `a.cum_max().over(order_by=b)`
+    /// - `MIN(a) OVER (ORDER BY b)` → `a.cum_min().over(order_by=b)`
+    ///
+    /// ROWS vs RANGE Semantics (show default behaviour if no frame spec):
+    ///
+    /// **Polars (ROWS)**
+    /// Each row gets its own cumulative value row-by-row.
+    /// ```text
+    /// Data: [(A,X,10), (A,X,15), (A,Y,20)]
+    /// Query: SUM(value) OVER (ORDER BY category, subcategory)
+    /// Result: [10, 25, 45]  ← row-by-row cumulative
+    /// ```
+    ///
+    /// **SQL (RANGE)**
+    /// Rows with identical ORDER BY values (peers) get the same result.
+    /// ```text
+    /// Same data, query with RANGE (eg: using a relational DB):
+    /// Result: [25, 25, 45]  ← both (A,X) rows get 25
+    /// ```
     fn apply_cumulative_window(
         &mut self,
         f: impl Fn(Expr) -> Expr,
-        cumulative_f: impl Fn(Expr, bool) -> Expr,
+        cumulative_fn: impl Fn(Expr, bool) -> Expr,
         WindowSpec {
             partition_by,
             order_by,
+            window_frame,
             ..
         }: &WindowSpec,
     ) -> PolarsResult<Expr> {
-        if !order_by.is_empty() && partition_by.is_empty() {
-            let (order_by, desc): (Vec<Expr>, Vec<bool>) = order_by
-                .iter()
-                .map(|o| {
-                    let expr = parse_sql_expr(&o.expr, self.ctx, self.active_schema)?;
-                    Ok(match o.asc {
-                        Some(b) => (expr, !b),
-                        None => (expr, false),
-                    })
-                })
-                .collect::<PolarsResult<Vec<_>>>()?
-                .into_iter()
-                .unzip();
-            self.visit_unary_no_window(|e| {
-                cumulative_f(
-                    e.sort_by(
-                        &order_by,
-                        SortMultipleOptions::default().with_order_descending_multi(desc.clone()),
-                    ),
-                    false,
+        self.validate_window_frame(window_frame)?;
+
+        if !order_by.is_empty() {
+            // Extract ORDER BY exprs and sort direction
+            let (order_by_exprs, all_desc) = self.parse_order_by_in_window(order_by)?;
+
+            // Get the base expr/column
+            let args = extract_args(self.func)?;
+            let base_expr = match args.as_slice() {
+                [FunctionArgExpr::Expr(sql_expr)] => {
+                    parse_sql_expr(sql_expr, self.ctx, self.active_schema)?
+                },
+                _ => return self.not_supported_error(),
+            };
+            let partition_by_exprs = if partition_by.is_empty() {
+                None
+            } else {
+                Some(
+                    partition_by
+                        .iter()
+                        .map(|p| parse_sql_expr(p, self.ctx, self.active_schema))
+                        .collect::<PolarsResult<Vec<_>>>()?,
                 )
-            })
+            };
+
+            // Apply cumulative function and wrap with window spec
+            let cumulative_expr = cumulative_fn(base_expr, false);
+            let sort_opts = SortOptions::default().with_order_descending(all_desc);
+            cumulative_expr.over_with_options(
+                partition_by_exprs,
+                Some((order_by_exprs, sort_opts)),
+                Default::default(),
+            )
         } else {
             self.visit_unary(f)
         }
@@ -1665,35 +1790,20 @@ impl SQLFunctionVisitor<'_> {
 
     /// Some functions have cumulative equivalents that can be applied to window specs
     /// e.g. SUM(a) OVER (ORDER BY b DESC) -> CUMSUM(a, false)
-    /// visit_unary_with_cumulative_window will take in a function & a cumulative function
-    /// if there is a cumulative window spec, it will apply the cumulative function,
-    /// otherwise it will apply the function
     fn visit_unary_with_opt_cumulative(
         &mut self,
         f: impl Fn(Expr) -> Expr,
-        cumulative_f: impl Fn(Expr, bool) -> Expr,
+        cumulative_fn: impl Fn(Expr, bool) -> Expr,
     ) -> PolarsResult<Expr> {
         match self.func.over.as_ref() {
             Some(WindowType::WindowSpec(spec)) => {
-                self.apply_cumulative_window(f, cumulative_f, spec)
+                self.apply_cumulative_window(f, cumulative_fn, spec)
             },
             Some(WindowType::NamedWindow(named_window)) => polars_bail!(
-                SQLInterface: "Named windows are not currently supported; found {:?}",
+                SQLInterface: "named windows are not (yet) supported; found {:?}",
                 named_window
             ),
             _ => self.visit_unary(f),
-        }
-    }
-
-    fn visit_unary_no_window(&mut self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
-        let args = extract_args(self.func)?;
-        match args.as_slice() {
-            [FunctionArgExpr::Expr(sql_expr)] => {
-                let expr = parse_sql_expr(sql_expr, self.ctx, self.active_schema)?;
-                // apply the function on the inner expr -- e.g. SUM(a) -> SUM
-                Ok(f(expr))
-            },
-            _ => self.not_supported_error(),
         }
     }
 
@@ -1842,15 +1952,60 @@ impl SQLFunctionVisitor<'_> {
 
     fn visit_count(&mut self) -> PolarsResult<Expr> {
         let (args, is_distinct) = extract_args_distinct(self.func)?;
+
+        // Window function with an ORDER BY clause?
+        let has_order_by = match &self.func.over {
+            Some(WindowType::WindowSpec(spec)) => !spec.order_by.is_empty(),
+            _ => false,
+        };
+        if has_order_by && !is_distinct {
+            if let Some(WindowType::WindowSpec(spec)) = &self.func.over {
+                self.validate_window_frame(&spec.window_frame)?;
+
+                match args.as_slice() {
+                    [FunctionArgExpr::Wildcard] | [] => {
+                        // COUNT(*) with ORDER BY -> map to `int_range`
+                        let (order_by_exprs, all_desc) =
+                            self.parse_order_by_in_window(&spec.order_by)?;
+                        let partition_by_exprs = if spec.partition_by.is_empty() {
+                            None
+                        } else {
+                            Some(
+                                spec.partition_by
+                                    .iter()
+                                    .map(|p| parse_sql_expr(p, self.ctx, self.active_schema))
+                                    .collect::<PolarsResult<Vec<_>>>()?,
+                            )
+                        };
+                        let sort_opts = SortOptions::default().with_order_descending(all_desc);
+                        let row_number = int_range(lit(0), len(), 1, DataType::Int64).add(lit(1)); // SQL is 1-indexed
+
+                        return row_number.over_with_options(
+                            partition_by_exprs,
+                            Some((order_by_exprs, sort_opts)),
+                            Default::default(),
+                        );
+                    },
+                    [FunctionArgExpr::Expr(_)] => {
+                        // COUNT(column) with ORDER BY -> use cum_count
+                        return self.visit_unary_with_opt_cumulative(
+                            |e| e.count(),
+                            |e, reverse| e.cum_count(reverse),
+                        );
+                    },
+                    _ => {},
+                }
+            }
+        }
         let count_expr = match (is_distinct, args.as_slice()) {
-            // count(*), count()
+            // COUNT(*), COUNT()
             (false, [FunctionArgExpr::Wildcard] | []) => len(),
-            // count(column_name)
+            // COUNT(col)
             (false, [FunctionArgExpr::Expr(sql_expr)]) => {
                 let expr = parse_sql_expr(sql_expr, self.ctx, self.active_schema)?;
                 expr.count()
             },
-            // count(distinct column_name)
+            // COUNT(DISTINCT col)
             (true, [FunctionArgExpr::Expr(sql_expr)]) => {
                 let expr = parse_sql_expr(sql_expr, self.ctx, self.active_schema)?;
                 expr.clone().n_unique().sub(expr.null_count().gt(lit(0)))
@@ -1866,7 +2021,7 @@ impl SQLFunctionVisitor<'_> {
         let mut nulls_last = Vec::with_capacity(order_by.len());
 
         for ob in order_by {
-            // note: if not specified 'NULLS FIRST' is default for DESC, 'NULLS LAST' otherwise
+            // Note: if not specified 'NULLS FIRST' is default for DESC, 'NULLS LAST' otherwise
             // https://www.postgresql.org/docs/current/queries-order.html
             let desc_order = !ob.asc.unwrap_or(true);
             by.push(parse_sql_expr(&ob.expr, self.ctx, self.active_schema)?);
@@ -1882,6 +2037,32 @@ impl SQLFunctionVisitor<'_> {
         ))
     }
 
+    /// Parse ORDER BY (in OVER clause), validating uniform direction.
+    fn parse_order_by_in_window(
+        &mut self,
+        order_by: &[OrderByExpr],
+    ) -> PolarsResult<(Vec<Expr>, bool)> {
+        if order_by.is_empty() {
+            return Ok((Vec::new(), false));
+        }
+        // Parse expressions and validate uniform direction
+        let all_ascending = order_by[0].asc.unwrap_or(true);
+        let mut exprs = Vec::with_capacity(order_by.len());
+        for o in order_by {
+            if all_ascending != o.asc.unwrap_or(true) {
+                // TODO: mixed sort directions are not currently supported; we
+                //  need to enhance `over_with_options` to take SortMultipleOptions
+                polars_bail!(
+                    SQLSyntax:
+                    "OVER does not (yet) support mixed asc/desc directions for ORDER BY"
+                )
+            }
+            let expr = parse_sql_expr(&o.expr, self.ctx, self.active_schema)?;
+            exprs.push(expr);
+        }
+        Ok((exprs, !all_ascending))
+    }
+
     fn apply_window_spec(
         &mut self,
         expr: Expr,
@@ -1889,30 +2070,39 @@ impl SQLFunctionVisitor<'_> {
     ) -> PolarsResult<Expr> {
         Ok(match &window_type {
             Some(WindowType::WindowSpec(window_spec)) => {
-                if window_spec.partition_by.is_empty() {
-                    let exprs = window_spec
-                        .order_by
-                        .iter()
-                        .map(|o| {
-                            let e = parse_sql_expr(&o.expr, self.ctx, self.active_schema)?;
-                            Ok(o.asc.map_or(e.clone(), |b| {
-                                e.sort(SortOptions::default().with_order_descending(!b))
-                            }))
-                        })
-                        .collect::<PolarsResult<Vec<_>>>()?;
-                    expr.over(exprs)
+                self.validate_window_frame(&window_spec.window_frame)?;
+
+                let partition_by = if window_spec.partition_by.is_empty() {
+                    None
                 } else {
-                    // Process for simple window specification, partition by first
-                    let partition_by = window_spec
-                        .partition_by
-                        .iter()
-                        .map(|p| parse_sql_expr(p, self.ctx, self.active_schema))
-                        .collect::<PolarsResult<Vec<_>>>()?;
-                    expr.over(partition_by)
+                    Some(
+                        window_spec
+                            .partition_by
+                            .iter()
+                            .map(|p| parse_sql_expr(p, self.ctx, self.active_schema))
+                            .collect::<PolarsResult<Vec<_>>>()?,
+                    )
+                };
+                let order_by = if window_spec.order_by.is_empty() {
+                    None
+                } else {
+                    let (order_exprs, all_desc) =
+                        self.parse_order_by_in_window(&window_spec.order_by)?;
+                    let sort_opts = SortOptions::default().with_order_descending(all_desc);
+                    Some((order_exprs, sort_opts))
+                };
+
+                // Apply window spec
+                match (partition_by, order_by) {
+                    (None, None) => expr,
+                    (Some(part), None) => expr.over(part),
+                    (part, Some(order)) => {
+                        expr.over_with_options(part, Some(order), Default::default())?
+                    },
                 }
             },
             Some(WindowType::NamedWindow(named_window)) => polars_bail!(
-                SQLInterface: "Named windows are not currently supported; found {:?}",
+                SQLInterface: "named windows are not (yet) supported; found {:?}",
                 named_window
             ),
             None => expr,

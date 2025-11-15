@@ -929,7 +929,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     options,
                 })
             },
-            #[cfg(feature = "range")]
+            #[cfg(feature = "moment")]
             AExpr::Function {
                 function: ref function @ (IRFunctionExpr::Skew(..) | IRFunctionExpr::Kurtosis(..)),
                 ref input,

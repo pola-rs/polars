@@ -151,34 +151,6 @@ def test_join_inner(foods_ipc_path: Path, join_clause: str) -> None:
     assert_frame_equal(expected, out, check_dtypes=False)
 
 
-@pytest.mark.parametrize(
-    "join_clause",
-    [
-        """
-        INNER JOIN tbl_b USING (a,b)
-        INNER JOIN tbl_c USING (c)
-        """,
-        """
-        INNER JOIN tbl_b ON tbl_a.a = tbl_b.a AND tbl_a.b = tbl_b.b
-        INNER JOIN tbl_c ON tbl_a.c = tbl_c.c
-        """,
-    ],
-)
-def test_join_inner_multi(join_clause: str) -> None:
-    frames = {
-        "tbl_a": pl.DataFrame({"a": [1, 2, 3], "b": [4, None, 6]}),
-        "tbl_b": pl.DataFrame({"a": [3, 2, 1], "b": [6, 5, 4], "c": ["x", "y", "z"]}),
-        "tbl_c": pl.DataFrame({"c": ["w", "y", "z"], "d": [10.5, -50.0, 25.5]}),
-    }
-    with pl.SQLContext(frames) as ctx:
-        assert ctx.tables() == ["tbl_a", "tbl_b", "tbl_c"]
-        for select_cols in ("a, b, c, d", "tbl_a.a, tbl_a.b, tbl_b.c, tbl_c.d"):
-            out = ctx.execute(
-                f"SELECT {select_cols} FROM tbl_a {join_clause} ORDER BY a DESC"
-            )
-            assert out.collect().rows() == [(1, 4, "z", 25.5)]
-
-
 def test_join_inner_15663() -> None:
     df_a = pl.DataFrame({"LOCID": [1, 2, 3], "VALUE": [0.1, 0.2, 0.3]})
     df_b = pl.DataFrame({"LOCID": [1, 2, 3], "VALUE": [25.6, 53.4, 12.7]})
@@ -191,17 +163,68 @@ def test_join_inner_15663() -> None:
     )
     with pl.SQLContext(register_globals=True, eager=True) as ctx:
         query = """
-        SELECT
-            a.LOCID,
-            a.VALUE AS VALUE_A,
-            b.VALUE AS VALUE_B
-        FROM df_a AS a
-        INNER JOIN df_b AS b
-        USING (LOCID)
-        ORDER BY LOCID
+            SELECT
+                a.LOCID,
+                a.VALUE AS VALUE_A,
+                b.VALUE AS VALUE_B
+            FROM df_a AS a INNER JOIN df_b AS b USING (LOCID)
+            ORDER BY LOCID
         """
         actual = ctx.execute(query)
         assert_frame_equal(df_expected, actual)
+
+
+@pytest.mark.parametrize(
+    ("join_clause", "expected_error"),
+    [
+        (
+            """
+            INNER JOIN tbl_b USING (a,b)
+            INNER JOIN tbl_c USING (c)
+            """,
+            None,
+        ),
+        (
+            """
+            INNER JOIN tbl_b ON tbl_a.a = tbl_b.a AND tbl_a.b = tbl_b.b
+            INNER JOIN tbl_c ON tbl_b.c = tbl_c.c
+            """,
+            None,
+        ),
+        (
+            """
+            INNER JOIN tbl_b ON tbl_a.a = tbl_b.a AND tbl_a.b = tbl_b.b
+            INNER JOIN tbl_c ON tbl_a.c = tbl_c.c  --<< (no "c" in 'tbl_a')
+            """,
+            "no column named 'c' found in table 'tbl_a'",
+        ),
+    ],
+)
+def test_join_inner_multi(join_clause: str, expected_error: str | None) -> None:
+    frames = {
+        "tbl_a": pl.DataFrame({"a": [1, 2, 3], "b": [4, None, 6]}),
+        "tbl_b": pl.DataFrame({"a": [3, 2, 1], "b": [6, 5, 4], "c": ["x", "y", "z"]}),
+        "tbl_c": pl.DataFrame({"c": ["w", "y", "z"], "d": [10.5, -50.0, 25.5]}),
+    }
+    with pl.SQLContext(frames) as ctx:
+        assert ctx.tables() == ["tbl_a", "tbl_b", "tbl_c"]
+        for select_cols in (
+            "a, b, c, d",
+            "tbl_a.a, tbl_a.b, tbl_b.c, tbl_c.d",
+        ):
+            query = f"""
+                SELECT {select_cols}
+                FROM tbl_a {join_clause}
+                ORDER BY a DESC
+            """
+            try:
+                out = ctx.execute(query)
+                assert out.collect().rows() == [(1, 4, "z", 25.5)]
+
+            except SQLInterfaceError as err:
+                if expected_error and expected_error in str(err):
+                    break
+                raise
 
 
 @pytest.mark.parametrize(
@@ -213,7 +236,7 @@ def test_join_inner_15663() -> None:
         """,
         """
         LEFT JOIN tbl_b ON tbl_a.a = tbl_b.a AND tbl_a.b = tbl_b.b
-        LEFT JOIN tbl_c ON tbl_a.c = tbl_c.c
+        LEFT JOIN tbl_c ON tbl_b.c = tbl_c.c
         """,
     ],
 )
