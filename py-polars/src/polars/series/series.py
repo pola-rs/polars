@@ -5451,11 +5451,16 @@ class Series:
             raise ShapeError(msg)
         return self._s.dot(other._s)
 
-    def mode(self) -> Series:
+    def mode(self, *, maintain_order: bool = False) -> Series:
         """
         Compute the most occurring value(s).
 
         Can return multiple Values.
+
+        Parameters
+        ----------
+        maintain_order
+            Maintain order of data. This requires more work.
 
         Examples
         --------

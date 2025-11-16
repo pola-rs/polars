@@ -1788,11 +1788,16 @@ class Expr:
         other_pyexpr = parse_into_expression(other)
         return wrap_expr(self._pyexpr.dot(other_pyexpr))
 
-    def mode(self) -> Expr:
+    def mode(self, *, maintain_order: bool = False) -> Expr:
         """
         Compute the most occurring value(s).
 
         Can return multiple Values.
+
+        Parameters
+        ----------
+        maintain_order
+            Maintain order of data. This requires more work.
 
         Examples
         --------
@@ -1812,7 +1817,7 @@ class Expr:
         │ 1   ┆ 1   │
         └─────┴─────┘
         """
-        return wrap_expr(self._pyexpr.mode())
+        return wrap_expr(self._pyexpr.mode(maintain_order=maintain_order))
 
     def cast(
         self,
