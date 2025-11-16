@@ -174,40 +174,47 @@ fn test_coalesce_toggle_projection_pushdown() -> PolarsResult<()> {
     Ok(())
 }
 
-
 #[test]
 fn test_select_hconcat_pushdown_25263() -> PolarsResult<()> {
-    let df_a  = df![
+    let df_a = df![
         "a" => [1, 2, 2],
         "b" => [4, 5, 6],
-    ]?.lazy();
+    ]?
+    .lazy();
 
     let df_b = df![
         "d" => [1, 2],
-    ]?.lazy();
+    ]?
+    .lazy();
 
-    let lf = concat_lf_horizontal([df_a, df_b], UnionArgs::default())?
-            .select([col("d")]);
+    let lf = concat_lf_horizontal([df_a, df_b], UnionArgs::default())?.select([col("d")]);
     let plan = lf.clone().to_alp_optimized()?;
 
     let node = plan.lp_top;
     let lp_arena = plan.lp_arena;
 
     assert!(lp_arena.iter(node).all(|(_, plan)| match plan {
-        IR::DataFrameScan { schema, output_schema, .. } => {
+        IR::DataFrameScan {
+            schema,
+            output_schema,
+            ..
+        } => {
             // make sure that for `df_a` we apply a projection pushdown to only read a single column
             if schema.contains("a") {
                 assert_eq!(output_schema.as_ref().unwrap().len(), 1);
             }
             true
         },
-        _ => true
+        _ => true,
     }));
 
     let out = lf.collect()?;
-    assert_eq!(out, df![
-        "d" => [Some(1), Some(2), None]
-    ]?);
+    assert_eq!(
+        out,
+        df![
+            "d" => [Some(1), Some(2), None]
+        ]?
+    );
 
     Ok(())
 }
