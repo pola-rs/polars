@@ -61,17 +61,9 @@ pub trait SeriesMethods: SeriesSealed {
     #[cfg(feature = "hash")]
     fn hash(&self, build_hasher: PlSeedableRandomStateQuality) -> UInt64Chunked {
         let s = self.as_series().to_physical_repr();
-        match s.dtype() {
-            DataType::List(_) => {
-                let mut ca = s.list().unwrap().clone();
-                crate::chunked_array::hash::hash(&mut ca, build_hasher)
-            },
-            _ => {
-                let mut h = vec![];
-                s.0.vec_hash(build_hasher, &mut h).unwrap();
-                UInt64Chunked::from_vec(s.name().clone(), h)
-            },
-        }
+        let mut h = vec![];
+        s.0.vec_hash(build_hasher, &mut h).unwrap();
+        UInt64Chunked::from_vec(s.name().clone(), h)
     }
 
     fn ensure_sorted_arg(&self, operation: &str) -> PolarsResult<()> {
