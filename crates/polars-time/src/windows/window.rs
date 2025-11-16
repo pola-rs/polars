@@ -21,6 +21,7 @@ use crate::prelude::*;
 /// in the window `[2020-01-01 06:00, 2020-01-03 06:00)`. To give the earliest datapoint
 /// a chance of being included, we then shift the window back by `every` to
 /// `[2019-12-31 06:00, 2020-01-02 06:00)`.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn ensure_t_in_or_in_front_of_window(
     mut every: Duration,
     t: i64,
@@ -29,11 +30,23 @@ pub(crate) fn ensure_t_in_or_in_front_of_window(
     mut start: i64,
     closed_window: ClosedWindow,
     tz: Option<&Tz>,
+    nte_duration_fn: fn(&Duration) -> i64,
 ) -> PolarsResult<Bounds> {
     every.negative = !every.negative;
     let mut stop = offset_fn(&period, start, tz)?;
+
     while Bounds::new(start, stop).is_past(t, closed_window) {
-        start = offset_fn(&every, start, tz)?;
+        let mut gap = start - t;
+        if matches!(closed_window, ClosedWindow::Right | ClosedWindow::None) {
+            gap += 1;
+        }
+        debug_assert!(gap >= 1);
+
+        // Ceil division
+        let ffwd_stride = (gap + nte_duration_fn(&every) - 1) / nte_duration_fn(&every);
+        debug_assert!(ffwd_stride >= 1);
+
+        start = offset_fn(&(every * ffwd_stride), start, tz)?;
         stop = offset_fn(&period, start, tz)?;
     }
     Ok(Bounds::new_checked(start, stop))
@@ -114,6 +127,7 @@ impl Window {
             start,
             closed_window,
             tz,
+            Duration::nte_duration_ns,
         )
     }
 
@@ -133,6 +147,7 @@ impl Window {
             start,
             closed_window,
             tz,
+            Duration::nte_duration_us,
         )
     }
 
@@ -152,6 +167,7 @@ impl Window {
             start,
             closed_window,
             tz,
+            Duration::nte_duration_ms,
         )
     }
 
@@ -225,25 +241,29 @@ impl<'a> BoundsIter<'a> {
             _ => {
                 {
                     #[allow(clippy::type_complexity)]
-                    let (from, to, offset_fn): (
+                    let (from, to, offset_fn, nte_duration_fn): (
                         fn(i64) -> NaiveDateTime,
                         fn(NaiveDateTime) -> i64,
                         fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64>,
+                        fn(&Duration) -> i64,
                     ) = match tu {
                         TimeUnit::Nanoseconds => (
                             timestamp_ns_to_datetime,
                             datetime_to_timestamp_ns,
                             Duration::add_ns,
+                            Duration::nte_duration_ns,
                         ),
                         TimeUnit::Microseconds => (
                             timestamp_us_to_datetime,
                             datetime_to_timestamp_us,
                             Duration::add_us,
+                            Duration::nte_duration_us,
                         ),
                         TimeUnit::Milliseconds => (
                             timestamp_ms_to_datetime,
                             datetime_to_timestamp_ms,
                             Duration::add_ms,
+                            Duration::nte_duration_ms,
                         ),
                     };
                     // find beginning of the week.
@@ -273,6 +293,7 @@ impl<'a> BoundsIter<'a> {
                                 start,
                                 closed_window,
                                 Some(tz),
+                                nte_duration_fn,
                             )?
                         },
                         _ => {
@@ -300,6 +321,7 @@ impl<'a> BoundsIter<'a> {
                                 start,
                                 closed_window,
                                 None,
+                                nte_duration_fn,
                             )?
                         },
                     }
@@ -375,8 +397,10 @@ impl Iterator for BoundsIter<'_> {
 }
 
 impl<'a> BoundsIter<'a> {
-    // Return the number of iterations to advance, such that the bounds are on target or, in
-    // the case of non-constant duration, close to target.
+    /// Number of iterations to advance, such that the bounds are on target; or, in
+    /// the case of non-constant duration, close to target.
+    /// Follows the `nth()` convention on Iterator indexing, i.e., a return value of 0
+    /// implies advancing 1 iteration.
     pub fn get_stride(&self, target: i64) -> usize {
         let mut stride = 0;
         if self.bi.start < self.boundary.stop && target > self.bi.start {
