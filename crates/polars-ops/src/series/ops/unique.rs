@@ -125,19 +125,23 @@ pub fn unique_counts(s: &Series) -> PolarsResult<Series> {
         | DataType::Int128
         | DataType::Float32
         | DataType::Float64
-        | DataType::Decimal(..)
         | DataType::Date
         | DataType::Datetime(..)
         | DataType::Duration(..)
-        | DataType::Time
-        | DataType::Categorical(..)
-        | DataType::Enum(..) => unreachable!("primitive numeric"),
-        DataType::Array(..) | DataType::List(..) | DataType::Struct(..) => {
+        | DataType::Time => unreachable!("primitive numeric"),
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(..) => unreachable!("primitive numeric"),
+        #[cfg(feature = "dtype-categorical")]
+        DataType::Categorical(..) | DataType::Enum(..) => unreachable!("primitive numeric"),
+        #[cfg(feature = "dtype-array")]
+        DataType::Array(..) => unreachable!("row encoded"),
+        #[cfg(feature = "dtype-struct")]
+        DataType::Struct(..) => unreachable!("row encoded"),
+        DataType::List(..) => {
             unreachable!("row encoded")
         },
-
-        dt @ (DataType::Object(..) | DataType::Unknown(..)) => {
-            polars_bail!(opq = unique_counts, dt)
-        },
+        #[cfg(feature = "object")]
+        dt @ DataType::Object(..) => polars_bail!(opq = unique_counts, dt),
+        dt @ DataType::Unknown(..) => polars_bail!(opq = unique_counts, dt),
     }
 }
