@@ -1044,6 +1044,7 @@ def test_all_any_on_list_raises_error() -> None:
 
 
 @pytest.mark.parametrize("null_endpoints", [True, False])
+@pytest.mark.parametrize("ignore_nulls", [True, False])
 @pytest.mark.parametrize(
     ("dtype", "first_value", "last_value"),
     [
@@ -1065,6 +1066,7 @@ def test_all_any_on_list_raises_error() -> None:
 )
 def test_first_last_nested(
     null_endpoints: bool,
+    ignore_nulls: bool,
     dtype: PolarsDataType,
     first_value: Any,
     last_value: Any,
@@ -1078,17 +1080,25 @@ def test_first_last_nested(
     lf = pl.LazyFrame({"a": s})
 
     # first
-    result = lf.select(pl.col("a").first()).collect()
+    result = lf.select(pl.col("a").first(ignore_nulls=ignore_nulls)).collect()
     expected = pl.DataFrame(
-        {"a": pl.Series([None if null_endpoints else first_value], dtype=dtype)}
+        {
+            "a": pl.Series(
+                [None if null_endpoints and not ignore_nulls else first_value],
+                dtype=dtype,
+            )
+        }
     )
     assert_frame_equal(result, expected)
 
     # last
-    result = lf.select(pl.col("a").last()).collect()
+    result = lf.select(pl.col("a").last(ignore_nulls=ignore_nulls)).collect()
     expected = pl.DataFrame(
         {
-            "a": pl.Series([None if null_endpoints else last_value], dtype=dtype),
+            "a": pl.Series(
+                [None if null_endpoints and not ignore_nulls else last_value],
+                dtype=dtype,
+            ),
         }
     )
     assert_frame_equal(result, expected)
