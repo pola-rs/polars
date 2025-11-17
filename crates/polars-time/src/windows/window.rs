@@ -43,10 +43,11 @@ pub(crate) fn ensure_t_in_or_in_front_of_window(
         debug_assert!(gap >= 1);
 
         // Ceil division
-        let ffwd_stride = (gap + nte_duration_fn(&every) - 1) / nte_duration_fn(&every);
-        debug_assert!(ffwd_stride >= 1);
+        let stride = (gap + nte_duration_fn(&every) - 1) / nte_duration_fn(&every);
+        debug_assert!(stride >= 1);
+        let stride = std::cmp::max(stride, 1);
 
-        start = offset_fn(&(every * ffwd_stride), start, tz)?;
+        start = offset_fn(&(every * stride), start, tz)?;
         stop = offset_fn(&period, start, tz)?;
     }
     Ok(Bounds::new_checked(start, stop))

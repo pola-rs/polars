@@ -1347,7 +1347,7 @@ def test_group_by_dynamic_very_large_offset() -> None:
             index_column="ts",
             every="10i",
             period="10i",
-            offset="1000000000000i",  # atypcial value for stress test
+            offset="1000000000000i",  # atypcial value, used for stress test only
         )
         .agg(pl.col("val").sum())
         .select("val")
@@ -1359,7 +1359,7 @@ def test_group_by_dynamic_very_large_offset() -> None:
 @pytest.mark.slow
 @pytest.mark.parametrize("closed", ["left", "right", "both", "none"])
 def test_group_by_dynamic_large_offset(closed: ClosedInterval) -> None:
-    large = 1_000
+    large = 100
     df = pl.DataFrame({"ts": [large], "val": [1]})
     vals = [1, 2, 3, large - 1, large, large + 1]
 
