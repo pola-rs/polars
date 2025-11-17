@@ -105,7 +105,12 @@ pub fn aexpr_to_column_predicates(
                                 input,
                                 function: IRFunctionExpr::StringExpr(str_function),
                                 options: _,
-                            } if matches!(str_function, crate::plans::IRStringFunction::Contains { literal: _, strict: true } | IRStringFunction::EndsWith | IRStringFunction::StartsWith) => {
+                            } if matches!(
+                                str_function,
+                                crate::plans::IRStringFunction::Contains { literal: _, strict: true } |
+                                crate::plans::IRStringFunction::EndsWith |
+                                crate::plans::IRStringFunction::StartsWith
+                            ) => {
                                 use crate::plans::IRStringFunction;
 
                                 assert_eq!(input.len(), 2);
