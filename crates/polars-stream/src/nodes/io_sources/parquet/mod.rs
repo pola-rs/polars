@@ -164,19 +164,19 @@ impl FileReader for ParquetFileReader {
         // Send all callbacks to unblock the next reader. We can do this immediately as we know
         // the total row count upfront.
 
-        if let Some(mut n_rows_in_file_tx) = n_rows_in_file_tx {
-            _ = n_rows_in_file_tx.try_send(n_rows_in_file);
+        if let Some(n_rows_in_file_tx) = n_rows_in_file_tx {
+            _ = n_rows_in_file_tx.send(n_rows_in_file);
         }
 
         // We are allowed to send this value immediately, even though we haven't "ended" yet
         // (see its definition under FileReaderCallbacks).
-        if let Some(mut row_position_on_end_tx) = row_position_on_end_tx {
+        if let Some(row_position_on_end_tx) = row_position_on_end_tx {
             _ = row_position_on_end_tx
-                .try_send(self._row_position_after_slice(normalized_pre_slice.clone())?);
+                .send(self._row_position_after_slice(normalized_pre_slice.clone())?);
         }
 
-        if let Some(mut file_schema_tx) = file_schema_tx {
-            _ = file_schema_tx.try_send(file_schema.clone());
+        if let Some(file_schema_tx) = file_schema_tx {
+            _ = file_schema_tx.send(file_schema.clone());
         }
 
         if normalized_pre_slice.as_ref().is_some_and(|x| x.len() == 0) {
