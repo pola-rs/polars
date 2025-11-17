@@ -20,13 +20,9 @@ impl BinaryChunked {
     #[allow(clippy::needless_lifetimes)]
     pub(crate) unsafe fn agg_min<'a>(&'a self, groups: &GroupsType) -> Series {
         // faster paths
-        match (&self.is_sorted_flag(), &self.null_count()) {
-            (IsSorted::Ascending, 0) => {
-                return self.clone().into_series().agg_first(groups);
-            },
-            (IsSorted::Descending, 0) => {
-                return self.clone().into_series().agg_last(groups);
-            },
+        match self.is_sorted_flag() {
+            IsSorted::Ascending => return self.clone().into_series().agg_first_non_null(groups),
+            IsSorted::Descending => return self.clone().into_series().agg_last_non_null(groups),
             _ => {},
         }
 

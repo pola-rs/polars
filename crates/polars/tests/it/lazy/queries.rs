@@ -143,7 +143,13 @@ fn test_sorted_path() -> PolarsResult<()> {
     let out = df
         .lazy()
         .with_row_index("index", None)
-        .explode(by_name(["a"], true))
+        .explode(
+            by_name(["a"], true),
+            ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            },
+        )
         .group_by(["index"])
         .agg([col("a").count().alias("count")])
         .collect()?;

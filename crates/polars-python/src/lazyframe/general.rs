@@ -22,7 +22,7 @@ use crate::expr::ToExprs;
 use crate::expr::datatype::PyDataTypeExpr;
 use crate::expr::selector::PySelector;
 use crate::interop::arrow::to_rust::pyarrow_schema_to_rust;
-use crate::io::PyScanOptions;
+use crate::io::scan_options::PyScanOptions;
 use crate::io::sink_options::PySinkOptions;
 use crate::io::sink_output::PySinkOutputType;
 use crate::lazyframe::visit::NodeTraverser;
@@ -119,8 +119,10 @@ impl PyLazyFrame {
         if let Some(first_path) = first_path {
             let first_path_url = first_path.to_str();
 
-            let mut cloud_options =
-                parse_cloud_options(first_path_url, cloud_options.unwrap_or_default())?;
+            let mut cloud_options = parse_cloud_options(
+                CloudScheme::from_uri(first_path_url),
+                cloud_options.unwrap_or_default(),
+            )?;
             cloud_options = cloud_options
                 .with_max_retries(retries)
                 .with_credential_provider(
@@ -236,8 +238,10 @@ impl PyLazyFrame {
         if let Some(first_path) = first_path {
             let first_path_url = first_path.to_str();
 
-            let mut cloud_options =
-                parse_cloud_options(first_path_url, cloud_options.unwrap_or_default())?;
+            let mut cloud_options = parse_cloud_options(
+                CloudScheme::from_uri(first_path_url),
+                cloud_options.unwrap_or_default(),
+            )?;
             if let Some(file_cache_ttl) = file_cache_ttl {
                 cloud_options.file_cache_ttl = file_cache_ttl;
             }
@@ -330,8 +334,11 @@ impl PyLazyFrame {
         let sources = sources.0;
         let first_path = sources.first_path().map(|p| p.into_owned());
 
-        let unified_scan_args =
-            scan_options.extract_unified_scan_args(first_path.as_ref().map(|p| p.as_ref()))?;
+        let unified_scan_args = scan_options.extract_unified_scan_args(
+            first_path
+                .as_ref()
+                .and_then(|p| CloudScheme::from_uri(p.to_str())),
+        )?;
 
         let lf: LazyFrame = DslBuilder::scan_parquet(sources, options, unified_scan_args)
             .map_err(to_py_err)?
@@ -354,8 +361,12 @@ impl PyLazyFrame {
         let sources = sources.0;
         let first_path = sources.first_path().map(|p| p.into_owned());
 
-        let mut unified_scan_args =
-            scan_options.extract_unified_scan_args(first_path.as_ref().map(|p| p.as_ref()))?;
+        let mut unified_scan_args = scan_options.extract_unified_scan_args(
+            first_path
+                .as_ref()
+                .map(|p| p.as_ref())
+                .and_then(|x| CloudScheme::from_uri(x.to_str())),
+        )?;
 
         if let Some(file_cache_ttl) = file_cache_ttl {
             unified_scan_args
@@ -381,8 +392,12 @@ impl PyLazyFrame {
         let sources = sources.0;
         let first_path = sources.first_path().map(|p| p.into_owned());
 
-        let mut unified_scan_args =
-            scan_options.extract_unified_scan_args(first_path.as_ref().map(|p| p.as_ref()))?;
+        let mut unified_scan_args = scan_options.extract_unified_scan_args(
+            first_path
+                .as_ref()
+                .map(|p| p.as_ref())
+                .and_then(|x| CloudScheme::from_uri(x.to_str())),
+        )?;
 
         if let Some(file_cache_ttl) = file_cache_ttl {
             unified_scan_args
@@ -1259,8 +1274,18 @@ impl PyLazyFrame {
         out.into()
     }
 
-    fn explode(&self, subset: PySelector) -> Self {
-        self.ldf.read().clone().explode(subset.inner).into()
+    fn explode(&self, subset: PySelector, empty_as_null: bool, keep_nulls: bool) -> Self {
+        self.ldf
+            .read()
+            .clone()
+            .explode(
+                subset.inner,
+                ExplodeOptions {
+                    empty_as_null,
+                    keep_nulls,
+                },
+            )
+            .into()
     }
 
     fn null_count(&self) -> Self {

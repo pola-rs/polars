@@ -38,7 +38,7 @@ pub fn aexpr_to_column_predicates(
     let mut leaf_names = Vec::with_capacity(2);
     for minterm in minterms {
         leaf_names.clear();
-        leaf_names.extend(aexpr_to_leaf_names_iter(minterm, expr_arena));
+        leaf_names.extend(aexpr_to_leaf_names_iter(minterm, expr_arena).cloned());
 
         if leaf_names.len() != 1 {
             is_sumwise_complete = false;

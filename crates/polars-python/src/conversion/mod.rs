@@ -1286,12 +1286,11 @@ impl<'py> FromPyObject<'py> for Wrap<QuoteStyle> {
 
 #[cfg(feature = "cloud")]
 pub(crate) fn parse_cloud_options(
-    uri: &str,
-    kv: impl IntoIterator<Item = (String, String)>,
+    cloud_scheme: Option<CloudScheme>,
+    keys_and_values: impl IntoIterator<Item = (String, String)>,
 ) -> PyResult<CloudOptions> {
-    let iter: &mut dyn Iterator<Item = _> = &mut kv.into_iter();
-    let out = CloudOptions::from_untyped_config(CloudScheme::from_uri(uri).as_ref(), iter)
-        .map_err(PyPolarsErr::from)?;
+    let iter: &mut dyn Iterator<Item = _> = &mut keys_and_values.into_iter();
+    let out = CloudOptions::from_untyped_config(cloud_scheme, iter).map_err(PyPolarsErr::from)?;
     Ok(out)
 }
 

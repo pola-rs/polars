@@ -50,7 +50,7 @@ pub fn create_scan_predicate(
 
         for predicate_part in MintermIter::new(predicate.node(), expr_arena) {
             if aexpr_to_leaf_names_iter(predicate_part, expr_arena)
-                .all(|name| hive_schema.contains(&name))
+                .all(|name| hive_schema.contains(name))
             {
                 hive_predicate_parts.push(predicate_part)
             } else {
@@ -113,10 +113,9 @@ pub fn create_scan_predicate(
         hive_predicate = Some(phys_predicate.clone());
     }
 
-    let live_columns = Arc::new(PlIndexSet::from_iter(aexpr_to_leaf_names_iter(
-        predicate.node(),
-        expr_arena,
-    )));
+    let live_columns = Arc::new(PlIndexSet::from_iter(
+        aexpr_to_leaf_names_iter(predicate.node(), expr_arena).cloned(),
+    ));
 
     let mut skip_batch_predicate = None;
 

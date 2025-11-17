@@ -518,7 +518,7 @@ fn test_join_multi_consecutive() {
     let sql = r#"
         SELECT tbl_a.a, tbl_a.b, tbl_b.c, tbl_c.d FROM tbl_a
         INNER JOIN tbl_b ON tbl_a.a = tbl_b.a AND tbl_a.b = tbl_b.b
-        INNER JOIN tbl_c ON tbl_a.c = tbl_c.c
+        INNER JOIN tbl_c ON tbl_b.c = tbl_c.c
         ORDER BY a DESC
     "#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();

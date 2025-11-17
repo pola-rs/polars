@@ -109,13 +109,13 @@ pub(super) fn process_join(
 
     // Add projections required by the join itself
     for expr_ir in left_on.as_slice() {
-        for name in aexpr_to_leaf_names_iter(expr_ir.node(), expr_arena) {
+        for name in aexpr_to_leaf_names_iter(expr_ir.node(), expr_arena).cloned() {
             project_left.insert(name);
         }
     }
 
     for expr_ir in right_on.as_slice() {
-        for name in aexpr_to_leaf_names_iter(expr_ir.node(), expr_arena) {
+        for name in aexpr_to_leaf_names_iter(expr_ir.node(), expr_arena).cloned() {
             project_right.insert(name);
         }
     }

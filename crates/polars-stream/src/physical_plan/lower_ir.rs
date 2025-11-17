@@ -435,9 +435,22 @@ pub fn lower_ir(
 
                 function if function.is_streamable() => {
                     let map = Arc::new(move |df| function.evaluate(df));
+                    let format_str = ctx.prepare_visualization.then(|| {
+                        let mut buffer = String::new();
+                        write_ir_non_recursive(
+                            &mut buffer,
+                            ir_arena.get(node),
+                            expr_arena,
+                            phys_sm.get(phys_input.node).unwrap().output_schema.as_ref(),
+                            0,
+                        )
+                        .unwrap();
+                        buffer
+                    });
                     PhysNodeKind::Map {
                         input: phys_input,
                         map,
+                        format_str,
                     }
                 },
 

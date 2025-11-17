@@ -460,6 +460,14 @@ fn expand_expression_rec(
                     opt_flags,
                     |e| Expr::Agg(AggExpr::First(Arc::new(e))),
                 )?,
+                AggExpr::FirstNonNull(expr) => expand_single(
+                    expr.as_ref(),
+                    ignored_selector_columns,
+                    schema,
+                    out,
+                    opt_flags,
+                    |e| Expr::Agg(AggExpr::FirstNonNull(Arc::new(e))),
+                )?,
                 AggExpr::Last(expr) => expand_single(
                     expr.as_ref(),
                     ignored_selector_columns,
@@ -467,6 +475,14 @@ fn expand_expression_rec(
                     out,
                     opt_flags,
                     |e| Expr::Agg(AggExpr::Last(Arc::new(e))),
+                )?,
+                AggExpr::LastNonNull(expr) => expand_single(
+                    expr.as_ref(),
+                    ignored_selector_columns,
+                    schema,
+                    out,
+                    opt_flags,
+                    |e| Expr::Agg(AggExpr::LastNonNull(Arc::new(e))),
                 )?,
                 AggExpr::Item { input, allow_empty } => expand_single(
                     input.as_ref(),
@@ -679,7 +695,7 @@ fn expand_expression_rec(
                 }
             }
         },
-        Expr::Explode { input, skip_empty } => {
+        Expr::Explode { input, options } => {
             _ = expand_single(
                 input.as_ref(),
                 ignored_selector_columns,
@@ -688,7 +704,7 @@ fn expand_expression_rec(
                 opt_flags,
                 |e| Expr::Explode {
                     input: Arc::new(e),
-                    skip_empty: *skip_empty,
+                    options: *options,
                 },
             )?
         },

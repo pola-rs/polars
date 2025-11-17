@@ -33,6 +33,7 @@ pub enum DslFunction {
     OpaquePython(OpaquePythonUdf),
     Explode {
         columns: Selector,
+        options: ExplodeOptions,
         allow_empty: bool,
     },
     #[cfg(feature = "pivot")]

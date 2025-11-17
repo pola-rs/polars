@@ -258,11 +258,12 @@ impl<'a> IRBuilder<'a> {
     }
 
     // call this if the schema needs to be updated
-    pub fn explode(self, columns: Arc<[PlSmallStr]>) -> Self {
+    pub fn explode(self, columns: Arc<[PlSmallStr]>, options: ExplodeOptions) -> Self {
         let lp = IR::MapFunction {
             input: self.root,
             function: FunctionIR::Explode {
                 columns,
+                options,
                 schema: Default::default(),
             },
         };

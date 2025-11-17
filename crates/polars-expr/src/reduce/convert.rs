@@ -12,6 +12,7 @@ use crate::reduce::bitwise::{
 };
 use crate::reduce::count::{CountReduce, NullCountReduce};
 use crate::reduce::first_last::{new_first_reduction, new_item_reduction, new_last_reduction};
+use crate::reduce::first_last_nonnull::{new_first_nonnull_reduction, new_last_nonnull_reduction};
 use crate::reduce::len::LenReduce;
 use crate::reduce::mean::new_mean_reduction;
 use crate::reduce::min_max::{new_max_reduction, new_min_reduction};
@@ -50,7 +51,11 @@ pub fn into_reduction(
                 (new_var_std_reduction(get_dt(*input)?, true, *ddof)?, *input)
             },
             IRAggExpr::First(input) => (new_first_reduction(get_dt(*input)?), *input),
+            IRAggExpr::FirstNonNull(input) => {
+                (new_first_nonnull_reduction(get_dt(*input)?), *input)
+            },
             IRAggExpr::Last(input) => (new_last_reduction(get_dt(*input)?), *input),
+            IRAggExpr::LastNonNull(input) => (new_last_nonnull_reduction(get_dt(*input)?), *input),
             IRAggExpr::Item { input, allow_empty } => {
                 (new_item_reduction(get_dt(*input)?, *allow_empty), *input)
             },

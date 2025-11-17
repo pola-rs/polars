@@ -141,8 +141,10 @@ impl AExpr {
                     Max { input: expr, .. }
                     | Min { input: expr, .. }
                     | First(expr)
+                    | FirstNonNull(expr)
                     | Last(expr)
-                    | Item { input: expr, .. } => ctx.arena.get(*expr).to_field_impl(ctx),
+                    | LastNonNull(expr) => ctx.arena.get(*expr).to_field_impl(ctx),
+                    Item { input: expr, .. } => ctx.arena.get(*expr).to_field_impl(ctx),
                     Sum(expr) => {
                         let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
                         let dt = match field.dtype() {
@@ -341,7 +343,9 @@ impl AExpr {
             | Agg(Max { input: expr, .. })
             | Agg(Min { input: expr, .. })
             | Agg(First(expr))
+            | Agg(FirstNonNull(expr))
             | Agg(Last(expr))
+            | Agg(LastNonNull(expr))
             | Agg(Item { input: expr, .. })
             | Agg(Sum(expr))
             | Agg(Median(expr))
@@ -629,12 +633,12 @@ fn get_arithmetic_field(
                     {
                         match (left_ae, right_ae) {
                             (AExpr::Literal(_), AExpr::Literal(_)) => {},
-                            (AExpr::Literal(_), _) => {
+                            (AExpr::Literal(_), _) if left_field.dtype.is_unknown() => {
                                 // literal will be coerced to match right type
                                 left_field.coerce(right_type);
                                 return Ok(left_field);
                             },
-                            (_, AExpr::Literal(_)) => {
+                            (_, AExpr::Literal(_)) if right_type.is_unknown() => {
                                 // literal will be coerced to match right type
                                 return Ok(left_field);
                             },

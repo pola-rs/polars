@@ -88,7 +88,7 @@ pub(super) fn convert_functions(
                 #[cfg(feature = "array_count")]
                 A::CountMatches => IA::CountMatches,
                 A::Shift => IA::Shift,
-                A::Explode { skip_empty } => IA::Explode { skip_empty },
+                A::Explode(options) => IA::Explode(options),
                 A::Concat => IA::Concat,
                 A::Slice(offset, length) => IA::Slice(offset, length),
                 #[cfg(feature = "array_to_struct")]
@@ -782,7 +782,7 @@ pub(super) fn convert_functions(
         F::DropNans => I::DropNans,
         F::DropNulls => I::DropNulls,
         #[cfg(feature = "mode")]
-        F::Mode => I::Mode,
+        F::Mode { maintain_order } => I::Mode { maintain_order },
         #[cfg(feature = "moment")]
         F::Skew(v) => I::Skew(v),
         #[cfg(feature = "moment")]

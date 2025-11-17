@@ -39,6 +39,10 @@ impl CategoricalMapping {
         &self.hasher
     }
 
+    pub fn max_categories(&self) -> usize {
+        self.max_categories
+    }
+
     pub fn set_max_categories(&mut self, max_categories: usize) {
         assert!(max_categories >= self.num_cats_upper_bound());
         self.max_categories = max_categories

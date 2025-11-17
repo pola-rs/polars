@@ -487,7 +487,11 @@ fn to_graph_rec<'a>(
             )
         },
 
-        Map { input, map } => {
+        Map {
+            input,
+            map,
+            format_str: _,
+        } => {
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.graph.add_node(
                 nodes::map::MapNode::new(map.clone()),
@@ -762,7 +766,12 @@ fn to_graph_rec<'a>(
             for agg in aggs {
                 has_order_sensitive_agg |= matches!(
                     ctx.expr_arena.get(agg.node()),
-                    AExpr::Agg(IRAggExpr::First(..) | IRAggExpr::Last(..))
+                    AExpr::Agg(
+                        IRAggExpr::First(_)
+                            | IRAggExpr::FirstNonNull(_)
+                            | IRAggExpr::Last(_)
+                            | IRAggExpr::LastNonNull(_)
+                    )
                 );
                 let (reduction, input_node) =
                     into_reduction(agg.node(), ctx.expr_arena, input_schema)?;
@@ -796,6 +805,7 @@ fn to_graph_rec<'a>(
             period,
             offset,
             closed,
+            slice,
             aggs,
         } => {
             let input_schema = &ctx.phys_sm[input.node].output_schema;
@@ -816,6 +826,7 @@ fn to_graph_rec<'a>(
                     *period,
                     *offset,
                     *closed,
+                    *slice,
                     aggs,
                 )?,
                 [(input_key, input.port)],

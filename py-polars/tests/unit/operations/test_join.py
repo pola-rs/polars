@@ -1004,7 +1004,9 @@ def test_cross_join() -> None:
     df2 = pl.DataFrame({"frame2": pl.arange(0, 100, eager=True)})
     out = df2.join(df1, how="cross")
     df2 = pl.DataFrame({"frame2": pl.arange(0, 101, eager=True)})
-    assert_frame_equal(df2.join(df1, how="cross").slice(0, 100), out)
+    assert_frame_equal(
+        df2.join(df1, how="cross", maintain_order="left_right").slice(0, 100), out
+    )
 
 
 @pytest.mark.release
@@ -1014,7 +1016,12 @@ def test_cross_join_slice_pushdown() -> None:
         pl.Series("x", pl.arange(0, 2**16 - 1, eager=True, dtype=pl.UInt16) % 2**15)
     ).to_frame()
 
-    result = df.lazy().join(df.lazy(), how="cross", suffix="_").slice(-5, 10).collect()
+    result = (
+        df.lazy()
+        .join(df.lazy(), how="cross", maintain_order="left_right", suffix="_")
+        .slice(-5, 10)
+        .collect()
+    )
     expected = pl.DataFrame(
         {
             "x": [32766, 32766, 32766, 32766, 32766],
@@ -1024,7 +1031,12 @@ def test_cross_join_slice_pushdown() -> None:
     )
     assert_frame_equal(result, expected)
 
-    result = df.lazy().join(df.lazy(), how="cross", suffix="_").slice(2, 10).collect()
+    result = (
+        df.lazy()
+        .join(df.lazy(), how="cross", maintain_order="left_right", suffix="_")
+        .slice(2, 10)
+        .collect()
+    )
     expected = pl.DataFrame(
         {
             "x": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],

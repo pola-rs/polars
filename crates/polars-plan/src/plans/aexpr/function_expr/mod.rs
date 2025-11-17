@@ -156,7 +156,9 @@ pub enum IRFunctionExpr {
     DropNans,
     DropNulls,
     #[cfg(feature = "mode")]
-    Mode,
+    Mode {
+        maintain_order: bool,
+    },
     #[cfg(feature = "moment")]
     Skew(bool),
     #[cfg(feature = "moment")]
@@ -491,7 +493,9 @@ impl Hash for IRFunctionExpr {
                 nulls_last.hash(state);
             },
             #[cfg(feature = "mode")]
-            Mode => {},
+            Mode { maintain_order } => {
+                maintain_order.hash(state);
+            },
             #[cfg(feature = "abs")]
             Abs => {},
             Negate => {},
@@ -734,7 +738,13 @@ impl Display for IRFunctionExpr {
             DropNans => "drop_nans",
             DropNulls => "drop_nulls",
             #[cfg(feature = "mode")]
-            Mode => "mode",
+            Mode { maintain_order } => {
+                if *maintain_order {
+                    "mode_stable"
+                } else {
+                    "mode"
+                }
+            },
             #[cfg(feature = "moment")]
             Skew(_) => "skew",
             #[cfg(feature = "moment")]
@@ -1017,7 +1027,7 @@ impl IRFunctionExpr {
             F::FillNullWithStrategy(strategy) if strategy.is_elementwise() => {
                 FunctionOptions::elementwise()
             },
-            F::FillNullWithStrategy(_) => FunctionOptions::groupwise(),
+            F::FillNullWithStrategy(_) => FunctionOptions::length_preserving(),
             #[cfg(feature = "rolling_window")]
             F::RollingExpr { .. } => FunctionOptions::length_preserving(),
             #[cfg(feature = "rolling_window_by")]
@@ -1032,11 +1042,15 @@ impl IRFunctionExpr {
             F::DropNulls => FunctionOptions::row_separable()
                 .flag(FunctionFlags::ALLOW_EMPTY_INPUTS | FunctionFlags::NON_ORDER_PRODUCING),
             #[cfg(feature = "mode")]
-            F::Mode => FunctionOptions::groupwise().flag(
-                FunctionFlags::NON_ORDER_OBSERVING
-                    | FunctionFlags::TERMINATES_INPUT_ORDER
-                    | FunctionFlags::NON_ORDER_PRODUCING,
-            ),
+            F::Mode { maintain_order } => FunctionOptions::groupwise().with_flags(|f| {
+                let f = f | FunctionFlags::NON_ORDER_PRODUCING;
+
+                if !*maintain_order {
+                    f | FunctionFlags::NON_ORDER_OBSERVING | FunctionFlags::TERMINATES_INPUT_ORDER
+                } else {
+                    f
+                }
+            }),
             #[cfg(feature = "moment")]
             F::Skew(_) => FunctionOptions::aggregation().flag(FunctionFlags::NON_ORDER_OBSERVING),
             #[cfg(feature = "moment")]
@@ -1044,7 +1058,13 @@ impl IRFunctionExpr {
                 FunctionOptions::aggregation().flag(FunctionFlags::NON_ORDER_OBSERVING)
             },
             #[cfg(feature = "dtype-array")]
-            F::Reshape(_) => FunctionOptions::groupwise(),
+            F::Reshape(dims) => {
+                if dims.len() == 1 && dims[0] == ReshapeDimension::Infer {
+                    FunctionOptions::row_separable()
+                } else {
+                    FunctionOptions::groupwise()
+                }
+            },
             #[cfg(feature = "repeat_by")]
             F::RepeatBy => FunctionOptions::elementwise(),
             F::ArgUnique => FunctionOptions::groupwise(),

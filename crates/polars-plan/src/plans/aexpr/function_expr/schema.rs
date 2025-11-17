@@ -127,9 +127,12 @@ impl IRFunctionExpr {
             DropNans => mapper.with_same_dtype(),
             DropNulls => mapper.with_same_dtype(),
             #[cfg(feature = "round_series")]
-            Clip { .. } => mapper.with_same_dtype(),
+            Clip {
+                has_min: _,
+                has_max: _,
+            } => mapper.with_same_dtype(),
             #[cfg(feature = "mode")]
-            Mode => mapper.with_same_dtype(),
+            Mode { maintain_order: _ } => mapper.with_same_dtype(),
             #[cfg(feature = "moment")]
             Skew(_) => mapper.with_dtype(DataType::Float64),
             #[cfg(feature = "moment")]

@@ -281,6 +281,11 @@ pub fn drop_items<'a>(
     if predicate.unset_bits() == 0 {
         if let AggState::AggregatedScalar(c) | AggState::LiteralScalar(c) = &mut ac.state {
             *c = c.as_list().into_column();
+            if c.len() == 1 && ac.groups.len() != 1 {
+                *c = c.new_from_index(0, ac.groups.len());
+            }
+            ac.state = AggState::AggregatedList(std::mem::take(c));
+            ac.update_groups = UpdateGroups::WithSeriesLen;
         }
         return Ok(ac);
     }
@@ -304,21 +309,8 @@ pub fn drop_items<'a>(
         return Ok(ac);
     }
 
-    if let AggState::LiteralScalar(c) = &ac.state {
-        ac.state =
-            AggState::AggregatedList(c.as_list().into_column().new_from_index(0, predicate.len()));
-        ac.groups = Cow::Owned(
-            GroupsType::Slice {
-                groups: predicate.iter().map(|p| [0, IdxSize::from(p)]).collect(),
-                overlapping: true,
-            }
-            .into_sliceable(),
-        );
-        return Ok(ac);
-    }
-
     if let AggState::AggregatedScalar(c) = &mut ac.state {
-        ac.state = AggState::AggregatedList(c.as_list().into_column());
+        ac.state = AggState::NotAggregated(std::mem::take(c));
         ac.groups = Cow::Owned(
             GroupsType::Slice {
                 groups: predicate
@@ -330,6 +322,7 @@ pub fn drop_items<'a>(
             }
             .into_sliceable(),
         );
+        ac.update_groups = UpdateGroups::No;
         return Ok(ac);
     }
 
@@ -563,6 +556,11 @@ pub fn unique<'a>(
 
     if let AggState::AggregatedScalar(c) | AggState::LiteralScalar(c) = &mut ac.state {
         *c = c.as_list().into_column();
+        if c.len() == 1 && ac.groups.len() != 1 {
+            *c = c.new_from_index(0, ac.groups.len());
+        }
+        ac.state = AggState::AggregatedList(std::mem::take(c));
+        ac.update_groups = UpdateGroups::WithSeriesLen;
         return Ok(ac);
     }
 

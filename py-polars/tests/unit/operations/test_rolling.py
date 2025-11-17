@@ -857,3 +857,26 @@ def test_rolling_in_over_25280() -> None:
         .over("train_line")
     )
     assert_frame_equal(df, result)
+
+
+def test_rolling_with_slice() -> None:
+    lf = (
+        pl.LazyFrame({"a": [0, 5, 2, 1, 3]})
+        .with_row_index()
+        .rolling("index", period="2i")
+        .agg(pl.col.a.sum())
+    )
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("index", [0, 1, 2, 3, 4], pl.get_index_type()),
+            pl.Series("a", [0, 5, 7, 3, 4]),
+        ]
+    )
+
+    assert_frame_equal(lf.head(2).collect(), expected.head(2))
+    assert_frame_equal(lf.slice(1, 3).collect(), expected.slice(1, 3))
+    assert_frame_equal(lf.tail(2).collect(), expected.tail(2))
+    assert_frame_equal(lf.slice(5, 1).collect(), expected.slice(5, 1))
+    assert_frame_equal(lf.slice(5, 0).collect(), expected.slice(5, 0))
+    assert_frame_equal(lf.slice(2, 1).collect(), expected.slice(2, 1))

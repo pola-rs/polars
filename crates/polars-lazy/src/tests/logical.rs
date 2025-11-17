@@ -25,7 +25,13 @@ fn test_duration() -> PolarsResult<()> {
             (col("date") - col("date").first()).alias("date"),
             (col("datetime") - col("datetime").first()).alias("datetime"),
         ])
-        .explode(by_name(["date", "datetime"], true))
+        .explode(
+            by_name(["date", "datetime"], true),
+            ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            },
+        )
         .collect()?;
 
     let column = out.column("date")?;

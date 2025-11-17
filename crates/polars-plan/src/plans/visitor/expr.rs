@@ -59,7 +59,9 @@ impl TreeWalker for Expr {
                 Median(x) => Median(am(x, f)?),
                 NUnique(x) => NUnique(am(x, f)?),
                 First(x) => First(am(x, f)?),
+                FirstNonNull(x) => FirstNonNull(am(x, f)?),
                 Last(x) => Last(am(x, f)?),
+                LastNonNull(x) => LastNonNull(am(x, f)?),
                 Item { input, allow_empty } => Item { input: am(input, f)?, allow_empty },
                 Mean(x) => Mean(am(x, f)?),
                 Implode(x) => Implode(am(x, f)?),
@@ -72,7 +74,7 @@ impl TreeWalker for Expr {
             }),
             Ternary { predicate, truthy, falsy } => Ternary { predicate: am(predicate, &mut f)?, truthy: am(truthy, &mut f)?, falsy: am(falsy, f)? },
             Function { input, function } => Function { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function },
-            Explode { input, skip_empty } => Explode { input: am(input, f)?, skip_empty },
+            Explode { input, options } => Explode { input: am(input, f)?, options },
             Filter { input, by } => Filter { input: am(input, &mut f)?, by: am(by, f)? },
             #[cfg(feature = "dynamic_group_by")]
             Rolling { function, index_column, period, offset, closed_window  } => Rolling { function: am(function, &mut f)?, index_column: am(index_column, &mut f)?, period, offset, closed_window  },
@@ -197,13 +199,13 @@ impl AExpr {
             (
                 Explode {
                     expr: _,
-                    skip_empty: l_skip_empty,
+                    options: l_options,
                 },
                 Explode {
                     expr: _,
-                    skip_empty: r_skip_empty,
+                    options: r_options,
                 },
-            ) => l_skip_empty == r_skip_empty,
+            ) => l_options == r_options,
             (
                 SortBy {
                     sort_options: l_sort_options,

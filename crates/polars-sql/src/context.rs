@@ -1134,6 +1134,11 @@ impl SQLContext {
         join_type: JoinType,
     ) -> PolarsResult<LazyFrame> {
         let (left_on, right_on) = process_join_constraint(constraint, tbl_left, tbl_right, self)?;
+        let coalesce_type = match constraint {
+            // "NATURAL" joins should coalesce; otherwise we disambiguate
+            JoinConstraint::Natural => JoinCoalesce::CoalesceColumns,
+            _ => JoinCoalesce::KeepColumns,
+        };
         let joined = tbl_left
             .frame
             .clone()
@@ -1143,7 +1148,7 @@ impl SQLContext {
             .right_on(right_on)
             .how(join_type)
             .suffix(format!(":{}", tbl_right.name))
-            .coalesce(JoinCoalesce::KeepColumns)
+            .coalesce(coalesce_type)
             .finish();
 
         Ok(joined)

@@ -961,6 +961,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             match function {
                 DslFunction::Explode {
                     columns,
+                    options,
                     allow_empty,
                 } => {
                     let columns = columns.into_columns(&input_schema, &Default::default())?;
@@ -970,6 +971,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     }
                     let function = FunctionIR::Explode {
                         columns: columns.into_iter().collect(),
+                        options,
                         schema: Default::default(),
                     };
                     let ir = IR::MapFunction { input, function };

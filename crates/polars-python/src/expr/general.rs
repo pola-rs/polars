@@ -146,11 +146,19 @@ impl PyExpr {
     fn unique_stable(&self) -> Self {
         self.inner.clone().unique_stable().into()
     }
-    fn first(&self) -> Self {
-        self.inner.clone().first().into()
+    fn first(&self, ignore_nulls: bool) -> Self {
+        if ignore_nulls {
+            self.inner.clone().first_non_null().into()
+        } else {
+            self.inner.clone().first().into()
+        }
     }
-    fn last(&self) -> Self {
-        self.inner.clone().last().into()
+    fn last(&self, ignore_nulls: bool) -> Self {
+        if ignore_nulls {
+            self.inner.clone().last_non_null().into()
+        } else {
+            self.inner.clone().last().into()
+        }
     }
     fn item(&self, allow_empty: bool) -> Self {
         self.inner.clone().item(allow_empty).into()
@@ -439,8 +447,14 @@ impl PyExpr {
         self.inner.clone().is_last_distinct().into()
     }
 
-    fn explode(&self) -> Self {
-        self.inner.clone().explode().into()
+    fn explode(&self, empty_as_null: bool, keep_nulls: bool) -> Self {
+        self.inner
+            .clone()
+            .explode(ExplodeOptions {
+                empty_as_null,
+                keep_nulls,
+            })
+            .into()
     }
 
     fn gather_every(&self, n: usize, offset: usize) -> Self {
@@ -702,8 +716,8 @@ impl PyExpr {
     fn reinterpret(&self, signed: bool) -> Self {
         self.inner.clone().reinterpret(signed).into()
     }
-    fn mode(&self) -> Self {
-        self.inner.clone().mode().into()
+    fn mode(&self, maintain_order: bool) -> Self {
+        self.inner.clone().mode(maintain_order).into()
     }
     fn interpolate(&self, method: Wrap<InterpolationMethod>) -> Self {
         self.inner.clone().interpolate(method.0).into()

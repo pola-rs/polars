@@ -99,6 +99,7 @@ pub enum PhysNodeProperties {
         period: PlSmallStr,
         offset: PlSmallStr,
         closed_window: PlSmallStr,
+        slice: Option<(u64, u64)>,
         aggs: Vec<PlSmallStr>,
     },
     InMemoryMap {
@@ -161,6 +162,7 @@ pub enum PhysNodeProperties {
     },
     Map {
         display_str: PlSmallStr,
+        format_str: PlSmallStr,
     },
     MultiScan {
         scan_type: PlSmallStr,

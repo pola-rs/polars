@@ -135,7 +135,7 @@ where
     }
     let mut local_predicates = Vec::with_capacity(remove_keys.len());
     for key in remove_keys {
-        if let Some(pred) = acc_predicates.remove(&*key) {
+        if let Some(pred) = acc_predicates.remove(key) {
             local_predicates.push(pred)
         }
     }
@@ -158,7 +158,7 @@ where
     for (key, predicate) in &*acc_predicates {
         let root_names = aexpr_to_leaf_names_iter(predicate.node(), expr_arena);
         for name in root_names {
-            if condition(&name) {
+            if condition(name) {
                 remove_keys.push(key.clone());
                 break;
             }

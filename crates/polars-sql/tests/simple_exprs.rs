@@ -526,7 +526,16 @@ fn test_arr_agg() {
         ),
         (
             "SELECT unnest(ARRAY_AGG(DISTINCT a)) FROM df",
-            vec![col("a").unique_stable().implode().explode().alias("a")],
+            vec![
+                col("a")
+                    .unique_stable()
+                    .implode()
+                    .explode(ExplodeOptions {
+                        empty_as_null: true,
+                        keep_nulls: true,
+                    })
+                    .alias("a"),
+            ],
         ),
         (
             "SELECT ARRAY_AGG(a ORDER BY b LIMIT 2) FROM df",

@@ -112,10 +112,6 @@ impl PhysicalExpr for SliceExpr {
         })?;
         let mut ac = results.pop().unwrap();
 
-        if let AggState::AggregatedScalar(_) = ac.agg_state() {
-            polars_bail!(InvalidOperation: "cannot slice() an aggregated scalar value")
-        }
-
         let mut ac_length = results.pop().unwrap();
         let mut ac_offset = results.pop().unwrap();
 
@@ -136,6 +132,10 @@ impl PhysicalExpr for SliceExpr {
                     ac.with_literal(s1);
                     ac.aggregated();
                     return Ok(ac);
+                }
+                if let AggregatedScalar(c) = ac.state {
+                    ac.state = AggregatedList(c.as_list().into_column());
+                    ac.update_groups = UpdateGroups::WithSeriesLen;
                 }
                 let groups = ac.groups();
 
@@ -162,6 +162,9 @@ impl PhysicalExpr for SliceExpr {
             (LiteralScalar(offset), _) => {
                 if matches!(ac.state, LiteralScalar(_)) {
                     ac.aggregated();
+                } else if let AggregatedScalar(c) = ac.state {
+                    ac.state = AggregatedList(c.as_list().into_column());
+                    ac.update_groups = UpdateGroups::WithSeriesLen;
                 }
                 let groups = ac.groups();
                 let offset = extract_offset(offset, &self.expr)?;
@@ -200,6 +203,9 @@ impl PhysicalExpr for SliceExpr {
             (_, LiteralScalar(length)) => {
                 if matches!(ac.state, LiteralScalar(_)) {
                     ac.aggregated();
+                } else if let AggregatedScalar(c) = ac.state {
+                    ac.state = AggregatedList(c.as_list().into_column());
+                    ac.update_groups = UpdateGroups::WithSeriesLen;
                 }
                 let groups = ac.groups();
                 let length = extract_length(length, &self.expr)?;
@@ -238,6 +244,9 @@ impl PhysicalExpr for SliceExpr {
             _ => {
                 if matches!(ac.state, LiteralScalar(_)) {
                     ac.aggregated();
+                } else if let AggregatedScalar(c) = ac.state {
+                    ac.state = AggregatedList(c.as_list().into_column());
+                    ac.update_groups = UpdateGroups::WithSeriesLen;
                 }
 
                 let groups = ac.groups();

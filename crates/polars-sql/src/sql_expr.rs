@@ -1357,46 +1357,32 @@ pub(crate) fn resolve_compound_identifier(
     }
 
     // resolve column/struct reference
-    let col_dtype: PolarsResult<(Expr, Option<&DataType>)> = match (
-        lf.is_none(),
-        schema.get(&ident_root.value),
-    ) {
-        // root is a column/struct in schema (no table)
-        (true, Some(dtype)) => {
-            remaining_idents = idents.iter().skip(1);
-            Ok((col(ident_root.value.as_str()), Some(dtype)))
-        },
-        // root is not in schema and no table found
-        (true, None) => {
-            polars_bail!(
-                SQLInterface: "no table or struct column named '{}' found",
-                ident_root
-            )
-        },
-        // root is a table, resolve column from table (or active) schema
-        (false, _) => {
-            if let Some((_, col_name, dtype)) = schema.get_full(name) {
-                resolve_column(ctx, ident_root, col_name, dtype)
-            } else if let Some(active_schema) = active_schema {
-                // fallback for chained/multi joins; look in the active schema
-                // (as this is where the accumulated join columns can be found)
-                active_schema
-                    .get_full(name)
-                    .map(|(_, col_name, dtype)| (col(col_name.clone()), Some(dtype)))
-                    .ok_or_else(|| {
-                        polars_err!(
-                            SQLInterface: "no column named '{}' found in table '{}' (or in the active schema)",
-                            name, ident_root
-                        )
-                    })
-            } else {
+    let col_dtype: PolarsResult<(Expr, Option<&DataType>)> =
+        match (lf.is_none(), schema.get(&ident_root.value)) {
+            // root is a column/struct in schema (no table)
+            (true, Some(dtype)) => {
+                remaining_idents = idents.iter().skip(1);
+                Ok((col(ident_root.value.as_str()), Some(dtype)))
+            },
+            // root is not in schema and no table found
+            (true, None) => {
                 polars_bail!(
-                    SQLInterface: "no column named '{}' found in table '{}'",
-                    name, ident_root
+                    SQLInterface: "no table or struct column named '{}' found",
+                    ident_root
                 )
-            }
-        },
-    };
+            },
+            // root is a table, resolve column from table schema
+            (false, _) => {
+                if let Some((_, col_name, dtype)) = schema.get_full(name) {
+                    resolve_column(ctx, ident_root, col_name, dtype)
+                } else {
+                    polars_bail!(
+                        SQLInterface: "no column named '{}' found in table '{}'",
+                        name, ident_root
+                    )
+                }
+            },
+        };
 
     // additional ident levels index into struct fields (eg: "df.col.field.nested_field")
     let (mut column, mut dtype) = col_dtype?;

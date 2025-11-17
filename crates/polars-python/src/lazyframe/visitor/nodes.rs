@@ -618,9 +618,15 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                 )
                     .into_py_any(py)?,
                 FunctionIR::Rechunk => ("rechunk",).into_py_any(py)?,
-                FunctionIR::Explode { columns, schema: _ } => (
+                FunctionIR::Explode {
+                    columns,
+                    options,
+                    schema: _,
+                } => (
                     "explode",
                     columns.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+                    options.empty_as_null,
+                    options.keep_nulls,
                 )
                     .into_py_any(py)?,
                 #[cfg(feature = "pivot")]

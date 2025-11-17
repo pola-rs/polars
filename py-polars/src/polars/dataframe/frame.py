@@ -9187,6 +9187,8 @@ class DataFrame:
         self,
         columns: ColumnNameOrSelector | Iterable[ColumnNameOrSelector],
         *more_columns: ColumnNameOrSelector,
+        empty_as_null: bool = True,
+        keep_nulls: bool = True,
     ) -> DataFrame:
         """
         Explode the dataframe to long format by exploding the given columns.
@@ -9198,6 +9200,10 @@ class DataFrame:
             columns being exploded must be of the `List` or `Array` data type.
         *more_columns
             Additional names of columns to explode, specified as positional arguments.
+        empty_as_null
+            Explode an empty list/array into a `null`.
+        keep_nulls
+            Explode a `null` list/array into a `null`.
 
         Returns
         -------
@@ -9244,7 +9250,12 @@ class DataFrame:
 
         return (
             self.lazy()
-            .explode(columns, *more_columns)
+            .explode(
+                columns,
+                *more_columns,
+                empty_as_null=empty_as_null,
+                keep_nulls=keep_nulls,
+            )
             .collect(optimizations=QueryOptFlags._eager())
         )
 

@@ -102,7 +102,7 @@ pub(super) fn expand_datasets(
                     let mut out: Arc<[PlSmallStr]> =
                         PlHashSet::from_iter(aexpr_to_leaf_names_iter(x.node(), expr_arena))
                             .into_iter()
-                            .filter(|live_col| {
+                            .filter(|&live_col| {
                                 if unified_scan_args
                                     .row_index
                                     .as_ref()
@@ -114,6 +114,7 @@ pub(super) fn expand_datasets(
                                     true
                                 }
                             })
+                            .cloned()
                             .collect();
 
                     Arc::get_mut(&mut out).unwrap().sort_unstable();

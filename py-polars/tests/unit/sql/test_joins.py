@@ -113,8 +113,8 @@ def test_join_cross_11927() -> None:
 @pytest.mark.parametrize(
     "join_clause",
     [
-        "ON foods1.category = foods2.category",
-        "ON foods2.category = foods1.category",
+        "ON f1.category = f2.category",
+        "ON f2.category = f1.category",
         "USING (category)",
     ],
 )
@@ -123,62 +123,32 @@ def test_join_inner(foods_ipc_path: Path, join_clause: str) -> None:
     foods2 = foods1
     schema = foods1.collect_schema()
 
-    sort_clause = ", ".join(f'{c} ASC, "{c}:foods2" DESC' for c in schema)
     out = pl.sql(
         f"""
         SELECT *
-        FROM foods1
-        INNER JOIN foods2 {join_clause}
-        ORDER BY {sort_clause}
+        FROM
+          (SELECT * FROM foods1 WHERE fats_g != 0) f1
+        INNER JOIN
+          (SELECT * FROM foods2 WHERE fats_g = 0) f2
+        {join_clause}
+        ORDER BY ALL
         LIMIT 2
         """,
         eager=True,
     )
-
-    assert_frame_equal(
-        out,
-        pl.DataFrame(
-            {
-                "category": ["fruit", "fruit"],
-                "calories": [30, 30],
-                "fats_g": [0.0, 0.0],
-                "sugars_g": [3, 5],
-                "category:foods2": ["fruit", "fruit"],
-                "calories:foods2": [130, 130],
-                "fats_g:foods2": [0.0, 0.0],
-                "sugars_g:foods2": [25, 25],
-            }
-        ),
-        check_dtypes=False,
+    expected = pl.DataFrame(
+        {
+            "category": ["fruit", "fruit"],
+            "calories": [50, 50],
+            "fats_g": [4.5, 4.5],
+            "sugars_g": [0, 0],
+            "category:f2": ["fruit", "fruit"],
+            "calories:f2": [30, 30],
+            "fats_g:f2": [0.0, 0.0],
+            "sugars_g:f2": [3, 5],
+        }
     )
-
-
-@pytest.mark.parametrize(
-    "join_clause",
-    [
-        """
-        INNER JOIN tbl_b USING (a,b)
-        INNER JOIN tbl_c USING (c)
-        """,
-        """
-        INNER JOIN tbl_b ON tbl_a.a = tbl_b.a AND tbl_a.b = tbl_b.b
-        INNER JOIN tbl_c ON tbl_a.c = tbl_c.c
-        """,
-    ],
-)
-def test_join_inner_multi(join_clause: str) -> None:
-    frames = {
-        "tbl_a": pl.DataFrame({"a": [1, 2, 3], "b": [4, None, 6]}),
-        "tbl_b": pl.DataFrame({"a": [3, 2, 1], "b": [6, 5, 4], "c": ["x", "y", "z"]}),
-        "tbl_c": pl.DataFrame({"c": ["w", "y", "z"], "d": [10.5, -50.0, 25.5]}),
-    }
-    with pl.SQLContext(frames) as ctx:
-        assert ctx.tables() == ["tbl_a", "tbl_b", "tbl_c"]
-        for select_cols in ("a, b, c, d", "tbl_a.a, tbl_a.b, tbl_b.c, tbl_c.d"):
-            out = ctx.execute(
-                f"SELECT {select_cols} FROM tbl_a {join_clause} ORDER BY a DESC"
-            )
-            assert out.collect().rows() == [(1, 4, "z", 25.5)]
+    assert_frame_equal(expected, out, check_dtypes=False)
 
 
 def test_join_inner_15663() -> None:
@@ -193,17 +163,68 @@ def test_join_inner_15663() -> None:
     )
     with pl.SQLContext(register_globals=True, eager=True) as ctx:
         query = """
-        SELECT
-            a.LOCID,
-            a.VALUE AS VALUE_A,
-            b.VALUE AS VALUE_B
-        FROM df_a AS a
-        INNER JOIN df_b AS b
-        USING (LOCID)
-        ORDER BY LOCID
+            SELECT
+                a.LOCID,
+                a.VALUE AS VALUE_A,
+                b.VALUE AS VALUE_B
+            FROM df_a AS a INNER JOIN df_b AS b USING (LOCID)
+            ORDER BY LOCID
         """
         actual = ctx.execute(query)
         assert_frame_equal(df_expected, actual)
+
+
+@pytest.mark.parametrize(
+    ("join_clause", "expected_error"),
+    [
+        (
+            """
+            INNER JOIN tbl_b USING (a,b)
+            INNER JOIN tbl_c USING (c)
+            """,
+            None,
+        ),
+        (
+            """
+            INNER JOIN tbl_b ON tbl_a.a = tbl_b.a AND tbl_a.b = tbl_b.b
+            INNER JOIN tbl_c ON tbl_b.c = tbl_c.c
+            """,
+            None,
+        ),
+        (
+            """
+            INNER JOIN tbl_b ON tbl_a.a = tbl_b.a AND tbl_a.b = tbl_b.b
+            INNER JOIN tbl_c ON tbl_a.c = tbl_c.c  --<< (no "c" in 'tbl_a')
+            """,
+            "no column named 'c' found in table 'tbl_a'",
+        ),
+    ],
+)
+def test_join_inner_multi(join_clause: str, expected_error: str | None) -> None:
+    frames = {
+        "tbl_a": pl.DataFrame({"a": [1, 2, 3], "b": [4, None, 6]}),
+        "tbl_b": pl.DataFrame({"a": [3, 2, 1], "b": [6, 5, 4], "c": ["x", "y", "z"]}),
+        "tbl_c": pl.DataFrame({"c": ["w", "y", "z"], "d": [10.5, -50.0, 25.5]}),
+    }
+    with pl.SQLContext(frames) as ctx:
+        assert ctx.tables() == ["tbl_a", "tbl_b", "tbl_c"]
+        for select_cols in (
+            "a, b, c, d",
+            "tbl_a.a, tbl_a.b, tbl_b.c, tbl_c.d",
+        ):
+            query = f"""
+                SELECT {select_cols}
+                FROM tbl_a {join_clause}
+                ORDER BY a DESC
+            """
+            try:
+                out = ctx.execute(query)
+                assert out.collect().rows() == [(1, 4, "z", 25.5)]
+
+            except SQLInterfaceError as err:
+                if expected_error and expected_error in str(err):
+                    break
+                raise
 
 
 @pytest.mark.parametrize(
@@ -215,7 +236,7 @@ def test_join_inner_15663() -> None:
         """,
         """
         LEFT JOIN tbl_b ON tbl_a.a = tbl_b.a AND tbl_a.b = tbl_b.b
-        LEFT JOIN tbl_c ON tbl_a.c = tbl_c.c
+        LEFT JOIN tbl_c ON tbl_b.c = tbl_c.c
         """,
     ],
 )
@@ -499,11 +520,9 @@ def test_natural_joins_01() -> None:
     with pl.SQLContext(
         {"df1": df1, "df2": df2, "df3": df3, "df4": df4}, eager=True
     ) as ctx:
-        # note: use of 'COLUMNS' is a neat way to drop
-        # all non-coalesced "<name>:<suffix>" cols
         res = ctx.execute(
             """
-            SELECT COLUMNS('^[^:]*$')
+            SELECT *
             FROM df1
             NATURAL LEFT JOIN df2
             NATURAL INNER JOIN df3
@@ -590,7 +609,7 @@ def test_natural_joins_02(cols_constraint: str, expect_data: list[tuple[int]]) -
     )
     actual = pl.sql(
         f"""
-        SELECT * EXCLUDE "y:df2"
+        SELECT *
         FROM df1 NATURAL JOIN df2
         WHERE COLUMNS(*) {cols_constraint}
         """

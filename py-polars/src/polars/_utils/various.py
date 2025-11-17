@@ -396,7 +396,7 @@ def _cast_repr_strings_with_schema(
                     .then(pl.when(F.col(c).str.len_bytes() > 0).then(F.col(c)))
                     # check for scientific notation
                     .when(F.col(c).str.contains("[eE]"))
-                    .then(F.col(c).str.replace(r"[^eE\d]", "."))
+                    .then(F.col(c).str.replace(r"[^eE\d+-]", "."))
                     .otherwise(
                         # recombine sanitised integer/fractional components
                         pl.concat_str(

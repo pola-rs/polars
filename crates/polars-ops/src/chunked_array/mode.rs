@@ -26,9 +26,9 @@ fn mode_indices(groups: GroupsType) -> Vec<IdxSize> {
     }
 }
 
-pub fn mode(s: &Series) -> PolarsResult<Series> {
+pub fn mode(s: &Series, maintain_order: bool) -> PolarsResult<Series> {
     let parallel = !POOL.current_thread_has_pending_tasks().unwrap_or(false);
-    let groups = s.group_tuples(parallel, false).unwrap();
+    let groups = s.group_tuples(parallel, maintain_order).unwrap();
     let idx = mode_indices(groups);
     let idx = IdxCa::from_vec("".into(), idx);
     // SAFETY:

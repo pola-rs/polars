@@ -1233,6 +1233,26 @@ pub(crate) fn index_to_chunked_index_rev<
     )
 }
 
+pub fn first_null<'a, I>(iter: I) -> Option<usize>
+where
+    I: Iterator<Item = &'a dyn Array>,
+{
+    let mut offset = 0;
+    for arr in iter {
+        if let Some(mask) = arr.validity() {
+            let len_mask = mask.len();
+            let n = mask.leading_ones();
+            if n < len_mask {
+                return Some(offset + n);
+            }
+            offset += len_mask
+        } else {
+            offset += arr.len();
+        }
+    }
+    None
+}
+
 pub fn first_non_null<'a, I>(iter: I) -> Option<usize>
 where
     I: Iterator<Item = &'a dyn Array>,

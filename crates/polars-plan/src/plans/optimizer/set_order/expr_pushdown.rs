@@ -227,7 +227,11 @@ impl<'a> ObservableOrdersResolver<'a> {
                 },
 
                 // Input order observing aggregations.
-                IRAggExpr::Implode(node) | IRAggExpr::First(node) | IRAggExpr::Last(node) => {
+                IRAggExpr::Implode(node)
+                | IRAggExpr::First(node)
+                | IRAggExpr::FirstNonNull(node)
+                | IRAggExpr::Last(node)
+                | IRAggExpr::LastNonNull(node) => {
                     if rec!(*node).column_ordering_observable() {
                         return Err(ColumnOrderObserved);
                     }

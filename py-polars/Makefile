@@ -73,7 +73,7 @@ test: .venv build  ## Run fast unittests
 
 .PHONY: test-streaming
 test-streaming: .venv build  ## Run fast unittests with the streaming engine
-	POLARS_TIMEOUT_MS=60000 POLARS_AUTO_NEW_STREAMING=1 $(VENV_BIN)/pytest -n auto -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only" $(PYTEST_ARGS)
+	POLARS_TIMEOUT_MS=60000 POLARS_AUTO_NEW_STREAMING=1 $(VENV_BIN)/pytest -n auto -m "not may_fail_auto_streaming and not docs and not benchmark and not ci_only" $(PYTEST_ARGS)
 
 .PHONY: test-all
 test-all: .venv build  ## Run all tests

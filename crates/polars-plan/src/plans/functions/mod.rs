@@ -54,6 +54,7 @@ pub enum FunctionIR {
     Rechunk,
     Explode {
         columns: Arc<[PlSmallStr]>,
+        options: ExplodeOptions,
         #[cfg_attr(feature = "ir_serde", serde(skip))]
         schema: CachedSchema,
     },
@@ -93,7 +94,18 @@ impl PartialEq for FunctionIR {
                     sources: srcs_r, ..
                 },
             ) => srcs_l == srcs_r,
-            (Explode { columns: l, .. }, Explode { columns: r, .. }) => l == r,
+            (
+                Explode {
+                    columns: l,
+                    options: l_options,
+                    ..
+                },
+                Explode {
+                    columns: r,
+                    options: r_options,
+                    ..
+                },
+            ) => l == r && l_options == r_options,
             #[cfg(feature = "pivot")]
             (Unpivot { args: l, .. }, Unpivot { args: r, .. }) => l == r,
             (RowIndex { name: l, .. }, RowIndex { name: r, .. }) => l == r,
@@ -125,7 +137,14 @@ impl Hash for FunctionIR {
                 separator.hash(state);
             },
             FunctionIR::Rechunk => {},
-            FunctionIR::Explode { columns, schema: _ } => columns.hash(state),
+            FunctionIR::Explode {
+                columns,
+                options,
+                schema: _,
+            } => {
+                columns.hash(state);
+                options.hash(state);
+            },
             #[cfg(feature = "pivot")]
             FunctionIR::Unpivot { args, schema: _ } => args.hash(state),
             FunctionIR::RowIndex {
@@ -231,7 +250,9 @@ impl FunctionIR {
                     df.unnest(columns.iter().cloned(), separator.as_deref())
                 )
             },
-            Explode { columns, .. } => df.explode(columns.iter().cloned()),
+            Explode {
+                columns, options, ..
+            } => df.explode(columns.iter().cloned(), *options),
             #[cfg(feature = "pivot")]
             Unpivot { args, .. } => {
                 use polars_ops::unpivot::UnpivotDF;
@@ -324,10 +345,14 @@ impl Display for FunctionIR {
                 write!(f, "hint.{hint}")
             },
             Opaque { fmt_str, .. } => write!(f, "{fmt_str}"),
-            Unnest { columns, .. } => {
+            Unnest { columns, separator } => {
                 write!(f, "UNNEST by:")?;
                 let columns = columns.as_ref();
-                fmt_column_delimited(f, columns, "[", "]")
+                fmt_column_delimited(f, columns, "[", "]")?;
+                if let Some(separator) = separator {
+                    write!(f, ", separator: {separator}")?;
+                }
+                Ok(())
             },
             FastCount {
                 sources,
@@ -345,10 +370,56 @@ impl Display for FunctionIR {
                     ScanSourcesDisplay(sources)
                 )
             },
-            v => {
-                let s: &str = v.into();
-                write!(f, "{s}")
+            RowIndex {
+                name,
+                offset,
+                schema: _,
+            } => {
+                write!(f, "ROW INDEX name: {name}")?;
+                if let Some(offset) = offset {
+                    write!(f, ", offset: {offset}")?;
+                }
+
+                Ok(())
             },
+            Explode {
+                columns,
+                options,
+                schema: _,
+            } => {
+                f.write_str("EXPLODE ")?;
+                fmt_column_delimited(f, columns, "[", "]")?;
+                if !options.empty_as_null {
+                    f.write_str(", empty_as_null: false")?;
+                }
+                if !options.keep_nulls {
+                    f.write_str(", keep_nulls: false")?;
+                }
+                Ok(())
+            },
+            #[cfg(feature = "pivot")]
+            Unpivot { args, schema: _ } => {
+                let UnpivotArgsIR {
+                    on,
+                    index,
+                    variable_name,
+                    value_name,
+                } = args.as_ref();
+
+                f.write_str("UNPIVOT on: ")?;
+                fmt_column_delimited(f, on, "[", "]")?;
+                fmt_column_delimited(f, index, "[", "]")?;
+                if let Some(variable_name) = variable_name {
+                    write!(f, ", variable_name: {variable_name}")?;
+                }
+                if let Some(value_name) = value_name {
+                    write!(f, ", value_name: {value_name}")?;
+                }
+                Ok(())
+            },
+            #[cfg(feature = "python")]
+            OpaquePython(_) => f.write_str(<&'static str>::from(self)),
+            Rechunk => f.write_str(<&'static str>::from(self)),
         }
     }
 }
