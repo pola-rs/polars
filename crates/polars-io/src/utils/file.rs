@@ -229,11 +229,11 @@ mod async_writeable {
 
     impl AsyncWriteable {
         pub async fn try_new(
-            addr: PlPathRef<'_>,
+            path: PlPathRef<'_>,
             cloud_options: Option<&CloudOptions>,
         ) -> PolarsResult<Self> {
             // TODO: Native async impl
-            Writeable::try_new(addr, cloud_options).and_then(|x| x.try_into_async_writeable())
+            Writeable::try_new(path, cloud_options).and_then(|x| x.try_into_async_writeable())
         }
 
         pub async fn sync_on_close(
