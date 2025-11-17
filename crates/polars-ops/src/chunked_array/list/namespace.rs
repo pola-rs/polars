@@ -649,12 +649,14 @@ pub trait ListNameSpaceImpl: AsList {
             fraction.len()
         );
 
-        let min_max = fraction.min_max().unwrap_or((0.0, 1.0));
+        if !with_replacement {
+            let min_max = fraction.min_max().unwrap_or((0.0, 1.0));
 
-        polars_ensure!(
-            min_max.0 >= 0.0 && min_max.1 <= 1.0,
-            ComputeError: "fraction must be between 0 and 1."
-        );
+            polars_ensure!(
+                min_max.0 >= 0.0 && min_max.1 <= 1.0,
+                ComputeError: "fraction(s) must be between 0 and 1 when sampling without replacement."
+            );
+        }
 
         // Broadcast `self`
         let mut ca = Cow::Borrowed(ca);
