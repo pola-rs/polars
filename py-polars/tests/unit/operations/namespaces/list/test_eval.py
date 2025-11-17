@@ -535,13 +535,15 @@ def test_list_eval_ternary() -> None:
     expected = pl.DataFrame({"a": [[2, 4, 5], [1], [8]]})
     q = df.lazy().select(expr).lazy().select(expr)
     assert_frame_equal(q.collect(), expected)
+
+
+@pytest.mark.parametrize(
     "series_a",
     [
         pl.Series("a", [[1, 2, 3], [4, 5], [6]]),
         pl.Series("a", [[1, 2, 3], None, [6]]),
     ],
-
-
+)
 @pytest.mark.parametrize("keys", [pl.col.g, pl.lit(42)])
 @pytest.mark.parametrize("predicate", [pl.col.b, pl.lit(True)])
 @pytest.mark.parametrize("maintain_order", [True, False])
