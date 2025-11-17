@@ -161,8 +161,8 @@ class ExprListNameSpace:
             Number of items to return. Cannot be used with `fraction`. Defaults to 1 if
             `fraction` is None.
         fraction
-            Fraction of items to return. Cannot be used with `n` and must be between 0
-            and 1.
+            Fraction of items to return. Cannot be used with `n`. When
+            `with_replacement` is false, fraction(s) must be between 0 and 1.
         with_replacement
             Allow values to be sampled more than once.
         shuffle
