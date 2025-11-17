@@ -913,7 +913,7 @@ fn lower_exprs_with_ctx(
             #[cfg(feature = "mode")]
             AExpr::Function {
                 input: ref inner_exprs,
-                function: IRFunctionExpr::Mode,
+                function: IRFunctionExpr::Mode { maintain_order },
                 options: _,
             } => {
                 // Transform:
@@ -951,7 +951,7 @@ fn lower_exprs_with_ctx(
                     &keys,
                     &aggs,
                     Arc::new(group_by_output_schema),
-                    false,
+                    maintain_order,
                     Default::default(),
                     None,
                     ctx.expr_arena,

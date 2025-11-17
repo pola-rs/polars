@@ -716,8 +716,8 @@ impl PyExpr {
     fn reinterpret(&self, signed: bool) -> Self {
         self.inner.clone().reinterpret(signed).into()
     }
-    fn mode(&self) -> Self {
-        self.inner.clone().mode().into()
+    fn mode(&self, maintain_order: bool) -> Self {
+        self.inner.clone().mode(maintain_order).into()
     }
     fn interpolate(&self, method: Wrap<InterpolationMethod>) -> Self {
         self.inner.clone().interpolate(method.0).into()

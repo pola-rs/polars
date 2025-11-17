@@ -887,7 +887,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::DropNans => F::DropNans,
         IF::DropNulls => F::DropNulls,
         #[cfg(feature = "mode")]
-        IF::Mode => F::Mode,
+        IF::Mode { maintain_order } => F::Mode { maintain_order },
         #[cfg(feature = "moment")]
         IF::Skew(v) => F::Skew(v),
         #[cfg(feature = "moment")]

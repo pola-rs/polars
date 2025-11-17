@@ -782,7 +782,7 @@ pub(super) fn convert_functions(
         F::DropNans => I::DropNans,
         F::DropNulls => I::DropNulls,
         #[cfg(feature = "mode")]
-        F::Mode => I::Mode,
+        F::Mode { maintain_order } => I::Mode { maintain_order },
         #[cfg(feature = "moment")]
         F::Skew(v) => I::Skew(v),
         #[cfg(feature = "moment")]

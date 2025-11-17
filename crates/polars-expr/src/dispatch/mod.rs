@@ -280,7 +280,7 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
             map_as_slice!(misc::clip, has_min, has_max)
         },
         #[cfg(feature = "mode")]
-        F::Mode => map!(misc::mode),
+        F::Mode { maintain_order } => map!(misc::mode, maintain_order),
         #[cfg(feature = "moment")]
         F::Skew(bias) => map!(misc::skew, bias),
         #[cfg(feature = "moment")]
