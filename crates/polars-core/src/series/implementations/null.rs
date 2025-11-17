@@ -259,6 +259,14 @@ impl SeriesTrait for NullChunked {
         Ok(IdxCa::new(self.name().clone(), idxs))
     }
 
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        if self.is_empty() {
+            Ok((0, Vec::new()))
+        } else {
+            Ok((1, vec![0; self.len()]))
+        }
+    }
+
     fn new_from_index(&self, _index: usize, length: usize) -> Series {
         NullChunked::new(self.name.clone(), length).into_series()
     }

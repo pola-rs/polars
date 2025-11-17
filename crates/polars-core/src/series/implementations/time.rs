@@ -329,6 +329,10 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
         self.0.physical().arg_unique()
     }
 
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        ChunkUnique::unique_id(self.0.physical())
+    }
+
     fn is_null(&self) -> BooleanChunked {
         self.0.is_null()
     }

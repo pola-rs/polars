@@ -211,8 +211,10 @@ fn create_physical_expr_inner(
             let phys_function =
                 create_physical_expr_inner(function, Context::Default, expr_arena, schema, state)?;
 
+            let mut order_by_is_elementwise = false;
             let order_by = order_by
                 .map(|(node, options)| {
+                    order_by_is_elementwise |= is_elementwise_rec(node, expr_arena);
                     PolarsResult::Ok((
                         create_physical_expr_inner(
                             node,
@@ -230,7 +232,9 @@ fn create_physical_expr_inner(
 
             // set again as the state can be reset
             state.set_window();
-            // TODO! Order by
+            let all_group_by_are_elementwise = partition_by
+                .iter()
+                .all(|n| is_elementwise_rec(*n, expr_arena));
             let group_by = create_physical_expressions_from_nodes(
                 partition_by,
                 Context::Default,
@@ -248,6 +252,8 @@ fn create_physical_expr_inner(
                     apply_columns.push(PlSmallStr::from_static("literal"))
                 } else if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Len)) {
                     apply_columns.push(PlSmallStr::from_static("len"))
+                } else if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Element)) {
+                    apply_columns.push(PlSmallStr::from_static("element"))
                 } else {
                     let e = node_to_expr(function, expr_arena);
                     polars_bail!(
@@ -291,6 +297,9 @@ fn create_physical_expr_inner(
                 expr,
                 has_different_group_sources,
                 output_field,
+
+                order_by_is_elementwise,
+                all_group_by_are_elementwise,
             }))
         },
         Literal(value) => {
