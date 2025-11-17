@@ -9,7 +9,7 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::DataType;
 use polars_core::scalar::Scalar;
 use polars_io::cloud::CloudOptions;
-use polars_io::utils::file::{Writeable, WriteableTrait};
+use polars_io::utils::file::Writeable;
 use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_utils::IdxSize;
 use polars_utils::arena::Arena;
