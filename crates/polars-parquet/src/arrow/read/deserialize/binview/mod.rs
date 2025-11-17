@@ -565,7 +565,7 @@ impl utils::Decoder for BinViewDecoder {
             (St::Plain(iter), Spce::EndsWith(pattern)) => predicate::decode_matches(
                 iter.max_num_values,
                 iter.values,
-                |v| v.starts_with(pattern),
+                |v| v.ends_with(pattern),
                 pred_true_mask,
             )?,
             (St::Plain(iter), Spce::RegexMatch(regex)) => predicate::decode_matches(
