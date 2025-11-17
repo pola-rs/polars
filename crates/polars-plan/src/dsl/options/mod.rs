@@ -274,7 +274,7 @@ pub struct GroupbyOptions {
 }
 
 impl GroupbyOptions {
-    pub(crate) fn is_rolling(&self) -> bool {
+    pub fn is_rolling(&self) -> bool {
         #[cfg(feature = "dynamic_group_by")]
         {
             self.rolling.is_some()
@@ -285,7 +285,7 @@ impl GroupbyOptions {
         }
     }
 
-    pub(crate) fn is_dynamic(&self) -> bool {
+    pub fn is_dynamic(&self) -> bool {
         #[cfg(feature = "dynamic_group_by")]
         {
             self.dynamic.is_some()

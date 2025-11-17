@@ -329,6 +329,28 @@ fn visualize_plan_rec(
             }
             (label, from_ref(input))
         },
+        PhysNodeKind::SortedGroupBy {
+            input,
+            key,
+            aggs,
+            slice,
+        } => {
+            let mut s = String::new();
+            s.push_str("sorted-group-by\\n");
+            let f = &mut s;
+            write!(f, "key: {key}\\n").unwrap();
+            if let Some((offset, length)) = slice {
+                write!(f, "slice: {offset}, {length}\\n").unwrap();
+            }
+            write!(
+                f,
+                "aggs:\\n{}",
+                fmt_exprs_to_label(aggs, expr_arena, FormatExprStyle::Select)
+            )
+            .unwrap();
+
+            (s, from_ref(input))
+        },
         PhysNodeKind::Sort {
             input,
             by_column,

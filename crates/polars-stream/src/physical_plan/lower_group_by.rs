@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{InitHashMaps, PlIndexMap, SortMultipleOptions};
+use polars_core::prelude::{Field, InitHashMaps, PlIndexMap, SortMultipleOptions};
 use polars_core::schema::Schema;
 use polars_error::{PolarsResult, polars_err};
 use polars_expr::state::ExecutionState;
@@ -18,7 +18,7 @@ use slotmap::SlotMap;
 
 use super::{ExprCache, PhysNode, PhysNodeKey, PhysNodeKind, PhysStream, StreamingLowerIRContext};
 use crate::physical_plan::lower_expr::{
-    build_select_stream, compute_output_schema, is_elementwise_rec_cached,
+    build_hstack_stream, build_select_stream, compute_output_schema, is_elementwise_rec_cached,
     is_fake_elementwise_function, is_input_independent,
 };
 use crate::physical_plan::lower_ir::{build_row_idx_stream, build_slice_stream};
@@ -520,6 +520,211 @@ fn try_build_streaming_group_by(
     Some(out)
 }
 
+#[expect(clippy::too_many_arguments)]
+pub fn try_build_sorted_group_by(
+    input: PhysStream,
+    keys: &[ExprIR],
+    aggs: &[ExprIR],
+    output_schema: Arc<Schema>,
+    maintain_order: bool,
+    options: Arc<GroupbyOptions>,
+    apply: Option<PlanCallback<DataFrame, DataFrame>>,
+    expr_arena: &mut Arena<AExpr>,
+    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    expr_cache: &mut ExprCache,
+    ctx: StreamingLowerIRContext,
+    are_keys_sorted: bool,
+) -> Option<PolarsResult<PhysStream>> {
+    let input_schema = phys_sm[input.node].output_schema.as_ref();
+
+    if keys.is_empty()
+        || apply.is_some()
+        || options.is_rolling()
+        || options.is_dynamic()
+        || (!are_keys_sorted && maintain_order)
+        || keys.iter().any(|k| {
+            k.dtype(input_schema, expr_arena)
+                .is_ok_and(|dtype| dtype.contains_unknown())
+        })
+    {
+        return None;
+    }
+
+    let mut input = input;
+    let mut input_column = unique_column_name();
+    let mut projected = false;
+    let mut row_encoded: Option<Vec<Field>> = None;
+
+    if keys.len() > 1
+        || match keys[0].dtype(input_schema, expr_arena) {
+            Ok(v) => v.is_nested(),
+            Err(err) => return Some(Err(err)),
+        }
+    {
+        let key_fields = match keys
+            .iter()
+            .map(|k| k.field(input_schema, expr_arena))
+            .collect::<PolarsResult<Vec<_>>>()
+        {
+            Ok(v) => v,
+            Err(e) => return Some(Err(e)),
+        };
+        let expr = AExprBuilder::function(
+            keys.to_vec(),
+            IRFunctionExpr::RowEncode(
+                key_fields.iter().map(|k| k.dtype().clone()).collect(),
+                RowEncodingVariant::Ordered {
+                    descending: None,
+                    nulls_last: None,
+                },
+            ),
+            expr_arena,
+        )
+        .expr_ir(input_column.clone());
+        input = match build_hstack_stream(input, &[expr], expr_arena, phys_sm, expr_cache, ctx) {
+            Ok(v) => v,
+            Err(err) => return Some(Err(err)),
+        };
+        projected = true;
+        row_encoded = Some(key_fields);
+    } else if !matches!(expr_arena.get(keys[0].node()), AExpr::Column(c) if c == keys[0].output_name())
+    {
+        input = match build_hstack_stream(
+            input,
+            &[keys[0].with_alias(input_column.clone())],
+            expr_arena,
+            phys_sm,
+            expr_cache,
+            ctx,
+        ) {
+            Ok(v) => v,
+            Err(err) => return Some(Err(err)),
+        };
+        projected = true;
+    } else {
+        input_column = keys[0].output_name().clone();
+    }
+
+    let key = AExprBuilder::col(input_column.clone(), expr_arena).expr_ir(input_column.clone());
+
+    let schema = phys_sm[input.node].output_schema.clone();
+    if !are_keys_sorted {
+        let row_idx_name = unique_column_name();
+        input = build_row_idx_stream(input, row_idx_name.clone(), None, phys_sm);
+
+        let row_idx_expr =
+            AExprBuilder::col(row_idx_name.clone(), expr_arena).expr_ir(row_idx_name.clone());
+
+        input = PhysStream::first(phys_sm.insert(PhysNode {
+            output_schema: phys_sm[input.node].output_schema.clone(),
+            kind: PhysNodeKind::Sort {
+                input,
+                by_column: vec![key, row_idx_expr],
+                slice: None,
+                sort_options: SortMultipleOptions::default(),
+            },
+        }));
+    }
+
+    let mut gb_output_schema = Schema::with_capacity(aggs.len() + 1);
+    gb_output_schema.insert(
+        input_column.clone(),
+        schema.get(input_column.as_str()).unwrap().clone(),
+    );
+    for agg in aggs {
+        let field = match agg.field(schema.as_ref(), expr_arena) {
+            Ok(v) => v,
+            Err(err) => return Some(Err(err)),
+        };
+        let dtype = if agg.is_scalar(expr_arena) {
+            field.dtype
+        } else {
+            field.dtype.implode()
+        };
+        gb_output_schema.insert(field.name, dtype);
+    }
+    input = PhysStream::first(
+        phys_sm.insert(PhysNode {
+            output_schema: Arc::new(gb_output_schema.clone()),
+            kind: PhysNodeKind::SortedGroupBy {
+                input,
+                key: input_column.clone(),
+                aggs: aggs.to_vec(),
+                slice: options
+                    .slice
+                    .filter(|(o, _)| *o >= 0)
+                    .map(|(o, l)| (o as IdxSize, l as IdxSize)),
+            },
+        }),
+    );
+    if let Some((offset, length)) = options.slice.as_ref().filter(|(o, _)| *o < 0) {
+        input = build_slice_stream(input, *offset, *length, phys_sm);
+    }
+
+    if projected {
+        if let Some(key_fields) = row_encoded {
+            let expr =
+                AExprBuilder::col(input_column.clone(), expr_arena).expr_ir(input_column.clone());
+            let expr = AExprBuilder::function(
+                vec![expr],
+                IRFunctionExpr::RowDecode(
+                    key_fields,
+                    RowEncodingVariant::Ordered {
+                        descending: None,
+                        nulls_last: None,
+                    },
+                ),
+                expr_arena,
+            )
+            .expr_ir(input_column.clone());
+            input = match build_hstack_stream(input, &[expr], expr_arena, phys_sm, expr_cache, ctx)
+            {
+                Ok(v) => v,
+                Err(err) => return Some(Err(err)),
+            };
+
+            // Unnest the row encoded columns.
+            input = PhysStream::first(phys_sm.insert(PhysNode {
+                output_schema: output_schema.clone(),
+                kind: PhysNodeKind::Map {
+                    input,
+                    map: Arc::new(move |df: DataFrame| df.unnest([input_column.clone()], None))
+                        as _,
+                    format_str: ctx.prepare_visualization.then(|| "UNNEST".to_string()),
+                },
+            }));
+
+            let exprs = output_schema
+                .iter_names()
+                .map(|name| AExprBuilder::col(name.clone(), expr_arena).expr_ir(name.clone()))
+                .collect::<Vec<_>>();
+            input = match build_select_stream(input, &exprs, expr_arena, phys_sm, expr_cache, ctx) {
+                Ok(v) => v,
+                Err(err) => return Some(Err(err)),
+            };
+        } else {
+            let exprs = std::iter::once(input_column)
+                .map(|name| (name, output_schema.get_at_index(0).unwrap().0.clone()))
+                .chain(
+                    output_schema
+                        .iter_names_cloned()
+                        .skip(1)
+                        .map(|name| (name.clone(), name.clone())),
+                )
+                .map(|(col_name, out_name)| {
+                    AExprBuilder::col(col_name, expr_arena).expr_ir(out_name)
+                })
+                .collect::<Vec<_>>();
+            input = match build_select_stream(input, &exprs, expr_arena, phys_sm, expr_cache, ctx) {
+                Ok(v) => v,
+                Err(err) => return Some(Err(err)),
+            };
+        }
+    }
+
+    Some(Ok(input))
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn build_group_by_stream(
     input: PhysStream,
@@ -533,6 +738,7 @@ pub fn build_group_by_stream(
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext,
+    are_keys_sorted: bool,
 ) -> PolarsResult<PhysStream> {
     #[cfg(feature = "dynamic_group_by")]
     if let Some(rolling_options) = options.as_ref().rolling.as_ref()
@@ -562,7 +768,24 @@ pub fn build_group_by_stream(
         return Ok(input);
     }
 
-    let streaming = try_build_streaming_group_by(
+    if (are_keys_sorted || std::env::var("POLARS_FORCE_SORTED_GROUP_BY").is_ok_and(|v| v == "1"))
+        && let Some(stream) = try_build_sorted_group_by(
+            input,
+            keys,
+            aggs,
+            output_schema.clone(),
+            maintain_order,
+            options.clone(),
+            apply.clone(),
+            expr_arena,
+            phys_sm,
+            expr_cache,
+            ctx,
+            are_keys_sorted,
+        )
+    {
+        stream
+    } else if let Some(stream) = try_build_streaming_group_by(
         input,
         keys,
         aggs,
@@ -573,8 +796,7 @@ pub fn build_group_by_stream(
         phys_sm,
         expr_cache,
         ctx,
-    );
-    if let Some(stream) = streaming {
+    ) {
         stream
     } else {
         let format_str = ctx.prepare_visualization.then(|| {
