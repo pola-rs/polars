@@ -23,21 +23,6 @@ pub trait DynWriteable: io::Write + Send {
     fn sync_on_close(&mut self, sync_on_close: SyncOnCloseType) -> io::Result<()>;
 }
 
-impl DynWriteable for ClosableFile {
-    fn as_dyn_write(&self) -> &(dyn io::Write + Send + 'static) {
-        self as _
-    }
-    fn as_mut_dyn_write(&mut self) -> &mut (dyn io::Write + Send + 'static) {
-        self as _
-    }
-    fn close(self: Box<Self>) -> io::Result<()> {
-        ClosableFile::close(*self)
-    }
-    fn sync_on_close(&mut self, sync_on_close: SyncOnCloseType) -> io::Result<()> {
-        super::sync_on_close::sync_on_close(sync_on_close, self.as_mut())
-    }
-}
-
 /// Holds a non-async writeable file, abstracted over local files or cloud files.
 ///
 /// This implements `DerefMut` to a trait object implementing [`std::io::Write`].
