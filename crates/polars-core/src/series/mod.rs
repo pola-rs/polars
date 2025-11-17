@@ -397,7 +397,7 @@ impl Series {
             {
                 true
             },
-            dt if dt.is_primitive() && dt == slf.dtype() => true,
+            dt if (dt.is_primitive() || dt.is_extension()) && dt == slf.dtype() => true,
             _ => false,
         };
 
