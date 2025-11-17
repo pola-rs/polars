@@ -102,8 +102,8 @@ pub enum DslPlan {
         extra_columns: ExtraColumnsPolicy,
     },
     PipeWithSchema {
-        input: Arc<DslPlan>,
-        callback: PlanCallback<(DslPlan, SchemaRef), DslPlan>,
+        input: Arc<[DslPlan]>,
+        callback: PlanCallback<(Vec<DslPlan>, Vec<SchemaRef>), DslPlan>,
     },
     #[cfg(feature = "pivot")]
     Pivot {

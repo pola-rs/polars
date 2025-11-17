@@ -104,7 +104,7 @@ mod _python {
     use std::sync::Arc;
 
     use polars_utils::pl_str::PlSmallStr;
-    use pyo3::types::{PyAnyMethods, PyTuple};
+    use pyo3::types::{PyAnyMethods, PyList, PyTuple};
     use pyo3::*;
 
     macro_rules! impl_pycb_type {
@@ -233,6 +233,17 @@ mod _python {
     impl<T: super::PlanCallbackArgs + Clone> super::PlanCallbackArgs for Arc<T> {
         fn into_pyany<'py>(self, py: Python<'py>) -> PyResult<Py<PyAny>> {
             Arc::unwrap_or_clone(self).into_pyany(py)
+        }
+    }
+
+    impl<T: super::PlanCallbackArgs + Clone> super::PlanCallbackArgs for Vec<T> {
+        fn into_pyany<'py>(self, py: Python<'py>) -> PyResult<Py<PyAny>> {
+            let items: Vec<Py<PyAny>> = self
+                .into_iter()
+                .map(|v| v.into_pyany(py))
+                .collect::<PyResult<Vec<_>>>()?;
+
+            Ok(PyList::new(py, items)?.into())
         }
     }
 

@@ -206,9 +206,12 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn pipe_with_schema(self, callback: PlanCallback<(DslPlan, SchemaRef), DslPlan>) -> Self {
+    pub fn pipe_with_schema(
+        self,
+        callback: PlanCallback<(Vec<DslPlan>, Vec<SchemaRef>), DslPlan>,
+    ) -> Self {
         DslPlan::PipeWithSchema {
-            input: Arc::new(self.0),
+            input: Arc::new([self.0]),
             callback,
         }
         .into()

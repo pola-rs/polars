@@ -710,21 +710,41 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             return run_conversion(lp, ctxt, "match_to_schema");
         },
         DslPlan::PipeWithSchema { input, callback } => {
-            let input_owned = owned(input);
+            let mut inputs = Vec::with_capacity(input.len());
+            let mut input_schemas = Vec::with_capacity(input.len());
 
-            // Derive the schema from the input
-            let input = to_alp_impl(input_owned.clone(), ctxt)
-                .map_err(|e| e.context(failed_here!(pipe_with_schema)))?;
-            let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
+            for plan in input.as_ref() {
+                let ir = to_alp_impl(plan.clone(), ctxt)?;
+                let schema = ctxt.lp_arena.get(ir).schema(ctxt.lp_arena).into_owned();
 
-            let input_owned = DslPlan::IR {
-                dsl: Arc::new(input_owned),
-                version: ctxt.lp_arena.version(),
-                node: Some(input),
-            };
+                let dsl = DslPlan::IR {
+                    dsl: Arc::new(plan.clone()),
+                    version: ctxt.lp_arena.version(),
+                    node: Some(ir),
+                };
+                inputs.push(dsl);
+                input_schemas.push(schema);
+            }
+
+            //
+            //// Derive the schema from the input
+            //let input_schema = input
+            //    .iter()
+            //    .map(|input| ctxt.lp_arena.get(input).schema(ctxt.lp_arena).into_owned())
+            //    .collect::<Vec<_>>();
+            //
+            //let input = to_alp_impl(input_owned.clone(), ctxt)
+            //    .map_err(|e| e.context(failed_here!(pipe_with_schema)))?;
+            //let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
+
+            //let input_owned = DslPlan::IR {
+            //    dsl: Arc::new(input_owned),
+            //    version: ctxt.lp_arena.version(),
+            //    node: Some(input),
+            //};
 
             // Adjust the input and start conversion again
-            let input_adjusted = callback.call((input_owned, input_schema.into_owned()))?;
+            let input_adjusted = callback.call((inputs, input_schemas))?;
             return to_alp_impl(input_adjusted, ctxt);
         },
         #[cfg(feature = "pivot")]
