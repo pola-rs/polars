@@ -739,14 +739,17 @@ impl ArrayChunked {
                 vec![FixedSizeListArray::new(arrow_dtype, length, values, None).into_boxed()],
             );
         }
-
+        let mut total_len = 0;
         let chunks = chunks
             .into_iter()
             .map(|chunk| {
                 debug_assert_eq!(chunk.len() % width, 0);
-                FixedSizeListArray::new(arrow_dtype.clone(), length, chunk, None).into_boxed()
+                let chunk_len = chunk.len() / width;
+                total_len += chunk_len;
+                FixedSizeListArray::new(arrow_dtype.clone(), chunk_len, chunk, None).into_boxed()
             })
             .collect();
+        debug_assert_eq!(total_len, length);
 
         unsafe { Self::new_with_dims(field, chunks, length, 0) }
     }
