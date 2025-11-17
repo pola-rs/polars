@@ -348,3 +348,69 @@ fn is_between(
 
     Some(SpecializedColumnPredicate::Between(low, high))
 }
+
+#[cfg(test)]
+mod tests {
+    use polars_error::PolarsResult;
+
+    use super::*;
+    use crate::dsl::{Expr, col, lit};
+    use crate::plans::{DynLiteralValue, ExprToIRContext, LiteralValue, to_expr_ir};
+
+    fn assert_column_predicates_creation_equality(
+        col_dtype: DataType,
+        comparison_value: Expr,
+        expected_predicate_value: AnyValue,
+    ) -> PolarsResult<()> {
+        let colname = PlSmallStr::from_str("test");
+        let expr = col("test").eq(comparison_value);
+        let mut arena = Arena::new();
+        let schema = Schema::from_iter_check_duplicates([(colname.clone(), col_dtype)])?;
+        let mut ctx = ExprToIRContext::new(&mut arena, &schema);
+        let expr_ir = to_expr_ir(expr, &mut ctx)?;
+        let column_predicates = aexpr_to_column_predicates(expr_ir.node(), &mut arena, &schema);
+        let [(colname2, (_, Some(SpecializedColumnPredicate::Equal(scalar))))] =
+            column_predicates.predicates.iter().collect::<Vec<_>>()[..]
+        else {
+            panic!(
+                "Unexpected column predicates: {:?}",
+                column_predicates.predicates
+            );
+        };
+        assert_eq!(colname, colname2);
+        assert_eq!(scalar.value(), &expected_predicate_value);
+        Ok(())
+    }
+
+    #[test]
+    fn column_predicates_creation_string_equality() -> PolarsResult<()> {
+        assert_column_predicates_creation_equality(
+            DataType::String,
+            lit("hello"),
+            AnyValue::StringOwned("hello".into()),
+        )
+    }
+
+    #[test]
+    fn column_predicates_creation_integer_equality() -> PolarsResult<()> {
+        // The same datatype.
+        assert_column_predicates_creation_equality(
+            DataType::Int64,
+            lit(123i64),
+            AnyValue::Int64(123),
+        )?;
+        // A smaller, losslessly castable datatype:
+        assert_column_predicates_creation_equality(
+            DataType::Int64,
+            lit(123i32),
+            AnyValue::Int64(123),
+        )?;
+        // A Python literal that fits in the range:
+        assert_column_predicates_creation_equality(
+            DataType::Int64,
+            Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(123))),
+            AnyValue::Int64(123),
+        )?;
+        Ok(())
+    }
+}
