@@ -100,7 +100,7 @@ pub fn aexpr_to_column_predicates(
                         let aexpr = expr_arena.get(minterm);
 
                         match aexpr {
-                            #[cfg(feature = "regex")]
+                            #[cfg(all(feature = "regex", feature = "strings"))]
                             AExpr::Function {
                                 input,
                                 function: IRFunctionExpr::StringExpr(str_function),
