@@ -112,10 +112,9 @@ pub fn unique_counts(s: &Series) -> PolarsResult<Series> {
             };
             Ok(IdxCa::new(s.name().clone(), values).into_series())
         },
-        
-        DataType::Extension(_, _) => {
-            unique_counts(s.ext().unwrap().storage())
-        },
+
+        #[cfg(feature = "dtype-extension")]
+        DataType::Extension(_, _) => unique_counts(s.ext().unwrap().storage()),
 
         DataType::UInt8
         | DataType::UInt16
