@@ -355,13 +355,14 @@ mod tests {
 
     use super::*;
     use crate::dsl::{Expr, col, lit};
-    use crate::plans::{DynLiteralValue, ExprToIRContext, LiteralValue, to_expr_ir};
+    use crate::plans::{DynLiteralValue, ExprToIRContext, LiteralValue, to_expr_ir, typed_lit};
 
-    fn assert_column_predicates_creation_equality(
+    /// Create a simple equality Expr and return the corresponding column's
+    /// `SpecializedColumnPredicate` from `aexpr_to_column_predicates()`.
+    fn equality_column_predicate(
         col_dtype: DataType,
         comparison_value: Expr,
-        expected_predicate_value: AnyValue,
-    ) -> PolarsResult<()> {
+    ) -> PolarsResult<Option<SpecializedColumnPredicate>> {
         let colname = PlSmallStr::from_str("test");
         let expr = col("test").eq(comparison_value);
         let mut arena = Arena::new();
@@ -369,8 +370,9 @@ mod tests {
         let mut ctx = ExprToIRContext::new(&mut arena, &schema);
         let expr_ir = to_expr_ir(expr, &mut ctx)?;
         let column_predicates = aexpr_to_column_predicates(expr_ir.node(), &mut arena, &schema);
-        let [(colname2, (_, Some(SpecializedColumnPredicate::Equal(scalar))))] =
-            column_predicates.predicates.iter().collect::<Vec<_>>()[..]
+        assert_eq!(column_predicates.predicates.len(), 1);
+        let Some((colname2, (_, predicate))) =
+            column_predicates.predicates.clone().into_iter().next()
         else {
             panic!(
                 "Unexpected column predicates: {:?}",
@@ -378,6 +380,19 @@ mod tests {
             );
         };
         assert_eq!(colname, colname2);
+        Ok(predicate)
+    }
+
+    fn assert_column_predicates_creation_equality(
+        col_dtype: DataType,
+        comparison_value: Expr,
+        expected_predicate_value: AnyValue,
+    ) -> PolarsResult<()> {
+        let Some(SpecializedColumnPredicate::Equal(scalar)) =
+            equality_column_predicate(col_dtype, comparison_value)?
+        else {
+            panic!("didn't get equality predicate")
+        };
         assert_eq!(scalar.value(), &expected_predicate_value);
         Ok(())
     }
@@ -396,21 +411,40 @@ mod tests {
         // The same datatype.
         assert_column_predicates_creation_equality(
             DataType::Int64,
-            lit(123i64),
+            typed_lit(123i64),
             AnyValue::Int64(123),
         )?;
         // A smaller, losslessly castable datatype:
         assert_column_predicates_creation_equality(
             DataType::Int64,
-            lit(123i32),
+            typed_lit(123i32),
             AnyValue::Int64(123),
         )?;
-        // A Python literal that fits in the range:
+        // A dynamic literal that fits in the range:
         assert_column_predicates_creation_equality(
             DataType::Int64,
             Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(123))),
             AnyValue::Int64(123),
         )?;
+        Ok(())
+    }
+
+    /// If casting losslessly is not possible, no equality predicate will be
+    /// created by `aexpr_to_column_predicates()`.
+    #[test]
+    fn column_predicates_equality_lossy_integer_casting() -> PolarsResult<()> {
+        // Can't cast Int64 to Int8 losslessly:
+        assert!(equality_column_predicate(DataType::Int8, typed_lit(100i64))?.is_none());
+        // Can't cast Int64 to Int32 losslessly:
+        assert!(equality_column_predicate(DataType::Int32, typed_lit(100i64))?.is_none());
+        // Can't cast 5000 to Int8 losslessly.
+        assert!(
+            equality_column_predicate(
+                DataType::Int8,
+                Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(5000)))
+            )?
+            .is_none()
+        );
         Ok(())
     }
 }
