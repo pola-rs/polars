@@ -7360,6 +7360,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         columns: ColumnNameOrSelector | Iterable[ColumnNameOrSelector],
         *more_columns: ColumnNameOrSelector,
+        empty_as_null: bool = True,
+        keep_nulls: bool = True,
     ) -> LazyFrame:
         """
         Explode the DataFrame to long format by exploding the given columns.
@@ -7371,6 +7373,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             columns being exploded must be of the `List` or `Array` data type.
         *more_columns
             Additional names of columns to explode, specified as positional arguments.
+        empty_as_null
+            Explode an empty list/array into a `null`.
+        keep_nulls
+            Explode a `null` list/array into a `null`.
 
         Examples
         --------
@@ -7400,7 +7406,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         subset = parse_list_into_selector(columns) | parse_list_into_selector(  # type: ignore[arg-type]
             more_columns
         )
-        return self._from_pyldf(self._ldf.explode(subset=subset._pyselector))
+        return self._from_pyldf(
+            self._ldf.explode(
+                subset=subset._pyselector,
+                empty_as_null=empty_as_null,
+                keep_nulls=keep_nulls,
+            )
+        )
 
     def unique(
         self,

@@ -293,11 +293,12 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn explode(self, columns: Selector, allow_empty: bool) -> Self {
+    pub fn explode(self, columns: Selector, options: ExplodeOptions, allow_empty: bool) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
             function: DslFunction::Explode {
                 columns,
+                options,
                 allow_empty,
             },
         }

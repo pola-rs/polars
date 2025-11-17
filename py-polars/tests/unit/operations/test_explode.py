@@ -591,3 +591,26 @@ def test_explode_array_parameters() -> None:
     assert_series_equal(
         s.explode(empty_as_null=False, keep_nulls=False), pl.Series("a", [], pl.Int64)
     )
+
+
+def test_explode_params() -> None:
+    df = pl.DataFrame({"a": [[1, 2, 3], None, [4, 5, 6], []], "b": [1, 2, 3, 4]})
+
+    assert_frame_equal(
+        df.explode("a"),
+        pl.DataFrame(
+            {"a": [1, 2, 3, None, 4, 5, 6, None], "b": [1, 1, 1, 2, 3, 3, 3, 4]}
+        ),
+    )
+    assert_frame_equal(
+        df.explode("a", empty_as_null=False),
+        pl.DataFrame({"a": [1, 2, 3, None, 4, 5, 6], "b": [1, 1, 1, 2, 3, 3, 3]}),
+    )
+    assert_frame_equal(
+        df.explode("a", keep_nulls=False),
+        pl.DataFrame({"a": [1, 2, 3, 4, 5, 6, None], "b": [1, 1, 1, 3, 3, 3, 4]}),
+    )
+    assert_frame_equal(
+        df.explode("a", empty_as_null=False, keep_nulls=False),
+        pl.DataFrame({"a": [1, 2, 3, 4, 5, 6], "b": [1, 1, 1, 3, 3, 3]}),
+    )

@@ -418,7 +418,13 @@ fn test_shift_elementwise_issue_2509() -> PolarsResult<()> {
         .sort(["x"], Default::default())
         .collect()?;
 
-    let out = out.explode(["sum"])?;
+    let out = out.explode(
+        ["sum"],
+        ExplodeOptions {
+            empty_as_null: true,
+            keep_nulls: true,
+        },
+    )?;
     let out = out.column("sum")?;
     assert_eq!(out.get(0)?, AnyValue::Int32(10));
     assert_eq!(out.get(1)?, AnyValue::Int32(20));

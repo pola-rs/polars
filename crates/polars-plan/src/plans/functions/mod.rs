@@ -54,6 +54,7 @@ pub enum FunctionIR {
     Rechunk,
     Explode {
         columns: Arc<[PlSmallStr]>,
+        options: ExplodeOptions,
         #[cfg_attr(feature = "ir_serde", serde(skip))]
         schema: CachedSchema,
     },
@@ -93,7 +94,18 @@ impl PartialEq for FunctionIR {
                     sources: srcs_r, ..
                 },
             ) => srcs_l == srcs_r,
-            (Explode { columns: l, .. }, Explode { columns: r, .. }) => l == r,
+            (
+                Explode {
+                    columns: l,
+                    options: l_options,
+                    ..
+                },
+                Explode {
+                    columns: r,
+                    options: r_options,
+                    ..
+                },
+            ) => l == r && l_options == r_options,
             #[cfg(feature = "pivot")]
             (Unpivot { args: l, .. }, Unpivot { args: r, .. }) => l == r,
             (RowIndex { name: l, .. }, RowIndex { name: r, .. }) => l == r,
@@ -125,7 +137,14 @@ impl Hash for FunctionIR {
                 separator.hash(state);
             },
             FunctionIR::Rechunk => {},
-            FunctionIR::Explode { columns, schema: _ } => columns.hash(state),
+            FunctionIR::Explode {
+                columns,
+                options,
+                schema: _,
+            } => {
+                columns.hash(state);
+                options.hash(state);
+            },
             #[cfg(feature = "pivot")]
             FunctionIR::Unpivot { args, schema: _ } => args.hash(state),
             FunctionIR::RowIndex {
@@ -231,7 +250,9 @@ impl FunctionIR {
                     df.unnest(columns.iter().cloned(), separator.as_deref())
                 )
             },
-            Explode { columns, .. } => df.explode(columns.iter().cloned()),
+            Explode {
+                columns, options, ..
+            } => df.explode(columns.iter().cloned(), *options),
             #[cfg(feature = "pivot")]
             Unpivot { args, .. } => {
                 use polars_ops::unpivot::UnpivotDF;
@@ -361,9 +382,20 @@ impl Display for FunctionIR {
 
                 Ok(())
             },
-            Explode { columns, schema: _ } => {
+            Explode {
+                columns,
+                options,
+                schema: _,
+            } => {
                 f.write_str("EXPLODE ")?;
-                fmt_column_delimited(f, columns, "[", "]")
+                fmt_column_delimited(f, columns, "[", "]")?;
+                if !options.empty_as_null {
+                    f.write_str(", empty_as_null: false")?;
+                }
+                if !options.keep_nulls {
+                    f.write_str(", keep_nulls: false")?;
+                }
+                Ok(())
             },
             #[cfg(feature = "pivot")]
             Unpivot { args, schema: _ } => {

@@ -223,7 +223,12 @@ impl ExplodeByOffsets for BooleanChunked {
 }
 
 /// Convert Arrow array offsets to indexes of the original list
-pub(crate) fn offsets_to_indexes(offsets: &[i64], capacity: usize) -> Vec<IdxSize> {
+pub(crate) fn offsets_to_indexes(
+    offsets: &[i64],
+    capacity: usize,
+    options: ExplodeOptions,
+    validity: Option<&Bitmap>,
+) -> Vec<IdxSize> {
     if offsets.is_empty() {
         return vec![];
     }
@@ -231,25 +236,57 @@ pub(crate) fn offsets_to_indexes(offsets: &[i64], capacity: usize) -> Vec<IdxSiz
     let mut idx = Vec::with_capacity(capacity);
 
     let mut last_idx = 0;
-    for (offset_start, offset_end) in offsets.iter().zip(offsets[1..].iter()) {
-        if idx.len() >= capacity {
-            // significant speed-up in edge cases with many offsets,
-            // no measurable overhead in typical case due to branch prediction
-            break;
-        }
+    match validity {
+        None => {
+            for (offset_start, offset_end) in offsets.iter().zip(offsets[1..].iter()) {
+                if idx.len() >= capacity {
+                    // significant speed-up in edge cases with many offsets,
+                    // no measurable overhead in typical case due to branch prediction
+                    break;
+                }
 
-        if offset_start == offset_end {
-            // if the previous offset is equal to the current offset, we have an empty
-            // list and we duplicate the previous index
-            idx.push(last_idx);
-        } else {
-            let width = (offset_end - offset_start) as usize;
-            for _ in 0..width {
-                idx.push(last_idx);
+                if offset_start == offset_end {
+                    if options.empty_as_null {
+                        // if the previous offset is equal to the current offset, we have an empty
+                        // list and we duplicate the previous index
+                        idx.push(last_idx);
+                    }
+                } else {
+                    let width = (offset_end - offset_start) as usize;
+                    for _ in 0..width {
+                        idx.push(last_idx);
+                    }
+                }
+
+                last_idx += 1;
             }
-        }
+        },
+        Some(validity) => {
+            for ((offset_start, offset_end), is_valid) in
+                offsets.iter().zip(offsets[1..].iter()).zip(validity.iter())
+            {
+                if idx.len() >= capacity {
+                    // significant speed-up in edge cases with many offsets,
+                    // no measurable overhead in typical case due to branch prediction
+                    break;
+                }
 
-        last_idx += 1;
+                if offset_start == offset_end {
+                    if (is_valid && options.empty_as_null) || (!is_valid && options.keep_nulls) {
+                        // if the previous offset is equal to the current offset, we have an empty
+                        // list and we duplicate the previous index
+                        idx.push(last_idx);
+                    }
+                } else {
+                    let width = (offset_end - offset_start) as usize;
+                    for _ in 0..width {
+                        idx.push(last_idx);
+                    }
+                }
+
+                last_idx += 1;
+            }
+        },
     }
 
     // take the remaining values
@@ -436,14 +473,30 @@ mod test {
     #[test]
     fn test_row_offsets() {
         let offsets = &[0, 1, 2, 2, 3, 4, 4];
-        let out = offsets_to_indexes(offsets, 6);
+        let out = offsets_to_indexes(
+            offsets,
+            6,
+            ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            },
+            None,
+        );
         assert_eq!(out, &[0, 1, 2, 3, 4, 5]);
     }
 
     #[test]
     fn test_empty_row_offsets() {
         let offsets = &[0, 0];
-        let out = offsets_to_indexes(offsets, 0);
+        let out = offsets_to_indexes(
+            offsets,
+            0,
+            ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            },
+            None,
+        );
         let expected: Vec<IdxSize> = Vec::new();
         assert_eq!(out, expected);
     }
@@ -451,14 +504,30 @@ mod test {
     #[test]
     fn test_row_offsets_over_capacity() {
         let offsets = &[0, 1, 1, 2, 2];
-        let out = offsets_to_indexes(offsets, 2);
+        let out = offsets_to_indexes(
+            offsets,
+            2,
+            ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            },
+            None,
+        );
         assert_eq!(out, &[0, 1]);
     }
 
     #[test]
     fn test_row_offsets_nonzero_first_offset() {
         let offsets = &[3, 6, 8];
-        let out = offsets_to_indexes(offsets, 10);
+        let out = offsets_to_indexes(
+            offsets,
+            10,
+            ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            },
+            None,
+        );
         assert_eq!(out, &[0, 0, 0, 1, 1, 2, 2, 2, 2, 2]);
     }
 }
