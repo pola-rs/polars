@@ -3634,6 +3634,7 @@ def test_regex_prefiltering_parametric(s: pl.Series) -> None:
     ]
 
     if (it := s.first()) is not None:
+        assert isinstance(it, str)
         escape = pl.escape_regex(it)
         predicates += [
             pl.col.a.str.starts_with(it),
@@ -3648,6 +3649,7 @@ def test_regex_prefiltering_parametric(s: pl.Series) -> None:
         ]
 
     if (it := s.last()) is not None:
+        assert isinstance(it, str)
         escape = pl.escape_regex(it)
         predicates += [
             pl.col.a.str.starts_with(it),

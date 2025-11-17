@@ -101,12 +101,13 @@ pub fn aexpr_to_column_predicates(
                         let aexpr = expr_arena.get(minterm);
 
                         match aexpr {
+                            #[cfg(feature = "regex")]
                             AExpr::Function {
                                 input,
                                 function: IRFunctionExpr::StringExpr(str_function),
                                 options: _,
                             } if matches!(str_function, IRStringFunction::Contains { literal: _, strict: true } | IRStringFunction::EndsWith | IRStringFunction::StartsWith) => {
-                                    assert_eq!(input.len(), 2);
+                                assert_eq!(input.len(), 2);
                                 into_column(input[0].node(), expr_arena)?;
                                 let lv = constant_evaluate(
                                         input[1].node(),
@@ -118,7 +119,7 @@ pub fn aexpr_to_column_predicates(
                                 if !lv.is_scalar() {
                                     return None;
                                 }
-                                 let lv = lv.extract_str()?;;
+                                 let lv = lv.extract_str()?;
 
                                 let pattern = match str_function {
                                     IRStringFunction::Contains { literal: true, strict: _ } => regex::escape(lv).to_string(),
