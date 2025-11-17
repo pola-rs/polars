@@ -14,8 +14,7 @@ use super::get_binary_expr_col_and_lv;
 use crate::dsl::Operator;
 use crate::plans::aexpr::evaluate::{constant_evaluate, into_column};
 use crate::plans::{
-    AExpr, IRBooleanFunction, IRFunctionExpr, IRStringFunction, MintermIter,
-    aexpr_to_leaf_names_iter,
+    AExpr, IRBooleanFunction, IRFunctionExpr, MintermIter, aexpr_to_leaf_names_iter,
 };
 
 pub struct ColumnPredicates {
@@ -106,7 +105,9 @@ pub fn aexpr_to_column_predicates(
                                 input,
                                 function: IRFunctionExpr::StringExpr(str_function),
                                 options: _,
-                            } if matches!(str_function, IRStringFunction::Contains { literal: _, strict: true } | IRStringFunction::EndsWith | IRStringFunction::StartsWith) => {
+                            } if matches!(str_function, crate::plans::IRStringFunction::Contains { literal: _, strict: true } | IRStringFunction::EndsWith | IRStringFunction::StartsWith) => {
+                                use crate::plans::IRStringFunction;
+
                                 assert_eq!(input.len(), 2);
                                 into_column(input[0].node(), expr_arena)?;
                                 let lv = constant_evaluate(
