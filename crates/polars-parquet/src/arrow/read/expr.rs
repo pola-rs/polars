@@ -96,7 +96,9 @@ pub enum SpecializedParquetColumnExpr {
     Equal(ParquetScalar),
     Between(ParquetScalar, ParquetScalar),
     EqualOneOf(Box<[ParquetScalar]>),
-    Regex(regex::bytes::Regex),
+    StartsWith(Box<[u8]>),
+    EndsWith(Box<[u8]>),
+    RegexMatch(regex::bytes::Regex),
 }
 
 pub type ParquetColumnExprRef = Arc<dyn ParquetColumnExpr>;

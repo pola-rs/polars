@@ -556,9 +556,24 @@ impl utils::Decoder for BinViewDecoder {
                     },
                 }
             },
-            (St::Plain(iter), Spce::Regex(regex)) => {
-                predicate::decode_regex(iter.max_num_values, iter.values, regex, pred_true_mask)?;
-            },
+            (St::Plain(iter), Spce::StartsWith(pattern)) => predicate::decode_matches(
+                iter.max_num_values,
+                iter.values,
+                |v| v.starts_with(pattern),
+                pred_true_mask,
+            )?,
+            (St::Plain(iter), Spce::EndsWith(pattern)) => predicate::decode_matches(
+                iter.max_num_values,
+                iter.values,
+                |v| v.starts_with(pattern),
+                pred_true_mask,
+            )?,
+            (St::Plain(iter), Spce::RegexMatch(regex)) => predicate::decode_matches(
+                iter.max_num_values,
+                iter.values,
+                |v| regex.is_match(v),
+                pred_true_mask,
+            )?,
             _ => return Ok(false),
         }
 

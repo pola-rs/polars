@@ -125,17 +125,22 @@ pub fn aexpr_to_column_predicates(
                                 if !lv.is_scalar() {
                                     return None;
                                 }
-                                 let lv = lv.extract_str()?;
+                                let lv = lv.extract_str()?;
 
-                                let pattern = match str_function {
-                                    IRStringFunction::Contains { literal: true, strict: _ } => regex::escape(lv).to_string(),
-                                    IRStringFunction::Contains { literal: false, strict: _ } => lv.to_string(),
-                                    IRStringFunction::EndsWith => format!("{}$", regex::escape(lv)),
-                                    IRStringFunction::StartsWith => format!("^{}", regex::escape(lv)),
+                                match str_function {
+                                    IRStringFunction::Contains { literal, strict: _ } => {
+                                        let pattern = if *literal {
+                                            regex::escape(lv)
+                                        } else {
+                                            lv.to_string()
+                                        };
+                                        let pattern = regex::bytes::Regex::new(&pattern).ok()?;
+                                        Some(SpecializedColumnPredicate::RegexMatch(pattern))
+                                    },
+                                    IRStringFunction::StartsWith => Some(SpecializedColumnPredicate::StartsWith(lv.as_bytes().into())),
+                                    IRStringFunction::EndsWith => Some(SpecializedColumnPredicate::EndsWith(lv.as_bytes().into())),
                                     _ => unreachable!(),
-                                };
-                                let pattern = regex::bytes::Regex::new(&pattern).ok()?;
-                                Some(SpecializedColumnPredicate::Regex(pattern))
+                                }
                             },
                             AExpr::Function {
                                 input,

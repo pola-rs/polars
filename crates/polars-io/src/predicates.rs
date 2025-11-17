@@ -20,7 +20,9 @@ pub enum SpecializedColumnPredicate {
     Equal(Scalar),
     Between(Scalar, Scalar),
     EqualOneOf(Box<[Scalar]>),
-    Regex(regex::bytes::Regex),
+    StartsWith(Box<[u8]>),
+    EndsWith(Box<[u8]>),
+    RegexMatch(regex::bytes::Regex),
 }
 
 #[derive(Clone)]
@@ -56,7 +58,9 @@ impl ColumnPredicateExpr {
                         .collect::<Result<Box<_>, ()>>()
                         .ok()?,
                 ),
-                S::Regex(s) => P::Regex(s),
+                S::StartsWith(s) => P::StartsWith(s),
+                S::EndsWith(s) => P::EndsWith(s),
+                S::RegexMatch(s) => P::RegexMatch(s),
             })
         });
 
