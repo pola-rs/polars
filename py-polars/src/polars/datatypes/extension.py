@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import contextlib
+
 from polars import datatypes as dt
-from polars._plr import _register_extension_type, _unregister_extension_type
 from polars._utils.unstable import unstable
+
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    from polars._plr import _register_extension_type, _unregister_extension_type
 
 _REGISTRY: dict[str, str | type[dt.BaseExtension]] = {}
 
