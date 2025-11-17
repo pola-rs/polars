@@ -560,17 +560,7 @@ fn create_physical_expr_inner(
             eval_schema.insert(PL_ELEMENT_NAME.clone(), element_dtype.clone());
             let evaluation = create_physical_expr_inner(
                 *evaluation,
-                // @Hack. Since EvalVariant::Array uses `evaluate_on_groups` to determine the
-                // output and that expects to be outputting a list, we need to pretend like we are
-                // aggregating here.
-                //
-                // EvalVariant::List also has this problem but that has a List datatype, so that
-                // goes wrong by pure change and some black magic.
-                if matches!(variant, EvalVariant::Array { .. }) && !evaluation_is_elementwise {
-                    Context::Aggregation
-                } else {
-                    Context::Default
-                },
+                Context::Default,
                 expr_arena,
                 &Arc::new(eval_schema),
                 state,
