@@ -21,8 +21,8 @@ impl WriteDataFrameToFile for ParquetWriteOptions {
         addr: PlPathRef<'_>,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<()> {
-        let f = Writeable::try_new(addr, cloud_options)?;
-        self.to_writer(f).finish(df)?;
+        let mut f = Writeable::try_new(addr, cloud_options)?;
+        self.to_writer(&mut *f).finish(df)?;
         Ok(())
     }
 }
@@ -35,8 +35,8 @@ impl WriteDataFrameToFile for IpcWriterOptions {
         addr: PlPathRef<'_>,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<()> {
-        let f = Writeable::try_new(addr, cloud_options)?;
-        self.to_writer(f).finish(df)?;
+        let mut f = Writeable::try_new(addr, cloud_options)?;
+        self.to_writer(&mut *f).finish(df)?;
         Ok(())
     }
 }

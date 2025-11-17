@@ -6,6 +6,7 @@ pub use async_writeable::AsyncWriteable;
 use polars_core::config;
 use polars_error::{PolarsError, PolarsResult, feature_gated};
 use polars_utils::create_file;
+use polars_utils::file::close_file;
 use polars_utils::mmap::ensure_not_mapped;
 use polars_utils::plpath::PlPathRef;
 
@@ -14,7 +15,7 @@ use crate::cloud::CloudOptions;
 use crate::resolve_homedir;
 
 pub trait WriteableTrait: std::io::Write {
-    fn close(self) -> std::io::Result<()>;
+    fn close(&mut self) -> std::io::Result<()>;
     fn sync_all(&self) -> std::io::Result<()>;
     fn sync_data(&self) -> std::io::Result<()>;
 }
@@ -129,7 +130,9 @@ impl Writeable {
 
     pub fn sync_on_close(&mut self, sync_on_close: SyncOnCloseType) -> std::io::Result<()> {
         match self {
-            Writeable::Dyn(d) => d.sync_on_close(sync_on_close),
+            Writeable::Dyn(d) => {
+                crate::utils::sync_on_close::sync_on_close_dyn(sync_on_close, d.as_mut())
+            },
             Writeable::Local(file) => {
                 crate::utils::sync_on_close::sync_on_close(sync_on_close, file)
             },
@@ -140,8 +143,8 @@ impl Writeable {
 
     pub fn close(self) -> std::io::Result<()> {
         match self {
-            Self::Dyn(v) => v.close(),
-            Self::Local(v) => ClosableFile::from(v).close(),
+            Self::Dyn(mut v) => v.close(),
+            Self::Local(v) => close_file(v),
             #[cfg(feature = "cloud")]
             Self::Cloud(mut v) => v.close(),
         }
@@ -153,7 +156,7 @@ impl Deref for Writeable {
 
     fn deref(&self) -> &Self::Target {
         match self {
-            Self::Dyn(v) => v.as_dyn_write(),
+            Self::Dyn(v) => v,
             Self::Local(v) => v,
             #[cfg(feature = "cloud")]
             Self::Cloud(v) => v,
@@ -164,7 +167,7 @@ impl Deref for Writeable {
 impl DerefMut for Writeable {
     fn deref_mut(&mut self) -> &mut Self::Target {
         match self {
-            Self::Dyn(v) => v.as_mut_dyn_write(),
+            Self::Dyn(v) => v,
             Self::Local(v) => v,
             #[cfg(feature = "cloud")]
             Self::Cloud(v) => v,
@@ -180,17 +183,17 @@ mod async_writeable {
     use std::task::{Context, Poll};
 
     use polars_error::{PolarsError, PolarsResult};
-    use polars_utils::file::ClosableFile;
+    use polars_utils::file::close_file;
     use polars_utils::plpath::PlPathRef;
     use tokio::io::AsyncWriteExt;
     use tokio::task;
 
-    use super::{DynWriteable, Writeable};
+    use super::{Writeable, WriteableTrait};
     use crate::cloud::CloudOptions;
     use crate::utils::sync_on_close::SyncOnCloseType;
 
     /// Turn an abstract io::Write into an abstract tokio::io::AsyncWrite.
-    pub struct AsyncDynWriteable(pub Box<dyn DynWriteable>);
+    pub struct AsyncDynWriteable(pub Box<dyn WriteableTrait + Send>);
 
     impl tokio::io::AsyncWrite for AsyncDynWriteable {
         fn poll_write(
@@ -238,7 +241,9 @@ mod async_writeable {
             sync_on_close: SyncOnCloseType,
         ) -> std::io::Result<()> {
             match self {
-                Self::Dyn(d) => task::block_in_place(|| d.0.sync_on_close(sync_on_close)),
+                Self::Dyn(d) => task::block_in_place(|| {
+                    crate::utils::sync_on_close::sync_on_close_dyn(sync_on_close, d.0.as_mut())
+                }),
                 Self::Local(file) => {
                     crate::utils::sync_on_close::tokio_sync_on_close(sync_on_close, file).await
                 },
@@ -254,7 +259,7 @@ mod async_writeable {
                 },
                 Self::Local(v) => async {
                     let f = v.into_std().await;
-                    ClosableFile::from(f).close()
+                    close_file(f)
                 }
                 .await
                 .map_err(PolarsError::from),
