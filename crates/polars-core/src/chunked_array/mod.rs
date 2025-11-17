@@ -55,7 +55,7 @@ pub use struct_::StructChunked;
 
 use self::flags::{StatisticsFlags, StatisticsFlagsIM};
 use crate::series::IsSorted;
-use crate::utils::{first_non_null, last_non_null};
+use crate::utils::{first_non_null, first_null, last_non_null};
 
 #[cfg(not(feature = "dtype-categorical"))]
 pub struct RevMapping {}
@@ -276,6 +276,34 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         let mut out = self.clone();
         out.set_sorted_flag(sorted);
         out
+    }
+
+    pub fn first_null(&self) -> Option<usize> {
+        if self.null_count() == 0 {
+            None
+        }
+        // We now know there is at least 1 non-null item in the array, and self.len() > 0
+        else if self.null_count() == self.len() {
+            Some(0)
+        } else if self.is_sorted_any() {
+            let out = if unsafe { self.downcast_get_unchecked(0).is_null_unchecked(0) } {
+                // nulls are all at the start
+                0
+            } else {
+                // nulls are all at the end
+                self.null_count()
+            };
+
+            debug_assert!(
+                // If we are lucky this catches something.
+                unsafe { self.get_unchecked(out) }.is_some(),
+                "incorrect sorted flag"
+            );
+
+            Some(out)
+        } else {
+            first_null(self.chunks().iter().map(|arr| arr.as_ref()))
+        }
     }
 
     /// Get the index of the first non null value in this [`ChunkedArray`].
