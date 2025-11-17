@@ -1106,8 +1106,8 @@ def test_hybrid_rle() -> None:
             pl.UInt8,
             pl.UInt32,
             pl.Int64,
-            # pl.Date, # Turned off because of issue #17599
-            # pl.Time, # Turned off because of issue #17599
+            pl.Date,
+            pl.Time,
             pl.Binary,
             pl.Float32,
             pl.Float64,
@@ -3620,3 +3620,50 @@ def test_parquet_is_in_multiple_pages_25312() -> None:
             }
         ),
     )
+
+
+@given(s=series(name="a", dtype=pl.String()))
+def test_regex_prefiltering_parametric(s: pl.Series) -> None:
+    f = io.BytesIO()
+    s.to_frame().write_parquet(f)
+
+    predicates = [
+        pl.col.a.str.starts_with("aaa"),
+        pl.col.a.str.ends_with("aaa"),
+        pl.col.a.str.contains("aaa"),
+    ]
+
+    if (it := s.first()) is not None:
+        escape = pl.escape_regex(it)
+        predicates += [
+            pl.col.a.str.starts_with(it),
+            pl.col.a.str.starts_with(it[1:]),
+            pl.col.a.str.starts_with(it[:-1]),
+            pl.col.a.str.ends_with(it),
+            pl.col.a.str.ends_with(it[1:]),
+            pl.col.a.str.ends_with(it[:-1]),
+            pl.col.a.str.contains(escape),
+            pl.col.a.str.contains(it, literal=True),
+            pl.col.a.str.contains(it[1:], literal=True),
+        ]
+
+    if (it := s.last()) is not None:
+        escape = pl.escape_regex(it)
+        predicates += [
+            pl.col.a.str.starts_with(it),
+            pl.col.a.str.starts_with(it[1:]),
+            pl.col.a.str.starts_with(it[:-1]),
+            pl.col.a.str.ends_with(it),
+            pl.col.a.str.ends_with(it[1:]),
+            pl.col.a.str.ends_with(it[:-1]),
+            pl.col.a.str.contains(escape),
+            pl.col.a.str.contains(it, literal=True),
+            pl.col.a.str.contains(it[1:], literal=True),
+        ]
+
+    for p in predicates:
+        f.seek(0)
+        assert_series_equal(
+            pl.scan_parquet(f).filter(p).collect().to_series(),
+            s.to_frame().filter(p).to_series(),
+        )

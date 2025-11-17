@@ -261,3 +261,35 @@ pub fn decode_is_in_inlinable(
 
     Ok(())
 }
+
+pub fn decode_regex(
+    num_expected_values: usize,
+    mut values: &[u8],
+    regex: &regex::bytes::Regex,
+    pred_true_mask: &mut BitmapBuilder,
+) -> ParquetResult<()> {
+    pred_true_mask.reserve(num_expected_values);
+    for _ in 0..num_expected_values {
+        if values.len() < 4 {
+            return Err(super::invalid_input_err());
+        }
+
+        let length;
+        (length, values) = values.split_at(4);
+        let length: &[u8; 4] = unsafe { length.try_into().unwrap_unchecked() };
+        let length = u32::from_le_bytes(*length);
+
+        if values.len() < length as usize {
+            return Err(super::invalid_input_err());
+        }
+
+        let value;
+        (value, values) = values.split_at(length as usize);
+
+        let is_match = regex.is_match(value);
+        // SAFETY: We reserved enough just before the loop.
+        unsafe { pred_true_mask.push_unchecked(is_match) };
+    }
+
+    Ok(())
+}

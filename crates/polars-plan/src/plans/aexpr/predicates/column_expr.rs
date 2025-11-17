@@ -14,7 +14,8 @@ use super::get_binary_expr_col_and_lv;
 use crate::dsl::Operator;
 use crate::plans::aexpr::evaluate::{constant_evaluate, into_column};
 use crate::plans::{
-    AExpr, IRBooleanFunction, IRFunctionExpr, MintermIter, aexpr_to_leaf_names_iter,
+    AExpr, IRBooleanFunction, IRFunctionExpr, IRStringFunction, MintermIter,
+    aexpr_to_leaf_names_iter,
 };
 
 pub struct ColumnPredicates {
@@ -100,6 +101,35 @@ pub fn aexpr_to_column_predicates(
                         let aexpr = expr_arena.get(minterm);
 
                         match aexpr {
+                            AExpr::Function {
+                                input,
+                                function: IRFunctionExpr::StringExpr(str_function),
+                                options: _,
+                            } if matches!(str_function, IRStringFunction::Contains { literal: _, strict: true } | IRStringFunction::EndsWith | IRStringFunction::StartsWith) => {
+                                    assert_eq!(input.len(), 2);
+                                into_column(input[0].node(), expr_arena)?;
+                                let lv = constant_evaluate(
+                                        input[1].node(),
+                                        expr_arena,
+                                        schema,
+                                        0,
+                                    )??;
+
+                                if !lv.is_scalar() {
+                                    return None;
+                                }
+                                 let lv = lv.extract_str()?;;
+
+                                let pattern = match str_function {
+                                    IRStringFunction::Contains { literal: true, strict: _ } => regex::escape(lv).to_string(),
+                                    IRStringFunction::Contains { literal: false, strict: _ } => lv.to_string(),
+                                    IRStringFunction::EndsWith => format!("{}$", regex::escape(lv)),
+                                    IRStringFunction::StartsWith => format!("^{}", regex::escape(lv)),
+                                    _ => unreachable!(),
+                                };
+                                let pattern = regex::bytes::Regex::new(&pattern).ok()?;
+                                Some(SpecializedColumnPredicate::Regex(pattern))
+                            },
                             AExpr::Function {
                                 input,
                                 function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNull),

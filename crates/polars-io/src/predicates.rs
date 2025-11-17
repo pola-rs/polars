@@ -18,14 +18,9 @@ pub trait PhysicalIoExpr: Send + Sync {
 #[derive(Debug, Clone)]
 pub enum SpecializedColumnPredicate {
     Equal(Scalar),
-
     Between(Scalar, Scalar),
-
     EqualOneOf(Box<[Scalar]>),
-
-    StartsWith(Box<[u8]>),
-    EndsWith(Box<[u8]>),
-    StartEndsWith(Box<[u8]>, Box<[u8]>),
+    Regex(regex::bytes::Regex),
 }
 
 #[derive(Clone)]
@@ -61,9 +56,7 @@ impl ColumnPredicateExpr {
                         .collect::<Result<Box<_>, ()>>()
                         .ok()?,
                 ),
-                S::StartsWith(s) => P::StartsWith(s),
-                S::EndsWith(s) => P::EndsWith(s),
-                S::StartEndsWith(start, end) => P::StartEndsWith(start, end),
+                S::Regex(s) => P::Regex(s),
             })
         });
 
