@@ -6,7 +6,6 @@ use object_store::ObjectStore;
 use object_store::buffered::BufWriter;
 use object_store::path::Path;
 use polars_error::PolarsResult;
-use polars_utils::file::WriteClose;
 use polars_utils::plpath::PlPathRef;
 use tokio::io::AsyncWriteExt;
 

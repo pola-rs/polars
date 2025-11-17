@@ -6,7 +6,6 @@ pub use async_writeable::AsyncWriteable;
 use polars_core::config;
 use polars_error::{PolarsError, PolarsResult, feature_gated};
 use polars_utils::create_file;
-use polars_utils::file::{ClosableFile, WriteClose};
 use polars_utils::mmap::ensure_not_mapped;
 use polars_utils::plpath::PlPathRef;
 
@@ -14,13 +13,10 @@ use super::sync_on_close::SyncOnCloseType;
 use crate::cloud::CloudOptions;
 use crate::resolve_homedir;
 
-pub trait DynWriteable: io::Write + Send {
-    // Needed because trait upcasting is only stable in 1.86.
-    fn as_dyn_write(&self) -> &(dyn io::Write + Send + 'static);
-    fn as_mut_dyn_write(&mut self) -> &mut (dyn io::Write + Send + 'static);
-
-    fn close(self: Box<Self>) -> io::Result<()>;
-    fn sync_on_close(&mut self, sync_on_close: SyncOnCloseType) -> io::Result<()>;
+pub trait WriteableTrait: std::io::Write {
+    fn close(self) -> std::io::Result<()>;
+    fn sync_all(&self) -> std::io::Result<()>;
+    fn sync_data(&self) -> std::io::Result<()>;
 }
 
 /// Holds a non-async writeable file, abstracted over local files or cloud files.
@@ -33,7 +29,7 @@ pub enum Writeable {
     /// An abstract implementation for writable.
     ///
     /// This is used to implement writing to in-memory and arbitrary file descriptors.
-    Dyn(Box<dyn DynWriteable>),
+    Dyn(Box<dyn WriteableTrait + Send>),
     Local(std::fs::File),
     #[cfg(feature = "cloud")]
     Cloud(crate::cloud::BlockingCloudWriter),
@@ -174,21 +170,6 @@ impl DerefMut for Writeable {
             Self::Cloud(v) => v,
         }
     }
-}
-
-/// Note: Prefer using [`Writeable`] / [`Writeable::try_new`] where possible.
-///
-/// Open a path for writing. Supports cloud paths.
-pub fn try_get_writeable(
-    addr: PlPathRef<'_>,
-    cloud_options: Option<&CloudOptions>,
-) -> PolarsResult<Box<dyn WriteClose + Send>> {
-    Writeable::try_new(addr, cloud_options).map(|x| match x {
-        Writeable::Dyn(_) => unreachable!(),
-        Writeable::Local(v) => Box::new(ClosableFile::from(v)) as Box<dyn WriteClose + Send>,
-        #[cfg(feature = "cloud")]
-        Writeable::Cloud(v) => Box::new(v) as Box<dyn WriteClose + Send>,
-    })
 }
 
 #[cfg(feature = "cloud")]

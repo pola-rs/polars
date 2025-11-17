@@ -11,7 +11,7 @@ use crate::parquet::write::ParquetWriteOptions;
 #[cfg(feature = "ipc")]
 use crate::prelude::IpcWriterOptions;
 use crate::prelude::URL_ENCODE_CHAR_SET;
-use crate::utils::file::try_get_writeable;
+use crate::utils::file::Writeable;
 use crate::{SerWriter, WriteDataFrameToFile};
 
 impl WriteDataFrameToFile for ParquetWriteOptions {
@@ -21,7 +21,7 @@ impl WriteDataFrameToFile for ParquetWriteOptions {
         addr: PlPathRef<'_>,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<()> {
-        let f = try_get_writeable(addr, cloud_options)?;
+        let f = Writeable::try_new(addr, cloud_options)?;
         self.to_writer(f).finish(df)?;
         Ok(())
     }
@@ -35,7 +35,7 @@ impl WriteDataFrameToFile for IpcWriterOptions {
         addr: PlPathRef<'_>,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<()> {
-        let f = try_get_writeable(addr, cloud_options)?;
+        let f = Writeable::try_new(addr, cloud_options)?;
         self.to_writer(f).finish(df)?;
         Ok(())
     }
