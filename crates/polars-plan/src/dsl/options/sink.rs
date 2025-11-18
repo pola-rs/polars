@@ -9,7 +9,7 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::DataType;
 use polars_core::scalar::Scalar;
 use polars_io::cloud::CloudOptions;
-use polars_io::utils::file::{DynWriteable, Writeable};
+use polars_io::utils::file::Writeable;
 use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_utils::IdxSize;
 use polars_utils::arena::Arena;
@@ -45,7 +45,7 @@ impl Default for SinkOptions {
     }
 }
 
-type DynSinkTarget = SpecialEq<Arc<std::sync::Mutex<Option<Box<dyn DynWriteable>>>>>;
+type DynSinkTarget = SpecialEq<Arc<std::sync::Mutex<Option<Writeable>>>>;
 
 #[derive(Clone, PartialEq, Eq)]
 pub enum SinkTarget {
@@ -67,9 +67,7 @@ impl SinkTarget {
 
                 polars_io::utils::file::Writeable::try_new(addr.as_ref(), cloud_options)
             },
-            SinkTarget::Dyn(memory_writer) => Ok(Writeable::Dyn(
-                memory_writer.lock().unwrap().take().unwrap(),
-            )),
+            SinkTarget::Dyn(memory_writer) => Ok(memory_writer.lock().unwrap().take().unwrap()),
         }
     }
 
@@ -96,9 +94,7 @@ impl SinkTarget {
 
                 polars_io::utils::file::Writeable::try_new(addr.as_ref(), cloud_options)
             },
-            SinkTarget::Dyn(memory_writer) => Ok(Writeable::Dyn(
-                memory_writer.lock().unwrap().take().unwrap(),
-            )),
+            SinkTarget::Dyn(memory_writer) => Ok(memory_writer.lock().unwrap().take().unwrap()),
         }
     }
 
