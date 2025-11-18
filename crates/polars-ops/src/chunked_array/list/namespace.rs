@@ -649,15 +649,6 @@ pub trait ListNameSpaceImpl: AsList {
             fraction.len()
         );
 
-        if !with_replacement {
-            let min_max = fraction.min_max().unwrap_or((0.0, 1.0));
-
-            polars_ensure!(
-                min_max.0 >= 0.0 && min_max.1 <= 1.0,
-                ComputeError: "fraction(s) must be between 0 and 1 when sampling without replacement."
-            );
-        }
-
         // Broadcast `self`
         let mut ca = Cow::Borrowed(ca);
         if ca.len() == 1 && fraction.len() != 1 {
@@ -670,7 +661,7 @@ pub trait ListNameSpaceImpl: AsList {
             1 => {
                 if let Some(fraction) = fraction.get(0) {
                     ca.try_apply_amortized(|s| {
-                        let n = (s.as_ref().len() as f64 * fraction) as usize;
+                        let n = (s.as_ref().len() as f64 * fraction).ceil() as usize;
                         s.as_ref().sample_n(n, with_replacement, shuffle, seed)
                     })
                 } else {
