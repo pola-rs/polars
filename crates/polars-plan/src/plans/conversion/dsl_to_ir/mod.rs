@@ -12,6 +12,7 @@ use super::convert_utils::SplitPredicates;
 use super::stack_opt::ConversionOptimizer;
 use super::*;
 use crate::constants::PL_ELEMENT_NAME;
+use crate::dsl::PartitionedSinkOptions;
 
 mod concat;
 mod datatype_fn_to_ir;
@@ -1201,85 +1202,93 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let payload = match payload {
                 SinkType::Memory => SinkTypeIR::Memory,
                 SinkType::Callback(f) => SinkTypeIR::Callback(f),
-                SinkType::File(f) => SinkTypeIR::File(f),
-                SinkType::Partition(f) => SinkTypeIR::Partition(PartitionSinkTypeIR {
-                    base_path: f.base_path,
-                    file_path_cb: f.file_path_cb,
-                    file_type: f.file_type,
-                    sink_options: f.sink_options,
-                    variant: match f.variant {
-                        PartitionVariant::MaxSize(max_size) => {
-                            PartitionVariantIR::MaxSize(max_size)
-                        },
-                        PartitionVariant::Parted {
-                            key_exprs,
-                            include_key,
-                        } => {
-                            let eirs = to_expr_irs(
-                                key_exprs,
-                                &mut ExprToIRContext::new_with_opt_eager(
-                                    ctxt.expr_arena,
-                                    &input_schema,
-                                    ctxt.opt_flags,
-                                ),
-                            )?;
-                            ctxt.conversion_optimizer
-                                .fill_scratch(&eirs, ctxt.expr_arena);
+                SinkType::File(options) => SinkTypeIR::File(options),
+                SinkType::Partitioned(PartitionedSinkOptions {
+                    base_path,
+                    file_path_provider,
+                    partition_strategy,
+                    finish_callback,
+                    file_format,
+                    unified_sink_args,
+                }) => {
+                    let expr_to_ir_cx = &mut ExprToIRContext::new_with_opt_eager(
+                        ctxt.expr_arena,
+                        &input_schema,
+                        ctxt.opt_flags,
+                    );
 
-                            PartitionVariantIR::Parted {
-                                key_exprs: eirs,
-                                include_key,
-                            }
-                        },
-                        PartitionVariant::ByKey {
-                            key_exprs,
-                            include_key,
+                    let partition_strategy = match partition_strategy {
+                        PartitionStrategy::Keyed {
+                            keys,
+                            include_keys,
+                            keys_pre_grouped,
+                            per_partition_sort_by,
                         } => {
-                            let eirs = to_expr_irs(
-                                key_exprs,
-                                &mut ExprToIRContext::new_with_opt_eager(
-                                    ctxt.expr_arena,
-                                    &input_schema,
-                                    ctxt.opt_flags,
-                                ),
-                            )?;
-                            ctxt.conversion_optimizer
-                                .fill_scratch(&eirs, ctxt.expr_arena);
-
-                            PartitionVariantIR::ByKey {
-                                key_exprs: eirs,
-                                include_key,
-                            }
-                        },
-                    },
-                    cloud_options: f.cloud_options,
-                    per_partition_sort_by: match f.per_partition_sort_by {
-                        None => None,
-                        Some(sort_by) => Some(
-                            sort_by
+                            let keys = to_expr_irs(keys, expr_to_ir_cx)?;
+                            let per_partition_sort_by: Vec<SortColumnIR> = per_partition_sort_by
                                 .into_iter()
                                 .map(|s| {
-                                    let expr = to_expr_ir(
-                                        s.expr,
-                                        &mut ExprToIRContext::new_with_opt_eager(
-                                            ctxt.expr_arena,
-                                            &input_schema,
-                                            ctxt.opt_flags,
-                                        ),
-                                    )?;
-                                    ctxt.conversion_optimizer
-                                        .push_scratch(expr.node(), ctxt.expr_arena);
-                                    Ok(SortColumnIR {
+                                    let SortColumn {
                                         expr,
-                                        descending: s.descending,
-                                        nulls_last: s.nulls_last,
+                                        descending,
+                                        nulls_last,
+                                    } = s;
+                                    Ok(SortColumnIR {
+                                        expr: to_expr_ir(expr, expr_to_ir_cx)?,
+                                        descending,
+                                        nulls_last,
                                     })
                                 })
-                                .collect::<PolarsResult<Vec<_>>>()?,
-                        ),
-                    },
-                    finish_callback: f.finish_callback,
-                }),
+                                .collect::<PolarsResult<_>>()?;
+
+                            PartitionStrategyIR::Keyed {
+                                keys,
+                                include_keys,
+                                keys_pre_grouped,
+                                per_partition_sort_by,
+                            }
+                        },
+                        PartitionStrategy::MaxRowsPerFile {
+                            max_rows_per_file,
+                            per_file_sort_by,
+                        } => {
+                            let per_file_sort_by: Vec<SortColumnIR> = per_file_sort_by
+                                .into_iter()
+                                .map(|s| {
+                                    let SortColumn {
+                                        expr,
+                                        descending,
+                                        nulls_last,
+                                    } = s;
+                                    Ok(SortColumnIR {
+                                        expr: to_expr_ir(expr, expr_to_ir_cx)?,
+                                        descending,
+                                        nulls_last,
+                                    })
+                                })
+                                .collect::<PolarsResult<_>>()?;
+
+                            PartitionStrategyIR::MaxRowsPerFile {
+                                max_rows_per_file,
+                                per_file_sort_by,
+                            }
+                        },
+                    };
+
+                    let options = PartitionedSinkOptionsIR {
+                        base_path,
+                        file_path_provider,
+                        partition_strategy,
+                        finish_callback,
+                        file_format,
+                        unified_sink_args,
+                    };
+
+                    ctxt.conversion_optimizer
+                        .fill_scratch(options.expr_irs_iter(), ctxt.expr_arena);
+
+                    SinkTypeIR::Partitioned(options)
+                },
             };
 
             let lp = IR::Sink { input, payload };
