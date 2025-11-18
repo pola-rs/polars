@@ -1,5 +1,5 @@
 use polars_core::chunked_array::cast::CastOptions;
-use polars_core::prelude::{DataType, SortMultipleOptions, SortOptions};
+use polars_core::prelude::{DataType, ExplodeOptions, SortMultipleOptions, SortOptions};
 use polars_core::scalar::Scalar;
 use polars_utils::IdxSize;
 use polars_utils::arena::{Arena, Node};
@@ -199,21 +199,11 @@ impl AExprBuilder {
         )
     }
 
-    pub fn explode_skip_empty(self, arena: &mut Arena<AExpr>) -> Self {
+    pub fn explode(self, arena: &mut Arena<AExpr>, options: ExplodeOptions) -> Self {
         Self::new_from_aexpr(
             AExpr::Explode {
                 expr: self.node(),
-                skip_empty: true,
-            },
-            arena,
-        )
-    }
-
-    pub fn explode_null_empty(self, arena: &mut Arena<AExpr>) -> Self {
-        Self::new_from_aexpr(
-            AExpr::Explode {
-                expr: self.node(),
-                skip_empty: false,
+                options,
             },
             arena,
         )

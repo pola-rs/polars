@@ -8,7 +8,7 @@ use polars_utils::idx_vec::UnitVec;
 use polars_utils::unique_id::UniqueId;
 
 use super::expr_pullup::is_output_ordered;
-use crate::dsl::SinkTypeIR;
+use crate::dsl::{FileSinkOptions, PartitionedSinkOptionsIR, SinkTypeIR};
 use crate::plans::{AExpr, IR};
 
 pub(super) fn pullup_orders(
@@ -86,8 +86,13 @@ pub(super) fn pullup_orders(
                     // Set maintain order to false if input is unordered
                     match payload {
                         SinkTypeIR::Memory => {},
-                        SinkTypeIR::File(s) => s.sink_options.maintain_order = false,
-                        SinkTypeIR::Partition(s) => s.sink_options.maintain_order = false,
+                        SinkTypeIR::File(FileSinkOptions {
+                            unified_sink_args, ..
+                        })
+                        | SinkTypeIR::Partitioned(PartitionedSinkOptionsIR {
+                            unified_sink_args,
+                            ..
+                        }) => unified_sink_args.maintain_order = false,
                         SinkTypeIR::Callback(s) => s.maintain_order = false,
                     }
                 }

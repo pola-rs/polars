@@ -6,7 +6,7 @@ use polars_utils::pl_str::PlSmallStr;
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[derive(Clone, Hash)]
+#[derive(Debug, Clone, Hash)]
 pub struct Sorted {
     pub column: PlSmallStr,
     pub descending: bool,

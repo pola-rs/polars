@@ -24,7 +24,7 @@ use crate::expr::selector::PySelector;
 use crate::interop::arrow::to_rust::pyarrow_schema_to_rust;
 use crate::io::scan_options::PyScanOptions;
 use crate::io::sink_options::PySinkOptions;
-use crate::io::sink_output::PySinkOutputType;
+use crate::io::sink_output::PyFileSinkDestination;
 use crate::lazyframe::visit::NodeTraverser;
 use crate::prelude::*;
 use crate::utils::{EnterPolarsExt, to_py_err};
@@ -666,7 +666,7 @@ impl PyLazyFrame {
     fn sink_parquet(
         &self,
         py: Python<'_>,
-        target: PySinkOutputType,
+        target: PyFileSinkDestination,
         sink_options: PySinkOptions,
         compression: &str,
         compression_level: Option<i32>,
@@ -687,14 +687,14 @@ impl PyLazyFrame {
             field_overwrites: field_overwrites.into_iter().map(|f| f.0).collect(),
         };
 
-        let target = target.extract_sink_output_type()?;
+        let target = target.extract_file_sink_destination()?;
         let unified_sink_args = sink_options.extract_unified_sink_args(target.cloud_scheme())?;
 
         py.enter_polars(|| {
             self.ldf
                 .read()
                 .clone()
-                .sink2(target, FileType::Parquet(options), unified_sink_args)
+                .sink(target, FileType::Parquet(options), unified_sink_args)
                 .into()
         })
         .map(Into::into)
@@ -708,7 +708,7 @@ impl PyLazyFrame {
     fn sink_ipc(
         &self,
         py: Python<'_>,
-        target: PySinkOutputType,
+        target: PyFileSinkDestination,
         sink_options: PySinkOptions,
         compression: Wrap<Option<IpcCompression>>,
         compat_level: PyCompatLevel,
@@ -719,14 +719,14 @@ impl PyLazyFrame {
             ..Default::default()
         };
 
-        let target = target.extract_sink_output_type()?;
+        let target = target.extract_file_sink_destination()?;
         let unified_sink_args = sink_options.extract_unified_sink_args(target.cloud_scheme())?;
 
         py.enter_polars(|| {
             self.ldf
                 .read()
                 .clone()
-                .sink2(target, FileType::Ipc(options), unified_sink_args)
+                .sink(target, FileType::Ipc(options), unified_sink_args)
                 .into()
         })
         .map(Into::into)
@@ -742,7 +742,7 @@ impl PyLazyFrame {
     fn sink_csv(
         &self,
         py: Python<'_>,
-        target: PySinkOutputType,
+        target: PyFileSinkDestination,
         sink_options: PySinkOptions,
         include_bom: bool,
         include_header: bool,
@@ -783,14 +783,14 @@ impl PyLazyFrame {
             serialize_options,
         };
 
-        let target = target.extract_sink_output_type()?;
+        let target = target.extract_file_sink_destination()?;
         let unified_sink_args = sink_options.extract_unified_sink_args(target.cloud_scheme())?;
 
         py.enter_polars(|| {
             self.ldf
                 .read()
                 .clone()
-                .sink2(target, FileType::Csv(options), unified_sink_args)
+                .sink(target, FileType::Csv(options), unified_sink_args)
                 .into()
         })
         .map(Into::into)
@@ -803,19 +803,19 @@ impl PyLazyFrame {
     fn sink_json(
         &self,
         py: Python<'_>,
-        target: PySinkOutputType,
+        target: PyFileSinkDestination,
         sink_options: PySinkOptions,
     ) -> PyResult<PyLazyFrame> {
         let options = JsonWriterOptions {};
 
-        let target = target.extract_sink_output_type()?;
+        let target = target.extract_file_sink_destination()?;
         let unified_sink_args = sink_options.extract_unified_sink_args(target.cloud_scheme())?;
 
         py.enter_polars(|| {
             self.ldf
                 .read()
                 .clone()
-                .sink2(target, FileType::Json(options), unified_sink_args)
+                .sink(target, FileType::Json(options), unified_sink_args)
                 .into()
         })
         .map(Into::into)
@@ -1274,8 +1274,18 @@ impl PyLazyFrame {
         out.into()
     }
 
-    fn explode(&self, subset: PySelector) -> Self {
-        self.ldf.read().clone().explode(subset.inner).into()
+    fn explode(&self, subset: PySelector, empty_as_null: bool, keep_nulls: bool) -> Self {
+        self.ldf
+            .read()
+            .clone()
+            .explode(
+                subset.inner,
+                ExplodeOptions {
+                    empty_as_null,
+                    keep_nulls,
+                },
+            )
+            .into()
     }
 
     fn null_count(&self) -> Self {

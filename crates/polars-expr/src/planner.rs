@@ -106,7 +106,6 @@ pub struct ExpressionConversionState {
 
 #[derive(Copy, Clone, Default)]
 struct LocalConversionState {
-    has_implode: bool,
     has_window: bool,
     has_lit: bool,
 }
@@ -124,10 +123,6 @@ impl ExpressionConversionState {
 
     fn reset(&mut self) {
         self.local = LocalConversionState::default();
-    }
-
-    fn has_implode(&self) -> bool {
-        self.local.has_implode
     }
 
     fn set_window(&mut self) {
@@ -328,11 +323,13 @@ fn create_physical_expr_inner(
             node_to_expr(expression, expr_arena),
             schema.clone(),
         ))),
-        Element => Ok(Arc::new(ColumnExpr::new(
-            PL_ELEMENT_NAME.clone(),
-            node_to_expr(expression, expr_arena),
-            schema.clone(),
-        ))),
+        Element => {
+            let output_field = expr_arena
+                .get(expression)
+                .to_field(&ToFieldContext::new(expr_arena, schema))?;
+
+            Ok(Arc::new(ElementExpr::new(output_field)))
+        },
         Sort { expr, options } => {
             let phys_expr = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(SortExpr::new(
@@ -382,8 +379,6 @@ fn create_physical_expr_inner(
         Agg(agg) => {
             let expr = agg.get_input().first();
             let input = create_physical_expr_inner(expr, ctxt, expr_arena, schema, state)?;
-            polars_ensure!(!(state.has_implode() && matches!(ctxt, Context::Aggregation)), InvalidOperation: "'implode' followed by an aggregation is not allowed");
-            state.local.has_implode |= matches!(agg, IRAggExpr::Implode(_));
             let allow_threading = state.allow_threading;
 
             match ctxt {
@@ -627,8 +622,6 @@ fn create_physical_expr_inner(
             let input = create_physical_expr_inner(*input, ctxt, expr_arena, schema, state)?;
             let offset = create_physical_expr_inner(*offset, ctxt, expr_arena, schema, state)?;
             let length = create_physical_expr_inner(*length, ctxt, expr_arena, schema, state)?;
-            polars_ensure!(!(state.has_implode() && matches!(ctxt, Context::Aggregation)),
-                InvalidOperation: "'implode' followed by a slice during aggregation is not allowed");
             Ok(Arc::new(SliceExpr {
                 input,
                 offset,
@@ -636,11 +629,11 @@ fn create_physical_expr_inner(
                 expr: node_to_expr(expression, expr_arena),
             }))
         },
-        Explode { expr, skip_empty } => {
+        Explode { expr, options } => {
             let input = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
-            let skip_empty = *skip_empty;
+            let options = *options;
             let function = SpecialEq::new(Arc::new(
-                move |c: &mut [polars_core::frame::column::Column]| c[0].explode(skip_empty),
+                move |c: &mut [polars_core::frame::column::Column]| c[0].explode(options),
             ) as Arc<dyn ColumnsUdf>);
 
             let output_field = expr_arena

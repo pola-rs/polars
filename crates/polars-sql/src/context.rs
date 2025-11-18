@@ -1134,6 +1134,11 @@ impl SQLContext {
         join_type: JoinType,
     ) -> PolarsResult<LazyFrame> {
         let (left_on, right_on) = process_join_constraint(constraint, tbl_left, tbl_right, self)?;
+        let coalesce_type = match constraint {
+            // "NATURAL" joins should coalesce; otherwise we disambiguate
+            JoinConstraint::Natural => JoinCoalesce::CoalesceColumns,
+            _ => JoinCoalesce::KeepColumns,
+        };
         let joined = tbl_left
             .frame
             .clone()
@@ -1143,7 +1148,7 @@ impl SQLContext {
             .right_on(right_on)
             .how(join_type)
             .suffix(format!(":{}", tbl_right.name))
-            .coalesce(JoinCoalesce::KeepColumns)
+            .coalesce(coalesce_type)
             .finish();
 
         Ok(joined)
@@ -1441,7 +1446,8 @@ impl SQLContext {
                 format!("group_by keys contained duplicate output name '{duplicate_name}'")
             })?;
 
-        // Remove the group_by keys as polars adds those implicitly.
+        // Note: remove the `group_by` keys as Polars adds those implicitly.
+        let mut aliased_aggregations: PlHashMap<PlSmallStr, PlSmallStr> = PlHashMap::new();
         let mut aggregation_projection = Vec::with_capacity(projections.len());
         let mut projection_overrides = PlHashMap::with_capacity(projections.len());
         let mut projection_aliases = PlHashSet::new();
@@ -1485,7 +1491,7 @@ impl SQLContext {
                 }
             }
             let field = e.to_field(&schema_before)?;
-            if group_by_keys_schema.get(&field.name).is_none() && is_non_group_key_expr {
+            if is_non_group_key_expr {
                 let mut e = e.clone();
                 if let Expr::Agg(AggExpr::Implode(expr)) = &e {
                     e = (**expr).clone();
@@ -1493,6 +1499,13 @@ impl SQLContext {
                     if let Expr::Agg(AggExpr::Implode(expr)) = expr.as_ref() {
                         e = (**expr).clone().alias(name.clone());
                     }
+                }
+                // If aggregation colname conflicts with a group key,
+                // alias it to avoid duplicate/mis-tracked columns
+                if group_by_keys_schema.get(&field.name).is_some() {
+                    let alias_name = format!("__POLARS_AGG_{}", field.name);
+                    e = e.alias(alias_name.as_str());
+                    aliased_aggregations.insert(field.name.clone(), alias_name.as_str().into());
                 }
                 aggregation_projection.push(e);
             } else if let Expr::Column(_)
@@ -1520,11 +1533,19 @@ impl SQLContext {
             .map(|(name, projection_expr)| {
                 if let Some(expr) = projection_overrides.get(name.as_str()) {
                     expr.clone()
+                } else if let Some(aliased_name) = aliased_aggregations.get(name) {
+                    col(aliased_name.clone()).alias(name.clone())
                 } else if group_by_keys_schema.get(name).is_some()
                     || projection_aliases.contains(name.as_str())
                     || group_key_aliases.contains(name.as_str())
                 {
-                    projection_expr.clone()
+                    if has_expr(projection_expr, |e| {
+                        matches!(e, Expr::Agg(_) | Expr::Len | Expr::Over { .. })
+                    }) {
+                        col(name.clone())
+                    } else {
+                        projection_expr.clone()
+                    }
                 } else {
                     col(name.clone())
                 }

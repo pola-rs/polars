@@ -144,7 +144,9 @@ pub enum FunctionExpr {
     DropNans,
     DropNulls,
     #[cfg(feature = "mode")]
-    Mode,
+    Mode {
+        maintain_order: bool,
+    },
     #[cfg(feature = "moment")]
     Skew(bool),
     #[cfg(feature = "moment")]
@@ -474,7 +476,7 @@ impl Hash for FunctionExpr {
                 nulls_last.hash(state);
             },
             #[cfg(feature = "mode")]
-            Mode => {},
+            Mode { maintain_order } => maintain_order.hash(state),
             #[cfg(feature = "abs")]
             Abs => {},
             Negate => {},
@@ -716,7 +718,13 @@ impl Display for FunctionExpr {
             DropNans => "drop_nans",
             DropNulls => "drop_nulls",
             #[cfg(feature = "mode")]
-            Mode => "mode",
+            Mode { maintain_order } => {
+                if *maintain_order {
+                    "mode_stable"
+                } else {
+                    "mode"
+                }
+            },
             #[cfg(feature = "moment")]
             Skew(_) => "skew",
             #[cfg(feature = "moment")]

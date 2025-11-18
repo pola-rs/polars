@@ -23,6 +23,10 @@ if __name__ == "__main__":
             basedir / "_polars_runtime_mod", basedir / ("_polars_runtime_" + rt)
         )
 
+        # Rename Cargo.template.toml to Cargo.toml. This rename is done to avoid
+        # cargo from picking up the template file as a real Cargo.toml, see #25391.
+        shutil.move(basedir / "Cargo.template.toml", basedir / "Cargo.toml")
+
         with (basedir / "Cargo.toml").open() as f:
             cargo_toml = f.read()
         with (basedir / "pyproject.toml").open() as f:

@@ -287,7 +287,13 @@ fn test_lazy_query_4() -> PolarsResult<()> {
                 .apply(|s: Column| &s - &(s.shift(1)), |_, f| Ok(f.clone()))
                 .alias("diff_cases"),
         ])
-        .explode(by_name(["day", "diff_cases"], true))
+        .explode(
+            by_name(["day", "diff_cases"], true),
+            ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            },
+        )
         .join(
             base_df,
             [col("uid"), col("day")],
@@ -1039,7 +1045,14 @@ fn test_group_by_cum_sum() -> PolarsResult<()> {
         .collect()?;
 
     assert_eq!(
-        Vec::from(out.column("vals")?.explode(false)?.i32()?),
+        Vec::from(
+            out.column("vals")?
+                .explode(ExplodeOptions {
+                    empty_as_null: true,
+                    keep_nulls: true
+                })?
+                .i32()?
+        ),
         [1, 5, 11, 3, 12, 20]
             .iter()
             .copied()
@@ -1100,7 +1113,13 @@ fn test_multiple_explode() -> PolarsResult<()> {
         .lazy()
         .group_by([col("a")])
         .agg([col("b").alias("b_list"), col("c").alias("c_list")])
-        .explode(by_name(["c_list", "b_list"], true))
+        .explode(
+            by_name(["c_list", "b_list"], true),
+            ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            },
+        )
         .collect()?;
     assert_eq!(out.shape(), (5, 3));
 
@@ -1301,7 +1320,10 @@ fn test_sort_by() -> PolarsResult<()> {
         .group_by_stable([col("b")])
         .agg([col("a").sort_by([col("b"), col("c")], SortMultipleOptions::default())])
         .collect()?;
-    let a = out.column("a")?.explode(false)?;
+    let a = out.column("a")?.explode(ExplodeOptions {
+        empty_as_null: true,
+        keep_nulls: true,
+    })?;
     assert_eq!(
         Vec::from(a.i32().unwrap()),
         &[Some(3), Some(1), Some(2), Some(5), Some(4)]
@@ -1314,7 +1336,10 @@ fn test_sort_by() -> PolarsResult<()> {
         .agg([col("a").sort_by([col("b"), col("c")], SortMultipleOptions::default())])
         .collect()?;
 
-    let a = out.column("a")?.explode(false)?;
+    let a = out.column("a")?.explode(ExplodeOptions {
+        empty_as_null: true,
+        keep_nulls: true,
+    })?;
     assert_eq!(
         Vec::from(a.i32().unwrap()),
         &[Some(3), Some(1), Some(2), Some(5), Some(4)]
@@ -1691,7 +1716,10 @@ fn test_single_ranked_group() -> PolarsResult<()> {
             .over_with_options(Some([col("group")]), None, WindowMapping::Join)?])
         .collect()?;
 
-    let out = out.column("value")?.explode(false)?;
+    let out = out.column("value")?.explode(ExplodeOptions {
+        empty_as_null: true,
+        keep_nulls: true,
+    })?;
     let out = out.f64()?;
     assert_eq!(
         Vec::from(out),
@@ -1760,7 +1788,10 @@ fn test_is_in() -> PolarsResult<()> {
         )])
         .collect()?;
     let out = out.column("cars").unwrap();
-    let out = out.explode(false)?;
+    let out = out.explode(ExplodeOptions {
+        empty_as_null: true,
+        keep_nulls: true,
+    })?;
     let out = out.bool().unwrap();
     assert_eq!(
         Vec::from(out),
@@ -1778,7 +1809,10 @@ fn test_is_in() -> PolarsResult<()> {
         .collect()?;
 
     let out = out.column("cars").unwrap();
-    let out = out.explode(false)?;
+    let out = out.explode(ExplodeOptions {
+        empty_as_null: true,
+        keep_nulls: true,
+    })?;
     let out = out.bool().unwrap();
     assert_eq!(
         Vec::from(out),

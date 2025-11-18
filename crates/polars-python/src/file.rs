@@ -11,11 +11,9 @@ use std::sync::Arc;
 
 use polars::io::mmap::MmapBytesReader;
 use polars::prelude::PlPath;
-use polars::prelude::file::DynWriteable;
-use polars::prelude::sync_on_close::SyncOnCloseType;
+use polars::prelude::file::{Writeable, WriteableTrait};
 use polars_error::polars_err;
 use polars_utils::create_file;
-use polars_utils::file::{ClosableFile, WriteClose};
 use polars_utils::mmap::MemSlice;
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyTypeError;
@@ -33,19 +31,17 @@ pub(crate) struct PyFileLikeObject {
     has_flush: bool,
 }
 
-impl WriteClose for PyFileLikeObject {}
-impl DynWriteable for PyFileLikeObject {
-    fn as_dyn_write(&self) -> &(dyn io::Write + Send + 'static) {
-        self as _
-    }
-    fn as_mut_dyn_write(&mut self) -> &mut (dyn io::Write + Send + 'static) {
-        self as _
-    }
-    fn close(self: Box<Self>) -> io::Result<()> {
+impl WriteableTrait for PyFileLikeObject {
+    fn close(&mut self) -> io::Result<()> {
         Ok(())
     }
-    fn sync_on_close(&mut self, _sync_on_close: SyncOnCloseType) -> io::Result<()> {
-        Ok(())
+
+    fn sync_all(&self) -> std::io::Result<()> {
+        self.flush()
+    }
+
+    fn sync_data(&self) -> std::io::Result<()> {
+        self.flush()
     }
 }
 
@@ -121,6 +117,18 @@ impl PyFileLikeObject {
             return Err(PyErr::new::<PyTypeError, _>(
                 "Object does not have a .write() method.",
             ));
+        }
+
+        Ok(())
+    }
+
+    pub fn flush(&self) -> std::io::Result<()> {
+        if self.has_flush {
+            Python::attach(|py| {
+                self.inner
+                    .call_method(py, "flush", (), None)
+                    .map_err(pyerr_to_io_err)
+            })?;
         }
 
         Ok(())
@@ -230,15 +238,7 @@ impl Write for PyFileLikeObject {
     }
 
     fn flush(&mut self) -> Result<(), io::Error> {
-        if self.has_flush {
-            Python::attach(|py| {
-                self.inner
-                    .call_method(py, "flush", (), None)
-                    .map_err(pyerr_to_io_err)
-            })?;
-        }
-
-        Ok(())
+        Self::flush(self)
     }
 }
 
@@ -264,13 +264,12 @@ impl Seek for PyFileLikeObject {
 pub(crate) trait FileLike: Read + Write + Seek + Sync + Send {}
 
 impl FileLike for File {}
-impl FileLike for ClosableFile {}
 impl FileLike for PyFileLikeObject {}
 impl MmapBytesReader for PyFileLikeObject {}
 
 pub(crate) enum EitherRustPythonFile {
     Py(PyFileLikeObject),
-    Rust(ClosableFile),
+    Rust(std::fs::File),
 }
 
 impl EitherRustPythonFile {
@@ -288,10 +287,10 @@ impl EitherRustPythonFile {
         }
     }
 
-    pub(crate) fn into_writeable(self) -> Box<dyn DynWriteable> {
+    pub(crate) fn into_writeable(self) -> Writeable {
         match self {
-            Self::Py(f) => Box::new(f),
-            Self::Rust(f) => Box::new(f),
+            Self::Py(f) => Writeable::Dyn(Box::new(f)),
+            Self::Rust(f) => Writeable::Local(f),
         }
     }
 }
@@ -299,7 +298,7 @@ impl EitherRustPythonFile {
 pub(crate) enum PythonScanSourceInput {
     Buffer(MemSlice),
     Path(PlPath),
-    File(ClosableFile),
+    File(std::fs::File),
 }
 
 pub(crate) fn try_get_pyfile(

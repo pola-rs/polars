@@ -4,8 +4,6 @@ use std::sync::Arc;
 use polars_core::prelude::Field;
 use polars_core::schema::Schema;
 use polars_error::{PolarsResult, feature_gated};
-#[cfg(feature = "ir_serde")]
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::SpecialEq;
 use crate::dsl::LazySerde;
@@ -52,10 +50,10 @@ impl OpaqueStreamingAgg {
 }
 
 #[cfg(feature = "ir_serde")]
-impl Serialize for SpecialEq<Arc<dyn AnonymousStreamingAgg>> {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+impl serde::Serialize for SpecialEq<Arc<dyn AnonymousStreamingAgg>> {
+    fn serialize<S>(&self, _serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
-        S: Serializer,
+        S: serde::Serializer,
     {
         unreachable!("should not be hit")
     }

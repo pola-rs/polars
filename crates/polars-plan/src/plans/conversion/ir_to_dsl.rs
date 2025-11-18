@@ -7,9 +7,9 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
 
     match expr {
         AExpr::Element => Expr::Element,
-        AExpr::Explode { expr, skip_empty } => Expr::Explode {
+        AExpr::Explode { expr, options } => Expr::Explode {
             input: Arc::new(node_to_expr(expr, expr_arena)),
-            skip_empty,
+            options,
         },
         AExpr::Column(a) => Expr::Column(a),
         AExpr::Literal(s) => Expr::Literal(s),
@@ -316,7 +316,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IA::CountMatches => A::CountMatches,
                 IA::Shift => A::Shift,
                 IA::Slice(offset, length) => A::Slice(offset, length),
-                IA::Explode { skip_empty } => A::Explode { skip_empty },
+                IA::Explode(options) => A::Explode(options),
                 #[cfg(feature = "array_to_struct")]
                 IA::ToStruct(ng) => A::ToStruct(ng),
             })
@@ -887,7 +887,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::DropNans => F::DropNans,
         IF::DropNulls => F::DropNulls,
         #[cfg(feature = "mode")]
-        IF::Mode => F::Mode,
+        IF::Mode { maintain_order } => F::Mode { maintain_order },
         #[cfg(feature = "moment")]
         IF::Skew(v) => F::Skew(v),
         #[cfg(feature = "moment")]

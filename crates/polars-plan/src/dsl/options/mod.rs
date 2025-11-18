@@ -4,7 +4,7 @@ use std::num::NonZeroUsize;
 use std::str::FromStr;
 use std::sync::Arc;
 
-mod sink;
+pub mod sink;
 pub mod sink2;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::*;
@@ -28,8 +28,13 @@ use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-pub use sink::*;
-pub use sink2::*;
+pub use sink::{
+    CallbackSinkType, FileSinkOptions, PartitionTargetCallback, PartitionTargetCallbackResult,
+    PartitionTargetContext, PartitionTargetContextKey, PartitionVariantIR, PartitionedSinkOptions,
+    PartitionedSinkOptionsIR, SinkFinishCallback, SinkOptions, SinkTarget, SinkType, SinkTypeIR,
+    SortColumn, SortColumnIR,
+};
+pub use sink2::{PartitionStrategy, PartitionStrategyIR, SinkDestination, UnifiedSinkArgs};
 use strum_macros::IntoStaticStr;
 
 use super::{Expr, ExprIR};
@@ -274,7 +279,7 @@ pub struct GroupbyOptions {
 }
 
 impl GroupbyOptions {
-    pub(crate) fn is_rolling(&self) -> bool {
+    pub fn is_rolling(&self) -> bool {
         #[cfg(feature = "dynamic_group_by")]
         {
             self.rolling.is_some()
@@ -285,7 +290,7 @@ impl GroupbyOptions {
         }
     }
 
-    pub(crate) fn is_dynamic(&self) -> bool {
+    pub fn is_dynamic(&self) -> bool {
         #[cfg(feature = "dynamic_group_by")]
         {
             self.dynamic.is_some()
@@ -332,7 +337,7 @@ pub struct AnonymousScanOptions {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, strum_macros::IntoStaticStr)]
-/// TODO: Rename to `FileWriteOptions`
+/// TODO: Rename to `FileWriteFormat`
 pub enum FileType {
     #[cfg(feature = "parquet")]
     Parquet(ParquetWriteOptions),
