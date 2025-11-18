@@ -942,8 +942,6 @@ fn expand_expression_rec(
                 let mut evaluation_schema = schema.clone();
                 evaluation_schema.insert(PL_STRUCTFIELDS_NAME.clone(), expr_dtype.clone());
 
-                // let start_length = out.len(); // kdn TODO REVIEW
-
                 let mut eval = Vec::with_capacity(evaluation.len());
                 for e in evaluation {
                     _ = expand_expression_rec(

@@ -12,7 +12,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import InvalidOperationError
+from polars.exceptions import DuplicateError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -1435,6 +1435,14 @@ def test_struct_equal_missing_null_25360() -> None:
             pl.DataFrame({"x": [10, 20, 30], "z": [1, 2, 3]}),
         ),
         (
+            pl.field("x") + 1,
+            pl.DataFrame({"x": [11, 21, 31]}),
+        ),
+        (
+            pl.field("x").alias("z") + 1,
+            pl.DataFrame({"x": [10, 20, 30], "z": [11, 21, 31]}),
+        ),
+        (
             pl.col("a") + pl.field("x"),
             pl.DataFrame({"x": [10, 20, 30], "a": [11, 22, 33]}),
         ),
@@ -1453,7 +1461,7 @@ def test_struct_equal_missing_null_25360() -> None:
     ],
 )
 @pytest.mark.parametrize("inject_none", [True, False])
-def test_struct_with_fields_col_and_field(
+def test_struct_with_fields_col_and_field_alias(
     eval: pl.Expr, expected: pl.DataFrame, inject_none: bool
 ) -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "s": [{"x": 10}, {"x": 20}, {"x": 30}]})
@@ -1468,4 +1476,96 @@ def test_struct_with_fields_col_and_field(
 
     out = df.select(pl.col.s.struct.with_fields(eval))
     out = out.select(pl.col.s.struct.unnest())
+    assert_frame_equal(out, expected)
+
+
+def test_struct_with_fields_multiple() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "s": [{"x": 10}, {"x": 20}, {"x": 30}]})
+    e1 = pl.col("a")
+    e2 = pl.field("x") - 1
+    e3 = pl.field("x").alias("y") + pl.col("a")
+    e4 = pl.field("x").reverse().alias("z") + pl.col("a")
+    out = df.select(pl.col.s.struct.with_fields(e1, e2, e3, e4))
+    out = out.select(pl.col.s.struct.unnest())
+    expected = pl.DataFrame(
+        {"x": [9, 19, 29], "a": [1, 2, 3], "y": [11, 22, 33], "z": [31, 22, 13]}
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_struct_with_fields_non_deterministic_24568() -> None:
+    df = pl.DataFrame({"x": [-1, -2, -2]})
+
+    unique_rows = pl.DataFrame({})
+    for _ in range(10):
+        out = df.select(
+            pl.col("x").value_counts().struct.with_fields(pl.field("count") * 2)
+        )
+        out = out.select(pl.col.x.struct.unnest())
+        unique_rows = unique_rows.vstack(out).unique()
+
+    assert len(unique_rows) == 2
+
+
+@pytest.mark.parametrize(
+    ("expr", "expected"),
+    [
+        (
+            pl.field("x") + pl.col("a").cum_sum(),
+            pl.DataFrame({"g": [10, 20], "s": [[{"x": 11}, {"x": 23}], [{"x": 35}]]}),
+        ),
+        (
+            pl.field("x") + pl.col("a").last(),
+            pl.DataFrame({"g": [10, 20], "s": [[{"x": 12}, {"x": 22}], [{"x": 35}]]}),
+        ),
+        (
+            pl.field("x").first() + pl.col("a").last(),
+            pl.DataFrame({"g": [10, 20], "s": [[{"x": 12}, {"x": 12}], [{"x": 35}]]}),
+        ),
+    ],
+)
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_struct_with_fields_group_by(
+    expr: pl.Expr, expected: pl.DataFrame, maintain_order: bool
+) -> None:
+    df = pl.DataFrame(
+        {"g": [10, 10, 20], "a": [1, 2, 5], "s": [{"x": 10}, {"x": 20}, {"x": 30}]}
+    )
+    q = (
+        df.lazy()
+        .group_by(pl.col("g"), maintain_order=maintain_order)
+        .agg(pl.col("s").struct.with_fields(expr))
+    )
+    assert_frame_equal(q.collect(), expected, check_row_order=maintain_order)
+
+
+def test_struct_with_fields_raises_on_duplicate_field_25207() -> None:
+    df = pl.DataFrame({"a": [1], "s": [{"x": 1}]})
+    with pytest.raises(DuplicateError):
+        df.select(pl.col.s.struct.with_fields(pl.col.a + 1, pl.col.a - 1))
+
+
+@pytest.mark.parametrize("selector", [pl.selectors.struct(), pl.col("*")])
+def test_struct_with_fields_selector_24687(selector: pl.Expr) -> None:
+    df = pl.DataFrame(
+        {
+            "s": [{"a": 1, "b": 1}, {"a": 3, "b": 3}],
+            "t": [{"a": 1, "b": 1}, {"a": 3, "b": 3}],
+        }
+    )
+    expr = pl.field("b").replace(3, -3)
+    expected = df
+    for name in ["s", "t"]:
+        expected = expected.with_columns(pl.col(name).struct.with_fields(expr))
+
+    out = df.select(selector.struct.with_fields(expr))
+    assert_frame_equal(out, expected)
+
+
+def test_struct_with_fields_non_len_preserving() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "s": [{"x": 10}, {"x": 10}, {"x": 30}]})
+    out = df.select(
+        pl.col.s.unique(maintain_order=True).struct.with_fields(pl.field("x") * 2)
+    ).select(pl.col.s.struct.unnest())
+    expected = pl.DataFrame({"x": [20, 60]})
     assert_frame_equal(out, expected)

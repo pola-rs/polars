@@ -107,7 +107,7 @@ impl AExpr {
                 let DataType::Struct(fields) = struct_field.dtype() else {
                     return Err(polars_err!(
                         InvalidOperation: "expected `Struct` dtype for `with_fields` Expr, got `{}`", 
-                        struct_field.dtype())); // kdn TODO ERROR HANDLING
+                        struct_field.dtype()));
                 };
                 //kdn: TODO PERFORMANCE: remove linear search
                 for f in fields {

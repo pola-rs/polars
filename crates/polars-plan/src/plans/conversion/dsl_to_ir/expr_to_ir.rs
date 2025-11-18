@@ -524,6 +524,7 @@ pub(super) fn to_aexpr_impl(
 
             let mut eval_ir = Vec::with_capacity(evaluation.len());
 
+            let mut field_names = PlHashSet::new();
             for e in evaluation {
                 let mut eval_ctx = ExprToIRContext {
                     with_fields: Some((expr, &struct_schema)),
@@ -532,7 +533,11 @@ pub(super) fn to_aexpr_impl(
                     allow_unknown: ctx.allow_unknown,
                     check_column_names: ctx.check_column_names,
                 };
-                eval_ir.push(to_expr_ir(e, &mut eval_ctx)?);
+                let exprir = to_expr_ir(e, &mut eval_ctx)?;
+                let field_name = exprir.output_name().clone();
+                polars_ensure!(field_names.insert(field_name.clone()),
+                    Duplicate: "field with name `{field_name}` has more than one occurrence");
+                eval_ir.push(exprir);
             }
 
             (
