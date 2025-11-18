@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import io
 import pickle
+from typing import TYPE_CHECKING
 
 import polars as pl
-from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
 
 TestExtension = pl.Extension(
     name="testing.test_extension",
@@ -18,7 +22,7 @@ pl.register_extension_type("testing.test_extension", pl.Extension)
 class PythonTestExtension(pl.datatypes.BaseExtension):
     """A test extension type defined in Python."""
 
-    def __init__(self, storage: pl.DataType) -> None:
+    def __init__(self, storage: PolarsDataType) -> None:
         super().__init__(name="testing.python_test_extension", storage=storage)
 
     def __repr__(self) -> str:
@@ -46,16 +50,6 @@ def test_extension_df_constructor() -> None:
             schema={"a": pl.Int8, "b": pl.String},
         ),
     )
-
-
-def test_extension_series_to_storage_and_back() -> None:
-    s = pl.Series("a", [10, 20, 30], dtype=TestExtension)
-
-    storage = s.ext.storage()
-    assert_series_equal(storage, pl.Series("a", [10, 20, 30], dtype=pl.Int8))
-
-    ext = storage.ext.to(TestExtension)
-    assert_series_equal(ext, pl.Series("a", [10, 20, 30], dtype=TestExtension))
 
 
 ROUNDTRIP_DF = pl.DataFrame(
@@ -113,3 +107,12 @@ def test_extension_ipc_roundtrip() -> None:
     buffer.seek(0)
     df_read = pl.read_ipc(buffer)
     assert_frame_equal(df, df_read)
+
+
+def test_to_from_storage_roundtrip() -> None:
+    df = ROUNDTRIP_DF
+    df_storage = df.select(pl.all().ext.storage())
+    df_ext = df_storage.select(
+        [pl.col(col).ext.to(df.schema[col]) for col in df.columns]
+    )
+    assert_frame_equal(df, df_ext)
