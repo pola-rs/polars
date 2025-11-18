@@ -19,10 +19,13 @@ pub mod amortized_iter;
 mod any_value;
 pub mod arithmetic;
 pub mod builder;
+#[cfg(feature = "dtype-categorical")]
+pub mod categorical_to_arrow;
 mod comparison;
 mod from;
 pub mod implementations;
 mod into;
+pub use into::ToArrowConverter;
 pub(crate) mod iterator;
 pub mod ops;
 #[cfg(feature = "proptest")]
@@ -622,11 +625,11 @@ impl Series {
     }
 
     /// Explode a list Series. This expands every item to a new row..
-    pub fn explode(&self, skip_empty: bool) -> PolarsResult<Series> {
+    pub fn explode(&self, options: ExplodeOptions) -> PolarsResult<Series> {
         match self.dtype() {
-            DataType::List(_) => self.list().unwrap().explode(skip_empty),
+            DataType::List(_) => self.list().unwrap().explode(options),
             #[cfg(feature = "dtype-array")]
-            DataType::Array(_, _) => self.array().unwrap().explode(skip_empty),
+            DataType::Array(_, _) => self.array().unwrap().explode(options),
             _ => Ok(self.clone()),
         }
     }

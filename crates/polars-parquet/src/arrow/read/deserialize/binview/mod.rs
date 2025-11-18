@@ -208,9 +208,9 @@ fn decode_plain(
         append_validity(page_validity, filter.as_ref(), validity, max_num_values);
     }
 
-    if let Some(equals_one_of_state) = equals_one_of_state {
-        assert!(page_validity.is_none());
-
+    if let Some(equals_one_of_state) = equals_one_of_state
+        && page_validity.is_none()
+    {
         let mut total_bytes_len = 0;
         match equals_one_of_state {
             EqualsOneOfState::Empty => {},
@@ -556,6 +556,24 @@ impl utils::Decoder for BinViewDecoder {
                     },
                 }
             },
+            (St::Plain(iter), Spce::StartsWith(pattern)) => predicate::decode_matches(
+                iter.max_num_values,
+                iter.values,
+                |v| v.starts_with(pattern),
+                pred_true_mask,
+            )?,
+            (St::Plain(iter), Spce::EndsWith(pattern)) => predicate::decode_matches(
+                iter.max_num_values,
+                iter.values,
+                |v| v.ends_with(pattern),
+                pred_true_mask,
+            )?,
+            (St::Plain(iter), Spce::RegexMatch(regex)) => predicate::decode_matches(
+                iter.max_num_values,
+                iter.values,
+                |v| regex.is_match(v),
+                pred_true_mask,
+            )?,
             _ => return Ok(false),
         }
 

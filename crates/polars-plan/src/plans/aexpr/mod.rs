@@ -27,6 +27,7 @@ pub use traverse::*;
 mod properties;
 pub use aexpr::function_expr::schema::FieldsMapper;
 pub use builder::AExprBuilder;
+pub use evaluate::into_column;
 pub use properties::*;
 pub use schema::ToFieldContext;
 
@@ -46,8 +47,15 @@ pub enum IRAggExpr {
     },
     Median(Node),
     NUnique(Node),
+    Item {
+        input: Node,
+        /// Return a missing value if there are no values.
+        allow_empty: bool,
+    },
     First(Node),
+    FirstNonNull(Node),
     Last(Node),
+    LastNonNull(Node),
     Mean(Node),
     Implode(Node),
     Quantile {
@@ -145,7 +153,10 @@ impl From<IRAggExpr> for GroupByMethod {
             Median(_) => GroupByMethod::Median,
             NUnique(_) => GroupByMethod::NUnique,
             First(_) => GroupByMethod::First,
+            FirstNonNull(_) => GroupByMethod::FirstNonNull,
             Last(_) => GroupByMethod::Last,
+            LastNonNull(_) => GroupByMethod::LastNonNull,
+            Item { allow_empty, .. } => GroupByMethod::Item { allow_empty },
             Mean(_) => GroupByMethod::Mean,
             Implode(_) => GroupByMethod::Implode,
             Sum(_) => GroupByMethod::Sum,
@@ -165,9 +176,13 @@ impl From<IRAggExpr> for GroupByMethod {
 #[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum AExpr {
+    /// Values in a `eval` context.
+    ///
+    /// Equivalent of `pl.element()`.
+    Element,
     Explode {
         expr: Node,
-        skip_empty: bool,
+        options: ExplodeOptions,
     },
     Column(PlSmallStr),
     Literal(LiteralValue),
@@ -205,6 +220,12 @@ pub enum AExpr {
         truthy: Node,
         falsy: Node,
     },
+    /// A streaming aggregation that can only run in the streaming engine.
+    AnonymousStreamingAgg {
+        input: Vec<ExprIR>,
+        fmt_str: Box<PlSmallStr>,
+        function: OpaqueStreamingAgg,
+    },
     AnonymousFunction {
         input: Vec<ExprIR>,
         function: OpaqueColumnUdf,
@@ -233,11 +254,19 @@ pub enum AExpr {
         function: IRFunctionExpr,
         options: FunctionOptions,
     },
-    Window {
+    Over {
         function: Node,
         partition_by: Vec<Node>,
         order_by: Option<(Node, SortOptions)>,
-        options: WindowType,
+        mapping: WindowMapping,
+    },
+    #[cfg(feature = "dynamic_group_by")]
+    Rolling {
+        function: Node,
+        index_column: Node,
+        period: Duration,
+        offset: Duration,
+        closed_window: ClosedWindow,
     },
     Slice {
         input: Node,
@@ -257,6 +286,8 @@ impl AExpr {
     #[recursive::recursive]
     pub fn is_scalar(&self, arena: &Arena<AExpr>) -> bool {
         match self {
+            AExpr::AnonymousStreamingAgg { .. } => true,
+            AExpr::Element => false,
             AExpr::Literal(lv) => lv.is_scalar(),
             AExpr::Function { options, input, .. }
             | AExpr::AnonymousFunction { options, input, .. } => {
@@ -290,7 +321,9 @@ impl AExpr {
             AExpr::Sort { expr, .. } => is_scalar_ae(*expr, arena),
             AExpr::Gather { returns_scalar, .. } => *returns_scalar,
             AExpr::SortBy { expr, .. } => is_scalar_ae(*expr, arena),
-            AExpr::Window { function, .. } => is_scalar_ae(*function, arena),
+            AExpr::Over { function, .. } => is_scalar_ae(*function, arena),
+            #[cfg(feature = "dynamic_group_by")]
+            AExpr::Rolling { function, .. } => is_scalar_ae(*function, arena),
             AExpr::Explode { .. }
             | AExpr::Column(_)
             | AExpr::Filter { .. }
@@ -323,9 +356,12 @@ impl AExpr {
         }
 
         match self {
+            AExpr::Element => true,
             AExpr::Column(_) => true,
-
-            AExpr::Literal(_) | AExpr::Agg(_) | AExpr::Len => false,
+            AExpr::AnonymousStreamingAgg { .. }
+            | AExpr::Literal(_)
+            | AExpr::Agg(_)
+            | AExpr::Len => false,
             AExpr::Function { options, input, .. }
             | AExpr::AnonymousFunction { options, input, .. } => {
                 if options.flags.is_elementwise() {
@@ -358,9 +394,85 @@ impl AExpr {
                 std::iter::once(*expr).chain(by.iter().copied()),
                 arena,
             ),
-            AExpr::Window { function, .. } => is_length_preserving_ae(*function, arena),
+            AExpr::Over { function, .. } => is_length_preserving_ae(*function, arena),
+            #[cfg(feature = "dynamic_group_by")]
+            AExpr::Rolling { function, .. } => is_length_preserving_ae(*function, arena),
 
             AExpr::Explode { .. } | AExpr::Filter { .. } | AExpr::Slice { .. } => false,
         }
     }
+
+    /// Is the top-level expression fallible based on the data values.
+    pub fn is_fallible_top_level(&self, arena: &Arena<AExpr>) -> bool {
+        #[allow(clippy::collapsible_match, clippy::match_like_matches_macro)]
+        match self {
+            AExpr::Function {
+                input, function, ..
+            } => match function {
+                IRFunctionExpr::ListExpr(f) => match f {
+                    IRListFunction::Get(false) => true,
+                    #[cfg(feature = "list_gather")]
+                    IRListFunction::Gather(false) => true,
+                    _ => false,
+                },
+                #[cfg(feature = "dtype-array")]
+                IRFunctionExpr::ArrayExpr(f) => match f {
+                    IRArrayFunction::Get(false) => true,
+                    _ => false,
+                },
+                #[cfg(all(feature = "strings", feature = "temporal"))]
+                IRFunctionExpr::StringExpr(f) => match f {
+                    IRStringFunction::Strptime(_, strptime_options) => {
+                        debug_assert!(input.len() <= 2);
+
+                        let ambiguous_arg_is_infallible_scalar = input
+                            .get(1)
+                            .map(|x| arena.get(x.node()))
+                            .is_some_and(|ae| match ae {
+                                AExpr::Literal(lv) => {
+                                    lv.extract_str().is_some_and(|ambiguous| match ambiguous {
+                                        "earliest" | "latest" | "null" => true,
+                                        "raise" => false,
+                                        v => {
+                                            if cfg!(debug_assertions) {
+                                                panic!("unhandled parameter to ambiguous: {v}")
+                                            }
+                                            false
+                                        },
+                                    })
+                                },
+                                _ => false,
+                            });
+
+                        let ambiguous_is_fallible = !ambiguous_arg_is_infallible_scalar;
+
+                        !matches!(arena.get(input[0].node()), AExpr::Literal(_))
+                            && (strptime_options.strict || ambiguous_is_fallible)
+                    },
+                    _ => false,
+                },
+                _ => false,
+            },
+            AExpr::Cast {
+                expr,
+                dtype: _,
+                options: CastOptions::Strict,
+            } => !matches!(arena.get(*expr), AExpr::Literal(_)),
+            _ => false,
+        }
+    }
+}
+
+#[recursive::recursive]
+pub fn deep_clone_ae(ae: Node, arena: &mut Arena<AExpr>) -> Node {
+    let slf = arena.get(ae).clone();
+
+    let mut children = vec![];
+    slf.children_rev(&mut children);
+    for child in &mut children {
+        *child = deep_clone_ae(*child, arena);
+    }
+    children.reverse();
+
+    arena.add(slf.replace_children(&children))
 }

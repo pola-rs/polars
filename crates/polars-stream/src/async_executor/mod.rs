@@ -17,6 +17,7 @@ use crossbeam_deque::{Injector, Steal, Stealer, Worker as WorkQueue};
 use crossbeam_utils::CachePadded;
 use park_group::ParkGroup;
 use parking_lot::Mutex;
+use polars_core::ALLOW_RAYON_THREADS;
 use polars_utils::relaxed_cell::RelaxedCell;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
@@ -93,7 +94,7 @@ impl<T> JoinHandle<T> {
         self.0.metadata().metrics.as_ref()
     }
 
-    #[expect(unused)]
+    #[allow(unused)]
     pub fn spawn_location(&self) -> &'static Location<'static> {
         self.0.metadata().spawn_location
     }
@@ -265,6 +266,7 @@ impl Executor {
 
     fn runner(&self, thread: usize) {
         TLS_THREAD_ID.set(thread);
+        ALLOW_RAYON_THREADS.set(false);
 
         let mut rng = SmallRng::from_rng(&mut rand::rng());
         let mut worker = self.park_group.new_worker();

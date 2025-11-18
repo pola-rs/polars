@@ -759,9 +759,16 @@ class ExprArrayNameSpace:
         separator_pyexpr = parse_into_expression(separator, str_as_lit=True)
         return wrap_expr(self._pyexpr.arr_join(separator_pyexpr, ignore_nulls))
 
-    def explode(self) -> Expr:
+    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Expr:
         """
         Returns a column with a separate row for every array element.
+
+        Parameters
+        ----------
+        empty_as_null
+            Explode an empty array into a `null`.
+        keep_nulls
+            Explode a `null` array into a `null`.
 
         Returns
         -------
@@ -788,7 +795,9 @@ class ExprArrayNameSpace:
         │ 6   │
         └─────┘
         """
-        return wrap_expr(self._pyexpr.arr_explode())
+        return wrap_expr(
+            self._pyexpr.arr_explode(empty_as_null=empty_as_null, keep_nulls=keep_nulls)
+        )
 
     def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Expr:
         """
@@ -989,5 +998,54 @@ class ExprArrayNameSpace:
         │ 8   ┆ 5   ┆ [2.0, 1.0]    │
         │ 3   ┆ 2   ┆ [2.0, 1.0]    │
         └─────┴─────┴───────────────┘
+
+        See Also
+        --------
+        polars.Expr.arr.agg: Evaluate any expression and automatically explode.
+        polars.Expr.list.eval: Same for the List datatype.
         """
         return wrap_expr(self._pyexpr.arr_eval(expr._pyexpr, as_list=as_list))
+
+    def agg(self, expr: Expr) -> Expr:
+        """
+        Run any polars aggregation expression against the arrays' elements.
+
+        Parameters
+        ----------
+        expr
+            Expression to run. Note that you can select an element with `pl.element()`.
+
+        Examples
+        --------
+        >>> df = pl.Series(
+        ...     "a", [[1, None], [42, 13], [None, None]], pl.Array(pl.Int64, 2)
+        ... ).to_frame()
+        >>> df.with_columns(null_count=pl.col.a.arr.agg(pl.element().null_count()))
+        shape: (3, 2)
+        ┌───────────────┬────────────┐
+        │ a             ┆ null_count │
+        │ ---           ┆ ---        │
+        │ array[i64, 2] ┆ u32        │
+        ╞═══════════════╪════════════╡
+        │ [1, null]     ┆ 1          │
+        │ [42, 13]      ┆ 0          │
+        │ [null, null]  ┆ 2          │
+        └───────────────┴────────────┘
+        >>> df.with_columns(no_nulls=pl.col.a.arr.agg(pl.element().drop_nulls()))
+        shape: (3, 2)
+        ┌───────────────┬───────────┐
+        │ a             ┆ no_nulls  │
+        │ ---           ┆ ---       │
+        │ array[i64, 2] ┆ list[i64] │
+        ╞═══════════════╪═══════════╡
+        │ [1, null]     ┆ [1]       │
+        │ [42, 13]      ┆ [42, 13]  │
+        │ [null, null]  ┆ []        │
+        └───────────────┴───────────┘
+
+        See Also
+        --------
+        polars.Expr.arr.eval: Evaluate any expression without automatic explode.
+        polars.Expr.list.agg: Same for the List datatype.
+        """
+        return wrap_expr(self._pyexpr.arr_agg(expr._pyexpr))

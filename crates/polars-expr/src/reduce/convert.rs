@@ -4,12 +4,15 @@ use polars_utils::arena::{Arena, Node};
 
 use super::*;
 use crate::reduce::any_all::{new_all_reduction, new_any_reduction};
+#[cfg(feature = "approx_unique")]
+use crate::reduce::approx_n_unique::new_approx_n_unique_reduction;
 #[cfg(feature = "bitwise")]
 use crate::reduce::bitwise::{
     new_bitwise_and_reduction, new_bitwise_or_reduction, new_bitwise_xor_reduction,
 };
 use crate::reduce::count::{CountReduce, NullCountReduce};
-use crate::reduce::first_last::{new_first_reduction, new_last_reduction};
+use crate::reduce::first_last::{new_first_reduction, new_item_reduction, new_last_reduction};
+use crate::reduce::first_last_nonnull::{new_first_nonnull_reduction, new_last_nonnull_reduction};
 use crate::reduce::len::LenReduce;
 use crate::reduce::mean::new_mean_reduction;
 use crate::reduce::min_max::{new_max_reduction, new_min_reduction};
@@ -48,7 +51,14 @@ pub fn into_reduction(
                 (new_var_std_reduction(get_dt(*input)?, true, *ddof)?, *input)
             },
             IRAggExpr::First(input) => (new_first_reduction(get_dt(*input)?), *input),
+            IRAggExpr::FirstNonNull(input) => {
+                (new_first_nonnull_reduction(get_dt(*input)?), *input)
+            },
             IRAggExpr::Last(input) => (new_last_reduction(get_dt(*input)?), *input),
+            IRAggExpr::LastNonNull(input) => (new_last_nonnull_reduction(get_dt(*input)?), *input),
+            IRAggExpr::Item { input, allow_empty } => {
+                (new_item_reduction(get_dt(*input)?, *allow_empty), *input)
+            },
             IRAggExpr::Count {
                 input,
                 include_nulls,
@@ -93,6 +103,18 @@ pub fn into_reduction(
             (count, input)
         },
 
+        #[cfg(feature = "approx_unique")]
+        AExpr::Function {
+            input: inner_exprs,
+            function: IRFunctionExpr::ApproxNUnique,
+            options: _,
+        } => {
+            assert!(inner_exprs.len() == 1);
+            let input = inner_exprs[0].node();
+            let out = new_approx_n_unique_reduction(get_dt(input)?)?;
+            (out, input)
+        },
+
         #[cfg(feature = "bitwise")]
         AExpr::Function {
             input: inner_exprs,
@@ -125,6 +147,20 @@ pub fn into_reduction(
                 },
                 _ => unreachable!(),
             }
+        },
+        AExpr::AnonymousStreamingAgg {
+            input: inner_exprs,
+            fmt_str: _,
+            function,
+        } => {
+            let ann_agg = function.materialize()?;
+            assert!(inner_exprs.len() == 1);
+            let input = inner_exprs[0].node();
+            let reduction = ann_agg.as_any();
+            let reduction = reduction
+                .downcast_ref::<Box<dyn GroupedReduction>>()
+                .unwrap();
+            (reduction.new_empty(), input)
         },
         _ => unreachable!(),
     };

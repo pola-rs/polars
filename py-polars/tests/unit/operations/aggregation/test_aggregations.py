@@ -5,10 +5,11 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pytest
+from hypothesis import given
 
 import polars as pl
-from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
+from polars.testing.parametric import dataframes
 
 if TYPE_CHECKING:
     import numpy.typing as npt
@@ -166,7 +167,7 @@ def test_literal_group_agg_chunked_7968() -> None:
         pl.DataFrame(
             [
                 pl.Series("A", [1], dtype=pl.Int64),
-                pl.Series("B", [[1, 2, 2]], dtype=pl.List(pl.UInt32)),
+                pl.Series("B", [[1, 2, 2]], dtype=pl.List(pl.get_index_type())),
             ]
         ),
     )
@@ -240,12 +241,16 @@ def test_online_variance() -> None:
 def test_implode_and_agg() -> None:
     df = pl.DataFrame({"type": ["water", "fire", "water", "earth"]})
 
-    # this would OOB
-    with pytest.raises(
-        InvalidOperationError,
-        match=r"'implode' followed by an aggregation is not allowed",
-    ):
-        df.group_by("type").agg(pl.col("type").implode().first().alias("foo"))
+    assert_frame_equal(
+        df.group_by("type").agg(pl.col("type").implode().first().alias("foo")),
+        pl.DataFrame(
+            {
+                "type": ["water", "fire", "earth"],
+                "foo": [["water", "water"], ["fire"], ["earth"]],
+            }
+        ),
+        check_row_order=False,
+    )
 
     # implode + function should be allowed in group_by
     assert df.group_by("type", maintain_order=True).agg(
@@ -292,7 +297,9 @@ def test_horizontal_sum_null_to_identity() -> None:
 
 def test_horizontal_sum_bool_dtype() -> None:
     out = pl.DataFrame({"a": [True, False]}).select(pl.sum_horizontal("a"))
-    assert_frame_equal(out, pl.DataFrame({"a": pl.Series([1, 0], dtype=pl.UInt32)}))
+    assert_frame_equal(
+        out, pl.DataFrame({"a": pl.Series([1, 0], dtype=pl.get_index_type())})
+    )
 
 
 def test_horizontal_sum_in_group_by_15102() -> None:
@@ -315,8 +322,8 @@ def test_horizontal_sum_in_group_by_15102() -> None:
         out,
         pl.DataFrame(
             {
-                "num_null": pl.Series([0, 2, 3], dtype=pl.UInt32),
-                "len": pl.Series([nbr_records] * 3, dtype=pl.UInt32),
+                "num_null": pl.Series([0, 2, 3], dtype=pl.get_index_type()),
+                "len": pl.Series([nbr_records] * 3, dtype=pl.get_index_type()),
             }
         ),
     )
@@ -430,6 +437,7 @@ def test_agg_filter_over_empty_df_13610() -> None:
 
 
 @pytest.mark.may_fail_cloud  # reason: output order is defined for this in cloud
+@pytest.mark.may_fail_auto_streaming
 @pytest.mark.slow
 def test_agg_empty_sum_after_filter_14734() -> None:
     f = (
@@ -522,7 +530,7 @@ def test_horizontal_mean_in_group_by_15115() -> None:
         pl.DataFrame(
             {
                 "mean_null": pl.Series([0.25, 0.5, 0.75, 1.0], dtype=pl.Float64),
-                "len": pl.Series([nbr_records] * 4, dtype=pl.UInt32),
+                "len": pl.Series([nbr_records] * 4, dtype=pl.get_index_type()),
             }
         ),
     )
@@ -564,8 +572,8 @@ def test_min_max_2850() -> None:
         computed = permuted.select(
             pl.col("id").min().alias("min"), pl.col("id").max().alias("max")
         )
-        assert cast(int, computed[0, "min"]) == minimum
-        assert cast(float, computed[0, "max"]) == maximum
+        assert cast("int", computed[0, "min"]) == minimum
+        assert cast("float", computed[0, "max"]) == maximum
 
 
 def test_multi_arg_structify_15834() -> None:
@@ -743,11 +751,13 @@ def test_sort_by_over_multiple_nulls_last() -> None:
     assert_frame_equal(out, expected)
 
 
-def test_slice_after_agg_raises() -> None:
-    with pytest.raises(
-        InvalidOperationError, match=r"cannot slice\(\) an aggregated scalar value"
-    ):
-        pl.select(a=1, b=1).group_by("a").agg(pl.col("b").first().slice(99, 0))
+def test_slice_after_agg() -> None:
+    assert_frame_equal(
+        pl.select(a=pl.lit(1, dtype=pl.Int64), b=pl.lit(1, dtype=pl.Int64))
+        .group_by("a")
+        .agg(pl.col("b").first().slice(99, 0)),
+        pl.DataFrame({"a": [1], "b": [[]]}, schema_overrides={"b": pl.List(pl.Int64)}),
+    )
 
 
 def test_agg_scalar_empty_groups_20115() -> None:
@@ -937,3 +947,172 @@ def test_invalid_agg_dtypes_should_raise(
         pl.exceptions.PolarsError, match=rf"`{op}` operation not supported for dtype"
     ):
         df.lazy().select(expr).collect(engine="streaming")
+
+
+@given(
+    df=dataframes(
+        min_size=1,
+        max_size=1,
+        excluded_dtypes=[
+            # TODO: polars/#24936
+            pl.Struct,
+        ],
+    )
+)
+def test_single(df: pl.DataFrame) -> None:
+    q = df.lazy().select(pl.all(ignore_nulls=False).item())
+    assert_frame_equal(q.collect(), df)
+    assert_frame_equal(q.collect(engine="streaming"), df)
+
+
+@given(df=dataframes(max_size=0))
+def test_single_empty(df: pl.DataFrame) -> None:
+    q = df.lazy().select(pl.all().item())
+    match = "aggregation 'item' expected a single value, got none"
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect()
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect(engine="streaming")
+
+
+@given(df=dataframes(min_size=2))
+def test_item_too_many(df: pl.DataFrame) -> None:
+    q = df.lazy().select(pl.all(ignore_nulls=False).item())
+    match = f"aggregation 'item' expected a single value, got {df.height} values"
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect()
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect(engine="streaming")
+
+
+@given(
+    df=dataframes(
+        min_size=1,
+        max_size=1,
+        allow_null=False,
+        excluded_dtypes=[
+            # TODO: polars/#24936
+            pl.Struct,
+        ],
+    )
+)
+def test_item_on_groups(df: pl.DataFrame) -> None:
+    df = df.with_columns(pl.col("col0").alias("key"))
+    q = df.lazy().group_by("col0").agg(pl.all(ignore_nulls=False).item())
+    assert_frame_equal(q.collect(), df)
+    assert_frame_equal(q.collect(engine="streaming"), df)
+
+
+def test_item_on_groups_empty() -> None:
+    df = pl.DataFrame({"col0": [[]]})
+    q = df.lazy().select(pl.all().list.item())
+    match = "aggregation 'item' expected a single value, got none"
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect()
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect(engine="streaming")
+
+
+def test_item_on_groups_too_many() -> None:
+    df = pl.DataFrame({"col0": [[1, 2, 3]]})
+    q = df.lazy().select(pl.all().list.item())
+    match = "aggregation 'item' expected a single value, got 3 values"
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect()
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect(engine="streaming")
+
+
+def test_all_any_on_list_raises_error() -> None:
+    # Ensure boolean reductions on non-boolean columns raise an error.
+    # (regression for #24942).
+    lf = pl.LazyFrame({"x": [[True]]}, schema={"x": pl.List(pl.Boolean)})
+
+    # for in-memory engine
+    for expr in (pl.col("x").all(), pl.col("x").any()):
+        with pytest.raises(
+            pl.exceptions.InvalidOperationError, match=r"expected boolean"
+        ):
+            lf.select(expr).collect()
+
+    # for streaming engine
+    for expr in (pl.col("x").all(), pl.col("x").any()):
+        with pytest.raises(
+            pl.exceptions.InvalidOperationError, match=r"expected boolean"
+        ):
+            lf.select(expr).collect(engine="streaming")
+
+
+@pytest.mark.parametrize("null_endpoints", [True, False])
+@pytest.mark.parametrize("ignore_nulls", [True, False])
+@pytest.mark.parametrize(
+    ("dtype", "first_value", "last_value"),
+    [
+        # Struct
+        (
+            pl.Struct({"x": pl.Enum(["c0", "c1"]), "y": pl.Float32}),
+            {"x": "c0", "y": 1.2},
+            {"x": "c1", "y": 3.4},
+        ),
+        # List
+        (pl.List(pl.UInt8), [1], [2]),
+        # Array
+        (pl.Array(pl.Int16, 2), [1, 2], [3, 4]),
+        # Date (logical test)
+        (pl.Date, date(2025, 1, 1), date(2025, 1, 2)),
+        # Float (primitive test)
+        (pl.Float32, 1.0, 2.0),
+    ],
+)
+def test_first_last_nested(
+    null_endpoints: bool,
+    ignore_nulls: bool,
+    dtype: PolarsDataType,
+    first_value: Any,
+    last_value: Any,
+) -> None:
+    s = pl.Series([first_value, last_value], dtype=dtype)
+    if null_endpoints:
+        # Test the case where the first/last value is null
+        null = pl.Series([None], dtype=dtype)
+        s = pl.concat((null, s, null))
+
+    lf = pl.LazyFrame({"a": s})
+
+    # first
+    result = lf.select(pl.col("a").first(ignore_nulls=ignore_nulls)).collect()
+    expected = pl.DataFrame(
+        {
+            "a": pl.Series(
+                [None if null_endpoints and not ignore_nulls else first_value],
+                dtype=dtype,
+            )
+        }
+    )
+    assert_frame_equal(result, expected)
+
+    # last
+    result = lf.select(pl.col("a").last(ignore_nulls=ignore_nulls)).collect()
+    expected = pl.DataFrame(
+        {
+            "a": pl.Series(
+                [None if null_endpoints and not ignore_nulls else last_value],
+                dtype=dtype,
+            ),
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_struct_enum_agg_streaming_24936() -> None:
+    s = (
+        pl.Series(
+            "a",
+            [{"f0": "c0"}],
+            dtype=pl.Struct({"f0": pl.Enum(categories=["c0"])}),
+        ),
+    )
+    df = pl.DataFrame(s)
+
+    q = df.lazy().select(pl.all(ignore_nulls=False).first())
+    assert_frame_equal(q.collect(), df)

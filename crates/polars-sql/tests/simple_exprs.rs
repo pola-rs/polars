@@ -448,7 +448,7 @@ fn test_create_table() {
         FROM df"#;
     let df_sql = context.execute(sql).unwrap().collect().unwrap();
     let create_tbl_res = df! {
-        "Response" => ["CREATE TABLE"]
+        "Response" => ["CREATE TABLE df2"]
     }
     .unwrap();
 
@@ -526,7 +526,16 @@ fn test_arr_agg() {
         ),
         (
             "SELECT unnest(ARRAY_AGG(DISTINCT a)) FROM df",
-            vec![col("a").unique_stable().implode().explode().alias("a")],
+            vec![
+                col("a")
+                    .unique_stable()
+                    .implode()
+                    .explode(ExplodeOptions {
+                        empty_as_null: true,
+                        keep_nulls: true,
+                    })
+                    .alias("a"),
+            ],
         ),
         (
             "SELECT ARRAY_AGG(a ORDER BY b LIMIT 2) FROM df",
@@ -722,6 +731,7 @@ fn test_group_by_2() -> PolarsResult<()> {
     let df_sql = df_sql.collect()?;
     let expected = LazyFrame::scan_ipc(
         PlPath::new("../../examples/datasets/foods1.ipc"),
+        Default::default(),
         Default::default(),
     )?
     .select(&[col("*")])

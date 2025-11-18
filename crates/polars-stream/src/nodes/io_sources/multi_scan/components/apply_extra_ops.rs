@@ -10,13 +10,13 @@ use polars_io::RowIndex;
 use polars_io::predicates::ScanIOPredicate;
 use polars_plan::dsl::{CastColumnsPolicy, MissingColumnsPolicy, ScanSource};
 use polars_plan::plans::hive::HivePartitionsDf;
+use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 
 use crate::nodes::io_sources::multi_scan::components::column_selector::ColumnSelector;
 use crate::nodes::io_sources::multi_scan::components::column_selector::builder::ColumnSelectorBuilder;
 use crate::nodes::io_sources::multi_scan::components::errors::missing_column_err;
 use crate::nodes::io_sources::multi_scan::components::projection::Projection;
-use crate::nodes::io_sources::multi_scan::components::row_counter::RowCounter;
 use crate::nodes::io_sources::multi_scan::components::row_deletions::ExternalFilterMask;
 use crate::nodes::io_sources::multi_scan::pipeline::models::ExtraOperations;
 

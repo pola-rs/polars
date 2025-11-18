@@ -33,6 +33,7 @@ pub enum DslFunction {
     OpaquePython(OpaquePythonUdf),
     Explode {
         columns: Selector,
+        options: ExplodeOptions,
         allow_empty: bool,
     },
     #[cfg(feature = "pivot")]
@@ -54,6 +55,7 @@ pub enum DslFunction {
     // Function that is already converted to IR.
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     FunctionIR(FunctionIR),
+    Hint(HintIR),
 }
 
 #[derive(Clone)]
@@ -127,6 +129,7 @@ impl DslFunction {
                 }
                 FunctionIR::Unnest { columns, separator }
             },
+            DslFunction::Hint(h) => FunctionIR::Hint(h),
             #[cfg(feature = "python")]
             DslFunction::OpaquePython(inner) => FunctionIR::OpaquePython(inner),
             DslFunction::Stats(_)

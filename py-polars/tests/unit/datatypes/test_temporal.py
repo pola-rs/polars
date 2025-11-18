@@ -368,11 +368,11 @@ def test_datetime_consistency() -> None:
 def test_timezone() -> None:
     ts = pa.timestamp("s")
     data = pa.array([1000, 2000], type=ts)
-    s = cast(pl.Series, pl.from_arrow(data))
+    s = cast("pl.Series", pl.from_arrow(data))
 
     tz_ts = pa.timestamp("s", tz="America/New_York")
     tz_data = pa.array([1000, 2000], type=tz_ts)
-    tz_s = cast(pl.Series, pl.from_arrow(tz_data))
+    tz_s = cast("pl.Series", pl.from_arrow(tz_data))
 
     # different timezones are not considered equal
     # we check both `null_equal=True` and `null_equal=False`
@@ -417,7 +417,7 @@ def test_to_list() -> None:
 
 def test_rows() -> None:
     s0 = pl.Series("date", [123543, 283478, 1243]).cast(pl.Date)
-    with pytest.deprecated_call(match="`dt.with_time_unit` is deprecated"):
+    with pytest.deprecated_call(match=r"`dt\.with_time_unit` is deprecated"):
         s1 = (
             pl.Series("datetime", [a * 1_000_000 for a in [123543, 283478, 1243]])
             .cast(pl.Datetime)
@@ -531,7 +531,7 @@ def test_microseconds_accuracy() -> None:
             ]
         ),
     )
-    df = cast(pl.DataFrame, pl.from_arrow(a))
+    df = cast("pl.DataFrame", pl.from_arrow(a))
     assert df["timestamp"].to_list() == timestamps
 
 
@@ -1286,7 +1286,8 @@ def test_replace_time_zone_non_existent_null() -> None:
 
 def test_invalid_non_existent() -> None:
     with pytest.raises(
-        ValueError, match="`non_existent` must be one of {'null', 'raise'}, got cabbage"
+        ValueError,
+        match=r"`non_existent` must be one of {'null', 'raise'}, got cabbage",
     ):
         (
             pl.Series([datetime(2020, 1, 1)]).dt.replace_time_zone(
@@ -2486,7 +2487,7 @@ def test_timezone_ignore_error(
         ComputeError,
         match=(
             "unable to parse time zone: 'non-existent'"
-            ".*POLARS_IGNORE_TIMEZONE_PARSE_ERROR"
+            r".*POLARS_IGNORE_TIMEZONE_PARSE_ERROR"
         ),
     ):
         pl.DataFrame({"a": datetime(2025, 1, 1)}, schema={"a": dtype})

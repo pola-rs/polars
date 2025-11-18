@@ -5,7 +5,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 mod sink;
-
+pub mod sink2;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::*;
 #[cfg(feature = "csv")]
@@ -29,9 +29,10 @@ use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 pub use sink::*;
+pub use sink2::*;
 use strum_macros::IntoStaticStr;
 
-use super::ExprIR;
+use super::{Expr, ExprIR};
 use crate::dsl::Selector;
 
 #[derive(Copy, Clone, PartialEq, Debug, Eq, Hash)]
@@ -119,10 +120,6 @@ pub struct JoinOptionsIR {
     pub force_parallel: bool,
     pub args: JoinArgs,
     pub options: Option<JoinTypeOptionsIR>,
-    /// Proxy of the number of rows in both sides of the joins
-    /// Holds `(Option<known_size>, estimated_size)`
-    pub rows_left: (Option<usize>, usize),
-    pub rows_right: (Option<usize>, usize),
 }
 
 impl From<JoinOptions> for JoinOptionsIR {
@@ -132,8 +129,6 @@ impl From<JoinOptions> for JoinOptionsIR {
             force_parallel: opts.force_parallel,
             args: opts.args,
             options: Default::default(),
-            rows_left: (None, usize::MAX),
-            rows_right: (None, usize::MAX),
         }
     }
 }
@@ -168,29 +163,6 @@ impl From<JoinOptionsIR> for JoinOptions {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub enum WindowType {
-    /// Explode the aggregated list and just do a hstack instead of a join
-    /// this requires the groups to be sorted to make any sense
-    Over(WindowMapping),
-    #[cfg(feature = "dynamic_group_by")]
-    Rolling(RollingGroupOptions),
-}
-
-impl From<WindowMapping> for WindowType {
-    fn from(value: WindowMapping) -> Self {
-        Self::Over(value)
-    }
-}
-
-impl Default for WindowType {
-    fn default() -> Self {
-        Self::Over(WindowMapping::default())
-    }
-}
-
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -205,14 +177,6 @@ pub enum WindowMapping {
     /// Join the groups as 'List<group_dtype>' to the row positions.
     /// warning: this can be memory intensive
     Join,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum NestedType {
-    #[cfg(feature = "dtype-array")]
-    Array,
-    // List,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -310,7 +274,7 @@ pub struct GroupbyOptions {
 }
 
 impl GroupbyOptions {
-    pub(crate) fn is_rolling(&self) -> bool {
+    pub fn is_rolling(&self) -> bool {
         #[cfg(feature = "dynamic_group_by")]
         {
             self.rolling.is_some()
@@ -321,7 +285,7 @@ impl GroupbyOptions {
         }
     }
 
-    pub(crate) fn is_dynamic(&self) -> bool {
+    pub fn is_dynamic(&self) -> bool {
         #[cfg(feature = "dynamic_group_by")]
         {
             self.dynamic.is_some()
@@ -337,8 +301,8 @@ impl GroupbyOptions {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct DistinctOptionsDSL {
-    /// Subset of columns that will be taken into account.
-    pub subset: Option<Selector>,
+    /// Subset of columns/expressions that will be taken into account.
+    pub subset: Option<Vec<Expr>>,
     /// This will maintain the order of the input.
     /// Note that this is more expensive.
     /// `maintain_order` is not supported in the streaming
@@ -367,7 +331,8 @@ pub struct AnonymousScanOptions {
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, strum_macros::IntoStaticStr)]
+/// TODO: Rename to `FileWriteOptions`
 pub enum FileType {
     #[cfg(feature = "parquet")]
     Parquet(ParquetWriteOptions),

@@ -12,6 +12,8 @@ Bitwise
      - Returns the bitwise AND of the given values.
    * - :ref:`BIT_COUNT <bit_count>`
      - Returns the number of bits set to 1 in the binary representation of the given value.
+   * - :ref:`BIT_NOT <bit_not>`
+     - Returns the bitwise NOT of the given value.
    * - :ref:`BIT_OR <bit_or>`
      - Returns the bitwise OR of the given values.
    * - :ref:`BIT_XOR <bit_xor>`
@@ -79,6 +81,33 @@ Returns the number of bits set to 1 in the binary representation of the given va
     # │ 55  ┆ 5          │
     # │ 127 ┆ 7          │
     # └─────┴────────────┘
+
+.. _bit_not:
+
+BIT_NOT
+-------
+Returns the bitwise NOT of the given value.
+
+.. code-block:: python
+
+    df = pl.DataFrame({"i": [3, 10, -4, 256]})
+    df.sql("""
+      SELECT
+        i,
+        BIT_NOT(i) AS bitnot_i
+      FROM self
+    """)
+    # shape: (4, 3)
+    # ┌─────┬──────────┐
+    # │ i   ┆ bitnot_i │
+    # │ --- ┆ ---      │
+    # │ i64 ┆ i64      │
+    # ╞═════╪══════════╡
+    # │ 3   ┆ -4       │
+    # │ 10  ┆ -11      │
+    # │ -4  ┆ 3        │
+    # │ 256 ┆ -257     │
+    # └─────┴──────────┘
 
 .. _bit_or:
 

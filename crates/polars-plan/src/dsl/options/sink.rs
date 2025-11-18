@@ -9,7 +9,7 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::DataType;
 use polars_core::scalar::Scalar;
 use polars_io::cloud::CloudOptions;
-use polars_io::utils::file::{DynWriteable, Writeable};
+use polars_io::utils::file::Writeable;
 use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_utils::IdxSize;
 use polars_utils::arena::Arena;
@@ -45,7 +45,7 @@ impl Default for SinkOptions {
     }
 }
 
-type DynSinkTarget = SpecialEq<Arc<std::sync::Mutex<Option<Box<dyn DynWriteable>>>>>;
+type DynSinkTarget = SpecialEq<Arc<std::sync::Mutex<Option<Writeable>>>>;
 
 #[derive(Clone, PartialEq, Eq)]
 pub enum SinkTarget {
@@ -67,9 +67,7 @@ impl SinkTarget {
 
                 polars_io::utils::file::Writeable::try_new(addr.as_ref(), cloud_options)
             },
-            SinkTarget::Dyn(memory_writer) => Ok(Writeable::Dyn(
-                memory_writer.lock().unwrap().take().unwrap(),
-            )),
+            SinkTarget::Dyn(memory_writer) => Ok(memory_writer.lock().unwrap().take().unwrap()),
         }
     }
 
@@ -96,9 +94,7 @@ impl SinkTarget {
 
                 polars_io::utils::file::Writeable::try_new(addr.as_ref(), cloud_options)
             },
-            SinkTarget::Dyn(memory_writer) => Ok(Writeable::Dyn(
-                memory_writer.lock().unwrap().take().unwrap(),
-            )),
+            SinkTarget::Dyn(memory_writer) => Ok(memory_writer.lock().unwrap().take().unwrap()),
         }
     }
 
@@ -157,15 +153,15 @@ impl<'de> serde::Deserialize<'de> for SinkTarget {
 
 #[cfg(feature = "dsl-schema")]
 impl schemars::JsonSchema for SinkTarget {
-    fn schema_name() -> String {
-        "SinkTarget".to_owned()
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "SinkTarget".into()
     }
 
     fn schema_id() -> std::borrow::Cow<'static, str> {
         std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "SinkTarget"))
     }
 
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         PathBuf::json_schema(generator)
     }
 }
@@ -265,10 +261,10 @@ impl PartitionTargetContextKey {
         Ok(value.to_string())
     }
     #[getter]
-    pub fn raw_value(&self) -> pyo3::PyObject {
+    pub fn raw_value(&self) -> pyo3::Py<pyo3::PyAny> {
         let converter = polars_core::chunked_array::object::registry::get_pyobject_converter();
         *(converter.as_ref())(self.raw_value.as_any_value())
-            .downcast::<pyo3::PyObject>()
+            .downcast::<pyo3::Py<pyo3::PyAny>>()
             .unwrap()
     }
 }
@@ -318,12 +314,32 @@ impl SinkFinishCallback {
         match self {
             Self::Rust(f) => f(df),
             #[cfg(feature = "python")]
-            Self::Python(f) => pyo3::Python::with_gil(|py| {
+            Self::Python(f) => pyo3::Python::attach(|py| {
                 let converter =
                     polars_utils::python_convert_registry::get_python_convert_registry();
                 let df = (converter.to_py.df)(Box::new(df) as Box<dyn std::any::Any>)?;
                 f.call1(py, (df,))?;
                 PolarsResult::Ok(())
+            }),
+        }
+    }
+
+    pub fn display_str(&self) -> PlSmallStr {
+        match self {
+            Self::Rust(_) => PlSmallStr::from_static("Rust(<dyn Fn>)"),
+            #[cfg(feature = "python")]
+            Self::Python(f) => pyo3::Python::attach(|py| {
+                use polars_utils::format_pl_smallstr;
+                use pyo3::intern;
+                use pyo3::pybacked::PyBackedStr;
+
+                let class_name: PyBackedStr = f
+                    .getattr(py, intern!(py, "__class__"))
+                    .unwrap()
+                    .extract(py)
+                    .unwrap();
+
+                format_pl_smallstr!("Python({class_name})")
             }),
         }
     }
@@ -340,7 +356,7 @@ impl PartitionTargetCallback {
         match self {
             Self::Rust(f) => f(ctx),
             #[cfg(feature = "python")]
-            Self::Python(f) => pyo3::Python::with_gil(|py| {
+            Self::Python(f) => pyo3::Python::attach(|py| {
                 let partition_target = f.call1(py, (ctx,))?;
                 let converter =
                     polars_utils::python_convert_registry::get_python_convert_registry();
@@ -351,6 +367,26 @@ impl PartitionTargetCallback {
                     .unwrap()
                     .clone();
                 PolarsResult::Ok(partition_target)
+            }),
+        }
+    }
+
+    pub fn display_str(&self) -> PlSmallStr {
+        match self {
+            Self::Rust(_) => PlSmallStr::from_static("Rust(<dyn Fn>)"),
+            #[cfg(feature = "python")]
+            Self::Python(f) => pyo3::Python::attach(|py| {
+                use polars_utils::format_pl_smallstr;
+                use pyo3::intern;
+                use pyo3::pybacked::PyBackedStr;
+
+                let class_name: PyBackedStr = f
+                    .getattr(py, intern!(py, "__class__"))
+                    .unwrap()
+                    .extract(py)
+                    .unwrap();
+
+                format_pl_smallstr!("Python({class_name})")
             }),
         }
     }
@@ -397,15 +433,15 @@ impl<'de> serde::Deserialize<'de> for SinkFinishCallback {
 
 #[cfg(feature = "dsl-schema")]
 impl schemars::JsonSchema for SinkFinishCallback {
-    fn schema_name() -> String {
-        "PartitionTargetCallback".to_owned()
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "PartitionTargetCallback".into()
     }
 
     fn schema_id() -> std::borrow::Cow<'static, str> {
         std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "SinkFinishCallback"))
     }
 
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         Vec::<u8>::json_schema(generator)
     }
 }
@@ -451,15 +487,15 @@ impl serde::Serialize for PartitionTargetCallback {
 
 #[cfg(feature = "dsl-schema")]
 impl schemars::JsonSchema for PartitionTargetCallback {
-    fn schema_name() -> String {
-        "PartitionTargetCallback".to_owned()
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "PartitionTargetCallback".into()
     }
 
     fn schema_id() -> std::borrow::Cow<'static, str> {
         std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "PartitionTargetCallback"))
     }
 
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         Vec::<u8>::json_schema(generator)
     }
 }
@@ -534,7 +570,7 @@ pub enum PartitionVariant {
 }
 
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, strum_macros::IntoStaticStr)]
 pub enum PartitionVariantIR {
     MaxSize(IdxSize),
     Parted {

@@ -209,7 +209,7 @@ def test_row_index_schema_parquet(parquet_file_path: Path) -> None:
         pl.scan_parquet(str(parquet_file_path), row_index_name="id")
         .select(["id", "b"])
         .collect()
-    ).dtypes == [pl.UInt32, pl.String]
+    ).dtypes == [pl.get_index_type(), pl.String]
 
 
 @pytest.mark.may_fail_cloud  # reason: inspects logs

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import warnings
 from typing import TYPE_CHECKING, Any, Callable, overload
 
 import polars._reexport as pl
@@ -61,8 +62,24 @@ def field(name: str | list[str]) -> Expr:
     """
     Select a field in the current `struct.with_fields` scope.
 
+    Parameters
+    ----------
     name
         Name of the field(s) to select.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"a": [{"x": 5, "y": 2}, {"x": 3, "y": 4}]})
+    >>> df.select(pl.col("a").struct.with_fields(pl.field("x") ** 2))
+    shape: (2, 1)
+    ┌───────────┐
+    │ a         │
+    │ ---       │
+    │ struct[2] │
+    ╞═══════════╡
+    │ {25,2}    │
+    │ {9,4}     │
+    └───────────┘
     """
     if isinstance(name, str):
         name = [name]
@@ -137,7 +154,7 @@ def element() -> Expr:
     │ 3   ┆ 2   ┆ [2]       │
     └─────┴─────┴───────────┘
     """
-    return F.col("")
+    return wrap_expr(plr.element())
 
 
 def count(*columns: str) -> Expr:
@@ -687,6 +704,9 @@ def nth(*indices: int | Sequence[int], strict: bool = True) -> Expr:
     ----------
     indices
         One or more indices representing the columns to retrieve.
+    strict
+        By default, all specified indices must be valid; if any index is out of bounds,
+        an error is raised. If set to `False`, out-of-bounds indices are ignored.
 
     Examples
     --------
@@ -1314,7 +1334,7 @@ def _row_encode(
     return wrap_expr(result)
 
 
-def _wrap_acc_lamba(
+def _wrap_acc_lambda(
     function: Callable[[Series, Series], Series],
 ) -> Callable[[tuple[plr.PySeries, plr.PySeries]], plr.PySeries]:
     def wrapper(t: tuple[plr.PySeries, plr.PySeries]) -> plr.PySeries:
@@ -1446,7 +1466,7 @@ def fold(
     return wrap_expr(
         plr.fold(
             pyacc,
-            _wrap_acc_lamba(function),
+            _wrap_acc_lambda(function),
             pyexprs,
             returns_scalar=returns_scalar,
             return_dtype=rt,
@@ -1529,7 +1549,7 @@ def reduce(
     pyexprs = parse_into_list_of_expressions(exprs)
     return wrap_expr(
         plr.reduce(
-            _wrap_acc_lamba(function),
+            _wrap_acc_lambda(function),
             pyexprs,
             returns_scalar=returns_scalar,
             return_dtype=rt,
@@ -1611,7 +1631,7 @@ def cum_fold(
     return wrap_expr(
         plr.cum_fold(
             pyacc,
-            _wrap_acc_lamba(function),
+            _wrap_acc_lambda(function),
             pyexprs,
             returns_scalar=returns_scalar,
             return_dtype=rt,
@@ -1639,12 +1659,13 @@ def cum_reduce(
         Fn(acc, value) -> new_value
     exprs
         Expressions to aggregate over. May also be a wildcard expression.
+    returns_scalar
+        Whether or not `function` applied returns a scalar. This must be set correctly
+        by the user.
     return_dtype
         Output datatype.
         If not set, the dtype will be inferred based on the dtype of the input
         expressions.
-    include_init
-        Include the initial accumulator state as struct field.
 
     Examples
     --------
@@ -1678,7 +1699,7 @@ def cum_reduce(
     pyexprs = parse_into_list_of_expressions(exprs)
     return wrap_expr(
         plr.cum_reduce(
-            _wrap_acc_lamba(function),
+            _wrap_acc_lambda(function),
             pyexprs,
             returns_scalar=returns_scalar,
             return_dtype=rt,
@@ -1856,7 +1877,19 @@ def exclude(
 
 
 def groups(column: str) -> Expr:
-    """Syntactic sugar for `pl.col("foo").agg_groups()`."""
+    """
+    Syntactic sugar for `pl.col("foo").agg_groups()`.
+
+    .. deprecated:: 1.35
+        Use `df.with_row_index().group_by(...).agg(pl.col('index'))` instead.
+        This method will be removed in Polars 2.0.
+    """
+    warnings.warn(
+        "pl.groups() is deprecated and will be removed in Polars 2.0. "
+        "Use df.with_row_index().group_by(...).agg(pl.col('index')) instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     return F.col(column).agg_groups()
 
 
@@ -2680,12 +2713,14 @@ def row_index(name: str = "index") -> pl.Expr:
     The length of the returned sequence will match the context length, and the
     datatype will match the one returned by `get_index_dtype()`.
 
-    .. warning::
-        This functionality is considered **unstable**. It may be changed
-        at any point without it being considered a breaking change.
+    .. versionadded:: 1.32.0
 
     If you would like to generate sequences with custom offsets / length /
     step size / datatypes, it is recommended to use `int_range` instead.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
 
     Parameters
     ----------

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 import pytest
 
@@ -138,7 +138,7 @@ def test_list_eval_type_cast_11188() -> None:
 )
 def test_list_eval_list_output_18510(data: dict[str, Any], expr: pl.Expr) -> None:
     df = pl.DataFrame(data)
-    result = df.select(pl.col("a").list.eval(pl.lit("")))
+    result = df.select(pl.col("a").list.eval(expr))
     assert result.to_series().dtype == pl.List(pl.String)
 
 
@@ -262,3 +262,276 @@ def test_list_eval_struct_in_group_by_23846() -> None:
     expected = pl.Series("x", [[5, 5], [5]])
     assert_series_equal(q.collect().to_series().sort(), expected.sort())
     assert q.collect_schema() == q.collect().schema
+
+
+@pytest.mark.parametrize("filter_flag", [True, False])
+@pytest.mark.parametrize(
+    "col",
+    [
+        [],
+        [1, 2, 3],
+        [[1, 2], [3]],
+    ],
+)
+def test_cumulative_eval_on_empty_list_schema_24635(
+    col: list[Any], filter_flag: bool
+) -> None:
+    df = pl.DataFrame({"n": col})
+
+    # over
+    q = (
+        df.lazy()
+        # Force empty with a filter that removes everything
+        .filter(pl.lit(filter_flag))
+        .select(pl.col("n").cumulative_eval(pl.element().last()).over(1))
+    )
+    expected = df.head(df.height if filter_flag else 0)
+    assert_frame_equal(q.collect(), expected)
+    assert q.collect_schema() == q.collect().schema
+
+    # group_by
+    q = (
+        df.lazy()
+        # Force empty with a filter that removes everything
+        .filter(pl.lit(filter_flag))
+        .group_by([1])
+        .agg(pl.col("n").cumulative_eval(pl.element().last()))
+    )
+    assert q.collect_schema() == q.collect().schema
+
+
+def set_validity(s: pl.Series, validity: list[bool]) -> pl.Series:
+    return s.zip_with(pl.Series(validity), pl.Series([None], dtype=s.dtype))
+
+
+@pytest.mark.parametrize(
+    "sum_expr",
+    [pl.element().sum(), pl.element().unique().sum(), pl.element().fill_null(1).sum()],
+)
+def test_list_agg_sum(sum_expr: pl.Expr) -> None:
+    assert_series_equal(
+        pl.Series("a", [], pl.List(pl.Int64)).list.agg(sum_expr),
+        pl.Series("a", [], pl.Int64),
+    )
+
+    assert_series_equal(
+        pl.Series("a", [[0, 1, 2], [1, 3, 5]]).list.agg(sum_expr),
+        pl.Series("a", [3, 9]),
+    )
+
+    assert_series_equal(
+        pl.Series("a", [[], []], pl.List(pl.Int64)).list.agg(sum_expr),
+        pl.Series("a", [0, 0]),
+    )
+
+    assert_series_equal(
+        pl.Series("a", [None, [1, 3, 5]]).list.agg(sum_expr),
+        pl.Series("a", [None, 9]),
+    )
+
+    assert_series_equal(
+        set_validity(
+            pl.Series("a", [[1, 2, 3], [3], [1, 3, 5]]), [True, False, True]
+        ).list.agg(sum_expr),
+        pl.Series("a", [6, None, 9]),
+    )
+
+
+@pytest.mark.parametrize(
+    ("expr", "is_scalar"),
+    [
+        (pl.Expr.null_count, True),
+        (lambda e: e.rank().null_count(), True),
+        (pl.Expr.rank, False),
+        (lambda e: e + pl.lit(1), False),
+        (lambda e: e.filter(e != 0), False),
+        (pl.Expr.drop_nulls, False),
+        (pl.Expr.n_unique, True),
+    ],
+)
+def test_list_agg_parametric(
+    expr: Callable[[pl.Expr], pl.Expr], is_scalar: bool
+) -> None:
+    def test_case(s: pl.Series) -> None:
+        out = s.list.agg(expr(pl.element()))
+
+        for i, v in enumerate(s):
+            if v is None:
+                assert out[i] is None
+                continue
+
+            assert isinstance(v, pl.Series)
+
+            v = v.to_frame().select(expr(pl.col(""))).to_series()
+
+            if not is_scalar:
+                v = v.implode()
+
+            assert_series_equal(out.rename("").slice(i, 1), v)
+
+    test_case(pl.Series("a", [], pl.List(pl.Int64)))
+    test_case(pl.Series("a", [[]], pl.List(pl.Int64)))
+    test_case(pl.Series("a", [[], [0]]))
+    test_case(pl.Series("a", [[], [0], None]))
+    test_case(pl.Series("a", [None, [0], None]))
+    test_case(pl.Series("a", [[1, 2, 3], [4, 5]]))
+
+
+def test_list_eval_matching_slice_lengths() -> None:
+    df = pl.DataFrame({"a": [[1, 2], [3, 4]]})
+    out = df.select(
+        pl.col.a.list.eval(
+            (pl.element().slice(0, 1) * (pl.element().slice(1, 1))).sum()
+        )
+    )
+    expected = pl.DataFrame({"a": [[2], [12]]})
+    assert_frame_equal(out, expected)
+
+
+def test_unique_in_list_agg() -> None:
+    df = pl.DataFrame({"a": [[1, 2, 3]]}).select(
+        uniq=pl.col.a.list.agg(pl.element().first().unique()),
+        drop_nulls=pl.col.a.list.agg(pl.element().first().drop_nulls()),
+    )
+
+    assert_frame_equal(
+        df,
+        pl.DataFrame({"uniq": [[1]], "drop_nulls": [[1]]}),
+    )
+
+
+@pytest.mark.parametrize(
+    ("df"),
+    [
+        pl.DataFrame({"a": [[1, 2, 3], [4], [5]]}),
+        pl.DataFrame({"a": [[1, 2, 3], None, [5]]}),
+        pl.DataFrame({"a": [[1, 2, 3], [None], [5]]}),
+        pl.DataFrame({"a": [[1, 2, 3], [], [5]]}),
+        pl.DataFrame({"a": [[None, None, 3], [4], [5]]}),
+    ],
+)
+@pytest.mark.parametrize("expr", [pl.element(), 2 * pl.element() - pl.element()])
+def test_list_eval_parametric_element(df: pl.DataFrame, expr: pl.Expr) -> None:
+    out = df.select(pl.col.a.list.eval(expr))
+    assert_frame_equal(out, df)
+
+    out = df.select(pl.col.a.list.eval(expr).over(42))
+    assert_frame_equal(out, df)
+
+
+@pytest.mark.parametrize(
+    ("df"),
+    [
+        pl.DataFrame({"a": [[1, 2, 3], [1], [1]]}),
+        pl.DataFrame({"a": [[1, 2, 3], None, [1]]}),
+        pl.DataFrame({"a": [[1, 2, 3], [None], [1]]}),
+        pl.DataFrame({"a": [[1, 2, 3], [], [1]]}),
+        pl.DataFrame({"a": [[None, None, 1], [1], [1]]}),
+    ],
+)
+@pytest.mark.parametrize("expr", [pl.element().rank()])
+def test_list_eval_parametric_rank(df: pl.DataFrame, expr: pl.Expr) -> None:
+    out = df.select(pl.col.a.list.eval(expr))
+    expected = df.cast(pl.List(pl.Float64))
+    assert_frame_equal(out, expected)
+
+    out = df.select(pl.col.a.list.eval(expr).over(42))
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    ("df", "expected"),
+    [
+        (
+            pl.DataFrame({"a": [[1, 2, 3], [1], [1]]}),
+            pl.DataFrame({"a": [[1], [1], [1]]}),
+        ),
+        (
+            pl.DataFrame({"a": [[1, 2, 3], None, [1]]}),
+            pl.DataFrame({"a": [[1], None, [1]]}),
+        ),
+        (
+            pl.DataFrame({"a": [[1, 2, 3], [None], [1]]}),
+            pl.DataFrame({"a": [[1], [None], [1]]}),
+        ),
+        (
+            pl.DataFrame({"a": [[1, 2, 3], [], [1]]}),
+            pl.DataFrame({"a": [[1], [None], [1]]}),
+        ),
+        (
+            pl.DataFrame({"a": [[None, None, 1], [1], [1]]}),
+            pl.DataFrame({"a": [[None], [1], [1]]}),
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "expr", [pl.element().first(), pl.element().get(0), pl.element().reverse().last()]
+)
+def test_list_eval_parametric_first_scalar(
+    df: pl.DataFrame, expected: pl.DataFrame, expr: pl.Expr
+) -> None:
+    out = df.select(pl.col.a.list.eval(expr))
+    assert_frame_equal(out, expected)
+
+    out = df.select(pl.col.a.list.eval(expr).over(42))
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    ("df", "expected"),
+    [
+        (
+            pl.DataFrame({"a": [[1, 2, 3], [1], [1]]}),
+            pl.DataFrame({"a": [[1], [1], [1]]}),
+        ),
+        (
+            pl.DataFrame({"a": [[1, 2, 3], None, [1]]}),
+            pl.DataFrame({"a": [[1], None, [1]]}),
+        ),
+        (
+            pl.DataFrame({"a": [[1, 2, 3], [None], [1]]}),
+            pl.DataFrame({"a": [[1], [None], [1]]}),
+        ),
+        (
+            pl.DataFrame({"a": [[1, 2, 3], [], [1]]}),
+            pl.DataFrame({"a": [[1], [], [1]]}),
+        ),
+        (
+            pl.DataFrame({"a": [[None, None, 1], [1], [1]]}),
+            pl.DataFrame({"a": [[None], [1], [1]]}),
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "expr", [pl.element().head(1), pl.element().reverse().slice(-1)]
+)
+def test_list_eval_parametric_first_slice(
+    df: pl.DataFrame, expected: pl.DataFrame, expr: pl.Expr
+) -> None:
+    out = df.select(pl.col.a.list.eval(expr))
+    assert_frame_equal(out, expected)
+
+    out = df.select(pl.col.a.list.eval(expr).over(42))
+    assert_frame_equal(out, expected)
+
+
+def test_list_eval_ternary() -> None:
+    df = pl.DataFrame({"a": [[1, 2, 3], [4], [5]]})
+    expr = pl.col.a.list.eval(
+        pl.when(pl.element() % 2 == 0)
+        .then(pl.element() // 2)
+        .otherwise(pl.element() + pl.element() + pl.element() + 1)
+    )
+    expected = pl.DataFrame({"a": [[4, 1, 10], [2], [16]]})
+    q = df.lazy().select(expr)
+    assert_frame_equal(q.collect(), expected)
+
+    q = df.lazy().select(expr.over([1]))
+    assert_frame_equal(q.collect(), expected)
+
+    q = df.lazy().select(expr.filter(pl.lit(True)).over([1]))
+    assert_frame_equal(q.collect(), expected)
+
+    expected = pl.DataFrame({"a": [[2, 4, 5], [1], [8]]})
+    q = df.lazy().select(expr).lazy().select(expr)
+    assert_frame_equal(q.collect(), expected)

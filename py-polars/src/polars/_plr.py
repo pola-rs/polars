@@ -7,34 +7,36 @@ import sys
 
 from polars._cpu_check import check_cpu_flags
 
-PKG_VERSION = "1.34.0"
-
-# Replaced during the build process with our list of required feature flags
-# enabled at compile time.
-RT_COMPAT_FEATURE_FLAGS = ""
-RT_NONCOMPAT_FEATURE_FLAGS = ""
+# example: 1.35.0-beta.1
+PKG_VERSION = "1.35.1"
 
 
 def rt_compat() -> None:
-    check_cpu_flags(RT_COMPAT_FEATURE_FLAGS)
+    from _polars_runtime_compat import BUILD_FEATURE_FLAGS
 
-    import _polars_runtime_compat._polars_runtime_compat as plr
+    check_cpu_flags(BUILD_FEATURE_FLAGS)
+
+    import _polars_runtime_compat._polars_runtime as plr
 
     sys.modules[__name__] = plr
 
 
 def rt_64() -> None:
-    check_cpu_flags(RT_NONCOMPAT_FEATURE_FLAGS)
+    from _polars_runtime_64 import BUILD_FEATURE_FLAGS
 
-    import _polars_runtime_64._polars_runtime_64 as plr
+    check_cpu_flags(BUILD_FEATURE_FLAGS)
+
+    import _polars_runtime_64._polars_runtime as plr
 
     sys.modules[__name__] = plr
 
 
 def rt_32() -> None:
-    check_cpu_flags(RT_NONCOMPAT_FEATURE_FLAGS)
+    from _polars_runtime_32 import BUILD_FEATURE_FLAGS
 
-    import _polars_runtime_32._polars_runtime_32 as plr
+    check_cpu_flags(BUILD_FEATURE_FLAGS)
+
+    import _polars_runtime_32._polars_runtime as plr
 
     sys.modules[__name__] = plr
 
@@ -49,6 +51,7 @@ else:
     _prefer = os.environ.get("POLARS_PREFER_PKG")
 
     pkgs = {"compat": rt_compat, "64": rt_64, "32": rt_32}
+    default_prefer = [rt_compat, rt_64, rt_32]
 
     if _force is not None:
         try:
@@ -61,7 +64,7 @@ else:
             msg = f"Invalid value for `POLARS_FORCE_PKG` variable: '{_force}'"
             raise ValueError(msg) from None
     else:
-        preference = list(pkgs.values())
+        preference = default_prefer
         if _prefer is not None:
             try:
                 preference.insert(0, pkgs[_prefer])

@@ -32,5 +32,5 @@ jobs:
 
       - name: Run tests
         env:
-          PYTHONPATH: py-polars
+          PYTHONPATH: "py-polars/src:py-polars/runtime/polars-runtime-32:py-polars"
         run: pytest .github/scripts/test_bytecode_parser.py

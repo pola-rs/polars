@@ -829,11 +829,11 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
     lines = m.group().split("\n")[1:-1]
     rows = [
         [re.sub(r"^[\W+]*│", "", elem).strip() for elem in row]
-        for row in [re.split("[│┆|]", row.lstrip("#. ").rstrip("│ ")) for row in lines]
-        if len(row) > 1 or not re.search("├[╌┼]+┤", row[0])
+        for row in (re.split(r"[│┆|]", row.lstrip("#. ").rstrip("│ ")) for row in lines)
+        if len(row) > 1 or not re.search(r"├[╌┼]+┤", row[0])
     ]
 
-    # determine beginning/end of the header block
+    # determine the beginning /end of the header block
     table_body_start = 2
     found_header_divider = False
     for idx, (elem, *_) in enumerate(rows):
@@ -896,8 +896,29 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
             )
             raise NotImplementedError(msg)
 
+    # Deal with line wrapping by detecting columns which may not be empty, but are
+    # anyway, indicating a wrap has occurred.
+    str_schema = [(k, String) for k in schema]
+    tmp_df = pl.DataFrame(data=data, orient="col", schema=str_schema)
+    out_rows: list[Series] = []
+    for row_list in tmp_df.iter_rows():
+        row = pl.Series(row_list, dtype=String)
+        if out_rows and any(
+            col == "" and dtype is not None and dtype != String and dtype != Categorical
+            for col, dtype in zip(row, schema.values())
+        ):
+            pad = pl.Series(
+                ["" if x == "" or y == "" else " " for x, y in zip(out_rows[-1], row)],
+                dtype=String,
+            )
+            out_rows[-1] = out_rows[-1] + pad + row
+        else:
+            out_rows.append(row)
+    df = from_records(
+        data=[r.to_list() for r in out_rows], orient="row", schema=str_schema
+    )
+
     # construct DataFrame from string series and cast from repr to native dtype
-    df = pl.DataFrame(data=data, orient="col", schema=list(schema))
     if no_dtypes:
         if df.is_empty():
             # if no dtypes *and* empty, default to string

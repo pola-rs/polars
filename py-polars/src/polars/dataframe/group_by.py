@@ -106,7 +106,7 @@ class GroupBy:
         temp_col = "__POLARS_GB_GROUP_INDICES"
         groups_df = (
             self.df.lazy()
-            .with_row_index()
+            .with_row_index("__POLARS_GB_ROW_INDEX")
             .group_by(*self.by, **self.named_by, maintain_order=self.maintain_order)
             .agg(F.first().alias(temp_col))
             .collect(optimizations=QueryOptFlags.none())
@@ -513,9 +513,16 @@ class GroupBy:
         """
         return self.agg(F.len().alias("count"))
 
-    def first(self) -> DataFrame:
+    def first(self, *, ignore_nulls: bool = False) -> DataFrame:
         """
         Aggregate the first values in the group.
+
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the first non-null value for each aggregation is returned,
+            otherwise `None` is returned if no non-null value exists.
 
         Examples
         --------
@@ -523,11 +530,22 @@ class GroupBy:
         ...     {
         ...         "a": [1, 2, 2, 3, 4, 5],
         ...         "b": [0.5, 0.5, 4, 10, 13, 14],
-        ...         "c": [True, True, True, False, False, True],
+        ...         "c": [None, True, True, False, False, True],
         ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
         ...     }
         ... )
         >>> df.group_by("d", maintain_order=True).first()
+        shape: (3, 4)
+        ┌────────┬─────┬──────┬───────┐
+        │ d      ┆ a   ┆ b    ┆ c     │
+        │ ---    ┆ --- ┆ ---  ┆ ---   │
+        │ str    ┆ i64 ┆ f64  ┆ bool  │
+        ╞════════╪═════╪══════╪═══════╡
+        │ Apple  ┆ 1   ┆ 0.5  ┆ null  │
+        │ Orange ┆ 2   ┆ 0.5  ┆ true  │
+        │ Banana ┆ 4   ┆ 13.0 ┆ false │
+        └────────┴─────┴──────┴───────┘
+        >>> df.group_by("d", maintain_order=True).first(ignore_nulls=True)
         shape: (3, 4)
         ┌────────┬─────┬──────┬───────┐
         │ d      ┆ a   ┆ b    ┆ c     │
@@ -539,35 +557,53 @@ class GroupBy:
         │ Banana ┆ 4   ┆ 13.0 ┆ false │
         └────────┴─────┴──────┴───────┘
         """
-        return self.agg(F.all().first())
+        return self.agg(F.all().first(ignore_nulls=ignore_nulls))
 
-    def last(self) -> DataFrame:
+    def last(self, *, ignore_nulls: bool = False) -> DataFrame:
         """
         Aggregate the last values in the group.
+
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the last non-null value for each column is returned,
+            otherwise `None` is returned if no non-null value exists.
 
         Examples
         --------
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, 2, 3, 4, 5],
-        ...         "b": [0.5, 0.5, 4, 10, 14, 13],
-        ...         "c": [True, True, True, False, False, True],
+        ...         "b": [0.5, 0.5, 4, 10, 14, None],
+        ...         "c": [True, True, True, None, False, True],
         ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
         ...     }
         ... )
         >>> df.group_by("d", maintain_order=True).last()
         shape: (3, 4)
-        ┌────────┬─────┬──────┬───────┐
-        │ d      ┆ a   ┆ b    ┆ c     │
-        │ ---    ┆ --- ┆ ---  ┆ ---   │
-        │ str    ┆ i64 ┆ f64  ┆ bool  │
-        ╞════════╪═════╪══════╪═══════╡
-        │ Apple  ┆ 3   ┆ 10.0 ┆ false │
-        │ Orange ┆ 2   ┆ 0.5  ┆ true  │
-        │ Banana ┆ 5   ┆ 13.0 ┆ true  │
-        └────────┴─────┴──────┴───────┘
+        ┌────────┬─────┬──────┬──────┐
+        │ d      ┆ a   ┆ b    ┆ c    │
+        │ ---    ┆ --- ┆ ---  ┆ ---  │
+        │ str    ┆ i64 ┆ f64  ┆ bool │
+        ╞════════╪═════╪══════╪══════╡
+        │ Apple  ┆ 3   ┆ 10.0 ┆ null │
+        │ Orange ┆ 2   ┆ 0.5  ┆ true │
+        │ Banana ┆ 5   ┆ null ┆ true │
+        └────────┴─────┴──────┴──────┘
+        >>> df.group_by("d", maintain_order=True).last(ignore_nulls=True)
+        shape: (3, 4)
+        ┌────────┬─────┬──────┬──────┐
+        │ d      ┆ a   ┆ b    ┆ c    │
+        │ ---    ┆ --- ┆ ---  ┆ ---  │
+        │ str    ┆ i64 ┆ f64  ┆ bool │
+        ╞════════╪═════╪══════╪══════╡
+        │ Apple  ┆ 3   ┆ 10.0 ┆ true │
+        │ Orange ┆ 2   ┆ 0.5  ┆ true │
+        │ Banana ┆ 5   ┆ 14.0 ┆ true │
+        └────────┴─────┴──────┴──────┘
         """
-        return self.agg(F.all().last())
+        return self.agg(F.all().last(ignore_nulls=ignore_nulls))
 
     def max(self) -> DataFrame:
         """
@@ -804,7 +840,7 @@ class RollingGroupBy:
         temp_col = "__POLARS_GB_GROUP_INDICES"
         groups_df = (
             self.df.lazy()
-            .with_row_index()
+            .with_row_index("__POLARS_GB_ROW_INDEX")
             .rolling(
                 index_column=self.time_column,
                 period=self.period,
@@ -953,7 +989,7 @@ class DynamicGroupBy:
         temp_col = "__POLARS_GB_GROUP_INDICES"
         groups_df = (
             self.df.lazy()
-            .with_row_index()
+            .with_row_index("__POLARS_GB_ROW_INDEX")
             .group_by_dynamic(
                 index_column=self.time_column,
                 every=self.every,

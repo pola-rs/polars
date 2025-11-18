@@ -18,7 +18,7 @@ fn inv_pow2(n: u8) -> f64 {
 /// somewhere in between HyperLogLog and HyperLogLog++.
 #[derive(Clone)]
 pub struct CardinalitySketch {
-    buckets: Box<[u8; 256]>,
+    buckets: [u8; 256],
 }
 
 impl Default for CardinalitySketch {
@@ -30,8 +30,7 @@ impl Default for CardinalitySketch {
 impl CardinalitySketch {
     pub fn new() -> Self {
         Self {
-            // This compiles to alloc_zeroed directly.
-            buckets: vec![0u8; 256].into_boxed_slice().try_into().unwrap(),
+            buckets: [0u8; 256],
         }
     }
 
@@ -47,7 +46,7 @@ impl CardinalitySketch {
     }
 
     pub fn combine(&mut self, other: &CardinalitySketch) {
-        *self.buckets = std::array::from_fn(|i| std::cmp::max(self.buckets[i], other.buckets[i]));
+        self.buckets = std::array::from_fn(|i| std::cmp::max(self.buckets[i], other.buckets[i]));
     }
 
     pub fn estimate(&self) -> usize {
@@ -69,6 +68,18 @@ impl CardinalitySketch {
             est
         };
 
-        corr_est as usize
+        if num_zero == self.buckets.len() {
+            0
+        } else {
+            ((corr_est + 0.5) as usize).max(1)
+        }
+    }
+
+    pub fn into_state(self) -> [u8; 256] {
+        self.buckets
+    }
+
+    pub fn from_state(buckets: [u8; 256]) -> Self {
+        Self { buckets }
     }
 }

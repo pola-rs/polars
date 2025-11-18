@@ -1,8 +1,10 @@
 use polars_core::prelude::*;
+use polars_plan::constants::PL_ELEMENT_NAME;
 use polars_plan::prelude::expr_ir::ExprIR;
 use polars_plan::prelude::*;
 use recursive::recursive;
 
+use crate::dispatch::{function_expr_to_groups_udf, function_expr_to_udf};
 use crate::expressions as phys_expr;
 use crate::expressions::*;
 
@@ -104,7 +106,6 @@ pub struct ExpressionConversionState {
 
 #[derive(Copy, Clone, Default)]
 struct LocalConversionState {
-    has_implode: bool,
     has_window: bool,
     has_lit: bool,
 }
@@ -122,10 +123,6 @@ impl ExpressionConversionState {
 
     fn reset(&mut self) {
         self.local = LocalConversionState::default();
-    }
-
-    fn has_implode(&self) -> bool {
-        self.local.has_implode
     }
 
     fn set_window(&mut self) {
@@ -166,29 +163,60 @@ fn create_physical_expr_inner(
 
     match expr_arena.get(expression) {
         Len => Ok(Arc::new(phys_expr::CountExpr::new())),
-        aexpr @ Window {
+        #[cfg(feature = "dynamic_group_by")]
+        aexpr @ Rolling {
             function,
-            partition_by,
-            order_by,
-            options,
+            index_column,
+            period,
+            offset,
+            closed_window,
         } => {
-            let output_field = aexpr.to_field(&ToFieldContext::new(expr_arena, schema))?;
-            let function = *function;
-            state.set_window();
-            let phys_function = create_physical_expr_inner(
-                function,
-                Context::Aggregation,
+            let index_column = create_physical_expr_inner(
+                *index_column,
+                Context::Default,
                 expr_arena,
                 schema,
                 state,
             )?;
+
+            let output_field = aexpr.to_field(&ToFieldContext::new(expr_arena, schema))?;
+            let function = *function;
+            state.set_window();
+            let phys_function =
+                create_physical_expr_inner(function, Context::Default, expr_arena, schema, state)?;
+
+            let expr = node_to_expr(expression, expr_arena);
+
+            // set again as the state can be reset
+            state.set_window();
+            Ok(Arc::new(RollingExpr {
+                phys_function,
+                index_column,
+                period: *period,
+                offset: *offset,
+                closed_window: *closed_window,
+                expr,
+                output_field,
+            }))
+        },
+        aexpr @ Over {
+            function,
+            partition_by,
+            order_by,
+            mapping,
+        } => {
+            let output_field = aexpr.to_field(&ToFieldContext::new(expr_arena, schema))?;
+            let function = *function;
+            state.set_window();
+            let phys_function =
+                create_physical_expr_inner(function, Context::Default, expr_arena, schema, state)?;
 
             let order_by = order_by
                 .map(|(node, options)| {
                     PolarsResult::Ok((
                         create_physical_expr_inner(
                             node,
-                            Context::Aggregation,
+                            Context::Default,
                             expr_arena,
                             schema,
                             state,
@@ -202,80 +230,68 @@ fn create_physical_expr_inner(
 
             // set again as the state can be reset
             state.set_window();
-            match options {
-                WindowType::Over(mapping) => {
-                    // TODO! Order by
-                    let group_by = create_physical_expressions_from_nodes(
-                        partition_by,
-                        Context::Aggregation,
-                        expr_arena,
-                        schema,
-                        state,
-                    )?;
-                    let mut apply_columns = aexpr_to_leaf_names(function, expr_arena);
-                    // sort and then dedup removes consecutive duplicates == all duplicates
-                    apply_columns.sort();
-                    apply_columns.dedup();
+            // TODO! Order by
+            let group_by = create_physical_expressions_from_nodes(
+                partition_by,
+                Context::Default,
+                expr_arena,
+                schema,
+                state,
+            )?;
+            let mut apply_columns = aexpr_to_leaf_names(function, expr_arena);
+            // sort and then dedup removes consecutive duplicates == all duplicates
+            apply_columns.sort();
+            apply_columns.dedup();
 
-                    if apply_columns.is_empty() {
-                        if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Literal(_))) {
-                            apply_columns.push(PlSmallStr::from_static("literal"))
-                        } else if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Len)) {
-                            apply_columns.push(PlSmallStr::from_static("len"))
-                        } else {
-                            let e = node_to_expr(function, expr_arena);
-                            polars_bail!(
-                                ComputeError:
-                                "cannot apply a window function, did not find a root column; \
-                                this is likely due to a syntax error in this expression: {:?}", e
-                            );
-                        }
-                    }
-
-                    // Check if the branches have an aggregation
-                    // when(a > sum)
-                    // then (foo)
-                    // otherwise(bar - sum)
-                    let mut has_arity = false;
-                    let mut agg_col = false;
-                    for (_, e) in expr_arena.iter(function) {
-                        match e {
-                            AExpr::Ternary { .. } | AExpr::BinaryExpr { .. } => {
-                                has_arity = true;
-                            },
-                            AExpr::Agg(_) => {
-                                agg_col = true;
-                            },
-                            AExpr::Function { options, .. }
-                            | AExpr::AnonymousFunction { options, .. } => {
-                                if options.flags.returns_scalar() {
-                                    agg_col = true;
-                                }
-                            },
-                            _ => {},
-                        }
-                    }
-                    let has_different_group_sources = has_arity && agg_col;
-
-                    Ok(Arc::new(WindowExpr {
-                        group_by,
-                        order_by,
-                        apply_columns,
-                        phys_function,
-                        mapping: *mapping,
-                        expr,
-                        has_different_group_sources,
-                        output_field,
-                    }))
-                },
-                #[cfg(feature = "dynamic_group_by")]
-                WindowType::Rolling(options) => Ok(Arc::new(RollingExpr {
-                    phys_function,
-                    options: options.clone(),
-                    expr,
-                    output_field,
-                })),
+            if apply_columns.is_empty() {
+                if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Literal(_))) {
+                    apply_columns.push(PlSmallStr::from_static("literal"))
+                } else if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Len)) {
+                    apply_columns.push(PlSmallStr::from_static("len"))
+                } else {
+                    let e = node_to_expr(function, expr_arena);
+                    polars_bail!(
+                        ComputeError:
+                        "cannot apply a window function, did not find a root column; \
+                        this is likely due to a syntax error in this expression: {:?}", e
+                    );
+                }
             }
+
+            // Check if the branches have an aggregation
+            // when(a > sum)
+            // then (foo)
+            // otherwise(bar - sum)
+            let mut has_arity = false;
+            let mut agg_col = false;
+            for (_, e) in expr_arena.iter(function) {
+                match e {
+                    AExpr::Ternary { .. } | AExpr::BinaryExpr { .. } => {
+                        has_arity = true;
+                    },
+                    AExpr::Agg(_) => {
+                        agg_col = true;
+                    },
+                    AExpr::Function { options, .. } | AExpr::AnonymousFunction { options, .. } => {
+                        if options.flags.returns_scalar() {
+                            agg_col = true;
+                        }
+                    },
+                    _ => {},
+                }
+            }
+            let has_different_group_sources = has_arity && agg_col;
+
+            Ok(Arc::new(WindowExpr {
+                group_by,
+                order_by,
+                apply_columns,
+                phys_function,
+                mapping: *mapping,
+                expr,
+                has_different_group_sources,
+                output_field,
+            }))
         },
         Literal(value) => {
             state.local.has_lit = true;
@@ -307,6 +323,13 @@ fn create_physical_expr_inner(
             node_to_expr(expression, expr_arena),
             schema.clone(),
         ))),
+        Element => {
+            let output_field = expr_arena
+                .get(expression)
+                .to_field(&ToFieldContext::new(expr_arena, schema))?;
+
+            Ok(Arc::new(ElementExpr::new(output_field)))
+        },
         Sort { expr, options } => {
             let phys_expr = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(SortExpr::new(
@@ -356,8 +379,6 @@ fn create_physical_expr_inner(
         Agg(agg) => {
             let expr = agg.get_input().first();
             let input = create_physical_expr_inner(expr, ctxt, expr_arena, schema, state)?;
-            polars_ensure!(!(state.has_implode() && matches!(ctxt, Context::Aggregation)), InvalidOperation: "'implode' followed by an aggregation is not allowed");
-            state.local.has_implode |= matches!(agg, IRAggExpr::Implode(_));
             let allow_threading = state.allow_threading;
 
             match ctxt {
@@ -375,7 +396,12 @@ fn create_physical_expr_inner(
                         I::Median(_) => GBM::Median,
                         I::NUnique(_) => GBM::NUnique,
                         I::First(_) => GBM::First,
+                        I::FirstNonNull(_) => GBM::FirstNonNull,
                         I::Last(_) => GBM::Last,
+                        I::LastNonNull(_) => GBM::LastNonNull,
+                        I::Item { allow_empty, .. } => GBM::Item {
+                            allow_empty: *allow_empty,
+                        },
                         I::Mean(_) => GBM::Mean,
                         I::Implode(_) => GBM::Implode,
                         I::Quantile { .. } => unreachable!(),
@@ -497,12 +523,14 @@ fn create_physical_expr_inner(
             Ok(Arc::new(ApplyExpr::new(
                 input,
                 SpecialEq::new(function),
+                None,
                 node_to_expr(expression, expr_arena),
                 *options,
                 state.allow_threading,
                 schema.clone(),
                 output_field,
                 is_scalar,
+                true,
             )))
         },
         Eval {
@@ -513,21 +541,12 @@ fn create_physical_expr_inner(
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let evaluation_is_scalar = is_scalar_ae(*evaluation, expr_arena);
             let evaluation_is_elementwise = is_elementwise_rec(*evaluation, expr_arena);
+            // @NOTE: This is actually also something the downstream apply code should care about.
             let mut pd_group = ExprPushdownGroup::Pushable;
             pd_group.update_with_expr_rec(expr_arena.get(*evaluation), expr_arena, None);
+            let evaluation_is_fallible = matches!(pd_group, ExprPushdownGroup::Fallible);
 
-            let non_aggregated_output_field = expr_arena
-                .get(expression)
-                .to_field(&ToFieldContext::new(expr_arena, schema))?;
-            let output_field_with_ctx =
-                if matches!(ctxt, Context::Aggregation) && !is_scalar_ae(expression, expr_arena) {
-                    let mut f = non_aggregated_output_field.clone();
-                    f.coerce(non_aggregated_output_field.dtype().clone().implode());
-                    f
-                } else {
-                    non_aggregated_output_field.clone()
-                };
-            let non_aggregated_output_field = expr_arena
+            let output_field = expr_arena
                 .get(expression)
                 .to_field(&ToFieldContext::new(expr_arena, schema))?;
             let input_field = expr_arena
@@ -537,7 +556,8 @@ fn create_physical_expr_inner(
                 create_physical_expr_inner(*expr, Context::Default, expr_arena, schema, state)?;
 
             let element_dtype = variant.element_dtype(&input_field.dtype)?;
-            let eval_schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
+            let mut eval_schema = schema.as_ref().clone();
+            eval_schema.insert(PL_ELEMENT_NAME.clone(), element_dtype.clone());
             let evaluation = create_physical_expr_inner(
                 *evaluation,
                 // @Hack. Since EvalVariant::Array uses `evaluate_on_groups` to determine the
@@ -561,13 +581,11 @@ fn create_physical_expr_inner(
                 evaluation,
                 *variant,
                 node_to_expr(expression, expr_arena),
-                state.allow_threading,
-                output_field_with_ctx,
-                non_aggregated_output_field.dtype,
+                output_field,
                 is_scalar,
-                pd_group,
                 evaluation_is_scalar,
                 evaluation_is_elementwise,
+                evaluation_is_fallible,
             )))
         },
         Function {
@@ -581,16 +599,19 @@ fn create_physical_expr_inner(
                 .to_field(&ToFieldContext::new(expr_arena, schema))?;
             let input =
                 create_physical_expressions_from_irs(input, ctxt, expr_arena, schema, state)?;
+            let is_fallible = expr_arena.get(expression).is_fallible_top_level(expr_arena);
 
             Ok(Arc::new(ApplyExpr::new(
                 input,
-                function.clone().into(),
+                function_expr_to_udf(function.clone()),
+                function_expr_to_groups_udf(function),
                 node_to_expr(expression, expr_arena),
                 *options,
                 state.allow_threading,
                 schema.clone(),
                 output_field,
                 is_scalar,
+                is_fallible,
             )))
         },
         Slice {
@@ -601,8 +622,6 @@ fn create_physical_expr_inner(
             let input = create_physical_expr_inner(*input, ctxt, expr_arena, schema, state)?;
             let offset = create_physical_expr_inner(*offset, ctxt, expr_arena, schema, state)?;
             let length = create_physical_expr_inner(*length, ctxt, expr_arena, schema, state)?;
-            polars_ensure!(!(state.has_implode() && matches!(ctxt, Context::Aggregation)),
-                InvalidOperation: "'implode' followed by a slice during aggregation is not allowed");
             Ok(Arc::new(SliceExpr {
                 input,
                 offset,
@@ -610,11 +629,11 @@ fn create_physical_expr_inner(
                 expr: node_to_expr(expression, expr_arena),
             }))
         },
-        Explode { expr, skip_empty } => {
+        Explode { expr, options } => {
             let input = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
-            let skip_empty = *skip_empty;
+            let options = *options;
             let function = SpecialEq::new(Arc::new(
-                move |c: &mut [polars_core::frame::column::Column]| c[0].explode(skip_empty),
+                move |c: &mut [polars_core::frame::column::Column]| c[0].explode(options),
             ) as Arc<dyn ColumnsUdf>);
 
             let output_field = expr_arena
@@ -624,13 +643,18 @@ fn create_physical_expr_inner(
             Ok(Arc::new(ApplyExpr::new(
                 vec![input],
                 function,
+                None,
                 node_to_expr(expression, expr_arena),
                 FunctionOptions::groupwise(),
                 state.allow_threading,
                 schema.clone(),
                 output_field,
                 false,
+                false,
             )))
+        },
+        AnonymousStreamingAgg { .. } => {
+            polars_bail!(ComputeError: "anonymous agg not supported in in-memory engine")
         },
     }
 }

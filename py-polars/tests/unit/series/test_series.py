@@ -419,7 +419,9 @@ def test_various() -> None:
     a.sort(in_place=True)
     assert_series_equal(a, pl.Series("a", [1, 2, 4]))
     a = pl.Series("a", [2, 1, 1, 4, 4, 4])
-    assert_series_equal(a.arg_unique(), pl.Series("a", [0, 1, 3], dtype=UInt32))
+    assert_series_equal(
+        a.arg_unique(), pl.Series("a", [0, 1, 3], dtype=pl.get_index_type())
+    )
 
     assert_series_equal(a.gather([2, 3]), pl.Series("a", [1, 4]))
 
@@ -876,15 +878,15 @@ def test_fill_nan() -> None:
 
 
 def test_map_elements() -> None:
+    a = pl.Series("a", [1, 2, None])
     with pytest.warns(PolarsInefficientMapWarning):
-        a = pl.Series("a", [1, 2, None])
         b = a.map_elements(lambda x: x**2, return_dtype=pl.Int64)
-        assert list(b) == [1, 4, None]
+    assert list(b) == [1, 4, None]
 
+    a = pl.Series("a", ["foo", "bar", None])
     with pytest.warns(PolarsInefficientMapWarning):
-        a = pl.Series("a", ["foo", "bar", None])
         b = a.map_elements(lambda x: x + "py", return_dtype=pl.String)
-        assert list(b) == ["foopy", "barpy", None]
+    assert list(b) == ["foopy", "barpy", None]
 
     b = a.map_elements(lambda x: len(x), return_dtype=pl.Int32)
     assert list(b) == [3, 3, None]
@@ -1053,21 +1055,6 @@ def test_diff_negative() -> None:
         s.diff(-1, null_behavior="drop"),
         pl.Series("a", [-1, -1, 1, 0, -1, 3]),
     )
-
-
-def test_pct_change() -> None:
-    s = pl.Series("a", [1, 2, 4, 8, 16, 32, 64])
-    expected = pl.Series("a", [None, None, 3.0, 3.0, 3.0, 3.0, 3.0])
-    assert_series_equal(s.pct_change(2), expected)
-    assert_series_equal(s.pct_change(pl.Series([2])), expected)
-    # negative
-    assert pl.Series(range(5)).pct_change(-1).to_list() == [
-        -1.0,
-        -0.5,
-        -0.3333333333333333,
-        -0.25,
-        None,
-    ]
 
 
 def test_skew() -> None:
@@ -1442,11 +1429,11 @@ def test_gather_every() -> None:
 
 def test_arg_sort() -> None:
     s = pl.Series("a", [5, 3, 4, 1, 2])
-    expected = pl.Series("a", [3, 4, 1, 2, 0], dtype=UInt32)
+    expected = pl.Series("a", [3, 4, 1, 2, 0], dtype=pl.get_index_type())
 
     assert_series_equal(s.arg_sort(), expected)
 
-    expected_descending = pl.Series("a", [0, 2, 1, 4, 3], dtype=UInt32)
+    expected_descending = pl.Series("a", [0, 2, 1, 4, 3], dtype=pl.get_index_type())
     assert_series_equal(s.arg_sort(descending=True), expected_descending)
 
 
@@ -1900,6 +1887,18 @@ def test_cumulative_eval() -> None:
     assert_series_equal(s.cumulative_eval(expr3), expected3)
 
 
+def test_first_last() -> None:
+    # Ensure multiple chunks
+    s1 = pl.Series("a", [None, None], dtype=pl.Int32)
+    s2 = pl.Series("a", [None, 3, 4, None], dtype=pl.Int32)
+    s3 = pl.Series("a", [None, None], dtype=pl.Int32)
+    s = s1.append(s2).append(s3)
+    assert s.first() is None
+    assert s.first(ignore_nulls=True) == 3
+    assert s.last() is None
+    assert s.last(ignore_nulls=True) == 4
+
+
 def test_clip() -> None:
     s = pl.Series("foo", [-50, 5, None, 50])
     assert s.clip(1, 10).to_list() == [1, 5, None, 10]
@@ -2197,7 +2196,9 @@ def test_search_sorted(
     assert single_s == single_expected
 
     multiple_s = s.search_sorted(multiple)
-    assert_series_equal(multiple_s, pl.Series(multiple_expected, dtype=pl.UInt32))
+    assert_series_equal(
+        multiple_s, pl.Series(multiple_expected, dtype=pl.get_index_type())
+    )
 
 
 def test_series_from_pandas_with_dtype() -> None:

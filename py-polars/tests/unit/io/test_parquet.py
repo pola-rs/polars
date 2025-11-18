@@ -784,11 +784,11 @@ def test_utc_timezone_normalization_13670(tmp_path: Path) -> None:
         )
 
     df = pl.scan_parquet([utc_path, zero_path]).head(5).collect()
-    assert cast(pl.Datetime, df.schema["c1"]).time_zone == "UTC"
+    assert cast("pl.Datetime", df.schema["c1"]).time_zone == "UTC"
     df = pl.scan_parquet([zero_path, utc_path]).head(5).collect()
-    assert cast(pl.Datetime, df.schema["c1"]).time_zone == "UTC"
+    assert cast("pl.Datetime", df.schema["c1"]).time_zone == "UTC"
     df = pl.scan_parquet([zero_path, utc_lowercase_path]).head(5).collect()
-    assert cast(pl.Datetime, df.schema["c1"]).time_zone == "UTC"
+    assert cast("pl.Datetime", df.schema["c1"]).time_zone == "UTC"
 
 
 def test_parquet_rle_14333() -> None:
@@ -1106,8 +1106,8 @@ def test_hybrid_rle() -> None:
             pl.UInt8,
             pl.UInt32,
             pl.Int64,
-            # pl.Date, # Turned off because of issue #17599
-            # pl.Time, # Turned off because of issue #17599
+            pl.Date,
+            pl.Time,
             pl.Binary,
             pl.Float32,
             pl.Float64,
@@ -1159,7 +1159,7 @@ def test_read_byte_stream_split(nullable: bool) -> None:
     )
     arrays = [pa.array(values, type=field.type, mask=validity_mask) for field in schema]
     table = pa.Table.from_arrays(arrays, schema=schema)
-    df = cast(pl.DataFrame, pl.from_arrow(table))
+    df = cast("pl.DataFrame", pl.from_arrow(table))
 
     f = io.BytesIO()
     pq.write_table(
@@ -1222,7 +1222,7 @@ def test_read_byte_stream_split_arrays(
         for field in schema
     ]
     table = pa.Table.from_arrays(arrays, schema=schema)
-    df = cast(pl.DataFrame, pl.from_arrow(table))
+    df = cast("pl.DataFrame", pl.from_arrow(table))
 
     f = io.BytesIO()
     pq.write_table(
@@ -3560,3 +3560,112 @@ def test_binary_offset_roundtrip() -> None:
     lf = pl.scan_parquet(f)
 
     assert "binary[offset]" in str(lf.collect())
+
+
+@pytest.mark.parametrize(
+    "df",
+    [
+        pl.Series("a", [], pl.Struct([])).to_frame(),
+        pl.Series("a", [{}]).to_frame(),
+        pl.Series("a", [{}, None, {}]).to_frame(),
+        pl.Series("a", [[{}, None], [{}]], pl.List(pl.Struct([]))).to_frame(),
+        pl.Series("a", [[{}, None], None, []], pl.List(pl.Struct([]))).to_frame(),
+        pl.DataFrame(
+            {
+                "a": [{}, None, {}],
+                "b": [1, 2, 3],
+            }
+        ),
+        pl.DataFrame(
+            {
+                "b": [1, 2, 3],
+                "a": [{}, None, {}],
+            }
+        ),
+        pl.DataFrame(
+            {
+                "x": [2, 3, 4],
+                "a": [{}, None, {}],
+                "b": [1, 2, 3],
+            }
+        ),
+    ],
+)
+def test_empty_struct_roundtrip(df: pl.DataFrame, monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_ALLOW_PQ_EMPTY_STRUCT", "1")
+
+    f = io.BytesIO()
+    df.write_parquet(f)
+
+    f.seek(0)
+    assert_frame_equal(df, pl.read_parquet(f))
+
+
+def test_parquet_is_in_multiple_pages_25312() -> None:
+    tbl = pl.DataFrame(
+        {
+            "a": ["a"] * 5000 + [None],
+        }
+    ).to_arrow()
+
+    f = io.BytesIO()
+    pq.write_table(tbl, f, data_page_size=1, use_dictionary=False)
+    f.seek(0)
+
+    assert_frame_equal(
+        pl.scan_parquet(f).filter(pl.col.a.is_in(["a"])).collect(),
+        pl.DataFrame(
+            {
+                "a": ["a"] * 5000,
+            }
+        ),
+    )
+
+
+@given(s=series(name="a", dtype=pl.String()))
+def test_regex_prefiltering_parametric(s: pl.Series) -> None:
+    f = io.BytesIO()
+    s.to_frame().write_parquet(f)
+
+    predicates = [
+        pl.col.a.str.starts_with("aaa"),
+        pl.col.a.str.ends_with("aaa"),
+        pl.col.a.str.contains("aaa"),
+    ]
+
+    if (it := s.first()) is not None:
+        assert isinstance(it, str)
+        escape = pl.escape_regex(it)
+        predicates += [
+            pl.col.a.str.starts_with(it),
+            pl.col.a.str.starts_with(it[1:]),
+            pl.col.a.str.starts_with(it[:-1]),
+            pl.col.a.str.ends_with(it),
+            pl.col.a.str.ends_with(it[1:]),
+            pl.col.a.str.ends_with(it[:-1]),
+            pl.col.a.str.contains(escape),
+            pl.col.a.str.contains(it, literal=True),
+            pl.col.a.str.contains(it[1:], literal=True),
+        ]
+
+    if (it := s.last()) is not None:
+        assert isinstance(it, str)
+        escape = pl.escape_regex(it)
+        predicates += [
+            pl.col.a.str.starts_with(it),
+            pl.col.a.str.starts_with(it[1:]),
+            pl.col.a.str.starts_with(it[:-1]),
+            pl.col.a.str.ends_with(it),
+            pl.col.a.str.ends_with(it[1:]),
+            pl.col.a.str.ends_with(it[:-1]),
+            pl.col.a.str.contains(escape),
+            pl.col.a.str.contains(it, literal=True),
+            pl.col.a.str.contains(it[1:], literal=True),
+        ]
+
+    for p in predicates:
+        f.seek(0)
+        assert_series_equal(
+            pl.scan_parquet(f).filter(p).collect().to_series(),
+            s.to_frame().filter(p).to_series(),
+        )

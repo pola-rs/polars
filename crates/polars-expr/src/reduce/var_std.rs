@@ -38,7 +38,9 @@ pub fn new_var_std_reduction(
             },
         )),
         Duration(..) => todo!(),
-        Null => Box::new(super::NullGroupedReduction::new(dtype)),
+        Null => Box::new(super::NullGroupedReduction::new(Scalar::null(
+            DataType::Null,
+        ))),
         _ => {
             polars_bail!(InvalidOperation: "`{op_name}` operation not supported for dtype `{dtype}`")
         },
@@ -100,17 +102,29 @@ impl<T: PolarsNumericType> Reducer for VarStdReducer<T> {
         &self,
         v: Vec<Self::Value>,
         m: Option<Bitmap>,
-        _dtype: &DataType,
+        dtype: &DataType,
     ) -> PolarsResult<Series> {
         assert!(m.is_none());
-        let ca: Float64Chunked = v
-            .into_iter()
-            .map(|s| {
-                let var = s.finalize(self.ddof);
-                if self.is_std { var.map(f64::sqrt) } else { var }
-            })
-            .collect_ca(PlSmallStr::EMPTY);
-        Ok(ca.into_series())
+        if matches!(dtype, DataType::Float32) {
+            let ca: Float32Chunked = v
+                .into_iter()
+                .map(|s| {
+                    let var = s.finalize(self.ddof);
+                    let out = if self.is_std { var.map(f64::sqrt) } else { var };
+                    out.map(|v| v as f32)
+                })
+                .collect_ca(PlSmallStr::EMPTY);
+            Ok(ca.into_series())
+        } else {
+            let ca: Float64Chunked = v
+                .into_iter()
+                .map(|s| {
+                    let var = s.finalize(self.ddof);
+                    if self.is_std { var.map(f64::sqrt) } else { var }
+                })
+                .collect_ca(PlSmallStr::EMPTY);
+            Ok(ca.into_series())
+        }
     }
 }
 

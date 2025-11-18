@@ -63,7 +63,7 @@ jobs:
           RUSTFLAGS: -C embed-bitcode -D warnings
         working-directory: py-polars
         run: |
-          maturin develop --manifest-path runtime/Cargo.toml --release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
+          maturin develop --manifest-path runtime/polars-runtime-32/Cargo.toml --release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
 
       - name: Run benchmark
         working-directory: polars-benchmark
@@ -78,4 +78,3 @@ jobs:
           pip install seaborn
           "$HOME/py-polars-cache/create-plots.py"
           touch "$HOME/py-polars-cache/upload-probe"
-          "$HOME/py-polars-cache/cache-build.sh" "$PWD/polars"

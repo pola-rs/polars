@@ -648,13 +648,13 @@ def test_join_frame_consistency() -> None:
     df = pl.DataFrame({"A": [1, 2, 3]})
     ldf = pl.DataFrame({"A": [1, 2, 5]}).lazy()
 
-    with pytest.raises(TypeError, match="expected `other`.*LazyFrame"):
+    with pytest.raises(TypeError, match=r"expected `other`.*LazyFrame"):
         _ = ldf.join(df, on="A")  # type: ignore[arg-type]
-    with pytest.raises(TypeError, match="expected `other`.*DataFrame"):
+    with pytest.raises(TypeError, match=r"expected `other`.*DataFrame"):
         _ = df.join(ldf, on="A")  # type: ignore[arg-type]
-    with pytest.raises(TypeError, match="expected `other`.*LazyFrame"):
+    with pytest.raises(TypeError, match=r"expected `other`.*LazyFrame"):
         _ = ldf.join_asof(df, on="A")  # type: ignore[arg-type]
-    with pytest.raises(TypeError, match="expected `other`.*DataFrame"):
+    with pytest.raises(TypeError, match=r"expected `other`.*DataFrame"):
         _ = df.join_asof(ldf, on="A")  # type: ignore[arg-type]
 
 
@@ -1004,7 +1004,9 @@ def test_cross_join() -> None:
     df2 = pl.DataFrame({"frame2": pl.arange(0, 100, eager=True)})
     out = df2.join(df1, how="cross")
     df2 = pl.DataFrame({"frame2": pl.arange(0, 101, eager=True)})
-    assert_frame_equal(df2.join(df1, how="cross").slice(0, 100), out)
+    assert_frame_equal(
+        df2.join(df1, how="cross", maintain_order="left_right").slice(0, 100), out
+    )
 
 
 @pytest.mark.release
@@ -1014,7 +1016,12 @@ def test_cross_join_slice_pushdown() -> None:
         pl.Series("x", pl.arange(0, 2**16 - 1, eager=True, dtype=pl.UInt16) % 2**15)
     ).to_frame()
 
-    result = df.lazy().join(df.lazy(), how="cross", suffix="_").slice(-5, 10).collect()
+    result = (
+        df.lazy()
+        .join(df.lazy(), how="cross", maintain_order="left_right", suffix="_")
+        .slice(-5, 10)
+        .collect()
+    )
     expected = pl.DataFrame(
         {
             "x": [32766, 32766, 32766, 32766, 32766],
@@ -1024,7 +1031,12 @@ def test_cross_join_slice_pushdown() -> None:
     )
     assert_frame_equal(result, expected)
 
-    result = df.lazy().join(df.lazy(), how="cross", suffix="_").slice(2, 10).collect()
+    result = (
+        df.lazy()
+        .join(df.lazy(), how="cross", maintain_order="left_right", suffix="_")
+        .slice(2, 10)
+        .collect()
+    )
     expected = pl.DataFrame(
         {
             "x": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -2928,6 +2940,53 @@ def test_join_filter_pushdown_cross_join() -> None:
     assert_frame_equal(q.collect(), expect)
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
 
+    # Avoid conversion for order maintaining cross-join
+    q = (
+        pl.LazyFrame(
+            [
+                pl.Series("a", [2, 4, 8, 9, 11], dtype=pl.Int64),
+                pl.Series("b", [1, 2, 3, 4, 5], dtype=pl.Int64),
+            ]
+        )
+        .join(
+            pl.LazyFrame(
+                {
+                    "c": [0, 1, 2, 3, 4],
+                }
+            ),
+            how="cross",
+            maintain_order="left_right",
+        )
+        .filter(pl.col("c") <= pl.col("b"))
+    )
+
+    expect = pl.DataFrame(
+        [
+            pl.Series(
+                "a",
+                [2, 2, 4, 4, 4, 8, 8, 8, 8, 9, 9, 9, 9, 9, 11, 11, 11, 11, 11],
+                dtype=pl.Int64,
+            ),
+            pl.Series(
+                "b",
+                [1, 1, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5],
+                dtype=pl.Int64,
+            ),
+            pl.Series(
+                "c",
+                [0, 1, 0, 1, 2, 0, 1, 2, 3, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4],
+                dtype=pl.Int64,
+            ),
+        ]
+    )
+
+    plan = q.explain()
+
+    assert plan.startswith('NESTED LOOP JOIN ON [(col("c")) <= (col("b"))]:')
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
 
 def test_join_filter_pushdown_iejoin() -> None:
     lhs = pl.LazyFrame(
@@ -2992,7 +3051,7 @@ def test_join_filter_pushdown_iejoin() -> None:
 
     expect = pl.DataFrame(
         [
-            pl.Series("index", [0, 1, 1, 2, 2, 3, 3, 4, 4], dtype=pl.UInt32),
+            pl.Series("index", [0, 1, 1, 2, 2, 3, 3, 4, 4], dtype=pl.get_index_type()),
             pl.Series("a", [1, 2, 2, 3, 3, 4, 4, 5, 5], dtype=pl.Int64),
             pl.Series("b", [1, 2, 2, 3, 3, 4, 4, None, None], dtype=pl.Int64),
             pl.Series(
