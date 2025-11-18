@@ -48,12 +48,12 @@ if TYPE_CHECKING:
 
 # A simple test extension type for parametric tests.
 TestExtension = Extension(
-    name="testing.test_extension",
+    name="testing.parametric_test_extension",
     storage=Int32(),
-    metadata="A test extension type",
+    metadata="A parametric test extension type",
 )
 
-register_extension_type("testing.test_extension", Extension)
+register_extension_type("testing.parametric_test_extension", Extension)
 
 # Supported data type classes which do not take any arguments
 _SIMPLE_DTYPES: list[PolarsDataType] = [

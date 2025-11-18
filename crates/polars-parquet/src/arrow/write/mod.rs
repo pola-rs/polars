@@ -456,7 +456,7 @@ pub fn array_to_page_simple(
         polars_bail!(InvalidOperation: "writing a missing value to required parquet column '{}'", type_.field_info.name);
     }
 
-    match dtype.to_logical_type() {
+    match dtype {
         // Map empty struct to boolean array with same validity.
         ArrowDataType::Struct(fs) if fs.is_empty() => boolean::array_to_page(
             &BooleanArray::new(
@@ -864,6 +864,12 @@ pub fn array_to_page_simple(
             );
             fixed_size_binary::array_to_page(&array, options, type_, statistics)
         },
+        ArrowDataType::Extension(ext) => {
+            let mut boxed = array.to_boxed();
+            assert!(matches!(boxed.dtype(), ArrowDataType::Extension(ext2) if ext2 == ext));
+            *boxed.dtype_mut() = ext.inner.clone();
+            return array_to_page_simple(boxed.as_ref(), type_, options, encoding);
+        }
         other => polars_bail!(nyi = "Writing parquet pages for data type {other:?}"),
     }
     .map(Page::Data)
