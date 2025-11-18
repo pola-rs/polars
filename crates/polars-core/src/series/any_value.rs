@@ -278,30 +278,87 @@ fn any_values_to_string(values: &[AnyValue], strict: bool) -> PolarsResult<Strin
         Ok(builder.finish())
     }
     fn any_values_to_string_nonstrict(values: &[AnyValue]) -> StringChunked {
+        fn _write_any_value(av: &AnyValue<'_>, buffer: &mut String, float_buf: &mut Vec<u8>) {
+            match av {
+                AnyValue::String(s) => buffer.push_str(s),
+                AnyValue::Float64(f) => {
+                    float_buf.clear();
+                    SerPrimitive::write(float_buf, *f);
+                    let s = std::str::from_utf8(&float_buf).unwrap();
+                    buffer.push_str(s);
+                },
+                AnyValue::Float32(f) => {
+                    float_buf.clear();
+                    SerPrimitive::write(float_buf, *f as f64);
+                    let s = std::str::from_utf8(&float_buf).unwrap();
+                    buffer.push_str(s);
+                },
+                AnyValue::StructOwned(payload) => {
+                    buffer.push('{');
+                    let mut iter = payload.0.iter().peekable();
+                    while let Some(child) = iter.next() {
+                        _write_any_value(child, buffer, float_buf);
+                        if iter.peek().is_some() {
+                            buffer.push(',')
+                        }
+                    }
+                    buffer.push('}');
+                },
+                AnyValue::Struct(_, _, flds) => {
+                    let mut vals = Vec::with_capacity(flds.len());
+                    av._materialize_struct_av(&mut vals);
+
+                    buffer.push('{');
+                    let mut iter = vals.iter().peekable();
+                    while let Some(child) = iter.next() {
+                        _write_any_value(child, buffer, float_buf);
+                        if iter.peek().is_some() {
+                            buffer.push(',')
+                        }
+                    }
+                    buffer.push('}');
+                },
+                AnyValue::List(vals) | AnyValue::Array(vals, _) => {
+                    buffer.push('[');
+                    let mut iter = vals.iter().peekable();
+                    while let Some(child) = iter.next() {
+                        _write_any_value(&child, buffer, float_buf);
+                        if iter.peek().is_some() {
+                            buffer.push(',');
+                        }
+                    }
+                    buffer.push(']');
+                },
+                av => {
+                    write!(buffer, "{av}").unwrap();
+                },
+            }
+        }
+
         let mut builder = StringChunkedBuilder::new(PlSmallStr::EMPTY, values.len());
         let mut owned = String::new(); // Amortize allocations.
         let mut float_buf = vec![];
         for av in values {
+            owned.clear();
+            float_buf.clear();
+
             match av {
                 AnyValue::String(s) => builder.append_value(s),
                 AnyValue::StringOwned(s) => builder.append_value(s),
                 AnyValue::Null => builder.append_null(),
                 AnyValue::Binary(_) | AnyValue::BinaryOwned(_) => builder.append_null(),
                 AnyValue::Float64(f) => {
-                    float_buf.clear();
                     SerPrimitive::write(&mut float_buf, *f);
                     let s = std::str::from_utf8(&float_buf).unwrap();
                     builder.append_value(s);
                 },
                 AnyValue::Float32(f) => {
-                    float_buf.clear();
                     SerPrimitive::write(&mut float_buf, *f as f64); // promote to f64 for serialization
                     let s = std::str::from_utf8(&float_buf).unwrap();
                     builder.append_value(s);
                 },
                 av => {
-                    owned.clear();
-                    write!(owned, "{av}").unwrap();
+                    _write_any_value(av, &mut owned, &mut float_buf);
                     builder.append_value(&owned);
                 },
             }
