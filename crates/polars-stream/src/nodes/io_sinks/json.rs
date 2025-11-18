@@ -70,7 +70,7 @@ impl SinkNode for NDJsonSinkNode {
             use tokio::io::AsyncWriteExt;
 
             let mut file = target
-                .open_into_writeable_async(&sink_options, cloud_options.as_ref())
+                .open_into_writeable_async(cloud_options.as_ref(), sink_options.mkdir)
                 .await?
                 .try_into_async_writeable()?;
 

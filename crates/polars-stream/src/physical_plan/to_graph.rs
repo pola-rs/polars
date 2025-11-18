@@ -373,7 +373,7 @@ fn to_graph_rec<'a>(
             }
         },
 
-        PartitionSink {
+        PartitionedSink {
             input,
             base_path,
             file_path_cb,

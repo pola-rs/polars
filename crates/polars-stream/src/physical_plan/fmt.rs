@@ -277,7 +277,7 @@ fn visualize_plan_rec(
             #[allow(unreachable_patterns)]
             _ => todo!(),
         },
-        PhysNodeKind::PartitionSink {
+        PhysNodeKind::PartitionedSink {
             input,
             file_type,
             variant,
