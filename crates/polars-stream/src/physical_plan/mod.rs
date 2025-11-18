@@ -29,6 +29,8 @@ pub mod visualization;
 
 pub use fmt::visualize_plan;
 use polars_plan::prelude::{FileType, PlanCallback};
+#[cfg(feature = "dynamic_group_by")]
+use polars_time::DynamicGroupOptions;
 use polars_time::{ClosedWindow, Duration};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
@@ -316,6 +318,14 @@ pub enum PhysNodeKind {
     },
 
     #[cfg(feature = "dynamic_group_by")]
+    DynamicGroupBy {
+        input: PhysStream,
+        options: DynamicGroupOptions,
+        aggs: Vec<ExprIR>,
+        slice: Option<(IdxSize, IdxSize)>,
+    },
+
+    #[cfg(feature = "dynamic_group_by")]
     RollingGroupBy {
         input: PhysStream,
         index_column: PlSmallStr,
@@ -434,6 +444,11 @@ fn visit_node_inputs_mut(
                 visit(input);
             },
 
+            #[cfg(feature = "dynamic_group_by")]
+            PhysNodeKind::DynamicGroupBy { input, .. } => {
+                rec!(input.node);
+                visit(input);
+            },
             #[cfg(feature = "dynamic_group_by")]
             PhysNodeKind::RollingGroupBy { input, .. } => {
                 rec!(input.node);

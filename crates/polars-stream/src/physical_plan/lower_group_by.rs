@@ -766,6 +766,28 @@ pub fn build_group_by_stream(
             input = build_slice_stream(input, *offset, *length, phys_sm);
         }
         return Ok(input);
+    } else if let Some(dynamic_options) = options.as_ref().dynamic.as_ref()
+        && keys.is_empty()
+        && apply.is_none()
+    {
+        let mut input = PhysStream::first(
+            phys_sm.insert(PhysNode::new(
+                output_schema.clone(),
+                PhysNodeKind::DynamicGroupBy {
+                    input,
+                    options: dynamic_options.clone(),
+                    aggs: aggs.to_vec(),
+                    slice: options
+                        .slice
+                        .filter(|(o, _)| *o >= 0)
+                        .map(|(o, l)| (o as IdxSize, l as IdxSize)),
+                },
+            )),
+        );
+        if let Some((offset, length)) = options.slice.as_ref().filter(|(o, _)| *o < 0) {
+            input = build_slice_stream(input, *offset, *length, phys_sm);
+        }
+        return Ok(input);
     }
 
     if (are_keys_sorted || std::env::var("POLARS_FORCE_SORTED_GROUP_BY").is_ok_and(|v| v == "1"))
