@@ -2520,7 +2520,11 @@ class ExprStringNameSpace:
         return wrap_expr(self._pyexpr.str_to_integer(base_pyexpr, dtype, strict))
 
     def contains_any(
-        self, patterns: IntoExpr, *, ascii_case_insensitive: bool = False
+        self,
+        patterns: IntoExpr,
+        *,
+        ascii_case_insensitive: bool = False,
+        leftmost: bool = False,
     ) -> Expr:
         """
         Use the Aho-Corasick algorithm to find matches.
@@ -2569,7 +2573,9 @@ class ExprStringNameSpace:
         """
         patterns_pyexpr = parse_into_expression(patterns, str_as_lit=False)
         return wrap_expr(
-            self._pyexpr.str_contains_any(patterns_pyexpr, ascii_case_insensitive)
+            self._pyexpr.str_contains_any(
+                patterns_pyexpr, ascii_case_insensitive, leftmost
+            )
         )
 
     def replace_many(
@@ -2578,6 +2584,7 @@ class ExprStringNameSpace:
         replace_with: IntoExpr | NoDefault = no_default,
         *,
         ascii_case_insensitive: bool = False,
+        leftmost: bool = False,
     ) -> Expr:
         """
         Use the Aho-Corasick algorithm to replace many matches.
@@ -2718,7 +2725,7 @@ class ExprStringNameSpace:
         replace_with_pyexpr = parse_into_expression(replace_with, str_as_lit=True)
         return wrap_expr(
             self._pyexpr.str_replace_many(
-                patterns_pyexpr, replace_with_pyexpr, ascii_case_insensitive
+                patterns_pyexpr, replace_with_pyexpr, ascii_case_insensitive, leftmost
             )
         )
 
@@ -2729,6 +2736,7 @@ class ExprStringNameSpace:
         *,
         ascii_case_insensitive: bool = False,
         overlapping: bool = False,
+        leftmost: bool = False,
     ) -> Expr:
         """
         Use the Aho-Corasick algorithm to extract many matches.
@@ -2793,7 +2801,7 @@ class ExprStringNameSpace:
         patterns_pyexpr = parse_into_expression(patterns, str_as_lit=False)
         return wrap_expr(
             self._pyexpr.str_extract_many(
-                patterns_pyexpr, ascii_case_insensitive, overlapping
+                patterns_pyexpr, ascii_case_insensitive, overlapping, leftmost
             )
         )
 
@@ -2804,6 +2812,7 @@ class ExprStringNameSpace:
         *,
         ascii_case_insensitive: bool = False,
         overlapping: bool = False,
+        leftmost: bool = False,
     ) -> Expr:
         """
         Use the Aho-Corasick algorithm to find many matches.
@@ -2871,7 +2880,7 @@ class ExprStringNameSpace:
         patterns_pyexpr = parse_into_expression(patterns, str_as_lit=False)
         return wrap_expr(
             self._pyexpr.str_find_many(
-                patterns_pyexpr, ascii_case_insensitive, overlapping
+                patterns_pyexpr, ascii_case_insensitive, overlapping, leftmost
             )
         )
 

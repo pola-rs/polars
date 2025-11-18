@@ -36,10 +36,16 @@ impl StringNameSpace {
     ///   When this option is enabled, searching will be performed without respect to case for
     ///   ASCII letters (a-z and A-Z) only.
     #[cfg(feature = "find_many")]
-    pub fn contains_any(self, patterns: Expr, ascii_case_insensitive: bool) -> Expr {
+    pub fn contains_any(
+        self,
+        patterns: Expr,
+        ascii_case_insensitive: bool,
+        leftmost: bool,
+    ) -> Expr {
         self.0.map_binary(
             StringFunction::ContainsAny {
                 ascii_case_insensitive,
+                leftmost,
             },
             patterns,
         )
@@ -58,10 +64,12 @@ impl StringNameSpace {
         patterns: Expr,
         replace_with: Expr,
         ascii_case_insensitive: bool,
+        leftmost: bool,
     ) -> Expr {
         self.0.map_ternary(
             StringFunction::ReplaceMany {
                 ascii_case_insensitive,
+                leftmost,
             },
             patterns,
             replace_with,
@@ -81,11 +89,13 @@ impl StringNameSpace {
         patterns: Expr,
         ascii_case_insensitive: bool,
         overlapping: bool,
+        leftmost: bool,
     ) -> Expr {
         self.0.map_binary(
             StringFunction::ExtractMany {
                 ascii_case_insensitive,
                 overlapping,
+                leftmost,
             },
             patterns,
         )
@@ -104,11 +114,13 @@ impl StringNameSpace {
         patterns: Expr,
         ascii_case_insensitive: bool,
         overlapping: bool,
+        leftmost: bool,
     ) -> Expr {
         self.0.map_binary(
             StringFunction::FindMany {
                 ascii_case_insensitive,
                 overlapping,
+                leftmost,
             },
             patterns,
         )

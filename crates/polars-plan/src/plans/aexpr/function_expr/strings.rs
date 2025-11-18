@@ -119,20 +119,24 @@ pub enum IRStringFunction {
     #[cfg(feature = "find_many")]
     ContainsAny {
         ascii_case_insensitive: bool,
+        leftmost: bool,
     },
     #[cfg(feature = "find_many")]
     ReplaceMany {
         ascii_case_insensitive: bool,
+        leftmost: bool,
     },
     #[cfg(feature = "find_many")]
     ExtractMany {
         ascii_case_insensitive: bool,
         overlapping: bool,
+        leftmost: bool,
     },
     #[cfg(feature = "find_many")]
     FindMany {
         ascii_case_insensitive: bool,
         overlapping: bool,
+        leftmost: bool,
     },
     #[cfg(feature = "regex")]
     EscapeRegex,

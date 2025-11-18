@@ -1255,47 +1255,80 @@ def test_replace_expressions() -> None:
 
 
 @pytest.mark.parametrize(
-    ("pattern", "replacement", "case_insensitive", "expected"),
+    ("pattern", "replacement", "case_insensitive", "leftmost", "expected"),
     [
-        (["say"], "", False, "Tell me what you want"),
-        (["me"], ["them"], False, "Tell them what you want"),
-        (["who"], ["them"], False, "Tell me what you want"),
-        (["me", "you"], "it", False, "Tell it what it want"),
-        (["Me", "you"], "it", False, "Tell me what it want"),
-        (["me", "you"], ["it"], False, "Tell it what it want"),
-        (["me", "you"], ["you", "me"], False, "Tell you what me want"),
-        (["me", "You", "them"], "it", False, "Tell it what you want"),
-        (["Me", "you"], "it", True, "Tell it what it want"),
-        (["me", "YOU"], ["you", "me"], True, "Tell you what me want"),
-        (pl.Series(["me", "YOU"]), ["you", "me"], False, "Tell you what you want"),
-        (pl.Series(["me", "YOU"]), ["you", "me"], True, "Tell you what me want"),
+        (["say"], "", False, False, "Tell me what you want"),
+        (["me"], ["them"], False, False, "Tell them what you want"),
+        (["who"], ["them"], False, False, "Tell me what you want"),
+        (["me", "you"], "it", False, False, "Tell it what it want"),
+        (["Me", "you"], "it", False, False, "Tell me what it want"),
+        (["me", "you"], ["it"], False, False, "Tell it what it want"),
+        (["me", "you"], ["you", "me"], False, False, "Tell you what me want"),
+        (["me", "You", "them"], "it", False, False, "Tell it what you want"),
+        (["Me", "you"], "it", True, False, "Tell it what it want"),
+        (["me", "YOU"], ["you", "me"], True, False, "Tell you what me want"),
+        (
+            pl.Series(["me", "YOU"]),
+            ["you", "me"],
+            False,
+            False,
+            "Tell you what you want",
+        ),
+        (pl.Series(["me", "YOU"]), ["you", "me"], True, False, "Tell you what me want"),
+        (["me", "YOU"], ["you", "me"], True, False, "Tell you what me want"),
+        (
+            ["Tell me", "Tell"],
+            ["Don't tell", "Text"],
+            False,
+            False,
+            "Text me what you want",
+        ),
+        (
+            ["Tell me", "Tell"],
+            ["Don't tell", "Text"],
+            False,
+            False,
+            "Text me what you want",
+        ),
+        (
+            ["Tell me", "Tell"],
+            ["Don't tell me", "Text"],
+            False,
+            True,
+            "Don't tell me what you want",
+        ),
     ],
 )
 def test_replace_many(
     pattern: pl.Series | list[str],
     replacement: pl.Series | list[str] | str,
     case_insensitive: bool,
+    leftmost: bool,
     expected: str,
 ) -> None:
     df = pl.DataFrame({"text": ["Tell me what you want"]})
     # series
-    assert (
-        expected
-        == df["text"]
-        .str.replace_many(pattern, replacement, ascii_case_insensitive=case_insensitive)
+    val = (
+        df["text"]
+        .str.replace_many(
+            pattern,
+            replacement,
+            ascii_case_insensitive=case_insensitive,
+            leftmost=leftmost,
+        )
         .item()
     )
+    assert expected == val, val
     # expr
-    assert (
-        expected
-        == df.select(
-            pl.col("text").str.replace_many(
-                pattern,
-                replacement,
-                ascii_case_insensitive=case_insensitive,
-            )
-        ).item()
-    )
+    val = df.select(
+        pl.col("text").str.replace_many(
+            pattern,
+            replacement,
+            ascii_case_insensitive=case_insensitive,
+            leftmost=leftmost,
+        )
+    ).item()
+    assert expected == val, val
 
 
 def test_replace_many_groupby() -> None:

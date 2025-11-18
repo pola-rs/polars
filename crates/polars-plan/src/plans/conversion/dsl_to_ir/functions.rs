@@ -299,30 +299,38 @@ pub(super) fn convert_functions(
                 #[cfg(feature = "find_many")]
                 S::ContainsAny {
                     ascii_case_insensitive,
+                    leftmost,
                 } => IS::ContainsAny {
                     ascii_case_insensitive,
+                    leftmost,
                 },
                 #[cfg(feature = "find_many")]
                 S::ReplaceMany {
                     ascii_case_insensitive,
+                    leftmost,
                 } => IS::ReplaceMany {
                     ascii_case_insensitive,
+                    leftmost,
                 },
                 #[cfg(feature = "find_many")]
                 S::ExtractMany {
                     ascii_case_insensitive,
                     overlapping,
+                    leftmost,
                 } => IS::ExtractMany {
                     ascii_case_insensitive,
                     overlapping,
+                    leftmost,
                 },
                 #[cfg(feature = "find_many")]
                 S::FindMany {
                     ascii_case_insensitive,
                     overlapping,
+                    leftmost,
                 } => IS::FindMany {
                     ascii_case_insensitive,
                     overlapping,
+                    leftmost,
                 },
                 #[cfg(feature = "regex")]
                 S::EscapeRegex => IS::EscapeRegex,
