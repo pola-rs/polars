@@ -349,7 +349,7 @@ impl<'a> TreeFmtNode<'a> {
                                 SinkTypeIR::Memory => "SINK (memory)",
                                 SinkTypeIR::Callback(..) => "SINK (callback)",
                                 SinkTypeIR::File { .. } => "SINK (file)",
-                                SinkTypeIR::Partition { .. } => "SINK (partition)",
+                                SinkTypeIR::Partitioned { .. } => "SINK (partition)",
                             },
                         ),
                         vec![self.lp_node(None, *input)],

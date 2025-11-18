@@ -2,6 +2,7 @@ use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_expr::state::ExecutionState;
 use polars_plan::plans::expr_ir::ExprIR;
+use polars_plan::prelude::sink::CallbackSinkType;
 use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
 
@@ -245,7 +246,8 @@ fn create_physical_plan_impl(
                 | IR::Cache { .. } // Needed for plans branching from the same cache node
                 | IR::GroupBy { .. } // Needed for the streaming impl
                 | IR::Sink { // Needed for the streaming impl
-                    payload: SinkTypeIR::Partition(_),
+                    payload:
+                        SinkTypeIR::Partitioned { .. },
                     ..
                 }
         ) {
@@ -298,23 +300,24 @@ fn create_physical_plan_impl(
                         }),
                     }))
                 },
-                SinkTypeIR::File(FileSinkType {
-                    file_type,
+                SinkTypeIR::File(FileSinkOptions {
                     target,
-                    sink_options,
-                    cloud_options,
+                    file_format,
+                    unified_sink_args,
                 }) => {
-                    let name = sink_name(&file_type).to_owned();
+                    let name = sink_name(&file_format).to_owned();
                     Ok(Box::new(SinkExecutor {
                         input,
                         name,
                         f: Box::new(move |mut df, _state| {
-                            let mut file = target
-                                .open_into_writeable(&sink_options, cloud_options.as_ref())?;
+                            let mut file = target.open_into_writeable(
+                                unified_sink_args.cloud_options.as_ref(),
+                                unified_sink_args.mkdir,
+                            )?;
                             let writer = &mut *file;
 
                             use std::io::BufWriter;
-                            match &file_type {
+                            match file_format.as_ref() {
                                 #[cfg(feature = "parquet")]
                                 FileType::Parquet(options) => {
                                     use polars_io::parquet::write::ParquetWriter;
@@ -381,14 +384,14 @@ fn create_physical_plan_impl(
                                 _ => panic!("enable filetype feature"),
                             }
 
-                            file.sync_on_close(sink_options.sync_on_close)?;
+                            file.sync_on_close(unified_sink_args.sync_on_close)?;
                             file.close()?;
 
                             Ok(None)
                         }),
                     }))
                 },
-                SinkTypeIR::Partition(_) => {
+                SinkTypeIR::Partitioned { .. } => {
                     let builder = build_streaming_executor
                         .expect("invalid build. Missing feature new-streaming");
 

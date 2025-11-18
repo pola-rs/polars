@@ -971,7 +971,7 @@ pub fn write_ir_non_recursive(
                 SinkTypeIR::Memory => "SINK (memory)",
                 SinkTypeIR::Callback { .. } => "SINK (callback)",
                 SinkTypeIR::File { .. } => "SINK (file)",
-                SinkTypeIR::Partition { .. } => "SINK (partition)",
+                SinkTypeIR::Partitioned { .. } => "SINK (partition)",
             };
             write!(f, "{:indent$}{name}", "")
         },
