@@ -293,6 +293,7 @@ fn any_values_to_string(values: &[AnyValue], strict: bool) -> PolarsResult<Strin
                     let s = std::str::from_utf8(float_buf).unwrap();
                     buffer.push_str(s);
                 },
+                #[cfg(feature = "dtype-struct")]
                 AnyValue::StructOwned(payload) => {
                     buffer.push('{');
                     let mut iter = payload.0.iter().peekable();
@@ -304,6 +305,7 @@ fn any_values_to_string(values: &[AnyValue], strict: bool) -> PolarsResult<Strin
                     }
                     buffer.push('}');
                 },
+                #[cfg(feature = "dtype-struct")]
                 AnyValue::Struct(_, _, flds) => {
                     let mut vals = Vec::with_capacity(flds.len());
                     av._materialize_struct_av(&mut vals);
@@ -318,7 +320,19 @@ fn any_values_to_string(values: &[AnyValue], strict: bool) -> PolarsResult<Strin
                     }
                     buffer.push('}');
                 },
-                AnyValue::List(vals) | AnyValue::Array(vals, _) => {
+                #[cfg(feature = "dtype-array")]
+                AnyValue::Array(vals, _) => {
+                    buffer.push('[');
+                    let mut iter = vals.iter().peekable();
+                    while let Some(child) = iter.next() {
+                        _write_any_value(&child, buffer, float_buf);
+                        if iter.peek().is_some() {
+                            buffer.push(',');
+                        }
+                    }
+                    buffer.push(']');
+                },
+                AnyValue::List(vals) => {
                     buffer.push('[');
                     let mut iter = vals.iter().peekable();
                     while let Some(child) = iter.next() {
