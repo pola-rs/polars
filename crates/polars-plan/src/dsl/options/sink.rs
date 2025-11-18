@@ -94,9 +94,7 @@ impl SinkTarget {
 
                     polars_io::utils::file::Writeable::try_new(path.as_ref(), cloud_options)
                 },
-                SinkTarget::Dyn(memory_writer) => Ok(Writeable::Dyn(
-                    memory_writer.lock().unwrap().take().unwrap(),
-                )),
+                SinkTarget::Dyn(memory_writer) => Ok(memory_writer.lock().unwrap().take().unwrap()),
             }
         }
 
