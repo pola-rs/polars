@@ -189,6 +189,7 @@ def test_interpolate_vs_numpy(data: st.DataObject, x_dtype: pl.DataType) -> None
                         "value",
                         dtype=pl.Float64,
                         allow_null=True,
+                        strategy=by_strategy,
                     ),
                 ],
                 min_size=1,

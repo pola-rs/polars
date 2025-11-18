@@ -921,6 +921,7 @@ impl TryFrom<(&ArrowField, Vec<ArrayRef>)> for Series {
         let (field, chunks) = field_arr;
 
         let dtype = check_types(&chunks)?;
+        polars_ensure!(dtype == *field.dtype(), ComputeError: "Arrow Field dtype does not match the ArrayRef dtypes");
 
         // SAFETY:
         // dtype is checked
