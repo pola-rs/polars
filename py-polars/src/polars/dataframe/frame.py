@@ -960,7 +960,7 @@ class DataFrame:
     def __array__(
         self,
         dtype: npt.DTypeLike | None = None,
-        copy: bool | None = None,  # noqa: FBT001
+        copy: bool | None = None,
     ) -> np.ndarray[Any, Any]:
         """
         Return a NumPy ndarray with the given data type.

@@ -587,7 +587,7 @@ def _polars_warn(msg: str, category: type[Warning] = UserWarning) -> None:
 
 
 def extend_bool(
-    value: bool | Sequence[bool],  # noqa: FBT001
+    value: bool | Sequence[bool],
     n_match: int,
     value_name: str,
     match_name: str,
