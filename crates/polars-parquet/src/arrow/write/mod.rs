@@ -869,7 +869,7 @@ pub fn array_to_page_simple(
             assert!(matches!(boxed.dtype(), ArrowDataType::Extension(ext2) if ext2 == ext));
             *boxed.dtype_mut() = ext.inner.clone();
             return array_to_page_simple(boxed.as_ref(), type_, options, encoding);
-        }
+        },
         other => polars_bail!(nyi = "Writing parquet pages for data type {other:?}"),
     }
     .map(Page::Data)

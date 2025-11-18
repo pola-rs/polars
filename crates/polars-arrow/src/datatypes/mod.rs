@@ -387,7 +387,7 @@ impl ArrowDataType {
             _ => self,
         }
     }
-    
+
     /// Returns a version of `self` where all Extension types have been
     /// (recursively) replaced by their storage types.
     pub fn to_storage_recursive(&self) -> ArrowDataType {
@@ -418,11 +418,9 @@ impl ArrowDataType {
                     })
                     .collect(),
             ),
-            Dictionary(keys, values, is_sorted) => Dictionary(
-                *keys,
-                Box::new(values.to_storage_recursive()),
-                *is_sorted,
-            ),
+            Dictionary(keys, values, is_sorted) => {
+                Dictionary(*keys, Box::new(values.to_storage_recursive()), *is_sorted)
+            },
             Union(_) => unimplemented!(),
             Map(_, _) => unimplemented!(),
             _ => self.clone(),
