@@ -284,13 +284,13 @@ fn any_values_to_string(values: &[AnyValue], strict: bool) -> PolarsResult<Strin
                 AnyValue::Float64(f) => {
                     float_buf.clear();
                     SerPrimitive::write(float_buf, *f);
-                    let s = std::str::from_utf8(&float_buf).unwrap();
+                    let s = std::str::from_utf8(float_buf).unwrap();
                     buffer.push_str(s);
                 },
                 AnyValue::Float32(f) => {
                     float_buf.clear();
                     SerPrimitive::write(float_buf, *f as f64);
-                    let s = std::str::from_utf8(&float_buf).unwrap();
+                    let s = std::str::from_utf8(float_buf).unwrap();
                     buffer.push_str(s);
                 },
                 AnyValue::StructOwned(payload) => {
