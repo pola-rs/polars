@@ -70,9 +70,12 @@ def test_extension_parquet_roundtrip() -> None:
         {
             "a": [1, 2, 3],
             "b": ["x", "y", "z"],
-            "c": [0.1, 0.2, 0.3],
+            "c": [0.1, 0.2, float('nan')],
             "d": [True, False, True],
             "e": ["foo", "bar", "foo"],
+            "f": [[1, 2, 3], [4, 5], [6, 7, 2**100]],
+            "g": [[1, 2, 3], [4, 5, 6], [100, 1200, -1230]],
+            "h": [{"a": 1, "b": ["foo"]}, {"a": 1, "b": ["bar"]}, {"a": 1, "b": ["foo"]}],
         },
         schema={
             "a": TestExtension,
@@ -80,6 +83,12 @@ def test_extension_parquet_roundtrip() -> None:
             "c": PythonTestExtension(pl.Float64),
             "d": PythonTestExtension(pl.Boolean),
             "e": PythonTestExtension(pl.Categorical),
+            "f": PythonTestExtension(pl.List(pl.UInt128)),
+            "g": PythonTestExtension(pl.Array(pl.Int64, 3)),
+            "h": PythonTestExtension(pl.Struct({
+                "a": pl.Int8,
+                "b": PythonTestExtension(pl.List(pl.Categorical)),
+            })),
         },
     )
 
