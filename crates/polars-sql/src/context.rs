@@ -823,20 +823,33 @@ impl SQLContext {
             self.column_projections(select_stmt, &schema, &mut select_modifiers)?;
 
         // Dataframe Level explode (UNNEST CLAUSE)
-        let mut explode_columns = Vec::with_capacity(projections.len());
+        // Collect column names to explode
+        let mut explode_names = Vec::with_capacity(projections.len());
         for expr in &projections {
-            expr.into_iter().for_each(|e| {
+            for e in expr {
                 if let Expr::Explode { input, .. } = e {
                     if let Expr::Column(name) = input.as_ref() {
-                        explode_columns.push(col(name.clone()));
+                        explode_names.push(name.clone());
                     }
                 }
-            });
+            }
         }
 
-        if !explode_columns.is_empty() {
-            explode_columns.dedup();
-            lf = lf.explode(explode_columns);
+        if !explode_names.is_empty() {
+            // Apply explosions 1 by 1.
+            explode_names.dedup();
+            lf = lf.explode(
+                Selector::ByName {
+                    names: Arc::from(explode_names),
+                    strict: true,
+                },
+                ExplodeOptions {
+                    empty_as_null: true,
+                    keep_nulls: true,
+                },
+            );
+
+            // Remove the explode expressions from the projections to be executed.
             projections = projections
                 .into_iter()
                 .map(|p| {

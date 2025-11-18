@@ -578,7 +578,16 @@ fn test_explode_with_multiple_columns() {
         .unwrap();
 
     let df = df_with_new_column_a.vstack(&df_with_new_column_b).unwrap();
-    let df_pl_api = df.clone().lazy().explode(&[col("a")]).collect().unwrap();
+    let df_pl_api = df.clone().lazy().explode(
+        polars_lazy::dsl::Selector::ByName {
+            names: Arc::from(vec!["a".into()]),
+            strict: true,
+        },
+        ExplodeOptions {
+            empty_as_null: true,
+            keep_nulls: true,
+        },
+    );
     let mut context = SQLContext::new();
     context.register("df", df.lazy());
 
@@ -590,6 +599,7 @@ fn test_explode_with_multiple_columns() {
     "#;
 
     let df_sql = context.execute(sql).unwrap().collect().unwrap();
+    let df_pl_api = df_pl_api.collect().unwrap();
     assert!(df_sql.equals(&df_pl_api));
 }
 
@@ -646,7 +656,16 @@ fn test_multiple_explodes_different_columns() {
     let df_pl_api = df_with_scalar
         .clone()
         .lazy()
-        .explode(&[col("list_a"), col("list_b")])
+        .explode(
+            polars_lazy::dsl::Selector::ByName {
+                names: Arc::from(vec!["list_a".into(), "list_b".into()]),
+                strict: true,
+            },
+            ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            },
+        )
         .collect()
         .unwrap();
 
