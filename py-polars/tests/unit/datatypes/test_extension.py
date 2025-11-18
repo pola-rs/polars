@@ -114,3 +114,4 @@ def test_extension_ipc_roundtrip() -> None:
     buffer.seek(0)
     df_read = pl.read_ipc(buffer)
     assert_frame_equal(df, df_read)
+

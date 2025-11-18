@@ -237,7 +237,7 @@ fn serialize_compression(
 }
 
 fn set_variadic_buffer_counts(counts: &mut Vec<i64>, array: &dyn Array) {
-    match array.dtype() {
+    match array.dtype().to_logical_type() {
         ArrowDataType::Utf8View => {
             let array = array.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
             counts.push(array.data_buffers().len() as i64);
