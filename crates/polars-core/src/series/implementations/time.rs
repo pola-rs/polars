@@ -7,6 +7,7 @@
 //! opting for a little more run time cost. We cast to the physical type -> apply the operation and
 //! (depending on the result) cast back to the original type
 //!
+
 use super::*;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
@@ -367,7 +368,8 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
 
     fn mean_reduce(&self) -> PolarsResult<Scalar> {
         let mean = self.mean().map(|v| v as i64);
-        Ok(Scalar::new(self.dtype().clone(), mean.into()))
+        let av = AnyValue::from(mean).cast(self.dtype()).into_static();
+        Ok(Scalar::new(self.dtype().clone(), av))
     }
 
     fn median_reduce(&self) -> PolarsResult<Scalar> {

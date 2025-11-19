@@ -394,21 +394,16 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
 
     fn mean_reduce(&self) -> PolarsResult<Scalar> {
         let mean = self.mean().map(|v| (v * US_IN_DAY as f64) as i64);
-        Ok(Scalar::new(
-            DataType::Datetime(TimeUnit::Microseconds, None),
-            mean.into(),
-        ))
+        let dtype = DataType::Datetime(TimeUnit::Microseconds, None);
+        let av = AnyValue::from(mean).cast(&dtype).into_static();
+        Ok(Scalar::new(dtype, av))
     }
 
     fn median_reduce(&self) -> PolarsResult<Scalar> {
-        let av: AnyValue = self
-            .median()
-            .map(|v| (v * (US_IN_DAY as f64)) as i64)
-            .into();
-        Ok(Scalar::new(
-            DataType::Datetime(TimeUnit::Microseconds, None),
-            av,
-        ))
+        let median = self.median().map(|v| (v * (US_IN_DAY as f64)) as i64);
+        let dtype = DataType::Datetime(TimeUnit::Microseconds, None);
+        let av = AnyValue::from(median).cast(&dtype).into_static();
+        Ok(Scalar::new(dtype, av))
     }
 
     #[cfg(feature = "approx_unique")]
