@@ -374,13 +374,17 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
 
     fn max_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.physical().max_reduce();
-        let av = sc.value().as_datetime_owned(self.0.time_unit(), self.0.time_zone_arc());
+        let av = sc
+            .value()
+            .as_datetime_owned(self.0.time_unit(), self.0.time_zone_arc());
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
     fn min_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.physical().min_reduce();
-        let av = sc.value().as_datetime_owned(self.0.time_unit(), self.0.time_zone_arc());
+        let av = sc
+            .value()
+            .as_datetime_owned(self.0.time_unit(), self.0.time_zone_arc());
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
@@ -392,7 +396,8 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
 
     fn median_reduce(&self) -> PolarsResult<Scalar> {
         let median = self.median().map(|v| v as i64);
-        let av = AnyValue::from(median).as_datetime_owned(self.0.time_unit(), self.0.time_zone_arc());
+        let av =
+            AnyValue::from(median).as_datetime_owned(self.0.time_unit(), self.0.time_zone_arc());
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 

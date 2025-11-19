@@ -114,9 +114,7 @@ def test_extension_ipc_roundtrip() -> None:
 def test_to_from_storage_roundtrip() -> None:
     df = ROUNDTRIP_DF
     df_storage = df.select(pl.all().ext.storage())
-    df_ext = df_storage.select(
-        [pl.col(c).ext.to(df.schema[c]) for c in df.columns]
-    )
+    df_ext = df_storage.select([pl.col(c).ext.to(df.schema[c]) for c in df.columns])
     assert_frame_equal(df, df_ext)
 
 
@@ -133,12 +131,16 @@ def test_extension_gather() -> None:
 def test_extension_when_then_otherwise() -> None:
     df = ROUNDTRIP_DF.with_columns(pl.Series("mask", [True, False, None]))
     df_storage = df.select(pl.all().ext.storage())
-    result = df.select(pl.when(pl.col("mask")).then(c).otherwise(pl.col(c).reverse())
-                       for c in df.columns if c != "mask")
-    expected = (
-        df_storage.select(pl.when(pl.col("mask")).then(c).otherwise(pl.col(c).reverse()) for c in df.columns if c != "mask")
-            .select([pl.col(c).ext.to(df.schema[c]) for c in df.columns if c != "mask"])
+    result = df.select(
+        pl.when(pl.col("mask")).then(c).otherwise(pl.col(c).reverse())
+        for c in df.columns
+        if c != "mask"
     )
+    expected = df_storage.select(
+        pl.when(pl.col("mask")).then(c).otherwise(pl.col(c).reverse())
+        for c in df.columns
+        if c != "mask"
+    ).select([pl.col(c).ext.to(df.schema[c]) for c in df.columns if c != "mask"])
     assert_frame_equal(result, expected)
 
 
