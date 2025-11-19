@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import polars as pl
 import pytest
+
+import polars as pl
 from polars.exceptions import SQLInterfaceError
 from polars.testing import assert_frame_equal
-
 from tests.unit.sql import assert_sql_matches
 
 
