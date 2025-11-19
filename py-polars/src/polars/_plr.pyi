@@ -1101,7 +1101,10 @@ class PyLazyFrame:
     def count(self) -> PyLazyFrame: ...
     def merge_sorted(self, other: PyLazyFrame, key: str) -> PyLazyFrame: ...
     def hint_sorted(
-        self, columns: list[str], descending: list[bool], nulls_last: list[bool]
+        self,
+        columns: list[str],
+        descending: list[bool | None],
+        nulls_last: list[bool | None],
     ) -> PyLazyFrame: ...
 
     # exitable
