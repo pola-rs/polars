@@ -1275,14 +1275,6 @@ def test_replace_expressions() -> None:
             "Tell you what you want",
         ),
         (pl.Series(["me", "YOU"]), ["you", "me"], True, False, "Tell you what me want"),
-        (["me", "YOU"], ["you", "me"], True, False, "Tell you what me want"),
-        (
-            ["Tell me", "Tell"],
-            ["Don't tell", "Text"],
-            False,
-            False,
-            "Text me what you want",
-        ),
         (
             ["Tell me", "Tell"],
             ["Don't tell", "Text"],

@@ -2540,9 +2540,10 @@ class ExprStringNameSpace:
             When this option is enabled, searching will be performed without respect
             to case for ASCII letters (a-z and A-Z) only.
         leftmost
-            Guarantees in case there are overlapping matches that the leftmost match is used.
-            In case there are multiple candidates for the leftmost match the pattern which comes
-            first in patterns is used. May not be used together with overlapping = True.
+            Guarantees in case there are overlapping matches that the leftmost match
+            is used. In case there are multiple candidates for the leftmost match
+            the pattern which comes first in patterns is used. May not be used
+            together with overlapping = True.
 
         Notes
         -----
@@ -2611,9 +2612,10 @@ class ExprStringNameSpace:
             When this option is enabled, searching will be performed without respect
             to case for ASCII letters (a-z and A-Z) only.
         leftmost
-            Guarantees in case there are overlapping matches that the leftmost match is used.
-            In case there are multiple candidates for the leftmost match the pattern which comes
-            first in patterns is used. May not be used together with overlapping = True.
+            Guarantees in case there are overlapping matches that the leftmost match
+            is used. In case there are multiple candidates for the leftmost match
+            the pattern which comes first in patterns is used. May not be used
+            together with overlapping = True.
 
         Notes
         -----
@@ -2760,9 +2762,10 @@ class ExprStringNameSpace:
         overlapping
             Whether matches may overlap.
         leftmost
-            Guarantees in case there are overlapping matches that the leftmost match is used.
-            In case there are multiple candidates for the leftmost match the pattern which comes
-            first in patterns is used. May not be used together with overlapping = True.
+            Guarantees in case there are overlapping matches that the leftmost match
+            is used. In case there are multiple candidates for the leftmost match
+            the pattern which comes first in patterns is used. May not be used
+            together with overlapping = True.
 
         Notes
         -----
@@ -2846,9 +2849,10 @@ class ExprStringNameSpace:
         overlapping
             Whether matches may overlap.
         leftmost
-            Guarantees in case there are overlapping matches that the leftmost match is used.
-            In case there are multiple candidates for the leftmost match the pattern which comes
-            first in patterns is used. May not be used together with overlapping = True.
+            Guarantees in case there are overlapping matches that the leftmost match
+            is used. In case there are multiple candidates for the leftmost match
+            the pattern which comes first in patterns is used. May not be used
+            together with overlapping = True.
 
         Notes
         -----

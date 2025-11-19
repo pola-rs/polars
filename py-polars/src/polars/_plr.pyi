@@ -1843,7 +1843,10 @@ class PyExpr:
     def str_splitn(self, by: PyExpr, n: int) -> PyExpr: ...
     def str_to_decimal(self, scale: int) -> PyExpr: ...
     def str_contains_any(
-        self, patterns: PyExpr, ascii_case_insensitive: bool
+        self,
+        patterns: PyExpr,
+        ascii_case_insensitive: bool,
+        leftmost: bool,
     ) -> PyExpr: ...
     def str_replace_many(
         self,
