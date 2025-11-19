@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import pytest
-
 import polars as pl
+import pytest
 from polars.exceptions import SQLInterfaceError
 from polars.testing import assert_frame_equal
+
 from tests.unit.sql import assert_sql_matches
 
 
@@ -32,13 +32,11 @@ def test_over_with_order_by(df_test: pl.DataFrame) -> None:
         df_test,
         query=query,
         compare_with="sqlite",
-        expected=pl.DataFrame(
-            {
-                "id": [1, 2, 3, 4, 5, 6, 7],
-                "value": [20, 10, 30, 15, 40, 25, 35],
-                "sum_by_value": [45, 10, 100, 25, 175, 70, 135],
-            }
-        ),
+        expected={
+            "id": [1, 2, 3, 4, 5, 6, 7],
+            "value": [20, 10, 30, 15, 40, 25, 35],
+            "sum_by_value": [45, 10, 100, 25, 175, 70, 135],
+        },
     )
 
 
@@ -48,6 +46,7 @@ def test_over_with_partition_by(df_test: pl.DataFrame) -> None:
         SELECT
             category,
             value,
+            ROW_NUMBER() OVER (PARTITION BY category ORDER BY value) AS row_num,
             COUNT(*) OVER (PARTITION BY category) AS cat_count,
             SUM(value) OVER (PARTITION BY category) AS cat_sum
         FROM self
@@ -58,14 +57,13 @@ def test_over_with_partition_by(df_test: pl.DataFrame) -> None:
         query=query,
         check_dtypes=False,
         compare_with="sqlite",
-        expected=pl.DataFrame(
-            {
-                "category": ["A", "A", "A", "B", "B", "C"],
-                "value": [10, 20, 30, 15, 40, 35],
-                "cat_count": [3, 3, 3, 2, 2, 1],
-                "cat_sum": [60, 60, 60, 55, 55, 35],
-            }
-        ),
+        expected={
+            "category": ["A", "A", "A", "B", "B", "C"],
+            "value": [10, 20, 30, 15, 40, 35],
+            "row_num": [1, 2, 3, 1, 2, 1],
+            "cat_count": [3, 3, 3, 2, 2, 1],
+            "cat_sum": [60, 60, 60, 55, 55, 35],
+        },
     )
 
 
@@ -84,15 +82,13 @@ def test_over_with_cumulative_window_funcs(df_test: pl.DataFrame) -> None:
         df_test,
         query=query,
         compare_with="sqlite",
-        expected=pl.DataFrame(
-            {
-                "category": ["A", "A", "A", "B", "B", "B", "C"],
-                "value": [10, 20, 30, 15, 25, 40, 35],
-                "cumsum": [10, 30, 60, 15, 40, 80, 35],
-                "cummin": [10, 10, 10, 15, 15, 15, 35],
-                "cummax": [10, 20, 30, 15, 25, 40, 35],
-            }
-        ),
+        expected={
+            "category": ["A", "A", "A", "B", "B", "B", "C"],
+            "value": [10, 20, 30, 15, 25, 40, 35],
+            "cumsum": [10, 30, 60, 15, 40, 80, 35],
+            "cummin": [10, 10, 10, 15, 15, 15, 35],
+            "cummax": [10, 20, 30, 15, 25, 40, 35],
+        },
     )
 
 
@@ -110,13 +106,11 @@ def test_window_function_over_empty(df_test: pl.DataFrame) -> None:
         query=query,
         check_dtypes=False,
         compare_with="sqlite",
-        expected=pl.DataFrame(
-            {
-                "id": [1, 2, 3, 4, 5, 6, 7],
-                "total_count": [7, 7, 7, 7, 7, 7, 7],
-                "total_sum": [175, 175, 175, 175, 175, 175, 175],
-            }
-        ),
+        expected={
+            "id": [1, 2, 3, 4, 5, 6, 7],
+            "total_count": [7, 7, 7, 7, 7, 7, 7],
+            "total_sum": [175, 175, 175, 175, 175, 175, 175],
+        },
     )
 
 
@@ -126,7 +120,8 @@ def test_window_function_order_by_asc_desc(df_test: pl.DataFrame) -> None:
             id,
             value,
             SUM(value) OVER (ORDER BY value ASC) AS sum_asc,
-            SUM(value) OVER (ORDER BY value DESC) AS sum_desc
+            SUM(value) OVER (ORDER BY value DESC) AS sum_desc,
+            ROW_NUMBER() OVER (ORDER BY value DESC) AS row_num_desc
         FROM self
         ORDER BY id
     """
@@ -134,14 +129,13 @@ def test_window_function_order_by_asc_desc(df_test: pl.DataFrame) -> None:
         df_test,
         query=query,
         compare_with="sqlite",
-        expected=pl.DataFrame(
-            {
-                "id": [1, 2, 3, 4, 5, 6, 7],
-                "value": [20, 10, 30, 15, 40, 25, 35],
-                "sum_asc": [45, 10, 100, 25, 175, 70, 135],
-                "sum_desc": [150, 175, 105, 165, 40, 130, 75],
-            }
-        ),
+        expected={
+            "id": [1, 2, 3, 4, 5, 6, 7],
+            "value": [20, 10, 30, 15, 40, 25, 35],
+            "sum_asc": [45, 10, 100, 25, 175, 70, 135],
+            "sum_desc": [150, 175, 105, 165, 40, 130, 75],
+            "row_num_desc": [5, 7, 3, 6, 1, 4, 2],
+        },
     )
 
 
@@ -163,16 +157,14 @@ def test_window_function_misc_aggregations(df_test: pl.DataFrame) -> None:
         query=query,
         check_dtypes=False,
         compare_with="sqlite",
-        expected=pl.DataFrame(
-            {
-                "category": ["A", "A", "B", "B", "C"],
-                "value": [20, 30, 15, 40, 35],
-                "cat_count": [2, 2, 2, 2, 1],
-                "cat_sum": [50, 50, 55, 55, 35],
-                "cat_avg": [25.0, 25.0, 27.5, 27.5, 35.0],
-                "total_count": [5, 5, 5, 5, 5],
-            }
-        ),
+        expected={
+            "category": ["A", "A", "B", "B", "C"],
+            "value": [20, 30, 15, 40, 35],
+            "cat_count": [2, 2, 2, 2, 1],
+            "cat_sum": [50, 50, 55, 55, 35],
+            "cat_avg": [25.0, 25.0, 27.5, 27.5, 35.0],
+            "total_count": [5, 5, 5, 5, 5],
+        },
     )
 
 
@@ -199,15 +191,13 @@ def test_window_function_partition_by_multi() -> None:
         query=query,
         check_dtypes=False,
         compare_with="sqlite",
-        expected=pl.DataFrame(
-            {
-                "region": ["North", "North", "North", "South", "South", "South"],
-                "category": ["A", "A", "B", "A", "B", "B"],
-                "value": [10, 20, 15, 30, 25, 35],
-                "group_count": [2, 2, 1, 1, 2, 2],
-                "group_sum": [30, 30, 15, 30, 60, 60],
-            }
-        ),
+        expected={
+            "region": ["North", "North", "North", "South", "South", "South"],
+            "category": ["A", "A", "B", "A", "B", "B"],
+            "value": [10, 20, 15, 30, 25, 35],
+            "group_count": [2, 2, 1, 1, 2, 2],
+            "group_sum": [30, 30, 15, 30, 60, 60],
+        },
     )
 
 
@@ -241,14 +231,12 @@ def test_window_function_order_by_multi() -> None:
         df,
         query=query,
         compare_with="sqlite",
-        expected=pl.DataFrame(
-            {
-                "category": ["A", "A", "A", "B", "B"],
-                "subcategory": ["X", "X", "Y", "X", "Y"],
-                "value": [10, 15, 20, 25, 30],
-                "sum_asc": [10, 25, 45, 70, 100],
-            }
-        ),
+        expected={
+            "category": ["A", "A", "A", "B", "B"],
+            "subcategory": ["X", "X", "Y", "X", "Y"],
+            "value": [10, 15, 20, 25, 30],
+            "sum_asc": [10, 25, 45, 70, 100],
+        },
     )
 
     query = """
@@ -267,14 +255,12 @@ def test_window_function_order_by_multi() -> None:
         df,
         query=query,
         compare_with="sqlite",
-        expected=pl.DataFrame(
-            {
-                "category": ["B", "B", "A", "A", "A"],
-                "subcategory": ["Y", "X", "Y", "X", "X"],
-                "value": [30, 25, 20, 10, 15],
-                "sum_desc": [30, 55, 75, 85, 100],
-            }
-        ),
+        expected={
+            "category": ["B", "B", "A", "A", "A"],
+            "subcategory": ["Y", "X", "Y", "X", "X"],
+            "value": [30, 25, 20, 10, 15],
+            "sum_desc": [30, 55, 75, 85, 100],
+        },
     )
 
 
@@ -301,15 +287,13 @@ def test_window_function_with_nulls() -> None:
         query=query,
         check_dtypes=False,
         compare_with="sqlite",
-        expected=pl.DataFrame(
-            {
-                "category": ["A", "A", "B", "B", None],
-                "value": [None, 10, 25, 30, 15],
-                "cat_count": [2, 2, 2, 2, 1],
-                "value_count": [1, 1, 2, 2, 1],
-                "cat_count_global": [4, 4, 4, 4, 4],
-            }
-        ),
+        expected={
+            "category": ["A", "A", "B", "B", None],
+            "value": [None, 10, 25, 30, 15],
+            "cat_count": [2, 2, 2, 2, 1],
+            "value_count": [1, 1, 2, 2, 1],
+            "cat_count_global": [4, 4, 4, 4, 4],
+        },
     )
 
 
@@ -330,16 +314,14 @@ def test_window_function_min_max(df_test: pl.DataFrame) -> None:
         df,
         query=query,
         compare_with="sqlite",
-        expected=pl.DataFrame(
-            {
-                "category": ["A", "A", "B", "B", "C"],
-                "value": [20, 30, 15, 40, 35],
-                "cat_min": [20, 20, 15, 15, 35],
-                "cat_max": [30, 30, 40, 40, 35],
-                "global_min": [15, 15, 15, 15, 15],
-                "global_max": [40, 40, 40, 40, 40],
-            }
-        ),
+        expected={
+            "category": ["A", "A", "B", "B", "C"],
+            "value": [20, 30, 15, 40, 35],
+            "cat_min": [20, 20, 15, 15, 35],
+            "cat_max": [30, 30, 40, 40, 35],
+            "global_min": [15, 15, 15, 15, 15],
+            "global_max": [40, 40, 40, 40, 40],
+        },
     )
 
 
@@ -400,7 +382,7 @@ def test_window_function_over_clause_misc() -> None:
         query=query,
         check_dtypes=False,
         compare_with="sqlite",
-        expected=pl.DataFrame({"id": [1, 2, 3, 4], "cnt": [4, 4, 4, 4]}),
+        expected={"id": [1, 2, 3, 4], "cnt": [4, 4, 4, 4]},
     )
 
     # OVER with only PARTITION BY
@@ -413,13 +395,11 @@ def test_window_function_over_clause_misc() -> None:
         query=query,
         check_dtypes=False,
         compare_with="sqlite",
-        expected=pl.DataFrame(
-            {
-                "id": [1, 2, 3, 4],
-                "category": ["A", "A", "B", "B"],
-                "count": [2, 2, 2, 2],
-            }
-        ),
+        expected={
+            "id": [1, 2, 3, 4],
+            "category": ["A", "A", "B", "B"],
+            "count": [2, 2, 2, 2],
+        },
     )
 
     # OVER with only ORDER BY
@@ -431,13 +411,11 @@ def test_window_function_over_clause_misc() -> None:
         df,
         query=query,
         compare_with="sqlite",
-        expected=pl.DataFrame(
-            {
-                "id": [1, 2, 3, 4],
-                "value": [10, 20, 30, 40],
-                "sum_val": [10, 30, 60, 100],
-            }
-        ),
+        expected={
+            "id": [1, 2, 3, 4],
+            "value": [10, 20, 30, 40],
+            "sum_val": [10, 30, 60, 100],
+        },
     )
 
     # OVER with both PARTITION BY and ORDER BY
@@ -454,14 +432,12 @@ def test_window_function_over_clause_misc() -> None:
         query=query,
         check_dtypes=False,
         compare_with="sqlite",
-        expected=pl.DataFrame(
-            {
-                "id": [1, 2, 3, 4],
-                "category": ["A", "A", "B", "B"],
-                "value": [10, 20, 30, 40],
-                "cnt": [1, 2, 1, 2],
-            }
-        ),
+        expected={
+            "id": [1, 2, 3, 4],
+            "category": ["A", "A", "B", "B"],
+            "value": [10, 20, 30, 40],
+            "cnt": [1, 2, 1, 2],
+        },
     )
 
 
