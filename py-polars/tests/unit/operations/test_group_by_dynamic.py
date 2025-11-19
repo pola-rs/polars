@@ -1338,3 +1338,72 @@ def test_group_by_dynamic_with_slice(include_boundaries: bool) -> None:
     assert_frame_equal(lf.slice(5, 1).collect(), expected.slice(5, 1))
     assert_frame_equal(lf.slice(5, 0).collect(), expected.slice(5, 0))
     assert_frame_equal(lf.slice(2, 1).collect(), expected.slice(2, 1))
+
+
+def test_group_by_dynamic_very_large_offset() -> None:
+    df = pl.DataFrame({"ts": [1_000_000_000_000], "val": [1]})
+    out = (
+        df.group_by_dynamic(
+            index_column="ts",
+            every="10i",
+            period="10i",
+            offset="1000000000000i",  # atypcial value, used for stress test only
+        )
+        .agg(pl.col("val").sum())
+        .select("val")
+    )
+    expected = pl.DataFrame({"val": [1]})
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("closed", ["left", "right", "both", "none"])
+def test_group_by_dynamic_large_offset(closed: ClosedInterval) -> None:
+    large = 100
+    df = pl.DataFrame({"ts": [large], "val": [1]})
+    vals = [1, 2, 3, large - 1, large, large + 1]
+
+    def outside_left(t: int, start: int, stop: int, closed: ClosedInterval) -> bool:
+        return t < start if closed in ["left", "both"] else t <= start
+
+    def outside_right(t: int, start: int, stop: int, closed: ClosedInterval) -> bool:
+        return t > stop if closed in ["right", "both"] else t >= stop
+
+    def ground_truth_n_windows(
+        t: int, every: int, period: int, offset: int, closed: ClosedInterval
+    ) -> int:
+        start = large // every * every + offset
+        stop = start + period
+        while outside_left(t, start, stop, closed):
+            start -= every
+            stop = start + period
+        while outside_right(t, start, stop, closed):
+            start += every
+            stop = start + period
+        n = 0
+        while not outside_left(t, start, stop, closed):
+            n += 1
+            start += every
+            stop = start + period
+        return n
+
+    for every in vals:
+        for period in vals:
+            for offset in vals + [0] + [-v for v in vals]:
+                result = (
+                    df.lazy()
+                    .group_by_dynamic(
+                        index_column="ts",
+                        every=f"{every}i",
+                        period=f"{period}i",
+                        offset=f"{offset}i",
+                        closed=closed,
+                    )
+                    .agg(pl.col("val").sum())
+                    .collect()
+                )
+                n_out = result.height
+                n_expected = ground_truth_n_windows(
+                    large, every, period, offset, closed
+                )
+                assert n_out == n_expected
