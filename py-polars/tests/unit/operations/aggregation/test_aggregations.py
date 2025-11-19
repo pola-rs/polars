@@ -8,7 +8,6 @@ import pytest
 from hypothesis import given
 
 import polars as pl
-from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
 from polars.testing.parametric import dataframes
 
@@ -242,12 +241,16 @@ def test_online_variance() -> None:
 def test_implode_and_agg() -> None:
     df = pl.DataFrame({"type": ["water", "fire", "water", "earth"]})
 
-    # this would OOB
-    with pytest.raises(
-        InvalidOperationError,
-        match=r"'implode' followed by an aggregation is not allowed",
-    ):
-        df.group_by("type").agg(pl.col("type").implode().first().alias("foo"))
+    assert_frame_equal(
+        df.group_by("type").agg(pl.col("type").implode().first().alias("foo")),
+        pl.DataFrame(
+            {
+                "type": ["water", "fire", "earth"],
+                "foo": [["water", "water"], ["fire"], ["earth"]],
+            }
+        ),
+        check_row_order=False,
+    )
 
     # implode + function should be allowed in group_by
     assert df.group_by("type", maintain_order=True).agg(
@@ -434,6 +437,7 @@ def test_agg_filter_over_empty_df_13610() -> None:
 
 
 @pytest.mark.may_fail_cloud  # reason: output order is defined for this in cloud
+@pytest.mark.may_fail_auto_streaming
 @pytest.mark.slow
 def test_agg_empty_sum_after_filter_14734() -> None:
     f = (
@@ -747,11 +751,13 @@ def test_sort_by_over_multiple_nulls_last() -> None:
     assert_frame_equal(out, expected)
 
 
-def test_slice_after_agg_raises() -> None:
-    with pytest.raises(
-        InvalidOperationError, match=r"cannot slice\(\) an aggregated scalar value"
-    ):
-        pl.select(a=1, b=1).group_by("a").agg(pl.col("b").first().slice(99, 0))
+def test_slice_after_agg() -> None:
+    assert_frame_equal(
+        pl.select(a=pl.lit(1, dtype=pl.Int64), b=pl.lit(1, dtype=pl.Int64))
+        .group_by("a")
+        .agg(pl.col("b").first().slice(99, 0)),
+        pl.DataFrame({"a": [1], "b": [[]]}, schema_overrides={"b": pl.List(pl.Int64)}),
+    )
 
 
 def test_agg_scalar_empty_groups_20115() -> None:
@@ -1035,3 +1041,78 @@ def test_all_any_on_list_raises_error() -> None:
             pl.exceptions.InvalidOperationError, match=r"expected boolean"
         ):
             lf.select(expr).collect(engine="streaming")
+
+
+@pytest.mark.parametrize("null_endpoints", [True, False])
+@pytest.mark.parametrize("ignore_nulls", [True, False])
+@pytest.mark.parametrize(
+    ("dtype", "first_value", "last_value"),
+    [
+        # Struct
+        (
+            pl.Struct({"x": pl.Enum(["c0", "c1"]), "y": pl.Float32}),
+            {"x": "c0", "y": 1.2},
+            {"x": "c1", "y": 3.4},
+        ),
+        # List
+        (pl.List(pl.UInt8), [1], [2]),
+        # Array
+        (pl.Array(pl.Int16, 2), [1, 2], [3, 4]),
+        # Date (logical test)
+        (pl.Date, date(2025, 1, 1), date(2025, 1, 2)),
+        # Float (primitive test)
+        (pl.Float32, 1.0, 2.0),
+    ],
+)
+def test_first_last_nested(
+    null_endpoints: bool,
+    ignore_nulls: bool,
+    dtype: PolarsDataType,
+    first_value: Any,
+    last_value: Any,
+) -> None:
+    s = pl.Series([first_value, last_value], dtype=dtype)
+    if null_endpoints:
+        # Test the case where the first/last value is null
+        null = pl.Series([None], dtype=dtype)
+        s = pl.concat((null, s, null))
+
+    lf = pl.LazyFrame({"a": s})
+
+    # first
+    result = lf.select(pl.col("a").first(ignore_nulls=ignore_nulls)).collect()
+    expected = pl.DataFrame(
+        {
+            "a": pl.Series(
+                [None if null_endpoints and not ignore_nulls else first_value],
+                dtype=dtype,
+            )
+        }
+    )
+    assert_frame_equal(result, expected)
+
+    # last
+    result = lf.select(pl.col("a").last(ignore_nulls=ignore_nulls)).collect()
+    expected = pl.DataFrame(
+        {
+            "a": pl.Series(
+                [None if null_endpoints and not ignore_nulls else last_value],
+                dtype=dtype,
+            ),
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_struct_enum_agg_streaming_24936() -> None:
+    s = (
+        pl.Series(
+            "a",
+            [{"f0": "c0"}],
+            dtype=pl.Struct({"f0": pl.Enum(categories=["c0"])}),
+        ),
+    )
+    df = pl.DataFrame(s)
+
+    q = df.lazy().select(pl.all(ignore_nulls=False).first())
+    assert_frame_equal(q.collect(), df)

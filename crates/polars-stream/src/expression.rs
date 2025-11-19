@@ -51,6 +51,7 @@ impl StreamExpr {
     ) -> PolarsResult<AggregationContext<'a>> {
         if self.reentrant {
             let state = state.split();
+            // @NOTE: Clones only the Arc, relatively cheap.
             let groups = <GroupPositions as Clone>::clone(groups);
             let phys_expr = self.inner.clone();
             let df = df.clone();

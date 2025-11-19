@@ -6,7 +6,7 @@ ifeq ($(VENV),)
 VENV := .venv
 endif
 
-RUNTIME_CARGO_TOML=py-polars/runtime/Cargo.toml
+RUNTIME_CARGO_TOML=py-polars/runtime/polars-runtime-32/Cargo.toml
 
 ifeq ($(OS),Windows_NT)
 	VENV_BIN=$(VENV)/Scripts

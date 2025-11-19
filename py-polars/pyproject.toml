@@ -115,6 +115,7 @@ module = [
   "connectorx",
   "dateutil.*",
   "deltalake.*",
+  "duckdb.*",
   "fsspec.*",
   "gevent",
   "great_tables",

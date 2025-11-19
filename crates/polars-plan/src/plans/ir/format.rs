@@ -1,4 +1,4 @@
-use std::fmt::{self, Display, Formatter};
+use std::fmt::{self, Display, Formatter, Write};
 
 use polars_core::frame::DataFrame;
 use polars_core::schema::Schema;
@@ -377,13 +377,16 @@ impl Display for ExprIRDisplay<'_> {
                 }
             },
             Len => write!(f, "len()"),
-            Explode { expr, skip_empty } => {
+            Explode { expr, options } => {
                 let expr = self.with_root(expr);
-                if *skip_empty {
-                    write!(f, "{expr}.explode(skip_empty)")
-                } else {
-                    write!(f, "{expr}.explode()")
+                write!(f, "{expr}.explode(")?;
+                match (options.empty_as_null, options.keep_nulls) {
+                    (true, true) => {},
+                    (true, false) => f.write_str("keep_nulls=false")?,
+                    (false, true) => f.write_str("empty_as_null=false")?,
+                    (false, false) => f.write_str("empty_as_null=false, keep_nulls=false")?,
                 }
+                f.write_char(')')
             },
             Column(name) => write!(f, "col(\"{name}\")"),
             Literal(v) => write!(f, "{v:?}"),
@@ -458,7 +461,9 @@ impl Display for ExprIRDisplay<'_> {
                     Median(expr) => write!(f, "{}.median()", self.with_root(expr)),
                     Mean(expr) => write!(f, "{}.mean()", self.with_root(expr)),
                     First(expr) => write!(f, "{}.first()", self.with_root(expr)),
+                    FirstNonNull(expr) => write!(f, "{}.first_non_null()", self.with_root(expr)),
                     Last(expr) => write!(f, "{}.last()", self.with_root(expr)),
+                    LastNonNull(expr) => write!(f, "{}.last_non_null()", self.with_root(expr)),
                     Item { input, allow_empty } => {
                         self.with_root(input).fmt(f)?;
                         if *allow_empty {
@@ -966,7 +971,7 @@ pub fn write_ir_non_recursive(
                 SinkTypeIR::Memory => "SINK (memory)",
                 SinkTypeIR::Callback { .. } => "SINK (callback)",
                 SinkTypeIR::File { .. } => "SINK (file)",
-                SinkTypeIR::Partition { .. } => "SINK (partition)",
+                SinkTypeIR::Partitioned { .. } => "SINK (partition)",
             };
             write!(f, "{:indent$}{name}", "")
         },

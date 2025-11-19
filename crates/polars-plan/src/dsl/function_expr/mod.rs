@@ -56,7 +56,7 @@ pub use self::cat::CategoricalFunction;
 pub use self::datetime::TemporalFunction;
 pub use self::pow::PowFunction;
 #[cfg(feature = "range")]
-pub use self::range::RangeFunction;
+pub use self::range::{DateRangeArgs, RangeFunction};
 #[cfg(feature = "rolling_window")]
 pub use self::rolling::RollingFunction;
 #[cfg(feature = "rolling_window_by")]
@@ -144,7 +144,9 @@ pub enum FunctionExpr {
     DropNans,
     DropNulls,
     #[cfg(feature = "mode")]
-    Mode,
+    Mode {
+        maintain_order: bool,
+    },
     #[cfg(feature = "moment")]
     Skew(bool),
     #[cfg(feature = "moment")]
@@ -474,7 +476,7 @@ impl Hash for FunctionExpr {
                 nulls_last.hash(state);
             },
             #[cfg(feature = "mode")]
-            Mode => {},
+            Mode { maintain_order } => maintain_order.hash(state),
             #[cfg(feature = "abs")]
             Abs => {},
             Negate => {},
@@ -716,7 +718,13 @@ impl Display for FunctionExpr {
             DropNans => "drop_nans",
             DropNulls => "drop_nulls",
             #[cfg(feature = "mode")]
-            Mode => "mode",
+            Mode { maintain_order } => {
+                if *maintain_order {
+                    "mode_stable"
+                } else {
+                    "mode"
+                }
+            },
             #[cfg(feature = "moment")]
             Skew(_) => "skew",
             #[cfg(feature = "moment")]

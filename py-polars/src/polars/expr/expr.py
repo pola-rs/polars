@@ -1788,11 +1788,16 @@ class Expr:
         other_pyexpr = parse_into_expression(other)
         return wrap_expr(self._pyexpr.dot(other_pyexpr))
 
-    def mode(self) -> Expr:
+    def mode(self, *, maintain_order: bool = False) -> Expr:
         """
         Compute the most occurring value(s).
 
         Can return multiple Values.
+
+        Parameters
+        ----------
+        maintain_order
+            Maintain order of data. This requires more work.
 
         Examples
         --------
@@ -1812,7 +1817,7 @@ class Expr:
         │ 1   ┆ 1   │
         └─────┴─────┘
         """
-        return wrap_expr(self._pyexpr.mode())
+        return wrap_expr(self._pyexpr.mode(maintain_order=maintain_order))
 
     def cast(
         self,
@@ -3446,14 +3451,30 @@ class Expr:
             return wrap_expr(self._pyexpr.unique_stable())
         return wrap_expr(self._pyexpr.unique())
 
-    def first(self) -> Expr:
+    def first(self, *, ignore_nulls: bool = False) -> Expr:
         """
         Get the first value.
 
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the first non-null value is returned, otherwise `None` is
+            returned if no non-null value exists.
+
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 1, 2]})
+        >>> df = pl.DataFrame({"a": [None, 1, 2]})
         >>> df.select(pl.col("a").first())
+        shape: (1, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ i64  │
+        ╞══════╡
+        │ null │
+        └──────┘
+        >>> df.select(pl.col("a").first(ignore_nulls=True))
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -3463,11 +3484,18 @@ class Expr:
         │ 1   │
         └─────┘
         """
-        return wrap_expr(self._pyexpr.first())
+        return wrap_expr(self._pyexpr.first(ignore_nulls=ignore_nulls))
 
-    def last(self) -> Expr:
+    def last(self, *, ignore_nulls: bool = False) -> Expr:
         """
         Get the last value.
+
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the last non-null value is returned, otherwise `None` is
+            returned if no non-null value exists.
 
         Examples
         --------
@@ -3482,7 +3510,7 @@ class Expr:
         │ 2   │
         └─────┘
         """
-        return wrap_expr(self._pyexpr.last())
+        return wrap_expr(self._pyexpr.last(ignore_nulls=ignore_nulls))
 
     @unstable()
     def item(self, *, allow_empty: bool = False) -> Expr:
@@ -4936,13 +4964,20 @@ Consider using {self}.implode() instead"""
         │ b     ┆ [2, 3, 4] │
         └───────┴───────────┘
         """
-        return wrap_expr(self._pyexpr.explode())
+        return self.explode(empty_as_null=True, keep_nulls=True)
 
-    def explode(self) -> Expr:
+    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Expr:
         """
         Explode a list expression.
 
         This means that every item is expanded to a new row.
+
+        Parameters
+        ----------
+        empty_as_null
+            Explode an empty list/array into a `null`.
+        keep_nulls
+            Explode a `null` list/array into a `null`.
 
         Returns
         -------
@@ -4977,7 +5012,9 @@ Consider using {self}.implode() instead"""
         │ 4      │
         └────────┘
         """
-        return wrap_expr(self._pyexpr.explode())
+        return wrap_expr(
+            self._pyexpr.explode(empty_as_null=empty_as_null, keep_nulls=keep_nulls)
+        )
 
     def implode(self) -> Expr:
         """

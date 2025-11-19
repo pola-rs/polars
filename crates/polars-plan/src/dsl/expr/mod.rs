@@ -32,7 +32,9 @@ pub enum AggExpr {
     Median(Arc<Expr>),
     NUnique(Arc<Expr>),
     First(Arc<Expr>),
+    FirstNonNull(Arc<Expr>),
     Last(Arc<Expr>),
+    LastNonNull(Arc<Expr>),
     Item {
         input: Arc<Expr>,
         /// Give a missing value if there are no values.
@@ -64,7 +66,9 @@ impl AsRef<Expr> for AggExpr {
             Median(e) => e,
             NUnique(e) => e,
             First(e) => e,
+            FirstNonNull(e) => e,
             Last(e) => e,
+            LastNonNull(e) => e,
             Item { input, .. } => input,
             Mean(e) => e,
             Implode(e) => e,
@@ -137,7 +141,7 @@ pub enum Expr {
     },
     Explode {
         input: Arc<Expr>,
-        skip_empty: bool,
+        options: ExplodeOptions,
     },
     Filter {
         input: Arc<Expr>,
@@ -340,8 +344,8 @@ impl Hash for Expr {
                 sort_options.hash(state);
             },
             Expr::Agg(input) => input.hash(state),
-            Expr::Explode { input, skip_empty } => {
-                skip_empty.hash(state);
+            Expr::Explode { input, options } => {
+                options.hash(state);
                 input.hash(state)
             },
             #[cfg(feature = "dynamic_group_by")]

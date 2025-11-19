@@ -181,8 +181,8 @@ pub fn append(s: &[Column], upcast: bool) -> PolarsResult<Column> {
 }
 
 #[cfg(feature = "mode")]
-pub(super) fn mode(s: &Column) -> PolarsResult<Column> {
-    polars_ops::prelude::mode::mode(s.as_materialized_series()).map(Column::from)
+pub(super) fn mode(s: &Column, maintain_order: bool) -> PolarsResult<Column> {
+    polars_ops::prelude::mode::mode(s.as_materialized_series(), maintain_order).map(Column::from)
 }
 
 #[cfg(feature = "moment")]

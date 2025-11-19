@@ -38,7 +38,7 @@ pub fn aexpr_to_column_predicates(
     let mut leaf_names = Vec::with_capacity(2);
     for minterm in minterms {
         leaf_names.clear();
-        leaf_names.extend(aexpr_to_leaf_names_iter(minterm, expr_arena));
+        leaf_names.extend(aexpr_to_leaf_names_iter(minterm, expr_arena).cloned());
 
         if leaf_names.len() != 1 {
             is_sumwise_complete = false;
@@ -100,6 +100,48 @@ pub fn aexpr_to_column_predicates(
                         let aexpr = expr_arena.get(minterm);
 
                         match aexpr {
+                            #[cfg(all(feature = "regex", feature = "strings"))]
+                            AExpr::Function {
+                                input,
+                                function: IRFunctionExpr::StringExpr(str_function),
+                                options: _,
+                            } if matches!(
+                                str_function,
+                                crate::plans::IRStringFunction::Contains { literal: _, strict: true } |
+                                crate::plans::IRStringFunction::EndsWith |
+                                crate::plans::IRStringFunction::StartsWith
+                            ) => {
+                                use crate::plans::IRStringFunction;
+
+                                assert_eq!(input.len(), 2);
+                                into_column(input[0].node(), expr_arena)?;
+                                let lv = constant_evaluate(
+                                        input[1].node(),
+                                        expr_arena,
+                                        schema,
+                                        0,
+                                    )??;
+
+                                if !lv.is_scalar() {
+                                    return None;
+                                }
+                                let lv = lv.extract_str()?;
+
+                                match str_function {
+                                    IRStringFunction::Contains { literal, strict: _ } => {
+                                        let pattern = if *literal {
+                                            regex::escape(lv)
+                                        } else {
+                                            lv.to_string()
+                                        };
+                                        let pattern = regex::bytes::Regex::new(&pattern).ok()?;
+                                        Some(SpecializedColumnPredicate::RegexMatch(pattern))
+                                    },
+                                    IRStringFunction::StartsWith => Some(SpecializedColumnPredicate::StartsWith(lv.as_bytes().into())),
+                                    IRStringFunction::EndsWith => Some(SpecializedColumnPredicate::EndsWith(lv.as_bytes().into())),
+                                    _ => unreachable!(),
+                                }
+                            },
                             AExpr::Function {
                                 input,
                                 function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNull),

@@ -8,11 +8,15 @@ use arrow::bitmap::bitmask::nth_set_bit_u32;
 use polars_dtype::categorical::{CategoricalMapping, Categories, FrozenCategories};
 use proptest::prelude::*;
 
+use crate::chunked_array::builder::AnonymousListBuilder;
 #[cfg(feature = "dtype-categorical")]
 use crate::chunked_array::builder::CategoricalChunkedBuilder;
 use crate::prelude::{Int32Chunked, Int64Chunked, Int128Chunked, NamedFrom, Series, TimeUnit};
+#[cfg(feature = "dtype-struct")]
+use crate::series::StructChunked;
+use crate::series::from::IntoSeries;
 #[cfg(feature = "dtype-categorical")]
-use crate::series::{Categorical8Type, DataType, IntoSeries};
+use crate::series::{Categorical8Type, DataType};
 
 // A global, thread-safe counter that will be used to ensure unique column names when the Series are created
 // This is especially useful for when the Series strategies are combined to create a DataFrame strategy
@@ -39,6 +43,10 @@ bitflags::bitflags! {
         const DECIMAL = 1 << 10;
         const CATEGORICAL = 1 << 11;
         const ENUM = 1 << 12;
+
+        const LIST = 1 << 13;
+        const ARRAY = 1 << 14;
+        const STRUCT = 1 << 15;
     }
 }
 
@@ -56,29 +64,44 @@ impl SeriesArbitrarySelection {
             | Self::CATEGORICAL
             | Self::ENUM
     }
+
+    pub fn nested() -> Self {
+        Self::LIST | Self::ARRAY | Self::STRUCT
+    }
 }
 
 #[derive(Clone)]
 pub struct SeriesArbitraryOptions {
     pub allowed_dtypes: SeriesArbitrarySelection,
+    pub max_nesting_level: usize,
     pub series_length_range: RangeInclusive<usize>,
     pub categories_range: RangeInclusive<usize>,
+    pub struct_fields_range: RangeInclusive<usize>,
 }
 
 impl Default for SeriesArbitraryOptions {
     fn default() -> Self {
         Self {
             allowed_dtypes: SeriesArbitrarySelection::all(),
+            max_nesting_level: 3,
             series_length_range: 0..=5,
             categories_range: 0..=3,
+            struct_fields_range: 1..=3,
         }
     }
 }
 
-pub fn series_strategy(options: Rc<SeriesArbitraryOptions>) -> impl Strategy<Value = Series> {
+pub fn series_strategy(
+    options: Rc<SeriesArbitraryOptions>,
+    nesting_level: usize,
+) -> impl Strategy<Value = Series> {
     use SeriesArbitrarySelection as S;
-    #[allow(unused_mut)]
+
     let mut allowed_dtypes = options.allowed_dtypes;
+
+    if options.max_nesting_level <= nesting_level {
+        allowed_dtypes &= !S::nested()
+    }
 
     let num_possible_types = allowed_dtypes.bits().count_ones();
     assert!(num_possible_types > 0);
@@ -136,6 +159,23 @@ pub fn series_strategy(options: Rc<SeriesArbitraryOptions>) -> impl Strategy<Val
             _ if selection == S::ENUM => series_enum_strategy(
                 options.series_length_range.clone(),
                 options.categories_range.clone(),
+            )
+            .boxed(),
+            _ if selection == S::LIST => series_list_strategy(
+                series_strategy(options.clone(), nesting_level + 1),
+                options.series_length_range.clone(),
+            )
+            .boxed(),
+            #[cfg(feature = "dtype-array")]
+            _ if selection == S::ARRAY => series_array_strategy(
+                series_strategy(options.clone(), nesting_level + 1),
+                options.series_length_range.clone(),
+            )
+            .boxed(),
+            #[cfg(feature = "dtype-struct")]
+            _ if selection == S::STRUCT => series_struct_strategy(
+                series_strategy(options.clone(), nesting_level + 1),
+                options.struct_fields_range.clone(),
             )
             .boxed(),
             _ => unreachable!(),
@@ -345,4 +385,80 @@ fn series_enum_strategy(
 
             builder.finish().into_series()
         })
+}
+
+fn series_list_strategy(
+    inner: impl Strategy<Value = Series>,
+    series_length_range: RangeInclusive<usize>,
+) -> impl Strategy<Value = Series> {
+    inner.prop_flat_map(move |sample_series| {
+        series_length_range.clone().prop_map(move |num_lists| {
+            let mut builder = AnonymousListBuilder::new(
+                next_column_name().into(),
+                num_lists,
+                Some(sample_series.dtype().clone()),
+            );
+
+            for _ in 0..num_lists {
+                builder.append_series(&sample_series).unwrap();
+            }
+
+            builder.finish().into_series()
+        })
+    })
+}
+
+#[cfg(feature = "dtype-array")]
+fn series_array_strategy(
+    inner: impl Strategy<Value = Series>,
+    series_length_range: RangeInclusive<usize>,
+) -> impl Strategy<Value = Series> {
+    inner.prop_flat_map(move |sample_series| {
+        series_length_range.clone().prop_map(move |num_arrays| {
+            let width = sample_series.len();
+
+            let mut builder = AnonymousListBuilder::new(
+                next_column_name().into(),
+                num_arrays,
+                Some(sample_series.dtype().clone()),
+            );
+
+            for _ in 0..num_arrays {
+                builder.append_series(&sample_series).unwrap();
+            }
+
+            let list_series = builder.finish().into_series();
+
+            list_series
+                .cast(&DataType::Array(
+                    Box::new(sample_series.dtype().clone()),
+                    width,
+                ))
+                .unwrap()
+        })
+    })
+}
+
+#[cfg(feature = "dtype-struct")]
+fn series_struct_strategy(
+    inner: impl Strategy<Value = Series>,
+    struct_fields_range: RangeInclusive<usize>,
+) -> impl Strategy<Value = Series> {
+    inner.prop_flat_map(move |sample_series| {
+        struct_fields_range.clone().prop_map(move |num_fields| {
+            let length = sample_series.len();
+
+            let fields: Vec<Series> = (0..num_fields)
+                .map(|i| {
+                    let mut field = sample_series.clone();
+                    field.rename(format!("field_{}", i).into());
+                    field
+                })
+                .collect();
+
+            StructChunked::from_series(next_column_name().into(), length, fields.iter())
+                .unwrap()
+                .into_series()
+        })
+    })
 }

@@ -505,7 +505,10 @@ impl PhysicalExpr for WindowExpr {
                 let out = if self.phys_function.is_scalar() {
                     ac.get_values().clone()
                 } else {
-                    ac.aggregated().explode(false)?
+                    ac.aggregated().explode(ExplodeOptions {
+                        empty_as_null: true,
+                        keep_nulls: true,
+                    })?
                 };
                 Ok(out.into_column())
             },
@@ -513,7 +516,10 @@ impl PhysicalExpr for WindowExpr {
                 // TODO!
                 // investigate if sorted arrays can be return directly
                 let out_column = ac.aggregated();
-                let flattened = out_column.explode(false)?;
+                let flattened = out_column.explode(ExplodeOptions {
+                    empty_as_null: true,
+                    keep_nulls: true,
+                })?;
                 // we extend the lifetime as we must convince the compiler that ac lives
                 // long enough. We drop `GrouBy` when we are done with `ac`.
                 let ac = unsafe {

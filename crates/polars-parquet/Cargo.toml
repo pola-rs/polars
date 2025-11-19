@@ -25,6 +25,7 @@ polars-compute = { workspace = true, features = ["approx_unique", "cast"] }
 polars-error = { workspace = true }
 polars-parquet-format = "0.1"
 polars-utils = { workspace = true, features = ["mmap"] }
+regex = { workspace = true }
 simdutf8 = { workspace = true }
 
 streaming-decompression = "0.1"

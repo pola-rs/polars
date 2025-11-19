@@ -47,13 +47,15 @@ pub enum IRAggExpr {
     },
     Median(Node),
     NUnique(Node),
-    First(Node),
-    Last(Node),
     Item {
         input: Node,
         /// Return a missing value if there are no values.
         allow_empty: bool,
     },
+    First(Node),
+    FirstNonNull(Node),
+    Last(Node),
+    LastNonNull(Node),
     Mean(Node),
     Implode(Node),
     Quantile {
@@ -151,7 +153,9 @@ impl From<IRAggExpr> for GroupByMethod {
             Median(_) => GroupByMethod::Median,
             NUnique(_) => GroupByMethod::NUnique,
             First(_) => GroupByMethod::First,
+            FirstNonNull(_) => GroupByMethod::FirstNonNull,
             Last(_) => GroupByMethod::Last,
+            LastNonNull(_) => GroupByMethod::LastNonNull,
             Item { allow_empty, .. } => GroupByMethod::Item { allow_empty },
             Mean(_) => GroupByMethod::Mean,
             Implode(_) => GroupByMethod::Implode,
@@ -178,7 +182,7 @@ pub enum AExpr {
     Element,
     Explode {
         expr: Node,
-        skip_empty: bool,
+        options: ExplodeOptions,
     },
     Column(PlSmallStr),
     Literal(LiteralValue),

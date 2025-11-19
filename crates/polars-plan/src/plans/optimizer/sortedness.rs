@@ -4,11 +4,24 @@ use polars_core::prelude::PlHashMap;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::unique_id::UniqueId;
 
-use crate::plans::{AExpr, FunctionIR, HintIR, IR, Sorted, into_column};
+use crate::plans::{AExpr, ExprIR, FunctionIR, HintIR, IR, Sorted, into_column};
 
-pub type IRSorted = Arc<[Sorted]>;
+#[derive(Debug, Clone)]
+pub struct IRSorted(pub Arc<[Sorted]>);
 
-#[expect(unused)]
+impl IRSorted {
+    /// Is the data in any way sorted by the keys?
+    pub fn is_sorted_any(&self, keys: &[ExprIR], expr_arena: &Arena<AExpr>) -> bool {
+        if keys.len() > self.0.len() {
+            return false;
+        }
+
+        keys.iter()
+            .zip(self.0.iter())
+            .all(|(k, s)| into_column(k.node(), expr_arena).is_some_and(|k| k == &s.column))
+    }
+}
+
 pub fn is_sorted(root: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Option<IRSorted> {
     let mut sortedness = PlHashMap::default();
     let mut cache_proxy = PlHashMap::default();
@@ -53,7 +66,27 @@ fn is_sorted_rec(
         } => rec!(*input),
         IR::Scan { .. } => None,
         IR::DataFrameScan { .. } => None,
-        IR::SimpleProjection { .. } => None,
+        IR::SimpleProjection { input, columns } => {
+            let (input, columns) = (*input, columns.clone());
+            match rec!(input) {
+                None => None,
+                Some(v) => {
+                    let num_keys = v.0.iter().filter(|v| columns.contains(&v.column)).count();
+                    if num_keys == 0 {
+                        None
+                    } else if num_keys == v.0.len() {
+                        Some(v)
+                    } else {
+                        Some(IRSorted(
+                            v.0.iter()
+                                .filter(|v| columns.contains(&v.column))
+                                .cloned()
+                                .collect(),
+                        ))
+                    }
+                },
+            }
+        },
         IR::Select { .. } => None,
         IR::Sort {
             input: _,
@@ -86,7 +119,7 @@ fn is_sorted_rec(
                 s.iter_mut().for_each(|s| s.nulls_last = true);
             }
 
-            Some(s.into())
+            Some(IRSorted(s.into()))
         },
         IR::Cache { input, id } => {
             let (input, id) = (*input, *id);
@@ -103,7 +136,7 @@ fn is_sorted_rec(
         IR::HStack { .. } => None,
         IR::MapFunction { input, function } => match function {
             FunctionIR::Hint(hint) => match hint {
-                HintIR::Sorted(v) => Some(v.clone()),
+                HintIR::Sorted(v) => Some(IRSorted(v.clone())),
                 #[expect(unreachable_patterns)]
                 _ => rec!(*input),
             },
