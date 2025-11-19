@@ -539,7 +539,16 @@ impl DataType {
     }
 
     pub fn is_nested(&self) -> bool {
-        self.is_list() || self.is_struct() || self.is_array()
+        match self {
+            DataType::List(_) => true,
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(_, _) => true,
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(_) => true,
+            #[cfg(feature = "dtype-extension")]
+            DataType::Extension(_, storage) => storage.is_nested(),
+            _ => false,
+        }
     }
 
     /// Check if this [`DataType`] is a struct

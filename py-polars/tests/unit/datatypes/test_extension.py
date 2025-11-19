@@ -4,6 +4,8 @@ import io
 import pickle
 from typing import TYPE_CHECKING
 
+import pytest
+
 import polars as pl
 from polars.testing import assert_frame_equal
 
@@ -113,6 +115,44 @@ def test_to_from_storage_roundtrip() -> None:
     df = ROUNDTRIP_DF
     df_storage = df.select(pl.all().ext.storage())
     df_ext = df_storage.select(
-        [pl.col(col).ext.to(df.schema[col]) for col in df.columns]
+        [pl.col(c).ext.to(df.schema[c]) for c in df.columns]
     )
     assert_frame_equal(df, df_ext)
+
+
+def test_extension_gather() -> None:
+    df = ROUNDTRIP_DF
+    df_storage = df.select(pl.all().ext.storage())
+    result = df.select(pl.all().gather([2, 0]))
+    expected = df_storage.select(pl.all().gather([2, 0])).select(
+        [pl.col(c).ext.to(df.schema[c]) for c in df.columns]
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_extension_when_then_otherwise() -> None:
+    df = ROUNDTRIP_DF.with_columns(pl.Series("mask", [True, False, None]))
+    df_storage = df.select(pl.all().ext.storage())
+    result = df.select(pl.when(pl.col("mask")).then(c).otherwise(pl.col(c).reverse())
+                       for c in df.columns if c != "mask")
+    expected = (
+        df_storage.select(pl.when(pl.col("mask")).then(c).otherwise(pl.col(c).reverse()) for c in df.columns if c != "mask")
+            .select([pl.col(c).ext.to(df.schema[c]) for c in df.columns if c != "mask"])
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
+def test_extension_join_payload(how: str) -> None:
+    df = ROUNDTRIP_DF.with_columns(pl.Series("key", [1, 2, 3]))
+    df_storage = df.select(pl.all().ext.storage())
+    print(df)
+    print(df_storage)
+    other = pl.DataFrame({"key": [1, 3, 1, 1, 2, 3, 1, 4, 1]})
+
+    result = df.join(other, on="key", how=how)
+    expected = df_storage.join(other, on="key", how=how).with_columns(
+        [pl.col(c).ext.to(df.schema[c]) for c in df.columns if c != "key"]
+    )
+    print(result, expected)
+    assert_frame_equal(result, expected, check_row_order=False)
