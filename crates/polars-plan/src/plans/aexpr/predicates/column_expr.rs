@@ -423,8 +423,20 @@ mod tests {
         // A dynamic literal that fits in the range:
         assert_column_predicates_creation_equality(
             DataType::Int64,
-            Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(123))),
+            lit(123),
             AnyValue::Int64(123),
+        )?;
+        // A larger, potentially lossy-if-casted datatype (Int64), but the number fits
+        // in the range so casting works:
+        assert_column_predicates_creation_equality(
+            DataType::Int8,
+            typed_lit(100i64),
+            AnyValue::Int8(100),
+        )?;
+        assert_column_predicates_creation_equality(
+            DataType::Int8,
+            typed_lit(-100i64),
+            AnyValue::Int8(-100),
         )?;
         Ok(())
     }
@@ -433,18 +445,12 @@ mod tests {
     /// created by `aexpr_to_column_predicates()`.
     #[test]
     fn column_predicates_equality_lossy_integer_casting() -> PolarsResult<()> {
-        // Can't cast Int64 to Int8 losslessly:
-        assert!(equality_column_predicate(DataType::Int8, typed_lit(100i64))?.is_none());
-        // Can't cast Int64 to Int32 losslessly:
-        assert!(equality_column_predicate(DataType::Int32, typed_lit(100i64))?.is_none());
-        // Can't cast 5000 to Int8 losslessly.
-        assert!(
-            equality_column_predicate(
-                DataType::Int8,
-                Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(5000)))
-            )?
-            .is_none()
-        );
+        // Can't cast too-high or too-low typed numbers losslessly:
+        assert!(equality_column_predicate(DataType::Int8, typed_lit(300i64))?.is_none());
+        assert!(equality_column_predicate(DataType::Int8, typed_lit(-300i64))?.is_none());
+        // Can't cast too-high or too-low dynamic number to losslessly:
+        assert!(equality_column_predicate(DataType::Int8, lit(300))?.is_none());
+        assert!(equality_column_predicate(DataType::Int8, lit(-300))?.is_none());
         Ok(())
     }
 }
