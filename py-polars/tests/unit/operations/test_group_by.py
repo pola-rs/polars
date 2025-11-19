@@ -2600,3 +2600,54 @@ def test_sorted_group_by_slice() -> None:
     assert_frame_equal(lf.slice(50, 1).collect(), expected.slice(50, 1))
     assert_frame_equal(lf.slice(20, 30).collect(), expected.slice(20, 30))
     assert_frame_equal(lf.slice(20, 30).collect(), expected.slice(20, 30))
+
+
+def test_agg_first_last_non_null_25405() -> None:
+    lf = pl.LazyFrame(
+        {
+            "a": [1, 1, 1, 1, 2, 2, 2, 2, 2],
+            "b": pl.Series([1, 2, 3, None, None, 4, 5, 6, None]),
+        }
+    )
+
+    # first
+    result = lf.group_by("a", maintain_order=True).agg(
+        pl.col("b").first(ignore_nulls=True)
+    )
+    expected = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "b": [1, 4],
+        }
+    )
+    assert_frame_equal(result.collect(), expected)
+
+    result = lf.with_columns(pl.col("b").first(ignore_nulls=True).over("a"))
+    expected = pl.DataFrame(
+        {
+            "a": [1, 1, 1, 1, 2, 2, 2, 2, 2],
+            "b": [1, 1, 1, 1, 4, 4, 4, 4, 4],
+        }
+    )
+    assert_frame_equal(result.collect(), expected)
+
+    # last
+    result = lf.group_by("a", maintain_order=True).agg(
+        pl.col("b").last(ignore_nulls=True)
+    )
+    expected = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "b": [3, 6],
+        }
+    )
+    assert_frame_equal(result.collect(), expected)
+
+    result = lf.with_columns(pl.col("b").last(ignore_nulls=True).over("a"))
+    expected = pl.DataFrame(
+        {
+            "a": [1, 1, 1, 1, 2, 2, 2, 2, 2],
+            "b": [3, 3, 3, 3, 6, 6, 6, 6, 6],
+        }
+    )
+    assert_frame_equal(result.collect(), expected)
