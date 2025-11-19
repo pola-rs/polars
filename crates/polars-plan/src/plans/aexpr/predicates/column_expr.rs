@@ -264,9 +264,23 @@ pub fn aexpr_to_column_predicates(
                                     get_binary_expr_col_and_lv(*left, *right, expr_arena, schema)?;
                                 let lv = lv?;
                                 let av = lv.to_any_value()?;
-                                if av.dtype() != dtype {
-                                    return None;
-                                }
+                                let av = match (&dtype, &av.dtype()) {
+                                    (col_dtype, val_dtype) if col_dtype == val_dtype => av,
+                                    (col_dtype, val_dtype) if av.dtype().is_integer() && dtype.is_integer() => {
+                                        // Try round-trip casting. If we get the
+                                        // same value, that means the value fits
+                                        // in column dtype, so casting is fine.
+                                        let cast_av = av.cast(col_dtype);
+                                        if cast_av.cast(val_dtype) == av {
+                                            cast_av
+                                        } else {
+                                            return None;
+                                        }
+                                    },
+                                    _ => {
+                                        return None;
+                                    }
+                                };
                                 let scalar = Scalar::new(dtype.clone(), av.into_static());
                                 use Operator as O;
                                 match (op, lv_node == *right) {
