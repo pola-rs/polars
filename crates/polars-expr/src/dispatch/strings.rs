@@ -111,9 +111,8 @@ pub fn function_expr_to_udf(func: IRStringFunction) -> SpecialEq<Arc<dyn Columns
         #[cfg(feature = "find_many")]
         ContainsAny {
             ascii_case_insensitive,
-            leftmost,
         } => {
-            map_as_slice!(contains_any, ascii_case_insensitive, leftmost)
+            map_as_slice!(contains_any, ascii_case_insensitive)
         },
         #[cfg(feature = "find_many")]
         ReplaceMany {
@@ -144,14 +143,10 @@ pub fn function_expr_to_udf(func: IRStringFunction) -> SpecialEq<Arc<dyn Columns
 }
 
 #[cfg(feature = "find_many")]
-fn contains_any(
-    s: &[Column],
-    ascii_case_insensitive: bool,
-    leftmost: bool,
-) -> PolarsResult<Column> {
+fn contains_any(s: &[Column], ascii_case_insensitive: bool) -> PolarsResult<Column> {
     let ca = s[0].str()?;
     let patterns = s[1].list()?;
-    polars_ops::chunked_array::strings::contains_any(ca, patterns, ascii_case_insensitive, leftmost)
+    polars_ops::chunked_array::strings::contains_any(ca, patterns, ascii_case_insensitive)
         .map(|out| out.into_column())
 }
 

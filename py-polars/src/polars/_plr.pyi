@@ -1846,7 +1846,6 @@ class PyExpr:
         self,
         patterns: PyExpr,
         ascii_case_insensitive: bool,
-        leftmost: bool,
     ) -> PyExpr: ...
     def str_replace_many(
         self,

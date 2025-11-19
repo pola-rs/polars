@@ -119,7 +119,6 @@ pub enum IRStringFunction {
     #[cfg(feature = "find_many")]
     ContainsAny {
         ascii_case_insensitive: bool,
-        leftmost: bool,
     },
     #[cfg(feature = "find_many")]
     ReplaceMany {

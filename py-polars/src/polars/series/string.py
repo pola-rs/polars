@@ -2032,6 +2032,7 @@ class StringNameSpace:
         replace_with: Series | list[str] | str | NoDefault = no_default,
         *,
         ascii_case_insensitive: bool = False,
+        leftmost: bool = False,
     ) -> Series:
         """
         Use the Aho-Corasick algorithm to replace many matches.
@@ -2050,6 +2051,11 @@ class StringNameSpace:
             Enable ASCII-aware case-insensitive matching.
             When this option is enabled, searching will be performed without respect
             to case for ASCII letters (a-z and A-Z) only.
+        leftmost
+            Guarantees in case there are overlapping matches that the leftmost match
+            is used. In case there are multiple candidates for the leftmost match
+            the pattern which comes first in patterns is used. May not be used
+            together with overlapping = True.
 
         Notes
         -----
@@ -2130,6 +2136,7 @@ class StringNameSpace:
         *,
         ascii_case_insensitive: bool = False,
         overlapping: bool = False,
+        leftmost: bool = False,
     ) -> Series:
         """
         Use the Aho-Corasick algorithm to extract many matches.
@@ -2144,6 +2151,11 @@ class StringNameSpace:
             to case for ASCII letters (a-z and A-Z) only.
         overlapping
             Whether matches may overlap.
+        leftmost
+            Guarantees in case there are overlapping matches that the leftmost match
+            is used. In case there are multiple candidates for the leftmost match
+            the pattern which comes first in patterns is used. May not be used
+            together with overlapping = True.
 
         Notes
         -----
@@ -2170,6 +2182,7 @@ class StringNameSpace:
         *,
         ascii_case_insensitive: bool = False,
         overlapping: bool = False,
+        leftmost: bool = False,
     ) -> Series:
         """
         Use the Aho-Corasick algorithm to find all matches.
@@ -2187,6 +2200,11 @@ class StringNameSpace:
             to case for ASCII letters (a-z and A-Z) only.
         overlapping
             Whether matches may overlap.
+        leftmost
+            Guarantees in case there are overlapping matches that the leftmost match
+            is used. In case there are multiple candidates for the leftmost match
+            the pattern which comes first in patterns is used. May not be used
+            together with overlapping = True.
 
         Notes
         -----

@@ -2524,7 +2524,6 @@ class ExprStringNameSpace:
         patterns: IntoExpr,
         *,
         ascii_case_insensitive: bool = False,
-        leftmost: bool = False,
     ) -> Expr:
         """
         Use the Aho-Corasick algorithm to find matches.
@@ -2539,11 +2538,6 @@ class ExprStringNameSpace:
             Enable ASCII-aware case-insensitive matching.
             When this option is enabled, searching will be performed without respect
             to case for ASCII letters (a-z and A-Z) only.
-        leftmost
-            Guarantees in case there are overlapping matches that the leftmost match
-            is used. In case there are multiple candidates for the leftmost match
-            the pattern which comes first in patterns is used. May not be used
-            together with overlapping = True.
 
         Notes
         -----
@@ -2578,9 +2572,7 @@ class ExprStringNameSpace:
         """
         patterns_pyexpr = parse_into_expression(patterns, str_as_lit=False)
         return wrap_expr(
-            self._pyexpr.str_contains_any(
-                patterns_pyexpr, ascii_case_insensitive, leftmost
-            )
+            self._pyexpr.str_contains_any(patterns_pyexpr, ascii_case_insensitive)
         )
 
     def replace_many(

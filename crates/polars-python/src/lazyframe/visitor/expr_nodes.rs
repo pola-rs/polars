@@ -923,13 +923,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     #[cfg(feature = "find_many")]
                     IRStringFunction::ContainsAny {
                         ascii_case_insensitive,
-                        leftmost,
-                    } => (
-                        PyStringFunction::ContainsAny,
-                        ascii_case_insensitive,
-                        leftmost,
-                    )
-                        .into_py_any(py),
+                    } => (PyStringFunction::ContainsAny, ascii_case_insensitive).into_py_any(py),
                     #[cfg(feature = "find_many")]
                     IRStringFunction::ReplaceMany {
                         ascii_case_insensitive,

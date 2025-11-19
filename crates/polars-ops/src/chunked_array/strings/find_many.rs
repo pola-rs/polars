@@ -40,7 +40,6 @@ pub fn contains_any(
     ca: &StringChunked,
     patterns: &ListChunked,
     ascii_case_insensitive: bool,
-    leftmost: bool,
 ) -> PolarsResult<BooleanChunked> {
     polars_ensure!(
         ca.len() == patterns.len() || ca.len() == 1 || patterns.len() == 1,
@@ -62,7 +61,7 @@ pub fn contains_any(
         keep_nulls: true,
     })?;
     let patterns = patterns.str()?;
-    let ac = build_ac(patterns, ascii_case_insensitive, leftmost)?;
+    let ac = build_ac(patterns, ascii_case_insensitive, false)?;
 
     Ok(unary_elementwise(ca, |opt_val| {
         opt_val.map(|val| ac.find(val).is_some())

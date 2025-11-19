@@ -501,10 +501,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 #[cfg(feature = "find_many")]
                 IB::ContainsAny {
                     ascii_case_insensitive,
-                    leftmost,
                 } => B::ContainsAny {
                     ascii_case_insensitive,
-                    leftmost,
                 },
                 #[cfg(feature = "find_many")]
                 IB::ReplaceMany {

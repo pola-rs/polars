@@ -299,10 +299,8 @@ pub(super) fn convert_functions(
                 #[cfg(feature = "find_many")]
                 S::ContainsAny {
                     ascii_case_insensitive,
-                    leftmost,
                 } => IS::ContainsAny {
                     ascii_case_insensitive,
-                    leftmost,
                 },
                 #[cfg(feature = "find_many")]
                 S::ReplaceMany {

@@ -308,16 +308,11 @@ impl PyExpr {
     }
 
     #[cfg(feature = "find_many")]
-    fn str_contains_any(
-        &self,
-        patterns: PyExpr,
-        ascii_case_insensitive: bool,
-        leftmost: bool,
-    ) -> Self {
+    fn str_contains_any(&self, patterns: PyExpr, ascii_case_insensitive: bool) -> Self {
         self.inner
             .clone()
             .str()
-            .contains_any(patterns.inner, ascii_case_insensitive, leftmost)
+            .contains_any(patterns.inner, ascii_case_insensitive)
             .into()
     }
     #[cfg(feature = "find_many")]

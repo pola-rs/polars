@@ -36,16 +36,10 @@ impl StringNameSpace {
     ///   When this option is enabled, searching will be performed without respect to case for
     ///   ASCII letters (a-z and A-Z) only.
     #[cfg(feature = "find_many")]
-    pub fn contains_any(
-        self,
-        patterns: Expr,
-        ascii_case_insensitive: bool,
-        leftmost: bool,
-    ) -> Expr {
+    pub fn contains_any(self, patterns: Expr, ascii_case_insensitive: bool) -> Expr {
         self.0.map_binary(
             StringFunction::ContainsAny {
                 ascii_case_insensitive,
-                leftmost,
             },
             patterns,
         )
