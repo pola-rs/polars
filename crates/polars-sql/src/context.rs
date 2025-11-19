@@ -819,7 +819,47 @@ impl SQLContext {
             replace: vec![],
         };
 
-        let projections = self.column_projections(select_stmt, &schema, &mut select_modifiers)?;
+        let mut projections =
+            self.column_projections(select_stmt, &schema, &mut select_modifiers)?;
+
+        // Dataframe Level explode (UNNEST CLAUSE)
+        // Collect column names to explode
+        let mut explode_names = Vec::with_capacity(projections.len());
+        for expr in &projections {
+            for e in expr {
+                if let Expr::Explode { input, .. } = e {
+                    if let Expr::Column(name) = input.as_ref() {
+                        explode_names.push(name.clone());
+                    }
+                }
+            }
+        }
+
+        if !explode_names.is_empty() {
+            // Apply explosions 1 by 1.
+            explode_names.dedup();
+            lf = lf.explode(
+                Selector::ByName {
+                    names: Arc::from(explode_names),
+                    strict: true,
+                },
+                ExplodeOptions {
+                    empty_as_null: true,
+                    keep_nulls: true,
+                },
+            );
+
+            // Remove the explode expressions from the projections to be executed.
+            projections = projections
+                .into_iter()
+                .map(|p| {
+                    p.map_expr(|e| match e {
+                        Expr::Explode { input, .. } => input.as_ref().clone(),
+                        _ => e,
+                    })
+                })
+                .collect();
+        }
 
         // Check for "GROUP BY ..." (after determining projections)
         let mut group_by_keys: Vec<Expr> = Vec::new();
@@ -932,7 +972,6 @@ impl SQLContext {
                     // height. E.g.:
                     //
                     // * SELECT COUNT(*) FROM df ORDER BY sort_key;
-                    // * SELECT UNNEST(list_col) FROM df ORDER BY sort_key;
                     //
                     // For these cases we truncate / extend the sorting columns with NULLs to match
                     // the output height. We do this by projecting independently and then joining
