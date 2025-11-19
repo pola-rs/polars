@@ -290,12 +290,7 @@ fn is_sorted_rec(
             }
         },
         #[cfg(feature = "dynamic_group_by")]
-        IR::GroupBy {
-            input,
-            keys,
-            options,
-            ..
-        } if options.is_rolling() => {
+        IR::GroupBy { options, .. } if options.is_rolling() => {
             let Some(rolling_options) = &options.rolling else {
                 unreachable!()
             };
@@ -309,12 +304,7 @@ fn is_sorted_rec(
             ))
         },
         #[cfg(feature = "dynamic_group_by")]
-        IR::GroupBy {
-            input,
-            keys,
-            options,
-            ..
-        } if options.is_dynamic() => {
+        IR::GroupBy { keys, options, .. } if options.is_dynamic() => {
             let Some(dynamic_options) = &options.dynamic else {
                 unreachable!()
             };
