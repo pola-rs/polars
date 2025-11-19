@@ -688,7 +688,7 @@ impl PhysicalExpr for WindowExpr {
                 }
                 // Sanity check: Length Preserving.
                 assert_eq!(e.len(), length_preserving_height);
-                let arr = if needs_remap_to_rows {
+                let arr: Option<PrimitiveArray<IdxSize>> = if needs_remap_to_rows {
                     feature_gated!("rank", {
                         // Performance: precompute the rank here, so we can avoid dispatching per group
                         // later.

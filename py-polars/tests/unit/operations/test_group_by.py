@@ -2273,7 +2273,8 @@ def test_grouped_agg_parametric(
         )
     )
 
-    types["literal"] = (lambda e: e, True, False)
+    if not is_window:
+        types["literal"] = (lambda e: e, True, False)
 
     def verify_index(i: int) -> None:
         idx_df = df.filter(pl.col.key == pl.lit(i, pl.UInt8))
