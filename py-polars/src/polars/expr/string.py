@@ -2798,6 +2798,9 @@ class ExprStringNameSpace:
         │ ["rhap", "ody"] │
         └─────────────────┘
         """
+        if overlapping and leftmost:
+            msg = "can not match overlapping patterns when leftmost == True"
+            raise TypeError(msg)
         patterns_pyexpr = parse_into_expression(patterns, str_as_lit=False)
         return wrap_expr(
             self._pyexpr.str_extract_many(
@@ -2877,6 +2880,9 @@ class ExprStringNameSpace:
         │ [0, 5]    │
         └───────────┘
         """
+        if overlapping and leftmost:
+            msg = "can not match overlapping patterns when leftmost == True"
+            raise TypeError(msg)
         patterns_pyexpr = parse_into_expression(patterns, str_as_lit=False)
         return wrap_expr(
             self._pyexpr.str_find_many(

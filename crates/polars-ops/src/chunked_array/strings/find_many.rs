@@ -164,6 +164,8 @@ pub fn extract_many(
     overlapping: bool,
     leftmost: bool,
 ) -> PolarsResult<ListChunked> {
+    // ensure that either overlapping == false, or overlapping == true and leftmost == false
+    polars_ensure!(!overlapping | !leftmost, InvalidOperation: "can not match overlapping patterns when leftmost == True");
     match (ca.len(), patterns.len()) {
         (1, _) => match ca.get(0) {
             None => Ok(ListChunked::full_null_with_dtype(
@@ -255,7 +257,7 @@ pub fn find_many(
     overlapping: bool,
     leftmost: bool,
 ) -> PolarsResult<ListChunked> {
-    // TODO: add leftmost vs overlapping check
+    polars_ensure!(!overlapping | !leftmost, InvalidOperation: "can not match overlapping patterns when leftmost == True");
     type B = ListPrimitiveChunkedBuilder<UInt32Type>;
     match (ca.len(), patterns.len()) {
         (1, _) => match ca.get(0) {
