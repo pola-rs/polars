@@ -26,11 +26,11 @@ pub(crate) fn ensure_t_in_or_in_front_of_window(
     mut every: Duration,
     t: i64,
     offset_fn: fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64>,
+    nte_duration_fn: fn(&Duration) -> i64,
     period: Duration,
     mut start: i64,
     closed_window: ClosedWindow,
     tz: Option<&Tz>,
-    nte_duration_fn: fn(&Duration) -> i64,
 ) -> PolarsResult<Bounds> {
     every.negative = !every.negative;
     let mut stop = offset_fn(&period, start, tz)?;
@@ -124,11 +124,11 @@ impl Window {
             self.every,
             t,
             Duration::add_ns,
+            Duration::nte_duration_ns,
             self.period,
             start,
             closed_window,
             tz,
-            Duration::nte_duration_ns,
         )
     }
 
@@ -144,11 +144,11 @@ impl Window {
             self.every,
             t,
             Duration::add_us,
+            Duration::nte_duration_us,
             self.period,
             start,
             closed_window,
             tz,
-            Duration::nte_duration_us,
         )
     }
 
@@ -164,11 +164,11 @@ impl Window {
             self.every,
             t,
             Duration::add_ms,
+            Duration::nte_duration_ms,
             self.period,
             start,
             closed_window,
             tz,
-            Duration::nte_duration_ms,
         )
     }
 
@@ -290,11 +290,11 @@ impl<'a> BoundsIter<'a> {
                                 window.every,
                                 boundary.start,
                                 offset_fn,
+                                nte_duration_fn,
                                 window.period,
                                 start,
                                 closed_window,
                                 Some(tz),
-                                nte_duration_fn,
                             )?
                         },
                         _ => {
@@ -318,11 +318,11 @@ impl<'a> BoundsIter<'a> {
                                 window.every,
                                 boundary.start,
                                 offset_fn,
+                                nte_duration_fn,
                                 window.period,
                                 start,
                                 closed_window,
                                 None,
-                                nte_duration_fn,
                             )?
                         },
                     }
