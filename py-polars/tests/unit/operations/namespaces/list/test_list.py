@@ -1089,6 +1089,22 @@ def test_list_sample_fraction_self_broadcast() -> None:
     )
 
 
+def test_list_sample_fraction_out_of_range_without_replacement_22024() -> None:
+    df = pl.DataFrame(pl.Series("a", [[1, 2, 3], [4, 5]]))
+    sample = df.select(
+        pl.col.a.list.sample(fraction=pl.Series([1.0, 1.0]), with_replacement=False)
+    )
+    assert_frame_equal(df, sample)
+
+    with pytest.raises(pl.exceptions.ShapeError):
+        df.select(
+            pl.col.a.list.sample(fraction=pl.Series([1.1, 1.0]), with_replacement=False)
+        )
+
+    with pytest.raises(pl.exceptions.ShapeError):
+        df.select(pl.col.a.list.sample(fraction=5.0, with_replacement=False))
+
+
 def test_list_shift_unequal_lengths_22018() -> None:
     with pytest.raises(pl.exceptions.ShapeError):
         pl.Series("a", [[1, 2], [1, 2]]).list.shift(pl.Series([1, 2, 3]))
