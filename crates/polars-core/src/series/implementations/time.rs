@@ -356,26 +356,25 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
 
     fn max_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.physical().max_reduce();
-        let av = sc.value().cast(self.dtype()).into_static();
+        let av = sc.value().as_time();
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
     fn min_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.physical().min_reduce();
-        let av = sc.value().cast(self.dtype()).into_static();
+        let av = sc.value().as_time();
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
     fn mean_reduce(&self) -> PolarsResult<Scalar> {
         let mean = self.mean().map(|v| v as i64);
-        let av = AnyValue::from(mean).cast(self.dtype()).into_static();
+        let av = AnyValue::from(mean).as_time();
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
     fn median_reduce(&self) -> PolarsResult<Scalar> {
-        let av = AnyValue::from(self.median().map(|v| v as i64))
-            .cast(self.dtype())
-            .into_static();
+        let median = self.median().map(|v| v as i64);
+        let av = AnyValue::from(median).as_time();
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 

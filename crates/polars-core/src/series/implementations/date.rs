@@ -382,27 +382,27 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
 
     fn max_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.physical().max_reduce();
-        let av = sc.value().cast(self.dtype()).into_static();
+        let av = sc.value().as_date();
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
     fn min_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.physical().min_reduce();
-        let av = sc.value().cast(self.dtype()).into_static();
+        let av = sc.value().as_date();
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
     fn mean_reduce(&self) -> PolarsResult<Scalar> {
         let mean = self.mean().map(|v| (v * US_IN_DAY as f64) as i64);
         let dtype = DataType::Datetime(TimeUnit::Microseconds, None);
-        let av = AnyValue::from(mean).cast(&dtype).into_static();
+        let av = AnyValue::from(mean).as_datetime(TimeUnit::Microseconds, None);
         Ok(Scalar::new(dtype, av))
     }
 
     fn median_reduce(&self) -> PolarsResult<Scalar> {
         let median = self.median().map(|v| (v * (US_IN_DAY as f64)) as i64);
         let dtype = DataType::Datetime(TimeUnit::Microseconds, None);
-        let av = AnyValue::from(median).cast(&dtype).into_static();
+        let av = AnyValue::from(median).as_datetime(TimeUnit::Microseconds, None);
         Ok(Scalar::new(dtype, av))
     }
 
