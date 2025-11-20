@@ -1207,7 +1207,13 @@ class Struct(NestedType):
 
 
 class BaseExtension(DataType):
-    """Base class for extension data types."""
+    """
+    Base class for extension data types.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed at any
+        point without it being considered a breaking change.
+    """
 
     def __init__(
         self, name: str, storage: PolarsDataType, metadata: str | None = None
@@ -1246,6 +1252,9 @@ class BaseExtension(DataType):
         This should be lowercase and if feasible show parameters in brackets,
         for example i64, str, datetime[ns], etc. This is used when displaying
         dataframes in a human-readable format, so brevity is important.
+
+        This function starts with an underscore for historical reasons; it is
+        intended to be overridden by subclasses.
         """
         s = self.ext_name().lower()
         if len(s) <= 12:
@@ -1289,4 +1298,10 @@ class BaseExtension(DataType):
 
 
 class Extension(BaseExtension):
-    """Generic extension data type for non-registered extensions."""
+    """
+    Generic extension data type for non-registered extensions.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed at any
+        point without it being considered a breaking change.
+    """
