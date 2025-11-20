@@ -2731,7 +2731,9 @@ class ExprStringNameSpace:
 
         >>> df = pl.DataFrame({"haystack": ["abcd"]})
         >>> patterns = {"b": "x", "abc": "y", "abcd": "z"}
-        >>> df.with_columns(replaced=pl.col("haystack").str.replace_many(patterns))
+        >>> df.with_columns(
+        ...     replaced=pl.col("haystack").str.replace_many(patterns, leftmost=True)
+        ... )
         shape: (1, 2)
         ┌──────────┬──────────┐
         │ haystack ┆ replaced │
@@ -2748,6 +2750,7 @@ class ExprStringNameSpace:
         >>> df.with_columns(
         ...     replaced=pl.col("haystack").str.replace_many(patterns, leftmost=True)
         ... )
+        shape: (1, 2)
         ┌──────────┬──────────┐
         │ haystack ┆ replaced │
         │ ---      ┆ ---      │
@@ -2761,6 +2764,7 @@ class ExprStringNameSpace:
         >>> df = pl.DataFrame({"haystack": ["abcd"]})
         >>> patterns = {"abcd": "z", "abc": "y", "b": "x"}
         >>> df.with_columns(replaced=pl.col("haystack").str.replace_many(patterns))
+        shape: (1, 2)
         ┌──────────┬──────────┐
         │ haystack ┆ replaced │
         │ ---      ┆ ---      │
