@@ -214,12 +214,8 @@ fn create_physical_expr_inner(
             let all_group_by_are_elementwise = partition_by
                 .iter()
                 .all(|n| is_elementwise_rec(*n, expr_arena));
-            let group_by = create_physical_expressions_from_nodes(
-                partition_by,
-                expr_arena,
-                schema,
-                state,
-            )?;
+            let group_by =
+                create_physical_expressions_from_nodes(partition_by, expr_arena, schema, state)?;
             let mut apply_columns = aexpr_to_leaf_names(function, expr_arena);
             // sort and then dedup removes consecutive duplicates == all duplicates
             apply_columns.sort();
