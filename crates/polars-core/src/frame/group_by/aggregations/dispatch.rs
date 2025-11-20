@@ -135,7 +135,7 @@ impl Series {
                             // All values are null, we have no first non-null.
                             None
                         } else {
-                            Some(leading_zeros)
+                            Some(first + leading_zeros)
                         }
                     })
                     .collect_ca(PlSmallStr::EMPTY)
@@ -432,7 +432,7 @@ impl Series {
                             // All values are null, we have no last non-null.
                             None
                         } else {
-                            Some(len - trailing_zeros - 1)
+                            Some(first + len - trailing_zeros - 1)
                         }
                     })
                     .collect_ca(PlSmallStr::EMPTY)
