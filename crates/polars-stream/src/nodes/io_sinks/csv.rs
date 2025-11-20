@@ -19,6 +19,7 @@ use crate::morsel::MorselSeq;
 use crate::nodes::io_sinks::parallelize_receive_task;
 use crate::nodes::io_sinks::phase::PhaseOutcome;
 use crate::nodes::{JoinHandle, TaskPriority};
+use crate::utils::task_handles_ext::AbortOnDropHandle;
 
 type IOSend = Linearizer<Priority<Reverse<MorselSeq>, Vec<u8>>>;
 
@@ -30,7 +31,7 @@ pub struct CsvSinkNode {
     cloud_options: Option<CloudOptions>,
 
     io_tx: Option<Sender<IOSend>>,
-    io_task: Option<tokio_util::task::AbortOnDropHandle<PolarsResult<()>>>,
+    io_task: Option<AbortOnDropHandle<PolarsResult<()>>>,
 }
 impl CsvSinkNode {
     pub fn new(
@@ -77,7 +78,7 @@ impl SinkNode for CsvSinkNode {
             use tokio::io::AsyncWriteExt;
 
             let mut file = target
-                .open_into_writeable_async(&sink_options, cloud_options.as_ref())
+                .open_into_writeable_async(cloud_options.as_ref(), sink_options.mkdir)
                 .await?;
 
             // Write the header
@@ -116,7 +117,7 @@ impl SinkNode for CsvSinkNode {
         });
 
         self.io_tx = Some(io_tx);
-        self.io_task = Some(tokio_util::task::AbortOnDropHandle::new(io_task));
+        self.io_task = Some(AbortOnDropHandle(io_task));
 
         Ok(())
     }

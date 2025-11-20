@@ -112,8 +112,8 @@ fn column_idx_to_series(
         assert_dtypes(field.dtype())
     }
     let columns = mmap_columns(store, field_md);
-    let (array, pred_true_mask) = mmap::to_deserializer(columns, field.clone(), filter)?;
-    let series = Series::try_from((field, array))?;
+    let (arrays, pred_true_mask) = mmap::to_deserializer(columns, field.clone(), filter)?;
+    let series = Series::try_from((field, arrays))?;
 
     Ok((series, pred_true_mask))
 }
@@ -262,13 +262,15 @@ fn rg_to_dfs_optionally_par_over_columns(
 
         materialize_hive_partitions(&mut df, schema.as_ref(), hive_partition_columns);
 
-        *previous_row_count = previous_row_count.checked_add(current_row_count).ok_or_else(||
-            polars_err!(
-                ComputeError: "Parquet file produces more than pow(2, 32) rows; \
-                consider compiling with polars-bigidx feature (polars-u64-idx package on python), \
-                or set 'streaming'"
-            ),
-        )?;
+        *previous_row_count = previous_row_count
+            .checked_add(current_row_count)
+            .ok_or_else(|| {
+                polars_err!(
+                    ComputeError: "Parquet file produces more than pow(2, 32) rows; \
+                    consider compiling with polars-bigidx feature (pip install polars[rt64]), \
+                    or set 'streaming'"
+                )
+            })?;
         dfs.push(df);
 
         if *previous_row_count as usize >= slice_end {

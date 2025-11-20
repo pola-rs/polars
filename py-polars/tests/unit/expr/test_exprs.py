@@ -5,6 +5,7 @@ from itertools import permutations
 from typing import TYPE_CHECKING, Any, cast
 from zoneinfo import ZoneInfo
 
+import numpy as np
 import pytest
 
 import polars as pl
@@ -25,7 +26,7 @@ if TYPE_CHECKING:
 def test_arg_true() -> None:
     df = pl.DataFrame({"a": [1, 1, 2, 1]})
     res = df.select((pl.col("a") == 1).arg_true())
-    expected = pl.DataFrame([pl.Series("a", [0, 1, 3], dtype=pl.UInt32)])
+    expected = pl.DataFrame([pl.Series("a", [0, 1, 3], dtype=pl.get_index_type())])
     assert_frame_equal(res, expected)
 
 
@@ -100,7 +101,7 @@ def test_len_expr() -> None:
 
     out = df.select(pl.len())
     assert out.shape == (1, 1)
-    assert cast(int, out.item()) == 5
+    assert cast("int", out.item()) == 5
 
     out = df.group_by("b", maintain_order=True).agg(pl.len())
     assert out["b"].to_list() == ["a", "b"]
@@ -135,6 +136,105 @@ def test_entropy() -> None:
         {"group": ["A", "B", "C"], "id": [1.0397207708399179, 1.371381017771811, 0.0]}
     )
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Float64,
+        pl.Float32,
+    ],
+)
+def test_log_broadcast(dtype: pl.DataType) -> None:
+    a = pl.Series("a", [1, 3, 9, 27, 81], dtype=dtype)
+    b = pl.Series("a", [3, 3, 9, 3, 9], dtype=dtype)
+
+    assert_series_equal(a.log(b), pl.Series("a", [0, 1, 1, 3, 2], dtype=dtype))
+    assert_series_equal(
+        a.log(pl.Series("a", [3], dtype=dtype)),
+        pl.Series("a", [0, 1, 2, 3, 4], dtype=dtype),
+    )
+    assert_series_equal(
+        pl.Series("a", [81], dtype=dtype).log(b),
+        pl.Series("a", [4, 4, 2, 4, 2], dtype=dtype),
+    )
+
+
+@pytest.mark.parametrize(
+    ("dtype", "expected_dtype"),
+    [
+        (pl.Float64, pl.Float64),
+        (pl.Float32, pl.Float32),
+        (pl.Int32, pl.Float64),
+        (pl.Int64, pl.Float64),
+    ],
+)
+def test_log_broadcast_upcasting(
+    dtype: pl.DataType, expected_dtype: pl.DataType
+) -> None:
+    a = pl.Series("a", [1, 3, 9, 27, 81], dtype=dtype)
+    b = pl.Series("a", [3, 3, 9, 3, 9], dtype=dtype)
+    expected = pl.Series("a", [0, 1, 1, 3, 2], dtype=expected_dtype)
+
+    assert_series_equal(a.log(b), expected)
+
+
+@pytest.mark.parametrize(
+    ("dtype_a", "dtype_base", "dtype_out"),
+    [
+        (pl.Float32, pl.Float32, pl.Float32),
+        (pl.Float32, pl.Float64, pl.Float32),
+        (pl.Float64, pl.Float32, pl.Float64),
+        (pl.Float64, pl.Float64, pl.Float64),
+        (pl.Float32, pl.Int32, pl.Float32),
+        (pl.Float64, pl.Int32, pl.Float64),
+        (pl.Int32, pl.Float32, pl.Float32),
+        (pl.Int32, pl.Float64, pl.Float64),
+        (pl.Decimal(21, 3), pl.Decimal(21, 3), pl.Float64),
+        (pl.Int32, pl.Int32, pl.Float64),
+    ],
+)
+def test_log(
+    dtype_a: PolarsDataType,
+    dtype_base: PolarsDataType,
+    dtype_out: PolarsDataType,
+) -> None:
+    a = pl.Series("a", [1, 3, 9, 27, 81], dtype=dtype_a)
+    base = pl.Series("base", [3, 3, 9, 3, 9], dtype=dtype_base)
+    lf = pl.LazyFrame([a, base])
+
+    result = lf.select(pl.col("a").log(pl.col("base")))
+    expected = pl.DataFrame({"a": pl.Series([0, 1, 1, 3, 2], dtype=dtype_out)})
+
+    assert_frame_equal(result.collect(), expected)
+    assert result.collect_schema() == expected.schema, (
+        f"{result.collect_schema()} != {expected.schema}"
+    )
+
+
+@pytest.mark.parametrize(
+    ("dtype_in", "dtype_out"),
+    [
+        (pl.Int32, pl.Float64),
+        (pl.Float32, pl.Float32),
+        (pl.Float64, pl.Float64),
+    ],
+)
+def test_exp_log1p(dtype_in: PolarsDataType, dtype_out: PolarsDataType) -> None:
+    a = pl.Series("a", [1, 3, 9, 4, 10], dtype=dtype_in)
+    lf = pl.LazyFrame([a])
+
+    # exp
+    result = lf.select(pl.col("a").exp())
+    expected = pl.Series("a", np.exp(a.to_numpy())).cast(dtype_out).to_frame()
+    assert_frame_equal(result.collect(), expected)
+    assert result.collect_schema() == expected.schema
+
+    # log1p
+    result = lf.select(pl.col("a").log1p())
+    expected = pl.Series("a", np.log1p(a.to_numpy())).cast(dtype_out).to_frame()
+    assert_frame_equal(result.collect(), expected)
+    assert result.collect_schema() == expected.schema
 
 
 def test_dot_in_group_by() -> None:
@@ -586,7 +686,7 @@ def test_repr_short_expression() -> None:
     # memory location which will vary between runs
     result = repr(expr).split("0x")[0]
 
-    expected = "<Expr ['cs.all().len().prefix(length-l…'] at "
+    expected = "<Expr ['cs.all().len().name.prefix(len…'] at "
     assert result == expected
 
 
@@ -648,7 +748,10 @@ def test_slice() -> None:
 @pytest.mark.may_fail_cloud  # reason: shrink_dtype
 def test_function_expr_scalar_identification_18755() -> None:
     # The function uses `ApplyOptions::GroupWise`, however the input is scalar.
-    with pytest.warns(DeprecationWarning):
+    with pytest.warns(
+        DeprecationWarning,
+        match=r"use `Series\.shrink_dtype` instead",
+    ):
         assert_frame_equal(
             pl.DataFrame({"a": [1, 2]}).with_columns(
                 pl.lit(5, pl.Int64).shrink_dtype().alias("b")
@@ -658,7 +761,7 @@ def test_function_expr_scalar_identification_18755() -> None:
 
 
 def test_concat_deprecation() -> None:
-    with pytest.deprecated_call(match="`str.concat` is deprecated."):
+    with pytest.deprecated_call(match=r"`str\.concat` is deprecated."):
         pl.Series(["foo"]).str.concat()
-    with pytest.deprecated_call(match="`str.concat` is deprecated."):
+    with pytest.deprecated_call(match=r"`str\.concat` is deprecated."):
         pl.DataFrame({"foo": ["bar"]}).select(pl.all().str.concat())

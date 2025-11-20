@@ -23,6 +23,7 @@ use crate::expression::StreamExpr;
 use crate::morsel::{MorselSeq, SourceToken};
 use crate::nodes::io_sinks::phase::PhaseOutcome;
 use crate::nodes::{Morsel, TaskPriority};
+use crate::pipe::{PortSender, port_channel};
 
 pub mod by_key;
 pub mod max_size;
@@ -105,7 +106,7 @@ pub fn get_create_new_fn(
 }
 
 enum SinkSender {
-    Connector(connector::Sender<Morsel>),
+    Connector(PortSender),
     Distributor(distributor_channel::Sender<Morsel>),
 }
 
@@ -183,7 +184,7 @@ async fn open_new_sink(
     let target = if let Some(file_path_cb) = file_path_cb {
         let keys = keys.map_or(Vec::new(), |keys| {
             keys.iter()
-                .map(|k| polars_plan::dsl::PartitionTargetContextKey {
+                .map(|k| polars_plan::dsl::sink::PartitionTargetContextKey {
                     name: k.name().clone(),
                     raw_value: Scalar::new(k.dtype().clone(), k.get(0).unwrap().into_static()),
                 })
@@ -225,7 +226,7 @@ async fn open_new_sink(
             *DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE,
         );
         let (txs, rxs) = (0..state.num_pipelines)
-            .map(|_| connector::connector())
+            .map(|_| port_channel(None))
             .collect::<(Vec<_>, Vec<_>)>();
         join_handles.extend(dist_rxs.into_iter().zip(txs).map(|(mut dist_rx, mut tx)| {
             spawn(TaskPriority::High, async move {
@@ -240,14 +241,14 @@ async fn open_new_sink(
 
         (SinkInputPort::Parallel(rxs), SinkSender::Distributor(tx))
     } else {
-        let (tx, rx) = connector::connector();
+        let (tx, rx) = port_channel(None);
         (SinkInputPort::Serial(rx), SinkSender::Connector(tx))
     };
 
     // Handle sorting per partition.
     if let Some(per_partition_sort_by) = per_partition_sort_by {
         let num_selectors = per_partition_sort_by.selectors.len();
-        let (tx, mut rx) = connector::connector();
+        let (tx, mut rx) = port_channel(None);
 
         let state = state.in_memory_exec_state.split();
         let selectors = per_partition_sort_by.selectors.clone();

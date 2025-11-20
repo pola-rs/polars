@@ -24,6 +24,7 @@ impl PySeries {
                 DataType::UInt16 => PyList::new(py, series.u16().map_err(PyPolarsErr::from)?)?,
                 DataType::UInt32 => PyList::new(py, series.u32().map_err(PyPolarsErr::from)?)?,
                 DataType::UInt64 => PyList::new(py, series.u64().map_err(PyPolarsErr::from)?)?,
+                DataType::UInt128 => PyList::new(py, series.u128().map_err(PyPolarsErr::from)?)?,
                 DataType::Int8 => PyList::new(py, series.i8().map_err(PyPolarsErr::from)?)?,
                 DataType::Int16 => PyList::new(py, series.i16().map_err(PyPolarsErr::from)?)?,
                 DataType::Int32 => PyList::new(py, series.i32().map_err(PyPolarsErr::from)?)?,
@@ -147,7 +148,7 @@ impl PySeries {
 
     /// Return the underlying Arrow array.
     #[allow(clippy::wrong_self_convention)]
-    fn to_arrow(&self, py: Python<'_>, compat_level: PyCompatLevel) -> PyResult<PyObject> {
+    fn to_arrow(&self, py: Python<'_>, compat_level: PyCompatLevel) -> PyResult<Py<PyAny>> {
         self.rechunk(py, true)?;
         let pyarrow = py.import("pyarrow")?;
 
@@ -164,7 +165,7 @@ impl PySeries {
     fn __arrow_c_stream__<'py>(
         &self,
         py: Python<'py>,
-        requested_schema: Option<PyObject>,
+        requested_schema: Option<Py<PyAny>>,
     ) -> PyResult<Bound<'py, PyCapsule>> {
         series_to_stream(&self.series.read(), py)
     }

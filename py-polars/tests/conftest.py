@@ -7,7 +7,7 @@ from typing import Any, Callable, TypeVar, cast
 import pytest
 
 import polars as pl
-from polars._typing import PartitioningScheme
+from polars.io.partition import _SinkDirectory
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -28,7 +28,7 @@ def _patched_cloud(
         import uuid
         from pathlib import Path
 
-        from polars_cloud import ClusterContext, InteractiveQuery, set_compute_context
+        from polars_cloud import ClusterContext, DirectQuery, set_compute_context
 
         TIMEOUT_SECS = 20
 
@@ -67,7 +67,7 @@ def _patched_cloud(
 
         class LazyExe:
             def __init__(
-                self, query: InteractiveQuery, prev_tgt: io.BytesIO | None, path: Path
+                self, query: DirectQuery, prev_tgt: io.BytesIO | None, path: Path
             ) -> None:
                 self.query = query
 
@@ -160,9 +160,7 @@ def _patched_cloud(
 
             def _(lf: pl.LazyFrame, *args: Any, **kwargs: Any) -> pl.LazyFrame | None:
                 # The cloud client sinks to a "placeholder-path".
-                if args[0] == "placeholder-path" or isinstance(
-                    args[0], PartitioningScheme
-                ):
+                if args[0] == "placeholder-path" or isinstance(args[0], _SinkDirectory):
                     prev_lazy = kwargs.get("lazy", False)
                     kwargs["lazy"] = True
                     lf = prev_sink(lf, *args, **kwargs)
@@ -205,7 +203,7 @@ def _patched_cloud(
                     lf.remote(plan_type="plain").distributed(), f"sink_{ext}"
                 )
                 q = sink(*args, **kwargs)
-                assert isinstance(q, InteractiveQuery)
+                assert isinstance(q, DirectQuery)
                 query = LazyExe(
                     q,
                     prev_tgt,

@@ -1,5 +1,6 @@
 use super::functions::convert_functions;
 use super::*;
+use crate::constants::PL_ELEMENT_NAME;
 use crate::plans::iterator::ArenaExprIter;
 
 pub fn to_expr_ir(expr: Expr, ctx: &mut ExprToIRContext) -> PolarsResult<ExprIR> {
@@ -83,6 +84,10 @@ impl<'a> ExprToIRContext<'a> {
         ctx.check_column_names = false;
         ctx
     }
+
+    pub fn to_field_ctx<'b>(&'b self) -> ToFieldContext<'b> {
+        ToFieldContext::new(self.arena, self.schema)
+    }
 }
 
 /// Converts expression to AExpr and adds it to the arena, which uses an arena (Vec) for allocation.
@@ -116,9 +121,10 @@ pub(super) fn to_aexpr_impl(
     }
 
     let (v, output_name) = match expr {
-        Expr::Explode { input, skip_empty } => {
+        Expr::Element => (AExpr::Element, PlSmallStr::EMPTY),
+        Expr::Explode { input, options } => {
             let (expr, output_name) = recurse_arc!(input)?;
-            (AExpr::Explode { expr, skip_empty }, output_name)
+            (AExpr::Explode { expr, options }, output_name)
         },
         Expr::Alias(e, name) => return Ok((recurse_arc!(e)?.0, name)),
         Expr::Literal(lv) => {
@@ -243,9 +249,21 @@ pub(super) fn to_aexpr_impl(
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::First(input), output_name)
                 },
+                AggExpr::FirstNonNull(input) => {
+                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
+                    (IRAggExpr::FirstNonNull(input), output_name)
+                },
                 AggExpr::Last(input) => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::Last(input), output_name)
+                },
+                AggExpr::LastNonNull(input) => {
+                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
+                    (IRAggExpr::LastNonNull(input), output_name)
+                },
+                AggExpr::Item { input, allow_empty } => {
+                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
+                    (IRAggExpr::Item { input, allow_empty }, output_name)
                 },
                 AggExpr::Mean(input) => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
@@ -360,11 +378,32 @@ pub(super) fn to_aexpr_impl(
         Expr::Function { input, function } => {
             return convert_functions(input, function, ctx);
         },
-        Expr::Window {
+        #[cfg(feature = "dynamic_group_by")]
+        Expr::Rolling {
+            function,
+            index_column,
+            period,
+            offset,
+            closed_window,
+        } => {
+            let (function, output_name) = recurse_arc!(function)?;
+            let (index_column, _) = to_aexpr_mat_lit_arc!(index_column)?;
+            (
+                AExpr::Rolling {
+                    function,
+                    index_column,
+                    period,
+                    offset,
+                    closed_window,
+                },
+                output_name,
+            )
+        },
+        Expr::Over {
             function,
             partition_by,
             order_by,
-            options,
+            mapping,
         } => {
             let (function, output_name) = recurse_arc!(function)?;
             let order_by = if let Some((e, options)) = order_by {
@@ -374,14 +413,14 @@ pub(super) fn to_aexpr_impl(
             };
 
             (
-                AExpr::Window {
+                AExpr::Over {
                     function,
                     partition_by: partition_by
                         .into_iter()
                         .map(|e| Ok(to_aexpr_impl_materialized_lit(e, ctx)?.0))
                         .collect::<PolarsResult<_>>()?,
                     order_by,
-                    options,
+                    mapping,
                 },
                 output_name,
             )
@@ -409,21 +448,21 @@ pub(super) fn to_aexpr_impl(
             variant,
         } => {
             let (expr, output_name) = recurse_arc!(expr)?;
-            let expr_dtype = ctx.arena.get(expr).to_dtype(ctx.schema, ctx.arena)?;
+            let expr_dtype = ctx.arena.get(expr).to_dtype(&ctx.to_field_ctx())?;
             let element_dtype = variant.element_dtype(&expr_dtype)?;
 
             // Perform this before schema resolution so that we can better error messages.
             for e in evaluation.as_ref().into_iter() {
-                if let Expr::Column(name) = e {
-                    polars_ensure!(
-                        name.is_empty(),
+                if matches!(e, Expr::Column(_)) {
+                    polars_bail!(
                         ComputeError:
                         "named columns are not allowed in `eval` functions; consider using `element`"
                     );
                 }
             }
 
-            let evaluation_schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
+            let mut evaluation_schema = ctx.schema.clone();
+            evaluation_schema.insert(PL_ELEMENT_NAME.clone(), element_dtype.clone());
             let mut evaluation_ctx = ExprToIRContext {
                 with_fields: None,
                 schema: &evaluation_schema,
@@ -434,7 +473,14 @@ pub(super) fn to_aexpr_impl(
             let (evaluation, _) = to_aexpr_impl(owned(evaluation), &mut evaluation_ctx)?;
 
             match variant {
-                EvalVariant::List => {},
+                EvalVariant::List | EvalVariant::ListAgg => {},
+                EvalVariant::Array { as_list } => {
+                    polars_ensure!(
+                        as_list || is_length_preserving_ae(evaluation, ctx.arena),
+                        InvalidOperation: "`array.eval` is not allowed with non-length preserving expressions. Enable `as_list` if you want to output a variable amount of items per row."
+                    )
+                },
+                EvalVariant::ArrayAgg => {},
                 EvalVariant::Cumulative { .. } => {
                     polars_ensure!(
                         is_scalar_ae(evaluation, ctx.arena),

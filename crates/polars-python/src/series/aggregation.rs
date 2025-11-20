@@ -56,11 +56,11 @@ impl PySeries {
         let s = self.series.read();
         match s.dtype() {
             Boolean => scalar_to_py(
-                py.enter_polars_ok(|| s.cast(&DataType::UInt8).unwrap().mean_reduce()),
+                py.enter_polars(|| s.cast(&DataType::UInt8).unwrap().mean_reduce()),
                 py,
             ),
             // For non-numeric output types we require mean_reduce.
-            dt if dt.is_temporal() => scalar_to_py(py.enter_polars_ok(|| s.mean_reduce()), py),
+            dt if dt.is_temporal() => scalar_to_py(py.enter_polars(|| s.mean_reduce()), py),
             _ => Ok(s.mean().into_pyobject(py)?),
         }
     }
@@ -110,12 +110,22 @@ impl PySeries {
         scalar_to_py(py.enter_polars(|| self.series.read().sum_reduce()), py)
     }
 
-    fn first<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        scalar_to_py(py.enter_polars_ok(|| self.series.read().first()), py)
+    fn first<'py>(&self, py: Python<'py>, ignore_nulls: bool) -> PyResult<Bound<'py, PyAny>> {
+        let result = if ignore_nulls {
+            py.enter_polars_ok(|| self.series.read().first_non_null())
+        } else {
+            py.enter_polars_ok(|| self.series.read().first())
+        };
+        scalar_to_py(result, py)
     }
 
-    fn last<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        scalar_to_py(py.enter_polars_ok(|| self.series.read().last()), py)
+    fn last<'py>(&self, py: Python<'py>, ignore_nulls: bool) -> PyResult<Bound<'py, PyAny>> {
+        let result = if ignore_nulls {
+            py.enter_polars_ok(|| self.series.read().last_non_null())
+        } else {
+            py.enter_polars_ok(|| self.series.read().last())
+        };
+        scalar_to_py(result, py)
     }
 
     #[cfg(feature = "approx_unique")]

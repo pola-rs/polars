@@ -110,6 +110,7 @@ fn aexpr_to_skip_batch_predicate_rec(
         }
 
         match arena.get(e) {
+            AExpr::Element => None,
             AExpr::Explode { .. } => None,
             AExpr::Column(_) => None,
             AExpr::Literal(_) => None,
@@ -292,7 +293,7 @@ fn aexpr_to_skip_batch_predicate_rec(
             AExpr::Gather { .. } => None,
             AExpr::SortBy { .. } => None,
             AExpr::Filter { .. } => None,
-            AExpr::Agg(..) => None,
+            AExpr::Agg(..) | AExpr::AnonymousStreamingAgg { .. } => None,
             AExpr::Ternary { .. } => None,
             AExpr::AnonymousFunction { .. } => None,
             AExpr::Eval { .. } => None,
@@ -309,10 +310,12 @@ fn aexpr_to_skip_batch_predicate_rec(
                         let nulls_equal = *nulls_equal;
                         let lv_node = input[1].node();
                         match (
-                            into_column(input[0].node(), arena, schema, 0),
+                            into_column(input[0].node(), arena),
                             constant_evaluate(lv_node, arena, schema, 0),
                         ) {
                             (Some(col), Some(_)) => {
+                                use polars_core::prelude::ExplodeOptions;
+
                                 let dtype = schema.get(col)?;
                                 if !does_dtype_have_sufficient_order(dtype) {
                                     return None;
@@ -327,7 +330,13 @@ fn aexpr_to_skip_batch_predicate_rec(
                                 let col = col.clone();
                                 let lv_node = lv_node.into_aexpr_builder();
 
-                                let lv_node_exploded = lv_node.explode_skip_empty(arena);
+                                let lv_node_exploded = lv_node.explode(
+                                    arena,
+                                    ExplodeOptions {
+                                        empty_as_null: false,
+                                        keep_nulls: true,
+                                    },
+                                );
                                 let lv_min = lv_node_exploded.min(arena);
                                 let lv_max = lv_node_exploded.max(arena);
 
@@ -373,7 +382,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                         }
                     },
                     IRBooleanFunction::IsNull => {
-                        let col = into_column(input[0].node(), arena, schema, 0)?;
+                        let col = into_column(input[0].node(), arena)?;
 
                         // col(A).is_null() -> null_count(A) == 0
                         let col_nc = col!(null_count: col);
@@ -381,7 +390,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                         Some(col_nc.eq(idx_zero, arena).node())
                     },
                     IRBooleanFunction::IsNotNull => {
-                        let col = into_column(input[0].node(), arena, schema, 0)?;
+                        let col = into_column(input[0].node(), arena)?;
 
                         // col(A).is_not_null() -> null_count(A) == LEN
                         let col_nc = col!(null_count: col);
@@ -390,7 +399,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                     },
                     #[cfg(feature = "is_between")]
                     IRBooleanFunction::IsBetween { closed } => {
-                        let col = into_column(input[0].node(), arena, schema, 0)?;
+                        let col = into_column(input[0].node(), arena)?;
                         let dtype = schema.get(col)?;
 
                         if !does_dtype_have_sufficient_order(dtype) {
@@ -446,7 +455,9 @@ fn aexpr_to_skip_batch_predicate_rec(
                 },
                 _ => None,
             },
-            AExpr::Window { .. } => None,
+            #[cfg(feature = "dynamic_group_by")]
+            AExpr::Rolling { .. } => None,
+            AExpr::Over { .. } => None,
             AExpr::Slice { .. } => None,
             AExpr::Len => None,
         }
@@ -465,7 +476,7 @@ fn aexpr_to_skip_batch_predicate_rec(
 
     let live_columns = PlIndexMap::from_iter(aexpr_to_leaf_names_iter(e, arena).map(|col| {
         let min_name = format_pl_smallstr!("{col}_min");
-        (col, min_name)
+        (col.clone(), min_name)
     }));
 
     // We cannot do proper equalities for these.

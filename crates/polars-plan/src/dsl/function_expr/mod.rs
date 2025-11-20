@@ -56,7 +56,7 @@ pub use self::cat::CategoricalFunction;
 pub use self::datetime::TemporalFunction;
 pub use self::pow::PowFunction;
 #[cfg(feature = "range")]
-pub use self::range::RangeFunction;
+pub use self::range::{DateRangeArgs, RangeFunction};
 #[cfg(feature = "rolling_window")]
 pub use self::rolling::RollingFunction;
 #[cfg(feature = "rolling_window_by")]
@@ -135,6 +135,7 @@ pub enum FunctionExpr {
         function_by: RollingFunctionBy,
         options: RollingOptionsDynamicWindow,
     },
+    Rechunk,
     Append {
         upcast: bool,
     },
@@ -143,7 +144,9 @@ pub enum FunctionExpr {
     DropNans,
     DropNulls,
     #[cfg(feature = "mode")]
-    Mode,
+    Mode {
+        maintain_order: bool,
+    },
     #[cfg(feature = "moment")]
     Skew(bool),
     #[cfg(feature = "moment")]
@@ -463,7 +466,7 @@ impl Hash for FunctionExpr {
                 ignore_nulls.hash(state)
             },
             MaxHorizontal | MinHorizontal | DropNans | DropNulls | Reverse | ArgUnique | ArgMin
-            | ArgMax | Product | Shift | ShiftAndFill => {},
+            | ArgMax | Product | Shift | ShiftAndFill | Rechunk => {},
             Append { upcast } => upcast.hash(state),
             ArgSort {
                 descending,
@@ -473,7 +476,7 @@ impl Hash for FunctionExpr {
                 nulls_last.hash(state);
             },
             #[cfg(feature = "mode")]
-            Mode => {},
+            Mode { maintain_order } => maintain_order.hash(state),
             #[cfg(feature = "abs")]
             Abs => {},
             Negate => {},
@@ -709,12 +712,19 @@ impl Display for FunctionExpr {
             RollingExpr { function, .. } => return write!(f, "{function}"),
             #[cfg(feature = "rolling_window_by")]
             RollingExprBy { function_by, .. } => return write!(f, "{function_by}"),
+            Rechunk => "rechunk",
             Append { .. } => "upcast",
             ShiftAndFill => "shift_and_fill",
             DropNans => "drop_nans",
             DropNulls => "drop_nulls",
             #[cfg(feature = "mode")]
-            Mode => "mode",
+            Mode { maintain_order } => {
+                if *maintain_order {
+                    "mode_stable"
+                } else {
+                    "mode"
+                }
+            },
             #[cfg(feature = "moment")]
             Skew(_) => "skew",
             #[cfg(feature = "moment")]

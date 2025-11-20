@@ -17,7 +17,6 @@ pub trait LogSeries: SeriesSealed {
     fn log(&self, base: &Series) -> Series {
         let s = self.as_series();
 
-        use DataType::*;
         match (s.dtype(), base.dtype()) {
             (dt1, dt2) if dt1 == dt2 && dt1.is_float() => {
                 let s = s.to_physical_repr();
@@ -31,12 +30,9 @@ pub trait LogSeries: SeriesSealed {
                     out.into_series()
                 })
             },
-            (_, Float64) => s.cast(&DataType::Float64).unwrap().log(base),
-            (Float64, _) => s.log(&base.cast(&DataType::Float64).unwrap()),
-            (_, _) => s
-                .cast(&DataType::Float64)
-                .unwrap()
-                .log(&base.cast(&DataType::Float64).unwrap()),
+            (dt1, _) if dt1.is_float() => s.log(&base.cast(dt1).unwrap()),
+            (_, dt2) if dt2.is_float() => s.cast(base.dtype()).unwrap().log(base),
+            (_, _) => s.cast(&DataType::Float64).unwrap().log(base),
         }
     }
 
@@ -88,7 +84,7 @@ pub trait LogSeries: SeriesSealed {
         }
     }
 
-    /// Compute the entropy as `-sum(pk * log(pk)`.
+    /// Compute the entropy as `-sum(pk * log(pk))`.
     /// where `pk` are discrete probabilities.
     fn entropy(&self, base: f64, normalize: bool) -> PolarsResult<f64> {
         let s = self.as_series().to_physical_repr();

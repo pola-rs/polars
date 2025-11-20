@@ -39,14 +39,14 @@ def elem_order_sign(
         assert lhs.dtype == rhs.dtype
 
         if isinstance(lhs.dtype, pl.Enum):
-            lhs = cast(Element, lhs.to_physical())
-            rhs = cast(Element, rhs.to_physical())
+            lhs = cast("Element", lhs.to_physical())
+            rhs = cast("Element", rhs.to_physical())
             assert isinstance(lhs, pl.Series)
             assert isinstance(rhs, pl.Series)
 
         if lhs.dtype == pl.Categorical(ordering="lexical"):
-            lhs = cast(Element, lhs.cast(pl.String))
-            rhs = cast(Element, rhs.cast(pl.String))
+            lhs = cast("Element", lhs.cast(pl.String))
+            rhs = cast("Element", rhs.cast(pl.String))
             assert isinstance(lhs, pl.Series)
             assert isinstance(rhs, pl.Series)
 

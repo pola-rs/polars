@@ -10,6 +10,7 @@ use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::prelude::*;
+use crate::utils::{first_non_null, last_non_null};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -32,10 +33,12 @@ impl IsSorted {
 }
 
 pub enum BitRepr {
+    U8(UInt8Chunked),
+    U16(UInt16Chunked),
     U32(UInt32Chunked),
     U64(UInt64Chunked),
-    #[cfg(feature = "dtype-i128")]
-    I128(Int128Chunked),
+    #[cfg(feature = "dtype-u128")]
+    U128(UInt128Chunked),
 }
 
 pub(crate) mod private {
@@ -393,6 +396,8 @@ pub trait SeriesTrait:
         None
     }
 
+    fn deposit(&self, validity: &Bitmap) -> Series;
+
     /// Find the indices of elements where the null masks are different recursively.
     fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>);
 
@@ -511,6 +516,10 @@ pub trait SeriesTrait:
     fn median_reduce(&self) -> PolarsResult<Scalar> {
         polars_bail!(opq = median, self._dtype());
     }
+    /// Get the mean of the Series as a new Scalar
+    fn mean_reduce(&self) -> PolarsResult<Scalar> {
+        polars_bail!(opq = mean, self._dtype());
+    }
     /// Get the variance of the Series as a new Series of length 1.
     fn var_reduce(&self, _ddof: u8) -> PolarsResult<Scalar> {
         polars_bail!(opq = var, self._dtype());
@@ -546,6 +555,23 @@ pub trait SeriesTrait:
         Scalar::new(dt.clone(), av)
     }
 
+    /// Get the first non-null element of the [`Series`] as a [`Scalar`]
+    ///
+    /// If the [`Series`] is empty, a [`Scalar`] with a [`AnyValue::Null`] is returned.
+    fn first_non_null(&self) -> Scalar {
+        let av = if self.len() == 0 {
+            AnyValue::Null
+        } else {
+            let idx = if self.has_nulls() {
+                first_non_null(self.chunks().iter().map(|c| c.as_ref())).unwrap_or(0)
+            } else {
+                0
+            };
+            self.get(idx).map_or(AnyValue::Null, AnyValue::into_static)
+        };
+        Scalar::new(self.dtype().clone(), av)
+    }
+
     /// Get the last element of the [`Series`] as a [`Scalar`]
     ///
     /// If the [`Series`] is empty, a [`Scalar`] with a [`AnyValue::Null`] is returned.
@@ -559,6 +585,25 @@ pub trait SeriesTrait:
         };
 
         Scalar::new(dt.clone(), av)
+    }
+
+    /// Get the last non-null element of the [`Series`] as a [`Scalar`]
+    ///
+    /// If the [`Series`] is empty, a [`Scalar`] with a [`AnyValue::Null`] is returned.
+    fn last_non_null(&self) -> Scalar {
+        let n = self.len();
+        let av = if n == 0 {
+            AnyValue::Null
+        } else {
+            let idx = if self.has_nulls() {
+                last_non_null(self.chunks().iter().map(|c| c.as_ref()), n).unwrap_or(n - 1)
+            } else {
+                n - 1
+            };
+            // SAFETY: len-1 < len if len != 0
+            unsafe { self.get_unchecked(idx) }.into_static()
+        };
+        Scalar::new(self.dtype().clone(), av)
     }
 
     #[cfg(feature = "approx_unique")]

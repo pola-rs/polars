@@ -13,19 +13,21 @@ use arrow::types::NativeType;
 use num_traits::pow::Pow;
 use num_traits::{Bounded, Float, Num, NumCast, ToPrimitive, Zero};
 use polars_compute::rolling::no_nulls::{
-    MaxWindow, MeanWindow, MinWindow, MomentWindow, QuantileWindow, RollingAggWindowNoNulls,
-    SumWindow,
+    MaxWindow, MinWindow, MomentWindow, QuantileWindow, RollingAggWindowNoNulls,
 };
 use polars_compute::rolling::nulls::{RollingAggWindowNulls, VarianceMoment};
 use polars_compute::rolling::quantile_filter::SealedRolling;
 use polars_compute::rolling::{
-    self, QuantileMethod, RollingFnParams, RollingQuantileParams, RollingVarParams, quantile_filter,
+    self, MeanWindow, QuantileMethod, RollingFnParams, RollingQuantileParams, RollingVarParams,
+    SumWindow, quantile_filter,
 };
 use polars_utils::float::IsFloat;
 use polars_utils::idx_vec::IdxVec;
+use polars_utils::kahan_sum::KahanSum;
 use polars_utils::min_max::MinMax;
 use rayon::prelude::*;
 
+use crate::POOL;
 use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::create_extension;
@@ -36,7 +38,6 @@ use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::series::implementations::SeriesWrap;
 use crate::utils::NoNull;
-use crate::{POOL, apply_method_physical_integer};
 
 fn idx2usize(idx: &[IdxSize]) -> impl ExactSizeIterator<Item = usize> + '_ {
     idx.iter().map(|i| *i as usize)
@@ -188,17 +189,6 @@ where
 {
     let ca: ChunkedArray<T> = POOL.install(|| groups.all().into_par_iter().map(f).collect());
     ca.into_series()
-}
-
-/// Same as `agg_helper_idx_on_all` but for aggregations that don't return an Option.
-fn agg_helper_idx_on_all_no_null<T, F>(groups: &GroupsIdx, f: F) -> Series
-where
-    F: Fn(&IdxVec) -> T::Native + Send + Sync,
-    T: PolarsNumericType,
-{
-    let ca: NoNull<ChunkedArray<T>> =
-        POOL.install(|| groups.all().into_par_iter().map(f).collect());
-    ca.into_inner().into_series()
 }
 
 pub fn _agg_helper_slice<T, F>(groups: &[[IdxSize; 2]], f: F) -> Series
@@ -445,13 +435,9 @@ where
 {
     pub(crate) unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
         // faster paths
-        match (self.is_sorted_flag(), self.null_count()) {
-            (IsSorted::Ascending, 0) => {
-                return self.clone().into_series().agg_first(groups);
-            },
-            (IsSorted::Descending, 0) => {
-                return self.clone().into_series().agg_last(groups);
-            },
+        match self.is_sorted_flag() {
+            IsSorted::Ascending => return self.clone().into_series().agg_first_non_null(groups),
+            IsSorted::Descending => return self.clone().into_series().agg_last_non_null(groups),
             _ => {},
         }
         match groups {
@@ -466,15 +452,11 @@ where
                     } else if idx.len() == 1 {
                         arr.get(first as usize)
                     } else if no_nulls {
-                        take_agg_no_null_primitive_iter_unchecked::<_, T::Native, _, _>(
-                            arr,
-                            idx2usize(idx),
-                            |a, b| a.min_ignore_nan(b),
-                        )
+                        take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
+                            .reduce(|a, b| a.min_ignore_nan(b))
                     } else {
-                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx), |a, b| {
-                            a.min_ignore_nan(b)
-                        })
+                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx))
+                            .reduce(|a, b| a.min_ignore_nan(b))
                     }
                 })
             },
@@ -542,15 +524,11 @@ where
                     } else if idx.len() == 1 {
                         arr.get(first as usize)
                     } else if no_nulls {
-                        take_agg_no_null_primitive_iter_unchecked::<_, T::Native, _, _>(
-                            arr,
-                            idx2usize(idx),
-                            |a, b| a.max_ignore_nan(b),
-                        )
+                        take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
+                            .reduce(|a, b| a.max_ignore_nan(b))
                     } else {
-                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx), |a, b| {
-                            a.max_ignore_nan(b)
-                        })
+                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx))
+                            .reduce(|a, b| a.max_ignore_nan(b))
                     }
                 })
             },
@@ -607,11 +585,21 @@ where
                     } else if idx.len() == 1 {
                         arr.get(first as usize).unwrap_or(T::Native::zero())
                     } else if no_nulls {
-                        take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx), |a, b| a + b)
-                            .unwrap_or(T::Native::zero())
+                        if T::Native::is_float() {
+                            take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
+                                .fold(KahanSum::default(), |k, x| k + x)
+                                .sum()
+                        } else {
+                            take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
+                                .fold(T::Native::zero(), |a, b| a + b)
+                        }
+                    } else if T::Native::is_float() {
+                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx))
+                            .fold(KahanSum::default(), |k, x| k + x)
+                            .sum()
                     } else {
-                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx), |a, b| a + b)
-                            .unwrap_or(T::Native::zero())
+                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx))
+                            .fold(T::Native::zero(), |a, b| a + b)
                     }
                 })
             },
@@ -626,13 +614,13 @@ where
                             _,
                             _,
                         >(values, offset_iter, None),
-                        Some(validity) => {
-                            _rolling_apply_agg_window_nulls::<
-                                rolling::nulls::SumWindow<T::Native, T::Native>,
-                                _,
-                                _,
-                            >(values, validity, offset_iter, None)
-                        },
+                        Some(validity) => _rolling_apply_agg_window_nulls::<
+                            SumWindow<T::Native, T::Native>,
+                            _,
+                            _,
+                        >(
+                            values, validity, offset_iter, None
+                        ),
                     };
                     Self::from(arr).into_series()
                 } else {
@@ -681,27 +669,23 @@ where
                     } else if idx.len() == 1 {
                         arr.get(first as usize).map(|sum| sum.to_f64().unwrap())
                     } else if no_nulls {
-                        take_agg_no_null_primitive_iter_unchecked::<_, T::Native, _, _>(
-                            arr,
-                            idx2usize(idx),
-                            |a, b| a + b,
+                        Some(
+                            take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
+                                .fold(KahanSum::default(), |a, b| {
+                                    a + b.to_f64().unwrap_unchecked()
+                                })
+                                .sum()
+                                / idx.len() as f64,
                         )
-                        .unwrap()
-                        .to_f64()
-                        .map(|sum| sum / idx.len() as f64)
                     } else {
-                        take_agg_primitive_iter_unchecked_count_nulls::<T::Native, _, _, _>(
+                        take_agg_primitive_iter_unchecked_count_nulls(
                             arr,
                             idx2usize(idx),
-                            |a, b| a + b,
-                            T::Native::zero(),
+                            KahanSum::default(),
+                            |a, b| a + b.to_f64().unwrap_unchecked(),
                             idx.len() as IdxSize,
                         )
-                        .map(|(sum, null_count)| {
-                            sum.to_f64()
-                                .map(|sum| sum / (idx.len() as f64 - null_count as f64))
-                                .unwrap()
-                        })
+                        .map(|(sum, null_count)| sum.sum() / (idx.len() as f64 - null_count as f64))
                     };
                     out.map(|flt| NumCast::from(flt).unwrap())
                 })
@@ -717,12 +701,11 @@ where
                             offset_iter,
                             None,
                         ),
-                        Some(validity) => _rolling_apply_agg_window_nulls::<
-                            rolling::nulls::MeanWindow<_>,
-                            _,
-                            _,
-                        >(
-                            values, validity, offset_iter, None
+                        Some(validity) => _rolling_apply_agg_window_nulls::<MeanWindow<_>, _, _>(
+                            values,
+                            validity,
+                            offset_iter,
+                            None,
                         ),
                     };
                     ChunkedArray::<T>::from(arr).into_series()
@@ -942,29 +925,24 @@ where
                         self.get(first as usize).map(|sum| sum.to_f64().unwrap())
                     } else {
                         match (self.has_nulls(), self.chunks.len()) {
-                            (false, 1) => {
-                                take_agg_no_null_primitive_iter_unchecked::<_, f64, _, _>(
+                            (false, 1) => Some(
+                                take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
+                                    .fold(KahanSum::default(), |a, b| a + b.to_f64().unwrap())
+                                    .sum()
+                                    / idx.len() as f64,
+                            ),
+                            (_, 1) => {
+                                take_agg_primitive_iter_unchecked_count_nulls(
                                     arr,
                                     idx2usize(idx),
-                                    |a, b| a + b,
+                                    KahanSum::default(),
+                                    |a, b| a + b.to_f64().unwrap(),
+                                    idx.len() as IdxSize,
                                 )
-                                .map(|sum| sum / idx.len() as f64)
-                            },
-                            (_, 1) => {
-                                {
-                                    take_agg_primitive_iter_unchecked_count_nulls::<
-                                        T::Native,
-                                        f64,
-                                        _,
-                                        _,
-                                    >(
-                                        arr, idx2usize(idx), |a, b| a + b, 0.0, idx.len() as IdxSize
-                                    )
-                                }
-                                .map(|(sum, null_count)| {
-                                    sum / (idx.len() as f64 - null_count as f64)
-                                })
-                            },
+                            }
+                            .map(|(sum, null_count)| {
+                                sum.sum() / (idx.len() as f64 - null_count as f64)
+                            }),
                             _ => {
                                 let take = { self.take_unchecked(idx) };
                                 take.mean()

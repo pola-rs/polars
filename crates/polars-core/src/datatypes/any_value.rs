@@ -22,6 +22,12 @@ impl Clone for OwnedObject {
     }
 }
 
+#[cfg(feature = "dtype-decimal")]
+use polars_compute::decimal::{
+    dec128_cmp, dec128_eq, dec128_rescale, dec128_to_f64, dec128_to_i128, f64_to_dec128,
+    i128_to_dec128,
+};
+
 #[derive(Debug, Clone, Default)]
 pub enum AnyValue<'a> {
     #[default]
@@ -38,6 +44,8 @@ pub enum AnyValue<'a> {
     UInt32(u32),
     /// An unsigned 64-bit integer number.
     UInt64(u64),
+    /// An unsigned 128-bit integer number.
+    UInt128(u128),
     /// An 8-bit integer number.
     Int8(i8),
     /// A 16-bit integer number.
@@ -99,9 +107,9 @@ pub enum AnyValue<'a> {
     StringOwned(PlSmallStr),
     Binary(&'a [u8]),
     BinaryOwned(Vec<u8>),
-    /// A 128-bit fixed point decimal number with a scale.
+    /// A 128-bit fixed point decimal number with a precision and scale.
     #[cfg(feature = "dtype-decimal")]
-    Decimal(i128, usize),
+    Decimal(i128, usize, usize),
 }
 
 impl AnyValue<'static> {
@@ -119,9 +127,7 @@ impl AnyValue<'static> {
             #[cfg(feature = "dtype-duration")]
             DataType::Duration(unit) => AnyValue::Duration(0, *unit),
             #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(_p, s) => {
-                AnyValue::Decimal(0, s.expect("unknown scale during execution"))
-            },
+            DataType::Decimal(p, s) => AnyValue::Decimal(0, *p, *s),
             _ => AnyValue::Null,
         }
     }
@@ -144,6 +150,7 @@ impl AnyValue<'static> {
             DT::UInt16 => AV::UInt16(numeric_to_one.into()),
             DT::UInt32 => AV::UInt32(numeric_to_one.into()),
             DT::UInt64 => AV::UInt64(numeric_to_one.into()),
+            DT::UInt128 => AV::UInt128(numeric_to_one.into()),
             DT::Int8 => AV::Int8(numeric_to_one.into()),
             DT::Int16 => AV::Int16(numeric_to_one.into()),
             DT::Int32 => AV::Int32(numeric_to_one.into()),
@@ -152,7 +159,7 @@ impl AnyValue<'static> {
             DT::Float32 => AV::Float32(numeric_to_one.into()),
             DT::Float64 => AV::Float64(numeric_to_one.into()),
             #[cfg(feature = "dtype-decimal")]
-            DT::Decimal(_, scale) => AV::Decimal(0, scale.unwrap()),
+            DT::Decimal(p, s) => AV::Decimal(0, *p, *s),
             DT::String => AV::String(""),
             DT::Binary => AV::Binary(&[]),
             DT::BinaryOffset => AV::Binary(&[]),
@@ -228,6 +235,7 @@ impl<'a> AnyValue<'a> {
             UInt16(_) => DataType::UInt16,
             UInt32(_) => DataType::UInt32,
             UInt64(_) => DataType::UInt64,
+            UInt128(_) => DataType::UInt128,
             Float32(_) => DataType::Float32,
             Float64(_) => DataType::Float64,
             String(_) | StringOwned(_) => DataType::String,
@@ -258,7 +266,7 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-struct")]
             StructOwned(payload) => DataType::Struct(payload.1.clone()),
             #[cfg(feature = "dtype-decimal")]
-            Decimal(_, scale) => DataType::Decimal(None, Some(*scale)),
+            Decimal(_, p, s) => DataType::Decimal(*p, *s),
             #[cfg(feature = "object")]
             Object(o) => DataType::Object(o.type_name()),
             #[cfg(feature = "object")]
@@ -269,7 +277,7 @@ impl<'a> AnyValue<'a> {
     /// Extract a numerical value from the AnyValue
     #[doc(hidden)]
     #[inline]
-    pub fn extract<T: NumCast>(&self) -> Option<T> {
+    pub fn extract<T: NumCast + IsFloat>(&self) -> Option<T> {
         use AnyValue::*;
         match self {
             Int8(v) => NumCast::from(*v),
@@ -281,6 +289,7 @@ impl<'a> AnyValue<'a> {
             UInt16(v) => NumCast::from(*v),
             UInt32(v) => NumCast::from(*v),
             UInt64(v) => NumCast::from(*v),
+            UInt128(v) => NumCast::from(*v),
             Float32(v) => NumCast::from(*v),
             Float64(v) => NumCast::from(*v),
             #[cfg(feature = "dtype-date")]
@@ -292,12 +301,11 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-duration")]
             Duration(v, _) => NumCast::from(*v),
             #[cfg(feature = "dtype-decimal")]
-            Decimal(v, scale) => {
-                if *scale == 0 {
-                    NumCast::from(*v)
+            Decimal(v, _p, s) => {
+                if T::is_float() {
+                    NumCast::from(dec128_to_f64(*v, *s))
                 } else {
-                    let f: Option<f64> = NumCast::from(*v);
-                    NumCast::from(f? / 10f64.powi(*scale as _))
+                    NumCast::from(dec128_to_i128(*v, *s))
                 }
             },
             Boolean(v) => NumCast::from(if *v { 1 } else { 0 }),
@@ -314,7 +322,7 @@ impl<'a> AnyValue<'a> {
     }
 
     #[inline]
-    pub fn try_extract<T: NumCast>(&self) -> PolarsResult<T> {
+    pub fn try_extract<T: NumCast + IsFloat>(&self) -> PolarsResult<T> {
         self.extract().ok_or_else(|| {
             polars_err!(
                 ComputeError: "could not extract number from any-value of dtype: '{:?}'",
@@ -353,7 +361,11 @@ impl<'a> AnyValue<'a> {
     pub fn is_unsigned_integer(&self) -> bool {
         matches!(
             self,
-            AnyValue::UInt8(_) | AnyValue::UInt16(_) | AnyValue::UInt32(_) | AnyValue::UInt64(_)
+            AnyValue::UInt8(_)
+                | AnyValue::UInt16(_)
+                | AnyValue::UInt32(_)
+                | AnyValue::UInt64(_)
+                | AnyValue::UInt128(_)
         )
     }
 
@@ -390,6 +402,7 @@ impl<'a> AnyValue<'a> {
             (av, DataType::UInt16) => AnyValue::UInt16(av.extract::<u16>()?),
             (av, DataType::UInt32) => AnyValue::UInt32(av.extract::<u32>()?),
             (av, DataType::UInt64) => AnyValue::UInt64(av.extract::<u64>()?),
+            (av, DataType::UInt128) => AnyValue::UInt128(av.extract::<u128>()?),
             (av, DataType::Int8) => AnyValue::Int8(av.extract::<i8>()?),
             (av, DataType::Int16) => AnyValue::Int16(av.extract::<i16>()?),
             (av, DataType::Int32) => AnyValue::Int32(av.extract::<i32>()?),
@@ -403,6 +416,7 @@ impl<'a> AnyValue<'a> {
             (AnyValue::UInt16(v), DataType::Boolean) => AnyValue::Boolean(*v != u16::default()),
             (AnyValue::UInt32(v), DataType::Boolean) => AnyValue::Boolean(*v != u32::default()),
             (AnyValue::UInt64(v), DataType::Boolean) => AnyValue::Boolean(*v != u64::default()),
+            (AnyValue::UInt128(v), DataType::Boolean) => AnyValue::Boolean(*v != u128::default()),
             (AnyValue::Int8(v), DataType::Boolean) => AnyValue::Boolean(*v != i8::default()),
             (AnyValue::Int16(v), DataType::Boolean) => AnyValue::Boolean(*v != i16::default()),
             (AnyValue::Int32(v), DataType::Boolean) => AnyValue::Boolean(*v != i32::default()),
@@ -584,33 +598,24 @@ impl<'a> AnyValue<'a> {
                 *tu_r,
             ),
 
-            // to decimal
             #[cfg(feature = "dtype-decimal")]
-            (av, DataType::Decimal(prec, scale)) if av.is_integer() => {
-                let value = av.try_extract::<i128>().unwrap();
-                let scale = scale.unwrap_or(0);
-                let factor = 10_i128.pow(scale as _); // Conversion to u32 is safe, max value is 38.
-                let converted = value.checked_mul(factor)?;
-
-                // Check if the converted value fits into the specified precision
-                let prec = prec.unwrap_or(38) as u32;
-                let num_digits = (converted.abs() as f64).log10().ceil() as u32;
-                if num_digits > prec {
-                    return None;
-                }
-
-                AnyValue::Decimal(converted, scale)
+            (av, DataType::Decimal(p, s)) if av.is_integer() => {
+                let int = av.try_extract::<i128>().ok()?;
+                let dec = i128_to_dec128(int, *p, *s)?;
+                AnyValue::Decimal(dec, *p, *s)
             },
+
             #[cfg(feature = "dtype-decimal")]
-            (AnyValue::Decimal(value, scale_av), DataType::Decimal(_, scale)) => {
-                let Some(scale) = scale else {
-                    return Some(self.clone());
-                };
-                // TODO: Allow lossy conversion?
-                let scale_diff = scale.checked_sub(*scale_av)?;
-                let factor = 10_i128.pow(scale_diff as _); // Conversion is safe, max value is 38.
-                let converted = value.checked_mul(factor)?;
-                AnyValue::Decimal(converted, *scale)
+            (av, DataType::Decimal(p, s)) if av.is_float() => {
+                let f = av.try_extract::<f64>().unwrap();
+                let dec = f64_to_dec128(f, *p, *s)?;
+                AnyValue::Decimal(dec, *p, *s)
+            },
+
+            #[cfg(feature = "dtype-decimal")]
+            (AnyValue::Decimal(value, _old_p, old_s), DataType::Decimal(p, s)) => {
+                let converted = dec128_rescale(*value, *old_s, *p, *s)?;
+                AnyValue::Decimal(converted, *p, *s)
             },
 
             // to self
@@ -675,6 +680,7 @@ impl<'a> AnyValue<'a> {
             | Self::UInt16(_)
             | Self::UInt32(_)
             | Self::UInt64(_)
+            | Self::UInt128(_)
             | Self::Int8(_)
             | Self::Int16(_)
             | Self::Int32(_)
@@ -697,10 +703,16 @@ impl<'a> AnyValue<'a> {
             Self::Time(v) => Self::Int64(v),
 
             #[cfg(feature = "dtype-categorical")]
-            Self::Categorical(v, _)
-            | Self::CategoricalOwned(v, _)
-            | Self::Enum(v, _)
-            | Self::EnumOwned(v, _) => Self::UInt32(v),
+            Self::Categorical(v, &ref m)
+            | Self::CategoricalOwned(v, ref m)
+            | Self::Enum(v, &ref m)
+            | Self::EnumOwned(v, ref m) => {
+                match CategoricalPhysical::smallest_physical(m.max_categories()).unwrap() {
+                    CategoricalPhysical::U8 => Self::UInt8(v as u8),
+                    CategoricalPhysical::U16 => Self::UInt16(v as u16),
+                    CategoricalPhysical::U32 => Self::UInt32(v),
+                }
+            },
             Self::List(series) => Self::List(series.to_physical_repr().into_owned()),
 
             #[cfg(feature = "dtype-array")]
@@ -724,7 +736,7 @@ impl<'a> AnyValue<'a> {
             ))),
 
             #[cfg(feature = "dtype-decimal")]
-            Self::Decimal(v, _) => Self::Int128(v),
+            Self::Decimal(v, _, _) => Self::Int128(v),
         }
     }
 
@@ -781,6 +793,7 @@ impl AnyValue<'_> {
             UInt16(v) => v.hash(state),
             UInt32(v) => v.hash(state),
             UInt64(v) => v.hash(state),
+            UInt128(v) => feature_gated!("dtype-u128", v.hash(state)),
             String(v) => v.hash(state),
             StringOwned(v) => v.hash(state),
             Float32(v) => v.to_ne_bytes().hash(state),
@@ -840,9 +853,10 @@ impl AnyValue<'_> {
             #[cfg(feature = "dtype-struct")]
             StructOwned(v) => v.0.hash(state),
             #[cfg(feature = "dtype-decimal")]
-            Decimal(v, k) => {
+            Decimal(v, s, p) => {
                 v.hash(state);
-                k.hash(state);
+                s.hash(state);
+                p.hash(state);
             },
             Null => {},
         }
@@ -951,12 +965,14 @@ impl<'a> AnyValue<'a> {
                 Duration(l + r, *lu)
             },
             #[cfg(feature = "dtype-decimal")]
-            (Decimal(l, ls), Decimal(r, rs)) => {
-                if ls != rs {
-                    unimplemented!("adding decimals with different scales is not supported here");
+            (Decimal(l, lp, ls), Decimal(r, rp, rs)) => {
+                if (lp, ls) != (rp, rs) {
+                    unimplemented!(
+                        "adding decimals with different precisions/scales is not supported here"
+                    );
                 }
 
-                Decimal(l + r, *ls)
+                Decimal(l + r, *lp, *ls)
             },
             _ => unimplemented!(),
         }
@@ -995,6 +1011,7 @@ impl<'a> AnyValue<'a> {
             UInt16(v) => UInt16(v),
             UInt32(v) => UInt32(v),
             UInt64(v) => UInt64(v),
+            UInt128(v) => UInt128(v),
             Boolean(v) => Boolean(v),
             Float32(v) => Float32(v),
             Float64(v) => Float64(v),
@@ -1035,7 +1052,7 @@ impl<'a> AnyValue<'a> {
                 unsafe { std::mem::transmute::<AnyValue<'a>, AnyValue<'static>>(av) }
             },
             #[cfg(feature = "dtype-decimal")]
-            Decimal(val, scale) => Decimal(val, scale),
+            Decimal(val, s, p) => Decimal(val, s, p),
             #[cfg(feature = "dtype-categorical")]
             Categorical(cat, map) => CategoricalOwned(cat, map.clone()),
             #[cfg(feature = "dtype-categorical")]
@@ -1151,6 +1168,7 @@ impl AnyValue<'_> {
             (UInt16(l), UInt16(r)) => *l == *r,
             (UInt32(l), UInt32(r)) => *l == *r,
             (UInt64(l), UInt64(r)) => *l == *r,
+            (UInt128(l), UInt128(r)) => *l == *r,
             (Int8(l), Int8(r)) => *l == *r,
             (Int16(l), Int16(r)) => *l == *r,
             (Int32(l), Int32(r)) => *l == *r,
@@ -1221,32 +1239,7 @@ impl AnyValue<'_> {
                 null_equal,
             ),
             #[cfg(feature = "dtype-decimal")]
-            (Decimal(l_v, l_s), Decimal(r_v, r_s)) => {
-                // l_v / 10**l_s == r_v / 10**r_s
-                if l_s == r_s && l_v == r_v || *l_v == 0 && *r_v == 0 {
-                    true
-                } else if l_s < r_s {
-                    // l_v * 10**(r_s - l_s) == r_v
-                    if let Some(lhs) = (|| {
-                        let exp = i128::checked_pow(10, (r_s - l_s).try_into().ok()?)?;
-                        l_v.checked_mul(exp)
-                    })() {
-                        lhs == *r_v
-                    } else {
-                        false
-                    }
-                } else {
-                    // l_v == r_v * 10**(l_s - r_s)
-                    if let Some(rhs) = (|| {
-                        let exp = i128::checked_pow(10, (l_s - r_s).try_into().ok()?)?;
-                        r_v.checked_mul(exp)
-                    })() {
-                        *l_v == rhs
-                    } else {
-                        false
-                    }
-                }
-            },
+            (Decimal(lv, _lp, ls), Decimal(rv, _rp, rs)) => dec128_eq(*lv, *ls, *rv, *rs),
             #[cfg(feature = "object")]
             (Object(l), Object(r)) => l == r,
             #[cfg(feature = "dtype-array")]
@@ -1331,6 +1324,7 @@ impl PartialOrd for AnyValue<'_> {
             (UInt16(l), UInt16(r)) => l.partial_cmp(r),
             (UInt32(l), UInt32(r)) => l.partial_cmp(r),
             (UInt64(l), UInt64(r)) => l.partial_cmp(r),
+            (UInt128(l), UInt128(r)) => l.partial_cmp(r),
             (Int8(l), Int8(r)) => l.partial_cmp(r),
             (Int16(l), Int16(r)) => l.partial_cmp(r),
             (Int32(l), Int32(r)) => l.partial_cmp(r),
@@ -1394,32 +1388,7 @@ impl PartialOrd for AnyValue<'_> {
                 unimplemented!("ordering for Struct dtype is not supported")
             },
             #[cfg(feature = "dtype-decimal")]
-            (Decimal(l_v, l_s), Decimal(r_v, r_s)) => {
-                // l_v / 10**l_s <=> r_v / 10**r_s
-                if l_s == r_s && l_v == r_v || *l_v == 0 && *r_v == 0 {
-                    Some(Ordering::Equal)
-                } else if l_s < r_s {
-                    // l_v * 10**(r_s - l_s) <=> r_v
-                    if let Some(lhs) = (|| {
-                        let exp = i128::checked_pow(10, (r_s - l_s).try_into().ok()?)?;
-                        l_v.checked_mul(exp)
-                    })() {
-                        lhs.partial_cmp(r_v)
-                    } else {
-                        Some(Ordering::Greater)
-                    }
-                } else {
-                    // l_v <=> r_v * 10**(l_s - r_s)
-                    if let Some(rhs) = (|| {
-                        let exp = i128::checked_pow(10, (l_s - r_s).try_into().ok()?)?;
-                        r_v.checked_mul(exp)
-                    })() {
-                        l_v.partial_cmp(&rhs)
-                    } else {
-                        Some(Ordering::Less)
-                    }
-                }
-            },
+            (Decimal(lv, _lp, ls), Decimal(rv, _rp, rs)) => Some(dec128_cmp(*lv, *ls, *rv, *rs)),
 
             (_, _) => {
                 unimplemented!(
@@ -1557,6 +1526,16 @@ impl GetAnyValue for ArrayRef {
                     Some(v) => AnyValue::UInt64(v),
                 }
             },
+            ArrowDataType::UInt128 => {
+                let arr = self
+                    .as_any()
+                    .downcast_ref::<PrimitiveArray<u128>>()
+                    .unwrap_unchecked();
+                match arr.get_unchecked(index) {
+                    None => AnyValue::Null,
+                    Some(v) => AnyValue::UInt128(v),
+                }
+            },
             ArrowDataType::Float32 => {
                 let arr = self
                     .as_any()
@@ -1615,6 +1594,9 @@ impl<K: NumericNative> From<K> for AnyValue<'static> {
                 PrimitiveType::UInt16 => AnyValue::UInt16(NumCast::from(value).unwrap_unchecked()),
                 PrimitiveType::UInt32 => AnyValue::UInt32(NumCast::from(value).unwrap_unchecked()),
                 PrimitiveType::UInt64 => AnyValue::UInt64(NumCast::from(value).unwrap_unchecked()),
+                PrimitiveType::UInt128 => {
+                    AnyValue::UInt128(NumCast::from(value).unwrap_unchecked())
+                },
                 PrimitiveType::Float32 => {
                     AnyValue::Float32(NumCast::from(value).unwrap_unchecked())
                 },

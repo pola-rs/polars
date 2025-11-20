@@ -16,7 +16,6 @@ use pyo3::exceptions::PyValueError;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::PyAnyMethods;
 use pyo3::{Bound, FromPyObject, PyAny, PyResult, pyclass};
-pub use sink::{PyPartitioning, SinkTarget};
 
 use crate::prelude::Wrap;
 

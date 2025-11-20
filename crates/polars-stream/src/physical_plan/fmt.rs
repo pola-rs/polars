@@ -4,6 +4,9 @@ use polars_plan::dsl::PartitionVariantIR;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, EscapeLabel};
 use polars_plan::prelude::FileType;
+use polars_time::ClosedWindow;
+#[cfg(feature = "dynamic_group_by")]
+use polars_time::DynamicGroupOptions;
 use polars_utils::arena::Arena;
 use polars_utils::slice_enum::Slice;
 use slotmap::{Key, SecondaryMap, SlotMap};
@@ -128,7 +131,7 @@ pub fn fmt_exprs(
         }
 
         for (name, expr) in formatted {
-            write!(f, "{name:>max_name_width$} = {expr:<max_expr_width$}\\n").unwrap();
+            writeln!(f, "{name:>max_name_width$} = {expr:<max_expr_width$}").unwrap();
         }
     } else {
         let Some(e) = exprs.first() else {
@@ -138,7 +141,7 @@ pub fn fmt_exprs(
         fmt_expr(f, e, expr_arena).unwrap();
 
         for e in &exprs[1..] {
-            f.write_str("\\n").unwrap();
+            f.write_str("\n").unwrap();
             fmt_expr(f, e, expr_arena).unwrap();
         }
     }
@@ -259,6 +262,7 @@ fn visualize_plan_rec(
             from_ref(input),
         ),
         PhysNodeKind::InMemorySink { input } => ("in-memory-sink".to_string(), from_ref(input)),
+        PhysNodeKind::CallbackSink { input, .. } => ("callback-sink".to_string(), from_ref(input)),
         PhysNodeKind::FileSink {
             input, file_type, ..
         } => match file_type {
@@ -273,7 +277,7 @@ fn visualize_plan_rec(
             #[allow(unreachable_patterns)]
             _ => todo!(),
         },
-        PhysNodeKind::PartitionSink {
+        PhysNodeKind::PartitionedSink {
             input,
             file_type,
             variant,
@@ -306,14 +310,50 @@ fn visualize_plan_rec(
             let mut label = String::new();
             label.push_str("in-memory-map");
             if let Some(format_str) = format_str {
-                label.push('\n');
+                label.write_str("\\n").unwrap();
 
                 let mut f = EscapeLabel(&mut label);
-                write!(f, "{format_str}").unwrap();
+                f.write_str(format_str).unwrap();
             }
             (label, from_ref(input))
         },
-        PhysNodeKind::Map { input, map: _ } => ("map".to_string(), from_ref(input)),
+        PhysNodeKind::Map {
+            input,
+            map: _,
+            format_str,
+        } => {
+            let mut label = String::new();
+            label.push_str("map");
+            if let Some(format_str) = format_str {
+                label.push_str("\\n");
+
+                let mut f = EscapeLabel(&mut label);
+                f.write_str(format_str).unwrap();
+            }
+            (label, from_ref(input))
+        },
+        PhysNodeKind::SortedGroupBy {
+            input,
+            key,
+            aggs,
+            slice,
+        } => {
+            let mut s = String::new();
+            s.push_str("sorted-group-by\\n");
+            let f = &mut s;
+            write!(f, "key: {key}\\n").unwrap();
+            if let Some((offset, length)) = slice {
+                write!(f, "slice: {offset}, {length}\\n").unwrap();
+            }
+            write!(
+                f,
+                "aggs:\\n{}",
+                fmt_exprs_to_label(aggs, expr_arena, FormatExprStyle::Select)
+            )
+            .unwrap();
+
+            (s, from_ref(input))
+        },
         PhysNodeKind::Sort {
             input,
             by_column,
@@ -365,6 +405,10 @@ fn visualize_plan_rec(
                 &[*input][..],
             )
         },
+        PhysNodeKind::GatherEvery { input, n, offset } => (
+            format!("gather_every\\nn: {n}, offset: {offset}"),
+            &[*input][..],
+        ),
         PhysNodeKind::Rle(input) => ("rle".to_owned(), &[*input][..]),
         PhysNodeKind::RleId(input) => ("rle_id".to_owned(), &[*input][..]),
         PhysNodeKind::PeakMinMax { input, is_peak_max } => (
@@ -393,12 +437,14 @@ fn visualize_plan_rec(
             row_index,
             pre_slice,
             predicate,
+            predicate_file_skip_applied: _,
             hive_parts,
             include_file_paths,
             cast_columns_policy: _,
             missing_columns_policy: _,
             forbid_extra_columns: _,
             deletion_files,
+            table_statistics: _,
             file_schema: _,
         } => {
             let mut out = format!("multi-scan[{}]", file_reader_builder.reader_name());
@@ -467,6 +513,94 @@ fn visualize_plan_rec(
             ),
             from_ref(input),
         ),
+        #[cfg(feature = "dynamic_group_by")]
+        PhysNodeKind::DynamicGroupBy {
+            input,
+            options,
+            aggs,
+            slice,
+        } => {
+            use polars_time::prelude::{Label, StartBy};
+
+            let DynamicGroupOptions {
+                index_column,
+                every,
+                period,
+                offset,
+                label,
+                include_boundaries,
+                closed_window,
+                start_by,
+            } = options;
+            let mut s = String::new();
+            let f = &mut s;
+            f.write_str("dynamic-group-by\\n").unwrap();
+            write!(f, "index column: {index_column}\\n").unwrap();
+            write!(f, "every: {every}").unwrap();
+            if every != period {
+                write!(f, ", period: {period}").unwrap();
+            }
+            if !offset.is_zero() {
+                write!(f, ", offset: {offset}").unwrap();
+            }
+            f.write_str("\\n").unwrap();
+            if *label != Label::Left {
+                write!(f, "label: {}\\n", <&'static str>::from(label)).unwrap();
+            }
+            if *include_boundaries {
+                write!(f, "include_boundaries: true\\n").unwrap();
+            }
+            if *start_by != StartBy::WindowBound {
+                write!(f, "start_by: {}\\n", <&'static str>::from(start_by)).unwrap();
+            }
+            if *closed_window != ClosedWindow::Left {
+                write!(
+                    f,
+                    "closed_window: {}\\n",
+                    <&'static str>::from(closed_window)
+                )
+                .unwrap();
+            }
+            if let Some((offset, length)) = slice {
+                write!(f, "slice: {offset}, {length}\\n").unwrap();
+            }
+            write!(
+                f,
+                "aggs:\\n{}",
+                fmt_exprs_to_label(aggs, expr_arena, FormatExprStyle::Select)
+            )
+            .unwrap();
+
+            (s, from_ref(input))
+        },
+        #[cfg(feature = "dynamic_group_by")]
+        PhysNodeKind::RollingGroupBy {
+            input,
+            index_column,
+            period,
+            offset,
+            closed,
+            slice,
+            aggs,
+        } => {
+            let mut s = String::new();
+            let f = &mut s;
+            f.write_str("rolling-group-by\\n").unwrap();
+            write!(f, "index column: {index_column}\\n").unwrap();
+            write!(f, "period: {period}, offset: {offset}\\n").unwrap();
+            write!(f, "closed: {}\\n", <&'static str>::from(*closed)).unwrap();
+            if let Some((offset, length)) = slice {
+                write!(f, "slice: {offset}, {length}\\n").unwrap();
+            }
+            write!(
+                f,
+                "aggs:\\n{}",
+                fmt_exprs_to_label(aggs, expr_arena, FormatExprStyle::Select)
+            )
+            .unwrap();
+
+            (s, from_ref(input))
+        },
         PhysNodeKind::InMemoryJoin {
             input_left,
             input_right,
@@ -544,6 +678,12 @@ fn visualize_plan_rec(
             input_left,
             input_right,
         } => ("merge-sorted".to_string(), &[*input_left, *input_right][..]),
+        #[cfg(feature = "ewma")]
+        PhysNodeKind::EwmMean { input, options: _ } => ("ewm-mean".to_string(), &[*input][..]),
+        #[cfg(feature = "ewma")]
+        PhysNodeKind::EwmVar { input, options: _ } => ("ewm-var".to_string(), &[*input][..]),
+        #[cfg(feature = "ewma")]
+        PhysNodeKind::EwmStd { input, options: _ } => ("ewm-std".to_string(), &[*input][..]),
     };
 
     let node_id = node_key.data().as_ffi();

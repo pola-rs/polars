@@ -88,7 +88,7 @@ impl DataFrame {
                 };
                 Ok(GroupsType::Slice {
                     groups,
-                    rolling: false,
+                    overlapping: false,
                 })
             } else {
                 let rows = if multithreaded {
@@ -274,8 +274,11 @@ impl<'a> GroupBy<'a> {
                             };
                             out
                         },
-                        GroupsType::Slice { groups, rolling } => {
-                            if *rolling && !groups.is_empty() {
+                        GroupsType::Slice {
+                            groups,
+                            overlapping,
+                        } => {
+                            if *overlapping && !groups.is_empty() {
                                 // Groups can be sliced.
                                 let offset = groups[0][0];
                                 let [upper_offset, upper_len] = groups[groups.len() - 1];
@@ -871,7 +874,10 @@ pub enum GroupByMethod {
     Median,
     Mean,
     First,
+    FirstNonNull,
     Last,
+    LastNonNull,
+    Item { allow_empty: bool },
     Sum,
     Groups,
     NUnique,
@@ -893,7 +899,10 @@ impl Display for GroupByMethod {
             Median => "median",
             Mean => "mean",
             First => "first",
+            FirstNonNull => "first_non_null",
             Last => "last",
+            LastNonNull => "last_non_null",
+            Item { .. } => "item",
             Sum => "sum",
             Groups => "groups",
             NUnique => "n_unique",
@@ -918,7 +927,10 @@ pub fn fmt_group_by_column(name: &str, method: GroupByMethod) -> PlSmallStr {
         Median => format_pl_smallstr!("{name}_median"),
         Mean => format_pl_smallstr!("{name}_mean"),
         First => format_pl_smallstr!("{name}_first"),
+        FirstNonNull => format_pl_smallstr!("{name}_first_non_null"),
         Last => format_pl_smallstr!("{name}_last"),
+        LastNonNull => format_pl_smallstr!("{name}_last_non_null"),
+        Item { .. } => format_pl_smallstr!("{name}_item"),
         Sum => format_pl_smallstr!("{name}_sum"),
         Groups => PlSmallStr::from_static("groups"),
         NUnique => format_pl_smallstr!("{name}_n_unique"),

@@ -98,7 +98,7 @@ pub mod builder {
 const ROW_COUNT_OVERFLOW_ERR: PolarsError = PolarsError::ComputeError(ErrString::new_static(
     "\
 IPC file produces more than 2^32 rows; \
-consider compiling with polars-bigidx feature (polars-u64-idx package on python)",
+consider compiling with polars-bigidx feature (pip install polars[rt64])",
 ));
 
 struct IpcFileReader {
@@ -223,17 +223,17 @@ impl FileReader for IpcFileReader {
             None
         };
 
-        if let Some(mut n_rows_in_file_tx) = n_rows_in_file_tx {
-            _ = n_rows_in_file_tx.try_send(self._n_rows_in_file()?);
+        if let Some(n_rows_in_file_tx) = n_rows_in_file_tx {
+            _ = n_rows_in_file_tx.send(self._n_rows_in_file()?);
         }
 
-        if let Some(mut row_position_on_end_tx) = row_position_on_end_tx {
+        if let Some(row_position_on_end_tx) = row_position_on_end_tx {
             _ = row_position_on_end_tx
-                .try_send(self._row_position_after_slice(normalized_pre_slice.clone())?);
+                .send(self._row_position_after_slice(normalized_pre_slice.clone())?);
         }
 
-        if let Some(mut file_schema_tx) = file_schema_tx {
-            _ = file_schema_tx.try_send(file_schema_pl.clone());
+        if let Some(file_schema_tx) = file_schema_tx {
+            _ = file_schema_tx.send(file_schema_pl.clone());
         }
 
         if normalized_pre_slice.as_ref().is_some_and(|x| x.len() == 0) {

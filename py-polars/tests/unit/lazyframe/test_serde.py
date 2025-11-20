@@ -134,6 +134,7 @@ def custom_function(x: pl.Series) -> pl.Series:
     return x + 1
 
 
+@pytest.mark.may_fail_cloud  # reason: cloud does not have access to this scope
 @pytest.mark.filterwarnings("ignore::polars.exceptions.PolarsInefficientMapWarning")
 def test_lf_serde_version_specific_named_function() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3]}).select(
@@ -154,3 +155,17 @@ def test_lf_serde_map_batches_on_lazyframe() -> None:
     result = pl.LazyFrame.deserialize(io.BytesIO(ser))
     expected = pl.LazyFrame({"a": [2, 3, 4]})
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("max_byte_slice_len", [1, 2, 3, 100, 4294967295])
+def test_lf_serde_chunked_bytes(
+    monkeypatch: pytest.MonkeyPatch, max_byte_slice_len: int
+) -> None:
+    monkeypatch.setenv(
+        "POLARS_SERIALIZE_LAZYFRAME_MAX_BYTE_SLICE_LEN", str(max_byte_slice_len)
+    )
+    lf = pl.LazyFrame({"a": range(5000)})
+
+    b = lf.serialize()
+
+    assert_frame_equal(pl.LazyFrame.deserialize(io.BytesIO(b)).collect(), lf.collect())

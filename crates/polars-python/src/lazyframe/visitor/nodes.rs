@@ -21,7 +21,7 @@ fn scan_type_to_pyobject(
     py: Python<'_>,
     scan_type: &FileScanIR,
     cloud_options: &Option<CloudOptions>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     match scan_type {
         #[cfg(feature = "csv")]
         FileScanIR::Csv { options } => {
@@ -47,6 +47,8 @@ fn scan_type_to_pyobject(
                 .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
             Ok(("ndjson", options).into_py_any(py)?)
         },
+        #[cfg(feature = "scan_lines")]
+        FileScanIR::Lines { name } => Ok(("lines", name.as_str()).into_py_any(py)?),
         FileScanIR::PythonDataset { .. } => {
             Err(PyNotImplementedError::new_err("python dataset scan"))
         },
@@ -58,7 +60,7 @@ fn scan_type_to_pyobject(
 /// Scan a table with an optional predicate from a python function
 pub struct PythonScan {
     #[pyo3(get)]
-    options: PyObject,
+    options: Py<PyAny>,
 }
 
 #[pyclass(frozen)]
@@ -122,7 +124,7 @@ impl PyFileOptions {
         self.inner.rechunk
     }
     #[getter]
-    fn hive_options(&self, _py: Python<'_>) -> PyResult<PyObject> {
+    fn hive_options(&self, _py: Python<'_>) -> PyResult<Py<PyAny>> {
         Err(PyNotImplementedError::new_err("hive options"))
     }
     #[getter]
@@ -134,7 +136,7 @@ impl PyFileOptions {
     /// * None
     /// * ("iceberg-position-delete", dict[int, list[str]])
     #[getter]
-    fn deletion_files(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn deletion_files(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         Ok(match &self.inner.deletion_files {
             None => py.None().into_any(),
 
@@ -157,7 +159,7 @@ impl PyFileOptions {
     /// * None
     /// * ("iceberg-column-mapping", <unimplemented>)
     #[getter]
-    fn column_mapping(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn column_mapping(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         Ok(match &self.inner.column_mapping {
             None => py.None().into_any(),
 
@@ -170,15 +172,15 @@ impl PyFileOptions {
 /// Scan a table from file
 pub struct Scan {
     #[pyo3(get)]
-    paths: PyObject,
+    paths: Py<PyAny>,
     #[pyo3(get)]
-    file_info: PyObject,
+    file_info: Py<PyAny>,
     #[pyo3(get)]
     predicate: Option<PyExprIR>,
     #[pyo3(get)]
     file_options: PyFileOptions,
     #[pyo3(get)]
-    scan_type: PyObject,
+    scan_type: Py<PyAny>,
 }
 
 #[pyclass(frozen)]
@@ -187,7 +189,7 @@ pub struct DataFrameScan {
     #[pyo3(get)]
     df: PyDataFrame,
     #[pyo3(get)]
-    projection: PyObject,
+    projection: Py<PyAny>,
     #[pyo3(get)]
     selection: Option<PyExprIR>,
 }
@@ -246,7 +248,7 @@ pub struct GroupBy {
     #[pyo3(get)]
     maintain_order: bool,
     #[pyo3(get)]
-    options: PyObject,
+    options: Py<PyAny>,
 }
 
 #[pyclass(frozen)]
@@ -261,7 +263,7 @@ pub struct Join {
     #[pyo3(get)]
     right_on: Vec<PyExprIR>,
     #[pyo3(get)]
-    options: PyObject,
+    options: Py<PyAny>,
 }
 
 #[pyclass(frozen)]
@@ -301,7 +303,7 @@ pub struct Distinct {
     #[pyo3(get)]
     input: usize,
     #[pyo3(get)]
-    options: PyObject,
+    options: Py<PyAny>,
 }
 #[pyclass(frozen)]
 /// A (User Defined) Function
@@ -309,7 +311,7 @@ pub struct MapFunction {
     #[pyo3(get)]
     input: usize,
     #[pyo3(get)]
-    function: PyObject,
+    function: Py<PyAny>,
 }
 #[pyclass(frozen)]
 pub struct Union {
@@ -340,10 +342,10 @@ pub struct Sink {
     #[pyo3(get)]
     input: usize,
     #[pyo3(get)]
-    payload: PyObject,
+    payload: Py<PyAny>,
 }
 
-pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
+pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
     match plan {
         IR::PythonScan { options } => {
             let python_src = match options.python_source {
@@ -403,6 +405,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             file_info: _,
             hive_parts: _,
             predicate,
+            predicate_file_skip_applied,
             output_schema: _,
             scan_type,
             unified_scan_args,
@@ -425,7 +428,10 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                 },
                 // TODO: file info
                 file_info: py.None(),
-                predicate: predicate.as_ref().map(|e| e.into()),
+                predicate: predicate
+                    .as_ref()
+                    .filter(|_| *predicate_file_skip_applied != Some(true))
+                    .map(|e| e.into()),
                 file_options: PyFileOptions {
                     inner: (**unified_scan_args).clone(),
                 },
@@ -605,15 +611,22 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     streamable: _,
                     fmt_str: _,
                 } => return Err(PyNotImplementedError::new_err("opaque rust mapfunction")),
-                FunctionIR::Unnest { columns } => (
+                FunctionIR::Unnest { columns, separator } => (
                     "unnest",
                     columns.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+                    separator.as_ref().map(|s| s.to_string()),
                 )
                     .into_py_any(py)?,
                 FunctionIR::Rechunk => ("rechunk",).into_py_any(py)?,
-                FunctionIR::Explode { columns, schema: _ } => (
+                FunctionIR::Explode {
+                    columns,
+                    options,
+                    schema: _,
+                } => (
                     "explode",
                     columns.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+                    options.empty_as_null,
+                    options.keep_nulls,
                 )
                     .into_py_any(py)?,
                 #[cfg(feature = "pivot")]
@@ -659,6 +672,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
 
                     ("fast_count", sources, scan_type, alias).into_py_any(py)?
                 },
+                FunctionIR::Hint(_) => return Err(PyNotImplementedError::new_err("hint ir")),
             },
         }
         .into_py_any(py),

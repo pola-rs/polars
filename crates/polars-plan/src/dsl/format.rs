@@ -1,4 +1,4 @@
-use std::fmt;
+use std::fmt::{self, Write};
 
 use crate::prelude::*;
 
@@ -12,41 +12,54 @@ impl fmt::Debug for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Expr::*;
         match self {
-            Window {
+            Element => f.write_str("element()"),
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling {
+                function,
+                index_column,
+                period,
+                offset,
+                closed_window: _,
+            } => {
+                write!(
+                    f,
+                    "{:?}.rolling(by='{}', offset={}, period={})",
+                    function, index_column, offset, period
+                )
+            },
+            Over {
                 function,
                 partition_by,
                 order_by,
-                options,
-            } => match options {
-                #[cfg(feature = "dynamic_group_by")]
-                WindowType::Rolling(options) => {
+                mapping: _,
+            } => {
+                if let Some((order_by, _)) = order_by {
                     write!(
                         f,
-                        "{:?}.rolling(by='{}', offset={}, period={})",
-                        function, options.index_column, options.offset, options.period
+                        "{function:?}.over(partition_by: {partition_by:?}, order_by: {order_by:?})"
                     )
-                },
-                _ => {
-                    if let Some((order_by, _)) = order_by {
-                        write!(
-                            f,
-                            "{function:?}.over(partition_by: {partition_by:?}, order_by: {order_by:?})"
-                        )
-                    } else {
-                        write!(f, "{function:?}.over({partition_by:?})")
-                    }
-                },
+                } else {
+                    write!(f, "{function:?}.over({partition_by:?})")
+                }
             },
             DataTypeFunction(dtype_fn) => fmt::Debug::fmt(dtype_fn, f),
             Len => write!(f, "len()"),
             Explode {
                 input: expr,
-                skip_empty: false,
-            } => write!(f, "{expr:?}.explode()"),
-            Explode {
-                input: expr,
-                skip_empty: true,
-            } => write!(f, "{expr:?}.explode(skip_empty)"),
+                options,
+            } => {
+                write!(f, "{expr:?}.explode(")?;
+                if !options.empty_as_null {
+                    f.write_str("empty_as_null=false")?;
+                }
+                if !options.keep_nulls {
+                    if options.empty_as_null {
+                        f.write_str(", ")?;
+                    }
+                    f.write_str("keep_nulls=false")?;
+                }
+                f.write_char(')')
+            },
             Alias(expr, name) => write!(f, "{expr:?}.alias(\"{name}\")"),
             Column(name) => write!(f, "col(\"{name}\")"),
             Literal(v) => write!(f, "{v:?}"),
@@ -111,7 +124,16 @@ impl fmt::Debug for Expr {
                     Median(expr) => write!(f, "{expr:?}.median()"),
                     Mean(expr) => write!(f, "{expr:?}.mean()"),
                     First(expr) => write!(f, "{expr:?}.first()"),
+                    FirstNonNull(expr) => write!(f, "{expr:?}.first_non_null()"),
                     Last(expr) => write!(f, "{expr:?}.last()"),
+                    LastNonNull(expr) => write!(f, "{expr:?}.last_non_null()"),
+                    Item { input, allow_empty } => {
+                        if *allow_empty {
+                            write!(f, "{input:?}.item(allow_empty=true)")
+                        } else {
+                            write!(f, "{input:?}.item()")
+                        }
+                    },
                     Implode(expr) => write!(f, "{expr:?}.list()"),
                     NUnique(expr) => write!(f, "{expr:?}.n_unique()"),
                     Sum(expr) => write!(f, "{expr:?}.sum()"),
@@ -178,6 +200,14 @@ impl fmt::Debug for Expr {
                 variant,
             } => match variant {
                 EvalVariant::List => write!(f, "{input:?}.list.eval({evaluation:?})"),
+                EvalVariant::ListAgg => write!(f, "{input:?}.list.agg({evaluation:?})"),
+                EvalVariant::Array { as_list: false } => {
+                    write!(f, "{input:?}.arr.eval({evaluation:?})")
+                },
+                EvalVariant::Array { as_list: true } => {
+                    write!(f, "{input:?}.arr.eval({evaluation:?}, as_list=true)")
+                },
+                EvalVariant::ArrayAgg => write!(f, "{input:?}.arr.agg({evaluation:?})"),
                 EvalVariant::Cumulative { min_samples } => write!(
                     f,
                     "{input:?}.Cumulative_eval({evaluation:?}, min_samples={min_samples}"
@@ -190,13 +220,24 @@ impl fmt::Debug for Expr {
             } => write!(f, "{input:?}.slice(offset={offset:?}, length={length:?})",),
             KeepName(e) => write!(f, "{e:?}.name.keep()"),
             RenameAlias { expr, function } => match function {
-                RenameAliasFn::Prefix(s) => write!(f, "{expr:?}.prefix({s})"),
-                RenameAliasFn::Suffix(s) => write!(f, "{expr:?}.suffix({s})"),
-                RenameAliasFn::ToLowercase => write!(f, "{expr:?}.to_lowercase()"),
-                RenameAliasFn::ToUppercase => write!(f, "{expr:?}.to_uppercase()"),
-                #[cfg(feature = "python")]
-                RenameAliasFn::Python(_) => write!(f, "{expr:?}.rename_alias()"),
-                RenameAliasFn::Rust(_) => write!(f, "{expr:?}.rename_alias()"),
+                RenameAliasFn::Prefix(s) => write!(f, "{expr:?}.name.prefix({s})"),
+                RenameAliasFn::Suffix(s) => write!(f, "{expr:?}.name.suffix({s})"),
+                RenameAliasFn::ToLowercase => write!(f, "{expr:?}.name.to_lowercase()"),
+                RenameAliasFn::ToUppercase => write!(f, "{expr:?}.name.to_uppercase()"),
+                RenameAliasFn::Map(_) => write!(f, "{expr:?}.name.map()"),
+                RenameAliasFn::Replace {
+                    pattern,
+                    value,
+                    literal: false,
+                } => write!(f, "{expr:?}.replace(\"{pattern}\", \"{value}\")"),
+                RenameAliasFn::Replace {
+                    pattern,
+                    value,
+                    literal: true,
+                } => write!(
+                    f,
+                    "{expr:?}.replace(\"{pattern}\", \"{value}\", literal=true)"
+                ),
             },
             Selector(s) => fmt::Display::fmt(s, f),
             #[cfg(feature = "dtype-struct")]

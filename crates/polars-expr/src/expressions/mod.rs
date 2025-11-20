@@ -5,6 +5,7 @@ mod binary;
 mod cast;
 mod column;
 mod count;
+mod element;
 mod eval;
 mod filter;
 mod gather;
@@ -25,11 +26,13 @@ pub(crate) use aggregation::*;
 pub(crate) use alias::*;
 pub(crate) use apply::*;
 use arrow::array::ArrayRef;
+use arrow::bitmap::MutableBitmap;
 use arrow::legacy::utils::CustomIterTools;
 pub(crate) use binary::*;
 pub(crate) use cast::*;
 pub(crate) use column::*;
 pub(crate) use count::*;
+pub(crate) use element::*;
 pub(crate) use eval::*;
 pub(crate) use filter::*;
 pub(crate) use gather::*;
@@ -79,11 +82,28 @@ impl AggState {
     fn is_scalar(&self) -> bool {
         matches!(self, Self::AggregatedScalar(_))
     }
+
+    pub fn name(&self) -> &PlSmallStr {
+        match self {
+            AggState::AggregatedList(s)
+            | AggState::NotAggregated(s)
+            | AggState::LiteralScalar(s)
+            | AggState::AggregatedScalar(s) => s.name(),
+        }
+    }
+
+    pub fn flat_dtype(&self) -> &DataType {
+        match self {
+            AggState::AggregatedList(s) => s.dtype().inner_dtype().unwrap(),
+            AggState::NotAggregated(s)
+            | AggState::LiteralScalar(s)
+            | AggState::AggregatedScalar(s) => s.dtype(),
+        }
+    }
 }
 
 // lazy update strategy
-#[cfg_attr(debug_assertions, derive(Debug))]
-#[derive(PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub(crate) enum UpdateGroups {
     /// don't update groups
     No,
@@ -101,16 +121,19 @@ pub struct AggregationContext<'a> {
     /// Can be in one of two states
     /// 1. already aggregated as list
     /// 2. flat (still needs the grouptuples to aggregate)
-    state: AggState,
+    ///
+    /// When aggregation state is LiteralScalar or AggregatedScalar, the group values are not
+    /// related to the state data anymore. The number of groups is still accurate.
+    pub(crate) state: AggState,
     /// group tuples for AggState
-    groups: Cow<'a, GroupPositions>,
+    pub(crate) groups: Cow<'a, GroupPositions>,
     /// This is used to determined if we need to update the groups
     /// into a sorted groups. We do this lazily, so that this work only is
     /// done when the groups are needed
-    update_groups: UpdateGroups,
+    pub(crate) update_groups: UpdateGroups,
     /// This is true when the Series and Groups still have all
     /// their original values. Not the case when filtered
-    original_len: bool,
+    pub(crate) original_len: bool,
 }
 
 impl<'a> AggregationContext<'a> {
@@ -139,13 +162,33 @@ impl<'a> AggregationContext<'a> {
                         self.groups = Cow::Owned(
                             GroupsType::Slice {
                                 groups,
-                                rolling: false,
+                                overlapping: false,
                             }
                             .into_sliceable(),
                         )
                     },
-                    // sliced groups are already in correct order
-                    GroupsType::Slice { .. } => {},
+                    // sliced groups are already in correct order,
+                    // Update offsets in the case of overlapping groups
+                    // e.g. [0,2], [1,3], [2,4] becomes [0,2], [2,3], [5,4]
+                    GroupsType::Slice { groups, .. } => {
+                        // unroll
+                        let groups = groups
+                            .iter()
+                            .map(|g| {
+                                let len = g[1];
+                                let new = [offset, g[1]];
+                                offset += len;
+                                new
+                            })
+                            .collect();
+                        self.groups = Cow::Owned(
+                            GroupsType::Slice {
+                                groups,
+                                overlapping: false,
+                            }
+                            .into_sliceable(),
+                        )
+                    },
                 }
                 self.update_groups = UpdateGroups::No;
             },
@@ -261,7 +304,7 @@ impl<'a> AggregationContext<'a> {
                 self.groups = Cow::Owned(
                     GroupsType::Slice {
                         groups,
-                        rolling: false,
+                        overlapping: false,
                     }
                     .into_sliceable(),
                 );
@@ -288,7 +331,7 @@ impl<'a> AggregationContext<'a> {
                 self.groups = Cow::Owned(
                     GroupsType::Slice {
                         groups,
-                        rolling: false,
+                        overlapping: false,
                     }
                     .into_sliceable(),
                 );
@@ -322,7 +365,7 @@ impl<'a> AggregationContext<'a> {
         expr: Option<&Expr>,
         // if the applied function was a `map` instead of an `apply`
         // this will keep functions applied over literals as literals: F(lit) = lit
-        mapped: bool,
+        preserve_literal: bool,
         returns_scalar: bool,
     ) -> PolarsResult<&mut Self> {
         self.state = match (aggregated, column.dtype()) {
@@ -349,7 +392,7 @@ impl<'a> AggregationContext<'a> {
                     // retrieve the length before grouping, so it stays  in this state.
                     AggState::AggregatedScalar(_) => AggState::AggregatedScalar(column),
                     // applying a function on a literal, keeps the literal state
-                    AggState::LiteralScalar(_) if column.len() == 1 && mapped => {
+                    AggState::LiteralScalar(_) if column.len() == 1 && preserve_literal => {
                         AggState::LiteralScalar(column)
                     },
                     _ => AggState::NotAggregated(column.into_column()),
@@ -377,20 +420,14 @@ impl<'a> AggregationContext<'a> {
         self
     }
 
-    pub(crate) fn _implode_no_agg(&mut self) {
-        match self.state.clone() {
-            AggState::NotAggregated(_) => {
-                let _ = self.aggregated();
-                let AggState::AggregatedList(s) = self.state.clone() else {
-                    unreachable!()
-                };
-                self.state = AggState::AggregatedScalar(s);
-            },
-            AggState::AggregatedList(s) => {
-                self.state = AggState::AggregatedScalar(s);
-            },
-            _ => unreachable!("should only be called in non-agg/list-agg state by aggregation.rs"),
-        }
+    /// Ensure that each group is represented by contiguous values in memory.
+    pub fn normalize_values(&mut self) {
+        self.set_original_len(false);
+        self.groups();
+        let values = self.flat_naive();
+        let values = unsafe { values.agg_list(&self.groups) };
+        self.state = AggState::AggregatedList(values);
+        self.with_update_groups(UpdateGroups::WithGroupsLen);
     }
 
     /// Aggregate into `ListChunked`.
@@ -433,7 +470,6 @@ impl<'a> AggregationContext<'a> {
             },
             AggState::AggregatedList(s) | AggState::AggregatedScalar(s) => s.into_column(),
             AggState::LiteralScalar(s) => {
-                self.groups();
                 let rows = self.groups.len();
                 let s = s.implode().unwrap();
                 let s = s.new_from_index(0, rows);
@@ -479,7 +515,12 @@ impl<'a> AggregationContext<'a> {
             AggState::AggregatedScalar(c) => (c, groups),
             AggState::LiteralScalar(c) => (c, groups),
             AggState::AggregatedList(c) => {
-                let flattened = c.explode(true).unwrap();
+                let flattened = c
+                    .explode(ExplodeOptions {
+                        empty_as_null: false,
+                        keep_nulls: true,
+                    })
+                    .unwrap();
                 let groups = groups.into_owned();
                 // unroll the possible flattened state
                 // say we have groups with overlapping windows:
@@ -519,21 +560,39 @@ impl<'a> AggregationContext<'a> {
         match &self.state {
             AggState::NotAggregated(c) => Cow::Borrowed(c),
             AggState::AggregatedList(c) => {
-                #[cfg(debug_assertions)]
-                {
-                    // panic so we find cases where we accidentally explode overlapping groups
-                    // we don't want this as this can create a lot of data
-                    if let GroupsType::Slice { rolling: true, .. } = self.groups.as_ref().as_ref() {
-                        panic!(
-                            "implementation error, polars should not hit this branch for overlapping groups"
+                if cfg!(debug_assertions) {
+                    // Warning, so we find cases where we accidentally explode overlapping groups
+                    // We don't want this as this can create a lot of data
+                    if let GroupsType::Slice {
+                        overlapping: true, ..
+                    } = self.groups.as_ref().as_ref()
+                    {
+                        polars_warn!(
+                            "performance - an aggregated list with overlapping groups may consume excessive memory"
                         )
                     }
                 }
 
-                Cow::Owned(c.explode(false).unwrap())
+                // We should not insert nulls, otherwise the offsets in the groups will not be correct.
+                Cow::Owned(
+                    c.explode(ExplodeOptions {
+                        empty_as_null: false,
+                        keep_nulls: true,
+                    })
+                    .unwrap(),
+                )
             },
             AggState::AggregatedScalar(c) => Cow::Borrowed(c),
             AggState::LiteralScalar(c) => Cow::Borrowed(c),
+        }
+    }
+
+    fn flat_naive_length(&self) -> usize {
+        match &self.state {
+            AggState::NotAggregated(c) => c.len(),
+            AggState::AggregatedList(c) => c.list().unwrap().inner_length(),
+            AggState::AggregatedScalar(c) => c.len(),
+            AggState::LiteralScalar(_) => 1,
         }
     }
 
@@ -547,12 +606,98 @@ impl<'a> AggregationContext<'a> {
         };
         std::mem::take(c)
     }
+
+    /// Do the group indices reference all values in the aggregation state.
+    fn groups_cover_all_values(&mut self) -> bool {
+        if matches!(
+            self.state,
+            AggState::LiteralScalar(_) | AggState::AggregatedScalar(_)
+        ) {
+            return true;
+        }
+
+        let num_values = self.flat_naive_length();
+        match self.groups().as_ref().as_ref() {
+            GroupsType::Idx(groups) => {
+                let mut seen = MutableBitmap::from_len_zeroed(num_values);
+                for (_, g) in groups {
+                    for i in g.iter() {
+                        unsafe { seen.set_unchecked(*i as usize, true) };
+                    }
+                }
+                seen.unset_bits() == 0
+            },
+            GroupsType::Slice {
+                groups,
+                overlapping: true,
+            } => {
+                // @NOTE: Slice groups are sorted by their `start` value.
+                let mut offset = 0;
+                let mut covers_all = true;
+                for [start, length] in groups {
+                    covers_all &= *start <= offset;
+                    offset = start + length;
+                }
+                covers_all && offset == num_values as IdxSize
+            },
+
+            // If we don't have overlapping data, we can just do a count.
+            GroupsType::Slice {
+                groups,
+                overlapping: false,
+            } => groups.iter().map(|[_, l]| *l as usize).sum::<usize>() == num_values,
+        }
+    }
+
+    /// Fixes groups for `AggregatedScalar` and `LiteralScalar` so that they point to valid
+    /// data elements in the `AggState` values.
+    fn set_groups_for_undefined_agg_states(&mut self) {
+        match &self.state {
+            AggState::AggregatedList(_) | AggState::NotAggregated(_) => {},
+            AggState::AggregatedScalar(c) => {
+                assert_eq!(self.update_groups, UpdateGroups::No);
+                self.groups = Cow::Owned(
+                    GroupsType::Slice {
+                        groups: (0..c.len() as IdxSize).map(|i| [i, 1]).collect(),
+                        overlapping: false,
+                    }
+                    .into_sliceable(),
+                );
+            },
+            AggState::LiteralScalar(c) => {
+                assert_eq!(c.len(), 1);
+                assert_eq!(self.update_groups, UpdateGroups::No);
+                self.groups = Cow::Owned(
+                    GroupsType::Slice {
+                        groups: vec![[0, 1]; self.groups.len()],
+                        overlapping: true,
+                    }
+                    .into_sliceable(),
+                );
+            },
+        }
+    }
+
+    pub fn into_static(&self) -> AggregationContext<'static> {
+        let groups: GroupPositions = GroupPositions::to_owned(&self.groups);
+        let groups: Cow<'static, GroupPositions> = Cow::Owned(groups);
+        AggregationContext {
+            state: self.state.clone(),
+            groups,
+            update_groups: self.update_groups,
+            original_len: self.original_len,
+        }
+    }
 }
 
 /// Take a DataFrame and evaluate the expressions.
 /// Implement this for Column, lt, eq, etc
 pub trait PhysicalExpr: Send + Sync {
     fn as_expression(&self) -> Option<&Expr> {
+        None
+    }
+
+    fn as_column(&self) -> Option<PlSmallStr> {
         None
     }
 
@@ -591,11 +736,6 @@ pub trait PhysicalExpr: Send + Sync {
 
     /// Get the output field of this expr
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field>;
-
-    /// Convert to a partitioned aggregator.
-    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
-        None
-    }
 
     fn is_literal(&self) -> bool {
         false
@@ -642,8 +782,14 @@ impl PhysicalIoExpr for PhysicalIoHelper {
 
 pub fn phys_expr_to_io_expr(expr: Arc<dyn PhysicalExpr>) -> Arc<dyn PhysicalIoExpr> {
     let has_window_function = if let Some(expr) = expr.as_expression() {
-        expr.into_iter()
-            .any(|expr| matches!(expr, Expr::Window { .. }))
+        expr.into_iter().any(|expr| {
+            #[cfg(feature = "dynamic_group_by")]
+            if matches!(expr, Expr::Rolling { .. }) {
+                return true;
+            }
+
+            matches!(expr, Expr::Over { .. })
+        })
     } else {
         false
     };
@@ -651,30 +797,4 @@ pub fn phys_expr_to_io_expr(expr: Arc<dyn PhysicalExpr>) -> Arc<dyn PhysicalIoEx
         expr,
         has_window_function,
     }) as Arc<dyn PhysicalIoExpr>
-}
-
-pub trait PartitionedAggregation: Send + Sync + PhysicalExpr {
-    /// This is called in partitioned aggregation.
-    /// Partitioned results may differ from aggregation results.
-    /// For instance, for a `mean` operation a partitioned result
-    /// needs to return the `sum` and the `valid_count` (length - null count).
-    ///
-    /// A final aggregation can then take the sum of sums and sum of valid_counts
-    /// to produce a final mean.
-    #[allow(clippy::ptr_arg)]
-    fn evaluate_partitioned(
-        &self,
-        df: &DataFrame,
-        groups: &GroupPositions,
-        state: &ExecutionState,
-    ) -> PolarsResult<Column>;
-
-    /// Called to merge all the partitioned results in a final aggregate.
-    #[allow(clippy::ptr_arg)]
-    fn finalize(
-        &self,
-        partitioned: Column,
-        groups: &GroupPositions,
-        state: &ExecutionState,
-    ) -> PolarsResult<Column>;
 }

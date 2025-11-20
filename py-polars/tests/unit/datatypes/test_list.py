@@ -320,24 +320,54 @@ def test_list_sum_and_dtypes() -> None:
         (pl.Int16, pl.Int64),
         (pl.Int32, pl.Int32),
         (pl.Int64, pl.Int64),
+        (pl.Int128, pl.Int128),
         (pl.UInt8, pl.Int64),
         (pl.UInt16, pl.Int64),
         (pl.UInt32, pl.UInt32),
         (pl.UInt64, pl.UInt64),
+        (pl.UInt128, pl.UInt128),
+        (pl.Float32, pl.Float32),
+        (pl.Float64, pl.Float64),
     ]:
         df = pl.DataFrame(
-            {"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]]},
-            schema={"a": pl.List(dt_in)},
+            {
+                "a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]],
+                "b": [[None], [1, 2, None], [1, 2, 3, None], [1, 2, 3, 4, None]],
+            },
+            schema={
+                "a": pl.List(dt_in),
+                "b": pl.List(dt_in),
+            },
         )
 
-        summed = df.explode("a").sum()
-        assert summed.dtypes == [dt_out]
-        assert summed.item() == 32
-        assert df.select(pl.col("a").list.sum()).dtypes == [dt_out]
+        assert_frame_equal(
+            df.select("a").explode("a").sum(),
+            pl.DataFrame(pl.Series("a", [32], dtype=dt_out)),
+            check_dtypes=True,
+            check_exact=True,
+        )
+        assert_series_equal(
+            df.get_column("a").list.sum(),
+            pl.Series("a", [1, 6, 10, 15], dtype=dt_out),
+            check_dtypes=True,
+            check_exact=True,
+        )
 
-    assert df.select(pl.col("a").list.sum()).to_dict(as_series=False) == {
-        "a": [1, 6, 10, 15]
-    }
+        # include nulls in the list
+        assert_frame_equal(
+            df.select("b").explode("b").sum(),
+            pl.DataFrame(pl.Series("b", [19], dtype=dt_out)),
+            check_dtypes=True,
+            check_exact=True,
+        )
+        assert_series_equal(
+            df.get_column("b").list.sum(),
+            pl.Series("b", [0, 3, 6, 10], dtype=dt_out),
+            check_dtypes=True,
+            check_exact=True,
+        )
+
+    assert df.select(pl.col("a").list.sum()).dtypes == [dt_out]
 
     # include nulls
     assert pl.DataFrame(
@@ -518,7 +548,7 @@ def test_logical_parallel_list_collect() -> None:
         .explode("Values")
         .unnest("Values")
     )
-    assert out.dtypes == [pl.String, pl.Categorical, pl.UInt32]
+    assert out.dtypes == [pl.String, pl.Categorical, pl.get_index_type()]
     assert out.to_dict(as_series=False) == {
         "Group": ["GroupA", "GroupA"],
         "Values": ["Value1", "Value2"],
