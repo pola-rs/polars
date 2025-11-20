@@ -302,6 +302,10 @@ impl SeriesTrait for SeriesWrap<ExtensionChunked> {
         self.0.storage().arg_unique()
     }
 
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        self.0.storage().unique_id()
+    }
+
     fn as_single_ptr(&mut self) -> PolarsResult<usize> {
         self.0.storage_mut().as_single_ptr()
     }

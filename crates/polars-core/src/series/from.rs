@@ -467,7 +467,12 @@ impl Series {
                 use crate::datatypes::extension::get_extension_type_or_storage;
 
                 for chunk in &mut chunks {
-                    debug_assert!(chunk.dtype() == dtype, "expected chunk dtype to be {:?}, got {:?}", dtype, chunk.dtype());
+                    debug_assert!(
+                        chunk.dtype() == dtype,
+                        "expected chunk dtype to be {:?}, got {:?}",
+                        dtype,
+                        chunk.dtype()
+                    );
                     *chunk.dtype_mut() = ext.inner.clone();
                 }
                 let storage = Series::_try_from_arrow_unchecked_with_md(

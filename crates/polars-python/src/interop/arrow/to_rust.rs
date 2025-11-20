@@ -108,7 +108,7 @@ pub fn to_rust_df(
                 .map(|i| {
                     let array = rb.call_method1("column", (i,))?;
                     let mut arr = array_to_rust(&array)?;
-                    
+
                     // Only the schema contains extension type info, restore.
                     // TODO: nested?
                     let dtype = schema.get_at_index(i).unwrap().1.dtype();
