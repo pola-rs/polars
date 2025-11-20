@@ -1,8 +1,7 @@
 use std::ops::{Add, Div, Mul, Sub};
 
 use arrow::array::PrimitiveArray;
-use arrow::bitmap::MutableBitmap;
-use arrow::bitmap::Bitmap;
+use arrow::bitmap::{Bitmap, MutableBitmap};
 use bytemuck::allocation::zeroed_vec;
 use num_traits::{NumCast, Zero};
 use polars_core::prelude::*;
@@ -225,11 +224,11 @@ where
     // Helper that, given low/high anchors and index bounds, pushes interpolations
     // while skipping indices where `by` is null.
     let mut interpolate_gap = |low_idx: usize,
-                           low: T::Native,
-                           high_idx: usize,
-                           high: T::Native,
-                           out: &mut Vec<T::Native>,
-                           validity: &mut MutableBitmap| {
+                               low: T::Native,
+                               high_idx: usize,
+                               high: T::Native,
+                               out: &mut Vec<T::Native>,
+                               validity: &mut MutableBitmap| {
         // (low_idx, high_idx) interior range
         let start = low_idx + 1;
         let end = high_idx.saturating_sub(1);
@@ -265,12 +264,18 @@ where
             //    we include both endpoints too: [x_low, x_s..=x_e, x_high].
             scratch_x.clear();
             // x_low
-            debug_assert!(is_by_valid(low_idx), "We only interpolate if anchors have non-null `by`");
+            debug_assert!(
+                is_by_valid(low_idx),
+                "We only interpolate if anchors have non-null `by`"
+            );
             scratch_x.push(unsafe { *by_values.get_unchecked(low_idx) });
             // interior x's (valid-by only)
             scratch_x.extend_from_slice(&by_values[s..=e]);
             // x_high
-            debug_assert!(is_by_valid(high_idx), "We only interpolate if anchors have non-null `by`");
+            debug_assert!(
+                is_by_valid(high_idx),
+                "We only interpolate if anchors have non-null `by`"
+            );
             scratch_x.push(unsafe { *by_values.get_unchecked(high_idx) });
 
             // Before calling, the output currently has values up to position (current gap start - 1).
@@ -344,7 +349,6 @@ where
         Ok(ChunkedArray::with_chunk(chunked_arr.name().clone(), array))
     }
 }
-
 
 fn interpolate_impl_by<T, F, I>(
     ca: &ChunkedArray<T>,
@@ -452,7 +456,8 @@ where
     while let Some((idx, next)) = iter.next() {
         if let Some(v) = next {
             // If both anchors have non-null `by`, interpolate the interior.
-            let anchors_ok = unsafe { is_valid(by_valid_opt, low_idx) && is_valid(by_valid_opt, idx) };
+            let anchors_ok =
+                unsafe { is_valid(by_valid_opt, low_idx) && is_valid(by_valid_opt, idx) };
             if anchors_ok {
                 let start = low_idx + 1;
                 let end = idx.saturating_sub(1);
@@ -504,7 +509,6 @@ where
     );
     Ok(ChunkedArray::with_chunk(ca_sorted.name().clone(), array))
 }
-
 
 // // Sort on behalf of user
 // fn interpolate_impl_by<T, F, I>(
