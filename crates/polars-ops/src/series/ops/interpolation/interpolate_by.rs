@@ -381,16 +381,16 @@ where
     let by_valid_opt = by_arr.validity();
 
     #[inline(always)]
-    unsafe fn is_valid(valid: Option<&Bitmap>, idx: usize) -> bool {
+    fn is_valid(valid: Option<&Bitmap>, idx: usize) -> bool {
         match valid {
             None => true,
-            Some(bm) => bm.get_bit_unchecked(idx),
+            Some(bm) => unsafe { bm.get_bit_unchecked(idx) },
         }
     }
 
     // Find first/last non-null y in the *sorted* y.
     let first = ca_sorted.first_non_null().unwrap();
-    let last = ca_sorted.last_non_null().unwrap() + 1;
+    //let last = ca_sorted.last_non_null().unwrap() + 1;
 
     let n = ca_sorted.len();
     // Pre-allocate output (all zeros) and validity (all false).
@@ -456,8 +456,7 @@ where
     while let Some((idx, next)) = iter.next() {
         if let Some(v) = next {
             // If both anchors have non-null `by`, interpolate the interior.
-            let anchors_ok =
-                unsafe { is_valid(by_valid_opt, low_idx) && is_valid(by_valid_opt, idx) };
+            let anchors_ok: bool = is_valid(by_valid_opt, low_idx) && is_valid(by_valid_opt, idx);
             if anchors_ok {
                 let start = low_idx + 1;
                 let end = idx.saturating_sub(1);
@@ -466,7 +465,7 @@ where
                     let mut i = start;
                     while i <= end {
                         // skip invalid-by positions
-                        while i <= end && unsafe { !is_valid(by_valid_opt, i) } {
+                        while i <= end && !is_valid(by_valid_opt, i) {
                             i += 1;
                         }
                         if i > end {
@@ -474,7 +473,7 @@ where
                         }
                         // contiguous valid-by run [s..=e]
                         let s = i;
-                        while i <= end && unsafe { is_valid(by_valid_opt, i) } {
+                        while i <= end && is_valid(by_valid_opt, i) {
                             i += 1;
                         }
                         let e = i - 1;

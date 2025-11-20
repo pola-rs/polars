@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import hypothesis.strategies as st
 import numpy as np
 import pytest
-from hypothesis import assume, given, reproduce_failure
+from hypothesis import assume, given
 
 import polars as pl
 from polars.exceptions import InvalidOperationError
@@ -96,22 +96,35 @@ def test_interpolate_by(
         schema={"times": times_dtype, "values": values_dtype},
     )
 
-    with_null_df = (
-        pl.concat([df, some_nulls], how="vertical")
-        .sample(fraction=1.0, shuffle=True)
+    with_null_df = pl.concat([df, some_nulls], how="vertical").sample(
+        fraction=1.0, shuffle=True
     )
 
     # Test sorted implementation
-    result = with_null_df.sort('times').with_columns(pl.col("values").interpolate_by("times"))
+    result = with_null_df.sort("times").with_columns(
+        pl.col("values").interpolate_by("times")
+    )
 
-    assert_frame_equal(result.drop_nulls(subset='times').sort('times').select('values'), expected)
-    assert_frame_equal(result.filter(pl.col('times').is_null()).sort('values'), some_nulls.sort('values'), check_dtypes=False)
+    assert_frame_equal(
+        result.drop_nulls(subset="times").sort("times").select("values"), expected
+    )
+    assert_frame_equal(
+        result.filter(pl.col("times").is_null()).sort("values"),
+        some_nulls.sort("values"),
+        check_dtypes=False,
+    )
 
     # Test unsorted implementation
     result = with_null_df.with_columns(pl.col("values").interpolate_by("times"))
 
-    assert_frame_equal(result.drop_nulls(subset='times').sort('times').select('values'), expected)
-    assert_frame_equal(result.filter(pl.col('times').is_null()).sort('values'), some_nulls.sort('values'), check_dtypes=False)
+    assert_frame_equal(
+        result.drop_nulls(subset="times").sort("times").select("values"), expected
+    )
+    assert_frame_equal(
+        result.filter(pl.col("times").is_null()).sort("values"),
+        some_nulls.sort("values"),
+        check_dtypes=False,
+    )
 
 
 def test_interpolate_by_leading_nulls() -> None:
@@ -186,8 +199,7 @@ def test_interpolate_by_trailing_nulls(dataset: str) -> None:
     )
     assert_frame_equal(result, expected)
 
-#@reproduce_failure('6.148.0', b'AXicc2RwZGFwYr/gyOjIiE6dB1GODGDIqMEAB4wAEacIKA==')
-#@reproduce_failure('6.148.0', b'AXicc2R0ZGbQYIACDfsPUAZMxJERKxOIGQF5PwNE')
+
 @given(data=st.data(), x_dtype=st.sampled_from([pl.Date, pl.Float64]))
 def test_interpolate_vs_numpy(data: st.DataObject, x_dtype: pl.DataType) -> None:
     # Strategy for `ts` values if float; for Date we let hypothesis generate valid dates
@@ -245,7 +257,9 @@ def test_interpolate_vs_numpy(data: st.DataObject, x_dtype: pl.DataType) -> None
     interp[:first_non_null] = float("nan")
     interp[last_non_null:] = float("nan")
 
-    expected = dataframe.with_columns(value=pl.Series(interp, nan_to_null=True))["value"]
+    expected = dataframe.with_columns(value=pl.Series(interp, nan_to_null=True))[
+        "value"
+    ]
 
     # Allow a tiny absolute error due to NumPy quirks
     assert_series_equal(result, expected, abs_tol=1e-4, check_names=False)
@@ -257,10 +271,11 @@ def test_interpolate_vs_numpy(data: st.DataObject, x_dtype: pl.DataType) -> None
     )
     assert_series_equal(result_from_unsorted, expected, abs_tol=1e-4, check_names=False)
 
-    # ===== New check: introduce nulls in `by` (ts) and verify "as-if filtered" semantics =====
     n = len(dataframe)
     # Random null mask for ts (length-n list of booleans)
-    ts_null_mask = np.array(data.draw(st.lists(st.booleans(), min_size=n, max_size=n)), dtype=bool)
+    ts_null_mask = np.array(
+        data.draw(st.lists(st.booleans(), min_size=n, max_size=n)), dtype=bool
+    )
     # Ensure not all ts become null (we need at least some anchors left)
     assume(~ts_null_mask.all())
 
@@ -270,26 +285,24 @@ def test_interpolate_vs_numpy(data: st.DataObject, x_dtype: pl.DataType) -> None
         ts=pl.when(pl.Series(ts_null_mask)).then(null_ts).otherwise(pl.col("ts"))
     )
 
-    filter_first = (
-        dataframe_null_ts.filter(pl.col("ts").is_not_null())
-        .with_columns(pl.col('value').interpolate_by('ts'))
+    filter_first = dataframe_null_ts.filter(pl.col("ts").is_not_null()).with_columns(
+        pl.col("value").interpolate_by("ts")
     )
 
-    filter_second = (
-        dataframe_null_ts.with_columns(pl.col('value').interpolate_by('ts'))
-        .filter(pl.col("ts").is_not_null())
-    )
+    filter_second = dataframe_null_ts.with_columns(
+        pl.col("value").interpolate_by("ts")
+    ).filter(pl.col("ts").is_not_null())
 
     assert_frame_equal(filter_first, filter_second, check_exact=False, abs_tol=1e-4)
 
-    null_before = dataframe_null_ts.filter(pl.col('ts').is_null())
+    null_before = dataframe_null_ts.filter(pl.col("ts").is_null())
 
-    null_after = (
-        dataframe_null_ts.with_columns(pl.col('value').interpolate_by('ts'))
-        .filter(pl.col('ts').is_null())
-    )
+    null_after = dataframe_null_ts.with_columns(
+        pl.col("value").interpolate_by("ts")
+    ).filter(pl.col("ts").is_null())
 
     assert_frame_equal(null_before, null_after, check_exact=False, abs_tol=1e-4)
+
 
 def test_interpolate_by_invalid() -> None:
     s = pl.Series([1, None, 3])
