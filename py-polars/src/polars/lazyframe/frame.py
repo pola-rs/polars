@@ -8360,7 +8360,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def set_sorted(
         self,
-        column: str,
+        column: str | list[str],
         *more_columns: str,
         descending: bool | list[bool] = False,
         nulls_last: bool | list[bool] = False,
@@ -8373,7 +8373,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Parameters
         ----------
         column
-            Column that is sorted
+            Column(s) that is sorted
         more_columns
             Columns that are sorted over after `column`.
         descending
@@ -8387,11 +8387,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Use with care!
 
         """
-        # NOTE: Only accepts 1 column on purpose! User think they are sorted by
-        # the combined multicolumn values.
-        if not isinstance(column, str):
-            msg = "expected a 'str' for argument 'column' in 'set_sorted'"
-            raise TypeError(msg)
+        cs: list[str]
+        if isinstance(column, str):
+            cs = [column] + list(more_columns)
+        else:
+            cs = column + list(more_columns)
 
         ds: list[bool]
         nl: list[bool]
@@ -8404,11 +8404,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         else:
             nl = nulls_last
 
-        return self._from_pyldf(
-            self._ldf.hint_sorted(
-                [column] + list(more_columns), descending=ds, nulls_last=nl
-            )
-        )
+        return self._from_pyldf(self._ldf.hint_sorted(cs, descending=ds, nulls_last=nl))
 
     @unstable()
     def update(
