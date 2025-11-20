@@ -1953,7 +1953,7 @@ def test_find_many_raises() -> None:
     df = pl.DataFrame({"values": ["discontent", "foobar"]})
     patterns = ["winter", "disco", "onte", "discontent"]
     with pytest.raises(
-        TypeError, match="can not match overlapping patterns when leftmost == True"
+        ValueError, match="can not match overlapping patterns when leftmost == True"
     ):
         df.select(
             pl.col("values").str.find_many(patterns, leftmost=True, overlapping=True)
@@ -1964,7 +1964,7 @@ def test_extract_many_raises() -> None:
     df = pl.DataFrame({"values": ["discontent", "foobar"]})
     patterns = ["winter", "disco", "onte", "discontent"]
     with pytest.raises(
-        TypeError, match="can not match overlapping patterns when leftmost == True"
+        ValueError, match="can not match overlapping patterns when leftmost == True"
     ):
         df.select(
             pl.col("values").str.extract_many(patterns, leftmost=True, overlapping=True)

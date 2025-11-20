@@ -2606,8 +2606,7 @@ class ExprStringNameSpace:
         leftmost
             Guarantees in case there are overlapping matches that the leftmost match
             is used. In case there are multiple candidates for the leftmost match
-            the pattern which comes first in patterns is used. May not be used
-            together with overlapping = True.
+            the pattern which comes first in patterns is used.
 
         Notes
         -----
@@ -2709,6 +2708,66 @@ class ExprStringNameSpace:
         │ Tell me what you want, what you really really want ┆ Tell you what me need, what me really really need │
         │ Can you feel the love tonight                      ┆ Can me feel the love tonight                      │
         └────────────────────────────────────────────────────┴───────────────────────────────────────────────────┘
+
+        Using `leftmost` and changing order of tokens in `patterns`, you can get fine control over replacement
+        logic, following `Aho-Corasick crate documentation <https://docs.rs/aho-corasick/latest/aho_corasick/struct.AhoCorasickBuilder.html#method.match_kind>`_
+        and its examples.
+
+        Default behavior -- when going left to right, match first found pattern:
+
+        >>> df = pl.DataFrame({"haystack": ["abcd"]})
+        >>> patterns = {"b": "x", "abc": "y", "abcd": "z"}
+        >>> df.with_columns(replaced=pl.col("haystack").str.replace_many(patterns))
+        shape: (1, 2)
+        ┌──────────┬──────────┐
+        │ haystack ┆ replaced │
+        │ ---      ┆ ---      │
+        │ str      ┆ str      │
+        ╞══════════╪══════════╡
+        │ abcd     ┆ axcd     │
+        └──────────┴──────────┘
+
+        Adding `leftmost=True` matches pattern with leftmost start index first:
+
+        >>> df = pl.DataFrame({"haystack": ["abcd"]})
+        >>> patterns = {"b": "x", "abc": "y", "abcd": "z"}
+        >>> df.with_columns(replaced=pl.col("haystack").str.replace_many(patterns))
+        shape: (1, 2)
+        ┌──────────┬──────────┐
+        │ haystack ┆ replaced │
+        │ ---      ┆ ---      │
+        │ str      ┆ str      │
+        ╞══════════╪══════════╡
+        │ abcd     ┆ yd       │
+        └──────────┴──────────┘
+
+        Changing order inside patterns to match 'abcd' first:
+
+        >>> df = pl.DataFrame({"haystack": ["abcd"]})
+        >>> patterns = {"abcd": "z", "abc": "y", "b": "x"}
+        >>> df.with_columns(
+        ...     replaced=pl.col("haystack").str.replace_many(patterns, leftmost=True)
+        ... )
+        ┌──────────┬──────────┐
+        │ haystack ┆ replaced │
+        │ ---      ┆ ---      │
+        │ str      ┆ str      │
+        ╞══════════╪══════════╡
+        │ abcd     ┆ z        │
+        └──────────┴──────────┘
+
+        Note that this will not affect the default behavior:
+
+        >>> df = pl.DataFrame({"haystack": ["abcd"]})
+        >>> patterns = {"abcd": "z", "abc": "y", "b": "x"}
+        >>> df.with_columns(replaced=pl.col("haystack").str.replace_many(patterns))
+        ┌──────────┬──────────┐
+        │ haystack ┆ replaced │
+        │ ---      ┆ ---      │
+        │ str      ┆ str      │
+        ╞══════════╪══════════╡
+        │ abcd     ┆ axcd     │
+        └──────────┴──────────┘
         """  # noqa: W505
         if replace_with is no_default:
             if not isinstance(patterns, Mapping):
@@ -2804,10 +2863,14 @@ class ExprStringNameSpace:
         │ ["disco"]       │
         │ ["rhap", "ody"] │
         └─────────────────┘
+
+        See Also
+        --------
+        replace_many
         """
         if overlapping and leftmost:
             msg = "can not match overlapping patterns when leftmost == True"
-            raise TypeError(msg)
+            raise ValueError(msg)
         patterns_pyexpr = parse_into_expression(patterns, str_as_lit=False)
         return wrap_expr(
             self._pyexpr.str_extract_many(
@@ -2891,10 +2954,14 @@ class ExprStringNameSpace:
         │ [0]       │
         │ [0, 5]    │
         └───────────┘
+
+        See Also
+        --------
+        replace_many
         """
         if overlapping and leftmost:
             msg = "can not match overlapping patterns when leftmost == True"
-            raise TypeError(msg)
+            raise ValueError(msg)
         patterns_pyexpr = parse_into_expression(patterns, str_as_lit=False)
         return wrap_expr(
             self._pyexpr.str_find_many(
