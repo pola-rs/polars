@@ -5,6 +5,7 @@ use hive::hive_partitions_from_paths;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::config::verbose;
 use polars_utils::format_pl_smallstr;
+use polars_utils::itertools::Itertools;
 use polars_utils::plpath::PlPath;
 use polars_utils::unique_id::UniqueId;
 
@@ -460,11 +461,51 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
         DslPlan::GroupBy {
             input,
             keys,
-            aggs,
+            predicates,
+            mut aggs,
             apply,
             maintain_order,
             options,
         } => {
+            // If the group by contains any predicates, we update the plan by turning the
+            // predicates into aggregations and filtering on them. Then, we recursively call
+            // this function.
+            if !predicates.is_empty() {
+                let predicate_names = (0..predicates.len())
+                    .map(|i| PlSmallStr::from_string(format!("__POLARS_HAVING_{i}")))
+                    .collect::<Arc<[_]>>();
+                let predicates = predicates
+                    .into_iter()
+                    .zip(predicate_names.iter())
+                    .map(|(p, name)| p.alias(name.clone()))
+                    .collect_vec();
+                aggs.extend(predicates);
+
+                let lp = DslPlan::GroupBy {
+                    input,
+                    keys,
+                    predicates: vec![],
+                    aggs,
+                    apply,
+                    maintain_order,
+                    options,
+                };
+                let lp = DslBuilder::from(lp)
+                    .filter(
+                        all_horizontal(
+                            predicate_names.iter().map(|n| col(n.clone())).collect_vec(),
+                        )
+                        .unwrap(),
+                    )
+                    .drop(Selector::ByName {
+                        names: predicate_names,
+                        strict: true,
+                    })
+                    .build();
+                return to_alp_impl(lp, ctxt);
+            }
+
+            // NOTE: As we went into this branch, we know that no predicates are provided.
             let input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(group_by)))?;
 
@@ -504,7 +545,6 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 maintain_order,
                 options,
             };
-
             return run_conversion(lp, ctxt, "group_by")
                 .map_err(|e| e.context(failed_here!(group_by)));
         },
@@ -1476,6 +1516,7 @@ fn resolve_group_by(
 
     Ok((keys, aggs, Arc::new(output_schema)))
 }
+
 fn stats_helper<F, E>(condition: F, expr: E, schema: &Schema) -> Vec<Expr>
 where
     F: Fn(&DataType) -> bool,

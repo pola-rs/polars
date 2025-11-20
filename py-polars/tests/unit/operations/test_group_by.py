@@ -1474,6 +1474,19 @@ def test_group_by_shift_filter_23910(maintain_order: bool) -> None:
     )
 
 
+def group_by_having() -> None:
+    df = pl.DataFrame(
+        {
+            "grp": ["A", "A", "B", "B", "C", "C"],
+            "value": [10, 15, 5, 15, 5, 10],
+        }
+    )
+
+    result = df.group_by("group").having(pl.col("value").mean() >= 10).agg()
+    expected = pl.DataFrame({"grp": ["A", "B"]})
+    assert_frame_equal(result, expected, check_row_order=False)
+
+
 def test_group_by_tuple_typing_24112() -> None:
     df = pl.DataFrame({"id": ["a", "b", "a"], "val": [1, 2, 3]})
     for (id_,), _ in df.group_by("id"):

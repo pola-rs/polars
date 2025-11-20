@@ -241,9 +241,11 @@ impl DslBuilder {
         .into()
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn group_by<E: AsRef<[Expr]>>(
         self,
         keys: Vec<Expr>,
+        predicates: Vec<Expr>,
         aggs: E,
         apply: Option<(PlanCallback<DataFrame, DataFrame>, SchemaRef)>,
         maintain_order: bool,
@@ -262,6 +264,7 @@ impl DslBuilder {
         DslPlan::GroupBy {
             input: Arc::new(self.0),
             keys,
+            predicates,
             aggs,
             apply,
             maintain_order,
