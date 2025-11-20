@@ -8386,9 +8386,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         cs: list[str]
         if isinstance(column, str):
-            cs = [column] + more_columns
+            cs = [column] + list(more_columns)
         else:
-            cs = column + more_columns
+            cs = column + list(more_columns)
 
         ds: list[bool]
         nl: list[bool]
