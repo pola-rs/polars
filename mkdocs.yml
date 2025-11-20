@@ -162,6 +162,7 @@ nav:
         - polars-on-premise/bare-metal/getting-started.md
         - polars-on-premise/bare-metal/config-reference.md
         - polars-on-premise/bare-metal/environment-variables.md
+        - polars-on-premise/bare-metal/python-environment.md
 not_in_nav: |
     /_build/
 validation:
