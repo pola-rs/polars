@@ -267,9 +267,9 @@ pub fn aexpr_to_column_predicates(
                                 let av = match (&dtype, &av.dtype()) {
                                     (col_dtype, val_dtype) if col_dtype == val_dtype => av,
                                     (col_dtype, val_dtype) if
-                                        (av.dtype().is_integer() && dtype.is_integer()) ||
-                                        (av.dtype().is_datetime() && dtype.is_datetime()) ||
-                                        (av.dtype().is_duration() && dtype.is_duration()) =>
+                                        (col_dtype.is_integer() && val_dtype.is_integer()) ||
+                                        (col_dtype.is_datetime() && val_dtype.is_datetime()) ||
+                                        (col_dtype.is_duration() && val_dtype.is_duration()) =>
                                     {
                                         // Try round-trip casting. If we get the
                                         // same value, that means the value fits
