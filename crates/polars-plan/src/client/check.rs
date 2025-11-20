@@ -85,13 +85,13 @@ impl DslPlan {
             | Slice { input, .. }
             | HStack { input, .. }
             | MatchToSchema { input, .. }
-            | PipeWithSchema { input, .. }
             | MapFunction { input, .. }
             | Sink { input, .. }
             | Cache { input, .. } => scratch.push(input),
             Union { inputs, .. } | HConcat { inputs, .. } | SinkMultiple { inputs } => {
                 scratch.extend(inputs)
             },
+            PipeWithSchema { input, .. } => scratch.extend(input.iter()),
             Join {
                 input_left,
                 input_right,
