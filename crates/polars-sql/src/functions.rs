@@ -1593,7 +1593,7 @@ impl SQLFunctionVisitor<'_> {
             ArrayReverse => self.visit_unary(|e| e.list().reverse()),
             ArraySum => self.visit_unary(|e| e.list().sum()),
             ArrayToString => self.visit_arr_to_string(),
-            ArrayUnique => self.visit_unary(|e| e.list().unique()),
+            ArrayUnique => self.visit_unary(|e| e.list().unique_stable()),
             Explode => self.visit_unary(|e| {
                 e.explode(ExplodeOptions {
                     empty_as_null: true,

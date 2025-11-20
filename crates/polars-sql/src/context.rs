@@ -854,7 +854,7 @@ impl SQLContext {
         let mut projections =
             self.column_projections(select_stmt, &schema, &mut select_modifiers)?;
 
-        // apply `UNNEST` expressions
+        // Apply `UNNEST` expressions
         let mut explode_names = Vec::new();
         let mut explode_exprs = Vec::new();
         let mut explode_lookup = PlHashMap::new();
@@ -865,13 +865,16 @@ impl SQLContext {
                     match input.as_ref() {
                         Expr::Column(name) => explode_names.push(name.clone()),
                         other_expr => {
-                            let temp_name = PlSmallStr::from(format!(
-                                "__POLARS_UNNEST_{}",
-                                explode_exprs.len()
-                            ));
-                            explode_exprs.push(other_expr.clone().alias(temp_name.as_str()));
-                            explode_lookup.insert(other_expr.clone(), temp_name.clone());
-                            explode_names.push(temp_name);
+                            // Note: skip aggregate expressions; those are handled in the GROUP BY phase
+                            if !has_expr(other_expr, |e| matches!(e, Expr::Agg(_) | Expr::Len)) {
+                                let temp_name = PlSmallStr::from(format!(
+                                    "__POLARS_UNNEST_{}",
+                                    explode_exprs.len()
+                                ));
+                                explode_exprs.push(other_expr.clone().alias(temp_name.as_str()));
+                                explode_lookup.insert(other_expr.clone(), temp_name.clone());
+                                explode_names.push(temp_name);
+                            }
                         },
                     }
                 }
