@@ -153,8 +153,8 @@ time to
 
 ### Aggregation & sorting
 
-Like `select` on data frames, the two related functions `eval` and `agg` can also be
-used to aggregate over or sort the list elements.
+Like `select` on data frames, the two related functions `eval` and `agg` can also be used to
+aggregate over or sort the list elements.
 
 We'll reuse a slightly modified version of the example data from the very beginning:
 
