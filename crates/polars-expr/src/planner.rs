@@ -390,88 +390,35 @@ fn create_physical_expr_inner(
             let input = create_physical_expr_inner(expr, ctxt, expr_arena, schema, state)?;
             let allow_threading = state.allow_threading;
 
-            match ctxt {
-                Context::Default if !matches!(agg, IRAggExpr::Quantile { .. }) => {
-                    use {GroupByMethod as GBM, IRAggExpr as I};
+            let output_field = expr_arena
+                .get(expression)
+                .to_field(&ToFieldContext::new(expr_arena, schema))?;
 
-                    let output_field = expr_arena
-                        .get(expression)
-                        .to_field(&ToFieldContext::new(expr_arena, schema))?;
-                    let groupby = match agg {
-                        I::Min { propagate_nans, .. } if *propagate_nans => GBM::NanMin,
-                        I::Min { .. } => GBM::Min,
-                        I::Max { propagate_nans, .. } if *propagate_nans => GBM::NanMax,
-                        I::Max { .. } => GBM::Max,
-                        I::Median(_) => GBM::Median,
-                        I::NUnique(_) => GBM::NUnique,
-                        I::First(_) => GBM::First,
-                        I::FirstNonNull(_) => GBM::FirstNonNull,
-                        I::Last(_) => GBM::Last,
-                        I::LastNonNull(_) => GBM::LastNonNull,
-                        I::Item { allow_empty, .. } => GBM::Item {
-                            allow_empty: *allow_empty,
-                        },
-                        I::Mean(_) => GBM::Mean,
-                        I::Implode(_) => GBM::Implode,
-                        I::Quantile { .. } => unreachable!(),
-                        I::Sum(_) => GBM::Sum,
-                        I::Count {
-                            input: _,
-                            include_nulls,
-                        } => GBM::Count {
-                            include_nulls: *include_nulls,
-                        },
-                        I::Std(_, ddof) => GBM::Std(*ddof),
-                        I::Var(_, ddof) => GBM::Var(*ddof),
-                        I::AggGroups(_) => {
-                            polars_bail!(InvalidOperation: "agg groups expression only supported in aggregation context")
-                        },
-                    };
-
-                    let agg_type = AggregationType {
-                        groupby,
-                        allow_threading,
-                    };
-
-                    Ok(Arc::new(AggregationExpr::new(
-                        input,
-                        agg_type,
-                        output_field,
-                    )))
-                },
-                _ => {
-                    if let IRAggExpr::Quantile {
-                        quantile,
-                        method: interpol,
-                        ..
-                    } = agg
-                    {
-                        let quantile =
-                            create_physical_expr_inner(*quantile, ctxt, expr_arena, schema, state)?;
-                        return Ok(Arc::new(AggQuantileExpr::new(input, quantile, *interpol)));
-                    }
-
-                    let mut output_field = expr_arena
-                        .get(expression)
-                        .to_field(&ToFieldContext::new(expr_arena, schema))?;
-
-                    if matches!(ctxt, Context::Aggregation) && !is_scalar_ae(expression, expr_arena)
-                    {
-                        output_field.coerce(output_field.dtype.clone().implode());
-                    }
-
-                    let groupby = GroupByMethod::from(agg.clone());
-                    let agg_type = AggregationType {
-                        groupby,
-                        allow_threading: false,
-                    };
-                    Ok(Arc::new(AggregationExpr::new(
-                        input,
-                        agg_type,
-                        output_field,
-                    )))
-                },
+            // Special case: Quantile supports multiple inputs.
+            // TODO refactor to FunctionExpr.
+            if let IRAggExpr::Quantile {
+                quantile,
+                method: interpol,
+                ..
+            } = agg
+            {
+                let quantile =
+                    create_physical_expr_inner(*quantile, ctxt, expr_arena, schema, state)?;
+                return Ok(Arc::new(AggQuantileExpr::new(input, quantile, *interpol)));
             }
+
+            let groupby = GroupByMethod::from(agg.clone());
+
+            let agg_type = AggregationType {
+                groupby,
+                allow_threading,
+            };
+
+            Ok(Arc::new(AggregationExpr::new(
+                input,
+                agg_type,
+                output_field,
+            )))
         },
         Cast {
             expr,

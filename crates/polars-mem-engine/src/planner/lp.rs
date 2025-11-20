@@ -633,7 +633,7 @@ fn create_physical_plan_impl(
             )?;
             let phys_aggs = create_physical_expressions_from_irs(
                 &aggs,
-                Context::Aggregation,
+                Context::Default,
                 expr_arena,
                 &input_schema,
                 &mut ExpressionConversionState::new(true),
