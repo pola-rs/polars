@@ -321,9 +321,12 @@ impl AExpr {
             AExpr::Sort { expr, .. } => is_scalar_ae(*expr, arena),
             AExpr::Gather { returns_scalar, .. } => *returns_scalar,
             AExpr::SortBy { expr, .. } => is_scalar_ae(*expr, arena),
-            AExpr::Over { function, .. } => is_scalar_ae(*function, arena),
+
+            // Over and Rolling implicitly zip with the context and thus are never scalars
+            AExpr::Over { .. } => false,
             #[cfg(feature = "dynamic_group_by")]
-            AExpr::Rolling { function, .. } => is_scalar_ae(*function, arena),
+            AExpr::Rolling { .. } => false,
+
             AExpr::Explode { .. }
             | AExpr::Column(_)
             | AExpr::Filter { .. }
@@ -358,6 +361,13 @@ impl AExpr {
         match self {
             AExpr::Element => true,
             AExpr::Column(_) => true,
+
+            // Over and Rolling implicitly zip with the context and thus should always be length
+            // preserving
+            AExpr::Over { mapping, .. } => !matches!(mapping, WindowMapping::Explode),
+            #[cfg(feature = "dynamic_group_by")]
+            AExpr::Rolling { .. } => true,
+
             AExpr::AnonymousStreamingAgg { .. }
             | AExpr::Literal(_)
             | AExpr::Agg(_)
@@ -394,9 +404,6 @@ impl AExpr {
                 std::iter::once(*expr).chain(by.iter().copied()),
                 arena,
             ),
-            AExpr::Over { function, .. } => is_length_preserving_ae(*function, arena),
-            #[cfg(feature = "dynamic_group_by")]
-            AExpr::Rolling { function, .. } => is_length_preserving_ae(*function, arena),
 
             AExpr::Explode { .. } | AExpr::Filter { .. } | AExpr::Slice { .. } => false,
         }

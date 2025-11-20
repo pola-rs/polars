@@ -384,6 +384,11 @@ pub trait ChunkUnique {
     fn n_unique(&self) -> PolarsResult<usize> {
         self.arg_unique().map(|v| v.len())
     }
+
+    /// Get dense ids for each unique value.
+    ///
+    /// Returns: (n_unique, unique_ids)
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)>;
 }
 
 #[cfg(feature = "approx_unique")]

@@ -2140,23 +2140,30 @@ def test_group_by_drop_nans(s: pl.Series) -> None:
     ),
 )
 @pytest.mark.parametrize(
-    ("expr", "check_order", "returns_scalar", "length_preserving"),
+    ("expr", "check_order", "returns_scalar", "length_preserving", "is_window"),
     [
-        (pl.Expr.unique, False, False, False),
-        (lambda e: e.unique(maintain_order=True), True, False, False),
-        (pl.Expr.drop_nans, True, False, False),
-        (pl.Expr.drop_nulls, True, False, False),
-        (pl.Expr.null_count, True, False, False),
-        (pl.Expr.n_unique, True, True, False),
-        (lambda e: e.filter(pl.int_range(0, e.len()) % 3 == 0), True, False, False),
-        (pl.Expr.shift, True, False, True),
-        (pl.Expr.forward_fill, True, False, True),
-        (pl.Expr.backward_fill, True, False, True),
-        (pl.Expr.reverse, True, False, True),
+        (pl.Expr.unique, False, False, False, False),
+        (lambda e: e.unique(maintain_order=True), True, False, False, False),
+        (pl.Expr.drop_nans, True, False, False, False),
+        (pl.Expr.drop_nulls, True, False, False, False),
+        (pl.Expr.null_count, True, False, False, False),
+        (pl.Expr.n_unique, True, True, False, False),
+        (
+            lambda e: e.filter(pl.int_range(0, e.len()) % 3 == 0),
+            True,
+            False,
+            False,
+            False,
+        ),
+        (pl.Expr.shift, True, False, True, False),
+        (pl.Expr.forward_fill, True, False, True, False),
+        (pl.Expr.backward_fill, True, False, True, False),
+        (pl.Expr.reverse, True, False, True, False),
         (
             lambda e: (pl.int_range(e.len() - e.len(), e.len()) % 3 == 0).any(),
             True,
             True,
+            False,
             False,
         ),
         (
@@ -2164,11 +2171,49 @@ def test_group_by_drop_nans(s: pl.Series) -> None:
             True,
             True,
             False,
+            False,
         ),
-        (lambda e: e.head(2), True, False, False),
-        (pl.Expr.first, True, True, False),
-        (pl.Expr.mode, False, False, False),
-        (lambda e: e.gather(pl.int_range(0, e.len()).slice(1, 3)), True, False, False),
+        (lambda e: e.head(2), True, False, False, False),
+        (pl.Expr.first, True, True, False, False),
+        (pl.Expr.mode, False, False, False, False),
+        (lambda e: e.fill_null(e.first()).over(e), True, False, True, True),
+        (lambda e: e.first().over(e), True, False, True, True),
+        (
+            lambda e: e.fill_null(e.first()).over(e, mapping_strategy="join"),
+            True,
+            False,
+            True,
+            True,
+        ),
+        (
+            lambda e: e.fill_null(e.first()).over(e, mapping_strategy="explode"),
+            True,
+            False,
+            False,
+            True,
+        ),
+        (
+            lambda e: e.fill_null(strategy="forward").over([e, e]),
+            True,
+            False,
+            True,
+            True,
+        ),
+        (lambda e: e.fill_null(e.first()).over(e, order_by=e), True, False, True, True),
+        (
+            lambda e: e.fill_null(e.first()).over(e, order_by=e, descending=True),
+            True,
+            False,
+            True,
+            True,
+        ),
+        (
+            lambda e: e.gather(pl.int_range(0, e.len()).slice(1, 3)),
+            True,
+            False,
+            False,
+            False,
+        ),
     ],
 )
 def test_grouped_agg_parametric(
@@ -2177,14 +2222,22 @@ def test_grouped_agg_parametric(
     check_order: bool,
     returns_scalar: bool,
     length_preserving: bool,
+    is_window: bool,
 ) -> None:
     types: dict[str, tuple[Callable[[pl.Expr], pl.Expr], bool, bool]] = {
         "basic": (lambda e: e, False, True),
-        "first": (pl.Expr.first, True, False),
-        "slice": (lambda e: e.slice(1, 3), False, False),
-        "impl_expl": (lambda e: e.implode().explode(), False, False),
-        "rolling": (lambda e: e.rolling(pl.row_index(), period="3i"), False, True),
     }
+
+    if not is_window:
+        types["first"] = (pl.Expr.first, True, False)
+        types["slice"] = (lambda e: e.slice(1, 3), False, False)
+        types["impl_expl"] = (lambda e: e.implode().explode(), False, False)
+        types["rolling"] = (
+            lambda e: e.rolling(pl.row_index(), period="3i"),
+            False,
+            True,
+        )
+        types["over"] = (lambda e: e.forward_fill().over(e), False, True)
 
     def slit(s: pl.Series) -> pl.Expr:
         import polars._plr as plr
@@ -2220,7 +2273,8 @@ def test_grouped_agg_parametric(
         )
     )
 
-    types["literal"] = (lambda e: e, True, False)
+    if not is_window:
+        types["literal"] = (lambda e: e, True, False)
 
     def verify_index(i: int) -> None:
         idx_df = df.filter(pl.col.key == pl.lit(i, pl.UInt8))
@@ -2247,6 +2301,7 @@ def test_grouped_agg_parametric(
                 result_is_scalar = False
                 result_is_scalar |= returns_scalar and t_is_length_preserving
                 result_is_scalar |= t_is_scalar and length_preserving
+                result_is_scalar &= not is_window
 
                 if not result_is_scalar:
                     gb_s = gb_s.explode(empty_as_null=False)
