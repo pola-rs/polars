@@ -1491,8 +1491,8 @@ impl PyLazyFrame {
             .iter()
             .map(|c| Sorted {
                 column: PlSmallStr::from_str(c.as_str()),
-                descending: None,
-                nulls_last: None,
+                descending: Some(false),
+                nulls_last: Some(false),
             })
             .collect::<Vec<_>>();
 
