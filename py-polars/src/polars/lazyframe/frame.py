@@ -18,7 +18,6 @@ from typing import (
     ClassVar,
     NoReturn,
     TypeVar,
-    cast,
     overload,
 )
 
