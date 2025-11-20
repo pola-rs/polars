@@ -32,13 +32,15 @@ def register_extension_type(
     if as_storage:
         assert ext_class is None, "cannot specify ext_class when as_storage is True"
         _REGISTRY[ext_name] = "storage"
-        _register_extension_type(ext_name, None)
+        with contextlib.suppress(NameError):  # _plr module may be unavailable
+            _register_extension_type(ext_name, None)
     else:
         assert not as_storage, "as_storage must be False when ext_class is provided"
         assert isinstance(ext_class, type)
         assert issubclass(ext_class, dt.BaseExtension)
         _REGISTRY[ext_name] = ext_class
-        _register_extension_type(ext_name, ext_class)
+        with contextlib.suppress(NameError):  # _plr module may be unavailable
+            _register_extension_type(ext_name, ext_class)
 
 
 @unstable()
