@@ -65,7 +65,7 @@ pub(super) fn pullup_orders(
                 maintain_order,
                 ..
             } => {
-                if !inputs_ordered[0] {
+                if !inputs_ordered[0] && *maintain_order {
                     // Unordered -> _
                     //   to
                     // maintain_order = false
@@ -77,8 +77,10 @@ pub(super) fn pullup_orders(
                         .any(|k| is_output_ordered(expr_arena.get(k.node()), expr_arena, false));
                     if !keys_produce_order {
                         *maintain_order = false;
-                        set_unordered_output!();
                     }
+                }
+                if !*maintain_order {
+                    set_unordered_output!();
                 }
             },
             IR::Sink { input: _, payload } => {
@@ -119,10 +121,10 @@ pub(super) fn pullup_orders(
                         _ => unreachable!(),
                     };
 
-                    if matches!(new_options.args.maintain_order, MOJ::None) {
-                        set_unordered_output!();
-                    }
                     *options = Arc::new(new_options);
+                }
+                if matches!(options.args.maintain_order, MOJ::None) {
+                    set_unordered_output!();
                 }
             },
             IR::Distinct { input: _, options } => {
@@ -131,6 +133,8 @@ pub(super) fn pullup_orders(
                     if options.keep_strategy != UniqueKeepStrategy::None {
                         options.keep_strategy = UniqueKeepStrategy::Any;
                     }
+                }
+                if !options.maintain_order {
                     set_unordered_output!();
                 }
             },
