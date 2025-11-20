@@ -266,10 +266,15 @@ pub fn aexpr_to_column_predicates(
                                 let av = lv.to_any_value()?;
                                 let av = match (&dtype, &av.dtype()) {
                                     (col_dtype, val_dtype) if col_dtype == val_dtype => av,
-                                    (col_dtype, val_dtype) if av.dtype().is_integer() && dtype.is_integer() => {
+                                    (col_dtype, val_dtype) if
+                                        (av.dtype().is_integer() && dtype.is_integer()) ||
+                                        (av.dtype().is_datetime() && dtype.is_datetime()) ||
+                                        (av.dtype().is_duration() && dtype.is_duration()) =>
+                                    {
                                         // Try round-trip casting. If we get the
                                         // same value, that means the value fits
-                                        // in column dtype, so casting is fine.
+                                        // in the column's dtype, so casting is
+                                        // not lossy and we can safely cast it.
                                         let cast_av = av.cast(col_dtype);
                                         if cast_av.cast(val_dtype) == av {
                                             cast_av
@@ -369,7 +374,7 @@ mod tests {
 
     use super::*;
     use crate::dsl::{Expr, col, lit};
-    use crate::plans::{DynLiteralValue, ExprToIRContext, LiteralValue, to_expr_ir, typed_lit};
+    use crate::plans::{ExprToIRContext, to_expr_ir, typed_lit};
 
     /// Given a single-column `Expr`, call `aexpr_to_column_predicates()` and
     /// return the corresponding column's `Option<SpecializedColumnPredicate>`.
@@ -411,10 +416,9 @@ mod tests {
         comparison_value: Expr,
         expected_predicate_value: AnyValue,
     ) -> PolarsResult<()> {
-        let Some(SpecializedColumnPredicate::Equal(scalar)) =
-            equality_column_predicate(col_dtype, comparison_value)?
-        else {
-            panic!("didn't get equality predicate")
+        let predicate = equality_column_predicate(col_dtype, comparison_value)?;
+        let Some(SpecializedColumnPredicate::Equal(scalar)) = predicate else {
+            panic!("didn't get equality predicate, got {predicate:?}")
         };
         assert_eq!(scalar.value(), &expected_predicate_value);
         Ok(())
@@ -427,6 +431,54 @@ mod tests {
             lit("hello"),
             AnyValue::StringOwned("hello".into()),
         )
+    }
+
+    #[cfg(feature = "dtype-datetime")]
+    #[test]
+    fn column_predicates_creation_datetime_casting() -> PolarsResult<()> {
+        use polars_core::prelude::TimeUnit::*;
+        let ms_dtype = DataType::Datetime(Milliseconds, None);
+
+        // Higher resolution datetimes that can be cast losslessly are cast losslessly:
+        assert_column_predicates_creation_equality(
+            ms_dtype.clone(),
+            lit(Scalar::new_datetime(17_000_000i64, Nanoseconds, None)),
+            AnyValue::Datetime(17, Milliseconds, None),
+        )?;
+
+        // Values that can't be cast losslessly result in no predicate:
+        assert!(
+            equality_column_predicate(
+                ms_dtype,
+                lit(Scalar::new_datetime(17_123_456i64, Nanoseconds, None))
+            )?
+            .is_none()
+        );
+        Ok(())
+    }
+
+    #[cfg(feature = "dtype-duration")]
+    #[test]
+    fn column_predicates_creation_duration_casting() -> PolarsResult<()> {
+        use polars_core::prelude::TimeUnit::*;
+        let ms_dtype = DataType::Duration(Milliseconds);
+
+        // Higher resolution durations that can be cast losslessly are cast losslessly:
+        assert_column_predicates_creation_equality(
+            ms_dtype.clone(),
+            lit(Scalar::new_duration(17_000_000i64, Nanoseconds)),
+            AnyValue::Duration(17, Milliseconds),
+        )?;
+
+        // Values that can't be cast losslessly result in no predicate:
+        assert!(
+            equality_column_predicate(
+                ms_dtype,
+                lit(Scalar::new_duration(17_123_456i64, Nanoseconds))
+            )?
+            .is_none()
+        );
+        Ok(())
     }
 
     #[test]
