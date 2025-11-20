@@ -1,7 +1,7 @@
 # Config file reference
 
 This page describes the different configuration options for polars-on-premise. The config file is a
-standard TOML file with different sections. Any of the configuration can be overriden using
+standard TOML file with different sections. Any of the configuration can be overridden using
 environment variables in the following format: `PC_CUBLET__section_name__key`.
 
 ### Top-level configuration
