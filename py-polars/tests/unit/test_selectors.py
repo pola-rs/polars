@@ -842,7 +842,7 @@ def test_selector_or() -> None:
 
     expected = pl.DataFrame(
         {"idx": [0, 1, 2], "str": ["x", "y", "z"]},
-        schema_overrides={"idx": pl.UInt32},
+        schema_overrides={"idx": pl.get_index_type()},
     )
     assert_frame_equal(result, expected)
 
@@ -880,7 +880,7 @@ def test_selector_list_of_lists_18499() -> None:
     )
 
     with pytest.raises(TypeError, match="cannot turn 'list' into selector"):
-        lf.unique(subset=[["bar", "ham"]])  # type: ignore[list-item]
+        lf.unique(subset=[["bar", "ham"]])
 
 
 def test_selector_python_dtypes() -> None:

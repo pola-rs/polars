@@ -20,7 +20,6 @@ def all(*names: str, ignore_nulls: bool = True) -> Expr:
     *names
         Name(s) of the columns to use in the aggregation.
     ignore_nulls
-
         * If set to `True` (default), null values are ignored. If there
           are no non-null values, the output is `True`.
         * If set to `False`, `Kleene logic`_ is used to deal with nulls:
@@ -86,7 +85,6 @@ def any(*names: str, ignore_nulls: bool = True) -> Expr | bool | None:
     *names
         Name(s) of the columns to use in the aggregation.
     ignore_nulls
-
         * If set to `True` (default), null values are ignored. If there
           are no non-null values, the output is `False`.
         * If set to `False`, `Kleene logic`_ is used to deal with nulls:

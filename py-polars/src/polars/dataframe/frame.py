@@ -90,6 +90,7 @@ from polars.datatypes import (
     Float64,
     Int32,
     Int64,
+    List,
     Null,
     Object,
     String,
@@ -162,7 +163,6 @@ if TYPE_CHECKING:
         Orientation,
         ParquetCompression,
         ParquetMetadata,
-        PartitioningScheme,
         PivotAgg,
         PolarsDataType,
         PythonDataType,
@@ -182,6 +182,7 @@ if TYPE_CHECKING:
     from polars._utils.various import NoDefault
     from polars.interchange.dataframe import PolarsDataFrame
     from polars.io.cloud import CredentialProviderFunction
+    from polars.io.partition import _SinkDirectory
     from polars.ml.torch import PolarsDataset
 
     if sys.version_info >= (3, 10):
@@ -957,7 +958,9 @@ class DataFrame:
         return Schema(zip(self.columns, self.dtypes), check_dtypes=False)
 
     def __array__(
-        self, dtype: npt.DTypeLike | None = None, copy: bool | None = None
+        self,
+        dtype: npt.DTypeLike | None = None,
+        copy: bool | None = None,  # noqa: FBT001
     ) -> np.ndarray[Any, Any]:
         """
         Return a NumPy ndarray with the given data type.
@@ -1680,9 +1683,8 @@ class DataFrame:
         if row is None and column is None:
             if self.shape != (1, 1):
                 msg = (
-                    "can only call `.item()` if the dataframe is of shape (1, 1),"
-                    " or if explicit row/col values are provided;"
-                    f" frame has shape {self.shape!r}"
+                    'can only call `.item()` without "row" or "column" values if the '
+                    f"DataFrame has a single element; shape={self.shape!r}"
                 )
                 raise ValueError(msg)
             return self._df.to_series(0).get_index(0)
@@ -4159,7 +4161,7 @@ class DataFrame:
 
             return
 
-        target: str | Path | IO[bytes] | PartitioningScheme = file
+        target: str | Path | IO[bytes] | _SinkDirectory = file
         engine: EngineType = "in-memory"
         if partition_by is not None:
             if not isinstance(file, str):
@@ -4235,7 +4237,8 @@ class DataFrame:
               method (though this will eventually be phased out in favor of a native
               solution).
             * Setting `engine` to "adbc" inserts using the ADBC cursor's `adbc_ingest`
-              method.
+              method. Note that when passing an instantiated connection object, PyArrow
+              is required for SQLite and Snowflake drivers.
 
         Examples
         --------
@@ -4295,6 +4298,7 @@ class DataFrame:
             from polars.io.database._utils import (
                 _get_adbc_module_name_from_uri,
                 _import_optional_adbc_driver,
+                _is_adbc_snowflake_conn,
                 _open_adbc_connection,
             )
 
@@ -4344,15 +4348,31 @@ class DataFrame:
                 catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
                 n_rows: int
 
-                adbc_module_name = (
-                    _get_adbc_module_name_from_uri(connection)
-                    if isinstance(connection, str)
-                    else connection_module_root
-                )
-                adbc_driver = _import_optional_adbc_driver(
-                    adbc_module_name, dbapi_submodule=False
-                )
-                adbc_driver_str_version = getattr(adbc_driver, "__version__", "0.0")
+                # We can reliably introspect the underlying driver from a URI
+                # We can also introspect instantiated connections when PyArrow is
+                # installed. Otherwise, the underlying driver is unknown
+                # Ref: https://github.com/apache/arrow-adbc/issues/2828
+                if isinstance(connection, str):
+                    adbc_module_name = _get_adbc_module_name_from_uri(connection)
+                elif _PYARROW_AVAILABLE:
+                    adbc_module_name = (
+                        f"adbc_driver_{conn.adbc_get_info()['vendor_name'].lower()}"
+                    )
+                else:
+                    adbc_module_name = "Unknown"
+
+                if adbc_module_name != "Unknown":
+                    adbc_driver = _import_optional_adbc_driver(
+                        adbc_module_name, dbapi_submodule=False
+                    )
+                    adbc_driver_str_version = getattr(adbc_driver, "__version__", "0.0")
+                else:
+                    adbc_driver = "Unknown"
+                    # If we can't introspect the driver, guess that it has the same
+                    # version as the driver manager. This is what happens by default
+                    # when installed
+                    adbc_driver_str_version = driver_manager_str_version
+
                 adbc_driver_version = parse_version(adbc_driver_str_version)
 
                 if adbc_module_name.split("_")[-1] == "sqlite":
@@ -4368,9 +4388,27 @@ class DataFrame:
                         cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
                         mode = "create"
 
+                # For Snowflake, we convert to PyArrow until string_view columns can be
+                # written. Ref: https://github.com/apache/arrow-adbc/issues/3420
+                is_snowflake_driver = (
+                    "snowflake" in adbc_module_name
+                    if _PYARROW_AVAILABLE
+                    else _is_adbc_snowflake_conn(conn)
+                )
+                if is_snowflake_driver and not _PYARROW_AVAILABLE:
+                    msg = (
+                        "write_database with Snowflake driver requires 'pyarrow'.\n"
+                        "Please install using the command `pip install pyarrow`."
+                    )
+                    raise ModuleNotFoundError(msg)
+
                 # As of adbc_driver_manager 1.6.0, adbc_ingest can take a Polars
                 # DataFrame via the PyCapsule interface
-                data = self if driver_manager_version >= (1, 6) else self.to_arrow()
+                data = (
+                    self
+                    if (driver_manager_version >= (1, 6)) and not is_snowflake_driver
+                    else self.to_arrow()
+                )
 
                 # use of schema-qualified table names was released in
                 # adbc-driver-manager 0.7.0 and is working without bugs from driver
@@ -4385,7 +4423,11 @@ class DataFrame:
                         **(engine_options or {}),
                     )
                 elif db_schema is not None:
-                    adbc_driver_pypi_name = adbc_module_name.replace("_", "-")
+                    adbc_driver_pypi_name = (
+                        adbc_module_name.replace("_", "-")
+                        if adbc_module_name != "Unknown"
+                        else "adbc-driver-<driver>"
+                    )
                     msg = (
                         "use of schema-qualified table names requires "
                         "adbc-driver-manager version >= 0.7.0, found "
@@ -4994,6 +5036,10 @@ class DataFrame:
             and throw an exception if any do not. (Note that this parameter
             is a no-op when passing a function to `mapping`).
 
+        See Also
+        --------
+        Expr.name.replace
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -5427,7 +5473,7 @@ class DataFrame:
         *,
         max_items_per_column: int = ...,
         max_colname_length: int = ...,
-        return_as_string: Literal[False] = ...,
+        return_type: None = ...,
     ) -> None: ...
 
     @overload
@@ -5436,7 +5482,7 @@ class DataFrame:
         *,
         max_items_per_column: int = ...,
         max_colname_length: int = ...,
-        return_as_string: Literal[True],
+        return_type: Literal["string"],
     ) -> str: ...
 
     @overload
@@ -5445,16 +5491,17 @@ class DataFrame:
         *,
         max_items_per_column: int = ...,
         max_colname_length: int = ...,
-        return_as_string: bool,
-    ) -> str | None: ...
+        return_type: Literal["frame", "self"],
+    ) -> DataFrame: ...
 
+    @deprecate_renamed_parameter("return_as_string", "return_type", version="1.35.0")
     def glimpse(
         self,
         *,
         max_items_per_column: int = 10,
         max_colname_length: int = 50,
-        return_as_string: bool = False,
-    ) -> str | None:
+        return_type: Literal["frame", "self", "string"] | None = None,
+    ) -> str | DataFrame | None:
         """
         Return a dense preview of the DataFrame.
 
@@ -5462,15 +5509,24 @@ class DataFrame:
         cleanly. Each line shows the column name, the data type, and the first
         few values.
 
+        .. versionchanged:: 1.35.0
+            The `return_as_string` parameter was renamed `return_type` and now accepts
+            string values `'string'` and `'frame'` instead of boolean True or False.
+
         Parameters
         ----------
         max_items_per_column
             Maximum number of items to show per column.
         max_colname_length
-            Maximum length of the displayed column names; values that exceed this
-            value are truncated with a trailing ellipsis.
-        return_as_string
-            If True, return the preview as a string instead of printing to stdout.
+            Maximum length of the displayed column names; values that exceed
+            this value are truncated with a trailing ellipsis.
+        return_type
+            Modify the return format:
+
+            - `None` (default): Print the glimpse output to stdout, returning `None`.
+            - `"self"`: Print the glimpse output to stdout, returning the *original* frame.
+            - `"frame"`: Return the glimpse output as a new DataFrame.
+            - `"string"`: Return the glimpse output as a string.
 
         See Also
         --------
@@ -5489,51 +5545,130 @@ class DataFrame:
         ...         "f": [date(2020, 1, 1), date(2021, 1, 2), date(2022, 1, 1)],
         ...     }
         ... )
-        >>> df.glimpse()
+
+        Print glimpse-formatted output to stdout, returning `None`:
+
+        >>> res = df.glimpse()
         Rows: 3
         Columns: 6
         $ a  <f64> 1.0, 2.8, 3.0
-        $ b  <i64> 4, 5, None
+        $ b  <i64> 4, 5, null
         $ c <bool> True, False, True
-        $ d  <str> None, 'b', 'c'
-        $ e  <str> 'usd', 'eur', None
+        $ d  <str> null, 'b', 'c'
+        $ e  <str> 'usd', 'eur', null
         $ f <date> 2020-01-01, 2021-01-02, 2022-01-01
-        """
+        >>> res is None
+        True
+
+        Return the glimpse output as a string:
+
+        >>> res = df.glimpse(return_type="string")
+        >>> isinstance(res, str)
+        True
+
+        Return the glimpse output as a DataFrame:
+
+        >>> df.glimpse(return_type="frame")
+        shape: (6, 3)
+        ┌────────┬───────┬─────────────────────────────────┐
+        │ column ┆ dtype ┆ values                          │
+        │ ---    ┆ ---   ┆ ---                             │
+        │ str    ┆ str   ┆ list[str]                       │
+        ╞════════╪═══════╪═════════════════════════════════╡
+        │ a      ┆ f64   ┆ ["1.0", "2.8", "3.0"]           │
+        │ b      ┆ i64   ┆ ["4", "5", null]                │
+        │ c      ┆ bool  ┆ ["True", "False", "True"]       │
+        │ d      ┆ str   ┆ [null, "'b'", "'c'"]            │
+        │ e      ┆ str   ┆ ["'usd'", "'eur'", null]        │
+        │ f      ┆ date  ┆ ["2020-01-01", "2021-01-02", "… │
+        └────────┴───────┴─────────────────────────────────┘
+
+        Print glimpse-formatted output to stdout, returning the *original* frame:
+
+        >>> res = df.glimpse(return_type="self")
+        Rows: 3
+        Columns: 6
+        $ a  <f64> 1.0, 2.8, 3.0
+        $ b  <i64> 4, 5, null
+        $ c <bool> True, False, True
+        $ d  <str> null, 'b', 'c'
+        $ e  <str> 'usd', 'eur', null
+        $ f <date> 2020-01-01, 2021-01-02, 2022-01-01
+        >>> res
+        shape: (3, 6)
+        ┌─────┬──────┬───────┬──────┬──────┬────────────┐
+        │ a   ┆ b    ┆ c     ┆ d    ┆ e    ┆ f          │
+        │ --- ┆ ---  ┆ ---   ┆ ---  ┆ ---  ┆ ---        │
+        │ f64 ┆ i64  ┆ bool  ┆ str  ┆ str  ┆ date       │
+        ╞═════╪══════╪═══════╪══════╪══════╪════════════╡
+        │ 1.0 ┆ 4    ┆ true  ┆ null ┆ usd  ┆ 2020-01-01 │
+        │ 2.8 ┆ 5    ┆ false ┆ b    ┆ eur  ┆ 2021-01-02 │
+        │ 3.0 ┆ null ┆ true  ┆ c    ┆ null ┆ 2022-01-01 │
+        └─────┴──────┴───────┴──────┴──────┴────────────┘
+        """  # noqa: W505
+        # handle boolean value from now-deprecated `return_as_string` parameter
+        if isinstance(return_type, bool) or return_type is None:  # type: ignore[redundant-expr]
+            return_type = "string" if return_type else None  # type: ignore[redundant-expr]
+            return_frame = False
+        else:
+            return_frame = return_type == "frame"
+            if not return_frame and return_type not in ("self", "string"):
+                msg = f"invalid `return_type`; found {return_type!r}, expected one of 'string', 'frame', 'self', or None"
+                raise ValueError(msg)
+
         # always print at most this number of values (mainly ensures that
         # we do not cast long arrays to strings, which would be slow)
         max_n_values = min(max_items_per_column, self.height)
         schema = self.schema
 
-        def _parse_column(col_name: str, dtype: PolarsDataType) -> tuple[str, str, str]:
+        def _column_to_row_output(
+            col_name: str, dtype: PolarsDataType
+        ) -> tuple[str, str, list[str | None]]:
             fn = repr if schema[col_name] == String else str
             values = self[:max_n_values, col_name].to_list()
-            val_str = ", ".join(fn(v) for v in values)
             if len(col_name) > max_colname_length:
                 col_name = col_name[: (max_colname_length - 1)] + "…"
-            return col_name, f"<{_dtype_str_repr(dtype)}>", val_str
-
-        data = [_parse_column(s, dtype) for s, dtype in self.schema.items()]
-
-        # determine column layout widths
-        max_col_name = max((len(col_name) for col_name, _, _ in data))
-        max_col_dtype = max((len(dtype_str) for _, dtype_str, _ in data))
-
-        # print header
-        output = StringIO()
-        output.write(f"Rows: {self.height}\nColumns: {self.width}\n")
-
-        # print individual columns: one row per column
-        for col_name, dtype_str, val_str in data:
-            output.write(
-                f"$ {col_name:<{max_col_name}} {dtype_str:>{max_col_dtype}} {val_str}\n"
+            dtype_str = _dtype_str_repr(dtype)
+            if not return_frame:
+                dtype_str = f"<{dtype_str}>"
+            return (
+                col_name,
+                dtype_str,
+                [(fn(v) if v is not None else v) for v in values],
             )
 
-        s = output.getvalue()
-        if return_as_string:
-            return s
+        data = [_column_to_row_output(s, dtype) for s, dtype in self.schema.items()]
 
-        print(s, end=None)
-        return None
+        # output one row per column
+        if return_frame:
+            return pl.DataFrame(
+                data=data,
+                orient="row",
+                schema={"column": String, "dtype": String, "values": List(String)},
+            )
+        else:
+            # determine column layout widths
+            max_col_name = max((len(col_name) for col_name, _, _ in data))
+            max_col_dtype = max((len(dtype_str) for _, dtype_str, _ in data))
+
+            # write column headers and data to the buffer
+            output = StringIO()
+            output.write(f"Rows: {self.height}\nColumns: {self.width}\n")
+            for col_name, dtype_str, values in data:
+                val_str = ", ".join(("null" if v is None else v) for v in values)
+                output.write(
+                    f"$ {col_name:<{max_col_name}} {dtype_str:>{max_col_dtype}} {val_str}\n"
+                )
+
+            s = output.getvalue()
+            if return_type == "string":
+                return s
+
+            print(s, end=None)
+
+            if return_type == "self":
+                return self
+            return None
 
     def describe(
         self,
@@ -8731,10 +8866,10 @@ class DataFrame:
         │ null ┆ null ┆ null │
         └──────┴──────┴──────┘
         """
-        if n < 0:
-            msg = f"`n` should be greater than or equal to 0, got {n}"
-            raise ValueError(msg)
-        # faster path
+        if not (is_int := isinstance(n, int)) or n < 0:  # type: ignore[redundant-expr]
+            msg = f"`n` should be an integer >= 0, got {n}"
+            err = TypeError if not is_int else ValueError
+            raise err(msg)
         if n == 0:
             return self._from_pydf(self._df.clear())
         return self.__class__(
@@ -9052,6 +9187,8 @@ class DataFrame:
         self,
         columns: ColumnNameOrSelector | Iterable[ColumnNameOrSelector],
         *more_columns: ColumnNameOrSelector,
+        empty_as_null: bool = True,
+        keep_nulls: bool = True,
     ) -> DataFrame:
         """
         Explode the dataframe to long format by exploding the given columns.
@@ -9063,6 +9200,10 @@ class DataFrame:
             columns being exploded must be of the `List` or `Array` data type.
         *more_columns
             Additional names of columns to explode, specified as positional arguments.
+        empty_as_null
+            Explode an empty list/array into a `null`.
+        keep_nulls
+            Explode a `null` list/array into a `null`.
 
         Returns
         -------
@@ -9109,7 +9250,12 @@ class DataFrame:
 
         return (
             self.lazy()
-            .explode(columns, *more_columns)
+            .explode(
+                columns,
+                *more_columns,
+                empty_as_null=empty_as_null,
+                keep_nulls=keep_nulls,
+            )
             .collect(optimizations=QueryOptFlags._eager())
         )
 
@@ -9117,6 +9263,7 @@ class DataFrame:
     def pivot(
         self,
         on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
+        on_columns: Sequence[Any] | pl.Series | pl.DataFrame | None = None,
         *,
         index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
@@ -9139,6 +9286,8 @@ class DataFrame:
         on
             The column(s) whose values will be used as the new columns of the output
             DataFrame.
+        on_columns
+            What value combinations will be considered for the output table.
         index
             The column(s) that remain from the input to the output. The output DataFrame will have one row
             for each unique combination of the `index`'s values.
@@ -9215,6 +9364,26 @@ class DataFrame:
         │ Karen ┆ 61    ┆ 58      │
         └───────┴───────┴─────────┘
 
+        If you want to only pivot over a limited set of `subject` values or already
+        know the `subject` values ahead of time, you can provide these using the
+        `on_columns` argument.
+
+        >>> df.pivot(
+        ...     "subject",
+        ...     on_columns=["maths", "physics"],
+        ...     index="name",
+        ...     values="test_1",
+        ... )
+        shape: (2, 3)
+        ┌───────┬───────┬─────────┐
+        │ name  ┆ maths ┆ physics │
+        │ ---   ┆ ---   ┆ ---     │
+        │ str   ┆ i64   ┆ i64     │
+        ╞═══════╪═══════╪═════════╡
+        │ Cady  ┆ 98    ┆ 99      │
+        │ Karen ┆ 61    ┆ 58      │
+        └───────┴───────┴─────────┘
+
         You can use selectors too - here we include all test scores in the pivoted table:
 
         >>> import polars.selectors as cs
@@ -9277,77 +9446,33 @@ class DataFrame:
         │ b    ┆ 0.964028 ┆ 0.999954 │
         └──────┴──────────┴──────────┘
 
-        Note that `pivot` is only available in eager mode. If you know the unique
-        column values in advance, you can use :meth:`polars.LazyFrame.group_by` to
-        get the same result as above in lazy mode:
-
-        >>> index = pl.col("col1")
-        >>> on = pl.col("col2")
-        >>> values = pl.col("col3")
-        >>> unique_column_values = ["x", "y"]
-        >>> aggregate_function = lambda col: col.tanh().mean()
-        >>> df.lazy().group_by(index).agg(
-        ...     aggregate_function(values.filter(on == value)).alias(value)
-        ...     for value in unique_column_values
-        ... ).collect()  # doctest: +IGNORE_RESULT
-        shape: (2, 3)
-        ┌──────┬──────────┬──────────┐
-        │ col1 ┆ x        ┆ y        │
-        │ ---  ┆ ---      ┆ ---      │
-        │ str  ┆ f64      ┆ f64      │
-        ╞══════╪══════════╪══════════╡
-        │ a    ┆ 0.998347 ┆ null     │
-        │ b    ┆ 0.964028 ┆ 0.999954 │
-        └──────┴──────────┴──────────┘
+        See Also
+        --------
+        LazyFrame.pivot
         """  # noqa: W505
-        on = _expand_selectors(self, on)
-        if values is not None:
-            values = _expand_selectors(self, values)
-        if index is not None:
-            index = _expand_selectors(self, index)
+        from polars.lazyframe.opt_flags import QueryOptFlags
 
-        if isinstance(aggregate_function, str):
-            if aggregate_function == "first":
-                aggregate_expr = F.element().first()._pyexpr
-            elif aggregate_function == "sum":
-                aggregate_expr = F.element().sum()._pyexpr
-            elif aggregate_function == "max":
-                aggregate_expr = F.element().max()._pyexpr
-            elif aggregate_function == "min":
-                aggregate_expr = F.element().min()._pyexpr
-            elif aggregate_function == "mean":
-                aggregate_expr = F.element().mean()._pyexpr
-            elif aggregate_function == "median":
-                aggregate_expr = F.element().median()._pyexpr
-            elif aggregate_function == "last":
-                aggregate_expr = F.element().last()._pyexpr
-            elif aggregate_function == "len":
-                aggregate_expr = F.len()._pyexpr
-            elif aggregate_function == "count":
-                issue_deprecation_warning(
-                    "`aggregate_function='count'` input for `pivot` is deprecated."
-                    " Please use `aggregate_function='len'`.",
-                    version="0.20.5",
-                )
-                aggregate_expr = F.len()._pyexpr
-            else:
-                msg = f"invalid input for `aggregate_function` argument: {aggregate_function!r}"
-                raise ValueError(msg)
-        elif aggregate_function is None:
-            aggregate_expr = None
+        on_cols: Sequence[Any] | pl.Series | pl.DataFrame
+        if on_columns is None:
+            cols = self.select(on).unique(maintain_order=True)
+            if sort_columns:
+                cols = cols.sort(on)
+            on_cols = cols
         else:
-            aggregate_expr = aggregate_function._pyexpr
+            on_cols = on_columns
 
-        return self._from_pydf(
-            self._df.pivot_expr(
-                on,
-                index,
-                values,
-                maintain_order,
-                sort_columns,
-                aggregate_expr,
-                separator,
+        return (
+            self.lazy()
+            .pivot(
+                on=on,
+                on_columns=on_cols,
+                index=index,
+                values=values,
+                aggregate_function=aggregate_function,
+                maintain_order=maintain_order,
+                separator=separator,
             )
+            .collect(optimizations=QueryOptFlags._eager())
         )
 
     def unpivot(
@@ -10770,32 +10895,31 @@ class DataFrame:
 
     def unique(
         self,
-        subset: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
+        subset: IntoExpr | Collection[IntoExpr] | None = None,
         *,
         keep: UniqueKeepStrategy = "any",
         maintain_order: bool = False,
     ) -> DataFrame:
-        """
-        Drop duplicate rows from this dataframe.
+        r"""
+        Drop duplicate rows from this DataFrame.
 
         Parameters
         ----------
         subset
-            Column name(s) or selector(s), to consider when identifying
-            duplicate rows. If set to `None` (default), use all columns.
+            Column name(s), selector(s), or expressions to consider when identifying
+            duplicate rows. If set to `None` (default), all columns are considered.
         keep : {'first', 'last', 'any', 'none'}
             Which of the duplicate rows to keep.
 
             * 'any': Does not give any guarantee of which row is kept.
                      This allows more optimizations.
             * 'none': Don't keep duplicate rows.
-            * 'first': Keep first unique row.
-            * 'last': Keep last unique row.
+            * 'first': Keep the first unique row.
+            * 'last': Keep the last unique row.
         maintain_order
-            Keep the same order as the original DataFrame. This is more expensive to
-            compute.
-            Settings this to `True` blocks the possibility
-            to run on the streaming engine.
+            Keep the same order as the original DataFrame. This is more expensive
+            to compute. Settings this to `True` blocks the possibility to run on
+            the streaming engine.
 
         Returns
         -------
@@ -10804,24 +10928,43 @@ class DataFrame:
 
         Warnings
         --------
-        This method will fail if there is a column of type `List` in the DataFrame or
-        subset.
+        This method will fail if there is a column of type `List` in the DataFrame (or
+        in the "subset" parameter).
 
         Notes
         -----
-        If you're coming from pandas, this is similar to
+        If you're coming from Pandas, this is similar to
         `pandas.DataFrame.drop_duplicates`.
 
         Examples
         --------
         >>> df = pl.DataFrame(
         ...     {
-        ...         "foo": [1, 2, 3, 1],
-        ...         "bar": ["a", "a", "a", "a"],
-        ...         "ham": ["b", "b", "b", "b"],
+        ...         "foo": [1, 2, 3, 1, 1],
+        ...         "bar": ["a", "a", "a", "x", "x"],
+        ...         "ham": ["b", "b", "b", "y", "y"],
         ...     }
         ... )
+
+        By default, all columns are considered when determining which rows are unique:
+
         >>> df.unique(maintain_order=True)
+        shape: (4, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ str ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ a   ┆ b   │
+        │ 2   ┆ a   ┆ b   │
+        │ 3   ┆ a   ┆ b   │
+        │ 1   ┆ x   ┆ y   │
+        └─────┴─────┴─────┘
+
+        We can also consider only a subset of columns when determining uniqueness,
+        controlling which row we keep when duplicates are found:
+
+        >>> df.unique(subset="foo", keep="first", maintain_order=True)
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -10832,16 +10975,7 @@ class DataFrame:
         │ 2   ┆ a   ┆ b   │
         │ 3   ┆ a   ┆ b   │
         └─────┴─────┴─────┘
-        >>> df.unique(subset=["bar", "ham"], maintain_order=True)
-        shape: (1, 3)
-        ┌─────┬─────┬─────┐
-        │ foo ┆ bar ┆ ham │
-        │ --- ┆ --- ┆ --- │
-        │ i64 ┆ str ┆ str │
-        ╞═════╪═════╪═════╡
-        │ 1   ┆ a   ┆ b   │
-        └─────┴─────┴─────┘
-        >>> df.unique(keep="last", maintain_order=True)
+        >>> df.unique(subset="foo", keep="last", maintain_order=True)
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -10850,8 +10984,56 @@ class DataFrame:
         ╞═════╪═════╪═════╡
         │ 2   ┆ a   ┆ b   │
         │ 3   ┆ a   ┆ b   │
-        │ 1   ┆ a   ┆ b   │
+        │ 1   ┆ x   ┆ y   │
         └─────┴─────┴─────┘
+        >>> df.unique(subset="foo", keep="none", maintain_order=True)
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ str ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 2   ┆ a   ┆ b   │
+        │ 3   ┆ a   ┆ b   │
+        └─────┴─────┴─────┘
+
+        Selectors can be used to define the "subset" parameter:
+
+        >>> import polars.selectors as cs
+        >>> df.unique(subset=cs.string(), maintain_order=True)
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ str ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ a   ┆ b   │
+        │ 1   ┆ x   ┆ y   │
+        └─────┴─────┴─────┘
+
+        We can also use an arbitrary expression in the "subset" parameter; in this
+        example we use the part of the label in front of ":" to determine uniqueness:
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "label": ["xx:1", "xx:2", "yy:3", "yy:4"],
+        ...         "value": [100, 200, 300, 400],
+        ...     }
+        ... )
+        >>> df.unique(
+        ...     subset=pl.col("label").str.extract(r"^(\w+):"),
+        ...     maintain_order=True,
+        ...     keep="first",
+        ... )
+        shape: (2, 2)
+        ┌───────┬───────┐
+        │ label ┆ value │
+        │ ---   ┆ ---   │
+        │ str   ┆ i64   │
+        ╞═══════╪═══════╡
+        │ xx:1  ┆ 100   │
+        │ yy:3  ┆ 300   │
+        └───────┴───────┘
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
@@ -11261,7 +11443,16 @@ class DataFrame:
         >>> df.row(by_predicate=(pl.col("ham") == "b"))
         (2, 7, 'b')
         """
-        if index is not None and by_predicate is not None:
+        if index is None and by_predicate is None:
+            if self.height == 1:
+                index = 0
+            else:
+                msg = (
+                    'can only call `.row()` without "index" or "by_predicate" values '
+                    f"if the DataFrame has a single row; shape={self.shape!r}"
+                )
+                raise ValueError(msg)
+        elif index is not None and by_predicate is not None:
             msg = "cannot set both 'index' and 'by_predicate'; mutually exclusive"
             raise ValueError(msg)
         elif isinstance(index, pl.Expr):
@@ -11578,8 +11769,8 @@ class DataFrame:
         where possible, prefer export via one of the dedicated export/output methods
         that deals with columnar data.
 
-        Returns
-        -------
+        Yields
+        ------
         iterator of tuples (default) or dictionaries (if named) of python row values
 
         See Also

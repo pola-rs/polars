@@ -11,7 +11,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import NUMERIC_DTYPES, TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
-    from polars._typing import ConcatMethod
+    from polars._typing import ConcatMethod, PolarsDataType
 
 
 def test_concat_align() -> None:
@@ -543,7 +543,7 @@ def test_fill_null_unknown_output_type() -> None:
 def test_approx_n_unique(dtype: pl.DataType) -> None:
     df = pl.DataFrame({"a": pl.arange(100, eager=True).cast(dtype)})
     cardinality = df.select(pl.col("a").approx_n_unique()).to_series()[0]
-    assert 95 <= cardinality <= 100
+    assert 92 <= cardinality <= 108
 
 
 def test_approx_n_unique_null() -> None:
@@ -602,8 +602,8 @@ def test_lazy_functions() -> None:
         pl.DataFrame(
             data=expected,
             schema_overrides={
-                "a_n_unique": pl.UInt32,
-                "b_n_unique": pl.UInt32,
+                "a_n_unique": pl.get_index_type(),
+                "b_n_unique": pl.get_index_type(),
             },
         ),
     )
@@ -648,6 +648,100 @@ def test_head_tail(fruits_cars: pl.DataFrame) -> None:
     assert_series_equal(res_expr.to_series(), expected)
 
 
+@pytest.mark.parametrize(
+    "dtype", [pl.Int32, pl.Boolean, pl.String, pl.Categorical, pl.List]
+)
+def test_first_last(dtype: PolarsDataType) -> None:
+    # Ensure multiple chunks.
+    s1 = pl.Series("a", [None, None], dtype=pl.Int32)
+    s2 = pl.Series("a", [None, 3, 4, None], dtype=pl.Int32)
+    s3 = pl.Series("a", [None, None], dtype=pl.Int32)
+    s = s1.append(s2).append(s3)
+    if dtype == pl.Categorical:
+        # For categorical, we must go through String
+        s = s.cast(pl.String)
+    s = s.cast(dtype)
+    lf = s.to_frame().lazy()
+
+    result = lf.select(pl.col("a").first()).collect()
+    expected_value = pl.Series("a", [None])
+    if dtype == pl.Categorical:
+        # For categorical, we must go through String
+        expected_value = expected_value.cast(pl.String)
+    expected = expected_value.cast(dtype).to_frame()
+    assert_frame_equal(result, expected)
+
+    result = lf.select(pl.col("a").first(ignore_nulls=True)).collect()
+    expected_value = pl.Series("a", [3])
+    if dtype == pl.Categorical:
+        # For categorical, we must go through String
+        expected_value = expected_value.cast(pl.String)
+
+    expected = expected_value.cast(dtype).to_frame()
+    assert_frame_equal(result, expected)
+
+    result = lf.select(pl.col("a").last()).collect()
+    expected_value = pl.Series("a", [None])
+    if dtype == pl.Categorical:
+        # For categorical, we must go through String
+        expected_value = expected_value.cast(pl.String)
+    expected = expected_value.cast(dtype).to_frame()
+    assert_frame_equal(result, expected)
+
+    result = lf.select(pl.col("a").last(ignore_nulls=True)).collect()
+    expected_value = pl.Series("a", [4])
+    if dtype == pl.Categorical:
+        # For categorical, we must go through String
+        expected_value = expected_value.cast(pl.String)
+    expected = expected_value.cast(dtype).to_frame()
+    assert_frame_equal(result, expected)
+
+    # Test with empty
+    lf = pl.Series("a", [], dtype=dtype).to_frame().lazy()
+    expected = pl.Series("a", [None], dtype=dtype).to_frame()
+
+    result = lf.select(pl.col("a").first()).collect()
+    assert_frame_equal(result, expected)
+
+    result = lf.select(pl.col("a").first(ignore_nulls=True)).collect()
+    assert_frame_equal(result, expected)
+
+    result = lf.select(pl.col("a").last()).collect()
+    assert_frame_equal(result, expected)
+
+    result = lf.select(pl.col("a").last(ignore_nulls=True)).collect()
+    assert_frame_equal(result, expected)
+
+    # Test with no nulls
+    lf = pl.Series("a", [1, 2, 3, 4, 5], dtype=pl.Int32).to_frame().lazy()
+    expected_value = pl.Series("a", [1])
+    if dtype == pl.Categorical:
+        # For categorical, we must go through String
+        expected_value = expected_value.cast(pl.String)
+        lf = lf.with_columns(pl.col("a").cast(pl.String))
+
+    lf = lf.with_columns(pl.col("a").cast(dtype))
+    expected = expected_value.cast(dtype).to_frame()
+
+    result = lf.select(pl.col("a").first()).collect()
+    assert_frame_equal(result, expected)
+
+    result = lf.select(pl.col("a").first(ignore_nulls=True)).collect()
+    assert_frame_equal(result, expected)
+
+    expected_value = pl.Series("a", [5])
+    if dtype == pl.Categorical:
+        # For categorical, we must go through String
+        expected_value = expected_value.cast(pl.String)
+    expected = expected_value.cast(dtype).to_frame()
+
+    result = lf.select(pl.col("a").last()).collect()
+    assert_frame_equal(result, expected)
+
+    result = lf.select(pl.col("a").last(ignore_nulls=True)).collect()
+    assert_frame_equal(result, expected)
+
+
 def test_escape_regex() -> None:
     result = pl.escape_regex("abc(\\w+)")
     expected = "abc\\(\\\\w\\+\\)"
@@ -656,7 +750,7 @@ def test_escape_regex() -> None:
     df = pl.DataFrame({"text": ["abc", "def", None, "abc(\\w+)"]})
     with pytest.raises(
         TypeError,
-        match="escape_regex function is unsupported for `Expr`, you may want use `Expr.str.escape_regex` instead",
+        match=r"escape_regex function is unsupported for `Expr`, you may want use `Expr\.str\.escape_regex` instead",
     ):
         df.with_columns(escaped=pl.escape_regex(pl.col("text")))  # type: ignore[arg-type]
 

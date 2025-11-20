@@ -11,7 +11,7 @@ macro_rules! push_expr {
     ($current_expr:expr, $c:ident, $push:ident, $push_owned:ident, $iter:ident) => {{
         use Expr::*;
         match $current_expr {
-            DataTypeFunction(_) | Column(_) | Literal(_) | Len => {},
+            DataTypeFunction(_) | Column(_) | Literal(_) | Len | Element => {},
             #[cfg(feature = "dtype-struct")]
             Field(_) => {},
             Alias(e, _) => $push($c, e),
@@ -47,7 +47,10 @@ macro_rules! push_expr {
                     Median(e) => $push($c, e),
                     NUnique(e) => $push($c, e),
                     First(e) => $push($c, e),
+                    FirstNonNull(e) => $push($c, e),
                     Last(e) => $push($c, e),
+                    LastNonNull(e) => $push($c, e),
+                    Item { input, .. } => $push($c, input),
                     Implode(e) => $push($c, e),
                     Count { input, .. } => $push($c, input),
                     Quantile { expr, .. } => $push($c, expr),
@@ -78,11 +81,17 @@ macro_rules! push_expr {
             },
             Function { input, .. } => input.$iter().rev().for_each(|e| $push_owned($c, e)),
             Explode { input, .. } => $push($c, input),
-            Window {
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling { function, .. } => $push($c, function),
+            Over {
                 function,
                 partition_by,
+                order_by,
                 ..
             } => {
+                if let Some((order_by, _)) = order_by {
+                    $push($c, order_by);
+                }
                 for e in partition_by.into_iter().rev() {
                     $push_owned($c, e)
                 }

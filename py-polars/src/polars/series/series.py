@@ -262,13 +262,13 @@ class Series:
     _s: PySeries = None  # type: ignore[assignment]
     _accessors: ClassVar[set[str]] = {
         "arr",
+        "bin",
         "cat",
         "dt",
         "list",
-        "str",
-        "bin",
-        "struct",
         "plot",
+        "str",
+        "struct",
     }
 
     def __init__(
@@ -406,8 +406,8 @@ class Series:
              - The raw pointer to a C ArrowArray struct
              - The raw pointer to a C ArrowSchema struct
 
-        Warning
-        -------
+        Warnings
+        --------
         This will read the `array` pointer without moving it. The host process should
         garbage collect the heap pointer, but not its contents.
         """
@@ -433,16 +433,13 @@ class Series:
         The series should only contain a single chunk. If you want to export all chunks,
         first call `Series.get_chunks` to give you a list of chunks.
 
-        Warning
-        -------
-        Safety
-        This function will write to the pointers given in `out_ptr` and `out_schema_ptr`
-        and thus is highly unsafe.
-
-        Leaking
-        If you don't pass the ArrowArray struct to a consumer,
-        array memory will leak. This is a low-level function intended for
-        expert users.
+        Warnings
+        --------
+        * Safety: This function will write to the pointers given in `out_ptr`
+          and `out_schema_ptr` and thus is highly unsafe.
+        * Leaking: If you don't pass the ArrowArray struct to a consumer,
+          array memory will leak. This is a low-level function intended for
+          expert users.
         """
         self._s._export_arrow_to_c(out_ptr, out_schema_ptr)
 
@@ -1436,7 +1433,9 @@ class Series:
             raise TypeError(msg)
 
     def __array__(
-        self, dtype: npt.DTypeLike | None = None, copy: bool | None = None
+        self,
+        dtype: npt.DTypeLike | None = None,
+        copy: bool | None = None,  # noqa: FBT001
     ) -> np.ndarray[Any, Any]:
         """
         Return a NumPy ndarray with the given data type.
@@ -1742,7 +1741,6 @@ class Series:
         Parameters
         ----------
         ignore_nulls
-
             * If set to `True` (default), null values are ignored. If there
               are no non-null values, the output is `False`.
             * If set to `False`, `Kleene logic`_ is used to deal with nulls:
@@ -1785,7 +1783,6 @@ class Series:
         Parameters
         ----------
         ignore_nulls
-
             * If set to `True` (default), null values are ignored. If there
               are no non-null values, the output is `True`.
             * If set to `False`, `Kleene logic`_ is used to deal with nulls:
@@ -4013,6 +4010,8 @@ class Series:
 
         Parameters
         ----------
+        other
+            A Series or collection to search in.
         nulls_equal : bool, default False
             If True, treat null as a distinct value. Null values will not propagate.
 
@@ -4187,11 +4186,18 @@ class Series:
         ]
         """
 
-    def explode(self) -> Series:
+    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Series:
         """
         Explode a list Series.
 
         This means that every item is expanded to a new row.
+
+        Parameters
+        ----------
+        empty_as_null
+            Explode an empty list into a `null`.
+        keep_nulls
+            Explode a `null` list into a `null`.
 
         Returns
         -------
@@ -4525,6 +4531,8 @@ class Series:
 
         Parameters
         ----------
+        other
+            A literal or expression value to compare with.
         abs_tol
             Absolute tolerance. This is the maximum allowed absolute difference between
             two values. Must be non-negative.
@@ -4980,7 +4988,7 @@ class Series:
         """
         return self._s.len()
 
-    def set(self, filter: Series, value: int | float | str | bool | None) -> Series:
+    def set(self, filter: Series, value: Any) -> Series:
         """
         Set masked values.
 
@@ -5025,11 +5033,8 @@ class Series:
         │ 3       │
         └─────────┘
         """
-        f = get_ffi_func("set_with_mask_<>", self.dtype, self._s)
-        if f is None:
-            msg = f"Series of type {self.dtype} can not be set"
-            raise NotImplementedError(msg)
-        return self._from_pyseries(f(filter._s, value))
+        value_s = Series([value], dtype=self.dtype)
+        return wrap_s(self._s.set(filter._s, value_s._s))
 
     def scatter(
         self,
@@ -5148,10 +5153,10 @@ class Series:
             null
         ]
         """
-        if n < 0:
-            msg = f"`n` should be greater than or equal to 0, got {n}"
-            raise ValueError(msg)
-        # faster path
+        if not (is_int := isinstance(n, int)) or n < 0:  # type: ignore[redundant-expr]
+            msg = f"`n` should be an integer >= 0, got {n}"
+            err = TypeError if not is_int else ValueError
+            raise err(msg)
         if n == 0:
             return self._from_pyseries(self._s.clear())
         s = (
@@ -5443,11 +5448,16 @@ class Series:
             raise ShapeError(msg)
         return self._s.dot(other._s)
 
-    def mode(self) -> Series:
+    def mode(self, *, maintain_order: bool = False) -> Series:
         """
         Compute the most occurring value(s).
 
         Can return multiple Values.
+
+        Parameters
+        ----------
+        maintain_order
+            Maintain order of data. This requires more work.
 
         Examples
         --------
@@ -7456,6 +7466,161 @@ class Series:
         """  # noqa: W505
 
     @unstable()
+    def rolling_rank_by(
+        self,
+        by: IntoExpr,
+        window_size: timedelta | str,
+        method: RankMethod = "average",
+        *,
+        seed: int | None = None,
+        min_samples: int = 1,
+        closed: ClosedInterval = "right",
+    ) -> Series:
+        """
+        Compute a rolling rank based on another column.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Given a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
+
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
+            - ...
+            - (t_n - window_size, t_n]
+
+        Parameters
+        ----------
+        by
+            Should be ``DateTime``, ``Date``, ``UInt64``, ``UInt32``, ``Int64``,
+            or ``Int32`` data type (note that the integral ones require using `'i'`
+            in `window size`).
+        window_size
+            The length of the window. Can be a dynamic
+            temporal size indicated by a timedelta or the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
+        method : {'average', 'min', 'max', 'dense', 'random'}
+            The method used to assign ranks to tied elements.
+            The following methods are available (default is 'average'):
+
+            - 'average' : The average of the ranks that would have been assigned to
+              all the tied values is assigned to each value.
+            - 'min' : The minimum of the ranks that would have been assigned to all
+              the tied values is assigned to each value. (This is also referred to
+              as "competition" ranking.)
+            - 'max' : The maximum of the ranks that would have been assigned to all
+              the tied values is assigned to each value.
+            - 'dense' : Like 'min', but the rank of the next highest element is
+              assigned the rank immediately after those assigned to the tied
+              elements.
+            - 'random' : Choose a random rank for each value in a tie.
+        seed
+            Random seed used when `method='random'`. If set to None (default), a
+            random seed is generated for each rolling rank operation.
+        min_samples
+            The number of values in the window that should be non-null before computing
+            a result.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive),
+            defaults to `'right'`.
+
+        Returns
+        -------
+        Series
+            A Series of data :class:`.Float64` if `method` is `"average"` or,
+            the index size (see :func:`.get_index_type()`) otherwise.
+        """
+
+    @unstable()
+    def rolling_rank(
+        self,
+        window_size: int,
+        method: RankMethod = "average",
+        *,
+        seed: int | None = None,
+        min_samples: int | None = None,
+        center: bool = False,
+    ) -> Series:
+        """
+        Compute a rolling rank.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        A window of length `window_size` will traverse the array. The values
+        that fill this window will be ranked according to the `method`
+        parameter. The resulting values will be the rank of the value that is
+        at the end of the sliding window.
+
+        Parameters
+        ----------
+        window_size
+            Integer size of the rolling window.
+        method : {'average', 'min', 'max', 'dense', 'random'}
+            The method used to assign ranks to tied elements.
+            The following methods are available (default is 'average'):
+
+            - 'average' : The average of the ranks that would have been assigned to
+              all the tied values is assigned to each value.
+            - 'min' : The minimum of the ranks that would have been assigned to all
+              the tied values is assigned to each value. (This is also referred to
+              as "competition" ranking.)
+            - 'max' : The maximum of the ranks that would have been assigned to all
+              the tied values is assigned to each value.
+            - 'dense' : Like 'min', but the rank of the next highest element is
+              assigned the rank immediately after those assigned to the tied
+              elements.
+            - 'random' : Choose a random rank for each value in a tie.
+        seed
+            Random seed used when `method='random'`. If set to None (default), a
+            random seed is generated for each rolling rank operation.
+        min_samples
+            The number of values in the window that should be non-null before computing
+            a result. If set to `None` (default), it will be set equal to `window_size`.
+        center
+            Set the labels at the center of the window.
+
+        Returns
+        -------
+        Series
+            A Series of data :class:`.Float64` if `method` is `"average"` or,
+            the index size (see :func:`.get_index_type()`) otherwise.
+
+        Examples
+        --------
+        >>> pl.Series([1, 4, 4, 1, 9]).rolling_rank(3, method="average")
+        shape: (5,)
+        Series: '' [f64]
+        [
+            null
+            null
+            2.5
+            1.0
+            3.0
+        ]
+        """
+
+    @unstable()
     def rolling_skew(
         self,
         window_size: int,
@@ -7938,6 +8103,11 @@ class Series:
         n
             periods to shift for forming percent change.
 
+        Notes
+        -----
+        Null values are preserved. If you're coming from pandas, this matches
+        their ``fill_method=None`` behaviour.
+
         Examples
         --------
         >>> pl.Series(range(10)).pct_change()
@@ -8188,14 +8358,15 @@ class Series:
             Accepts expression input. Non-expression inputs are parsed as literals.
 
             .. deprecated:: 0.20.31
-                Use :meth:`replace_all` instead to set a default while replacing values.
+                Use :meth:`replace_strict` instead to set a default while
+                replacing values.
 
         return_dtype
             The data type of the resulting expression. If set to `None` (default),
             the data type is determined automatically based on the other inputs.
 
             .. deprecated:: 0.20.31
-                Use :meth:`replace_all` instead to set a return data type while
+                Use :meth:`replace_strict` instead to set a return data type while
                 replacing values.
 
 
@@ -8953,6 +9124,8 @@ class Series:
         """
         Aggregate values into a list.
 
+        The returned list itself is a scalar value of `list` dtype.
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
@@ -8994,21 +9167,35 @@ class Series:
         """Perform an aggregation of bitwise XORs."""
         return self._s.bitwise_xor()
 
-    def first(self) -> PythonLiteral | None:
+    def first(self, *, ignore_nulls: bool = False) -> PythonLiteral | None:
         """
         Get the first element of the Series.
 
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the first non-null value is returned, otherwise `None` is
+            returned if no non-null value exists.
+
         Returns `None` if the Series is empty.
         """
-        return self._s.first()
+        return self._s.first(ignore_nulls=ignore_nulls)
 
-    def last(self) -> PythonLiteral | None:
+    def last(self, *, ignore_nulls: bool = False) -> PythonLiteral | None:
         """
         Get the last element of the Series.
 
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the last non-null value is returned, otherwise `None` is
+            returned if no non-null value exists.
+
         Returns `None` if the Series is empty.
         """
-        return self._s.last()
+        return self._s.last(ignore_nulls=ignore_nulls)
 
     def approx_n_unique(self) -> PythonLiteral | None:
         """

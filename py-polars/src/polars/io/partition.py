@@ -1,23 +1,26 @@
 from __future__ import annotations
 
-import contextlib
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from polars import DataFrame, col
-from polars._typing import PartitioningScheme
+from polars import DataFrame
+from polars._utils.parse.expr import parse_into_list_of_expressions
 from polars._utils.unstable import issue_unstable_warning
-from polars.expr import Expr
 
 if TYPE_CHECKING:
+    import contextlib
+
     with contextlib.suppress(ImportError):  # Module not available when building docs
         from polars._plr import PyDataFrame, PyExpr
 
+    from collections.abc import Sequence
     from typing import IO, Any, Callable
 
-with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars._plr import PyPartitioning
+    from polars._typing import SyncOnCloseMethod
+    from polars.expr import Expr
+    from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
 
 
 class KeyedPartition:
@@ -122,10 +125,76 @@ class BasePartitionContext:
     )
 
 
+# TODO: Expose this as Python API (as unstable).
+class _SinkDirectory:
+    def __init__(
+        self,
+        base_path: str | Path,
+        *,
+        file_path_provider: Callable[
+            [KeyedPartitionContext], Path | str | IO[bytes] | IO[str]
+        ]
+        | None = None,
+        partition_by: str
+        | Expr
+        | Sequence[str | Expr]
+        | Mapping[str, Expr]
+        | None = None,
+        partition_keys_sorted: bool | None = None,
+        include_keys: bool | None = None,
+        per_partition_sort_by: str | Expr | Sequence[str | Expr] | None = None,
+        per_file_sort_by: str | Expr | Sequence[str | Expr] | None = None,
+        max_rows_per_file: int | None = None,
+        finish_callback: Callable[[DataFrame], None] | None = None,
+    ) -> None:
+        base_path = str(base_path)
+
+        self._pl_sink_directory = _SinkDirectoryInner(
+            base_path=base_path,
+            file_path_provider=file_path_provider,
+            partition_by=(
+                _parse_to_pyexpr_list(partition_by)
+                if partition_by is not None
+                else None
+            ),
+            partition_keys_sorted=partition_keys_sorted,
+            include_keys=include_keys,
+            per_partition_sort_by=(
+                _parse_to_pyexpr_list(per_partition_sort_by)
+                if per_partition_sort_by is not None
+                else None
+            ),
+            per_file_sort_by=(
+                _parse_to_pyexpr_list(per_file_sort_by)
+                if per_file_sort_by is not None
+                else None
+            ),
+            max_rows_per_file=max_rows_per_file,
+            finish_callback=(
+                _prepare_finish_callback(finish_callback)
+                if finish_callback is not None
+                else None
+            ),
+        )
+
+    @property
+    def _base_path(self) -> str | None:
+        return self._pl_sink_directory.base_path
+
+
+def _parse_to_pyexpr_list(
+    exprs_or_columns: str | Expr | Sequence[str | Expr] | Mapping[str, Expr],
+) -> list[PyExpr]:
+    if isinstance(exprs_or_columns, Mapping):
+        return [e.alias(k)._pyexpr for k, e in exprs_or_columns.items()]
+
+    return parse_into_list_of_expressions(exprs_or_columns)
+
+
 def _cast_base_file_path_cb(
     file_path_cb: Callable[[BasePartitionContext], Path | str | IO[bytes] | IO[str]]
     | None,
-) -> Callable[[BasePartitionContext], Path | str | IO[bytes] | IO[str]] | None:
+) -> Callable[[KeyedPartitionContext], Path | str | IO[bytes] | IO[str]] | None:
     if file_path_cb is None:
         return None
     return lambda ctx: file_path_cb(
@@ -160,31 +229,6 @@ def _cast_keyed_file_path_cb(
     )
 
 
-def _prepare_per_partition_sort_by(
-    e: str | Expr | Iterable[str | Expr] | None,
-) -> list[PyExpr] | None:
-    def prepare_one(v: str | Expr) -> PyExpr:
-        if isinstance(v, str):
-            return col(v)._pyexpr
-        elif isinstance(v, Expr):
-            return v._pyexpr
-        else:
-            msg = f"cannot do a per partition sort by for {v!r}"
-            raise TypeError(msg)
-
-    if e is None:
-        return None
-    elif isinstance(e, str):
-        return [col(e)._pyexpr]
-    elif isinstance(e, Expr):
-        return [e._pyexpr]
-    elif isinstance(e, Iterable):
-        return [prepare_one(v) for v in e]
-    else:
-        msg = f"cannot do a per partition sort by for {e!r}"
-        raise TypeError(msg)
-
-
 def _prepare_finish_callback(
     f: Callable[[DataFrame], None] | None,
 ) -> Callable[[PyDataFrame], None] | None:
@@ -198,7 +242,7 @@ def _prepare_finish_callback(
     return cb
 
 
-class PartitionMaxSize(PartitioningScheme):
+class PartitionMaxSize(_SinkDirectory):
     """
     Partitioning scheme to write files with a maximum size.
 
@@ -237,7 +281,7 @@ class PartitionMaxSize(PartitioningScheme):
     Split a parquet file by over smaller CSV files with 100 000 rows each:
 
     >>> pl.scan_parquet("/path/to/file.parquet").sink_csv(
-    ...     PartitionMax("./out", max_size=100_000),
+    ...     pl.PartitionMax("./out/", max_size=100_000),
     ... )  # doctest: +SKIP
 
     See Also
@@ -254,49 +298,23 @@ class PartitionMaxSize(PartitioningScheme):
         file_path: Callable[[BasePartitionContext], Path | str | IO[bytes] | IO[str]]
         | None = None,
         max_size: int,
-        per_partition_sort_by: str | Expr | Iterable[str | Expr] | None = None,
+        per_partition_sort_by: str | Expr | Sequence[str | Expr] | None = None,
         finish_callback: Callable[[DataFrame], None] | None = None,
     ) -> None:
         issue_unstable_warning("partitioning strategies are considered unstable.")
+
+        file_path_provider = _cast_base_file_path_cb(file_path)
+
         super().__init__(
-            PyPartitioning.new_max_size(
-                base_path=base_path,
-                file_path_cb=_cast_base_file_path_cb(file_path),
-                max_size=max_size,
-                per_partition_sort_by=_prepare_per_partition_sort_by(
-                    per_partition_sort_by
-                ),
-                finish_callback=_prepare_finish_callback(finish_callback),
-            )
+            base_path=base_path,
+            file_path_provider=file_path_provider,
+            max_rows_per_file=max_size,
+            finish_callback=finish_callback,
+            per_file_sort_by=per_partition_sort_by,
         )
 
 
-def _lower_by(
-    by: str | Expr | Sequence[str | Expr] | Mapping[str, Expr],
-) -> list[PyExpr]:
-    def to_expr(i: str | Expr) -> Expr:
-        if isinstance(i, str):
-            return col(i)
-        else:
-            return i
-
-    lowered_by: list[PyExpr]
-    if isinstance(by, str):
-        lowered_by = [col(by)._pyexpr]
-    elif isinstance(by, Expr):
-        lowered_by = [by._pyexpr]
-    elif isinstance(by, Sequence):
-        lowered_by = [to_expr(e)._pyexpr for e in by]
-    elif isinstance(by, Mapping):
-        lowered_by = [e.alias(n)._pyexpr for n, e in by.items()]
-    else:
-        msg = "invalid `by` type"
-        raise TypeError(msg)
-
-    return lowered_by
-
-
-class PartitionByKey(PartitioningScheme):
+class PartitionByKey(_SinkDirectory):
     """
     Partitioning scheme to write files split by the values of keys.
 
@@ -345,12 +363,12 @@ class PartitionByKey(PartitioningScheme):
     Split into a hive-partitioning style partition:
 
     >>> (
-    ...     pl.DataFrame({"a": [1, 2, 3], "b": [5, 7, 9], "c": ["A", "B", "C"]})
-    ...     .lazy()
-    ...     .sink_parquet(
-    ...         PartitionByKey(
-    ...             "./out",
-    ...             by=[pl.col.a, pl.col.b],
+    ...     pl.LazyFrame(
+    ...         {"a": [1, 2, 3], "b": [5, 7, 9], "c": ["A", "B", "C"]}
+    ...     ).sink_parquet(
+    ...         pl.PartitionByKey(
+    ...             "./out/",
+    ...             by=["a", "b"],
     ...             include_key=False,
     ...         ),
     ...         mkdir=True,
@@ -382,27 +400,22 @@ class PartitionByKey(PartitioningScheme):
         | None = None,
         by: str | Expr | Sequence[str | Expr] | Mapping[str, Expr],
         include_key: bool = True,
-        per_partition_sort_by: str | Expr | Iterable[str | Expr] | None = None,
+        per_partition_sort_by: str | Expr | Sequence[str | Expr] | None = None,
         finish_callback: Callable[[DataFrame], None] | None = None,
     ) -> None:
         issue_unstable_warning("partitioning strategies are considered unstable.")
 
-        lowered_by = _lower_by(by)
         super().__init__(
-            PyPartitioning.new_by_key(
-                base_path=base_path,
-                file_path_cb=_cast_keyed_file_path_cb(file_path),
-                by=lowered_by,
-                include_key=include_key,
-                per_partition_sort_by=_prepare_per_partition_sort_by(
-                    per_partition_sort_by
-                ),
-                finish_callback=_prepare_finish_callback(finish_callback),
-            )
+            base_path=base_path,
+            file_path_provider=_cast_keyed_file_path_cb(file_path),
+            partition_by=by,
+            include_keys=include_key,
+            per_partition_sort_by=per_partition_sort_by,
+            finish_callback=finish_callback,
         )
 
 
-class PartitionParted(PartitioningScheme):
+class PartitionParted(_SinkDirectory):
     """
     Partitioning scheme to split parted dataframes.
 
@@ -452,7 +465,7 @@ class PartitionParted(PartitioningScheme):
     Split a parquet file by a column `year` into CSV files:
 
     >>> pl.scan_parquet("/path/to/file.parquet").sink_csv(
-    ...     PartitionParted("./out", by="year"),
+    ...     pl.PartitionParted("./out/", by="year"),
     ...     mkdir=True,
     ... )  # doctest: +SKIP
 
@@ -471,21 +484,57 @@ class PartitionParted(PartitioningScheme):
         | None = None,
         by: str | Expr | Sequence[str | Expr] | Mapping[str, Expr],
         include_key: bool = True,
-        per_partition_sort_by: str | Expr | Iterable[str | Expr] | None = None,
+        per_partition_sort_by: str | Expr | Sequence[str | Expr] | None = None,
         finish_callback: Callable[[DataFrame], None] | None = None,
     ) -> None:
         issue_unstable_warning("partitioning strategies are considered unstable.")
 
-        lowered_by = _lower_by(by)
         super().__init__(
-            PyPartitioning.new_by_key(
-                base_path=base_path,
-                file_path_cb=_cast_keyed_file_path_cb(file_path),
-                by=lowered_by,
-                include_key=include_key,
-                per_partition_sort_by=_prepare_per_partition_sort_by(
-                    per_partition_sort_by
-                ),
-                finish_callback=_prepare_finish_callback(finish_callback),
-            )
+            base_path=base_path,
+            file_path_provider=_cast_keyed_file_path_cb(file_path),
+            partition_by=by,
+            partition_keys_sorted=True,
+            include_keys=include_key,
+            per_partition_sort_by=per_partition_sort_by,
+            finish_callback=finish_callback,
         )
+
+
+# TODO: Add `kw_only=True` after 3.9 support dropped
+@dataclass
+class _SinkDirectoryInner:
+    """
+    Holds parsed directory sink options.
+
+    For internal use.
+    """
+
+    base_path: str
+    file_path_provider: (
+        Callable[[KeyedPartitionContext], Path | str | IO[bytes] | IO[str]] | None
+    )
+    partition_by: list[PyExpr] | None
+    partition_keys_sorted: bool | None
+    include_keys: bool | None
+    per_partition_sort_by: list[PyExpr] | None
+    per_file_sort_by: list[PyExpr] | None
+    max_rows_per_file: int | None
+    finish_callback: Callable[[PyDataFrame], None] | None
+
+
+@dataclass
+class _SinkOptions:
+    """
+    Holds sink options that are generic over file / target type.
+
+    For internal use. Most of the options will parse into `UnifiedSinkArgs`.
+    """
+
+    mkdir: bool
+    maintain_order: bool
+    sync_on_close: SyncOnCloseMethod | None = None
+
+    # Cloud
+    storage_options: list[tuple[str, str]] | None = None
+    credential_provider: CredentialProviderBuilder | None = None
+    retries: int = 2

@@ -19,7 +19,7 @@ where
         false => det_offsets,
     };
     match weights {
-        None => rolling_apply_agg_window::<MeanWindow<_>, _, _>(
+        None => rolling_apply_agg_window::<MeanWindow<_>, _, _, _>(
             values,
             window_size,
             min_periods,

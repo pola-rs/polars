@@ -94,9 +94,12 @@ def test_cat_uses_lexical_ordering() -> None:
     s = s.cast(pl.Categorical("lexical"))
     assert s.cat.uses_lexical_ordering()
 
-    with pytest.warns(DeprecationWarning):
-        s = s.cast(pl.Categorical("physical"))  # Deprecated.
-        assert s.cat.uses_lexical_ordering()
+    with pytest.warns(
+        DeprecationWarning,
+        match="ordering is now always lexical",
+    ):
+        s = s.cast(pl.Categorical("physical"))
+    assert s.cat.uses_lexical_ordering()
 
 
 @pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum])
@@ -132,7 +135,7 @@ def test_cat_len_bytes(dtype: PolarsDataType) -> None:
         {
             "key": [1, 1, 1, 1, 1, 2, 2, 2, 2, 2],
             "len_bytes": pl.Series(
-                [5, None, 5, 3, 6, 5, None, 5, 3, 6], dtype=pl.get_index_type()
+                [5, None, 5, 3, 6, 5, None, 5, 3, 6], dtype=pl.UInt32
             ),
         }
     )
@@ -172,7 +175,7 @@ def test_cat_len_chars(dtype: PolarsDataType) -> None:
         {
             "key": [1, 1, 1, 1, 1, 2, 2, 2, 2, 2],
             "len_bytes": pl.Series(
-                [4, None, 4, 3, 2, 4, None, 4, 3, 2], dtype=pl.get_index_type()
+                [4, None, 4, 3, 2, 4, None, 4, 3, 2], dtype=pl.UInt32
             ),
         }
     )

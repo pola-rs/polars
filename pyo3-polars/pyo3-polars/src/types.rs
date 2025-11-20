@@ -393,12 +393,13 @@ impl<'py> IntoPyObject<'py> for PyExpr {
             .map_err(|err| {
                 let msg = format!("deserialization failed: {err}");
                 PyValueError::new_err(msg)
-            })
+            })?;
+        Ok(instance)
     }
 }
 
 #[cfg(feature = "dtype-categorical")]
-pub(crate) fn to_series(py: Python, s: PySeries) -> PyObject {
+pub(crate) fn to_series(py: Python, s: PySeries) -> Py<PyAny> {
     let series = SERIES.bind(py);
     let constructor = series
         .getattr(intern!(series.py(), "_from_pyseries"))

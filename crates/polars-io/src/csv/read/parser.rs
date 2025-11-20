@@ -113,7 +113,7 @@ pub fn count_rows_from_slice_par(
                         // Ensure we start at the start of a line.
                         if let Some(nl_off) = bytes[start_offset..next_start_offset]
                             .iter()
-                            .position(|b| *b == b'\n')
+                            .position(|b| *b == eol_char)
                         {
                             start_offset += nl_off + 1;
                         } else {
@@ -121,8 +121,9 @@ pub fn count_rows_from_slice_par(
                         }
                     }
 
-                    let stop_offset = if let Some(nl_off) =
-                        bytes[next_start_offset..].iter().position(|b| *b == b'\n')
+                    let stop_offset = if let Some(nl_off) = bytes[next_start_offset..]
+                        .iter()
+                        .position(|b| *b == eol_char)
                     {
                         next_start_offset + nl_off + 1
                     } else {
@@ -140,26 +141,19 @@ pub fn count_rows_from_slice_par(
             n += pair[in_string as usize].newline_count;
             in_string = pair[in_string as usize].end_inside_string;
         }
-        if let Some(last) = bytes.last() {
-            n += (*last != eol_char) as usize;
+        if let Some(last) = bytes.last()
+            && *last != eol_char
+            && (comment_prefix.is_none()
+                || !is_comment_line(
+                    bytes.rsplit(|c| *c == eol_char).next().unwrap(),
+                    comment_prefix,
+                ))
+        {
+            n += 1
         }
+
         Ok(n)
     })
-}
-
-/// Read the number of rows without parsing columns, assuming bytes is at a
-/// newline starting point. Does not deal with start/header.
-pub fn count_rows_from_slice_raw(
-    bytes: &[u8],
-    quote_char: Option<u8>,
-    comment_prefix: Option<&CommentPrefix>,
-    eol_char: u8,
-) -> PolarsResult<usize> {
-    Ok(
-        CountLines::new(quote_char, eol_char, comment_prefix.cloned())
-            .count(bytes)
-            .0,
-    )
 }
 
 /// Skip the utf-8 Byte Order Mark.
@@ -176,7 +170,7 @@ pub(super) fn skip_bom(input: &[u8]) -> &[u8] {
 ///
 /// This function is used during CSV parsing to determine whether a line should be ignored based on its starting characters.
 #[inline]
-pub(super) fn is_comment_line(line: &[u8], comment_prefix: Option<&CommentPrefix>) -> bool {
+pub fn is_comment_line(line: &[u8], comment_prefix: Option<&CommentPrefix>) -> bool {
     match comment_prefix {
         Some(CommentPrefix::Single(c)) => line.first() == Some(c),
         Some(CommentPrefix::Multi(s)) => line.starts_with(s.as_bytes()),
@@ -770,7 +764,10 @@ impl CountLines {
             // Skip comment line if needed.
             while bytes[scan_offset..].starts_with(pre_s) {
                 scan_offset += pre_s.len();
-                let Some(nl_off) = bytes[scan_offset..].iter().position(|c| *c == b'\n') else {
+                let Some(nl_off) = bytes[scan_offset..]
+                    .iter()
+                    .position(|c| *c == self.eol_char)
+                else {
                     break;
                 };
                 scan_offset += nl_off + 1;
@@ -799,13 +796,18 @@ impl CountLines {
         loop {
             let b = unsafe { bytes.get_unchecked(..(*chunk_size).min(bytes.len())) };
 
-            let (count, offset) = self.count(b);
+            let (count, offset) = if self.comment_prefix.is_some() {
+                let stats = self.analyze_chunk_with_comment(b, false);
+                (stats.newline_count, stats.last_newline_offset)
+            } else {
+                self.count(b)
+            };
 
             if count > 0 || b.len() == bytes.len() {
                 return (count, offset);
             }
 
-            *chunk_size *= 2;
+            *chunk_size = chunk_size.saturating_mul(2);
         }
     }
 

@@ -7,6 +7,7 @@ import sys
 import warnings
 from collections.abc import Collection, Mapping, Sequence
 from datetime import timedelta
+from decimal import Decimal
 from functools import reduce
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -45,6 +46,9 @@ from polars._utils.various import (
     warn_null_comparison,
 )
 from polars._utils.wrap import wrap_expr, wrap_s
+from polars.datatypes import (
+    Decimal as PolarsDecimal,
+)
 from polars.datatypes import (
     Int64,
     parse_into_datatype_expr,
@@ -130,13 +134,13 @@ class Expr:
     _pyexpr: PyExpr = None  # type: ignore[assignment]
     _accessors: ClassVar[set[str]] = {
         "arr",
+        "bin",
         "cat",
         "dt",
         "list",
         "meta",
         "name",
         "str",
-        "bin",
         "struct",
     }
 
@@ -484,7 +488,6 @@ class Expr:
         Parameters
         ----------
         ignore_nulls
-
             * If set to `True` (default), null values are ignored. If there
               are no non-null values, the output is `False`.
             * If set to `False`, `Kleene logic`_ is used to deal with nulls:
@@ -544,7 +547,6 @@ class Expr:
         Parameters
         ----------
         ignore_nulls
-
             * If set to `True` (default), null values are ignored. If there
               are no non-null values, the output is `True`.
             * If set to `False`, `Kleene logic`_ is used to deal with nulls:
@@ -897,44 +899,45 @@ class Expr:
         │ c: 3 ┆ 15   │
         │ d: 4 ┆ -20  │
         └──────┴──────┘
-
         '''
         return function(self, *args, **kwargs)
 
     def not_(self) -> Expr:
         """
-        Negate a boolean expression.
+        Method equivalent of bitwise "not" operator `~expr`.
+
+        This has the effect of negating logical boolean expressions,
+        but operates bitwise on integers.
 
         Examples
         --------
         >>> df = pl.DataFrame(
         ...     {
-        ...         "a": [True, False, False],
-        ...         "b": ["a", "b", None],
+        ...         "label": ["aa", "bb", "cc", "dd", "ee"],
+        ...         "valid": [True, False, None, False, True],
+        ...         "int_code": [1, 0, 2, None, -1],
         ...     }
         ... )
-        >>> df
-        shape: (3, 2)
-        ┌───────┬──────┐
-        │ a     ┆ b    │
-        │ ---   ┆ ---  │
-        │ bool  ┆ str  │
-        ╞═══════╪══════╡
-        │ true  ┆ a    │
-        │ false ┆ b    │
-        │ false ┆ null │
-        └───────┴──────┘
-        >>> df.select(pl.col("a").not_())
-        shape: (3, 1)
-        ┌───────┐
-        │ a     │
-        │ ---   │
-        │ bool  │
-        ╞═══════╡
-        │ false │
-        │ true  │
-        │ true  │
-        └───────┘
+
+        Apply "not" to boolean expression (negates the value) and
+        integer expression (operates bitwise):
+
+        >>> df.with_columns(
+        ...     not_valid=pl.col("valid").not_(),
+        ...     not_int_code=pl.col("int_code").not_(),
+        ... )
+        shape: (5, 5)
+        ┌───────┬───────┬──────────┬───────────┬──────────────┐
+        │ label ┆ valid ┆ int_code ┆ not_valid ┆ not_int_code │
+        │ ---   ┆ ---   ┆ ---      ┆ ---       ┆ ---          │
+        │ str   ┆ bool  ┆ i64      ┆ bool      ┆ i64          │
+        ╞═══════╪═══════╪══════════╪═══════════╪══════════════╡
+        │ aa    ┆ true  ┆ 1        ┆ false     ┆ -2           │
+        │ bb    ┆ false ┆ 0        ┆ true      ┆ -1           │
+        │ cc    ┆ null  ┆ 2        ┆ null      ┆ -3           │
+        │ dd    ┆ false ┆ null     ┆ true      ┆ null         │
+        │ ee    ┆ true  ┆ -1       ┆ false     ┆ 0            │
+        └───────┴───────┴──────────┴───────────┴──────────────┘
         """
         return wrap_expr(self._pyexpr.not_())
 
@@ -1126,10 +1129,16 @@ class Expr:
         """
         Get the group indexes of the group by operation.
 
+        .. deprecated:: 1.35
+            use `df.with_row_index().group_by(...).agg(pl.col('index'))` instead.
+            This method will be removed in Polars 2.0.
+
         Should be used in aggregation context only.
 
         Examples
         --------
+        >>> import warnings
+        >>> warnings.filterwarnings("ignore", category=DeprecationWarning)
         >>> df = pl.DataFrame(
         ...     {
         ...         "group": [
@@ -1153,7 +1162,29 @@ class Expr:
         │ one   ┆ [0, 1, 2] │
         │ two   ┆ [3, 4, 5] │
         └───────┴───────────┘
+
+        New recommended approach:
+        >>> (
+        ...     df.with_row_index()
+        ...     .group_by("group", maintain_order=True)
+        ...     .agg(pl.col("index"))
+        ... )
+        shape: (2, 2)
+        ┌───────┬───────────┐
+        │ group ┆ index     │
+        │ ---   ┆ ---       │
+        │ str   ┆ list[u32] │
+        ╞═══════╪═══════════╡
+        │ one   ┆ [0, 1, 2] │
+        │ two   ┆ [3, 4, 5] │
+        └───────┴───────────┘
         """
+        warnings.warn(
+            "agg_groups() is deprecated and will be removed in Polars 2.0. "
+            "Use df.with_row_index().group_by(...).agg(pl.col('index')) instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return wrap_expr(self._pyexpr.agg_groups())
 
     def count(self) -> Expr:
@@ -1757,11 +1788,16 @@ class Expr:
         other_pyexpr = parse_into_expression(other)
         return wrap_expr(self._pyexpr.dot(other_pyexpr))
 
-    def mode(self) -> Expr:
+    def mode(self, *, maintain_order: bool = False) -> Expr:
         """
         Compute the most occurring value(s).
 
         Can return multiple Values.
+
+        Parameters
+        ----------
+        maintain_order
+            Maintain order of data. This requires more work.
 
         Examples
         --------
@@ -1781,7 +1817,7 @@ class Expr:
         │ 1   ┆ 1   │
         └─────┴─────┘
         """
-        return wrap_expr(self._pyexpr.mode())
+        return wrap_expr(self._pyexpr.mode(maintain_order=maintain_order))
 
     def cast(
         self,
@@ -2396,7 +2432,15 @@ class Expr:
         │ 2         ┆ 1    ┆ null      │
         └───────────┴──────┴───────────┘
         """
-        element_pyexpr = parse_into_expression(element, str_as_lit=True)
+        dtype = None
+        # Decimals by default are converted with maximum precision, but that
+        # makes lossless casting hard. So for Decimals we manually specify the
+        # minimal required precision.
+        if isinstance(element, Decimal):
+            _, digits, exponent = element.as_tuple()
+            if isinstance(exponent, int):  # can also be 'n'/'N'/'F'
+                dtype = PolarsDecimal(len(digits), -exponent)
+        element_pyexpr = parse_into_expression(element, str_as_lit=True, dtype=dtype)
         return wrap_expr(self._pyexpr.index_of(element_pyexpr))
 
     def search_sorted(
@@ -3407,14 +3451,30 @@ class Expr:
             return wrap_expr(self._pyexpr.unique_stable())
         return wrap_expr(self._pyexpr.unique())
 
-    def first(self) -> Expr:
+    def first(self, *, ignore_nulls: bool = False) -> Expr:
         """
         Get the first value.
 
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the first non-null value is returned, otherwise `None` is
+            returned if no non-null value exists.
+
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 1, 2]})
+        >>> df = pl.DataFrame({"a": [None, 1, 2]})
         >>> df.select(pl.col("a").first())
+        shape: (1, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ i64  │
+        ╞══════╡
+        │ null │
+        └──────┘
+        >>> df.select(pl.col("a").first(ignore_nulls=True))
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -3424,11 +3484,18 @@ class Expr:
         │ 1   │
         └─────┘
         """
-        return wrap_expr(self._pyexpr.first())
+        return wrap_expr(self._pyexpr.first(ignore_nulls=ignore_nulls))
 
-    def last(self) -> Expr:
+    def last(self, *, ignore_nulls: bool = False) -> Expr:
         """
         Get the last value.
+
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the last non-null value is returned, otherwise `None` is
+            returned if no non-null value exists.
 
         Examples
         --------
@@ -3443,7 +3510,52 @@ class Expr:
         │ 2   │
         └─────┘
         """
-        return wrap_expr(self._pyexpr.last())
+        return wrap_expr(self._pyexpr.last(ignore_nulls=ignore_nulls))
+
+    @unstable()
+    def item(self, *, allow_empty: bool = False) -> Expr:
+        """
+        Get the single value.
+
+        This raises an error if there is not exactly one value.
+
+        Parameters
+        ----------
+        allow_empty
+            Allow having no values to return `null`.
+
+        See Also
+        --------
+        :meth:`Expr.get` : Get a single value by index.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1]})
+        >>> df.select(pl.col("a").item())
+        shape: (1, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        └─────┘
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select(pl.col("a").item())
+        Traceback (most recent call last):
+        ...
+        polars.exceptions.ComputeError: aggregation 'item' expected a single value, got 3 values
+        >>> df.head(0).select(pl.col("a").item(allow_empty=True))
+        shape: (1, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ i64  │
+        ╞══════╡
+        │ null │
+        └──────┘
+        """  # noqa: W505
+        return wrap_expr(self._pyexpr.item(allow_empty=allow_empty))
 
     def over(
         self,
@@ -3482,18 +3594,24 @@ class Expr:
             the nulls in last position.
         mapping_strategy: {'group_to_rows', 'join', 'explode'}
             - group_to_rows
-                If the aggregation results in multiple values, assign them back to their
-                position in the DataFrame. This can only be done if the group yields
-                the same elements before aggregation as after.
+                If the aggregation results in multiple values per group, map them back
+                to their row position in the DataFrame. This can only be done if each
+                group yields the same elements before aggregation as after. If the
+                aggregation results in one scalar value per group, this value will be
+                mapped to every row.
             - join
-                Join the groups as 'List<group_dtype>' to the row positions.
-                warning: this can be memory intensive.
+                If the aggregation may result in multiple values per group, join the
+                values as 'List<group_dtype>' to each row position. Warning: this can be
+                memory intensive. If the aggregation always results in one scalar value
+                per group, join this value as '<group_dtype>' to each row position.
             - explode
-                Explodes the grouped data into new rows, similar to the results of
-                `group_by` + `agg` + `explode`. Sorting of the given groups is required
-                if the groups are not part of the window operation for the operation,
-                otherwise the result would not make sense. This operation changes the
-                number of rows.
+                If the aggregation may result in multiple values per group, map each
+                value to a new row, similar to the results of `group_by` + `agg` +
+                `explode`. If the aggregation always results in one scalar value per
+                group, map this value to one row position. Sorting of the given groups
+                is required if the groups are not part of the window operation for the
+                operation, otherwise the result would not make sense. This operation
+                changes the number of rows.
 
         Examples
         --------
@@ -3551,6 +3669,41 @@ class Expr:
         │ b   ┆ 5   ┆ 2   ┆ 1     │
         │ b   ┆ 3   ┆ 1   ┆ 1     │
         └─────┴─────┴─────┴───────┘
+
+        Mapping strategy `join` joins the values by group.
+
+        >>> df.with_columns(
+        ...     c_pairs=pl.col("c").head(2).over("a", mapping_strategy="join")
+        ... )
+        shape: (5, 4)
+        ┌─────┬─────┬─────┬───────────┐
+        │ a   ┆ b   ┆ c   ┆ c_pairs   │
+        │ --- ┆ --- ┆ --- ┆ ---       │
+        │ str ┆ i64 ┆ i64 ┆ list[i64] │
+        ╞═════╪═════╪═════╪═══════════╡
+        │ a   ┆ 1   ┆ 5   ┆ [5, 4]    │
+        │ a   ┆ 2   ┆ 4   ┆ [5, 4]    │
+        │ b   ┆ 3   ┆ 3   ┆ [3, 2]    │
+        │ b   ┆ 5   ┆ 2   ┆ [3, 2]    │
+        │ b   ┆ 3   ┆ 1   ┆ [3, 2]    │
+        └─────┴─────┴─────┴───────────┘
+
+        Mapping strategy `explode` maps the values to new rows, changing the shape.
+
+        >>> df.select(
+        ...     c_first_2=pl.col("c").head(2).over("a", mapping_strategy="explode")
+        ... )
+        shape: (4, 1)
+        ┌───────────┐
+        │ c_first_2 │
+        │ ---       │
+        │ i64       │
+        ╞═══════════╡
+        │ 5         │
+        │ 4         │
+        │ 3         │
+        │ 2         │
+        └───────────┘
 
         You can use non-elementwise expressions with `over` too. By default they are
         evaluated using row-order, but you can specify a different one using `order_by`.
@@ -3634,7 +3787,7 @@ class Expr:
 
     def rolling(
         self,
-        index_column: str,
+        index_column: IntoExprColumn,
         *,
         period: str | timedelta,
         offset: str | timedelta | None = None,
@@ -3729,13 +3882,16 @@ class Expr:
         │ 2020-01-08 23:16:43 ┆ 1   ┆ 1     ┆ 1     ┆ 1     │
         └─────────────────────┴─────┴───────┴───────┴───────┘
         """
+        index_column_pyexpr = parse_into_expression(index_column)
         if offset is None:
             offset = negate_duration_string(parse_as_duration_string(period))
 
         period = parse_as_duration_string(period)
         offset = parse_as_duration_string(offset)
 
-        return wrap_expr(self._pyexpr.rolling(index_column, period, offset, closed))
+        return wrap_expr(
+            self._pyexpr.rolling(index_column_pyexpr, period, offset, closed)
+        )
 
     def is_unique(self) -> Expr:
         """
@@ -4549,7 +4705,6 @@ Consider using {self}.implode() instead"""
         pass_name
             Pass the Series name to the custom function (this is more expensive).
         returns_scalar
-
             .. deprecated:: 1.32.0
                 Is ignored and will be removed in 2.0.
         strategy : {'thread_local', 'threading'}
@@ -4809,13 +4964,20 @@ Consider using {self}.implode() instead"""
         │ b     ┆ [2, 3, 4] │
         └───────┴───────────┘
         """
-        return wrap_expr(self._pyexpr.explode())
+        return self.explode(empty_as_null=True, keep_nulls=True)
 
-    def explode(self) -> Expr:
+    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Expr:
         """
         Explode a list expression.
 
         This means that every item is expanded to a new row.
+
+        Parameters
+        ----------
+        empty_as_null
+            Explode an empty list/array into a `null`.
+        keep_nulls
+            Explode a `null` list/array into a `null`.
 
         Returns
         -------
@@ -4850,11 +5012,15 @@ Consider using {self}.implode() instead"""
         │ 4      │
         └────────┘
         """
-        return wrap_expr(self._pyexpr.explode())
+        return wrap_expr(
+            self._pyexpr.explode(empty_as_null=empty_as_null, keep_nulls=keep_nulls)
+        )
 
     def implode(self) -> Expr:
         """
         Aggregate values into a list.
+
+        The returned list itself is a scalar value of `list` dtype.
 
         Examples
         --------
@@ -5005,6 +5171,9 @@ Consider using {self}.implode() instead"""
         """
         Method equivalent of bitwise "and" operator `expr & other & ...`.
 
+        This has the effect of combining logical boolean expressions,
+        but operates bitwise on integers.
+
         Parameters
         ----------
         *others
@@ -5019,6 +5188,9 @@ Consider using {self}.implode() instead"""
         ...         "z": [-9, 2, -1, 4, 8],
         ...     }
         ... )
+
+        Combine logical "and" conditions:
+
         >>> df.select(
         ...     (pl.col("x") >= pl.col("z"))
         ...     .and_(
@@ -5041,12 +5213,31 @@ Consider using {self}.implode() instead"""
         │ false │
         │ false │
         └───────┘
+
+        Bitwise "and" operation on integer columns:
+
+        >>> df.select("x", "z", x_and_z=pl.col("x").and_(pl.col("z")))
+        shape: (5, 3)
+        ┌─────┬─────┬─────────┐
+        │ x   ┆ z   ┆ x_and_z │
+        │ --- ┆ --- ┆ ---     │
+        │ i64 ┆ i64 ┆ i64     │
+        ╞═════╪═════╪═════════╡
+        │ 5   ┆ -9  ┆ 5       │
+        │ 6   ┆ 2   ┆ 2       │
+        │ 7   ┆ -1  ┆ 7       │
+        │ 4   ┆ 4   ┆ 4       │
+        │ 8   ┆ 8   ┆ 8       │
+        └─────┴─────┴─────────┘
         """
         return reduce(operator.and_, (self, *others))
 
     def or_(self, *others: Any) -> Expr:
         """
         Method equivalent of bitwise "or" operator `expr | other | ...`.
+
+        This has the effect of combining logical boolean expressions,
+        but operates bitwise on integers.
 
         Parameters
         ----------
@@ -5062,6 +5253,9 @@ Consider using {self}.implode() instead"""
         ...         "z": [-9, 2, -1, 4, 8],
         ...     }
         ... )
+
+        Combine logical "or" conditions:
+
         >>> df.select(
         ...     (pl.col("x") == pl.col("y"))
         ...     .or_(
@@ -5083,6 +5277,22 @@ Consider using {self}.implode() instead"""
         │ true  │
         │ false │
         └───────┘
+
+        Bitwise "or" operation on integer columns:
+
+        >>> df.select("x", "z", x_or_z=pl.col("x").or_(pl.col("z")))
+        shape: (5, 3)
+        ┌─────┬─────┬────────┐
+        │ x   ┆ z   ┆ x_or_z │
+        │ --- ┆ --- ┆ ---    │
+        │ i64 ┆ i64 ┆ i64    │
+        ╞═════╪═════╪════════╡
+        │ 5   ┆ -9  ┆ -9     │
+        │ 6   ┆ 2   ┆ 6      │
+        │ 7   ┆ -1  ┆ -1     │
+        │ 4   ┆ 4   ┆ 4      │
+        │ 8   ┆ 8   ┆ 8      │
+        └─────┴─────┴────────┘
         """
         return reduce(operator.or_, (self,) + others)
 
@@ -5991,6 +6201,8 @@ Consider using {self}.implode() instead"""
 
         Parameters
         ----------
+        other
+            A literal or expression value to compare with.
         abs_tol
             Absolute tolerance. This is the maximum allowed absolute difference between
             two values. Must be non-negative.
@@ -7466,6 +7678,103 @@ Consider using {self}.implode() instead"""
             )
         )
 
+    @unstable()
+    def rolling_rank_by(
+        self,
+        by: IntoExpr,
+        window_size: timedelta | str,
+        method: RankMethod = "average",
+        *,
+        seed: int | None = None,
+        min_samples: int = 1,
+        closed: ClosedInterval = "right",
+    ) -> Expr:
+        """
+        Compute a rolling rank based on another column.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Given a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
+
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
+            - ...
+            - (t_n - window_size, t_n]
+
+        Parameters
+        ----------
+        by
+            Should be ``DateTime``, ``Date``, ``UInt64``, ``UInt32``, ``Int64``,
+            or ``Int32`` data type (note that the integral ones require using `'i'`
+            in `window size`).
+        window_size
+            The length of the window. Can be a dynamic
+            temporal size indicated by a timedelta or the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
+        method : {'average', 'min', 'max', 'dense', 'random'}
+            The method used to assign ranks to tied elements.
+            The following methods are available (default is 'average'):
+
+            - 'average' : The average of the ranks that would have been assigned to
+              all the tied values is assigned to each value.
+            - 'min' : The minimum of the ranks that would have been assigned to all
+              the tied values is assigned to each value. (This is also referred to
+              as "competition" ranking.)
+            - 'max' : The maximum of the ranks that would have been assigned to all
+              the tied values is assigned to each value.
+            - 'dense' : Like 'min', but the rank of the next highest element is
+              assigned the rank immediately after those assigned to the tied
+              elements.
+            - 'random' : Choose a random rank for each value in a tie.
+        seed
+            Random seed used when `method='random'`. If set to None (default), a
+            random seed is generated for each rolling rank operation.
+        min_samples
+            The number of values in the window that should be non-null before computing
+            a result.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive),
+            defaults to `'right'`.
+
+        Returns
+        -------
+        Expr
+            An Expr of data :class:`.Float64` if `method` is `"average"` or,
+            the index size (see :func:`.get_index_type()`) otherwise.
+        """
+        window_size = _prepare_rolling_by_window_args(window_size)
+        by_pyexpr = parse_into_expression(by)
+        return wrap_expr(
+            self._pyexpr.rolling_rank_by(
+                by_pyexpr,
+                window_size,
+                method,
+                seed,
+                min_samples,
+                closed,
+            )
+        )
+
     @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_min(
         self,
@@ -8397,6 +8706,89 @@ Consider using {self}.implode() instead"""
         )
 
     @unstable()
+    def rolling_rank(
+        self,
+        window_size: int,
+        method: RankMethod = "average",
+        *,
+        seed: int | None = None,
+        min_samples: int | None = None,
+        center: bool = False,
+    ) -> Expr:
+        """
+        Compute a rolling rank.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        A window of length `window_size` will traverse the array. The values
+        that fill this window will be ranked according to the `method`
+        parameter. The resulting values will be the rank of the value that is
+        at the end of the sliding window.
+
+        Parameters
+        ----------
+        window_size
+            Integer size of the rolling window.
+        method : {'average', 'min', 'max', 'dense', 'random'}
+            The method used to assign ranks to tied elements.
+            The following methods are available (default is 'average'):
+
+            - 'average' : The average of the ranks that would have been assigned to
+              all the tied values is assigned to each value.
+            - 'min' : The minimum of the ranks that would have been assigned to all
+              the tied values is assigned to each value. (This is also referred to
+              as "competition" ranking.)
+            - 'max' : The maximum of the ranks that would have been assigned to all
+              the tied values is assigned to each value.
+            - 'dense' : Like 'min', but the rank of the next highest element is
+              assigned the rank immediately after those assigned to the tied
+              elements.
+            - 'random' : Choose a random rank for each value in a tie.
+        seed
+            Random seed used when `method='random'`. If set to None (default), a
+            random seed is generated for each rolling rank operation.
+        min_samples
+            The number of values in the window that should be non-null before computing
+            a result. If set to `None` (default), it will be set equal to `window_size`.
+        center
+            Set the labels at the center of the window.
+
+        Returns
+        -------
+        Expr
+            An Expr of data :class:`.Float64` if `method` is `"average"` or,
+            the index size (see :func:`.get_index_type()`) otherwise.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 4, 4, 1, 9]})
+        >>> df.select(pl.col("a").rolling_rank(3, method="average"))
+            shape: (5, 1)
+            ┌──────┐
+            │ a    │
+            │ ---  │
+            │ f64  │
+            ╞══════╡
+            │ null │
+            │ null │
+            │ 2.5  │
+            │ 1.0  │
+            │ 3.0  │
+            └──────┘
+        """
+        return wrap_expr(
+            self._pyexpr.rolling_rank(
+                window_size,
+                method,
+                seed,
+                min_samples,
+                center,
+            )
+        )
+
+    @unstable()
     def rolling_skew(
         self,
         window_size: int,
@@ -8810,6 +9202,11 @@ Consider using {self}.implode() instead"""
         n
             periods to shift for forming percent change.
 
+        Notes
+        -----
+        Null values are preserved. If you're coming from pandas, this matches
+        their ``fill_method=None`` behaviour.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -8827,8 +9224,8 @@ Consider using {self}.implode() instead"""
         │ 10   ┆ null       │
         │ 11   ┆ 0.1        │
         │ 12   ┆ 0.090909   │
-        │ null ┆ 0.0        │
-        │ 12   ┆ 0.0        │
+        │ null ┆ null       │
+        │ 12   ┆ null       │
         └──────┴────────────┘
         """
         n_pyexpr = parse_into_expression(n)
@@ -10116,6 +10513,52 @@ Consider using {self}.implode() instead"""
         │ red   ┆ 0.333333 │
         │ green ┆ 0.166667 │
         └───────┴──────────┘
+
+        Note that `group_by` can be used to generate counts.
+
+        >>> df.group_by("color").len()  # doctest: +IGNORE_RESULT
+        shape: (3, 2)
+        ┌───────┬─────┐
+        │ color ┆ len │
+        │ ---   ┆ --- │
+        │ str   ┆ u32 │
+        ╞═══════╪═════╡
+        │ red   ┆ 2   │
+        │ green ┆ 1   │
+        │ blue  ┆ 3   │
+        └───────┴─────┘
+
+        To add counts as a new column `pl.len()` can be used as a window function.
+
+        >>> df.with_columns(pl.len().over("color"))
+        shape: (6, 2)
+        ┌───────┬─────┐
+        │ color ┆ len │
+        │ ---   ┆ --- │
+        │ str   ┆ u32 │
+        ╞═══════╪═════╡
+        │ red   ┆ 2   │
+        │ blue  ┆ 3   │
+        │ red   ┆ 2   │
+        │ green ┆ 1   │
+        │ blue  ┆ 3   │
+        │ blue  ┆ 3   │
+        └───────┴─────┘
+
+        >>> df.with_columns((pl.len().over("color") / pl.len()).alias("fraction"))
+        shape: (6, 2)
+        ┌───────┬──────────┐
+        │ color ┆ fraction │
+        │ ---   ┆ ---      │
+        │ str   ┆ f64      │
+        ╞═══════╪══════════╡
+        │ red   ┆ 0.333333 │
+        │ blue  ┆ 0.5      │
+        │ red   ┆ 0.333333 │
+        │ green ┆ 0.166667 │
+        │ blue  ┆ 0.5      │
+        │ blue  ┆ 0.5      │
+        └───────┴──────────┘
         """
         name = name or ("proportion" if normalize else "count")
         return wrap_expr(self._pyexpr.value_counts(sort, parallel, name, normalize))
@@ -10134,11 +10577,7 @@ Consider using {self}.implode() instead"""
         ...         "id": ["a", "b", "b", "c", "c", "c"],
         ...     }
         ... )
-        >>> df.select(
-        ...     [
-        ...         pl.col("id").unique_counts(),
-        ...     ]
-        ... )
+        >>> df.select(pl.col("id").unique_counts())
         shape: (3, 1)
         ┌─────┐
         │ id  │
@@ -10149,6 +10588,37 @@ Consider using {self}.implode() instead"""
         │ 2   │
         │ 3   │
         └─────┘
+
+        Note that `group_by` can be used to generate counts.
+
+        >>> df.group_by("id", maintain_order=True).len().select("len")
+        shape: (3, 1)
+        ┌─────┐
+        │ len │
+        │ --- │
+        │ u32 │
+        ╞═════╡
+        │ 1   │
+        │ 2   │
+        │ 3   │
+        └─────┘
+
+        To add counts as a new column `pl.len()` can be used as a window function.
+
+        >>> df.with_columns(pl.len().over("id"))
+        shape: (6, 2)
+        ┌─────┬─────┐
+        │ id  ┆ len │
+        │ --- ┆ --- │
+        │ str ┆ u32 │
+        ╞═════╪═════╡
+        │ a   ┆ 1   │
+        │ b   ┆ 2   │
+        │ b   ┆ 2   │
+        │ c   ┆ 3   │
+        │ c   ┆ 3   │
+        │ c   ┆ 3   │
+        └─────┴─────┘
         """
         return wrap_expr(self._pyexpr.unique_counts())
 

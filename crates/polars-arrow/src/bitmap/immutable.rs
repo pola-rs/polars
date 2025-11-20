@@ -494,7 +494,10 @@ impl Bitmap {
 
     /// Calculates the number of shared set bits between two [`Bitmap`]s.
     pub fn num_intersections_with(&self, other: &Self) -> usize {
-        num_intersections_with(self, other)
+        num_intersections_with(
+            super::bitmask::BitMask::from_bitmap(self),
+            super::bitmask::BitMask::from_bitmap(other),
+        )
     }
 
     /// Select between `truthy` and `falsy` based on `self`.

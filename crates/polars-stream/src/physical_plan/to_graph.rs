@@ -9,7 +9,8 @@ use polars_expr::groups::new_hash_grouper;
 use polars_expr::planner::{ExpressionConversionState, create_physical_expr};
 use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
-use polars_mem_engine::{create_physical_plan, create_scan_predicate};
+use polars_mem_engine::create_physical_plan;
+use polars_mem_engine::scan_predicate::create_scan_predicate;
 use polars_plan::dsl::{JoinOptionsIR, PartitionVariantIR, ScanSources};
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, Context, IR, IRAggExpr};
@@ -372,7 +373,7 @@ fn to_graph_rec<'a>(
             }
         },
 
-        PartitionSink {
+        PartitionedSink {
             input,
             base_path,
             file_path_cb,
@@ -486,10 +487,37 @@ fn to_graph_rec<'a>(
             )
         },
 
-        Map { input, map } => {
+        Map {
+            input,
+            map,
+            format_str: _,
+        } => {
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.graph.add_node(
                 nodes::map::MapNode::new(map.clone()),
+                [(input_key, input.port)],
+            )
+        },
+
+        SortedGroupBy {
+            input,
+            key,
+            aggs,
+            slice,
+        } => {
+            let input_schema = ctx.phys_sm[input.node].output_schema.clone();
+            let input_key = to_graph_rec(input.node, ctx)?;
+            let aggs = aggs
+                .iter()
+                .map(|e| {
+                    Ok((
+                        e.output_name().clone(),
+                        create_stream_expr(e, ctx, &input_schema)?,
+                    ))
+                })
+                .collect::<PolarsResult<Arc<[_]>>>()?;
+            ctx.graph.add_node(
+                nodes::sorted_group_by::SortedGroupBy::new(key.clone(), aggs, *slice, input_schema),
                 [(input_key, input.port)],
             )
         },
@@ -514,7 +542,7 @@ fn to_graph_rec<'a>(
                 sort_node,
                 &mut lp_arena,
                 ctx.expr_arena,
-                None,
+                Some(crate::dispatch::build_streaming_query_executor),
             )?);
 
             let input_key = to_graph_rec(input.node, ctx)?;
@@ -665,6 +693,7 @@ fn to_graph_rec<'a>(
             row_index,
             pre_slice,
             predicate,
+            predicate_file_skip_applied,
             hive_parts,
             missing_columns_policy,
             cast_columns_policy,
@@ -693,6 +722,7 @@ fn to_graph_rec<'a>(
                 })
                 .transpose()?
                 .map(|p| p.to_io(None, file_schema.clone()));
+            let predicate_file_skip_applied = *predicate_file_skip_applied;
 
             let sources = scan_sources.clone();
             let file_reader_builder = file_reader_builder.clone();
@@ -723,6 +753,7 @@ fn to_graph_rec<'a>(
                     row_index,
                     pre_slice,
                     predicate,
+                    predicate_file_skip_applied,
                     hive_parts,
                     include_file_paths,
                     missing_columns_policy,
@@ -758,7 +789,12 @@ fn to_graph_rec<'a>(
             for agg in aggs {
                 has_order_sensitive_agg |= matches!(
                     ctx.expr_arena.get(agg.node()),
-                    AExpr::Agg(IRAggExpr::First(..) | IRAggExpr::Last(..))
+                    AExpr::Agg(
+                        IRAggExpr::First(_)
+                            | IRAggExpr::FirstNonNull(_)
+                            | IRAggExpr::Last(_)
+                            | IRAggExpr::LastNonNull(_)
+                    )
                 );
                 let (reduction, input_node) =
                     into_reduction(agg.node(), ctx.expr_arena, input_schema)?;
@@ -781,6 +817,69 @@ fn to_graph_rec<'a>(
                     ctx.num_pipelines,
                     has_order_sensitive_agg,
                 ),
+                [(input_key, input.port)],
+            )
+        },
+
+        #[cfg(feature = "dynamic_group_by")]
+        DynamicGroupBy {
+            input,
+            options,
+            aggs,
+            slice,
+        } => {
+            let input_schema = &ctx.phys_sm[input.node].output_schema;
+            let input_key = to_graph_rec(input.node, ctx)?;
+            let aggs = aggs
+                .iter()
+                .map(|e| {
+                    Ok((
+                        e.output_name().clone(),
+                        create_stream_expr(e, ctx, input_schema)?,
+                    ))
+                })
+                .collect::<PolarsResult<Arc<[_]>>>()?;
+            ctx.graph.add_node(
+                nodes::dynamic_group_by::DynamicGroupBy::new(
+                    input_schema.clone(),
+                    options.clone(),
+                    aggs,
+                    *slice,
+                )?,
+                [(input_key, input.port)],
+            )
+        },
+        #[cfg(feature = "dynamic_group_by")]
+        RollingGroupBy {
+            input,
+            index_column,
+            period,
+            offset,
+            closed,
+            slice,
+            aggs,
+        } => {
+            let input_schema = &ctx.phys_sm[input.node].output_schema;
+            let input_key = to_graph_rec(input.node, ctx)?;
+            let aggs = aggs
+                .iter()
+                .map(|e| {
+                    Ok((
+                        e.output_name().clone(),
+                        create_stream_expr(e, ctx, input_schema)?,
+                    ))
+                })
+                .collect::<PolarsResult<Arc<[_]>>>()?;
+            ctx.graph.add_node(
+                nodes::rolling_group_by::RollingGroupBy::new(
+                    input_schema.clone(),
+                    index_column.clone(),
+                    *period,
+                    *offset,
+                    *closed,
+                    *slice,
+                    aggs,
+                )?,
                 [(input_key, input.port)],
             )
         },
@@ -816,8 +915,6 @@ fn to_graph_rec<'a>(
                     force_parallel: false,
                     args: args.clone(),
                     options: options.clone(),
-                    rows_left: (None, 0),
-                    rows_right: (None, 0),
                 }),
             });
 
@@ -825,7 +922,7 @@ fn to_graph_rec<'a>(
                 join_node,
                 &mut lp_arena,
                 ctx.expr_arena,
-                None,
+                Some(crate::dispatch::build_streaming_query_executor),
             )?);
 
             ctx.graph.add_node(
@@ -1036,7 +1133,7 @@ fn to_graph_rec<'a>(
 
                     // Setup the IO plugin generator.
                     let (generator, can_parse_predicate) = {
-                        Python::with_gil(|py| {
+                        Python::attach(|py| {
                             let pl = PyModule::import(py, intern!(py, "polars")).unwrap();
                             let utils = pl.getattr(intern!(py, "_utils")).unwrap();
                             let callable =
@@ -1086,7 +1183,7 @@ fn to_graph_rec<'a>(
                     }?;
 
                     let get_batch_fn = Box::new(move |state: &StreamingExecutionState| {
-                        let df = Python::with_gil(|py| {
+                        let df = Python::attach(|py| {
                             match generator.bind(py).call_method0(intern!(py, "__next__")) {
                                 Ok(out) => polars_plan::plans::python_df_to_rust(py, out).map(Some),
                                 Err(err)
@@ -1160,6 +1257,7 @@ fn to_graph_rec<'a>(
             let row_index = None;
             let pre_slice = None;
             let predicate = None;
+            let predicate_file_skip_applied = None;
             let hive_parts = None;
             let include_file_paths = None;
             let missing_columns_policy = MissingColumnsPolicy::Raise;
@@ -1179,6 +1277,7 @@ fn to_graph_rec<'a>(
                     row_index,
                     pre_slice,
                     predicate,
+                    predicate_file_skip_applied,
                     hive_parts,
                     include_file_paths,
                     missing_columns_policy,
@@ -1194,6 +1293,61 @@ fn to_graph_rec<'a>(
                 })),
                 [],
             )
+        },
+
+        #[cfg(feature = "ewma")]
+        ewm_variant @ EwmMean { input, options }
+        | ewm_variant @ EwmVar { input, options }
+        | ewm_variant @ EwmStd { input, options } => {
+            use nodes::ewm::EwmNode;
+            use polars_compute::ewm::mean::EwmMeanState;
+            use polars_compute::ewm::{EwmCovState, EwmStateUpdate, EwmStdState, EwmVarState};
+            use polars_core::with_match_physical_float_type;
+
+            let input_key = to_graph_rec(input.node, ctx)?;
+            let input_schema = &ctx.phys_sm[input.node].output_schema;
+            let (_, dtype) = input_schema.get_at_index(0).unwrap();
+
+            let state: Box<dyn EwmStateUpdate + Send> = match ewm_variant {
+                EwmMean { .. } => {
+                    with_match_physical_float_type!(dtype, |$T| {
+                        let state: EwmMeanState<$T> = EwmMeanState::new(
+                            options.alpha as $T,
+                            options.adjust,
+                            options.min_periods,
+                            options.ignore_nulls,
+                        );
+
+                        Box::new(state)
+                    })
+                },
+                _ => with_match_physical_float_type!(dtype, |$T| {
+                    let state: EwmCovState<$T> = EwmCovState::new(
+                        options.alpha as $T,
+                        options.adjust,
+                        options.bias,
+                        options.min_periods,
+                        options.ignore_nulls,
+                    );
+
+                    match ewm_variant {
+                        EwmVar { .. } => Box::new(EwmVarState::new(state)),
+                        EwmStd { .. } => Box::new(EwmStdState::new(state)),
+                        _ => unreachable!(),
+                    }
+                }),
+            };
+
+            let name = match ewm_variant {
+                EwmMean { .. } => "ewm-mean",
+                EwmVar { .. } => "ewm-var",
+                EwmStd { .. } => "ewm-std",
+                _ => unreachable!(),
+            };
+
+            let node = EwmNode::new(name, state);
+
+            ctx.graph.add_node(node, [(input_key, input.port)])
         },
     };
 

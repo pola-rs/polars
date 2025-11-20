@@ -9,11 +9,11 @@ repository = { workspace = true }
 description = "Private crate for the streaming execution engine for the Polars DataFrame library"
 
 [dependencies]
-arrow = { workspace = true }
 async-channel = { workspace = true }
 async-trait = { workspace = true }
 atomic-waker = { workspace = true }
 bitflags = { workspace = true }
+chrono-tz = { workspace = true }
 crossbeam-channel = { workspace = true }
 crossbeam-deque = { workspace = true }
 crossbeam-queue = { workspace = true }
@@ -23,40 +23,52 @@ memmap = { workspace = true }
 parking_lot = { workspace = true }
 percent-encoding = { workspace = true }
 pin-project-lite = { workspace = true }
-polars-io = { workspace = true, features = ["async", "file_cache"] }
-polars-utils = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rand = { workspace = true }
 rayon = { workspace = true }
 recursive = { workspace = true }
+schemars = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
 slotmap = { workspace = true }
+strum_macros = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["sync"] }
 
+arrow = { workspace = true }
+polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["partition_by"] }
 polars-error = { workspace = true }
-polars-expr = { workspace = true }
+polars-expr = { workspace = true, features = ["rle", "peaks", "arg_where", "unique_counts", "dtype-struct"] }
+polars-io = { workspace = true, features = ["async", "file_cache"] }
 polars-mem-engine = { workspace = true }
-polars-ops = { workspace = true, features = ["rle", "peaks", "unique_counts", "dtype-struct"] }
+polars-ops = { workspace = true, features = ["rle", "peaks", "unique_counts", "dtype-struct", "search_sorted"] }
 polars-parquet = { workspace = true }
 polars-plan = { workspace = true, features = ["cse", "rle", "peaks", "arg_where", "unique_counts", "dtype-struct"] }
+polars-time = { workspace = true }
+polars-utils = { workspace = true }
 
 [build-dependencies]
 version_check = { workspace = true }
 
 [features]
-nightly = []
+nightly = ["polars-expr/nightly"]
+approx_unique = ["polars-plan/approx_unique", "polars-expr/approx_unique"]
 bitwise = ["polars-core/bitwise", "polars-plan/bitwise", "polars-expr/bitwise"]
 merge_sorted = ["polars-plan/merge_sorted", "polars-mem-engine/merge_sorted"]
 dynamic_group_by = [
   "polars-plan/dynamic_group_by",
   "polars-expr/dynamic_group_by",
   "polars-mem-engine/dynamic_group_by",
+  "polars-time/dtype-date",
+  "polars-time/dtype-datetime",
+  "arrow/timezones",
 ]
 strings = []
 ipc = ["polars-mem-engine/ipc", "polars-plan/ipc", "polars-io/ipc"]
 parquet = ["polars-mem-engine/parquet", "polars-plan/parquet", "cloud"]
 csv = ["polars-mem-engine/csv", "polars-plan/csv", "polars-io/csv"]
 json = ["polars-mem-engine/json", "polars-plan/json", "polars-io/json"]
+scan_lines = ["polars-mem-engine/scan_lines", "polars-plan/scan_lines", "polars-io/scan_lines"]
 cloud = ["polars-mem-engine/cloud", "polars-plan/cloud", "polars-io/cloud"]
 diff = ["polars-ops/diff", "polars-plan/diff", "polars-plan/abs"]
 dtype-array = ["polars-core/dtype-array"]
@@ -68,8 +80,21 @@ dtype-i16 = ["polars-core/dtype-i16", "polars-plan/dtype-i16"]
 dtype-i128 = ["polars-core/dtype-i128", "polars-plan/dtype-i128"]
 dtype-categorical = ["polars-core/dtype-categorical", "polars-plan/dtype-categorical"]
 dtype-decimal = ["polars-core/dtype-decimal", "polars-plan/dtype-decimal"]
+ewma = ["polars-plan/ewma"]
 mode = ["polars-plan/mode"]
 object = ["polars-ops/object"]
+physical_plan_visualization = [
+  "dep:serde",
+  "dep:serde_json",
+  "polars-plan/ir_serde",
+  "strum_macros",
+]
+physical_plan_visualization_schema = [
+  "physical_plan_visualization",
+  "dep:schemars",
+  "polars-plan/dsl-schema",
+  "polars-utils/dsl-schema",
+]
 python = ["pyo3", "polars-plan/python", "polars-mem-engine/python", "polars-error/python"]
 semi_anti_join = ["polars-plan/semi_anti_join", "polars-ops/semi_anti_join"]
 is_in = ["polars-ops/is_in", "polars-plan/is_in", "semi_anti_join"]

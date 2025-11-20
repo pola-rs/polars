@@ -6,7 +6,7 @@ ifeq ($(VENV),)
 VENV := .venv
 endif
 
-RUNTIME_CARGO_TOML=py-polars/runtime/Cargo.toml
+RUNTIME_CARGO_TOML=py-polars/runtime/polars-runtime-32/Cargo.toml
 
 ifeq ($(OS),Windows_NT)
 	VENV_BIN=$(VENV)/Scripts
@@ -23,17 +23,23 @@ ifeq ($(OS),Windows_NT)
 	else ifeq ($(PROCESSOR_ARCHITECTURE),ARM64)
 		ARCH := arm64
 	else
+		_DUMMY := $(warning Unknown architecture '$(PROCESSOR_ARCHITECTURE)', defaulting to 'unknown')
 		ARCH := unknown
     endif
 else
-    UNAME_P := $(shell uname -p)
-    ifeq ($(UNAME_P),x86_64)
+    UNAME_M := $(shell uname -m)
+    ifeq ($(UNAME_M),x86_64)
 		ARCH := amd64
-	else ifneq ($(filter %86,$(UNAME_P)),)
-		ARCH := x86
-	else ifneq ($(filter arm%,$(UNAME_P)),)
+    else ifeq ($(UNAME_M),x64)
+		ARCH := amd64
+    else ifeq ($(UNAME_M),arm64)
 		ARCH := arm64
+    else ifeq ($(UNAME_M),aarch64)
+		ARCH := arm64
+	else ifneq ($(filter %86,$(UNAME_M)),)
+		ARCH := x86
 	else
+		_DUMMY := $(warning Unknown architecture '$(UNAME_M)', defaulting to 'unknown')
 		ARCH := unknown
     endif
 endif

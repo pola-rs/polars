@@ -12,8 +12,10 @@ description = "DataFrame library based on Apache Arrow"
 
 [dependencies]
 arrow = { workspace = true }
+polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["algorithm_group_by"] }
 polars-error = { workspace = true }
+polars-expr = { workspace = true, optional = true }
 polars-io = { workspace = true, optional = true }
 polars-lazy = { workspace = true, optional = true }
 polars-ops = { workspace = true, optional = true }
@@ -50,7 +52,14 @@ sql = ["polars-sql"]
 rows = ["polars-core/rows"]
 simd = ["polars-core/simd", "polars-io/simd", "polars-ops?/simd"]
 avx512 = ["polars-core/avx512"]
-nightly = ["polars-core/nightly", "polars-ops?/nightly", "simd", "polars-lazy?/nightly", "polars-sql?/nightly"]
+nightly = [
+  "polars-core/nightly",
+  "polars-ops?/nightly",
+  "simd",
+  "polars-lazy?/nightly",
+  "polars-sql?/nightly",
+  "polars-expr/nightly",
+]
 docs = ["polars-core/docs"]
 temporal = ["polars-core/temporal", "polars-lazy?/temporal", "polars-io/temporal", "polars-time"]
 random = ["polars-core/random", "polars-lazy?/random", "polars-ops/random"]
@@ -100,6 +109,8 @@ object = ["polars-core/object", "polars-lazy?/object", "polars-io/object"]
 
 # support for arrows json parsing
 json = ["polars-io", "polars-io/json", "polars-lazy?/json", "polars-sql?/json", "dtype-struct", "new_streaming"]
+
+scan_lines = ["polars-io", "polars-io/scan_lines", "polars-lazy?/scan_lines", "new_streaming"]
 
 # support for arrows ipc file parsing
 ipc = ["polars-io", "polars-io/ipc", "polars-lazy?/ipc", "polars-sql?/ipc", "new_streaming"]
@@ -165,7 +176,7 @@ diagonal_concat = ["polars-core/diagonal_concat", "polars-lazy?/diagonal_concat"
 diff = ["polars-ops/diff", "polars-lazy?/diff"]
 dot_diagram = ["polars-lazy?/dot_diagram"]
 dot_product = ["polars-core/dot_product"]
-dynamic_group_by = ["polars-core/dynamic_group_by", "polars-lazy?/dynamic_group_by"]
+dynamic_group_by = ["polars-core/dynamic_group_by", "polars-lazy?/dynamic_group_by", "polars-sql?/dynamic_group_by"]
 ewma = ["polars-ops/ewma", "polars-lazy?/ewma"]
 ewma_by = ["polars-ops/ewma_by", "polars-lazy?/ewma_by"]
 extract_groups = ["polars-lazy?/extract_groups"]
@@ -175,7 +186,7 @@ extract_jsonpath = [
   "polars-ops/strings",
   "polars-lazy?/extract_jsonpath",
 ]
-find_many = ["polars-plan/find_many"]
+find_many = ["polars-expr/find_many", "polars-lazy?/find_many"]
 fused = ["polars-ops/fused", "polars-lazy?/fused"]
 interpolate = ["polars-ops/interpolate", "polars-lazy?/interpolate"]
 interpolate_by = ["polars-ops/interpolate_by", "polars-lazy?/interpolate_by"]
@@ -212,7 +223,7 @@ pivot = ["polars-lazy?/pivot", "polars-ops/pivot", "dtype-struct", "rows"]
 product = ["polars-core/product"]
 propagate_nans = ["polars-lazy?/propagate_nans"]
 range = ["polars-lazy?/range"]
-rank = ["polars-lazy?/rank", "polars-ops/rank"]
+rank = ["polars-lazy?/rank", "polars-ops/rank", "polars-sql?/rank"]
 reinterpret = ["polars-core/reinterpret", "polars-lazy?/reinterpret", "polars-ops/reinterpret"]
 repeat_by = ["polars-ops/repeat_by", "polars-lazy?/repeat_by"]
 replace = ["polars-ops/replace", "polars-lazy?/replace"]

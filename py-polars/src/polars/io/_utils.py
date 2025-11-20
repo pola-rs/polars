@@ -2,21 +2,23 @@ from __future__ import annotations
 
 import glob
 import re
+from collections.abc import Sequence
 from contextlib import contextmanager
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, overload
+from typing import IO, TYPE_CHECKING, Any, Union, cast, overload
 
 from polars._dependencies import _FSSPEC_AVAILABLE, fsspec
 from polars._utils.various import (
     is_int_sequence,
+    is_path_or_str_sequence,
     is_str_sequence,
     normalize_filepath,
 )
 from polars.exceptions import NoDataError
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Sequence
+    from collections.abc import Iterator
     from contextlib import AbstractContextManager as ContextManager
 
 
@@ -291,7 +293,7 @@ def _check_empty(
 
 
 def looks_like_url(path: str) -> bool:
-    return re.match("^(ht|f)tps?://", path, re.IGNORECASE) is not None
+    return re.match(r"^(ht|f)tps?://", path, re.IGNORECASE) is not None
 
 
 def process_file_url(path: str, encoding: str | None = None) -> BytesIO:
@@ -315,3 +317,32 @@ def is_local_file(file: str) -> bool:
         return False
     else:
         return True
+
+
+def get_sources(
+    source: str
+    | Path
+    | IO[bytes]
+    | IO[str]
+    | bytes
+    | list[str]
+    | list[Path]
+    | list[IO[bytes]]
+    | list[IO[str]]
+    | list[bytes],
+) -> list[str] | list[Path] | list[IO[str]] | list[IO[bytes]] | list[bytes]:
+    if isinstance(source, (str, Path)):
+        source = normalize_filepath(source, check_not_directory=False)
+    elif is_path_or_str_sequence(source):
+        source = [
+            normalize_filepath(source, check_not_directory=False) for source in source
+        ]
+
+    if not isinstance(source, Sequence) or isinstance(source, (str, bytes)):
+        out: list[bytes | str | IO[bytes] | IO[str]] = [source]
+
+        return cast(
+            "Union[list[bytes], list[str], list[IO[bytes]], list[IO[str]]]", out
+        )
+
+    return source

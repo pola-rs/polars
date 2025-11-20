@@ -22,14 +22,14 @@ where
         + PartialOrd,
 {
     match (center, weights) {
-        (true, None) => rolling_apply_agg_window::<SumWindow<T, T>, _, _>(
+        (true, None) => rolling_apply_agg_window::<SumWindow<T, T>, _, _, _>(
             values,
             window_size,
             min_periods,
             det_offsets_center,
             None,
         ),
-        (false, None) => rolling_apply_agg_window::<SumWindow<T, T>, _, _>(
+        (false, None) => rolling_apply_agg_window::<SumWindow<T, T>, _, _, _>(
             values,
             window_size,
             min_periods,

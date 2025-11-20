@@ -35,7 +35,7 @@ fn scatter(mut s: Series, idx: &Series, values: &Series) -> Result<Series, (Seri
     let values = if logical_dtype.is_categorical() || logical_dtype.is_enum() {
         if matches!(
             values.dtype(),
-            DataType::Categorical(_, _) | DataType::Enum(_, _) | DataType::String
+            DataType::Categorical(_, _) | DataType::Enum(_, _) | DataType::String | DataType::Null
         ) {
             match values.strict_cast(&logical_dtype) {
                 Ok(values) => values,

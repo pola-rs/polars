@@ -15,12 +15,12 @@ from typing import (
 )
 
 if TYPE_CHECKING:
-    import contextlib
     import sys
     from datetime import date, datetime, time, timedelta
     from decimal import Decimal
 
     from sqlalchemy.engine import Connection, Engine
+    from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession
     from sqlalchemy.orm import Session
 
     from polars import DataFrame, Expr, LazyFrame, Series
@@ -31,9 +31,6 @@ if TYPE_CHECKING:
     from polars.datatypes import DataType, DataTypeClass, IntegerType, TemporalType
     from polars.lazyframe.engine_config import GPUEngine
     from polars.selectors import Selector
-
-    with contextlib.suppress(ImportError):  # Module not available when building docs
-        from polars._plr import PyPartitioning
 
     if sys.version_info >= (3, 10):
         from typing import TypeAlias
@@ -112,7 +109,12 @@ AvroCompression: TypeAlias = Literal["uncompressed", "snappy", "deflate"]
 CsvQuoteStyle: TypeAlias = Literal["necessary", "always", "non_numeric", "never"]
 CategoricalOrdering: TypeAlias = Literal["physical", "lexical"]
 CsvEncoding: TypeAlias = Literal["utf8", "utf8-lossy"]
-ColumnMapping: TypeAlias = tuple[Literal["iceberg-column-mapping"], "pa.Schema"]
+ColumnMapping: TypeAlias = tuple[
+    Literal["iceberg-column-mapping"],
+    # This is "pa.Schema". Not typed as that causes pyright strict type checking
+    # failures for users who don't have pyarrow-stubs installed.
+    Any,
+]
 DefaultFieldValues: TypeAlias = tuple[
     Literal["iceberg"], dict[int, Union["Series", str]]
 ]
@@ -139,7 +141,7 @@ ParquetCompression: TypeAlias = Literal[
     "lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"
 ]
 PivotAgg: TypeAlias = Literal[
-    "min", "max", "first", "last", "sum", "mean", "median", "len"
+    "min", "max", "first", "last", "sum", "mean", "median", "len", "item"
 ]
 QuantileMethod: TypeAlias = Literal[
     "nearest", "higher", "lower", "midpoint", "linear", "equiprobable"
@@ -294,8 +296,11 @@ class Cursor(BasicCursor):
 
 
 AlchemyConnection: TypeAlias = Union["Connection", "Engine", "Session"]
+AlchemyAsyncConnection: TypeAlias = Union[
+    "AsyncConnection", "AsyncEngine", "AsyncSession"
+]
 ConnectionOrCursor: TypeAlias = Union[
-    BasicConnection, BasicCursor, Cursor, AlchemyConnection
+    BasicConnection, BasicCursor, Cursor, AlchemyConnection, AlchemyAsyncConnection
 ]
 
 # Annotations for `__getitem__` methods
@@ -349,18 +354,6 @@ DeprecationType: TypeAlias = Literal[
     "nonkeyword_arguments",
     "parameter_as_multi_positional",
 ]
-
-
-class PartitioningScheme:
-    def __init__(
-        self,
-        py_partitioning: PyPartitioning,
-    ) -> None:
-        self._py_partitioning = py_partitioning
-
-    @property
-    def _base_path(self) -> str | None:
-        return self._py_partitioning.base_path
 
 
 __all__ = [
@@ -424,7 +417,6 @@ __all__ = [
     "ParallelStrategy",
     "ParametricProfileNames",
     "ParquetCompression",
-    "PartitioningScheme",
     "PivotAgg",
     "PolarsDataType",
     "PolarsIntegerType",

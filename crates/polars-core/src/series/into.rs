@@ -20,13 +20,30 @@ impl Series {
     /// This conversion is needed because polars doesn't use a
     /// 1 on 1 mapping for logical/categoricals, etc.
     pub fn to_arrow(&self, chunk_idx: usize, compat_level: CompatLevel) -> ArrayRef {
-        ToArrowConverter { compat_level }
-            .array_to_arrow(self.chunks().get(chunk_idx).unwrap().as_ref(), self.dtype())
+        ToArrowConverter {
+            compat_level,
+            #[cfg(feature = "dtype-categorical")]
+            categorical_converter: {
+                let mut categorical_converter =
+                    crate::series::categorical_to_arrow::CategoricalToArrowConverter {
+                        converters: Default::default(),
+                        persist_remap: false,
+                        output_keys_only: false,
+                    };
+
+                categorical_converter.initialize(self.dtype());
+
+                categorical_converter
+            },
+        }
+        .array_to_arrow(self.chunks().get(chunk_idx).unwrap().as_ref(), self.dtype())
     }
 }
 
 pub struct ToArrowConverter {
     pub compat_level: CompatLevel,
+    #[cfg(feature = "dtype-categorical")]
+    pub categorical_converter: crate::series::categorical_to_arrow::CategoricalToArrowConverter,
 }
 
 impl ToArrowConverter {
@@ -49,9 +66,16 @@ impl ToArrowConverter {
                     ArrowDataType::Struct(
                         fields
                             .iter()
-                            .map(|x| x.name())
+                            .map(|x| (x.name().clone(), x.dtype()))
                             .zip(values.iter().map(|x| x.dtype()))
-                            .map(|(name, dtype)| ArrowField::new(name.clone(), dtype.clone(), true))
+                            .map(|((name, dtype), converted_arrow_dtype)| {
+                                create_arrow_field(
+                                    name,
+                                    dtype,
+                                    converted_arrow_dtype,
+                                    self.compat_level,
+                                )
+                            })
                             .collect(),
                     ),
                     arr.len(),
@@ -65,7 +89,12 @@ impl ToArrowConverter {
                 let new_values = self.array_to_arrow(arr.values().as_ref(), inner);
 
                 let arr = ListArray::<i64>::new(
-                    ListArray::<i64>::default_datatype(new_values.dtype().clone()),
+                    ArrowDataType::LargeList(Box::new(create_arrow_field(
+                        LIST_VALUES_NAME,
+                        inner.as_ref(),
+                        new_values.dtype(),
+                        self.compat_level,
+                    ))),
                     arr.offsets().clone(),
                     new_values,
                     arr.validity().cloned(),
@@ -80,7 +109,15 @@ impl ToArrowConverter {
                 let new_values = self.array_to_arrow(arr.values().as_ref(), inner);
 
                 let arr = FixedSizeListArray::new(
-                    FixedSizeListArray::default_datatype(new_values.dtype().clone(), *width),
+                    ArrowDataType::FixedSizeList(
+                        Box::new(create_arrow_field(
+                            LIST_VALUES_NAME,
+                            inner.as_ref(),
+                            new_values.dtype(),
+                            self.compat_level,
+                        )),
+                        *width,
+                    ),
                     arr.len(),
                     new_values,
                     arr.validity().cloned(),
@@ -88,16 +125,9 @@ impl ToArrowConverter {
                 Box::new(arr)
             },
             #[cfg(feature = "dtype-categorical")]
-            dt @ (DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
-                with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
-                    let arr: &PrimitiveArray<<$C as PolarsCategoricalType>::Native> = array.as_any().downcast_ref().unwrap();
-                    unsafe {
-                        let new_phys = ChunkedArray::from_chunks(PlSmallStr::EMPTY, vec![arr.to_boxed()]);
-                        let new = CategoricalChunked::<$C>::from_cats_and_dtype_unchecked(new_phys, dt.clone());
-                        new.to_arrow(self.compat_level).boxed()
-                    }
-                })
-            },
+            DataType::Categorical(_, _) | DataType::Enum(_, _) => self
+                .categorical_converter
+                .array_to_arrow(array, dtype, self.compat_level),
             #[cfg(feature = "dtype-date")]
             DataType::Date => {
                 cast_default(array, &DataType::Date.to_arrow(self.compat_level)).unwrap()
@@ -152,5 +182,21 @@ impl ToArrowConverter {
                 array.to_boxed()
             },
         }
+    }
+}
+
+fn create_arrow_field(
+    name: PlSmallStr,
+    dtype: &DataType,
+    arrow_dtype: &ArrowDataType,
+    compat_level: CompatLevel,
+) -> ArrowField {
+    match (dtype, arrow_dtype) {
+        #[cfg(feature = "dtype-categorical")]
+        (DataType::Categorical(..) | DataType::Enum(..), ArrowDataType::Dictionary(_, _, _)) => {
+            // Sets _PL_ metadata
+            dtype.to_arrow_field(name, compat_level)
+        },
+        _ => ArrowField::new(name, arrow_dtype.clone(), true),
     }
 }

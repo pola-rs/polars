@@ -380,7 +380,7 @@ class ExprMetaNameSpace:
         self, *, return_as_string: Literal[True], schema: None | SchemaDict = None
     ) -> str: ...
 
-    def tree_format(
+    def tree_format(  # noqa: D417 (TODO: document schema parameter)
         self, *, return_as_string: bool = False, schema: None | SchemaDict = None
     ) -> str | None:
         """
@@ -403,7 +403,7 @@ class ExprMetaNameSpace:
             print(s)
             return None
 
-    def show_graph(
+    def show_graph(  # noqa: D417 (TODO: document schema parameter)
         self,
         *,
         show: bool = True,
@@ -442,3 +442,6 @@ class ExprMetaNameSpace:
             raw_output=raw_output,
             figsize=figsize,
         )
+
+    def _replace_element(self, expr: Expr) -> Expr:
+        return wrap_expr(self._pyexpr.meta_replace_element(expr._pyexpr))

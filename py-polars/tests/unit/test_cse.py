@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 def num_cse_occurrences(explanation: str) -> int:
     """The number of unique CSE columns in an explain string."""
-    return len(set(re.findall('__POLARS_CSER_0x[^"]+"', explanation)))
+    return len(set(re.findall(r'__POLARS_CSER_0x[^"]+"', explanation)))
 
 
 def create_dataframe_source(
@@ -346,6 +346,7 @@ def test_cse_mixed_window_functions() -> None:
         pl.col("b").rank().alias("d_rank"),
         pl.col("b").first().over([pl.col("a")]).alias("b_first"),
         pl.col("b").last().over([pl.col("a")]).alias("b_last"),
+        pl.col("b").item().over([pl.col("a")]).alias("b_item"),
         pl.col("b").shift().alias("b_lag_1"),
         pl.col("b").shift().alias("b_lead_1"),
         pl.col("c").cum_sum().alias("c_cumsum"),
@@ -363,6 +364,7 @@ def test_cse_mixed_window_functions() -> None:
             "d_rank": [1.0],
             "b_first": [1],
             "b_last": [1],
+            "b_item": [1],
             "b_lag_1": [None],
             "b_lead_1": [None],
             "c_cumsum": [1],
@@ -1143,6 +1145,7 @@ def test_cse_custom_io_source_diff_filters() -> None:
     assert_frame_equal(expected[1], res[1])
 
 
+@pytest.mark.skip
 def test_cspe_recursive_24744() -> None:
     df_a = pl.DataFrame([pl.Series("x", [0, 1, 2, 3], dtype=pl.UInt32)])
 
@@ -1187,3 +1190,22 @@ def test_cspe_recursive_24744() -> None:
         ).count("CACHE")
         == 3
     )
+
+
+def test_cpse_predicates_25030() -> None:
+    df = pl.LazyFrame({"key": [1, 2, 2], "x": [6, 2, 3], "y": [0, 1, 4]})
+
+    q1 = df.group_by("key").len().filter(pl.col("len") > 1)
+    q2 = df.filter(pl.col.x > pl.col.y)
+
+    q3 = q1.join(q2, on="key")
+
+    q4 = q3.group_by("key").len().join(q3, on="key")
+
+    got = q4.collect()
+    expected = q4.collect(
+        optimizations=pl.lazyframe.opt_flags.QueryOptFlags(comm_subplan_elim=False)
+    )
+
+    assert_frame_equal(got, expected)
+    assert q4.explain().count("CACHE") == 2

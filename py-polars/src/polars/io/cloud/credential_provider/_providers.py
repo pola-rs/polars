@@ -159,7 +159,7 @@ class CredentialProviderAWS(CachingCredentialProvider):
         at any point without it being considered a breaking change.
     """
 
-    def __init__(
+    def __init__(  # noqa: D417 (TODO)
         self,
         *,
         profile_name: str | None = None,
@@ -514,7 +514,7 @@ class CredentialProviderGCP(CachingCredentialProvider):
         at any point without it being considered a breaking change.
     """
 
-    def __init__(
+    def __init__(  # noqa: D417 (TODO)
         self,
         *,
         scopes: Any | None = None,

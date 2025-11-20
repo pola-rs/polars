@@ -1,4 +1,4 @@
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(feature = "simd", feature(portable_simd))]
 #![cfg_attr(
     feature = "allow_unused",
@@ -33,6 +33,8 @@ pub mod path_utils;
 pub mod pl_async;
 pub mod predicates;
 pub mod prelude;
+#[cfg(feature = "scan_lines")]
+pub mod scan_lines;
 mod shared;
 pub mod utils;
 
