@@ -1474,7 +1474,8 @@ def test_group_by_shift_filter_23910(maintain_order: bool) -> None:
     )
 
 
-def group_by_having() -> None:
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_group_by_having(maintain_order: bool) -> None:
     df = pl.DataFrame(
         {
             "grp": ["A", "A", "B", "B", "C", "C"],
@@ -1482,9 +1483,13 @@ def group_by_having() -> None:
         }
     )
 
-    result = df.group_by("group").having(pl.col("value").mean() >= 10).agg()
+    result = (
+        df.group_by("grp", maintain_order=maintain_order)
+        .having(pl.col("value").mean() >= 10)
+        .agg()
+    )
     expected = pl.DataFrame({"grp": ["A", "B"]})
-    assert_frame_equal(result, expected, check_row_order=False)
+    assert_frame_equal(result, expected, check_row_order=maintain_order)
 
 
 def test_group_by_tuple_typing_24112() -> None:
