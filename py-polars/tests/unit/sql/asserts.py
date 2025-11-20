@@ -9,12 +9,12 @@ from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Collection, Sequence
 
     from polars.type_aliases import PolarsDataType
 
 _POLARS_TO_SQLITE_: dict[PolarsDataType, str] = {
-    # SQLite has limited type support (primitive types only)
+    # SQLite has limited type support (primitive scalar types only)
     **dict.fromkeys(INTEGER_DTYPES, "INTEGER"),
     **dict.fromkeys(FLOAT_DTYPES, "FLOAT"),
     pl.Boolean: "INTEGER",
@@ -32,6 +32,7 @@ def _execute_with_sqlite(
         for name, df in frames.items():
             if isinstance(df, pl.LazyFrame):
                 df = df.collect()
+
             frame_schema = df.schema
             types = (_POLARS_TO_SQLITE_[frame_schema[col]] for col in df.columns)
             schema = ", ".join(f"{col} {tp}" for col, tp in zip(df.columns, types))
@@ -40,6 +41,7 @@ def _execute_with_sqlite(
                 f"INSERT INTO {name} VALUES ({','.join(['?'] * len(df.columns))})",
                 df.iter_rows(),
             )
+
         conn.commit()
         cursor.execute(query)
 
@@ -59,7 +61,7 @@ def _execute_with_duckdb(
         import duckdb
     except ImportError:
         msg = (
-            "DuckDB is required for compare_with='duckdb'."
+            "DuckDB not found; required for `compare_with='duckdb'`.\n"
             "Install with: `pip install duckdb`"
         )
         raise ImportError(msg) from None
@@ -80,7 +82,7 @@ def assert_sql_matches(
     frames: pl.DataFrame | pl.LazyFrame | dict[str, pl.DataFrame | pl.LazyFrame],
     *,
     query: str,
-    compare_with: Literal["sqlite", "duckdb"],
+    compare_with: Literal["sqlite", "duckdb"] | Collection[Literal["sqlite", "duckdb"]],
     check_dtypes: bool = False,
     check_row_order: bool = True,
     check_column_names: bool = True,
@@ -101,7 +103,7 @@ def assert_sql_matches(
     query
         SQL query string to test, referencing table names from `frames`.
     compare_with
-        Which SQL engine to use as a reference implementation.
+        One or more named SQL engines to use as a reference for comparison.
         - 'sqlite': Use Python's built-in `sqlite3` module.
         - 'duckdb': Use DuckDB (requires `duckdb` to be installed separately).
     check_dtypes
@@ -113,9 +115,9 @@ def assert_sql_matches(
         Set False to ignore the column names in the Polars/comparison frame match
         (but still compare each column in the same expected order).
     expected
-        An optional DataFrame (or dictionary) containing the expected result; with
-        this we can confirm both that the result matches the reference implementation
-        *and* that these results match expectation.
+        An optional DataFrame (or dictionary) containing the expected result;
+        with this we can confirm both that the result matches the reference
+        implementation *and* that those results match expectation.
 
     Examples
     --------
@@ -147,27 +149,32 @@ def assert_sql_matches(
         frames = {"self": frames}
 
     with pl.SQLContext(frames=frames, eager=True) as ctx:
-        if (execute_comparison := _COMPARISON_BACKENDS_.get(compare_with)) is None:
+        polars_result = ctx.execute(query=query, eager=True)
+
+    if isinstance(compare_with, str):
+        compare_with = [compare_with]
+
+    for comparison_backend in compare_with:
+        if (exec_comparison := _COMPARISON_BACKENDS_.get(comparison_backend)) is None:
             valid_engines = ", ".join(repr(b) for b in sorted(_COMPARISON_BACKENDS_))
             msg = (
-                f"invalid `compare_with` value: {compare_with!r}; "
+                f"invalid `compare_with` value: {comparison_backend!r}; "
                 f"expected one of {valid_engines}"
             )
             raise ValueError(msg)
 
-        polars_result = ctx.execute(query=query, eager=True)
-        comparison_result = execute_comparison(frames, query)
+        comparison_result = exec_comparison(frames, query)
         if not check_column_names:
             n_comparison_cols = comparison_result.width
             comparison_result.columns = polars_result.columns[:n_comparison_cols]
 
-    # validate against the reference engine/backend
-    assert_frame_equal(
-        polars_result,
-        comparison_result,
-        check_dtypes=check_dtypes,
-        check_row_order=check_row_order,
-    )
+        # validate against the reference engine/backend
+        assert_frame_equal(
+            polars_result,
+            comparison_result,
+            check_dtypes=check_dtypes,
+            check_row_order=check_row_order,
+        )
 
     # confirm that these values are not just consistent
     # but also match a specific/expected result

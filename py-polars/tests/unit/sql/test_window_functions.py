@@ -55,7 +55,6 @@ def test_over_with_partition_by(df_test: pl.DataFrame) -> None:
     assert_sql_matches(
         df,
         query=query,
-        check_dtypes=False,
         compare_with="sqlite",
         expected={
             "category": ["A", "A", "A", "B", "B", "C"],
@@ -104,7 +103,6 @@ def test_window_function_over_empty(df_test: pl.DataFrame) -> None:
     assert_sql_matches(
         df_test,
         query=query,
-        check_dtypes=False,
         compare_with="sqlite",
         expected={
             "id": [1, 2, 3, 4, 5, 6, 7],
@@ -155,7 +153,6 @@ def test_window_function_misc_aggregations(df_test: pl.DataFrame) -> None:
     assert_sql_matches(
         df,
         query=query,
-        check_dtypes=False,
         compare_with="sqlite",
         expected={
             "category": ["A", "A", "B", "B", "C"],
@@ -189,7 +186,6 @@ def test_window_function_partition_by_multi() -> None:
     assert_sql_matches(
         df,
         query=query,
-        check_dtypes=False,
         compare_with="sqlite",
         expected={
             "region": ["North", "North", "North", "South", "South", "South"],
@@ -380,7 +376,6 @@ def test_window_function_over_clause_misc() -> None:
     assert_sql_matches(
         df,
         query=query,
-        check_dtypes=False,
         compare_with="sqlite",
         expected={"id": [1, 2, 3, 4], "cnt": [4, 4, 4, 4]},
     )
@@ -393,7 +388,6 @@ def test_window_function_over_clause_misc() -> None:
     assert_sql_matches(
         df,
         query=query,
-        check_dtypes=False,
         compare_with="sqlite",
         expected={
             "id": [1, 2, 3, 4],
@@ -430,7 +424,6 @@ def test_window_function_over_clause_misc() -> None:
     assert_sql_matches(
         df,
         query=query,
-        check_dtypes=False,
         compare_with="sqlite",
         expected={
             "id": [1, 2, 3, 4],
