@@ -16,7 +16,7 @@ use polars_plan::dsl::{FileScanIR, Operator, ScanSources, TableStatistics, Unifi
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::predicates::{aexpr_to_column_predicates, aexpr_to_skip_batch_predicate};
-use polars_plan::plans::{AExpr, Context, ExprIRDisplay, FileInfo, IR, MintermIter};
+use polars_plan::plans::{AExpr, ExprIRDisplay, FileInfo, IR, MintermIter};
 use polars_plan::utils::aexpr_to_leaf_names_iter;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
@@ -81,7 +81,6 @@ pub fn create_scan_predicate(
 
             hive_predicate = Some(create_physical_expr(
                 &ExprIR::from_node(node, expr_arena),
-                Context::Default,
                 expr_arena,
                 schema,
                 state,
@@ -106,8 +105,7 @@ pub fn create_scan_predicate(
         break;
     }
 
-    let phys_predicate =
-        create_physical_expr(&predicate, Context::Default, expr_arena, schema, state)?;
+    let phys_predicate = create_physical_expr(&predicate, expr_arena, schema, state)?;
 
     if hive_predicate_is_full_predicate {
         hive_predicate = Some(phys_predicate.clone());
@@ -143,7 +141,6 @@ pub fn create_scan_predicate(
 
             skip_batch_predicate = Some(create_physical_expr(
                 &expr,
-                Context::Default,
                 expr_arena,
                 &Arc::new(skip_batch_schema),
                 state,
@@ -179,7 +176,6 @@ pub fn create_scan_predicate(
                         (
                             create_physical_expr(
                                 &ExprIR::new(p, OutputName::Alias(PlSmallStr::EMPTY)),
-                                Context::Default,
                                 expr_arena,
                                 schema,
                                 state,
