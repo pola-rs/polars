@@ -1473,8 +1473,8 @@ impl PyLazyFrame {
     fn hint_sorted(
         &self,
         columns: Vec<String>,
-        descending: Vec<Option<bool>>,
-        nulls_last: Vec<Option<bool>>,
+        descending: Vec<bool>,
+        nulls_last: Vec<bool>,
     ) -> PyResult<Self> {
         if columns.len() != descending.len() && descending.len() != 1 {
             return Err(PyValueError::new_err(
@@ -1501,22 +1501,18 @@ impl PyLazyFrame {
                 sorted
                     .iter_mut()
                     .zip(descending)
-                    .for_each(|(s, d)| s.descending = d);
-            } else if let Some(descending) = descending[0] {
-                sorted
-                    .iter_mut()
-                    .for_each(|s| s.descending = Some(descending));
+                    .for_each(|(s, d)| s.descending = Some(d));
+            } else if descending[0] {
+                sorted.iter_mut().for_each(|s| s.descending = Some(true));
             }
 
             if nulls_last.len() != 1 {
                 sorted
                     .iter_mut()
                     .zip(nulls_last)
-                    .for_each(|(s, d)| s.nulls_last = d);
-            } else if let Some(nulls_last) = nulls_last[0] {
-                sorted
-                    .iter_mut()
-                    .for_each(|s| s.nulls_last = Some(nulls_last));
+                    .for_each(|(s, d)| s.nulls_last = Some(d));
+            } else if nulls_last[0] {
+                sorted.iter_mut().for_each(|s| s.nulls_last = Some(true));
             }
         }
 

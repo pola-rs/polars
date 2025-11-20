@@ -8390,16 +8390,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         else:
             cs = column + more_columns
 
-        ds: list[bool | None]
-        nl: list[bool | None]
+        ds: list[bool]
+        nl: list[bool]
         if isinstance(descending, bool):
             ds = [descending]
         else:
-            ds = cast("list[bool | None]", descending)
+            ds = descending
         if isinstance(nulls_last, bool):
             nl = [nulls_last]
         else:
-            nl = cast("list[bool | None]", nulls_last)
+            nl = nulls_last
 
         return self._from_pyldf(self._ldf.hint_sorted(cs, descending=ds, nulls_last=nl))
 
