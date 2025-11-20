@@ -1204,3 +1204,104 @@ class Struct(NestedType):
     def to_schema(self) -> OrderedDict[str, PolarsDataType]:
         """Return Struct dtype as a schema dict."""
         return OrderedDict(self)
+
+
+class BaseExtension(DataType):
+    """
+    Base class for extension data types.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed at any
+        point without it being considered a breaking change.
+    """
+
+    def __init__(
+        self, name: str, storage: PolarsDataType, metadata: str | None = None
+    ) -> None:
+        self._name = name
+        self._storage = storage
+        self._metadata = metadata
+
+    @classmethod
+    def ext_from_params(
+        cls, name: str, storage: PolarsDataType, metadata: str | None
+    ) -> Any:
+        """Creates an Extension type instance from its parameters."""
+        slf = cls.__new__(cls)
+        slf._name = name
+        slf._storage = storage
+        slf._metadata = metadata
+        return slf
+
+    def ext_name(self) -> str:
+        """Returns the name of this extension type."""
+        return self._name
+
+    def ext_storage(self) -> PolarsDataType:
+        """Returns the storage type for this extension type."""
+        return self._storage
+
+    def ext_metadata(self) -> str | None:
+        """Returns the metadata for this extension type."""
+        return self._metadata
+
+    def _string_repr(self) -> str:
+        """
+        Return a short string representation of the extension type.
+
+        This should be lowercase and if feasible show parameters in brackets,
+        for example i64, str, datetime[ns], etc. This is used when displaying
+        dataframes in a human-readable format, so brevity is important.
+
+        This function starts with an underscore for historical reasons; it is
+        intended to be overridden by subclasses.
+        """
+        s = self.ext_name().lower()
+        if len(s) <= 12:
+            return s
+        else:
+            return s[:10] + ".."
+
+    def __repr__(self) -> str:
+        md = self.ext_metadata()
+        if md is not None:
+            return f"{self.__class__.__name__}({self.ext_name()!r}, {self.ext_storage()!r}, {md!r})"
+        else:
+            return f"{self.__class__.__name__}({self.ext_name()!r}, {self.ext_storage()!r})"
+
+    # It's not recommended to override the below methods.
+    def __hash__(self) -> int:
+        return hash((self.ext_name(), self.ext_storage(), self.ext_metadata()))
+
+    @overload  # type: ignore[override]
+    def __eq__(self, other: pl.DataTypeExpr) -> pl.Expr: ...
+
+    @overload
+    def __eq__(self, other: PolarsDataType) -> bool: ...
+
+    def __eq__(self, other: pl.DataTypeExpr | PolarsDataType) -> pl.Expr | bool:
+        if isinstance(other, pl.DataTypeExpr):
+            return self.to_dtype_expr() == other
+        else:
+            return (
+                isinstance(other, BaseExtension)
+                and self.ext_name() == other.ext_name()
+                and self.ext_storage() == other.ext_storage()
+                and self.ext_metadata() == other.ext_metadata()
+            )
+
+    def __getstate__(self) -> tuple[str, PolarsDataType, str | None]:
+        return self.ext_name(), self.ext_storage(), self.ext_metadata()
+
+    def __setstate__(self, state: tuple[str, PolarsDataType, str | None]) -> None:
+        self.__dict__ = type(self).ext_from_params(*state).__dict__
+
+
+class Extension(BaseExtension):
+    """
+    Generic extension data type for non-registered extensions.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed at any
+        point without it being considered a breaking change.
+    """

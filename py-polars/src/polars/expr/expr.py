@@ -62,6 +62,7 @@ from polars.expr.array import ExprArrayNameSpace
 from polars.expr.binary import ExprBinaryNameSpace
 from polars.expr.categorical import ExprCatNameSpace
 from polars.expr.datetime import ExprDateTimeNameSpace
+from polars.expr.ext import ExprExtensionNameSpace
 from polars.expr.list import ExprListNameSpace
 from polars.expr.meta import ExprMetaNameSpace
 from polars.expr.name import ExprNameNameSpace
@@ -137,6 +138,7 @@ class Expr:
         "bin",
         "cat",
         "dt",
+        "ext",
         "list",
         "meta",
         "name",
@@ -11687,6 +11689,15 @@ Consider using {self}.implode() instead"""
         └─────┘
         """
         return ExprStructNameSpace(self)
+
+    @property
+    def ext(self) -> ExprExtensionNameSpace:
+        """
+        Create an object namespace of all extension type related expressions.
+
+        See the individual method pages for full details.
+        """
+        return ExprExtensionNameSpace(self)
 
     def _skip_batch_predicate(self, schema: SchemaDict) -> Expr | None:
         result = self._pyexpr.skip_batch_predicate(schema)

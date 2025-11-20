@@ -645,7 +645,7 @@ def test_raise_invalid_arithmetic() -> None:
 def test_err_invalid_comparison() -> None:
     with pytest.raises(
         SchemaError,
-        match="could not evaluate comparison between series 'a' of dtype: date and series 'b' of dtype: bool",
+        match="could not evaluate comparison between series 'a' of dtype: Date and series 'b' of dtype: Boolean",
     ):
         _ = pl.Series("a", [date(2020, 1, 1)]) == pl.Series("b", [True])
 

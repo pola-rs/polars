@@ -532,18 +532,16 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
 
     fn mean_reduce(&self) -> PolarsResult<Scalar> {
         let mean = self.mean().map(|v| v as i64);
-        Ok(Scalar::new(self.dtype().clone(), mean.into()))
+        let av = AnyValue::from(mean).as_duration(self.0.time_unit());
+        Ok(Scalar::new(self.dtype().clone(), av))
     }
 
     fn median_reduce(&self) -> PolarsResult<Scalar> {
-        let v: AnyValue = self.median().map(|v| v as i64).into();
-        let to = self.dtype().to_physical();
-        let v = v.cast(&to);
-        Ok(Scalar::new(
-            self.dtype().clone(),
-            v.as_duration(self.0.time_unit()),
-        ))
+        let mean = self.median().map(|v| v as i64);
+        let av = AnyValue::from(mean).as_duration(self.0.time_unit());
+        Ok(Scalar::new(self.dtype().clone(), av))
     }
+
     fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
         let v = self.0.physical().quantile_reduce(quantile, method)?;
         let to = self.dtype().to_physical();

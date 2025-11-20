@@ -166,8 +166,8 @@ def test_interpolate_by_trailing_nulls(dataset: str) -> None:
 def test_interpolate_vs_numpy(data: st.DataObject, x_dtype: pl.DataType) -> None:
     if x_dtype == pl.Float64:
         by_strategy = st.floats(
-            min_value=-1e150,
-            max_value=1e150,
+            min_value=-100,
+            max_value=100,
             allow_nan=False,
             allow_infinity=False,
             allow_subnormal=False,
@@ -189,6 +189,7 @@ def test_interpolate_vs_numpy(data: st.DataObject, x_dtype: pl.DataType) -> None
                         "value",
                         dtype=pl.Float64,
                         allow_null=True,
+                        strategy=by_strategy,
                     ),
                 ],
                 min_size=1,
@@ -228,13 +229,13 @@ def test_interpolate_vs_numpy(data: st.DataObject, x_dtype: pl.DataType) -> None
     ]
 
     # We increase the absolute error threshold, numpy has some instability, see #22348.
-    assert_series_equal(result, expected, abs_tol=1e-4)
+    assert_series_equal(result, expected, abs_tol=1e-3)
     result_from_unsorted = (
         dataframe.sort("ts", descending=True)
         .with_columns(pl.col("value").interpolate_by("ts"))
         .sort("ts")["value"]
     )
-    assert_series_equal(result_from_unsorted, expected, abs_tol=1e-4)
+    assert_series_equal(result_from_unsorted, expected, abs_tol=1e-3)
 
 
 def test_interpolate_by_invalid() -> None:

@@ -505,6 +505,8 @@ where
                     .collect(),
                 dictionary_id: None,
             },
+            #[cfg(feature = "dtype-extension")]
+            Extension(_, storage) => self.dtype_to_ipc_field(storage.as_ref()),
             _ => {
                 assert!(!dtype.is_nested());
                 IpcField {
