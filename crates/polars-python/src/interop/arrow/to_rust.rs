@@ -107,7 +107,17 @@ pub fn to_rust_df(
             let columns = (0..schema.len())
                 .map(|i| {
                     let array = rb.call_method1("column", (i,))?;
-                    let arr = array_to_rust(&array)?;
+                    let mut arr = array_to_rust(&array)?;
+                    
+                    // Only the schema contains extension type info, restore.
+                    // TODO: nested?
+                    let dtype = schema.get_at_index(i).unwrap().1.dtype();
+                    if let ArrowDataType::Extension(ext) = dtype {
+                        if *arr.dtype() == ext.inner {
+                            *arr.dtype_mut() = dtype.clone();
+                        }
+                    }
+
                     run_parallel |= matches!(
                         arr.dtype(),
                         ArrowDataType::Utf8 | ArrowDataType::Dictionary(_, _, _)
