@@ -9,7 +9,6 @@ repository = { workspace = true }
 description = "Private crate for the streaming execution engine for the Polars DataFrame library"
 
 [dependencies]
-arrow = { workspace = true }
 async-channel = { workspace = true }
 async-trait = { workspace = true }
 atomic-waker = { workspace = true }
@@ -24,9 +23,6 @@ memmap = { workspace = true }
 parking_lot = { workspace = true }
 percent-encoding = { workspace = true }
 pin-project-lite = { workspace = true }
-polars-io = { workspace = true, features = ["async", "file_cache"] }
-polars-time = { workspace = true }
-polars-utils = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rand = { workspace = true }
 rayon = { workspace = true }
@@ -38,14 +34,18 @@ slotmap = { workspace = true }
 strum_macros = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["sync"] }
 
+arrow = { workspace = true }
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["partition_by"] }
 polars-error = { workspace = true }
 polars-expr = { workspace = true, features = ["rle", "peaks", "arg_where", "unique_counts", "dtype-struct"] }
+polars-io = { workspace = true, features = ["async", "file_cache"] }
 polars-mem-engine = { workspace = true }
 polars-ops = { workspace = true, features = ["rle", "peaks", "unique_counts", "dtype-struct", "search_sorted"] }
 polars-parquet = { workspace = true }
 polars-plan = { workspace = true, features = ["cse", "rle", "peaks", "arg_where", "unique_counts", "dtype-struct"] }
+polars-time = { workspace = true }
+polars-utils = { workspace = true }
 
 [build-dependencies]
 version_check = { workspace = true }
@@ -59,6 +59,9 @@ dynamic_group_by = [
   "polars-plan/dynamic_group_by",
   "polars-expr/dynamic_group_by",
   "polars-mem-engine/dynamic_group_by",
+  "polars-time/dtype-date",
+  "polars-time/dtype-datetime",
+  "arrow/timezones",
 ]
 strings = []
 ipc = ["polars-mem-engine/ipc", "polars-plan/ipc", "polars-io/ipc"]

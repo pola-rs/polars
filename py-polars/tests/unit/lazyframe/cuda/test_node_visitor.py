@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import time
 from functools import lru_cache, partial
@@ -155,3 +156,17 @@ def test_path_uri_to_python_conversion_22766(tmp_path: Path) -> None:
     # Windows fails because it turns everything into `\\`
     if sys.platform != "win32":
         assert out == [path]
+
+
+def test_node_traverse_sink(tmp_path: Path) -> None:
+    def callback(node_traverser: Any, query_start: int | None) -> None:
+        assert list(json.loads(node_traverser.view_current_node().payload)["File"]) == [
+            "target",
+            "file_format",
+            "unified_sink_args",
+        ]
+
+    q = pl.LazyFrame({"x": [0, 1, 2]}).sink_parquet(tmp_path / "a", lazy=True)
+    q.collect(
+        post_opt_callback=callback  # type: ignore[call-overload]
+    )

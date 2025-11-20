@@ -330,8 +330,8 @@ fn is_between(
     }
     assert!(low.is_some() || high.is_some());
 
-    low_closed &= low.is_some();
-    high_closed &= high.is_some();
+    low_closed |= low.is_none();
+    high_closed |= high.is_none();
 
     let mut low = low.map_or_else(|| dtype.min().unwrap(), |sc| sc.to_physical());
     let mut high = high.map_or_else(|| dtype.max().unwrap(), |sc| sc.to_physical());
@@ -371,21 +371,20 @@ mod tests {
     use crate::dsl::{Expr, col, lit};
     use crate::plans::{DynLiteralValue, ExprToIRContext, LiteralValue, to_expr_ir, typed_lit};
 
-    /// Create a simple equality Expr and return the corresponding column's
-    /// `SpecializedColumnPredicate` from `aexpr_to_column_predicates()`.
-    fn equality_column_predicate(
+    /// Given a single-column `Expr`, call `aexpr_to_column_predicates()` and
+    /// return the corresponding column's `Option<SpecializedColumnPredicate>`.
+    fn column_predicate_for_expr(
         col_dtype: DataType,
-        comparison_value: Expr,
+        col_name: &str,
+        expr: Expr,
     ) -> PolarsResult<Option<SpecializedColumnPredicate>> {
-        let colname = PlSmallStr::from_str("test");
-        let expr = col("test").eq(comparison_value);
         let mut arena = Arena::new();
-        let schema = Schema::from_iter_check_duplicates([(colname.clone(), col_dtype)])?;
+        let schema = Schema::from_iter_check_duplicates([(col_name.into(), col_dtype)])?;
         let mut ctx = ExprToIRContext::new(&mut arena, &schema);
         let expr_ir = to_expr_ir(expr, &mut ctx)?;
         let column_predicates = aexpr_to_column_predicates(expr_ir.node(), &mut arena, &schema);
         assert_eq!(column_predicates.predicates.len(), 1);
-        let Some((colname2, (_, predicate))) =
+        let Some((col_name2, (_, predicate))) =
             column_predicates.predicates.clone().into_iter().next()
         else {
             panic!(
@@ -393,8 +392,18 @@ mod tests {
                 column_predicates.predicates
             );
         };
-        assert_eq!(colname, colname2);
+        assert_eq!(col_name, col_name2);
         Ok(predicate)
+    }
+
+    /// Create a simple equality Expr and return the corresponding column's
+    /// `SpecializedColumnPredicate` from `aexpr_to_column_predicates()`.
+    fn equality_column_predicate(
+        col_dtype: DataType,
+        comparison_value: Expr,
+    ) -> PolarsResult<Option<SpecializedColumnPredicate>> {
+        let expr = col("test").eq(comparison_value);
+        column_predicate_for_expr(col_dtype, "test", expr)
     }
 
     fn assert_column_predicates_creation_equality(
@@ -465,6 +474,34 @@ mod tests {
         // Can't cast too-high or too-low dynamic number to losslessly:
         assert!(equality_column_predicate(DataType::Int8, lit(300))?.is_none());
         assert!(equality_column_predicate(DataType::Int8, lit(-300))?.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn column_predicate_for_inequality_operators() -> PolarsResult<()> {
+        let col_name = "testcol";
+        // Array of (expr, expected minimum, expected maximum):
+        let test_values: [(Expr, i8, i8); _] = [
+            (col(col_name).lt(typed_lit(10i8)), -128, 9),
+            (col(col_name).lt(typed_lit(-11i8)), -128, -12),
+            (col(col_name).gt(typed_lit(17i8)), 18, 127),
+            (col(col_name).gt(typed_lit(-10i8)), -9, 127),
+            (col(col_name).lt_eq(typed_lit(10i8)), -128, 10),
+            (col(col_name).lt_eq(typed_lit(-11i8)), -128, -11),
+            (col(col_name).gt_eq(typed_lit(17i8)), 17, 127),
+            (col(col_name).gt_eq(typed_lit(-10i8)), -10, 127),
+        ];
+        for (expr, expected_min, expected_max) in test_values {
+            let predicate = column_predicate_for_expr(DataType::Int8, col_name, expr.clone())?;
+            if let Some(SpecializedColumnPredicate::Between(actual_min, actual_max)) = predicate {
+                assert_eq!(
+                    (expected_min.into(), expected_max.into()),
+                    (actual_min, actual_max)
+                );
+            } else {
+                panic!("{predicate:?} is unexpected for {expr:?}");
+            }
+        }
         Ok(())
     }
 }

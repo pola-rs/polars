@@ -6,10 +6,12 @@ use polars_core::prelude::{
     polars_err,
 };
 use polars_lazy::dsl::Expr;
+#[cfg(feature = "rank")]
+use polars_lazy::prelude::{RankMethod, RankOptions};
 use polars_ops::chunked_array::UnicodeForm;
 use polars_ops::series::RoundMode;
 use polars_plan::dsl::{
-    coalesce, concat_str, element, int_range, len, max_horizontal, min_horizontal, when,
+    as_struct, coalesce, concat_str, element, int_range, len, max_horizontal, min_horizontal, when,
 };
 use polars_plan::plans::{DynLiteralValue, LiteralValue, typed_lit};
 use polars_plan::prelude::{StrptimeOptions, col, cols, lit};
@@ -40,32 +42,32 @@ pub(crate) enum PolarsSQLFunctions {
     /// SQL 'bit_and' function.
     /// Returns the bitwise AND of the input expressions.
     /// ```sql
-    /// SELECT BIT_AND(column_1, column_2) FROM df;
+    /// SELECT BIT_AND(col1, col2) FROM df;
     /// ```
     BitAnd,
     /// SQL 'bit_count' function.
     /// Returns the number of set bits in the input expression.
     /// ```sql
-    /// SELECT BIT_COUNT(column_1) FROM df;
+    /// SELECT BIT_COUNT(col1) FROM df;
     /// ```
     #[cfg(feature = "bitwise")]
     BitCount,
     /// SQL 'bit_or' function.
     /// Returns the bitwise OR of the input expressions.
     /// ```sql
-    /// SELECT BIT_OR(column_1, column_2) FROM df;
+    /// SELECT BIT_OR(col1, col2) FROM df;
     /// ```
     BitNot,
     /// SQL 'bit_not' function.
     /// Returns the bitwise Not of the input expression.
     /// ```sql
-    /// SELECT BIT_Not(column_1) FROM df;
+    /// SELECT BIT_Not(col1) FROM df;
     /// ```
     BitOr,
     /// SQL 'bit_xor' function.
     /// Returns the bitwise XOR of the input expressions.
     /// ```sql
-    /// SELECT BIT_XOR(column_1, column_2) FROM df;
+    /// SELECT BIT_XOR(col1, col2) FROM df;
     /// ```
     BitXor,
 
@@ -75,32 +77,32 @@ pub(crate) enum PolarsSQLFunctions {
     /// SQL 'abs' function.
     /// Returns the absolute value of the input expression.
     /// ```sql
-    /// SELECT ABS(column_1) FROM df;
+    /// SELECT ABS(col1) FROM df;
     /// ```
     Abs,
     /// SQL 'ceil' function.
     /// Returns the nearest integer closest from zero.
     /// ```sql
-    /// SELECT CEIL(column_1) FROM df;
+    /// SELECT CEIL(col1) FROM df;
     /// ```
     Ceil,
     /// SQL 'div' function.
     /// Returns the integer quotient of the division.
     /// ```sql
-    /// SELECT DIV(column_1, 2) FROM df;
+    /// SELECT DIV(col1, 2) FROM df;
     /// ```
     Div,
     /// SQL 'exp' function.
     /// Computes the exponential of the given value.
     /// ```sql
-    /// SELECT EXP(column_1) FROM df;
+    /// SELECT EXP(col1) FROM df;
     /// ```
     Exp,
     /// SQL 'floor' function.
     /// Returns the nearest integer away from zero.
     ///   0.5 will be rounded
     /// ```sql
-    /// SELECT FLOOR(column_1) FROM df;
+    /// SELECT FLOOR(col1) FROM df;
     /// ```
     Floor,
     /// SQL 'pi' function.
@@ -112,68 +114,68 @@ pub(crate) enum PolarsSQLFunctions {
     /// SQL 'ln' function.
     /// Computes the natural logarithm of the given value.
     /// ```sql
-    /// SELECT LN(column_1) FROM df;
+    /// SELECT LN(col1) FROM df;
     /// ```
     Ln,
     /// SQL 'log2' function.
     /// Computes the logarithm of the given value in base 2.
     /// ```sql
-    /// SELECT LOG2(column_1) FROM df;
+    /// SELECT LOG2(col1) FROM df;
     /// ```
     Log2,
     /// SQL 'log10' function.
     /// Computes the logarithm of the given value in base 10.
     /// ```sql
-    /// SELECT LOG10(column_1) FROM df;
+    /// SELECT LOG10(col1) FROM df;
     /// ```
     Log10,
     /// SQL 'log' function.
     /// Computes the `base` logarithm of the given value.
     /// ```sql
-    /// SELECT LOG(column_1, 10) FROM df;
+    /// SELECT LOG(col1, 10) FROM df;
     /// ```
     Log,
     /// SQL 'log1p' function.
     /// Computes the natural logarithm of "given value plus one".
     /// ```sql
-    /// SELECT LOG1P(column_1) FROM df;
+    /// SELECT LOG1P(col1) FROM df;
     /// ```
     Log1p,
     /// SQL 'pow' function.
     /// Returns the value to the power of the given exponent.
     /// ```sql
-    /// SELECT POW(column_1, 2) FROM df;
+    /// SELECT POW(col1, 2) FROM df;
     /// ```
     Pow,
     /// SQL 'mod' function.
     /// Returns the remainder of a numeric expression divided by another numeric expression.
     /// ```sql
-    /// SELECT MOD(column_1, 2) FROM df;
+    /// SELECT MOD(col1, 2) FROM df;
     /// ```
     Mod,
     /// SQL 'sqrt' function.
     /// Returns the square root (√) of a number.
     /// ```sql
-    /// SELECT SQRT(column_1) FROM df;
+    /// SELECT SQRT(col1) FROM df;
     /// ```
     Sqrt,
     /// SQL 'cbrt' function.
     /// Returns the cube root (∛) of a number.
     /// ```sql
-    /// SELECT CBRT(column_1) FROM df;
+    /// SELECT CBRT(col1) FROM df;
     /// ```
     Cbrt,
     /// SQL 'round' function.
     /// Round a number to `x` decimals (default: 0) away from zero.
     ///   .5 is rounded away from zero.
     /// ```sql
-    /// SELECT ROUND(column_1, 3) FROM df;
+    /// SELECT ROUND(col1, 3) FROM df;
     /// ```
     Round,
     /// SQL 'sign' function.
     /// Returns the sign of the argument as -1, 0, or +1.
     /// ```sql
-    /// SELECT SIGN(column_1) FROM df;
+    /// SELECT SIGN(col1) FROM df;
     /// ```
     Sign,
 
@@ -183,103 +185,103 @@ pub(crate) enum PolarsSQLFunctions {
     /// SQL 'cos' function.
     /// Compute the cosine sine of the input expression (in radians).
     /// ```sql
-    /// SELECT COS(column_1) FROM df;
+    /// SELECT COS(col1) FROM df;
     /// ```
     Cos,
     /// SQL 'cot' function.
     /// Compute the cotangent of the input expression (in radians).
     /// ```sql
-    /// SELECT COT(column_1) FROM df;
+    /// SELECT COT(col1) FROM df;
     /// ```
     Cot,
     /// SQL 'sin' function.
     /// Compute the sine of the input expression (in radians).
     /// ```sql
-    /// SELECT SIN(column_1) FROM df;
+    /// SELECT SIN(col1) FROM df;
     /// ```
     Sin,
     /// SQL 'tan' function.
     /// Compute the tangent of the input expression (in radians).
     /// ```sql
-    /// SELECT TAN(column_1) FROM df;
+    /// SELECT TAN(col1) FROM df;
     /// ```
     Tan,
     /// SQL 'cosd' function.
     /// Compute the cosine sine of the input expression (in degrees).
     /// ```sql
-    /// SELECT COSD(column_1) FROM df;
+    /// SELECT COSD(col1) FROM df;
     /// ```
     CosD,
     /// SQL 'cotd' function.
     /// Compute cotangent of the input expression (in degrees).
     /// ```sql
-    /// SELECT COTD(column_1) FROM df;
+    /// SELECT COTD(col1) FROM df;
     /// ```
     CotD,
     /// SQL 'sind' function.
     /// Compute the sine of the input expression (in degrees).
     /// ```sql
-    /// SELECT SIND(column_1) FROM df;
+    /// SELECT SIND(col1) FROM df;
     /// ```
     SinD,
     /// SQL 'tand' function.
     /// Compute the tangent of the input expression (in degrees).
     /// ```sql
-    /// SELECT TAND(column_1) FROM df;
+    /// SELECT TAND(col1) FROM df;
     /// ```
     TanD,
     /// SQL 'acos' function.
     /// Compute inverse cosine of the input expression (in radians).
     /// ```sql
-    /// SELECT ACOS(column_1) FROM df;
+    /// SELECT ACOS(col1) FROM df;
     /// ```
     Acos,
     /// SQL 'asin' function.
     /// Compute inverse sine of the input expression (in radians).
     /// ```sql
-    /// SELECT ASIN(column_1) FROM df;
+    /// SELECT ASIN(col1) FROM df;
     /// ```
     Asin,
     /// SQL 'atan' function.
     /// Compute inverse tangent of the input expression (in radians).
     /// ```sql
-    /// SELECT ATAN(column_1) FROM df;
+    /// SELECT ATAN(col1) FROM df;
     /// ```
     Atan,
     /// SQL 'atan2' function.
-    /// Compute the inverse tangent of column_1/column_2 (in radians).
+    /// Compute the inverse tangent of col1/col2 (in radians).
     /// ```sql
-    /// SELECT ATAN2(column_1, column_2) FROM df;
+    /// SELECT ATAN2(col1, col2) FROM df;
     /// ```
     Atan2,
     /// SQL 'acosd' function.
     /// Compute inverse cosine of the input expression (in degrees).
     /// ```sql
-    /// SELECT ACOSD(column_1) FROM df;
+    /// SELECT ACOSD(col1) FROM df;
     /// ```
     AcosD,
     /// SQL 'asind' function.
     /// Compute inverse sine of the input expression (in degrees).
     /// ```sql
-    /// SELECT ASIND(column_1) FROM df;
+    /// SELECT ASIND(col1) FROM df;
     /// ```
     AsinD,
     /// SQL 'atand' function.
     /// Compute inverse tangent of the input expression (in degrees).
     /// ```sql
-    /// SELECT ATAND(column_1) FROM df;
+    /// SELECT ATAND(col1) FROM df;
     /// ```
     AtanD,
     /// SQL 'atan2d' function.
-    /// Compute the inverse tangent of column_1/column_2 (in degrees).
+    /// Compute the inverse tangent of col1/col2 (in degrees).
     /// ```sql
-    /// SELECT ATAN2D(column_1) FROM df;
+    /// SELECT ATAN2D(col1) FROM df;
     /// ```
     Atan2D,
     /// SQL 'degrees' function.
     /// Convert between radians and degrees.
     /// ```sql
-    /// SELECT DEGREES(column_1) FROM df;
+    /// SELECT DEGREES(col1) FROM df;
     /// ```
     ///
     ///
@@ -287,7 +289,7 @@ pub(crate) enum PolarsSQLFunctions {
     /// SQL 'RADIANS' function.
     /// Convert between degrees and radians.
     /// ```sql
-    /// SELECT RADIANS(column_1) FROM df;
+    /// SELECT RADIANS(col1) FROM df;
     /// ```
     Radians,
 
@@ -297,13 +299,13 @@ pub(crate) enum PolarsSQLFunctions {
     /// SQL 'date_part' function.
     /// Extracts a part of a date (or datetime) such as 'year', 'month', etc.
     /// ```sql
-    /// SELECT DATE_PART('year', column_1) FROM df;
-    /// SELECT DATE_PART('day', column_1) FROM df;
+    /// SELECT DATE_PART('year', col1) FROM df;
+    /// SELECT DATE_PART('day', col1) FROM df;
     DatePart,
     /// SQL 'strftime' function.
     /// Converts a datetime to a string using a format string.
     /// ```sql
-    /// SELECT STRFTIME(column_1, '%d-%m-%Y %H:%M') FROM df;
+    /// SELECT STRFTIME(col1, '%d-%m-%Y %H:%M') FROM df;
     /// ```
     Strftime,
 
@@ -312,20 +314,20 @@ pub(crate) enum PolarsSQLFunctions {
     // ----
     /// SQL 'bit_length' function (bytes).
     /// ```sql
-    /// SELECT BIT_LENGTH(column_1) FROM df;
+    /// SELECT BIT_LENGTH(col1) FROM df;
     /// ```
     BitLength,
     /// SQL 'concat' function.
     /// Returns all input expressions concatenated together as a string.
     /// ```sql
-    /// SELECT CONCAT(column_1, column_2) FROM df;
+    /// SELECT CONCAT(col1, col2) FROM df;
     /// ```
     Concat,
     /// SQL 'concat_ws' function.
     /// Returns all input expressions concatenated together
     /// (and interleaved with a separator) as a string.
     /// ```sql
-    /// SELECT CONCAT_WS(':', column_1, column_2, column_3) FROM df;
+    /// SELECT CONCAT_WS(':', col1, col2, col3) FROM df;
     /// ```
     ConcatWS,
     /// SQL 'date' function.
@@ -340,121 +342,121 @@ pub(crate) enum PolarsSQLFunctions {
     /// SQL 'ends_with' function.
     /// Returns True if the value ends with the second argument.
     /// ```sql
-    /// SELECT ENDS_WITH(column_1, 'a') FROM df;
-    /// SELECT column_2 from df WHERE ENDS_WITH(column_1, 'a');
+    /// SELECT ENDS_WITH(col1, 'a') FROM df;
+    /// SELECT col2 from df WHERE ENDS_WITH(col1, 'a');
     /// ```
     EndsWith,
     /// SQL 'initcap' function.
     /// Returns the value with the first letter capitalized.
     /// ```sql
-    /// SELECT INITCAP(column_1) FROM df;
+    /// SELECT INITCAP(col1) FROM df;
     /// ```
     #[cfg(feature = "nightly")]
     InitCap,
     /// SQL 'left' function.
     /// Returns the first (leftmost) `n` characters.
     /// ```sql
-    /// SELECT LEFT(column_1, 3) FROM df;
+    /// SELECT LEFT(col1, 3) FROM df;
     /// ```
     Left,
     /// SQL 'length' function (characters.
     /// Returns the character length of the string.
     /// ```sql
-    /// SELECT LENGTH(column_1) FROM df;
+    /// SELECT LENGTH(col1) FROM df;
     /// ```
     Length,
     /// SQL 'lower' function.
     /// Returns an lowercased column.
     /// ```sql
-    /// SELECT LOWER(column_1) FROM df;
+    /// SELECT LOWER(col1) FROM df;
     /// ```
     Lower,
     /// SQL 'ltrim' function.
     /// Strip whitespaces from the left.
     /// ```sql
-    /// SELECT LTRIM(column_1) FROM df;
+    /// SELECT LTRIM(col1) FROM df;
     /// ```
     LTrim,
     /// SQL 'normalize' function.
     /// Convert string to Unicode normalization form
     /// (one of NFC, NFKC, NFD, or NFKD - unquoted).
     /// ```sql
-    /// SELECT NORMALIZE(column_1, NFC) FROM df;
+    /// SELECT NORMALIZE(col1, NFC) FROM df;
     /// ```
     Normalize,
     /// SQL 'octet_length' function.
     /// Returns the length of a given string in bytes.
     /// ```sql
-    /// SELECT OCTET_LENGTH(column_1) FROM df;
+    /// SELECT OCTET_LENGTH(col1) FROM df;
     /// ```
     OctetLength,
     /// SQL 'regexp_like' function.
     /// True if `pattern` matches the value (optional: `flags`).
     /// ```sql
-    /// SELECT REGEXP_LIKE(column_1, 'xyz', 'i') FROM df;
+    /// SELECT REGEXP_LIKE(col1, 'xyz', 'i') FROM df;
     /// ```
     RegexpLike,
     /// SQL 'replace' function.
     /// Replace a given substring with another string.
     /// ```sql
-    /// SELECT REPLACE(column_1, 'old', 'new') FROM df;
+    /// SELECT REPLACE(col1, 'old', 'new') FROM df;
     /// ```
     Replace,
     /// SQL 'reverse' function.
     /// Return the reversed string.
     /// ```sql
-    /// SELECT REVERSE(column_1) FROM df;
+    /// SELECT REVERSE(col1) FROM df;
     /// ```
     Reverse,
     /// SQL 'right' function.
     /// Returns the last (rightmost) `n` characters.
     /// ```sql
-    /// SELECT RIGHT(column_1, 3) FROM df;
+    /// SELECT RIGHT(col1, 3) FROM df;
     /// ```
     Right,
     /// SQL 'rtrim' function.
     /// Strip whitespaces from the right.
     /// ```sql
-    /// SELECT RTRIM(column_1) FROM df;
+    /// SELECT RTRIM(col1) FROM df;
     /// ```
     RTrim,
     /// SQL 'split_part' function.
     /// Splits a string into an array of strings using the given delimiter
     /// and returns the `n`-th part (1-indexed).
     /// ```sql
-    /// SELECT SPLIT_PART(column_1, ',', 2) FROM df;
+    /// SELECT SPLIT_PART(col1, ',', 2) FROM df;
     /// ```
     SplitPart,
     /// SQL 'starts_with' function.
     /// Returns True if the value starts with the second argument.
     /// ```sql
-    /// SELECT STARTS_WITH(column_1, 'a') FROM df;
-    /// SELECT column_2 from df WHERE STARTS_WITH(column_1, 'a');
+    /// SELECT STARTS_WITH(col1, 'a') FROM df;
+    /// SELECT col2 from df WHERE STARTS_WITH(col1, 'a');
     /// ```
     StartsWith,
     /// SQL 'strpos' function.
     /// Returns the index of the given substring in the target string.
     /// ```sql
-    /// SELECT STRPOS(column_1,'xyz') FROM df;
+    /// SELECT STRPOS(col1,'xyz') FROM df;
     /// ```
     StrPos,
     /// SQL 'substr' function.
     /// Returns a portion of the data (first character = 1) in the range.
     ///   \[start, start + length]
     /// ```sql
-    /// SELECT SUBSTR(column_1, 3, 5) FROM df;
+    /// SELECT SUBSTR(col1, 3, 5) FROM df;
     /// ```
     Substring,
     /// SQL 'string_to_array' function.
     /// Splits a string into an array of strings using the given delimiter.
     /// ```sql
-    /// SELECT STRING_TO_ARRAY(column_1, ',') FROM df;
+    /// SELECT STRING_TO_ARRAY(col1, ',') FROM df;
     /// ```
     StringToArray,
     /// SQL 'strptime' function.
     /// Converts a string to a datetime using a format string.
     /// ```sql
-    /// SELECT STRPTIME(column_1, '%d-%m-%Y %H:%M') FROM df;
+    /// SELECT STRPTIME(col1, '%d-%m-%Y %H:%M') FROM df;
     /// ```
     Strptime,
     /// SQL 'time' function.
@@ -478,7 +480,7 @@ pub(crate) enum PolarsSQLFunctions {
     /// SQL 'upper' function.
     /// Returns an uppercased column.
     /// ```sql
-    /// SELECT UPPER(column_1) FROM df;
+    /// SELECT UPPER(col1) FROM df;
     /// ```
     Upper,
 
@@ -488,13 +490,13 @@ pub(crate) enum PolarsSQLFunctions {
     /// SQL 'coalesce' function.
     /// Returns the first non-null value in the provided values/columns.
     /// ```sql
-    /// SELECT COALESCE(column_1, ...) FROM df;
+    /// SELECT COALESCE(col1, ...) FROM df;
     /// ```
     Coalesce,
     /// SQL 'greatest' function.
     /// Returns the greatest value in the list of expressions.
     /// ```sql
-    /// SELECT GREATEST(column_1, column_2, ...) FROM df;
+    /// SELECT GREATEST(col1, col2, ...) FROM df;
     /// ```
     Greatest,
     /// SQL 'if' function.
@@ -513,13 +515,13 @@ pub(crate) enum PolarsSQLFunctions {
     /// SQL 'least' function.
     /// Returns the smallest value in the list of expressions.
     /// ```sql
-    /// SELECT LEAST(column_1, column_2, ...) FROM df;
+    /// SELECT LEAST(col1, col2, ...) FROM df;
     /// ```
     Least,
     /// SQL 'nullif' function.
     /// Returns NULL if two expressions are equal, otherwise returns the first.
     /// ```sql
-    /// SELECT NULLIF(column_1, column_2) FROM df;
+    /// SELECT NULLIF(col1, col2) FROM df;
     /// ```
     NullIf,
 
@@ -529,187 +531,217 @@ pub(crate) enum PolarsSQLFunctions {
     /// SQL 'avg' function.
     /// Returns the average (mean) of all the elements in the grouping.
     /// ```sql
-    /// SELECT AVG(column_1) FROM df;
+    /// SELECT AVG(col1) FROM df;
     /// ```
     Avg,
     /// SQL 'corr' function.
     /// Returns the Pearson correlation coefficient between two columns.
     /// ```sql
-    /// SELECT CORR(column_1, column_2) FROM df;
+    /// SELECT CORR(col1, col2) FROM df;
     /// ```
     Corr,
     /// SQL 'count' function.
     /// Returns the amount of elements in the grouping.
     /// ```sql
-    /// SELECT COUNT(column_1) FROM df;
+    /// SELECT COUNT(col1) FROM df;
     /// SELECT COUNT(*) FROM df;
-    /// SELECT COUNT(DISTINCT column_1) FROM df;
+    /// SELECT COUNT(DISTINCT col1) FROM df;
     /// SELECT COUNT(DISTINCT *) FROM df;
     /// ```
     Count,
     /// SQL 'covar_pop' function.
     /// Returns the population covariance between two columns.
     /// ```sql
-    /// SELECT COVAR_POP(column_1, column_2) FROM df;
+    /// SELECT COVAR_POP(col1, col2) FROM df;
     /// ```
     CovarPop,
     /// SQL 'covar_samp' function.
     /// Returns the sample covariance between two columns.
     /// ```sql
-    /// SELECT COVAR_SAMP(column_1, column_2) FROM df;
+    /// SELECT COVAR_SAMP(col1, col2) FROM df;
     /// ```
     CovarSamp,
     /// SQL 'first' function.
     /// Returns the first element of the grouping.
     /// ```sql
-    /// SELECT FIRST(column_1) FROM df;
+    /// SELECT FIRST(col1) FROM df;
     /// ```
     First,
-    /// SQL 'first_value' window function.
-    /// Returns the first value in an ordered set of values (respecting window frame).
-    /// ```sql
-    /// SELECT FIRST_VALUE(column_1) OVER (PARTITION BY category ORDER BY id) FROM df;
-    /// ```
-    FirstValue,
     /// SQL 'last' function.
     /// Returns the last element of the grouping.
     /// ```sql
-    /// SELECT LAST(column_1) FROM df;
+    /// SELECT LAST(col1) FROM df;
     /// ```
     Last,
-    /// SQL 'last_value' window function.
-    /// Returns the last value in an ordered set of values (respecting window frame).
-    /// With default frame, returns the current row's value.
-    /// ```sql
-    /// SELECT LAST_VALUE(column_1) OVER (PARTITION BY category ORDER BY id) FROM df;
-    /// ```
-    LastValue,
     /// SQL 'max' function.
     /// Returns the greatest (maximum) of all the elements in the grouping.
     /// ```sql
-    /// SELECT MAX(column_1) FROM df;
+    /// SELECT MAX(col1) FROM df;
     /// ```
     Max,
     /// SQL 'median' function.
     /// Returns the median element from the grouping.
     /// ```sql
-    /// SELECT MEDIAN(column_1) FROM df;
+    /// SELECT MEDIAN(col1) FROM df;
     /// ```
     Median,
     /// SQL 'quantile_cont' function.
     /// Returns the continuous quantile element from the grouping
     /// (interpolated value between two closest values).
     /// ```sql
-    /// SELECT QUANTILE_CONT(column_1) FROM df;
+    /// SELECT QUANTILE_CONT(col1) FROM df;
     /// ```
     QuantileCont,
     /// SQL 'quantile_disc' function.
     /// Divides the [0, 1] interval into equal-length subintervals, each corresponding to a value,
     /// and returns the value associated with the subinterval where the quantile value falls.
     /// ```sql
-    /// SELECT QUANTILE_DISC(column_1) FROM df;
+    /// SELECT QUANTILE_DISC(col1) FROM df;
     /// ```
     QuantileDisc,
     /// SQL 'min' function.
     /// Returns the smallest (minimum) of all the elements in the grouping.
     /// ```sql
-    /// SELECT MIN(column_1) FROM df;
+    /// SELECT MIN(col1) FROM df;
     /// ```
     Min,
     /// SQL 'stddev' function.
     /// Returns the standard deviation of all the elements in the grouping.
     /// ```sql
-    /// SELECT STDDEV(column_1) FROM df;
+    /// SELECT STDDEV(col1) FROM df;
     /// ```
     StdDev,
     /// SQL 'sum' function.
     /// Returns the sum of all the elements in the grouping.
     /// ```sql
-    /// SELECT SUM(column_1) FROM df;
+    /// SELECT SUM(col1) FROM df;
     /// ```
     Sum,
     /// SQL 'variance' function.
     /// Returns the variance of all the elements in the grouping.
     /// ```sql
-    /// SELECT VARIANCE(column_1) FROM df;
+    /// SELECT VARIANCE(col1) FROM df;
     /// ```
     Variance,
+
     // ----
     // Array functions
     // ----
     /// SQL 'array_length' function.
     /// Returns the length of the array.
     /// ```sql
-    /// SELECT ARRAY_LENGTH(column_1) FROM df;
+    /// SELECT ARRAY_LENGTH(col1) FROM df;
     /// ```
     ArrayLength,
     /// SQL 'array_lower' function.
     /// Returns the minimum value in an array; equivalent to `array_min`.
     /// ```sql
-    /// SELECT ARRAY_LOWER(column_1) FROM df;
+    /// SELECT ARRAY_LOWER(col1) FROM df;
     /// ```
     ArrayMin,
     /// SQL 'array_upper' function.
     /// Returns the maximum value in an array; equivalent to `array_max`.
     /// ```sql
-    /// SELECT ARRAY_UPPER(column_1) FROM df;
+    /// SELECT ARRAY_UPPER(col1) FROM df;
     /// ```
     ArrayMax,
     /// SQL 'array_sum' function.
     /// Returns the sum of all values in an array.
     /// ```sql
-    /// SELECT ARRAY_SUM(column_1) FROM df;
+    /// SELECT ARRAY_SUM(col1) FROM df;
     /// ```
     ArraySum,
     /// SQL 'array_mean' function.
     /// Returns the mean of all values in an array.
     /// ```sql
-    /// SELECT ARRAY_MEAN(column_1) FROM df;
+    /// SELECT ARRAY_MEAN(col1) FROM df;
     /// ```
     ArrayMean,
     /// SQL 'array_reverse' function.
     /// Returns the array with the elements in reverse order.
     /// ```sql
-    /// SELECT ARRAY_REVERSE(column_1) FROM df;
+    /// SELECT ARRAY_REVERSE(col1) FROM df;
     /// ```
     ArrayReverse,
     /// SQL 'array_unique' function.
     /// Returns the array with the unique elements.
     /// ```sql
-    /// SELECT ARRAY_UNIQUE(column_1) FROM df;
+    /// SELECT ARRAY_UNIQUE(col1) FROM df;
     /// ```
     ArrayUnique,
     /// SQL 'unnest' function.
     /// Unnest/explodes an array column into multiple rows.
     /// ```sql
-    /// SELECT unnest(column_1) FROM df;
+    /// SELECT unnest(col1) FROM df;
     /// ```
     Explode,
     /// SQL 'array_agg' function.
     /// Concatenates the input expressions, including nulls, into an array.
     /// ```sql
-    /// SELECT ARRAY_AGG(column_1, column_2, ...) FROM df;
+    /// SELECT ARRAY_AGG(col1, col2, ...) FROM df;
     /// ```
     ArrayAgg,
     /// SQL 'array_to_string' function.
     /// Takes all elements of the array and joins them into one string.
     /// ```sql
-    /// SELECT ARRAY_TO_STRING(column_1, ',') FROM df;
-    /// SELECT ARRAY_TO_STRING(column_1, ',', 'n/a') FROM df;
+    /// SELECT ARRAY_TO_STRING(col1, ',') FROM df;
+    /// SELECT ARRAY_TO_STRING(col1, ',', 'n/a') FROM df;
     /// ```
     ArrayToString,
     /// SQL 'array_get' function.
     /// Returns the value at the given index in the array.
     /// ```sql
-    /// SELECT ARRAY_GET(column_1, 1) FROM df;
+    /// SELECT ARRAY_GET(col1, 1) FROM df;
     /// ```
     ArrayGet,
     /// SQL 'array_contains' function.
     /// Returns true if the array contains the value.
     /// ```sql
-    /// SELECT ARRAY_CONTAINS(column_1, 'foo') FROM df;
+    /// SELECT ARRAY_CONTAINS(col1, 'foo') FROM df;
     /// ```
     ArrayContains,
+
+    // ----
+    // Window functions
+    // ----
+    /// SQL 'first_value' window function.
+    /// Returns the first value in an ordered set of values (respecting window frame).
+    /// ```sql
+    /// SELECT FIRST_VALUE(col1) OVER (PARTITION BY category ORDER BY id) FROM df;
+    /// ```
+    FirstValue,
+    /// SQL 'last_value' window function.
+    /// Returns the last value in an ordered set of values (respecting window frame).
+    /// With default frame, returns the current row's value.
+    /// ```sql
+    /// SELECT LAST_VALUE(col1) OVER (PARTITION BY category ORDER BY id) FROM df;
+    /// ```
+    LastValue,
+    /// SQL 'row_number' function.
+    /// Returns the sequential row number within a window partition, starting from 1.
+    /// ```sql
+    /// SELECT ROW_NUMBER() OVER (ORDER BY col1) FROM df;
+    /// SELECT ROW_NUMBER() OVER (PARTITION BY col1 ORDER BY col2) FROM df;
+    /// ```
+    RowNumber,
+    /// SQL 'rank' function.
+    /// Returns the rank of each row within a window partition, with gaps for ties.
+    /// Rows with equal values receive the same rank, and the next rank skips numbers.
+    /// ```sql
+    /// SELECT RANK() OVER (ORDER BY col1) FROM df;
+    /// SELECT RANK() OVER (PARTITION BY col1 ORDER BY col2 DESC) FROM df;
+    /// ```
+    #[cfg(feature = "rank")]
+    Rank,
+    /// SQL 'dense_rank' function.
+    /// Returns the rank of each row within a window partition, without gaps for ties.
+    /// Rows with equal values receive the same rank, and the next rank is consecutive.
+    /// ```sql
+    /// SELECT DENSE_RANK() OVER (ORDER BY col1) FROM df;
+    /// SELECT DENSE_RANK() OVER (PARTITION BY col1 ORDER BY col2 DESC) FROM df;
+    /// ```
+    #[cfg(feature = "rank")]
+    DenseRank,
 
     // ----
     // Column selection
@@ -771,6 +803,7 @@ impl PolarsSQLFunctions {
             "date",
             "date_part",
             "degrees",
+            "dense_rank",
             "ends_with",
             "exp",
             "first",
@@ -807,11 +840,13 @@ impl PolarsSQLFunctions {
             "quantile_cont",
             "quantile_disc",
             "radians",
+            "rank",
             "regexp_like",
             "replace",
             "reverse",
             "right",
             "round",
+            "row_number",
             "rtrim",
             "sign",
             "sin",
@@ -951,9 +986,7 @@ impl PolarsSQLFunctions {
             "covar_pop" => Self::CovarPop,
             "covar" | "covar_samp" => Self::CovarSamp,
             "first" => Self::First,
-            "first_value" => Self::FirstValue,
             "last" => Self::Last,
-            "last_value" => Self::LastValue,
             "max" => Self::Max,
             "median" => Self::Median,
             "quantile_cont" => Self::QuantileCont,
@@ -978,6 +1011,17 @@ impl PolarsSQLFunctions {
             "array_unique" => Self::ArrayUnique,
             "array_upper" => Self::ArrayMax,
             "unnest" => Self::Explode,
+
+            // ----
+            // Window functions
+            // ----
+            #[cfg(feature = "rank")]
+            "dense_rank" => Self::DenseRank,
+            "first_value" => Self::FirstValue,
+            "last_value" => Self::LastValue,
+            #[cfg(feature = "rank")]
+            "rank" => Self::Rank,
+            "row_number" => Self::RowNumber,
 
             // ----
             // Column selection
@@ -1470,23 +1514,7 @@ impl SQLFunctionVisitor<'_> {
             CovarPop => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 0)),
             CovarSamp => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 1)),
             First => self.visit_unary(Expr::first),
-            FirstValue => self.visit_unary(Expr::first),
             Last => self.visit_unary(Expr::last),
-            LastValue => {
-                // With the default window frame (ROWS UNBOUNDED PRECEDING TO CURRENT ROW),
-                // LAST_VALUE returns the last value from the start of the partition up
-                // to the current row - which is simply the current row's value.
-                let args = extract_args(function)?;
-                match args.as_slice() {
-                    [FunctionArgExpr::Expr(sql_expr)] => {
-                        parse_sql_expr(sql_expr, self.ctx, self.active_schema)
-                    },
-                    _ => polars_bail!(
-                        SQLSyntax: "LAST_VALUE expects exactly 1 argument, got {}",
-                        args.len()
-                    ),
-                }
-            },
             Max => self.visit_unary_with_opt_cumulative(Expr::max, Expr::cum_max),
             Median => self.visit_unary(Expr::median),
             QuantileCont => {
@@ -1613,6 +1641,73 @@ impl SQLFunctionVisitor<'_> {
                     Expr::Selector(s) => Ok(s.as_expr()),
                     _ => polars_bail!(SQLSyntax: "COLUMNS expects a regex; found {:?}", e),
                 })
+            },
+
+            // ----
+            // Window functions
+            // ----
+            FirstValue => self.visit_unary(Expr::first),
+            LastValue => {
+                // With the default window frame (ROWS UNBOUNDED PRECEDING TO CURRENT ROW),
+                // LAST_VALUE returns the last value from the start of the partition up
+                // to the current row - which is simply the current row's value.
+                let args = extract_args(function)?;
+                match args.as_slice() {
+                    [FunctionArgExpr::Expr(sql_expr)] => {
+                        parse_sql_expr(sql_expr, self.ctx, self.active_schema)
+                    },
+                    _ => polars_bail!(
+                        SQLSyntax: "LAST_VALUE expects exactly 1 argument (found {})",
+                        args.len()
+                    ),
+                }
+            },
+            #[cfg(feature = "rank")]
+            Rank | DenseRank => {
+                let (func_name, rank_method) = match function_name {
+                    Rank => ("RANK", RankMethod::Min),
+                    DenseRank => ("DENSE_RANK", RankMethod::Dense),
+                    _ => unreachable!(),
+                };
+                let args = extract_args(function)?;
+                if !args.is_empty() {
+                    polars_bail!(SQLSyntax: "{} expects 0 arguments (found {})", func_name, args.len());
+                }
+                let window_spec = match &self.func.over {
+                    Some(WindowType::WindowSpec(spec)) if !spec.order_by.is_empty() => spec,
+                    _ => {
+                        polars_bail!(SQLSyntax: "{} requires an OVER clause with ORDER BY", func_name)
+                    },
+                };
+                let (order_exprs, all_desc) =
+                    self.parse_order_by_in_window(&window_spec.order_by)?;
+                let rank_expr = if order_exprs.len() == 1 {
+                    order_exprs[0].clone().rank(
+                        RankOptions {
+                            method: rank_method,
+                            descending: all_desc,
+                        },
+                        None,
+                    )
+                } else {
+                    as_struct(order_exprs).rank(
+                        RankOptions {
+                            method: rank_method,
+                            descending: all_desc,
+                        },
+                        None,
+                    )
+                };
+                self.apply_window_spec(rank_expr, &self.func.over)
+            },
+            RowNumber => {
+                let args = extract_args(function)?;
+                if !args.is_empty() {
+                    polars_bail!(SQLSyntax: "ROW_NUMBER expects 0 arguments (found {})", args.len());
+                }
+                // note: SQL is 1-indexed
+                let row_num_expr = int_range(lit(0i64), len(), 1, DataType::UInt32) + lit(1u32);
+                self.apply_window_spec(row_num_expr, &self.func.over)
             },
 
             // ----

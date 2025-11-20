@@ -960,7 +960,6 @@ def test_invalid_agg_dtypes_should_raise(
     )
 )
 def test_single(df: pl.DataFrame) -> None:
-    df.write_parquet("test_single.pqt")
     q = df.lazy().select(pl.all(ignore_nulls=False).item())
     assert_frame_equal(q.collect(), df)
     assert_frame_equal(q.collect(engine="streaming"), df)

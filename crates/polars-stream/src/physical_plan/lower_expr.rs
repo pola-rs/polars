@@ -447,7 +447,6 @@ fn build_fallback_node_with_ctx(
         .map(|expr| {
             create_physical_expr(
                 expr,
-                Context::Default,
                 ctx.expr_arena,
                 &ctx.phys_sm[input_stream.node].output_schema,
                 &mut conv_state,

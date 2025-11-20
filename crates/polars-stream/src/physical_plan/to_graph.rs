@@ -13,7 +13,7 @@ use polars_mem_engine::create_physical_plan;
 use polars_mem_engine::scan_predicate::create_scan_predicate;
 use polars_plan::dsl::{JoinOptionsIR, PartitionVariantIR, ScanSources};
 use polars_plan::plans::expr_ir::ExprIR;
-use polars_plan::plans::{AExpr, ArenaExprIter, Context, IR, IRAggExpr};
+use polars_plan::plans::{AExpr, ArenaExprIter, IR, IRAggExpr};
 use polars_plan::prelude::{FileType, FunctionFlags};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
@@ -55,7 +55,6 @@ fn create_stream_expr(
     let reentrant = has_potential_recurring_entrance(expr_ir.node(), ctx.expr_arena);
     let phys = create_physical_expr(
         expr_ir,
-        Context::Default,
         ctx.expr_arena,
         schema,
         &mut ctx.expr_conversion_state,
@@ -373,7 +372,7 @@ fn to_graph_rec<'a>(
             }
         },
 
-        PartitionSink {
+        PartitionedSink {
             input,
             base_path,
             file_path_cb,
@@ -821,6 +820,34 @@ fn to_graph_rec<'a>(
             )
         },
 
+        #[cfg(feature = "dynamic_group_by")]
+        DynamicGroupBy {
+            input,
+            options,
+            aggs,
+            slice,
+        } => {
+            let input_schema = &ctx.phys_sm[input.node].output_schema;
+            let input_key = to_graph_rec(input.node, ctx)?;
+            let aggs = aggs
+                .iter()
+                .map(|e| {
+                    Ok((
+                        e.output_name().clone(),
+                        create_stream_expr(e, ctx, input_schema)?,
+                    ))
+                })
+                .collect::<PolarsResult<Arc<[_]>>>()?;
+            ctx.graph.add_node(
+                nodes::dynamic_group_by::DynamicGroupBy::new(
+                    input_schema.clone(),
+                    options.clone(),
+                    aggs,
+                    *slice,
+                )?,
+                [(input_key, input.port)],
+            )
+        },
         #[cfg(feature = "dynamic_group_by")]
         RollingGroupBy {
             input,

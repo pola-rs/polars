@@ -2,6 +2,7 @@ use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_expr::state::ExecutionState;
 use polars_plan::plans::expr_ir::ExprIR;
+use polars_plan::prelude::sink::CallbackSinkType;
 use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
 
@@ -184,13 +185,7 @@ pub fn python_scan_predicate(
                 // We don't have to use a physical expression as pyarrow deals with the filter.
                 None
             } else {
-                Some(create_physical_expr(
-                    e,
-                    Context::Default,
-                    expr_arena,
-                    &options.schema,
-                    state,
-                )?)
+                Some(create_physical_expr(e, expr_arena, &options.schema, state)?)
             }
         }
         // Convert to physical expression for the case the reader cannot consume the predicate.
@@ -198,13 +193,7 @@ pub fn python_scan_predicate(
             let dsl_expr = e.to_expr(expr_arena);
             predicate_serialized = polars_plan::plans::python::predicate::serialize(&dsl_expr)?;
 
-            Some(create_physical_expr(
-                e,
-                Context::Default,
-                expr_arena,
-                &options.schema,
-                state,
-            )?)
+            Some(create_physical_expr(e, expr_arena, &options.schema, state)?)
         }
     } else {
         None
@@ -245,7 +234,8 @@ fn create_physical_plan_impl(
                 | IR::Cache { .. } // Needed for plans branching from the same cache node
                 | IR::GroupBy { .. } // Needed for the streaming impl
                 | IR::Sink { // Needed for the streaming impl
-                    payload: SinkTypeIR::Partition(_),
+                    payload:
+                        SinkTypeIR::Partitioned { .. },
                     ..
                 }
         ) {
@@ -298,23 +288,24 @@ fn create_physical_plan_impl(
                         }),
                     }))
                 },
-                SinkTypeIR::File(FileSinkType {
-                    file_type,
+                SinkTypeIR::File(FileSinkOptions {
                     target,
-                    sink_options,
-                    cloud_options,
+                    file_format,
+                    unified_sink_args,
                 }) => {
-                    let name = sink_name(&file_type).to_owned();
+                    let name = sink_name(&file_format).to_owned();
                     Ok(Box::new(SinkExecutor {
                         input,
                         name,
                         f: Box::new(move |mut df, _state| {
-                            let mut file = target
-                                .open_into_writeable(&sink_options, cloud_options.as_ref())?;
+                            let mut file = target.open_into_writeable(
+                                unified_sink_args.cloud_options.as_ref(),
+                                unified_sink_args.mkdir,
+                            )?;
                             let writer = &mut *file;
 
                             use std::io::BufWriter;
-                            match &file_type {
+                            match file_format.as_ref() {
                                 #[cfg(feature = "parquet")]
                                 FileType::Parquet(options) => {
                                     use polars_io::parquet::write::ParquetWriter;
@@ -381,14 +372,14 @@ fn create_physical_plan_impl(
                                 _ => panic!("enable filetype feature"),
                             }
 
-                            file.sync_on_close(sink_options.sync_on_close)?;
+                            file.sync_on_close(unified_sink_args.sync_on_close)?;
                             file.close()?;
 
                             Ok(None)
                         }),
                     }))
                 },
-                SinkTypeIR::Partition(_) => {
+                SinkTypeIR::Partitioned { .. } => {
                     let builder = build_streaming_executor
                         .expect("invalid build. Missing feature new-streaming");
 
@@ -436,13 +427,8 @@ fn create_physical_plan_impl(
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
             let input = recurse!(input, state)?;
             let mut state = ExpressionConversionState::new(true);
-            let predicate = create_physical_expr(
-                &predicate,
-                Context::Default,
-                expr_arena,
-                &input_schema,
-                &mut state,
-            )?;
+            let predicate =
+                create_physical_expr(&predicate, expr_arena, &input_schema, &mut state)?;
             Ok(Box::new(executors::FilterExec::new(
                 predicate,
                 input,
@@ -535,13 +521,8 @@ fn create_physical_plan_impl(
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
             let input = recurse!(input, state)?;
             let mut state = ExpressionConversionState::new(POOL.current_num_threads() > expr.len());
-            let phys_expr = create_physical_expressions_from_irs(
-                &expr,
-                Context::Default,
-                expr_arena,
-                &input_schema,
-                &mut state,
-            )?;
+            let phys_expr =
+                create_physical_expressions_from_irs(&expr, expr_arena, &input_schema, &mut state)?;
 
             let allow_vertical_parallelism = options.should_broadcast && expr.iter().all(|e| is_elementwise_rec(e.node(), expr_arena))
                 // If all columns are literal we would get a 1 row per thread.
@@ -576,7 +557,6 @@ fn create_physical_plan_impl(
             let input_schema = lp_arena.get(input).schema(lp_arena);
             let by_column = create_physical_expressions_from_irs(
                 &by_column,
-                Context::Default,
                 expr_arena,
                 input_schema.as_ref(),
                 &mut ExpressionConversionState::new(true),
@@ -623,14 +603,12 @@ fn create_physical_plan_impl(
             let options = Arc::try_unwrap(options).unwrap_or_else(|options| (*options).clone());
             let phys_keys = create_physical_expressions_from_irs(
                 &keys,
-                Context::Default,
                 expr_arena,
                 &input_schema,
                 &mut ExpressionConversionState::new(true),
             )?;
             let phys_aggs = create_physical_expressions_from_irs(
                 &aggs,
-                Context::Aggregation,
                 expr_arena,
                 &input_schema,
                 &mut ExpressionConversionState::new(true),
@@ -736,14 +714,12 @@ fn create_physical_plan_impl(
 
             let left_on = create_physical_expressions_from_irs(
                 &left_on,
-                Context::Default,
                 expr_arena,
                 &schema_left,
                 &mut ExpressionConversionState::new(true),
             )?;
             let right_on = create_physical_expressions_from_irs(
                 &right_on,
-                Context::Default,
                 expr_arena,
                 &schema_right,
                 &mut ExpressionConversionState::new(true),
@@ -758,7 +734,6 @@ fn create_physical_plan_impl(
                     o.compile(|e| {
                         let phys_expr = create_physical_expr(
                             e,
-                            Context::Default,
                             expr_arena,
                             &schema,
                             &mut ExpressionConversionState::new(false),
@@ -805,7 +780,6 @@ fn create_physical_plan_impl(
 
             let phys_exprs = create_physical_expressions_from_irs(
                 &exprs,
-                Context::Default,
                 expr_arena,
                 &input_schema,
                 &mut state,

@@ -579,7 +579,7 @@ impl LazyFrame {
             !matches!(
                 lp_arena.get(lp_top),
                 IR::Sink {
-                    payload: SinkTypeIR::File { .. } | SinkTypeIR::Partition { .. },
+                    payload: SinkTypeIR::File { .. },
                     ..
                 }
             )
@@ -640,9 +640,7 @@ impl LazyFrame {
         if engine == Engine::Auto {
             engine = match payload {
                 #[cfg(feature = "new_streaming")]
-                SinkType::Callback { .. } | SinkType::File { .. } | SinkType::Partition { .. } => {
-                    Engine::Streaming
-                },
+                SinkType::Callback { .. } | SinkType::File { .. } => Engine::Streaming,
                 _ => Engine::InMemory,
             };
         }
@@ -856,93 +854,29 @@ impl LazyFrame {
         self._profile_post_opt(|_, _, _, _| Ok(()))
     }
 
-    /// Stream a query result into a parquet file. This is useful if the final result doesn't fit
-    /// into memory. This methods will return an error if the query cannot be completely done in a
-    /// streaming fashion.
-    #[cfg(feature = "parquet")]
-    pub fn sink_parquet(
-        self,
-        target: SinkTarget,
-        options: ParquetWriteOptions,
-        cloud_options: Option<polars_io::cloud::CloudOptions>,
-        sink_options: SinkOptions,
-    ) -> PolarsResult<Self> {
-        self.sink(SinkType::File(FileSinkType {
-            target,
-            sink_options,
-            file_type: FileType::Parquet(options),
-            cloud_options,
-        }))
-    }
-
-    /// Stream a query result into an ipc/arrow file. This is useful if the final result doesn't fit
-    /// into memory. This methods will return an error if the query cannot be completely done in a
-    /// streaming fashion.
-    #[cfg(feature = "ipc")]
-    pub fn sink_ipc(
-        self,
-        target: SinkTarget,
-        options: IpcWriterOptions,
-        cloud_options: Option<polars_io::cloud::CloudOptions>,
-        sink_options: SinkOptions,
-    ) -> PolarsResult<Self> {
-        self.sink(SinkType::File(FileSinkType {
-            target,
-            sink_options,
-            file_type: FileType::Ipc(options),
-            cloud_options,
-        }))
-    }
-
-    /// Stream a query result into an csv file. This is useful if the final result doesn't fit
-    /// into memory. This methods will return an error if the query cannot be completely done in a
-    /// streaming fashion.
-    #[cfg(feature = "csv")]
-    pub fn sink_csv(
-        self,
-        target: SinkTarget,
-        options: CsvWriterOptions,
-        cloud_options: Option<polars_io::cloud::CloudOptions>,
-        sink_options: SinkOptions,
-    ) -> PolarsResult<Self> {
-        self.sink(SinkType::File(FileSinkType {
-            target,
-            sink_options,
-            file_type: FileType::Csv(options),
-            cloud_options,
-        }))
-    }
-
-    /// Stream a query result into a JSON file. This is useful if the final result doesn't fit
-    /// into memory. This methods will return an error if the query cannot be completely done in a
-    /// streaming fashion.
-    #[cfg(feature = "json")]
-    pub fn sink_json(
-        self,
-        target: SinkTarget,
-        options: JsonWriterOptions,
-        cloud_options: Option<polars_io::cloud::CloudOptions>,
-        sink_options: SinkOptions,
-    ) -> PolarsResult<Self> {
-        self.sink(SinkType::File(FileSinkType {
-            target,
-            sink_options,
-            file_type: FileType::Json(options),
-            cloud_options,
-        }))
-    }
-
     pub fn sink_batches(
-        self,
+        mut self,
         function: PlanCallback<DataFrame, bool>,
         maintain_order: bool,
         chunk_size: Option<NonZeroUsize>,
     ) -> PolarsResult<Self> {
-        self.sink(SinkType::Callback(CallbackSinkType {
-            function,
-            maintain_order,
-            chunk_size,
-        }))
+        use polars_plan::prelude::sink::CallbackSinkType;
+
+        polars_ensure!(
+            !matches!(self.logical_plan, DslPlan::Sink { .. }),
+            InvalidOperation: "cannot create a sink on top of another sink"
+        );
+
+        self.logical_plan = DslPlan::Sink {
+            input: Arc::new(self.logical_plan),
+            payload: SinkType::Callback(CallbackSinkType {
+                function,
+                maintain_order,
+                chunk_size,
+            }),
+        };
+
+        Ok(self)
     }
 
     #[cfg(feature = "new_streaming")]
@@ -996,100 +930,41 @@ impl LazyFrame {
         None
     }
 
-    // TODO: Rename to sink_payload (or can potentially remove altogether pending sink IR refactor).
-    fn sink(mut self, payload: SinkType) -> Result<LazyFrame, PolarsError> {
+    pub fn sink(
+        mut self,
+        sink_type: SinkDestination,
+        file_format: impl Into<Box<FileType>>,
+        unified_sink_args: UnifiedSinkArgs,
+    ) -> PolarsResult<Self> {
         polars_ensure!(
             !matches!(self.logical_plan, DslPlan::Sink { .. }),
             InvalidOperation: "cannot create a sink on top of another sink"
         );
+
         self.logical_plan = DslPlan::Sink {
             input: Arc::new(self.logical_plan),
-            payload,
+            payload: match sink_type {
+                SinkDestination::File { target } => SinkType::File(FileSinkOptions {
+                    target,
+                    file_format: file_format.into(),
+                    unified_sink_args,
+                }),
+                SinkDestination::Partitioned {
+                    base_path,
+                    file_path_provider,
+                    partition_strategy,
+                    finish_callback,
+                } => SinkType::Partitioned(PartitionedSinkOptions {
+                    base_path,
+                    file_path_provider,
+                    partition_strategy,
+                    finish_callback,
+                    file_format: file_format.into(),
+                    unified_sink_args,
+                }),
+            },
         };
         Ok(self)
-    }
-
-    // TODO: Rename to `sink` after existing `sinks` is renamed to `sink_payload`.
-    pub fn sink2(
-        self,
-        target: SinkOutputType,
-        file_write_options: FileType,
-        unified_sink_args: UnifiedSinkArgs,
-    ) -> PolarsResult<Self> {
-        // TODO
-        // Temporarily converts to existing IR format - in the future we should be able to just pass
-        // the parameters through.
-        let sink_options = SinkOptions {
-            sync_on_close: unified_sink_args.sync_on_close,
-            maintain_order: unified_sink_args.maintain_order,
-            mkdir: unified_sink_args.mkdir,
-        };
-
-        let file_type = file_write_options;
-
-        match target {
-            SinkOutputType::Single(target) => self.sink(SinkType::File(FileSinkType {
-                target,
-                file_type,
-                sink_options,
-                cloud_options: unified_sink_args.cloud_options,
-            })),
-            SinkOutputType::Multiple(DirectorySinkOptions {
-                base_path,
-                file_path_provider,
-                sink_type,
-                finish_callback,
-            }) => {
-                let (variant, per_partition_sort_by) = match sink_type {
-                    PartitionVariant2::PartitionBy {
-                        keys,
-                        include_keys,
-                        keys_sorted,
-                        per_partition_sort_by,
-                    } => {
-                        let variant = if keys_sorted {
-                            PartitionVariant::Parted {
-                                key_exprs: keys,
-                                include_key: include_keys,
-                            }
-                        } else {
-                            PartitionVariant::ByKey {
-                                key_exprs: keys,
-                                include_key: include_keys,
-                            }
-                        };
-
-                        (variant, per_partition_sort_by)
-                    },
-                    PartitionVariant2::MaxSize {
-                        max_rows_per_file,
-                        per_file_sort_by,
-                    } => (
-                        PartitionVariant::MaxSize(max_rows_per_file),
-                        // FIXME
-                        // Existing implementation takes per-file sort_by as the
-                        // per-partition sort_by.
-                        per_file_sort_by,
-                    ),
-                };
-
-                self.sink(SinkType::Partition(PartitionSinkType {
-                    base_path: Arc::new(base_path),
-                    file_path_cb: file_path_provider,
-                    sink_options: SinkOptions {
-                        sync_on_close: unified_sink_args.sync_on_close,
-                        maintain_order: unified_sink_args.maintain_order,
-                        mkdir: unified_sink_args.mkdir,
-                    },
-                    variant,
-                    file_type,
-                    cloud_options: unified_sink_args.cloud_options,
-                    per_partition_sort_by: (!per_partition_sort_by.is_empty())
-                        .then_some(per_partition_sort_by),
-                    finish_callback,
-                }))
-            },
-        }
     }
 
     /// Filter frame rows that match a predicate expression.
@@ -1225,6 +1100,7 @@ impl LazyFrame {
                 logical_plan: self.logical_plan,
                 opt_state,
                 keys,
+                predicates: vec![],
                 maintain_order: false,
                 dynamic_options: None,
                 rolling_options: None,
@@ -1237,6 +1113,7 @@ impl LazyFrame {
                 logical_plan: self.logical_plan,
                 opt_state,
                 keys,
+                predicates: vec![],
                 maintain_order: false,
             }
         }
@@ -1272,6 +1149,7 @@ impl LazyFrame {
         LazyGroupBy {
             logical_plan: self.logical_plan,
             opt_state,
+            predicates: vec![],
             keys: group_by.as_ref().to_vec(),
             maintain_order: true,
             dynamic_options: None,
@@ -1317,6 +1195,7 @@ impl LazyFrame {
         LazyGroupBy {
             logical_plan: self.logical_plan,
             opt_state,
+            predicates: vec![],
             keys: group_by.as_ref().to_vec(),
             maintain_order: true,
             dynamic_options: Some(options),
@@ -1339,6 +1218,7 @@ impl LazyFrame {
                 logical_plan: self.logical_plan,
                 opt_state,
                 keys,
+                predicates: vec![],
                 maintain_order: true,
                 dynamic_options: None,
                 rolling_options: None,
@@ -1351,6 +1231,7 @@ impl LazyFrame {
                 logical_plan: self.logical_plan,
                 opt_state,
                 keys,
+                predicates: vec![],
                 maintain_order: true,
             }
         }
@@ -1664,7 +1545,10 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
-    pub fn pipe_with_schema(self, callback: PlanCallback<(DslPlan, SchemaRef), DslPlan>) -> Self {
+    pub fn pipe_with_schema(
+        self,
+        callback: PlanCallback<(Vec<DslPlan>, Vec<SchemaRef>), DslPlan>,
+    ) -> Self {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().pipe_with_schema(callback).build();
         Self::from_logical_plan(lp, opt_state)
@@ -2100,6 +1984,7 @@ pub struct LazyGroupBy {
     pub logical_plan: DslPlan,
     opt_state: OptFlags,
     keys: Vec<Expr>,
+    predicates: Vec<Expr>,
     maintain_order: bool,
     #[cfg(feature = "dynamic_group_by")]
     dynamic_options: Option<DynamicGroupOptions>,
@@ -2118,6 +2003,31 @@ impl From<LazyGroupBy> for LazyFrame {
 }
 
 impl LazyGroupBy {
+    /// Filter groups with a predicate after aggregation.
+    ///
+    /// Similarly to the [LazyGroupBy::agg] method, the predicate must run an aggregation as it
+    /// is evaluated on the groups.
+    /// This method can be chained in which case all predicates must evaluate to `true` for a
+    /// group to be kept.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::prelude::*;
+    /// use polars_lazy::prelude::*;
+    ///
+    /// fn example(df: DataFrame) -> LazyFrame {
+    ///       df.lazy()
+    ///        .group_by_stable([col("date")])
+    ///        .having(col("rain").sum().gt(lit(10)))
+    ///        .agg([col("rain").min().alias("min_rain")])
+    /// }
+    /// ```
+    pub fn having(mut self, predicate: Expr) -> Self {
+        self.predicates.push(predicate);
+        self
+    }
+
     /// Group by and aggregate.
     ///
     /// Select a column with [col] and choose an aggregation.
@@ -2144,6 +2054,7 @@ impl LazyGroupBy {
         let lp = DslBuilder::from(self.logical_plan)
             .group_by(
                 self.keys,
+                self.predicates,
                 aggs,
                 None,
                 self.maintain_order,
@@ -2154,7 +2065,7 @@ impl LazyGroupBy {
 
         #[cfg(not(feature = "dynamic_group_by"))]
         let lp = DslBuilder::from(self.logical_plan)
-            .group_by(self.keys, aggs, None, self.maintain_order)
+            .group_by(self.keys, self.predicates, aggs, None, self.maintain_order)
             .build();
         LazyFrame::from_logical_plan(lp, self.opt_state)
     }
@@ -2200,6 +2111,10 @@ impl LazyGroupBy {
     /// **It is not recommended that you use this as materializing the DataFrame is very
     /// expensive.**
     pub fn apply(self, f: PlanCallback<DataFrame, DataFrame>, schema: SchemaRef) -> LazyFrame {
+        if !self.predicates.is_empty() {
+            panic!("not yet implemented: `apply` cannot be used with `having` predicates");
+        }
+
         #[cfg(feature = "dynamic_group_by")]
         let options = GroupbyOptions {
             dynamic: self.dynamic_options,
@@ -2213,6 +2128,7 @@ impl LazyGroupBy {
         let lp = DslPlan::GroupBy {
             input: Arc::new(self.logical_plan),
             keys: self.keys,
+            predicates: vec![],
             aggs: vec![],
             apply: Some((f, schema)),
             maintain_order: self.maintain_order,

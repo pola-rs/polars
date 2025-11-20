@@ -1,7 +1,14 @@
 use std::collections::VecDeque;
 
 use arrow::legacy::time_zone::Tz;
+use arrow::temporal_conversions::{
+    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
+};
 use arrow::trusted_len::TrustedLen;
+use chrono::NaiveDateTime;
+#[cfg(feature = "timezones")]
+use chrono::TimeZone as _;
+use now::DateTimeNow;
 use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;
@@ -960,6 +967,316 @@ impl RollingWindower {
         self.start = 0;
         self.end = 0;
         self.length = 0;
+    }
+}
+
+#[derive(Debug)]
+struct ActiveDynWindow {
+    start: IdxSize,
+    lower_bound: i64,
+    upper_bound: i64,
+}
+
+#[inline(always)]
+fn is_above_lower_bound(t: i64, lb: i64, closed: ClosedWindow) -> bool {
+    (t > lb) | (matches!(closed, ClosedWindow::Left | ClosedWindow::Both) & (t == lb))
+}
+#[inline(always)]
+fn is_below_upper_bound(t: i64, ub: i64, closed: ClosedWindow) -> bool {
+    (t < ub) | (matches!(closed, ClosedWindow::Right | ClosedWindow::Both) & (t == ub))
+}
+
+pub struct GroupByDynamicWindower {
+    period: Duration,
+    offset: Duration,
+    every: Duration,
+    closed: ClosedWindow,
+
+    start_by: StartBy,
+
+    add: fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64>,
+    // Not-to-exceed duration (upper limit).
+    nte: fn(&Duration) -> i64,
+    tu: TimeUnit,
+    tz: Option<Tz>,
+
+    include_lower_bound: bool,
+    include_upper_bound: bool,
+
+    num_seen: IdxSize,
+    next_lower_bound: i64,
+    active: VecDeque<ActiveDynWindow>,
+}
+
+impl GroupByDynamicWindower {
+    #[expect(clippy::too_many_arguments)]
+    pub fn new(
+        period: Duration,
+        offset: Duration,
+        every: Duration,
+        start_by: StartBy,
+        closed: ClosedWindow,
+        tu: TimeUnit,
+        tz: Option<Tz>,
+        include_lower_bound: bool,
+        include_upper_bound: bool,
+    ) -> Self {
+        Self {
+            period,
+            offset,
+            every,
+            closed,
+
+            start_by,
+
+            add: match tu {
+                TimeUnit::Nanoseconds => Duration::add_ns,
+                TimeUnit::Microseconds => Duration::add_us,
+                TimeUnit::Milliseconds => Duration::add_ms,
+            },
+            nte: match tu {
+                TimeUnit::Nanoseconds => Duration::nte_duration_ns,
+                TimeUnit::Microseconds => Duration::nte_duration_us,
+                TimeUnit::Milliseconds => Duration::nte_duration_ms,
+            },
+            tu,
+            tz,
+
+            include_lower_bound,
+            include_upper_bound,
+
+            num_seen: 0,
+            next_lower_bound: 0,
+            active: Default::default(),
+        }
+    }
+
+    pub fn find_first_window_around(
+        &self,
+        mut lower_bound: i64,
+        target: i64,
+    ) -> PolarsResult<Result<(i64, i64), i64>> {
+        let mut upper_bound = (self.add)(&self.period, lower_bound, self.tz.as_ref())?;
+        while !is_below_upper_bound(target, upper_bound, self.closed) {
+            let gap = target - lower_bound;
+            let nth = match self.tu {
+                TimeUnit::Nanoseconds
+                    if gap > self.every.nte_duration_ns() + self.period.nte_duration_ns() =>
+                {
+                    ((gap - self.period.nte_duration_ns()) as usize)
+                        / (self.every.nte_duration_ns() as usize)
+                },
+                TimeUnit::Microseconds
+                    if gap > self.every.nte_duration_us() + self.period.nte_duration_us() =>
+                {
+                    ((gap - self.period.nte_duration_us()) as usize)
+                        / (self.every.nte_duration_us() as usize)
+                },
+                TimeUnit::Milliseconds
+                    if gap > self.every.nte_duration_ms() + self.period.nte_duration_ms() =>
+                {
+                    ((gap - self.period.nte_duration_ms()) as usize)
+                        / (self.every.nte_duration_ms() as usize)
+                },
+                _ => 1,
+            };
+
+            let nth: i64 = nth.try_into().unwrap();
+            lower_bound = (self.add)(&(self.every * nth), lower_bound, self.tz.as_ref())?;
+            upper_bound = (self.add)(&self.period, lower_bound, self.tz.as_ref())?;
+        }
+
+        if is_above_lower_bound(target, lower_bound, self.closed) {
+            Ok(Ok((lower_bound, upper_bound)))
+        } else {
+            Ok(Err(lower_bound))
+        }
+    }
+
+    fn start_lower_bound(&self, first: i64) -> PolarsResult<i64> {
+        match self.start_by {
+            StartBy::DataPoint => Ok(first),
+            StartBy::WindowBound => {
+                let get_earliest_bounds = match self.tu {
+                    TimeUnit::Nanoseconds => Window::get_earliest_bounds_ns,
+                    TimeUnit::Microseconds => Window::get_earliest_bounds_us,
+                    TimeUnit::Milliseconds => Window::get_earliest_bounds_ms,
+                };
+                Ok((get_earliest_bounds)(
+                    &Window::new(self.every, self.period, self.offset),
+                    first,
+                    self.closed,
+                    self.tz.as_ref(),
+                )?
+                .start)
+            },
+            _ => {
+                {
+                    #[allow(clippy::type_complexity)]
+                    let (from, to): (
+                        fn(i64) -> NaiveDateTime,
+                        fn(NaiveDateTime) -> i64,
+                    ) = match self.tu {
+                        TimeUnit::Nanoseconds => {
+                            (timestamp_ns_to_datetime, datetime_to_timestamp_ns)
+                        },
+                        TimeUnit::Microseconds => {
+                            (timestamp_us_to_datetime, datetime_to_timestamp_us)
+                        },
+                        TimeUnit::Milliseconds => {
+                            (timestamp_ms_to_datetime, datetime_to_timestamp_ms)
+                        },
+                    };
+                    // find beginning of the week.
+                    let dt = from(first);
+                    match self.tz.as_ref() {
+                        #[cfg(feature = "timezones")]
+                        Some(tz) => {
+                            let dt = tz.from_utc_datetime(&dt);
+                            let dt = dt.beginning_of_week();
+                            let dt = dt.naive_utc();
+                            let start = to(dt);
+                            // adjust start of the week based on given day of the week
+                            let start = (self.add)(
+                                &Duration::parse(&format!("{}d", self.start_by.weekday().unwrap())),
+                                start,
+                                self.tz.as_ref(),
+                            )?;
+                            // apply the 'offset'
+                            let start = (self.add)(&self.offset, start, self.tz.as_ref())?;
+                            // make sure the first datapoint has a chance to be included
+                            // and compute the end of the window defined by the 'period'
+                            Ok(ensure_t_in_or_in_front_of_window(
+                                self.every,
+                                first,
+                                self.add,
+                                self.nte,
+                                self.period,
+                                start,
+                                self.closed,
+                                self.tz.as_ref(),
+                            )?
+                            .start)
+                        },
+                        _ => {
+                            let tz = chrono::Utc;
+                            let dt = dt.and_local_timezone(tz).unwrap();
+                            let dt = dt.beginning_of_week();
+                            let dt = dt.naive_utc();
+                            let start = to(dt);
+                            // adjust start of the week based on given day of the week
+                            let start = (self.add)(
+                                &Duration::parse(&format!("{}d", self.start_by.weekday().unwrap())),
+                                start,
+                                None,
+                            )
+                            .unwrap();
+                            // apply the 'offset'
+                            let start = (self.add)(&self.offset, start, None).unwrap();
+                            // make sure the first datapoint has a chance to be included
+                            // and compute the end of the window defined by the 'period'
+                            Ok(ensure_t_in_or_in_front_of_window(
+                                self.every,
+                                first,
+                                self.add,
+                                self.nte,
+                                self.period,
+                                start,
+                                self.closed,
+                                None,
+                            )?
+                            .start)
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+    pub fn insert(
+        &mut self,
+        time: &[i64],
+        windows: &mut Vec<[IdxSize; 2]>,
+        lower_bound: &mut Vec<i64>,
+        upper_bound: &mut Vec<i64>,
+    ) -> PolarsResult<()> {
+        if time.is_empty() {
+            return Ok(());
+        }
+
+        if self.num_seen == 0 {
+            debug_assert!(self.active.is_empty());
+            self.next_lower_bound = self.start_lower_bound(time[0])?;
+        }
+
+        for &t in time {
+            while let Some(w) = self.active.front()
+                && !is_below_upper_bound(t, w.upper_bound, self.closed)
+            {
+                let w = self.active.pop_front().unwrap();
+                windows.push([w.start, self.num_seen - w.start]);
+                if self.include_lower_bound {
+                    lower_bound.push(w.lower_bound);
+                }
+                if self.include_upper_bound {
+                    upper_bound.push(w.upper_bound);
+                }
+            }
+
+            while is_above_lower_bound(t, self.next_lower_bound, self.closed) {
+                match self.find_first_window_around(self.next_lower_bound, t)? {
+                    Ok((lower_bound, upper_bound)) => {
+                        self.next_lower_bound =
+                            (self.add)(&self.every, lower_bound, self.tz.as_ref())?;
+                        self.active.push_back(ActiveDynWindow {
+                            start: self.num_seen,
+                            lower_bound,
+                            upper_bound,
+                        });
+                    },
+                    Err(lower_bound) => {
+                        self.next_lower_bound = lower_bound;
+                        break;
+                    },
+                }
+            }
+
+            self.num_seen += 1
+        }
+
+        Ok(())
+    }
+
+    pub fn lowest_needed_index(&self) -> IdxSize {
+        self.active.front().map_or(self.num_seen, |w| w.start)
+    }
+
+    pub fn finalize(
+        &mut self,
+        windows: &mut Vec<[IdxSize; 2]>,
+        lower_bound: &mut Vec<i64>,
+        upper_bound: &mut Vec<i64>,
+    ) {
+        for w in self.active.drain(..) {
+            windows.push([w.start, self.num_seen - w.start]);
+            if self.include_lower_bound {
+                lower_bound.push(w.lower_bound);
+            }
+            if self.include_upper_bound {
+                upper_bound.push(w.upper_bound);
+            }
+        }
+
+        self.next_lower_bound = 0;
+        self.num_seen = 0;
+    }
+
+    pub fn num_seen(&self) -> IdxSize {
+        self.num_seen
+    }
+
+    pub fn time_unit(&self) -> TimeUnit {
+        self.tu
     }
 }
 
