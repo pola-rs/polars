@@ -10,7 +10,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars._typing import PolarsDataType
+    from polars._typing import JoinStrategy, PolarsDataType
 
 TestExtension = pl.Extension(
     name="testing.test_extension",
@@ -144,8 +144,8 @@ def test_extension_when_then_otherwise() -> None:
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
-def test_extension_join_payload(how: str) -> None:
+@pytest.mark.parametrize("how", ["inner", "left", "right", "full", "semi", "anti"])
+def test_extension_join_payload(how: JoinStrategy) -> None:
     df = ROUNDTRIP_DF.with_columns(pl.Series("key", [1, 2, 3]))
     df_storage = df.select(pl.all().ext.storage())
     print(df)

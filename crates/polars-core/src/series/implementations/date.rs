@@ -392,6 +392,7 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
+    #[cfg(feature = "dtype-datetime")]
     fn mean_reduce(&self) -> PolarsResult<Scalar> {
         let mean = self.mean().map(|v| (v * US_IN_DAY as f64) as i64);
         let dtype = DataType::Datetime(TimeUnit::Microseconds, None);
@@ -399,6 +400,7 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
         Ok(Scalar::new(dtype, av))
     }
 
+    #[cfg(feature = "dtype-datetime")]
     fn median_reduce(&self) -> PolarsResult<Scalar> {
         let median = self.median().map(|v| (v * (US_IN_DAY as f64)) as i64);
         let dtype = DataType::Datetime(TimeUnit::Microseconds, None);
