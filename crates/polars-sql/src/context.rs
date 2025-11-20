@@ -795,6 +795,7 @@ impl SQLContext {
         // Check that the statement doesn't contain unsupported SELECT clauses
         self.validate_select(select_stmt)?;
 
+        // Get `FROM` table/data
         let mut lf = if select_stmt.from.is_empty() {
             DataFrame::empty().lazy()
         } else {
@@ -807,11 +808,11 @@ impl SQLContext {
             self.execute_from_statement(from.first().unwrap())?
         };
 
-        // Filter expression (WHERE clause)
-        let schema = self.get_frame_schema(&mut lf)?;
+        // Apply `WHERE` constraint
+        let mut schema = self.get_frame_schema(&mut lf)?;
         lf = self.process_where(lf, &select_stmt.selection, false, Some(schema.clone()))?;
 
-        // 'SELECT *' modifiers
+        // Determine projections
         let mut select_modifiers = SelectModifiers {
             ilike: None,
             exclude: PlHashSet::new(),
@@ -822,22 +823,36 @@ impl SQLContext {
         let mut projections =
             self.column_projections(select_stmt, &schema, &mut select_modifiers)?;
 
-        // Dataframe Level explode (UNNEST CLAUSE)
-        // Collect column names to explode
-        let mut explode_names = Vec::with_capacity(projections.len());
+        // Apply `UNNEST` expressions
+        let mut explode_names = Vec::new();
+        let mut explode_exprs = Vec::new();
+        let mut explode_lookup = PlHashMap::new();
+
         for expr in &projections {
             for e in expr {
                 if let Expr::Explode { input, .. } = e {
-                    if let Expr::Column(name) = input.as_ref() {
-                        explode_names.push(name.clone());
+                    match input.as_ref() {
+                        Expr::Column(name) => explode_names.push(name.clone()),
+                        other_expr => {
+                            // Note: skip aggregate expressions; those are handled in the GROUP BY phase
+                            if !has_expr(other_expr, |e| matches!(e, Expr::Agg(_) | Expr::Len)) {
+                                let temp_name = PlSmallStr::from(format!(
+                                    "__POLARS_UNNEST_{}",
+                                    explode_exprs.len()
+                                ));
+                                explode_exprs.push(other_expr.clone().alias(temp_name.as_str()));
+                                explode_lookup.insert(other_expr.clone(), temp_name.clone());
+                                explode_names.push(temp_name);
+                            }
+                        },
                     }
                 }
             }
         }
-
         if !explode_names.is_empty() {
-            // Apply explosions 1 by 1.
-            explode_names.dedup();
+            if !explode_exprs.is_empty() {
+                lf = lf.with_columns(explode_exprs);
+            }
             lf = lf.explode(
                 Selector::ByName {
                     names: Arc::from(explode_names),
@@ -848,17 +863,21 @@ impl SQLContext {
                     keep_nulls: true,
                 },
             );
-
-            // Remove the explode expressions from the projections to be executed.
             projections = projections
                 .into_iter()
                 .map(|p| {
+                    // Update "projections" with column refs to the now-exploded expressions
                     p.map_expr(|e| match e {
-                        Expr::Explode { input, .. } => input.as_ref().clone(),
+                        Expr::Explode { input, .. } => explode_lookup
+                            .get(input.as_ref())
+                            .map(|name| Expr::Column(name.clone()))
+                            .unwrap_or_else(|| input.as_ref().clone()),
                         _ => e,
                     })
                 })
                 .collect();
+
+            schema = self.get_frame_schema(&mut lf)?;
         }
 
         // Check for "GROUP BY ..." (after determining projections)
