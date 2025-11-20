@@ -899,7 +899,7 @@ impl<'a> AnyValue<'a> {
         }
     }
 
-    #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
+    #[cfg(feature = "dtype-datetime")]
     pub(crate) fn as_datetime(&self, tu: TimeUnit, tz: Option<&'a TimeZone>) -> AnyValue<'a> {
         match self {
             AnyValue::Int64(v) => AnyValue::Datetime(*v, tu, tz),
