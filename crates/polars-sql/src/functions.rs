@@ -1996,29 +1996,41 @@ impl SQLFunctionVisitor<'_> {
         match args.as_slice() {
             [FunctionArgExpr::Expr(sql_expr)] => {
                 let mut base = parse_sql_expr(sql_expr, self.ctx, self.active_schema)?;
-                if is_distinct {
-                    base = base.unique_stable();
-                }
-                for clause in clauses {
+                let mut order_by_clause = None;
+                let mut limit_clause = None;
+                for clause in &clauses {
                     match clause {
                         FunctionArgumentClause::OrderBy(order_exprs) => {
-                            base = self.apply_order_by(base, order_exprs.as_slice())?;
+                            order_by_clause = Some(order_exprs.as_slice());
                         },
                         FunctionArgumentClause::Limit(limit_expr) => {
-                            let limit = parse_sql_expr(&limit_expr, self.ctx, self.active_schema)?;
-                            match limit {
-                                Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n)))
-                                    if n >= 0 =>
-                                {
-                                    base = base.head(Some(n as usize))
-                                },
-                                _ => {
-                                    polars_bail!(SQLSyntax: "LIMIT in ARRAY_AGG must be a positive integer")
-                                },
-                            };
+                            limit_clause = Some(limit_expr);
                         },
                         _ => {},
                     }
+                }
+                if !is_distinct {
+                    // No DISTINCT: apply ORDER BY normally
+                    if let Some(order_by) = order_by_clause {
+                        base = self.apply_order_by(base, order_by)?;
+                    }
+                } else {
+                    // DISTINCT: apply unique, then sort the result
+                    base = base.unique_stable();
+                    if let Some(order_by) = order_by_clause {
+                        base = self.apply_order_by_to_distinct_array(base, order_by, sql_expr)?;
+                    }
+                }
+                if let Some(limit_expr) = limit_clause {
+                    let limit = parse_sql_expr(limit_expr, self.ctx, self.active_schema)?;
+                    match limit {
+                        Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) if n >= 0 => {
+                            base = base.head(Some(n as usize))
+                        },
+                        _ => {
+                            polars_bail!(SQLSyntax: "LIMIT in ARRAY_AGG must be a positive integer")
+                        },
+                    };
                 }
                 Ok(base.implode())
             },
@@ -2146,6 +2158,27 @@ impl SQLFunctionVisitor<'_> {
                 .with_nulls_last_multi(nulls_last)
                 .with_maintain_order(true),
         ))
+    }
+
+    fn apply_order_by_to_distinct_array(
+        &mut self,
+        expr: Expr,
+        order_by: &[OrderByExpr],
+        base_sql_expr: &SQLExpr,
+    ) -> PolarsResult<Expr> {
+        // If ORDER BY references the base expression, use .sort() directly
+        if order_by.len() == 1 && order_by[0].expr == *base_sql_expr {
+            let desc_order = !order_by[0].asc.unwrap_or(true);
+            let nulls_last = !order_by[0].nulls_first.unwrap_or(desc_order);
+            return Ok(expr.sort(
+                SortOptions::default()
+                    .with_order_descending(desc_order)
+                    .with_nulls_last(nulls_last)
+                    .with_maintain_order(true),
+            ));
+        }
+        // Otherwise, fall back to `sort_by` (may need to handle further edge-cases later)
+        self.apply_order_by(expr, order_by)
     }
 
     /// Parse ORDER BY (in OVER clause), validating uniform direction.

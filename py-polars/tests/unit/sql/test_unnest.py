@@ -108,6 +108,23 @@ def test_unnest_select_expressions() -> None:
     # )
 
 
+def test_unnest_aggregates() -> None:
+    df = pl.DataFrame({"a": [i // 100 for i in range(1, 1000)]})
+    query = """
+        SELECT
+            UNNEST(ARRAY_AGG(DISTINCT a)) AS x,
+            UNNEST(ARRAY_AGG(DISTINCT a ORDER BY a)) AS y,
+            UNNEST(ARRAY_AGG(DISTINCT a ORDER BY a DESC)) AS z
+        FROM self
+    """
+    res = df.sql(query)
+    assert res.to_dict(as_series=False) == {
+        "x": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        "y": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        "z": [9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
+    }
+
+
 def test_unnest_select_height_filter_order_by() -> None:
     # Note: SQL UNNEST equates to `pl.Dataframe.explode()`
     # (ordering is applied after the explode/unnest)
