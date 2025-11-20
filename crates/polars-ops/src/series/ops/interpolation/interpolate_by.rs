@@ -296,7 +296,7 @@ where
     // Walk forward exactly like the original loop, but only interpolate a gap
     // if BOTH anchors have non-null `by`. If not, we leave the whole gap null
     // (placeholders) to match “as-if filtered out” semantics.
-    while let Some((idx, next)) = iter.next() {
+    for (idx, next) in iter {
         if let Some(v) = next {
             // If both anchors have valid-by, interpolate the preceding gap.
             // Else, leave the preceding gap as nulls (already handled below).
@@ -453,7 +453,7 @@ where
     };
 
     // Main walk over sorted y, identical structure, with null-aware "by" handling.
-    while let Some((idx, next)) = iter.next() {
+    for (idx, next) in iter {
         if let Some(v) = next {
             // If both anchors have non-null `by`, interpolate the interior.
             let anchors_ok: bool = is_valid(by_valid_opt, low_idx) && is_valid(by_valid_opt, idx);
