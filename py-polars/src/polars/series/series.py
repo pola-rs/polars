@@ -1435,7 +1435,7 @@ class Series:
     def __array__(
         self,
         dtype: npt.DTypeLike | None = None,
-        copy: bool | None = None,
+        copy: bool | None = None,  # noqa: FBT001
     ) -> np.ndarray[Any, Any]:
         """
         Return a NumPy ndarray with the given data type.

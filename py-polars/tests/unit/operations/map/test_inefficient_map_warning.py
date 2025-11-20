@@ -569,7 +569,7 @@ def test_expr_exact_warning_message() -> None:
 
     # check the EXACT warning messages - if modifying the message in the future,
     # make sure to keep the `^` and `$`, and the assertion on `len(warnings)`
-    with pytest.warns(
+    with pytest.warns(  # noqa: PT031
         PolarsInefficientMapWarning,
         match=rf"^{msg}$",
     ) as warnings:

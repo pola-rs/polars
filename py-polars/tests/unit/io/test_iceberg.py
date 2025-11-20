@@ -68,7 +68,7 @@ def iceberg_path(io_files_path: Path) -> str:
     current_path = Path(__file__).parent.resolve()
 
     with contextlib.suppress(FileExistsError):
-        os.symlink(f"{current_path}/files/iceberg-table", "/tmp/iceberg/t1")
+        os.symlink(f"{current_path}/files/iceberg-table", "/tmp/iceberg/t1")  # noqa: PTH211
 
     iceberg_path = io_files_path / "iceberg-table" / "metadata" / "v2.metadata.json"
     return f"file://{iceberg_path.resolve()}"
