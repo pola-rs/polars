@@ -149,7 +149,7 @@ mod _python {
             impl super::PlanCallbackArgs for $type {
                 fn into_pyany<'py>(self, _py: Python<'py>) -> PyResult<Py<PyAny>> {
                     let registry = polars_utils::python_convert_registry::get_python_convert_registry();
-                    (registry.to_py.$to)(Box::new(self) as _)
+                    (registry.to_py.$to)(&self)
                 }
             }
 
