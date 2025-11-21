@@ -95,6 +95,7 @@ jobs:
         run: |
           mkdocs build
           cargo clean
+          uv clean
 
       - name: Add .nojekyll
         if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
@@ -103,16 +104,16 @@ jobs:
           touch .nojekyll
           df -h
 
-      # - name: Deploy docs
-      #   if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
-      #   uses: JamesIves/github-pages-deploy-action@v4
-      #   with:
-      #     folder: site
-      #     # docs/ and py-polars/ included for backwards compatibility
-      #     clean-exclude: |
-      #       api/python/
-      #       api/rust/
-      #       docs/python
-      #       docs/rust
-      #       py-polars/html
-      #     single-commit: true
+      - name: Deploy docs
+        if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: site
+          # docs/ and py-polars/ included for backwards compatibility
+          clean-exclude: |
+            api/python/
+            api/rust/
+            docs/python
+            docs/rust
+            py-polars/html
+          single-commit: true
