@@ -39,7 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ])
         .collect()?;
 
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:rank]
 
     // --8<-- [start:rank-multiple]
@@ -81,7 +81,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ])
         .collect()?;
 
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:pokemon-mean]
 
     // --8<-- [start:group_by]
@@ -103,7 +103,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ])
         .collect()?;
 
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:group_by]
 
     // --8<-- [start:operations]
@@ -114,30 +114,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .select([col("Name"), col("Type 1"), col("Speed")])
         .collect()?;
 
-    println!("{}", filtered);
+    println!("{filtered}");
     // --8<-- [end:operations]
 
     // --8<-- [start:sort]
     let result = filtered
         .lazy()
         .with_columns([cols(["Name", "Speed"])
+            .as_expr()
             .sort_by(
                 ["Speed"],
                 SortMultipleOptions::default().with_order_descending(true),
             )
             .over(["Type 1"])])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:sort]
 
     // --8<-- [start:examples]
     let result = df
-        .clone()
         .lazy()
         .select([
             col("Type 1")
                 .head(Some(3))
-                .over_with_options(["Type 1"], None, WindowMapping::Explode)
+                .over_with_options(Some(["Type 1"]), None, WindowMapping::Explode)?
                 .flatten(),
             col("Name")
                 .sort_by(
@@ -145,7 +145,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     SortMultipleOptions::default().with_order_descending(true),
                 )
                 .head(Some(3))
-                .over_with_options(["Type 1"], None, WindowMapping::Explode)
+                .over_with_options(Some(["Type 1"]), None, WindowMapping::Explode)?
                 .flatten()
                 .alias("fastest/group"),
             col("Name")
@@ -154,18 +154,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     SortMultipleOptions::default().with_order_descending(true),
                 )
                 .head(Some(3))
-                .over_with_options(["Type 1"], None, WindowMapping::Explode)
+                .over_with_options(Some(["Type 1"]), None, WindowMapping::Explode)?
                 .flatten()
                 .alias("strongest/group"),
             col("Name")
                 .sort(Default::default())
                 .head(Some(3))
-                .over_with_options(["Type 1"], None, WindowMapping::Explode)
+                .over_with_options(Some(["Type 1"]), None, WindowMapping::Explode)?
                 .flatten()
                 .alias("sorted_by_alphabet"),
         ])
         .collect()?;
-    println!("{:?}", result);
+    println!("{result:?}");
     // --8<-- [end:examples]
 
     Ok(())

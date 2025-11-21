@@ -3,14 +3,14 @@ use arrow::datatypes::ArrowDataType;
 use polars_error::*;
 
 use super::{Version, WriteOptions};
+use crate::parquet::CowBuffer;
 use crate::parquet::compression::CompressionOptions;
-use crate::parquet::encoding::hybrid_rle::{self, encode};
 use crate::parquet::encoding::Encoding;
+use crate::parquet::encoding::hybrid_rle::{self, encode};
 use crate::parquet::metadata::Descriptor;
 use crate::parquet::page::{DataPage, DataPageHeader, DataPageHeaderV1, DataPageHeaderV2};
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::ParquetStatistics;
-use crate::parquet::CowBuffer;
 
 /// writes the def levels to a `Vec<u8>` and returns it.
 pub fn write_def_levels(

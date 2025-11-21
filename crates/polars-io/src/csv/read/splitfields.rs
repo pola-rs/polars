@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 #[cfg(not(feature = "simd"))]
 mod inner {
     /// An adapted version of std::iter::Split.
@@ -43,7 +44,7 @@ mod inner {
             Some((self.v, need_escaping))
         }
 
-        fn eof_oel(&self, current_ch: u8) -> bool {
+        fn eof_eol(&self, current_ch: u8) -> bool {
             current_ch == self.separator || current_ch == self.eol_char
         }
     }
@@ -88,7 +89,7 @@ mod inner {
                         in_field = !in_field;
                     }
 
-                    if !in_field && self.eof_oel(c) {
+                    if !in_field && self.eof_eol(c) {
                         if c == self.eol_char {
                             // SAFETY:
                             // we are in bounds
@@ -108,7 +109,7 @@ mod inner {
 
                 idx as usize
             } else {
-                match self.v.iter().position(|&c| self.eof_oel(c)) {
+                match self.v.iter().position(|&c| self.eof_eol(c)) {
                     None => return self.finish(needs_escaping),
                     Some(idx) => unsafe {
                         // SAFETY:
@@ -188,11 +189,11 @@ mod inner {
         unsafe fn finish_eol(
             &mut self,
             need_escaping: bool,
-            idx: usize,
+            pos: usize,
         ) -> Option<(&'a [u8], bool)> {
             self.finished = true;
-            debug_assert!(idx <= self.v.len());
-            Some((self.v.get_unchecked(..idx), need_escaping))
+            debug_assert!(pos <= self.v.len());
+            Some((self.v.get_unchecked(..pos), need_escaping))
         }
 
         #[inline]
@@ -201,7 +202,7 @@ mod inner {
             Some((self.v, need_escaping))
         }
 
-        fn eof_oel(&self, current_ch: u8) -> bool {
+        fn eof_eol(&self, current_ch: u8) -> bool {
             current_ch == self.separator || current_ch == self.eol_char
         }
     }
@@ -212,7 +213,11 @@ mod inner {
 
         #[inline]
         fn next(&mut self) -> Option<(&'a [u8], bool)> {
-            // First check cached value as this is hot.
+            // This must be before we check the cached value
+            if self.finished {
+                return None;
+            }
+            // Then check cached value as this is hot.
             if self.previous_valid_ends != 0 {
                 let pos = self.previous_valid_ends.trailing_zeros() as usize;
                 self.previous_valid_ends >>= (pos + 1) as u64;
@@ -221,21 +226,23 @@ mod inner {
                     debug_assert!(pos < self.v.len());
                     // SAFETY:
                     // we are in bounds
+                    let needs_escaping = self
+                        .v
+                        .first()
+                        .map(|c| *c == self.quote_char && self.quoting)
+                        .unwrap_or(false);
+
+                    if *self.v.get_unchecked(pos) == self.eol_char {
+                        return self.finish_eol(needs_escaping, pos);
+                    }
+
                     let bytes = self.v.get_unchecked(..pos);
+
                     self.v = self.v.get_unchecked(pos + 1..);
-                    let ret = Some((
-                        bytes,
-                        bytes
-                            .first()
-                            .map(|c| *c == self.quote_char && self.quoting)
-                            .unwrap_or(false),
-                    ));
+                    let ret = Some((bytes, needs_escaping));
 
                     return ret;
                 }
-            }
-            if self.finished {
-                return None;
             }
             if self.v.is_empty() {
                 return self.finish(false);
@@ -248,6 +255,7 @@ mod inner {
             // SAFETY:
             // we have checked bounds
             let pos = if self.quoting && unsafe { *self.v.get_unchecked(0) } == self.quote_char {
+                // Start of an enclosed field
                 let mut total_idx = 0;
                 needs_escaping = true;
                 let mut not_in_field_previous_iter = true;
@@ -317,14 +325,7 @@ mod inner {
                                 in_field = !in_field;
                             }
 
-                            if !in_field && self.eof_oel(c) {
-                                if c == self.eol_char {
-                                    // SAFETY:
-                                    // we are in bounds
-                                    return unsafe {
-                                        self.finish_eol(needs_escaping, current_idx + total_idx)
-                                    };
-                                }
+                            if !in_field && self.eof_eol(c) {
                                 idx = current_idx;
                                 break;
                             }
@@ -345,6 +346,7 @@ mod inner {
                 }
                 total_idx
             } else {
+                // Start of an unenclosed field
                 let mut total_idx = 0;
 
                 loop {
@@ -369,7 +371,7 @@ mod inner {
                             total_idx += SIMD_SIZE;
                         }
                     } else {
-                        match bytes.iter().position(|&c| self.eof_oel(c)) {
+                        match bytes.iter().position(|&c| self.eof_eol(c)) {
                             None => return self.finish(needs_escaping),
                             Some(idx) => {
                                 total_idx += idx;
@@ -378,14 +380,16 @@ mod inner {
                         }
                     }
                 }
-                unsafe {
-                    if *self.v.get_unchecked(total_idx) == self.eol_char {
-                        return self.finish_eol(needs_escaping, total_idx);
-                    } else {
-                        total_idx
-                    }
-                }
+                total_idx
             };
+
+            // Make sure the iterator is done when EOL.
+            let c = unsafe { *self.v.get_unchecked(pos) };
+            if c == self.eol_char {
+                // SAFETY:
+                // we are in bounds
+                return unsafe { self.finish_eol(needs_escaping, pos) };
+            }
 
             unsafe {
                 debug_assert!(pos < self.v.len());

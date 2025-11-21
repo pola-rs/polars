@@ -1,6 +1,6 @@
 use polars_parquet::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use polars_parquet::parquet::error::ParquetResult;
-use polars_parquet::parquet::page::{split_buffer, DataPage, EncodedSplitBuffer};
+use polars_parquet::parquet::page::{DataPage, EncodedSplitBuffer, split_buffer};
 use polars_parquet::parquet::read::levels::get_bit_width;
 
 use super::hybrid_rle_iter;

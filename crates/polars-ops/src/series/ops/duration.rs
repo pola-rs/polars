@@ -12,17 +12,22 @@ pub fn impl_duration(s: &[Column], time_unit: TimeUnit) -> PolarsResult<Column> 
     }
 
     // TODO: Handle overflow for UInt64
-    let weeks = s[0].cast(&DataType::Int64).unwrap();
-    let days = s[1].cast(&DataType::Int64).unwrap();
-    let hours = s[2].cast(&DataType::Int64).unwrap();
-    let minutes = s[3].cast(&DataType::Int64).unwrap();
-    let seconds = s[4].cast(&DataType::Int64).unwrap();
-    let mut milliseconds = s[5].cast(&DataType::Int64).unwrap();
-    let mut microseconds = s[6].cast(&DataType::Int64).unwrap();
-    let mut nanoseconds = s[7].cast(&DataType::Int64).unwrap();
+    let weeks = &s[0];
+    let days = &s[1];
+    let hours = &s[2];
+    let minutes = &s[3];
+    let seconds = &s[4];
+    let mut milliseconds = s[5].clone();
+    let mut microseconds = s[6].clone();
+    let mut nanoseconds = s[7].clone();
 
     let is_scalar = |s: &Column| s.len() == 1;
-    let is_zero_scalar = |s: &Column| is_scalar(s) && s.get(0).unwrap() == AnyValue::Int64(0);
+    let is_zero = |av: AnyValue<'_>| match av {
+        v if v.is_integer() => v == AnyValue::Int64(0),
+        v if v.is_float() => v == AnyValue::Float64(0.0),
+        _ => false,
+    };
+    let is_zero_scalar = |s: &Column| is_scalar(s) && is_zero(s.get(0).unwrap());
 
     // Process subseconds
     let max_len = s.iter().map(|s| s.len()).max().unwrap();
@@ -71,23 +76,21 @@ pub fn impl_duration(s: &[Column], time_unit: TimeUnit) -> PolarsResult<Column> 
         TimeUnit::Microseconds => MICROSECONDS,
         TimeUnit::Milliseconds => MILLISECONDS,
     };
-    if !is_zero_scalar(&seconds) {
+    if !is_zero_scalar(seconds) {
         duration = (duration + seconds * multiplier)?;
     }
-    if !is_zero_scalar(&minutes) {
-        duration = (duration + minutes * multiplier * 60)?;
+    if !is_zero_scalar(minutes) {
+        duration = (duration + minutes * (multiplier * 60))?;
     }
-    if !is_zero_scalar(&hours) {
-        duration = (duration + hours * multiplier * 60 * 60)?;
+    if !is_zero_scalar(hours) {
+        duration = (duration + hours * (multiplier * 60 * 60))?;
     }
-    if !is_zero_scalar(&days) {
-        duration = (duration + days * multiplier * SECONDS_IN_DAY)?;
+    if !is_zero_scalar(days) {
+        duration = (duration + days * (multiplier * SECONDS_IN_DAY))?;
     }
-    if !is_zero_scalar(&weeks) {
-        duration = (duration + weeks * multiplier * SECONDS_IN_DAY * 7)?;
+    if !is_zero_scalar(weeks) {
+        duration = (duration + weeks * (multiplier * SECONDS_IN_DAY * 7))?;
     }
 
-    duration
-        .cast(&DataType::Duration(time_unit))
-        .map(Column::from)
+    duration.cast(&DataType::Duration(time_unit))
 }

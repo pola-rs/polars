@@ -4,7 +4,7 @@ use arrow::array::{
 };
 use arrow::bitmap::Bitmap;
 use arrow::legacy::utils::CustomIterTools;
-use arrow::types::{days_ms, f16, i256, months_days_ns, Offset};
+use arrow::types::{Offset, days_ms, f16, i256, months_days_ns};
 
 use super::TotalEqKernel;
 
@@ -27,8 +27,8 @@ macro_rules! compare {
 
                 (0..$lhs.len())
                     .map(|i| {
-                        let lval = $lhs.validity().map_or(true, |v| v.get(i).unwrap());
-                        let rval = $rhs.validity().map_or(true, |v| v.get(i).unwrap());
+                        let lval = $lhs.validity().is_none_or(|v| v.get(i).unwrap());
+                        let rval = $rhs.validity().is_none_or(|v| v.get(i).unwrap());
 
                         if !lval || !rval {
                             return $invalid_rv;
@@ -76,6 +76,7 @@ macro_rules! compare {
             PH::Primitive(PR::MonthDayNano) => {
                 call_binary!(PrimitiveArray<months_days_ns>)
             },
+            PH::Primitive(PR::MonthDayMillis) => unimplemented!(),
 
             #[cfg(feature = "dtype-array")]
             PH::FixedSizeList => call_binary!(arrow::array::FixedSizeListArray),
@@ -99,10 +100,12 @@ macro_rules! compare {
             PH::Dictionary(I::Int16) => call_binary!(DictionaryArray<i16>),
             PH::Dictionary(I::Int32) => call_binary!(DictionaryArray<i32>),
             PH::Dictionary(I::Int64) => call_binary!(DictionaryArray<i64>),
+            PH::Dictionary(I::Int128) => call_binary!(DictionaryArray<i128>),
             PH::Dictionary(I::UInt8) => call_binary!(DictionaryArray<u8>),
             PH::Dictionary(I::UInt16) => call_binary!(DictionaryArray<u16>),
             PH::Dictionary(I::UInt32) => call_binary!(DictionaryArray<u32>),
             PH::Dictionary(I::UInt64) => call_binary!(DictionaryArray<u64>),
+            PH::Dictionary(I::UInt128) => call_binary!(DictionaryArray<u128>),
         }
     }};
 }
@@ -126,7 +129,7 @@ macro_rules! compare_broadcast {
 
                 (0..length)
                     .map(move |i| {
-                        let v = $validity.map_or(true, |v| v.get(i).unwrap());
+                        let v = $validity.is_none_or(|v| v.get(i).unwrap());
 
                         if !v {
                             return $invalid_rv;
@@ -173,6 +176,7 @@ macro_rules! compare_broadcast {
             PH::Primitive(PR::MonthDayNano) => {
                 call_binary!(PrimitiveArray<months_days_ns>)
             },
+            PH::Primitive(PR::MonthDayMillis) => unimplemented!(),
 
             #[cfg(feature = "dtype-array")]
             PH::FixedSizeList => call_binary!(arrow::array::FixedSizeListArray),
@@ -196,10 +200,12 @@ macro_rules! compare_broadcast {
             PH::Dictionary(I::Int16) => call_binary!(DictionaryArray<i16>),
             PH::Dictionary(I::Int32) => call_binary!(DictionaryArray<i32>),
             PH::Dictionary(I::Int64) => call_binary!(DictionaryArray<i64>),
+            PH::Dictionary(I::Int128) => call_binary!(DictionaryArray<i128>),
             PH::Dictionary(I::UInt8) => call_binary!(DictionaryArray<u8>),
             PH::Dictionary(I::UInt16) => call_binary!(DictionaryArray<u16>),
             PH::Dictionary(I::UInt32) => call_binary!(DictionaryArray<u32>),
             PH::Dictionary(I::UInt64) => call_binary!(DictionaryArray<u64>),
+            PH::Dictionary(I::UInt128) => call_binary!(DictionaryArray<u128>),
         }
     }};
 }

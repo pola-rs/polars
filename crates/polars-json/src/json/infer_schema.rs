@@ -42,7 +42,7 @@ fn infer_array(values: &[BorrowedValue]) -> PolarsResult<ArrowDataType> {
         .iter()
         .map(infer)
         // deduplicate entries
-        .collect::<PolarsResult<PlHashSet<_>>>()?;
+        .collect::<PolarsResult<PlIndexSet<_>>>()?;
 
     let dt = if !types.is_empty() {
         let types = types.into_iter().collect::<Vec<_>>();

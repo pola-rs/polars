@@ -1,4 +1,5 @@
 use std::io::Cursor;
+use std::sync::Arc;
 
 use arrow::array::{ArrayRef, Utf8ViewArray};
 use arrow::datatypes::{ArrowSchema, Field};
@@ -7,7 +8,8 @@ use polars_error::PolarsResult;
 use polars_parquet::arrow::write::{FileWriter, WriteOptions};
 use polars_parquet::read::read_metadata;
 use polars_parquet::write::{
-    CompressionOptions, Encoding, RowGroupIterator, StatisticsOptions, Version,
+    ColumnWriteOptions, CompressionOptions, Encoding, FieldWriteOptions, RowGroupIterator,
+    StatisticsOptions, Version,
 };
 
 use crate::io::parquet::read::file::FileReader;
@@ -16,7 +18,7 @@ fn round_trip(
     array: &ArrayRef,
     version: Version,
     compression: CompressionOptions,
-    encodings: Vec<Encoding>,
+    column_options: Vec<ColumnWriteOptions>,
 ) -> PolarsResult<()> {
     let field = Field::new("a1".into(), array.dtype().clone(), true);
     let schema = ArrowSchema::from_iter([field]);
@@ -28,18 +30,22 @@ fn round_trip(
         data_page_size: None,
     };
 
-    let iter = vec![RecordBatchT::try_new(array.len(), vec![array.clone()])];
+    let iter = vec![RecordBatchT::try_new(
+        array.len(),
+        Arc::new(schema.clone()),
+        vec![array.clone()],
+    )];
 
     let row_groups =
-        RowGroupIterator::try_new(iter.into_iter(), &schema, options, vec![encodings])?;
+        RowGroupIterator::try_new(iter.into_iter(), &schema, options, column_options.clone())?;
 
     let writer = Cursor::new(vec![]);
-    let mut writer = FileWriter::try_new(writer, schema.clone(), options)?;
+    let mut writer = FileWriter::try_new(writer, schema.clone(), options, &column_options)?;
 
     for group in row_groups {
         writer.write(group?)?;
     }
-    writer.end(None)?;
+    writer.end(None, &column_options)?;
 
     let data = writer.into_inner().into_inner();
 
@@ -76,6 +82,9 @@ fn roundtrip_binview() -> PolarsResult<()> {
         &array.boxed(),
         Version::V1,
         CompressionOptions::Uncompressed,
-        vec![Encoding::Plain],
+        vec![
+            FieldWriteOptions::default_with_encoding(Encoding::Plain)
+                .into_default_column_write_options(),
+        ],
     )
 }

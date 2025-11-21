@@ -33,7 +33,7 @@ def test_corr() -> None:
 
 def test_corr_nan() -> None:
     df = pl.DataFrame({"a": [1.0, 1.0], "b": [1.0, 2.0]})
-    assert str(df.select(pl.corr("a", "b", ddof=1))[0, 0]) == "nan"
+    assert str(df.select(pl.corr("a", "b"))[0, 0]) == "nan"
 
 
 def test_median_quantile_duration() -> None:
@@ -66,20 +66,18 @@ def test_cov_corr_f32_type() -> None:
 
 def test_cov(fruits_cars: pl.DataFrame) -> None:
     ldf = fruits_cars.lazy()
-    cov_a_b = pl.cov(pl.col("A"), pl.col("B"))
-    cov_ab = pl.cov("A", "B")
-    assert cast(float, ldf.select(cov_a_b).collect().item()) == -2.5
-    assert cast(float, ldf.select(cov_ab).collect().item()) == -2.5
+    for cov_ab in (pl.cov(pl.col("A"), pl.col("B")), pl.cov("A", "B")):
+        assert cast("float", ldf.select(cov_ab).collect().item()) == -2.5
 
 
 def test_std(fruits_cars: pl.DataFrame) -> None:
-    assert fruits_cars.lazy().std().collect()["A"][0] == pytest.approx(
-        1.5811388300841898
-    )
+    res = fruits_cars.lazy().std().collect()
+    assert res["A"][0] == pytest.approx(1.5811388300841898)
 
 
 def test_var(fruits_cars: pl.DataFrame) -> None:
-    assert fruits_cars.lazy().var().collect()["A"][0] == pytest.approx(2.5)
+    res = fruits_cars.lazy().var().collect()
+    assert res["A"][0] == pytest.approx(2.5)
 
 
 def test_max(fruits_cars: pl.DataFrame) -> None:
@@ -135,7 +133,7 @@ def test_count() -> None:
             "one_null_float": [2],
             "no_nulls_int": [3],
         },
-    ).cast(pl.UInt32)
+    ).cast(pl.get_index_type())
     assert_frame_equal(lf_result, expected)
     assert_frame_equal(df_result, expected.collect())
 
@@ -145,3 +143,8 @@ def test_kurtosis_same_vals() -> None:
     assert_frame_equal(
         df.select(pl.col("a").kurtosis()), pl.select(a=pl.lit(float("nan")))
     )
+
+
+def test_correction_shape_mismatch_22080() -> None:
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.select(pl.corr(pl.Series([1, 2]), pl.Series([2, 3, 5])))

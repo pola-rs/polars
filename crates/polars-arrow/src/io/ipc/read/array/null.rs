@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use polars_error::{polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_err};
 
 use super::super::Node;
 use crate::array::NullArray;

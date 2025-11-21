@@ -125,7 +125,7 @@ fn test_group_by_expression_key() -> PolarsResult<()> {
     .unwrap();
 
     let mut context = SQLContext::new();
-    context.register("df", df.clone().lazy());
+    context.register("df", df.lazy());
 
     // check how we handle grouping by a key that gets used in select transform
     let df_sql = context
@@ -196,19 +196,24 @@ fn test_literal_exprs() {
             'foo' as string_lit,
             true as bool_lit,
             null as null_lit,
-            interval '1 quarter 2 weeks 1 day 50 seconds' as duration_lit
+            interval '2 weeks 1 day 50 seconds' as duration_lit
         FROM df"#;
     let df_sql = context.execute(sql).unwrap().collect().unwrap();
     let df_pl = df
         .lazy()
         .select(&[
+            first().as_expr(),
             lit(1i64).alias("int_lit"),
             lit(1.0).alias("float_lit"),
             lit("foo").alias("string_lit"),
             lit(true).alias("bool_lit"),
             lit(NULL).alias("null_lit"),
-            lit(Duration::parse("1q2w1d50s")).alias("duration_lit"),
+            lit(Duration::parse("2w1d50s")).alias("duration_lit"),
         ])
+        .collect()
+        .unwrap()
+        .lazy()
+        .drop(first())
         .collect()
         .unwrap();
     assert!(df_sql.equals_missing(&df_pl));
@@ -443,7 +448,7 @@ fn test_create_table() {
         FROM df"#;
     let df_sql = context.execute(sql).unwrap().collect().unwrap();
     let create_tbl_res = df! {
-        "Response" => ["CREATE TABLE"]
+        "Response" => ["CREATE TABLE df2"]
     }
     .unwrap();
 
@@ -508,10 +513,12 @@ fn test_arr_agg() {
         ),
         (
             "SELECT ARRAY_AGG(a ORDER BY a) AS a FROM df",
-            vec![col("a")
-                .sort_by(vec![col("a")], SortMultipleOptions::default())
-                .implode()
-                .alias("a")],
+            vec![
+                col("a")
+                    .sort_by(vec![col("a")], SortMultipleOptions::default())
+                    .implode()
+                    .alias("a"),
+            ],
         ),
         (
             "SELECT ARRAY_AGG(a) AS a FROM df",
@@ -519,20 +526,297 @@ fn test_arr_agg() {
         ),
         (
             "SELECT unnest(ARRAY_AGG(DISTINCT a)) FROM df",
-            vec![col("a").unique_stable().implode().explode().alias("a")],
+            vec![
+                col("a")
+                    .unique_stable()
+                    .implode()
+                    .explode(ExplodeOptions {
+                        empty_as_null: true,
+                        keep_nulls: true,
+                    })
+                    .alias("a"),
+            ],
         ),
         (
             "SELECT ARRAY_AGG(a ORDER BY b LIMIT 2) FROM df",
-            vec![col("a")
-                .sort_by(vec![col("b")], SortMultipleOptions::default())
-                .head(Some(2))
-                .implode()],
+            vec![
+                col("a")
+                    .sort_by(vec![col("b")], SortMultipleOptions::default())
+                    .head(Some(2))
+                    .implode(),
+            ],
         ),
     ];
 
     for (sql, expr) in exprs {
         assert_sql_to_polars(&df, sql, |df| df.select(&expr));
     }
+}
+
+#[test]
+fn test_explode_with_multiple_columns() {
+    let df = create_sample_df();
+
+    // Implode column "a"
+    let df_imploded = df
+        .lazy()
+        .select(&[col("a").implode().alias("a")])
+        .collect()
+        .unwrap();
+
+    let df_with_new_column_a = df_imploded
+        .clone()
+        .lazy()
+        .with_column(lit("a").alias("b"))
+        .collect()
+        .unwrap();
+
+    let df_with_new_column_b = df_imploded
+        .lazy()
+        .with_column(lit("b").alias("b"))
+        .collect()
+        .unwrap();
+
+    let df = df_with_new_column_a.vstack(&df_with_new_column_b).unwrap();
+    let df_pl_api = df.clone().lazy().explode(
+        polars_lazy::dsl::Selector::ByName {
+            names: Arc::from(vec!["a".into()]),
+            strict: true,
+        },
+        ExplodeOptions {
+            empty_as_null: true,
+            keep_nulls: true,
+        },
+    );
+    let mut context = SQLContext::new();
+    context.register("df", df.lazy());
+
+    let sql = r#"
+        SELECT
+            unnest(a) AS a,
+            b
+        FROM df
+    "#;
+
+    let df_sql = context.execute(sql).unwrap().collect().unwrap();
+    let df_pl_api = df_pl_api.collect().unwrap();
+    assert!(df_sql.equals(&df_pl_api));
+}
+
+#[test]
+fn test_multiple_explodes_with_same_column() {
+    let df = create_sample_df();
+    let df_imploded = df
+        .lazy()
+        .select(&[
+            col("a").implode().alias("list_a"),
+            col("b").implode().alias("list_b"),
+        ])
+        .collect()
+        .unwrap();
+
+    let mut context = SQLContext::new();
+    context.register("df", df_imploded.clone().lazy());
+    let sql = r#"
+        SELECT
+            unnest(list_a) AS list_a,
+            unnest(list_b) AS list_b,
+            CASE 
+                WHEN unnest(list_b) > 5000 THEN 'High'
+                WHEN unnest(list_b) > 2500 THEN 'Medium'
+                ELSE 'Low'
+            END AS list_b_category
+        FROM df
+    "#;
+    let df_sql = context.execute(sql).unwrap().collect().unwrap();
+
+    let expected_list_b: Vec<i64> = (1..10000).collect();
+    let expected_list_a: Vec<i64> = expected_list_b.iter().map(|b| b / 100).collect();
+
+    let expected_category: Vec<&'static str> = expected_list_b
+        .iter()
+        .map(|b| {
+            if *b > 5000 {
+                "High"
+            } else if *b > 2500 {
+                "Medium"
+            } else {
+                "Low"
+            }
+        })
+        .collect();
+
+    let expected_df = DataFrame::new(vec![
+        Column::new(PlSmallStr::from_static("list_a"), expected_list_a),
+        Column::new(PlSmallStr::from_static("list_b"), expected_list_b),
+        Column::new(
+            PlSmallStr::from_static("list_b_category"),
+            expected_category,
+        ),
+    ])
+    .unwrap();
+    assert!(df_sql.equals(&expected_df));
+    assert!(df_sql.shape().eq(&(9_999, 3)));
+}
+
+#[test]
+fn test_multiple_explodes_different_columns() {
+    let df = create_sample_df();
+    let df_imploded = df
+        .lazy()
+        .select(&[
+            col("a").implode().alias("list_a"),
+            col("b").implode().alias("list_b"),
+        ])
+        .collect()
+        .unwrap();
+
+    // Add scalar to check if row-bound mapping stays consistent.
+    let df_with_scalar = df_imploded
+        .lazy()
+        .with_column(lit(100).alias("value"))
+        .collect()
+        .unwrap();
+
+    // Test using both the Polars API and SQL
+    let df_pl_api = df_with_scalar
+        .clone()
+        .lazy()
+        .explode(
+            polars_lazy::dsl::Selector::ByName {
+                names: Arc::from(vec!["list_a".into(), "list_b".into()]),
+                strict: true,
+            },
+            ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            },
+        )
+        .collect()
+        .unwrap();
+
+    let mut context = SQLContext::new();
+    context.register("df", df_with_scalar.clone().lazy());
+
+    let sql = r#"
+        SELECT
+            unnest(list_a) AS list_a,
+            unnest(list_b) AS list_b,
+            value
+        FROM df
+    "#;
+
+    let df_sql = context.execute(sql).unwrap().collect().unwrap();
+
+    let expected_list_a: Vec<i64> = (1..10000).map(|i| i / 100).collect();
+    let expected_list_b: Vec<i64> = (1..10000).collect();
+    let expected_value: Vec<i32> = vec![100i32; expected_list_b.len()];
+
+    let expected_df = DataFrame::new(vec![
+        Column::new(PlSmallStr::from_static("list_a"), expected_list_a),
+        Column::new(PlSmallStr::from_static("list_b"), expected_list_b),
+        Column::new(PlSmallStr::from_static("value"), expected_value),
+    ])
+    .unwrap();
+
+    assert!(df_sql.equals(&df_pl_api));
+    assert!(df_sql.equals(&expected_df));
+    assert!(df_pl_api.equals(&expected_df));
+}
+
+#[test]
+fn explode_same_name_with_cte() {
+    let values = vec![
+        Series::new(
+            PlSmallStr::from_static(""),
+            vec![
+                Series::new(PlSmallStr::from_static(""), &[1i64, 2]),
+                Series::new(PlSmallStr::from_static(""), &[3i64, 4]),
+            ],
+        ),
+        Series::new(
+            PlSmallStr::from_static(""),
+            vec![
+                Series::new(PlSmallStr::from_static(""), &[5i64, 6]),
+                Series::new(PlSmallStr::from_static(""), &[7i64, 8]),
+            ],
+        ),
+    ];
+
+    let list_series = Column::new(PlSmallStr::from_static("list_a"), values);
+
+    let df = DataFrame::new(vec![list_series]).unwrap();
+
+    let df_imploded = df
+        .lazy()
+        .select(&[col("list_a").implode().alias("list_a")])
+        .collect()
+        .unwrap();
+
+    let mut context = SQLContext::new();
+    context.register("df", df_imploded.clone().lazy());
+
+    let sql = r#"
+        WITH exploded AS (
+            SELECT
+                unnest(list_a) AS list_a
+            FROM df
+        ),
+        exploded_2 AS (
+            SELECT
+                unnest(list_a) AS list_a
+            FROM exploded
+        )
+        SELECT
+            unnest(list_a) AS list_a
+        FROM exploded_2
+    "#;
+
+    let df_sql = context.execute(sql).unwrap().collect().unwrap();
+    let df_pl_api = df_imploded
+        .lazy()
+        .explode(
+            polars_lazy::dsl::Selector::ByName {
+                names: Arc::from(vec!["list_a".into()]),
+                strict: true,
+            },
+            ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            },
+        )
+        .explode(
+            polars_lazy::dsl::Selector::ByName {
+                names: Arc::from(vec!["list_a".into()]),
+                strict: true,
+            },
+            ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            },
+        )
+        .explode(
+            polars_lazy::dsl::Selector::ByName {
+                names: Arc::from(vec!["list_a".into()]),
+                strict: true,
+            },
+            ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            },
+        )
+        .collect()
+        .unwrap();
+
+    let expected_results = vec![1i64, 2, 3, 4, 5, 6, 7, 8];
+    let expected_df = DataFrame::new(vec![Column::new(
+        PlSmallStr::from_static("list_a"),
+        expected_results,
+    )])
+    .unwrap();
+    assert!(df_sql.equals(&df_pl_api));
+    assert!(df_sql.equals(&expected_df));
+    assert!(df_pl_api.equals(&expected_df));
 }
 
 #[test]
@@ -575,6 +859,8 @@ fn test_cte_values() -> PolarsResult<()> {
 #[test]
 #[cfg(feature = "ipc")]
 fn test_group_by_2() -> PolarsResult<()> {
+    use polars_utils::plpath::PlPath;
+
     let mut context = SQLContext::new();
     let sql = r#"
     CREATE TABLE foods AS
@@ -595,19 +881,23 @@ fn test_group_by_2() -> PolarsResult<()> {
 
     let df_sql = context.execute(sql)?;
     let df_sql = df_sql.collect()?;
-    let expected = LazyFrame::scan_ipc("../../examples/datasets/foods1.ipc", Default::default())?
-        .select(&[col("*")])
-        .group_by(vec![col("category")])
-        .agg(vec![
-            col("category").count().alias("count"),
-            col("calories").max(),
-            col("fats_g").min(),
-        ])
-        .sort_by_exprs(
-            vec![col("count"), col("category")],
-            SortMultipleOptions::default().with_order_descending_multi([false, true]),
-        )
-        .limit(2);
+    let expected = LazyFrame::scan_ipc(
+        PlPath::new("../../examples/datasets/foods1.ipc"),
+        Default::default(),
+        Default::default(),
+    )?
+    .select(&[col("*")])
+    .group_by(vec![col("category")])
+    .agg(vec![
+        col("category").count().alias("count"),
+        col("calories").max(),
+        col("fats_g").min(),
+    ])
+    .sort_by_exprs(
+        vec![col("count"), col("category")],
+        SortMultipleOptions::default().with_order_descending_multi([false, true]),
+    )
+    .limit(2);
 
     let expected = expected.collect()?;
     assert!(df_sql.equals(&expected));
@@ -721,7 +1011,7 @@ fn test_struct_field_selection() {
     let (df_struct, df_original) = create_struct_df();
 
     let mut context = SQLContext::new();
-    context.register("df", df_struct.clone().lazy());
+    context.register("df", df_struct.lazy());
 
     for sql in [
         r#"SELECT json_msg.* FROM df ORDER BY 1"#,

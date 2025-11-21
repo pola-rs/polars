@@ -8,7 +8,7 @@ use arrow::legacy::utils::CustomIterTools;
 use arrow::trusted_len::TrustMyLength;
 use arrow::types::NativeType;
 use polars_compute::min_max::MinMaxKernel;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 
 use super::binary::{
     build_statistics as binary_build_statistics, encode_plain as binary_encode_plain,
@@ -20,15 +20,15 @@ use super::pages::PrimitiveNested;
 use super::primitive::{
     build_statistics as primitive_build_statistics, encode_plain as primitive_encode_plain,
 };
-use super::{binview, nested, EncodeNullability, Nested, WriteOptions};
+use super::{EncodeNullability, Nested, WriteOptions, binview, nested};
 use crate::arrow::read::schema::is_nullable;
 use crate::arrow::write::{slice_nested_leaf, utils};
-use crate::parquet::encoding::hybrid_rle::encode;
+use crate::parquet::CowBuffer;
 use crate::parquet::encoding::Encoding;
+use crate::parquet::encoding::hybrid_rle::encode;
 use crate::parquet::page::{DictPage, Page};
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::ParquetStatistics;
-use crate::parquet::CowBuffer;
 use crate::write::DynIter;
 
 trait MinMaxThreshold {
@@ -241,7 +241,7 @@ pub(crate) fn encode_as_dictionary_optional(
                 nested,
                 options,
                 Encoding::RleDictionary,
-            ))
+            ));
         },
         DictionaryDecision::TryAgain => {},
     }
@@ -361,7 +361,7 @@ fn serialize_keys<K: DictionaryKey>(
 
     let mut nested = nested.to_vec();
     let array = array.clone().sliced(start, len);
-    if let Some(Nested::Primitive(PrimitiveNested { ref mut length, .. })) = nested.last_mut() {
+    if let Some(Nested::Primitive(PrimitiveNested { length, .. })) = nested.last_mut() {
         *length = len;
     } else {
         unreachable!("")

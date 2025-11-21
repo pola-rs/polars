@@ -30,6 +30,24 @@ def test_search_sorted() -> None:
     assert a.search_sorted(b, side="left").to_list() == [0, 0, 2, 2, 4]
     assert a.search_sorted(b, side="right").to_list() == [0, 2, 2, 4, 4]
 
+    a = pl.Series([1, 1, 4, 4], dtype=pl.Decimal(3))
+    b = pl.Series([0, 1, 2, 4, 5], dtype=pl.Decimal(3))
+    assert a.search_sorted(b, side="left").to_list() == [0, 0, 2, 2, 4]
+    assert a.search_sorted(b, side="right").to_list() == [0, 2, 2, 4, 4]
+
+
+@pytest.mark.parametrize("descending", [False, True])
+def test_search_sorted_descending_order(descending: bool) -> None:
+    values = sorted([2, 3, 4, 5], reverse=descending)
+    series = pl.Series(values)
+    df = pl.DataFrame({"series": series}).lazy()
+    for value in values:
+        expected_index = values.index(value)
+        assert series.search_sorted(value, descending=descending) == expected_index
+        assert df.select(
+            pl.col("series").search_sorted(value, descending=descending)
+        ).collect().get_column("series").to_list() == [expected_index]
+
 
 def test_search_sorted_multichunk() -> None:
     for seed in [1, 2, 3]:

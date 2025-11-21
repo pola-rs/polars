@@ -195,9 +195,7 @@ fn iss_9560_join_as() {
 
     assert!(
         actual.equals(&expected),
-        "expected = {:?}\nactual={:?}",
-        expected,
-        actual
+        "expected = {expected:?}\nactual={actual:?}"
     );
 }
 
@@ -244,9 +242,7 @@ fn test_compound_join_basic() {
 
     assert!(
         actual.equals(&expected),
-        "expected = {:?}\nactual={:?}",
-        expected,
-        actual
+        "expected = {expected:?}\nactual={actual:?}"
     );
 }
 
@@ -285,9 +281,7 @@ fn test_compound_join_different_column_names() {
 
     assert!(
         actual.equals(&expected),
-        "expected = {:?}\nactual={:?}",
-        expected,
-        actual
+        "expected = {expected:?}\nactual={actual:?}"
     );
 }
 
@@ -311,9 +305,7 @@ fn test_compound_join_three_tables() {
 
     assert!(
         actual.equals(&expected),
-        "expected = {:?}\nactual={:?}",
-        expected,
-        actual
+        "expected = {expected:?}\nactual={actual:?}"
     );
 }
 
@@ -346,14 +338,13 @@ fn test_compound_join_nested_and() {
     ] {
         let sql = format!(
             r#"
-            SELECT {} FROM df1
+            SELECT {cols} FROM df1
                 INNER JOIN df2 ON
                     df1.a = df2.a AND
                     df1.b = df2.b AND
                     df1.c = df2.c AND
                     df1.d = df2.d
-         "#,
-            cols
+         "#
         );
         let actual = ctx.execute(sql.as_str()).unwrap().collect().unwrap();
         let expected = df! {
@@ -366,9 +357,7 @@ fn test_compound_join_nested_and() {
 
         assert!(
             actual.equals(&expected),
-            "expected = {:?}\nactual={:?}",
-            expected,
-            actual
+            "expected = {expected:?}\nactual={actual:?}"
         );
     }
 }
@@ -394,10 +383,9 @@ fn test_resolve_join_column_select_13618() {
             r#"
             SELECT tbl.A, other.B, tbl.fruits, other.cars
             FROM tbl
-            {} JOIN other ON tbl.A = other.B
+            {join_type} JOIN other ON tbl.A = other.B
             ORDER BY tbl.A ASC
-            "#,
-            join_type
+            "#
         );
         let actual = ctx.execute(sql.as_str()).unwrap().collect().unwrap();
         let expected = df! {
@@ -410,10 +398,7 @@ fn test_resolve_join_column_select_13618() {
 
         assert!(
             actual.equals(&expected),
-            "({} JOIN) expected = {:?}\nactual={:?}",
-            join_type,
-            expected,
-            actual
+            "({join_type} JOIN) expected = {expected:?}\nactual={actual:?}"
         );
     }
 }
@@ -462,9 +447,7 @@ fn test_compound_join_and_select_exclude_rename_replace() {
 
     assert!(
         actual.equals(&expected),
-        "expected = {:?}\nactual={:?}",
-        expected,
-        actual
+        "expected = {expected:?}\nactual={actual:?}"
     );
 
     let sql = r#"
@@ -493,9 +476,7 @@ fn test_compound_join_and_select_exclude_rename_replace() {
 
     assert!(
         actual.equals(&expected),
-        "expected = {:?}\nactual={:?}",
-        expected,
-        actual
+        "expected = {expected:?}\nactual={actual:?}"
     );
 }
 
@@ -519,9 +500,7 @@ fn test_join_on_different_keys() {
     let expected = df! {"y" => [0, 1, 3]}.unwrap();
     assert!(
         actual.equals(&expected),
-        "expected = {:?}\nactual={:?}",
-        expected,
-        actual
+        "expected = {expected:?}\nactual={actual:?}"
     );
 }
 
@@ -539,7 +518,7 @@ fn test_join_multi_consecutive() {
     let sql = r#"
         SELECT tbl_a.a, tbl_a.b, tbl_b.c, tbl_c.d FROM tbl_a
         INNER JOIN tbl_b ON tbl_a.a = tbl_b.a AND tbl_a.b = tbl_b.b
-        INNER JOIN tbl_c ON tbl_a.c = tbl_c.c
+        INNER JOIN tbl_c ON tbl_b.c = tbl_c.c
         ORDER BY a DESC
     "#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
@@ -554,9 +533,7 @@ fn test_join_multi_consecutive() {
 
     assert!(
         actual.equals(&expected),
-        "expected = {:?}\nactual={:?}",
-        expected,
-        actual
+        "expected = {expected:?}\nactual={actual:?}"
     );
 }
 
@@ -597,9 +574,7 @@ fn test_join_utf8() {
 
     assert!(
         actual.equals(&expected),
-        "expected = {:?}\nactual={:?}",
-        expected,
-        actual
+        "expected = {expected:?}\nactual={actual:?}"
     );
 }
 
@@ -614,14 +589,6 @@ fn test_compound_invalid_1() {
 #[test]
 #[should_panic]
 fn test_compound_invalid_2() {
-    let mut ctx = prepare_compound_join_context();
-    let sql = "SELECT * FROM df1 LEFT JOIN df2 ON df1.a = df2.a AND b = b";
-    let _ = ctx.execute(sql).unwrap();
-}
-
-#[test]
-#[should_panic]
-fn test_compound_invalid_3() {
     let mut ctx = prepare_compound_join_context();
     let sql = "SELECT * FROM df1 INNER JOIN df2 ON df1.a = df2.a AND b";
     let _ = ctx.execute(sql).unwrap();

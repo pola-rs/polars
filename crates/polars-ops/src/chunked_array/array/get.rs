@@ -1,5 +1,5 @@
 use arrow::array::Array;
-use arrow::legacy::kernels::fixed_size_list::{
+use polars_compute::gather::sublist::fixed_size_list::{
     sub_fixed_size_list_get, sub_fixed_size_list_get_literal,
 };
 use polars_core::utils::align_chunks_binary;
@@ -21,6 +21,57 @@ fn array_get_literal(ca: &ArrayChunked, idx: i64, null_on_oob: bool) -> PolarsRe
 /// and index `-1` would return the last item of every sub-array
 /// if an index is out of bounds, it will return a `None`.
 pub fn array_get(
+    ca: &ArrayChunked,
+    index: &Int64Chunked,
+    null_on_oob: bool,
+) -> PolarsResult<Series> {
+    polars_ensure!(ca.width() < IdxSize::MAX as usize, ComputeError: "`arr.get` not supported for such wide arrays");
+
+    // Base case. No overflow.
+    if ca.width() * ca.len() < IdxSize::MAX as usize {
+        return array_get_impl(ca, index, null_on_oob);
+    }
+
+    // If the array width * length would overflow. Do it part-by-part.
+    assert!(ca.len() != 1 || index.len() != 1);
+    let rows_per_slice = IdxSize::MAX as usize / ca.width();
+
+    let mut ca = ca.clone();
+    let mut index = index.clone();
+    let current_ca;
+    let current_index;
+    if ca.len() == 1 {
+        current_ca = ca.clone();
+    } else {
+        (current_ca, ca) = ca.split_at(rows_per_slice as i64);
+    }
+    if index.len() == 1 {
+        current_index = index.clone();
+    } else {
+        (current_index, index) = index.split_at(rows_per_slice as i64);
+    }
+    let mut s = array_get_impl(&current_ca, &current_index, null_on_oob)?;
+
+    while !ca.is_empty() && !index.is_empty() {
+        let current_ca;
+        let current_index;
+        if ca.len() == 1 {
+            current_ca = ca.clone();
+        } else {
+            (current_ca, ca) = ca.split_at(rows_per_slice as i64);
+        }
+        if index.len() == 1 {
+            current_index = index.clone();
+        } else {
+            (current_index, index) = index.split_at(rows_per_slice as i64);
+        }
+        s.append_owned(array_get_impl(&current_ca, &current_index, null_on_oob)?)?;
+    }
+
+    Ok(s)
+}
+
+fn array_get_impl(
     ca: &ArrayChunked,
     index: &Int64Chunked,
     null_on_oob: bool,

@@ -38,7 +38,7 @@ impl_named_from_owned!(Vec<i8>, Int8Type);
 impl_named_from_owned!(Vec<i16>, Int16Type);
 impl_named_from_owned!(Vec<i32>, Int32Type);
 impl_named_from_owned!(Vec<i64>, Int64Type);
-#[cfg(feature = "dtype-decimal")]
+#[cfg(feature = "dtype-i128")]
 impl_named_from_owned!(Vec<i128>, Int128Type);
 #[cfg(feature = "dtype-u8")]
 impl_named_from_owned!(Vec<u8>, UInt8Type);
@@ -46,6 +46,8 @@ impl_named_from_owned!(Vec<u8>, UInt8Type);
 impl_named_from_owned!(Vec<u16>, UInt16Type);
 impl_named_from_owned!(Vec<u32>, UInt32Type);
 impl_named_from_owned!(Vec<u64>, UInt64Type);
+#[cfg(feature = "dtype-u128")]
+impl_named_from_owned!(Vec<u128>, UInt128Type);
 impl_named_from_owned!(Vec<f32>, Float32Type);
 impl_named_from_owned!(Vec<f64>, Float64Type);
 
@@ -73,13 +75,15 @@ impl_named_from!([u8], UInt8Type, from_slice);
 impl_named_from!([u16], UInt16Type, from_slice);
 impl_named_from!([u32], UInt32Type, from_slice);
 impl_named_from!([u64], UInt64Type, from_slice);
+#[cfg(feature = "dtype-u128")]
+impl_named_from!([u128], UInt128Type, from_slice);
 #[cfg(feature = "dtype-i8")]
 impl_named_from!([i8], Int8Type, from_slice);
 #[cfg(feature = "dtype-i16")]
 impl_named_from!([i16], Int16Type, from_slice);
 impl_named_from!([i32], Int32Type, from_slice);
 impl_named_from!([i64], Int64Type, from_slice);
-#[cfg(feature = "dtype-decimal")]
+#[cfg(any(feature = "dtype-i128", feature = "dtype-decimal"))]
 impl_named_from!([i128], Int128Type, from_slice);
 impl_named_from!([f32], Float32Type, from_slice);
 impl_named_from!([f64], Float64Type, from_slice);
@@ -92,13 +96,15 @@ impl_named_from!([Option<u8>], UInt8Type, from_slice_options);
 impl_named_from!([Option<u16>], UInt16Type, from_slice_options);
 impl_named_from!([Option<u32>], UInt32Type, from_slice_options);
 impl_named_from!([Option<u64>], UInt64Type, from_slice_options);
+#[cfg(feature = "dtype-u128")]
+impl_named_from!([Option<u128>], UInt128Type, from_slice_options);
 #[cfg(feature = "dtype-i8")]
 impl_named_from!([Option<i8>], Int8Type, from_slice_options);
 #[cfg(feature = "dtype-i16")]
 impl_named_from!([Option<i16>], Int16Type, from_slice_options);
 impl_named_from!([Option<i32>], Int32Type, from_slice_options);
 impl_named_from!([Option<i64>], Int64Type, from_slice_options);
-#[cfg(feature = "dtype-decimal")]
+#[cfg(any(feature = "dtype-i128", feature = "dtype-decimal"))]
 impl_named_from!([Option<i128>], Int128Type, from_slice_options);
 impl_named_from!([Option<f32>], Float32Type, from_slice_options);
 impl_named_from!([Option<f64>], Float64Type, from_slice_options);

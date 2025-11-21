@@ -5,7 +5,7 @@ use std::sync::Arc;
 use arrow_format::ipc::planus::ReadAsRoot;
 use arrow_format::ipc::{Block, FooterRef, MessageHeaderRef};
 use futures::{Stream, StreamExt};
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_err};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
 use crate::datatypes::ArrowSchema;
@@ -325,7 +325,6 @@ impl FlightConsumer {
             // Return Batch
             MessageHeaderRef::RecordBatch(batch) => {
                 if batch.compression()?.is_some() {
-                    let data_size = msg.arrow_data.len() as u64;
                     let mut reader = std::io::Cursor::new(msg.arrow_data.as_slice());
                     read_record_batch(
                         batch,
@@ -337,7 +336,6 @@ impl FlightConsumer {
                         self.md.version,
                         &mut reader,
                         0,
-                        data_size,
                         &mut self.scratch,
                     )
                     .map(Some)
@@ -348,7 +346,7 @@ impl FlightConsumer {
                         mmap_record(
                             &self.md.schema,
                             &self.md.ipc_schema.fields,
-                            arrow_data.clone(),
+                            arrow_data,
                             batch,
                             0,
                             &self.dictionaries,

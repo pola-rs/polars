@@ -30,10 +30,12 @@ in Rust, and available for Python, R and NodeJS.
   data to be in memory at the same time.
 - **Parallel**: Utilises the power of your machine by dividing the workload among the available CPU
   cores without any additional configuration.
-- **Vectorized Query Engine**: Using [Apache Arrow](https://arrow.apache.org/), a columnar data
-  format, to process your queries in a vectorized manner and SIMD to optimize CPU usage.
+- **Vectorized Query Engine**
 - **GPU Support**: Optionally run queries on NVIDIA GPUs for maximum performance for in-memory
   workloads.
+- **[Apache Arrow support](https://arrow.apache.org/)**: Polars can consume and produce Arrow data
+  often with zero-copy operations. Note that Polars is not built on a Pyarrow/Arrow implementation.
+  Instead, Polars has its own compute and buffer implementations.
 
 <!-- dprint-ignore-start -->
 

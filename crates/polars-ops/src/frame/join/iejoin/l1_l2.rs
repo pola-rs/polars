@@ -1,10 +1,11 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use polars_core::chunked_array::ChunkedArray;
 use polars_core::datatypes::{IdxCa, PolarsNumericType};
 use polars_core::prelude::Series;
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_error::PolarsResult;
-use polars_utils::total_ord::TotalOrd;
 use polars_utils::IdxSize;
+use polars_utils::total_ord::TotalOrd;
 
 use super::*;
 

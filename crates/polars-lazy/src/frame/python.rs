@@ -1,21 +1,33 @@
-use polars_core::prelude::*;
-use pyo3::PyObject;
+use std::sync::Arc;
 
+use either::Either;
+use polars_core::schema::SchemaRef;
+use pyo3::{Py, PyAny};
+
+use self::python_dsl::{PythonOptionsDsl, PythonScanSource};
 use crate::prelude::*;
 
 impl LazyFrame {
-    pub fn scan_from_python_function(schema: Schema, scan_fn: PyObject, pyarrow: bool) -> Self {
+    pub fn scan_from_python_function(
+        schema: Either<Py<PyAny>, SchemaRef>,
+        scan_fn: Py<PyAny>,
+        pyarrow: bool,
+        // Validate that the source gives the proper schema
+        validate_schema: bool,
+        is_pure: bool,
+    ) -> Self {
         DslPlan::PythonScan {
-            options: PythonOptions {
+            options: PythonOptionsDsl {
                 // Should be a python function that returns a generator
                 scan_fn: Some(scan_fn.into()),
-                schema: Arc::new(schema),
+                schema_fn: Some(SpecialEq::new(Arc::new(schema.map_left(|obj| obj.into())))),
                 python_source: if pyarrow {
                     PythonScanSource::Pyarrow
                 } else {
                     PythonScanSource::IOPlugin
                 },
-                ..Default::default()
+                validate_schema,
+                is_pure,
             },
         }
         .into()

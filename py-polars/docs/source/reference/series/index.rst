@@ -17,6 +17,7 @@ This page gives an overview of all public Series methods.
    computation
    descriptive
    export
+   extension
    list
    modify_select
    miscellaneous

@@ -10,6 +10,7 @@ Miscellaneous
     DataFrame.corr
     DataFrame.equals
     DataFrame.lazy
+    DataFrame.map_columns
     DataFrame.map_rows
 
 Serialization

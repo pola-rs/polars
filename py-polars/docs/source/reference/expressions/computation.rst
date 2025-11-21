@@ -42,6 +42,7 @@ Computation
     Expr.exp
     Expr.hash
     Expr.hist
+    Expr.index_of
     Expr.kurtosis
     Expr.log
     Expr.log10
@@ -53,6 +54,7 @@ Computation
     Expr.peak_min
     Expr.radians
     Expr.rank
+    Expr.rolling_kurtosis
     Expr.rolling_map
     Expr.rolling_max
     Expr.rolling_max_by
@@ -64,6 +66,8 @@ Computation
     Expr.rolling_min_by
     Expr.rolling_quantile
     Expr.rolling_quantile_by
+    Expr.rolling_rank
+    Expr.rolling_rank_by
     Expr.rolling_skew
     Expr.rolling_std
     Expr.rolling_std_by

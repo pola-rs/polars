@@ -48,7 +48,6 @@ def test_replace_enum_to_str() -> None:
     assert_series_equal(result, expected)
 
 
-@pl.StringCache()
 def test_replace_cat_to_cat(str_mapping: dict[str | None, str]) -> None:
     lf = pl.LazyFrame(
         {"country_code": ["FR", None, "ES", "DE"]},

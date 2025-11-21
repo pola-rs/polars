@@ -6,8 +6,11 @@ mod binary;
 mod bitwise;
 #[cfg(feature = "pymethods")]
 mod categorical;
+pub mod datatype;
 #[cfg(feature = "pymethods")]
 mod datetime;
+#[cfg(feature = "pymethods")]
+mod extension;
 #[cfg(feature = "pymethods")]
 mod general;
 #[cfg(feature = "pymethods")]
@@ -18,6 +21,7 @@ mod meta;
 mod name;
 #[cfg(feature = "pymethods")]
 mod rolling;
+pub mod selector;
 #[cfg(feature = "pymethods")]
 mod serde;
 #[cfg(feature = "pymethods")]
@@ -30,7 +34,7 @@ use std::mem::ManuallyDrop;
 use polars::lazy::dsl::Expr;
 use pyo3::pyclass;
 
-#[pyclass]
+#[pyclass] // Not marked as frozen for pickling, but that's the only &mut self method.
 #[repr(transparent)]
 #[derive(Clone)]
 pub struct PyExpr {

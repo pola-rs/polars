@@ -1,5 +1,3 @@
-use polars::prelude::*;
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:read]
     use polars::prelude::*;
@@ -21,10 +19,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .finish()
         .unwrap();
     // --8<-- [end:read]
-    println!("{}", df);
+    println!("{df}");
 
     // --8<-- [start:scan]
-    let lf = LazyCsvReader::new("docs/assets/data/path.csv")
+    let lf = LazyCsvReader::new(PlPath::new("docs/assets/data/path.csv"))
         .finish()
         .unwrap();
     // --8<-- [end:scan]

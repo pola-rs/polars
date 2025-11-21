@@ -21,7 +21,7 @@ def test_issue_unstable_warning(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_issue_unstable_warning_default(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("POLARS_WARN_UNSTABLE", "1")
 
-    msg = "This functionality is considered unstable."
+    msg = "this functionality is considered unstable."
     with pytest.warns(UnstableWarning, match=msg):
         issue_unstable_warning()
 

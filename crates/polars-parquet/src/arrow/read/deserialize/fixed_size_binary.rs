@@ -1,25 +1,26 @@
-use arrow::array::{
-    DictionaryArray, DictionaryKey, FixedSizeBinaryArray, PrimitiveArray, Splitable,
-};
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::array::{FixedSizeBinaryArray, Splitable};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
+use arrow::pushable::Pushable;
 use arrow::storage::SharedStorage;
 use arrow::types::{
-    Bytes12Alignment4, Bytes16Alignment16, Bytes1Alignment1, Bytes2Alignment2, Bytes32Alignment16,
-    Bytes4Alignment4, Bytes8Alignment8,
+    AlignedBytes, Bytes1Alignment1, Bytes2Alignment2, Bytes4Alignment4, Bytes8Alignment8,
+    Bytes12Alignment4, Bytes16Alignment16, Bytes32Alignment16,
 };
+use bytemuck::Zeroable;
 
+use super::Filter;
 use super::dictionary_encoded::append_validity;
 use super::utils::array_chunks::ArrayChunks;
-use super::utils::{dict_indices_decoder, freeze_validity, Decoder};
-use super::Filter;
+use super::utils::{Decoder, dict_indices_decoder, freeze_validity};
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
-use crate::parquet::encoding::{hybrid_rle, Encoding};
+use crate::parquet::encoding::{Encoding, hybrid_rle};
 use crate::parquet::error::{ParquetError, ParquetResult};
-use crate::parquet::page::{split_buffer, DataPage, DictPage};
+use crate::parquet::page::{DataPage, DictPage, split_buffer};
 use crate::read::deserialize::dictionary_encoded::constrain_page_validity;
-use crate::read::deserialize::utils;
+use crate::read::deserialize::utils::{self, Decoded};
+use crate::read::expr::{ParquetScalar, SpecializedParquetColumnExpr};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
@@ -57,6 +58,13 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
             _ => Err(utils::not_implemented(page)),
         }
     }
+
+    fn num_rows(&self) -> usize {
+        match self {
+            StateTranslation::Plain(v, n) => v.len() / n,
+            StateTranslation::Dictionary(i) => i.len(),
+        }
+    }
 }
 
 pub(crate) struct BinaryDecoder {
@@ -88,6 +96,19 @@ impl FSBVec {
         }
     }
 
+    fn size(&self) -> usize {
+        match self {
+            FSBVec::Size1(_) => 1,
+            FSBVec::Size2(_) => 2,
+            FSBVec::Size4(_) => 4,
+            FSBVec::Size8(_) => 8,
+            FSBVec::Size12(_) => 12,
+            FSBVec::Size16(_) => 16,
+            FSBVec::Size32(_) => 32,
+            FSBVec::Other(_, size) => *size,
+        }
+    }
+
     pub fn into_bytes_buffer(self) -> Buffer<u8> {
         Buffer::from_storage(match self {
             FSBVec::Size1(vec) => SharedStorage::bytes_from_pod_vec(vec),
@@ -100,15 +121,43 @@ impl FSBVec {
             FSBVec::Other(vec, _) => SharedStorage::from_vec(vec),
         })
     }
-}
 
-impl<T> utils::ExactSize for Vec<T> {
-    fn len(&self) -> usize {
-        Vec::len(self)
+    pub fn extend_from_byte_slice(&mut self, slice: &[u8]) {
+        let size = self.size();
+        if size == 0 {
+            assert_eq!(slice.len(), 0);
+            return;
+        }
+
+        assert_eq!(slice.len() % size, 0);
+
+        macro_rules! extend_from_slice {
+            ($v:expr) => {{
+                $v.reserve(slice.len() / size);
+                unsafe {
+                    std::ptr::copy_nonoverlapping(
+                        slice.as_ptr(),
+                        $v.as_mut_ptr().add($v.len()) as *mut _,
+                        slice.len(),
+                    )
+                }
+                let new_len = $v.len() + slice.len() / size;
+                unsafe { $v.set_len(new_len) };
+            }};
+        }
+
+        match self {
+            FSBVec::Size1(v) => extend_from_slice!(v),
+            FSBVec::Size2(v) => extend_from_slice!(v),
+            FSBVec::Size4(v) => extend_from_slice!(v),
+            FSBVec::Size8(v) => extend_from_slice!(v),
+            FSBVec::Size12(v) => extend_from_slice!(v),
+            FSBVec::Size16(v) => extend_from_slice!(v),
+            FSBVec::Size32(v) => extend_from_slice!(v),
+            FSBVec::Other(v, _) => v.extend_from_slice(slice),
+        }
     }
-}
 
-impl utils::ExactSize for FSBVec {
     fn len(&self) -> usize {
         match self {
             FSBVec::Size1(vec) => vec.len(),
@@ -121,19 +170,51 @@ impl utils::ExactSize for FSBVec {
             FSBVec::Other(vec, size) => vec.len() / size,
         }
     }
-}
 
-impl utils::ExactSize for (FSBVec, MutableBitmap) {
-    fn len(&self) -> usize {
-        self.0.len()
+    fn capacity(&self) -> usize {
+        match self {
+            FSBVec::Size1(vec) => vec.capacity(),
+            FSBVec::Size2(vec) => vec.capacity(),
+            FSBVec::Size4(vec) => vec.capacity(),
+            FSBVec::Size8(vec) => vec.capacity(),
+            FSBVec::Size12(vec) => vec.capacity(),
+            FSBVec::Size16(vec) => vec.capacity(),
+            FSBVec::Size32(vec) => vec.capacity(),
+            FSBVec::Other(vec, size) => vec.capacity() / size,
+        }
     }
 }
 
+impl utils::Decoded for (FSBVec, BitmapBuilder) {
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    fn extend_nulls(&mut self, n: usize) {
+        match &mut self.0 {
+            FSBVec::Size1(v) => v.resize(v.len() + n, Zeroable::zeroed()),
+            FSBVec::Size2(v) => v.resize(v.len() + n, Zeroable::zeroed()),
+            FSBVec::Size4(v) => v.resize(v.len() + n, Zeroable::zeroed()),
+            FSBVec::Size8(v) => v.resize(v.len() + n, Zeroable::zeroed()),
+            FSBVec::Size12(v) => v.resize(v.len() + n, Zeroable::zeroed()),
+            FSBVec::Size16(v) => v.resize(v.len() + n, Zeroable::zeroed()),
+            FSBVec::Size32(v) => v.resize(v.len() + n, Zeroable::zeroed()),
+            FSBVec::Other(v, size) => v.resize(v.len() + n * *size, Zeroable::zeroed()),
+        }
+        self.1.extend_constant(n, false);
+    }
+
+    fn remaining_capacity(&self) -> usize {
+        (self.0.capacity() - self.0.len()).min(self.1.capacity() - self.1.len())
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn decode_fsb_plain(
     size: usize,
     values: &[u8],
     target: &mut FSBVec,
-    validity: &mut MutableBitmap,
+    validity: &mut BitmapBuilder,
     is_optional: bool,
     filter: Option<Filter>,
     page_validity: Option<&Bitmap>,
@@ -202,6 +283,7 @@ fn decode_fsb_plain(
                             offset += num_filtered;
                         }
                     },
+                    Filter::Predicate(_) => todo!(),
                 },
                 (Some(validity), None) => {
                     let mut iter = validity.iter();
@@ -248,6 +330,7 @@ fn decode_fsb_plain(
                             offset += usize::from(is_valid);
                         }
                     },
+                    Filter::Predicate(_) => todo!(),
                 },
             }
 
@@ -260,9 +343,9 @@ fn decode_fsb_plain(
 fn decode_fsb_dict(
     size: usize,
     values: HybridRleDecoder<'_>,
-    dict: &FSBVec,
+    dict: &FixedSizeBinaryArray,
     target: &mut FSBVec,
-    validity: &mut MutableBitmap,
+    validity: &mut BitmapBuilder,
     is_optional: bool,
     filter: Option<Filter>,
     page_validity: Option<&Bitmap>,
@@ -271,9 +354,13 @@ fn decode_fsb_dict(
 
     macro_rules! decode_static_size {
         ($dict:ident, $target:ident) => {{
+            let dict = $dict.values().as_slice();
+            // @NOTE: We initialize the dict with the right alignment for this to work.
+            let dict = bytemuck::cast_slice(dict);
+
             super::dictionary_encoded::decode_dict_dispatch(
                 values,
-                $dict,
+                dict,
                 is_optional,
                 page_validity,
                 filter,
@@ -284,17 +371,19 @@ fn decode_fsb_dict(
     }
 
     use FSBVec as T;
-    match (dict, target) {
-        (T::Size1(dict), T::Size1(target)) => decode_static_size!(dict, target),
-        (T::Size2(dict), T::Size2(target)) => decode_static_size!(dict, target),
-        (T::Size4(dict), T::Size4(target)) => decode_static_size!(dict, target),
-        (T::Size8(dict), T::Size8(target)) => decode_static_size!(dict, target),
-        (T::Size12(dict), T::Size12(target)) => decode_static_size!(dict, target),
-        (T::Size16(dict), T::Size16(target)) => decode_static_size!(dict, target),
-        (T::Size32(dict), T::Size32(target)) => decode_static_size!(dict, target),
-        (T::Other(dict, _), T::Other(target, _)) => {
+    match target {
+        T::Size1(target) => decode_static_size!(dict, target),
+        T::Size2(target) => decode_static_size!(dict, target),
+        T::Size4(target) => decode_static_size!(dict, target),
+        T::Size8(target) => decode_static_size!(dict, target),
+        T::Size12(target) => decode_static_size!(dict, target),
+        T::Size16(target) => decode_static_size!(dict, target),
+        T::Size32(target) => decode_static_size!(dict, target),
+        T::Other(target, _) => {
             // @NOTE: All these kernels are quite slow, but they should be very uncommon and the
             // general case requires arbitrary length memcopies anyway.
+
+            let dict = dict.values().as_slice();
 
             if is_optional {
                 append_validity(
@@ -348,6 +437,7 @@ fn decode_fsb_dict(
                             offset += num_filtered;
                         }
                     },
+                    Filter::Predicate(_) => todo!(),
                 },
                 (Some(validity), None) => {
                     let mut iter = validity.iter();
@@ -404,19 +494,19 @@ fn decode_fsb_dict(
                             offset += usize::from(is_valid);
                         }
                     },
+                    Filter::Predicate(_) => todo!(),
                 },
             }
 
             Ok(())
         },
-        _ => unreachable!(),
     }
 }
 
 impl Decoder for BinaryDecoder {
     type Translation<'a> = StateTranslation<'a>;
-    type Dict = FSBVec;
-    type DecodedState = (FSBVec, MutableBitmap);
+    type Dict = FixedSizeBinaryArray;
+    type DecodedState = (FSBVec, BitmapBuilder);
     type Output = FixedSizeBinaryArray;
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
@@ -433,7 +523,7 @@ impl Decoder for BinaryDecoder {
             _ => FSBVec::Other(Vec::with_capacity(capacity * size), size),
         };
 
-        (values, MutableBitmap::with_capacity(capacity))
+        (values, BitmapBuilder::with_capacity(capacity))
     }
 
     fn deserialize_dict(&mut self, page: DictPage) -> ParquetResult<Self::Dict> {
@@ -442,12 +532,49 @@ impl Decoder for BinaryDecoder {
             self.size,
             page.buffer.as_ref(),
             &mut target,
-            &mut MutableBitmap::new(),
+            &mut BitmapBuilder::new(),
             false,
             None,
             None,
         )?;
-        Ok(target)
+
+        Ok(FixedSizeBinaryArray::new(
+            ArrowDataType::FixedSizeBinary(self.size),
+            target.into_bytes_buffer(),
+            None,
+        ))
+    }
+
+    fn evaluate_predicate(
+        &mut self,
+        _state: &utils::State<'_, Self>,
+        _predicate: Option<&SpecializedParquetColumnExpr>,
+        _pred_true_mask: &mut BitmapBuilder,
+        _dict_mask: Option<&Bitmap>,
+    ) -> ParquetResult<bool> {
+        Ok(false)
+    }
+
+    fn extend_decoded(
+        &self,
+        decoded: &mut Self::DecodedState,
+        additional: &dyn arrow::array::Array,
+        is_optional: bool,
+    ) -> ParquetResult<()> {
+        let additional = additional
+            .as_any()
+            .downcast_ref::<FixedSizeBinaryArray>()
+            .unwrap();
+        decoded
+            .0
+            .extend_from_byte_slice(additional.values().as_slice());
+        match additional.validity() {
+            Some(v) => decoded.1.extend_from_bitmap(v),
+            None if is_optional => decoded.1.extend_constant(additional.len(), true),
+            None => {},
+        }
+
+        Ok(())
     }
 
     fn finalize(
@@ -470,6 +597,7 @@ impl Decoder for BinaryDecoder {
         state: utils::State<'_, Self>,
         decoded: &mut Self::DecodedState,
         filter: Option<Filter>,
+        _chunks: &mut Vec<Self::Output>,
     ) -> ParquetResult<()> {
         match state.translation {
             StateTranslation::Plain(values, size) => decode_fsb_plain(
@@ -493,20 +621,49 @@ impl Decoder for BinaryDecoder {
             ),
         }
     }
-}
 
-impl utils::DictDecodable for BinaryDecoder {
-    fn finalize_dict_array<K: DictionaryKey>(
-        &self,
-        dtype: ArrowDataType,
-        dict: Self::Dict,
-        keys: PrimitiveArray<K>,
-    ) -> ParquetResult<DictionaryArray<K>> {
-        let dict = FixedSizeBinaryArray::new(
-            ArrowDataType::FixedSizeBinary(self.size),
-            dict.into_bytes_buffer(),
-            None,
-        );
-        Ok(DictionaryArray::try_new(dtype, keys, Box::new(dict)).unwrap())
+    fn extend_constant(
+        &mut self,
+        decoded: &mut Self::DecodedState,
+        length: usize,
+        value: &ParquetScalar,
+    ) -> ParquetResult<()> {
+        if value.is_null() {
+            decoded.extend_nulls(length);
+        }
+
+        let value = value.as_binary().unwrap();
+        assert_eq!(value.len(), decoded.0.size());
+        match &mut decoded.0 {
+            FSBVec::Size1(v) => {
+                v.extend_constant(length, <_>::from_unaligned(value.try_into().unwrap()))
+            },
+            FSBVec::Size2(v) => {
+                v.extend_constant(length, <_>::from_unaligned(value.try_into().unwrap()))
+            },
+            FSBVec::Size4(v) => {
+                v.extend_constant(length, <_>::from_unaligned(value.try_into().unwrap()))
+            },
+            FSBVec::Size8(v) => {
+                v.extend_constant(length, <_>::from_unaligned(value.try_into().unwrap()))
+            },
+            FSBVec::Size12(v) => {
+                v.extend_constant(length, <_>::from_unaligned(value.try_into().unwrap()))
+            },
+            FSBVec::Size16(v) => {
+                v.extend_constant(length, <_>::from_unaligned(value.try_into().unwrap()))
+            },
+            FSBVec::Size32(v) => {
+                v.extend_constant(length, <_>::from_unaligned(value.try_into().unwrap()))
+            },
+            FSBVec::Other(v, size) => {
+                v.reserve(*size * length);
+                for _ in 0..length {
+                    v.extend_from_slice(value);
+                }
+            },
+        }
+
+        Ok(())
     }
 }

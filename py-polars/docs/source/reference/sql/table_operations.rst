@@ -9,6 +9,8 @@ Table Operations
      - Description
    * - :ref:`CREATE TABLE <create_table>`
      - Create a new table and its columns from a SQL query executed against an existing table.
+   * - :ref:`DELETE FROM <delete_from_table>`
+     - Remove specific rows of data from a table using an (optional) constraint.
    * - :ref:`DROP TABLES <drop_tables>`
      - Deletes the specified table, unregistering it.
    * - :ref:`EXPLAIN <explain>`
@@ -25,14 +27,37 @@ Table Operations
 
 CREATE TABLE
 ------------
-Create a new table and its columns from a SQL query executed against an existing table.
+Create a new table from a sequence of column definitions,
+a SQL query executed against an existing table, or create
+an empty table from the schema of an existing table.
 
 **Example:**
 
 .. code-block:: sql
 
+    CREATE TABLE tbl(colx VARCHAR, coly DATE, colz ARRAY<DOUBLE>)
+
+.. code-block:: sql
+
     CREATE TABLE new_table AS
     SELECT * FROM existing_table WHERE value > 42
+
+.. code-block:: sql
+
+    CREATE TABLE new_table LIKE existing_table
+
+.. _delete_from_table:
+
+DELETE
+------
+Remove specific rows from a table using an (optional) constraint.
+Omitting the constraint deletes *all* rows, equivalent to `TRUNCATE`.
+
+**Example:**
+
+.. code-block:: sql
+
+    DELETE FROM some_table WHERE value < 0
 
 .. _drop_tables:
 
@@ -91,7 +116,7 @@ Unnest one or more arrays as columns in a new table object.
 
 TRUNCATE
 --------
-Remove all data from a table without actually deleting it.
+Remove all data from a table *without* deleting the table itself.
 
 **Example:**
 

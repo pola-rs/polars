@@ -8,8 +8,8 @@ use polars_error::polars_ensure;
 use polars_utils::itertools::Itertools;
 
 use super::compute_node_prelude::*;
-use crate::morsel::SourceToken;
 use crate::DEFAULT_ZIP_HEAD_BUFFER_SIZE;
+use crate::morsel::SourceToken;
 
 /// The head of an input stream.
 #[derive(Debug)]
@@ -138,14 +138,21 @@ impl ZipNode {
 
 impl ComputeNode for ZipNode {
     fn name(&self) -> &str {
-        "zip"
+        if self.null_extend {
+            "zip-null-extend"
+        } else {
+            "zip"
+        }
     }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
+    fn update_state(
+        &mut self,
+        recv: &mut [PortState],
+        send: &mut [PortState],
+        _state: &StreamingExecutionState,
+    ) -> PolarsResult<()> {
         assert!(send.len() == 1);
         assert!(recv.len() == self.input_heads.len());
-
-        let any_input_blocked = recv.iter().any(|s| *s == PortState::Blocked);
 
         let mut all_broadcast = true;
         let mut all_done_or_broadcast = true;
@@ -178,26 +185,31 @@ impl ComputeNode for ZipNode {
 
         let all_output_sent = all_done_or_broadcast && !all_broadcast;
 
-        let new_recv_state = if send[0] == PortState::Done || all_output_sent {
+        // Are we completely done?
+        if send[0] == PortState::Done || all_output_sent {
             for input_head in &mut self.input_heads {
                 input_head.clear();
             }
             send[0] = PortState::Done;
-            PortState::Done
-        } else if send[0] == PortState::Blocked || any_input_blocked {
-            send[0] = if any_input_blocked {
+            recv.fill(PortState::Done);
+            return Ok(());
+        }
+
+        let num_inputs_blocked = recv.iter().filter(|r| **r == PortState::Blocked).count();
+        send[0] = if num_inputs_blocked > 0 {
+            PortState::Blocked
+        } else {
+            PortState::Ready
+        };
+
+        let num_total_blocked = num_inputs_blocked + (send[0] == PortState::Blocked) as usize;
+        for r in recv {
+            let num_others_blocked = num_total_blocked - (*r == PortState::Blocked) as usize;
+            *r = if num_others_blocked > 0 {
                 PortState::Blocked
             } else {
                 PortState::Ready
             };
-            PortState::Blocked
-        } else {
-            send[0] = PortState::Ready;
-            PortState::Ready
-        };
-
-        for r in recv {
-            *r = new_recv_state;
         }
         Ok(())
     }
@@ -207,7 +219,7 @@ impl ComputeNode for ZipNode {
         scope: &'s TaskScope<'s, 'env>,
         recv_ports: &mut [Option<RecvPort<'_>>],
         send_ports: &mut [Option<SendPort<'_>>],
-        _state: &'s ExecutionState,
+        _state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         assert!(send_ports.len() == 1);
@@ -219,7 +231,8 @@ impl ComputeNode for ZipNode {
             .map(|recv_port| {
                 // Add buffering to each receiver to reduce contention between input heads.
                 let mut serial_recv = recv_port.take()?.serial();
-                let (buf_send, buf_recv) = tokio::sync::mpsc::channel(DEFAULT_ZIP_HEAD_BUFFER_SIZE);
+                let (buf_send, buf_recv) =
+                    tokio::sync::mpsc::channel(*DEFAULT_ZIP_HEAD_BUFFER_SIZE);
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     while let Ok(morsel) = serial_recv.recv().await {
                         if buf_send.send(morsel).await.is_err() {

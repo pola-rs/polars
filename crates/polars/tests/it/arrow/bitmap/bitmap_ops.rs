@@ -1,4 +1,4 @@
-use arrow::bitmap::{and, or, xor, Bitmap};
+use arrow::bitmap::{Bitmap, and, or, xor};
 use proptest::prelude::*;
 
 use super::bitmap_strategy;

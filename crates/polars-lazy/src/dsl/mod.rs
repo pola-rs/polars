@@ -32,19 +32,8 @@
 //! These kinds of invalid operations will only yield an error at runtime, when
 //! [`collect`](crate::frame::LazyFrame::collect) is called on the [`LazyFrame`].
 
-#[cfg(any(feature = "cumulative_eval", feature = "list_eval"))]
-mod eval;
 pub mod functions;
-mod into;
-#[cfg(feature = "list_eval")]
-mod list;
 
-#[cfg(any(feature = "cumulative_eval", feature = "list_eval"))]
-pub use eval::*;
 pub use functions::*;
-#[cfg(any(feature = "cumulative_eval", feature = "list_eval"))]
-use into::IntoExpr;
-#[cfg(feature = "list_eval")]
-pub use list::*;
 pub use polars_plan::dsl::*;
 pub use polars_plan::plans::UdfSchema;

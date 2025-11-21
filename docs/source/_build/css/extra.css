@@ -1,7 +1,5 @@
 :root {
-  --md-primary-fg-color: #0B7189;
-  --md-primary-fg-color--light: #C2CCD6;
-  --md-primary-fg-color--dark: #103547;
+  --md-primary-fg-color: #0075ff;
   --md-text-font: 'Proxima Nova', sans-serif;
 }
 
@@ -74,4 +72,8 @@ span .md-typeset .emojione,
 body[data-md-color-scheme="slate"] .excalidraw svg {
   will-change: filter;
   filter: invert(100%) hue-rotate(180deg);
+}
+
+.md-typeset__table code {
+  text-wrap: nowrap !important;
 }

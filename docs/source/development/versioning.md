@@ -113,7 +113,15 @@ users, we may extend the deprecation period.
 
 Polars does not have a set release schedule. We issue a new release whenever we feel like we have
 something new and valuable to offer to our users. In practice, a new minor version is released about
-once every one or two weeks.
+once every two weeks.
+
+## Pre-releases
+
+To minimize the risk of regressions, we begin by publishing a pre-release version. This is followed
+by a cooldown period lasting a few days, during which we block pull requests that might introduce
+instability. Any regression bugs reported during this time are more likely to be addressed before
+the final release. We encourage users to actively test the pre-release versions to help ensure
+greater stability.
 
 ### Breaking releases
 

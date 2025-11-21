@@ -1,10 +1,10 @@
 use std::borrow::Borrow;
 use std::ops::{BitAnd, BitOr};
 
-use polars_error::{polars_ensure, PolarsResult};
+use polars_error::{PolarsResult, polars_ensure};
 
 use crate::array::Array;
-use crate::bitmap::{and_not, push_bitchunk, ternary, Bitmap};
+use crate::bitmap::{Bitmap, and_not, push_bitchunk, ternary};
 
 pub fn combine_validities_and3(
     opt1: Option<&Bitmap>,

@@ -1,5 +1,5 @@
 #[cfg(feature = "timezones")]
-use polars_core::chunked_array::temporal::parse_time_zone;
+use polars_core::datatypes::time_zone::parse_time_zone;
 use polars_core::prelude::*;
 use polars_ops::prelude::*;
 use polars_ops::series::SeriesMethods;
@@ -12,7 +12,7 @@ pub trait PolarsUpsample {
     /// # Arguments
     /// * `by` - First group by these columns and then upsample for every group
     /// * `time_column` - Will be used to determine a date_range.
-    ///                   Note that this column has to be sorted for the output to make sense.
+    ///   Note that this column has to be sorted for the output to make sense.
     /// * `every` - interval will start 'every' duration
     /// * `offset` - change the start of the date_range by this offset.
     ///
@@ -53,7 +53,7 @@ pub trait PolarsUpsample {
     /// # Arguments
     /// * `by` - First group by these columns and then upsample for every group
     /// * `time_column` - Will be used to determine a date_range.
-    ///                   Note that this column has to be sorted for the output to make sense.
+    ///   Note that this column has to be sorted for the output to make sense.
     /// * `every` - interval will start 'every' duration
     /// * `offset` - change the start of the date_range by this offset.
     ///
@@ -122,59 +122,64 @@ fn upsample_impl(
 ) -> PolarsResult<DataFrame> {
     let s = source.column(index_column)?;
     let time_type = s.dtype();
-    if matches!(time_type, DataType::Date) {
-        let mut df = source.clone();
-        df.apply(index_column, |s| {
-            s.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
-                .unwrap()
-        })
-        .unwrap();
-        let mut out = upsample_impl(&df, by, index_column, every, stable)?;
-        out.apply(index_column, |s| s.cast(time_type).unwrap())
+    match time_type {
+        #[cfg(feature = "dtype-date")]
+        DataType::Date => {
+            let mut df = source.clone();
+            df.apply(index_column, |s| {
+                s.cast(&DataType::Datetime(TimeUnit::Microseconds, None))
+                    .unwrap()
+            })
             .unwrap();
-        Ok(out)
-    } else if matches!(
-        time_type,
-        DataType::UInt32 | DataType::UInt64 | DataType::Int32
-    ) {
-        let mut df = source.clone();
+            let mut out = upsample_impl(&df, by, index_column, every, stable)?;
+            out.apply(index_column, |s| s.cast(time_type).unwrap())
+                .unwrap();
+            Ok(out)
+        },
+        DataType::UInt32 | DataType::UInt64 | DataType::Int32 => {
+            let mut df = source.clone();
 
-        df.apply(index_column, |s| {
-            s.cast(&DataType::Int64)
-                .unwrap()
-                .cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))
-                .unwrap()
-        })
-        .unwrap();
-        let mut out = upsample_impl(&df, by, index_column, every, stable)?;
-        out.apply(index_column, |s| s.cast(time_type).unwrap())
+            df.apply(index_column, |s| {
+                s.cast(&DataType::Int64)
+                    .unwrap()
+                    .cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))
+                    .unwrap()
+            })
             .unwrap();
-        Ok(out)
-    } else if matches!(time_type, DataType::Int64) {
-        let mut df = source.clone();
-        df.apply(index_column, |s| {
-            s.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))
-                .unwrap()
-        })
-        .unwrap();
-        let mut out = upsample_impl(&df, by, index_column, every, stable)?;
-        out.apply(index_column, |s| s.cast(time_type).unwrap())
+            let mut out = upsample_impl(&df, by, index_column, every, stable)?;
+            out.apply(index_column, |s| s.cast(time_type).unwrap())
+                .unwrap();
+            Ok(out)
+        },
+        DataType::Int64 => {
+            let mut df = source.clone();
+            df.apply(index_column, |s| {
+                s.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))
+                    .unwrap()
+            })
             .unwrap();
-        Ok(out)
-    } else if by.is_empty() {
-        let index_column = source.column(index_column)?;
-        upsample_single_impl(source, index_column.as_materialized_series(), every)
-    } else {
-        let gb = if stable {
-            source.group_by_stable(by)
-        } else {
-            source.group_by(by)
-        };
-        // don't parallelize this, this may SO on large data.
-        gb?.apply(|df| {
-            let index_column = df.column(index_column)?;
-            upsample_single_impl(&df, index_column.as_materialized_series(), every)
-        })
+            let mut out = upsample_impl(&df, by, index_column, every, stable)?;
+            out.apply(index_column, |s| s.cast(time_type).unwrap())
+                .unwrap();
+            Ok(out)
+        },
+        _ => {
+            if by.is_empty() {
+                let index_column = source.column(index_column)?;
+                upsample_single_impl(source, index_column.as_materialized_series(), every)
+            } else {
+                let gb = if stable {
+                    source.group_by_stable(by)
+                } else {
+                    source.group_by(by)
+                };
+                // don't parallelize this, this may SO on large data.
+                gb?.apply(|df| {
+                    let index_column = df.column(index_column)?;
+                    upsample_single_impl(&df, index_column.as_materialized_series(), every)
+                })
+            }
+        },
     }
 }
 
@@ -188,6 +193,7 @@ fn upsample_single_impl(
 
     use DataType::*;
     match index_column.dtype() {
+        #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
         Datetime(tu, tz) => {
             let s = index_column.cast(&Int64).unwrap();
             let ca = s.i64().unwrap();
@@ -216,6 +222,7 @@ fn upsample_single_impl(
                         [index_col_name.clone()],
                         [index_col_name.clone()],
                         JoinArgs::new(JoinType::Left),
+                        None,
                     )
                 },
                 _ => polars_bail!(

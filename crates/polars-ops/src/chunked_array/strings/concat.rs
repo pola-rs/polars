@@ -81,7 +81,7 @@ pub fn hor_str_concat(
         .unwrap_or(1);
     polars_ensure!(
         cas.iter().all(|ca| ca.len() == 1 || ca.len() == len),
-        ComputeError: "all series in `hor_str_concat` should have equal or unit length"
+        ShapeMismatch: "all series in `hor_str_concat` should have equal or unit length"
     );
 
     let mut builder = StringChunkedBuilder::new(cas[0].name().clone(), len);

@@ -10,7 +10,9 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars._typing import PolarsTemporalType
+    import numpy.typing as npt
+
+    from polars._typing import PolarsDataType, PolarsTemporalType
 
 
 def test_from_numpy() -> None:
@@ -147,3 +149,33 @@ def test_from_numpy_supported_units(
         pl.Series("column_0", expected_values).str.strptime(expected_dtype).to_frame()
     )
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("np_dtype", "dtype"),
+    [
+        (np.float64, pl.Float64),
+        (np.int32, pl.Int32),
+    ],
+)
+def test_from_numpy_empty(np_dtype: npt.DTypeLike, dtype: PolarsDataType) -> None:
+    data = np.array([], dtype=np_dtype)
+    result = pl.from_numpy(data, schema=["a"])
+    expected = pl.Series("a", [], dtype=dtype).to_frame()
+    assert_frame_equal(result, expected)
+
+
+def test_dataframe_numpy_records_mixed_dims() -> None:
+    arr_1d = np.array([1, 2, 3], dtype=np.int16)
+    arr_2d = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]], dtype=np.float32)
+
+    df = pl.DataFrame({"arr1d": arr_1d, "arr2d": arr_2d})
+    assert df.schema == {
+        "arr1d": pl.Int16,
+        "arr2d": pl.Array(pl.Float32, 2),
+    }
+    assert df.to_dicts() == [
+        {"arr1d": 1, "arr2d": [1.0, 2.0]},
+        {"arr1d": 2, "arr2d": [3.0, 4.0]},
+        {"arr1d": 3, "arr2d": [5.0, 6.0]},
+    ]

@@ -1,7 +1,7 @@
 use arrow::array::{Array, BooleanArray};
 use polars_error::PolarsResult;
 
-use super::super::{nested, utils, EncodeNullability, WriteOptions};
+use super::super::{EncodeNullability, WriteOptions, nested, utils};
 use super::basic::{build_statistics, encode_plain};
 use crate::arrow::read::schema::is_nullable;
 use crate::arrow::write::Nested;

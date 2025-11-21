@@ -1,11 +1,11 @@
 use std::io::{Read, Seek};
 
 use arrow::array::Array;
-use arrow::datatypes::Field;
+use arrow::datatypes::{ArrowSchemaRef, Field};
 use arrow::record_batch::RecordBatchT;
 use polars::prelude::ArrowSchema;
 use polars_error::PolarsResult;
-use polars_parquet::arrow::read::{column_iter_to_arrays, Filter};
+use polars_parquet::arrow::read::{Filter, column_iter_to_arrays};
 use polars_parquet::parquet::metadata::ColumnChunkMetadata;
 use polars_parquet::parquet::read::{BasicDecompressor, PageReader};
 use polars_parquet::read::RowGroupMetadata;
@@ -22,6 +22,7 @@ use polars_utils::mmap::MemReader;
 pub struct RowGroupDeserializer {
     num_rows: usize,
     remaining_rows: usize,
+    column_schema: ArrowSchemaRef,
     column_chunks: Vec<Box<dyn Array>>,
 }
 
@@ -31,10 +32,16 @@ impl RowGroupDeserializer {
     /// # Panic
     /// This function panics iff any of the `column_chunks`
     /// do not return an array with an equal length.
-    pub fn new(column_chunks: Vec<Box<dyn Array>>, num_rows: usize, limit: Option<usize>) -> Self {
+    pub fn new(
+        column_schema: ArrowSchemaRef,
+        column_chunks: Vec<Box<dyn Array>>,
+        num_rows: usize,
+        limit: Option<usize>,
+    ) -> Self {
         Self {
             num_rows,
             remaining_rows: limit.unwrap_or(usize::MAX).min(num_rows),
+            column_schema,
             column_chunks,
         }
     }
@@ -53,7 +60,11 @@ impl Iterator for RowGroupDeserializer {
             return None;
         }
         let length = self.column_chunks.first().map_or(0, |chunk| chunk.len());
-        let chunk = RecordBatchT::try_new(length, std::mem::take(&mut self.column_chunks));
+        let chunk = RecordBatchT::try_new(
+            length,
+            self.column_schema.clone(),
+            std::mem::take(&mut self.column_chunks),
+        );
         self.remaining_rows = self.remaining_rows.saturating_sub(
             chunk
                 .as_ref()
@@ -104,7 +115,7 @@ pub fn to_deserializer(
     columns: Vec<(&ColumnChunkMetadata, Vec<u8>)>,
     field: Field,
     filter: Option<Filter>,
-) -> PolarsResult<Box<dyn Array>> {
+) -> PolarsResult<Vec<Box<dyn Array>>> {
     let (columns, types): (Vec<_>, Vec<_>) = columns
         .into_iter()
         .map(|(column_meta, chunk)| {
@@ -122,7 +133,7 @@ pub fn to_deserializer(
         })
         .unzip();
 
-    column_iter_to_arrays(columns, types, field, filter)
+    column_iter_to_arrays(columns, types, field, filter).map(|v| v.0)
 }
 
 /// Returns a vector of iterators of [`Array`] ([`ArrayIter`]) corresponding to the top
@@ -140,7 +151,7 @@ pub fn read_columns_many<R: Read + Seek>(
     row_group: &RowGroupMetadata,
     fields: &ArrowSchema,
     filter: Option<Filter>,
-) -> PolarsResult<Vec<Box<dyn Array>>> {
+) -> PolarsResult<Vec<Vec<Box<dyn Array>>>> {
     // reads all the necessary columns for all fields from the row group
     // This operation is IO-bounded `O(C)` where C is the number of columns in the row group
     let field_columns = fields

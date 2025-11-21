@@ -41,11 +41,11 @@ where
 {
     pub fn new(name: PlSmallStr, capacity: usize) -> Self {
         let array_builder = MutablePrimitiveArray::<T::Native>::with_capacity(capacity)
-            .to(T::get_dtype().to_arrow(CompatLevel::newest()));
+            .to(T::get_static_dtype().to_arrow(CompatLevel::newest()));
 
         PrimitiveChunkedBuilder {
             array_builder,
-            field: Field::new(name, T::get_dtype()),
+            field: Field::new(name, T::get_static_dtype()),
         }
     }
 }

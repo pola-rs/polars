@@ -17,11 +17,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let df = ParquetReader::new(&mut file).finish().unwrap();
     // --8<-- [end:read]
-    println!("{}", df);
+    println!("{df}");
 
     // --8<-- [start:scan]
     let args = ScanArgsParquet::default();
-    let lf = LazyFrame::scan_parquet("docs/assets/data/path.parquet", args).unwrap();
+    let lf = LazyFrame::scan_parquet(PlPath::new("docs/assets/data/path.parquet"), args).unwrap();
     // --8<-- [end:scan]
     println!("{}", lf.collect()?);
 

@@ -1,8 +1,8 @@
 use polars_parquet_format::ColumnOrder as TColumnOrder;
 
+use super::RowGroupMetadata;
 use super::column_order::ColumnOrder;
 use super::schema_descriptor::SchemaDescriptor;
-use super::RowGroupMetadata;
 use crate::parquet::error::ParquetError;
 use crate::parquet::metadata::get_sort_order;
 pub use crate::parquet::thrift_format::KeyValue;

@@ -1,5 +1,5 @@
 use hashbrown::hash_map::Entry;
-use polars_utils::hashing::{hash_to_partition, DirtyHash};
+use polars_utils::hashing::{DirtyHash, hash_to_partition};
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::itertools::Itertools;
 use polars_utils::sync::SyncPtr;
@@ -7,10 +7,10 @@ use polars_utils::total_ord::{ToTotalOrd, TotalHash, TotalOrdWrap};
 use polars_utils::unitvec;
 use rayon::prelude::*;
 
+use crate::POOL;
 use crate::hashing::*;
 use crate::prelude::*;
 use crate::utils::flatten;
-use crate::POOL;
 
 fn get_init_size() -> usize {
     // we check if this is executed from the main thread
@@ -23,7 +23,7 @@ fn get_init_size() -> usize {
     }
 }
 
-fn finish_group_order(mut out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsProxy {
+fn finish_group_order(mut out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsType {
     if sorted {
         // we can just take the first value, no need to flatten
         let mut out = if out.len() == 1 {
@@ -60,19 +60,19 @@ fn finish_group_order(mut out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsProxy {
         out.sort_unstable_by_key(|g| g.0);
         let mut idx = GroupsIdx::from_iter(out);
         idx.sorted = true;
-        GroupsProxy::Idx(idx)
+        GroupsType::Idx(idx)
     } else {
         // we can just take the first value, no need to flatten
         if out.len() == 1 {
-            GroupsProxy::Idx(GroupsIdx::from(out.pop().unwrap()))
+            GroupsType::Idx(GroupsIdx::from(out.pop().unwrap()))
         } else {
             // flattens
-            GroupsProxy::Idx(GroupsIdx::from(out))
+            GroupsType::Idx(GroupsIdx::from(out))
         }
     }
 }
 
-pub(crate) fn group_by<K>(keys: impl Iterator<Item = K>, sorted: bool) -> GroupsProxy
+pub(crate) fn group_by<K>(keys: impl Iterator<Item = K>, sorted: bool) -> GroupsType
 where
     K: TotalHash + TotalEq,
 {
@@ -107,7 +107,7 @@ where
         }
         (first, groups) = hash_tbl.into_values().unzip();
     }
-    GroupsProxy::Idx(GroupsIdx::new(first, groups, sorted))
+    GroupsType::Idx(GroupsIdx::new(first, groups, sorted))
 }
 
 // giving the slice info to the compiler is much
@@ -117,7 +117,7 @@ pub(crate) fn group_by_threaded_slice<T, IntoSlice>(
     keys: Vec<IntoSlice>,
     n_partitions: usize,
     sorted: bool,
-) -> GroupsProxy
+) -> GroupsType
 where
     T: ToTotalOrd,
     <T as ToTotalOrd>::TotalOrdItem: Send + Sync + Copy + DirtyHash,
@@ -170,7 +170,7 @@ pub(crate) fn group_by_threaded_iter<T, I>(
     keys: &[I],
     n_partitions: usize,
     sorted: bool,
-) -> GroupsProxy
+) -> GroupsType
 where
     I: IntoIterator<Item = T> + Send + Sync + Clone,
     I::IntoIter: ExactSizeIterator,

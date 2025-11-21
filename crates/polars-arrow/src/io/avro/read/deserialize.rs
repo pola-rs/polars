@@ -1,6 +1,8 @@
+use std::sync::Arc;
+
 use avro_schema::file::Block;
 use avro_schema::schema::{Enum, Field as AvroField, Record, Schema as AvroSchema};
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_err};
 
 use super::nested::*;
 use super::util;
@@ -58,6 +60,7 @@ fn make_mutable(
                     .collect::<PolarsResult<Vec<_>>>()?;
                 Box::new(DynMutableStructArray::new(values, dtype.clone())) as Box<dyn MutableArray>
             },
+            ArrowDataType::Extension(ext) => make_mutable(&ext.inner, avro_field, capacity)?,
             other => {
                 polars_bail!(nyi = "Deserializing type {other:#?} is still not implemented")
             },
@@ -506,8 +509,16 @@ pub fn deserialize(
         }
     }
 
+    let projected_schema = fields
+        .iter_values()
+        .zip(projection)
+        .filter_map(|(f, p)| (*p).then_some(f))
+        .cloned()
+        .collect();
+
     RecordBatchT::try_new(
         rows,
+        Arc::new(projected_schema),
         arrays
             .iter_mut()
             .zip(projection.iter())

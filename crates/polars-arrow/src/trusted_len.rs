@@ -57,6 +57,8 @@ unsafe impl<A: Clone> TrustedLen for std::iter::Repeat<A> {}
 unsafe impl<A, F: FnMut() -> A> TrustedLen for std::iter::RepeatWith<F> {}
 unsafe impl<A: TrustedLen> TrustedLen for std::iter::Take<A> {}
 
+unsafe impl<A: Clone> TrustedLen for std::iter::RepeatN<A> {}
+
 unsafe impl<T> TrustedLen for &mut dyn TrustedLen<Item = T> {}
 unsafe impl<T> TrustedLen for Box<dyn TrustedLen<Item = T> + '_> {}
 
@@ -100,11 +102,11 @@ where
     }
 }
 
-impl<J: Clone> TrustMyLength<std::iter::Take<std::iter::Repeat<J>>, J> {
+impl<J: Clone> TrustMyLength<std::iter::RepeatN<J>, J> {
     /// Create a new `TrustMyLength` iterator that repeats `value` `len` times.
     pub fn new_repeat_n(value: J, len: usize) -> Self {
         // SAFETY: This is always safe since repeat(..).take(n) always repeats exactly `n` times`.
-        unsafe { Self::new(std::iter::repeat(value).take(len), len) }
+        unsafe { Self::new(std::iter::repeat_n(value, len), len) }
     }
 }
 

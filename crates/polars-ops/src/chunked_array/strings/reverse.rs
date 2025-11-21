@@ -1,5 +1,5 @@
-use polars_core::prelude::arity::unary_elementwise;
 use polars_core::prelude::StringChunked;
+use polars_core::prelude::arity::unary_elementwise;
 use unicode_reverse::reverse_grapheme_clusters_in_place;
 
 fn to_reverse_helper(s: Option<&str>) -> Option<String> {

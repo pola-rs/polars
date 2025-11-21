@@ -1,16 +1,16 @@
 use std::io::Write;
 
 use futures::{AsyncWrite, AsyncWriteExt};
-use polars_parquet_format::thrift::protocol::TCompactOutputStreamProtocol;
 use polars_parquet_format::RowGroup;
+use polars_parquet_format::thrift::protocol::TCompactOutputStreamProtocol;
 
 use super::row_group::write_row_group_async;
 use super::{RowGroupIterColumns, WriteOptions};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::{KeyValue, SchemaDescriptor};
+use crate::parquet::write::State;
 use crate::parquet::write::indexes::{write_column_index_async, write_offset_index_async};
 use crate::parquet::write::page::PageWriteSpec;
-use crate::parquet::write::State;
 use crate::parquet::{FOOTER_SIZE, PARQUET_MAGIC};
 
 async fn start_file<W: AsyncWrite + Unpin>(writer: &mut W) -> ParquetResult<u64> {

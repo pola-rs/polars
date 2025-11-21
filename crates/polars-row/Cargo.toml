@@ -12,7 +12,15 @@ description = "Row encodings for the Polars DataFrame library"
 bitflags = { workspace = true }
 bytemuck = { workspace = true }
 polars-compute = { workspace = true, features = ["cast"] }
+polars-dtype = { workspace = true }
 polars-error = { workspace = true }
 polars-utils = { workspace = true }
 
 arrow = { workspace = true }
+
+[dev-dependencies]
+arrow = { workspace = true, features = ["proptest"] }
+proptest = { workspace = true }
+
+[lints]
+workspace = true

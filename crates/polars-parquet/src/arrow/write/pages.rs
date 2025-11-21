@@ -2,11 +2,11 @@ use std::fmt::Debug;
 
 use arrow::array::{Array, FixedSizeListArray, ListArray, MapArray, StructArray};
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::datatypes::PhysicalType;
+use arrow::datatypes::{ArrowDataType, PhysicalType};
 use arrow::offset::{Offset, OffsetsBuffer};
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 
-use super::{array_to_pages, Encoding, WriteOptions};
+use super::{ColumnWriteOptions, WriteOptions, array_to_pages};
 use crate::arrow::read::schema::is_nullable;
 use crate::parquet::page::Page;
 use crate::parquet::schema::types::{ParquetType, PrimitiveType as ParquetPrimitiveType};
@@ -141,6 +141,10 @@ fn to_nested_recursive(
 ) -> PolarsResult<()> {
     let is_optional = is_nullable(type_.get_field_info());
 
+    if !is_optional && array.null_count() > 0 {
+        polars_bail!(InvalidOperation: "writing a missing value to required field '{}'", type_.name());
+    }
+
     use PhysicalType::*;
     match array.dtype().to_physical_type() {
         Struct => {
@@ -148,6 +152,19 @@ fn to_nested_recursive(
             let fields = if let ParquetType::GroupType { fields, .. } = type_ {
                 fields
             } else {
+                // @NOTE: Support empty struct by mapping to Boolean array.
+                if let ArrowDataType::Struct(fs) = array.dtype()
+                    && fs.is_empty()
+                {
+                    parents.push(Nested::Primitive(PrimitiveNested {
+                        validity: array.validity().cloned(),
+                        is_optional,
+                        length: array.len(),
+                    }));
+                    nested.push(parents);
+                    return Ok(());
+                }
+
                 polars_bail!(InvalidOperation:
                     "Parquet type must be a group for a struct array",
                 )
@@ -393,7 +410,7 @@ pub fn to_leaves(array: &dyn Array, leaves: &mut Vec<Box<dyn Array>>) {
         let validity = (&child_validity) & (&inherited_validity);
 
         match array.dtype().to_physical_type() {
-            P::Struct => {
+            P::Struct if !matches!(array.dtype(), ArrowDataType::Struct(fs) if fs.is_empty()) => {
                 let array = array.as_any().downcast_ref::<StructArray>().unwrap();
 
                 leaves.reserve(array.len().saturating_sub(1));
@@ -467,7 +484,8 @@ pub fn to_leaves(array: &dyn Array, leaves: &mut Vec<Box<dyn Array>>) {
             | P::LargeUtf8
             | P::Dictionary(_)
             | P::BinaryView
-            | P::Utf8View => {
+            | P::Utf8View
+            | P::Struct => {
                 leaves.push(array.with_validity(validity.into()));
             },
 
@@ -498,41 +516,47 @@ fn to_parquet_leaves_recursive(type_: ParquetType, leaves: &mut Vec<ParquetPrimi
 pub fn array_to_columns<A: AsRef<dyn Array> + Send + Sync>(
     array: A,
     type_: ParquetType,
+    column_options: &ColumnWriteOptions,
     options: WriteOptions,
-    encoding: &[Encoding],
 ) -> PolarsResult<Vec<DynIter<'static, PolarsResult<Page>>>> {
     let array = array.as_ref();
 
     let nested = to_nested(array, &type_)?;
-
     let types = to_parquet_leaves(type_);
 
     let mut values = Vec::new();
     to_leaves(array, &mut values);
 
-    assert_eq!(encoding.len(), types.len());
+    let mut field_options = Vec::with_capacity(types.len());
+    column_options.to_leaves(&mut field_options);
 
-    values
+    assert_eq!(field_options.len(), types.len());
+
+    let x = values
         .iter()
         .zip(nested)
         .zip(types)
-        .zip(encoding.iter())
-        .map(|(((values, nested), type_), encoding)| {
-            array_to_pages(values.as_ref(), type_, &nested, options, *encoding)
+        .zip(field_options)
+        .map(|(((values, nested), type_), field_options)| {
+            array_to_pages(values.as_ref(), type_, &nested, options, field_options)
         })
-        .collect()
+        .collect::<PolarsResult<Vec<DynIter<'static, PolarsResult<Page>>>>>()?;
+    Ok(x)
 }
 
 pub fn arrays_to_columns<A: AsRef<dyn Array> + Send + Sync>(
     arrays: &[A],
     type_: ParquetType,
     options: WriteOptions,
-    encoding: &[Encoding],
+    column_options: &ColumnWriteOptions,
 ) -> PolarsResult<Vec<DynIter<'static, PolarsResult<Page>>>> {
     let array = arrays[0].as_ref();
     let nested = to_nested(array, &type_)?;
 
     let types = to_parquet_leaves(type_);
+
+    let mut field_options = Vec::with_capacity(types.len());
+    column_options.to_leaves(&mut field_options);
 
     // leaves; index level is nesting depth.
     // index i: has a vec because we have multiple chunks.
@@ -554,15 +578,15 @@ pub fn arrays_to_columns<A: AsRef<dyn Array> + Send + Sync>(
         .into_iter()
         .zip(nested)
         .zip(types)
-        .zip(encoding.iter())
-        .map(move |(((values, nested), type_), encoding)| {
+        .zip(field_options)
+        .map(move |(((values, nested), type_), column_options)| {
             let iter = values.into_iter().map(|leave_values| {
                 array_to_pages(
                     leave_values.as_ref(),
                     type_.clone(),
                     &nested,
                     options,
-                    *encoding,
+                    column_options,
                 )
             });
 
@@ -583,10 +607,10 @@ mod tests {
 
     use super::super::{FieldInfo, ParquetPhysicalType};
     use super::*;
+    use crate::parquet::schema::Repetition;
     use crate::parquet::schema::types::{
         GroupLogicalType, PrimitiveConvertedType, PrimitiveLogicalType,
     };
-    use crate::parquet::schema::Repetition;
 
     #[test]
     fn test_struct() {

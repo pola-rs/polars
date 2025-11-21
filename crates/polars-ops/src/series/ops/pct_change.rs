@@ -14,11 +14,9 @@ pub fn pct_change(s: &Series, n: &Series) -> PolarsResult<Series> {
         _ => return pct_change(&s.cast(&DataType::Float64)?, n),
     }
 
-    let fill_null_s = s.fill_null(FillNullStrategy::Forward(None))?;
-
     let n_s = n.cast(&DataType::Int64)?;
     if let Some(n) = n_s.i64()?.get(0) {
-        diff(&fill_null_s, n, NullBehavior::Ignore)?.divide(&fill_null_s.shift(n))
+        diff(s, n, NullBehavior::Ignore)?.divide(&s.shift(n))
     } else {
         Ok(Series::full_null(s.name().clone(), s.len(), s.dtype()))
     }

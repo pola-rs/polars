@@ -139,7 +139,7 @@ pub(crate) fn get_fixed_size_list_builder(
 ) -> PolarsResult<Box<dyn FixedSizeListBuilder>> {
     let phys_dtype = inner_type_logical.to_physical();
 
-    let builder = if phys_dtype.is_numeric() {
+    let builder = if phys_dtype.is_primitive_numeric() {
         with_match_physical_numeric_type!(phys_dtype, |$T| {
         // SAFETY: physical type match logical type
         unsafe {

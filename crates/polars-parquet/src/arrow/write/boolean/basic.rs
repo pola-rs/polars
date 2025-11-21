@@ -1,10 +1,10 @@
 use arrow::array::*;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 
-use super::super::{utils, WriteOptions};
+use super::super::{WriteOptions, utils};
 use crate::arrow::read::schema::is_nullable;
-use crate::parquet::encoding::hybrid_rle::{self, bitpacked_encode};
 use crate::parquet::encoding::Encoding;
+use crate::parquet::encoding::hybrid_rle::{self, bitpacked_encode};
 use crate::parquet::page::DataPage;
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::{BooleanStatistics, ParquetStatistics};

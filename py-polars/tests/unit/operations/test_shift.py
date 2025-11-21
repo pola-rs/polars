@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from datetime import date
 
+import pytest
+
 import polars as pl
+from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -116,3 +119,84 @@ def test_shift_fill_value_group_logicals() -> None:
     result = df.select(pl.col("d").shift(fill_value=pl.col("d").max(), n=-1).over("s"))
 
     assert result.dtypes == [pl.Date]
+
+
+def test_shift_n_null() -> None:
+    df = pl.DataFrame({"a": pl.Series([1, 2, 3], dtype=pl.Int32)})
+    out = df.shift(None)  # type: ignore[arg-type]
+    expected = pl.DataFrame({"a": pl.Series([None, None, None], dtype=pl.Int32)})
+    assert_frame_equal(out, expected)
+
+    out = df.shift(None, fill_value=1)  # type: ignore[arg-type]
+    assert_frame_equal(out, expected)
+
+    out = df.select(pl.col("a").shift(None))  # type: ignore[arg-type]
+    assert_frame_equal(out, expected)
+
+    out = df.select(pl.col("a").shift(None, fill_value=1))  # type: ignore[arg-type]
+    assert_frame_equal(out, expected)
+
+
+def test_shift_n_nonscalar() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": [4, 5, 6],
+        }
+    )
+    with pytest.raises(
+        ShapeError,
+        match="'n' must be a scalar value",
+    ):
+        # Note: Expressions are not in the signature for `n`, but they work.
+        # We can still verify that n is scalar up-front.
+        df.shift(pl.col("b"), fill_value=1)  # type: ignore[arg-type]
+
+    with pytest.raises(
+        ShapeError,
+        match="'n' must be a scalar value",
+    ):
+        df.select(pl.col("a").shift(pl.col("b"), fill_value=1))
+
+
+def test_shift_fill_value_nonscalar() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": [4, 5, 6],
+        }
+    )
+    with pytest.raises(
+        ShapeError,
+        match="'fill_value' must be a scalar value",
+    ):
+        df.shift(1, fill_value=pl.col("b"))
+
+    with pytest.raises(
+        ShapeError,
+        match="'fill_value' must be a scalar value",
+    ):
+        df.select(pl.col("a").shift(1, fill_value=pl.col("b")))
+
+
+def test_shift_array_list_eval_24672() -> None:
+    s = pl.Series([[[1], [2], [3]]], dtype=pl.List(pl.Array(pl.Int64, 1)))
+    expected = pl.Series([[None, [1], [2]]], dtype=pl.List(pl.Array(pl.Int64, 1)))
+    out = s.list.eval(pl.element().shift())
+    assert_series_equal(expected, out)
+
+
+def test_streaming_shift_25226() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4]})
+
+    q = df.lazy().with_columns(b=pl.col("a").shift(), c=pl.col("a").min())
+    assert_frame_equal(
+        q.collect(),
+        df.with_columns(b=pl.Series([None, 1, 2, 3]), c=pl.lit(1, pl.Int64)),
+    )
+
+    q = df.lazy().with_columns(b=pl.col("a").shift(n=-1), c=pl.col("a").min())
+    assert_frame_equal(
+        q.collect(),
+        df.with_columns(b=pl.Series([2, 3, 4, None]), c=pl.lit(1, pl.Int64)),
+    )

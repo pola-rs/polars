@@ -1,7 +1,9 @@
+# mypy: disable-error-code="redundant-expr"
 from __future__ import annotations
 
 import enum
-from datetime import datetime, timedelta
+import sys
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -16,6 +18,14 @@ from polars.testing.parametric.strategies.data import datetimes
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
+
+
+if sys.version_info >= (3, 11):
+    from enum import StrEnum
+
+    PyStrEnum: type[enum.Enum] | None = StrEnum
+else:
+    PyStrEnum = None
 
 
 @pytest.mark.parametrize(
@@ -69,7 +79,7 @@ def test_lit_ambiguous_datetimes_11379() -> None:
             )
         }
     )
-    for i in range(len(df)):
+    for i in range(df.height):
         result = df.filter(pl.col("ts") >= df["ts"][i])
         expected = df[i:]
         assert_frame_equal(result, expected)
@@ -105,32 +115,62 @@ def test_lit_unsupported_type() -> None:
         pl.lit(pl.LazyFrame({"a": [1, 2, 3]}))
 
 
-def test_lit_enum_input_16668() -> None:
+@pytest.mark.parametrize(
+    "EnumBase",
+    [
+        (enum.Enum,),
+        (str, enum.Enum),
+        *([(PyStrEnum,)] if PyStrEnum is not None else []),
+    ],
+)
+def test_lit_enum_input_16668(EnumBase: tuple[type, ...]) -> None:
     # https://github.com/pola-rs/polars/issues/16668
 
-    class State(str, enum.Enum):
-        VIC = "victoria"
-        NSW = "new south wales"
+    class State(*EnumBase):  # type: ignore[misc]
+        NSW = "New South Wales"
+        QLD = "Queensland"
+        VIC = "Victoria"
 
+    # validate that frame schema has inferred the enum
+    df = pl.DataFrame({"state": [State.NSW, State.VIC]})
+    assert df.schema == {
+        "state": pl.Enum(["New South Wales", "Queensland", "Victoria"])
+    }
+
+    # check use of enum as lit/constraint
     value = State.VIC
+    expected = "Victoria"
 
-    result = pl.lit(value)
-    assert pl.select(result).dtypes[0] == pl.Enum(["victoria", "new south wales"])
-    assert pl.select(result).item() == "victoria"
+    for lit_value in (
+        pl.lit(value),
+        pl.lit(value.value),  # type: ignore[attr-defined]
+    ):
+        assert pl.select(lit_value).item() == expected
+        assert df.filter(state=value).item() == expected
+        assert df.filter(state=lit_value).item() == expected
 
-    result = pl.lit(value, dtype=pl.String)
-    assert pl.select(result).dtypes[0] == pl.String
-    assert pl.select(result).item() == "victoria"
+    assert df.filter(pl.col("state") == State.QLD).is_empty()
+    assert df.filter(pl.col("state") != State.QLD).height == 2
 
 
-def test_lit_enum_input_non_string() -> None:
+@pytest.mark.parametrize(
+    "EnumBase",
+    [
+        (enum.Enum,),
+        (enum.Flag,),
+        (enum.IntEnum,),
+        (enum.IntFlag,),
+        (int, enum.Enum),
+    ],
+)
+def test_lit_enum_input_non_string(EnumBase: tuple[type, ...]) -> None:
     # https://github.com/pola-rs/polars/issues/16668
 
-    class State(int, enum.Enum):
+    class Number(*EnumBase):  # type: ignore[misc]
         ONE = 1
         TWO = 2
 
-    value = State.ONE
+    value = Number.ONE
 
     result = pl.lit(value)
     assert pl.select(result).dtypes[0] == pl.Int32
@@ -162,6 +202,14 @@ def test_datetime_ms(value: datetime) -> None:
     assert result == value.replace(microsecond=expected_microsecond)
 
 
+def test_np_datetime64_as_date_24521() -> None:
+    result = pl.select(pl.lit(np.datetime64("2020-12-27")))
+    series = result.get_column("literal")
+    assert series.dtype == pl.Date
+    assert series[0] == date(2020, 12, 27)
+
+
+@pytest.mark.may_fail_cloud  # @cloud-decimal
 def test_lit_decimal() -> None:
     value = Decimal("0.1")
 
@@ -184,6 +232,7 @@ def test_lit_string_float() -> None:
     assert result == str(value)
 
 
+@pytest.mark.may_fail_cloud  # @cloud-decimal
 @given(s=series(min_size=1, max_size=1, allow_null=False, allowed_dtypes=pl.Decimal))
 def test_lit_decimal_parametric(s: pl.Series) -> None:
     scale = s.dtype.scale  # type: ignore[attr-defined]
@@ -199,7 +248,27 @@ def test_lit_decimal_parametric(s: pl.Series) -> None:
 
 @pytest.mark.parametrize(
     "item",
-    [{}, {"foo": 1}],
+    [pytest.param({}, marks=pytest.mark.may_fail_cloud), {"foo": 1}],
 )
 def test_lit_structs(item: Any) -> None:
     assert pl.select(pl.lit(item)).to_dict(as_series=False) == {"literal": [item]}
+
+
+@pytest.mark.parametrize(
+    ("value", "expected_dtype"),
+    [
+        (np.float32(1.2), pl.Float32),
+        (np.float64(1.2), pl.Float64),
+        (np.int8(1), pl.Int8),
+        (np.uint8(1), pl.UInt8),
+        (np.int16(1), pl.Int16),
+        (np.uint16(1), pl.UInt16),
+        (np.int32(1), pl.Int32),
+        (np.uint32(1), pl.UInt32),
+        (np.int64(1), pl.Int64),
+        (np.uint64(1), pl.UInt64),
+    ],
+)
+def test_numpy_lit(value: Any, expected_dtype: PolarsDataType) -> None:
+    result = pl.select(pl.lit(value)).get_column("literal")
+    assert result.dtype == expected_dtype

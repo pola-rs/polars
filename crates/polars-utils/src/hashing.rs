@@ -2,6 +2,13 @@ use std::hash::{Hash, Hasher};
 
 use crate::nulls::IsNull;
 
+// Hash combine from c++' boost lib.
+#[inline(always)]
+pub fn _boost_hash_combine(l: u64, r: u64) -> u64 {
+    l ^ r.wrapping_add(0x9e3779b9u64.wrapping_add(l << 6).wrapping_add(r >> 2))
+}
+
+#[inline(always)]
 pub const fn folded_multiply(a: u64, b: u64) -> u64 {
     let full = (a as u128).wrapping_mul(b as u128);
     (full as u64) ^ ((full >> 64) as u64)
@@ -101,6 +108,12 @@ impl HashPartitioner {
         ((shuffled as u128 * self.num_partitions as u128) >> 64) as usize
     }
 
+    /// The partition nulls are put into.
+    #[inline(always)]
+    pub fn null_partition(&self) -> usize {
+        0
+    }
+
     #[inline(always)]
     pub fn num_partitions(&self) -> usize {
         self.num_partitions
@@ -136,6 +149,14 @@ impl_hash_partition_as_u64!(i8);
 impl_hash_partition_as_u64!(i16);
 impl_hash_partition_as_u64!(i32);
 impl_hash_partition_as_u64!(i64);
+
+impl DirtyHash for u128 {
+    fn dirty_hash(&self) -> u64 {
+        (*self as u64)
+            .wrapping_mul(RANDOM_ODD)
+            .wrapping_add((*self >> 64) as u64)
+    }
+}
 
 impl DirtyHash for i128 {
     fn dirty_hash(&self) -> u64 {

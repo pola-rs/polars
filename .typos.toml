@@ -5,6 +5,9 @@ extend-exclude = [
   "*.gz",
   "dists.dss",
   "**/images/*",
+  "**/py-polars/src/polars/_utils/nest_asyncio.py",
+  "*.nix",
+  "**/crates/polars-plan/dsl-schema-hashes.json",
 ]
 ignore-hidden = false
 
@@ -18,10 +21,14 @@ arange = "arange"
 ser = "ser"
 splitted = "splitted"
 strat = "strat"
+typ = "typ"
 
 [type.py.extend-identifiers]
 ba = "ba"
 ody = "ody"
+ND = "ND"
+nd = "nd"
+NDArray1D = "NDArray1D"
 
 [type.rust.extend-identifiers]
 ANDed = "ANDed"
@@ -30,5 +37,8 @@ Fo = "Fo"
 ND = "ND"
 nd = "nd"
 NDJson = "NDJson"
+NDJsonSinkNode = "NDJsonSinkNode"
 NDJsonReadOptions = "NDJsonReadOptions"
+NDJsonFileReader = "NDJsonFileReader"
 opt_nd = "opt_nd"
+tpe = "tpe"

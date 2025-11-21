@@ -1,6 +1,6 @@
 use num_traits::Float;
 
-use self::search_sorted::{binary_search_ca, SearchSortedSide};
+use self::search_sorted::{SearchSortedSide, binary_search_ca};
 use crate::prelude::*;
 
 impl<T> ChunkedArray<T>
@@ -36,11 +36,7 @@ where
 
         let search_val = std::iter::once(Some(T::Native::nan()));
         let idx = binary_search_ca(ca, search_val, SearchSortedSide::Right, true)[0] as usize;
-        if idx == ca.len() {
-            idx - 1
-        } else {
-            idx
-        }
+        if idx == ca.len() { idx - 1 } else { idx }
     }
 }
 

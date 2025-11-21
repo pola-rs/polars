@@ -3,13 +3,15 @@ use either::Either;
 use super::specification::try_check_offsets_bounds;
 use super::{Array, GenericBinaryArray, Splitable};
 use crate::array::iterator::NonNullValuesIter;
-use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::Bitmap;
+use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 use crate::offset::{Offset, Offsets, OffsetsBuffer};
 use crate::trusted_len::TrustedLen;
 
+mod builder;
+pub use builder::*;
 mod ffi;
 pub(super) mod fmt;
 mod iterator;
@@ -19,7 +21,9 @@ mod mutable_values;
 pub use mutable_values::*;
 mod mutable;
 pub use mutable::*;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
+#[cfg(feature = "proptest")]
+pub mod proptest;
 
 /// A [`BinaryArray`] is Arrow's semantically equivalent of an immutable `Vec<Option<Vec<u8>>>`.
 /// It implements [`Array`].
@@ -49,7 +53,7 @@ use polars_error::{polars_bail, PolarsResult};
 ///
 /// # Safety
 /// The following invariants hold:
-/// * Two consecutives `offsets` casted (`as`) to `usize` are valid slices of `values`.
+/// * Two consecutive `offsets` cast (`as`) to `usize` are valid slices of `values`.
 /// * `len` is equal to `validity.len()`, when defined.
 #[derive(Clone)]
 pub struct BinaryArray<O: Offset> {
@@ -127,12 +131,12 @@ impl<O: Offset> BinaryArray<O> {
     }
 
     /// Returns an iterator of `Option<&[u8]>` over every element of this array.
-    pub fn iter(&self) -> ZipValidity<&[u8], BinaryValueIter<O>, BitmapIter> {
+    pub fn iter(&self) -> ZipValidity<&[u8], BinaryValueIter<'_, O>, BitmapIter<'_>> {
         ZipValidity::new_with_validity(self.values_iter(), self.validity.as_ref())
     }
 
     /// Returns an iterator of `&[u8]` over every element of this array, ignoring the validity
-    pub fn values_iter(&self) -> BinaryValueIter<O> {
+    pub fn values_iter(&self) -> BinaryValueIter<'_, O> {
         BinaryValueIter::new(self)
     }
 

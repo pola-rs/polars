@@ -26,7 +26,7 @@ impl<T: ViewType + ?Sized> BinViewChunkedBuilder<T> {
     pub fn new(name: PlSmallStr, capacity: usize) -> Self {
         Self {
             chunk_builder: MutableBinaryViewArray::with_capacity(capacity),
-            field: Arc::new(Field::new(name, DataType::from(&T::DATA_TYPE))),
+            field: Arc::new(Field::new(name, DataType::from_arrow_dtype(&T::DATA_TYPE))),
         }
     }
 

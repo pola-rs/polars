@@ -2,9 +2,9 @@ use std::borrow::Cow;
 
 use arrow::array::*;
 use arrow::bitmap::Bitmap;
-use arrow::legacy::kernels::list::array_to_unit_list;
 use arrow::offset::{Offsets, OffsetsBuffer};
-use polars_error::{polars_bail, polars_ensure, PolarsResult};
+use polars_compute::gather::sublist::list::array_to_unit_list;
+use polars_error::{PolarsResult, polars_bail, polars_ensure};
 use polars_utils::format_tuple;
 
 use crate::chunked_array::builder::get_list_builder;
@@ -71,16 +71,6 @@ impl Series {
         (offsets, validities)
     }
 
-    /// For ListArrays, recursively normalizes the offsets to begin from 0, and
-    /// slices excess length from the values array.
-    pub fn list_rechunk_and_trim_to_normalized_offsets(&self) -> Self {
-        if let Some(ca) = self.try_list() {
-            ca.rechunk_and_trim_to_normalized_offsets().into_series()
-        } else {
-            self.rechunk()
-        }
-    }
-
     /// Convert the values of this Series to a ListChunked with a length of 1,
     /// so a Series of `[1, 2, 3]` becomes `[[1, 2, 3]]`.
     pub fn implode(&self) -> PolarsResult<ListChunked> {
@@ -116,7 +106,12 @@ impl Series {
             InvalidOperation: "at least one dimension must be specified"
         );
 
-        let leaf_array = self.get_leaf_array().rechunk();
+        let leaf_array = self
+            .trim_lists_to_normalized_offsets()
+            .as_ref()
+            .unwrap_or(self)
+            .get_leaf_array()
+            .rechunk();
         let size = leaf_array.len();
 
         let mut total_dim_size = 1;
@@ -183,7 +178,7 @@ impl Series {
         );
 
         polars_ensure!(
-            size % total_dim_size == 0,
+            size.is_multiple_of(total_dim_size),
             InvalidOperation: "cannot reshape array of size {} into shape {}", size, format_tuple!(dimensions)
         );
 
@@ -227,7 +222,10 @@ impl Series {
 
         let s = self;
         let s = if let DataType::List(_) = s.dtype() {
-            Cow::Owned(s.explode()?)
+            Cow::Owned(s.explode(ExplodeOptions {
+                empty_as_null: false,
+                keep_nulls: true,
+            })?)
         } else {
             Cow::Borrowed(s)
         };
@@ -239,7 +237,7 @@ impl Series {
         match dimensions.len() {
             1 => {
                 polars_ensure!(
-                    dimensions[0].get().map_or(true, |dim| dim as usize == s_ref.len()),
+                    dimensions[0].get().is_none_or( |dim| dim as usize == s_ref.len()),
                     InvalidOperation: "cannot reshape len {} into shape {:?}", s_ref.len(), dimensions,
                 );
                 Ok(s_ref.clone())
@@ -248,7 +246,7 @@ impl Series {
                 let rows = dimensions[0];
                 let cols = dimensions[1];
 
-                if s_ref.len() == 0_usize {
+                if s_ref.is_empty() {
                     if rows.get_or_infer(0) == 0 && cols.get_or_infer(0) <= 1 {
                         let s = reshape_fast_path(s.name().clone(), s_ref);
                         return Ok(s);
@@ -338,7 +336,14 @@ mod test {
             let out = s.reshape_list(&dims)?;
             assert_eq!(out.len(), list_len);
             assert!(matches!(out.dtype(), DataType::List(_)));
-            assert_eq!(out.explode()?.len(), 4);
+            assert_eq!(
+                out.explode(ExplodeOptions {
+                    empty_as_null: true,
+                    keep_nulls: true,
+                })?
+                .len(),
+                4
+            );
         }
 
         Ok(())

@@ -1,12 +1,12 @@
-use polars_parquet::parquet::encoding::hybrid_rle::encode;
+use polars_parquet::parquet::CowBuffer;
 use polars_parquet::parquet::encoding::Encoding;
+use polars_parquet::parquet::encoding::hybrid_rle::encode;
 use polars_parquet::parquet::error::ParquetResult;
 use polars_parquet::parquet::metadata::Descriptor;
 use polars_parquet::parquet::page::{DataPage, DataPageHeader, DataPageHeaderV1, Page};
 use polars_parquet::parquet::statistics::PrimitiveStatistics;
 use polars_parquet::parquet::types::NativeType;
 use polars_parquet::parquet::write::WriteOptions;
-use polars_parquet::parquet::CowBuffer;
 
 fn unzip_option<T: NativeType>(array: &[Option<T>]) -> ParquetResult<(Vec<u8>, Vec<u8>)> {
     // leave the first 4 bytes announcing the length of the def level

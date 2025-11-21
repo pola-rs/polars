@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 @pytest.mark.slow
@@ -61,3 +62,13 @@ def test_bool_literal_expressions() -> None:
     assert val(True | pl.col("x")) == {"literal": [True, True]}
     assert val(False ^ pl.col("x")) == {"literal": [False, True]}
     assert val(True ^ pl.col("x")) == {"literal": [True, False]}
+
+
+def test_bool_min_max_streaming_23343() -> None:
+    n_rows = pl.thread_pool_size() + 1
+    df = pl.DataFrame({"k": list(range(n_rows)), "a": [True] * n_rows})
+    out_min = df.lazy().group_by("k").agg(pl.col("a").min()).collect(engine="streaming")
+    out_max = df.lazy().group_by("k").agg(pl.col("a").max()).collect(engine="streaming")
+    expected = df
+    assert_frame_equal(out_min.sort("k"), expected)
+    assert_frame_equal(out_max.sort("k"), expected)

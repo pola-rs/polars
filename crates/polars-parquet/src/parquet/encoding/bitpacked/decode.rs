@@ -238,7 +238,7 @@ impl<'a, T: Unpackable> Decoder<'a, T> {
         // Since T::Unpacked::LENGTH is always a power of two and known at compile time. Division,
         // modulo and multiplication are just trivial operators.
         let num_packs = (self.length / T::Unpacked::LENGTH)
-            + usize::from(self.length % T::Unpacked::LENGTH != 0);
+            + usize::from(!self.length.is_multiple_of(T::Unpacked::LENGTH));
 
         // We reserve enough space here for self.length rounded up to the next multiple of
         // T::Unpacked::LENGTH so that we can safely just write into that memory. Otherwise, we
@@ -359,13 +359,11 @@ mod tests {
         let data = &[0b10001000u8, 0b11000110, 0b00011010];
         let num_bits = 3;
         let copies = 99; // 8 * 99 % 32 != 0
-        let expected = std::iter::repeat(&[0u32, 1, 2, 3, 4, 5, 6, 0])
-            .take(copies)
+        let expected = std::iter::repeat_n(&[0u32, 1, 2, 3, 4, 5, 6, 0], copies)
             .flatten()
             .copied()
             .collect::<Vec<_>>();
-        let data = std::iter::repeat(data)
-            .take(copies)
+        let data = std::iter::repeat_n(data, copies)
             .flatten()
             .copied()
             .collect::<Vec<_>>();
@@ -383,14 +381,12 @@ mod tests {
         let data = &[0b10001000u8, 0b11000110, 0b00011010];
         let num_bits = 3;
         let copies = 4;
-        let expected = std::iter::repeat(&[0u32, 1, 2, 3, 4, 5, 6, 0])
-            .take(copies)
+        let expected = std::iter::repeat_n(&[0u32, 1, 2, 3, 4, 5, 6, 0], copies)
             .flatten()
             .copied()
             .chain(std::iter::once(2))
             .collect::<Vec<_>>();
-        let data = std::iter::repeat(data)
-            .take(copies)
+        let data = std::iter::repeat_n(data, copies)
             .flatten()
             .copied()
             .chain(std::iter::once(0b00000010u8))

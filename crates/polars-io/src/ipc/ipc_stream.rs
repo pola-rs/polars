@@ -33,17 +33,18 @@
 //! let df_read = IpcStreamReader::new(buf).finish().unwrap();
 //! assert!(df.equals(&df_read));
 //! ```
-use std::io::{Read, Write};
+use std::io::{Read, Seek, Write};
 use std::path::PathBuf;
 
 use arrow::datatypes::Metadata;
 use arrow::io::ipc::read::{StreamMetadata, StreamState};
 use arrow::io::ipc::write::WriteOptions;
 use arrow::io::ipc::{read, write};
+use polars_core::frame::chunk_df_for_writing;
 use polars_core::prelude::*;
 
 use crate::prelude::*;
-use crate::shared::{finish_reader, ArrowReader};
+use crate::shared::{ArrowReader, finish_reader};
 
 /// Read Arrows Stream IPC format into a DataFrame
 ///
@@ -129,7 +130,7 @@ impl<R: Read> IpcStreamReader<R> {
 
 impl<R> ArrowReader for read::StreamReader<R>
 where
-    R: Read,
+    R: Read + Seek,
 {
     fn next_record_batch(&mut self) -> PolarsResult<Option<RecordBatch>> {
         self.next().map_or(Ok(None), |v| match v {
@@ -144,7 +145,7 @@ where
 
 impl<R> SerReader<R> for IpcStreamReader<R>
 where
-    R: Read,
+    R: Read + Seek,
 {
     fn new(reader: R) -> Self {
         IpcStreamReader {

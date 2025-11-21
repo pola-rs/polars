@@ -2,7 +2,7 @@ use arrow::array::BooleanArray;
 use arrow::bitmap::{self, Bitmap};
 use arrow::datatypes::ArrowDataType;
 
-use super::{if_then_else_validity, IfThenElseKernel};
+use super::{IfThenElseKernel, if_then_else_validity};
 
 impl IfThenElseKernel for BooleanArray {
     type Scalar<'a> = bool;

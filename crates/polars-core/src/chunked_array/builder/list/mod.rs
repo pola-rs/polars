@@ -1,9 +1,6 @@
 mod anonymous;
 mod binary;
 mod boolean;
-#[cfg(feature = "dtype-categorical")]
-mod categorical;
-mod dtypes;
 mod null;
 mod primitive;
 
@@ -12,9 +9,6 @@ use arrow::legacy::array::list::AnonymousBuilder;
 use arrow::legacy::array::null::MutableNullArray;
 pub use binary::*;
 pub use boolean::*;
-#[cfg(feature = "dtype-categorical")]
-use categorical::*;
-use dtypes::*;
 pub use null::*;
 pub use primitive::*;
 
@@ -88,36 +82,11 @@ pub fn get_list_builder(
     list_capacity: usize,
     name: PlSmallStr,
 ) -> Box<dyn ListBuilderTrait> {
-    match inner_type_logical {
-        #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(Some(rev_map), ordering) => {
-            return create_categorical_chunked_listbuilder(
-                name,
-                *ordering,
-                list_capacity,
-                value_capacity,
-                rev_map.clone(),
-            )
-        },
-        #[cfg(feature = "dtype-categorical")]
-        DataType::Enum(Some(rev_map), ordering) => {
-            let list_builder = ListEnumCategoricalChunkedBuilder::new(
-                name,
-                *ordering,
-                list_capacity,
-                value_capacity,
-                (**rev_map).clone(),
-            );
-            return Box::new(list_builder);
-        },
-        _ => {},
-    }
-
     let physical_type = inner_type_logical.to_physical();
 
     match &physical_type {
         #[cfg(feature = "object")]
-        DataType::Object(_, _) => {
+        DataType::Object(_) => {
             let builder = get_object_builder(PlSmallStr::EMPTY, 0).get_list_builder(
                 name,
                 value_capacity,

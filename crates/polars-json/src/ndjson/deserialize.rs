@@ -1,5 +1,5 @@
 use arrow::array::Array;
-use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
+use arrow::compute::concatenate::concatenate_unchecked;
 use simd_json::BorrowedValue;
 
 use super::*;
@@ -34,7 +34,7 @@ pub fn deserialize_iter<'a>(
         if let BorrowedValue::Array(rows) = out {
             super::super::json::deserialize::_deserialize(
                 &rows,
-                dtype.clone(),
+                dtype,
                 allow_extra_fields_in_struct,
             )
         } else {
@@ -66,13 +66,13 @@ pub fn deserialize_iter<'a>(
     buf.push(b']');
 
     if arr.is_empty() {
-        _deserializer(&mut buf, dtype.clone(), allow_extra_fields_in_struct)
+        _deserializer(&mut buf, dtype, allow_extra_fields_in_struct)
     } else {
         arr.push(_deserializer(
             &mut buf,
-            dtype.clone(),
+            dtype,
             allow_extra_fields_in_struct,
         )?);
-        concatenate_owned_unchecked(&arr)
+        concatenate_unchecked(&arr)
     }
 }

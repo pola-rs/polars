@@ -17,7 +17,7 @@ pub fn negate(s: &Series) -> PolarsResult<Series> {
             let precision = ca.precision();
             let scale = ca.scale();
 
-            let out = ca.as_ref().wrapping_neg();
+            let out = ca.physical().wrapping_neg();
             out.into_decimal_unchecked(precision, scale).into_series()
         },
         #[cfg(feature = "dtype-duration")]

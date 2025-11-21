@@ -6,6 +6,8 @@ on:
       - crates/**
       - docs/source/src/rust/**
       - examples/**
+      - pyo3-polars/**
+      - pyo3-polars/Cargo.toml
       - py-polars/src/**
       - py-polars/Cargo.toml
       - Cargo.toml
@@ -17,6 +19,8 @@ on:
       - crates/**
       - docs/source/src/rust/**
       - examples/**
+      - pyo3-polars/**
+      - pyo3-polars/Cargo.toml
       - py-polars/src/**
       - py-polars/Cargo.toml
       - Cargo.toml

@@ -6,6 +6,8 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import ColumnNotFoundError
+from polars.testing import assert_frame_equal
 
 pytestmark = pytest.mark.benchmark()
 
@@ -87,3 +89,38 @@ def east_west() -> tuple[pl.DataFrame, pl.DataFrame]:
     )
 
     return east, west
+
+
+def test_join_where_invalid_column() -> None:
+    df = pl.DataFrame({"x": 1})
+    with pytest.raises(ColumnNotFoundError, match="y"):
+        df.join_where(df, pl.col("x") < pl.col("y"))
+
+    # Nested column
+    df1 = pl.DataFrame({"a": [1, 2, 3], "b": [True, False, True]})
+    df2 = pl.DataFrame(
+        {
+            "a": [2, 3, 4],
+            "c": ["a", "b", "c"],
+        }
+    )
+    with pytest.raises(ColumnNotFoundError, match="d"):
+        df = df1.join_where(
+            df2,
+            ((pl.col("a") - pl.col("b")) > (pl.col("c") == "a").cast(pl.Int32))
+            > (pl.col("a") - pl.col("d")),
+        )
+
+
+def test_join_where_not_elementwise_24134() -> None:
+    out = (
+        pl.LazyFrame({"a": [0, 1, 2, 16]})
+        .join_where(
+            pl.LazyFrame({"b": [0, 1, 2, 16]}),
+            pl.col.a == pl.len(),
+        )
+        .collect()
+    )
+
+    expected = pl.DataFrame({"a": [16, 16, 16, 16], "b": [0, 1, 2, 16]})
+    assert_frame_equal(out, expected, check_row_order=False)

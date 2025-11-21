@@ -104,7 +104,7 @@ macro_rules! unpack {
             // This will get optimised into a jump table
             //
             // @NOTE
-            // This jumptable appoach saves around 2 - 2.5x on performance over no jumptable and no
+            // This jumptable approach saves around 2 - 2.5x on performance over no jumptable and no
             // generics.
             seq_macro!(i in 0..=$bits {
                 if i == num_bits {
@@ -132,7 +132,7 @@ mod tests {
             let mut output = [0; 32];
             unpack32(&input, &mut output, i);
             for (idx, out) in output.iter().enumerate() {
-                assert_eq!(out.trailing_ones() as usize, i, "out[{}] = {}", idx, out);
+                assert_eq!(out.trailing_ones() as usize, i, "out[{idx}] = {out}");
             }
         }
 
@@ -140,7 +140,7 @@ mod tests {
             let mut output = [0; 64];
             unpack64(&input, &mut output, i);
             for (idx, out) in output.iter().enumerate() {
-                assert_eq!(out.trailing_ones() as usize, i, "out[{}] = {}", idx, out);
+                assert_eq!(out.trailing_ones() as usize, i, "out[{idx}] = {out}");
             }
         }
     }

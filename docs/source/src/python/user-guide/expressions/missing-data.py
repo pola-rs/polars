@@ -43,10 +43,10 @@ print(fill_literal_df)
 # --8<-- [end:fill]
 
 # --8<-- [start:fillexpr]
-fill_median_df = df.with_columns(
+fill_expression_df = df.with_columns(
     pl.col("col2").fill_null((2 * pl.col("col1")).cast(pl.Int64)),
 )
-print(fill_median_df)
+print(fill_expression_df)
 # --8<-- [end:fillexpr]
 
 # --8<-- [start:fillstrategy]

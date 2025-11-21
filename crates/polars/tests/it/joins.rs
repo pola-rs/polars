@@ -49,7 +49,7 @@ fn join_empty_datasets() -> PolarsResult<()> {
 
     a.lazy()
         .group_by([col("foo")])
-        .agg([all().last()])
+        .agg([all().as_expr().last()])
         .inner_join(b.lazy(), "foo", "foo")
         .collect()
         .unwrap();

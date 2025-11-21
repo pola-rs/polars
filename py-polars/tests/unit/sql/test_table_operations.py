@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import re
 from datetime import date
+from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
 from polars.exceptions import SQLInterfaceError
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture
@@ -20,6 +24,80 @@ def test_frame() -> pl.LazyFrame:
         },
         schema_overrides={"x": pl.UInt8},
     )
+
+
+def test_create_table() -> None:
+    with pl.SQLContext() as ctx:
+        # test all three ways of creating a new table
+        ctx.execute("CREATE TABLE tbl1(colx VARCHAR, coly DATE, colz ARRAY<DOUBLE>)")
+        ctx.execute("CREATE TABLE tbl2 AS SELECT * FROM tbl1")
+        ctx.execute("CREATE TABLE tbl3 LIKE tbl2")
+        df = ctx.execute("SELECT * FROM tbl3", eager=True)
+
+    df_expected = pl.DataFrame(
+        schema={
+            "colx": pl.String,
+            "coly": pl.Date,
+            "colz": pl.List(pl.Float64),
+        }
+    )
+    assert_frame_equal(df_expected, df)
+
+
+def test_create_table_from_file_io(io_files_path: Path) -> None:
+    foods_csv = io_files_path / "foods*.csv"
+    with pl.SQLContext() as ctx:
+        ctx.execute(
+            query=f"""
+                CREATE TABLE foods AS
+                SELECT * FROM READ_CSV('{foods_csv}')
+            """,
+            eager=True,
+        )
+        df = ctx.execute("SELECT * FROM foods", eager=True)
+        assert df.schema == {
+            "category": pl.String,
+            "calories": pl.Int64,
+            "fats_g": pl.Float64,
+            "sugars_g": pl.Int64,
+        }
+        assert df.shape == (135, 4)
+
+
+@pytest.mark.parametrize(
+    ("delete_constraint", "expected_ids"),
+    [
+        # basic constraints
+        ("WHERE id = 200", {100, 300}),
+        ("WHERE id = 200 OR id = 300", {100}),
+        ("WHERE id IN (200, 300, 400)", {100}),
+        ("WHERE id NOT IN (200, 300, 400)", {200, 300}),
+        # more involved constraints
+        ("WHERE EXTRACT(year FROM dt) >= 2000", {200}),
+        # null-handling (in the data)
+        ("WHERE v1 < 0", {100, 300}),
+        ("WHERE v1 > 0", {200, 300}),
+        # null handling (in the constraint)
+        ("WHERE v1 IS NULL", {100, 200}),
+        ("WHERE v1 IS NOT NULL", {300}),
+        # boolean handling (delete all/none)
+        ("WHERE FALSE", {100, 200, 300}),
+        ("WHERE TRUE", set()),
+        # no constraint; equivalent to TRUNCATE (drop all rows)
+        ("", set()),
+    ],
+)
+def test_delete_clause(delete_constraint: str, expected_ids: set[int]) -> None:
+    df = pl.DataFrame(
+        {
+            "id": [100, 200, 300],
+            "dt": [date(2020, 10, 10), date(1999, 1, 2), date(2001, 7, 5)],
+            "v1": [3.5, -4.0, None],
+            "v2": [10.0, 2.5, -1.5],
+        }
+    )
+    res = df.sql(f"DELETE FROM self {delete_constraint}")
+    assert set(res["id"]) == expected_ids
 
 
 def test_drop_table(test_frame: pl.LazyFrame) -> None:

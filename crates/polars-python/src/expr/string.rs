@@ -1,9 +1,10 @@
 use polars::prelude::*;
 use pyo3::prelude::*;
 
+use super::datatype::PyDataTypeExpr;
+use crate::PyExpr;
 use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
-use crate::PyExpr;
 
 #[pymethods]
 impl PyExpr {
@@ -33,14 +34,14 @@ impl PyExpr {
         &self,
         format: Option<String>,
         time_unit: Option<Wrap<TimeUnit>>,
-        time_zone: Option<Wrap<TimeZone>>,
+        time_zone: Wrap<Option<TimeZone>>,
         strict: bool,
         exact: bool,
         cache: bool,
         ambiguous: Self,
     ) -> Self {
         let format = format.map(|x| x.into());
-        let time_zone = time_zone.map(|x| x.0);
+        let time_zone = time_zone.0;
 
         let options = StrptimeOptions {
             format,
@@ -156,19 +157,31 @@ impl PyExpr {
             .into()
     }
 
+    fn str_normalize(&self, form: Wrap<UnicodeForm>) -> Self {
+        self.inner.clone().str().normalize(form.0).into()
+    }
+
     fn str_reverse(&self) -> Self {
         self.inner.clone().str().reverse().into()
     }
 
-    fn str_pad_start(&self, length: usize, fill_char: char) -> Self {
-        self.inner.clone().str().pad_start(length, fill_char).into()
+    fn str_pad_start(&self, length: PyExpr, fill_char: char) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .pad_start(length.inner, fill_char)
+            .into()
     }
 
-    fn str_pad_end(&self, length: usize, fill_char: char) -> Self {
-        self.inner.clone().str().pad_end(length, fill_char).into()
+    fn str_pad_end(&self, length: PyExpr, fill_char: char) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .pad_end(length.inner, fill_char)
+            .into()
     }
 
-    fn str_zfill(&self, length: Self) -> Self {
+    fn str_zfill(&self, length: PyExpr) -> Self {
         self.inner.clone().str().zfill(length.inner).into()
     }
 
@@ -216,28 +229,18 @@ impl PyExpr {
         self.inner.clone().str().base64_decode(strict).into()
     }
 
-    fn str_to_integer(&self, base: Self, strict: bool) -> Self {
+    #[pyo3(signature = (base, dtype=Some(Wrap(DataType::Int64)), strict=true))]
+    fn str_to_integer(&self, base: Self, dtype: Option<Wrap<DataType>>, strict: bool) -> Self {
         self.inner
             .clone()
             .str()
-            .to_integer(base.inner, strict)
-            .with_fmt("str.to_integer")
+            .to_integer(base.inner, dtype.map(|wrap| wrap.0), strict)
             .into()
     }
 
     #[cfg(feature = "extract_jsonpath")]
-    #[pyo3(signature = (dtype=None, infer_schema_len=None))]
-    fn str_json_decode(
-        &self,
-        dtype: Option<Wrap<DataType>>,
-        infer_schema_len: Option<usize>,
-    ) -> Self {
-        let dtype = dtype.map(|wrap| wrap.0);
-        self.inner
-            .clone()
-            .str()
-            .json_decode(dtype, infer_schema_len)
-            .into()
+    fn str_json_decode(&self, dtype: PyDataTypeExpr) -> Self {
+        self.inner.clone().str().json_decode(dtype.inner).into()
     }
 
     #[cfg(feature = "extract_jsonpath")]
@@ -300,8 +303,8 @@ impl PyExpr {
         self.inner.clone().str().splitn(by.inner, n).into()
     }
 
-    fn str_to_decimal(&self, infer_len: usize) -> Self {
-        self.inner.clone().str().to_decimal(infer_len).into()
+    fn str_to_decimal(&self, scale: usize) -> Self {
+        self.inner.clone().str().to_decimal(scale).into()
     }
 
     #[cfg(feature = "find_many")]
@@ -357,5 +360,13 @@ impl PyExpr {
     #[cfg(feature = "regex")]
     fn str_escape_regex(&self) -> Self {
         self.inner.clone().str().escape_regex().into()
+    }
+
+    #[staticmethod]
+    fn str_format(f_string: String, exprs: Vec<PyExpr>) -> PyResult<Self> {
+        let exprs = exprs.into_iter().map(|e| e.inner).collect::<Vec<_>>();
+        Ok(format_str(&f_string, exprs)
+            .map_err(PyPolarsErr::from)?
+            .into())
     }
 }

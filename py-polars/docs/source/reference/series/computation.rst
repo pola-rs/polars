@@ -46,7 +46,9 @@ Computation
     Series.first
     Series.hash
     Series.hist
+    Series.index_of
     Series.is_between
+    Series.is_close
     Series.kurtosis
     Series.last
     Series.log
@@ -58,16 +60,27 @@ Computation
     Series.rank
     Series.replace
     Series.replace_strict
+    Series.rolling_kurtosis
     Series.rolling_map
     Series.rolling_max
+    Series.rolling_max_by
     Series.rolling_mean
+    Series.rolling_mean_by
     Series.rolling_median
+    Series.rolling_median_by
     Series.rolling_min
+    Series.rolling_min_by
     Series.rolling_quantile
+    Series.rolling_quantile_by
+    Series.rolling_rank
+    Series.rolling_rank_by
     Series.rolling_skew
     Series.rolling_std
+    Series.rolling_std_by
     Series.rolling_sum
+    Series.rolling_sum_by
     Series.rolling_var
+    Series.rolling_var_by
     Series.search_sorted
     Series.sign
     Series.sin

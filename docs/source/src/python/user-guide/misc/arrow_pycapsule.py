@@ -13,7 +13,7 @@ print(polars_df)
 # --8<-- [end:to_polars]
 
 # --8<-- [start:to_arrow_series]
-arrow_chunked_array = pa.array(df["foo"])
+arrow_chunked_array = pa.chunked_array(df["foo"])
 print(arrow_chunked_array)
 # --8<-- [end:to_arrow_series]
 

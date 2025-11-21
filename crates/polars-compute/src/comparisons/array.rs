@@ -3,8 +3,8 @@ use arrow::array::{
     FixedSizeListArray, ListArray, NullArray, PrimitiveArray, StructArray, Utf8Array,
     Utf8ViewArray,
 };
-use arrow::bitmap::utils::count_zeros;
 use arrow::bitmap::Bitmap;
+use arrow::bitmap::utils::count_zeros;
 use arrow::datatypes::ArrowDataType;
 use arrow::legacy::utils::CustomIterTools;
 use arrow::types::{days_ms, f16, i256, months_days_ns};
@@ -23,7 +23,7 @@ where
     if bm.len() == 1 {
         bm
     } else {
-        assert!(width > 0 && bm.len() % width == 0);
+        assert!(width > 0 && bm.len().is_multiple_of(width));
 
         let (slice, offset, _len) = bm.as_slice();
         (0..bm.len() / width)
@@ -182,6 +182,7 @@ macro_rules! compare {
             PH::Primitive(PR::MonthDayNano) => {
                 call_binary!(PrimitiveArray<months_days_ns>)
             },
+            PH::Primitive(PR::MonthDayMillis) => unimplemented!(),
 
             #[cfg(feature = "dtype-array")]
             PH::FixedSizeList => call_binary!(arrow::array::FixedSizeListArray),
@@ -205,10 +206,12 @@ macro_rules! compare {
             PH::Dictionary(I::Int16) => call_binary!(DictionaryArray<i16>),
             PH::Dictionary(I::Int32) => call_binary!(DictionaryArray<i32>),
             PH::Dictionary(I::Int64) => call_binary!(DictionaryArray<i64>),
+            PH::Dictionary(I::Int128) => call_binary!(DictionaryArray<i128>),
             PH::Dictionary(I::UInt8) => call_binary!(DictionaryArray<u8>),
             PH::Dictionary(I::UInt16) => call_binary!(DictionaryArray<u16>),
             PH::Dictionary(I::UInt32) => call_binary!(DictionaryArray<u32>),
             PH::Dictionary(I::UInt64) => call_binary!(DictionaryArray<u64>),
+            PH::Dictionary(I::UInt128) => call_binary!(DictionaryArray<u128>),
         }
     }};
 }

@@ -8,7 +8,7 @@ use polars_utils::mmap::MMapSemaphore;
 use super::ipc_file::IpcReader;
 use crate::mmap::MmapBytesReader;
 use crate::predicates::PhysicalIoExpr;
-use crate::shared::{finish_reader, ArrowReader};
+use crate::shared::{ArrowReader, finish_reader};
 use crate::utils::{apply_projection, columns_to_projection};
 
 impl<R: MmapBytesReader> IpcReader<R> {
@@ -97,9 +97,10 @@ impl ArrowReader for MMapChunkIter<'_> {
                 None => chunk,
                 Some(proj) => {
                     let length = chunk.len();
-                    let cols = chunk.into_arrays();
+                    let (schema, cols) = chunk.into_schema_and_arrays();
+                    let schema = schema.try_project_indices(proj).unwrap();
                     let arrays = proj.iter().map(|i| cols[*i].clone()).collect();
-                    RecordBatch::new(length, arrays)
+                    RecordBatch::new(length, Arc::new(schema), arrays)
                 },
             };
             Ok(Some(chunk))

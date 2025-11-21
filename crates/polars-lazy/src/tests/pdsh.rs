@@ -10,16 +10,18 @@ const fn base_path() -> &'static str {
 fn region() -> LazyFrame {
     let base_path = base_path();
     LazyFrame::scan_ipc(
-        format!("{base_path}/region.feather"),
-        ScanArgsIpc::default(),
+        PlPath::new(&format!("{base_path}/region.feather")),
+        Default::default(),
+        Default::default(),
     )
     .unwrap()
 }
 fn nation() -> LazyFrame {
     let base_path = base_path();
     LazyFrame::scan_ipc(
-        format!("{base_path}/nation.feather"),
-        ScanArgsIpc::default(),
+        PlPath::new(&format!("{base_path}/nation.feather")),
+        Default::default(),
+        Default::default(),
     )
     .unwrap()
 }
@@ -27,22 +29,29 @@ fn nation() -> LazyFrame {
 fn supplier() -> LazyFrame {
     let base_path = base_path();
     LazyFrame::scan_ipc(
-        format!("{base_path}/supplier.feather"),
-        ScanArgsIpc::default(),
+        PlPath::new(&format!("{base_path}/supplier.feather")),
+        Default::default(),
+        Default::default(),
     )
     .unwrap()
 }
 
 fn part() -> LazyFrame {
     let base_path = base_path();
-    LazyFrame::scan_ipc(format!("{base_path}/part.feather"), ScanArgsIpc::default()).unwrap()
+    LazyFrame::scan_ipc(
+        PlPath::new(&format!("{base_path}/part.feather")),
+        Default::default(),
+        Default::default(),
+    )
+    .unwrap()
 }
 
 fn partsupp() -> LazyFrame {
     let base_path = base_path();
     LazyFrame::scan_ipc(
-        format!("{base_path}/partsupp.feather"),
-        ScanArgsIpc::default(),
+        PlPath::new(&format!("{base_path}/partsupp.feather")),
+        Default::default(),
+        Default::default(),
     )
     .unwrap()
 }
@@ -75,9 +84,10 @@ fn test_q2() -> PolarsResult<()> {
             "s_address",
             "s_phone",
             "s_comment",
-        ])])
+        ])
+        .as_expr()])
         .sort_by_exprs(
-            [cols(["s_acctbal", "n_name", "s_name", "p_partkey"])],
+            [cols(["s_acctbal", "n_name", "s_name", "p_partkey"]).as_expr()],
             SortMultipleOptions::default()
                 .with_order_descending_multi([true, false, false, false])
                 .with_maintain_order(true),
@@ -89,7 +99,7 @@ fn test_q2() -> PolarsResult<()> {
         lp_top, lp_arena, ..
     } = q.clone().to_alp_optimized().unwrap();
     assert_eq!(
-        (&lp_arena)
+        lp_arena
             .iter(lp_top)
             .filter(|(_, alp)| matches!(alp, IR::Cache { .. }))
             .count(),
@@ -107,7 +117,7 @@ fn test_q2() -> PolarsResult<()> {
         Field::new("s_phone".into(), DataType::String),
         Field::new("s_comment".into(), DataType::String),
     ]);
-    assert_eq!(&out.schema(), &schema);
+    assert_eq!(&**out.schema(), &schema);
 
     Ok(())
 }

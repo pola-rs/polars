@@ -8,7 +8,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "floats"=> [4.0, 5.8, -6.3],
     )?;
 
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:dfnum]
 
     // --8<-- [start:castnum]
@@ -24,7 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .alias("floats_as_integers"),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:castnum]
 
     // --8<-- [start:downcast]
@@ -47,17 +47,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .select([col("big_integers").strict_cast(DataType::Int8)])
         .collect();
     if let Err(e) = result {
-        println!("{}", e)
+        println!("{e}")
     };
     // --8<-- [end:overflow]
 
     // --8<-- [start:overflow2]
     let result = df
-        .clone()
         .lazy()
         .select([col("big_integers").cast(DataType::Int8)])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:overflow2]
 
     // --8<-- [start:strings]
@@ -68,7 +67,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let result = df
-        .clone()
         .lazy()
         .select([
             col("integers_as_strings").cast(DataType::Int32),
@@ -76,19 +74,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             col("floats").cast(DataType::String),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:strings]
 
     // --8<-- [start:strings2]
     let df = df! ("floats" => ["4.0", "5.8", "- 6 . 3"])?;
 
     let result = df
-        .clone()
         .lazy()
         .select([col("floats").strict_cast(DataType::Float64)])
         .collect();
     if let Err(e) = result {
-        println!("{}", e)
+        println!("{e}")
     };
     // --8<-- [end:strings2]
 
@@ -100,7 +97,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let result = df
-        .clone()
         .lazy()
         .select([
             col("integers").cast(DataType::Boolean),
@@ -108,7 +104,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             col("bools").cast(DataType::UInt8),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:bool]
 
     // --8<-- [start:dates]
@@ -135,7 +131,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .collect()?;
 
     let result = df
-        .clone()
         .lazy()
         .select([
             col("date").cast(DataType::Int64).alias("days_since_epoch"),
@@ -145,7 +140,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             col("time").cast(DataType::Int64).alias("ns_since_midnight"),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:dates]
 
     // --8<-- [start:dates2]
@@ -161,7 +156,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let result = df
-        .clone()
         .lazy()
         .select([
             col("date").dt().to_string("%Y-%m-%d"),
@@ -173,7 +167,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:dates2]
 
     Ok(())

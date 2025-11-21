@@ -1,11 +1,10 @@
 use std::hash::Hash;
+use std::ops::Deref;
 
 use arrow::bitmap::MutableBitmap;
-use polars_compute::unique::{BooleanUniqueKernelState, PrimitiveRangedUniqueState};
-use polars_utils::float::IsFloat;
-use polars_utils::total_ord::{ToTotalOrd, TotalHash};
+use polars_compute::unique::BooleanUniqueKernelState;
+use polars_utils::total_ord::{ToTotalOrd, TotalHash, TotalOrdWrap};
 
-use crate::chunked_array::metadata::MetadataEnv;
 use crate::hashing::_HASHMAP_INIT_SIZE;
 use crate::prelude::*;
 use crate::series::IsSorted;
@@ -27,21 +26,21 @@ fn finish_is_unique_helper(
 }
 
 pub(crate) fn is_unique_helper(
-    groups: GroupsProxy,
+    groups: &GroupPositions,
     len: IdxSize,
     unique_val: bool,
     duplicated_val: bool,
 ) -> BooleanChunked {
     debug_assert_ne!(unique_val, duplicated_val);
 
-    let idx = match groups {
-        GroupsProxy::Idx(groups) => groups
-            .into_iter()
+    let idx = match groups.deref() {
+        GroupsType::Idx(groups) => groups
+            .iter()
             .filter_map(|(first, g)| if g.len() == 1 { Some(first) } else { None })
             .collect::<Vec<_>>(),
-        GroupsProxy::Slice { groups, .. } => groups
-            .into_iter()
-            .filter_map(|[first, len]| if len == 1 { Some(first) } else { None })
+        GroupsType::Slice { groups, .. } => groups
+            .iter()
+            .filter_map(|[first, len]| if *len == 1 { Some(*first) } else { None })
             .collect(),
     };
     finish_is_unique_helper(idx, len, unique_val, duplicated_val)
@@ -55,6 +54,10 @@ impl<T: PolarsObject> ChunkUnique for ObjectChunked<T> {
 
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         polars_bail!(opq = arg_unique, self.dtype());
+    }
+
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        polars_bail!(opq = unique_id, self.dtype());
     }
 }
 
@@ -87,8 +90,7 @@ where
     T: PolarsNumericType,
     T::Native: TotalHash + TotalEq + ToTotalOrd,
     <T::Native as ToTotalOrd>::TotalOrdItem: Hash + Eq + Ord,
-    ChunkedArray<T>:
-        IntoSeries + for<'a> ChunkCompareEq<&'a ChunkedArray<T>, Item = BooleanChunked>,
+    ChunkedArray<T>: for<'a> ChunkCompareEq<&'a ChunkedArray<T>, Item = BooleanChunked>,
 {
     fn unique(&self) -> PolarsResult<Self> {
         // prevent stackoverflow repeated sorted.unique call
@@ -124,33 +126,6 @@ where
                 }
             },
             IsSorted::Not => {
-                if !T::Native::is_float() && MetadataEnv::experimental_enabled() {
-                    let md = self.metadata();
-                    if let (Some(min), Some(max)) = (md.get_min_value(), md.get_max_value()) {
-                        let dtype = self.field.as_ref().dtype().to_arrow(CompatLevel::oldest());
-                        if let Some(mut state) = PrimitiveRangedUniqueState::new(
-                            *min,
-                            *max,
-                            self.null_count() > 0,
-                            dtype,
-                        ) {
-                            use polars_compute::unique::RangedUniqueKernel;
-
-                            for chunk in self.downcast_iter() {
-                                state.append(chunk);
-
-                                if state.has_seen_all() {
-                                    break;
-                                }
-                            }
-
-                            let unique = state.finalize_unique();
-
-                            return Ok(Self::with_chunk(self.name().clone(), unique));
-                        }
-                    }
-                }
-
                 let sorted = self.sort(false);
                 sorted.unique()
             },
@@ -200,6 +175,23 @@ where
             },
         }
     }
+
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        let mut n = IdxSize::from(self.has_nulls());
+        let mut indices = PlHashMap::new();
+        let ids = self
+            .iter()
+            .map(|v| match v {
+                None => 0,
+                Some(v) => *indices.entry(TotalOrdWrap(v)).or_insert_with(|| {
+                    let i = n;
+                    n += 1;
+                    i
+                }),
+            })
+            .collect_trusted();
+        Ok((n, ids))
+    }
 }
 
 impl ChunkUnique for StringChunked {
@@ -214,6 +206,10 @@ impl ChunkUnique for StringChunked {
 
     fn n_unique(&self) -> PolarsResult<usize> {
         self.as_binary().n_unique()
+    }
+
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        self.as_binary().unique_id()
     }
 }
 
@@ -263,15 +259,89 @@ impl ChunkUnique for BinaryChunked {
             Ok(set.len())
         }
     }
+
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        let mut n = IdxSize::from(self.has_nulls());
+        let mut indices = PlHashMap::new();
+        let ids = self
+            .iter()
+            .map(|v| match v {
+                None => 0,
+                Some(v) => *indices.entry(v).or_insert_with(|| {
+                    let i = n;
+                    n += 1;
+                    i
+                }),
+            })
+            .collect_trusted();
+        Ok((n, ids))
+    }
+}
+
+impl ChunkUnique for BinaryOffsetChunked {
+    fn unique(&self) -> PolarsResult<Self> {
+        match self.null_count() {
+            0 => {
+                let mut set =
+                    PlHashSet::with_capacity(std::cmp::min(_HASHMAP_INIT_SIZE, self.len()));
+                for arr in self.downcast_iter() {
+                    set.extend(arr.values_iter())
+                }
+                Ok(set.iter().copied().collect_ca(self.name().clone()))
+            },
+            _ => {
+                let mut set =
+                    PlHashSet::with_capacity(std::cmp::min(_HASHMAP_INIT_SIZE, self.len()));
+                for arr in self.downcast_iter() {
+                    set.extend(arr.iter())
+                }
+                Ok(set.iter().copied().collect_ca(self.name().clone()))
+            },
+        }
+    }
+
+    fn arg_unique(&self) -> PolarsResult<IdxCa> {
+        Ok(IdxCa::from_vec(self.name().clone(), arg_unique_ca!(self)))
+    }
+
+    fn n_unique(&self) -> PolarsResult<usize> {
+        let mut set: PlHashSet<&[u8]> = PlHashSet::new();
+        if self.null_count() > 0 {
+            for arr in self.downcast_iter() {
+                set.extend(arr.into_iter().flatten())
+            }
+            Ok(set.len() + 1)
+        } else {
+            for arr in self.downcast_iter() {
+                set.extend(arr.values_iter())
+            }
+            Ok(set.len())
+        }
+    }
+
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        let mut n = IdxSize::from(self.has_nulls());
+        let mut indices = PlHashMap::new();
+        let ids = self
+            .iter()
+            .map(|v| match v {
+                None => 0,
+                Some(v) => *indices.entry(v).or_insert_with(|| {
+                    let i = n;
+                    n += 1;
+                    i
+                }),
+            })
+            .collect_trusted();
+        Ok((n, ids))
+    }
 }
 
 impl ChunkUnique for BooleanChunked {
     fn unique(&self) -> PolarsResult<Self> {
         use polars_compute::unique::RangedUniqueKernel;
 
-        let dtype = self.field.as_ref().dtype().to_arrow(CompatLevel::oldest());
-        let has_null = self.null_count() > 0;
-        let mut state = BooleanUniqueKernelState::new(has_null, dtype);
+        let mut state = BooleanUniqueKernelState::new();
 
         for arr in self.downcast_iter() {
             state.append(arr);
@@ -288,6 +358,23 @@ impl ChunkUnique for BooleanChunked {
 
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         Ok(IdxCa::from_vec(self.name().clone(), arg_unique_ca!(self)))
+    }
+
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        let num_nulls = self.null_count();
+        let num_trues = self.num_trues();
+
+        let true_idx = IdxSize::from(num_nulls > 0);
+        let false_idx = IdxSize::from(num_nulls > 0) + IdxSize::from(num_trues > 0);
+        let ids = self
+            .iter()
+            .map(|v| match v {
+                None => 0,
+                Some(false) => false_idx,
+                Some(true) => true_idx,
+            })
+            .collect_trusted();
+        Ok((false_idx + 1, ids))
     }
 }
 

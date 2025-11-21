@@ -6,7 +6,7 @@ use crate::parquet::page::DataPage;
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::FixedLenStatistics;
 use crate::read::schema::is_nullable;
-use crate::write::{nested, utils, EncodeNullability, Encoding, Nested, WriteOptions};
+use crate::write::{EncodeNullability, Encoding, Nested, WriteOptions, nested, utils};
 
 pub fn array_to_page(
     array: &FixedSizeBinaryArray,

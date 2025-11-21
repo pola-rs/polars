@@ -16,7 +16,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )])
         .with_columns([col("tz_naive")
             .dt()
-            .replace_time_zone(Some("UTC".into()), lit("raise"), NonExistent::Raise)
+            .replace_time_zone(Some(TimeZone::UTC), lit("raise"), NonExistent::Raise)
             .alias("tz_aware")])
         .collect()?;
 
@@ -30,14 +30,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             col("tz_aware")
                 .dt()
                 .replace_time_zone(
-                    Some("Europe/Brussels".into()),
+                    TimeZone::opt_try_new(Some("Europe/Brussels")).unwrap(),
                     lit("raise"),
                     NonExistent::Raise,
                 )
                 .alias("replace time zone"),
             col("tz_aware")
                 .dt()
-                .convert_time_zone("Asia/Kathmandu".into())
+                .convert_time_zone(
+                    TimeZone::opt_try_new(Some("Asia/Kathmandu"))
+                        .unwrap()
+                        .unwrap(),
+                )
                 .alias("convert time zone"),
             col("tz_aware")
                 .dt()

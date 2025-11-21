@@ -28,7 +28,7 @@ fn test_join_suffix_and_drop() -> PolarsResult<()> {
         .right_on([col("id")])
         .suffix("_sire")
         .finish()
-        .drop(["sireid"])
+        .drop(cols(["sireid"]))
         .collect()?;
 
     assert_eq!(out.shape(), (1, 3));
@@ -92,7 +92,7 @@ fn test_row_number_pd() -> PolarsResult<()> {
 #[test]
 #[cfg(feature = "cse")]
 fn scan_join_same_file() -> PolarsResult<()> {
-    let lf = LazyCsvReader::new(FOODS_CSV).finish()?;
+    let lf = LazyCsvReader::new(PlPath::new(FOODS_CSV)).finish()?;
 
     for cse in [true, false] {
         let partial = lf.clone().select([col("category")]).limit(5);
@@ -166,7 +166,7 @@ fn test_coalesce_toggle_projection_pushdown() -> PolarsResult<()> {
     let node = plan.lp_top;
     let lp_arena = plan.lp_arena;
 
-    assert!((&lp_arena).iter(node).all(|(_, plan)| match plan {
+    assert!(lp_arena.iter(node).all(|(_, plan)| match plan {
         IR::Join { options, .. } => options.args.should_coalesce(),
         _ => true,
     }));

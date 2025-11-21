@@ -67,3 +67,18 @@ def test_map_rows_shifted_chunks() -> None:
         }
     )
     assert_frame_equal(result, expected)
+
+
+def test_map_elements_infer() -> None:
+    lf = pl.LazyFrame(
+        {
+            "a": [1, 2, 3],
+        }
+    )
+    lf = lf.select(pl.col.a.map_elements(lambda v: f"pre-{v}"))
+
+    # this should not go through execution, solely through the planner
+    schema = lf.collect_schema()
+
+    assert schema.names() == ["a"]
+    assert schema.dtypes() == [pl.String]

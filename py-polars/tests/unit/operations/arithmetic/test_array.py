@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 import pytest
 
@@ -11,6 +11,9 @@ from tests.unit.operations.arithmetic.utils import (
     BROADCAST_SERIES_COMBINATIONS,
     EXEC_OP_COMBINATIONS,
 )
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
 
 
 @pytest.mark.parametrize(
@@ -282,6 +285,23 @@ def test_array_arithmetic_values(
     dtypes = [pl.Null, pl.UInt8, pl.Float64]
     l, r, o = materialize_series(None, 3, None)  # noqa: E741
     assert_series_equal(exec_op(l, r, op.truediv), o)
+
+
+@pytest.mark.parametrize(
+    ("lhs_dtype", "rhs_dtype", "expected_dtype"),
+    [
+        (pl.Array(pl.Int64, 2), pl.Int64, pl.Array(pl.Float64, 2)),
+        (pl.Array(pl.Float32, 2), pl.Float32, pl.Array(pl.Float32, 2)),
+        (pl.Array(pl.Duration("us"), 2), pl.Int64, pl.Array(pl.Duration("us"), 2)),
+    ],
+)
+def test_array_truediv_schema(
+    lhs_dtype: PolarsDataType, rhs_dtype: PolarsDataType, expected_dtype: PolarsDataType
+) -> None:
+    schema = {"lhs": lhs_dtype, "rhs": rhs_dtype}
+    df = pl.DataFrame({"lhs": [[None, 10]], "rhs": 2}, schema=schema)
+    result = df.lazy().select(pl.col("lhs").truediv("rhs")).collect_schema()["lhs"]
+    assert result == expected_dtype
 
 
 def test_array_literal_broadcast() -> None:

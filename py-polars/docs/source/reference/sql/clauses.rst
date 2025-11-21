@@ -27,6 +27,8 @@ SQL Clauses
      - Specify the number of rows returned.
    * - :ref:`OFFSET <offset>`
      - Skip a specified number of rows.
+   * - :ref:`WINDOW <window>`
+     - Define named window specifications for window functions.
 
 
 .. _select:
@@ -167,8 +169,7 @@ Combines rows from two or more tables based on a related column.
     # └──────┴───────┴─────┘
 
     pl.sql("""
-      SELECT COLUMNS('^\w+$')
-      FROM df1 NATURAL INNER JOIN df2
+      SELECT * FROM df1 NATURAL INNER JOIN df2
     """).collect()
     # shape: (2, 3)
     # ┌─────┬───────┬─────┐
@@ -351,3 +352,79 @@ Skip a number of rows before starting to return rows from the query.
     # │ c   ┆ 40  │
     # │ b   ┆ 30  │
     # └─────┴─────┘
+
+.. _window:
+
+WINDOW
+------
+Define named window specifications that can be referenced by window functions.
+
+**Example:**
+
+One window, multiple expressions:
+
+.. code-block:: python
+
+    df = pl.DataFrame({
+        "id": [1, 2, 3, 4, 5, 6, 7],
+        "category": ["A", "A", "A", "B", "B", "B", "C"],
+        "value": [20, 10, 30, 15, 50, 30, 35],
+    })
+    df.sql("""
+      SELECT
+        category,
+        value,
+        SUM(value) OVER w AS "w:sum",
+        MIN(value) OVER w AS "w:min",
+        AVG(value) OVER w AS "w:avg",
+      FROM self
+      WINDOW w AS (PARTITION BY category ORDER BY value)
+      ORDER BY category, value
+    """)
+    # shape: (7, 5)
+    # ┌──────────┬───────┬───────┬───────┬───────────┐
+    # │ category ┆ value ┆ w:sum ┆ w:min ┆ w:avg     │
+    # │ ---      ┆ ---   ┆ ---   ┆ ---   ┆ ---       │
+    # │ str      ┆ i64   ┆ i64   ┆ i64   ┆ f64       │
+    # ╞══════════╪═══════╪═══════╪═══════╪═══════════╡
+    # │ A        ┆ 10    ┆ 10    ┆ 10    ┆ 20.0      │
+    # │ A        ┆ 20    ┆ 30    ┆ 10    ┆ 20.0      │
+    # │ A        ┆ 30    ┆ 60    ┆ 10    ┆ 20.0      │
+    # │ B        ┆ 15    ┆ 15    ┆ 15    ┆ 31.666667 │
+    # │ B        ┆ 30    ┆ 45    ┆ 15    ┆ 31.666667 │
+    # │ B        ┆ 50    ┆ 95    ┆ 15    ┆ 31.666667 │
+    # │ C        ┆ 35    ┆ 35    ┆ 35    ┆ 35.0      │
+    # └──────────┴───────┴───────┴───────┴───────────┘
+
+Multiple windows, multiple expressions:
+
+.. code-block:: python
+
+    df.sql("""
+      SELECT
+        category,
+        value,
+        AVG(value) OVER w1 AS category_avg,
+        SUM(value) OVER w2 AS running_value,
+        COUNT(*) OVER w3 AS total_count
+      FROM self
+      WINDOW
+        w1 AS (PARTITION BY category),
+        w2 AS (ORDER BY value),
+        w3 AS ()
+      ORDER BY category, value
+    """)
+    # shape: (7, 5)
+    # ┌──────────┬───────┬──────────────┬───────────────┬─────────────┐
+    # │ category ┆ value ┆ category_avg ┆ running_value ┆ total_count │
+    # │ ---      ┆ ---   ┆ ---          ┆ ---           ┆ ---         │
+    # │ str      ┆ i64   ┆ f64          ┆ i64           ┆ u32         │
+    # ╞══════════╪═══════╪══════════════╪═══════════════╪═════════════╡
+    # │ A        ┆ 10    ┆ 20.0         ┆ 10            ┆ 7           │
+    # │ A        ┆ 20    ┆ 20.0         ┆ 45            ┆ 7           │
+    # │ A        ┆ 30    ┆ 20.0         ┆ 75            ┆ 7           │
+    # │ B        ┆ 15    ┆ 31.666667    ┆ 25            ┆ 7           │
+    # │ B        ┆ 30    ┆ 31.666667    ┆ 105           ┆ 7           │
+    # │ B        ┆ 50    ┆ 31.666667    ┆ 190           ┆ 7           │
+    # │ C        ┆ 35    ┆ 35.0         ┆ 140           ┆ 7           │
+    # └──────────┴───────┴──────────────┴───────────────┴─────────────┘

@@ -1,4 +1,4 @@
-use polars_error::{feature_gated, PolarsResult};
+use polars_error::{PolarsResult, feature_gated};
 
 use super::list_utils::NumericOp;
 use super::{ArrayChunked, FixedSizeListType, IntoSeries, NumOpsDispatchInner, Series};
@@ -643,7 +643,7 @@ mod inner {
                 | v @ (BinaryOpApplyType::PrimitiveToList, Broadcast::Left)
                 | v @ (BinaryOpApplyType::PrimitiveToList, Broadcast::NoBroadcast) => {
                     if cfg!(debug_assertions) {
-                        panic!("operation was not re-written: {:?}", v)
+                        panic!("operation was not re-written: {v:?}")
                     } else {
                         unreachable!()
                     }
@@ -808,7 +808,7 @@ mod inner {
             FixedSizeListArray::new(
                 ArrowDataType::FixedSizeList(
                     Box::new(ArrowField::new(
-                        PlSmallStr::from_static("item"),
+                        LIST_VALUES_NAME,
                         inner_array.dtype().clone(),
                         // is_nullable, we always set true otherwise the Eq kernels would panic
                         // when they assert == on the arrow `Field`

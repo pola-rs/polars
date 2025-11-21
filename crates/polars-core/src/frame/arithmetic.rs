@@ -2,9 +2,9 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use rayon::prelude::*;
 
+use crate::POOL;
 use crate::prelude::*;
 use crate::utils::try_get_supertype;
-use crate::POOL;
 
 /// Get the supertype that is valid for all columns in the [`DataFrame`].
 /// This reduces casting of the rhs in arithmetic.

@@ -1,8 +1,8 @@
 use polars::prelude::*;
 use pyo3::prelude::*;
 
-use crate::conversion::Wrap;
 use crate::PyExpr;
+use crate::conversion::Wrap;
 
 #[pymethods]
 impl PyExpr {
@@ -28,31 +28,24 @@ impl PyExpr {
         self.inner.clone().dt().offset_by(by.inner).into()
     }
 
-    fn dt_epoch_seconds(&self) -> Self {
-        self.inner
-            .clone()
-            .map(
-                |s| {
-                    s.take_materialized_series()
-                        .timestamp(TimeUnit::Milliseconds)
-                        .map(|ca| Some((ca / 1000).into_column()))
-                },
-                GetOutput::from_type(DataType::Int64),
-            )
-            .into()
-    }
-
     fn dt_with_time_unit(&self, time_unit: Wrap<TimeUnit>) -> Self {
         self.inner.clone().dt().with_time_unit(time_unit.0).into()
     }
 
     #[cfg(feature = "timezones")]
-    fn dt_convert_time_zone(&self, time_zone: String) -> Self {
-        self.inner
+    fn dt_convert_time_zone(&self, time_zone: String) -> PyResult<Self> {
+        use crate::utils::to_py_err;
+
+        Ok(self
+            .inner
             .clone()
             .dt()
-            .convert_time_zone(time_zone.into())
-            .into()
+            .convert_time_zone(
+                TimeZone::opt_try_new(Some(PlSmallStr::from(time_zone)))
+                    .map_err(to_py_err)?
+                    .unwrap_or(TimeZone::UTC),
+            )
+            .into())
     }
 
     fn dt_cast_time_unit(&self, time_unit: Wrap<TimeUnit>) -> Self {
@@ -66,12 +59,19 @@ impl PyExpr {
         time_zone: Option<String>,
         ambiguous: Self,
         non_existent: Wrap<NonExistent>,
-    ) -> Self {
-        self.inner
+    ) -> PyResult<Self> {
+        use crate::utils::to_py_err;
+
+        Ok(self
+            .inner
             .clone()
             .dt()
-            .replace_time_zone(time_zone.map(|x| x.into()), ambiguous.inner, non_existent.0)
-            .into()
+            .replace_time_zone(
+                TimeZone::opt_try_new(time_zone.map(PlSmallStr::from_string)).map_err(to_py_err)?,
+                ambiguous.inner,
+                non_existent.0,
+            )
+            .into())
     }
 
     fn dt_truncate(&self, every: Self) -> Self {
@@ -99,6 +99,33 @@ impl PyExpr {
         self.inner.clone().dt().round(every.inner).into()
     }
 
+    fn dt_replace(
+        &self,
+        year: Self,
+        month: Self,
+        day: Self,
+        hour: Self,
+        minute: Self,
+        second: Self,
+        microsecond: Self,
+        ambiguous: Self,
+    ) -> Self {
+        self.inner
+            .clone()
+            .dt()
+            .replace(
+                year.inner,
+                month.inner,
+                day.inner,
+                hour.inner,
+                minute.inner,
+                second.inner,
+                microsecond.inner,
+                ambiguous.inner,
+            )
+            .into()
+    }
+
     fn dt_combine(&self, time: Self, time_unit: Wrap<TimeUnit>) -> Self {
         self.inner
             .clone()
@@ -115,6 +142,13 @@ impl PyExpr {
     fn dt_year(&self) -> Self {
         self.inner.clone().dt().year().into()
     }
+    fn dt_is_business_day(&self, week_mask: [bool; 7], holidays: Vec<i32>) -> Self {
+        self.inner
+            .clone()
+            .dt()
+            .is_business_day(week_mask, holidays)
+            .into()
+    }
     fn dt_is_leap_year(&self) -> Self {
         self.inner.clone().dt().is_leap_year().into()
     }
@@ -126,6 +160,9 @@ impl PyExpr {
     }
     fn dt_month(&self) -> Self {
         self.inner.clone().dt().month().into()
+    }
+    fn dt_days_in_month(&self) -> Self {
+        self.inner.clone().dt().days_in_month().into()
     }
     fn dt_week(&self) -> Self {
         self.inner.clone().dt().week().into()
@@ -169,25 +206,33 @@ impl PyExpr {
     fn dt_timestamp(&self, time_unit: Wrap<TimeUnit>) -> Self {
         self.inner.clone().dt().timestamp(time_unit.0).into()
     }
-    fn dt_total_days(&self) -> Self {
-        self.inner.clone().dt().total_days().into()
+    fn dt_total_days(&self, fractional: bool) -> Self {
+        self.inner.clone().dt().total_days(fractional).into()
     }
-    fn dt_total_hours(&self) -> Self {
-        self.inner.clone().dt().total_hours().into()
+    fn dt_total_hours(&self, fractional: bool) -> Self {
+        self.inner.clone().dt().total_hours(fractional).into()
     }
-    fn dt_total_minutes(&self) -> Self {
-        self.inner.clone().dt().total_minutes().into()
+    fn dt_total_minutes(&self, fractional: bool) -> Self {
+        self.inner.clone().dt().total_minutes(fractional).into()
     }
-    fn dt_total_seconds(&self) -> Self {
-        self.inner.clone().dt().total_seconds().into()
+    fn dt_total_seconds(&self, fractional: bool) -> Self {
+        self.inner.clone().dt().total_seconds(fractional).into()
     }
-    fn dt_total_milliseconds(&self) -> Self {
-        self.inner.clone().dt().total_milliseconds().into()
+    fn dt_total_milliseconds(&self, fractional: bool) -> Self {
+        self.inner
+            .clone()
+            .dt()
+            .total_milliseconds(fractional)
+            .into()
     }
-    fn dt_total_microseconds(&self) -> Self {
-        self.inner.clone().dt().total_microseconds().into()
+    fn dt_total_microseconds(&self, fractional: bool) -> Self {
+        self.inner
+            .clone()
+            .dt()
+            .total_microseconds(fractional)
+            .into()
     }
-    fn dt_total_nanoseconds(&self) -> Self {
-        self.inner.clone().dt().total_nanoseconds().into()
+    fn dt_total_nanoseconds(&self, fractional: bool) -> Self {
+        self.inner.clone().dt().total_nanoseconds(fractional).into()
     }
 }

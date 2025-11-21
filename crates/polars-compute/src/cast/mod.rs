@@ -3,17 +3,20 @@
 mod binary_to;
 mod binview_to;
 mod boolean_to;
+#[cfg(feature = "dtype-decimal")]
 mod decimal_to;
 mod dictionary_to;
 mod primitive_to;
 mod utf8_to;
 
+use arrow::bitmap::MutableBitmap;
 pub use binary_to::*;
 #[cfg(feature = "dtype-decimal")]
 pub use binview_to::binview_to_decimal;
-use binview_to::binview_to_primitive_dyn;
+use binview_to::utf8view_to_primitive_dyn;
 pub use binview_to::utf8view_to_utf8;
 pub use boolean_to::*;
+#[cfg(feature = "dtype-decimal")]
 pub use decimal_to::*;
 pub mod temporal;
 use arrow::array::*;
@@ -24,8 +27,9 @@ use binview_to::{
     binview_to_dictionary, utf8view_to_date32_dyn, utf8view_to_dictionary,
     utf8view_to_naive_timestamp_dyn, view_to_binary,
 };
+pub use binview_to::{binview_to_fixed_size_list_dyn, binview_to_primitive_dyn};
 use dictionary_to::*;
-use polars_error::{polars_bail, polars_ensure, polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_utils::IdxSize;
 pub use primitive_to::*;
 use temporal::utf8view_to_timestamp;
@@ -167,7 +171,7 @@ fn cast_fixed_size_list_to_list<O: Offset>(
     ))
 }
 
-fn cast_list_to_fixed_size_list<O: Offset>(
+pub(super) fn cast_list_to_fixed_size_list<O: Offset>(
     list: &ListArray<O>,
     inner: &Field,
     size: usize,
@@ -222,9 +226,8 @@ fn cast_list_to_fixed_size_list<O: Offset>(
                 }
             }
         }
-        let take_values = unsafe {
-            arrow::compute::take::take_unchecked(list.values().as_ref(), &indices.freeze())
-        };
+        let take_values =
+            unsafe { crate::gather::take_unchecked(list.values().as_ref(), &indices.freeze()) };
 
         cast(take_values.as_ref(), inner.dtype(), options)?
     };
@@ -236,6 +239,127 @@ fn cast_list_to_fixed_size_list<O: Offset>(
         list.validity().cloned(),
     )
     .map_err(|_| polars_err!(ComputeError: "not all elements have the specified width {size}"))
+}
+
+fn cast_list_uint8_to_binary<O: Offset>(list: &ListArray<O>) -> PolarsResult<BinaryViewArray> {
+    let mut views = Vec::with_capacity(list.len());
+    let mut result_validity = MutableBitmap::from_len_set(list.len());
+
+    let u8array: &PrimitiveArray<u8> = list.values().as_any().downcast_ref().unwrap();
+    let slice = u8array.values().as_slice();
+    let mut cloned_buffers = vec![u8array.values().clone()];
+    let mut buf_index = 0;
+    let mut previous_buf_lengths = 0;
+    let validity = list.validity();
+    let internal_validity = list.values().validity();
+    let offsets = list.offsets();
+
+    let mut all_views_inline = true;
+
+    // In a View for BinaryViewArray, both length and offset are u32.
+    #[cfg(not(test))]
+    const MAX_BUF_SIZE: usize = u32::MAX as usize;
+
+    // This allows us to test some invariants without using 4GB of RAM; see mod
+    // tests below.
+    #[cfg(test)]
+    const MAX_BUF_SIZE: usize = 15;
+
+    for index in 0..list.len() {
+        // Check if there's a null instead of a list:
+        if let Some(validity) = validity {
+            // SAFETY: We are generating indexes limited to < list.len().
+            debug_assert!(index < validity.len());
+            if unsafe { !validity.get_bit_unchecked(index) } {
+                debug_assert!(index < result_validity.len());
+                unsafe {
+                    result_validity.set_unchecked(index, false);
+                }
+                views.push(View::default());
+                continue;
+            }
+        }
+
+        // SAFETY: We are generating indexes limited to < list.len().
+        debug_assert!(index < offsets.len());
+        let (start, end) = unsafe { offsets.start_end_unchecked(index) };
+        let length = end - start;
+        polars_ensure!(
+            length <= MAX_BUF_SIZE,
+            InvalidOperation: format!("when casting to BinaryView, list lengths must be <= {MAX_BUF_SIZE}")
+        );
+
+        // Check if the list contains nulls:
+        if let Some(internal_validity) = internal_validity {
+            if internal_validity.null_count_range(start, length) > 0 {
+                debug_assert!(index < result_validity.len());
+                unsafe {
+                    result_validity.set_unchecked(index, false);
+                }
+                views.push(View::default());
+                continue;
+            }
+        }
+
+        if end - previous_buf_lengths > MAX_BUF_SIZE {
+            // View offsets must fit in u32 (or smaller value when running Rust
+            // tests), and we've determined the end of the next view will be
+            // past that.
+            buf_index += 1;
+            let (previous, next) = cloned_buffers
+                .last()
+                .unwrap()
+                .split_at(start - previous_buf_lengths);
+            debug_assert!(previous.len() <= MAX_BUF_SIZE);
+            previous_buf_lengths += previous.len();
+            *(cloned_buffers.last_mut().unwrap()) = previous;
+            cloned_buffers.push(next);
+        }
+        let view = View::new_from_bytes(
+            &slice[start..end],
+            buf_index,
+            (start - previous_buf_lengths) as u32,
+        );
+        if !view.is_inline() {
+            all_views_inline = false;
+        }
+        debug_assert_eq!(
+            unsafe { view.get_slice_unchecked(&cloned_buffers) },
+            &slice[start..end]
+        );
+        views.push(view);
+    }
+
+    // Optimization: don't actually need buffers if Views are all inline.
+    if all_views_inline {
+        cloned_buffers.clear();
+    }
+
+    let result_buffers = cloned_buffers.into_boxed_slice().into();
+    let result = if cfg!(debug_assertions) {
+        // A safer wrapper around new_unchecked_unknown_md; it shouldn't ever
+        // fail in practice.
+        BinaryViewArrayGeneric::try_new(
+            ArrowDataType::BinaryView,
+            views.into(),
+            result_buffers,
+            result_validity.into(),
+        )?
+    } else {
+        unsafe {
+            BinaryViewArrayGeneric::new_unchecked_unknown_md(
+                ArrowDataType::BinaryView,
+                views.into(),
+                result_buffers,
+                result_validity.into(),
+                // We could compute this ourselves, but we want to make this code
+                // match debug_assertions path as much as possible.
+                None,
+            )
+        }
+    };
+
+    Ok(result)
 }
 
 pub fn cast_default(array: &dyn Array, to_type: &ArrowDataType) -> PolarsResult<Box<dyn Array>> {
@@ -259,6 +383,7 @@ pub fn cast_unchecked(array: &dyn Array, to_type: &ArrowDataType) -> PolarsResul
 /// * Fixed Size List to List: the underlying data type is cast
 /// * List to Fixed Size List: the offsets are checked for valid order, then the
 ///   underlying type is cast.
+/// * List of UInt8 to Binary: the list of integers becomes binary data, nulls in the list means it becomes a null
 /// * Struct to Struct: the underlying fields are cast.
 /// * PrimitiveArray to List: a list array with 1 value per slot is created
 /// * Date32 and Date64: precision lost when going to higher interval
@@ -268,7 +393,7 @@ pub fn cast_unchecked(array: &dyn Array, to_type: &ArrowDataType) -> PolarsResul
 ///
 /// Unsupported Casts
 /// * non-`StructArray` to `StructArray` or `StructArray` to non-`StructArray`
-/// * List to primitive
+/// * List to primitive (other than UInt8)
 /// * Utf8 to boolean
 /// * Interval and duration
 pub fn cast(
@@ -327,6 +452,14 @@ pub fn cast(
             options,
         )
         .map(|x| x.boxed()),
+        (List(field), BinaryView) if matches!(field.dtype(), UInt8) => {
+            cast_list_uint8_to_binary::<i32>(array.as_any().downcast_ref().unwrap())
+                .map(|arr| arr.boxed())
+        },
+        (LargeList(field), BinaryView) if matches!(field.dtype(), UInt8) => {
+            cast_list_uint8_to_binary::<i64>(array.as_any().downcast_ref().unwrap())
+                .map(|arr| arr.boxed())
+        },
         (BinaryView, _) => match to_type {
             Utf8View => array
                 .as_any()
@@ -394,16 +527,20 @@ pub fn cast(
             match to_type {
                 BinaryView => Ok(arr.to_binview().boxed()),
                 LargeUtf8 => Ok(binview_to::utf8view_to_utf8::<i64>(arr).boxed()),
-                UInt8 => binview_to_primitive_dyn::<u8>(&arr.to_binview(), to_type, options),
-                UInt16 => binview_to_primitive_dyn::<u16>(&arr.to_binview(), to_type, options),
-                UInt32 => binview_to_primitive_dyn::<u32>(&arr.to_binview(), to_type, options),
-                UInt64 => binview_to_primitive_dyn::<u64>(&arr.to_binview(), to_type, options),
-                Int8 => binview_to_primitive_dyn::<i8>(&arr.to_binview(), to_type, options),
-                Int16 => binview_to_primitive_dyn::<i16>(&arr.to_binview(), to_type, options),
-                Int32 => binview_to_primitive_dyn::<i32>(&arr.to_binview(), to_type, options),
-                Int64 => binview_to_primitive_dyn::<i64>(&arr.to_binview(), to_type, options),
-                Float32 => binview_to_primitive_dyn::<f32>(&arr.to_binview(), to_type, options),
-                Float64 => binview_to_primitive_dyn::<f64>(&arr.to_binview(), to_type, options),
+                UInt8 => utf8view_to_primitive_dyn::<u8>(arr, to_type, options),
+                UInt16 => utf8view_to_primitive_dyn::<u16>(arr, to_type, options),
+                UInt32 => utf8view_to_primitive_dyn::<u32>(arr, to_type, options),
+                UInt64 => utf8view_to_primitive_dyn::<u64>(arr, to_type, options),
+                #[cfg(feature = "dtype-u128")]
+                UInt128 => utf8view_to_primitive_dyn::<u128>(arr, to_type, options),
+                Int8 => utf8view_to_primitive_dyn::<i8>(arr, to_type, options),
+                Int16 => utf8view_to_primitive_dyn::<i16>(arr, to_type, options),
+                Int32 => utf8view_to_primitive_dyn::<i32>(arr, to_type, options),
+                Int64 => utf8view_to_primitive_dyn::<i64>(arr, to_type, options),
+                #[cfg(feature = "dtype-i128")]
+                Int128 => utf8view_to_primitive_dyn::<i128>(arr, to_type, options),
+                Float32 => utf8view_to_primitive_dyn::<f32>(arr, to_type, options),
+                Float64 => utf8view_to_primitive_dyn::<f64>(arr, to_type, options),
                 Timestamp(time_unit, None) => {
                     utf8view_to_naive_timestamp_dyn(array, time_unit.to_owned())
                 },
@@ -415,6 +552,10 @@ pub fn cast(
                 )
                 .map(|arr| arr.boxed()),
                 Date32 => utf8view_to_date32_dyn(array),
+                #[cfg(feature = "dtype-decimal")]
+                Decimal(precision, scale) => {
+                    Ok(binview_to_decimal(&arr.to_binview(), *precision, *scale).to_boxed())
+                },
                 _ => polars_bail!(InvalidOperation:
                     "casting from {from_type:?} to {to_type:?} not supported",
                 ),
@@ -426,12 +567,17 @@ pub fn cast(
             UInt16 => primitive_to_boolean_dyn::<u16>(array, to_type.clone()),
             UInt32 => primitive_to_boolean_dyn::<u32>(array, to_type.clone()),
             UInt64 => primitive_to_boolean_dyn::<u64>(array, to_type.clone()),
+            #[cfg(feature = "dtype-u128")]
+            UInt128 => primitive_to_boolean_dyn::<u128>(array, to_type.clone()),
             Int8 => primitive_to_boolean_dyn::<i8>(array, to_type.clone()),
             Int16 => primitive_to_boolean_dyn::<i16>(array, to_type.clone()),
             Int32 => primitive_to_boolean_dyn::<i32>(array, to_type.clone()),
             Int64 => primitive_to_boolean_dyn::<i64>(array, to_type.clone()),
+            #[cfg(feature = "dtype-i128")]
+            Int128 => primitive_to_boolean_dyn::<i128>(array, to_type.clone()),
             Float32 => primitive_to_boolean_dyn::<f32>(array, to_type.clone()),
             Float64 => primitive_to_boolean_dyn::<f64>(array, to_type.clone()),
+            #[cfg(feature = "dtype-decimal")]
             Decimal(_, _) => primitive_to_boolean_dyn::<i128>(array, to_type.clone()),
             _ => polars_bail!(InvalidOperation:
                 "casting from {from_type:?} to {to_type:?} not supported",
@@ -442,10 +588,14 @@ pub fn cast(
             UInt16 => boolean_to_primitive_dyn::<u16>(array),
             UInt32 => boolean_to_primitive_dyn::<u32>(array),
             UInt64 => boolean_to_primitive_dyn::<u64>(array),
+            #[cfg(feature = "dtype-u128")]
+            UInt128 => boolean_to_primitive_dyn::<u128>(array),
             Int8 => boolean_to_primitive_dyn::<i8>(array),
             Int16 => boolean_to_primitive_dyn::<i16>(array),
             Int32 => boolean_to_primitive_dyn::<i32>(array),
             Int64 => boolean_to_primitive_dyn::<i64>(array),
+            #[cfg(feature = "dtype-i128")]
+            Int128 => boolean_to_primitive_dyn::<i128>(array),
             Float32 => boolean_to_primitive_dyn::<f32>(array),
             Float64 => boolean_to_primitive_dyn::<f64>(array),
             Utf8View => boolean_to_utf8view_dyn(array),
@@ -512,10 +662,14 @@ pub fn cast(
             UInt16 => binary_to_primitive_dyn::<i64, u16>(array, to_type, options),
             UInt32 => binary_to_primitive_dyn::<i64, u32>(array, to_type, options),
             UInt64 => binary_to_primitive_dyn::<i64, u64>(array, to_type, options),
+            #[cfg(feature = "dtype-u128")]
+            UInt128 => binary_to_primitive_dyn::<i64, u128>(array, to_type, options),
             Int8 => binary_to_primitive_dyn::<i64, i8>(array, to_type, options),
             Int16 => binary_to_primitive_dyn::<i64, i16>(array, to_type, options),
             Int32 => binary_to_primitive_dyn::<i64, i32>(array, to_type, options),
             Int64 => binary_to_primitive_dyn::<i64, i64>(array, to_type, options),
+            #[cfg(feature = "dtype-i128")]
+            Int128 => binary_to_primitive_dyn::<i64, i128>(array, to_type, options),
             Float32 => binary_to_primitive_dyn::<i64, f32>(array, to_type, options),
             Float64 => binary_to_primitive_dyn::<i64, f64>(array, to_type, options),
             Binary => {
@@ -549,90 +703,180 @@ pub fn cast(
         (UInt8, UInt16) => primitive_to_primitive_dyn::<u8, u16>(array, to_type, as_options),
         (UInt8, UInt32) => primitive_to_primitive_dyn::<u8, u32>(array, to_type, as_options),
         (UInt8, UInt64) => primitive_to_primitive_dyn::<u8, u64>(array, to_type, as_options),
+        #[cfg(feature = "dtype-u128")]
+        (UInt8, UInt128) => primitive_to_primitive_dyn::<u8, u128>(array, to_type, options),
         (UInt8, Int8) => primitive_to_primitive_dyn::<u8, i8>(array, to_type, options),
         (UInt8, Int16) => primitive_to_primitive_dyn::<u8, i16>(array, to_type, options),
         (UInt8, Int32) => primitive_to_primitive_dyn::<u8, i32>(array, to_type, options),
         (UInt8, Int64) => primitive_to_primitive_dyn::<u8, i64>(array, to_type, options),
+        #[cfg(feature = "dtype-i128")]
+        (UInt8, Int128) => primitive_to_primitive_dyn::<u8, i128>(array, to_type, options),
         (UInt8, Float32) => primitive_to_primitive_dyn::<u8, f32>(array, to_type, as_options),
         (UInt8, Float64) => primitive_to_primitive_dyn::<u8, f64>(array, to_type, as_options),
+        #[cfg(feature = "dtype-decimal")]
         (UInt8, Decimal(p, s)) => integer_to_decimal_dyn::<u8>(array, *p, *s),
 
         (UInt16, UInt8) => primitive_to_primitive_dyn::<u16, u8>(array, to_type, options),
         (UInt16, UInt32) => primitive_to_primitive_dyn::<u16, u32>(array, to_type, as_options),
         (UInt16, UInt64) => primitive_to_primitive_dyn::<u16, u64>(array, to_type, as_options),
+        #[cfg(feature = "dtype-u128")]
+        (UInt16, UInt128) => primitive_to_primitive_dyn::<u16, u128>(array, to_type, options),
         (UInt16, Int8) => primitive_to_primitive_dyn::<u16, i8>(array, to_type, options),
         (UInt16, Int16) => primitive_to_primitive_dyn::<u16, i16>(array, to_type, options),
         (UInt16, Int32) => primitive_to_primitive_dyn::<u16, i32>(array, to_type, options),
         (UInt16, Int64) => primitive_to_primitive_dyn::<u16, i64>(array, to_type, options),
+        #[cfg(feature = "dtype-i128")]
+        (UInt16, Int128) => primitive_to_primitive_dyn::<u16, i128>(array, to_type, options),
         (UInt16, Float32) => primitive_to_primitive_dyn::<u16, f32>(array, to_type, as_options),
         (UInt16, Float64) => primitive_to_primitive_dyn::<u16, f64>(array, to_type, as_options),
+        #[cfg(feature = "dtype-decimal")]
         (UInt16, Decimal(p, s)) => integer_to_decimal_dyn::<u16>(array, *p, *s),
 
         (UInt32, UInt8) => primitive_to_primitive_dyn::<u32, u8>(array, to_type, options),
         (UInt32, UInt16) => primitive_to_primitive_dyn::<u32, u16>(array, to_type, options),
         (UInt32, UInt64) => primitive_to_primitive_dyn::<u32, u64>(array, to_type, as_options),
+        #[cfg(feature = "dtype-u128")]
+        (UInt32, UInt128) => primitive_to_primitive_dyn::<u32, u128>(array, to_type, options),
         (UInt32, Int8) => primitive_to_primitive_dyn::<u32, i8>(array, to_type, options),
         (UInt32, Int16) => primitive_to_primitive_dyn::<u32, i16>(array, to_type, options),
         (UInt32, Int32) => primitive_to_primitive_dyn::<u32, i32>(array, to_type, options),
         (UInt32, Int64) => primitive_to_primitive_dyn::<u32, i64>(array, to_type, options),
+        #[cfg(feature = "dtype-i128")]
+        (UInt32, Int128) => primitive_to_primitive_dyn::<u32, i128>(array, to_type, options),
         (UInt32, Float32) => primitive_to_primitive_dyn::<u32, f32>(array, to_type, as_options),
         (UInt32, Float64) => primitive_to_primitive_dyn::<u32, f64>(array, to_type, as_options),
+        #[cfg(feature = "dtype-decimal")]
         (UInt32, Decimal(p, s)) => integer_to_decimal_dyn::<u32>(array, *p, *s),
 
         (UInt64, UInt8) => primitive_to_primitive_dyn::<u64, u8>(array, to_type, options),
         (UInt64, UInt16) => primitive_to_primitive_dyn::<u64, u16>(array, to_type, options),
         (UInt64, UInt32) => primitive_to_primitive_dyn::<u64, u32>(array, to_type, options),
+        #[cfg(feature = "dtype-u128")]
+        (UInt64, UInt128) => primitive_to_primitive_dyn::<u64, u128>(array, to_type, options),
         (UInt64, Int8) => primitive_to_primitive_dyn::<u64, i8>(array, to_type, options),
         (UInt64, Int16) => primitive_to_primitive_dyn::<u64, i16>(array, to_type, options),
         (UInt64, Int32) => primitive_to_primitive_dyn::<u64, i32>(array, to_type, options),
         (UInt64, Int64) => primitive_to_primitive_dyn::<u64, i64>(array, to_type, options),
+        #[cfg(feature = "dtype-i128")]
+        (UInt64, Int128) => primitive_to_primitive_dyn::<u64, i128>(array, to_type, options),
         (UInt64, Float32) => primitive_to_primitive_dyn::<u64, f32>(array, to_type, as_options),
         (UInt64, Float64) => primitive_to_primitive_dyn::<u64, f64>(array, to_type, as_options),
+        #[cfg(feature = "dtype-decimal")]
         (UInt64, Decimal(p, s)) => integer_to_decimal_dyn::<u64>(array, *p, *s),
+
+        #[cfg(feature = "dtype-u128")]
+        (UInt128, UInt8) => primitive_to_primitive_dyn::<u128, u8>(array, to_type, options),
+        #[cfg(feature = "dtype-u128")]
+        (UInt128, UInt16) => primitive_to_primitive_dyn::<u128, u16>(array, to_type, options),
+        #[cfg(feature = "dtype-u128")]
+        (UInt128, UInt32) => primitive_to_primitive_dyn::<u128, u32>(array, to_type, options),
+        #[cfg(feature = "dtype-u128")]
+        (UInt128, UInt64) => primitive_to_primitive_dyn::<u128, u64>(array, to_type, options),
+        #[cfg(feature = "dtype-u128")]
+        (UInt128, Int8) => primitive_to_primitive_dyn::<u128, i8>(array, to_type, options),
+        #[cfg(feature = "dtype-u128")]
+        (UInt128, Int16) => primitive_to_primitive_dyn::<u128, i16>(array, to_type, options),
+        #[cfg(feature = "dtype-u128")]
+        (UInt128, Int32) => primitive_to_primitive_dyn::<u128, i32>(array, to_type, options),
+        #[cfg(feature = "dtype-u128")]
+        (UInt128, Int64) => primitive_to_primitive_dyn::<u128, i64>(array, to_type, options),
+        #[cfg(all(feature = "dtype-u128", feature = "dtype-i128"))]
+        (UInt128, Int128) => primitive_to_primitive_dyn::<u128, i128>(array, to_type, options),
+        #[cfg(feature = "dtype-u128")]
+        (UInt128, Float32) => primitive_to_primitive_dyn::<u128, f32>(array, to_type, as_options),
+        #[cfg(feature = "dtype-u128")]
+        (UInt128, Float64) => primitive_to_primitive_dyn::<u128, f64>(array, to_type, as_options),
+        #[cfg(all(feature = "dtype-u128", feature = "dtype-decimal"))]
+        (UInt128, Decimal(p, s)) => integer_to_decimal_dyn::<u128>(array, *p, *s),
 
         (Int8, UInt8) => primitive_to_primitive_dyn::<i8, u8>(array, to_type, options),
         (Int8, UInt16) => primitive_to_primitive_dyn::<i8, u16>(array, to_type, options),
         (Int8, UInt32) => primitive_to_primitive_dyn::<i8, u32>(array, to_type, options),
         (Int8, UInt64) => primitive_to_primitive_dyn::<i8, u64>(array, to_type, options),
+        #[cfg(feature = "dtype-u128")]
+        (Int8, UInt128) => primitive_to_primitive_dyn::<i8, u128>(array, to_type, options),
         (Int8, Int16) => primitive_to_primitive_dyn::<i8, i16>(array, to_type, as_options),
         (Int8, Int32) => primitive_to_primitive_dyn::<i8, i32>(array, to_type, as_options),
         (Int8, Int64) => primitive_to_primitive_dyn::<i8, i64>(array, to_type, as_options),
+        #[cfg(feature = "dtype-i128")]
+        (Int8, Int128) => primitive_to_primitive_dyn::<i8, i128>(array, to_type, as_options),
         (Int8, Float32) => primitive_to_primitive_dyn::<i8, f32>(array, to_type, as_options),
         (Int8, Float64) => primitive_to_primitive_dyn::<i8, f64>(array, to_type, as_options),
+        #[cfg(feature = "dtype-decimal")]
         (Int8, Decimal(p, s)) => integer_to_decimal_dyn::<i8>(array, *p, *s),
 
         (Int16, UInt8) => primitive_to_primitive_dyn::<i16, u8>(array, to_type, options),
         (Int16, UInt16) => primitive_to_primitive_dyn::<i16, u16>(array, to_type, options),
         (Int16, UInt32) => primitive_to_primitive_dyn::<i16, u32>(array, to_type, options),
         (Int16, UInt64) => primitive_to_primitive_dyn::<i16, u64>(array, to_type, options),
+        #[cfg(feature = "dtype-u128")]
+        (Int16, UInt128) => primitive_to_primitive_dyn::<i16, u128>(array, to_type, options),
         (Int16, Int8) => primitive_to_primitive_dyn::<i16, i8>(array, to_type, options),
         (Int16, Int32) => primitive_to_primitive_dyn::<i16, i32>(array, to_type, as_options),
         (Int16, Int64) => primitive_to_primitive_dyn::<i16, i64>(array, to_type, as_options),
+        #[cfg(feature = "dtype-i128")]
+        (Int16, Int128) => primitive_to_primitive_dyn::<i16, i128>(array, to_type, as_options),
         (Int16, Float32) => primitive_to_primitive_dyn::<i16, f32>(array, to_type, as_options),
         (Int16, Float64) => primitive_to_primitive_dyn::<i16, f64>(array, to_type, as_options),
+        #[cfg(feature = "dtype-decimal")]
         (Int16, Decimal(p, s)) => integer_to_decimal_dyn::<i16>(array, *p, *s),
 
         (Int32, UInt8) => primitive_to_primitive_dyn::<i32, u8>(array, to_type, options),
         (Int32, UInt16) => primitive_to_primitive_dyn::<i32, u16>(array, to_type, options),
         (Int32, UInt32) => primitive_to_primitive_dyn::<i32, u32>(array, to_type, options),
         (Int32, UInt64) => primitive_to_primitive_dyn::<i32, u64>(array, to_type, options),
+        #[cfg(feature = "dtype-u128")]
+        (Int32, UInt128) => primitive_to_primitive_dyn::<i32, u128>(array, to_type, options),
         (Int32, Int8) => primitive_to_primitive_dyn::<i32, i8>(array, to_type, options),
         (Int32, Int16) => primitive_to_primitive_dyn::<i32, i16>(array, to_type, options),
         (Int32, Int64) => primitive_to_primitive_dyn::<i32, i64>(array, to_type, as_options),
+        #[cfg(feature = "dtype-i128")]
+        (Int32, Int128) => primitive_to_primitive_dyn::<i32, i128>(array, to_type, as_options),
         (Int32, Float32) => primitive_to_primitive_dyn::<i32, f32>(array, to_type, as_options),
         (Int32, Float64) => primitive_to_primitive_dyn::<i32, f64>(array, to_type, as_options),
+        #[cfg(feature = "dtype-decimal")]
         (Int32, Decimal(p, s)) => integer_to_decimal_dyn::<i32>(array, *p, *s),
 
         (Int64, UInt8) => primitive_to_primitive_dyn::<i64, u8>(array, to_type, options),
         (Int64, UInt16) => primitive_to_primitive_dyn::<i64, u16>(array, to_type, options),
         (Int64, UInt32) => primitive_to_primitive_dyn::<i64, u32>(array, to_type, options),
         (Int64, UInt64) => primitive_to_primitive_dyn::<i64, u64>(array, to_type, options),
+        #[cfg(feature = "dtype-u128")]
+        (Int64, UInt128) => primitive_to_primitive_dyn::<i64, u128>(array, to_type, options),
         (Int64, Int8) => primitive_to_primitive_dyn::<i64, i8>(array, to_type, options),
         (Int64, Int16) => primitive_to_primitive_dyn::<i64, i16>(array, to_type, options),
         (Int64, Int32) => primitive_to_primitive_dyn::<i64, i32>(array, to_type, options),
+        #[cfg(feature = "dtype-i128")]
+        (Int64, Int128) => primitive_to_primitive_dyn::<i64, i128>(array, to_type, options),
         (Int64, Float32) => primitive_to_primitive_dyn::<i64, f32>(array, to_type, options),
         (Int64, Float64) => primitive_to_primitive_dyn::<i64, f64>(array, to_type, as_options),
+        #[cfg(feature = "dtype-decimal")]
         (Int64, Decimal(p, s)) => integer_to_decimal_dyn::<i64>(array, *p, *s),
+
+        #[cfg(feature = "dtype-i128")]
+        (Int128, UInt8) => primitive_to_primitive_dyn::<i128, u8>(array, to_type, options),
+        #[cfg(feature = "dtype-i128")]
+        (Int128, UInt16) => primitive_to_primitive_dyn::<i128, u16>(array, to_type, options),
+        #[cfg(feature = "dtype-i128")]
+        (Int128, UInt32) => primitive_to_primitive_dyn::<i128, u32>(array, to_type, options),
+        #[cfg(feature = "dtype-i128")]
+        (Int128, UInt64) => primitive_to_primitive_dyn::<i128, u64>(array, to_type, options),
+        #[cfg(all(feature = "dtype-u128", feature = "dtype-i128"))]
+        (Int128, UInt128) => primitive_to_primitive_dyn::<i128, u128>(array, to_type, options),
+        #[cfg(feature = "dtype-i128")]
+        (Int128, Int8) => primitive_to_primitive_dyn::<i128, i8>(array, to_type, options),
+        #[cfg(feature = "dtype-i128")]
+        (Int128, Int16) => primitive_to_primitive_dyn::<i128, i16>(array, to_type, options),
+        #[cfg(feature = "dtype-i128")]
+        (Int128, Int32) => primitive_to_primitive_dyn::<i128, i32>(array, to_type, options),
+        #[cfg(feature = "dtype-i128")]
+        (Int128, Int64) => primitive_to_primitive_dyn::<i128, i64>(array, to_type, options),
+        #[cfg(feature = "dtype-i128")]
+        (Int128, Float32) => primitive_to_primitive_dyn::<i128, f32>(array, to_type, options),
+        #[cfg(feature = "dtype-i128")]
+        (Int128, Float64) => primitive_to_primitive_dyn::<i128, f64>(array, to_type, as_options),
+        #[cfg(all(feature = "dtype-i128", feature = "dtype-decimal"))]
+        (Int128, Decimal(p, s)) => integer_to_decimal_dyn::<i128>(array, *p, *s),
 
         (Float16, Float32) => {
             let from = array.as_any().downcast_ref().unwrap();
@@ -643,34 +887,59 @@ pub fn cast(
         (Float32, UInt16) => primitive_to_primitive_dyn::<f32, u16>(array, to_type, options),
         (Float32, UInt32) => primitive_to_primitive_dyn::<f32, u32>(array, to_type, options),
         (Float32, UInt64) => primitive_to_primitive_dyn::<f32, u64>(array, to_type, options),
+        #[cfg(feature = "dtype-u128")]
+        (Float32, UInt128) => primitive_to_primitive_dyn::<f32, u128>(array, to_type, options),
         (Float32, Int8) => primitive_to_primitive_dyn::<f32, i8>(array, to_type, options),
         (Float32, Int16) => primitive_to_primitive_dyn::<f32, i16>(array, to_type, options),
         (Float32, Int32) => primitive_to_primitive_dyn::<f32, i32>(array, to_type, options),
         (Float32, Int64) => primitive_to_primitive_dyn::<f32, i64>(array, to_type, options),
+        #[cfg(feature = "dtype-i128")]
+        (Float32, Int128) => primitive_to_primitive_dyn::<f32, i128>(array, to_type, options),
         (Float32, Float64) => primitive_to_primitive_dyn::<f32, f64>(array, to_type, as_options),
+        #[cfg(feature = "dtype-decimal")]
         (Float32, Decimal(p, s)) => float_to_decimal_dyn::<f32>(array, *p, *s),
 
         (Float64, UInt8) => primitive_to_primitive_dyn::<f64, u8>(array, to_type, options),
         (Float64, UInt16) => primitive_to_primitive_dyn::<f64, u16>(array, to_type, options),
         (Float64, UInt32) => primitive_to_primitive_dyn::<f64, u32>(array, to_type, options),
         (Float64, UInt64) => primitive_to_primitive_dyn::<f64, u64>(array, to_type, options),
+        #[cfg(feature = "dtype-u128")]
+        (Float64, UInt128) => primitive_to_primitive_dyn::<f64, u128>(array, to_type, options),
         (Float64, Int8) => primitive_to_primitive_dyn::<f64, i8>(array, to_type, options),
         (Float64, Int16) => primitive_to_primitive_dyn::<f64, i16>(array, to_type, options),
         (Float64, Int32) => primitive_to_primitive_dyn::<f64, i32>(array, to_type, options),
         (Float64, Int64) => primitive_to_primitive_dyn::<f64, i64>(array, to_type, options),
+        #[cfg(feature = "dtype-i128")]
+        (Float64, Int128) => primitive_to_primitive_dyn::<f64, i128>(array, to_type, options),
         (Float64, Float32) => primitive_to_primitive_dyn::<f64, f32>(array, to_type, options),
+        #[cfg(feature = "dtype-decimal")]
         (Float64, Decimal(p, s)) => float_to_decimal_dyn::<f64>(array, *p, *s),
 
+        #[cfg(feature = "dtype-decimal")]
         (Decimal(_, _), UInt8) => decimal_to_integer_dyn::<u8>(array),
+        #[cfg(feature = "dtype-decimal")]
         (Decimal(_, _), UInt16) => decimal_to_integer_dyn::<u16>(array),
+        #[cfg(feature = "dtype-decimal")]
         (Decimal(_, _), UInt32) => decimal_to_integer_dyn::<u32>(array),
+        #[cfg(feature = "dtype-decimal")]
         (Decimal(_, _), UInt64) => decimal_to_integer_dyn::<u64>(array),
+        #[cfg(all(feature = "dtype-decimal", feature = "dtype-u128"))]
+        (Decimal(_, _), UInt128) => decimal_to_integer_dyn::<u128>(array),
+        #[cfg(feature = "dtype-decimal")]
         (Decimal(_, _), Int8) => decimal_to_integer_dyn::<i8>(array),
+        #[cfg(feature = "dtype-decimal")]
         (Decimal(_, _), Int16) => decimal_to_integer_dyn::<i16>(array),
+        #[cfg(feature = "dtype-decimal")]
         (Decimal(_, _), Int32) => decimal_to_integer_dyn::<i32>(array),
+        #[cfg(feature = "dtype-decimal")]
         (Decimal(_, _), Int64) => decimal_to_integer_dyn::<i64>(array),
+        #[cfg(all(feature = "dtype-decimal", feature = "dtype-i128"))]
+        (Decimal(_, _), Int128) => decimal_to_integer_dyn::<i128>(array),
+        #[cfg(feature = "dtype-decimal")]
         (Decimal(_, _), Float32) => decimal_to_float_dyn::<f32>(array),
+        #[cfg(feature = "dtype-decimal")]
         (Decimal(_, _), Float64) => decimal_to_float_dyn::<f64>(array),
+        #[cfg(feature = "dtype-decimal")]
         (Decimal(_, _), Decimal(to_p, to_s)) => decimal_to_decimal_dyn(array, *to_p, *to_s),
         // end numeric casts
 
@@ -745,7 +1014,7 @@ fn cast_to_dictionary<K: DictionaryKey>(
 ) -> PolarsResult<Box<dyn Array>> {
     let array = cast(array, dict_value_type, options)?;
     let array = array.as_ref();
-    match *dict_value_type {
+    match dict_value_type.to_logical_type() {
         ArrowDataType::Int8 => primitive_to_dictionary_dyn::<i8, K>(array),
         ArrowDataType::Int16 => primitive_to_dictionary_dyn::<i16, K>(array),
         ArrowDataType::Int32 => primitive_to_dictionary_dyn::<i32, K>(array),
@@ -784,10 +1053,12 @@ fn from_to_binview(
         UInt16 => primitive_to_binview_dyn::<u16>(array),
         UInt32 => primitive_to_binview_dyn::<u32>(array),
         UInt64 => primitive_to_binview_dyn::<u64>(array),
+        UInt128 => primitive_to_binview_dyn::<u128>(array),
         Int8 => primitive_to_binview_dyn::<i8>(array),
         Int16 => primitive_to_binview_dyn::<i16>(array),
         Int32 => primitive_to_binview_dyn::<i32>(array),
         Int64 => primitive_to_binview_dyn::<i64>(array),
+        Int128 => primitive_to_binview_dyn::<i128>(array),
         Float32 => primitive_to_binview_dyn::<f32>(array),
         Float64 => primitive_to_binview_dyn::<f64>(array),
         Binary => binary_to_binview::<i32>(array.as_any().downcast_ref().unwrap()),
@@ -798,4 +1069,115 @@ fn from_to_binview(
         ),
     };
     Ok(binview)
+}
+
+#[cfg(test)]
+mod tests {
+    use arrow::offset::OffsetsBuffer;
+    use polars_error::PolarsError;
+
+    use super::*;
+
+    /// When cfg(test), offsets for ``View``s generated by
+    /// cast_list_uint8_to_binary() are limited to max value of 3, so buffers
+    /// need to be split aggressively.
+    #[test]
+    fn cast_list_uint8_to_binary_across_buffer_max_size() {
+        let dtype =
+            ArrowDataType::List(Box::new(Field::new("".into(), ArrowDataType::UInt8, true)));
+        let values = PrimitiveArray::from_slice((0u8..20).collect::<Vec<_>>()).boxed();
+        let list_u8 = ListArray::try_new(
+            dtype,
+            unsafe { OffsetsBuffer::new_unchecked(vec![0, 13, 18, 20].into()) },
+            values,
+            None,
+        )
+        .unwrap();
+
+        let binary = cast(
+            &list_u8,
+            &ArrowDataType::BinaryView,
+            CastOptionsImpl::default(),
+        )
+        .unwrap();
+        let binary_array: &BinaryViewArray = binary.as_ref().as_any().downcast_ref().unwrap();
+        assert_eq!(
+            binary_array
+                .values_iter()
+                .map(|s| s.to_vec())
+                .collect::<Vec<Vec<u8>>>(),
+            vec![
+                vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+                vec![13, 14, 15, 16, 17],
+                vec![18, 19]
+            ]
+        );
+        // max offset of 15 so we need to split:
+        assert_eq!(
+            binary_array
+                .data_buffers()
+                .iter()
+                .map(|buf| buf.len())
+                .collect::<Vec<_>>(),
+            vec![13, 7]
+        );
+    }
+
+    /// Arrow spec requires views to fit in a single buffer. When cfg(test),
+    /// buffers generated by cast_list_uint8_to_binary are of size 15 or
+    /// smaller, so a list of size 16 should cause an error.
+    #[test]
+    fn cast_list_uint8_to_binary_errors_too_large_list() {
+        let values = PrimitiveArray::from_slice(vec![0u8; 16]);
+        let dtype =
+            ArrowDataType::List(Box::new(Field::new("".into(), ArrowDataType::UInt8, true)));
+        let list_u8 = ListArray::new(
+            dtype,
+            OffsetsBuffer::one_with_length(16),
+            values.boxed(),
+            None,
+        );
+
+        let err = cast(
+            &list_u8,
+            &ArrowDataType::BinaryView,
+            CastOptionsImpl::default(),
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            PolarsError::InvalidOperation(msg)
+                if msg.as_ref() == "when casting to BinaryView, list lengths must be <= 15"
+        ));
+    }
+
+    /// When all views are <=12, cast_list_uint8_to_binary drops buffers in the
+    /// result because all views are inline.
+    #[test]
+    fn cast_list_uint8_to_binary_drops_small_buffers() {
+        let values = PrimitiveArray::from_slice(vec![10u8; 12]);
+        let dtype =
+            ArrowDataType::List(Box::new(Field::new("".into(), ArrowDataType::UInt8, true)));
+        let list_u8 = ListArray::new(
+            dtype,
+            OffsetsBuffer::one_with_length(12),
+            values.boxed(),
+            None,
+        );
+        let binary = cast(
+            &list_u8,
+            &ArrowDataType::BinaryView,
+            CastOptionsImpl::default(),
+        )
+        .unwrap();
+        let binary_array: &BinaryViewArray = binary.as_ref().as_any().downcast_ref().unwrap();
+        assert!(binary_array.data_buffers().is_empty());
+        assert_eq!(
+            binary_array
+                .values_iter()
+                .map(|s| s.to_vec())
+                .collect::<Vec<Vec<u8>>>(),
+            vec![vec![10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10],]
+        );
+    }
 }

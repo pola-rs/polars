@@ -68,10 +68,11 @@ use std::io::Write;
 use std::num::NonZeroUsize;
 use std::ops::Deref;
 
+use arrow::array::LIST_VALUES_NAME;
 use arrow::legacy::conversion::chunk_to_struct;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 use polars_json::json::write::FallibleStreamingIterator;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -82,10 +83,8 @@ use crate::prelude::*;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct JsonWriterOptions {
-    /// maintain the order the data was processed
-    pub maintain_order: bool,
-}
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub struct JsonWriterOptions {}
 
 /// The format to use to write the DataFrame to JSON: `Json` (a JSON array)
 /// or `JsonLines` (each row output on a separate line).
@@ -148,7 +147,7 @@ where
             .iter()
             .map(|s| {
                 #[cfg(feature = "object")]
-                polars_ensure!(!matches!(s.dtype(), DataType::Object(_, _)), ComputeError: "cannot write 'Object' datatype to json");
+                polars_ensure!(!matches!(s.dtype(), DataType::Object(_)), ComputeError: "cannot write 'Object' datatype to json");
                 Ok(s.field().to_arrow(CompatLevel::newest()))
             })
             .collect::<PolarsResult<Vec<_>>>()?;
@@ -193,7 +192,7 @@ where
             .iter()
             .map(|s| {
                 #[cfg(feature = "object")]
-                polars_ensure!(!matches!(s.dtype(), DataType::Object(_, _)), ComputeError: "cannot write 'Object' datatype to json");
+                polars_ensure!(!matches!(s.dtype(), DataType::Object(_)), ComputeError: "cannot write 'Object' datatype to json");
                 Ok(s.field().to_arrow(CompatLevel::newest()))
             })
             .collect::<PolarsResult<Vec<_>>>()?;
@@ -332,7 +331,7 @@ where
 
                 let dtype = if let BorrowedValue::Array(_) = &json_value {
                     ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
-                        PlSmallStr::from_static("item"),
+                        LIST_VALUES_NAME,
                         dtype,
                         true,
                     )))

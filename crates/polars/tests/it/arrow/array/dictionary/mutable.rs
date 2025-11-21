@@ -100,7 +100,7 @@ fn try_empty() {
     assert!(MutableDictionaryArray::<i32, _>::try_empty(values.clone()).is_err());
 }
 
-fn test_push_ex<M, T>(values: Vec<T>, gen: impl Fn(usize) -> T)
+fn test_push_ex<M, T>(values: Vec<T>, gen_: impl Fn(usize) -> T)
 where
     M: MutableArray + Indexable + TryPush<Option<T>> + TryExtend<Option<T>> + Default + 'static,
     M::Type: Eq + Hash + Debug,
@@ -133,9 +133,9 @@ where
             assert_eq!(arr.len(), 3 + i);
         }
         for i in 0..256 - set.len() {
-            push!(Some(gen(i))).unwrap();
+            push!(Some(gen_(i))).unwrap();
         }
-        assert!(push!(Some(gen(256))).is_err());
+        assert!(push!(Some(gen_(256))).is_err());
     }
 }
 

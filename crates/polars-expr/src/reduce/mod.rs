@@ -1,8 +1,16 @@
+#![allow(unsafe_op_in_unsafe_fn)]
+mod any_all;
+#[cfg(feature = "approx_unique")]
+mod approx_n_unique;
+#[cfg(feature = "bitwise")]
+mod bitwise;
 mod convert;
+mod count;
+mod first_last;
+mod first_last_nonnull;
 mod len;
 mod mean;
 mod min_max;
-mod partition;
 mod sum;
 mod var_std;
 
@@ -11,9 +19,12 @@ use std::borrow::Cow;
 use std::marker::PhantomData;
 
 use arrow::array::{Array, PrimitiveArray, StaticArray};
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
 pub use convert::into_reduction;
+pub use min_max::{new_max_reduction, new_min_reduction};
 use polars_core::prelude::*;
+
+use crate::EvictIdx;
 
 /// A reduction with groups.
 ///
@@ -32,25 +43,52 @@ pub trait GroupedReduction: Any + Send + Sync {
     fn resize(&mut self, num_groups: IdxSize);
 
     /// Updates the specified group with the given values.
-    fn update_group(&mut self, values: &Series, group_idx: IdxSize) -> PolarsResult<()>;
-
-    /// Updates this GroupedReduction with new values. values[i] should
-    /// be added to reduction self[group_idxs[i]].
     ///
-    /// # Safety
-    /// group_idxs[i] < self.num_groups() for all i.
-    unsafe fn update_groups(&mut self, values: &Series, group_idxs: &[IdxSize])
-        -> PolarsResult<()>;
-
-    /// Combines this GroupedReduction with another. Group other[i]
-    /// should be combined into group self[group_idxs[i]].
-    ///
-    /// # Safety
-    /// group_idxs[i] < self.num_groups() for all i.
-    unsafe fn combine(
+    /// For order-sensitive grouped reductions, seq_id can be used to resolve
+    /// order between calls/multiple reductions.
+    fn update_group(
         &mut self,
-        other: &dyn GroupedReduction,
+        values: &Column,
+        group_idx: IdxSize,
+        seq_id: u64,
+    ) -> PolarsResult<()>;
+
+    /// Updates this GroupedReduction with new values. values[subset[i]] should
+    /// be added to reduction self[group_idxs[i]]. For order-sensitive grouped
+    /// reductions, seq_id can be used to resolve order between calls/multiple
+    /// reductions.
+    ///
+    /// # Safety
+    /// The subset and group_idxs are in-bounds.
+    unsafe fn update_groups_subset(
+        &mut self,
+        values: &Column,
+        subset: &[IdxSize],
         group_idxs: &[IdxSize],
+        seq_id: u64,
+    ) -> PolarsResult<()> {
+        assert!(values.len() < (1 << (IdxSize::BITS - 1)));
+        // SAFETY: EvictIdx is a wrapper for IdxSize and has same alignment.
+        let evict_group_idxs = unsafe {
+            std::slice::from_raw_parts(group_idxs.as_ptr() as *const EvictIdx, subset.len())
+        };
+        self.update_groups_while_evicting(values, subset, evict_group_idxs, seq_id)
+    }
+
+    /// Updates this GroupedReduction with new values. values[subset[i]] should
+    /// be added to reduction self[group_idxs[i]]. For order-sensitive grouped
+    /// reductions, seq_id can be used to resolve order between calls/multiple
+    /// reductions. If the group_idxs[i] has its evict bit set the current value
+    /// in the group should be evicted and reset before updating.
+    ///
+    /// # Safety
+    /// The subset and group_idxs are in-bounds.
+    unsafe fn update_groups_while_evicting(
+        &mut self,
+        values: &Column,
+        subset: &[IdxSize],
+        group_idxs: &[EvictIdx],
+        seq_id: u64,
     ) -> PolarsResult<()>;
 
     /// Combines this GroupedReduction with another. Group other[subset[i]]
@@ -59,28 +97,15 @@ pub trait GroupedReduction: Any + Send + Sync {
     /// # Safety
     /// subset[i] < other.num_groups() for all i.
     /// group_idxs[i] < self.num_groups() for all i.
-    unsafe fn gather_combine(
+    unsafe fn combine_subset(
         &mut self,
         other: &dyn GroupedReduction,
         subset: &[IdxSize],
         group_idxs: &[IdxSize],
     ) -> PolarsResult<()>;
 
-    /// Partitions this GroupedReduction into several partitions.
-    ///
-    /// The ith group of this GroupedReduction should becomes the group_idxs[i]
-    /// group in partition partition_idxs[i].
-    ///
-    /// # Safety
-    /// partitions_idxs[i] < partition_sizes.len() for all i.
-    /// group_idxs[i] < partition_sizes[partition_idxs[i]] for all i.
-    /// Each partition p has an associated set of group_idxs, this set contains
-    /// 0..partition_size[p] exactly once.
-    unsafe fn partition(
-        self: Box<Self>,
-        partition_sizes: &[IdxSize],
-        partition_idxs: &[IdxSize],
-    ) -> Vec<Box<dyn GroupedReduction>>;
+    /// Take the accumulated evicted groups.
+    fn take_evictions(&mut self) -> Box<dyn GroupedReduction>;
 
     /// Returns the finalized value per group as a Series.
     ///
@@ -94,7 +119,7 @@ pub trait GroupedReduction: Any + Send + Sync {
 // Helper traits used in the VecGroupedReduction and VecMaskGroupedReduction to
 // reduce code duplication.
 pub trait Reducer: Send + Sync + Clone + 'static {
-    type Dtype: PolarsDataType;
+    type Dtype: PolarsPhysicalType;
     type Value: Clone + Send + Sync + 'static;
     fn init(&self) -> Self::Value;
     #[inline(always)]
@@ -106,8 +131,9 @@ pub trait Reducer: Send + Sync + Clone + 'static {
         &self,
         a: &mut Self::Value,
         b: Option<<Self::Dtype as PolarsDataType>::Physical<'_>>,
+        seq_id: u64,
     );
-    fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>);
+    fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, seq_id: u64);
     fn finish(
         &self,
         v: Vec<Self::Value>,
@@ -164,6 +190,7 @@ impl<R: NumericReduction> Reducer for NumReducer<R> {
         &self,
         a: &mut Self::Value,
         b: Option<<Self::Dtype as PolarsDataType>::Physical<'_>>,
+        _seq_id: u64,
     ) {
         if let Some(b) = b {
             *a = <R as NumericReduction>::combine(*a, b);
@@ -171,7 +198,7 @@ impl<R: NumericReduction> Reducer for NumReducer<R> {
     }
 
     #[inline(always)]
-    fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>) {
+    fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
         if let Some(r) = <R as NumericReduction>::reduce_ca(ca) {
             *v = <R as NumericReduction>::combine(*v, r);
         }
@@ -190,14 +217,16 @@ impl<R: NumericReduction> Reducer for NumReducer<R> {
 
 pub struct VecGroupedReduction<R: Reducer> {
     values: Vec<R::Value>,
+    evicted_values: Vec<R::Value>,
     in_dtype: DataType,
     reducer: R,
 }
 
 impl<R: Reducer> VecGroupedReduction<R> {
-    fn new(in_dtype: DataType, reducer: R) -> Self {
+    pub fn new(in_dtype: DataType, reducer: R) -> Self {
         Self {
             values: Vec::new(),
+            evicted_values: Vec::new(),
             in_dtype,
             reducer,
         }
@@ -211,6 +240,7 @@ where
     fn new_empty(&self) -> Box<dyn GroupedReduction> {
         Box::new(Self {
             values: Vec::new(),
+            evicted_values: Vec::new(),
             in_dtype: self.in_dtype.clone(),
             reducer: self.reducer.clone(),
         })
@@ -224,65 +254,64 @@ where
         self.values.resize(num_groups as usize, self.reducer.init());
     }
 
-    fn update_group(&mut self, values: &Series, group_idx: IdxSize) -> PolarsResult<()> {
+    fn update_group(
+        &mut self,
+        values: &Column,
+        group_idx: IdxSize,
+        seq_id: u64,
+    ) -> PolarsResult<()> {
         assert!(values.dtype() == &self.in_dtype);
+        let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
+        let values = values.as_materialized_series(); // @scalar-opt
         let values = self.reducer.cast_series(values);
         let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
         self.reducer
-            .reduce_ca(&mut self.values[group_idx as usize], ca);
+            .reduce_ca(&mut self.values[group_idx as usize], ca, seq_id);
         Ok(())
     }
 
-    unsafe fn update_groups(
+    unsafe fn update_groups_while_evicting(
         &mut self,
-        values: &Series,
-        group_idxs: &[IdxSize],
+        values: &Column,
+        subset: &[IdxSize],
+        group_idxs: &[EvictIdx],
+        seq_id: u64,
     ) -> PolarsResult<()> {
         assert!(values.dtype() == &self.in_dtype);
-        assert!(values.len() == group_idxs.len());
+        assert!(subset.len() == group_idxs.len());
+        let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
+        let values = values.as_materialized_series(); // @scalar-opt
         let values = self.reducer.cast_series(values);
         let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
+        let arr = ca.downcast_as_array();
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.
             if values.has_nulls() {
-                for (g, ov) in group_idxs.iter().zip(ca.iter()) {
-                    let grp = self.values.get_unchecked_mut(*g as usize);
-                    self.reducer.reduce_one(grp, ov);
+                for (i, g) in subset.iter().zip(group_idxs) {
+                    let ov = arr.get_unchecked(*i as usize);
+                    let grp = self.values.get_unchecked_mut(g.idx());
+                    if g.should_evict() {
+                        let old = core::mem::replace(grp, self.reducer.init());
+                        self.evicted_values.push(old);
+                    }
+                    self.reducer.reduce_one(grp, ov, seq_id);
                 }
             } else {
-                let mut offset = 0;
-                for arr in ca.downcast_iter() {
-                    let subgroup = &group_idxs[offset..offset + arr.len()];
-                    for (g, v) in subgroup.iter().zip(arr.values_iter()) {
-                        let grp = self.values.get_unchecked_mut(*g as usize);
-                        self.reducer.reduce_one(grp, Some(v));
+                for (i, g) in subset.iter().zip(group_idxs) {
+                    let v = arr.value_unchecked(*i as usize);
+                    let grp = self.values.get_unchecked_mut(g.idx());
+                    if g.should_evict() {
+                        let old = core::mem::replace(grp, self.reducer.init());
+                        self.evicted_values.push(old);
                     }
-                    offset += arr.len();
+                    self.reducer.reduce_one(grp, Some(v), seq_id);
                 }
             }
         }
         Ok(())
     }
 
-    unsafe fn combine(
-        &mut self,
-        other: &dyn GroupedReduction,
-        group_idxs: &[IdxSize],
-    ) -> PolarsResult<()> {
-        let other = other.as_any().downcast_ref::<Self>().unwrap();
-        assert!(self.in_dtype == other.in_dtype);
-        assert!(group_idxs.len() == other.values.len());
-        unsafe {
-            // SAFETY: indices are in-bounds guaranteed by trait.
-            for (g, v) in group_idxs.iter().zip(other.values.iter()) {
-                let grp = self.values.get_unchecked_mut(*g as usize);
-                self.reducer.combine(grp, v);
-            }
-        }
-        Ok(())
-    }
-
-    unsafe fn gather_combine(
+    unsafe fn combine_subset(
         &mut self,
         other: &dyn GroupedReduction,
         subset: &[IdxSize],
@@ -302,21 +331,13 @@ where
         Ok(())
     }
 
-    unsafe fn partition(
-        self: Box<Self>,
-        partition_sizes: &[IdxSize],
-        partition_idxs: &[IdxSize],
-    ) -> Vec<Box<dyn GroupedReduction>> {
-        partition::partition_vec(self.values, partition_sizes, partition_idxs)
-            .into_iter()
-            .map(|values| {
-                Box::new(Self {
-                    values,
-                    in_dtype: self.in_dtype.clone(),
-                    reducer: self.reducer.clone(),
-                }) as _
-            })
-            .collect()
+    fn take_evictions(&mut self) -> Box<dyn GroupedReduction> {
+        Box::new(Self {
+            values: core::mem::take(&mut self.evicted_values),
+            evicted_values: Vec::new(),
+            in_dtype: self.in_dtype.clone(),
+            reducer: self.reducer.clone(),
+        })
     }
 
     fn finalize(&mut self) -> PolarsResult<Series> {
@@ -332,6 +353,8 @@ where
 pub struct VecMaskGroupedReduction<R: Reducer> {
     values: Vec<R::Value>,
     mask: MutableBitmap,
+    evicted_values: Vec<R::Value>,
+    evicted_mask: BitmapBuilder,
     in_dtype: DataType,
     reducer: R,
 }
@@ -341,6 +364,8 @@ impl<R: Reducer> VecMaskGroupedReduction<R> {
         Self {
             values: Vec::new(),
             mask: MutableBitmap::new(),
+            evicted_values: Vec::new(),
+            evicted_mask: BitmapBuilder::new(),
             in_dtype,
             reducer,
         }
@@ -352,12 +377,7 @@ where
     R: Reducer,
 {
     fn new_empty(&self) -> Box<dyn GroupedReduction> {
-        Box::new(Self {
-            values: Vec::new(),
-            mask: MutableBitmap::new(),
-            in_dtype: self.in_dtype.clone(),
-            reducer: self.reducer.clone(),
-        })
+        Box::new(Self::new(self.in_dtype.clone(), self.reducer.clone()))
     }
 
     fn reserve(&mut self, additional: usize) {
@@ -370,69 +390,60 @@ where
         self.mask.resize(num_groups as usize, false);
     }
 
-    fn update_group(&mut self, values: &Series, group_idx: IdxSize) -> PolarsResult<()> {
-        // TODO: we should really implement a sum-as-other-type operation instead
-        // of doing this materialized cast.
+    fn update_group(
+        &mut self,
+        values: &Column,
+        group_idx: IdxSize,
+        seq_id: u64,
+    ) -> PolarsResult<()> {
         assert!(values.dtype() == &self.in_dtype);
-        let values = values.to_physical_repr();
+        let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
+        let values = values.as_materialized_series(); // @scalar-opt
+        let values = self.reducer.cast_series(values);
         let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
         self.reducer
-            .reduce_ca(&mut self.values[group_idx as usize], ca);
+            .reduce_ca(&mut self.values[group_idx as usize], ca, seq_id);
         if ca.len() != ca.null_count() {
             self.mask.set(group_idx as usize, true);
         }
         Ok(())
     }
 
-    unsafe fn update_groups(
+    unsafe fn update_groups_while_evicting(
         &mut self,
-        values: &Series,
-        group_idxs: &[IdxSize],
+        values: &Column,
+        subset: &[IdxSize],
+        group_idxs: &[EvictIdx],
+        seq_id: u64,
     ) -> PolarsResult<()> {
-        // TODO: we should really implement a sum-as-other-type operation instead
-        // of doing this materialized cast.
         assert!(values.dtype() == &self.in_dtype);
-        assert!(values.len() == group_idxs.len());
-        let values = values.to_physical_repr();
+        assert!(subset.len() == group_idxs.len());
+        let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
+        let values = values.as_materialized_series(); // @scalar-opt
+        let values = self.reducer.cast_series(values);
         let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
+        let arr = ca.downcast_as_array();
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.
-            for (g, ov) in group_idxs.iter().zip(ca.iter()) {
+            for (i, g) in subset.iter().zip(group_idxs) {
+                let ov = arr.get_unchecked(*i as usize);
+                let grp = self.values.get_unchecked_mut(g.idx());
+                if g.should_evict() {
+                    self.evicted_values
+                        .push(core::mem::replace(grp, self.reducer.init()));
+                    self.evicted_mask.push(self.mask.get_unchecked(g.idx()));
+                    self.mask.set_unchecked(g.idx(), false);
+                }
                 if let Some(v) = ov {
-                    let grp = self.values.get_unchecked_mut(*g as usize);
-                    self.reducer.reduce_one(grp, Some(v));
-                    self.mask.set_unchecked(*g as usize, true);
+                    self.reducer.reduce_one(grp, Some(v), seq_id);
+                    self.mask.set_unchecked(g.idx(), true);
                 }
             }
         }
         Ok(())
     }
 
-    unsafe fn combine(
-        &mut self,
-        other: &dyn GroupedReduction,
-        group_idxs: &[IdxSize],
-    ) -> PolarsResult<()> {
-        let other = other.as_any().downcast_ref::<Self>().unwrap();
-        assert!(self.in_dtype == other.in_dtype);
-        assert!(group_idxs.len() == other.values.len());
-        unsafe {
-            // SAFETY: indices are in-bounds guaranteed by trait.
-            for (g, (v, o)) in group_idxs
-                .iter()
-                .zip(other.values.iter().zip(other.mask.iter()))
-            {
-                if o {
-                    let grp = self.values.get_unchecked_mut(*g as usize);
-                    self.reducer.combine(grp, v);
-                    self.mask.set_unchecked(*g as usize, true);
-                }
-            }
-        }
-        Ok(())
-    }
-
-    unsafe fn gather_combine(
+    unsafe fn combine_subset(
         &mut self,
         other: &dyn GroupedReduction,
         subset: &[IdxSize],
@@ -456,33 +467,104 @@ where
         Ok(())
     }
 
-    unsafe fn partition(
-        self: Box<Self>,
-        partition_sizes: &[IdxSize],
-        partition_idxs: &[IdxSize],
-    ) -> Vec<Box<dyn GroupedReduction>> {
-        partition::partition_vec_mask(
-            self.values,
-            &self.mask.freeze(),
-            partition_sizes,
-            partition_idxs,
-        )
-        .into_iter()
-        .map(|(values, mask)| {
-            Box::new(Self {
-                values,
-                mask: mask.into_mut(),
-                in_dtype: self.in_dtype.clone(),
-                reducer: self.reducer.clone(),
-            }) as _
+    fn take_evictions(&mut self) -> Box<dyn GroupedReduction> {
+        Box::new(Self {
+            values: core::mem::take(&mut self.evicted_values),
+            mask: core::mem::take(&mut self.evicted_mask).into_mut(),
+            evicted_values: Vec::new(),
+            evicted_mask: BitmapBuilder::new(),
+            in_dtype: self.in_dtype.clone(),
+            reducer: self.reducer.clone(),
         })
-        .collect()
     }
 
     fn finalize(&mut self) -> PolarsResult<Series> {
         let v = core::mem::take(&mut self.values);
         let m = core::mem::take(&mut self.mask);
         self.reducer.finish(v, Some(m.freeze()), &self.in_dtype)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+#[derive(Clone)]
+pub struct NullGroupedReduction {
+    num_groups: IdxSize,
+    num_evictions: IdxSize,
+    output: Scalar,
+}
+
+impl NullGroupedReduction {
+    pub fn new(output: Scalar) -> Self {
+        Self {
+            num_groups: 0,
+            num_evictions: 0,
+            output,
+        }
+    }
+}
+
+impl GroupedReduction for NullGroupedReduction {
+    fn new_empty(&self) -> Box<dyn GroupedReduction> {
+        Box::new(Self::new(self.output.clone()))
+    }
+
+    fn reserve(&mut self, _additional: usize) {}
+
+    fn resize(&mut self, num_groups: IdxSize) {
+        self.num_groups = num_groups;
+    }
+
+    fn update_group(
+        &mut self,
+        values: &Column,
+        _group_idx: IdxSize,
+        _seq_id: u64,
+    ) -> PolarsResult<()> {
+        assert!(values.dtype().is_null());
+        Ok(())
+    }
+
+    unsafe fn update_groups_while_evicting(
+        &mut self,
+        values: &Column,
+        subset: &[IdxSize],
+        group_idxs: &[EvictIdx],
+        _seq_id: u64,
+    ) -> PolarsResult<()> {
+        assert!(values.dtype().is_null());
+        assert!(subset.len() == group_idxs.len());
+        for g in group_idxs {
+            self.num_evictions += g.should_evict() as IdxSize;
+        }
+        Ok(())
+    }
+
+    unsafe fn combine_subset(
+        &mut self,
+        other: &dyn GroupedReduction,
+        subset: &[IdxSize],
+        group_idxs: &[IdxSize],
+    ) -> PolarsResult<()> {
+        let _other = other.as_any().downcast_ref::<Self>().unwrap();
+        assert!(subset.len() == group_idxs.len());
+        Ok(())
+    }
+
+    fn take_evictions(&mut self) -> Box<dyn GroupedReduction> {
+        Box::new(Self {
+            num_groups: core::mem::replace(&mut self.num_evictions, 0),
+            num_evictions: 0,
+            output: self.output.clone(),
+        })
+    }
+
+    fn finalize(&mut self) -> PolarsResult<Series> {
+        let length = core::mem::replace(&mut self.num_groups, 0) as usize;
+        let s = self.output.clone().into_series(PlSmallStr::EMPTY);
+        Ok(s.new_from_index(0, length))
     }
 
     fn as_any(&self) -> &dyn Any {

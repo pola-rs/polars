@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use arrow::array::PrimitiveArray;
 use arrow::compute::utils::combine_validities_and;
 use arrow::types::NativeType;

@@ -2,29 +2,66 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime, timedelta
-from tempfile import NamedTemporaryFile
-from typing import Any
+from pathlib import Path
+from tempfile import NamedTemporaryFile, TemporaryDirectory
+from typing import TYPE_CHECKING, Any, TypeVar
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
 
 import polars as pl
+from polars.io.plugins import register_io_source
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 def num_cse_occurrences(explanation: str) -> int:
     """The number of unique CSE columns in an explain string."""
-    return len(set(re.findall('__POLARS_CSER_0x[^"]+"', explanation)))
+    return len(set(re.findall(r'__POLARS_CSER_0x[^"]+"', explanation)))
 
 
-def test_cse_rename_cross_join_5405() -> None:
+def create_dataframe_source(
+    source_df: pl.DataFrame,
+    is_pure: bool,
+    validate_schame: bool = False,
+) -> pl.LazyFrame:
+    """Generates a custom io source based on the provided pl.DataFrame."""
+
+    def dataframe_source(
+        with_columns: list[str] | None,
+        predicate: pl.Expr | None,
+        _n_rows: int | None,
+        _batch_size: int | None,
+    ) -> Iterator[pl.DataFrame]:
+        df = source_df.clone()
+        if predicate is not None:
+            df = df.filter(predicate)
+        if with_columns is not None:
+            df = df.select(with_columns)
+        yield df
+
+    return register_io_source(
+        dataframe_source,
+        schema=source_df.schema,
+        validate_schema=validate_schame,
+        is_pure=is_pure,
+    )
+
+
+@pytest.mark.parametrize("use_custom_io_source", [True, False])
+def test_cse_rename_cross_join_5405(use_custom_io_source: bool) -> None:
     # https://github.com/pola-rs/polars/issues/5405
 
     right = pl.DataFrame({"A": [1, 2], "B": [3, 4], "D": [5, 6]}).lazy()
+    if use_custom_io_source:
+        right = create_dataframe_source(right.collect(), is_pure=True)
     left = pl.DataFrame({"C": [3, 4]}).lazy().join(right.select("A"), how="cross")
 
     result = left.join(right.rename({"B": "C"}), on=["A", "C"], how="left").collect(
-        comm_subplan_elim=True
+        optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
     )
 
     expected = pl.DataFrame(
@@ -34,7 +71,7 @@ def test_cse_rename_cross_join_5405() -> None:
             "D": [5, None, None, 6],
         }
     )
-    assert_frame_equal(result, expected)
+    assert_frame_equal(result, expected, check_row_order=False)
 
 
 def test_union_duplicates() -> None:
@@ -42,14 +79,10 @@ def test_union_duplicates() -> None:
     df_lazy = pl.DataFrame({}).lazy()
     lazy_dfs = [df_lazy for _ in range(n_dfs)]
 
-    result = len(
-        re.findall(
-            r".*CACHE\[id: .*, cache_hits: 9].*",
-            pl.concat(lazy_dfs).explain(),
-            flags=re.MULTILINE,
-        )
-    )
-    assert result
+    matches = re.findall(r"CACHE\[id: (.*)]", pl.concat(lazy_dfs).explain())
+
+    assert len(matches) == 10
+    assert len(set(matches)) == 1
 
 
 def test_cse_with_struct_expr_11116() -> None:
@@ -64,7 +97,7 @@ def test_cse_with_struct_expr_11116() -> None:
             (pl.col("s").struct.field("a") <= pl.col("c"))
             & (pl.col("s").struct.field("b") > pl.col("c"))
         ).alias("c_between_a_and_b"),
-    ).collect(comm_subexpr_elim=True)
+    ).collect(optimizations=pl.QueryOptFlags(comm_subexpr_elim=True))
 
     expected = pl.DataFrame(
         {
@@ -96,7 +129,7 @@ def test_cse_schema_6081() -> None:
     )
 
     result = df.join(min_value_by_group, on=["date", "id"], how="left").collect(
-        comm_subplan_elim=True, projection_pushdown=True
+        optimizations=pl.QueryOptFlags(comm_subplan_elim=True, projection_pushdown=True)
     )
     expected = pl.DataFrame(
         {
@@ -106,7 +139,7 @@ def test_cse_schema_6081() -> None:
             "min_value": [1, 1, 2],
         }
     )
-    assert_frame_equal(result, expected)
+    assert_frame_equal(result, expected, check_row_order=False)
 
 
 def test_cse_9630() -> None:
@@ -130,7 +163,7 @@ def test_cse_9630() -> None:
     intersected_df2 = all_subsections.join(lf2, on="key")
 
     result = intersected_df1.join(intersected_df2, on=["key"], how="left").collect(
-        comm_subplan_elim=True
+        optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
     )
 
     expected = pl.DataFrame(
@@ -146,7 +179,8 @@ def test_cse_9630() -> None:
 
 
 @pytest.mark.write_disk
-def test_schema_row_index_cse() -> None:
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_schema_row_index_cse(maintain_order: bool) -> None:
     with NamedTemporaryFile() as csv_a:
         csv_a.write(b"A,B\nGr1,A\nGr1,B")
         csv_a.seek(0)
@@ -154,10 +188,10 @@ def test_schema_row_index_cse() -> None:
         df_a = pl.scan_csv(csv_a.name).with_row_index("Idx")
 
         result = (
-            df_a.join(df_a, on="B")
-            .group_by("A", maintain_order=True)
+            df_a.join(df_a, on="B", maintain_order="left" if maintain_order else "none")
+            .group_by("A", maintain_order=maintain_order)
             .all()
-            .collect(comm_subexpr_elim=True)
+            .collect(optimizations=pl.QueryOptFlags(comm_subexpr_elim=True))
         )
 
     expected = pl.DataFrame(
@@ -170,7 +204,7 @@ def test_schema_row_index_cse() -> None:
         },
         schema_overrides={"Idx": pl.List(pl.UInt32), "Idx_right": pl.List(pl.UInt32)},
     )
-    assert_frame_equal(result, expected)
+    assert_frame_equal(result, expected, check_row_order=maintain_order)
 
 
 @pytest.mark.debug
@@ -193,8 +227,17 @@ def test_cse_expr_selection_context() -> None:
         (derived2 * 10).alias("d3"),
     ]
 
-    result = q.select(exprs).collect(comm_subexpr_elim=True)
-    assert num_cse_occurrences(q.select(exprs).explain(comm_subexpr_elim=True)) == 2
+    result = q.select(exprs).collect(
+        optimizations=pl.QueryOptFlags(comm_subexpr_elim=True)
+    )
+    assert (
+        num_cse_occurrences(
+            q.select(exprs).explain(
+                optimizations=pl.QueryOptFlags(comm_subexpr_elim=True)
+            )
+        )
+        == 2
+    )
     expected = pl.DataFrame(
         {
             "d1": [30],
@@ -205,9 +248,16 @@ def test_cse_expr_selection_context() -> None:
     )
     assert_frame_equal(result, expected)
 
-    result = q.with_columns(exprs).collect(comm_subexpr_elim=True)
+    result = q.with_columns(exprs).collect(
+        optimizations=pl.QueryOptFlags(comm_subexpr_elim=True)
+    )
     assert (
-        num_cse_occurrences(q.with_columns(exprs).explain(comm_subexpr_elim=True)) == 2
+        num_cse_occurrences(
+            q.with_columns(exprs).explain(
+                optimizations=pl.QueryOptFlags(comm_subexpr_elim=True)
+            )
+        )
+        == 2
     )
     expected = pl.DataFrame(
         {
@@ -241,7 +291,7 @@ def test_windows_cse_excluded() -> None:
     result = lf.select(
         c_diff=pl.col("c").diff(1),
         c_diff_by_a=pl.col("c").diff(1).over("a"),
-    ).collect(comm_subexpr_elim=True)
+    ).collect(optimizations=pl.QueryOptFlags(comm_subexpr_elim=True))
 
     expected = pl.DataFrame(
         {
@@ -264,7 +314,9 @@ def test_cse_group_by_10215() -> None:
         ((pl.col("a") + 2).sum() * pl.col("b").sum()),
     )
 
-    assert "__POLARS_CSER" in result.explain(comm_subexpr_elim=True)
+    assert "__POLARS_CSER" in result.explain(
+        optimizations=pl.QueryOptFlags(comm_subexpr_elim=True)
+    )
     expected = pl.DataFrame(
         {
             "b": [1],
@@ -276,7 +328,9 @@ def test_cse_group_by_10215() -> None:
             "a": [3],
         }
     )
-    assert_frame_equal(result.collect(comm_subexpr_elim=True), expected)
+    assert_frame_equal(
+        result.collect(optimizations=pl.QueryOptFlags(comm_subexpr_elim=True)), expected
+    )
 
 
 def test_cse_mixed_window_functions() -> None:
@@ -292,13 +346,14 @@ def test_cse_mixed_window_functions() -> None:
         pl.col("b").rank().alias("d_rank"),
         pl.col("b").first().over([pl.col("a")]).alias("b_first"),
         pl.col("b").last().over([pl.col("a")]).alias("b_last"),
+        pl.col("b").item().over([pl.col("a")]).alias("b_item"),
         pl.col("b").shift().alias("b_lag_1"),
         pl.col("b").shift().alias("b_lead_1"),
         pl.col("c").cum_sum().alias("c_cumsum"),
         pl.col("c").cum_sum().over([pl.col("a")]).alias("c_cumsum_by_a"),
         pl.col("c").diff().alias("c_diff"),
         pl.col("c").diff().over([pl.col("a")]).alias("c_diff_by_a"),
-    ).collect(comm_subexpr_elim=True)
+    ).collect(optimizations=pl.QueryOptFlags(comm_subexpr_elim=True))
 
     expected = pl.DataFrame(
         {
@@ -309,6 +364,7 @@ def test_cse_mixed_window_functions() -> None:
             "d_rank": [1.0],
             "b_first": [1],
             "b_last": [1],
+            "b_item": [1],
             "b_lag_1": [None],
             "b_lead_1": [None],
             "c_cumsum": [1],
@@ -328,7 +384,9 @@ def test_cse_10401() -> None:
     assert r"""col("clicks").fill_null([0.0]).alias("__POLARS_CSER""" in q.explain()
 
     expected = pl.DataFrame({"clicks": [1.0, 0.0, 0.0]})
-    assert_frame_equal(q.collect(comm_subexpr_elim=True), expected)
+    assert_frame_equal(
+        q.collect(optimizations=pl.QueryOptFlags(comm_subexpr_elim=True)), expected
+    )
 
 
 def test_cse_10441() -> None:
@@ -336,7 +394,7 @@ def test_cse_10441() -> None:
 
     result = lf.select(
         pl.col("a").sum() + pl.col("a").sum() + pl.col("b").sum()
-    ).collect(comm_subexpr_elim=True)
+    ).collect(optimizations=pl.QueryOptFlags(comm_subexpr_elim=True))
 
     expected = pl.DataFrame({"a": [18]})
     assert_frame_equal(result, expected)
@@ -348,10 +406,14 @@ def test_cse_10452() -> None:
         pl.col("b").sum() + pl.col("a").sum().over(pl.col("b")) + pl.col("b").sum()
     )
 
-    assert "__POLARS_CSE" in q.explain(comm_subexpr_elim=True)
+    assert "__POLARS_CSE" in q.explain(
+        optimizations=pl.QueryOptFlags(comm_subexpr_elim=True)
+    )
 
     expected = pl.DataFrame({"b": [13, 14, 15]})
-    assert_frame_equal(q.collect(comm_subexpr_elim=True), expected)
+    assert_frame_equal(
+        q.collect(optimizations=pl.QueryOptFlags(comm_subexpr_elim=True)), expected
+    )
 
 
 def test_cse_group_by_ternary_10490() -> None:
@@ -378,7 +440,7 @@ def test_cse_group_by_ternary_10490() -> None:
                 ((pl.col("a") + 2).sum() * pl.col("b").sum()).alias("x4"),
             ]
         )
-        .collect(comm_subexpr_elim=True)
+        .collect(optimizations=pl.QueryOptFlags(comm_subexpr_elim=True))
         .sort("a")
     )
 
@@ -437,7 +499,7 @@ def test_cse_nan_10824() -> None:
                 )
                 .lazy()
                 .select(magic)
-                .collect(comm_subexpr_elim=True)
+                .collect(optimizations=pl.QueryOptFlags(comm_subexpr_elim=True))
             ).to_dict(as_series=False)
         )
         == "{'literal': [nan]}"
@@ -491,9 +553,13 @@ def test_cse_slice_11594() -> None:
         pl.col("a").slice(offset=1, length=pl.len() - 1).alias("2"),
     )
 
-    assert "__POLARS_CSE" in q.explain(comm_subexpr_elim=True)
+    assert "__POLARS_CSE" in q.explain(
+        optimizations=pl.QueryOptFlags(comm_subexpr_elim=True)
+    )
 
-    assert q.collect(comm_subexpr_elim=True).to_dict(as_series=False) == {
+    assert q.collect(optimizations=pl.QueryOptFlags(comm_subexpr_elim=True)).to_dict(
+        as_series=False
+    ) == {
         "1": [2, 1, 2, 1, 2],
         "2": [2, 1, 2, 1, 2],
     }
@@ -503,9 +569,13 @@ def test_cse_slice_11594() -> None:
         pl.col("a").slice(offset=0, length=pl.len() - 1).alias("2"),
     )
 
-    assert "__POLARS_CSE" in q.explain(comm_subexpr_elim=True)
+    assert "__POLARS_CSE" in q.explain(
+        optimizations=pl.QueryOptFlags(comm_subexpr_elim=True)
+    )
 
-    assert q.collect(comm_subexpr_elim=True).to_dict(as_series=False) == {
+    assert q.collect(optimizations=pl.QueryOptFlags(comm_subexpr_elim=True)).to_dict(
+        as_series=False
+    ) == {
         "1": [2, 1, 2, 1, 2],
         "2": [1, 2, 1, 2, 1],
     }
@@ -547,8 +617,12 @@ def test_cse_11958() -> None:
         vector_losses.append(component_loss.alias(f"diff{lag}"))
 
     q = df.select(vector_losses)
-    assert "__POLARS_CSE" in q.explain(comm_subexpr_elim=True)
-    assert q.collect(comm_subexpr_elim=True).to_dict(as_series=False) == {
+    assert "__POLARS_CSE" in q.explain(
+        optimizations=pl.QueryOptFlags(comm_subexpr_elim=True)
+    )
+    assert q.collect(optimizations=pl.QueryOptFlags(comm_subexpr_elim=True)).to_dict(
+        as_series=False
+    ) == {
         "diff1": [None, 10, 10, 10, 10],
         "diff2": [None, None, 20, 20, 20],
         "diff3": [None, None, None, 30, 30],
@@ -600,7 +674,8 @@ def test_cse_14047() -> None:
     exprs = count_diff_exprs + s_per_count_exprs
     ldf = ldf.with_columns(*exprs)
     assert_frame_equal(
-        ldf.collect(comm_subexpr_elim=True), ldf.collect(comm_subexpr_elim=False)
+        ldf.collect(optimizations=pl.QueryOptFlags(comm_subexpr_elim=True)),
+        ldf.collect(optimizations=pl.QueryOptFlags(comm_subexpr_elim=False)),
     )
 
 
@@ -622,8 +697,12 @@ def test_cse_15548() -> None:
     ldf2 = ldf.filter(pl.col("a") == 1).cache()
     ldf3 = pl.concat([ldf, ldf2])
 
-    assert len(ldf3.collect(comm_subplan_elim=False)) == 4
-    assert len(ldf3.collect(comm_subplan_elim=True)) == 4
+    assert (
+        len(ldf3.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False))) == 4
+    )
+    assert (
+        len(ldf3.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=True))) == 4
+    )
 
 
 @pytest.mark.debug
@@ -640,16 +719,27 @@ def test_cse_and_schema_update_projection_pd() -> None:
             .then(0.2 * pl.col("b"))
         )
     )
-    assert q.collect(comm_subplan_elim=False).to_dict(as_series=False) == {
-        "literal": [19.8, 19.8]
-    }
-    assert num_cse_occurrences(q.explain(comm_subexpr_elim=True)) == 1
+    assert q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)).to_dict(
+        as_series=False
+    ) == {"literal": [19.8, 19.8]}
+    assert (
+        num_cse_occurrences(
+            q.explain(optimizations=pl.QueryOptFlags(comm_subexpr_elim=True))
+        )
+        == 1
+    )
 
 
 @pytest.mark.debug
-def test_cse_predicate_self_join(capfd: Any, monkeypatch: Any) -> None:
+@pytest.mark.may_fail_auto_streaming
+@pytest.mark.parametrize("use_custom_io_source", [True, False])
+def test_cse_predicate_self_join(
+    capfd: Any, monkeypatch: Any, use_custom_io_source: bool
+) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     y = pl.LazyFrame({"a": [1], "b": [2], "y": [3]})
+    if use_custom_io_source:
+        y = create_dataframe_source(y.collect(), is_pure=True)
 
     xf = y.filter(pl.col("y") == 2).select(["a", "b"])
     y_xf = y.join(xf, on=["a", "b"], how="left")
@@ -669,6 +759,7 @@ def test_cse_manual_cache_15688() -> None:
     df2 = df.filter(id=1).join(df1, on=["a", "b"], how="semi")
     df2 = df2.cache()
     res = df2.group_by("b").agg(pl.all().sum())
+
     assert res.cache().with_columns(foo=1).collect().to_dict(as_series=False) == {
         "b": [1],
         "a": [6],
@@ -718,18 +809,27 @@ def test_cse_series_collision_16138() -> None:
         pl.coalesce(currency_factor_query_dict).alias("currency_factor"),
     )
 
-    assert factor_holdings.collect(comm_subexpr_elim=True).to_dict(as_series=False) == {
+    assert factor_holdings.collect(
+        optimizations=pl.QueryOptFlags(comm_subexpr_elim=True)
+    ).to_dict(as_series=False) == {
         "fund_currency": ["CLP", "CLP"],
         "asset_currency": ["EUR", "USA"],
         "currency_factor": [True, False],
     }
-    assert num_cse_occurrences(factor_holdings.explain(comm_subexpr_elim=True)) == 3
+    assert (
+        num_cse_occurrences(
+            factor_holdings.explain(
+                optimizations=pl.QueryOptFlags(comm_subexpr_elim=True)
+            )
+        )
+        == 3
+    )
 
 
 def test_nested_cache_no_panic_16553() -> None:
-    assert pl.LazyFrame().select(a=[[[1]]]).collect(comm_subexpr_elim=True).to_dict(
-        as_series=False
-    ) == {"a": [[[[1]]]]}
+    assert pl.LazyFrame().select(a=[[[1]]]).collect(
+        optimizations=pl.QueryOptFlags(comm_subexpr_elim=True)
+    ).to_dict(as_series=False) == {"a": [[[[1]]]]}
 
 
 def test_hash_empty_series_16577() -> None:
@@ -746,7 +846,7 @@ def test_cse_non_scalar_length_mismatch_17732() -> None:
             pl.col("a").head(5).min().alias("b"),
             pl.col("a").head(5).max().alias("c"),
         )
-        .collect(comm_subexpr_elim=True)
+        .collect(optimizations=pl.QueryOptFlags(comm_subexpr_elim=True))
     )
     expect = pl.DataFrame(
         {
@@ -790,7 +890,7 @@ def test_eager_cse_during_struct_expansion_18411() -> None:
     )["foo"].all()
 
 
-def test_cse_skip_as_struct_19253() -> None:
+def test_cse_as_struct_19253() -> None:
     df = pl.LazyFrame({"x": [1, 2], "y": [4, 5]})
 
     assert (
@@ -803,6 +903,16 @@ def test_cse_skip_as_struct_19253() -> None:
         "y": [4, 5],
         "q1": [{"x": -3.5}, {"x": -2.5}],
         "q2": [{"x": -3.0}, {"x": -3.0}],
+    }
+
+
+@pytest.mark.may_fail_auto_streaming
+def test_cse_as_struct_value_counts_20927() -> None:
+    assert pl.DataFrame({"x": [i for i in range(1, 6) for _ in range(i)]}).select(
+        pl.struct("x").value_counts().struct.unnest()
+    ).sort("count").to_dict(as_series=False) == {
+        "x": [{"x": 1}, {"x": 2}, {"x": 3}, {"x": 4}, {"x": 5}],
+        "count": [1, 2, 3, 4, 5],
     }
 
 
@@ -819,3 +929,283 @@ def test_cse_union_19227() -> None:
     assert out.collect().schema == pl.Schema(
         [("C", pl.Int64), ("A", pl.Int64), ("B", pl.Int64)]
     )
+
+
+def test_cse_21115() -> None:
+    lf = pl.LazyFrame({"x": 1, "y": 5})
+
+    assert lf.with_columns(
+        pl.all().exp() + pl.min_horizontal(pl.all().exp())
+    ).collect().to_dict(as_series=False) == {
+        "x": [5.43656365691809],
+        "y": [151.13144093103566],
+    }
+
+
+@pytest.mark.parametrize("use_custom_io_source", [True, False])
+def test_cse_cache_leakage_22339(use_custom_io_source: bool) -> None:
+    lf1 = pl.LazyFrame({"x": [True] * 2})
+    lf2 = pl.LazyFrame({"x": [True] * 3})
+    if use_custom_io_source:
+        lf1 = create_dataframe_source(lf1.collect(), is_pure=True)
+        lf2 = create_dataframe_source(lf2.collect(), is_pure=True)
+
+    a = lf1
+    b = lf1.filter(pl.col("x").not_().over(1))
+    c = lf2.filter(pl.col("x").not_().over(1))
+
+    ab = a.join(b, on="x")
+    bc = b.join(c, on="x")
+    ac = a.join(c, on="x")
+
+    assert pl.concat([ab, bc, ac]).collect().to_dict(as_series=False) == {"x": []}
+
+
+@pytest.mark.write_disk
+def test_multiplex_predicate_pushdown() -> None:
+    ldf = pl.LazyFrame({"a": [1, 1, 2, 2], "b": [1, 2, 3, 4]})
+    with TemporaryDirectory() as f:
+        tmppath = Path(f)
+        ldf.sink_parquet(
+            pl.PartitionByKey(tmppath, by="a", include_key=True),
+            sync_on_close="all",
+            mkdir=True,
+        )
+        ldf = pl.scan_parquet(tmppath, hive_partitioning=True)
+        ldf = ldf.filter(pl.col("a").eq(1)).select("b")
+        assert 'SELECTION: [(col("a")) == (1)]' in pl.explain_all([ldf, ldf])
+
+
+def test_cse_custom_io_source_same_object() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
+
+    io_source = Mock(wraps=lambda *_: iter([df]))
+
+    lf = register_io_source(
+        io_source,
+        schema=df.schema,
+        validate_schema=True,
+        is_pure=True,
+    )
+
+    lfs = [lf, lf]
+
+    plan = pl.explain_all(lfs)
+    caches: list[str] = [
+        x for x in map(str.strip, plan.splitlines()) if x.startswith("CACHE[")
+    ]
+    assert len(caches) == 2
+    assert len(set(caches)) == 1
+
+    assert io_source.call_count == 0
+
+    assert_frame_equal(
+        pl.concat(pl.collect_all(lfs)),
+        pl.DataFrame({"a": [1, 2, 3, 4, 5, 1, 2, 3, 4, 5]}),
+    )
+
+    assert io_source.call_count == 1
+
+    io_source = Mock(wraps=lambda *_: iter([df]))
+
+    # Without explicit is_pure parameter should default to False
+    lf = register_io_source(
+        io_source,
+        schema=df.schema,
+        validate_schema=True,
+    )
+
+    lfs = [lf, lf]
+
+    plan = pl.explain_all(lfs)
+
+    caches = [x for x in map(str.strip, plan.splitlines()) if x.startswith("CACHE[")]
+    assert len(caches) == 0
+
+    assert io_source.call_count == 0
+
+    assert_frame_equal(
+        pl.concat(pl.collect_all(lfs)),
+        pl.DataFrame({"a": [1, 2, 3, 4, 5, 1, 2, 3, 4, 5]}),
+    )
+
+    assert io_source.call_count == 2
+
+    io_source = Mock(wraps=lambda *_: iter([df]))
+
+    # LazyFrames constructed from separate calls do not CSE even if the
+    # io_source function is the same.
+    #
+    # Note: This behavior is achieved by having `register_io_source` wrap
+    # the user-provided io plugin with a locally constructed wrapper before
+    # passing to the Rust-side.
+    lfs = [
+        register_io_source(
+            io_source,
+            schema=df.schema,
+            validate_schema=True,
+            is_pure=True,
+        ),
+        register_io_source(
+            io_source,
+            schema=df.schema,
+            validate_schema=True,
+            is_pure=True,
+        ),
+    ]
+
+    caches = [x for x in map(str.strip, plan.splitlines()) if x.startswith("CACHE[")]
+    assert len(caches) == 0
+
+    assert io_source.call_count == 0
+
+    assert_frame_equal(
+        pl.concat(pl.collect_all(lfs)),
+        pl.DataFrame({"a": [1, 2, 3, 4, 5, 1, 2, 3, 4, 5]}),
+    )
+
+    assert io_source.call_count == 2
+
+
+@pytest.mark.write_disk
+def test_cse_preferred_over_slice() -> None:
+    # This test asserts that even if we slice disjoint sections of a lazyframe, caching
+    # is preferred, and slicing is not pushed down
+    df = pl.DataFrame({"a": list(range(1, 21))})
+    with NamedTemporaryFile() as f:
+        val = df.write_csv()
+        f.write(val.encode())
+        f.seek(0)
+        ldf = pl.scan_csv(f.name)
+        left = ldf.slice(0, 5)
+        right = ldf.slice(6, 5)
+        q = left.join(right, on="a", how="inner")
+        assert "CACHE[id:" in q.explain(
+            optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
+        )
+
+
+def test_cse_preferred_over_slice_custom_io_source() -> None:
+    # This test asserts that even if we slice disjoint sections of a custom io source,
+    # caching is preferred, and slicing is not pushed down
+    df = pl.DataFrame({"a": list(range(1, 21))})
+    lf = create_dataframe_source(df, is_pure=True)
+    left = lf.slice(0, 5)
+    right = lf.slice(6, 5)
+    q = left.join(right, on="a", how="inner")
+    assert "CACHE[id:" in q.explain(
+        optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
+    )
+
+    lf = create_dataframe_source(df, is_pure=False)
+    left = lf.slice(0, 5)
+    right = lf.slice(6, 5)
+    q = left.join(right, on="a", how="inner")
+    assert "CACHE[id:" not in q.explain(
+        optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
+    )
+
+
+def test_cse_custom_io_source_diff_columns() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [10, 11, 12, 13, 14]})
+    lf = create_dataframe_source(df, is_pure=True)
+    collection = [lf.select("a"), lf.select("b")]
+    assert "CACHE[id:" in pl.explain_all(collection)
+    collected = pl.collect_all(
+        collection, optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
+    )
+    assert_frame_equal(df.select("a"), collected[0])
+    assert_frame_equal(df.select("b"), collected[1])
+
+
+def test_cse_custom_io_source_diff_filters() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [10, 11, 12, 13, 14]})
+    lf = create_dataframe_source(df, is_pure=True)
+
+    # We use this so that the true type of the input is passed through
+    # to the output
+    PolarsFrame = TypeVar("PolarsFrame", pl.DataFrame, pl.LazyFrame)
+
+    def left_pipe(df_or_lf: PolarsFrame) -> PolarsFrame:
+        return df_or_lf.select("a").filter(pl.col("a").is_between(2, 6))
+
+    def right_pipe(df_or_lf: PolarsFrame) -> PolarsFrame:
+        return df_or_lf.select("b").filter(pl.col("b").is_between(10, 13))
+
+    collection = [lf.pipe(left_pipe), lf.pipe(right_pipe)]
+    explanation = pl.explain_all(collection)
+    # we prefer predicate pushdown over CSE
+    assert "CACHE[id:" not in explanation
+    assert 'SELECTION: col("a").is_between([2, 6])' in explanation
+    assert 'SELECTION: col("b").is_between([10, 13])' in explanation
+
+    res = pl.collect_all(collection)
+    expected = [df.pipe(left_pipe), df.pipe(right_pipe)]
+    assert_frame_equal(expected[0], res[0])
+    assert_frame_equal(expected[1], res[1])
+
+
+@pytest.mark.skip
+def test_cspe_recursive_24744() -> None:
+    df_a = pl.DataFrame([pl.Series("x", [0, 1, 2, 3], dtype=pl.UInt32)])
+
+    def convoluted_inner_join(
+        lf_left: pl.LazyFrame,
+        lf_right: pl.LazyFrame,
+    ) -> pl.LazyFrame:
+        lf_left = lf_left.with_columns(pl.col("x").alias("index"))
+
+        lf_joined = lf_left.join(
+            lf_right,
+            how="inner",
+            on=["x"],
+        )
+
+        lf_joined_final = lf_left.join(
+            lf_joined,
+            how="inner",
+            on=["index", "x"],
+        ).drop("index")
+        return lf_joined_final
+
+    lf_a = df_a.lazy()
+    lf_j1 = convoluted_inner_join(lf_left=lf_a, lf_right=lf_a)
+    lf_j2 = convoluted_inner_join(lf_left=lf_j1, lf_right=lf_a)
+    lf_j3 = convoluted_inner_join(lf_left=lf_j2, lf_right=lf_a).sort("x")
+
+    assert lf_j3.explain().count("CACHE") == 14
+    assert_frame_equal(
+        lf_j3.collect(),
+        lf_j3.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+    )
+    assert (
+        lf_j3.show_graph(  # type: ignore[union-attr]
+            engine="streaming", plan_stage="physical", raw_output=True
+        ).count("multiplexer")
+        == 3
+    )
+    assert (
+        lf_j3.show_graph(  # type: ignore[union-attr]
+            engine="in-memory", plan_stage="physical", raw_output=True
+        ).count("CACHE")
+        == 3
+    )
+
+
+def test_cpse_predicates_25030() -> None:
+    df = pl.LazyFrame({"key": [1, 2, 2], "x": [6, 2, 3], "y": [0, 1, 4]})
+
+    q1 = df.group_by("key").len().filter(pl.col("len") > 1)
+    q2 = df.filter(pl.col.x > pl.col.y)
+
+    q3 = q1.join(q2, on="key")
+
+    q4 = q3.group_by("key").len().join(q3, on="key")
+
+    got = q4.collect()
+    expected = q4.collect(
+        optimizations=pl.lazyframe.opt_flags.QueryOptFlags(comm_subplan_elim=False)
+    )
+
+    assert_frame_equal(got, expected)
+    assert q4.explain().count("CACHE") == 2

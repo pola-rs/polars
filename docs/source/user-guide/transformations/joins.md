@@ -240,12 +240,8 @@ player could be interested in buying. We use the function `join_where` to comput
 --8<-- "python/user-guide/transformations/joins.py:non-equi"
 ```
 
-You can provide multiple expressions as predicates but they all must use comparison operators that
-evaluate to a Boolean result and must refer to columns from both dataframes.
-
-!!! note
-
-    `join_where` is still experimental and doesn't yet support arbitrary Boolean expressions as predicates.
+You can provide multiple expressions as predicates, in that case they will be AND combined. You can
+also combine expressions in a single expression if you need other combinations like OR or XOR.
 
 ## Asof join
 
@@ -269,10 +265,10 @@ The broker has another dataframe called `df_quotes` showing prices it has quoted
 --8<-- "python/user-guide/transformations/joins.py:df_quotes"
 ```
 
-You want to produce a dataframe showing for each trade the most recent quote provided _before_ the
-trade. You do this with `join_asof` (using the default `strategy = "backward"`). To avoid joining
-between trades on one stock with a quote on another you must specify an exact preliminary join on
-the stock column with `by="stock"`.
+You want to produce a dataframe showing for each trade the most recent quote provided _on or before_
+the time of the trade. You do this with `join_asof` (using the default `strategy = "backward"`). To
+avoid joining between trades on one stock with a quote on another you must specify an exact
+preliminary join on the stock column with `by="stock"`.
 
 {{code_block('user-guide/transformations/joins','asof', [], ['join_asof'], ['join_asof_by'])}}
 

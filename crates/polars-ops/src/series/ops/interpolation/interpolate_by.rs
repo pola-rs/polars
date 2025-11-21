@@ -3,7 +3,7 @@ use std::ops::{Add, Div, Mul, Sub};
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::MutableBitmap;
 use bytemuck::allocation::zeroed_vec;
-use polars_core::export::num::{NumCast, Zero};
+use num_traits::{NumCast, Zero};
 use polars_core::prelude::*;
 use polars_utils::slice::SliceAble;
 
@@ -151,7 +151,7 @@ where
         }
 
         let array = PrimitiveArray::new(
-            T::get_dtype().to_arrow(CompatLevel::newest()),
+            T::get_static_dtype().to_arrow(CompatLevel::newest()),
             out.into(),
             Some(validity.into()),
         );
@@ -253,7 +253,7 @@ where
         }
 
         let array = PrimitiveArray::new(
-            T::get_dtype().to_arrow(CompatLevel::newest()),
+            T::get_static_dtype().to_arrow(CompatLevel::newest()),
             out.into(),
             Some(validity.into()),
         );

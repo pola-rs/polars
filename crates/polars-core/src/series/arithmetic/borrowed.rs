@@ -45,11 +45,7 @@ impl<T: NumOpsDispatchInner> NumOpsDispatch for ChunkedArray<T> {
     }
 }
 
-impl<T> NumOpsDispatchInner for T
-where
-    T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
-{
+impl<T: PolarsNumericType> NumOpsDispatchInner for T {
     fn subtract(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
         polars_ensure!(
             lhs.dtype() == rhs.dtype(),
@@ -164,7 +160,7 @@ pub mod checked {
             lhs: &ChunkedArray<Self>,
             _rhs: T,
         ) -> PolarsResult<Series> {
-            polars_bail!(opq = checked_div_num, lhs.dtype(), Self::get_dtype());
+            polars_bail!(opq = checked_div_num, lhs.dtype(), Self::get_static_dtype());
         }
     }
 
@@ -187,7 +183,6 @@ pub mod checked {
     where
         T: PolarsIntegerType,
         T::Native: CheckedDiv<Output = T::Native> + CheckedDiv<Output = T::Native> + Zero + One,
-        ChunkedArray<T>: IntoSeries,
     {
         fn checked_div(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
             // SAFETY:
@@ -197,13 +192,12 @@ pub mod checked {
             // The ChunkedArray with the wrong dtype is dropped after this operation
             let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
 
-            Ok(
+            let ca: ChunkedArray<T> =
                 arity::binary_elementwise(lhs, rhs, |opt_l, opt_r| match (opt_l, opt_r) {
                     (Some(l), Some(r)) => l.checked_div(&r),
                     _ => None,
-                })
-                .into_series(),
-            )
+                });
+            Ok(ca.into_series())
         }
     }
 
@@ -310,11 +304,7 @@ pub mod checked {
                     .apply(|opt_v| {
                         opt_v.and_then(|v| {
                             let res = rhs.to_f32().unwrap();
-                            if res.is_zero() {
-                                None
-                            } else {
-                                Some(v / res)
-                            }
+                            if res.is_zero() { None } else { Some(v / res) }
                         })
                     })
                     .into_series(),
@@ -324,11 +314,7 @@ pub mod checked {
                     .apply(|opt_v| {
                         opt_v.and_then(|v| {
                             let res = rhs.to_f64().unwrap();
-                            if res.is_zero() {
-                                None
-                            } else {
-                                Some(v / res)
-                            }
+                            if res.is_zero() { None } else { Some(v / res) }
                         })
                     })
                     .into_series(),
@@ -448,8 +434,21 @@ pub fn _struct_arithmetic<F: FnMut(&Series, &Series) -> PolarsResult<Series>>(
             Ok(rhs.try_apply_fields(|rhs| func(s, rhs))?.into_series())
         },
         _ => {
-            let (s, rhs) = align_chunks_binary(s, rhs);
+            let mut s = Cow::Borrowed(s);
+            let mut rhs = Cow::Borrowed(rhs);
+
+            match (s.len(), rhs.len()) {
+                (l, r) if l == r => {},
+                (1, _) => s = Cow::Owned(s.new_from_index(0, rhs.len())),
+                (_, 1) => rhs = Cow::Owned(rhs.new_from_index(0, s.len())),
+                (l, r) => {
+                    polars_bail!(ComputeError: "Struct arithmetic between different lengths {l} != {r}")
+                },
+            };
+            let (s, rhs) = align_chunks_binary(&s, &rhs);
             let mut s = s.into_owned();
+
+            // Expects lengths to be equal.
             s.zip_outer_validity(rhs.as_ref());
 
             let mut rhs_iter = rhs.fields_as_series().into_iter();
@@ -659,9 +658,7 @@ where
     fn sub(self, rhs: T) -> Self::Output {
         let s = self.to_physical_repr();
         macro_rules! sub {
-            ($ca:expr) => {{
-                $ca.sub(rhs).into_series()
-            }};
+            ($ca:expr) => {{ $ca.sub(rhs).into_series() }};
         }
 
         let out = downcast_as_macro_arg_physical!(s, sub);
@@ -689,9 +686,7 @@ where
     fn add(self, rhs: T) -> Self::Output {
         let s = self.to_physical_repr();
         macro_rules! add {
-            ($ca:expr) => {{
-                $ca.add(rhs).into_series()
-            }};
+            ($ca:expr) => {{ $ca.add(rhs).into_series() }};
         }
         let out = downcast_as_macro_arg_physical!(s, add);
         finish_cast(self, out)
@@ -718,9 +713,7 @@ where
     fn div(self, rhs: T) -> Self::Output {
         let s = self.to_physical_repr();
         macro_rules! div {
-            ($ca:expr) => {{
-                $ca.div(rhs).into_series()
-            }};
+            ($ca:expr) => {{ $ca.div(rhs).into_series() }};
         }
 
         let out = downcast_as_macro_arg_physical!(s, div);
@@ -764,9 +757,7 @@ where
     fn mul(self, rhs: T) -> Self::Output {
         let s = self.to_physical_repr();
         macro_rules! mul {
-            ($ca:expr) => {{
-                $ca.mul(rhs).into_series()
-            }};
+            ($ca:expr) => {{ $ca.mul(rhs).into_series() }};
         }
         let out = downcast_as_macro_arg_physical!(s, mul);
         finish_cast(self, out)
@@ -793,9 +784,7 @@ where
     fn rem(self, rhs: T) -> Self::Output {
         let s = self.to_physical_repr();
         macro_rules! rem {
-            ($ca:expr) => {{
-                $ca.rem(rhs).into_series()
-            }};
+            ($ca:expr) => {{ $ca.rem(rhs).into_series() }};
         }
         let out = downcast_as_macro_arg_physical!(s, rem);
         finish_cast(self, out)
@@ -816,11 +805,7 @@ where
 /// We cannot override the left hand side behaviour. So we create a trait LhsNumOps.
 /// This allows for 1.add(&Series)
 ///
-impl<T> ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
-{
+impl<T: PolarsNumericType> ChunkedArray<T> {
     /// Apply lhs - self
     #[must_use]
     pub fn lhs_sub<N: Num + NumCast>(&self, lhs: N) -> Self {
@@ -866,9 +851,7 @@ where
     fn sub(self, rhs: &Series) -> Self::Output {
         let s = rhs.to_physical_repr();
         macro_rules! sub {
-            ($rhs:expr) => {{
-                $rhs.lhs_sub(self).into_series()
-            }};
+            ($rhs:expr) => {{ $rhs.lhs_sub(self).into_series() }};
         }
         let out = downcast_as_macro_arg_physical!(s, sub);
 
@@ -877,9 +860,7 @@ where
     fn div(self, rhs: &Series) -> Self::Output {
         let s = rhs.to_physical_repr();
         macro_rules! div {
-            ($rhs:expr) => {{
-                $rhs.lhs_div(self).into_series()
-            }};
+            ($rhs:expr) => {{ $rhs.lhs_div(self).into_series() }};
         }
         let out = downcast_as_macro_arg_physical!(s, div);
 
@@ -892,9 +873,7 @@ where
     fn rem(self, rhs: &Series) -> Self::Output {
         let s = rhs.to_physical_repr();
         macro_rules! rem {
-            ($rhs:expr) => {{
-                $rhs.lhs_rem(self).into_series()
-            }};
+            ($rhs:expr) => {{ $rhs.lhs_rem(self).into_series() }};
         }
 
         let out = downcast_as_macro_arg_physical!(s, rem);

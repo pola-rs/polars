@@ -22,3 +22,6 @@ pub mod bitmask;
 
 mod builder;
 pub use builder::*;
+
+#[cfg(feature = "proptest")]
+pub mod proptest;

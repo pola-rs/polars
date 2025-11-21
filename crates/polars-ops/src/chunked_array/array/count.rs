@@ -1,6 +1,6 @@
 use arrow::array::{Array, BooleanArray};
-use arrow::bitmap::utils::count_zeros;
 use arrow::bitmap::Bitmap;
+use arrow::bitmap::utils::count_zeros;
 use arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::arity::unary_mut_with_options;
 

@@ -9,10 +9,20 @@ pub(crate) fn new_chunks(chunks: &mut Vec<ArrayRef>, other: &[ArrayRef], len: us
         other.clone_into(chunks);
     } else {
         for chunk in other {
-            if chunk.len() > 0 {
+            if !chunk.is_empty() {
                 chunks.push(chunk.clone());
             }
         }
+    }
+}
+
+pub(crate) fn new_chunks_owned(chunks: &mut Vec<ArrayRef>, other: Vec<ArrayRef>, len: usize) {
+    // Replace an empty array.
+    if chunks.len() == 1 && len == 0 {
+        *chunks = other;
+    } else {
+        chunks.reserve(other.len());
+        chunks.extend(other.into_iter().filter(|c| !c.is_empty()));
     }
 }
 
@@ -149,11 +159,30 @@ where
         new_chunks(&mut self.chunks, &other.chunks, len);
         Ok(())
     }
+
+    /// Append in place. This is done by adding the chunks of `other` to this [`ChunkedArray`].
+    ///
+    /// See also [`extend`](Self::extend) for appends to the underlying memory
+    pub fn append_owned(&mut self, mut other: Self) -> PolarsResult<()> {
+        update_sorted_flag_before_append::<T>(self, &other);
+        let len = self.len();
+        self.length = self
+            .length
+            .checked_add(other.length)
+            .ok_or_else(|| polars_err!(ComputeError: LENGTH_LIMIT_MSG))?;
+        self.null_count += other.null_count;
+        new_chunks_owned(&mut self.chunks, std::mem::take(&mut other.chunks), len);
+        Ok(())
+    }
 }
 
 #[doc(hidden)]
 impl ListChunked {
     pub fn append(&mut self, other: &Self) -> PolarsResult<()> {
+        self.append_owned(other.clone())
+    }
+
+    pub fn append_owned(&mut self, mut other: Self) -> PolarsResult<()> {
         let dtype = merge_dtypes(self.dtype(), other.dtype())?;
         self.field = Arc::new(Field::new(self.name().clone(), dtype));
 
@@ -163,11 +192,12 @@ impl ListChunked {
             .checked_add(other.length)
             .ok_or_else(|| polars_err!(ComputeError: LENGTH_LIMIT_MSG))?;
         self.null_count += other.null_count;
-        new_chunks(&mut self.chunks, &other.chunks, len);
         self.set_sorted_flag(IsSorted::Not);
         if !other.get_fast_explode_list() {
             self.unset_fast_explode_list()
         }
+
+        new_chunks_owned(&mut self.chunks, std::mem::take(&mut other.chunks), len);
         Ok(())
     }
 }
@@ -176,6 +206,10 @@ impl ListChunked {
 #[doc(hidden)]
 impl ArrayChunked {
     pub fn append(&mut self, other: &Self) -> PolarsResult<()> {
+        self.append_owned(other.clone())
+    }
+
+    pub fn append_owned(&mut self, mut other: Self) -> PolarsResult<()> {
         let dtype = merge_dtypes(self.dtype(), other.dtype())?;
         self.field = Arc::new(Field::new(self.name().clone(), dtype));
 
@@ -187,8 +221,9 @@ impl ArrayChunked {
             .ok_or_else(|| polars_err!(ComputeError: LENGTH_LIMIT_MSG))?;
         self.null_count += other.null_count;
 
-        new_chunks(&mut self.chunks, &other.chunks, len);
         self.set_sorted_flag(IsSorted::Not);
+
+        new_chunks_owned(&mut self.chunks, std::mem::take(&mut other.chunks), len);
         Ok(())
     }
 }
@@ -197,6 +232,10 @@ impl ArrayChunked {
 #[doc(hidden)]
 impl StructChunked {
     pub fn append(&mut self, other: &Self) -> PolarsResult<()> {
+        self.append_owned(other.clone())
+    }
+
+    pub fn append_owned(&mut self, mut other: Self) -> PolarsResult<()> {
         let dtype = merge_dtypes(self.dtype(), other.dtype())?;
         self.field = Arc::new(Field::new(self.name().clone(), dtype));
 
@@ -208,9 +247,24 @@ impl StructChunked {
             .ok_or_else(|| polars_err!(ComputeError: LENGTH_LIMIT_MSG))?;
         self.null_count += other.null_count;
 
-        new_chunks(&mut self.chunks, &other.chunks, len);
         self.set_sorted_flag(IsSorted::Not);
+
+        new_chunks_owned(&mut self.chunks, std::mem::take(&mut other.chunks), len);
         Ok(())
+    }
+}
+
+#[cfg(feature = "dtype-categorical")]
+#[doc(hidden)]
+impl<T: PolarsCategoricalType> CategoricalChunked<T> {
+    pub fn append(&mut self, other: &Self) -> PolarsResult<()> {
+        assert!(self.dtype() == other.dtype());
+        self.phys.append(&other.phys)
+    }
+
+    pub fn append_owned(&mut self, other: Self) -> PolarsResult<()> {
+        assert!(self.dtype() == other.dtype());
+        self.phys.append_owned(other.phys)
     }
 }
 
@@ -218,6 +272,10 @@ impl StructChunked {
 #[doc(hidden)]
 impl<T: PolarsObject> ObjectChunked<T> {
     pub fn append(&mut self, other: &Self) -> PolarsResult<()> {
+        self.append_owned(other.clone())
+    }
+
+    pub fn append_owned(&mut self, mut other: Self) -> PolarsResult<()> {
         let len = self.len();
         self.length = self
             .length
@@ -225,7 +283,8 @@ impl<T: PolarsObject> ObjectChunked<T> {
             .ok_or_else(|| polars_err!(ComputeError: LENGTH_LIMIT_MSG))?;
         self.null_count += other.null_count;
         self.set_sorted_flag(IsSorted::Not);
-        new_chunks(&mut self.chunks, &other.chunks, len);
+
+        new_chunks_owned(&mut self.chunks, std::mem::take(&mut other.chunks), len);
         Ok(())
     }
 }

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 import pytest
 from hypothesis import given
@@ -11,12 +11,6 @@ from polars.exceptions import PanicException
 from polars.testing import assert_series_equal
 from polars.testing.parametric import series
 from tests.unit.conftest import NUMERIC_DTYPES
-
-if TYPE_CHECKING:
-    from zoneinfo import ZoneInfo
-
-else:
-    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 @given(
@@ -130,7 +124,7 @@ def test_series_from_buffers_string() -> None:
 
 def test_series_from_buffers_enum() -> None:
     dtype = pl.Enum(["a", "b", "c"])
-    data = pl.Series([0, 1, 0, 2], dtype=pl.UInt32)
+    data = pl.Series([0, 1, 0, 2], dtype=pl.UInt8)
     validity = pl.Series([True, True, False, True])
 
     result = pl.Series._from_buffers(dtype, data=data, validity=validity)

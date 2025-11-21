@@ -10,29 +10,18 @@ pub(super) fn predicate_to_key(predicate: Node, expr_arena: &Arena<AExpr>) -> Pl
     if let Some(first) = iter.next() {
         if let Some(second) = iter.next() {
             let mut new = String::with_capacity(32 * iter.size_hint().0);
-            new.push_str(&first);
+            new.push_str(first);
             new.push_str(HIDDEN_DELIMITER);
-            new.push_str(&second);
+            new.push_str(second);
 
             for name in iter {
                 new.push_str(HIDDEN_DELIMITER);
-                new.push_str(&name);
+                new.push_str(name);
             }
             return PlSmallStr::from_string(new);
         }
-        first
+        first.clone()
     } else {
         PlSmallStr::from_str(HIDDEN_DELIMITER)
     }
-}
-
-pub(super) fn key_has_name(key: &str, name: &str) -> bool {
-    if key.contains(HIDDEN_DELIMITER) {
-        for root_name in key.split(HIDDEN_DELIMITER) {
-            if root_name == name {
-                return true;
-            }
-        }
-    }
-    key == name
 }

@@ -84,15 +84,14 @@ fn from() {
 
 #[test]
 fn from_trusted_len_iter() {
-    let iter = std::iter::repeat(b"hello").take(2).map(Some);
+    let iter = std::iter::repeat_n(b"hello", 2).map(Some);
     let a = BinaryArray::<i32>::from_trusted_len_iter(iter);
     assert_eq!(a.len(), 2);
 }
 
 #[test]
 fn try_from_trusted_len_iter() {
-    let iter = std::iter::repeat(b"hello".as_ref())
-        .take(2)
+    let iter = std::iter::repeat_n(b"hello".as_ref(), 2)
         .map(Some)
         .map(PolarsResult::Ok);
     let a = BinaryArray::<i32>::try_from_trusted_len_iter(iter).unwrap();
@@ -101,7 +100,7 @@ fn try_from_trusted_len_iter() {
 
 #[test]
 fn from_iter() {
-    let iter = std::iter::repeat(b"hello").take(2).map(Some);
+    let iter = std::iter::repeat_n(b"hello", 2).map(Some);
     let a: BinaryArray<i32> = iter.collect();
     assert_eq!(a.len(), 2);
 }

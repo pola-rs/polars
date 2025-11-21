@@ -4,6 +4,7 @@ use arrow::bitmap::Bitmap;
 
 use super::*;
 use crate::chunked_array::StructChunked;
+use crate::prelude::row_encode::{_get_rows_encoded_ca_unordered, encode_rows_unordered};
 use crate::prelude::*;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
 
@@ -14,7 +15,7 @@ impl PrivateSeriesNumeric for SeriesWrap<StructChunked> {
 }
 
 impl PrivateSeries for SeriesWrap<StructChunked> {
-    fn _field(&self) -> Cow<Field> {
+    fn _field(&self) -> Cow<'_, Field> {
         Cow::Borrowed(self.0.ref_field())
     }
 
@@ -26,11 +27,13 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
         self.0.compute_len()
     }
 
-    fn _get_flags(&self) -> MetadataFlags {
-        MetadataFlags::empty()
+    fn _get_flags(&self) -> StatisticsFlags {
+        self.0.get_flags()
     }
 
-    fn _set_flags(&mut self, _flags: MetadataFlags) {}
+    fn _set_flags(&mut self, flags: StatisticsFlags) {
+        self.0.set_flags(flags);
+    }
 
     // TODO! remove this. Very slow. Asof join should use row-encoding.
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
@@ -42,8 +45,26 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
             .all(|(s, other)| s.equal_element(idx_self, idx_other, &other))
     }
 
+    fn vec_hash(
+        &self,
+        build_hasher: PlSeedableRandomStateQuality,
+        buf: &mut Vec<u64>,
+    ) -> PolarsResult<()> {
+        _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, &[self.0.clone().into_column()])?
+            .vec_hash(build_hasher, buf)
+    }
+
+    fn vec_hash_combine(
+        &self,
+        build_hasher: PlSeedableRandomStateQuality,
+        hashes: &mut [u64],
+    ) -> PolarsResult<()> {
+        _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, &[self.0.clone().into_column()])?
+            .vec_hash_combine(build_hasher, hashes)
+    }
+
     #[cfg(feature = "algorithm_group_by")]
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
         let ca = self.0.get_row_encoded(Default::default())?;
         ca.group_tuples(multithreaded, sorted)
     }
@@ -55,21 +76,16 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
             .map(|ca| ca.into_series())
     }
 
-    #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
-        self.0.agg_list(groups)
+    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
+        invalid_operation_panic!(into_total_eq_inner, self)
+    }
+    fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
+        invalid_operation_panic!(into_total_ord_inner, self)
     }
 
-    fn vec_hash(&self, build_hasher: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
-        let mut fields = self.0.fields_as_series().into_iter();
-
-        if let Some(s) = fields.next() {
-            s.vec_hash(build_hasher.clone(), buf)?
-        };
-        for s in fields {
-            s.vec_hash_combine(build_hasher.clone(), buf)?
-        }
-        Ok(())
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
+        self.0.agg_list(groups)
     }
 }
 
@@ -78,7 +94,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         self.0.rename(name)
     }
 
-    fn chunk_lengths(&self) -> ChunkLenIter {
+    fn chunk_lengths(&self) -> ChunkLenIter<'_> {
         self.0.chunk_lengths()
     }
 
@@ -107,6 +123,10 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
         self.0.append(other.as_ref().as_ref())
     }
+    fn append_owned(&mut self, other: Series) -> PolarsResult<()> {
+        polars_ensure!(self.0.dtype() == other.dtype(), append);
+        self.0.append_owned(other.take_inner())
+    }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), extend);
@@ -133,24 +153,37 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         self.0.take_unchecked(_idx).into_series()
     }
 
+    fn deposit(&self, validity: &Bitmap) -> Series {
+        self.0.deposit(validity).into_series()
+    }
+
     fn len(&self) -> usize {
         self.0.len()
     }
 
     fn rechunk(&self) -> Series {
-        let ca = self.0.rechunk();
-        ca.into_series()
+        self.0.rechunk().into_owned().into_series()
     }
 
     fn new_from_index(&self, _index: usize, _length: usize) -> Series {
         self.0.new_from_index(_index, _length).into_series()
     }
 
+    fn trim_lists_to_normalized_offsets(&self) -> Option<Series> {
+        self.0
+            .trim_lists_to_normalized_offsets()
+            .map(IntoSeries::into_series)
+    }
+
+    fn propagate_nulls(&self) -> Option<Series> {
+        self.0.propagate_nulls().map(IntoSeries::into_series)
+    }
+
     fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
         self.0.cast_with_options(dtype, cast_options)
     }
 
-    unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
+    unsafe fn get_unchecked(&self, index: usize) -> AnyValue<'_> {
         self.0.get_any_value_unchecked(index)
     }
 
@@ -201,6 +234,11 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         Ok(IdxCa::from_vec(self.name().clone(), first))
     }
 
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        let ca = encode_rows_unordered(&[self.0.clone().into_column()])?;
+        ChunkUnique::unique_id(&ca)
+    }
+
     fn has_nulls(&self) -> bool {
         self.0.has_nulls()
     }
@@ -246,8 +284,24 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
 
+    fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>) {
+        self.0.find_validity_mismatch(other, idxs)
+    }
+
     fn as_any(&self) -> &dyn Any {
         &self.0
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        &mut self.0
+    }
+
+    fn as_phys_any(&self) -> &dyn Any {
+        &self.0
+    }
+
+    fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self as _
     }
 
     fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {

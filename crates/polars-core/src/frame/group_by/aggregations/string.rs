@@ -18,22 +18,18 @@ where
 
 impl BinaryChunked {
     #[allow(clippy::needless_lifetimes)]
-    pub(crate) unsafe fn agg_min<'a>(&'a self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_min<'a>(&'a self, groups: &GroupsType) -> Series {
         // faster paths
-        match (&self.is_sorted_flag(), &self.null_count()) {
-            (IsSorted::Ascending, 0) => {
-                return self.clone().into_series().agg_first(groups);
-            },
-            (IsSorted::Descending, 0) => {
-                return self.clone().into_series().agg_last(groups);
-            },
+        match self.is_sorted_flag() {
+            IsSorted::Ascending => return self.clone().into_series().agg_first_non_null(groups),
+            IsSorted::Descending => return self.clone().into_series().agg_last_non_null(groups),
             _ => {},
         }
 
         match groups {
-            GroupsProxy::Idx(groups) => {
+            GroupsType::Idx(groups) => {
                 let ca_self = self.rechunk();
-                let arr = ca_self.downcast_iter().next().unwrap();
+                let arr = ca_self.downcast_as_array();
                 let no_nulls = arr.null_count() == 0;
                 _agg_helper_idx_bin(groups, |(first, idx)| {
                     debug_assert!(idx.len() <= ca_self.len());
@@ -57,7 +53,7 @@ impl BinaryChunked {
                     }
                 })
             },
-            GroupsProxy::Slice {
+            GroupsType::Slice {
                 groups: groups_slice,
                 ..
             } => _agg_helper_slice_bin(groups_slice, |[first, len]| {
@@ -80,7 +76,7 @@ impl BinaryChunked {
     }
 
     #[allow(clippy::needless_lifetimes)]
-    pub(crate) unsafe fn agg_max<'a>(&'a self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_max<'a>(&'a self, groups: &GroupsType) -> Series {
         // faster paths
         match (self.is_sorted_flag(), self.null_count()) {
             (IsSorted::Ascending, 0) => {
@@ -93,9 +89,9 @@ impl BinaryChunked {
         }
 
         match groups {
-            GroupsProxy::Idx(groups) => {
+            GroupsType::Idx(groups) => {
                 let ca_self = self.rechunk();
-                let arr = ca_self.downcast_iter().next().unwrap();
+                let arr = ca_self.downcast_as_array();
                 let no_nulls = arr.null_count() == 0;
                 _agg_helper_idx_bin(groups, |(first, idx)| {
                     debug_assert!(idx.len() <= self.len());
@@ -119,7 +115,7 @@ impl BinaryChunked {
                     }
                 })
             },
-            GroupsProxy::Slice {
+            GroupsType::Slice {
                 groups: groups_slice,
                 ..
             } => _agg_helper_slice_bin(groups_slice, |[first, len]| {
@@ -144,13 +140,13 @@ impl BinaryChunked {
 
 impl StringChunked {
     #[allow(clippy::needless_lifetimes)]
-    pub(crate) unsafe fn agg_min<'a>(&'a self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_min<'a>(&'a self, groups: &GroupsType) -> Series {
         let out = self.as_binary().agg_min(groups);
         out.binary().unwrap().to_string_unchecked().into_series()
     }
 
     #[allow(clippy::needless_lifetimes)]
-    pub(crate) unsafe fn agg_max<'a>(&'a self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_max<'a>(&'a self, groups: &GroupsType) -> Series {
         let out = self.as_binary().agg_max(groups);
         out.binary().unwrap().to_string_unchecked().into_series()
     }

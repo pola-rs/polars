@@ -152,46 +152,74 @@ where
     StructChunked::from_series(ca.name().clone(), ca.len(), fields.iter())
 }
 
-pub fn split_helper<'a, F, I>(ca: &'a StringChunked, by: &'a StringChunked, op: F) -> ListChunked
+pub fn split_helper<'a, F, I>(
+    ca: &'a StringChunked,
+    by: &'a StringChunked,
+    op: F,
+) -> PolarsResult<ListChunked>
 where
     F: Fn(&'a str, &'a str) -> I,
     I: Iterator<Item = &'a str>,
 {
-    if by.len() == 1 {
-        if let Some(by) = by.get(0) {
+    Ok(match (ca.len(), by.len()) {
+        (a, b) if a == b => {
             let mut builder =
                 ListStringChunkedBuilder::new(ca.name().clone(), ca.len(), ca.get_values_size());
 
-            if by.is_empty() {
-                ca.for_each(|opt_s| match opt_s {
-                    Some(s) => builder.append_values_iter(split_chars(s)),
-                    _ => builder.append_null(),
-                });
-            } else {
-                ca.for_each(|opt_s| match opt_s {
-                    Some(s) => builder.append_values_iter(op(s, by)),
-                    _ => builder.append_null(),
-                });
-            }
+            binary_elementwise_for_each(ca, by, |opt_s, opt_by| match (opt_s, opt_by) {
+                (Some(s), Some(by)) => {
+                    if by.is_empty() {
+                        builder.append_values_iter(split_chars(s))
+                    } else {
+                        builder.append_values_iter(op(s, by))
+                    }
+                },
+                _ => builder.append_null(),
+            });
+
             builder.finish()
-        } else {
-            ListChunked::full_null_with_dtype(ca.name().clone(), ca.len(), &DataType::String)
-        }
-    } else {
-        let mut builder =
-            ListStringChunkedBuilder::new(ca.name().clone(), ca.len(), ca.get_values_size());
+        },
+        (1, _) => {
+            if let Some(s) = ca.get(0) {
+                let mut builder = ListStringChunkedBuilder::new(
+                    by.name().clone(),
+                    by.len(),
+                    by.get_values_size(),
+                );
 
-        binary_elementwise_for_each(ca, by, |opt_s, opt_by| match (opt_s, opt_by) {
-            (Some(s), Some(by)) => {
+                by.for_each(|opt_by| match opt_by {
+                    Some(by) => builder.append_values_iter(op(s, by)),
+                    _ => builder.append_null(),
+                });
+                builder.finish()
+            } else {
+                ListChunked::full_null_with_dtype(ca.name().clone(), ca.len(), &DataType::String)
+            }
+        },
+        (_, 1) => {
+            if let Some(by) = by.get(0) {
+                let mut builder = ListStringChunkedBuilder::new(
+                    ca.name().clone(),
+                    ca.len(),
+                    ca.get_values_size(),
+                );
+
                 if by.is_empty() {
-                    builder.append_values_iter(split_chars(s))
+                    ca.for_each(|opt_s| match opt_s {
+                        Some(s) => builder.append_values_iter(split_chars(s)),
+                        _ => builder.append_null(),
+                    });
                 } else {
-                    builder.append_values_iter(op(s, by))
+                    ca.for_each(|opt_s| match opt_s {
+                        Some(s) => builder.append_values_iter(op(s, by)),
+                        _ => builder.append_null(),
+                    });
                 }
-            },
-            _ => builder.append_null(),
-        });
-
-        builder.finish()
-    }
+                builder.finish()
+            } else {
+                ListChunked::full_null_with_dtype(ca.name().clone(), ca.len(), &DataType::String)
+            }
+        },
+        _ => polars_bail!(length_mismatch = "str.split", ca.len(), by.len()),
+    })
 }

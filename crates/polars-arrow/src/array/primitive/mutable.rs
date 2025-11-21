@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use polars_error::PolarsResult;
 
-use super::{check, PrimitiveArray};
+use super::{PrimitiveArray, check};
 use crate::array::physical_binary::extend_validity;
 use crate::array::{Array, MutableArray, TryExtend, TryExtendFromSelf, TryPush};
 use crate::bitmap::{Bitmap, MutableBitmap};

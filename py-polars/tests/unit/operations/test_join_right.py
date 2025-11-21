@@ -1,4 +1,5 @@
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_right_join_schemas() -> None:
@@ -7,7 +8,9 @@ def test_right_join_schemas() -> None:
     b = pl.DataFrame({"a": [1, 3], "b": [1, 3], "c": [1, 3]})
 
     # coalesces the join key, so the key of the right table remains
-    assert a.join(b, on="a", how="right", coalesce=True).to_dict(as_series=False) == {
+    assert a.join(
+        b, on="a", how="right", coalesce=True, maintain_order="right"
+    ).to_dict(as_series=False) == {
         "b": [1, 3],
         "a": [1, 3],
         "b_right": [1, 3],
@@ -23,12 +26,18 @@ def test_right_join_schemas() -> None:
     ]
 
     # coalesces the join key, so the key of the right table remains
-    assert b.join(a, on="a", how="right", coalesce=True).to_dict(as_series=False) == {
-        "b": [1, None, 3],
-        "c": [1, None, 3],
-        "a": [1, 2, 3],
-        "b_right": [1, 2, 3],
-    }
+    assert_frame_equal(
+        b.join(a, on="a", how="right", coalesce=True),
+        pl.DataFrame(
+            {
+                "b": [1, None, 3],
+                "c": [1, None, 3],
+                "a": [1, 2, 3],
+                "b_right": [1, 2, 3],
+            }
+        ),
+        check_row_order=False,
+    )
     assert b.join(a, on="a", how="right", coalesce=False).columns == [
         "a",
         "b",
@@ -65,12 +74,18 @@ def test_right_join_schemas_multikey() -> None:
         "b_right",
         "c_right",
     ]
-    assert a.join(b, on=["a", "b"], how="right", coalesce=True).to_dict(
-        as_series=False
-    ) == {"c": [1, 3], "a": [1, 3], "b": [1, 3], "c_right": [1, 3]}
-    assert b.join(a, on=["a", "b"], how="right", coalesce=True).to_dict(
-        as_series=False
-    ) == {"c": [1, None, 3], "a": [1, 2, 3], "b": [1, 2, 3], "c_right": [1, 2, 3]}
+    assert_frame_equal(
+        a.join(b, on=["a", "b"], how="right", coalesce=True),
+        pl.DataFrame({"c": [1, 3], "a": [1, 3], "b": [1, 3], "c_right": [1, 3]}),
+        check_row_order=False,
+    )
+    assert_frame_equal(
+        b.join(a, on=["a", "b"], how="right", coalesce=True),
+        pl.DataFrame(
+            {"c": [1, None, 3], "a": [1, 2, 3], "b": [1, 2, 3], "c_right": [1, 2, 3]}
+        ),
+        check_row_order=False,
+    )
 
 
 def test_join_right_different_key() -> None:
@@ -87,11 +102,20 @@ def test_join_right_different_key() -> None:
             "ham2": ["a", "b", "d"],
         }
     )
-    assert df.join(other_df, left_on="ham1", right_on="ham2", how="right").to_dict(
-        as_series=False
-    ) == {
+    assert df.join(
+        other_df, left_on="ham1", right_on="ham2", how="right", maintain_order="right"
+    ).to_dict(as_series=False) == {
         "foo": [1, 2, None],
         "bar": [6.0, 7.0, None],
         "apple": ["x", "y", "z"],
         "ham2": ["a", "b", "d"],
     }
+
+
+def test_join_right_different_multikey() -> None:
+    left = pl.LazyFrame({"a": [1, 2], "b": [1, 2]})
+    right = pl.LazyFrame({"c": [1, 2], "d": [1, 2]})
+    result = left.join(right, left_on=["a", "b"], right_on=["c", "d"], how="right")
+    expected = pl.DataFrame({"c": [1, 2], "d": [1, 2]})
+    assert_frame_equal(result.collect(), expected, check_row_order=False)
+    assert result.collect_schema() == expected.schema

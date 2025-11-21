@@ -1,6 +1,6 @@
 //! Boolean operators of [Kleene logic](https://en.wikipedia.org/wiki/Three-valued_logic#Kleene_and_Priest_logics).
 use crate::array::{Array, BooleanArray};
-use crate::bitmap::{binary, quaternary, ternary, unary, Bitmap, MutableBitmap};
+use crate::bitmap::{Bitmap, binary, quaternary, ternary, unary};
 use crate::datatypes::ArrowDataType;
 use crate::scalar::BooleanScalar;
 
@@ -184,11 +184,11 @@ pub fn and(lhs: &BooleanArray, rhs: &BooleanArray) -> BooleanArray {
 /// ```
 pub fn or_scalar(array: &BooleanArray, scalar: &BooleanScalar) -> BooleanArray {
     match scalar.value() {
-        Some(true) => {
-            let mut values = MutableBitmap::new();
-            values.extend_constant(array.len(), true);
-            BooleanArray::new(ArrowDataType::Boolean, values.into(), None)
-        },
+        Some(true) => BooleanArray::new(
+            ArrowDataType::Boolean,
+            Bitmap::new_with_value(true, array.len()),
+            None,
+        ),
         Some(false) => array.clone(),
         None => {
             let values = array.values();
@@ -258,8 +258,10 @@ pub fn and_scalar(array: &BooleanArray, scalar: &BooleanScalar) -> BooleanArray 
 pub fn any(array: &BooleanArray) -> Option<bool> {
     if array.is_empty() {
         Some(false)
-    } else if array.null_count() > 0 {
-        if array.into_iter().any(|v| v == Some(true)) {
+    } else if let Some(validity) = array.validity()
+        && validity.unset_bits() > 0
+    {
+        if array.values().intersects_with(validity) {
             Some(true)
         } else {
             None

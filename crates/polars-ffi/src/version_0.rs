@@ -1,3 +1,4 @@
+use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, CompatLevel};
 
 use super::*;
@@ -58,11 +59,9 @@ pub fn export_column(c: &Column) -> SeriesExport {
 }
 
 pub fn export_series(s: &Series) -> SeriesExport {
-    let field = ArrowField::new(
-        s.name().clone(),
-        s.dtype().to_arrow(CompatLevel::newest()),
-        true,
-    );
+    let field = s
+        .dtype()
+        .to_arrow_field(s.name().clone(), CompatLevel::newest());
     let schema = Box::new(ffi::export_field_to_c(&field));
 
     let mut arrays = (0..s.chunks().len())
@@ -99,7 +98,12 @@ pub unsafe fn import_series(e: SeriesExport) -> PolarsResult<Series> {
         })
         .collect::<PolarsResult<Vec<_>>>()?;
 
-    Series::try_from((field.name.clone(), chunks))
+    Series::_try_from_arrow_unchecked_with_md(
+        field.name.clone(),
+        chunks,
+        field.dtype(),
+        field.metadata.as_deref(),
+    )
 }
 
 /// # Safety
@@ -111,6 +115,18 @@ pub unsafe fn import_series_buffer(e: *mut SeriesExport, len: usize) -> PolarsRe
         out.push(import_series(e)?)
     }
     Ok(out)
+}
+
+/// # Safety
+/// `SeriesExport` must be valid
+pub unsafe fn import_df(e: *mut SeriesExport, len: usize) -> PolarsResult<DataFrame> {
+    let mut out = Vec::with_capacity(len);
+    for i in 0..len {
+        let e = std::ptr::read(e.add(i));
+        let s = import_series(e)?;
+        out.push(s.into())
+    }
+    Ok(DataFrame::new_no_checks_height_from_first(out))
 }
 
 /// Passed to an expression.

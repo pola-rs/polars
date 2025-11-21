@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 
 use super::BooleanArray;
 use crate::array::physical_binary::extend_validity;
@@ -69,8 +69,8 @@ impl MutableBooleanArray {
         }
 
         if dtype.to_physical_type() != PhysicalType::Boolean {
-            polars_bail!(oos =
-                "MutableBooleanArray can only be initialized with a DataType whose physical type is Boolean",
+            polars_bail!(
+                oos = "MutableBooleanArray can only be initialized with a DataType whose physical type is Boolean",
             )
         }
 
@@ -265,9 +265,10 @@ impl MutableBooleanArray {
         if value.is_none() && self.validity.is_none() {
             // When the validity is None, all elements so far are valid. When one of the elements is set of null,
             // the validity must be initialized.
-            self.validity = Some(MutableBitmap::from_trusted_len_iter(
-                std::iter::repeat(true).take(self.len()),
-            ));
+            self.validity = Some(MutableBitmap::from_trusted_len_iter(std::iter::repeat_n(
+                true,
+                self.len(),
+            )));
         }
         if let Some(x) = self.validity.as_mut() {
             x.set(index, value.is_some())

@@ -1,16 +1,17 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
 
 macro_rules! unpack_chunked_err {
     ($series:expr => $name:expr) => {
-        polars_err!(SchemaMismatch: "invalid series dtype: expected `{}`, got `{}`", $name, $series.dtype())
+        polars_err!(SchemaMismatch: "invalid series dtype: expected `{}`, got `{}` for series with name `{}`", $name, $series.dtype(), $series.name())
     };
 }
 
 macro_rules! try_unpack_chunked {
-    ($series:expr, $expected:pat => $ca:ty) => {
+    ($series:expr, $expected:pat $(if $guard: expr)? => $ca:ty) => {
         match $series.dtype() {
-            $expected => {
+            $expected $(if $guard)? => {
                 // Check downcast in debug compiles
                 #[cfg(debug_assertions)]
                 {
@@ -61,6 +62,12 @@ impl Series {
         try_unpack_chunked!(self, DataType::Int64 => Int64Chunked)
     }
 
+    /// Unpack to [`ChunkedArray`] of dtype [`DataType::Int128`]
+    #[cfg(feature = "dtype-i128")]
+    pub fn try_i128(&self) -> Option<&Int128Chunked> {
+        try_unpack_chunked!(self, DataType::Int128 => Int128Chunked)
+    }
+
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Float32`]
     pub fn try_f32(&self) -> Option<&Float32Chunked> {
         try_unpack_chunked!(self, DataType::Float32 => Float32Chunked)
@@ -89,6 +96,12 @@ impl Series {
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::UInt64`]
     pub fn try_u64(&self) -> Option<&UInt64Chunked> {
         try_unpack_chunked!(self, DataType::UInt64 => UInt64Chunked)
+    }
+
+    /// Unpack to [`ChunkedArray`] of dtype [`DataType::UInt128`]
+    #[cfg(feature = "dtype-u128")]
+    pub fn try_u128(&self) -> Option<&UInt128Chunked> {
+        try_unpack_chunked!(self, DataType::UInt128 => UInt128Chunked)
     }
 
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Boolean`]
@@ -152,10 +165,31 @@ impl Series {
         try_unpack_chunked!(self, DataType::Array(_, _) => ArrayChunked)
     }
 
-    /// Unpack to [`ChunkedArray`] of dtype [`DataType::Categorical`]
     #[cfg(feature = "dtype-categorical")]
-    pub fn try_categorical(&self) -> Option<&CategoricalChunked> {
-        try_unpack_chunked!(self, DataType::Categorical(_, _) | DataType::Enum(_, _) => CategoricalChunked)
+    pub fn try_cat<T: PolarsCategoricalType>(&self) -> Option<&CategoricalChunked<T>> {
+        try_unpack_chunked!(self, dt @ DataType::Enum(_, _) | dt @ DataType::Categorical(_, _) if dt.cat_physical().unwrap() == T::physical() => CategoricalChunked<T>)
+    }
+
+    /// Unpack to [`ChunkedArray`] of dtype [`DataType::Categorical`] or [`DataType::Enum`] with a physical type of UInt8.
+    #[cfg(feature = "dtype-categorical")]
+    pub fn try_cat8(&self) -> Option<&Categorical8Chunked> {
+        self.try_cat::<Categorical8Type>()
+    }
+
+    #[cfg(feature = "dtype-categorical")]
+    pub fn try_cat16(&self) -> Option<&Categorical16Chunked> {
+        self.try_cat::<Categorical16Type>()
+    }
+
+    #[cfg(feature = "dtype-categorical")]
+    pub fn try_cat32(&self) -> Option<&Categorical32Chunked> {
+        self.try_cat::<Categorical32Type>()
+    }
+
+    /// Unpack to [`ExtensionChunked`] of dtype [`DataType::Extension`].
+    #[cfg(feature = "dtype-extension")]
+    pub fn try_ext(&self) -> Option<&ExtensionChunked> {
+        try_unpack_chunked!(self, DataType::Extension(_, _) => ExtensionChunked)
     }
 
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Struct`]
@@ -213,6 +247,13 @@ impl Series {
             .ok_or_else(|| unpack_chunked_err!(self => "Int64"))
     }
 
+    /// Unpack to [`ChunkedArray`] of dtype [`DataType::Int128`]
+    #[cfg(feature = "dtype-i128")]
+    pub fn i128(&self) -> PolarsResult<&Int128Chunked> {
+        self.try_i128()
+            .ok_or_else(|| unpack_chunked_err!(self => "Int128"))
+    }
+
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Float32`]
     pub fn f32(&self) -> PolarsResult<&Float32Chunked> {
         self.try_f32()
@@ -247,6 +288,13 @@ impl Series {
     pub fn u64(&self) -> PolarsResult<&UInt64Chunked> {
         self.try_u64()
             .ok_or_else(|| unpack_chunked_err!(self => "UInt64"))
+    }
+
+    /// Unpack to [`ChunkedArray`] of dtype [`DataType::UInt128`]
+    #[cfg(feature = "dtype-u128")]
+    pub fn u128(&self) -> PolarsResult<&UInt128Chunked> {
+        self.try_u128()
+            .ok_or_else(|| unpack_chunked_err!(self => "UInt128"))
     }
 
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Boolean`]
@@ -318,14 +366,35 @@ impl Series {
     #[cfg(feature = "dtype-array")]
     pub fn array(&self) -> PolarsResult<&ArrayChunked> {
         self.try_array()
-            .ok_or_else(|| unpack_chunked_err!(self => "FixedSizeList"))
+            .ok_or_else(|| unpack_chunked_err!(self => "Array"))
     }
 
-    /// Unpack to [`ChunkedArray`] of dtype [`DataType::Categorical`]
+    /// Unpack to [`ChunkedArray`] of dtype [`DataType::Categorical`] or [`DataType::Enum`].
     #[cfg(feature = "dtype-categorical")]
-    pub fn categorical(&self) -> PolarsResult<&CategoricalChunked> {
-        self.try_categorical()
+    pub fn cat<T: PolarsCategoricalType>(&self) -> PolarsResult<&CategoricalChunked<T>> {
+        self.try_cat::<T>()
             .ok_or_else(|| unpack_chunked_err!(self => "Enum | Categorical"))
+    }
+
+    /// Unpack to [`ChunkedArray`] of dtype [`DataType::Categorical`] or [`DataType::Enum`] with a physical type of UInt8.
+    #[cfg(feature = "dtype-categorical")]
+    pub fn cat8(&self) -> PolarsResult<&CategoricalChunked<Categorical8Type>> {
+        self.try_cat8()
+            .ok_or_else(|| unpack_chunked_err!(self => "Enum8 | Categorical8"))
+    }
+
+    /// Unpack to [`ChunkedArray`] of dtype [`DataType::Categorical`] or [`DataType::Enum`] with a physical type of UInt16.
+    #[cfg(feature = "dtype-categorical")]
+    pub fn cat16(&self) -> PolarsResult<&CategoricalChunked<Categorical16Type>> {
+        self.try_cat16()
+            .ok_or_else(|| unpack_chunked_err!(self => "Enum16 | Categorical16"))
+    }
+
+    /// Unpack to [`ChunkedArray`] of dtype [`DataType::Categorical`] or [`DataType::Enum`] with a physical type of UInt32.
+    #[cfg(feature = "dtype-categorical")]
+    pub fn cat32(&self) -> PolarsResult<&CategoricalChunked<Categorical32Type>> {
+        self.try_cat32()
+            .ok_or_else(|| unpack_chunked_err!(self => "Enum32 | Categorical32"))
     }
 
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Struct`]
@@ -341,6 +410,13 @@ impl Series {
 
         self.try_struct()
             .ok_or_else(|| unpack_chunked_err!(self => "Struct"))
+    }
+
+    /// Unpack to [`ExtensionChunked`] of dtype [`DataType::Extension`].
+    #[cfg(feature = "dtype-extension")]
+    pub fn ext(&self) -> PolarsResult<&ExtensionChunked> {
+        self.try_ext()
+            .ok_or_else(|| unpack_chunked_err!(self => "Extension"))
     }
 
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Null`]

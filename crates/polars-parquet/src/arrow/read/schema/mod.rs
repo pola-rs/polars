@@ -6,7 +6,7 @@ mod metadata;
 
 pub(crate) use convert::*;
 pub use convert::{parquet_to_arrow_schema, parquet_to_arrow_schema_with_options};
-pub use metadata::read_schema_from_metadata;
+pub use metadata::{read_custom_key_value_metadata, read_schema_from_metadata};
 use polars_error::PolarsResult;
 
 use self::metadata::parse_key_value_metadata;

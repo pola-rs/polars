@@ -4,7 +4,7 @@ use crate::parquet::page::{
     CompressedDataPage, CompressedDictPage, CompressedPage, DataPage, DataPageHeader, DictPage,
     Page,
 };
-use crate::parquet::{compression, CowBuffer, FallibleStreamingIterator};
+use crate::parquet::{CowBuffer, FallibleStreamingIterator, compression};
 
 /// Compresses a [`DataPage`] into a [`CompressedDataPage`].
 fn compress_data(
@@ -161,5 +161,26 @@ impl<I: Iterator<Item = ParquetResult<Page>>> FallibleStreamingIterator for Comp
 
     fn get(&self) -> Option<&Self::Item> {
         self.current.as_ref()
+    }
+}
+
+impl<I: Iterator<Item = ParquetResult<Page>>> Iterator for Compressor<I> {
+    type Item = ParquetResult<CompressedPage>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut compressed_buffer = if let Some(page) = self.current.as_mut() {
+            std::mem::take(page.buffer_mut())
+        } else {
+            std::mem::take(&mut self.buffer)
+        };
+        compressed_buffer.clear();
+
+        let page = self.iter.next()?;
+        let page = match page {
+            Ok(page) => page,
+            Err(err) => return Some(Err(err)),
+        };
+
+        Some(compress(page, compressed_buffer, self.compression))
     }
 }

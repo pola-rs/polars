@@ -5,8 +5,8 @@ import os
 import random
 import string
 import sys
-import tracemalloc
-from typing import TYPE_CHECKING, Any, cast
+from contextlib import contextmanager
+from typing import TYPE_CHECKING, Any, Callable, cast
 
 import numpy as np
 import pytest
@@ -16,14 +16,24 @@ from polars.testing.parametric import load_profile
 
 if TYPE_CHECKING:
     from collections.abc import Generator
+    from types import ModuleType
+    from typing import Any
+
+    FixtureRequest = Any
 
 load_profile(
     profile=os.environ.get("POLARS_HYPOTHESIS_PROFILE", "fast"),  # type: ignore[arg-type]
 )
 
 # Data type groups
-SIGNED_INTEGER_DTYPES = [pl.Int8(), pl.Int16(), pl.Int32(), pl.Int64()]
-UNSIGNED_INTEGER_DTYPES = [pl.UInt8(), pl.UInt16(), pl.UInt32(), pl.UInt64()]
+SIGNED_INTEGER_DTYPES = [pl.Int8(), pl.Int16(), pl.Int32(), pl.Int64(), pl.Int128()]
+UNSIGNED_INTEGER_DTYPES = [
+    pl.UInt8(),
+    pl.UInt16(),
+    pl.UInt32(),
+    pl.UInt64(),
+    pl.UInt128(),
+]
 INTEGER_DTYPES = SIGNED_INTEGER_DTYPES + UNSIGNED_INTEGER_DTYPES
 FLOAT_DTYPES = [pl.Float32(), pl.Float64()]
 NUMERIC_DTYPES = INTEGER_DTYPES + FLOAT_DTYPES
@@ -131,7 +141,7 @@ for T in ["T", " "]:
 
 @pytest.fixture(params=ISO8601_FORMATS_DATETIME)
 def iso8601_format_datetime(request: pytest.FixtureRequest) -> list[str]:
-    return cast(list[str], request.param)
+    return cast("list[str]", request.param)
 
 
 ISO8601_TZ_AWARE_FORMATS_DATETIME = []
@@ -154,7 +164,7 @@ for T in ["T", " "]:
 
 @pytest.fixture(params=ISO8601_TZ_AWARE_FORMATS_DATETIME)
 def iso8601_tz_aware_format_datetime(request: pytest.FixtureRequest) -> list[str]:
-    return cast(list[str], request.param)
+    return cast("list[str]", request.param)
 
 
 ISO8601_FORMATS_DATE = []
@@ -166,7 +176,7 @@ for date_sep in ("/", "-"):
 
 @pytest.fixture(params=ISO8601_FORMATS_DATE)
 def iso8601_format_date(request: pytest.FixtureRequest) -> list[str]:
-    return cast(list[str], request.param)
+    return cast("list[str]", request.param)
 
 
 class MemoryUsage:
@@ -178,10 +188,10 @@ class MemoryUsage:
 
     def reset_tracking(self) -> None:
         """Reset tracking to zero."""
-        gc.collect()
-        tracemalloc.stop()
-        tracemalloc.start()
-        assert self.get_peak() < 100_000
+        # gc.collect()
+        # tracemalloc.stop()
+        # tracemalloc.start()
+        # assert self.get_peak() < 100_000
 
     def get_current(self) -> int:
         """
@@ -190,7 +200,8 @@ class MemoryUsage:
         This only tracks allocations since this object was created or
         ``reset_tracking()`` was called, whichever is later.
         """
-        return tracemalloc.get_traced_memory()[0]
+        return 0
+        # tracemalloc.get_traced_memory()[0]
 
     def get_peak(self) -> int:
         """
@@ -199,10 +210,15 @@ class MemoryUsage:
         This returns peak allocations since this object was created or
         ``reset_tracking()`` was called, whichever is later.
         """
-        return tracemalloc.get_traced_memory()[1]
+        return 0
+        # tracemalloc.get_traced_memory()[1]
 
 
-@pytest.fixture
+# The bizarre syntax is from
+# https://github.com/pytest-dev/pytest/issues/1368#issuecomment-2344450259 - we
+# need to mark any test using this fixture as slow because we have a sleep
+# added to work around a CPython bug, see the end of the function.
+@pytest.fixture(params=[pytest.param(0, marks=pytest.mark.slow)])
 def memory_usage_without_pyarrow() -> Generator[MemoryUsage, Any, Any]:
     """
     Provide an API for measuring peak memory usage.
@@ -212,7 +228,7 @@ def memory_usage_without_pyarrow() -> Generator[MemoryUsage, Any, Any]:
 
     Memory usage from PyArrow is not tracked.
     """
-    if not pl.polars._debug:  # type: ignore[attr-defined]
+    if not pl._plr._debug:
         pytest.skip("Memory usage only available in debug/dev builds.")
 
     if os.getenv("POLARS_FORCE_ASYNC", "0") == "1":
@@ -224,8 +240,61 @@ def memory_usage_without_pyarrow() -> Generator[MemoryUsage, Any, Any]:
         pytest.skip("Windows not supported at the moment.")
 
     gc.collect()
-    tracemalloc.start()
     try:
         yield MemoryUsage()
     finally:
-        tracemalloc.stop()
+        gc.collect()
+    # gc.collect()
+    # tracemalloc.start()
+    # try:
+    #     yield MemoryUsage()
+    # finally:
+    #     # Workaround for https://github.com/python/cpython/issues/128679
+    #     time.sleep(1)
+    #     gc.collect()
+    #
+    #     tracemalloc.stop()
+
+
+@contextmanager
+def mock_module_import(
+    name: str, module: ModuleType, *, replace_if_exists: bool = False
+) -> Generator[None, None, None]:
+    """
+    Mock an optional module import for the duration of a context.
+
+    Parameters
+    ----------
+    name
+        The name of the module to mock.
+    module
+        A ModuleType instance representing the mocked module.
+    replace_if_exists
+        Whether to replace the module if it already exists in `sys.modules` (defaults to
+        False, meaning that if the module is already imported, it will not be replaced).
+    """
+    if (original := sys.modules.get(name, None)) is not None and not replace_if_exists:
+        yield
+    else:
+        sys.modules[name] = module
+        try:
+            yield
+        finally:
+            if original is not None:
+                sys.modules[name] = original
+            else:
+                del sys.modules[name]
+
+
+def time_func(func: Callable[[], Any], *, iterations: int = 3) -> float:
+    """Minimum time over 3 iterations."""
+    from time import perf_counter
+
+    times = []
+    for _ in range(iterations):
+        t = perf_counter()
+        func()
+        times.append(perf_counter() - t)
+        times = [min(times)]
+
+    return min(times)

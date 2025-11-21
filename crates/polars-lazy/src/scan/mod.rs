@@ -8,3 +8,6 @@ pub(super) mod ipc;
 pub(super) mod ndjson;
 #[cfg(feature = "parquet")]
 pub(super) mod parquet;
+
+#[cfg(feature = "catalog")]
+mod catalog;

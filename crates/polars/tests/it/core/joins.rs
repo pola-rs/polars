@@ -1,6 +1,4 @@
 use polars_core::utils::{accumulate_dataframes_vertical, split_df};
-#[cfg(feature = "dtype-categorical")]
-use polars_core::{disable_string_cache, SINGLE_LOCK};
 
 use super::*;
 
@@ -27,6 +25,7 @@ fn test_chunked_left_join() -> PolarsResult<()> {
         ["name"],
         ["name"],
         JoinArgs::new(JoinType::Left),
+        None,
     )?;
     let expected = df![
         "name" => ["john", "paul", "keith"],
@@ -56,7 +55,7 @@ fn test_inner_join() {
     let (temp, rain) = create_frames();
 
     for i in 1..8 {
-        std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
+        unsafe { std::env::set_var("POLARS_MAX_THREADS", format!("{i}")) };
         let joined = temp.inner_join(&rain, ["days"], ["days"]).unwrap();
 
         let join_col_days = Column::new("days".into(), &[1, 2, 1]);
@@ -80,7 +79,7 @@ fn test_inner_join() {
 #[cfg_attr(miri, ignore)]
 fn test_left_join() {
     for i in 1..8 {
-        std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
+        unsafe { std::env::set_var("POLARS_MAX_THREADS", format!("{i}")) };
         let s0 = Column::new("days".into(), &[0, 1, 2, 3, 4]);
         let s1 = Column::new("temp".into(), &[22.1, 19.9, 7., 2., 3.]);
         let temp = DataFrame::new(vec![s0, s1]).unwrap();
@@ -135,6 +134,7 @@ fn test_full_outer_join() -> PolarsResult<()> {
         ["days"],
         ["days"],
         JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
+        None,
     )?;
     assert_eq!(joined.height(), 5);
     assert_eq!(
@@ -162,6 +162,7 @@ fn test_full_outer_join() -> PolarsResult<()> {
         ["a"],
         ["a"],
         JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
+        None,
     )?;
     assert_eq!(out.column("c_right")?.null_count(), 1);
 
@@ -260,19 +261,33 @@ fn test_join_multiple_columns() {
 
     // now check the join with multiple columns
     let joined = df_a
-        .join(&df_b, ["a", "b"], ["foo", "bar"], JoinType::Left.into())
+        .join(
+            &df_b,
+            ["a", "b"],
+            ["foo", "bar"],
+            JoinType::Left.into(),
+            None,
+        )
         .unwrap();
     let ca = joined.column("ham").unwrap().str().unwrap();
     assert_eq!(Vec::from(ca), correct_ham);
     let joined_inner_hack = df_a.inner_join(&df_b, ["dummy"], ["dummy"]).unwrap();
     let joined_inner = df_a
-        .join(&df_b, ["a", "b"], ["foo", "bar"], JoinType::Inner.into())
+        .join(
+            &df_b,
+            ["a", "b"],
+            ["foo", "bar"],
+            JoinType::Inner.into(),
+            None,
+        )
         .unwrap();
 
-    assert!(joined_inner_hack
-        .column("ham")
-        .unwrap()
-        .equals_missing(joined_inner.column("ham").unwrap()));
+    assert!(
+        joined_inner_hack
+            .column("ham")
+            .unwrap()
+            .equals_missing(joined_inner.column("ham").unwrap())
+    );
 
     let joined_full_outer_hack = df_a.full_join(&df_b, ["dummy"], ["dummy"]).unwrap();
     let joined_full_outer = df_a
@@ -281,35 +296,34 @@ fn test_join_multiple_columns() {
             ["a", "b"],
             ["foo", "bar"],
             JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
+            None,
         )
         .unwrap();
-    assert!(joined_full_outer_hack
-        .column("ham")
-        .unwrap()
-        .equals_missing(joined_full_outer.column("ham").unwrap()));
+    assert!(
+        joined_full_outer_hack
+            .column("ham")
+            .unwrap()
+            .equals_missing(joined_full_outer.column("ham").unwrap())
+    );
 }
 
 #[test]
 #[cfg_attr(miri, ignore)]
 #[cfg(feature = "dtype-categorical")]
 fn test_join_categorical() {
-    let _guard = SINGLE_LOCK.lock();
-    disable_string_cache();
-    let _sc = StringCacheHolder::hold();
-
     let (mut df_a, mut df_b) = get_dfs();
 
     df_a.try_apply("b", |s| {
-        s.cast(&DataType::Categorical(None, Default::default()))
+        s.cast(&DataType::from_categories(Categories::global()))
     })
     .unwrap();
     df_b.try_apply("bar", |s| {
-        s.cast(&DataType::Categorical(None, Default::default()))
+        s.cast(&DataType::from_categories(Categories::global()))
     })
     .unwrap();
 
     let out = df_a
-        .join(&df_b, ["b"], ["bar"], JoinType::Left.into())
+        .join(&df_b, ["b"], ["bar"], JoinType::Left.into(), None)
         .unwrap();
     assert_eq!(out.shape(), (6, 5));
     let correct_ham = &[
@@ -327,30 +341,30 @@ fn test_join_categorical() {
 
     // test dispatch
     for jt in [JoinType::Left, JoinType::Inner, JoinType::Full] {
-        let out = df_a.join(&df_b, ["b"], ["bar"], jt.into()).unwrap();
+        let out = df_a.join(&df_b, ["b"], ["bar"], jt.into(), None).unwrap();
         let out = out.column("b").unwrap();
         assert_eq!(
             out.dtype(),
-            &DataType::Categorical(None, Default::default())
+            &DataType::from_categories(Categories::global())
         );
     }
 
-    // Test error when joining on different string cache
+    // Test error when joining on different categories.
     let (mut df_a, mut df_b) = get_dfs();
     df_a.try_apply("b", |s| {
-        s.cast(&DataType::Categorical(None, Default::default()))
+        s.cast(&DataType::from_categories(Categories::global()))
     })
     .unwrap();
-
-    // Create a new string cache
-    drop(_sc);
-    let _sc = StringCacheHolder::hold();
 
     df_b.try_apply("bar", |s| {
-        s.cast(&DataType::Categorical(None, Default::default()))
+        s.cast(&DataType::from_categories(Categories::new(
+            PlSmallStr::from_static("test"),
+            PlSmallStr::EMPTY,
+            CategoricalPhysical::U32,
+        )))
     })
     .unwrap();
-    let out = df_a.join(&df_b, ["b"], ["bar"], JoinType::Left.into());
+    let out = df_a.join(&df_b, ["b"], ["bar"], JoinType::Left.into(), None);
     assert!(out.is_err());
 }
 
@@ -443,9 +457,16 @@ fn test_join_err() -> PolarsResult<()> {
     ]?;
 
     // dtypes don't match, error
-    assert!(df1
-        .join(&df2, vec!["a", "b"], vec!["a", "b"], JoinType::Left.into())
-        .is_err());
+    assert!(
+        df1.join(
+            &df2,
+            vec!["a", "b"],
+            vec!["a", "b"],
+            JoinType::Left.into(),
+            None
+        )
+        .is_err()
+    );
     Ok(())
 }
 
@@ -490,6 +511,7 @@ fn test_joins_with_duplicates() -> PolarsResult<()> {
             ["col1"],
             ["join_col1"],
             JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
+            None,
         )
         .unwrap();
 
@@ -532,6 +554,7 @@ fn test_multi_joins_with_duplicates() -> PolarsResult<()> {
             ["col1", "join_col2"],
             ["join_col1", "col2"],
             JoinType::Inner.into(),
+            None,
         )
         .unwrap();
 
@@ -547,6 +570,7 @@ fn test_multi_joins_with_duplicates() -> PolarsResult<()> {
             ["col1", "join_col2"],
             ["join_col1", "col2"],
             JoinType::Left.into(),
+            None,
         )
         .unwrap();
 
@@ -562,6 +586,7 @@ fn test_multi_joins_with_duplicates() -> PolarsResult<()> {
             ["col1", "join_col2"],
             ["join_col1", "col2"],
             JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
+            None,
         )
         .unwrap();
 
@@ -594,6 +619,7 @@ fn test_join_floats() -> PolarsResult<()> {
         vec!["a", "c"],
         vec!["foo", "bar"],
         JoinType::Left.into(),
+        None,
     )?;
     assert_eq!(
         Vec::from(out.column("ham")?.str()?),
@@ -605,6 +631,7 @@ fn test_join_floats() -> PolarsResult<()> {
         vec!["a", "c"],
         vec!["foo", "bar"],
         JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
+        None,
     )?;
     assert_eq!(
         out.dtypes(),

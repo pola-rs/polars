@@ -1,4 +1,5 @@
-use super::{new_empty_array, new_null_array, Array, ArrayRef, Splitable};
+use super::{Array, ArrayRef, Splitable, new_empty_array, new_null_array};
+use crate::array::list::LIST_VALUES_NAME;
 use crate::bitmap::Bitmap;
 use crate::datatypes::{ArrowDataType, Field};
 
@@ -6,11 +7,14 @@ mod ffi;
 pub(super) mod fmt;
 mod iterator;
 
+mod builder;
+pub use builder::*;
 mod mutable;
 pub use mutable::*;
-use polars_error::{polars_bail, polars_ensure, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_ensure};
 use polars_utils::format_tuple;
-use polars_utils::pl_str::PlSmallStr;
+#[cfg(feature = "proptest")]
+pub mod proptest;
 
 use crate::datatypes::reshape::{Dimension, ReshapeDimension};
 
@@ -48,7 +52,7 @@ impl FixedSizeListArray {
             polars_bail!(ComputeError: "FixedSizeListArray's child's DataType must match. However, the expected DataType is {child_dtype:?} while it got {values_dtype:?}.")
         }
 
-        polars_ensure!(size == 0 || values.len() % size == 0, ComputeError:
+        polars_ensure!(size == 0 || values.len().is_multiple_of(size), ComputeError:
             "values (of len {}) must be a multiple of size ({}) in FixedSizeListArray.",
             values.len(),
             size
@@ -59,7 +63,7 @@ impl FixedSizeListArray {
             values.len() / size,
             length,
         );
-        polars_ensure!(size != 0 || values.len() == 0, ComputeError:
+        polars_ensure!(size != 0 || values.is_empty(), ComputeError:
             "zero width FixedSizeListArray has values (length = {}).",
             values.len(),
         );
@@ -82,14 +86,14 @@ impl FixedSizeListArray {
 
     #[inline]
     fn has_invariants(&self) -> bool {
-        let has_valid_length = (self.size == 0 && self.values().len() == 0)
+        let has_valid_length = (self.size == 0 && self.values().is_empty())
             || (self.size > 0
-                && self.values().len() % self.size() == 0
+                && self.values().len().is_multiple_of(self.size())
                 && self.values().len() / self.size() == self.length);
         let has_valid_validity = self
             .validity
             .as_ref()
-            .map_or(true, |v| v.len() == self.length);
+            .is_none_or(|v| v.len() == self.length);
 
         has_valid_length && has_valid_validity
     }
@@ -187,7 +191,7 @@ impl FixedSizeListArray {
         );
 
         polars_ensure!(
-            size % total_dim_size == 0,
+            size.is_multiple_of(total_dim_size),
             InvalidOperation: "cannot reshape array of size {} into shape {}", size, format_tuple!(dimensions)
         );
 
@@ -224,32 +228,6 @@ impl FixedSizeListArray {
             prev_array = &a.values;
         }
         dims
-    }
-
-    pub fn propagate_nulls(&self) -> Self {
-        let Some(validity) = self.validity() else {
-            return self.clone();
-        };
-
-        let propagated_validity = if self.size == 1 {
-            validity.clone()
-        } else {
-            Bitmap::from_trusted_len_iter(
-                (0..self.size * validity.len())
-                    .map(|i| unsafe { validity.get_bit_unchecked(i / self.size) }),
-            )
-        };
-
-        let propagated_validity = match self.values.validity() {
-            None => propagated_validity,
-            Some(val) => val & &propagated_validity,
-        };
-        Self::new(
-            self.dtype().clone(),
-            self.length,
-            self.values.with_validity(Some(propagated_validity)),
-            self.validity.clone(),
-        )
     }
 }
 
@@ -356,7 +334,7 @@ impl FixedSizeListArray {
 
     /// Returns a [`ArrowDataType`] consistent with [`FixedSizeListArray`].
     pub fn default_datatype(dtype: ArrowDataType, size: usize) -> ArrowDataType {
-        let field = Box::new(Field::new(PlSmallStr::from_static("item"), dtype, true));
+        let field = Box::new(Field::new(LIST_VALUES_NAME, dtype, true));
         ArrowDataType::FixedSizeList(field, size)
     }
 }

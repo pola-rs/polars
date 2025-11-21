@@ -1,8 +1,25 @@
+use std::sync::Arc;
+
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use super::{ArrowDataType, Metadata};
+
+// These two have the same encoding, but because older versions of Polars
+// were unable to read non-u32-key arrow dictionaries while _PL_ENUM_VALUES
+// is set we switched to a new version.
+pub static DTYPE_ENUM_VALUES_LEGACY: &str = "_PL_ENUM_VALUES";
+pub static DTYPE_ENUM_VALUES_NEW: &str = "_PL_ENUM_VALUES2";
+
+// These have different encodings.
+pub static DTYPE_CATEGORICAL_LEGACY: &str = "_PL_CATEGORICAL";
+pub static DTYPE_CATEGORICAL_NEW: &str = "_PL_CATEGORICAL2";
+
+pub static PARQUET_EMPTY_STRUCT: &str = "_PL_EMPTY_STRUCT";
+
+pub static MAINTAIN_PL_TYPE: &str = "maintain_type";
+pub static PL_KEY: &str = "pl";
 
 /// Represents Arrow's metadata of a "column".
 ///
@@ -14,6 +31,7 @@ use super::{ArrowDataType, Metadata};
 /// to be serialized.
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct Field {
     /// Its name
     pub name: PlSmallStr,
@@ -22,7 +40,7 @@ pub struct Field {
     /// Its nullability
     pub is_nullable: bool,
     /// Additional custom (opaque) metadata.
-    pub metadata: Metadata,
+    pub metadata: Option<Arc<Metadata>>,
 }
 
 /// Support for `ArrowSchema::from_iter([field, ..])`
@@ -46,11 +64,14 @@ impl Field {
     /// Creates a new [`Field`] with metadata.
     #[inline]
     pub fn with_metadata(self, metadata: Metadata) -> Self {
+        if metadata.is_empty() {
+            return self;
+        }
         Self {
             name: self.name,
             dtype: self.dtype,
             is_nullable: self.is_nullable,
-            metadata,
+            metadata: Some(Arc::new(metadata)),
         }
     }
 
@@ -58,5 +79,42 @@ impl Field {
     #[inline]
     pub fn dtype(&self) -> &ArrowDataType {
         &self.dtype
+    }
+
+    pub fn is_enum(&self) -> bool {
+        if let Some(md) = &self.metadata {
+            md.get(DTYPE_ENUM_VALUES_LEGACY).is_some() || md.get(DTYPE_ENUM_VALUES_NEW).is_some()
+        } else {
+            false
+        }
+    }
+
+    pub fn is_categorical(&self) -> bool {
+        if let Some(md) = &self.metadata {
+            md.get(DTYPE_CATEGORICAL_LEGACY).is_some() || md.get(DTYPE_CATEGORICAL_NEW).is_some()
+        } else {
+            false
+        }
+    }
+
+    pub fn is_pl_pq_empty_struct(&self) -> bool {
+        self.metadata
+            .as_ref()
+            .is_some_and(|md| md.contains_key(PARQUET_EMPTY_STRUCT))
+    }
+
+    pub fn map_dtype(mut self, f: impl FnOnce(ArrowDataType) -> ArrowDataType) -> Self {
+        self.dtype = f(self.dtype);
+        self
+    }
+
+    pub fn map_dtype_mut(&mut self, f: impl FnOnce(&mut ArrowDataType)) {
+        f(&mut self.dtype);
+    }
+
+    pub fn with_dtype(&self, dtype: ArrowDataType) -> Self {
+        let mut field = self.clone();
+        field.dtype = dtype;
+        field
     }
 }

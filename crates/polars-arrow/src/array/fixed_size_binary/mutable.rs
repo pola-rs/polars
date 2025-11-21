@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 
 use super::FixedSizeBinaryArray;
 use crate::array::physical_binary::extend_validity;
@@ -45,7 +45,7 @@ impl MutableFixedSizeBinaryArray {
     ) -> PolarsResult<Self> {
         let size = FixedSizeBinaryArray::maybe_get_size(&dtype)?;
 
-        if values.len() % size != 0 {
+        if !values.len().is_multiple_of(size) {
             polars_bail!(ComputeError:
                 "values (of len {}) must be a multiple of size ({}) in FixedSizeBinaryArray.",
                 values.len(),
@@ -221,6 +221,14 @@ impl MutableFixedSizeBinaryArray {
         if let Some(validity) = &mut self.validity {
             validity.shrink_to_fit()
         }
+    }
+
+    pub fn freeze(self) -> FixedSizeBinaryArray {
+        FixedSizeBinaryArray::new(
+            ArrowDataType::FixedSizeBinary(self.size),
+            self.values.into(),
+            self.validity.map(|x| x.into()),
+        )
     }
 }
 

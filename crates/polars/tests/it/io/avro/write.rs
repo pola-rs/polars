@@ -1,4 +1,5 @@
 use std::io::Cursor;
+use std::sync::Arc;
 
 use arrow::array::*;
 use arrow::datatypes::*;
@@ -101,8 +102,9 @@ pub(super) fn data() -> RecordBatchT<Box<dyn Array>> {
             Some([true, false].into()),
         )),
     ];
+    let schema = schema();
 
-    RecordBatchT::new(2, columns)
+    RecordBatchT::new(2, Arc::new(schema), columns)
 }
 
 pub(super) fn serialize_to_block<R: AsRef<dyn Array>>(
@@ -197,7 +199,9 @@ fn large_format_data() -> RecordBatchT<Box<dyn Array>> {
         Box::new(BinaryArray::<i64>::from_slice([b"foo", b"bar"])),
         Box::new(BinaryArray::<i64>::from([Some(b"foo"), None])),
     ];
-    RecordBatchT::new(2, columns)
+    let schema = large_format_schema();
+
+    RecordBatchT::new(2, Arc::new(schema), columns)
 }
 
 fn large_format_expected_schema() -> ArrowSchema {
@@ -216,7 +220,9 @@ fn large_format_expected_data() -> RecordBatchT<Box<dyn Array>> {
         Box::new(BinaryArray::<i32>::from_slice([b"foo", b"bar"])),
         Box::new(BinaryArray::<i32>::from([Some(b"foo"), None])),
     ];
-    RecordBatchT::new(2, columns)
+    let schema = large_format_expected_schema();
+
+    RecordBatchT::new(2, Arc::new(schema), columns)
 }
 
 #[test]
@@ -264,9 +270,11 @@ fn struct_data() -> RecordBatchT<Box<dyn Array>> {
         Field::new("item1".into(), ArrowDataType::Int32, false),
         Field::new("item2".into(), ArrowDataType::Int32, true),
     ]);
+    let schema = struct_schema();
 
     RecordBatchT::new(
         2,
+        Arc::new(schema),
         vec![
             Box::new(StructArray::new(
                 struct_dt.clone(),

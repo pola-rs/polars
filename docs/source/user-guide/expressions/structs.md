@@ -91,7 +91,7 @@ What if we need to rename individual fields of a `Struct` column? We use the fun
 --8<-- "python/user-guide/expressions/structs.py:series_struct_rename"
 ```
 
-To be able to actually see that the field names were change, we will create a dataframe where the
+To be able to actually see that the field names were changed, we will create a dataframe where the
 only column is the result and then we use the function `unnest` so that each field becomes its own
 column. The column names will reflect the renaming operation we just did:
 

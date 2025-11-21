@@ -16,4 +16,3 @@ macro_rules! with_arms {
 pub mod boolean;
 pub mod decimal;
 pub mod numeric;
-pub mod packed_u32;

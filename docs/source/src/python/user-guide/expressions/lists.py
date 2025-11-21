@@ -136,7 +136,7 @@ print(weather_by_day)
 # --8<-- [end:weather_by_day]
 
 # --8<-- [start:rank_pct]
-rank_pct = (pl.element().rank(descending=True) / pl.all().count()).round(2)
+rank_pct = (pl.element().rank(descending=True) / pl.element().count()).round(2)
 
 result = weather_by_day.with_columns(
     # create the list of homogeneous data

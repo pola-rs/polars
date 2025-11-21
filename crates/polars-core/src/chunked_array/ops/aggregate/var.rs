@@ -1,4 +1,4 @@
-use polars_compute::var_cov::VarState;
+use polars_compute::moment::VarState;
 
 use super::*;
 
@@ -17,7 +17,7 @@ where
     fn var(&self, ddof: u8) -> Option<f64> {
         let mut out = VarState::default();
         for arr in self.downcast_iter() {
-            out.combine(&polars_compute::var_cov::var(arr))
+            out.combine(&polars_compute::moment::var(arr))
         }
         out.finalize(ddof)
     }

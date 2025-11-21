@@ -432,10 +432,10 @@ fn test_any_all() {
     let array = BooleanArray::from(&[None, Some(true), Some(true)]);
     assert!(any(&array));
     assert!(all(&array));
-    let array = BooleanArray::from_iter(std::iter::repeat(false).take(10).map(Some));
+    let array = BooleanArray::from_iter(std::iter::repeat_n(false, 10).map(Some));
     assert!(!any(&array));
     assert!(!all(&array));
-    let array = BooleanArray::from_iter(std::iter::repeat(true).take(10).map(Some));
+    let array = BooleanArray::from_iter(std::iter::repeat_n(true, 10).map(Some));
     assert!(any(&array));
     assert!(all(&array));
     let array = BooleanArray::from_iter([true, false, true, true].map(Some));

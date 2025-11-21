@@ -1,5 +1,5 @@
-use polars_core::frame::column::ScalarColumn;
 use polars_core::frame::DataFrame;
+use polars_core::frame::column::ScalarColumn;
 use polars_core::prelude::Column;
 use polars_core::series::Series;
 
@@ -18,8 +18,9 @@ pub(crate) fn materialize_hive_partitions<D>(
     df: &mut DataFrame,
     reader_schema: &polars_schema::Schema<D>,
     hive_partition_columns: Option<&[Series]>,
-    num_rows: usize,
 ) {
+    let num_rows = df.height();
+
     if let Some(hive_columns) = hive_partition_columns {
         // Insert these hive columns in the order they are stored in the file.
         if hive_columns.is_empty() {

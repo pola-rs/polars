@@ -72,3 +72,38 @@ def test_write_async_force_async(
     write_func(df, path)
 
     assert_frame_equal(read_func(path), df)
+
+
+@pytest.mark.write_disk
+def test_write_with_storage_options_22873(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "data"
+
+    df = pl.DataFrame({"x": 1})
+
+    for func in [
+        pl.DataFrame.write_parquet,
+        pl.DataFrame.write_ipc,
+        pl.DataFrame.write_csv,
+        pl.DataFrame.write_ndjson,
+    ]:
+        # TODO: write_ndjson cloud support
+        if func is pl.DataFrame.write_ndjson:
+            with pytest.raises(
+                TypeError, match="unexpected keyword argument 'storage_options'"
+            ):
+                func(df, path, storage_options={"test": "1"})  # type: ignore[operator]
+
+            continue
+
+        func(df, path, storage_options={"test": "1"})  # type: ignore[operator]
+
+    lf = df.lazy()
+
+    for func in [
+        pl.LazyFrame.sink_parquet,
+        pl.LazyFrame.sink_ipc,
+        pl.LazyFrame.sink_csv,
+        pl.LazyFrame.sink_ndjson,
+    ]:
+        func(lf, path, storage_options={"test": "1"})  # type: ignore[operator]

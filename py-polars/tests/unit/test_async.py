@@ -9,7 +9,7 @@ from typing import Any, Callable
 import pytest
 
 import polars as pl
-from polars.dependencies import gevent
+from polars._dependencies import gevent
 from polars.exceptions import ColumnNotFoundError
 
 pytestmark = pytest.mark.slow()

@@ -51,7 +51,8 @@ use for authentication. This can be done in a few ways:
   functionality. For example, `pl.CredentialProviderAWS` supports selecting AWS profiles, as well as
   assuming an IAM role:
 
-{{code_block('user-guide/io/cloud-storage','credential_provider_class',['scan_parquet'])}}
+{{code_block('user-guide/io/cloud-storage','credential_provider_class',['scan_parquet',
+'CredentialProviderAWS'])}}
 
 ### Using a custom `credential_provider` function
 
@@ -59,6 +60,20 @@ use for authentication. This can be done in a few ways:
   cases a Python function can be provided for Polars to use to retrieve credentials:
 
 {{code_block('user-guide/io/cloud-storage','credential_provider_custom_func',['scan_parquet'])}}
+
+- Example for Azure:
+
+{{code_block('user-guide/io/cloud-storage','credential_provider_custom_func_azure',['scan_parquet',
+'CredentialProviderAzure'])}}
+
+### Set a default credential provider to use
+
+- It is possible to globally configure a default credential provider, so that it does not need to be
+  passed to every I/O function call. This can be convenient in the case where there are many cloud
+  I/O operations that use the same credential provider.
+
+{{code_block('user-guide/io/cloud-storage','credential_provider_class_global_default',['scan_parquet',
+'CredentialProviderAWS'])}}
 
 ## Scanning with PyArrow
 
@@ -71,7 +86,12 @@ We first create a PyArrow dataset and then create a `LazyFrame` from the dataset
 
 ## Writing to cloud storage
 
-We can write a `DataFrame` to cloud storage in Python using s3fs for S3, adlfs for Azure Blob
-Storage and gcsfs for Google Cloud Storage. In this example, we write a Parquet file to S3.
+`DataFrame`s can also be written to cloud storage by passing a cloud URL:
 
 {{code_block('user-guide/io/cloud-storage','write_parquet',['write_parquet'])}}
+
+Note that `DataFrame`s can also be written to any Python file object that supports writes. This can
+be helpful for performing operations that are not yet natively supported, e.g. writing a compressed
+CSV directly to cloud:
+
+{{code_block('user-guide/io/cloud-storage','write_file_object',['write_csv'])}}

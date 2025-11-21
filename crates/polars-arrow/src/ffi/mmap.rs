@@ -1,11 +1,14 @@
 //! Functionality to mmap in-memory data regions.
 use std::sync::Arc;
 
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 
 use super::{ArrowArray, InternalArrowArray};
 use crate::array::{BooleanArray, FromFfi, PrimitiveArray};
+use crate::bitmap::Bitmap;
+use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
+use crate::storage::SharedStorage;
 use crate::types::NativeType;
 
 #[allow(dead_code)]
@@ -96,8 +99,11 @@ unsafe extern "C" fn release<T>(array: *mut ArrowArray) {
 ///
 /// Using this function is not unsafe, but the returned PrimitiveArray's lifetime is bound to the lifetime
 /// of the slice. The returned [`PrimitiveArray`] _must not_ outlive the passed slice.
-pub unsafe fn slice<T: NativeType>(slice: &[T]) -> PrimitiveArray<T> {
-    slice_and_owner(slice, ())
+pub unsafe fn slice<T: NativeType>(values: &[T]) -> PrimitiveArray<T> {
+    let static_values = std::mem::transmute::<&[T], &'static [T]>(values);
+    let storage = SharedStorage::from_static(static_values);
+    let buffer = Buffer::from_storage(storage);
+    PrimitiveArray::new_unchecked(T::PRIMITIVE.into(), buffer, None)
 }
 
 /// Creates a (non-null) [`PrimitiveArray`] from a slice of values.
@@ -149,7 +155,16 @@ pub unsafe fn slice_and_owner<T: NativeType, O>(slice: &[T], owner: O) -> Primit
 /// is bound to the lifetime of the slice. The returned [`BooleanArray`] _must
 /// not_ outlive the passed slice.
 pub unsafe fn bitmap(data: &[u8], offset: usize, length: usize) -> PolarsResult<BooleanArray> {
-    bitmap_and_owner(data, offset, length, ())
+    if offset >= 8 {
+        polars_bail!(InvalidOperation: "offset should be < 8")
+    };
+    if length > data.len() * 8 - offset {
+        polars_bail!(InvalidOperation: "given length is oob")
+    }
+    let static_data = std::mem::transmute::<&[u8], &'static [u8]>(data);
+    let storage = SharedStorage::from_static(static_data);
+    let bitmap = Bitmap::from_inner_unchecked(storage, offset, length, None);
+    Ok(BooleanArray::new(ArrowDataType::Boolean, bitmap, None))
 }
 
 /// Creates a (non-null) [`BooleanArray`] from a slice of bits.

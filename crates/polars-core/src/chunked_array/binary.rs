@@ -1,11 +1,12 @@
+use std::hash::BuildHasher;
+
 use polars_utils::aliases::PlRandomState;
 use polars_utils::hashing::BytesHash;
 use rayon::prelude::*;
 
-use crate::hashing::get_null_hash_value;
+use crate::POOL;
 use crate::prelude::*;
 use crate::utils::{_set_partition_size, _split_offsets};
-use crate::POOL;
 
 #[inline]
 fn fill_bytes_hashes<'a, T>(
@@ -46,7 +47,7 @@ where
         hb: PlRandomState,
     ) -> Vec<Vec<BytesHash<'a>>> {
         multithreaded &= POOL.current_num_threads() > 1;
-        let null_h = get_null_hash_value(&hb);
+        let null_h = hb.hash_one(0xde259df92c607d49_u64);
 
         if multithreaded {
             let n_partitions = _set_partition_size();
@@ -71,7 +72,7 @@ where
                     .collect::<Vec<_>>()
             })
         } else {
-            vec![fill_bytes_hashes(self, null_h, hb.clone())]
+            vec![fill_bytes_hashes(self, null_h, hb)]
         }
     }
 }

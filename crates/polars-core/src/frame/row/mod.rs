@@ -14,9 +14,9 @@ use polars_utils::format_pl_smallstr;
 use polars_utils::total_ord::TotalHash;
 use rayon::prelude::*;
 
+use crate::POOL;
 use crate::prelude::*;
 use crate::utils::{dtypes_to_schema, dtypes_to_supertype, try_get_supertype};
-use crate::POOL;
 
 #[cfg(feature = "object")]
 pub(crate) struct AnyValueRows<'a> {
@@ -70,7 +70,7 @@ impl DataFrame {
         for (col_i, s) in self.materialized_column_iter().enumerate() {
             match s.dtype() {
                 #[cfg(feature = "object")]
-                DataType::Object(_, _) => {
+                DataType::Object(_) => {
                     for row_i in 0..s.len() {
                         let av = s.get(row_i).unwrap();
                         buf[row_i * width + col_i] = av

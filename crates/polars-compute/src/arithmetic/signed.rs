@@ -52,11 +52,7 @@ macro_rules! impl_signed_arith_kernel {
                     Some(&mask),
                 );
                 let ret = prim_binary_values(lhs, other, |lhs, rhs| {
-                    if rhs != 0 {
-                        lhs.wrapping_div(rhs)
-                    } else {
-                        0
-                    }
+                    if rhs != 0 { lhs.wrapping_div(rhs) } else { 0 }
                 });
                 ret.with_validity(valid)
             }
@@ -195,11 +191,7 @@ macro_rules! impl_signed_arith_kernel {
                         }
 
                         // Remainder should have sign of RHS.
-                        if rhs < 0 {
-                            -(rem_u as $T)
-                        } else {
-                            rem_u as $T
-                        }
+                        if rhs < 0 { -(rem_u as $T) } else { rem_u as $T }
                     })
                 }
             }
@@ -213,6 +205,10 @@ macro_rules! impl_signed_arith_kernel {
                     prim_unary_values(rhs, |x| lhs.wrapping_floor_div_mod(x).1)
                 };
                 ret.with_validity(valid)
+            }
+
+            fn prim_checked_mul_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {
+                super::prim_checked_mul_scalar(&lhs, rhs)
             }
 
             fn prim_true_div(lhs: PArr<$T>, other: PArr<$T>) -> PArr<Self::TrueDivT> {

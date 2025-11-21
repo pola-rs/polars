@@ -11,7 +11,7 @@ fn create_fixed_size_list_array<U: AsRef<[i32]>, T: AsRef<[Option<U>]>>(
     let data = data.as_ref().iter().map(|x| {
         Some(match x {
             Some(x) => x.as_ref().iter().map(|x| Some(*x)).collect::<Vec<_>>(),
-            None => std::iter::repeat(None).take(3).collect::<Vec<_>>(),
+            None => std::iter::repeat_n(None, 3).collect::<Vec<_>>(),
         })
     });
 

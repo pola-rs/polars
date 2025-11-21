@@ -1,5 +1,5 @@
-use crate::bitmap::utils::BitmapIter;
 use crate::bitmap::Bitmap;
+use crate::bitmap::utils::BitmapIter;
 use crate::trusted_len::TrustedLen;
 
 /// An [`Iterator`] over validity and values.

@@ -1,9 +1,9 @@
-use polars_core::chunked_array::ops::arity::unary_mut_values;
 use polars_core::chunked_array::ChunkedArray;
+use polars_core::chunked_array::ops::arity::unary_mut_values;
 use polars_core::prelude::DataType;
 use polars_core::series::Series;
 use polars_core::{with_match_physical_float_polars_type, with_match_physical_integer_polars_type};
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 
 use super::*;
 
