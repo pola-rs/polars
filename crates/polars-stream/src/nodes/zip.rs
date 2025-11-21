@@ -127,7 +127,7 @@ impl ZipNode {
     pub fn new(extend_behavior: ExtendBehavior, schemas: Vec<Arc<Schema>>) -> Self {
         let input_heads = schemas
             .into_iter()
-            .map(|s| InputHead::new(s, matches!(extend_behavior, ExtendBehavior::FillNulls)))
+            .map(|s| InputHead::new(s, matches!(extend_behavior, ExtendBehavior::Broadcast)))
             .collect();
         Self {
             extend_behavior,
