@@ -1271,10 +1271,6 @@ fn fmt_struct(f: &mut Formatter<'_>, vals: &[AnyValue]) -> fmt::Result {
 
 impl Series {
     pub fn fmt_list(&self) -> String {
-        assert!(
-            !self.dtype().is_object(),
-            "nested Objects are not allowed\n\nYou probably got here by not setting a `return_dtype` on a UDF on Objects."
-        );
         if self.is_empty() {
             return "[]".to_owned();
         }
@@ -1282,26 +1278,49 @@ impl Series {
         let max_items = get_list_len_limit();
         let ellipsis = get_ellipsis();
 
+        // For Object dtype, use .get() instead of .iter() to avoid panic
+        #[cfg(feature = "object")]
+        let use_get = matches!(self.dtype(), DataType::Object(_));
+        #[cfg(not(feature = "object"))]
+        let use_get = false;
+
         match max_items {
             0 => write!(result, "{ellipsis}]").unwrap(),
             _ if max_items >= self.len() => {
-                // this will always leave a trailing ", " after the last item
-                // but for long lists, this is faster than checking against the length each time
-                for item in self.rechunk().iter() {
-                    write!(result, "{item}, ").unwrap();
+                if use_get {
+                    for i in 0..self.len() {
+                        write!(result, "{}, ", self.get(i).unwrap()).unwrap();
+                    }
+                } else {
+                    for item in self.rechunk().iter() {
+                        write!(result, "{item}, ").unwrap();
+                    }
                 }
                 // remove trailing ", " and replace with closing brace
                 result.truncate(result.len() - 2);
                 result.push(']');
             },
             _ => {
-                let s = self.slice(0, max_items).rechunk();
-                for (i, item) in s.iter().enumerate() {
-                    if i == max_items.saturating_sub(1) {
-                        write!(result, "{ellipsis} {}", self.get(self.len() - 1).unwrap()).unwrap();
-                        break;
-                    } else {
-                        write!(result, "{item}, ").unwrap();
+                if use_get {
+                    for i in 0..max_items {
+                        if i == max_items.saturating_sub(1) {
+                            write!(result, "{ellipsis} {}", self.get(self.len() - 1).unwrap())
+                                .unwrap();
+                            break;
+                        } else {
+                            write!(result, "{}, ", self.get(i).unwrap()).unwrap();
+                        }
+                    }
+                } else {
+                    let s = self.slice(0, max_items).rechunk();
+                    for (i, item) in s.iter().enumerate() {
+                        if i == max_items.saturating_sub(1) {
+                            write!(result, "{ellipsis} {}", self.get(self.len() - 1).unwrap())
+                                .unwrap();
+                            break;
+                        } else {
+                            write!(result, "{item}, ").unwrap();
+                        }
                     }
                 }
                 result.push(']');

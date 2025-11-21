@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from typing import TYPE_CHECKING, Any
 
@@ -256,3 +257,188 @@ def test_nested_query_with_streaming_dispatch_25172() -> None:
         .sort("a"),
         pl.DataFrame({"a": ["A", "B"], "b": [1, 1]}, schema_overrides={"b": pl.Int64}),
     )
+
+
+@pytest.mark.skipif(
+    os.getenv("POLARS_AUTO_NEW_STREAMING") == "1",
+    reason="List(Object) not yet supported in new streaming engine",
+)
+def test_map_groups_object_dtype_display_22814() -> None:
+    class CustomObject:
+        pass
+
+    df = pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4],
+            "objects": [CustomObject(), CustomObject(), CustomObject(), CustomObject()],
+        }
+    )
+
+    result = df.group_by("id").agg(
+        pl.map_groups(
+            [pl.col("objects")], lambda x: x[0], return_dtype=pl.Object
+        ).alias("first_object")
+    )
+
+    result_str = str(result)
+    assert "first_object" in result_str
+    assert result.shape == (4, 2)
+
+
+@pytest.mark.skipif(
+    os.getenv("POLARS_AUTO_NEW_STREAMING") == "1",
+    reason="List(Object) not yet supported in new streaming engine",
+)
+def test_list_object_multiple_objects() -> None:
+    class Marker:
+        def __init__(self, value: int) -> None:
+            self.value = value
+
+        def __repr__(self) -> str:
+            return f"M{self.value}"
+
+    df = pl.DataFrame(
+        {
+            "id": [1, 1, 1, 2, 2],
+            "objects": [Marker(i) for i in range(5)],
+        }
+    )
+
+    result = df.group_by("id", maintain_order=True).agg(
+        pl.map_groups(
+            [pl.col("objects")], lambda x: x[0], return_dtype=pl.Object
+        ).alias("first_obj"),
+        pl.map_groups(
+            [pl.col("objects")], lambda x: x[-1], return_dtype=pl.Object
+        ).alias("last_obj"),
+    )
+
+    result_str = str(result)
+    assert "first_obj" in result_str
+    assert "last_obj" in result_str
+
+    # Verify we can access the lists
+    assert len(result) == 2
+    assert isinstance(result["first_obj"][0][0], Marker)
+    assert isinstance(result["last_obj"][0][0], Marker)
+
+
+@pytest.mark.skipif(
+    os.getenv("POLARS_AUTO_NEW_STREAMING") == "1",
+    reason="List(Object) not yet supported in new streaming engine",
+)
+def test_list_object_with_nulls() -> None:
+    df = pl.DataFrame(
+        {
+            "id": [1, 2, 3],
+            "objects": [object(), None, object()],
+        }
+    )
+
+    result = df.group_by("id").agg(
+        pl.map_groups(
+            [pl.col("objects")], lambda x: x[0], return_dtype=pl.Object
+        ).alias("obj")
+    )
+
+    result_str = str(result)
+    assert "obj" in result_str
+
+
+@pytest.mark.skipif(
+    os.getenv("POLARS_AUTO_NEW_STREAMING") == "1",
+    reason="List(Object) not yet supported in new streaming engine",
+)
+def test_list_object_iteration() -> None:
+    class Value:
+        def __init__(self, x: int) -> None:
+            self.x = x
+
+        def __repr__(self) -> str:
+            return f"V{self.x}"
+
+    df = pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4, 5],
+            "val": [Value(i) for i in range(5)],
+        }
+    )
+
+    result = df.group_by("id").agg(
+        pl.map_groups([pl.col("val")], lambda x: x[0], return_dtype=pl.Object).alias(
+            "values"
+        )
+    )
+
+    # Test that iteration doesn't panic
+    count = 0
+    for _ in result["values"]:
+        count += 1
+    assert count == 5
+
+    # Test formatting the entire column doesn't panic
+    result_str = str(result["values"])
+    assert "values" in result_str or "V" in result_str
+
+
+@pytest.mark.skipif(
+    os.getenv("POLARS_AUTO_NEW_STREAMING") == "1",
+    reason="List(Object) not yet supported in new streaming engine",
+)
+def test_list_object_mixed_types() -> None:
+    from pathlib import Path
+
+    class Wrapper:
+        def __init__(self, value: Any) -> None:
+            self.value = value
+
+    df = pl.DataFrame(
+        {
+            "group": [1, 2, 3],
+            "mixed": [Wrapper({"a": 1}), Path("test"), object()],
+        }
+    )
+
+    result = df.group_by("group").agg(
+        pl.map_groups([pl.col("mixed")], lambda x: x[0], return_dtype=pl.Object).alias(
+            "objects"
+        )
+    )
+
+    result_str = str(result)
+    assert "objects" in result_str
+
+    obj_values = [item[0] for item in result["objects"]]
+    assert any(isinstance(obj, Wrapper) for obj in obj_values)
+    assert any(isinstance(obj, Path) for obj in obj_values)
+
+
+@pytest.mark.skipif(
+    os.getenv("POLARS_AUTO_NEW_STREAMING") == "1",
+    reason="List(Object) not yet supported in new streaming engine",
+)
+def test_list_object_formatting_many_items() -> None:
+    class Num:
+        def __init__(self, n: int) -> None:
+            self.n = n
+
+        def __repr__(self) -> str:
+            return f"N{self.n}"
+
+    # Multiple rows to test iteration and formatting
+    df = pl.DataFrame({"id": list(range(10)), "obj": [Num(i) for i in range(10)]})
+
+    result = df.group_by("id").agg(
+        pl.map_groups([pl.col("obj")], lambda x: x[0], return_dtype=pl.Object).alias(
+            "nums"
+        )
+    )
+
+    result_str = str(result)
+    assert "nums" in result_str
+    assert len(result) == 10
+
+    for i in range(len(result)):
+        obj_list = result["nums"][i]
+        assert len(obj_list) == 1
+        assert isinstance(obj_list[0], Num)

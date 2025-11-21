@@ -49,6 +49,14 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         DataType::Float64 => downcast_and_pack!(Float64Array, Float64),
         DataType::List(dt) => {
             let v: ArrayRef = downcast!(LargeListArray);
+            #[cfg(feature = "object")]
+            if matches!(dt.as_ref(), DataType::Object(_)) {
+                // For Object dtype, avoid physical conversion
+                if !v.is_empty() {
+                    let s = Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![v], dt);
+                    return AnyValue::List(s);
+                }
+            }
             if dt.is_primitive() {
                 let s = Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![v], dt);
                 AnyValue::List(s)
@@ -137,9 +145,10 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         DataType::Extension(typ, storage) => arr_to_any_value(arr, idx, storage),
         #[cfg(feature = "object")]
         DataType::Object(_) => {
-            // We should almost never hit this. The only known exception is when we put objects in
-            // structs. Any other hit should be considered a bug.
-            let arr = arr.as_any().downcast_ref::<FixedSizeBinaryArray>().unwrap();
+            let arr = arr
+                .as_any()
+                .downcast_ref::<FixedSizeBinaryArray>()
+                .expect("Object dtype should be stored as FixedSizeBinaryArray");
             PolarsExtension::arr_to_av(arr, idx)
         },
         DataType::Null => AnyValue::Null,
