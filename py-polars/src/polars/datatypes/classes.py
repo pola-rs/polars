@@ -682,7 +682,7 @@ class Categories:
         >>> fruit = pl.Categories("fruit")
         >>> s = pl.Series(["apple", "banana", "orange"], dtype=pl.Categorical(fruit))
         >>> fruit[0]
-        "apple"
+        'apple'
         >>> fruit["apple"]
         0
 
