@@ -34,13 +34,10 @@ macro_rules! polars_warn {
         func(format!($fmt, $($arg)*).as_ref(), warn)
         }}
     };
-    ($fmt:literal, $($arg:expr)+) => {
+    ($fmt:literal $(, $arg:expr)*) => {
         {{
         let func = $crate::get_warning_function();
-        func(format!($fmt, $($arg)+).as_ref(), $crate::PolarsWarning::UserWarning)
+        func(format!($fmt, $($arg),*).as_ref(), $crate::PolarsWarning::UserWarning)
         }}
-    };
-    ($($arg:tt)+) => {
-        polars_warn!("{}", $($arg)+);
     };
 }

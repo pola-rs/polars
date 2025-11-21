@@ -12,6 +12,8 @@ mod cat;
 mod correlation;
 #[cfg(feature = "temporal")]
 mod datetime;
+#[cfg(feature = "dtype-extension")]
+mod extension;
 mod list;
 mod pow;
 #[cfg(feature = "random")]
@@ -54,6 +56,8 @@ pub use self::business::BusinessFunction;
 pub use self::cat::CategoricalFunction;
 #[cfg(feature = "temporal")]
 pub use self::datetime::TemporalFunction;
+#[cfg(feature = "dtype-extension")]
+pub use self::extension::ExtensionFunction;
 pub use self::pow::PowFunction;
 #[cfg(feature = "range")]
 pub use self::range::{DateRangeArgs, RangeFunction};
@@ -79,6 +83,8 @@ pub enum FunctionExpr {
     BinaryExpr(BinaryFunction),
     #[cfg(feature = "dtype-categorical")]
     Categorical(CategoricalFunction),
+    #[cfg(feature = "dtype-extension")]
+    Extension(ExtensionFunction),
     ListExpr(ListFunction),
     #[cfg(feature = "strings")]
     StringExpr(StringFunction),
@@ -378,6 +384,8 @@ impl Hash for FunctionExpr {
             BinaryExpr(f) => f.hash(state),
             #[cfg(feature = "dtype-categorical")]
             Categorical(f) => f.hash(state),
+            #[cfg(feature = "dtype-extension")]
+            Extension(f) => f.hash(state),
             ListExpr(f) => f.hash(state),
             #[cfg(feature = "strings")]
             StringExpr(f) => f.hash(state),
@@ -672,6 +680,8 @@ impl Display for FunctionExpr {
             BinaryExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "dtype-categorical")]
             Categorical(func) => return write!(f, "{func}"),
+            #[cfg(feature = "dtype-extension")]
+            Extension(func) => return write!(f, "{func}"),
             ListExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "strings")]
             StringExpr(func) => return write!(f, "{func}"),

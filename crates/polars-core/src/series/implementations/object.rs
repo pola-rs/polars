@@ -211,6 +211,10 @@ where
         ChunkUnique::arg_unique(&self.0)
     }
 
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        polars_bail!(opq = unique_id, self.dtype());
+    }
+
     fn is_null(&self) -> BooleanChunked {
         ObjectChunked::is_null(&self.0)
     }

@@ -267,12 +267,14 @@ impl FunctionIR {
                 {
                     let idx = df.try_get_column_index(&s.column)?;
                     let col = &mut unsafe { df.get_columns_mut() }[idx];
-                    let flag = if s.descending {
-                        IsSorted::Descending
-                    } else {
-                        IsSorted::Ascending
-                    };
-                    col.set_sorted_flag(flag);
+                    if let Some(d) = s.descending {
+                        let flag = if d {
+                            IsSorted::Descending
+                        } else {
+                            IsSorted::Ascending
+                        };
+                        col.set_sorted_flag(flag);
+                    }
                 }
 
                 Ok(df)

@@ -7063,7 +7063,9 @@ class DataFrame:
                     f"    group_by({value!r})"
                 )
                 raise TypeError(msg)
-        return GroupBy(self, *by, **named_by, maintain_order=maintain_order)
+        return GroupBy(
+            self, *by, **named_by, maintain_order=maintain_order, predicates=None
+        )
 
     @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
     def rolling(
@@ -7220,6 +7222,7 @@ class DataFrame:
             offset=offset,
             closed=closed,
             group_by=group_by,
+            predicates=None,
         )
 
     @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
@@ -7540,6 +7543,7 @@ class DataFrame:
             closed=closed,
             group_by=group_by,
             start_by=start_by,
+            predicates=None,
         )
 
     @deprecate_renamed_parameter("by", "group_by", version="0.20.14")

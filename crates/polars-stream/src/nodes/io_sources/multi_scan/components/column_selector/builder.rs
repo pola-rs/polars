@@ -229,8 +229,7 @@ impl ColumnSelectorBuilder {
         }
 
         // Eq here should be cheap as we have intercepted all nested types above.
-
-        debug_assert!(!target_dtype.is_nested());
+        debug_assert!(!target_dtype.is_nested() || target_dtype.is_extension());
 
         if target_dtype == incoming_dtype {
             return Ok(input_selector);

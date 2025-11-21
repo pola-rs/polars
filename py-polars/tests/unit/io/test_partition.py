@@ -292,6 +292,7 @@ def test_partition_parted(tmp_path: Path, io_type: IOType, engine: EngineType) -
             pl.Struct,
             pl.Array,
             pl.List,
+            pl.Extension,  # Can't be cast to string
         ],
     )
 )

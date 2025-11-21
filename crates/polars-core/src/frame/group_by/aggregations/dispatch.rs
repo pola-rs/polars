@@ -10,9 +10,9 @@ impl Series {
         self.slice(first as i64, len as usize)
     }
 
-    fn restore_logical(&self, out: Series) -> Series {
-        if self.dtype().is_logical() {
-            out.cast(self.dtype()).unwrap()
+    unsafe fn restore_logical(&self, out: Series) -> Series {
+        if self.dtype().is_logical() && !out.dtype().is_logical() {
+            out.from_physical_unchecked(self.dtype()).unwrap()
         } else {
             out
         }
@@ -135,7 +135,7 @@ impl Series {
                             // All values are null, we have no first non-null.
                             None
                         } else {
-                            Some(leading_zeros)
+                            Some(first + leading_zeros)
                         }
                     })
                     .collect_ca(PlSmallStr::EMPTY)
@@ -432,7 +432,7 @@ impl Series {
                             // All values are null, we have no last non-null.
                             None
                         } else {
-                            Some(len - trailing_zeros - 1)
+                            Some(first + len - trailing_zeros - 1)
                         }
                     })
                     .collect_ca(PlSmallStr::EMPTY)
