@@ -10,8 +10,13 @@ pub fn search_sorted(
     descending: bool,
 ) -> PolarsResult<IdxCa> {
     let original_dtype = s.dtype();
-    polars_ensure!(original_dtype == search_values.dtype(), op = "search_sorted", original_dtype, search_values.dtype());
-    
+    polars_ensure!(
+        original_dtype == search_values.dtype(),
+        op = "search_sorted",
+        original_dtype,
+        search_values.dtype()
+    );
+
     if s.dtype().is_categorical() {
         return search_sorted(
             &s.cast(&DataType::String).unwrap(),
