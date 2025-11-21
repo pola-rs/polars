@@ -13,6 +13,25 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
             };
         }
 
+        let flags = self.get_flags();
+        let nulls_first = !options.nulls_last;
+        let options_ascending = !options.descending;
+
+        if flags.is_sorted_any()
+            && (!self.physical().has_nulls() || self.physical().first().is_none() == nulls_first)
+        {
+            return if flags.is_sorted_ascending() == options_ascending {
+                self.clone()
+            } else {
+                unsafe {
+                    CategoricalChunked::<T>::from_cats_and_dtype_unchecked(
+                        self.physical().reverse(),
+                        self.dtype().clone(),
+                    )
+                }
+            };
+        }
+
         let mut vals = self
             .physical()
             .into_iter()
@@ -53,9 +72,20 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
         let cats = ChunkedArray::with_chunk(self.name().clone(), arr);
 
         // SAFETY: we only reordered the indexes so we are still in bounds.
-        unsafe {
+        let mut out = unsafe {
             CategoricalChunked::<T>::from_cats_and_dtype_unchecked(cats, self.dtype().clone())
-        }
+        };
+        let s = if options.descending {
+            IsSorted::Descending
+        } else {
+            IsSorted::Ascending
+        };
+
+        let mut flags = out.get_flags();
+        flags.set_sorted(s);
+        out.set_flags(flags);
+
+        out
     }
 
     /// Returned a sorted `ChunkedArray`.

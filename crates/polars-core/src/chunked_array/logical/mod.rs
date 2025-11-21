@@ -30,6 +30,7 @@ use std::marker::PhantomData;
 pub use time::*;
 
 use crate::chunked_array::cast::CastOptions;
+use crate::chunked_array::flags::StatisticsFlagsIM;
 use crate::prelude::*;
 
 /// Maps a logical type to a chunked array implementation of the physical type.
@@ -37,6 +38,9 @@ use crate::prelude::*;
 pub struct Logical<Logical: PolarsDataType, Physical: PolarsDataType> {
     pub phys: ChunkedArray<Physical>,
     pub dtype: DataType,
+    /// Used by logical types that store flags that only apply logically.
+    /// E.g. Categoricals will indicate sortedness here, but not in the physical.
+    pub logical_flags: StatisticsFlagsIM,
     _phantom: PhantomData<Logical>,
 }
 
@@ -45,6 +49,7 @@ impl<K: PolarsDataType, T: PolarsDataType> Clone for Logical<K, T> {
         Self {
             phys: self.phys.clone(),
             dtype: self.dtype.clone(),
+            logical_flags: self.logical_flags.clone(),
             _phantom: PhantomData,
         }
     }
@@ -57,6 +62,7 @@ impl<K: PolarsDataType, T: PolarsDataType> Logical<K, T> {
         Logical {
             phys,
             dtype,
+            logical_flags: StatisticsFlagsIM::empty(),
             _phantom: PhantomData,
         }
     }
