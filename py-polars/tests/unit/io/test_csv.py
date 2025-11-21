@@ -2140,7 +2140,6 @@ def test_schema_overrides_dict_with_nonexistent_columns() -> None:
     )
 
     # This should work: override 'a' to Int64, 'c' doesn't exist so should be ignored
-    # Currently fails with: ComputeError: could not parse `hi` as dtype `i64` at column 'c'
     f = io.StringIO(csv)
     df = pl.read_csv(f, schema_overrides={"a": pl.Int64, "c": pl.Int64})
 
