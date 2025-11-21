@@ -95,7 +95,12 @@ impl PhysStream {
 }
 
 /// Behaviour when handling multiple DataFrames with different heights.
-#[derive(Clone, Debug, Copy)]
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Copy)]
+#[cfg_attr(
+    feature = "physical_plan_visualization_schema",
+    derive(schemars::JsonSchema)
+)]
 pub enum ExtendBehavior {
     /// Fill the shorter DataFrames with nulls to the height of the longest DataFrame.
     FillNulls,

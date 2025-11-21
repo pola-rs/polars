@@ -941,7 +941,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
 
                 let properties = PhysNodeProperties::Zip {
                     num_inputs: inputs.len().try_into().unwrap(),
-                    extend_behaviour: *extend_behavior,
+                    extend_behavior: *extend_behavior,
                 };
 
                 PhysNodeInfo {
