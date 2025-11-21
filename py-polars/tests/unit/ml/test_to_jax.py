@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import sys
 from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.dependencies import _lazy_import
+from polars._dependencies import _lazy_import
 
 # don't import jax until an actual test is triggered (the decorator already
 # ensures the tests aren't run locally; this avoids premature local import)
@@ -143,10 +142,6 @@ def test_to_jax_dict(df: pl.DataFrame) -> None:
         assert_array_equal(a, jxn.array(expected_data, dtype=jxn.float32))
 
 
-@pytest.mark.skipif(
-    sys.version_info < (3, 9),
-    reason="jax.numpy.bool requires Python >= 3.9",
-)
 def test_to_jax_feature_label_dict(df: pl.DataFrame) -> None:
     df = pl.DataFrame(
         {

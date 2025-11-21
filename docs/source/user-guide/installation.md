@@ -9,7 +9,7 @@ corresponding programming language.
     pip install polars
 
     # Or for legacy CPUs without AVX2 support
-    pip install polars-lts-cpu
+    pip install polars[rtcompat]
     ```
 
 === ":fontawesome-brands-rust: Rust"
@@ -30,7 +30,7 @@ $2^{64}$ (~18 quintillion) by enabling the big index extension:
 === ":fontawesome-brands-python: Python"
 
     ``` bash
-    pip install polars-u64-idx
+    pip install polars[rt64]
     ```
 
 === ":fontawesome-brands-rust: Rust"
@@ -51,7 +51,7 @@ To install Polars for Python on an old CPU without
 === ":fontawesome-brands-python: Python"
 
     ``` bash
-    pip install polars-lts-cpu
+    pip install polars[rtcompat]
     ```
 
 ## Importing
@@ -98,9 +98,7 @@ pip install 'polars[numpy,fsspec]'
 
 !!! note
 
-    To install the GPU engine, you need to pass
-    `--extra-index-url=https://pypi.nvidia.com` to `pip`. See [GPU
-    support](gpu-support.md) for more detailed instructions and
+    See [GPU support](gpu-support.md) for more detailed instructions and
     prerequisites.
 
 #### Interoperability
@@ -155,7 +153,7 @@ pip install 'polars[numpy,fsspec]'
 | style       | Style dataframes through the `style` namespace. |
 | timezone    | Timezone support[^note].                        |
 
-[^note]: Only needed if you are on Python < 3.9 or you are on Windows.
+[^note]: Only needed if you are on Windows.
 
 ### Rust
 
@@ -176,8 +174,10 @@ The opt-in features are:
     - `dtype-duration`
     - `dtype-i8`
     - `dtype-i16`
+    - `dtype-i128`
     - `dtype-u8`
     - `dtype-u16`
+    - `dtype-u128`
     - `dtype-categorical`
     - `dtype-struct`
 - `lazy` - Lazy API:
@@ -243,7 +243,7 @@ The opt-in features are:
     - `mode` - Return the most frequently occurring value(s).
     - `cum_agg` - `cum_sum`, `cum_min`, and `cum_max`, aggregations.
     - `rolling_window` - rolling window functions, like `rolling_mean`.
-    - `interpolate` - Interpolate `None` values.
+    - `interpolate` - Interpolate intermediate `None` values.
     - `extract_jsonpath` - [Run `jsonpath` queries on `StringChunked`](https://goessner.net/articles/JsonPath/).
     - `list` - List utils:
       - `list_gather` - take sublist by multiple indices.

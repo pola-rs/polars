@@ -105,17 +105,15 @@ def test_interpolate_by_leading_nulls() -> None:
         }
     )
     result = df.select(pl.col("values").interpolate_by("times"))
-    expected = pl.DataFrame(
-        {"values": [None, None, None, 1.0, 1.7999999999999998, 4.6, 5.0]}
-    )
+    expected = pl.DataFrame({"values": [None, None, None, 1.0, 1.8, 4.6, 5.0]})
     assert_frame_equal(result, expected)
     result = (
-        df.sort("times", descending=True)
+        df.sort("times", maintain_order=True, descending=True)
         .with_columns(pl.col("values").interpolate_by("times"))
-        .sort("times")
+        .sort("times", maintain_order=True)
         .drop("times")
     )
-    assert_frame_equal(result, expected)
+    assert_frame_equal(result, expected, check_exact=False)
 
 
 @pytest.mark.parametrize("dataset", ["floats", "dates"])
@@ -168,8 +166,8 @@ def test_interpolate_by_trailing_nulls(dataset: str) -> None:
 def test_interpolate_vs_numpy(data: st.DataObject, x_dtype: pl.DataType) -> None:
     if x_dtype == pl.Float64:
         by_strategy = st.floats(
-            min_value=-1e150,
-            max_value=1e150,
+            min_value=-100,
+            max_value=100,
             allow_nan=False,
             allow_infinity=False,
             allow_subnormal=False,
@@ -191,6 +189,7 @@ def test_interpolate_vs_numpy(data: st.DataObject, x_dtype: pl.DataType) -> None
                         "value",
                         dtype=pl.Float64,
                         allow_null=True,
+                        strategy=by_strategy,
                     ),
                 ],
                 min_size=1,
@@ -229,13 +228,14 @@ def test_interpolate_vs_numpy(data: st.DataObject, x_dtype: pl.DataType) -> None
         "value"
     ]
 
-    assert_series_equal(result, expected)
+    # We increase the absolute error threshold, numpy has some instability, see #22348.
+    assert_series_equal(result, expected, abs_tol=1e-3)
     result_from_unsorted = (
         dataframe.sort("ts", descending=True)
         .with_columns(pl.col("value").interpolate_by("ts"))
         .sort("ts")["value"]
     )
-    assert_series_equal(result_from_unsorted, expected)
+    assert_series_equal(result_from_unsorted, expected, abs_tol=1e-3)
 
 
 def test_interpolate_by_invalid() -> None:

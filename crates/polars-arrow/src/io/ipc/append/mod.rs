@@ -5,7 +5,7 @@
 // write new footer
 use std::io::{Read, Seek, SeekFrom, Write};
 
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_err};
 
 use super::endianness::is_native_little_endian;
 use super::read::{self, FileMetadata};

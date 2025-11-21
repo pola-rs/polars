@@ -1,102 +1,35 @@
+#[cfg(feature = "dtype-decimal")]
+use polars_compute::decimal::DEC128_MAX_PREC;
+use polars_utils::format_pl_smallstr;
 use recursive::recursive;
 
 use super::*;
+use crate::constants::{PL_ELEMENT_NAME, POLARS_ELEMENT};
 
-fn float_type(field: &mut Field) {
-    let should_coerce = match &field.dtype {
-        DataType::Float32 => false,
-        #[cfg(feature = "dtype-decimal")]
-        DataType::Decimal(..) => true,
-        DataType::Boolean => true,
-        dt => dt.is_numeric(),
-    };
-    if should_coerce {
-        field.coerce(DataType::Float64);
-    }
+fn validate_expr(node: Node, ctx: &ToFieldContext) -> PolarsResult<()> {
+    ctx.arena.get(node).to_field_impl(ctx).map(|_| ())
 }
 
-fn validate_expr(node: Node, arena: &Arena<AExpr>, schema: &Schema) -> PolarsResult<()> {
-    let mut ctx = ToFieldContext {
-        schema,
-        ctx: Context::Default,
-        arena,
-        validate: true,
-    };
-    arena
-        .get(node)
-        .to_field_impl(&mut ctx, &mut false)
-        .map(|_| ())
-}
-
-struct ToFieldContext<'a> {
-    schema: &'a Schema,
-    ctx: Context,
+pub struct ToFieldContext<'a> {
     arena: &'a Arena<AExpr>,
-    // Traverse all expressions to validate they are in the schema.
-    validate: bool,
+    schema: &'a Schema,
+}
+
+impl<'a> ToFieldContext<'a> {
+    pub fn new(arena: &'a Arena<AExpr>, schema: &'a Schema) -> Self {
+        Self { arena, schema }
+    }
 }
 
 impl AExpr {
-    pub fn to_dtype(
-        &self,
-        schema: &Schema,
-        ctx: Context,
-        arena: &Arena<AExpr>,
-    ) -> PolarsResult<DataType> {
-        self.to_field(schema, ctx, arena).map(|f| f.dtype)
+    pub fn to_dtype(&self, ctx: &ToFieldContext<'_>) -> PolarsResult<DataType> {
+        self.to_field(ctx).map(|f| f.dtype)
     }
 
-    /// Get Field result of the expression. The schema is the input data.
-    pub fn to_field(
-        &self,
-        schema: &Schema,
-        ctx: Context,
-        arena: &Arena<AExpr>,
-    ) -> PolarsResult<Field> {
-        // Indicates whether we should auto-implode the result. This is initialized to true if we are
-        // in an aggregation context, so functions that return scalars should explicitly set this
-        // to false in `to_field_impl`.
-        let mut agg_list = matches!(ctx, Context::Aggregation);
-        let mut ctx = ToFieldContext {
-            schema,
-            ctx,
-            arena,
-            validate: true,
-        };
-        let mut field = self.to_field_impl(&mut ctx, &mut agg_list)?;
-
-        if agg_list {
-            field.coerce(field.dtype().clone().implode());
-        }
-
-        Ok(field)
-    }
-
-    /// Get Field result of the expression. The schema is the input data.
-    pub fn to_field_and_validate(
-        &self,
-        schema: &Schema,
-        ctx: Context,
-        arena: &Arena<AExpr>,
-    ) -> PolarsResult<Field> {
-        // Indicates whether we should auto-implode the result. This is initialized to true if we are
-        // in an aggregation context, so functions that return scalars should explicitly set this
-        // to false in `to_field_impl`.
-        let mut agg_list = matches!(ctx, Context::Aggregation);
-
-        let mut ctx = ToFieldContext {
-            schema,
-            ctx,
-            arena,
-            validate: true,
-        };
-        let mut field = self.to_field_impl(&mut ctx, &mut agg_list)?;
-
-        if agg_list {
-            field.coerce(field.dtype().clone().implode());
-        }
-
-        Ok(field)
+    /// Get Field result of the expression. The schema is the input data. The result will
+    /// not be coerced (also known as auto-implode): this is the responsibility of the caller.
+    pub fn to_field(&self, ctx: &ToFieldContext<'_>) -> PolarsResult<Field> {
+        self.to_field_impl(ctx)
     }
 
     /// Get Field result of the expression. The schema is the input data.
@@ -104,48 +37,50 @@ impl AExpr {
     /// This is taken as `&mut bool` as for some expressions this is determined by the upper node
     /// (e.g. `alias`, `cast`).
     #[recursive]
-    pub fn to_field_impl(
-        &self,
-        ctx: &mut ToFieldContext,
-        agg_list: &mut bool,
-    ) -> PolarsResult<Field> {
+    pub fn to_field_impl(&self, ctx: &ToFieldContext) -> PolarsResult<Field> {
         use AExpr::*;
         use DataType::*;
         match self {
-            Len => {
-                *agg_list = false;
-                Ok(Field::new(PlSmallStr::from_static(LEN), IDX_DTYPE))
+            Element => ctx
+                .schema
+                .get_field(POLARS_ELEMENT)
+                .ok_or_else(|| polars_err!(invalid_element_use)),
+
+            Len => Ok(Field::new(PlSmallStr::from_static(LEN), IDX_DTYPE)),
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling { function, .. } => {
+                let e = ctx.arena.get(*function);
+                let mut field = e.to_field_impl(ctx)?;
+                // Implicit implode
+                if !is_scalar_ae(*function, ctx.arena) {
+                    field.dtype = field.dtype.implode();
+                }
+                Ok(field)
             },
-            Window {
+            Over {
                 function,
-                options,
                 partition_by,
                 order_by,
+                mapping,
             } => {
-                if let WindowType::Over(WindowMapping::Join) = options {
-                    // expr.over(..), defaults to agg-list unless explicitly unset
-                    // by the `to_field_impl` of the `expr`
-                    *agg_list = true;
+                for node in partition_by {
+                    validate_expr(*node, ctx)?;
                 }
-
-                if ctx.validate {
-                    for node in partition_by {
-                        validate_expr(*node, ctx.arena, ctx.schema)?;
-                    }
-                    if let Some((node, _)) = order_by {
-                        validate_expr(*node, ctx.arena, ctx.schema)?;
-                    }
+                if let Some((node, _)) = order_by {
+                    validate_expr(*node, ctx)?;
                 }
 
                 let e = ctx.arena.get(*function);
-                e.to_field_impl(ctx, agg_list)
-            },
-            Explode(expr) => {
-                // `Explode` is a "flatten" operation, which is not the same as returning a scalar.
-                // Namely, it should be auto-imploded in the aggregation context, so we don't update
-                // the `agg_list` state here.
-                let field = ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?;
+                let mut field = e.to_field_impl(ctx)?;
 
+                if matches!(mapping, WindowMapping::Join) && !is_scalar_ae(*function, ctx.arena) {
+                    field.dtype = field.dtype.implode();
+                }
+
+                Ok(field)
+            },
+            Explode { expr, .. } => {
+                let field = ctx.arena.get(*expr).to_field_impl(ctx)?;
                 let field = match field.dtype() {
                     List(inner) => Field::new(field.name().clone(), *inner.clone()),
                     #[cfg(feature = "dtype-array")]
@@ -155,21 +90,14 @@ impl AExpr {
 
                 Ok(field)
             },
-            Alias(expr, name) => Ok(Field::new(
-                name.clone(),
-                ctx.arena.get(*expr).to_field_impl(ctx, agg_list)?.dtype,
-            )),
             Column(name) => ctx
                 .schema
                 .get_field(name)
                 .ok_or_else(|| PolarsError::ColumnNotFound(name.to_string().into())),
-            Literal(sv) => {
-                *agg_list = false;
-                Ok(match sv {
-                    LiteralValue::Series(s) => s.field().into_owned(),
-                    _ => Field::new(sv.output_name().clone(), sv.get_datatype()),
-                })
-            },
+            Literal(sv) => Ok(match sv {
+                LiteralValue::Series(s) => s.field().into_owned(),
+                _ => Field::new(sv.output_column_name().clone(), sv.get_datatype()),
+            }),
             BinaryExpr { left, right, op } => {
                 use DataType::*;
 
@@ -186,38 +114,26 @@ impl AExpr {
                     | Operator::LogicalOr => {
                         let out_field;
                         let out_name = {
-                            out_field = ctx.arena.get(*left).to_field_impl(ctx, agg_list)?;
+                            out_field = ctx.arena.get(*left).to_field_impl(ctx)?;
                             out_field.name()
                         };
                         Field::new(out_name.clone(), Boolean)
                     },
-                    Operator::TrueDivide => get_truediv_field(*left, *right, ctx, agg_list)?,
-                    _ => get_arithmetic_field(*left, *right, *op, ctx, agg_list)?,
+                    Operator::TrueDivide => get_truediv_field(*left, *right, ctx)?,
+                    _ => get_arithmetic_field(*left, *right, *op, ctx)?,
                 };
 
                 Ok(field)
             },
-            Sort { expr, .. } => ctx.arena.get(*expr).to_field_impl(ctx, agg_list),
-            Gather {
-                expr,
-                idx,
-                returns_scalar,
-                ..
-            } => {
-                if *returns_scalar {
-                    *agg_list = false;
-                }
-                if ctx.validate {
-                    validate_expr(*idx, ctx.arena, ctx.schema)?
-                }
-                ctx.arena.get(*expr).to_field_impl(ctx, &mut false)
+            Sort { expr, .. } => ctx.arena.get(*expr).to_field_impl(ctx),
+            Gather { expr, idx, .. } => {
+                validate_expr(*idx, ctx)?;
+                ctx.arena.get(*expr).to_field_impl(ctx)
             },
-            SortBy { expr, .. } => ctx.arena.get(*expr).to_field_impl(ctx, agg_list),
+            SortBy { expr, .. } => ctx.arena.get(*expr).to_field_impl(ctx),
             Filter { input, by } => {
-                if ctx.validate {
-                    validate_expr(*by, ctx.arena, ctx.schema)?
-                }
-                ctx.arena.get(*input).to_field_impl(ctx, agg_list)
+                validate_expr(*by, ctx)?;
+                ctx.arena.get(*input).to_field_impl(ctx)
             },
             Agg(agg) => {
                 use IRAggExpr::*;
@@ -225,13 +141,12 @@ impl AExpr {
                     Max { input: expr, .. }
                     | Min { input: expr, .. }
                     | First(expr)
-                    | Last(expr) => {
-                        *agg_list = false;
-                        ctx.arena.get(*expr).to_field_impl(ctx, &mut false)
-                    },
+                    | FirstNonNull(expr)
+                    | Last(expr)
+                    | LastNonNull(expr) => ctx.arena.get(*expr).to_field_impl(ctx),
+                    Item { input: expr, .. } => ctx.arena.get(*expr).to_field_impl(ctx),
                     Sum(expr) => {
-                        *agg_list = false;
-                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?;
+                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
                         let dt = match field.dtype() {
                             Boolean => Some(IDX_DTYPE),
                             UInt8 | Int8 | Int16 | UInt16 => Some(Int64),
@@ -243,86 +158,77 @@ impl AExpr {
                         Ok(field)
                     },
                     Median(expr) => {
-                        *agg_list = false;
-                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?;
+                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
                         match field.dtype {
-                            Date => field.coerce(Datetime(TimeUnit::Milliseconds, None)),
-                            _ => float_type(&mut field),
+                            Date => field.coerce(Datetime(TimeUnit::Microseconds, None)),
+                            _ => {
+                                let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
+                                let mapper = FieldsMapper::new(&field);
+                                return mapper.moment_dtype();
+                            },
                         }
                         Ok(field)
                     },
                     Mean(expr) => {
-                        *agg_list = false;
-                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?;
+                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
                         match field.dtype {
-                            Date => field.coerce(Datetime(TimeUnit::Milliseconds, None)),
-                            _ => float_type(&mut field),
+                            Date => field.coerce(Datetime(TimeUnit::Microseconds, None)),
+                            _ => {
+                                let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
+                                let mapper = FieldsMapper::new(&field);
+                                return mapper.moment_dtype();
+                            },
                         }
                         Ok(field)
                     },
                     Implode(expr) => {
-                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?;
+                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
                         field.coerce(DataType::List(field.dtype().clone().into()));
                         Ok(field)
                     },
                     Std(expr, _) => {
-                        *agg_list = false;
-                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?;
-                        float_type(&mut field);
-                        Ok(field)
+                        let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
+                        let mapper = FieldsMapper::new(&field);
+                        mapper.moment_dtype()
                     },
                     Var(expr, _) => {
-                        *agg_list = false;
-                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?;
-                        float_type(&mut field);
-                        Ok(field)
+                        let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
+                        let mapper = FieldsMapper::new(&field);
+                        mapper.var_dtype()
                     },
                     NUnique(expr) => {
-                        *agg_list = false;
-                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?;
+                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
                         field.coerce(IDX_DTYPE);
                         Ok(field)
                     },
-                    Count(expr, _) => {
-                        *agg_list = false;
-                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?;
+                    Count { input, .. } => {
+                        let mut field = ctx.arena.get(*input).to_field_impl(ctx)?;
                         field.coerce(IDX_DTYPE);
                         Ok(field)
                     },
                     AggGroups(expr) => {
-                        *agg_list = true;
-                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?;
-                        field.coerce(List(IDX_DTYPE.into()));
+                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
+                        field.coerce(IDX_DTYPE.implode());
                         Ok(field)
                     },
                     Quantile { expr, .. } => {
-                        *agg_list = false;
-                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?;
-                        float_type(&mut field);
-                        Ok(field)
+                        let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
+                        let mapper = FieldsMapper::new(&field);
+                        mapper.map_numeric_to_float_dtype(true)
                     },
                 }
             },
             Cast { expr, dtype, .. } => {
-                let field = ctx.arena.get(*expr).to_field_impl(ctx, agg_list)?;
+                let field = ctx.arena.get(*expr).to_field_impl(ctx)?;
                 Ok(Field::new(field.name().clone(), dtype.clone()))
             },
             Ternary { truthy, falsy, .. } => {
-                let mut agg_list_truthy = *agg_list;
-                let mut agg_list_falsy = *agg_list;
-
                 // During aggregation:
                 // left: col(foo):              list<T>         nesting: 1
                 // right; col(foo).first():     T               nesting: 0
                 // col(foo) + col(foo).first() will have nesting 1 as we still maintain the groups list.
-                let mut truthy = ctx
-                    .arena
-                    .get(*truthy)
-                    .to_field_impl(ctx, &mut agg_list_truthy)?;
-                let falsy = ctx
-                    .arena
-                    .get(*falsy)
-                    .to_field_impl(ctx, &mut agg_list_falsy)?;
+                let mut truthy = ctx.arena.get(*truthy).to_field_impl(ctx)?;
+                let falsy = ctx.arena.get(*falsy).to_field_impl(ctx)?;
 
                 let st = if let DataType::Null = *truthy.dtype() {
                     falsy.dtype().clone()
@@ -330,43 +236,64 @@ impl AExpr {
                     try_get_supertype(truthy.dtype(), falsy.dtype())?
                 };
 
-                *agg_list = agg_list_truthy | agg_list_falsy;
-
                 truthy.coerce(st);
                 Ok(truthy)
             },
             AnonymousFunction {
-                output_type,
                 input,
-                options,
+                function,
+                fmt_str,
                 ..
             } => {
-                let fields = func_args_to_fields(input, ctx, agg_list)?;
-                polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", options.fmt_str);
-                let out = output_type.get_field(ctx.schema, ctx.ctx, &fields)?;
-
-                if options.flags.contains(FunctionFlags::RETURNS_SCALAR) {
-                    *agg_list = false;
-                } else if !options.is_elementwise() && matches!(ctx.ctx, Context::Aggregation) {
-                    *agg_list = true;
-                }
-
+                let fields = func_args_to_fields(input, ctx)?;
+                polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", fmt_str);
+                let function = function.clone().materialize()?;
+                let out = function.get_field(ctx.schema, &fields)?;
                 Ok(out)
+            },
+            AnonymousStreamingAgg {
+                input,
+                function,
+                fmt_str,
+                ..
+            } => {
+                let fields = func_args_to_fields(input, ctx)?;
+                polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", fmt_str);
+                let function = function.clone().materialize()?;
+                let out = function.get_field(ctx.schema, &fields)?;
+                Ok(out)
+            },
+            Eval {
+                expr,
+                evaluation,
+                variant,
+            } => {
+                let field = ctx.arena.get(*expr).to_field_impl(ctx)?;
+
+                let element_dtype = variant.element_dtype(field.dtype())?;
+                let mut evaluation_schema = ctx.schema.clone();
+                evaluation_schema.insert(PL_ELEMENT_NAME.clone(), element_dtype.clone());
+                let mut output_field = ctx
+                    .arena
+                    .get(*evaluation)
+                    .to_field_impl(&ToFieldContext::new(ctx.arena, &evaluation_schema))?;
+                output_field.dtype = output_field.dtype.materialize_unknown(false)?;
+                let eval_is_scalar = is_scalar_ae(*evaluation, ctx.arena);
+
+                output_field.dtype =
+                    variant.output_dtype(field.dtype(), output_field.dtype, eval_is_scalar)?;
+                output_field.name = field.name;
+
+                Ok(output_field)
             },
             Function {
                 function,
                 input,
-                options,
+                options: _,
             } => {
-                let fields = func_args_to_fields(input, ctx, agg_list)?;
+                let fields = func_args_to_fields(input, ctx)?;
                 polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", function);
-                let out = function.get_field(ctx.schema, ctx.ctx, &fields)?;
-
-                if options.flags.contains(FunctionFlags::RETURNS_SCALAR) {
-                    *agg_list = false;
-                } else if !options.is_elementwise() && matches!(ctx.ctx, Context::Aggregation) {
-                    *agg_list = true;
-                }
+                let out = function.get_field(ctx.schema, &fields)?;
 
                 Ok(out)
             },
@@ -375,44 +302,90 @@ impl AExpr {
                 offset,
                 length,
             } => {
-                if ctx.validate {
-                    validate_expr(*offset, ctx.arena, ctx.schema)?;
-                    validate_expr(*length, ctx.arena, ctx.schema)?;
-                }
+                validate_expr(*offset, ctx)?;
+                validate_expr(*length, ctx)?;
 
-                ctx.arena.get(*input).to_field_impl(ctx, agg_list)
+                ctx.arena.get(*input).to_field_impl(ctx)
             },
+        }
+    }
+
+    pub fn to_name(&self, expr_arena: &Arena<AExpr>) -> PlSmallStr {
+        use AExpr::*;
+        use IRAggExpr::*;
+        match self {
+            Element => PlSmallStr::EMPTY,
+            Len => crate::constants::get_len_name(),
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling {
+                function,
+                index_column: _,
+                period: _,
+                offset: _,
+                closed_window: _,
+            } => expr_arena.get(*function).to_name(expr_arena),
+            Over {
+                function: expr,
+                partition_by: _,
+                order_by: _,
+                mapping: _,
+            }
+            | BinaryExpr { left: expr, .. }
+            | Explode { expr, .. }
+            | Sort { expr, .. }
+            | Gather { expr, .. }
+            | SortBy { expr, .. }
+            | Filter { input: expr, .. }
+            | Cast { expr, .. }
+            | Ternary { truthy: expr, .. }
+            | Eval { expr, .. }
+            | Slice { input: expr, .. }
+            | Agg(Max { input: expr, .. })
+            | Agg(Min { input: expr, .. })
+            | Agg(First(expr))
+            | Agg(FirstNonNull(expr))
+            | Agg(Last(expr))
+            | Agg(LastNonNull(expr))
+            | Agg(Item { input: expr, .. })
+            | Agg(Sum(expr))
+            | Agg(Median(expr))
+            | Agg(Mean(expr))
+            | Agg(Implode(expr))
+            | Agg(Std(expr, _))
+            | Agg(Var(expr, _))
+            | Agg(NUnique(expr))
+            | Agg(Count { input: expr, .. })
+            | Agg(AggGroups(expr))
+            | Agg(Quantile { expr, .. }) => expr_arena.get(*expr).to_name(expr_arena),
+            AnonymousFunction { input, fmt_str, .. }
+            | AnonymousStreamingAgg { input, fmt_str, .. } => {
+                if input.is_empty() {
+                    fmt_str.as_ref().clone()
+                } else {
+                    input[0].output_name().clone()
+                }
+            },
+            Function {
+                input, function, ..
+            } => match function.output_name().and_then(|v| v.into_inner()) {
+                Some(name) => name,
+                None if input.is_empty() => format_pl_smallstr!("{}", &function),
+                None => input[0].output_name().clone(),
+            },
+            Column(name) => name.clone(),
+            Literal(lv) => lv.output_column_name().clone(),
         }
     }
 }
 
-fn func_args_to_fields(
-    input: &[ExprIR],
-    ctx: &mut ToFieldContext,
-    agg_list: &mut bool,
-) -> PolarsResult<Vec<Field>> {
+fn func_args_to_fields(input: &[ExprIR], ctx: &ToFieldContext) -> PolarsResult<Vec<Field>> {
     input
         .iter()
-        .enumerate()
-        // Default context because `col()` would return a list in aggregation context
-        .map(|(i, e)| {
-            let tmp = &mut false;
-
-            ctx.arena
-                .get(e.node())
-                .to_field_impl(
-                    ctx,
-                    if i == 0 {
-                        // Only mutate first agg_list as that is the dtype of the function.
-                        agg_list
-                    } else {
-                        tmp
-                    },
-                )
-                .map(|mut field| {
-                    field.name = e.output_name().clone();
-                    field
-                })
+        .map(|e| {
+            ctx.arena.get(e.node()).to_field_impl(ctx).map(|mut field| {
+                field.name = e.output_name().clone();
+                field
+            })
         })
         .collect()
 }
@@ -422,8 +395,7 @@ fn get_arithmetic_field(
     left: Node,
     right: Node,
     op: Operator,
-    ctx: &mut ToFieldContext,
-    agg_list: &mut bool,
+    ctx: &ToFieldContext,
 ) -> PolarsResult<Field> {
     use DataType::*;
     let left_ae = ctx.arena.get(left);
@@ -437,14 +409,19 @@ fn get_arithmetic_field(
     // leading to quadratic behavior. # 4736
     //
     // further right_type is only determined when needed.
-    let mut left_field = left_ae.to_field_impl(ctx, agg_list)?;
+    let mut left_field = left_ae.to_field_impl(ctx)?;
 
     let super_type = match op {
         Operator::Minus => {
-            let right_type = right_ae.to_field_impl(ctx, agg_list)?.dtype;
+            let right_type = right_ae.to_field_impl(ctx)?.dtype;
             match (&left_field.dtype, &right_type) {
                 #[cfg(feature = "dtype-struct")]
                 (Struct(_), Struct(_)) => {
+                    return Ok(left_field);
+                },
+                // This matches the engine output. TODO: revisit pending resolution of GH issue #23797
+                #[cfg(feature = "dtype-struct")]
+                (Struct(_), r) if r.is_numeric() => {
                     return Ok(left_field);
                 },
                 (Duration(_), Datetime(_, _))
@@ -459,7 +436,7 @@ fn get_arithmetic_field(
                 (_, Datetime(_, _)) | (Datetime(_, _), _) => {
                     polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
                 },
-                (Date, Date) => Duration(TimeUnit::Milliseconds),
+                (Date, Date) => Duration(TimeUnit::Microseconds),
                 (_, Date) | (Date, _) => {
                     polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
                 },
@@ -467,6 +444,7 @@ fn get_arithmetic_field(
                 (_, Duration(_)) | (Duration(_), _) => {
                     polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
                 },
+                (Time, Time) => Duration(TimeUnit::Nanoseconds),
                 (_, Time) | (Time, _) => {
                     polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
                 },
@@ -499,12 +477,25 @@ fn get_arithmetic_field(
                         other_dtype.leaf_dtype(),
                     )?)
                 },
+                #[cfg(feature = "dtype-decimal")]
+                (Decimal(_, scale_left), Decimal(_, scale_right)) => {
+                    Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
+                },
                 (left, right) => try_get_supertype(left, right)?,
             }
         },
         Operator::Plus => {
-            let right_type = right_ae.to_field_impl(ctx, agg_list)?.dtype;
+            let right_type = right_ae.to_field_impl(ctx)?.dtype;
             match (&left_field.dtype, &right_type) {
+                #[cfg(feature = "dtype-struct")]
+                (Struct(_), Struct(_)) => {
+                    return Ok(left_field);
+                },
+                // This matches the engine output. TODO: revisit pending resolution of GH issue #23797
+                #[cfg(feature = "dtype-struct")]
+                (Struct(_), r) if r.is_numeric() => {
+                    return Ok(left_field);
+                },
                 (Duration(_), Datetime(_, _))
                 | (Datetime(_, _), Duration(_))
                 | (Duration(_), Date)
@@ -548,15 +539,24 @@ fn get_arithmetic_field(
                         other_dtype.leaf_dtype(),
                     )?)
                 },
+                #[cfg(feature = "dtype-decimal")]
+                (Decimal(_, scale_left), Decimal(_, scale_right)) => {
+                    Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
+                },
                 (left, right) => try_get_supertype(left, right)?,
             }
         },
         _ => {
-            let right_type = right_ae.to_field_impl(ctx, agg_list)?.dtype;
+            let right_type = right_ae.to_field_impl(ctx)?.dtype;
 
             match (&left_field.dtype, &right_type) {
                 #[cfg(feature = "dtype-struct")]
                 (Struct(_), Struct(_)) => {
+                    return Ok(left_field);
+                },
+                // This matches the engine output. TODO: revisit pending resolution of GH issue #23797
+                #[cfg(feature = "dtype-struct")]
+                (Struct(_), r) if r.is_numeric() => {
                     return Ok(left_field);
                 },
                 (Datetime(_, _), _)
@@ -571,7 +571,7 @@ fn get_arithmetic_field(
                     // True divide handled somewhere else
                     polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
                 },
-                (l, Duration(_)) if l.is_numeric() => match op {
+                (l, Duration(_)) if l.is_primitive_numeric() => match op {
                     Operator::Multiply => {
                         left_field.coerce(right_type);
                         return Ok(left_field);
@@ -580,6 +580,21 @@ fn get_arithmetic_field(
                         polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
                     },
                 },
+                (Duration(_), r) if r.is_primitive_numeric() => match op {
+                    Operator::Multiply => {
+                        return Ok(left_field);
+                    },
+                    _ => {
+                        polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
+                    },
+                },
+                #[cfg(feature = "dtype-decimal")]
+                (Decimal(_, scale_left), Decimal(_, scale_right)) => {
+                    let dtype = Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right));
+                    left_field.coerce(dtype);
+                    return Ok(left_field);
+                },
+
                 (l @ List(a), r @ List(b))
                     if ![a, b]
                         .into_iter()
@@ -618,12 +633,12 @@ fn get_arithmetic_field(
                     {
                         match (left_ae, right_ae) {
                             (AExpr::Literal(_), AExpr::Literal(_)) => {},
-                            (AExpr::Literal(_), _) => {
+                            (AExpr::Literal(_), _) if left_field.dtype.is_unknown() => {
                                 // literal will be coerced to match right type
                                 left_field.coerce(right_type);
                                 return Ok(left_field);
                             },
-                            (_, AExpr::Literal(_)) => {
+                            (_, AExpr::Literal(_)) if right_type.is_unknown() => {
                                 // literal will be coerced to match right type
                                 return Ok(left_field);
                             },
@@ -641,19 +656,59 @@ fn get_arithmetic_field(
     Ok(left_field)
 }
 
-fn get_truediv_field(
-    left: Node,
-    right: Node,
-    ctx: &mut ToFieldContext,
-    agg_list: &mut bool,
-) -> PolarsResult<Field> {
-    let mut left_field = ctx.arena.get(left).to_field_impl(ctx, agg_list)?;
-    let right_field = ctx.arena.get(right).to_field_impl(ctx, agg_list)?;
+fn get_truediv_field(left: Node, right: Node, ctx: &ToFieldContext) -> PolarsResult<Field> {
+    let mut left_field = ctx.arena.get(left).to_field_impl(ctx)?;
+    let right_field = ctx.arena.get(right).to_field_impl(ctx)?;
+    let out_type = get_truediv_dtype(left_field.dtype(), right_field.dtype())?;
+    left_field.coerce(out_type);
+    Ok(left_field)
+}
+
+fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsResult<DataType> {
     use DataType::*;
 
     // TODO: Re-investigate this. A lot of "_" is being used on the RHS match because this code
     // originally (mostly) only looked at the LHS dtype.
-    let out_type = match (left_field.dtype(), right_field.dtype()) {
+    let out_type = match (left_dtype, right_dtype) {
+        #[cfg(feature = "dtype-struct")]
+        (Struct(a), Struct(b)) => {
+            polars_ensure!(a.len() == b.len() || b.len() == 1,
+                InvalidOperation: "cannot {} two structs of different length (left: {}, right: {})",
+                "div", a.len(), b.len()
+            );
+            let mut fields = Vec::with_capacity(a.len());
+            // In case b.len() == 1, we broadcast the first field (b[0]).
+            // Safety is assured by the constraints above.
+            let b_iter = (0..a.len()).map(|i| b.get(i.min(b.len() - 1)).unwrap());
+            for (left, right) in a.iter().zip(b_iter) {
+                let name = left.name.clone();
+                let (left, right) = (left.dtype(), right.dtype());
+                if !(left.is_numeric() && right.is_numeric()) {
+                    polars_bail!(InvalidOperation:
+                        "cannot {} two structs with non-numeric fields: (left: {}, right: {})",
+                        "div", left, right,)
+                };
+                let field = Field::new(name, get_truediv_dtype(left, right)?);
+                fields.push(field);
+            }
+            Struct(fields)
+        },
+        #[cfg(feature = "dtype-struct")]
+        (Struct(a), n) if n.is_numeric() => {
+            let mut fields = Vec::with_capacity(a.len());
+            for left in a.iter() {
+                let name = left.name.clone();
+                let left = left.dtype();
+                if !(left.is_numeric()) {
+                    polars_bail!(InvalidOperation:
+                        "cannot {} a struct with non-numeric field: (left: {})",
+                        "div", left)
+                };
+                let field = Field::new(name, get_truediv_dtype(left, n)?);
+                fields.push(field);
+            }
+            Struct(fields)
+        },
         (l @ List(a), r @ List(b))
             if ![a, b]
                 .into_iter()
@@ -666,31 +721,44 @@ fn get_truediv_field(
             )
         },
         (list_dtype @ List(_), other_dtype) | (other_dtype, list_dtype @ List(_)) => {
-            list_dtype.cast_leaf(match (list_dtype.leaf_dtype(), other_dtype.leaf_dtype()) {
-                (Float32, Float32) => Float32,
-                (Float32, Float64) | (Float64, Float32) => Float64,
-                // FIXME: We should properly recurse on the enclosing match block here.
-                (dt, _) => dt.clone(),
-            })
+            let dtype = get_truediv_dtype(list_dtype.leaf_dtype(), other_dtype.leaf_dtype())?;
+            list_dtype.cast_leaf(dtype)
         },
         #[cfg(feature = "dtype-array")]
         (list_dtype @ Array(..), other_dtype) | (other_dtype, list_dtype @ Array(..)) => {
-            list_dtype.cast_leaf(match (list_dtype.leaf_dtype(), other_dtype.leaf_dtype()) {
-                (Float32, Float32) => Float32,
-                (Float32, Float64) | (Float64, Float32) => Float64,
-                // FIXME: We should properly recurse on the enclosing match block here.
-                (dt, _) => dt.clone(),
-            })
+            let dtype = get_truediv_dtype(list_dtype.leaf_dtype(), other_dtype.leaf_dtype())?;
+            list_dtype.cast_leaf(dtype)
         },
+        (Boolean, Float32) => Float32,
+        (Boolean, b) if b.is_numeric() => Float64,
+        (Boolean, Boolean) => Float64,
+        #[cfg(feature = "dtype-u8")]
+        (Float32, UInt8 | Int8) => Float32,
+        #[cfg(feature = "dtype-u16")]
+        (Float32, UInt16 | Int16) => Float32,
+        (Float32, Unknown(UnknownKind::Int(_))) => Float32,
+        (Float32, other) if other.is_integer() => Float64,
+        (Float32, Float64) => Float64,
         (Float32, _) => Float32,
-        (dt, _) if dt.is_numeric() => Float64,
+        (String, _) | (_, String) => polars_bail!(
+            InvalidOperation: "division with 'String' datatypes is not allowed"
+        ),
+        #[cfg(feature = "dtype-decimal")]
+        (Decimal(_, scale_left), Decimal(_, scale_right)) => {
+            Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
+        },
+        #[cfg(feature = "dtype-u8")]
+        (UInt8 | Int8, Float32) => Float32,
+        #[cfg(feature = "dtype-u16")]
+        (UInt16 | Int16, Float32) => Float32,
+        (dt, _) if dt.is_primitive_numeric() => Float64,
         #[cfg(feature = "dtype-duration")]
         (Duration(_), Duration(_)) => Float64,
         #[cfg(feature = "dtype-duration")]
-        (Duration(_), dt) if dt.is_numeric() => return Ok(left_field),
+        (Duration(_), dt) if dt.is_primitive_numeric() => left_dtype.clone(),
         #[cfg(feature = "dtype-duration")]
         (Duration(_), dt) => {
-            polars_bail!(InvalidOperation: "true division of {} with {} is not allowed", left_field.dtype(), dt)
+            polars_bail!(InvalidOperation: "true division of {} with {} is not allowed", left_dtype, dt)
         },
         #[cfg(feature = "dtype-datetime")]
         (Datetime(_, _), _) => {
@@ -703,7 +771,5 @@ fn get_truediv_field(
         // we don't know what to do here, best return the dtype
         (dt, _) => dt.clone(),
     };
-
-    left_field.coerce(out_type);
-    Ok(left_field)
+    Ok(out_type)
 }

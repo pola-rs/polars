@@ -1,20 +1,21 @@
 use std::sync::{Arc, Mutex};
 
 use polars::prelude::PolarsError;
-use polars_plan::plans::{to_aexpr, Context, IR};
+use polars::prelude::python_dsl::PythonScanSource;
+use polars_plan::plans::{ExprToIRContext, IR, ToFieldContext, to_expr_ir};
 use polars_plan::prelude::expr_ir::ExprIR;
-use polars_plan::prelude::{AExpr, PythonOptions, PythonScanSource};
+use polars_plan::prelude::{AExpr, PythonOptions};
 use polars_utils::arena::{Arena, Node};
 use pyo3::prelude::*;
-use pyo3::types::PyList;
+use pyo3::types::{PyDict, PyList};
 
-use super::visitor::{expr_nodes, nodes};
 use super::PyLazyFrame;
+use super::visitor::{expr_nodes, nodes};
 use crate::error::PyPolarsErr;
-use crate::{raise_err, PyExpr, Wrap};
+use crate::{PyExpr, Wrap, raise_err};
 
 #[derive(Clone)]
-#[pyclass]
+#[pyclass(frozen)]
 pub struct PyExprIR {
     #[pyo3(get)]
     node: usize,
@@ -57,7 +58,7 @@ impl NodeTraverser {
     // Increment major on breaking changes to the IR (e.g. renaming
     // fields, reordering tuples), minor on backwards compatible
     // changes (e.g. exposing a new expression node).
-    const VERSION: Version = (4, 2);
+    const VERSION: Version = (12, 0);
 
     pub fn new(root: Node, lp_arena: Arena<IR>, expr_arena: Arena<AExpr>) -> Self {
         Self {
@@ -89,37 +90,32 @@ impl NodeTraverser {
         this_node.copy_exprs(&mut self.expr_scratch);
     }
 
-    fn scratch_to_list(&mut self) -> PyObject {
-        Python::with_gil(|py| {
-            PyList::new_bound(py, self.scratch.drain(..).map(|node| node.0)).to_object(py)
-        })
+    fn scratch_to_list<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
+        PyList::new(py, self.scratch.drain(..).map(|node| node.0))
     }
 
-    fn expr_to_list(&mut self) -> PyObject {
-        Python::with_gil(|py| {
-            PyList::new_bound(
-                py,
-                self.expr_scratch
-                    .drain(..)
-                    .map(|e| PyExprIR::from(e).into_py(py)),
-            )
-            .to_object(py)
-        })
+    fn expr_to_list<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
+        PyList::new(
+            py,
+            self.expr_scratch
+                .drain(..)
+                .map(|e| PyExprIR::from(e).into_pyobject(py).unwrap()),
+        )
     }
 }
 
 #[pymethods]
 impl NodeTraverser {
     /// Get expression nodes
-    fn get_exprs(&mut self) -> PyObject {
+    fn get_exprs<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
         self.fill_expressions();
-        self.expr_to_list()
+        self.expr_to_list(py)
     }
 
     /// Get input nodes
-    fn get_inputs(&mut self) -> PyObject {
+    fn get_inputs<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
         self.fill_inputs();
-        self.scratch_to_list()
+        self.scratch_to_list(py)
     }
 
     /// The current version of the IR
@@ -128,23 +124,23 @@ impl NodeTraverser {
     }
 
     /// Get Schema of current node as python dict<str, pl.DataType>
-    fn get_schema(&self, py: Python<'_>) -> PyObject {
+    fn get_schema<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         let lp_arena = self.lp_arena.lock().unwrap();
         let schema = lp_arena.get(self.root).schema(&lp_arena);
-        Wrap(&**schema).into_py(py)
+        Wrap((**schema).clone()).into_pyobject(py)
     }
 
     /// Get expression dtype of expr_node, the schema used is that of the current root node
-    fn get_dtype(&self, expr_node: usize, py: Python<'_>) -> PyResult<PyObject> {
+    fn get_dtype<'py>(&self, expr_node: usize, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let expr_node = Node(expr_node);
         let lp_arena = self.lp_arena.lock().unwrap();
         let schema = lp_arena.get(self.root).schema(&lp_arena);
         let expr_arena = self.expr_arena.lock().unwrap();
         let field = expr_arena
             .get(expr_node)
-            .to_field(&schema, Context::Default, &expr_arena)
+            .to_field(&ToFieldContext::new(&expr_arena, &schema))
             .map_err(PyPolarsErr::from)?;
-        Ok(Wrap(field.dtype).to_object(py))
+        Wrap(field.dtype).into_pyobject(py)
     }
 
     /// Set the current node in the plan.
@@ -158,7 +154,8 @@ impl NodeTraverser {
     }
 
     /// Set a python UDF that will replace the subtree location with this function src.
-    fn set_udf(&mut self, function: PyObject) {
+    #[pyo3(signature = (function, is_pure = false))]
+    fn set_udf(&mut self, function: Py<PyAny>, is_pure: bool) {
         let mut lp_arena = self.lp_arena.lock().unwrap();
         let schema = lp_arena.get(self.root).schema(&lp_arena).into_owned();
         let ir = IR::PythonScan {
@@ -170,18 +167,20 @@ impl NodeTraverser {
                 python_source: PythonScanSource::Cuda,
                 predicate: Default::default(),
                 n_rows: None,
+                validate_schema: false,
+                is_pure,
             },
         };
         lp_arena.replace(self.root, ir);
     }
 
-    fn view_current_node(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn view_current_node(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let lp_arena = self.lp_arena.lock().unwrap();
         let lp_node = lp_arena.get(self.root);
         nodes::into_py(py, lp_node)
     }
 
-    fn view_expression(&self, py: Python<'_>, node: usize) -> PyResult<PyObject> {
+    fn view_expression(&self, py: Python<'_>, node: usize) -> PyResult<Py<PyAny>> {
         let expr_arena = self.expr_arena.lock().unwrap();
         let n = match &self.expr_mapping {
             Some(mapping) => *mapping.get(node).unwrap(),
@@ -194,14 +193,19 @@ impl NodeTraverser {
     /// Add some expressions to the arena and return their new node ids as well
     /// as the total number of nodes in the arena.
     fn add_expressions(&mut self, expressions: Vec<PyExpr>) -> PyResult<(Vec<usize>, usize)> {
+        let lp_arena = self.lp_arena.lock().unwrap();
+        let schema = lp_arena.get(self.root).schema(&lp_arena);
         let mut expr_arena = self.expr_arena.lock().unwrap();
         Ok((
             expressions
                 .into_iter()
                 .map(|e| {
-                    to_aexpr(e.inner, &mut expr_arena)
+                    let mut ctx = ExprToIRContext::new(&mut expr_arena, &schema);
+                    ctx.allow_unknown = true;
+                    // NOTE: Probably throwing away the output names here is not okay?
+                    to_expr_ir(e.inner, &mut ctx)
                         .map_err(PyPolarsErr::from)
-                        .map(|v| v.0)
+                        .map(|v| v.node().0)
                 })
                 .collect::<Result<_, PyPolarsErr>>()?,
             expr_arena.len(),
@@ -233,6 +237,7 @@ impl PyLazyFrame {
         let mut expr_arena = Arena::with_capacity(16);
         let root = self
             .ldf
+            .read()
             .clone()
             .optimize(&mut lp_arena, &mut expr_arena)
             .map_err(PyPolarsErr::from)?;

@@ -96,6 +96,12 @@ def test_drop_nulls_misc() -> None:
     }
 
 
+def test_drop_nulls_empty_subset() -> None:
+    df = pl.DataFrame({"a": [1, None]})
+    assert_frame_equal(df.drop_nulls([]), df)
+    assert_frame_equal(df.drop_nulls(()), df)
+
+
 def test_drop_columns() -> None:
     out = pl.LazyFrame({"a": [1], "b": [2], "c": [3]}).drop(["a", "b"])
     assert out.collect_schema().names() == ["c"]
@@ -118,29 +124,39 @@ def test_drop_nans(lazy: bool) -> None:
     DataFrame = pl.LazyFrame if lazy else pl.DataFrame
     df = DataFrame(
         {
-            "a": [1.0, float("nan"), 3.0, 4.0],
-            "b": [10000, 20000, 30000, 40000],
-            "c": [-90.5, 25.0, 0.0, float("nan")],
+            "a": [1.0, float("nan"), 3.0, 4.0, None],
+            "b": [10000, 20000, 30000, 40000, None],
+            "c": [-90.5, 25.0, 0.0, float("nan"), None],
         }
     )
     expected = DataFrame(
         {
-            "a": [1.0, 3.0],
-            "b": [10000, 30000],
-            "c": [-90.5, 0.0],
+            "a": [1.0, 3.0, None],
+            "b": [10000, 30000, None],
+            "c": [-90.5, 0.0, None],
         }
     )
     assert_frame_equal(expected, df.drop_nans())
 
     expected = DataFrame(
         {
-            "a": [1.0, float("nan"), 3.0],
-            "b": [10000, 20000, 30000],
-            "c": [-90.5, 25.0, 0.0],
+            "a": [1.0, float("nan"), 3.0, None],
+            "b": [10000, 20000, 30000, None],
+            "c": [-90.5, 25.0, 0.0, None],
         }
     )
     assert_frame_equal(expected, df.drop_nans(subset=["c"]))
     assert_frame_equal(expected, df.drop_nans(subset=cs.ends_with("c")))
+
+    expected = DataFrame(
+        {
+            "a": [1.0, 3.0, None],
+            "b": [10000, 30000, None],
+            "c": [-90.5, 0.0, None],
+        }
+    )
+    assert_frame_equal(expected, df.drop_nans(subset=["a", "c"]))
+    assert_frame_equal(expected, df.drop_nans(subset=cs.float()))
 
 
 def test_drop_nan_ignore_null_3525() -> None:
@@ -152,6 +168,12 @@ def test_drop_nan_ignore_null_3525() -> None:
         3.0,
         4.0,
     ]
+
+
+def test_drop_nans_empty_subset() -> None:
+    df = pl.DataFrame({"a": [1.0, float("NaN")]})
+    assert_frame_equal(df.drop_nans([]), df)
+    assert_frame_equal(df.drop_nans(()), df)
 
 
 def test_drop_without_parameters() -> None:
@@ -170,3 +192,16 @@ def test_drop_strict() -> None:
 
     df.drop("a", strict=False)
     df.drop("b", strict=False)
+
+
+def test_drop_regex_14069() -> None:
+    df = pl.DataFrame({"a": 1, "a2": 2, "b": 3})
+    assert df.drop(cs.matches("^a.*$")).columns == ["b"]
+
+
+def test_drop_invalid_selector_19023() -> None:
+    df = pl.DataFrame(
+        data={"x": [1, 2], "x_b": [3, 4], "y_b": [10, 20], "z": ["a", "b"]}
+    )
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="is not a selector"):
+        df.drop(pl.selectors.ends_with("_b") + [])  # type: ignore[arg-type]

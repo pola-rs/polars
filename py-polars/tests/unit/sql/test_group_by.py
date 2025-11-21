@@ -8,6 +8,7 @@ import pytest
 import polars as pl
 from polars.exceptions import SQLSyntaxError
 from polars.testing import assert_frame_equal
+from tests.unit.sql import assert_sql_matches
 
 
 @pytest.fixture
@@ -244,3 +245,90 @@ def test_group_by_errors() -> None:
         match=r"HAVING clause not valid outside of GROUP BY",
     ):
         df.sql("SELECT a, COUNT(a) AS n FROM self HAVING n > 1")
+
+
+def test_group_by_output_struct() -> None:
+    df = pl.DataFrame({"g": [1], "x": [2], "y": [3]})
+    out = df.group_by("g").agg(pl.struct(pl.col.x.min(), pl.col.y.sum()))
+    assert out.rows() == [(1, {"x": 2, "y": 3})]
+
+
+@pytest.mark.parametrize(
+    "maintain_order",
+    [False, True],
+)
+def test_group_by_list_cat_24049(maintain_order: bool) -> None:
+    df = pl.DataFrame(
+        {
+            "x": [["a"], ["b", "c"], ["a"], ["a"], ["d"], ["b", "c"]],
+            "y": [1, 2, 3, 4, 5, 10],
+        },
+        schema={"x": pl.List(pl.Categorical), "y": pl.Int32},
+    )
+
+    expected = pl.DataFrame(
+        {"x": [["a"], ["b", "c"], ["d"]], "y": [8, 12, 5]},
+        schema={"x": pl.List(pl.Categorical), "y": pl.Int32},
+    )
+    assert_frame_equal(
+        df.group_by("x", maintain_order=maintain_order).agg(pl.col.y.sum()),
+        expected,
+        check_row_order=maintain_order,
+    )
+
+
+@pytest.mark.parametrize(
+    "maintain_order",
+    [False, True],
+)
+def test_group_by_struct_cat_24049(maintain_order: bool) -> None:
+    a = {"k1": "a2", "k2": "a2"}
+    b = {"k1": "b2", "k2": "b2"}
+    c = {"k1": "c2", "k2": "c2"}
+    s = pl.Struct({"k1": pl.Categorical, "k2": pl.Categorical})
+    df = pl.DataFrame(
+        {
+            "x": [a, b, a, a, c, b],
+            "y": [1, 2, 3, 4, 5, 10],
+        },
+        schema={"x": s, "y": pl.Int32},
+    )
+
+    expected = pl.DataFrame(
+        {"x": [a, b, c], "y": [8, 12, 5]},
+        schema={"x": s, "y": pl.Int32},
+    )
+    assert_frame_equal(
+        df.group_by("x", maintain_order=maintain_order).agg(pl.col.y.sum()),
+        expected,
+        check_row_order=maintain_order,
+    )
+
+
+def test_group_by_aggregate_name_is_group_key() -> None:
+    """Unaliased aggregation with a column that's also used in the GROUP BY key."""
+    df = pl.DataFrame({"c0": [1, 2]})
+
+    # 'COUNT(col)' where 'col' is also part of the the group key
+    for query in (
+        "SELECT COUNT(c0) FROM self GROUP BY c0",
+        "SELECT COUNT(c0) AS c0 FROM self GROUP BY c0",
+    ):
+        assert_sql_matches(
+            df,
+            query=query,
+            compare_with="sqlite",
+            check_column_names=False,
+            expected={"c0": [1, 1]},
+        )
+
+    # Same condition with a table prefix (and a different aggfunc)
+    query = "SELECT SUM(self.c0) FROM self GROUP BY self.c0"
+    assert_sql_matches(
+        df,
+        query=query,
+        compare_with="sqlite",
+        check_row_order=False,
+        check_column_names=False,
+        expected={"c0": [1, 2]},
+    )

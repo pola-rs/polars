@@ -1,6 +1,6 @@
 use super::StructArray;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
-use crate::scalar::{new_scalar, Scalar};
+use crate::scalar::{Scalar, new_scalar};
 use crate::trusted_len::TrustedLen;
 
 pub struct StructValueIter<'a> {

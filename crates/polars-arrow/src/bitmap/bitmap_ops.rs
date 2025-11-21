@@ -1,7 +1,8 @@
 use std::ops::{BitAnd, BitOr, BitXor, Not};
 
-use super::utils::{BitChunk, BitChunkIterExact, BitChunksExact};
 use super::Bitmap;
+use super::bitmask::BitMask;
+use super::utils::{BitChunk, BitChunkIterExact, BitChunksExact};
 use crate::bitmap::MutableBitmap;
 use crate::trusted_len::TrustedLen;
 
@@ -131,6 +132,25 @@ where
 }
 
 /// Apply a bitwise operation `op` to two inputs and fold the result.
+pub fn binary_mask_fold<B, F, R>(lhs: BitMask<'_>, rhs: BitMask<'_>, op: F, init: B, fold: R) -> B
+where
+    F: Fn(u64, u64) -> B,
+    R: Fn(B, B) -> B,
+{
+    assert_eq!(lhs.len(), rhs.len());
+    let lhs_chunks = lhs.chunks();
+    let rhs_chunks = rhs.chunks();
+    let rem_lhs = lhs_chunks.remainder();
+    let rem_rhs = rhs_chunks.remainder();
+
+    let result = lhs_chunks
+        .zip(rhs_chunks)
+        .fold(init, |prev, (left, right)| fold(prev, op(left, right)));
+
+    fold(result, op(rem_lhs, rem_rhs))
+}
+
+/// Apply a bitwise operation `op` to two inputs and fold the result.
 pub fn binary_fold_mut<B, F, R>(
     lhs: &MutableBitmap,
     rhs: &MutableBitmap,
@@ -185,8 +205,7 @@ where
 pub(crate) fn align(bitmap: &Bitmap, new_offset: usize) -> Bitmap {
     let length = bitmap.len();
 
-    let bitmap: Bitmap = std::iter::repeat(false)
-        .take(new_offset)
+    let bitmap: Bitmap = std::iter::repeat_n(false, new_offset)
         .chain(bitmap.iter())
         .collect();
 
@@ -270,8 +289,8 @@ fn eq(lhs: &Bitmap, rhs: &Bitmap) -> bool {
     lhs_remainder.zip(rhs_remainder).all(|(x, y)| x == y)
 }
 
-pub fn num_intersections_with(lhs: &Bitmap, rhs: &Bitmap) -> usize {
-    binary_fold(
+pub fn num_intersections_with(lhs: BitMask<'_>, rhs: BitMask<'_>) -> usize {
+    binary_mask_fold(
         lhs,
         rhs,
         |lhs, rhs| (lhs & rhs).count_ones() as usize,
@@ -367,5 +386,49 @@ impl Not for &Bitmap {
 
     fn not(self) -> Bitmap {
         unary(self, |a| !a)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+
+    use super::*;
+    use crate::bitmap::proptest::bitmap;
+
+    fn two_equal_length_bitmaps() -> impl Strategy<Value = (Bitmap, Bitmap)> {
+        (1..=250usize).prop_flat_map(|length| {
+            (
+                bitmap(length..300),
+                bitmap(length..300),
+                0..length,
+                0..length,
+            )
+                .prop_flat_map(move |(lhs, rhs, lhs_offset, rhs_offset)| {
+                    (0..usize::min(length - lhs_offset, length - rhs_offset)).prop_map(
+                        move |slice_length| {
+                            (
+                                lhs.clone().sliced(lhs_offset, slice_length),
+                                rhs.clone().sliced(rhs_offset, slice_length),
+                            )
+                        },
+                    )
+                })
+        })
+    }
+
+    proptest! {
+        #[test]
+        fn test_num_intersections_with(
+            (lhs, rhs) in two_equal_length_bitmaps()
+        ) {
+            let kernel_out = num_intersections_with(BitMask::from_bitmap(&lhs), BitMask::from_bitmap(&rhs));
+            let mut reference_out = 0;
+            for (l, r) in lhs.iter().zip(rhs.iter()) {
+                reference_out += usize::from(l & r);
+            }
+
+            prop_assert_eq!(kernel_out, reference_out);
+        }
     }
 }

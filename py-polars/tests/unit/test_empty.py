@@ -46,7 +46,7 @@ def test_empty_count_window() -> None:
     )
 
     out = df.select(pl.col("ID").count().over(["ID", "DESC"]))
-    assert out.schema == {"ID": pl.UInt32}
+    assert out.schema == {"ID": pl.get_index_type()}
     assert out.height == 0
 
 
@@ -158,3 +158,10 @@ def test_empty_input_expansion() -> None:
                 pl.col("B").sort_by(pl.struct(pl.exclude("A", "B")))
             )
         )
+
+
+def test_empty_list_15523() -> None:
+    s = pl.Series("", [["a"], []], dtype=pl.List)
+    assert s.dtype == pl.List(pl.String)
+    s = pl.Series("", [[], ["a"]], dtype=pl.List)
+    assert s.dtype == pl.List(pl.String)

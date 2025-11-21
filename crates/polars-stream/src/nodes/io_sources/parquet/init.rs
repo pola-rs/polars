@@ -1,115 +1,46 @@
-use std::collections::VecDeque;
-use std::future::Future;
 use std::sync::Arc;
 
-use futures::stream::FuturesUnordered;
-use futures::StreamExt;
 use polars_core::frame::DataFrame;
-use polars_error::PolarsResult;
-use polars_io::prelude::ParallelStrategy;
+use polars_error::{PolarsResult, polars_ensure};
 use polars_io::prelude::_internal::PrefilterMaskSetting;
+use polars_io::prelude::ParallelStrategy;
+use polars_utils::IdxSize;
 
 use super::row_group_data_fetch::RowGroupDataFetcher;
 use super::row_group_decode::RowGroupDecoder;
-use super::{AsyncTaskData, ParquetSourceNode};
+use super::{AsyncTaskData, ParquetReadImpl};
 use crate::async_executor;
-use crate::async_primitives::connector::connector;
-use crate::async_primitives::wait_group::IndexedWaitGroup;
-use crate::morsel::get_ideal_morsel_size;
+use crate::morsel::{Morsel, SourceToken, get_ideal_morsel_size};
+use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
+use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
+use crate::nodes::io_sources::parquet::statistics::calculate_row_group_pred_pushdown_skip_mask;
 use crate::nodes::{MorselSeq, TaskPriority};
-use crate::utils::task_handles_ext;
+use crate::utils::task_handles_ext::{self, AbortOnDropHandle};
 
-impl ParquetSourceNode {
-    /// # Panics
-    /// Panics if called more than once.
-    async fn shutdown_impl(
-        async_task_data: Arc<tokio::sync::Mutex<Option<AsyncTaskData>>>,
-        verbose: bool,
-    ) -> PolarsResult<()> {
-        if verbose {
-            eprintln!("[ParquetSource]: Shutting down");
-        }
-
-        let (raw_morsel_receivers, morsel_stream_task_handle) =
-            async_task_data.try_lock().unwrap().take().unwrap();
-
-        drop(raw_morsel_receivers);
-        // Join on the producer handle to catch errors/panics.
-        // Safety
-        // * We dropped the receivers on the line above
-        // * This function is only called once.
-        morsel_stream_task_handle.await.unwrap()
-    }
-
-    pub(super) fn shutdown(&self) -> impl Future<Output = PolarsResult<()>> {
-        if self.verbose {
-            eprintln!("[ParquetSource]: Shutdown via `shutdown()`");
-        }
-        Self::shutdown_impl(self.async_task_data.clone(), self.verbose)
-    }
-
-    /// Spawns a task to shut down the source node to avoid blocking the current thread. This is
-    /// usually called when data is no longer needed from the source node, as such it does not
-    /// propagate any (non-critical) errors. If on the other hand the source node does not provide
-    /// more data when requested, then it is more suitable to call [`Self::shutdown`], as it returns
-    /// a result that can be used to distinguish between whether the data stream stopped due to an
-    /// error or EOF.
-    pub(super) fn shutdown_in_background(&self) {
-        if self.verbose {
-            eprintln!("[ParquetSource]: Shutdown via `shutdown_in_background()`");
-        }
-        let async_task_data = self.async_task_data.clone();
-        polars_io::pl_async::get_runtime()
-            .spawn(Self::shutdown_impl(async_task_data, self.verbose));
-    }
-
+impl ParquetReadImpl {
     /// Constructs the task that distributes morsels across the engine pipelines.
     #[allow(clippy::type_complexity)]
-    pub(super) fn init_raw_morsel_distributor(&mut self) -> AsyncTaskData {
+    pub(super) fn init_morsel_distributor(&mut self) -> AsyncTaskData {
         let verbose = self.verbose;
         let io_runtime = polars_io::pl_async::get_runtime();
 
         let use_statistics = self.options.use_statistics;
 
-        let (mut raw_morsel_senders, raw_morsel_receivers): (Vec<_>, Vec<_>) =
-            (0..self.config.num_pipelines).map(|_| connector()).unzip();
+        let (mut morsel_sender, morsel_rx) = FileReaderOutputSend::new_serial();
 
-        if let Some((_, 0)) = self.file_options.slice {
+        if let Some((_, 0)) = self.normalized_pre_slice {
             return (
-                raw_morsel_receivers,
+                morsel_rx,
                 task_handles_ext::AbortOnDropHandle(io_runtime.spawn(std::future::ready(Ok(())))),
             );
         }
 
-        let reader_schema = self.schema.clone().unwrap();
+        let projected_arrow_fields = self.projected_arrow_fields.clone();
+        let is_full_projection = self.is_full_projection;
 
-        let (normalized_slice_oneshot_rx, metadata_rx, metadata_task_handle) =
-            self.init_metadata_fetcher();
-
-        let num_pipelines = self.config.num_pipelines;
         let row_group_prefetch_size = self.config.row_group_prefetch_size;
-        let projection = self.file_options.with_columns.clone();
-        assert_eq!(self.physical_predicate.is_some(), self.predicate.is_some());
-        let predicate = self.physical_predicate.clone();
+        let predicate = self.predicate.clone();
         let memory_prefetch_func = self.memory_prefetch_func;
-
-        let mut row_group_data_fetcher = RowGroupDataFetcher {
-            metadata_rx,
-            use_statistics,
-            verbose,
-            reader_schema,
-            projection,
-            predicate,
-            slice_range: None, // Initialized later
-            memory_prefetch_func,
-            current_path_index: 0,
-            current_byte_source: Default::default(),
-            current_row_groups: Default::default(),
-            current_row_group_idx: 0,
-            current_max_row_group_height: 0,
-            current_row_offset: 0,
-            current_shared_file_state: Default::default(),
-        };
 
         let row_group_decoder = self.init_row_group_decoder();
         let row_group_decoder = Arc::new(row_group_decoder);
@@ -117,284 +48,303 @@ impl ParquetSourceNode {
         let ideal_morsel_size = get_ideal_morsel_size();
 
         if verbose {
-            eprintln!("[ParquetSource]: ideal_morsel_size: {}", ideal_morsel_size);
+            eprintln!("[ParquetFileReader]: ideal_morsel_size: {ideal_morsel_size}");
         }
 
-        // Distributes morsels across pipelines. This does not perform any CPU or I/O bound work -
-        // it is purely a dispatch loop.
-        let raw_morsel_distributor_task_handle = io_runtime.spawn(async move {
-            let slice_range = {
-                let Ok(slice) = normalized_slice_oneshot_rx.await else {
-                    // If we are here then the producer probably errored.
-                    drop(row_group_data_fetcher);
-                    return metadata_task_handle.await.unwrap();
-                };
+        let metadata = self.metadata.clone();
+        let normalized_pre_slice = self.normalized_pre_slice;
+        let byte_source = self.byte_source.clone();
 
-                slice.map(|(offset, len)| offset..offset + len)
-            };
+        // Prefetch loop (spawns prefetches on the tokio scheduler).
+        let (prefetch_send, mut prefetch_recv) =
+            tokio::sync::mpsc::channel(row_group_prefetch_size);
 
-            row_group_data_fetcher.slice_range = slice_range;
+        let row_index = self.row_index.clone();
 
-            // Ensure proper backpressure by only polling the buffered iterator when a wait group
-            // is free.
-            let mut wait_groups = (0..num_pipelines)
-                .map(|index| IndexedWaitGroup::new(index).wait())
-                .collect::<FuturesUnordered<_>>();
+        let prefetch_task = AbortOnDropHandle(io_runtime.spawn(async move {
+            polars_ensure!(
+                metadata.num_rows < IdxSize::MAX as usize,
+                bigidx,
+                ctx = "parquet file",
+                size = metadata.num_rows
+            );
 
-            let mut df_stream = row_group_data_fetcher
-                .into_stream()
-                .map(|x| async {
-                    match x {
-                        Ok(handle) => handle.await.unwrap(),
-                        Err(e) => Err(e),
-                    }
-                })
-                .buffered(row_group_prefetch_size)
-                .map(|x| async {
-                    let row_group_decoder = row_group_decoder.clone();
+            // Calculate the row groups that need to be read and the slice range relative to those
+            // row groups.
+            let mut row_offset = 0;
+            let mut slice_range =
+                normalized_pre_slice.map(|(offset, length)| offset..offset + length);
+            let mut row_group_slice = 0..metadata.row_groups.len();
+            if let Some(pre_slice) = normalized_pre_slice {
+                let mut start = 0;
+                let mut start_offset = 0;
 
-                    match x {
-                        Ok(row_group_data) => {
-                            async_executor::spawn(TaskPriority::Low, async move {
-                                row_group_decoder.row_group_data_to_df(row_group_data).await
-                            })
-                            .await
-                        },
-                        Err(e) => Err(e),
-                    }
-                })
-                .buffered(
-                    // Because we are using an ordered buffer, we may suffer from head-of-line blocking,
-                    // so we add a small amount of buffer.
-                    num_pipelines + 4,
-                );
+                let mut num_offset_remaining = pre_slice.0;
+                let mut num_length_remaining = pre_slice.1;
 
-            let morsel_seq_ref = &mut MorselSeq::default();
-            let mut dfs = VecDeque::with_capacity(1);
-
-            'main: loop {
-                let Some(mut indexed_wait_group) = wait_groups.next().await else {
-                    break;
-                };
-
-                while dfs.is_empty() {
-                    let Some(v) = df_stream.next().await else {
-                        break 'main;
-                    };
-
-                    let df = v?;
-
-                    if df.is_empty() {
-                        continue;
+                for rg in &metadata.row_groups {
+                    if rg.num_rows() > num_offset_remaining {
+                        start_offset = num_offset_remaining;
+                        num_length_remaining = num_length_remaining
+                            .saturating_sub(rg.num_rows() - num_offset_remaining);
+                        break;
                     }
 
-                    let (iter, n) = split_to_morsels(&df, ideal_morsel_size);
-
-                    dfs.reserve(n);
-                    dfs.extend(iter);
+                    row_offset += rg.num_rows();
+                    num_offset_remaining -= rg.num_rows();
+                    start += 1;
                 }
 
-                let mut df = dfs.pop_front().unwrap();
-                let morsel_seq = *morsel_seq_ref;
-                *morsel_seq_ref = morsel_seq.successor();
+                let mut end = start + 1;
 
-                loop {
-                    use crate::async_primitives::connector::SendError;
+                while num_length_remaining > 0 {
+                    num_length_remaining =
+                        num_length_remaining.saturating_sub(metadata.row_groups[end].num_rows());
+                    end += 1;
+                }
 
-                    let channel_index = indexed_wait_group.index();
-                    let wait_token = indexed_wait_group.token();
+                slice_range = Some(start_offset..start_offset + pre_slice.1);
+                row_group_slice = start..end;
 
-                    match raw_morsel_senders[channel_index].try_send((df, morsel_seq, wait_token)) {
-                        Ok(_) => {
-                            wait_groups.push(indexed_wait_group.wait());
-                            break;
-                        },
-                        Err(SendError::Closed(v)) => {
-                            // The channel assigned to this wait group has been closed, so we will not
-                            // add it back to the list of wait groups, and we will try to send this
-                            // across another channel.
-                            df = v.0
-                        },
-                        Err(SendError::Full(_)) => unreachable!(),
-                    }
-
-                    let Some(v) = wait_groups.next().await else {
-                        // All channels have closed
-                        break 'main;
-                    };
-
-                    indexed_wait_group = v;
+                if verbose {
+                    eprintln!(
+                        "[ParquetFileReader]: Slice pushdown: \
+                        reading {} / {} row groups",
+                        row_group_slice.len(),
+                        metadata.row_groups.len()
+                    );
                 }
             }
 
-            // Join on the producer handle to catch errors/panics.
-            drop(df_stream);
-            metadata_task_handle.await.unwrap()
+            let row_group_mask = calculate_row_group_pred_pushdown_skip_mask(
+                row_group_slice.clone(),
+                use_statistics,
+                predicate.as_ref(),
+                &metadata,
+                projected_arrow_fields.clone(),
+                row_index,
+                verbose,
+            )
+            .await?;
+
+            let mut row_group_data_fetcher = RowGroupDataFetcher {
+                projection: projected_arrow_fields.clone(),
+                is_full_projection,
+                predicate,
+                slice_range,
+                memory_prefetch_func,
+                metadata,
+                byte_source,
+                row_group_slice,
+                row_group_mask,
+                row_offset,
+            };
+
+            while let Some(prefetch) = row_group_data_fetcher.next().await {
+                if prefetch_send.send(prefetch?).await.is_err() {
+                    break;
+                }
+            }
+            PolarsResult::Ok(())
+        }));
+
+        // Decode loop (spawns decodes on the computational executor).
+        let (decode_send, mut decode_recv) = tokio::sync::mpsc::channel(self.config.num_pipelines);
+        let decode_task = AbortOnDropHandle(io_runtime.spawn(async move {
+            while let Some(prefetch) = prefetch_recv.recv().await {
+                let row_group_data = prefetch.await.unwrap()?;
+                let row_group_decoder = row_group_decoder.clone();
+                let decode_fut = async_executor::spawn(TaskPriority::High, async move {
+                    row_group_decoder.row_group_data_to_df(row_group_data).await
+                });
+                if decode_send.send(decode_fut).await.is_err() {
+                    break;
+                }
+            }
+            PolarsResult::Ok(())
+        }));
+
+        // Distributes morsels across pipelines. This does not perform any CPU or I/O bound work -
+        // it is purely a dispatch loop. Run on the computational executor to reduce context switches.
+        let last_morsel_min_split = self.config.num_pipelines;
+        let distribute_task = async_executor::spawn(TaskPriority::High, async move {
+            let mut morsel_seq = MorselSeq::default();
+            // Note: We don't use this (it is handled by the bridge). But morsels require a source token.
+            let source_token = SourceToken::new();
+
+            // Decode first non-empty morsel.
+            let mut next = None;
+            loop {
+                let Some(decode_fut) = decode_recv.recv().await else {
+                    break;
+                };
+                let df = decode_fut.await?;
+                if df.height() == 0 {
+                    continue;
+                }
+                next = Some(df);
+                break;
+            }
+
+            while let Some(df) = next.take() {
+                // Try to decode the next non-empty morsel first, so we know
+                // whether the df is the last morsel.
+                loop {
+                    let Some(decode_fut) = decode_recv.recv().await else {
+                        break;
+                    };
+                    let next_df = decode_fut.await?;
+                    if next_df.height() == 0 {
+                        continue;
+                    }
+                    next = Some(next_df);
+                    break;
+                }
+
+                for df in split_to_morsels(
+                    &df,
+                    ideal_morsel_size,
+                    next.is_none(),
+                    last_morsel_min_split,
+                ) {
+                    if morsel_sender
+                        .send_morsel(Morsel::new(df, morsel_seq, source_token.clone()))
+                        .await
+                        .is_err()
+                    {
+                        return Ok(());
+                    }
+                    morsel_seq = morsel_seq.successor();
+                }
+            }
+            PolarsResult::Ok(())
         });
 
-        let raw_morsel_distributor_task_handle =
-            task_handles_ext::AbortOnDropHandle(raw_morsel_distributor_task_handle);
+        let join_task = io_runtime.spawn(async move {
+            prefetch_task.await.unwrap()?;
+            decode_task.await.unwrap()?;
+            distribute_task.await?;
+            Ok(())
+        });
 
-        (raw_morsel_receivers, raw_morsel_distributor_task_handle)
+        (morsel_rx, AbortOnDropHandle(join_task))
     }
 
     /// Creates a `RowGroupDecoder` that turns `RowGroupData` into DataFrames.
     /// This must be called AFTER the following have been initialized:
-    /// * `self.projected_arrow_schema`
+    /// * `self.projected_arrow_fields`
     /// * `self.physical_predicate`
-    pub(super) fn init_row_group_decoder(&self) -> RowGroupDecoder {
-        assert_eq!(self.predicate.is_some(), self.physical_predicate.is_some());
-
-        let scan_sources = self.scan_sources.clone();
-        let hive_partitions = self.hive_parts.clone();
-        let hive_partitions_width = hive_partitions
-            .as_deref()
-            .map(|x| x[0].get_statistics().column_stats().len())
-            .unwrap_or(0);
-        let include_file_paths = self.file_options.include_file_paths.clone();
-        let projected_arrow_schema = self.projected_arrow_schema.clone().unwrap();
+    pub(super) fn init_row_group_decoder(&mut self) -> RowGroupDecoder {
+        let projected_arrow_fields = self.projected_arrow_fields.clone();
         let row_index = self.row_index.clone();
-        let physical_predicate = self.physical_predicate.clone();
-        let min_values_per_thread = self.config.min_values_per_thread;
+        let target_values_per_thread = self.config.target_values_per_thread;
+        let predicate = self.predicate.clone();
 
-        let mut use_prefiltered = physical_predicate.is_some()
-            && matches!(
-                self.options.parallel,
-                ParallelStrategy::Auto | ParallelStrategy::Prefiltered
-            );
+        let mut use_prefiltered = matches!(self.options.parallel, ParallelStrategy::Prefiltered);
+        use_prefiltered |=
+            predicate.is_some() && matches!(self.options.parallel, ParallelStrategy::Auto);
 
-        let predicate_arrow_field_indices = if use_prefiltered {
-            let v = physical_predicate
-                .as_ref()
-                .unwrap()
-                .live_variables()
-                .and_then(|x| {
-                    let mut out = x
-                        .iter()
-                        // Can be `None` - if the column is e.g. a hive column, or the row index column.
-                        .filter_map(|x| projected_arrow_schema.index_of(x))
-                        .collect::<Vec<_>>();
-
-                    out.sort_unstable();
-                    out.dedup();
-                    // There is at least one non-predicate column, or pre-filtering was
-                    // explicitly requested (only useful for testing).
-                    (out.len() < projected_arrow_schema.len()
-                        || matches!(self.options.parallel, ParallelStrategy::Prefiltered))
-                    .then_some(out)
-                });
-
-            use_prefiltered &= v.is_some();
-
-            v.unwrap_or_default()
-        } else {
-            vec![]
-        };
+        let predicate_field_indices: Arc<[usize]> =
+            if use_prefiltered && let Some(predicate) = predicate.as_ref() {
+                projected_arrow_fields
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, projected_field)| {
+                        predicate
+                            .live_columns
+                            .contains(projected_field.output_name())
+                            .then_some(i)
+                    })
+                    .collect()
+            } else {
+                Default::default()
+            };
 
         let use_prefiltered = use_prefiltered.then(PrefilterMaskSetting::init_from_env);
 
-        let non_predicate_arrow_field_indices = if use_prefiltered.is_some() {
+        let non_predicate_field_indices: Arc<[usize]> = if use_prefiltered.is_some() {
             filtered_range(
-                predicate_arrow_field_indices.as_slice(),
-                projected_arrow_schema.len(),
+                predicate_field_indices.as_ref(),
+                projected_arrow_fields.len(),
             )
+            .collect()
         } else {
-            vec![]
+            Default::default()
         };
 
         if use_prefiltered.is_some() && self.verbose {
             eprintln!(
-                "[ParquetSource]: Pre-filtered decode enabled ({} live, {} non-live)",
-                predicate_arrow_field_indices.len(),
-                non_predicate_arrow_field_indices.len()
+                "[ParquetFileReader]: Pre-filtered decode enabled ({} live, {} non-live)",
+                predicate_field_indices.len(),
+                non_predicate_field_indices.len()
             )
         }
 
+        let allow_column_predicates = predicate
+            .as_ref()
+            .is_some_and(|x| x.column_predicates.is_sumwise_complete)
+            && row_index.is_none()
+            && !projected_arrow_fields.iter().any(|x| {
+                x.arrow_field().dtype().is_nested()
+                    || matches!(x, ArrowFieldProjection::Mapped { .. })
+            });
+
         RowGroupDecoder {
-            scan_sources,
-            hive_partitions,
-            hive_partitions_width,
-            include_file_paths,
-            reader_schema: self.schema.clone().unwrap(),
-            projected_arrow_schema,
+            num_pipelines: self.config.num_pipelines,
+            projected_arrow_fields,
             row_index,
-            physical_predicate,
+            predicate,
+            allow_column_predicates,
             use_prefiltered,
-            predicate_arrow_field_indices,
-            non_predicate_arrow_field_indices,
-            min_values_per_thread,
-        }
-    }
-
-    pub(super) fn init_projected_arrow_schema(&mut self) {
-        let reader_schema = self.schema.clone().unwrap();
-
-        self.projected_arrow_schema = Some(
-            if let Some(columns) = self.file_options.with_columns.as_deref() {
-                Arc::new(
-                    columns
-                        .iter()
-                        .map(|x| {
-                            let (_, k, v) = reader_schema.get_full(x).unwrap();
-                            (k.clone(), v.clone())
-                        })
-                        .collect(),
-                )
-            } else {
-                reader_schema.clone()
-            },
-        );
-
-        if self.verbose {
-            eprintln!(
-                "[ParquetSource]: {} / {} parquet columns to be projected from {} files",
-                self.projected_arrow_schema
-                    .as_ref()
-                    .map_or(reader_schema.len(), |x| x.len()),
-                reader_schema.len(),
-                self.scan_sources.len(),
-            );
+            predicate_field_indices,
+            non_predicate_field_indices,
+            target_values_per_thread,
         }
     }
 }
 
 /// Returns 0..len in a Vec, excluding indices in `exclude`.
 /// `exclude` needs to be a sorted list of unique values.
-fn filtered_range(exclude: &[usize], len: usize) -> Vec<usize> {
+fn filtered_range(exclude: &[usize], len: usize) -> impl Iterator<Item = usize> {
+    if cfg!(debug_assertions) {
+        assert!(exclude.windows(2).all(|x| x[1] > x[0]));
+    }
+
     let mut j = 0;
 
-    (0..len)
-        .filter(|&i| {
-            if j == exclude.len() || i != exclude[j] {
-                true
-            } else {
-                j += 1;
-                false
-            }
-        })
-        .collect()
+    (0..len).filter(move |&i| {
+        if j == exclude.len() || i != exclude[j] {
+            true
+        } else {
+            j += 1;
+            false
+        }
+    })
 }
 
-/// Note: The 2nd return is an upper bound on the number of morsels rather than an exact count.
 fn split_to_morsels(
     df: &DataFrame,
     ideal_morsel_size: usize,
-) -> (impl Iterator<Item = DataFrame> + '_, usize) {
-    let n_morsels = if df.height() > 3 * ideal_morsel_size / 2 {
+    last_morsel: bool,
+    last_morsel_min_split: usize,
+) -> impl Iterator<Item = DataFrame> + '_ {
+    let mut n_morsels = if df.height() > 3 * ideal_morsel_size / 2 {
         // num_rows > (1.5 * ideal_morsel_size)
         (df.height() / ideal_morsel_size).max(2)
     } else {
         1
     };
 
-    let rows_per_morsel = 1 + df.height() / n_morsels;
+    if last_morsel {
+        n_morsels = n_morsels.max(last_morsel_min_split);
+    }
 
-    (
-        (0..i64::try_from(df.height()).unwrap())
-            .step_by(rows_per_morsel)
-            .map(move |offset| df.slice(offset, rows_per_morsel)),
-        n_morsels,
-    )
+    let rows_per_morsel = df.height().div_ceil(n_morsels).max(1);
+
+    (0..i64::try_from(df.height()).unwrap())
+        .step_by(rows_per_morsel)
+        .map(move |offset| df.slice(offset, rows_per_morsel))
+        .filter(|df| df.height() > 0)
 }
 
 mod tests {
@@ -402,7 +352,13 @@ mod tests {
     #[test]
     fn test_filtered_range() {
         use super::filtered_range;
-        assert_eq!(filtered_range(&[1, 3], 7).as_slice(), &[0, 2, 4, 5, 6]);
-        assert_eq!(filtered_range(&[1, 6], 7).as_slice(), &[0, 2, 3, 4, 5]);
+        assert_eq!(
+            filtered_range(&[1, 3], 7).collect::<Vec<_>>().as_slice(),
+            &[0, 2, 4, 5, 6]
+        );
+        assert_eq!(
+            filtered_range(&[1, 6], 7).collect::<Vec<_>>().as_slice(),
+            &[0, 2, 3, 4, 5]
+        );
     }
 }

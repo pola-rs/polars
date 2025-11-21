@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 use polars_utils::arena::{Arena, Node};
 
-use crate::prelude::{node_to_expr, AExpr};
+use crate::prelude::{AExpr, node_to_expr};
 
 pub fn dbg_nodes(nodes: &[Node], arena: &Arena<AExpr>) {
     println!("[");

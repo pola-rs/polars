@@ -1,7 +1,7 @@
 use polars_parquet::parquet::error::ParquetError;
 use polars_parquet::parquet::metadata::SchemaDescriptor;
 use polars_parquet::parquet::schema::types::{ParquetType, PhysicalType};
-use polars_parquet::parquet::write::{write_metadata_sidecar, FileWriter, Version, WriteOptions};
+use polars_parquet::parquet::write::{FileWriter, Version, WriteOptions, write_metadata_sidecar};
 
 #[test]
 fn basic() -> Result<(), ParquetError> {

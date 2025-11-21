@@ -214,7 +214,7 @@ def test_add_business_days_invalid() -> None:
         )
     with pytest.raises(
         ValueError,
-        match="`roll` must be one of {'raise', 'forward', 'backward'}, got cabbage",
+        match=r"`roll` must be one of {'raise', 'forward', 'backward'}, got cabbage",
     ):
         df.select(result=pl.col("start").dt.add_business_days(1, roll="cabbage"))  # type: ignore[arg-type]
 
@@ -285,3 +285,8 @@ def test_against_np_busday_offset(
         start, n, weekmask=week_mask, holidays=holidays, roll=roll
     )
     assert result == expected
+
+
+def test_unequal_lengths_22018() -> None:
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.Series([date(2088, 8, 5)] * 2).dt.add_business_days(pl.Series([1] * 3))

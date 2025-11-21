@@ -124,7 +124,7 @@ mod test {
 
     #[test]
     fn test_write_with_zstd_compression() {
-        test_write_with_compression(IpcCompression::ZSTD);
+        test_write_with_compression(IpcCompression::ZSTD(Default::default()));
     }
 
     fn test_write_with_compression(compression: IpcCompression) {
@@ -146,7 +146,7 @@ mod test {
     fn write_and_read_ipc_stream_empty_series() {
         fn df() -> DataFrame {
             DataFrame::new(vec![
-                Float64Chunked::new("empty".into(), &[0_f64; 0]).into_column()
+                Float64Chunked::new("empty".into(), &[0_f64; 0]).into_column(),
             ])
             .unwrap()
         }

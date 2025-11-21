@@ -24,7 +24,9 @@ pub(super) fn utf8_to_dictionary_dyn<O: Offset, K: DictionaryKey>(
 pub fn utf8_to_dictionary<O: Offset, K: DictionaryKey>(
     from: &Utf8Array<O>,
 ) -> PolarsResult<DictionaryArray<K>> {
-    let mut array = MutableDictionaryArray::<K, MutableUtf8Array<O>>::new();
+    let mut array = MutableDictionaryArray::<K, MutableUtf8Array<O>>::empty_with_value_dtype(
+        from.dtype().clone(),
+    );
     array.reserve(from.len());
     array.try_extend(from.iter())?;
 
@@ -76,8 +78,10 @@ type OffsetType = i8;
 // chunks so that we don't overflow the offset u32.
 fn truncate_buffer(buf: &Buffer<u8>) -> Buffer<u8> {
     // * 2, as it must be able to hold u32::MAX offset + u32::MAX len.
-    buf.clone()
-        .sliced(0, std::cmp::min(buf.len(), OffsetType::MAX as usize * 2))
+    buf.clone().sliced(
+        0,
+        std::cmp::min(buf.len(), ((OffsetType::MAX as u64) * 2) as usize),
+    )
 }
 
 pub fn binary_to_binview<O: Offset>(arr: &BinaryArray<O>) -> BinaryViewArray {

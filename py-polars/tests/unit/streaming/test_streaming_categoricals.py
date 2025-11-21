@@ -12,7 +12,7 @@ def test_streaming_nested_categorical() -> None:
         .group_by("numbers")
         .agg(pl.col("cat").first())
         .sort("numbers")
-    ).collect(streaming=True).to_dict(as_series=False) == {
+    ).collect(engine="streaming").to_dict(as_series=False) == {
         "numbers": [1, 2],
         "cat": [["str"], ["bar"]],
     }
@@ -25,9 +25,9 @@ def test_streaming_cat_14933() -> None:
     df2 = pl.LazyFrame(
         [
             pl.Series("a", [0, 1], dtype=pl.UInt32),
-            pl.Series("l", [None, None], dtype=pl.Categorical(ordering="physical")),
+            pl.Series("l", [None, None], dtype=pl.Categorical()),
         ]
     )
     result = df1.join(df2, on="a", how="left")
     expected = {"a": [0], "l": [None]}
-    assert result.collect(streaming=True).to_dict(as_series=False) == expected
+    assert result.collect(engine="streaming").to_dict(as_series=False) == expected

@@ -101,7 +101,7 @@ First, probably because of historical reasons: `spawn` was added to Python in ve
 `fork` has been part of Python from the 2.x series.
 
 Second, there are several limitations for `spawn` and `forkserver` that do not apply to `fork`, in
-particular all arguments should be pickable. See the
+particular all arguments should be pickleable. See the
 [Python multiprocessing docs](https://docs.python.org/3/library/multiprocessing.html#the-spawn-and-forkserver-start-methods)
 for more information.
 

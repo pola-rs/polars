@@ -2,13 +2,11 @@ pub mod infer;
 use chrono::DateTime;
 mod patterns;
 mod strptime;
-use chrono::format::ParseErrorKind;
-use chrono::ParseError;
 pub use patterns::Pattern;
 #[cfg(feature = "dtype-time")]
 use polars_core::chunked_array::temporal::time_to_time64ns;
 use polars_core::prelude::arity::unary_elementwise;
-use polars_utils::cache::FastCachedFunc;
+use polars_utils::cache::LruCachedFunc;
 
 use super::*;
 #[cfg(feature = "dtype-date")]
@@ -52,14 +50,6 @@ where
         .copied()
 }
 
-struct ParseErrorByteCopy(ParseErrorKind);
-
-impl From<ParseError> for ParseErrorByteCopy {
-    fn from(e: ParseError) -> Self {
-        ParseErrorByteCopy(e.kind())
-    }
-}
-
 fn get_first_val(ca: &StringChunked) -> PolarsResult<&str> {
     let idx = ca.first_non_null().ok_or_else(|| {
         polars_err!(ComputeError:
@@ -100,7 +90,7 @@ pub trait StringMethods: AsString {
         };
         let use_cache = use_cache && string_ca.len() > 50;
 
-        let mut convert = FastCachedFunc::new(
+        let mut convert = LruCachedFunc::new(
             |s| {
                 let naive_time = NaiveTime::parse_from_str(s, fmt).ok()?;
                 Some(time_to_time64ns(&naive_time))
@@ -108,7 +98,7 @@ pub trait StringMethods: AsString {
             (string_ca.len() as f64).sqrt() as usize,
         );
         let ca = unary_elementwise(string_ca, |opt_s| convert.eval(opt_s?, use_cache));
-        Ok(ca.with_name(string_ca.name().clone()).into())
+        Ok(ca.with_name(string_ca.name().clone()).into_time())
     }
 
     #[cfg(feature = "dtype-date")]
@@ -123,27 +113,20 @@ pub trait StringMethods: AsString {
         };
         let ca = unary_elementwise(string_ca, |opt_s| {
             let mut s = opt_s?;
-            let fmt_len = fmt.len();
-
-            for i in 1..(s.len().saturating_sub(fmt_len)) {
-                if s.is_empty() {
-                    return None;
-                }
-                match NaiveDate::parse_from_str(s, fmt).map(naive_date_to_date) {
-                    Ok(nd) => return Some(nd),
-                    Err(e) => match ParseErrorByteCopy::from(e).0 {
-                        ParseErrorKind::TooLong => {
-                            s = &s[..s.len() - 1];
-                        },
-                        _ => {
-                            s = &s[i..];
-                        },
+            while !s.is_empty() {
+                match NaiveDate::parse_and_remainder(s, fmt) {
+                    Ok((nd, _)) => return Some(naive_date_to_date(nd)),
+                    Err(_) => {
+                        let mut it = s.chars();
+                        it.next();
+                        s = it.as_str();
                     },
                 }
             }
+
             None
         });
-        Ok(ca.with_name(string_ca.name().clone()).into())
+        Ok(ca.with_name(string_ca.name().clone()).into_date())
     }
 
     #[cfg(feature = "dtype-datetime")]
@@ -157,8 +140,11 @@ pub trait StringMethods: AsString {
         tz_aware: bool,
         tz: Option<&TimeZone>,
         _ambiguous: &StringChunked,
+        // Ensure that the inferred time_zone matches the given time_zone.
+        ensure_matching_tz: bool,
     ) -> PolarsResult<DatetimeChunked> {
         let string_ca = self.as_string();
+        let had_format = fmt.is_some();
         let fmt = match fmt {
             Some(fmt) => fmt,
             None => sniff_fmt_datetime(string_ca)?,
@@ -172,35 +158,30 @@ pub trait StringMethods: AsString {
 
         let ca = unary_elementwise(string_ca, |opt_s| {
             let mut s = opt_s?;
-            let fmt_len = fmt.len();
-
-            for i in 1..(s.len().saturating_sub(fmt_len)) {
-                if s.is_empty() {
-                    return None;
-                }
+            while !s.is_empty() {
                 let timestamp = if tz_aware {
-                    DateTime::parse_from_str(s, fmt).map(|dt| func(dt.naive_utc()))
+                    DateTime::parse_and_remainder(s, fmt).map(|(dt, _r)| func(dt.naive_utc()))
                 } else {
-                    NaiveDateTime::parse_from_str(s, fmt).map(func)
+                    NaiveDateTime::parse_and_remainder(s, fmt).map(|(nd, _r)| func(nd))
                 };
                 match timestamp {
                     Ok(ts) => return Some(ts),
-                    Err(e) => {
-                        let e: ParseErrorByteCopy = e.into();
-                        match e.0 {
-                            ParseErrorKind::TooLong => {
-                                s = &s[..s.len() - 1];
-                            },
-                            _ => {
-                                s = &s[i..];
-                            },
-                        }
+                    Err(_) => {
+                        let mut it = s.chars();
+                        it.next();
+                        s = it.as_str();
                     },
                 }
             }
             None
         })
         .with_name(string_ca.name().clone());
+
+        polars_ensure!(
+            !ensure_matching_tz || had_format || !(tz_aware && tz.is_none()),
+            to_datetime_tz_mismatch
+        );
+
         match (tz_aware, tz) {
             #[cfg(feature = "timezones")]
             (false, Some(tz)) => polars_ops::prelude::replace_time_zone(
@@ -210,10 +191,7 @@ pub trait StringMethods: AsString {
                 NonExistent::Raise,
             ),
             #[cfg(feature = "timezones")]
-            (true, tz) => Ok(ca.into_datetime(
-                tu,
-                tz.cloned().or_else(|| Some(PlSmallStr::from_static("UTC"))),
-            )),
+            (true, tz) => Ok(ca.into_datetime(tu, Some(tz.cloned().unwrap_or(TimeZone::UTC)))),
             _ => Ok(ca.into_datetime(tu, None)),
         }
     }
@@ -232,7 +210,7 @@ pub trait StringMethods: AsString {
         // We can use the fast parser.
         let ca = if let Some(fmt_len) = strptime::fmt_len(fmt.as_bytes()) {
             let mut strptime_cache = StrpTimeState::default();
-            let mut convert = FastCachedFunc::new(
+            let mut convert = LruCachedFunc::new(
                 |s: &str| {
                     // SAFETY: fmt_len is correct, it was computed with this `fmt` str.
                     match unsafe { strptime_cache.parse(s.as_bytes(), fmt.as_bytes(), fmt_len) } {
@@ -246,7 +224,7 @@ pub trait StringMethods: AsString {
             );
             unary_elementwise(string_ca, |val| convert.eval(val?, use_cache))
         } else {
-            let mut convert = FastCachedFunc::new(
+            let mut convert = LruCachedFunc::new(
                 |s| {
                     let naive_date = NaiveDate::parse_from_str(s, &fmt).ok()?;
                     Some(naive_date_to_date(naive_date))
@@ -256,7 +234,7 @@ pub trait StringMethods: AsString {
             unary_elementwise(string_ca, |val| convert.eval(val?, use_cache))
         };
 
-        Ok(ca.with_name(string_ca.name().clone()).into())
+        Ok(ca.with_name(string_ca.name().clone()).into_date())
     }
 
     #[cfg(feature = "dtype-datetime")]
@@ -273,7 +251,7 @@ pub trait StringMethods: AsString {
         let string_ca = self.as_string();
         let fmt = match fmt {
             Some(fmt) => fmt,
-            None => return infer::to_datetime(string_ca, tu, tz, ambiguous),
+            None => return infer::to_datetime(string_ca, tu, tz, ambiguous, true),
         };
         let fmt = strptime::compile_fmt(fmt)?;
         let use_cache = use_cache && string_ca.len() > 50;
@@ -287,7 +265,7 @@ pub trait StringMethods: AsString {
         if tz_aware {
             #[cfg(feature = "timezones")]
             {
-                let mut convert = FastCachedFunc::new(
+                let mut convert = LruCachedFunc::new(
                     |s: &str| {
                         let dt = DateTime::parse_from_str(s, &fmt).ok()?;
                         Some(func(dt.naive_utc()))
@@ -297,13 +275,7 @@ pub trait StringMethods: AsString {
                 Ok(
                     unary_elementwise(string_ca, |opt_s| convert.eval(opt_s?, use_cache))
                         .with_name(string_ca.name().clone())
-                        .into_datetime(
-                            tu,
-                            Some(
-                                tz.cloned()
-                                    .unwrap_or_else(|| PlSmallStr::from_static("UTC")),
-                            ),
-                        ),
+                        .into_datetime(tu, Some(tz.cloned().unwrap_or(TimeZone::UTC))),
                 )
             }
             #[cfg(not(feature = "timezones"))]
@@ -319,7 +291,7 @@ pub trait StringMethods: AsString {
             // We can use the fast parser.
             let ca = if let Some(fmt_len) = self::strptime::fmt_len(fmt.as_bytes()) {
                 let mut strptime_cache = StrpTimeState::default();
-                let mut convert = FastCachedFunc::new(
+                let mut convert = LruCachedFunc::new(
                     |s: &str| {
                         // SAFETY: fmt_len is correct, it was computed with this `fmt` str.
                         match unsafe { strptime_cache.parse(s.as_bytes(), fmt.as_bytes(), fmt_len) }
@@ -332,7 +304,7 @@ pub trait StringMethods: AsString {
                 );
                 unary_elementwise(string_ca, |opt_s| convert.eval(opt_s?, use_cache))
             } else {
-                let mut convert = FastCachedFunc::new(
+                let mut convert = LruCachedFunc::new(
                     |s| transform(s, &fmt),
                     (string_ca.len() as f64).sqrt() as usize,
                 );

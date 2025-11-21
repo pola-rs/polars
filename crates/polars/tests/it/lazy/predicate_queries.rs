@@ -1,7 +1,3 @@
-// used only if feature="is_in", feature="dtype-categorical"
-#[cfg(all(feature = "is_in", feature = "dtype-categorical"))]
-use polars_core::{disable_string_cache, StringCacheHolder, SINGLE_LOCK};
-
 use super::*;
 
 #[test]
@@ -54,7 +50,7 @@ fn filter_true_lit() -> PolarsResult<()> {
 
 fn create_n_filters(col_name: &str, num_filters: usize) -> Vec<Expr> {
     (0..num_filters)
-        .map(|i| col(col_name).eq(lit(format!("{}", i))))
+        .map(|i| col(col_name).eq(lit(format!("{i}"))))
         .collect()
 }
 
@@ -131,16 +127,12 @@ fn test_is_in_categorical_3420() -> PolarsResult<()> {
         "b" => [1, 2, 3, 4, 5]
     ]?;
 
-    let _guard = SINGLE_LOCK.lock();
-    disable_string_cache();
-    let _sc = StringCacheHolder::hold();
-
     let s = Series::new("x".into(), ["a", "b", "c"])
-        .strict_cast(&DataType::Categorical(None, Default::default()))?;
+        .strict_cast(&DataType::from_categories(Categories::global()))?;
     let out = df
         .lazy()
-        .with_column(col("a").strict_cast(DataType::Categorical(None, Default::default())))
-        .filter(col("a").is_in(lit(s).alias("x")))
+        .with_column(col("a").strict_cast(DataType::from_categories(Categories::global())))
+        .filter(col("a").is_in(lit(s).alias("x"), false))
         .collect()?;
 
     let mut expected = df![
@@ -148,7 +140,7 @@ fn test_is_in_categorical_3420() -> PolarsResult<()> {
         "b" => [1, 2, 3]
     ]?;
     expected.try_apply("a", |s| {
-        s.cast(&DataType::Categorical(None, Default::default()))
+        s.cast(&DataType::from_categories(Categories::global()))
     })?;
     assert!(out.equals(&expected));
     Ok(())

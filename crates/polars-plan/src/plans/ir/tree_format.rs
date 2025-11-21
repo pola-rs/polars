@@ -1,8 +1,7 @@
-use std::fmt;
+use std::fmt::{self, Write};
 
 use polars_core::error::*;
-#[cfg(feature = "regex")]
-use regex::Regex;
+use polars_utils::format_list_truncated;
 
 use crate::constants;
 use crate::plans::ir::IRPlanRef;
@@ -25,24 +24,33 @@ pub struct TreeFmtAExpr<'a>(&'a AExpr);
 impl fmt::Display for TreeFmtAExpr<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self.0 {
-            AExpr::Explode(_) => "explode",
-            AExpr::Alias(_, name) => return write!(f, "alias({})", name),
-            AExpr::Column(name) => return write!(f, "col({})", name),
-            AExpr::Literal(lv) => return write!(f, "lit({lv:?})"),
-            AExpr::BinaryExpr { op, .. } => return write!(f, "binary: {}", op),
-            AExpr::Cast { dtype, options, .. } => {
-                return if options.strict() {
-                    write!(f, "strict cast({})", dtype)
-                } else {
-                    write!(f, "cast({})", dtype)
+            AExpr::Element => "element()",
+            AExpr::Explode { expr: _, options } => {
+                f.write_str("explode(")?;
+                match (options.empty_as_null, options.keep_nulls) {
+                    (true, true) => {},
+                    (true, false) => f.write_str("keep_nulls=false")?,
+                    (false, true) => f.write_str("empty_as_null=false")?,
+                    (false, false) => f.write_str("empty_as_null=false, keep_nulls=false")?,
                 }
+                return f.write_char(')');
+            },
+            AExpr::Column(name) => return write!(f, "col({name})"),
+            AExpr::Literal(lv) => return write!(f, "lit({lv:?})"),
+            AExpr::BinaryExpr { op, .. } => return write!(f, "binary: {op}"),
+            AExpr::Cast { dtype, options, .. } => {
+                return if options.is_strict() {
+                    write!(f, "strict cast({dtype})")
+                } else {
+                    write!(f, "cast({dtype})")
+                };
             },
             AExpr::Sort { options, .. } => {
                 return write!(
                     f,
                     "sort: {}{}{}",
                     options.descending as u8, options.nulls_last as u8, options.multithreaded as u8
-                )
+                );
             },
             AExpr::Gather { .. } => "gather",
             AExpr::SortBy { sort_options, .. } => {
@@ -62,11 +70,17 @@ impl fmt::Display for TreeFmtAExpr<'_> {
                 return write!(f, "{}", s.to_lowercase());
             },
             AExpr::Ternary { .. } => "ternary",
-            AExpr::AnonymousFunction { options, .. } => {
-                return write!(f, "anonymous_function: {}", options.fmt_str)
+            AExpr::AnonymousFunction { fmt_str, .. } => {
+                return write!(f, "anonymous_function: {fmt_str}");
             },
+            AExpr::AnonymousStreamingAgg { fmt_str, .. } => {
+                return write!(f, "anonymous_streaming_agg: {fmt_str}");
+            },
+            AExpr::Eval { .. } => "list.eval",
             AExpr::Function { function, .. } => return write!(f, "function: {function}"),
-            AExpr::Window { .. } => "window",
+            #[cfg(feature = "dynamic_group_by")]
+            AExpr::Rolling { .. } => "rolling",
+            AExpr::Over { .. } => "window",
             AExpr::Slice { .. } => "slice",
             AExpr::Len => constants::LEN,
         };
@@ -92,27 +106,16 @@ fn with_header(header: &Option<String>, text: &str) -> String {
 
 #[cfg(feature = "regex")]
 fn multiline_expression(expr: &str) -> std::borrow::Cow<'_, str> {
-    let re = Regex::new(r"([\)\]])(\.[a-z0-9]+\()").unwrap();
-    re.replace_all(expr, "$1\n  $2")
+    polars_utils::regex_cache::cached_regex! {
+        static RE = r"([\)\]])(\.[a-z0-9]+\()";
+    }
+    RE.replace_all(expr, "$1\n  $2")
 }
 
 impl<'a> TreeFmtNode<'a> {
     pub fn root_logical_plan(lp: IRPlanRef<'a>) -> Self {
-        if let Some(streaming_lp) = lp.extract_streaming_plan() {
-            return Self::streaming_root_logical_plan(streaming_lp);
-        }
-
         Self {
             h: None,
-            content: TreeFmtNodeContent::LogicalPlan(lp.lp_top),
-
-            lp,
-        }
-    }
-
-    fn streaming_root_logical_plan(lp: IRPlanRef<'a>) -> Self {
-        Self {
-            h: Some("Streaming".to_string()),
             content: TreeFmtNodeContent::LogicalPlan(lp.lp_top),
 
             lp,
@@ -164,7 +167,7 @@ impl<'a> TreeFmtNode<'a> {
     }
 
     fn node_data(&self) -> TreeFmtNodeData<'_> {
-        use {with_header as wh, TreeFmtNodeContent as C, TreeFmtNodeData as ND};
+        use {TreeFmtNodeContent as C, TreeFmtNodeData as ND, with_header as wh};
 
         let lp = &self.lp;
         let h = &self.h;
@@ -189,28 +192,34 @@ impl<'a> TreeFmtNode<'a> {
                     DataFrameScan {
                         schema,
                         output_schema,
-                        filter: selection,
                         ..
-                    } => ND(
-                        wh(
-                            h,
-                            &format!(
-                                "DF {:?}\nPROJECT {}/{} COLUMNS",
-                                schema.iter_names().take(4).collect::<Vec<_>>(),
-                                if let Some(columns) = output_schema {
-                                    format!("{}", columns.len())
-                                } else {
-                                    "*".to_string()
-                                },
-                                schema.len()
-                            ),
-                        ),
-                        if let Some(expr) = selection {
-                            vec![self.expr_node(Some("SELECTION:".to_string()), expr)]
+                    } => {
+                        let (n_columns, projected) = if let Some(schema) = output_schema {
+                            (
+                                format!("{}", schema.len()),
+                                format!(
+                                    ": {};",
+                                    format_list_truncated!(schema.iter_names(), 4, '"')
+                                ),
+                            )
                         } else {
-                            vec![]
-                        },
-                    ),
+                            ("*".to_string(), "".to_string())
+                        };
+                        ND(
+                            wh(
+                                h,
+                                &format!(
+                                    "DF {}\nPROJECT{} {}/{} COLUMNS",
+                                    format_list_truncated!(schema.iter_names(), 4, '"'),
+                                    projected,
+                                    n_columns,
+                                    schema.len()
+                                ),
+                            ),
+                            vec![],
+                        )
+                    },
+
                     Union { inputs, .. } => ND(
                         wh(
                             h,
@@ -236,15 +245,8 @@ impl<'a> TreeFmtNode<'a> {
                             .map(|(i, lp_root)| self.lp_node(Some(format!("PLAN {i}:")), *lp_root))
                             .collect(),
                     ),
-                    Cache {
-                        input,
-                        id,
-                        cache_hits,
-                    } => ND(
-                        wh(
-                            h,
-                            &format!("CACHE[id: {:x}, cache_hits: {}]", *id, *cache_hits),
-                        ),
+                    Cache { input, id } => ND(
+                        wh(h, &format!("CACHE[id: {id}]")),
                         vec![self.lp_node(None, *input)],
                     ),
                     Filter { input, predicate } => ND(
@@ -272,9 +274,16 @@ impl<'a> TreeFmtNode<'a> {
                             .collect(),
                     ),
                     GroupBy {
-                        input, keys, aggs, ..
+                        input,
+                        keys,
+                        aggs,
+                        maintain_order,
+                        ..
                     } => ND(
-                        wh(h, "AGGREGATE"),
+                        wh(
+                            h,
+                            &format!("AGGREGATE[maintain_order: {}]", *maintain_order),
+                        ),
                         aggs.iter()
                             .map(|expr| self.expr_node(Some("expression:".to_string()), expr))
                             .chain(keys.iter().map(|expr| {
@@ -312,14 +321,6 @@ impl<'a> TreeFmtNode<'a> {
                             .chain([self.lp_node(None, *input)])
                             .collect(),
                     ),
-                    Reduce { input, exprs, .. } => ND(
-                        wh(h, "REDUCE"),
-                        exprs
-                            .iter()
-                            .map(|expr| self.expr_node(Some("expression:".to_string()), expr))
-                            .chain([self.lp_node(None, *input)])
-                            .collect(),
-                    ),
                     Distinct { input, options } => ND(
                         wh(
                             h,
@@ -334,19 +335,10 @@ impl<'a> TreeFmtNode<'a> {
                         wh(h, &format!("SLICE[offset: {offset}, len: {len}]")),
                         vec![self.lp_node(None, *input)],
                     ),
-                    MapFunction { input, function } => {
-                        if let Some(streaming_lp) = function.to_streaming_lp() {
-                            ND(
-                                String::default(),
-                                vec![TreeFmtNode::streaming_root_logical_plan(streaming_lp)],
-                            )
-                        } else {
-                            ND(
-                                wh(h, &format!("{function}")),
-                                vec![self.lp_node(None, *input)],
-                            )
-                        }
-                    },
+                    MapFunction { input, function } => ND(
+                        wh(h, &format!("{function}")),
+                        vec![self.lp_node(None, *input)],
+                    ),
                     ExtContext { input, .. } => {
                         ND(wh(h, "EXTERNAL_CONTEXT"), vec![self.lp_node(None, *input)])
                     },
@@ -354,11 +346,21 @@ impl<'a> TreeFmtNode<'a> {
                         wh(
                             h,
                             match payload {
-                                SinkType::Memory => "SINK (memory)",
-                                SinkType::File { .. } => "SINK (file)",
+                                SinkTypeIR::Memory => "SINK (memory)",
+                                SinkTypeIR::Callback(..) => "SINK (callback)",
+                                SinkTypeIR::File { .. } => "SINK (file)",
+                                SinkTypeIR::Partitioned { .. } => "SINK (partition)",
                             },
                         ),
                         vec![self.lp_node(None, *input)],
+                    ),
+                    SinkMultiple { inputs } => ND(
+                        wh(h, "SINK_MULTIPLE"),
+                        inputs
+                            .iter()
+                            .enumerate()
+                            .map(|(i, lp_root)| self.lp_node(Some(format!("PLAN {i}:")), *lp_root))
+                            .collect(),
                     ),
                     SimpleProjection { input, columns } => {
                         let num_columns = columns.as_ref().len();
@@ -373,6 +375,18 @@ impl<'a> TreeFmtNode<'a> {
                             vec![self.lp_node(None, *input)],
                         )
                     },
+                    #[cfg(feature = "merge_sorted")]
+                    MergeSorted {
+                        input_left,
+                        input_right,
+                        key,
+                    } => ND(
+                        wh(h, &format!("MERGE SORTED ON '{key}")),
+                        [self.lp_node(Some("LEFT PLAN:".to_string()), *input_left)]
+                            .into_iter()
+                            .chain([self.lp_node(Some("RIGHT PLAN:".to_string()), *input_right)])
+                            .collect(),
+                    ),
                     Invalid => ND(wh(h, "INVALID"), vec![]),
                 }
             },
@@ -811,7 +825,7 @@ impl From<TreeView<'_>> for Canvas {
         }
 
         fn even_odd(a: usize, b: usize) -> usize {
-            if a % 2 == 0 && b % 2 == 1 {
+            if a.is_multiple_of(2) && b % 2 == 1 {
                 1
             } else {
                 0

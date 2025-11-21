@@ -1,12 +1,15 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::any::Any;
 use std::future::Future;
-use std::panic::{catch_unwind, resume_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::pin::Pin;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::{Arc, Weak};
 use std::task::{Context, Poll, Wake, Waker};
 
+use atomic_waker::AtomicWaker;
 use parking_lot::Mutex;
+use polars_error::signals::try_raise_keyboard_interrupt;
 
 /// The state of the task. Can't be part of the TaskData enum as it needs to be
 /// atomically updateable, even when we hold the lock on the data.
@@ -71,7 +74,8 @@ enum TaskData<F: Future> {
 
 struct Task<F: Future, S, M> {
     state: TaskState,
-    data: Mutex<(TaskData<F>, Option<Waker>)>,
+    data: Mutex<TaskData<F>>,
+    join_waker: AtomicWaker,
     schedule: S,
     metadata: M,
 }
@@ -80,7 +84,7 @@ impl<'a, F, S, M> Task<F, S, M>
 where
     F: Future + Send + 'a,
     F::Output: Send + 'static,
-    S: Fn(Runnable<M>) + Send + Sync + Copy + 'static,
+    S: Fn(Arc<dyn Runnable<M>>) + Send + Sync + Copy + 'static,
     M: Send + Sync + 'static,
 {
     /// # Safety
@@ -89,32 +93,21 @@ where
     unsafe fn spawn(future: F, schedule: S, metadata: M) -> Arc<Self> {
         let task = Arc::new(Self {
             state: TaskState::default(),
-            data: Mutex::new((TaskData::Empty, None)),
+            data: Mutex::new(TaskData::Empty),
+            join_waker: AtomicWaker::new(),
             schedule,
             metadata,
         });
 
         let waker = unsafe { Waker::from_raw(std_shim::raw_waker(task.clone())) };
-        task.data.try_lock().unwrap().0 = TaskData::Polling(future, waker);
+        *task.data.try_lock().unwrap() = TaskData::Polling(future, waker);
         task
     }
 
-    fn into_runnable(self: Arc<Self>) -> Runnable<M> {
-        let arc: Arc<dyn DynTask<M> + 'a> = self;
-        let arc: Arc<dyn DynTask<M>> = unsafe { std::mem::transmute(arc) };
-        Runnable(arc)
-    }
-
-    fn into_join_handle(self: Arc<Self>) -> JoinHandle<F::Output> {
-        let arc: Arc<dyn Joinable<F::Output> + 'a> = self;
-        let arc: Arc<dyn Joinable<F::Output>> = unsafe { std::mem::transmute(arc) };
-        JoinHandle(Some(arc))
-    }
-
-    fn into_cancel_handle(self: Arc<Self>) -> CancelHandle {
-        let arc: Arc<dyn Cancellable + 'a> = self;
-        let arc: Arc<dyn Cancellable> = unsafe { std::mem::transmute(arc) };
-        CancelHandle(Arc::downgrade(&arc))
+    fn into_dyn(self: Arc<Self>) -> Arc<dyn DynTask<F::Output, M>> {
+        let arc: Arc<dyn DynTask<F::Output, M> + 'a> = self;
+        let arc: Arc<dyn DynTask<F::Output, M>> = unsafe { std::mem::transmute(arc) };
+        arc
     }
 }
 
@@ -122,13 +115,13 @@ impl<F, S, M> Wake for Task<F, S, M>
 where
     F: Future + Send,
     F::Output: Send + 'static,
-    S: Fn(Runnable<M>) + Send + Sync + Copy + 'static,
+    S: Fn(Arc<dyn Runnable<M>>) + Send + Sync + Copy + 'static,
     M: Send + Sync + 'static,
 {
     fn wake(self: Arc<Self>) {
         if self.state.wake() {
             let schedule = self.schedule;
-            (schedule)(self.into_runnable());
+            (schedule)(self.into_dyn());
         }
     }
 
@@ -137,17 +130,35 @@ where
     }
 }
 
-pub trait DynTask<M>: Send + Sync {
-    fn metadata(&self) -> &M;
-    fn run(self: Arc<Self>) -> bool;
-    fn schedule(self: Arc<Self>);
-}
+/// Partially type-erased task: no future.
+pub trait DynTask<T, M>: Send + Sync + Runnable<M> + Joinable<T> + Cancellable {}
 
-impl<F, S, M> DynTask<M> for Task<F, S, M>
+impl<F, S, M> DynTask<F::Output, M> for Task<F, S, M>
 where
     F: Future + Send,
     F::Output: Send + 'static,
-    S: Fn(Runnable<M>) + Send + Sync + Copy + 'static,
+    S: Fn(Arc<dyn Runnable<M>>) + Send + Sync + Copy + 'static,
+    M: Send + Sync + 'static,
+{
+}
+
+/// Partially type-erased task: no future or return type.
+pub trait Runnable<M>: Send + Sync {
+    /// Gives the metadata for this task.
+    fn metadata(&self) -> &M;
+
+    /// Runs a task, and returns true if the task is done.
+    fn run(self: Arc<Self>) -> bool;
+
+    /// Schedules this task.
+    fn schedule(self: Arc<Self>);
+}
+
+impl<F, S, M> Runnable<M> for Task<F, S, M>
+where
+    F: Future + Send,
+    F::Output: Send + 'static,
+    S: Fn(Arc<dyn Runnable<M>>) + Send + Sync + Copy + 'static,
     M: Send + Sync + 'static,
 {
     fn metadata(&self) -> &M {
@@ -157,48 +168,48 @@ where
     fn run(self: Arc<Self>) -> bool {
         let mut data = self.data.lock();
 
-        let poll_result = match &mut data.0 {
+        let poll_result = match &mut *data {
             TaskData::Polling(future, waker) => {
                 self.state.start_running();
                 // SAFETY: we always store a Task in an Arc and never move it.
                 let fut = unsafe { Pin::new_unchecked(future) };
                 let mut ctx = Context::from_waker(waker);
-                catch_unwind(AssertUnwindSafe(|| fut.poll(&mut ctx)))
+                catch_unwind(AssertUnwindSafe(|| {
+                    try_raise_keyboard_interrupt();
+                    fut.poll(&mut ctx)
+                }))
             },
             TaskData::Cancelled => return true,
             _ => unreachable!("invalid TaskData when polling"),
         };
 
-        data.0 = match poll_result {
+        *data = match poll_result {
             Err(error) => TaskData::Panic(error),
             Ok(Poll::Ready(output)) => TaskData::Ready(output),
             Ok(Poll::Pending) => {
                 drop(data);
                 if self.state.reschedule_after_running() {
                     let schedule = self.schedule;
-                    (schedule)(self.into_runnable());
+                    (schedule)(self.into_dyn());
                 }
                 return false;
             },
         };
 
-        let join_waker = data.1.take();
         drop(data);
-        if let Some(w) = join_waker {
-            w.wake();
-        }
+        self.join_waker.wake();
         true
     }
 
     fn schedule(self: Arc<Self>) {
         if self.state.wake() {
-            (self.schedule)(self.clone().into_runnable());
+            (self.schedule)(self.clone().into_dyn());
         }
     }
 }
 
-trait Joinable<T>: Send + Sync {
-    fn cancel_handle(self: Arc<Self>) -> CancelHandle;
+/// Partially type-erased task: no future or metadata.
+pub trait Joinable<T>: Send + Sync + Cancellable {
     fn poll_join(&self, ctx: &mut Context<'_>) -> Poll<T>;
 }
 
@@ -206,30 +217,30 @@ impl<F, S, M> Joinable<F::Output> for Task<F, S, M>
 where
     F: Future + Send,
     F::Output: Send + 'static,
-    S: Fn(Runnable<M>) + Send + Sync + Copy + 'static,
+    S: Fn(Arc<dyn Runnable<M>>) + Send + Sync + Copy + 'static,
     M: Send + Sync + 'static,
 {
-    fn cancel_handle(self: Arc<Self>) -> CancelHandle {
-        self.into_cancel_handle()
-    }
-
     fn poll_join(&self, cx: &mut Context<'_>) -> Poll<F::Output> {
-        let mut data = self.data.lock();
-        if matches!(data.0, TaskData::Empty | TaskData::Polling(..)) {
-            data.1 = Some(cx.waker().clone());
-            return Poll::Pending;
-        }
+        self.join_waker.register(cx.waker());
+        if let Some(mut data) = self.data.try_lock() {
+            if matches!(*data, TaskData::Empty | TaskData::Polling(..)) {
+                return Poll::Pending;
+            }
 
-        match core::mem::replace(&mut data.0, TaskData::Joined) {
-            TaskData::Ready(output) => Poll::Ready(output),
-            TaskData::Panic(error) => resume_unwind(error),
-            TaskData::Cancelled => panic!("joined on cancelled task"),
-            _ => unreachable!("invalid TaskData when joining"),
+            match core::mem::replace(&mut *data, TaskData::Joined) {
+                TaskData::Ready(output) => Poll::Ready(output),
+                TaskData::Panic(error) => resume_unwind(error),
+                TaskData::Cancelled => panic!("joined on cancelled task"),
+                _ => unreachable!("invalid TaskData when joining"),
+            }
+        } else {
+            Poll::Pending
         }
     }
 }
 
-trait Cancellable: Send + Sync {
+/// Fully type-erased task.
+pub trait Cancellable: Send + Sync {
     fn cancel(&self);
 }
 
@@ -242,14 +253,14 @@ where
 {
     fn cancel(&self) {
         let mut data = self.data.lock();
-        match data.0 {
+        match *data {
             // Already done.
             TaskData::Panic(_) | TaskData::Joined => {},
 
             // Still in-progress, cancel.
             _ => {
-                data.0 = TaskData::Cancelled;
-                if let Some(join_waker) = data.1.take() {
+                *data = TaskData::Cancelled;
+                if let Some(join_waker) = self.join_waker.take() {
                     join_waker.wake();
                 }
             },
@@ -257,98 +268,14 @@ where
     }
 }
 
-pub struct Runnable<M>(Arc<dyn DynTask<M>>);
-
-impl<M> Runnable<M> {
-    /// Gives the metadata for this task.
-    pub fn metadata(&self) -> &M {
-        self.0.metadata()
-    }
-
-    /// Runs a task, and returns true if the task is done.
-    pub fn run(self) -> bool {
-        self.0.run()
-    }
-
-    /// Schedules this task.
-    pub fn schedule(self) {
-        self.0.schedule()
-    }
-}
-
-pub struct JoinHandle<T>(Option<Arc<dyn Joinable<T>>>);
-pub struct CancelHandle(Weak<dyn Cancellable>);
-pub struct AbortOnDropHandle<T> {
-    join_handle: JoinHandle<T>,
-    cancel_handle: CancelHandle,
-}
-
-impl<T> JoinHandle<T> {
-    pub fn cancel_handle(&self) -> CancelHandle {
-        let arc = self
-            .0
-            .as_ref()
-            .expect("called cancel_handle on joined JoinHandle");
-        Arc::clone(arc).cancel_handle()
-    }
-}
-
-impl<T> Future for JoinHandle<T> {
-    type Output = T;
-
-    fn poll(mut self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
-        let joinable = self.0.take().expect("JoinHandle polled after completion");
-
-        if let Poll::Ready(output) = joinable.poll_join(ctx) {
-            return Poll::Ready(output);
-        }
-
-        self.0 = Some(joinable);
-        Poll::Pending
-    }
-}
-
-impl CancelHandle {
-    pub fn cancel(&self) {
-        if let Some(t) = self.0.upgrade() {
-            t.cancel();
-        }
-    }
-}
-
-impl<T> AbortOnDropHandle<T> {
-    pub fn new(join_handle: JoinHandle<T>) -> Self {
-        let cancel_handle = join_handle.cancel_handle();
-        Self {
-            join_handle,
-            cancel_handle,
-        }
-    }
-}
-
-impl<T> Future for AbortOnDropHandle<T> {
-    type Output = T;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Pin::new(&mut self.join_handle).poll(cx)
-    }
-}
-
-impl<T> Drop for AbortOnDropHandle<T> {
-    fn drop(&mut self) {
-        self.cancel_handle.cancel();
-    }
-}
-
-pub fn spawn<F, S, M>(future: F, schedule: S, metadata: M) -> (Runnable<M>, JoinHandle<F::Output>)
+pub fn spawn<F, S, M>(future: F, schedule: S, metadata: M) -> Arc<dyn DynTask<F::Output, M>>
 where
     F: Future + Send + 'static,
     F::Output: Send + 'static,
-    S: Fn(Runnable<M>) + Send + Sync + Copy + 'static,
+    S: Fn(Arc<dyn Runnable<M>>) + Send + Sync + Copy + 'static,
     M: Send + Sync + 'static,
 {
-    let task = unsafe { Task::spawn(future, schedule, metadata) };
-    (task.clone().into_runnable(), task.into_join_handle())
+    unsafe { Task::spawn(future, schedule, metadata) }.into_dyn()
 }
 
 /// Takes a future and turns it into a runnable task with associated metadata.
@@ -359,15 +286,14 @@ pub unsafe fn spawn_with_lifetime<'a, F, S, M>(
     future: F,
     schedule: S,
     metadata: M,
-) -> (Runnable<M>, JoinHandle<F::Output>)
+) -> Arc<dyn DynTask<F::Output, M>>
 where
     F: Future + Send + 'a,
     F::Output: Send + 'static,
-    S: Fn(Runnable<M>) + Send + Sync + Copy + 'static,
+    S: Fn(Arc<dyn Runnable<M>>) + Send + Sync + Copy + 'static,
     M: Send + Sync + 'static,
 {
-    let task = Task::spawn(future, schedule, metadata);
-    (task.clone().into_runnable(), task.into_join_handle())
+    Task::spawn(future, schedule, metadata).into_dyn()
 }
 
 // Copied from the standard library, except without the 'static bound.

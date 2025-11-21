@@ -3,11 +3,13 @@
 Pivot a column in a `DataFrame` and perform one of the following aggregations:
 
 - first
+- last
 - sum
 - min
 - max
 - mean
 - median
+- len
 
 The pivot operation consists of a group by one, or multiple columns (these will be the new y-axis),
 the column that will be pivoted (this will be the new x-axis) and an aggregation.

@@ -11,8 +11,7 @@ macro_rules! push_expr {
     ($current_expr:expr, $c:ident, $push:ident, $push_owned:ident, $iter:ident) => {{
         use Expr::*;
         match $current_expr {
-            Nth(_) | Column(_) | Literal(_) | Wildcard | Columns(_) | DtypeColumn(_)
-            | IndexColumn(_) | Len => {},
+            DataTypeFunction(_) | Column(_) | Literal(_) | Len | Element => {},
             #[cfg(feature = "dtype-struct")]
             Field(_) => {},
             Alias(e, _) => $push($c, e),
@@ -48,9 +47,12 @@ macro_rules! push_expr {
                     Median(e) => $push($c, e),
                     NUnique(e) => $push($c, e),
                     First(e) => $push($c, e),
+                    FirstNonNull(e) => $push($c, e),
                     Last(e) => $push($c, e),
+                    LastNonNull(e) => $push($c, e),
+                    Item { input, .. } => $push($c, input),
                     Implode(e) => $push($c, e),
-                    Count(e, _) => $push($c, e),
+                    Count { input, .. } => $push($c, input),
                     Quantile { expr, .. } => $push($c, expr),
                     Sum(e) => $push($c, e),
                     AggGroups(e) => $push($c, e),
@@ -71,13 +73,25 @@ macro_rules! push_expr {
             // we iterate in reverse order, so that the lhs is popped first and will be found
             // as the root columns/ input columns by `_suffix` and `_keep_name` etc.
             AnonymousFunction { input, .. } => input.$iter().rev().for_each(|e| $push_owned($c, e)),
+            Eval {
+                expr, evaluation, ..
+            } => {
+                $push($c, evaluation);
+                $push($c, expr);
+            },
             Function { input, .. } => input.$iter().rev().for_each(|e| $push_owned($c, e)),
-            Explode(e) => $push($c, e),
-            Window {
+            Explode { input, .. } => $push($c, input),
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling { function, .. } => $push($c, function),
+            Over {
                 function,
                 partition_by,
+                order_by,
                 ..
             } => {
+                if let Some((order_by, _)) = order_by {
+                    $push($c, order_by);
+                }
                 for e in partition_by.into_iter().rev() {
                     $push_owned($c, e)
                 }
@@ -94,7 +108,6 @@ macro_rules! push_expr {
                 // latest, so that it is popped first
                 $push($c, input);
             },
-            Exclude(e, _) => $push($c, e),
             KeepName(e) => $push($c, e),
             RenameAlias { expr, .. } => $push($c, expr),
             SubPlan { .. } => {},
@@ -137,9 +150,9 @@ impl Expr {
         push_expr!(self, container, push, push, iter);
     }
 
-    pub fn nodes_owned(self, container: &mut UnitVec<Expr>) {
-        let push_arc = |c: &mut UnitVec<Expr>, e: Arc<Expr>| c.push(Arc::unwrap_or_clone(e));
-        let push_owned = |c: &mut UnitVec<Expr>, e: Expr| c.push(e);
+    pub fn nodes_owned(self, container: &mut Vec<Expr>) {
+        let push_arc = |c: &mut Vec<Expr>, e: Arc<Expr>| c.push(Arc::unwrap_or_clone(e));
+        let push_owned = |c: &mut Vec<Expr>, e: Expr| c.push(e);
         push_expr!(self, container, push_arc, push_owned, into_iter);
     }
 
@@ -176,7 +189,7 @@ impl<'a> Iterator for AExprIter<'a> {
             // take the arena because the bchk doesn't allow a mutable borrow to the field.
             let arena = self.arena.unwrap();
             let current_expr = arena.get(node);
-            current_expr.nodes(&mut self.stack);
+            current_expr.inputs_rev(&mut self.stack);
 
             self.arena = Some(arena);
             (node, current_expr)
@@ -185,11 +198,11 @@ impl<'a> Iterator for AExprIter<'a> {
 }
 
 pub trait ArenaExprIter<'a> {
-    fn iter(&self, root: Node) -> AExprIter<'a>;
+    fn iter(&'a self, root: Node) -> AExprIter<'a>;
 }
 
-impl<'a> ArenaExprIter<'a> for &'a Arena<AExpr> {
-    fn iter(&self, root: Node) -> AExprIter<'a> {
+impl<'a> ArenaExprIter<'a> for Arena<AExpr> {
+    fn iter(&'a self, root: Node) -> AExprIter<'a> {
         let stack = unitvec![root];
         AExprIter {
             stack,
@@ -204,11 +217,11 @@ pub struct AlpIter<'a> {
 }
 
 pub trait ArenaLpIter<'a> {
-    fn iter(&self, root: Node) -> AlpIter<'a>;
+    fn iter(&'a self, root: Node) -> AlpIter<'a>;
 }
 
-impl<'a> ArenaLpIter<'a> for &'a Arena<IR> {
-    fn iter(&self, root: Node) -> AlpIter<'a> {
+impl<'a> ArenaLpIter<'a> for Arena<IR> {
+    fn iter(&'a self, root: Node) -> AlpIter<'a> {
         let stack = unitvec![root];
         AlpIter { stack, arena: self }
     }

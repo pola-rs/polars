@@ -1,97 +1,14 @@
+use std::borrow::Cow;
+
 use arrow::compute::utils::combine_validities_and_many;
-use polars_row::{convert_columns, RowEncodingCatOrder, RowEncodingOptions, RowsEncoded};
+use polars_row::{RowEncodingContext, RowEncodingOptions, RowsEncoded, convert_columns};
 use rayon::prelude::*;
 
+use crate::POOL;
 use crate::prelude::*;
 use crate::utils::_split_offsets;
-use crate::POOL;
 
-pub(crate) fn convert_series_for_row_encoding(s: &Series) -> PolarsResult<Series> {
-    use DataType as D;
-    let out = match s.dtype() {
-        D::Null
-        | D::Boolean
-        | D::UInt8
-        | D::UInt16
-        | D::UInt32
-        | D::UInt64
-        | D::Int8
-        | D::Int16
-        | D::Int32
-        | D::Int64
-        | D::Float32
-        | D::Float64
-        | D::String
-        | D::Binary
-        | D::BinaryOffset => s.clone(),
-
-        #[cfg(feature = "dtype-categorical")]
-        D::Categorical(_, _) | D::Enum(_, _) => s.rechunk(),
-
-        #[cfg(feature = "dtype-struct")]
-        D::Struct(_) => {
-            let ca = s.struct_().unwrap();
-            let new_fields = ca
-                .fields_as_series()
-                .iter()
-                .map(convert_series_for_row_encoding)
-                .collect::<PolarsResult<Vec<_>>>()?;
-            let mut out =
-                StructChunked::from_series(ca.name().clone(), ca.len(), new_fields.iter())?;
-            out.zip_outer_validity(ca);
-            out.into_series()
-        },
-        // we could fallback to default branch, but decimal is not numeric dtype for now, so explicit here
-        #[cfg(feature = "dtype-decimal")]
-        D::Decimal(_, _) => s.clone(),
-        #[cfg(feature = "dtype-array")]
-        D::Array(_, _) => s
-            .array()
-            .unwrap()
-            .apply_to_inner(&|s| convert_series_for_row_encoding(&s))
-            .unwrap()
-            .into_series(),
-        D::List(_) => s
-            .list()
-            .unwrap()
-            .apply_to_inner(&|s| convert_series_for_row_encoding(&s))
-            .unwrap()
-            .into_series(),
-
-        D::Date | D::Datetime(_, _) | D::Duration(_) | D::Time => s.to_physical_repr().into_owned(),
-
-        #[cfg(feature = "object")]
-        D::Object(_, _) => {
-            polars_bail!( InvalidOperation: "cannot sort column of dtype `{}`", s.dtype())
-        },
-        D::Unknown(_) => {
-            polars_bail!( InvalidOperation: "cannot sort column of dtype `{}`", s.dtype())
-        },
-    };
-    Ok(out)
-}
-
-pub fn _get_rows_encoded_compat_array(by: &Series) -> PolarsResult<ArrayRef> {
-    let by = convert_series_for_row_encoding(by)?;
-    let by = by.rechunk();
-
-    let out = match by.dtype() {
-        #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(_, _) | DataType::Enum(_, _) => {
-            let ca = by.categorical().unwrap();
-            if ca.uses_lexical_ordering() {
-                by.to_arrow(0, CompatLevel::newest())
-            } else {
-                ca.physical().chunks[0].clone()
-            }
-        },
-        // Take physical
-        _ => by.chunks()[0].clone(),
-    };
-    Ok(out)
-}
-
-pub fn encode_rows_vertical_par_unordered(by: &[Series]) -> PolarsResult<BinaryOffsetChunked> {
+pub fn encode_rows_vertical_par_unordered(by: &[Column]) -> PolarsResult<BinaryOffsetChunked> {
     let n_threads = POOL.current_num_threads();
     let len = by[0].len();
     let splits = _split_offsets(len, n_threads);
@@ -114,7 +31,7 @@ pub fn encode_rows_vertical_par_unordered(by: &[Series]) -> PolarsResult<BinaryO
 
 // Almost the same but broadcast nulls to the row-encoded array.
 pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
-    by: &[Series],
+    by: &[Column],
 ) -> PolarsResult<BinaryOffsetChunked> {
     let n_threads = POOL.current_num_threads();
     let len = by[0].len();
@@ -132,7 +49,8 @@ pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
             .flat_map(|s| {
                 let s = s.rechunk();
                 #[allow(clippy::unnecessary_to_owned)]
-                s.chunks()
+                s.as_materialized_series()
+                    .chunks()
                     .to_vec()
                     .into_iter()
                     .map(|arr| arr.validity().cloned())
@@ -150,86 +68,88 @@ pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
     ))
 }
 
-pub fn get_row_encoding_dictionary(dtype: &DataType) -> Option<RowEncodingCatOrder> {
+/// Get the [`RowEncodingContext`] for a certain [`DataType`].
+///
+/// This should be given the logical type in order to communicate Polars datatype information down
+/// into the row encoding / decoding.
+pub fn get_row_encoding_context(dtype: &DataType) -> Option<RowEncodingContext> {
     match dtype {
         DataType::Boolean
         | DataType::UInt8
         | DataType::UInt16
         | DataType::UInt32
         | DataType::UInt64
+        | DataType::UInt128
         | DataType::Int8
         | DataType::Int16
         | DataType::Int32
         | DataType::Int64
+        | DataType::Int128
         | DataType::Float32
         | DataType::Float64
         | DataType::String
         | DataType::Binary
         | DataType::BinaryOffset
         | DataType::Null
-        | DataType::Unknown(_) => None,
+        | DataType::Time
+        | DataType::Date
+        | DataType::Datetime(_, _)
+        | DataType::Duration(_) => None,
 
-        DataType::Time => None,
-        DataType::Date => None,
-        DataType::Datetime(_, _) => None,
-        DataType::Duration(_) => None,
+        #[cfg(feature = "dtype-categorical")]
+        DataType::Categorical(_, mapping) | DataType::Enum(_, mapping) => {
+            use polars_row::RowEncodingCategoricalContext;
 
-        #[cfg(feature = "dtype-decimal")]
-        DataType::Decimal(_, _) => None,
+            Some(RowEncodingContext::Categorical(
+                RowEncodingCategoricalContext {
+                    is_enum: matches!(dtype, DataType::Enum(_, _)),
+                    mapping: mapping.clone(),
+                },
+            ))
+        },
+
+        DataType::Unknown(_) => panic!("Unsupported in row encoding"),
 
         #[cfg(feature = "object")]
-        DataType::Object(_, _) => None,
+        DataType::Object(_) => panic!("Unsupported in row encoding"),
+
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(precision, _) => Some(RowEncodingContext::Decimal(*precision)),
 
         #[cfg(feature = "dtype-array")]
-        DataType::Array(dtype, _) => get_row_encoding_dictionary(dtype),
-        DataType::List(dtype) => get_row_encoding_dictionary(dtype),
-        #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(revmap, ordering) | DataType::Enum(revmap, ordering) => {
-            let revmap = revmap.as_ref().unwrap();
-            Some(match ordering {
-                CategoricalOrdering::Physical => RowEncodingCatOrder::Physical(
-                    revmap
-                        .as_ref()
-                        .get_categories()
-                        .len()
-                        .next_power_of_two()
-                        .trailing_zeros() as usize
-                        + 1,
-                ),
-                CategoricalOrdering::Lexical => {
-                    RowEncodingCatOrder::Lexical(Box::new(revmap.as_ref().get_categories().clone()))
-                },
-            })
-        },
+        DataType::Array(dtype, _) => get_row_encoding_context(dtype),
+        DataType::List(dtype) => get_row_encoding_context(dtype),
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(fs) => {
-            let mut out = Vec::new();
+            let mut ctxts = Vec::new();
 
             for (i, f) in fs.iter().enumerate() {
-                if let Some(dict) = get_row_encoding_dictionary(f.dtype()) {
-                    out.reserve(fs.len());
-                    out.extend(std::iter::repeat_n(None, i));
-                    out.push(Some(dict));
+                if let Some(ctxt) = get_row_encoding_context(f.dtype()) {
+                    ctxts.reserve(fs.len());
+                    ctxts.extend(std::iter::repeat_n(None, i));
+                    ctxts.push(Some(ctxt));
                     break;
                 }
             }
 
-            if out.is_empty() {
+            if ctxts.is_empty() {
                 return None;
             }
 
-            out.extend(
-                fs[out.len()..]
+            ctxts.extend(
+                fs[ctxts.len()..]
                     .iter()
-                    .map(|f| get_row_encoding_dictionary(f.dtype())),
+                    .map(|f| get_row_encoding_context(f.dtype())),
             );
 
-            Some(RowEncodingCatOrder::Struct(out))
+            Some(RowEncodingContext::Struct(ctxts))
         },
+        #[cfg(feature = "dtype-extension")]
+        DataType::Extension(_, storage) => get_row_encoding_context(storage),
     }
 }
 
-pub fn encode_rows_unordered(by: &[Series]) -> PolarsResult<BinaryOffsetChunked> {
+pub fn encode_rows_unordered(by: &[Column]) -> PolarsResult<BinaryOffsetChunked> {
     let rows = _get_rows_encoded_unordered(by)?;
     Ok(BinaryOffsetChunked::with_chunk(
         PlSmallStr::EMPTY,
@@ -237,10 +157,10 @@ pub fn encode_rows_unordered(by: &[Series]) -> PolarsResult<BinaryOffsetChunked>
     ))
 }
 
-pub fn _get_rows_encoded_unordered(by: &[Series]) -> PolarsResult<RowsEncoded> {
+pub fn _get_rows_encoded_unordered(by: &[Column]) -> PolarsResult<RowsEncoded> {
     let mut cols = Vec::with_capacity(by.len());
     let mut opts = Vec::with_capacity(by.len());
-    let mut dicts = Vec::with_capacity(by.len());
+    let mut ctxts = Vec::with_capacity(by.len());
 
     // Since ZFS exists, we might not actually have any arrays and need to get the length from the
     // columns.
@@ -249,15 +169,20 @@ pub fn _get_rows_encoded_unordered(by: &[Series]) -> PolarsResult<RowsEncoded> {
     for by in by {
         debug_assert_eq!(by.len(), num_rows);
 
-        let arr = _get_rows_encoded_compat_array(by)?;
+        let by = by
+            .trim_lists_to_normalized_offsets()
+            .map_or(Cow::Borrowed(by), Cow::Owned);
+        let by = by.propagate_nulls().map_or(by, Cow::Owned);
+        let by = by.as_materialized_series();
+        let arr = by.to_physical_repr().rechunk().chunks()[0].to_boxed();
         let opt = RowEncodingOptions::new_unsorted();
-        let dict = get_row_encoding_dictionary(by.dtype());
+        let ctxt = get_row_encoding_context(by.dtype());
 
         cols.push(arr);
         opts.push(opt);
-        dicts.push(dict);
+        ctxts.push(ctxt);
     }
-    Ok(convert_columns(num_rows, &cols, &opts, &dicts))
+    Ok(convert_columns(num_rows, &cols, &opts, &ctxts))
 }
 
 pub fn _get_rows_encoded(
@@ -270,7 +195,7 @@ pub fn _get_rows_encoded(
 
     let mut cols = Vec::with_capacity(by.len());
     let mut opts = Vec::with_capacity(by.len());
-    let mut dicts = Vec::with_capacity(by.len());
+    let mut ctxts = Vec::with_capacity(by.len());
 
     // Since ZFS exists, we might not actually have any arrays and need to get the length from the
     // columns.
@@ -279,16 +204,20 @@ pub fn _get_rows_encoded(
     for ((by, desc), null_last) in by.iter().zip(descending).zip(nulls_last) {
         debug_assert_eq!(by.len(), num_rows);
 
+        let by = by
+            .trim_lists_to_normalized_offsets()
+            .map_or(Cow::Borrowed(by), Cow::Owned);
+        let by = by.propagate_nulls().map_or(by, Cow::Owned);
         let by = by.as_materialized_series();
-        let arr = _get_rows_encoded_compat_array(by)?;
+        let arr = by.to_physical_repr().rechunk().chunks()[0].to_boxed();
         let opt = RowEncodingOptions::new_sorted(*desc, *null_last);
-        let dict = get_row_encoding_dictionary(by.dtype());
+        let ctxt = get_row_encoding_context(by.dtype());
 
         cols.push(arr);
         opts.push(opt);
-        dicts.push(dict);
+        ctxts.push(ctxt);
     }
-    Ok(convert_columns(num_rows, &cols, &opts, &dicts))
+    Ok(convert_columns(num_rows, &cols, &opts, &ctxts))
 }
 
 pub fn _get_rows_encoded_ca(
@@ -311,8 +240,59 @@ pub fn _get_rows_encoded_arr(
 
 pub fn _get_rows_encoded_ca_unordered(
     name: PlSmallStr,
-    by: &[Series],
+    by: &[Column],
 ) -> PolarsResult<BinaryOffsetChunked> {
     _get_rows_encoded_unordered(by)
         .map(|rows| BinaryOffsetChunked::with_chunk(name, rows.into_array()))
+}
+
+#[cfg(feature = "dtype-struct")]
+pub fn row_encoding_decode(
+    ca: &BinaryOffsetChunked,
+    fields: &[Field],
+    opts: &[RowEncodingOptions],
+) -> PolarsResult<StructChunked> {
+    let (ctxts, dtypes) = fields
+        .iter()
+        .map(|f| {
+            (
+                get_row_encoding_context(f.dtype()),
+                f.dtype().to_physical().to_arrow(CompatLevel::newest()),
+            )
+        })
+        .collect::<(Vec<_>, Vec<_>)>();
+
+    let struct_arrow_dtype = ArrowDataType::Struct(
+        fields
+            .iter()
+            .map(|v| v.to_physical().to_arrow(CompatLevel::newest()))
+            .collect(),
+    );
+
+    let mut rows = Vec::new();
+    let chunks = ca
+        .downcast_iter()
+        .map(|array| {
+            let decoded_arrays = unsafe {
+                polars_row::decode::decode_rows_from_binary(array, opts, &ctxts, &dtypes, &mut rows)
+            };
+            assert_eq!(decoded_arrays.len(), fields.len());
+
+            StructArray::new(
+                struct_arrow_dtype.clone(),
+                array.len(),
+                decoded_arrays,
+                None,
+            )
+            .to_boxed()
+        })
+        .collect::<Vec<_>>();
+
+    Ok(unsafe {
+        StructChunked::from_chunks_and_dtype(
+            ca.name().clone(),
+            chunks,
+            DataType::Struct(fields.to_vec()),
+        )
+    })
 }

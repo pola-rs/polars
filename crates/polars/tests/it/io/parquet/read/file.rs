@@ -1,4 +1,5 @@
 use std::io::{Read, Seek};
+use std::sync::Arc;
 
 use arrow::array::Array;
 use arrow::datatypes::ArrowSchema;
@@ -6,7 +7,7 @@ use arrow::record_batch::RecordBatchT;
 use polars_error::PolarsResult;
 use polars_parquet::read::{Filter, RowGroupMetadata};
 
-use super::row_group::{read_columns_many, RowGroupDeserializer};
+use super::row_group::{RowGroupDeserializer, read_columns_many};
 
 /// An iterator of [`RecordBatchT`]s coming from row groups of a parquet file.
 ///
@@ -142,6 +143,7 @@ impl<R: Read + Seek> RowGroupReader<R> {
 
         let num_rows = row_group.num_rows();
 
+        let column_schema = self.schema.iter_values().cloned().collect();
         let column_chunks = read_columns_many(
             &mut self.reader,
             &row_group,
@@ -149,7 +151,20 @@ impl<R: Read + Seek> RowGroupReader<R> {
             Some(Filter::new_limited(self.remaining_rows)),
         )?;
 
-        let result = RowGroupDeserializer::new(column_chunks, num_rows, Some(self.remaining_rows));
+        let column_chunks = column_chunks
+            .into_iter()
+            .map(|mut c| {
+                assert_eq!(c.len(), 1);
+                c.pop().unwrap()
+            })
+            .collect();
+
+        let result = RowGroupDeserializer::new(
+            Arc::new(column_schema),
+            column_chunks,
+            num_rows,
+            Some(self.remaining_rows),
+        );
         self.remaining_rows = self.remaining_rows.saturating_sub(num_rows);
         Ok(Some(result))
     }

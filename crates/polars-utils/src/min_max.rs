@@ -17,38 +17,22 @@ pub trait MinMax: Sized {
     // Binary operators that return either the minimum or maximum.
     #[inline(always)]
     fn min_propagate_nan(self, other: Self) -> Self {
-        if self.nan_min_lt(&other) {
-            self
-        } else {
-            other
-        }
+        if self.nan_min_lt(&other) { self } else { other }
     }
 
     #[inline(always)]
     fn max_propagate_nan(self, other: Self) -> Self {
-        if self.nan_max_lt(&other) {
-            other
-        } else {
-            self
-        }
+        if self.nan_max_lt(&other) { other } else { self }
     }
 
     #[inline(always)]
     fn min_ignore_nan(self, other: Self) -> Self {
-        if self.nan_max_lt(&other) {
-            self
-        } else {
-            other
-        }
+        if self.nan_max_lt(&other) { self } else { other }
     }
 
     #[inline(always)]
     fn max_ignore_nan(self, other: Self) -> Self {
-        if self.nan_min_lt(&other) {
-            other
-        } else {
-            self
-        }
+        if self.nan_min_lt(&other) { other } else { self }
     }
 }
 
@@ -134,3 +118,57 @@ macro_rules! impl_float_min_max {
 
 impl_float_min_max!(f32);
 impl_float_min_max!(f64);
+
+pub trait MinMaxPolicy {
+    // Is the first argument strictly better than the second, per the policy?
+    fn is_better<T: MinMax>(a: &T, b: &T) -> bool;
+    fn best<T: MinMax>(a: T, b: T) -> T;
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct MinIgnoreNan;
+impl MinMaxPolicy for MinIgnoreNan {
+    fn is_better<T: MinMax>(a: &T, b: &T) -> bool {
+        T::nan_max_lt(a, b)
+    }
+
+    fn best<T: MinMax>(a: T, b: T) -> T {
+        T::min_ignore_nan(a, b)
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct MinPropagateNan;
+impl MinMaxPolicy for MinPropagateNan {
+    fn is_better<T: MinMax>(a: &T, b: &T) -> bool {
+        T::nan_min_lt(a, b)
+    }
+
+    fn best<T: MinMax>(a: T, b: T) -> T {
+        T::min_propagate_nan(a, b)
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct MaxIgnoreNan;
+impl MinMaxPolicy for MaxIgnoreNan {
+    fn is_better<T: MinMax>(a: &T, b: &T) -> bool {
+        T::nan_min_lt(b, a)
+    }
+
+    fn best<T: MinMax>(a: T, b: T) -> T {
+        T::max_ignore_nan(a, b)
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct MaxPropagateNan;
+impl MinMaxPolicy for MaxPropagateNan {
+    fn is_better<T: MinMax>(a: &T, b: &T) -> bool {
+        T::nan_max_lt(b, a)
+    }
+
+    fn best<T: MinMax>(a: T, b: T) -> T {
+        T::max_propagate_nan(a, b)
+    }
+}

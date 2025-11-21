@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use polars_core::prelude::*;
 
 use super::options::CsvReadOptions;
-use super::read_impl::batched::to_batched_owned;
 use super::read_impl::CoreReader;
+use super::read_impl::batched::to_batched_owned;
 use super::{BatchedCsvReader, OwnedBatchedCsvReader};
 use crate::mmap::MmapBytesReader;
 use crate::path_utils::resolve_homedir;
@@ -105,44 +105,36 @@ impl CsvReadOptions {
 }
 
 impl<R: MmapBytesReader> CsvReader<R> {
-    fn core_reader(&mut self) -> PolarsResult<CoreReader> {
+    fn core_reader(&mut self) -> PolarsResult<CoreReader<'_>> {
         let reader_bytes = get_reader_bytes(&mut self.reader)?;
 
         let parse_options = self.options.get_parse_options();
 
         CoreReader::new(
             reader_bytes,
+            parse_options,
             self.options.n_rows,
             self.options.skip_rows,
+            self.options.skip_lines,
             self.options.projection.clone().map(|x| x.as_ref().clone()),
             self.options.infer_schema_length,
-            Some(parse_options.separator),
             self.options.has_header,
             self.options.ignore_errors,
             self.options.schema.clone(),
             self.options.columns.clone(),
-            parse_options.encoding,
             self.options.n_threads,
             self.options.schema_overwrite.clone(),
             self.options.dtype_overwrite.clone(),
             self.options.chunk_size,
-            parse_options.comment_prefix.clone(),
-            parse_options.quote_char,
-            parse_options.eol_char,
-            parse_options.null_values.clone(),
-            parse_options.missing_is_null,
             self.predicate.clone(),
             self.options.fields_to_cast.clone(),
             self.options.skip_rows_after_header,
             self.options.row_index.clone(),
-            parse_options.try_parse_dates,
             self.options.raise_if_empty,
-            parse_options.truncate_ragged_lines,
-            parse_options.decimal_comma,
         )
     }
 
-    pub fn batched_borrowed(&mut self) -> PolarsResult<BatchedCsvReader> {
+    pub fn batched_borrowed(&mut self) -> PolarsResult<BatchedCsvReader<'_>> {
         let csv_reader = self.core_reader()?;
         csv_reader.batched()
     }
@@ -195,19 +187,22 @@ where
     }
 }
 
+impl<R: MmapBytesReader> CsvReader<R> {
+    /// Sets custom CSV read options.
+    pub fn with_options(mut self, options: CsvReadOptions) -> Self {
+        self.options = options;
+        self
+    }
+}
+
 /// Splits datatypes that cannot be natively read into a `fields_to_cast` for
 /// post-read casting.
-///
-/// # Returns
-/// `has_categorical`
 pub fn prepare_csv_schema(
     schema: &mut SchemaRef,
     fields_to_cast: &mut Vec<Field>,
-) -> PolarsResult<bool> {
+) -> PolarsResult<()> {
     // This branch we check if there are dtypes we cannot parse.
-    // We only support a few dtypes in the parser and later cast to the required dtype
-    let mut _has_categorical = false;
-
+    // We only support a few dtypes in the parser and later cast to the required dtype.
     let mut changed = false;
 
     let new_schema = schema
@@ -222,22 +217,6 @@ pub fn prepare_csv_schema(
                     fields_to_cast.push(fld.clone());
                     fld.coerce(String);
                     PolarsResult::Ok(fld)
-                },
-                #[cfg(feature = "dtype-categorical")]
-                Categorical(_, _) => {
-                    _has_categorical = true;
-                    PolarsResult::Ok(fld)
-                },
-                #[cfg(feature = "dtype-decimal")]
-                Decimal(precision, scale) => match (precision, scale) {
-                    (_, Some(_)) => {
-                        fields_to_cast.push(fld.clone());
-                        fld.coerce(String);
-                        PolarsResult::Ok(fld)
-                    },
-                    _ => Err(PolarsError::ComputeError(
-                        "'scale' must be set when reading csv column as Decimal".into(),
-                    )),
                 },
                 _ => {
                     matched = false;
@@ -255,5 +234,5 @@ pub fn prepare_csv_schema(
         *schema = Arc::new(new_schema);
     }
 
-    Ok(_has_categorical)
+    Ok(())
 }

@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             (col("nrs") % lit(3)).alias("nrs % 3"),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:arithmetic]
 
     // --8<-- [start:comparison]
@@ -41,7 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             col("nrs").eq(1).alias("nrs == 1"),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:comparison]
 
     // --8<-- [start:boolean]
@@ -55,7 +55,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .alias("random < 0.5 or group B"),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:boolean]
 
     // --8<-- [start:bitwise]
@@ -70,15 +70,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             col("nrs").xor(lit(6)).alias("nrs ^ 6"),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:bitwise]
 
     // --8<-- [start:count]
-    use rand::distributions::{Distribution, Uniform};
-    use rand::thread_rng;
+    use rand::distr::{Distribution, Uniform};
+    use rand::rng;
 
-    let mut rng = thread_rng();
-    let between = Uniform::new_inclusive(0, 100_000);
+    let mut rng = rng();
+    let between = Uniform::new_inclusive(0, 100_000).unwrap();
     let arr: Vec<u32> = between.sample_iter(&mut rng).take(100_100).collect();
 
     let long_df = df!(
@@ -86,14 +86,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let result = long_df
-        .clone()
         .lazy()
         .select([
             col("numbers").n_unique().alias("n_unique"),
             col("numbers").approx_n_unique().alias("approx_n_unique"),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:count]
 
     // --8<-- [start:value_counts]
@@ -104,7 +103,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .value_counts(false, false, "count", false)
             .alias("value_counts")])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:value_counts]
 
     // --8<-- [start:unique_counts]
@@ -116,12 +115,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             col("names").unique_counts().alias("unique_counts"),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:unique_counts]
 
     // --8<-- [start:collatz]
     let result = df
-        .clone()
         .lazy()
         .select([
             col("nrs"),
@@ -131,7 +129,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .alias("Collatz"),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:collatz]
 
     Ok(())

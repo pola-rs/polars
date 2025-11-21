@@ -9,6 +9,7 @@ import pytest
 import polars as pl
 from polars.exceptions import ColumnNotFoundError, SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
+from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
 
 if TYPE_CHECKING:
     from polars.datatypes import DataType
@@ -20,7 +21,7 @@ def foods_ipc_path() -> Path:
 
 
 def test_any_all() -> None:
-    df = pl.DataFrame(  # noqa: F841
+    df = pl.DataFrame(
         {
             "x": [-1, 0, 1, 2, 3, 4],
             "y": [1, 0, 0, 1, 2, 3],
@@ -133,6 +134,27 @@ def test_count() -> None:
     }
 
 
+def test_cte_aliasing() -> None:
+    df1 = pl.DataFrame({"colx": ["aa", "bb"], "coly": [40, 30]})
+    df2 = pl.DataFrame({"colx": "aa", "colz": 20})
+    df3 = pl.sql(
+        query="""
+            WITH
+              test1 AS (SELECT * FROM df1),
+              test2 AS (SELECT * FROM df2),
+              test3 AS (
+                SELECT ROW_NUMBER() OVER (ORDER BY colx) AS n, t1.colx, t2.colz
+                FROM test1 t1
+                LEFT JOIN test2 t2 ON t1.colx = t2.colx
+            )
+            SELECT * FROM test3 t3 ORDER BY colx DESC
+        """,
+        eager=True,
+    )
+    expected = [(2, "bb", None), (1, "aa", 20)]
+    assert expected == df3.rows()
+
+
 def test_distinct() -> None:
     df = pl.DataFrame(
         {
@@ -169,18 +191,28 @@ def test_distinct() -> None:
 
 def test_frame_sql_globals_error() -> None:
     df1 = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
-    df2 = pl.DataFrame({"a": [2, 3, 4], "b": [7, 6, 5]})  # noqa: F841
+    df2 = pl.DataFrame({"a": [2, 3, 4], "b": [7, 6, 5]})
 
     query = """
         SELECT df1.a, df2.b
         FROM df2 JOIN df1 ON df1.a = df2.a
         ORDER BY b DESC
     """
-    with pytest.raises(SQLInterfaceError, match="relation.*not found.*"):
+    with pytest.raises(SQLInterfaceError, match=r"relation.*not found.*"):
         df1.sql(query=query)
 
     res = pl.sql(query=query, eager=True)
     assert res.to_dict(as_series=False) == {"a": [2, 3], "b": [7, 6]}
+
+
+def test_global_misc_lookup() -> None:
+    # check that `col` in global namespace is not incorrectly identified
+    # as supporting pycapsule (as it can look like it has *any* attr)
+    from polars import col  # noqa: F401
+
+    df = pl.DataFrame({"col": [90, 80, 70]})
+    df_res = pl.sql("SELECT col FROM df WHERE col > 75", eager=True)
+    assert df_res.rows() == [(90,), (80,)]
 
 
 def test_in_no_ops_11946() -> None:
@@ -216,12 +248,36 @@ def test_limit_offset() -> None:
         assert len(out) == min(limit, n_values - offset)
 
 
+def test_nested_subquery_table_leakage() -> None:
+    a = pl.LazyFrame({"id": [1, 2, 3]})
+    b = pl.LazyFrame({"val": [2, 3, 4]})
+
+    ctx = pl.SQLContext(a=a, b=b)
+    ctx.execute("""
+      SELECT *
+      FROM a
+      WHERE id IN (
+          SELECT derived.val
+          FROM (SELECT val FROM b) AS derived
+      )
+    """)
+
+    # after execution of the above query, confirm that we don't see the
+    # inner "derived" table alias still being registered in the context
+    with pytest.raises(
+        SQLInterfaceError,
+        match="relation 'derived' was not found",
+    ):
+        ctx.execute("SELECT * FROM derived")
+
+
 def test_register_context() -> None:
-    # use as context manager unregisters tables created within each scope
-    # on exit from that scope; arbitrary levels of nesting are supported.
+    # context manager usage should unregister tables created in each
+    # scope on context exit; supports arbitrary levels of nesting.
     with pl.SQLContext() as ctx:
         _lf1 = pl.LazyFrame({"a": [1, 2, 3], "b": ["m", "n", "o"]})
         _lf2 = pl.LazyFrame({"a": [2, 3, 4], "c": ["p", "q", "r"]})
+
         ctx.register_globals()
         assert ctx.tables() == ["_lf1", "_lf2"]
 
@@ -242,7 +298,8 @@ def test_sql_on_compatible_frame_types() -> None:
     # create various different frame types
     dfp = df.to_pandas()
     dfa = df.to_arrow()
-    dfb = dfa.to_batches()[0]  # noqa: F841
+    dfb = dfa.to_batches()[0]
+    dfo = PyCapsuleStreamHolder(df)
 
     # run polars sql query against all frame types
     for dfs in (  # noqa: B007
@@ -256,6 +313,7 @@ def test_sql_on_compatible_frame_types() -> None:
                 UNION ALL SELECT * FROM dfp  -- pandas frame
                 UNION ALL SELECT * FROM dfa  -- pyarrow table
                 UNION ALL SELECT * FROM dfb  -- pyarrow record batch
+                UNION ALL SELECT * FROM dfo  -- arbitrary pycapsule object
             ) tbl
             INNER JOIN dfs ON dfs.c == tbl.b -- join on pandas/polars series
             GROUP BY "a", "b"
@@ -263,7 +321,7 @@ def test_sql_on_compatible_frame_types() -> None:
             """
         ).collect()
 
-        expected = pl.DataFrame({"a": [1, 3], "b": [4, 6], "cc": [16, 24]})
+        expected = pl.DataFrame({"a": [1, 3], "b": [4, 6], "cc": [20, 30]})
         assert_frame_equal(left=expected, right=res)
 
     # register and operate on non-polars frames
@@ -385,3 +443,187 @@ def test_invalid_cols(query: str) -> None:
     )
     with pytest.raises(ColumnNotFoundError, match="invalid_column"):
         df.sql(query)
+
+
+@pytest.mark.parametrize("filter_expr", ["", "WHERE 1 = 1", "WHERE a == 1 OR a != 1"])
+@pytest.mark.parametrize("order_expr", ["", "ORDER BY 1", "ORDER BY a"])
+def test_select_output_heights_20058_21084(filter_expr: str, order_expr: str) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    # Queries that maintain original height
+
+    assert_frame_equal(
+        df.sql(f"SELECT 1 as a FROM self {filter_expr} {order_expr}").cast(pl.Int64),
+        pl.select(a=pl.Series([1, 1, 1])),
+    )
+
+    assert_frame_equal(
+        df.sql(f"SELECT 1 + 1 as a, 1 as b FROM self {filter_expr} {order_expr}").cast(
+            pl.Int64
+        ),
+        pl.DataFrame({"a": [2, 2, 2], "b": [1, 1, 1]}),
+    )
+
+    # Queries that aggregate to unit height
+
+    assert_frame_equal(
+        df.sql(f"SELECT COUNT(*) as a FROM self {filter_expr} {order_expr}").cast(
+            pl.Int64
+        ),
+        pl.DataFrame({"a": 3}),
+    )
+
+    assert_frame_equal(
+        df.sql(
+            f"SELECT COUNT(*) as a, 1 as b FROM self {filter_expr} {order_expr}"
+        ).cast(pl.Int64),
+        pl.DataFrame({"a": 3, "b": 1}),
+    )
+
+    assert_frame_equal(
+        df.sql(
+            f"SELECT FIRST(a) as a, 1 as b FROM self {filter_expr} {order_expr}"
+        ).cast(pl.Int64),
+        pl.DataFrame({"a": 1, "b": 1}),
+    )
+
+    assert_frame_equal(
+        df.sql(f"SELECT SUM(a) as a, 1 as b FROM self {filter_expr} {order_expr}").cast(
+            pl.Int64
+        ),
+        pl.DataFrame({"a": 6, "b": 1}),
+    )
+
+    assert_frame_equal(
+        df.sql(
+            f"SELECT FIRST(1) as a, 1 as b FROM self {filter_expr} {order_expr}"
+        ).cast(pl.Int64),
+        pl.DataFrame({"a": 1, "b": 1}),
+    )
+
+    assert_frame_equal(
+        df.sql(
+            f"SELECT FIRST(1) + 1 as a, 1 as b FROM self {filter_expr} {order_expr}"
+        ).cast(pl.Int64),
+        pl.DataFrame({"a": 2, "b": 1}),
+    )
+
+    assert_frame_equal(
+        df.sql(
+            f"SELECT FIRST(1 + 1) as a, 1 as b FROM self {filter_expr} {order_expr}"
+        ).cast(pl.Int64),
+        pl.DataFrame({"a": 2, "b": 1}),
+    )
+
+
+def test_select_explode_height_filter_order_by() -> None:
+    # Note: `unnest()` from SQL equates to `pl.Dataframe.explode()
+    # The ordering is applied after the explosion/unnest.
+    # `
+    df = pl.DataFrame(
+        {
+            "list_long": [[1, 2, 3], [4, 5, 6]],
+            "sort_key": [2, 1],
+            "filter_mask": [False, True],
+            "filter_mask_all_true": True,
+        }
+    )
+
+    # Unnest/explode is applied at the dataframe level, sort is applied afterward
+    assert_frame_equal(
+        df.sql("SELECT UNNEST(list_long) as list FROM self ORDER BY sort_key"),
+        pl.Series("list", [4, 5, 6, 1, 2, 3]).to_frame(),
+    )
+
+    # No NULLS: since order is applied after explode on the dataframe level
+    assert_frame_equal(
+        df.sql(
+            "SELECT UNNEST(list_long) as list FROM self ORDER BY sort_key NULLS FIRST"
+        ),
+        pl.Series("list", [4, 5, 6, 1, 2, 3]).to_frame(),
+    )
+
+    # Literals are broadcasted to output height of UNNEST:
+    assert_frame_equal(
+        df.sql("SELECT UNNEST(list_long) as list, 1 as x FROM self ORDER BY sort_key"),
+        pl.select(pl.Series("list", [4, 5, 6, 1, 2, 3]), x=1),
+    )
+
+    # Note: Filter applies before projections in SQL
+    assert_frame_equal(
+        df.sql(
+            "SELECT UNNEST(list_long) as list FROM self WHERE filter_mask ORDER BY sort_key"
+        ),
+        pl.Series("list", [4, 5, 6]).to_frame(),
+        check_row_order=False,  # this is wrong at the moment
+    )
+
+    assert_frame_equal(
+        df.sql(
+            "SELECT UNNEST(list_long) as list FROM self WHERE filter_mask_all_true ORDER BY sort_key"
+        ),
+        pl.Series("list", [4, 5, 6, 1, 2, 3]).to_frame(),
+    )
+
+
+@pytest.mark.parametrize(
+    ("query", "result"),
+    [
+        (
+            """SELECT a, COUNT(*) OVER (PARTITION BY a) AS b FROM self""",
+            [3, 3, 3, 1, 3, 3, 3],
+        ),
+        (
+            """SELECT a, COUNT() OVER (PARTITION BY a) AS b FROM self""",
+            [3, 3, 3, 1, 3, 3, 3],
+        ),
+        (
+            """SELECT a, COUNT(i) OVER (PARTITION BY a) AS b FROM self""",
+            [3, 3, 3, 1, 1, 1, 1],
+        ),
+        (
+            """SELECT a, COUNT(DISTINCT i) OVER (PARTITION BY a) AS b FROM self""",
+            [2, 2, 2, 1, 1, 1, 1],
+        ),
+    ],
+)
+def test_count_partition_22665(query: str, result: list[Any]) -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 1, 1, 2, 3, 3, 3],
+            "i": [0, 0, 1, 2, 3, None, None],
+        }
+    )
+    out = df.sql(query).select("b")
+    expected = pl.DataFrame({"b": result}).cast({"b": pl.get_index_type()})
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # No support for QUALIFY (yet)
+        "SELECT x FROM df QUALIFY ROW_NUMBER() OVER (PARTITION BY y ORDER BY z) = 1",
+        # ClickHouse-specific PREWHERE clause
+        "SELECT x, y FROM df PREWHERE z IS NOT NULL",
+        # LATERAL VIEW syntax
+        "SELECT * FROM person LATERAL VIEW EXPLODE(ARRAY(0,125)) tableName AS age",
+        # Oracle-style hierarchical queries
+        """
+        SELECT employee_id, employee_name, manager_id, LEVEL AS hierarchy_level
+        FROM employees
+        START WITH manager_id IS NULL
+        CONNECT BY PRIOR employee_id = manager_id
+        """,
+    ],
+)
+def test_unsupported_select_clauses(query: str) -> None:
+    # ensure we're actively catching unsupported clauses
+    with (
+        pl.SQLContext() as ctx,
+        pytest.raises(
+            SQLInterfaceError,
+            match=r"not.*supported",
+        ),
+    ):
+        ctx.execute(query)

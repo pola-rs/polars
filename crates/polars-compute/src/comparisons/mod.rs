@@ -15,24 +15,22 @@ pub trait TotalEqKernel: Sized + Array {
     // to anything else.
     fn tot_eq_missing_kernel(&self, other: &Self) -> Bitmap {
         let q = self.tot_eq_kernel(other);
-        let combined = match (self.validity(), other.validity()) {
+        match (self.validity(), other.validity()) {
             (None, None) => q,
             (None, Some(r)) => &q & r,
             (Some(l), None) => &q & l,
             (Some(l), Some(r)) => bitmap::ternary(&q, l, r, |q, l, r| (q & l & r) | !(l | r)),
-        };
-        combined
+        }
     }
 
     fn tot_ne_missing_kernel(&self, other: &Self) -> Bitmap {
         let q = self.tot_ne_kernel(other);
-        let combined = match (self.validity(), other.validity()) {
+        match (self.validity(), other.validity()) {
             (None, None) => q,
             (None, Some(r)) => &q | &!r,
             (Some(l), None) => &q | &!l,
             (Some(l), Some(r)) => bitmap::ternary(&q, l, r, |q, l, r| (q & l & r) | (l ^ r)),
-        };
-        combined
+        }
     }
     fn tot_eq_missing_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
         let q = self.tot_eq_kernel_broadcast(other);

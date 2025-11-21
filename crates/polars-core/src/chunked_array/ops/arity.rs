@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::error::Error;
 
 use arrow::array::{Array, MutablePlString, StaticArray};
@@ -5,7 +6,7 @@ use arrow::compute::utils::combine_validities_and;
 use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;
 
-use crate::chunked_array::metadata::MetadataProperties;
+use crate::chunked_array::flags::StatisticsFlags;
 use crate::datatypes::{ArrayCollectIterExt, ArrayFromIter};
 use crate::prelude::{ChunkedArray, CompatLevel, PolarsDataType, Series, StringChunked};
 use crate::utils::{align_chunks_binary, align_chunks_binary_owned, align_chunks_ternary};
@@ -114,7 +115,10 @@ where
     V::Array: ArrayFromIter<<F as UnaryFnMut<T::Physical<'a>>>::Ret>,
 {
     if ca.null_count() == ca.len() {
-        let arr = V::Array::full_null(ca.len(), V::get_dtype().to_arrow(CompatLevel::newest()));
+        let arr = V::Array::full_null(
+            ca.len(),
+            V::get_static_dtype().to_arrow(CompatLevel::newest()),
+        );
         return ChunkedArray::with_chunk(ca.name().clone(), arr);
     }
 
@@ -138,7 +142,10 @@ where
     V::Array: ArrayFromIter<K>,
 {
     if ca.null_count() == ca.len() {
-        let arr = V::Array::full_null(ca.len(), V::get_dtype().to_arrow(CompatLevel::newest()));
+        let arr = V::Array::full_null(
+            ca.len(),
+            V::get_static_dtype().to_arrow(CompatLevel::newest()),
+        );
         return Ok(ChunkedArray::with_chunk(ca.name().clone(), arr));
     }
 
@@ -316,7 +323,7 @@ where
 {
     if lhs.null_count() == lhs.len() || rhs.null_count() == rhs.len() {
         let len = lhs.len().min(rhs.len());
-        let arr = V::Array::full_null(len, V::get_dtype().to_arrow(CompatLevel::newest()));
+        let arr = V::Array::full_null(len, V::get_static_dtype().to_arrow(CompatLevel::newest()));
 
         return ChunkedArray::with_chunk(lhs.name().clone(), arr);
     }
@@ -540,12 +547,11 @@ where
 
     let mut ca = lhs.copy_with_chunks(chunks);
 
-    use MetadataProperties as P;
-
-    let mut properties = P::empty();
-    properties.set(P::SORTED, keep_sorted);
-    properties.set(P::FAST_EXPLODE_LIST, keep_fast_explode);
-    ca.copy_metadata(&lhs, properties);
+    let mut retain_flags = StatisticsFlags::empty();
+    use StatisticsFlags as F;
+    retain_flags.set(F::IS_SORTED_ANY, keep_sorted);
+    retain_flags.set(F::CAN_FAST_EXPLODE_LIST, keep_fast_explode);
+    ca.retain_flags_from(lhs.as_ref(), retain_flags);
 
     ca
 }
@@ -596,11 +602,11 @@ where
         .collect::<Result<Vec<_>, E>>()?;
     let mut ca = lhs.copy_with_chunks(chunks);
 
-    use MetadataProperties as P;
-    let mut properties = P::empty();
-    properties.set(P::SORTED, keep_sorted);
-    properties.set(P::FAST_EXPLODE_LIST, keep_fast_explode);
-    ca.copy_metadata(&lhs, properties);
+    let mut retain_flags = StatisticsFlags::empty();
+    use StatisticsFlags as F;
+    retain_flags.set(F::IS_SORTED_ANY, keep_sorted);
+    retain_flags.set(F::CAN_FAST_EXPLODE_LIST, keep_fast_explode);
+    ca.retain_flags_from(lhs.as_ref(), retain_flags);
 
     Ok(ca)
 }
@@ -653,10 +659,10 @@ where
     G: PolarsDataType,
     V: PolarsDataType,
     F: for<'a> TernaryFnMut<
-        Option<T::Physical<'a>>,
-        Option<U::Physical<'a>>,
-        Option<G::Physical<'a>>,
-    >,
+            Option<T::Physical<'a>>,
+            Option<U::Physical<'a>>,
+            Option<G::Physical<'a>>,
+        >,
     V::Array: for<'a> ArrayFromIter<
         <F as TernaryFnMut<
             Option<T::Physical<'a>>,
@@ -749,7 +755,7 @@ where
         let min = lhs.len().min(rhs.len());
         let max = lhs.len().max(rhs.len());
         let len = if min == 1 { max } else { min };
-        let arr = V::Array::full_null(len, V::get_dtype().to_arrow(CompatLevel::newest()));
+        let arr = V::Array::full_null(len, V::get_static_dtype().to_arrow(CompatLevel::newest()));
 
         return ChunkedArray::with_chunk(lhs.name().clone(), arr);
     }
@@ -792,7 +798,7 @@ where
                 None => {
                     let arr = O::Array::full_null(
                         lhs.len(),
-                        O::get_dtype().to_arrow(CompatLevel::newest()),
+                        O::get_static_dtype().to_arrow(CompatLevel::newest()),
                     );
                     ChunkedArray::<O>::with_chunk(lhs.name().clone(), arr)
                 },
@@ -805,7 +811,7 @@ where
                 None => {
                     let arr = O::Array::full_null(
                         rhs.len(),
-                        O::get_dtype().to_arrow(CompatLevel::newest()),
+                        O::get_static_dtype().to_arrow(CompatLevel::newest()),
                     );
                     ChunkedArray::<O>::with_chunk(lhs.name().clone(), arr)
                 },
@@ -842,7 +848,7 @@ where
                 None => {
                     let arr = O::Array::full_null(
                         lhs.len(),
-                        O::get_dtype().to_arrow(CompatLevel::newest()),
+                        O::get_static_dtype().to_arrow(CompatLevel::newest()),
                     );
                     ChunkedArray::<O>::with_chunk(lhs.name().clone(), arr)
                 },
@@ -855,7 +861,7 @@ where
                 None => {
                     let arr = O::Array::full_null(
                         rhs.len(),
-                        O::get_dtype().to_arrow(CompatLevel::newest()),
+                        O::get_static_dtype().to_arrow(CompatLevel::newest()),
                     );
                     ChunkedArray::<O>::with_chunk(lhs.name().clone(), arr)
                 },

@@ -1,11 +1,12 @@
-use crate::export::chrono::Duration as ChronoDuration;
+use chrono::Duration as ChronoDuration;
+
 use crate::fmt::{fmt_duration_string, iso_duration_string};
 use crate::prelude::DataType::Duration;
 use crate::prelude::*;
 
 impl DurationChunked {
     pub fn time_unit(&self) -> TimeUnit {
-        match self.2.as_ref().unwrap() {
+        match &self.dtype {
             DataType::Duration(tu) => *tu,
             _ => unreachable!(),
         }
@@ -18,36 +19,36 @@ impl DurationChunked {
         let mut out = self.clone();
         out.set_time_unit(tu);
 
-        use TimeUnit::*;
+        use crate::datatypes::time_unit::TimeUnit::*;
         match (current_unit, tu) {
             (Nanoseconds, Microseconds) => {
-                let ca = (&self.0).wrapping_trunc_div_scalar(1_000);
-                out.0 = ca;
+                let ca = (&self.phys).wrapping_trunc_div_scalar(1_000);
+                out.phys = ca;
                 out
             },
             (Nanoseconds, Milliseconds) => {
-                let ca = (&self.0).wrapping_trunc_div_scalar(1_000_000);
-                out.0 = ca;
+                let ca = (&self.phys).wrapping_trunc_div_scalar(1_000_000);
+                out.phys = ca;
                 out
             },
             (Microseconds, Nanoseconds) => {
-                let ca = &self.0 * 1_000;
-                out.0 = ca;
+                let ca = &self.phys * 1_000;
+                out.phys = ca;
                 out
             },
             (Microseconds, Milliseconds) => {
-                let ca = (&self.0).wrapping_trunc_div_scalar(1_000);
-                out.0 = ca;
+                let ca = (&self.phys).wrapping_trunc_div_scalar(1_000);
+                out.phys = ca;
                 out
             },
             (Milliseconds, Nanoseconds) => {
-                let ca = &self.0 * 1_000_000;
-                out.0 = ca;
+                let ca = &self.phys * 1_000_000;
+                out.phys = ca;
                 out
             },
             (Milliseconds, Microseconds) => {
-                let ca = &self.0 * 1_000;
-                out.0 = ca;
+                let ca = &self.phys * 1_000;
+                out.phys = ca;
                 out
             },
             (Nanoseconds, Nanoseconds)
@@ -58,7 +59,7 @@ impl DurationChunked {
 
     /// Change the underlying [`TimeUnit`]. This does not modify the data.
     pub fn set_time_unit(&mut self, tu: TimeUnit) {
-        self.2 = Some(Duration(tu))
+        self.dtype = Duration(tu);
     }
 
     /// Convert from [`Duration`] to String; note that `strftime` format
@@ -69,7 +70,7 @@ impl DurationChunked {
         match format {
             "iso" | "iso:strict" => {
                 let out: StringChunked =
-                    self.0
+                    self.phys
                         .apply_nonnull_values_generic(DataType::String, |v: i64| {
                             s.clear();
                             iso_duration_string(&mut s, v, self.time_unit());
@@ -79,7 +80,7 @@ impl DurationChunked {
             },
             "polars" => {
                 let out: StringChunked =
-                    self.0
+                    self.phys
                         .apply_nonnull_values_generic(DataType::String, |v: i64| {
                             s.clear();
                             fmt_duration_string(&mut s, v, self.time_unit())

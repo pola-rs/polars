@@ -11,12 +11,13 @@
 //! * [`ListArray`] and [`MutableListArray`], an array of arrays (e.g. `[[1, 2], None, [], [None]]`)
 //! * [`StructArray`] and [`MutableStructArray`], an array of arrays identified by a string (e.g. `{"a": [1, 2], "b": [true, false]}`)
 //!
-//! All immutable arrays implement the trait object [`Array`] and that can be downcasted
+//! All immutable arrays implement the trait object [`Array`] and that can be downcast
 //! to a concrete struct based on [`PhysicalType`](crate::datatypes::PhysicalType) available from [`Array::dtype`].
 //! All immutable arrays are backed by [`Buffer`](crate::buffer::Buffer) and thus cloning and slicing them is `O(1)`.
 //!
 //! Most arrays contain a [`MutableArray`] counterpart that is neither cloneable nor sliceable, but
 //! can be operated in-place.
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::any::Any;
 use std::sync::Arc;
 
@@ -24,6 +25,8 @@ use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::datatypes::ArrowDataType;
 
 pub mod physical_binary;
+#[cfg(feature = "proptest")]
+pub mod proptest;
 
 pub trait Splitable: Sized {
     fn check_bound(&self, offset: usize) -> bool;
@@ -58,7 +61,7 @@ pub trait Splitable: Sized {
 }
 
 /// A trait representing an immutable Arrow array. Arrow arrays are trait objects
-/// that are infallibly downcasted to concrete types according to the [`Array::dtype`].
+/// that are infallibly downcast to concrete types according to the [`Array::dtype`].
 pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
     /// Converts itself to a reference of [`Any`], which enables downcasting to concrete types.
     fn as_any(&self) -> &dyn Any;
@@ -78,6 +81,8 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
     /// The [`ArrowDataType`] of the [`Array`]. In combination with [`Array::as_any`], this can be
     /// used to downcast trait objects (`dyn Array`) to concrete arrays.
     fn dtype(&self) -> &ArrowDataType;
+
+    fn dtype_mut(&mut self) -> &mut ArrowDataType;
 
     /// The validity of the [`Array`]: every array has an optional [`Bitmap`] that, when available
     /// specifies whether the array slot is valid or not (null).
@@ -199,6 +204,23 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
 }
 
 dyn_clone::clone_trait_object!(Array);
+
+pub trait IntoBoxedArray {
+    fn into_boxed(self) -> Box<dyn Array>;
+}
+
+impl<A: Array> IntoBoxedArray for A {
+    #[inline(always)]
+    fn into_boxed(self) -> Box<dyn Array> {
+        Box::new(self) as _
+    }
+}
+impl IntoBoxedArray for Box<dyn Array> {
+    #[inline(always)]
+    fn into_boxed(self) -> Box<dyn Array> {
+        self
+    }
+}
 
 /// A trait describing a mutable array; i.e. an array whose values can be changed.
 ///
@@ -427,8 +449,11 @@ macro_rules! impl_sliced {
         #[inline]
         #[must_use]
         pub fn sliced(self, offset: usize, length: usize) -> Self {
+            let total = offset
+                .checked_add(length)
+                .expect("offset + length overflowed");
             assert!(
-                offset + length <= self.len(),
+                total <= self.len(),
                 "the offset of the new Buffer cannot exceed the existing length"
             );
             unsafe { Self::sliced_unchecked(self, offset, length) }
@@ -559,6 +584,11 @@ macro_rules! impl_common_array {
         }
 
         #[inline]
+        fn dtype_mut(&mut self) -> &mut ArrowDataType {
+            &mut self.dtype
+        }
+
+        #[inline]
         fn split_at_boxed(&self, offset: usize) -> (Box<dyn Array>, Box<dyn Array>) {
             let (lhs, rhs) = $crate::array::Splitable::split_at(self, offset);
             (Box::new(lhs), Box::new(rhs))
@@ -625,7 +655,7 @@ pub fn clone(array: &dyn Array) -> Box<dyn Array> {
 
 // see https://users.rust-lang.org/t/generic-for-dyn-a-or-box-dyn-a-or-arc-dyn-a/69430/3
 // for details
-impl<'a> AsRef<(dyn Array + 'a)> for dyn Array {
+impl<'a> AsRef<dyn Array + 'a> for dyn Array {
     fn as_ref(&self) -> &(dyn Array + 'a) {
         self
     }
@@ -633,10 +663,12 @@ impl<'a> AsRef<(dyn Array + 'a)> for dyn Array {
 
 mod binary;
 mod boolean;
+pub mod builder;
 mod dictionary;
 mod fixed_size_binary;
 mod fixed_size_list;
 mod list;
+pub use list::LIST_VALUES_NAME;
 mod map;
 mod null;
 mod primitive;
@@ -656,35 +688,43 @@ pub mod indexable;
 pub mod iterator;
 
 mod binview;
-pub mod growable;
 mod values;
 
-pub use binary::{BinaryArray, BinaryValueIter, MutableBinaryArray, MutableBinaryValuesArray};
-pub use binview::{
-    validate_utf8_view, BinaryViewArray, BinaryViewArrayGeneric, MutableBinaryViewArray,
-    MutablePlBinary, MutablePlString, Utf8ViewArray, View, ViewType,
+pub use binary::{
+    BinaryArray, BinaryArrayBuilder, BinaryValueIter, MutableBinaryArray, MutableBinaryValuesArray,
 };
-pub use boolean::{BooleanArray, MutableBooleanArray};
+pub use binview::{
+    BinaryViewArray, BinaryViewArrayBuilder, BinaryViewArrayGeneric, BinaryViewArrayGenericBuilder,
+    MutableBinaryViewArray, MutablePlBinary, MutablePlString, Utf8ViewArray, Utf8ViewArrayBuilder,
+    View, ViewType,
+};
+pub use boolean::{BooleanArray, BooleanArrayBuilder, MutableBooleanArray};
 pub use dictionary::{DictionaryArray, DictionaryKey, MutableDictionaryArray};
 pub use equal::equal;
-pub use fixed_size_binary::{FixedSizeBinaryArray, MutableFixedSizeBinaryArray};
-pub use fixed_size_list::{FixedSizeListArray, MutableFixedSizeListArray};
+pub use fixed_size_binary::{
+    FixedSizeBinaryArray, FixedSizeBinaryArrayBuilder, MutableFixedSizeBinaryArray,
+};
+pub use fixed_size_list::{
+    FixedSizeListArray, FixedSizeListArrayBuilder, MutableFixedSizeListArray,
+};
 pub use fmt::{get_display, get_value_display};
 pub(crate) use iterator::ArrayAccessor;
 pub use iterator::ArrayValuesIter;
-pub use list::{ListArray, ListValuesIter, MutableListArray};
+pub use list::{ListArray, ListArrayBuilder, ListValuesIter, MutableListArray};
 pub use map::MapArray;
-pub use null::{MutableNullArray, NullArray};
+pub use null::{MutableNullArray, NullArray, NullArrayBuilder};
 use polars_error::PolarsResult;
 pub use primitive::*;
 pub use static_array::{ParameterFreeDtypeStaticArray, StaticArray};
 pub use static_array_collect::{ArrayCollectIterExt, ArrayFromIter, ArrayFromIterDtype};
-pub use struct_::StructArray;
+pub use struct_::{StructArray, StructArrayBuilder};
 pub use union::UnionArray;
 pub use utf8::{MutableUtf8Array, MutableUtf8ValuesArray, Utf8Array, Utf8ValuesIter};
 pub use values::ValueSize;
 
-pub(crate) use self::ffi::{offset_buffers_children_dictionary, FromFfi, ToFfi};
+#[cfg(feature = "proptest")]
+pub use self::boolean::proptest::boolean_array;
+pub(crate) use self::ffi::{FromFfi, ToFfi, offset_buffers_children_dictionary};
 use crate::{match_integer_type, with_match_primitive_type_full};
 
 /// A trait describing the ability of a struct to create itself from a iterator.
@@ -735,7 +775,7 @@ pub type ArrayRef = Box<dyn Array>;
 impl Splitable for Option<Bitmap> {
     #[inline(always)]
     fn check_bound(&self, offset: usize) -> bool {
-        self.as_ref().map_or(true, |v| offset <= v.len())
+        self.as_ref().is_none_or(|v| offset <= v.len())
     }
 
     unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {

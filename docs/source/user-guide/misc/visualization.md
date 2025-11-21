@@ -74,15 +74,24 @@ values so that it can be passed as an argument to `c`.
 --8<-- "python/user-guide/misc/visualization.py:matplotlib_make_plot"
 ```
 
-## Seaborn and Plotly
+## Plotnine
 
-[Seaborn](https://seaborn.pydata.org/) and [Plotly](https://plotly.com/) can accept a Polars
-`DataFrame` by leveraging the
+[Plotnine](https://plotnine.org/) is a reimplementation of ggplot2 in Python, bringing the Grammar
+of Graphics to Python users with an interface similar to its R counterpart. It supports Polars
+`DataFrame` by internally converting it to a pandas `DataFrame`.
+
+{{code_block('user-guide/misc/visualization','plotnine_show_plot',[])}}
+
+```python exec="on" session="user-guide/misc/visualization"
+--8<-- "python/user-guide/misc/visualization.py:plotnine_make_plot"
+```
+
+## Seaborn
+
+[Seaborn](https://seaborn.pydata.org/) can accept a Polars `DataFrame` by leveraging the
 [dataframe interchange protocol](https://data-apis.org/dataframe-api/), which offers zero-copy
 conversion where possible. Note that the protocol does not support all Polars data types (e.g.
 `List`) so your mileage may vary here.
-
-### Seaborn
 
 {{code_block('user-guide/misc/visualization','seaborn_show_plot',[])}}
 
@@ -90,7 +99,15 @@ conversion where possible. Note that the protocol does not support all Polars da
 --8<-- "python/user-guide/misc/visualization.py:seaborn_make_plot"
 ```
 
-### Plotly
+## Plotly
+
+[Plotly](https://plotly.com/) can accept a Polars `DataFrame` by leveraging:
+
+- [Narwhals](https://narwhals-dev.github.io/narwhals/), since plotly v6.0.0, and therefore running
+  execution natively without any conversion overhead.
+- The [dataframe interchange protocol](https://data-apis.org/dataframe-api/), before plotly v6.0.0,
+  which offers zero-copy conversion where possible. Note that the protocol does not support all
+  Polars data types (e.g. `List`) so your mileage may vary here.
 
 {{code_block('user-guide/misc/visualization','plotly_show_plot',[])}}
 

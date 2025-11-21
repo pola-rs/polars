@@ -29,4 +29,4 @@ def test_profile_with_cse() -> None:
         pl.when(x.is_null())
         .then(None)
         .otherwise(pl.when(y == 0).then(None).otherwise(x + y))
-    ).profile(comm_subexpr_elim=True)[1].shape == (2, 3)
+    ).profile(optimizations=pl.QueryOptFlags(comm_subexpr_elim=True))[1].shape == (2, 3)

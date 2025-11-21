@@ -1,9 +1,9 @@
 use polars_compute::arithmetic::ArithmeticKernel;
 use polars_core::chunked_array::ops::arity::apply_binary_kernel_broadcast;
 use polars_core::prelude::*;
-use polars_core::series::arithmetic::NumericListOp;
 #[cfg(feature = "dtype-struct")]
 use polars_core::series::arithmetic::_struct_arithmetic;
+use polars_core::series::arithmetic::NumericListOp;
 use polars_core::with_match_physical_numeric_polars_type;
 
 fn floor_div_ca<T: PolarsNumericType>(
@@ -36,7 +36,7 @@ pub fn floor_div_series(a: &Series, b: &Series) -> PolarsResult<Series> {
         _ => {},
     }
 
-    if !a.dtype().is_numeric() {
+    if !a.dtype().is_primitive_numeric() {
         polars_bail!(op = "floor_div", a.dtype());
     }
 
@@ -52,5 +52,5 @@ pub fn floor_div_series(a: &Series, b: &Series) -> PolarsResult<Series> {
         floor_div_ca(a, b).into_series()
     });
 
-    out.cast(logical_type)
+    unsafe { out.from_physical_unchecked(logical_type) }
 }

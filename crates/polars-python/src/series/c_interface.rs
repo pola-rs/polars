@@ -1,4 +1,4 @@
-use polars::export::arrow;
+#![allow(unsafe_op_in_unsafe_fn)]
 use polars::prelude::*;
 use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
@@ -38,7 +38,7 @@ impl PySeries {
         out_ptr: Py_uintptr_t,
         out_schema_ptr: Py_uintptr_t,
     ) -> PyResult<()> {
-        export_chunk(&self.series, out_ptr, out_schema_ptr).map_err(PyPolarsErr::from)?;
+        export_chunk(&self.series.read(), out_ptr, out_schema_ptr).map_err(PyPolarsErr::from)?;
         Ok(())
     }
 }

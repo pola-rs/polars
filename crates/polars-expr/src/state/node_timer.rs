@@ -1,5 +1,5 @@
 use std::sync::Mutex;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
@@ -8,7 +8,7 @@ type StartInstant = Instant;
 type EndInstant = Instant;
 
 type Nodes = Vec<String>;
-type Ticks = Vec<(StartInstant, EndInstant)>;
+type Ticks = Vec<(Duration, Duration)>;
 
 #[derive(Clone)]
 pub(super) struct NodeTimer {
@@ -17,14 +17,22 @@ pub(super) struct NodeTimer {
 }
 
 impl NodeTimer {
-    pub(super) fn new() -> Self {
+    pub(super) fn new(query_start: Instant) -> Self {
         Self {
-            query_start: Instant::now(),
+            query_start,
             data: Arc::new(Mutex::new((Vec::with_capacity(16), Vec::with_capacity(16)))),
         }
     }
 
     pub(super) fn store(&self, start: StartInstant, end: EndInstant, name: String) {
+        self.store_duration(
+            start.duration_since(self.query_start),
+            end.duration_since(self.query_start),
+            name,
+        )
+    }
+
+    pub(super) fn store_duration(&self, start: Duration, end: Duration, name: String) {
         let mut data = self.data.lock().unwrap();
         let nodes = &mut data.0;
         nodes.push(name);
@@ -41,18 +49,18 @@ impl NodeTimer {
         // first value is end of optimization
         polars_ensure!(!ticks.is_empty(), ComputeError: "no data to time");
         let start = ticks[0].0;
-        ticks.push((self.query_start, start));
+        ticks.push((Duration::from_nanos(0), start));
         let nodes_s = Column::new(PlSmallStr::from_static("node"), nodes);
         let start: NoNull<UInt64Chunked> = ticks
             .iter()
-            .map(|(start, _)| (start.duration_since(self.query_start)).as_micros() as u64)
+            .map(|(start, _)| start.as_micros() as u64)
             .collect();
         let mut start = start.into_inner();
         start.rename(PlSmallStr::from_static("start"));
 
         let end: NoNull<UInt64Chunked> = ticks
             .iter()
-            .map(|(_, end)| (end.duration_since(self.query_start)).as_micros() as u64)
+            .map(|(_, end)| end.as_micros() as u64)
             .collect();
         let mut end = end.into_inner();
         end.rename(PlSmallStr::from_static("end"));

@@ -1,15 +1,15 @@
-use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::Bitmap;
+use arrow::bitmap::bitmask::BitMask;
 use arrow::types::AlignedBytes;
 
-use super::{oob_dict_idx, required_skip_whole_chunks, verify_dict_indices};
+use super::{IndexMapping, oob_dict_idx, required_skip_whole_chunks, verify_dict_indices};
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::ParquetResult;
 
 #[inline(never)]
-pub fn decode<B: AlignedBytes>(
+pub fn decode<B: AlignedBytes, D: IndexMapping<Output = B>>(
     mut values: HybridRleDecoder<'_>,
-    dict: &[B],
+    dict: D,
     mut filter: Bitmap,
     target: &mut Vec<B>,
 ) -> ParquetResult<()> {
@@ -64,7 +64,7 @@ pub fn decode<B: AlignedBytes>(
                 let num_chunk_rows = current_filter.set_bits();
 
                 if num_chunk_rows > 0 {
-                    let Some(&value) = dict.get(value as usize) else {
+                    let Some(value) = dict.get(value) else {
                         return Err(oob_dict_idx());
                     };
 
@@ -72,7 +72,7 @@ pub fn decode<B: AlignedBytes>(
                 }
             },
             HybridRleChunk::Bitpacked(mut decoder) => {
-                let size = decoder.len().min(filter.len());
+                let size = decoder.len();
                 let mut chunked = decoder.chunked();
 
                 let mut buffer_part_idx = 0;
@@ -82,7 +82,7 @@ pub fn decode<B: AlignedBytes>(
 
                 let current_filter;
 
-                (current_filter, filter) = filter.split_at(size);
+                (current_filter, filter) = filter.split_at(size - num_rows_to_skip);
 
                 let mut iter = |mut f: u64, len: usize| {
                     debug_assert!(len <= 64);
@@ -139,7 +139,7 @@ pub fn decode<B: AlignedBytes>(
                         //    dictionary following the original `dict.is_empty` check.
                         // 2. Each time we write to `values_buffer`, it is followed by a
                         //    `verify_dict_indices`.
-                        let value = *unsafe { dict.get_unchecked(idx as usize) };
+                        let value = unsafe { dict.get_unchecked(idx) };
                         unsafe { target_ptr.add(num_written).write(value) };
 
                         num_written += 1;
@@ -165,7 +165,6 @@ pub fn decode<B: AlignedBytes>(
                 }
 
                 let (f, fl) = f_iter.remainder();
-
                 iter(f, fl)?;
             },
         }
@@ -174,4 +173,61 @@ pub fn decode<B: AlignedBytes>(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use arrow::bitmap::proptest::bitmap;
+    use arrow::types::Bytes4Alignment4;
+    use proptest::collection::size_range;
+    use proptest::prelude::*;
+    use proptest::test_runner::TestCaseResult;
+
+    use super::*;
+    use crate::parquet::encoding::hybrid_rle;
+
+    fn values_and_mask() -> impl Strategy<Value = (Vec<u8>, u32, Vec<u32>, Bitmap)> {
+        (bitmap(1..100), (0..300u32)).prop_flat_map(|(mask, max_idx)| {
+            let len = mask.len();
+            let hybrid_rle = hybrid_rle::proptest::hybrid_rle(max_idx, len);
+
+            (
+                hybrid_rle,
+                Just(max_idx),
+                any_with::<Vec<u32>>(size_range((max_idx + 1) as usize).lift()),
+                Just(mask),
+            )
+        })
+    }
+
+    fn _test_decode(
+        hybrid_rle: HybridRleDecoder<'_>,
+        dict: &[Bytes4Alignment4],
+        mask: &Bitmap,
+    ) -> TestCaseResult {
+        let mut result = Vec::<arrow::types::Bytes4Alignment4>::with_capacity(mask.set_bits());
+        decode(hybrid_rle.clone(), dict, mask.clone(), &mut result).unwrap();
+
+        let idxs = hybrid_rle.collect().unwrap();
+        let mut result_i = 0;
+        for (idx, is_selected) in idxs.iter().zip(mask.iter()) {
+            if is_selected {
+                prop_assert_eq!(result[result_i], dict[*idx as usize]);
+                result_i += 1;
+            }
+        }
+
+        TestCaseResult::Ok(())
+    }
+
+    proptest! {
+        #[test]
+        fn test_decode_masked_optional(
+            (ref hybrid_rle, max_idx, ref dict, ref mask) in values_and_mask()
+        ) {
+            let hybrid_rle = HybridRleDecoder::new(hybrid_rle, 32 - max_idx.leading_zeros(), mask.len());
+            let dict = bytemuck::cast_slice(dict.as_slice());
+            _test_decode(hybrid_rle, dict, mask)?
+        }
+    }
 }

@@ -1,103 +1,92 @@
-use std::io::Cursor;
-
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_series;
-use polars_row::RowEncodingOptions;
-use pyo3::exceptions::{PyIndexError, PyRuntimeError, PyValueError};
+use polars_utils::python_function::PythonObject;
+use pyo3::exceptions::{PyIndexError, PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
-use pyo3::Python;
+use pyo3::{IntoPyObjectExt, Python};
 
-use self::row_encode::get_row_encoding_dictionary;
 use super::PySeries;
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::prelude::*;
-use crate::py_modules::POLARS;
+use crate::py_modules::polars;
+use crate::utils::EnterPolarsExt;
 
 #[pymethods]
 impl PySeries {
     fn struct_unnest(&self, py: Python) -> PyResult<PyDataFrame> {
-        let ca = self.series.struct_().map_err(PyPolarsErr::from)?;
-        let df: DataFrame = py.allow_threads(|| ca.clone().unnest());
-        Ok(df.into())
+        py.enter_polars_df(|| Ok(self.series.read().struct_()?.clone().unnest()))
     }
 
-    fn struct_fields(&self) -> PyResult<Vec<&str>> {
-        let ca = self.series.struct_().map_err(PyPolarsErr::from)?;
+    fn struct_fields(&self) -> PyResult<Vec<String>> {
+        let s = self.series.read();
+        let ca = s.struct_().map_err(PyPolarsErr::from)?;
         Ok(ca
             .struct_fields()
             .iter()
-            .map(|s| s.name().as_str())
+            .map(|s| s.name().to_string())
             .collect())
     }
 
     fn is_sorted_ascending_flag(&self) -> bool {
-        matches!(self.series.is_sorted_flag(), IsSorted::Ascending)
+        matches!(self.series.read().is_sorted_flag(), IsSorted::Ascending)
     }
 
     fn is_sorted_descending_flag(&self) -> bool {
-        matches!(self.series.is_sorted_flag(), IsSorted::Descending)
+        matches!(self.series.read().is_sorted_flag(), IsSorted::Descending)
     }
 
     fn can_fast_explode_flag(&self) -> bool {
-        match self.series.list() {
+        match self.series.read().list() {
             Err(_) => false,
             Ok(list) => list._can_fast_explode(),
         }
     }
 
     pub fn cat_uses_lexical_ordering(&self) -> PyResult<bool> {
-        let ca = self.series.categorical().map_err(PyPolarsErr::from)?;
-        Ok(ca.uses_lexical_ordering())
+        Ok(true)
     }
 
     pub fn cat_is_local(&self) -> PyResult<bool> {
-        let ca = self.series.categorical().map_err(PyPolarsErr::from)?;
-        Ok(ca.get_rev_map().is_local())
+        Ok(false)
     }
 
-    pub fn cat_to_local(&self, py: Python) -> PyResult<Self> {
-        let ca = self.series.categorical().map_err(PyPolarsErr::from)?;
-        Ok(py.allow_threads(|| ca.to_local().into_series().into()))
+    pub fn cat_to_local(&self, _py: Python) -> PyResult<Self> {
+        Ok(self.clone())
     }
 
     fn estimated_size(&self) -> usize {
-        self.series.estimated_size()
+        self.series.read().estimated_size()
     }
 
     #[cfg(feature = "object")]
-    fn get_object(&self, index: usize) -> PyObject {
-        Python::with_gil(|py| {
-            if matches!(self.series.dtype(), DataType::Object(_, _)) {
-                let obj: Option<&ObjectValue> = self.series.get_object(index).map(|any| any.into());
-                obj.to_object(py)
-            } else {
-                py.None()
-            }
-        })
+    fn get_object<'py>(&self, py: Python<'py>, index: usize) -> PyResult<Bound<'py, PyAny>> {
+        let s = self.series.read();
+        if matches!(s.dtype(), DataType::Object(_)) {
+            let obj: Option<&ObjectValue> = s.get_object(index).map(|any| any.into());
+            Ok(obj.into_pyobject(py)?)
+        } else {
+            Ok(py.None().into_bound(py))
+        }
     }
 
     #[cfg(feature = "dtype-array")]
-    fn reshape(&self, py: Python, dims: Vec<i64>) -> PyResult<Self> {
+    fn reshape(&self, py: Python<'_>, dims: Vec<i64>) -> PyResult<Self> {
         let dims = dims
             .into_iter()
             .map(ReshapeDimension::new)
             .collect::<Vec<_>>();
 
-        let out = py
-            .allow_threads(|| self.series.reshape_array(&dims))
-            .map_err(PyPolarsErr::from)?;
-        Ok(out.into())
+        py.enter_polars_series(|| self.series.read().reshape_array(&dims))
     }
 
     /// Returns the string format of a single element of the Series.
     fn get_fmt(&self, index: usize, str_len_limit: usize) -> String {
-        let v = format!("{}", self.series.get(index).unwrap());
-        if let DataType::String | DataType::Categorical(_, _) | DataType::Enum(_, _) =
-            self.series.dtype()
-        {
+        let s = self.series.read();
+        let v = format!("{}", s.get(index).unwrap());
+        if let DataType::String | DataType::Categorical(_, _) | DataType::Enum(_, _) = s.dtype() {
             let v_no_quotes = &v[1..v.len() - 1];
             let v_trunc = &v_no_quotes[..v_no_quotes
                 .char_indices()
@@ -115,44 +104,38 @@ impl PySeries {
         }
     }
 
-    pub fn rechunk(&mut self, py: Python, in_place: bool) -> Option<Self> {
-        let series = py.allow_threads(|| self.series.rechunk());
+    pub fn rechunk(&self, py: Python<'_>, in_place: bool) -> PyResult<Option<Self>> {
+        let series = py.enter_polars_ok(|| self.series.read().rechunk())?;
         if in_place {
-            self.series = series;
-            None
+            *self.series.write() = series;
+            Ok(None)
         } else {
-            Some(series.into())
+            Ok(Some(series.into()))
         }
     }
 
     /// Get a value by index.
-    fn get_index(&self, py: Python, index: usize) -> PyResult<PyObject> {
-        let av = match self.series.get(index) {
+    fn get_index(&self, py: Python<'_>, index: usize) -> PyResult<Py<PyAny>> {
+        let s = self.series.read();
+        let av = match s.get(index) {
             Ok(v) => v,
             Err(PolarsError::OutOfBounds(err)) => {
-                return Err(PyIndexError::new_err(err.to_string()))
+                return Err(PyIndexError::new_err(err.to_string()));
             },
             Err(e) => return Err(PyPolarsErr::from(e).into()),
         };
 
-        let out = match av {
+        match av {
             AnyValue::List(s) | AnyValue::Array(s, _) => {
                 let pyseries = PySeries::new(s);
-                let out = POLARS
-                    .getattr(py, "wrap_s")
-                    .unwrap()
-                    .call1(py, (pyseries,))
-                    .unwrap();
-                out.into_py(py)
+                polars(py).getattr(py, "wrap_s")?.call1(py, (pyseries,))
             },
-            _ => Wrap(av).into_py(py),
-        };
-
-        Ok(out)
+            _ => Wrap(av).into_py_any(py),
+        }
     }
 
     /// Get a value by index, allowing negative indices.
-    fn get_index_signed(&self, py: Python, index: isize) -> PyResult<PyObject> {
+    fn get_index_signed(&self, py: Python<'_>, index: isize) -> PyResult<Py<PyAny>> {
         let index = if index < 0 {
             match self.len().checked_sub(index.unsigned_abs()) {
                 Some(v) => v,
@@ -168,44 +151,36 @@ impl PySeries {
         self.get_index(py, index)
     }
 
-    fn bitand(&self, py: Python, other: &PySeries) -> PyResult<Self> {
-        let out = py
-            .allow_threads(|| &self.series & &other.series)
-            .map_err(PyPolarsErr::from)?;
-        Ok(out.into())
+    fn bitand(&self, py: Python<'_>, other: &PySeries) -> PyResult<Self> {
+        py.enter_polars_series(|| &*self.series.read() & &*other.series.read())
     }
 
-    fn bitor(&self, py: Python, other: &PySeries) -> PyResult<Self> {
-        let out = py
-            .allow_threads(|| &self.series | &other.series)
-            .map_err(PyPolarsErr::from)?;
-        Ok(out.into())
+    fn bitor(&self, py: Python<'_>, other: &PySeries) -> PyResult<Self> {
+        py.enter_polars_series(|| &*self.series.read() | &*other.series.read())
     }
-    fn bitxor(&self, py: Python, other: &PySeries) -> PyResult<Self> {
-        let out = py
-            .allow_threads(|| &self.series ^ &other.series)
-            .map_err(PyPolarsErr::from)?;
-        Ok(out.into())
+
+    fn bitxor(&self, py: Python<'_>, other: &PySeries) -> PyResult<Self> {
+        py.enter_polars_series(|| &*self.series.read() ^ &*other.series.read())
     }
 
     fn chunk_lengths(&self) -> Vec<usize> {
-        self.series.chunk_lengths().collect()
+        self.series.read().chunk_lengths().collect()
     }
 
-    pub fn name(&self) -> &str {
-        self.series.name().as_str()
+    pub fn name(&self) -> String {
+        self.series.read().name().to_string()
     }
 
-    fn rename(&mut self, name: &str) {
-        self.series.rename(name.into());
+    fn rename(&self, name: &str) {
+        self.series.write().rename(name.into());
     }
 
-    fn dtype(&self, py: Python) -> PyObject {
-        Wrap(self.series.dtype().clone()).to_object(py)
+    fn dtype<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        Wrap(self.series.read().dtype().clone()).into_pyobject(py)
     }
 
     fn set_sorted_flag(&self, descending: bool) -> Self {
-        let mut out = self.series.clone();
+        let mut out = self.series.read().clone();
         if descending {
             out.set_sorted_flag(IsSorted::Descending);
         } else {
@@ -215,245 +190,211 @@ impl PySeries {
     }
 
     fn n_chunks(&self) -> usize {
-        self.series.n_chunks()
+        self.series.read().n_chunks()
     }
 
-    fn append(&mut self, other: &PySeries) -> PyResult<()> {
-        self.series
-            .append(&other.series)
-            .map_err(PyPolarsErr::from)?;
-        Ok(())
+    fn append(&self, py: Python<'_>, other: &PySeries) -> PyResult<()> {
+        py.enter_polars(|| {
+            // Prevent self-append deadlocks.
+            let other = other.series.read().clone();
+            let mut s = self.series.write();
+            s.append(&other)?;
+            PolarsResult::Ok(())
+        })
     }
 
-    fn extend(&mut self, py: Python, other: &PySeries) -> PyResult<()> {
-        py.allow_threads(|| self.series.extend(&other.series))
-            .map_err(PyPolarsErr::from)?;
-        Ok(())
+    fn extend(&self, py: Python<'_>, other: &PySeries) -> PyResult<()> {
+        py.enter_polars(|| {
+            // Prevent self-extend deadlocks.
+            let other = other.series.read().clone();
+            let mut s = self.series.write();
+            s.extend(&other)?;
+            PolarsResult::Ok(())
+        })
     }
 
-    fn new_from_index(&self, py: Python, index: usize, length: usize) -> PyResult<Self> {
-        if index >= self.series.len() {
+    fn new_from_index(&self, py: Python<'_>, index: usize, length: usize) -> PyResult<Self> {
+        let s = self.series.read();
+        if index >= s.len() {
             Err(PyValueError::new_err("index is out of bounds"))
         } else {
-            Ok(py.allow_threads(|| self.series.new_from_index(index, length).into()))
+            py.enter_polars_series(|| Ok(s.new_from_index(index, length)))
         }
     }
 
-    fn filter(&self, py: Python, filter: &PySeries) -> PyResult<Self> {
-        let filter_series = &filter.series;
+    fn filter(&self, py: Python<'_>, filter: &PySeries) -> PyResult<Self> {
+        let filter_series = &filter.series.read();
         if let Ok(ca) = filter_series.bool() {
-            let series = py
-                .allow_threads(|| self.series.filter(ca))
-                .map_err(PyPolarsErr::from)?;
-            Ok(PySeries { series })
+            py.enter_polars_series(|| self.series.read().filter(ca))
         } else {
             Err(PyRuntimeError::new_err("Expected a boolean mask"))
         }
     }
 
     fn sort(
-        &mut self,
-        py: Python,
+        &self,
+        py: Python<'_>,
         descending: bool,
         nulls_last: bool,
         multithreaded: bool,
     ) -> PyResult<Self> {
-        Ok(py
-            .allow_threads(|| {
-                self.series.sort(
-                    SortOptions::default()
-                        .with_order_descending(descending)
-                        .with_nulls_last(nulls_last)
-                        .with_multithreaded(multithreaded),
-                )
-            })
-            .map_err(PyPolarsErr::from)?
-            .into())
-    }
-
-    fn gather_with_series(&self, py: Python, indices: &PySeries) -> PyResult<Self> {
-        py.allow_threads(|| {
-            let indices = indices.series.idx().map_err(PyPolarsErr::from)?;
-            let s = self.series.take(indices).map_err(PyPolarsErr::from)?;
-            Ok(s.into())
+        py.enter_polars_series(|| {
+            self.series.read().sort(
+                SortOptions::default()
+                    .with_order_descending(descending)
+                    .with_nulls_last(nulls_last)
+                    .with_multithreaded(multithreaded),
+            )
         })
     }
 
+    fn gather_with_series(&self, py: Python<'_>, indices: &PySeries) -> PyResult<Self> {
+        py.enter_polars_series(|| self.series.read().take(indices.series.read().idx()?))
+    }
+
     fn null_count(&self) -> PyResult<usize> {
-        Ok(self.series.null_count())
+        Ok(self.series.read().null_count())
     }
 
     fn has_nulls(&self) -> bool {
-        self.series.has_nulls()
+        self.series.read().has_nulls()
     }
 
     fn equals(
         &self,
-        py: Python,
+        py: Python<'_>,
         other: &PySeries,
         check_dtypes: bool,
         check_names: bool,
         null_equal: bool,
-    ) -> bool {
-        if check_dtypes && (self.series.dtype() != other.series.dtype()) {
-            return false;
+    ) -> PyResult<bool> {
+        let s = self.series.read();
+        let o = other.series.read();
+        if check_dtypes && (s.dtype() != o.dtype()) {
+            return Ok(false);
         }
-        if check_names && (self.series.name() != other.series.name()) {
-            return false;
+        if check_names && (s.name() != o.name()) {
+            return Ok(false);
         }
         if null_equal {
-            py.allow_threads(|| self.series.equals_missing(&other.series))
+            py.enter_polars_ok(|| s.equals_missing(&o))
         } else {
-            py.allow_threads(|| self.series.equals(&other.series))
+            py.enter_polars_ok(|| s.equals(&o))
         }
     }
 
     fn as_str(&self) -> PyResult<String> {
-        Ok(format!("{:?}", self.series))
+        Ok(format!("{:?}", self.series.read()))
     }
 
     #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
-        self.series.len()
+        self.series.read().len()
     }
 
     /// Rechunk and return a pointer to the start of the Series.
     /// Only implemented for numeric types
-    fn as_single_ptr(&mut self, py: Python) -> PyResult<usize> {
-        let ptr = py
-            .allow_threads(|| self.series.as_single_ptr())
-            .map_err(PyPolarsErr::from)?;
-        Ok(ptr)
+    fn as_single_ptr(&self, py: Python) -> PyResult<usize> {
+        py.enter_polars(|| self.series.write().as_single_ptr())
     }
 
     fn clone(&self) -> Self {
-        self.series.clone().into()
+        Clone::clone(self)
     }
 
-    fn zip_with(&self, py: Python, mask: &PySeries, other: &PySeries) -> PyResult<Self> {
-        let mask = mask.series.bool().map_err(PyPolarsErr::from)?;
-        let s = py
-            .allow_threads(|| self.series.zip_with(mask, &other.series))
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.into())
+    fn zip_with(&self, py: Python<'_>, mask: &PySeries, other: &PySeries) -> PyResult<Self> {
+        let ms = mask.series.read();
+        let mask = ms.bool().map_err(PyPolarsErr::from)?;
+        py.enter_polars_series(|| self.series.read().zip_with(mask, &other.series.read()))
     }
 
-    #[pyo3(signature = (separator, drop_first=false))]
+    #[pyo3(signature = (separator, drop_first, drop_nulls))]
     fn to_dummies(
         &self,
-        py: Python,
+        py: Python<'_>,
         separator: Option<&str>,
         drop_first: bool,
+        drop_nulls: bool,
     ) -> PyResult<PyDataFrame> {
-        let df = py
-            .allow_threads(|| self.series.to_dummies(separator, drop_first))
-            .map_err(PyPolarsErr::from)?;
-        Ok(df.into())
+        py.enter_polars_df(|| {
+            self.series
+                .read()
+                .to_dummies(separator, drop_first, drop_nulls)
+        })
     }
 
     fn get_list(&self, index: usize) -> Option<Self> {
-        let ca = self.series.list().ok()?;
+        let s = self.series.read();
+        let ca = s.list().ok()?;
         Some(ca.get_as_series(index)?.into())
     }
 
     fn n_unique(&self, py: Python) -> PyResult<usize> {
-        let n = py
-            .allow_threads(|| self.series.n_unique())
-            .map_err(PyPolarsErr::from)?;
-        Ok(n)
+        py.enter_polars(|| self.series.read().n_unique())
     }
 
     fn floor(&self, py: Python) -> PyResult<Self> {
-        let s = py
-            .allow_threads(|| self.series.floor())
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.into())
+        py.enter_polars_series(|| self.series.read().floor())
     }
 
-    fn shrink_to_fit(&mut self, py: Python) {
-        py.allow_threads(|| self.series.shrink_to_fit());
+    fn shrink_to_fit(&self, py: Python) -> PyResult<()> {
+        py.enter_polars_ok(|| self.series.write().shrink_to_fit())
     }
 
-    fn dot(&self, other: &PySeries, py: Python) -> PyResult<PyObject> {
-        let lhs_dtype = self.series.dtype();
-        let rhs_dtype = other.series.dtype();
+    fn dot<'py>(&self, other: &PySeries, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let s = &*self.series.read();
+        let o = &*other.series.read();
+        let lhs_dtype = s.dtype();
+        let rhs_dtype = o.dtype();
 
-        if !lhs_dtype.is_numeric() {
+        if !lhs_dtype.is_primitive_numeric() {
             return Err(PyPolarsErr::from(polars_err!(opq = dot, lhs_dtype)).into());
         };
-        if !rhs_dtype.is_numeric() {
+        if !rhs_dtype.is_primitive_numeric() {
             return Err(PyPolarsErr::from(polars_err!(opq = dot, rhs_dtype)).into());
         }
 
         let result: AnyValue = if lhs_dtype.is_float() || rhs_dtype.is_float() {
-            py.allow_threads(|| (&self.series * &other.series)?.sum::<f64>())
-                .map_err(PyPolarsErr::from)?
-                .into()
+            py.enter_polars(|| (s * o)?.sum::<f64>())?.into()
         } else {
-            py.allow_threads(|| (&self.series * &other.series)?.sum::<i64>())
-                .map_err(PyPolarsErr::from)?
-                .into()
+            py.enter_polars(|| (s * o)?.sum::<i64>())?.into()
         };
 
-        Ok(Wrap(result).into_py(py))
+        Wrap(result).into_pyobject(py)
     }
 
-    #[cfg(feature = "ipc_streaming")]
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+    fn __getstate__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
         // Used in pickle/pickling
-        let mut buf: Vec<u8> = vec![];
-        // IPC only support DataFrames so we need to convert it
-        let mut df = self.series.clone().into_frame();
-        IpcStreamWriter::new(&mut buf)
-            .with_compat_level(CompatLevel::newest())
-            .finish(&mut df)
-            .expect("ipc writer");
-        Ok(PyBytes::new_bound(py, &buf).to_object(py))
+        Ok(PyBytes::new(
+            py,
+            &py.enter_polars(|| self.series.read().serialize_to_bytes())?,
+        ))
     }
 
-    #[cfg(feature = "ipc_streaming")]
-    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+    fn __setstate__(&self, py: Python<'_>, state: Py<PyAny>) -> PyResult<()> {
         // Used in pickle/pickling
-
         use pyo3::pybacked::PyBackedBytes;
         match state.extract::<PyBackedBytes>(py) {
-            Ok(s) => {
-                let c = Cursor::new(&s);
-                let reader = IpcStreamReader::new(c);
-                let mut df = reader.finish().map_err(PyPolarsErr::from)?;
-
-                df.pop()
-                    .map(|s| {
-                        self.series = s.take_materialized_series();
-                    })
-                    .ok_or_else(|| {
-                        PyPolarsErr::from(PolarsError::NoData(
-                            "No columns found in IPC byte stream".into(),
-                        ))
-                        .into()
-                    })
-            },
+            Ok(bytes) => py.enter_polars(|| {
+                let mut reader = std::io::Cursor::new(&*bytes);
+                *self.series.write() = Series::deserialize_from_reader(&mut reader)?;
+                PolarsResult::Ok(())
+            }),
             Err(e) => Err(e),
         }
     }
 
-    fn skew(&self, py: Python, bias: bool) -> PyResult<Option<f64>> {
-        let out = py
-            .allow_threads(|| self.series.skew(bias))
-            .map_err(PyPolarsErr::from)?;
-        Ok(out)
+    fn skew(&self, py: Python<'_>, bias: bool) -> PyResult<Option<f64>> {
+        py.enter_polars(|| self.series.read().skew(bias))
     }
 
-    fn kurtosis(&self, py: Python, fisher: bool, bias: bool) -> PyResult<Option<f64>> {
-        let out = py
-            .allow_threads(|| self.series.kurtosis(fisher, bias))
-            .map_err(PyPolarsErr::from)?;
-        Ok(out)
+    fn kurtosis(&self, py: Python<'_>, fisher: bool, bias: bool) -> PyResult<Option<f64>> {
+        py.enter_polars(|| self.series.read().kurtosis(fisher, bias))
     }
 
     fn cast(
         &self,
-        py: Python,
+        py: Python<'_>,
         dtype: Wrap<DataType>,
         strict: bool,
         wrap_numerical: bool,
@@ -465,24 +406,20 @@ impl PySeries {
         } else {
             CastOptions::NonStrict
         };
-
-        let dtype = dtype.0;
-        let out = py.allow_threads(|| self.series.cast_with_options(&dtype, options));
-        let out = out.map_err(PyPolarsErr::from)?;
-        Ok(out.into())
+        py.enter_polars_series(|| self.series.read().cast_with_options(&dtype.0, options))
     }
 
-    fn get_chunks(&self) -> PyResult<Vec<PyObject>> {
-        Python::with_gil(|py| {
-            let wrap_s = py_modules::POLARS.getattr(py, "wrap_s").unwrap();
-            flatten_series(&self.series)
+    fn get_chunks(&self) -> PyResult<Vec<Py<PyAny>>> {
+        Python::attach(|py| {
+            let wrap_s = py_modules::polars(py).getattr(py, "wrap_s").unwrap();
+            flatten_series(&self.series.read())
                 .into_iter()
                 .map(|s| wrap_s.call1(py, (Self::new(s),)))
                 .collect()
         })
     }
 
-    fn is_sorted(&self, py: Python, descending: bool, nulls_last: bool) -> PyResult<bool> {
+    fn is_sorted(&self, py: Python<'_>, descending: bool, nulls_last: bool) -> PyResult<bool> {
         let options = SortOptions {
             descending,
             nulls_last,
@@ -490,179 +427,195 @@ impl PySeries {
             maintain_order: false,
             limit: None,
         };
-        Ok(py
-            .allow_threads(|| self.series.is_sorted(options))
-            .map_err(PyPolarsErr::from)?)
+        py.enter_polars(|| self.series.read().is_sorted(options))
     }
 
     fn clear(&self) -> Self {
-        self.series.clear().into()
+        self.series.read().clear().into()
     }
 
-    fn head(&self, py: Python, n: usize) -> Self {
-        py.allow_threads(|| self.series.head(Some(n))).into()
+    fn head(&self, py: Python<'_>, n: usize) -> PyResult<Self> {
+        py.enter_polars_series(|| Ok(self.series.read().head(Some(n))))
     }
 
-    fn tail(&self, py: Python, n: usize) -> Self {
-        py.allow_threads(|| self.series.tail(Some(n))).into()
+    fn tail(&self, py: Python<'_>, n: usize) -> PyResult<Self> {
+        py.enter_polars_series(|| Ok(self.series.read().tail(Some(n))))
     }
 
     fn value_counts(
         &self,
-        py: Python,
+        py: Python<'_>,
         sort: bool,
         parallel: bool,
         name: String,
         normalize: bool,
     ) -> PyResult<PyDataFrame> {
-        let out = py
-            .allow_threads(|| {
-                self.series
-                    .value_counts(sort, parallel, name.into(), normalize)
-            })
-            .map_err(PyPolarsErr::from)?;
-        Ok(out.into())
+        py.enter_polars_df(|| {
+            self.series
+                .read()
+                .value_counts(sort, parallel, name.into(), normalize)
+        })
     }
 
-    #[pyo3(signature = (offset, length=None))]
+    #[pyo3(signature = (offset, length))]
     fn slice(&self, offset: i64, length: Option<usize>) -> Self {
-        let length = length.unwrap_or_else(|| self.series.len());
-        self.series.slice(offset, length).into()
+        let s = self.series.read();
+        let length = length.unwrap_or_else(|| s.len());
+        s.slice(offset, length).into()
     }
 
     pub fn not_(&self, py: Python) -> PyResult<Self> {
-        let out = py
-            .allow_threads(|| polars_ops::series::negate_bitwise(&self.series))
-            .map_err(PyPolarsErr::from)?;
-        Ok(out.into())
+        py.enter_polars_series(|| polars_ops::series::negate_bitwise(&self.series.read()))
     }
 
-    /// Internal utility function to allow direct access to the row encoding from python.
-    #[pyo3(signature = (dtypes, opts))]
-    fn _row_decode<'py>(
-        &'py self,
-        py: Python<'py>,
-        dtypes: Vec<(String, Wrap<DataType>)>,
-        opts: Vec<(bool, bool, bool)>,
-    ) -> PyResult<PyDataFrame> {
-        py.allow_threads(|| {
-            assert_eq!(dtypes.len(), opts.len());
-
-            let opts = opts
-                .into_iter()
-                .map(|(descending, nulls_last, no_order)| {
-                    let mut opt = RowEncodingOptions::default();
-
-                    opt.set(RowEncodingOptions::DESCENDING, descending);
-                    opt.set(RowEncodingOptions::NULLS_LAST, nulls_last);
-                    opt.set(RowEncodingOptions::NO_ORDER, no_order);
-
-                    opt
-                })
-                .collect::<Vec<_>>();
-
-            // The polars-row crate expects the physical arrow types.
-            let arrow_dtypes = dtypes
-                .iter()
-                .map(|(_, dtype)| dtype.0.to_physical().to_arrow(CompatLevel::newest()))
-                .collect::<Vec<_>>();
-
-            let dicts = dtypes
-                .iter()
-                .map(|(_, dtype)| get_row_encoding_dictionary(&dtype.0))
-                .collect::<Vec<_>>();
-
-            // Get the BinaryOffset array.
-            let arr = self.series.rechunk();
-            let arr = arr.binary_offset().map_err(PyPolarsErr::from)?;
-            assert_eq!(arr.chunks().len(), 1);
-            let mut values = arr
-                .downcast_iter()
-                .next()
-                .unwrap()
-                .values_iter()
-                .collect::<Vec<&[u8]>>();
-
-            let columns = PyResult::Ok(unsafe {
-                polars_row::decode::decode_rows(&mut values, &opts, &dicts, &arrow_dtypes)
-            })?;
-
-            // Construct a DataFrame from the result.
-            let columns = columns
-                .into_iter()
-                .zip(dtypes)
-                .map(|(arr, (name, dtype))| {
-                    unsafe {
-                        Series::from_chunks_and_dtype_unchecked(
-                            PlSmallStr::from(name),
-                            vec![arr],
-                            &dtype.0,
-                        )
-                    }
-                    .into_column()
-                })
-                .collect::<Vec<_>>();
-            Ok(DataFrame::new(columns).map_err(PyPolarsErr::from)?.into())
+    pub fn shrink_dtype(&self, py: Python<'_>) -> PyResult<Self> {
+        py.enter_polars(|| {
+            self.series
+                .read()
+                .shrink_type()
+                .map(Into::into)
+                .map_err(PyPolarsErr::from)
+                .map_err(PyErr::from)
         })
     }
-}
 
-macro_rules! impl_set_with_mask {
-    ($name:ident, $native:ty, $cast:ident, $variant:ident) => {
-        fn $name(
-            series: &Series,
-            filter: &PySeries,
-            value: Option<$native>,
-        ) -> PolarsResult<Series> {
-            let mask = filter.series.bool()?;
-            let ca = series.$cast()?;
-            let new = ca.set(mask, value)?;
-            Ok(new.into_series())
+    fn str_to_datetime_infer(
+        &self,
+        py: Python,
+        time_unit: Option<Wrap<TimeUnit>>,
+        strict: bool,
+        exact: bool,
+        ambiguous: PySeries,
+    ) -> PyResult<Self> {
+        Ok(py
+            .enter_polars(|| {
+                let s = self.series.read();
+                let datetime_strings = s.str()?;
+                let ambiguous = ambiguous.series.into_inner();
+                let ambiguous = ambiguous.str()?;
+
+                polars_time::prelude::string::infer::to_datetime_with_inferred_tz(
+                    datetime_strings,
+                    time_unit.map_or(TimeUnit::Microseconds, |v| v.0),
+                    strict,
+                    exact,
+                    ambiguous,
+                )
+            })?
+            .into_series()
+            .into())
+    }
+
+    pub fn str_to_decimal_infer(&self, py: Python, inference_length: usize) -> PyResult<Self> {
+        py.enter_polars_series(|| {
+            let s = self.series.read();
+            let ca = s.str()?;
+            ca.to_decimal_infer(inference_length).map(Series::from)
+        })
+    }
+
+    pub fn list_to_struct(
+        &self,
+        py: Python<'_>,
+        width_strat: Wrap<ListToStructWidthStrategy>,
+        name_gen: Option<Py<PyAny>>,
+    ) -> PyResult<Self> {
+        py.enter_polars(|| {
+            let get_index_name =
+                name_gen.map(|f| PlanCallback::<usize, String>::new_python(PythonObject(f)));
+            let get_index_name = get_index_name.map(|f| {
+                NameGenerator(Arc::new(move |i| f.call(i).map(PlSmallStr::from)) as Arc<_>)
+            });
+            self.series
+                .read()
+                .list()?
+                .to_struct(&ListToStructArgs::InferWidth {
+                    infer_field_strategy: width_strat.0,
+                    get_index_name,
+                    max_fields: None,
+                })
+                .map(IntoSeries::into_series)
+        })
+        .map(Into::into)
+        .map_err(PyPolarsErr::from)
+        .map_err(PyErr::from)
+    }
+
+    #[cfg(feature = "extract_jsonpath")]
+    fn str_json_decode(
+        &self,
+        py: Python<'_>,
+        infer_schema_length: Option<usize>,
+    ) -> PyResult<Self> {
+        py.enter_polars(|| {
+            let lock = self.series.read();
+            lock.str()?
+                .json_decode(None, infer_schema_length)
+                .map(|s| s.with_name(lock.name().clone()))
+        })
+        .map(Into::into)
+        .map_err(PyPolarsErr::from)
+        .map_err(PyErr::from)
+    }
+
+    fn ext_to(&self, dtype: Wrap<DataType>) -> PyResult<Self> {
+        let DataType::Extension(typ, storage) = &dtype.0 else {
+            return Err(PyTypeError::new_err(
+                "ext.to(dtype) can only be used with Extension dtypes",
+            ));
+        };
+
+        let s = self.series.read();
+
+        if storage.as_ref() != s.dtype() {
+            return Err(PyErr::from(PyPolarsErr::from(polars_err!(SchemaMismatch:
+                "storage type mismatch in ext.to(): expected {}, got {}",
+                storage,
+                s.dtype()
+            ))));
         }
 
-        #[pymethods]
-        impl PySeries {
-            #[pyo3(signature = (filter, value))]
-            fn $name(
-                &self,
-                py: Python,
-                filter: &PySeries,
-                value: Option<$native>,
-            ) -> PyResult<Self> {
-                let series = py
-                    .allow_threads(|| $name(&self.series, filter, value))
-                    .map_err(PyPolarsErr::from)?;
-                Ok(Self::new(series))
-            }
-        }
-    };
-}
+        Ok(s.clone().into_extension(typ.clone()).into())
+    }
 
-impl_set_with_mask!(set_with_mask_str, &str, str, String);
-impl_set_with_mask!(set_with_mask_f64, f64, f64, Float64);
-impl_set_with_mask!(set_with_mask_f32, f32, f32, Float32);
-impl_set_with_mask!(set_with_mask_u8, u8, u8, UInt8);
-impl_set_with_mask!(set_with_mask_u16, u16, u16, UInt16);
-impl_set_with_mask!(set_with_mask_u32, u32, u32, UInt32);
-impl_set_with_mask!(set_with_mask_u64, u64, u64, UInt64);
-impl_set_with_mask!(set_with_mask_i8, i8, i8, Int8);
-impl_set_with_mask!(set_with_mask_i16, i16, i16, Int16);
-impl_set_with_mask!(set_with_mask_i32, i32, i32, Int32);
-impl_set_with_mask!(set_with_mask_i64, i64, i64, Int64);
-impl_set_with_mask!(set_with_mask_bool, bool, bool, Boolean);
+    fn ext_storage(&self) -> Self {
+        self.series.read().to_storage().clone().into()
+    }
+
+    fn set(&self, py: Python<'_>, mask: PySeries, value: PySeries) -> PyResult<Self> {
+        assert_eq!(value.len(), 1);
+        py.enter_polars(|| {
+            let slf = self.series.read();
+            let mask = mask.series.read();
+            let value = value.series.read();
+
+            let mask = mask.bool()?;
+
+            PolarsResult::Ok(
+                value
+                    .zip_with_same_type(mask, &slf)?
+                    .with_name(slf.name().clone()),
+            )
+        })
+        .map(Into::into)
+        .map_err(PyPolarsErr::from)
+        .map_err(PyErr::from)
+    }
+}
 
 macro_rules! impl_get {
     ($name:ident, $series_variant:ident, $type:ty) => {
         #[pymethods]
         impl PySeries {
             fn $name(&self, index: i64) -> Option<$type> {
-                if let Ok(ca) = self.series.$series_variant() {
+                let s = self.series.read();
+                if let Ok(ca) = s.$series_variant() {
                     let index = if index < 0 {
                         (ca.len() as i64 + index) as usize
                     } else {
                         index as usize
                     };
-                    ca.get(index)
+                    ca.get(index).map(|r| r.to_owned())
                 } else {
                     None
                 }
@@ -681,34 +634,29 @@ impl_get!(get_i8, i8, i8);
 impl_get!(get_i16, i16, i16);
 impl_get!(get_i32, i32, i32);
 impl_get!(get_i64, i64, i64);
-impl_get!(get_str, str, &str);
-impl_get!(get_date, date, i32);
-impl_get!(get_datetime, datetime, i64);
-impl_get!(get_duration, duration, i64);
+impl_get!(get_str, str, String);
 
-#[cfg(test)]
-mod test {
-    use super::*;
-    use crate::series::ToSeries;
-
-    #[test]
-    fn transmute_to_series() {
-        // NOTE: This is only possible because PySeries is #[repr(transparent)]
-        // https://doc.rust-lang.org/reference/type-layout.html
-        let ps = PySeries {
-            series: [1i32, 2, 3].iter().collect(),
-        };
-
-        let s = unsafe { std::mem::transmute::<PySeries, Series>(ps.clone()) };
-
-        assert_eq!(s.sum::<i32>().unwrap(), 6);
-        let collection = vec![ps];
-        let s = collection.to_series();
-        assert_eq!(
-            s.iter()
-                .map(|s| s.sum::<i32>().unwrap())
-                .collect::<Vec<_>>(),
-            vec![6]
-        );
-    }
+macro_rules! impl_get_phys {
+    ($name:ident, $series_variant:ident, $type:ty) => {
+        #[pymethods]
+        impl PySeries {
+            fn $name(&self, index: i64) -> Option<$type> {
+                let s = self.series.read();
+                if let Ok(ca) = s.$series_variant() {
+                    let index = if index < 0 {
+                        (ca.len() as i64 + index) as usize
+                    } else {
+                        index as usize
+                    };
+                    ca.physical().get(index)
+                } else {
+                    None
+                }
+            }
+        }
+    };
 }
+
+impl_get_phys!(get_date, date, i32);
+impl_get_phys!(get_datetime, datetime, i64);
+impl_get_phys!(get_duration, duration, i64);

@@ -13,7 +13,6 @@ polars-compute = { workspace = true, features = ["cast"] }
 polars-error = { workspace = true }
 polars-utils = { workspace = true }
 
-ahash = { workspace = true }
 arrow = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true, optional = true }
@@ -28,5 +27,8 @@ streaming-iterator = { workspace = true }
 
 [features]
 chrono-tz = ["dep:chrono-tz", "arrow/chrono-tz"]
-dtype-decimal = ["arrow/dtype-decimal"]
+dtype-decimal = ["arrow/dtype-decimal", "polars-compute/dtype-decimal"]
 timezones = ["arrow/chrono-tz"]
+
+[lints]
+workspace = true

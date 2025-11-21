@@ -17,11 +17,13 @@ def exec_op_with_expr(lhs: pl.Series, rhs: pl.Series, op: Any) -> pl.Series:
 def exec_op_with_expr_no_type_coercion(
     lhs: pl.Series, rhs: pl.Series, op: Any
 ) -> pl.Series:
+    optimizations = pl.QueryOptFlags()
+    optimizations._pyoptflags.type_coercion = False
     return (
         pl.select(lhs)
         .lazy()
         .select(op(pl.first(), rhs))
-        .collect(type_coercion=False)
+        .collect(optimizations=optimizations)
         .to_series()
     )
 

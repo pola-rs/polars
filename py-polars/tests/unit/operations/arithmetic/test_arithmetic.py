@@ -3,7 +3,7 @@ from __future__ import annotations
 import operator
 from collections import OrderedDict
 from datetime import date, datetime, timedelta
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 import numpy as np
 import pytest
@@ -23,7 +23,10 @@ from polars import (
 )
 from polars.exceptions import ColumnNotFoundError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
-from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES
+from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES, UNSIGNED_INTEGER_DTYPES
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsIntegerType
 
 
 def test_sqrt_neg_inf() -> None:
@@ -39,13 +42,13 @@ def test_sqrt_neg_inf() -> None:
 
 
 def test_arithmetic_with_logical_on_series_4920() -> None:
-    assert (pl.Series([date(2022, 6, 3)]) - date(2022, 1, 1)).dtype == pl.Duration("ms")
+    assert (pl.Series([date(2022, 6, 3)]) - date(2022, 1, 1)).dtype == pl.Duration("us")
 
 
 @pytest.mark.parametrize(
     ("left", "right", "expected_value", "expected_dtype"),
     [
-        (date(2021, 1, 1), date(2020, 1, 1), timedelta(days=366), pl.Duration("ms")),
+        (date(2021, 1, 1), date(2020, 1, 1), timedelta(days=366), pl.Duration("us")),
         (
             datetime(2021, 1, 1),
             datetime(2020, 1, 1),
@@ -74,21 +77,41 @@ def test_struct_arithmetic() -> None:
             "c": [5, 6],
         }
     ).select(pl.cum_sum_horizontal("a", "c"))
-    assert df.select(pl.col("cum_sum") * 2).to_dict(as_series=False) == {
+
+    q = df.lazy().select(pl.col("cum_sum") * 2)
+    out = q.collect()
+    assert out.to_dict(as_series=False) == {
         "cum_sum": [{"a": 2, "c": 12}, {"a": 4, "c": 16}]
     }
-    assert df.select(pl.col("cum_sum") - 2).to_dict(as_series=False) == {
+    assert q.collect_schema() == out.schema
+
+    q = df.lazy().select(pl.col("cum_sum") - 2)
+    out = q.collect()
+    assert out.to_dict(as_series=False) == {
         "cum_sum": [{"a": -1, "c": 4}, {"a": 0, "c": 6}]
     }
-    assert df.select(pl.col("cum_sum") + 2).to_dict(as_series=False) == {
+    assert q.collect_schema() == out.schema
+
+    q = df.lazy().select(pl.col("cum_sum") + 2)
+    out = q.collect()
+    assert out.to_dict(as_series=False) == {
         "cum_sum": [{"a": 3, "c": 8}, {"a": 4, "c": 10}]
     }
-    assert df.select(pl.col("cum_sum") / 2).to_dict(as_series=False) == {
+    assert q.collect_schema() == out.schema
+
+    q = df.lazy().select(pl.col("cum_sum") / 2)
+    out = q.collect()
+    assert out.to_dict(as_series=False) == {
         "cum_sum": [{"a": 0.5, "c": 3.0}, {"a": 1.0, "c": 4.0}]
     }
-    assert df.select(pl.col("cum_sum") // 2).to_dict(as_series=False) == {
+    assert q.collect_schema() == out.schema
+
+    q = df.lazy().select(pl.col("cum_sum") // 2)
+    out = q.collect()
+    assert out.to_dict(as_series=False) == {
         "cum_sum": [{"a": 0, "c": 3}, {"a": 1, "c": 4}]
     }
+    assert q.collect_schema() == out.schema
 
     # inline, this checks cum_sum reports the right output type
     assert pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]}).select(
@@ -193,9 +216,9 @@ def test_fused_arithm() -> None:
         pl.col("c") - pl.col("c") * 2,
     ]:
         q = df.lazy().select(expr)
-        assert all(
-            el not in q.explain() for el in ["fms", "fsm", "fma"]
-        ), f"Fused Arithmetic applied on literal {expr}: {q.explain()}"
+        assert all(el not in q.explain() for el in ["fms", "fsm", "fma"]), (
+            f"Fused Arithmetic applied on literal {expr}: {q.explain()}"
+        )
 
 
 def test_literal_no_upcast() -> None:
@@ -210,9 +233,9 @@ def test_literal_no_upcast() -> None:
         )
         .collect()
     )
-    assert set(q.schema.values()) == {
-        pl.Float32
-    }, "Literal * Column (Float32) should not lead upcast"
+    assert set(q.schema.values()) == {pl.Float32}, (
+        "Literal * Column (Float32) should not lead upcast"
+    )
 
 
 def test_boolean_addition() -> None:
@@ -639,7 +662,7 @@ def test_literal_subtract_schema_13284() -> None:
         .with_columns(pl.col("a") - pl.lit(1))
         .group_by("a")
         .len()
-    ).collect_schema() == OrderedDict([("a", pl.UInt8), ("len", pl.UInt32)])
+    ).collect_schema() == OrderedDict([("a", pl.UInt8), ("len", pl.get_index_type())])
 
 
 @pytest.mark.parametrize("dtype", INTEGER_DTYPES)
@@ -705,8 +728,8 @@ def test_arithmetic_duration_div_multiply() -> None:
             ("a", pl.Duration(time_unit="us")),
             ("b", pl.Duration(time_unit="us")),
             ("c", pl.Duration(time_unit="us")),
-            ("d", pl.Unknown()),
-            ("e", pl.Unknown()),
+            ("d", pl.Duration(time_unit="us")),
+            ("e", pl.Duration(time_unit="us")),
             ("f", pl.Float64()),
         ]
     )
@@ -791,6 +814,31 @@ def test_date_datetime_sub() -> None:
     }
 
 
+def test_time_time_sub() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": pl.Series([-1, 0, 10]).cast(pl.Datetime("us")),
+            "bar": pl.Series([1, 0, 1]).cast(pl.Datetime("us")),
+        }
+    )
+
+    assert df.select(
+        pl.col("foo").dt.time() - pl.col("bar").dt.time(),
+        pl.col("bar").dt.time() - pl.col("foo").dt.time(),
+    ).to_dict(as_series=False) == {
+        "foo": [
+            timedelta(days=1, microseconds=-2),
+            timedelta(0),
+            timedelta(microseconds=9),
+        ],
+        "bar": [
+            timedelta(days=-1, microseconds=2),
+            timedelta(0),
+            timedelta(microseconds=-9),
+        ],
+    }
+
+
 def test_raise_invalid_shape() -> None:
     with pytest.raises(InvalidOperationError):
         pl.DataFrame([[1, 2], [3, 4]]) * pl.DataFrame([1, 2, 3])
@@ -799,3 +847,147 @@ def test_raise_invalid_shape() -> None:
 def test_integer_divide_scalar_zero_lhs_19142() -> None:
     assert_series_equal(pl.Series([0]) // pl.Series([1, 0]), pl.Series([0, None]))
     assert_series_equal(pl.Series([0]) % pl.Series([1, 0]), pl.Series([0, None]))
+
+
+def test_compound_duration_21389() -> None:
+    # test add
+    lf = pl.LazyFrame(
+        {
+            "ts": datetime(2024, 1, 1, 1, 2, 3),
+            "duration": timedelta(days=1),
+        }
+    )
+    result = lf.select(pl.col("ts") + pl.col("duration") * 2)
+    expected_schema = pl.Schema({"ts": pl.Datetime(time_unit="us", time_zone=None)})
+    expected = pl.DataFrame({"ts": datetime(2024, 1, 3, 1, 2, 3)})
+    assert result.collect_schema() == expected_schema
+    assert_frame_equal(result.collect(), expected)
+
+    # test subtract
+    result = lf.select(pl.col("ts") - pl.col("duration") * 2)
+    expected_schema = pl.Schema({"ts": pl.Datetime(time_unit="us", time_zone=None)})
+    expected = pl.DataFrame({"ts": datetime(2023, 12, 30, 1, 2, 3)})
+    assert result.collect_schema() == expected_schema
+    assert_frame_equal(result.collect(), expected)
+
+
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
+def test_arithmetic_i128(dtype: PolarsIntegerType) -> None:
+    s = pl.Series("a", [0, 1, 127], dtype=dtype, strict=False)
+    s128 = pl.Series("a", [0, 0, 0], dtype=pl.Int128)
+    expected = pl.Series("a", [0, 1, 127], dtype=pl.Int128)
+    assert_series_equal(s + s128, expected)
+    assert_series_equal(s128 + s, expected)
+
+
+def test_arithmetic_i128_nonint() -> None:
+    s128 = pl.Series("a", [0], dtype=pl.Int128)
+
+    s = pl.Series("a", [1.0], dtype=pl.Float32)
+    assert_series_equal(s + s128, pl.Series("a", [1.0], dtype=pl.Float64))
+    assert_series_equal(s128 + s, pl.Series("a", [1.0], dtype=pl.Float64))
+
+    s = pl.Series("a", [1.0], dtype=pl.Float64)
+    assert_series_equal(s + s128, s)
+    assert_series_equal(s128 + s, s)
+
+    s = pl.Series("a", [True], dtype=pl.Boolean)
+    assert_series_equal(s + s128, pl.Series("a", [1], dtype=pl.Int128))
+    assert_series_equal(s128 + s, pl.Series("a", [1], dtype=pl.Int128))
+
+
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
+def test_arithmetic_u128(dtype: PolarsIntegerType) -> None:
+    s = pl.Series("a", [0, 1, 127], dtype=dtype, strict=False)
+    s128 = pl.Series("a", [0, 0, 0], dtype=pl.UInt128)
+    expected_dtype = pl.UInt128 if dtype in UNSIGNED_INTEGER_DTYPES else pl.Int128
+    expected = pl.Series("a", [0, 1, 127], dtype=expected_dtype)
+    assert_series_equal(s + s128, expected)
+    assert_series_equal(s128 + s, expected)
+
+
+def test_arithmetic_u128_nonint() -> None:
+    s128 = pl.Series("a", [0], dtype=pl.UInt128)
+
+    s = pl.Series("a", [1.0], dtype=pl.Float32)
+    assert_series_equal(s + s128, pl.Series("a", [1.0], dtype=pl.Float64))
+    assert_series_equal(s128 + s, pl.Series("a", [1.0], dtype=pl.Float64))
+
+    s = pl.Series("a", [1.0], dtype=pl.Float64)
+    assert_series_equal(s + s128, s)
+    assert_series_equal(s128 + s, s)
+
+    s = pl.Series("a", [True], dtype=pl.Boolean)
+    assert_series_equal(s + s128, pl.Series("a", [1], dtype=pl.UInt128))
+    assert_series_equal(s128 + s, pl.Series("a", [1], dtype=pl.UInt128))
+
+
+def test_float_truediv_output_type() -> None:
+    lf = pl.LazyFrame(schema={"f32": pl.Float32, "f64": pl.Float64})
+    assert lf.select(x=pl.col("f32") / pl.col("f32")).collect_schema() == pl.Schema(
+        {"x": pl.Float32}
+    )
+    assert lf.select(x=pl.col("f32") / pl.col("f64")).collect_schema() == pl.Schema(
+        {"x": pl.Float64}
+    )
+    assert lf.select(x=pl.col("f64") / pl.col("f32")).collect_schema() == pl.Schema(
+        {"x": pl.Float64}
+    )
+    assert lf.select(x=pl.col("f64") / pl.col("f64")).collect_schema() == pl.Schema(
+        {"x": pl.Float64}
+    )
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Float64,
+        pl.Int32,
+        pl.Decimal(21, 3),
+    ],
+)
+def test_log_exp(dtype: pl.DataType) -> None:
+    df = pl.DataFrame(
+        {
+            "a": pl.Series("a", [1, 100, 1000], dtype=dtype),
+            "b": pl.Series("a", [0, 2, 3], dtype=dtype),
+        }
+    )
+
+    result = df.lazy().select(
+        log10=pl.col("a").log10(),
+        log=pl.col("a").log(),
+        exp=pl.col("b").exp(),
+        log1p=pl.col("a").log1p(),
+    )
+    expected = df.select(
+        log10=pl.col("b").cast(pl.Float64),
+        log=pl.Series(np.log(df["a"].cast(pl.Float64).to_numpy())),
+        exp=pl.Series(np.exp(df["b"].cast(pl.Float64).to_numpy())),
+        log1p=pl.Series(np.log1p(df["a"].cast(pl.Float64).to_numpy())),
+    )
+
+    assert_frame_equal(result.collect(), expected)
+    assert result.collect_schema() == expected.schema
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Float64,
+        pl.Float32,
+    ],
+)
+def test_log_broadcast(dtype: pl.DataType) -> None:
+    a = pl.Series("a", [1, 3, 9, 27, 81], dtype=dtype)
+    b = pl.Series("a", [3, 3, 9, 3, 9], dtype=dtype)
+
+    assert_series_equal(a.log(b), pl.Series("a", [0, 1, 1, 3, 2], dtype=dtype))
+    assert_series_equal(
+        a.log(pl.Series("a", [3], dtype=dtype)),
+        pl.Series("a", [0, 1, 2, 3, 4], dtype=dtype),
+    )
+    assert_series_equal(
+        pl.Series("a", [81], dtype=dtype).log(b),
+        pl.Series("a", [4, 4, 2, 4, 2], dtype=dtype),
+    )

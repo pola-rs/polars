@@ -70,13 +70,21 @@ pub(super) fn par_sorted_merge_left(
         DataType::Int64 => {
             par_sorted_merge_left_impl(s_left.i64().unwrap(), s_right.i64().unwrap())
         },
+        #[cfg(feature = "dtype-u128")]
+        DataType::UInt128 => {
+            par_sorted_merge_left_impl(s_left.u128().unwrap(), s_right.u128().unwrap())
+        },
+        #[cfg(feature = "dtype-i128")]
+        DataType::Int128 => {
+            par_sorted_merge_left_impl(s_left.i128().unwrap(), s_right.i128().unwrap())
+        },
         DataType::Float32 => {
             par_sorted_merge_left_impl(s_left.f32().unwrap(), s_right.f32().unwrap())
         },
         DataType::Float64 => {
             par_sorted_merge_left_impl(s_left.f64().unwrap(), s_right.f64().unwrap())
         },
-        _ => unreachable!(),
+        dt => panic!("{dt:?}"),
     }
 }
 #[cfg(feature = "performant")]
@@ -142,6 +150,14 @@ pub(super) fn par_sorted_merge_inner_no_nulls(
         DataType::Int64 => {
             par_sorted_merge_inner_impl(s_left.i64().unwrap(), s_right.i64().unwrap())
         },
+        #[cfg(feature = "dtype-u128")]
+        DataType::UInt128 => {
+            par_sorted_merge_inner_impl(s_left.u128().unwrap(), s_right.u128().unwrap())
+        },
+        #[cfg(feature = "dtype-i128")]
+        DataType::Int128 => {
+            par_sorted_merge_inner_impl(s_left.i128().unwrap(), s_right.i128().unwrap())
+        },
         DataType::Float32 => {
             par_sorted_merge_inner_impl(s_left.f32().unwrap(), s_right.f32().unwrap())
         },
@@ -179,9 +195,9 @@ pub(crate) fn _sort_or_hash_inner(
     s_right: &Series,
     _verbose: bool,
     validate: JoinValidation,
-    join_nulls: bool,
+    nulls_equal: bool,
 ) -> PolarsResult<(InnerJoinIds, bool)> {
-    s_left.hash_join_inner(s_right, validate, join_nulls)
+    s_left.hash_join_inner(s_right, validate, nulls_equal)
 }
 
 #[cfg(feature = "performant")]
@@ -190,7 +206,7 @@ pub(crate) fn _sort_or_hash_inner(
     s_right: &Series,
     verbose: bool,
     validate: JoinValidation,
-    join_nulls: bool,
+    nulls_equal: bool,
 ) -> PolarsResult<(InnerJoinIds, bool)> {
     // We check if keys are sorted.
     // - If they are we can do a sorted merge join
@@ -201,10 +217,10 @@ pub(crate) fn _sort_or_hash_inner(
     let size_factor_acceptable = std::env::var("POLARS_JOIN_SORT_FACTOR")
         .map(|s| s.parse::<f32>().unwrap())
         .unwrap_or(1.0);
-    let is_numeric = s_left.dtype().to_physical().is_numeric();
+    let is_numeric = s_left.dtype().to_physical().is_primitive_numeric();
 
     if validate.needs_checks() {
-        return s_left.hash_join_inner(s_right, validate, join_nulls);
+        return s_left.hash_join_inner(s_right, validate, nulls_equal);
     }
 
     let no_nulls = s_left.null_count() == 0 && s_right.null_count() == 0;
@@ -272,7 +288,7 @@ pub(crate) fn _sort_or_hash_inner(
             // set sorted to `false` as we descending sorted the left key.
             Ok(((left, right), false))
         },
-        _ => s_left.hash_join_inner(s_right, validate, join_nulls),
+        _ => s_left.hash_join_inner(s_right, validate, nulls_equal),
     }
 }
 
@@ -282,9 +298,9 @@ pub(crate) fn sort_or_hash_left(
     s_right: &Series,
     _verbose: bool,
     validate: JoinValidation,
-    join_nulls: bool,
+    nulls_equal: bool,
 ) -> PolarsResult<LeftJoinIds> {
-    s_left.hash_join_left(s_right, validate, join_nulls)
+    s_left.hash_join_left(s_right, validate, nulls_equal)
 }
 
 #[cfg(feature = "performant")]
@@ -293,17 +309,17 @@ pub(crate) fn sort_or_hash_left(
     s_right: &Series,
     verbose: bool,
     validate: JoinValidation,
-    join_nulls: bool,
+    nulls_equal: bool,
 ) -> PolarsResult<LeftJoinIds> {
     if validate.needs_checks() {
-        return s_left.hash_join_left(s_right, validate, join_nulls);
+        return s_left.hash_join_left(s_right, validate, nulls_equal);
     }
 
     let size_factor_rhs = s_right.len() as f32 / s_left.len() as f32;
     let size_factor_acceptable = std::env::var("POLARS_JOIN_SORT_FACTOR")
         .map(|s| s.parse::<f32>().unwrap())
         .unwrap_or(1.0);
-    let is_numeric = s_left.dtype().to_physical().is_numeric();
+    let is_numeric = s_left.dtype().to_physical().is_primitive_numeric();
 
     let no_nulls = s_left.null_count() == 0 && s_right.null_count() == 0;
 
@@ -348,6 +364,6 @@ pub(crate) fn sort_or_hash_left(
             Ok(to_left_join_ids(left, right))
         },
         // don't reverse sort a left join key yet. Have to figure out how to set sorted flag
-        _ => s_left.hash_join_left(s_right, validate, join_nulls),
+        _ => s_left.hash_join_left(s_right, validate, nulls_equal),
     }
 }

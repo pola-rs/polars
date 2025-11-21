@@ -1,22 +1,20 @@
-use arrow::array::{DictionaryArray, DictionaryKey, PrimitiveArray};
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::array::PrimitiveArray;
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 
 use super::super::utils;
-use super::{
-    AsDecoderFunction, ClosureDecoderFunction, DecoderFunction, PrimitiveDecoder,
-    UnitDecoderFunction,
-};
-use crate::parquet::encoding::{byte_stream_split, hybrid_rle, Encoding};
+use super::{ClosureDecoderFunction, DecoderFunction, PrimitiveDecoder, UnitDecoderFunction};
+use crate::parquet::encoding::{Encoding, byte_stream_split, hybrid_rle};
 use crate::parquet::error::ParquetResult;
-use crate::parquet::page::{split_buffer, DataPage, DictPage};
-use crate::parquet::types::{decode, NativeType as ParquetNativeType};
+use crate::parquet::page::{DataPage, DictPage, split_buffer};
+use crate::parquet::types::{NativeType as ParquetNativeType, decode};
+use crate::read::Filter;
 use crate::read::deserialize::dictionary_encoded;
 use crate::read::deserialize::utils::{
     dict_indices_decoder, freeze_validity, unspecialized_decode,
 };
-use crate::read::Filter;
+use crate::read::expr::{ParquetScalar, SpecializedParquetColumnExpr};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
@@ -29,7 +27,7 @@ pub(crate) enum StateTranslation<'a> {
 impl<'a, P, T, D> utils::StateTranslation<'a, FloatDecoder<P, T, D>> for StateTranslation<'a>
 where
     T: NativeType,
-    P: ParquetNativeType,
+    P: ParquetNativeType + for<'b> TryFrom<&'b ParquetScalar>,
     D: DecoderFunction<P, T>,
 {
     type PlainDecoder = &'a [u8];
@@ -58,6 +56,13 @@ where
                 )?))
             },
             _ => Err(utils::not_implemented(page)),
+        }
+    }
+    fn num_rows(&self) -> usize {
+        match self {
+            Self::Plain(v) => v.len() / size_of::<P>(),
+            Self::Dictionary(i) => i.len(),
+            Self::ByteStreamSplit(i) => i.len(),
         }
     }
 }
@@ -91,17 +96,6 @@ where
     }
 }
 
-impl<P, T> FloatDecoder<P, T, AsDecoderFunction<P, T>>
-where
-    P: ParquetNativeType,
-    T: NativeType,
-    AsDecoderFunction<P, T>: Default + DecoderFunction<P, T>,
-{
-    pub(crate) fn cast_as() -> Self {
-        Self::new(AsDecoderFunction::<P, T>::default())
-    }
-}
-
 impl<P, T, F> FloatDecoder<P, T, ClosureDecoderFunction<P, T, F>>
 where
     P: ParquetNativeType,
@@ -113,9 +107,18 @@ where
     }
 }
 
-impl<T> utils::ExactSize for (Vec<T>, MutableBitmap) {
+impl<T: NativeType> utils::Decoded for (Vec<T>, BitmapBuilder) {
     fn len(&self) -> usize {
         self.0.len()
+    }
+
+    fn extend_nulls(&mut self, n: usize) {
+        self.0.resize(self.0.len() + n, T::default());
+        self.1.extend_constant(n, false);
+    }
+
+    fn remaining_capacity(&self) -> usize {
+        (self.0.capacity() - self.0.len()).min(self.1.capacity() - self.1.len())
     }
 }
 
@@ -126,14 +129,14 @@ where
     D: DecoderFunction<P, T>,
 {
     type Translation<'a> = StateTranslation<'a>;
-    type Dict = Vec<T>;
-    type DecodedState = (Vec<T>, MutableBitmap);
+    type Dict = PrimitiveArray<T>;
+    type DecodedState = (Vec<T>, BitmapBuilder);
     type Output = PrimitiveArray<T>;
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
         (
             Vec::<T>::with_capacity(capacity),
-            MutableBitmap::with_capacity(capacity),
+            BitmapBuilder::with_capacity(capacity),
         )
     }
 
@@ -146,12 +149,61 @@ where
             false,
             None,
             None,
-            &mut MutableBitmap::new(),
+            &mut BitmapBuilder::new(),
             &mut self.0.intermediate,
             &mut target,
             self.0.decoder,
         )?;
-        Ok(target)
+        Ok(PrimitiveArray::new(
+            T::PRIMITIVE.into(),
+            target.into(),
+            None,
+        ))
+    }
+
+    fn evaluate_predicate(
+        &mut self,
+        state: &utils::State<'_, Self>,
+        _predicate: Option<&SpecializedParquetColumnExpr>,
+        pred_true_mask: &mut BitmapBuilder,
+        dict_mask: Option<&Bitmap>,
+    ) -> ParquetResult<bool> {
+        if state.page_validity.is_some() {
+            // @Performance: implement validity aware
+            return Ok(false);
+        }
+
+        if let StateTranslation::Dictionary(values) = &state.translation {
+            let dict_mask = dict_mask.unwrap();
+            super::super::dictionary_encoded::predicate::decode(
+                values.clone(),
+                dict_mask,
+                pred_true_mask,
+            )?;
+            return Ok(true);
+        }
+
+        Ok(false)
+    }
+
+    fn extend_decoded(
+        &self,
+        decoded: &mut Self::DecodedState,
+        additional: &dyn arrow::array::Array,
+        is_optional: bool,
+    ) -> ParquetResult<()> {
+        let additional = additional
+            .as_any()
+            .downcast_ref::<PrimitiveArray<T>>()
+            .unwrap();
+        decoded.0.extend(additional.values().iter().copied());
+        match additional.validity() {
+            Some(v) => decoded.1.extend_from_bitmap(v),
+            None if is_optional => decoded.1.extend_constant(additional.len(), true),
+            None => {},
+        }
+
+        Ok(())
     }
 
     fn extend_filtered_with_state(
@@ -159,6 +211,7 @@ where
         mut state: utils::State<'_, Self>,
         decoded: &mut Self::DecodedState,
         filter: Option<Filter>,
+        _chunks: &mut Vec<Self::Output>,
     ) -> ParquetResult<()> {
         match state.translation {
             StateTranslation::Plain(ref mut values) => super::plain::decode(
@@ -173,7 +226,7 @@ where
             ),
             StateTranslation::Dictionary(ref mut indexes) => dictionary_encoded::decode_dict(
                 indexes.clone(),
-                state.dict.unwrap(),
+                state.dict.unwrap().values().as_slice(),
                 state.is_optional,
                 state.page_validity.as_ref(),
                 filter,
@@ -197,6 +250,15 @@ where
         }
     }
 
+    fn extend_constant(
+        &mut self,
+        decoded: &mut Self::DecodedState,
+        length: usize,
+        value: &ParquetScalar,
+    ) -> ParquetResult<()> {
+        self.0.extend_constant(decoded, length, value)
+    }
+
     fn finalize(
         &self,
         dtype: ArrowDataType,
@@ -205,28 +267,5 @@ where
     ) -> ParquetResult<Self::Output> {
         let validity = freeze_validity(validity);
         Ok(PrimitiveArray::try_new(dtype, values.into(), validity).unwrap())
-    }
-}
-
-impl<P, T, D> utils::DictDecodable for FloatDecoder<P, T, D>
-where
-    T: NativeType,
-    P: ParquetNativeType,
-    D: DecoderFunction<P, T>,
-{
-    fn finalize_dict_array<K: DictionaryKey>(
-        &self,
-        dtype: ArrowDataType,
-        dict: Self::Dict,
-        keys: PrimitiveArray<K>,
-    ) -> ParquetResult<DictionaryArray<K>> {
-        let value_type = match &dtype {
-            ArrowDataType::Dictionary(_, value, _) => value.as_ref().clone(),
-            _ => T::PRIMITIVE.into(),
-        };
-
-        let dict = Box::new(PrimitiveArray::new(value_type, dict.into(), None));
-
-        Ok(DictionaryArray::try_new(dtype, keys, dict).unwrap())
     }
 }

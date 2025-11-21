@@ -9,7 +9,6 @@ on:
   repository_dispatch:
     types:
       - python-release-docs
-  # Allow manual trigger until we have properly versioned docs
   workflow_dispatch:
 
 jobs:
@@ -19,7 +18,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.client_payload.sha }}
-      - uses: gaurav-nelson/github-action-markdown-link-check@v1
+      - uses: tcort/github-action-markdown-link-check@v1.1.1
         with:
           config-file: docs/mlc-config.json
           folder-path: docs
@@ -67,9 +66,12 @@ jobs:
           uv venv
           echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
           echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> $GITHUB_ENV
+          echo "VENV=$GITHUB_WORKSPACE/.venv" >> $GITHUB_ENV
 
       - name: Install Python dependencies
-        run: uv pip install -r py-polars/requirements-dev.txt -r docs/source/requirements.txt
+        run: |
+          uv pip install -r py-polars/requirements-dev.txt -r docs/source/requirements.txt
+          uv pip install --no-deps -e py-polars
 
       - name: Set up Rust
         run: rustup show
@@ -82,7 +84,7 @@ jobs:
 
       - name: Install Polars
         working-directory: py-polars
-        run: maturin develop
+        run: make build
 
       - name: Set up Graphviz
         uses: ts-graphviz/setup-graphviz@v2

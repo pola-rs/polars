@@ -10,7 +10,7 @@ pub(super) fn process_group_by(
     aggs: Vec<ExprIR>,
     schema: SchemaRef,
     maintain_order: bool,
-    apply: Option<Arc<dyn DataFrameUdf>>,
+    apply: Option<PlanCallback<DataFrame, DataFrame>>,
     options: Arc<GroupbyOptions>,
     acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
 ) -> PolarsResult<IR> {
@@ -36,13 +36,16 @@ pub(super) fn process_group_by(
         return opt.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena);
     }
 
-    // If the predicate only resolves to the keys we can push it down.
+    // If the predicate only resolves to the keys we can push it down, on the condition
+    // that the key values are not modified from their original values.
     // When it filters the aggregations, the predicate should be done after aggregation.
     let mut local_predicates = Vec::with_capacity(acc_predicates.len());
+    let eligible_keys = keys.iter().filter(
+        |&key| matches!(expr_arena.get(key.node()), AExpr::Column(c) if c == key.output_name()),
+    );
     let key_schema = aexprs_to_schema(
-        &keys,
+        eligible_keys,
         lp_arena.get(input).schema(lp_arena).as_ref(),
-        Context::Default,
         expr_arena,
     );
 
@@ -51,9 +54,7 @@ pub(super) fn process_group_by(
     for (pred_name, predicate) in acc_predicates {
         // Counts change due to groupby's
         // TODO! handle aliases, so that the predicate that is pushed down refers to the column before alias.
-        let mut push_down = !has_aexpr(predicate.node(), expr_arena, |ae| {
-            matches!(ae, AExpr::Len | AExpr::Alias(_, _))
-        });
+        let mut push_down = !has_aexpr(predicate.node(), expr_arena, |ae| matches!(ae, AExpr::Len));
 
         for name in aexpr_to_leaf_names_iter(predicate.node(), expr_arena) {
             push_down &= key_schema.contains(name.as_ref());

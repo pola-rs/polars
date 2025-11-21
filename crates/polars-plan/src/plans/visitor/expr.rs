@@ -1,6 +1,4 @@
-use std::fmt::Debug;
-#[cfg(feature = "cse")]
-use std::fmt::Formatter;
+use std::fmt::{Debug, Formatter};
 
 use polars_core::prelude::{Field, Schema};
 use polars_utils::unitvec;
@@ -44,10 +42,8 @@ impl TreeWalker for Expr {
         let ret = match self {
             Alias(l, r) => Alias(am(l, f)?, r),
             Column(_) => self,
-            Columns(_) => self,
-            DtypeColumn(_) => self,
-            IndexColumn(_) => self,
             Literal(_) => self,
+            DataTypeFunction(_) => self,
             #[cfg(feature = "dtype-struct")]
             Field(_) => self,
             BinaryExpr { left, op, right } => {
@@ -63,10 +59,13 @@ impl TreeWalker for Expr {
                 Median(x) => Median(am(x, f)?),
                 NUnique(x) => NUnique(am(x, f)?),
                 First(x) => First(am(x, f)?),
+                FirstNonNull(x) => FirstNonNull(am(x, f)?),
                 Last(x) => Last(am(x, f)?),
+                LastNonNull(x) => LastNonNull(am(x, f)?),
+                Item { input, allow_empty } => Item { input: am(input, f)?, allow_empty },
                 Mean(x) => Mean(am(x, f)?),
                 Implode(x) => Implode(am(x, f)?),
-                Count(x, nulls) => Count(am(x, f)?, nulls),
+                Count { input, include_nulls } => Count { input: am(input, f)?, include_nulls },
                 Quantile { expr, quantile, method: interpol } => Quantile { expr: am(expr, &mut f)?, quantile: am(quantile, f)?, method: interpol },
                 Sum(x) => Sum(am(x, f)?),
                 AggGroups(x) => AggGroups(am(x, f)?),
@@ -74,23 +73,24 @@ impl TreeWalker for Expr {
                 Var(x, ddf) => Var(am(x, f)?, ddf),
             }),
             Ternary { predicate, truthy, falsy } => Ternary { predicate: am(predicate, &mut f)?, truthy: am(truthy, &mut f)?, falsy: am(falsy, f)? },
-            Function { input, function, options } => Function { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, options },
-            Explode(expr) => Explode(am(expr, f)?),
+            Function { input, function } => Function { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function },
+            Explode { input, options } => Explode { input: am(input, f)?, options },
             Filter { input, by } => Filter { input: am(input, &mut f)?, by: am(by, f)? },
-            Window { function, partition_by, order_by, options } => {
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling { function, index_column, period, offset, closed_window  } => Rolling { function: am(function, &mut f)?, index_column: am(index_column, &mut f)?, period, offset, closed_window  },
+            Over { function, partition_by, order_by, mapping } => {
                 let partition_by = partition_by.into_iter().map(&mut f).collect::<Result<_, _>>()?;
-                Window { function: am(function, f)?, partition_by, order_by, options }
+                Over { function: am(function, f)?, partition_by, order_by, mapping }
             },
-            Wildcard => Wildcard,
             Slice { input, offset, length } => Slice { input: am(input, &mut f)?, offset: am(offset, &mut f)?, length: am(length, f)? },
-            Exclude(expr, excluded) => Exclude(am(expr, f)?, excluded),
             KeepName(expr) => KeepName(am(expr, f)?),
+            Element => Element,
             Len => Len,
-            Nth(_) => self,
             RenameAlias { function, expr } => RenameAlias { function, expr: am(expr, f)? },
-            AnonymousFunction { input, function, output_type, options } => {
-                AnonymousFunction { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, output_type, options }
+            AnonymousFunction { input, function, options, fmt_str } => {
+                AnonymousFunction { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, options, fmt_str }
             },
+            Eval { expr: input, evaluation, variant } => Eval { expr: am(input, &mut f)?, evaluation: am(evaluation, f)?, variant },
             SubPlan(_, _) => self,
             Selector(_) => self,
         };
@@ -123,7 +123,7 @@ impl AexprNode {
 
     pub fn to_field(&self, schema: &Schema, arena: &Arena<AExpr>) -> PolarsResult<Field> {
         let aexpr = arena.get(self.node);
-        aexpr.to_field(schema, Context::Default, arena)
+        aexpr.to_field(&ToFieldContext::new(arena, schema))
     }
 
     pub fn assign(&mut self, ae: AExpr, arena: &mut Arena<AExpr>) {
@@ -131,12 +131,10 @@ impl AexprNode {
         self.node = node;
     }
 
-    #[cfg(feature = "cse")]
     pub(crate) fn is_leaf(&self, arena: &Arena<AExpr>) -> bool {
         matches!(self.to_aexpr(arena), AExpr::Column(_) | AExpr::Literal(_))
     }
 
-    #[cfg(feature = "cse")]
     pub(crate) fn hashable_and_cmp<'a>(&self, arena: &'a Arena<AExpr>) -> AExprArena<'a> {
         AExprArena {
             node: self.node,
@@ -145,13 +143,11 @@ impl AexprNode {
     }
 }
 
-#[cfg(feature = "cse")]
 pub struct AExprArena<'a> {
     node: Node,
     arena: &'a Arena<AExpr>,
 }
 
-#[cfg(feature = "cse")]
 impl Debug for AExprArena<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "AexprArena: {}", self.node.0)
@@ -159,14 +155,29 @@ impl Debug for AExprArena<'_> {
 }
 
 impl AExpr {
-    #[cfg(feature = "cse")]
     fn is_equal_node(&self, other: &Self) -> bool {
         use AExpr::*;
         match (self, other) {
-            (Alias(_, l), Alias(_, r)) => l == r,
             (Column(l), Column(r)) => l == r,
             (Literal(l), Literal(r)) => l == r,
-            (Window { options: l, .. }, Window { options: r, .. }) => l == r,
+            #[cfg(feature = "dynamic_group_by")]
+            (
+                Rolling {
+                    function: _,
+                    index_column: _,
+                    period: l_period,
+                    offset: l_offset,
+                    closed_window: l_closed_window,
+                },
+                Rolling {
+                    function: _,
+                    index_column: _,
+                    period: r_period,
+                    offset: r_offset,
+                    closed_window: r_closed_window,
+                },
+            ) => l_period == r_period && l_offset == r_offset && l_closed_window == r_closed_window,
+            (Over { mapping: l, .. }, Over { mapping: r, .. }) => l == r,
             (
                 Cast {
                     options: strict_l,
@@ -184,8 +195,17 @@ impl AExpr {
             | (Filter { .. }, Filter { .. })
             | (Ternary { .. }, Ternary { .. })
             | (Len, Len)
-            | (Slice { .. }, Slice { .. })
-            | (Explode(_), Explode(_)) => true,
+            | (Slice { .. }, Slice { .. }) => true,
+            (
+                Explode {
+                    expr: _,
+                    options: l_options,
+                },
+                Explode {
+                    expr: _,
+                    options: r_options,
+                },
+            ) => l_options == r_options,
             (
                 SortBy {
                     sort_options: l_sort_options,
@@ -225,28 +245,26 @@ impl AExpr {
     }
 }
 
-#[cfg(feature = "cse")]
 impl<'a> AExprArena<'a> {
-    fn new(node: Node, arena: &'a Arena<AExpr>) -> Self {
+    pub fn new(node: Node, arena: &'a Arena<AExpr>) -> Self {
         Self { node, arena }
     }
-    fn to_aexpr(&self) -> &'a AExpr {
+    pub fn to_aexpr(&self) -> &'a AExpr {
         self.arena.get(self.node)
     }
 
     // Check single node on equality
-    fn is_equal_single(&self, other: &Self) -> bool {
+    pub fn is_equal_single(&self, other: &Self) -> bool {
         let self_ae = self.to_aexpr();
         let other_ae = other.to_aexpr();
         self_ae.is_equal_node(other_ae)
     }
 }
 
-#[cfg(feature = "cse")]
 impl PartialEq for AExprArena<'_> {
     fn eq(&self, other: &Self) -> bool {
-        let mut scratch1 = vec![];
-        let mut scratch2 = vec![];
+        let mut scratch1 = unitvec![];
+        let mut scratch2 = unitvec![];
 
         scratch1.push(self.node);
         scratch2.push(other.node);
@@ -255,14 +273,14 @@ impl PartialEq for AExprArena<'_> {
             match (scratch1.pop(), scratch2.pop()) {
                 (Some(l), Some(r)) => {
                     let l = Self::new(l, self.arena);
-                    let r = Self::new(r, self.arena);
+                    let r = Self::new(r, other.arena);
 
                     if !l.is_equal_single(&r) {
                         return false;
                     }
 
-                    l.to_aexpr().nodes(&mut scratch1);
-                    r.to_aexpr().nodes(&mut scratch2);
+                    l.to_aexpr().inputs_rev(&mut scratch1);
+                    r.to_aexpr().inputs_rev(&mut scratch2);
                 },
                 (None, None) => return true,
                 _ => return false,
@@ -280,7 +298,7 @@ impl TreeWalker for AexprNode {
     ) -> PolarsResult<VisitRecursion> {
         let mut scratch = unitvec![];
 
-        self.to_aexpr(arena).nodes(&mut scratch);
+        self.to_aexpr(arena).inputs_rev(&mut scratch);
         for node in scratch.as_slice() {
             let aenode = AexprNode::new(*node);
             match op(&aenode, arena)? {
@@ -301,7 +319,7 @@ impl TreeWalker for AexprNode {
         let mut scratch = unitvec![];
 
         let ae = arena.get(self.node).clone();
-        ae.nodes(&mut scratch);
+        ae.inputs_rev(&mut scratch);
 
         // rewrite the nodes
         for node in scratch.as_mut_slice() {
@@ -309,6 +327,7 @@ impl TreeWalker for AexprNode {
             *node = op(aenode, arena)?.node;
         }
 
+        scratch.as_mut_slice().reverse();
         let ae = ae.replace_inputs(&scratch);
         self.node = arena.add(ae);
         Ok(self)

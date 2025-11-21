@@ -1,6 +1,8 @@
 use std::fmt::Debug;
 
 use polars_utils::IdxSize;
+use polars_utils::itertools::Itertools;
+use polars_utils::total_ord::TotalEq;
 
 use crate::types::NativeType;
 
@@ -68,6 +70,50 @@ where
     out
 }
 
+pub fn partition_to_groups_amortized_varsize<T, I>(
+    values: I,
+    values_len: IdxSize,
+    first_group_offset: IdxSize,
+    nulls_first: bool,
+    offset: IdxSize,
+    out: &mut Vec<[IdxSize; 2]>,
+) where
+    T: Debug + TotalEq,
+    I: IntoIterator<Item = T>,
+{
+    let mut values = values.into_iter().enumerate_idx();
+    if let Some((i, mut first)) = values.next() {
+        out.clear();
+        if nulls_first && first_group_offset > 0 {
+            out.push([0, first_group_offset])
+        }
+
+        let mut first_idx = if nulls_first { first_group_offset } else { 0 } + offset;
+        let mut start = i;
+
+        for (i, val) in values {
+            // new group reached
+            if val.tot_ne(&first) {
+                let len = i - start;
+                start = i;
+                out.push([first_idx, len]);
+                first_idx += len;
+                first = val;
+            }
+        }
+        // add last group
+        if nulls_first {
+            out.push([first_idx, values_len + first_group_offset - first_idx]);
+        } else {
+            out.push([first_idx, values_len - (first_idx - offset)]);
+        }
+
+        if !nulls_first && first_group_offset > 0 {
+            out.push([values_len + offset, first_group_offset])
+        }
+    }
+}
+
 pub fn partition_to_groups_amortized<T>(
     values: &[T],
     first_group_offset: IdxSize,
@@ -75,7 +121,7 @@ pub fn partition_to_groups_amortized<T>(
     offset: IdxSize,
     out: &mut Vec<[IdxSize; 2]>,
 ) where
-    T: Debug + NativeType,
+    T: Debug + TotalEq + Sized,
 {
     if let Some(mut first) = values.first() {
         out.clear();

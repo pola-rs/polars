@@ -1,12 +1,13 @@
 use std::collections::VecDeque;
 use std::io::{Read, Seek};
+use std::sync::Arc;
 
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_str::PlSmallStr;
 
-use super::deserialize::{read, skip};
 use super::Dictionaries;
+use super::deserialize::{read, skip};
 use crate::array::*;
 use crate::datatypes::{ArrowDataType, ArrowSchema, Field};
 use crate::io::ipc::read::OutOfSpecKind;
@@ -85,7 +86,6 @@ pub fn read_record_batch<R: Read + Seek>(
     version: arrow_format::ipc::MetadataVersion,
     reader: &mut R,
     block_offset: u64,
-    file_size: u64,
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<RecordBatchT<Box<dyn Array>>> {
     assert_eq!(fields.len(), ipc_schema.fields.len());
@@ -99,26 +99,6 @@ pub fn read_record_batch<R: Read + Seek>(
         .map(|v| v.iter().map(|v| v as usize).collect::<VecDeque<usize>>())
         .unwrap_or_else(VecDeque::new);
     let mut buffers: VecDeque<arrow_format::ipc::BufferRef> = buffers.iter().collect();
-
-    // check that the sum of the sizes of all buffers is <= than the size of the file
-    let buffers_size = buffers
-        .iter()
-        .map(|buffer| {
-            let buffer_size: u64 = buffer
-                .length()
-                .try_into()
-                .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
-            Ok(buffer_size)
-        })
-        .sum::<PolarsResult<u64>>()?;
-    if buffers_size > file_size {
-        return Err(polars_err!(
-            oos = OutOfSpecKind::InvalidBuffersLength {
-                buffers_size,
-                file_size,
-            }
-        ));
-    }
 
     let field_nodes = batch
         .nodes()
@@ -197,7 +177,11 @@ pub fn read_record_batch<R: Read + Seek>(
         .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
     let length = limit.map(|limit| limit.min(length)).unwrap_or(length);
 
-    RecordBatchT::try_new(length, columns)
+    let mut schema: ArrowSchema = fields.iter_values().cloned().collect();
+    if let Some(projection) = projection {
+        schema = schema.try_project_indices(projection).unwrap();
+    }
+    RecordBatchT::try_new(length, Arc::new(schema), columns)
 }
 
 fn find_first_dict_field_d<'a>(
@@ -206,13 +190,21 @@ fn find_first_dict_field_d<'a>(
     ipc_field: &'a IpcField,
 ) -> Option<(&'a Field, &'a IpcField)> {
     use ArrowDataType::*;
-    match dtype {
+    match dtype.to_logical_type() {
         Dictionary(_, inner, _) => find_first_dict_field_d(id, inner.as_ref(), ipc_field),
         List(field) | LargeList(field) | FixedSizeList(field, ..) | Map(field, ..) => {
             find_first_dict_field(id, field.as_ref(), &ipc_field.fields[0])
         },
-        Union(fields, ..) | Struct(fields) => {
+        Struct(fields) => {
             for (field, ipc_field) in fields.iter().zip(ipc_field.fields.iter()) {
+                if let Some(f) = find_first_dict_field(id, field, ipc_field) {
+                    return Some(f);
+                }
+            }
+            None
+        },
+        Union(u) => {
+            for (field, ipc_field) in u.fields.iter().zip(ipc_field.fields.iter()) {
                 if let Some(f) = find_first_dict_field(id, field, ipc_field) {
                     return Some(f);
                 }
@@ -262,7 +254,6 @@ pub fn read_dictionary<R: Read + Seek>(
     dictionaries: &mut Dictionaries,
     reader: &mut R,
     block_offset: u64,
-    file_size: u64,
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<()> {
     if batch
@@ -309,7 +300,6 @@ pub fn read_dictionary<R: Read + Seek>(
         arrow_format::ipc::MetadataVersion::V5,
         reader,
         block_offset,
-        file_size,
         scratch,
     )?;
 
@@ -373,13 +363,21 @@ pub fn apply_projection(
     let length = chunk.len();
 
     // re-order according to projection
-    let arrays = chunk.into_arrays();
+    let (schema, arrays) = chunk.into_schema_and_arrays();
+    let mut new_schema = schema.as_ref().clone();
     let mut new_arrays = arrays.clone();
 
-    map.iter()
-        .for_each(|(old, new)| new_arrays[*new] = arrays[*old].clone());
+    map.iter().for_each(|(old, new)| {
+        let (old_name, old_field) = schema.get_at_index(*old).unwrap();
+        let (new_name, new_field) = new_schema.get_at_index_mut(*new).unwrap();
 
-    RecordBatchT::new(length, new_arrays)
+        *new_name = old_name.clone();
+        *new_field = old_field.clone();
+
+        new_arrays[*new] = arrays[*old].clone();
+    });
+
+    RecordBatchT::new(length, Arc::new(new_schema), new_arrays)
 }
 
 #[cfg(test)]

@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 import pytest
 
 import polars as pl
+
+if TYPE_CHECKING:
+    from polars._typing import WindowMappingStrategy
+from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -214,7 +220,7 @@ def test_window_cached_keys_sorted_update_4183() -> None:
     )
     expected = pl.DataFrame(
         {"count": [2, 2, 1], "rank": [1, 2, 1]},
-        schema={"count": pl.UInt32, "rank": pl.UInt32},
+        schema={"count": pl.get_index_type(), "rank": pl.get_index_type()},
     )
     assert_frame_equal(result, expected)
 
@@ -398,7 +404,7 @@ def test_window_filtered_false_15483() -> None:
             "group": ["A", "A"],
             "value": [None, None],
         },
-        schema_overrides={"value": pl.UInt32},
+        schema_overrides={"value": pl.get_index_type()},
     )
     assert_frame_equal(out, expected)
 
@@ -487,12 +493,14 @@ def test_window_order_by_8662() -> None:
     assert df.with_columns(
         x_lag0=pl.col("x").shift(1).over("g"),
         x_lag1=pl.col("x").shift(1).over("g", order_by="t"),
+        x_lag2=pl.col("x").shift(1).over("g", order_by="t", descending=True),
     ).to_dict(as_series=False) == {
         "g": [1, 1, 1, 1, 2, 2, 2, 2],
         "t": [1, 2, 3, 4, 4, 1, 2, 3],
         "x": [10, 20, 30, 40, 10, 20, 30, 40],
         "x_lag0": [None, 10, 20, 30, None, 10, 20, 30],
         "x_lag1": [None, 10, 20, 30, 40, None, 20, 30],
+        "x_lag2": [20, 30, 40, None, None, 30, 40, 10],
     }
 
 
@@ -536,3 +544,321 @@ def test_order_by_sorted_keys_18943() -> None:
 
     out = df.set_sorted("g").select(pl.col("x").cum_sum().over("g", order_by="t"))
     assert_frame_equal(out, expect)
+
+
+def test_nested_window_keys() -> None:
+    df = pl.DataFrame({"x": 1, "y": "two"})
+    assert df.select(pl.col("y").first().over(pl.struct("x").implode())).item() == "two"
+    assert df.select(pl.col("y").first().over(pl.struct("x"))).item() == "two"
+
+
+def test_window_21692() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 1, 2, 3],
+            "b": [4, 3, 0, 1, 2, 0],
+            "c": ["first", "first", "first", "second", "second", "second"],
+        }
+    )
+    gt0 = pl.col("b") > 0
+    assert df.with_columns(
+        corr=pl.corr(
+            pl.col("a").filter(gt0),
+            pl.col("b").filter(gt0),
+        ).over("c"),
+    ).to_dict(as_series=False) == {
+        "a": [1, 2, 3, 1, 2, 3],
+        "b": [4, 3, 0, 1, 2, 0],
+        "c": ["first", "first", "first", "second", "second", "second"],
+        "corr": [-1.0, -1.0, -1.0, 1.0, 1.0, 1.0],
+    }
+
+
+def test_window_implode_explode() -> None:
+    assert pl.DataFrame(
+        {
+            "x": [1, 2, 3, 1, 2, 3, 1, 2, 3],
+            "y": [2, 2, 2, 3, 3, 3, 4, 4, 4],
+        }
+    ).select(
+        works=(pl.col.x * pl.col.x.implode().explode()).over(pl.col.y),
+    ).to_dict(as_series=False) == {"works": [1, 4, 9, 1, 4, 9, 1, 4, 9]}
+
+
+def test_window_22006() -> None:
+    df = pl.DataFrame(
+        [
+            {"a": 1, "b": 1},
+            {"a": 1, "b": 2},
+            {"a": 2, "b": 3},
+            {"a": 2, "b": 4},
+        ]
+    )
+
+    df_empty = pl.DataFrame([], df.schema)
+
+    df_out = df.select(c=pl.col("b").over("a", mapping_strategy="join"))
+
+    df_empty_out = df_empty.select(c=pl.col("b").over("a", mapping_strategy="join"))
+
+    assert df_out.schema == df_empty_out.schema
+
+
+def test_when_then_over_22478() -> None:
+    q = pl.LazyFrame(
+        {
+            "x": [True, True, False, True, True, True, False],
+            "t": [1, 2, 3, 4, 5, 6, 7],
+        }
+    ).with_columns(
+        duration=(
+            pl.when(pl.col("x"))
+            .then(pl.col("t").last() - pl.col("t").first())
+            .otherwise(pl.lit(0))
+            .over(pl.col("x").rle_id())
+        )
+    )
+
+    expect = pl.DataFrame(
+        {
+            "x": [True, True, False, True, True, True, False],
+            "t": [1, 2, 3, 4, 5, 6, 7],
+            "duration": [1, 1, 0, 2, 2, 2, 0],
+        }
+    )
+
+    assert q.collect_schema() == {
+        "x": pl.Boolean,
+        "t": pl.Int64,
+        "duration": pl.Int64,
+    }
+    assert_frame_equal(q.collect(), expect)
+
+    q = pl.LazyFrame({"key": [1, 1, 2, 2, 2]}).with_columns(
+        out=pl.when(pl.Series(99 * [True])).then(pl.sum("key")).over("key")
+    )
+
+    with pytest.raises(pl.exceptions.ShapeError):
+        q.collect()
+
+
+def test_window_fold_22493() -> None:
+    df = pl.DataFrame({"a": [1, 1, 1, 2, 2, 2, 2, 2], "b": [1, 1, 1, 2, 2, 2, 2, 2]})
+
+    assert (
+        df.select(
+            (
+                pl.when(False)
+                .then(1)
+                .otherwise(
+                    pl.fold(
+                        acc=pl.lit(0.0),
+                        function=lambda acc, x: acc + x,
+                        exprs=pl.col(["a", "b"]),
+                        returns_scalar=False,
+                    )
+                )
+            )
+            .over("a")
+            .alias("prod"),
+        )
+    ).to_dict(as_series=False) == {"prod": [2.0, 2.0, 2.0, 4.0, 4.0, 4.0, 4.0, 4.0]}
+
+    assert (
+        df.select(
+            (
+                pl.when(False)
+                .then(1)
+                .otherwise(
+                    pl.fold(
+                        acc=pl.lit(0.0),
+                        function=lambda acc, x: acc + x.sum(),
+                        exprs=pl.col(["a", "b"]),
+                        returns_scalar=True,
+                    )
+                )
+            )
+            .over("a")
+            .alias("prod"),
+        )
+    ).to_dict(as_series=False) == {
+        "prod": [6.0, 6.0, 6.0, 20.0, 20.0, 20.0, 20.0, 20.0]
+    }
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        (
+            df.select(
+                (
+                    pl.when(False)
+                    .then(1)
+                    .otherwise(
+                        pl.fold(
+                            acc=pl.lit(0.0),
+                            function=lambda acc, x: acc + x,
+                            exprs=pl.col(["a", "b"]),
+                            returns_scalar=True,
+                        )
+                    )
+                )
+                .over("a")
+                .alias("prod"),
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    "mapping_strategy",
+    ["group_to_rows", "join", "explode"],
+)
+@pytest.mark.parametrize(
+    "query", [pl.col.x.sum().gather([0, 0, 0]), pl.col.x.implode().gather([0, 0, 0])]
+)
+def test_aggregate_gather_over_dtype_24632(
+    mapping_strategy: WindowMappingStrategy, query: pl.Expr
+) -> None:
+    df = pl.DataFrame({"x": [1, 2, 3]})
+    q = df.lazy().select(query.over(1, mapping_strategy=mapping_strategy))
+    assert q.collect_schema() == q.collect().schema
+
+
+@pytest.mark.may_fail_auto_streaming  # reason: issue
+# https://github.com/pola-rs/polars/issues/24865
+@pytest.mark.parametrize(
+    ("expr", "mapping_strategy", "result"),
+    [
+        # baseline
+        (pl.col.x, "group_to_rows", [1, 2, 3]),
+        (pl.col.x, "join", [[1, 2], [1, 2], [3]]),
+        (pl.col.x, "explode", [1, 2, 3]),
+        # no agg, length-preserving
+        (pl.col.x.reverse(), "group_to_rows", [2, 1, 3]),
+        (pl.col.x.reverse(), "join", [[2, 1], [2, 1], [3]]),
+        (pl.col.x.reverse(), "explode", [2, 1, 3]),
+        # agg to scalar
+        (pl.col.x.first(), "group_to_rows", [1, 1, 3]),
+        (pl.col.x.first(), "join", [1, 1, 3]),
+        (pl.col.x.first(), "explode", [1, 3]),
+        # agg to scalar (list)
+        (pl.col.x.implode(), "group_to_rows", [[1, 2], [1, 2], [3]]),
+        (pl.col.x.implode(), "join", [[1, 2], [1, 2], [3]]),
+        (pl.col.x.implode(), "explode", [[1, 2], [3]]),
+        # mix of no agg and agg to scalar
+        (pl.col.x.first() + pl.col.y, "group_to_rows", [5, 6, 9]),
+        (pl.col.x.first() + pl.col.y, "join", [[5, 6], [5, 6], [9]]),
+        (pl.col.x.first() + pl.col.y, "explode", [5, 6, 9]),
+        # mix of no agg and agg to scalar, re-ordered
+        (pl.col.x + pl.col.y.first(), "group_to_rows", [5, 6, 9]),
+        (pl.col.x + pl.col.y.first(), "join", [[5, 6], [5, 6], [9]]),
+        (pl.col.x + pl.col.y.first(), "explode", [5, 6, 9]),
+        # not length preserving - head
+        (pl.col.x.head(1), "group_to_rows", None),  # Must raise
+        (pl.col.x.head(1), "join", [[1], [1], [3]]),
+        (pl.col.x.head(1), "explode", [1, 3]),
+        # not length preserving - gather
+        (pl.col.x.gather([0, 0]), "group_to_rows", None),  # Must raise
+        (pl.col.x.gather([0, 0]), "join", [[1, 1], [1, 1], [3, 3]]),
+        (pl.col.x.gather([0, 0]), "explode", [1, 1, 3, 3]),
+        # agg to scalar (list), then agg length preserving
+        (pl.col.x.implode().reverse(), "group_to_rows", [[1, 2], [1, 2], [3]]),
+        (pl.col.x.implode().reverse(), "join", [[1, 2], [1, 2], [3]]),
+        (pl.col.x.implode().reverse(), "explode", [[1, 2], [3]]),
+    ],
+)
+def test_mapping_strategy_scalar_matrix(
+    expr: pl.Expr, mapping_strategy: WindowMappingStrategy, result: list[int] | None
+) -> None:
+    df = pl.DataFrame({"g": [10, 10, 20], "x": [1, 2, 3], "y": [4, 5, 6]})
+
+    q = df.lazy().select(expr.over(pl.col.g, mapping_strategy=mapping_strategy))
+    expected = pl.DataFrame({"x": result})
+
+    if not result:
+        with pytest.raises(ShapeError):
+            q.collect()
+    else:
+        out = q.collect()
+        print(out)
+        print(expected)
+        assert q.collect_schema() == out.schema
+        assert_frame_equal(out, expected)
+
+
+@pytest.mark.may_fail_auto_streaming  # reason: issue
+# https://github.com/pola-rs/polars/issues/24865
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col.x.head(0),
+        pl.col.x.head(1),
+        pl.col.x.gather([]),
+        pl.col.x.gather([0]),
+        pl.col.x.gather([0, 0]),
+    ],
+)
+def test_shape_mismatch(expr: pl.Expr) -> None:
+    df = pl.DataFrame({"g": [10, 10, 20], "x": [1, 2, 3]})
+
+    q = df.lazy().select(expr.over(pl.col.g))
+    with pytest.raises(ShapeError):
+        q.collect()
+
+
+def test_clear_cache_on_stacked_filters_24806() -> None:
+    df = pl.LazyFrame({"x": [1, 2]})
+    predicate = (pl.col.x > 1).over(9)
+    out = df.filter(predicate).filter(predicate).collect()
+    expected = pl.DataFrame({"x": [2]})
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    "expr", [pl.col.a, pl.col.a.first(), pl.col.b, pl.col.b.first()]
+)
+@pytest.mark.parametrize(
+    "over",
+    [
+        pl.lit(42),
+        pl.col.g,
+        pl.col.g.first(),
+        [pl.col.g, pl.lit(42)],
+        [pl.lit(42), pl.col.g],
+        [pl.col.g, pl.col.h],
+        [pl.col.g.first(), pl.col.h],
+    ],
+)
+def test_over_literal_or_scalar_24756(expr: pl.Expr, over: pl.Expr) -> None:
+    df = pl.DataFrame(
+        {"a": [1, 2, 3], "b": ["x", "y", "z"], "g": [10, 10, 20], "h": [10, 10, 20]}
+    )
+
+    out = df.select(expr.over(over))
+    assert out.shape == (3, 1)
+
+
+def test_shape_mismatch_group_by_slice() -> None:
+    q = pl.LazyFrame(
+        {
+            "x": [True, True, False],
+            "t": [1, 1, 3],
+        }
+    ).select(pl.col.t.mode().over(pl.col("x").rle_id()))
+
+    with pytest.raises(
+        ShapeError, match="expressions must have matching group lengths"
+    ):
+        q.collect()
+
+
+def test_shape_mismatch_group_by_unique_slice() -> None:
+    q = pl.LazyFrame(
+        {
+            "x": [True, True, False],
+            "t": [1, 1, 3],
+        }
+    ).select(pl.col.t.unique().over(pl.col("x").rle_id()))
+
+    with pytest.raises(
+        ShapeError,
+        match="the length of the window expression did not match that of the group",
+    ):
+        q.collect()

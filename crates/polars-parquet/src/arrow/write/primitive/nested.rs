@@ -2,7 +2,7 @@ use arrow::array::{Array, PrimitiveArray};
 use arrow::types::NativeType as ArrowNativeType;
 use polars_error::PolarsResult;
 
-use super::super::{nested, utils, WriteOptions};
+use super::super::{WriteOptions, nested, utils};
 use super::basic::{build_statistics, encode_plain};
 use crate::arrow::read::schema::is_nullable;
 use crate::arrow::write::Nested;

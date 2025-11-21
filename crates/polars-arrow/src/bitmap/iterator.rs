@@ -1,7 +1,7 @@
 use polars_utils::slice::load_padded_le_u64;
 
-use super::bitmask::BitMask;
 use super::Bitmap;
+use super::bitmask::BitMask;
 use crate::trusted_len::TrustedLen;
 
 /// Calculates how many iterations are remaining, assuming:

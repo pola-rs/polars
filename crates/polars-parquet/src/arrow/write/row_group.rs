@@ -1,16 +1,16 @@
 use arrow::array::Array;
 use arrow::datatypes::ArrowSchema;
 use arrow::record_batch::RecordBatchT;
-use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
+use polars_error::{PolarsError, PolarsResult, polars_bail, to_compute_err};
 
 use super::{
-    array_to_columns, to_parquet_schema, DynIter, DynStreamingIterator, Encoding,
-    RowGroupIterColumns, SchemaDescriptor, WriteOptions,
+    ColumnWriteOptions, DynIter, DynStreamingIterator, RowGroupIterColumns, SchemaDescriptor,
+    WriteOptions, array_to_columns, to_parquet_schema,
 };
+use crate::parquet::FallibleStreamingIterator;
 use crate::parquet::error::ParquetError;
 use crate::parquet::schema::types::ParquetType;
 use crate::parquet::write::Compressor;
-use crate::parquet::FallibleStreamingIterator;
 
 /// Maps a [`RecordBatchT`] and parquet-specific options to an [`RowGroupIterColumns`] used to
 /// write to parquet
@@ -20,20 +20,21 @@ use crate::parquet::FallibleStreamingIterator;
 /// * `encodings.len() != chunk.arrays().len()`
 pub fn row_group_iter<A: AsRef<dyn Array> + 'static + Send + Sync>(
     chunk: RecordBatchT<A>,
-    encodings: Vec<Vec<Encoding>>,
+    column_options: Vec<ColumnWriteOptions>,
     fields: Vec<ParquetType>,
     options: WriteOptions,
 ) -> RowGroupIterColumns<'static, PolarsError> {
-    assert_eq!(encodings.len(), fields.len());
-    assert_eq!(encodings.len(), chunk.arrays().len());
+    assert_eq!(column_options.len(), fields.len());
+    assert_eq!(column_options.len(), chunk.arrays().len());
     DynIter::new(
         chunk
             .into_arrays()
             .into_iter()
             .zip(fields)
-            .zip(encodings)
-            .flat_map(move |((array, type_), encoding)| {
-                let encoded_columns = array_to_columns(array, type_, options, &encoding).unwrap();
+            .zip(column_options)
+            .flat_map(move |((array, type_), column_options)| {
+                let encoded_columns =
+                    array_to_columns(array, type_, &column_options, options).unwrap();
                 encoded_columns
                     .into_iter()
                     .map(|encoded_pages| {
@@ -64,7 +65,7 @@ pub struct RowGroupIterator<
     iter: I,
     options: WriteOptions,
     parquet_schema: SchemaDescriptor,
-    encodings: Vec<Vec<Encoding>>,
+    column_options: Vec<ColumnWriteOptions>,
 }
 
 impl<A: AsRef<dyn Array> + 'static, I: Iterator<Item = PolarsResult<RecordBatchT<A>>>>
@@ -80,20 +81,20 @@ impl<A: AsRef<dyn Array> + 'static, I: Iterator<Item = PolarsResult<RecordBatchT
         iter: I,
         schema: &ArrowSchema,
         options: WriteOptions,
-        encodings: Vec<Vec<Encoding>>,
+        column_options: Vec<ColumnWriteOptions>,
     ) -> PolarsResult<Self> {
-        if encodings.len() != schema.len() {
+        if column_options.len() != schema.len() {
             polars_bail!(InvalidOperation:
-                "The number of encodings must equal the number of fields".to_string(),
+                "The number of column options must equal the number of fields".to_string(),
             )
         }
-        let parquet_schema = to_parquet_schema(schema)?;
+        let parquet_schema = to_parquet_schema(schema, &column_options)?;
 
         Ok(Self {
             iter,
             options,
             parquet_schema,
-            encodings,
+            column_options,
         })
     }
 
@@ -103,10 +104,8 @@ impl<A: AsRef<dyn Array> + 'static, I: Iterator<Item = PolarsResult<RecordBatchT
     }
 }
 
-impl<
-        A: AsRef<dyn Array> + 'static + Send + Sync,
-        I: Iterator<Item = PolarsResult<RecordBatchT<A>>>,
-    > Iterator for RowGroupIterator<A, I>
+impl<A: AsRef<dyn Array> + 'static + Send + Sync, I: Iterator<Item = PolarsResult<RecordBatchT<A>>>>
+    Iterator for RowGroupIterator<A, I>
 {
     type Item = PolarsResult<RowGroupIterColumns<'static, PolarsError>>;
 
@@ -115,12 +114,12 @@ impl<
 
         self.iter.next().map(|maybe_chunk| {
             let chunk = maybe_chunk?;
-            if self.encodings.len() != chunk.arrays().len() {
+            if self.column_options.len() != chunk.arrays().len() {
                 polars_bail!(InvalidOperation:
                     "The number of arrays in the chunk must equal the number of fields in the schema"
                 )
             };
-            let encodings = self.encodings.clone();
+            let encodings = self.column_options.clone();
             Ok(row_group_iter(
                 chunk,
                 encodings,

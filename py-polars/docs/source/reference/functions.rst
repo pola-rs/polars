@@ -25,15 +25,18 @@ Miscellaneous
 
     align_frames
     concat
+    union
+    defer
     escape_regex
 
-Parallelization
-~~~~~~~~~~~~~~~
+Multiple queries
+~~~~~~~~~~~~~~~~
 .. autosummary::
    :toctree: api/
 
    collect_all
    collect_all_async
+   explain_all
 
 Random
 ~~~~~~
@@ -41,6 +44,15 @@ Random
    :toctree: api/
 
    set_random_seed
+   
+Extension Types
+~~~~~~~~~~~~~~~
+.. autosummary::
+   :toctree: api/
+   
+   register_extension_type
+   unregister_extension_type
+   get_extension_type
 
 StringCache
 ~~~~~~~~~~~

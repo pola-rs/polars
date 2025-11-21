@@ -13,43 +13,37 @@ pub fn concat_str<E: AsRef<[Expr]>>(s: E, separator: &str, ignore_nulls: bool) -
             ignore_nulls,
         }
         .into(),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::ElementWise,
-            flags: FunctionFlags::default()
-                | FunctionFlags::INPUT_WILDCARD_EXPANSION & !FunctionFlags::RETURNS_SCALAR,
-            ..Default::default()
-        },
     }
 }
 
 #[cfg(all(feature = "concat_str", feature = "strings"))]
 /// Format the results of an array of expressions using a format string
 pub fn format_str<E: AsRef<[Expr]>>(format: &str, args: E) -> PolarsResult<Expr> {
-    let mut args: std::collections::VecDeque<Expr> = args.as_ref().to_vec().into();
+    let input = args.as_ref().to_vec();
 
-    // Parse the format string, and separate substrings between placeholders
-    let segments: Vec<&str> = format.split("{}").collect();
+    let mut s = String::with_capacity(format.len());
+    let mut insertions = Vec::with_capacity(input.len());
+    let mut offset = 0;
+    while let Some(j) = format[offset..].find("{}") {
+        s.push_str(&format[offset..][..j]);
+        insertions.push(s.len());
+        offset += j + 2;
+    }
+    s.push_str(&format[offset..]);
 
     polars_ensure!(
-        segments.len() - 1 == args.len(),
+        insertions.len() == input.len(),
         ShapeMismatch: "number of placeholders should equal the number of arguments"
     );
 
-    let mut exprs: Vec<Expr> = Vec::new();
-
-    for (i, s) in segments.iter().enumerate() {
-        if i > 0 {
-            if let Some(arg) = args.pop_front() {
-                exprs.push(arg);
-            }
+    Ok(Expr::Function {
+        input,
+        function: StringFunction::Format {
+            format: s.into(),
+            insertions: insertions.into(),
         }
-
-        if !s.is_empty() {
-            exprs.push(lit(s.to_string()))
-        }
-    }
-
-    Ok(concat_str(exprs, "", false))
+        .into(),
+    })
 }
 
 /// Concat lists entries.
@@ -61,11 +55,6 @@ pub fn concat_list<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> PolarsResult
     Ok(Expr::Function {
         input: s,
         function: FunctionExpr::ListExpr(ListFunction::Concat),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::ElementWise,
-            flags: FunctionFlags::default() | FunctionFlags::INPUT_WILDCARD_EXPANSION,
-            ..Default::default()
-        },
     })
 }
 
@@ -77,11 +66,6 @@ pub fn concat_arr(input: Vec<Expr>) -> PolarsResult<Expr> {
         Ok(Expr::Function {
             input,
             function: FunctionExpr::ArrayExpr(ArrayFunction::Concat),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ElementWise,
-                flags: FunctionFlags::default() | FunctionFlags::INPUT_WILDCARD_EXPANSION,
-                ..Default::default()
-            },
         })
     })
 }
@@ -92,15 +76,5 @@ pub fn concat_expr<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
 ) -> PolarsResult<Expr> {
     let s: Vec<_> = s.as_ref().iter().map(|e| e.clone().into()).collect();
     polars_ensure!(!s.is_empty(), ComputeError: "`concat_expr` needs one or more expressions");
-
-    Ok(Expr::Function {
-        input: s,
-        function: FunctionExpr::ConcatExpr(rechunk),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::ElementWise,
-            flags: FunctionFlags::default() | FunctionFlags::INPUT_WILDCARD_EXPANSION,
-            cast_to_supertypes: Some(Default::default()),
-            ..Default::default()
-        },
-    })
+    Ok(Expr::n_ary(FunctionExpr::ConcatExpr(rechunk), s))
 }

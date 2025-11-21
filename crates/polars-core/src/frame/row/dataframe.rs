@@ -2,7 +2,7 @@ use super::*;
 
 impl DataFrame {
     /// Get a row from a [`DataFrame`]. Use of this is discouraged as it will likely be slow.
-    pub fn get_row(&self, idx: usize) -> PolarsResult<Row> {
+    pub fn get_row(&self, idx: usize) -> PolarsResult<Row<'_>> {
         let values = self
             .materialized_column_iter()
             .map(|s| s.get(idx))
