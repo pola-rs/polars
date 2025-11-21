@@ -170,7 +170,7 @@ fn test_lead_lag_without_partition_by() {
         } else {
             ("LEAD", -shift)
         };
-        
+
         let exprs = [
             col("a"),
             col("b"),
@@ -185,9 +185,7 @@ fn test_lead_lag_without_partition_by() {
                 .alias("a_shifted"),
         ];
 
-        let sql_expr = format!(
-            "a, b, {sql_func}(a, {shift_value}) OVER (ORDER BY a) as a_shifted"
-        );
+        let sql_expr = format!("a, b, {sql_func}(a, {shift_value}) OVER (ORDER BY a) as a_shifted");
         let (expected, actual) = create_expected(&exprs, &sql_expr);
 
         assert_eq!(expected, actual, "shift: {shift}");
@@ -198,10 +196,7 @@ fn test_lead_lag_without_partition_by() {
 fn test_lead_lag_without_over_clause() {
     // LAG/LEAD without OVER clause should raise an error
     for func in ["LAG", "LEAD"] {
-        ensure_error(
-            &format!("a, b, {func}(b) as c"),
-            "requires an OVER clause",
-        );
+        ensure_error(&format!("a, b, {func}(b) as c"), "requires an OVER clause");
         ensure_error(
             &format!("a, b, {func}(b, 1) as c"),
             "requires an OVER clause",
