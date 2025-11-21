@@ -2124,6 +2124,36 @@ def test_read_csv_invalid_schema_overrides_length() -> None:
         pl.read_csv(f, schema_overrides=[pl.Int64, pl.String, pl.Boolean])
 
 
+def test_schema_overrides_dict_with_nonexistent_columns() -> None:
+    """Test for issue #20903: schema_overrides should work consistently.
+
+    When schema_overrides is a dict with the same length as the number of columns
+    but contains non-existent column names, it should still work by name (not position).
+    Currently this fails because Polars incorrectly applies the overrides positionally
+    when the dict length matches the column count.
+    """
+    csv = textwrap.dedent(
+        """\
+        a,b
+        1,hi
+        """
+    )
+
+    # This should work: override 'a' to Int64, 'c' doesn't exist so should be ignored
+    f = io.StringIO(csv)
+    df = pl.read_csv(f, schema_overrides={"a": pl.Int64, "c": pl.Int64})
+
+    # Expected: column 'a' is Int64, column 'b' is inferred as String
+    assert df.schema == {"a": pl.Int64, "b": pl.String}
+    assert df.to_dict(as_series=False) == {"a": [1], "b": ["hi"]}
+
+    # Sanity check: this works when we have a different number of overrides
+    f = io.StringIO(csv)
+    df2 = pl.read_csv(f, schema_overrides={"a": pl.Int64, "c": pl.Int64, "d": pl.Int64})
+    assert df2.schema == {"a": pl.Int64, "b": pl.String}
+    assert df2.to_dict(as_series=False) == {"a": [1], "b": ["hi"]}
+
+
 @pytest.mark.parametrize("columns", [["b"], "b"])
 def test_read_csv_single_column(columns: list[str] | str) -> None:
     csv = textwrap.dedent(
