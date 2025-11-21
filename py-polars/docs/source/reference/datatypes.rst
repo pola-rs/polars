@@ -69,7 +69,6 @@ Other
     :nosignatures:
 
     BaseExtension
-        :private-members: +_string_repr
     Binary
     Boolean
     Extension
