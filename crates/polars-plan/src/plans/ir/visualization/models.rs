@@ -87,6 +87,7 @@ pub enum IRNodeProperties {
         num_inputs: u64,
         schema_names: Vec<PlSmallStr>,
         parallel: bool,
+        strict: bool,
     },
     HStack {
         exprs: Vec<PlSmallStr>,

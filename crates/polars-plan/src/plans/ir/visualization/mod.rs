@@ -260,12 +260,13 @@ impl IRVisualizationDataGenerator<'_> {
             IR::HConcat {
                 inputs,
                 schema,
-                options: HConcatOptions { parallel },
+                options: HConcatOptions { parallel, strict },
             } => {
                 let properties = IRNodeProperties::HConcat {
                     num_inputs: inputs.len().try_into().unwrap(),
                     schema_names: schema.iter_names_cloned().collect(),
                     parallel: *parallel,
+                    strict: *strict,
                 };
 
                 IRNodeInfo {
