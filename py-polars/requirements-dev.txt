@@ -30,7 +30,6 @@ adbc-driver-manager; platform_system != 'Windows'
 adbc-driver-sqlite; platform_system != 'Windows'
 aiosqlite
 connectorx
-duckdb
 kuzu
 # Cloud
 azure-identity

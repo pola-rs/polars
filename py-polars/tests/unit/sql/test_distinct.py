@@ -12,7 +12,7 @@ def test_distinct_basic_single_column(df_distinct: pl.DataFrame) -> None:
             SELECT DISTINCT category
             FROM self ORDER BY category NULLS FIRST
         """,
-        compare_with=["sqlite", "duckdb"],
+        compare_with=["sqlite"],
         expected={"category": [None, "A", "B", "C"]},
     )
 
@@ -25,7 +25,7 @@ def test_distinct_basic_multiple_columns(df_distinct: pl.DataFrame) -> None:
             SELECT DISTINCT category, subcategory
             FROM self ORDER BY category NULLS FIRST, subcategory
         """,
-        compare_with=["sqlite", "duckdb"],
+        compare_with=["sqlite"],
         expected={
             "category": [None, None, "A", "B", "B", "C", "C"],
             "subcategory": ["x", "y", "x", "y", "z", "x", "y"],
@@ -41,7 +41,7 @@ def test_distinct_basic_all_columns(df_distinct: pl.DataFrame) -> None:
             SELECT DISTINCT * FROM self
             ORDER BY category NULLS FIRST, subcategory, value, status, score
         """,
-        compare_with=["sqlite", "duckdb"],
+        compare_with=["sqlite"],
         expected={
             "category": [None, None, "A", "A", "B", "B", "B", "C", "C"],
             "subcategory": ["x", "y", "x", "x", "y", "y", "z", "x", "y"],
@@ -74,7 +74,7 @@ def test_distinct_with_expressions(df_distinct: pl.DataFrame) -> None:
             WHERE category IS NOT NULL
             ORDER BY category, doubled_value
         """,
-        compare_with=["sqlite", "duckdb"],
+        compare_with=["sqlite"],
         expected={
             "category": ["A", "B", "B", "C", "C"],
             "doubled_value": [200, 400, 600, 800, 1000],
@@ -100,7 +100,7 @@ def test_distinct_with_full_outer_join(df_distinct: pl.DataFrame) -> None:
             FULL JOIN extended e USING (category)
             ORDER BY category
         """,
-        compare_with=["sqlite", "duckdb"],
+        compare_with=["sqlite"],
         expected={
             "category": ["A", "B", "C", "D", "E"],
             "extra_info": ["info_a", None, None, "info_d", "info_e"],
@@ -123,7 +123,7 @@ def test_distinct_with_group_by(df_distinct: pl.DataFrame) -> None:
             GROUP BY category
             ORDER BY category
         """,
-        compare_with=["sqlite", "duckdb"],
+        compare_with=["sqlite"],
         expected={
             "category": ["A", "B", "C"],
             "distinct_subcats": [1, 2, 2],
@@ -146,7 +146,7 @@ def test_distinct_with_group_by(df_distinct: pl.DataFrame) -> None:
             WHERE distinct_categories > 1
             ORDER BY subcategory
         """,
-        compare_with=["sqlite", "duckdb"],
+        compare_with=["sqlite"],
         expected={
             "subcategory": ["x", "y"],
             "distinct_categories": [2, 2],
@@ -185,7 +185,7 @@ def test_distinct_with_join(df_distinct: pl.DataFrame) -> None:
             INNER JOIN status_info s ON d.status = s.status
             ORDER BY d.category, d.status
         """,
-        compare_with=["sqlite", "duckdb"],
+        compare_with=["sqlite"],
         expected={
             "category": ["A", "B", "B", "C", "C"],
             "category_name": ["Alpha", "Beta", "Beta", "Gamma", "Gamma"],
@@ -213,7 +213,7 @@ def test_distinct_with_left_join_nulls(df_distinct: pl.DataFrame) -> None:
             LEFT JOIN lookup l ON d.category = l.category
             ORDER BY d.category NULLS FIRST, l.region
         """,
-        compare_with=["sqlite", "duckdb"],
+        compare_with=["sqlite"],
         expected={
             "category": [None, "A", "B", "C"],
             "region": [None, "North", "South", None],
@@ -229,7 +229,7 @@ def test_distinct_with_nulls_handling(df_distinct: pl.DataFrame) -> None:
             SELECT DISTINCT category, status
             FROM self ORDER BY category NULLS FIRST, status
         """,
-        compare_with=["sqlite", "duckdb"],
+        compare_with=["sqlite"],
         expected={
             "category": [None, None, "A", "B", "B", "C", "C"],
             "status": [
@@ -255,7 +255,7 @@ def test_distinct_with_where_filter(df_distinct: pl.DataFrame) -> None:
             WHERE value >= 200 AND category IS NOT NULL
             ORDER BY category, status
           """,
-        compare_with=["sqlite", "duckdb"],
+        compare_with=["sqlite"],
         expected={
             "category": ["B", "B", "C", "C"],
             "status": ["active", "inactive", "active", "inactive"],
