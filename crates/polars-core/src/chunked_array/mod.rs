@@ -591,10 +591,12 @@ where
     /// Panics if the [`ChunkedArray`] is empty.
     #[inline]
     pub fn last(&self) -> Option<T::Physical<'_>> {
-        let arr = self.downcast_iter().rev().find(|arr| !arr.is_empty()).unwrap();
-        unsafe {
-            arr.get_unchecked(arr.len() - 1)
-        }
+        let arr = self
+            .downcast_iter()
+            .rev()
+            .find(|arr| !arr.is_empty())
+            .unwrap();
+        unsafe { arr.get_unchecked(arr.len() - 1) }
     }
 
     pub fn set_validity(&mut self, validity: &Bitmap) {
