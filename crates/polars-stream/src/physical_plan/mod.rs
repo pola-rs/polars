@@ -96,7 +96,11 @@ impl PhysStream {
 
 /// Behaviour when handling multiple DataFrames with different heights.
 
-#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Copy)]
+#[derive(Clone, Debug, Copy)]
+#[cfg_attr(
+    feature = "physical_plan_visualization",
+    derive(serde::Serialize, serde::Deserialize)
+)]
 #[cfg_attr(
     feature = "physical_plan_visualization_schema",
     derive(schemars::JsonSchema)
