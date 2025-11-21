@@ -1,5 +1,6 @@
 use std::num::NonZeroUsize;
 
+use crate::physical_plan::ExtendBehavior;
 use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_ops::frame::MaintainOrderJoin;
 use polars_ops::prelude::{JoinCoalesce, JoinValidation};
@@ -267,7 +268,7 @@ pub enum PhysNodeProperties {
     },
     Zip {
         num_inputs: u64,
-        null_extend: bool,
+        extend_behavior: ExtendBehavior,
     },
     //
     // Feature gated

@@ -38,6 +38,7 @@ use crate::nodes::io_sources::multi_scan::components::projection::builder::Proje
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::physical_plan::lower_expr::{ExprCache, build_select_stream, lower_exprs};
 use crate::physical_plan::lower_group_by::build_group_by_stream;
+use crate::physical_plan::ExtendBehavior;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
 /// Creates a new PhysStream which outputs a slice of the input stream.
@@ -656,7 +657,11 @@ pub fn lower_ir(
             schema: _,
             options,
         } => {
-            let null_extend = !options.strict;
+            let extend_behavior = if options.strict {
+                ExtendBehavior::Raise
+            } else {
+                ExtendBehavior::FillNulls
+            };
             let inputs = inputs
                 .clone() // Needed to borrow ir_arena mutably.
                 .into_iter()
@@ -664,7 +669,7 @@ pub fn lower_ir(
                 .collect::<Result<_, _>>()?;
             PhysNodeKind::Zip {
                 inputs,
-                null_extend,
+                extend_behavior,
             }
         },
 

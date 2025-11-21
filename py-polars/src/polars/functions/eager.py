@@ -318,6 +318,7 @@ def union(
     items: Iterable[PolarsType],
     *,
     how: ConcatMethod = "vertical",
+    strict: bool = False,
 ) -> PolarsType:
     """
     Combine multiple DataFrames, LazyFrames, or Series into a single object.
@@ -350,6 +351,8 @@ def union(
           join columns are automatically coalesced, but other column collisions
           will raise an error (if you need more control over this you should use
           a suitable `join` method directly).
+    strict
+        When how=`horizontal`, require all DataFrames to be the same height
 
     Examples
     --------
@@ -536,7 +539,7 @@ def union(
                 )
             ).collect(optimizations=QueryOptFlags._eager())
         elif how == "horizontal":
-            out = wrap_df(plr.concat_df_horizontal(elems))
+            out = wrap_df(plr.concat_df_horizontal(elems, strict=strict))
         else:
             allowed = ", ".join(repr(m) for m in get_args(ConcatMethod))
             msg = f"DataFrame `how` must be one of {{{allowed}}}, got {how!r}"
@@ -568,6 +571,7 @@ def union(
                 plr.concat_lf_horizontal(
                     elems,
                     parallel=True,
+                    strict=strict,
                 )
             )
         else:

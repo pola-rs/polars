@@ -24,6 +24,7 @@ use super::fmt::fmt_exprs;
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream, StreamingLowerIRContext};
 use crate::physical_plan::lower_group_by::build_group_by_stream;
 use crate::physical_plan::lower_ir::{build_filter_stream, build_row_idx_stream};
+use crate::physical_plan::ExtendBehavior;
 
 type ExprNodeKey = Node;
 
@@ -493,7 +494,7 @@ fn simplify_input_streams(
         for input_stream in input_streams {
             if let PhysNodeKind::Zip {
                 inputs,
-                null_extend: false,
+                extend_behavior: ExtendBehavior::Broadcast | ExtendBehavior::Raise,
             } = &ctx.phys_sm[input_stream.node].kind
             {
                 flattened_input_streams.extend(inputs);
@@ -2049,7 +2050,7 @@ fn lower_exprs_with_ctx(
         .collect();
     let zip_kind = PhysNodeKind::Zip {
         inputs: zip_inputs,
-        null_extend: false,
+        extend_behavior: ExtendBehavior::Broadcast,
     };
     let zip_node = ctx
         .phys_sm
