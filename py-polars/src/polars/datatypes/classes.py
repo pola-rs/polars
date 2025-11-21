@@ -868,6 +868,7 @@ class Categorical(DataType):
         if isinstance(categories, str):
             if categories == "physical" or categories == "lexical":
                 from polars._utils.deprecation import issue_deprecation_warning
+
                 msg = (
                     "the ordering parameter on Categorical is deprecated. The ordering is now always lexical."
                     "\n\nIf you meant to use a Categories named 'physical' or 'lexical', pass it using pl.Categories('physical') or pl.Categories('lexical')."
@@ -875,9 +876,11 @@ class Categorical(DataType):
                 issue_deprecation_warning(msg, version="1.32.0")
                 categories = Categories()
             else:
-                categories = Categories(name = categories)
+                categories = Categories(name=categories)
 
         if ordering is not None:
+            from polars._utils.deprecation import issue_deprecation_warning
+
             issue_deprecation_warning(
                 "the ordering parameter on Categorical is deprecated. The ordering is now always lexical.",
                 version="1.32.0",
