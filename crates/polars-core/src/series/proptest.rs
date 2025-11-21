@@ -74,7 +74,7 @@ impl SeriesArbitrarySelection {
 pub struct SeriesArbitraryOptions {
     pub allowed_dtypes: SeriesArbitrarySelection,
     pub max_nesting_level: usize,
-    pub series_length_range: RangeInclusive<usize>,
+    pub series_length: usize,
     pub categories_range: RangeInclusive<usize>,
     pub struct_fields_range: RangeInclusive<usize>,
 }
@@ -84,8 +84,8 @@ impl Default for SeriesArbitraryOptions {
         Self {
             allowed_dtypes: SeriesArbitrarySelection::all(),
             max_nesting_level: 3,
-            series_length_range: 0..=5,
-            categories_range: 0..=3,
+            series_length: 5,
+            categories_range: 1..=3,
             struct_fields_range: 1..=3,
         }
     }
@@ -111,70 +111,50 @@ pub fn series_strategy(
             S::from_bits_retain(1 << nth_set_bit_u32(options.allowed_dtypes.bits(), i).unwrap());
 
         match selection {
-            _ if selection == S::BOOLEAN => {
-                series_boolean_strategy(options.series_length_range.clone()).boxed()
-            },
-            _ if selection == S::UINT => {
-                series_uint_strategy(options.series_length_range.clone()).boxed()
-            },
-            _ if selection == S::INT => {
-                series_int_strategy(options.series_length_range.clone()).boxed()
-            },
-            _ if selection == S::FLOAT => {
-                series_float_strategy(options.series_length_range.clone()).boxed()
-            },
-            _ if selection == S::STRING => {
-                series_string_strategy(options.series_length_range.clone()).boxed()
-            },
-            _ if selection == S::BINARY => {
-                series_binary_strategy(options.series_length_range.clone()).boxed()
-            },
+            _ if selection == S::BOOLEAN => series_boolean_strategy(options.series_length).boxed(),
+            _ if selection == S::UINT => series_uint_strategy(options.series_length).boxed(),
+            _ if selection == S::INT => series_int_strategy(options.series_length).boxed(),
+            _ if selection == S::FLOAT => series_float_strategy(options.series_length).boxed(),
+            _ if selection == S::STRING => series_string_strategy(options.series_length).boxed(),
+            _ if selection == S::BINARY => series_binary_strategy(options.series_length).boxed(),
             #[cfg(feature = "dtype-time")]
-            _ if selection == S::TIME => {
-                series_time_strategy(options.series_length_range.clone()).boxed()
-            },
+            _ if selection == S::TIME => series_time_strategy(options.series_length).boxed(),
             #[cfg(feature = "dtype-datetime")]
             _ if selection == S::DATETIME => {
-                series_datetime_strategy(options.series_length_range.clone()).boxed()
+                series_datetime_strategy(options.series_length).boxed()
             },
             #[cfg(feature = "dtype-date")]
-            _ if selection == S::DATE => {
-                series_date_strategy(options.series_length_range.clone()).boxed()
-            },
+            _ if selection == S::DATE => series_date_strategy(options.series_length).boxed(),
             #[cfg(feature = "dtype-duration")]
             _ if selection == S::DURATION => {
-                series_duration_strategy(options.series_length_range.clone()).boxed()
+                series_duration_strategy(options.series_length).boxed()
             },
             #[cfg(feature = "dtype-decimal")]
-            _ if selection == S::DECIMAL => {
-                series_decimal_strategy(options.series_length_range.clone()).boxed()
+            _ if selection == S::DECIMAL => series_decimal_strategy(options.series_length).boxed(),
+            #[cfg(feature = "dtype-categorical")]
+            _ if selection == S::CATEGORICAL => {
+                series_categorical_strategy(options.series_length, options.categories_range.clone())
+                    .boxed()
             },
             #[cfg(feature = "dtype-categorical")]
-            _ if selection == S::CATEGORICAL => series_categorical_strategy(
-                options.series_length_range.clone(),
-                options.categories_range.clone(),
-            )
-            .boxed(),
-            #[cfg(feature = "dtype-categorical")]
-            _ if selection == S::ENUM => series_enum_strategy(
-                options.series_length_range.clone(),
-                options.categories_range.clone(),
-            )
-            .boxed(),
+            _ if selection == S::ENUM => {
+                series_enum_strategy(options.series_length, options.categories_range.clone())
+                    .boxed()
+            },
             _ if selection == S::LIST => series_list_strategy(
                 series_strategy(options.clone(), nesting_level + 1),
-                options.series_length_range.clone(),
+                options.series_length,
             )
             .boxed(),
             #[cfg(feature = "dtype-array")]
             _ if selection == S::ARRAY => series_array_strategy(
                 series_strategy(options.clone(), nesting_level + 1),
-                options.series_length_range.clone(),
+                options.series_length,
             )
             .boxed(),
             #[cfg(feature = "dtype-struct")]
             _ if selection == S::STRUCT => series_struct_strategy(
-                series_strategy(options.clone(), nesting_level + 1),
+                series_strategy(options.clone(), nesting_level + 1).boxed(),
                 options.struct_fields_range.clone(),
             )
             .boxed(),
@@ -183,79 +163,65 @@ pub fn series_strategy(
     })
 }
 
-fn series_boolean_strategy(
-    series_length_range: RangeInclusive<usize>,
-) -> impl Strategy<Value = Series> {
-    prop::collection::vec(any::<bool>(), series_length_range)
+fn series_boolean_strategy(series_length: usize) -> impl Strategy<Value = Series> {
+    prop::collection::vec(any::<bool>(), series_length)
         .prop_map(|bools| Series::new(next_column_name().into(), bools))
 }
 
-fn series_uint_strategy(
-    series_length_range: RangeInclusive<usize>,
-) -> impl Strategy<Value = Series> {
+fn series_uint_strategy(series_length: usize) -> impl Strategy<Value = Series> {
     prop_oneof![
-        prop::collection::vec(any::<u8>(), series_length_range.clone())
+        prop::collection::vec(any::<u8>(), series_length)
             .prop_map(|uints| Series::new(next_column_name().into(), uints)),
-        prop::collection::vec(any::<u16>(), series_length_range.clone())
+        prop::collection::vec(any::<u16>(), series_length)
             .prop_map(|uints| Series::new(next_column_name().into(), uints)),
-        prop::collection::vec(any::<u32>(), series_length_range.clone())
+        prop::collection::vec(any::<u32>(), series_length)
             .prop_map(|uints| Series::new(next_column_name().into(), uints)),
-        prop::collection::vec(any::<u64>(), series_length_range.clone())
+        prop::collection::vec(any::<u64>(), series_length)
             .prop_map(|uints| Series::new(next_column_name().into(), uints)),
-        prop::collection::vec(any::<u128>(), series_length_range)
+        prop::collection::vec(any::<u128>(), series_length)
             .prop_map(|uints| Series::new(next_column_name().into(), uints)),
     ]
 }
 
-fn series_int_strategy(
-    series_length_range: RangeInclusive<usize>,
-) -> impl Strategy<Value = Series> {
+fn series_int_strategy(series_length: usize) -> impl Strategy<Value = Series> {
     prop_oneof![
-        prop::collection::vec(any::<i8>(), series_length_range.clone())
+        prop::collection::vec(any::<i8>(), series_length)
             .prop_map(|ints| Series::new(next_column_name().into(), ints)),
-        prop::collection::vec(any::<i16>(), series_length_range.clone())
+        prop::collection::vec(any::<i16>(), series_length)
             .prop_map(|ints| Series::new(next_column_name().into(), ints)),
-        prop::collection::vec(any::<i32>(), series_length_range.clone())
+        prop::collection::vec(any::<i32>(), series_length)
             .prop_map(|ints| Series::new(next_column_name().into(), ints)),
-        prop::collection::vec(any::<i64>(), series_length_range.clone())
+        prop::collection::vec(any::<i64>(), series_length)
             .prop_map(|ints| Series::new(next_column_name().into(), ints)),
-        prop::collection::vec(any::<i128>(), series_length_range)
+        prop::collection::vec(any::<i128>(), series_length)
             .prop_map(|ints| Series::new(next_column_name().into(), ints)),
     ]
 }
 
-fn series_float_strategy(
-    series_length_range: RangeInclusive<usize>,
-) -> impl Strategy<Value = Series> {
+fn series_float_strategy(series_length: usize) -> impl Strategy<Value = Series> {
     prop_oneof![
-        prop::collection::vec(any::<f32>(), series_length_range.clone())
+        prop::collection::vec(any::<f32>(), series_length)
             .prop_map(|floats| Series::new(next_column_name().into(), floats)),
-        prop::collection::vec(any::<f64>(), series_length_range)
+        prop::collection::vec(any::<f64>(), series_length)
             .prop_map(|floats| Series::new(next_column_name().into(), floats)),
     ]
 }
 
-fn series_string_strategy(
-    series_length_range: RangeInclusive<usize>,
-) -> impl Strategy<Value = Series> {
-    prop::collection::vec(any::<String>(), series_length_range)
+fn series_string_strategy(series_length: usize) -> impl Strategy<Value = Series> {
+    prop::collection::vec(any::<String>(), series_length)
         .prop_map(|strings| Series::new(next_column_name().into(), strings))
 }
 
-fn series_binary_strategy(
-    series_length_range: RangeInclusive<usize>,
-) -> impl Strategy<Value = Series> {
-    prop::collection::vec(any::<u8>(), series_length_range)
+fn series_binary_strategy(series_length: usize) -> impl Strategy<Value = Series> {
+    prop::collection::vec(any::<u8>(), series_length)
         .prop_map(|binaries| Series::new(next_column_name().into(), binaries))
 }
 
 #[cfg(feature = "dtype-time")]
-fn series_time_strategy(
-    series_length_range: RangeInclusive<usize>,
-) -> impl Strategy<Value = Series> {
+fn series_time_strategy(series_length: usize) -> impl Strategy<Value = Series> {
     prop::collection::vec(
         0i64..86_400_000_000_000i64, // Time range: 0 to just under 24 hours in nanoseconds
-        series_length_range,
+        series_length,
     )
     .prop_map(|times| {
         Int64Chunked::new(next_column_name().into(), &times)
@@ -265,12 +231,10 @@ fn series_time_strategy(
 }
 
 #[cfg(feature = "dtype-datetime")]
-fn series_datetime_strategy(
-    series_length_range: RangeInclusive<usize>,
-) -> impl Strategy<Value = Series> {
+fn series_datetime_strategy(series_length: usize) -> impl Strategy<Value = Series> {
     prop::collection::vec(
         0i64..i64::MAX, // Datetime range: 0 (1970-01-01) to i64::MAX in milliseconds since UNIX epoch
-        series_length_range,
+        series_length,
     )
     .prop_map(|datetimes| {
         Int64Chunked::new(next_column_name().into(), &datetimes)
@@ -280,12 +244,10 @@ fn series_datetime_strategy(
 }
 
 #[cfg(feature = "dtype-date")]
-fn series_date_strategy(
-    series_length_range: RangeInclusive<usize>,
-) -> impl Strategy<Value = Series> {
+fn series_date_strategy(series_length: usize) -> impl Strategy<Value = Series> {
     prop::collection::vec(
         0i32..50_000i32, // Date range: 0 (1970-01-01) to ~50,000 days (~137 years, roughly 1970-2107)
-        series_length_range,
+        series_length,
     )
     .prop_map(|dates| {
         Int32Chunked::new(next_column_name().into(), &dates)
@@ -295,12 +257,10 @@ fn series_date_strategy(
 }
 
 #[cfg(feature = "dtype-duration")]
-fn series_duration_strategy(
-    series_length_range: RangeInclusive<usize>,
-) -> impl Strategy<Value = Series> {
+fn series_duration_strategy(series_length: usize) -> impl Strategy<Value = Series> {
     prop::collection::vec(
         i64::MIN..i64::MAX, // Duration range: full i64 range in milliseconds (can be negative for time differences)
-        series_length_range,
+        series_length,
     )
     .prop_map(|durations| {
         Int64Chunked::new(next_column_name().into(), &durations)
@@ -310,10 +270,8 @@ fn series_duration_strategy(
 }
 
 #[cfg(feature = "dtype-decimal")]
-fn series_decimal_strategy(
-    series_length_range: RangeInclusive<usize>,
-) -> impl Strategy<Value = Series> {
-    prop::collection::vec(i128::MIN..i128::MAX, series_length_range).prop_map(|decimals| {
+fn series_decimal_strategy(series_length: usize) -> impl Strategy<Value = Series> {
+    prop::collection::vec(i128::MIN..i128::MAX, series_length).prop_map(|decimals| {
         Int128Chunked::new(next_column_name().into(), &decimals)
             .into_decimal_unchecked(38, 9) // precision = 38 (max for i128), scale = 9 (9 decimal places)
             .into_series()
@@ -322,7 +280,7 @@ fn series_decimal_strategy(
 
 #[cfg(feature = "dtype-categorical")]
 fn series_categorical_strategy(
-    series_length_range: RangeInclusive<usize>,
+    series_length: usize,
     categories_range: RangeInclusive<usize>,
 ) -> impl Strategy<Value = Series> {
     categories_range
@@ -330,10 +288,7 @@ fn series_categorical_strategy(
             let possible_categories: Vec<String> =
                 (0..n_categories).map(|i| format!("category{i}")).collect();
 
-            prop::collection::vec(
-                prop::sample::select(possible_categories),
-                series_length_range.clone(),
-            )
+            prop::collection::vec(prop::sample::select(possible_categories), series_length)
         })
         .prop_map(|categories| {
             // Using Categorical8Type (u8 backing) which supports up to 256 unique categories
@@ -352,7 +307,7 @@ fn series_categorical_strategy(
 
 #[cfg(feature = "dtype-categorical")]
 fn series_enum_strategy(
-    series_length_range: RangeInclusive<usize>,
+    series_length: usize,
     categories_range: RangeInclusive<usize>,
 ) -> impl Strategy<Value = Series> {
     categories_range
@@ -362,10 +317,7 @@ fn series_enum_strategy(
 
             (
                 Just(possible_categories.clone()),
-                prop::collection::vec(
-                    prop::sample::select(possible_categories),
-                    series_length_range.clone(),
-                ),
+                prop::collection::vec(prop::sample::select(possible_categories), series_length),
             )
         })
         .prop_map(|(possible_categories, sampled_categories)| {
@@ -389,76 +341,70 @@ fn series_enum_strategy(
 
 fn series_list_strategy(
     inner: impl Strategy<Value = Series>,
-    series_length_range: RangeInclusive<usize>,
+    series_length: usize,
 ) -> impl Strategy<Value = Series> {
-    inner.prop_flat_map(move |sample_series| {
-        series_length_range.clone().prop_map(move |num_lists| {
-            let mut builder = AnonymousListBuilder::new(
-                next_column_name().into(),
-                num_lists,
-                Some(sample_series.dtype().clone()),
-            );
+    inner.prop_map(move |sample_series| {
+        let mut builder = AnonymousListBuilder::new(
+            next_column_name().into(),
+            series_length,
+            Some(sample_series.dtype().clone()),
+        );
 
-            for _ in 0..num_lists {
-                builder.append_series(&sample_series).unwrap();
-            }
+        for _ in 0..series_length {
+            builder.append_series(&sample_series).unwrap();
+        }
 
-            builder.finish().into_series()
-        })
+        builder.finish().into_series()
     })
 }
 
 #[cfg(feature = "dtype-array")]
 fn series_array_strategy(
     inner: impl Strategy<Value = Series>,
-    series_length_range: RangeInclusive<usize>,
+    series_length: usize,
 ) -> impl Strategy<Value = Series> {
-    inner.prop_flat_map(move |sample_series| {
-        series_length_range.clone().prop_map(move |num_arrays| {
-            let width = sample_series.len();
+    inner.prop_map(move |sample_series| {
+        let width = sample_series.len();
 
-            let mut builder = AnonymousListBuilder::new(
-                next_column_name().into(),
-                num_arrays,
-                Some(sample_series.dtype().clone()),
-            );
+        let mut builder = AnonymousListBuilder::new(
+            next_column_name().into(),
+            series_length,
+            Some(sample_series.dtype().clone()),
+        );
 
-            for _ in 0..num_arrays {
-                builder.append_series(&sample_series).unwrap();
-            }
+        for _ in 0..series_length {
+            builder.append_series(&sample_series).unwrap();
+        }
 
-            let list_series = builder.finish().into_series();
+        let list_series = builder.finish().into_series();
 
-            list_series
-                .cast(&DataType::Array(
-                    Box::new(sample_series.dtype().clone()),
-                    width,
-                ))
-                .unwrap()
-        })
+        list_series
+            .cast(&DataType::Array(
+                Box::new(sample_series.dtype().clone()),
+                width,
+            ))
+            .unwrap()
     })
 }
 
 #[cfg(feature = "dtype-struct")]
 fn series_struct_strategy(
-    inner: impl Strategy<Value = Series>,
+    inner: BoxedStrategy<Series>,
     struct_fields_range: RangeInclusive<usize>,
 ) -> impl Strategy<Value = Series> {
-    inner.prop_flat_map(move |sample_series| {
-        struct_fields_range.clone().prop_map(move |num_fields| {
-            let length = sample_series.len();
+    struct_fields_range
+        .clone()
+        .prop_flat_map(move |num_fields| {
+            prop::collection::vec(inner.clone(), num_fields).prop_map(move |mut fields| {
+                let length = fields[0].len();
 
-            let fields: Vec<Series> = (0..num_fields)
-                .map(|i| {
-                    let mut field = sample_series.clone();
+                for (i, field) in fields.iter_mut().enumerate() {
                     field.rename(format!("field_{}", i).into());
-                    field
-                })
-                .collect();
+                }
 
-            StructChunked::from_series(next_column_name().into(), length, fields.iter())
-                .unwrap()
-                .into_series()
+                StructChunked::from_series(next_column_name().into(), length, fields.iter())
+                    .unwrap()
+                    .into_series()
+            })
         })
-    })
 }
