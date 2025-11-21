@@ -67,6 +67,7 @@ jobs:
           echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
           echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> $GITHUB_ENV
           echo "VENV=$GITHUB_WORKSPACE/.venv" >> $GITHUB_ENV
+          df -h
 
       - name: Install Python dependencies
         run: |
@@ -84,7 +85,9 @@ jobs:
 
       - name: Install Polars
         working-directory: py-polars
-        run: make build
+        run: |
+          make build
+          df -h
 
       - name: Set up Graphviz
         uses: ts-graphviz/setup-graphviz@v2
@@ -97,18 +100,20 @@ jobs:
       - name: Add .nojekyll
         if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
         working-directory: site
-        run: touch .nojekyll
+        run: |
+          touch .nojekyll
+          df -h
 
-      - name: Deploy docs
-        if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
-        uses: JamesIves/github-pages-deploy-action@v4
-        with:
-          folder: site
-          # docs/ and py-polars/ included for backwards compatibility
-          clean-exclude: |
-            api/python/
-            api/rust/
-            docs/python
-            docs/rust
-            py-polars/html
-          single-commit: true
+      # - name: Deploy docs
+      #   if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
+      #   uses: JamesIves/github-pages-deploy-action@v4
+      #   with:
+      #     folder: site
+      #     # docs/ and py-polars/ included for backwards compatibility
+      #     clean-exclude: |
+      #       api/python/
+      #       api/rust/
+      #       docs/python
+      #       docs/rust
+      #       py-polars/html
+      #     single-commit: true
