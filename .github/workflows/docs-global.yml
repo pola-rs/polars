@@ -100,9 +100,7 @@ jobs:
       - name: Add .nojekyll
         if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
         working-directory: site
-        run: |
-          touch .nojekyll
-          df -h
+        run: touch .nojekyll
 
       - name: Deploy docs
         if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
