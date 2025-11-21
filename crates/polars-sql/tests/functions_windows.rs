@@ -159,3 +159,72 @@ fn test_incorrect_shift() {
         );
     }
 }
+
+#[test]
+fn test_lead_lag_without_partition_by() {
+    // Test LAG/LEAD with ORDER BY but without PARTITION BY
+    // This should work correctly over the entire dataset
+    for shift in [-1, 1] {
+        let (sql_func, shift_value) = if shift > 0 {
+            ("LAG", shift)
+        } else {
+            ("LEAD", -shift)
+        };
+        
+        let exprs = [
+            col("a"),
+            col("b"),
+            col("a")
+                .shift(shift.into())
+                .over_with_options(
+                    None, // No partition by
+                    Some(([col("a")], SortOptions::new().with_order_descending(false))),
+                    Default::default(),
+                )
+                .unwrap()
+                .alias("a_shifted"),
+        ];
+
+        let sql_expr = format!(
+            "a, b, {sql_func}(a, {shift_value}) OVER (ORDER BY a) as a_shifted"
+        );
+        let (expected, actual) = create_expected(&exprs, &sql_expr);
+
+        assert_eq!(expected, actual, "shift: {shift}");
+    }
+}
+
+#[test]
+fn test_lead_lag_without_over_clause() {
+    // LAG/LEAD without OVER clause should raise an error
+    for func in ["LAG", "LEAD"] {
+        ensure_error(
+            &format!("a, b, {func}(b) as c"),
+            "requires an OVER clause",
+        );
+        ensure_error(
+            &format!("a, b, {func}(b, 1) as c"),
+            "requires an OVER clause",
+        );
+    }
+}
+
+#[test]
+fn test_lead_lag_without_order_by() {
+    // LAG/LEAD with OVER clause but without ORDER BY should raise an error
+    for func in ["LAG", "LEAD"] {
+        ensure_error(
+            &format!("a, b, {func}(b) OVER (PARTITION BY a) as c"),
+            "requires an ORDER BY",
+        );
+        ensure_error(
+            &format!("a, b, {func}(b, 1) OVER (PARTITION BY a) as c"),
+            "requires an ORDER BY",
+        );
+        // OVER clause with empty parentheses
+        ensure_error(
+            &format!("a, b, {func}(b) OVER () as c"),
+            "requires an ORDER BY",
+        );
+    }
+}

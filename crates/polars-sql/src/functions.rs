@@ -1742,6 +1742,18 @@ impl SQLFunctionVisitor<'_> {
     }
 
     fn visit_window_offset_function(&mut self, offset_multiplier: i64) -> PolarsResult<Expr> {
+        // LAG/LEAD require an OVER clause
+        if self.func.over.is_none() {
+            polars_bail!(SQLSyntax: "{} requires an OVER clause", self.func.name);
+        }
+
+        // LAG/LEAD require ORDER BY in the OVER clause
+        let window_type = self.func.over.as_ref().unwrap();
+        let window_spec = self.resolve_window_spec(window_type)?;
+        if window_spec.order_by.is_empty() {
+            polars_bail!(SQLSyntax: "{} requires an ORDER BY in the OVER clause", self.func.name);
+        }
+
         let args = extract_args(self.func)?;
 
         match args.as_slice() {
