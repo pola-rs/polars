@@ -580,19 +580,20 @@ where
         }
     }
 
+    /// # Panics
+    /// Panics if the [`ChunkedArray`] is empty.
     #[inline]
     pub fn first(&self) -> Option<T::Physical<'_>> {
-        unsafe {
-            let arr = self.downcast_get_unchecked(0);
-            arr.get_unchecked(0)
-        }
+        self.iter().next().unwrap()
     }
 
+    /// # Panics
+    /// Panics if the [`ChunkedArray`] is empty.
     #[inline]
     pub fn last(&self) -> Option<T::Physical<'_>> {
+        let arr = self.downcast_iter().rev().find(|arr| !arr.is_empty()).unwrap();
         unsafe {
-            let arr = self.downcast_get_unchecked(self.chunks.len().checked_sub(1)?);
-            arr.get_unchecked(arr.len().checked_sub(1)?)
+            arr.get_unchecked(arr.len() - 1)
         }
     }
 
