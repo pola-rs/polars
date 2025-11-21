@@ -1,11 +1,12 @@
 use std::num::NonZeroUsize;
 
-use crate::physical_plan::ExtendBehavior;
 use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_ops::frame::MaintainOrderJoin;
 use polars_ops::prelude::{JoinCoalesce, JoinValidation};
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
+
+use crate::physical_plan::ExtendBehavior;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 #[cfg_attr(

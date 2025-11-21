@@ -22,9 +22,9 @@ use slotmap::SlotMap;
 
 use super::fmt::fmt_exprs;
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream, StreamingLowerIRContext};
+use crate::physical_plan::ExtendBehavior;
 use crate::physical_plan::lower_group_by::build_group_by_stream;
 use crate::physical_plan::lower_ir::{build_filter_stream, build_row_idx_stream};
-use crate::physical_plan::ExtendBehavior;
 
 type ExprNodeKey = Node;
 

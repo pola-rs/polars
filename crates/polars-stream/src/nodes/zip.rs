@@ -8,9 +8,9 @@ use polars_error::polars_ensure;
 use polars_utils::itertools::Itertools;
 
 use super::compute_node_prelude::*;
-use crate::physical_plan::ExtendBehavior;
 use crate::DEFAULT_ZIP_HEAD_BUFFER_SIZE;
 use crate::morsel::SourceToken;
+use crate::physical_plan::ExtendBehavior;
 
 /// The head of an input stream.
 #[derive(Debug)]
@@ -183,7 +183,7 @@ impl ComputeNode for ZipNode {
                     !(at_least_one_non_broadcast_done && at_least_one_non_broadcast_nonempty),
                     ShapeMismatch: "zip node received non-equal length inputs"
                 );
-            }
+            },
             ExtendBehavior::Raise => {
                 if let Some(first_len) = self.input_heads.first().map(|h| h.total_len) {
                     let all_len_equal = self.input_heads.iter().all(|h| h.total_len == first_len);
@@ -192,8 +192,8 @@ impl ComputeNode for ZipNode {
                         ShapeMismatch: "zip node received non-equal length inputs"
                     );
                 }
-            }
-            _ => {}
+            },
+            _ => {},
         }
 
         let all_output_sent = all_done_or_broadcast && !all_broadcast;

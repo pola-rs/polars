@@ -11,9 +11,8 @@ use polars_utils::arena::Arena;
 use polars_utils::slice_enum::Slice;
 use slotmap::{Key, SecondaryMap, SlotMap};
 
-use crate::physical_plan::ExtendBehavior;
-
 use super::{PhysNode, PhysNodeKey, PhysNodeKind};
+use crate::physical_plan::ExtendBehavior;
 
 /// A style of a graph node.
 enum NodeStyle {
