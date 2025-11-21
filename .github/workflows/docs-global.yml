@@ -67,7 +67,6 @@ jobs:
           echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
           echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> $GITHUB_ENV
           echo "VENV=$GITHUB_WORKSPACE/.venv" >> $GITHUB_ENV
-          df -h
 
       - name: Install Python dependencies
         run: |
@@ -85,9 +84,7 @@ jobs:
 
       - name: Install Polars
         working-directory: py-polars
-        run: |
-          make build
-          df -h
+        run: make build
 
       - name: Set up Graphviz
         uses: ts-graphviz/setup-graphviz@v2
@@ -95,7 +92,9 @@ jobs:
       - name: Build documentation
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: mkdocs build
+        run: |
+          mkdocs build
+          cargo clean
 
       - name: Add .nojekyll
         if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
