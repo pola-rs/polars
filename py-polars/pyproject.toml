@@ -9,6 +9,8 @@ readme = "README.md"
 authors = [
   { name = "Ritchie Vink", email = "ritchie46@gmail.com" },
 ]
+# example: 1.35.0b1
+version = "1.35.1"
 license = { file = "LICENSE" }
 requires-python = ">=3.9"
 
