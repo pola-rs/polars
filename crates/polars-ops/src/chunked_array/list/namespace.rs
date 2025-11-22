@@ -1,10 +1,11 @@
 use std::borrow::Cow;
 use std::fmt::Write;
 
+use arrow::array::ValueSize;
 #[cfg(feature = "list_zip")]
 use arrow::array::builder::{ShareStrategy, make_builder};
 #[cfg(feature = "list_zip")]
-use arrow::array::{Array, StructArray, ValueSize};
+use arrow::array::{Array, StructArray};
 #[cfg(feature = "list_zip")]
 use arrow::bitmap::MutableBitmap;
 #[cfg(feature = "list_zip")]
