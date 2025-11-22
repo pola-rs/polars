@@ -59,6 +59,7 @@ String
 
     String
     Categorical
+    Categories
     Enum
     Utf8
 

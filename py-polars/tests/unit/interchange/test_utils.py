@@ -71,7 +71,7 @@ def test_dtype_to_polars_dtype_categorical(dtype: Dtype) -> None:
     "polars_dtype",
     [
         pl.Categorical,
-        pl.Categorical("lexical"),
+        pl.Categorical(),
         pl.Enum,
         pl.Enum(["a", "b"]),
     ],

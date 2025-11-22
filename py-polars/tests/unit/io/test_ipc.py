@@ -433,7 +433,7 @@ def test_categorical_lexical_sort_2732() -> None:
             "a": ["foo", "bar", "baz"],
             "b": [1, 3, 2],
         },
-        schema_overrides={"a": pl.Categorical("lexical")},
+        schema_overrides={"a": pl.Categorical()},
     )
     f = io.BytesIO()
     df.write_ipc(f)

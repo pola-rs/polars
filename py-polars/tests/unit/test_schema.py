@@ -109,7 +109,7 @@ def test_schema_python() -> None:
     input = {
         "foo": pl.Int8(),
         "bar": pl.String(),
-        "baz": pl.Categorical("lexical"),
+        "baz": pl.Categorical(),
         "ham": pl.Object(),
         "spam": pl.Struct({"time": pl.List(pl.Duration), "dist": pl.Float64}),
     }

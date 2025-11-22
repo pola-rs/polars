@@ -459,7 +459,7 @@ def test_predicate_push_down_categorical_17744(tmp_path: Path) -> None:
             "n": [1, 2, 3],
             "ccy": ["USD", "JPY", "EUR"],
         },
-        schema_overrides={"ccy": pl.Categorical("lexical")},
+        schema_overrides={"ccy": pl.Categorical()},
     )
     df.write_parquet(path)
     expect = df.head(1).with_columns(pl.col(pl.Categorical).cast(pl.String))

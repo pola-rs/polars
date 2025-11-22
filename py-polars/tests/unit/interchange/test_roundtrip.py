@@ -40,7 +40,7 @@ protocol_dtypes: list[PolarsDataType] = [
     pl.Datetime,
     # This is broken for empty dataframes
     # TODO: Enable lexically ordered categoricals
-    # pl.Categorical("lexical"),
+    # pl.Categorical(),
     # TODO: Add Enum
     # pl.Enum,
 ]

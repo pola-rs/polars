@@ -105,7 +105,7 @@ def test_unpivot_categorical() -> None:
         }
     )
     out = df.unpivot(["1", "2"], index="index")
-    assert out.dtypes == [pl.Int64, pl.String, pl.Categorical(ordering="lexical")]
+    assert out.dtypes == [pl.Int64, pl.String, pl.Categorical()]
     assert out.to_dict(as_series=False) == {
         "index": [0, 1, 0, 1],
         "variable": ["1", "1", "2", "2"],

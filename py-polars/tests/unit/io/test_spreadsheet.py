@@ -515,7 +515,7 @@ def test_read_mixed_dtype_columns(
         "Employee ID": pl.Utf8(),
         "Employee Name": pl.Utf8(),
         "Date": pl.Date(),
-        "Details": pl.Categorical("lexical"),
+        "Details": pl.Categorical(),
         "Asset ID": pl.Utf8(),
     }
     df = read_spreadsheet(
