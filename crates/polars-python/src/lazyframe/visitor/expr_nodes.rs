@@ -930,7 +930,13 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     #[cfg(feature = "find_many")]
                     IRStringFunction::ReplaceMany {
                         ascii_case_insensitive,
-                    } => (PyStringFunction::ReplaceMany, ascii_case_insensitive).into_py_any(py),
+                        leftmost,
+                    } => (
+                        PyStringFunction::ReplaceMany,
+                        ascii_case_insensitive,
+                        leftmost,
+                    )
+                        .into_py_any(py),
                     #[cfg(feature = "find_many")]
                     IRStringFunction::ExtractMany { .. } => {
                         return Err(PyNotImplementedError::new_err("extract_many"));

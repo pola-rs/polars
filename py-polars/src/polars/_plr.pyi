@@ -1847,16 +1847,30 @@ class PyExpr:
     def str_splitn(self, by: PyExpr, n: int) -> PyExpr: ...
     def str_to_decimal(self, scale: int) -> PyExpr: ...
     def str_contains_any(
-        self, patterns: PyExpr, ascii_case_insensitive: bool
+        self,
+        patterns: PyExpr,
+        ascii_case_insensitive: bool,
     ) -> PyExpr: ...
     def str_replace_many(
-        self, patterns: PyExpr, replace_with: PyExpr, ascii_case_insensitive: bool
+        self,
+        patterns: PyExpr,
+        replace_with: PyExpr,
+        ascii_case_insensitive: bool,
+        leftmost: bool,
     ) -> PyExpr: ...
     def str_extract_many(
-        self, patterns: PyExpr, ascii_case_insensitive: bool, overlapping: bool
+        self,
+        patterns: PyExpr,
+        ascii_case_insensitive: bool,
+        overlapping: bool,
+        leftmost: bool,
     ) -> PyExpr: ...
     def str_find_many(
-        self, patterns: PyExpr, ascii_case_insensitive: bool, overlapping: bool
+        self,
+        patterns: PyExpr,
+        ascii_case_insensitive: bool,
+        overlapping: bool,
+        leftmost: bool,
     ) -> PyExpr: ...
     def str_escape_regex(self) -> PyExpr: ...
     @staticmethod
