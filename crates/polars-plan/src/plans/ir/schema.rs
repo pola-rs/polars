@@ -22,7 +22,7 @@ impl IR {
             #[cfg(feature = "python")]
             PythonScan { .. } => "python_scan",
             Slice { .. } => "slice",
-            Filter { .. } => "selection",
+            Filter { .. } => "filter",
             DataFrameScan { .. } => "df",
             Select { .. } => "projection",
             Sort { .. } => "sort",
@@ -37,8 +37,9 @@ impl IR {
             ExtContext { .. } => "ext_context",
             Sink { payload, .. } => match payload {
                 SinkTypeIR::Memory => "sink (memory)",
+                SinkTypeIR::Callback(..) => "sink (callback)",
                 SinkTypeIR::File { .. } => "sink (file)",
-                SinkTypeIR::Partition { .. } => "sink (partition)",
+                SinkTypeIR::Partitioned { .. } => "sink (partition)",
             },
             SinkMultiple { .. } => "sink multiple",
             SimpleProjection { .. } => "simple_projection",

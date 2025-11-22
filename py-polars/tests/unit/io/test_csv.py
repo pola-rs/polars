@@ -142,9 +142,7 @@ def test_csv_null_values() -> None:
     # note: after reading, the buffer position in StringIO will have been
     # advanced; reading again will raise NoDataError, so we provide a hint
     # in the error string about this, suggesting "seek(0)" as a possible fix...
-    with pytest.raises(
-        NoDataError, match=r"empty data .* position = 20; try seek\(0\)"
-    ):
+    with pytest.raises(NoDataError, match=r"empty"):
         pl.read_csv(f)
 
     # ... unless we explicitly tell read_csv not to raise an
@@ -260,12 +258,12 @@ def test_csv_missing_utf8_is_empty_string() -> None:
 
 def test_csv_int_types() -> None:
     f = io.StringIO(
-        "u8,i8,u16,i16,u32,i32,u64,i64,i128\n"
-        "0,0,0,0,0,0,0,0,0\n"
-        "0,-128,0,-32768,0,-2147483648,0,-9223372036854775808,-170141183460469231731687303715884105728\n"
-        "255,127,65535,32767,4294967295,2147483647,18446744073709551615,9223372036854775807,170141183460469231731687303715884105727\n"
-        "01,01,01,01,01,01,01,01,01\n"
-        "01,-01,01,-01,01,-01,01,-01,01\n"
+        "u8,i8,u16,i16,u32,i32,u64,i64,u128,i128\n"
+        "0,0,0,0,0,0,0,0,0,0\n"
+        "0,-128,0,-32768,0,-2147483648,0,-9223372036854775808,0,-170141183460469231731687303715884105728\n"
+        "255,127,65535,32767,4294967295,2147483647,18446744073709551615,9223372036854775807,340282366920938463463374607431768211455,170141183460469231731687303715884105727\n"
+        "01,01,01,01,01,01,01,01,01,01\n"
+        "01,-01,01,-01,01,-01,01,-01,01,-01\n"
     )
     df = pl.read_csv(
         f,
@@ -278,6 +276,7 @@ def test_csv_int_types() -> None:
             "i32": pl.Int32,
             "u64": pl.UInt64,
             "i64": pl.Int64,
+            "u128": pl.UInt128,
             "i128": pl.Int128,
         },
     )
@@ -297,13 +296,23 @@ def test_csv_int_types() -> None:
                     [0, -9223372036854775808, 9223372036854775807, 1, -1],
                     dtype=pl.Int64,
                 ),
+                "u128": pl.Series(
+                    [
+                        0,
+                        0,
+                        340282366920938463463374607431768211455,
+                        1,
+                        1,
+                    ],
+                    dtype=pl.UInt128,
+                ),
                 "i128": pl.Series(
                     [
                         0,
                         -170141183460469231731687303715884105728,
                         170141183460469231731687303715884105727,
                         1,
-                        1,
+                        -1,
                     ],
                     dtype=pl.Int128,
                 ),
@@ -456,6 +465,7 @@ def test_read_csv_columns_argument(
     assert df.columns == col_out
 
 
+@pytest.mark.may_fail_cloud  # read->scan_csv dispatch
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_read_csv_buffer_ownership() -> None:
     bts = b"\xf0\x9f\x98\x80,5.55,333\n\xf0\x9f\x98\x86,-5.0,666"
@@ -620,6 +630,16 @@ def test_compressed_csv(io_files_path: Path, monkeypatch: pytest.MonkeyPatch) ->
         {"a": [1, 2, 3], "b": ["a", "b", "c"], "c": [1.0, 2.0, 3.0]}
     )
     assert_frame_equal(out, expected)
+
+    # different levels of zlib create different magic strings,
+    # try to cover them all.
+    for level in range(10):
+        csv_bytes = zlib.compress(csv.encode(), level=level)
+        out = pl.read_csv(csv_bytes)
+        expected = pl.DataFrame(
+            {"a": [1, 2, 3], "b": ["a", "b", "c"], "c": [1.0, 2.0, 3.0]}
+        )
+        assert_frame_equal(out, expected)
 
     # zstd compression
     csv_bytes = zstandard.compress(csv.encode())
@@ -2097,11 +2117,41 @@ def test_read_csv_invalid_schema_overrides_length() -> None:
         err = TypeError
         match = "expected 'schema_overrides' dict, found 'list'"
     else:
-        err = InvalidOperationError
+        err = InvalidOperationError  # type: ignore[assignment]
         match = "The number of schema overrides must be less than or equal to the number of fields"
 
     with pytest.raises(err, match=match):
         pl.read_csv(f, schema_overrides=[pl.Int64, pl.String, pl.Boolean])
+
+
+def test_schema_overrides_dict_with_nonexistent_columns() -> None:
+    """Test for issue #20903: schema_overrides should work consistently.
+
+    When schema_overrides is a dict with the same length as the number of columns
+    but contains non-existent column names, it should still work by name (not position).
+    Currently this fails because Polars incorrectly applies the overrides positionally
+    when the dict length matches the column count.
+    """
+    csv = textwrap.dedent(
+        """\
+        a,b
+        1,hi
+        """
+    )
+
+    # This should work: override 'a' to Int64, 'c' doesn't exist so should be ignored
+    f = io.StringIO(csv)
+    df = pl.read_csv(f, schema_overrides={"a": pl.Int64, "c": pl.Int64})
+
+    # Expected: column 'a' is Int64, column 'b' is inferred as String
+    assert df.schema == {"a": pl.Int64, "b": pl.String}
+    assert df.to_dict(as_series=False) == {"a": [1], "b": ["hi"]}
+
+    # Sanity check: this works when we have a different number of overrides
+    f = io.StringIO(csv)
+    df2 = pl.read_csv(f, schema_overrides={"a": pl.Int64, "c": pl.Int64, "d": pl.Int64})
+    assert df2.schema == {"a": pl.Int64, "b": pl.String}
+    assert df2.to_dict(as_series=False) == {"a": [1], "b": ["hi"]}
 
 
 @pytest.mark.parametrize("columns", [["b"], "b"])
@@ -2230,11 +2280,30 @@ def test_skip_rows_after_header_pyarrow(use_pyarrow: bool) -> None:
     assert_frame_equal(df, expected)
 
 
-def test_csv_float_decimal() -> None:
+def test_read_csv_float_type_decimal_comma() -> None:
     floats = b"a;b\n12,239;1,233\n13,908;87,32"
     read = pl.read_csv(floats, decimal_comma=True, separator=";")
     assert read.dtypes == [pl.Float64] * 2
     assert read.to_dict(as_series=False) == {"a": [12.239, 13.908], "b": [1.233, 87.32]}
+
+
+def test_read_csv_decimal_type_decimal_comma_24414() -> None:
+    schema = pl.Schema({"a": pl.Decimal(scale=3), "b": pl.Decimal(scale=2)})
+
+    csv_dot = b"a,b\n12.239,1.233\n13.908,87.32"
+    out_dot = pl.read_csv(csv_dot, schema=schema)
+
+    csv = b"a;b\n12,239;1,233\n13,908;87,32"
+    out = pl.read_csv(csv, decimal_comma=True, separator=";", schema=schema)
+    assert_frame_equal(out_dot, out)
+
+    csv = b"a;b\n 12,239;1,233\n   13,908;87,32"
+    out = pl.read_csv(csv, decimal_comma=True, separator=";", schema=schema)
+    assert_frame_equal(out_dot, out)
+
+    csv = b'a,b\n"12,239","1,233"\n"13,908","87,32"'
+    out = pl.read_csv(csv, decimal_comma=True, schema=schema)
+    assert_frame_equal(out_dot, out)
 
 
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
@@ -2302,6 +2371,8 @@ def test_write_csv_to_dangling_file_17328(
     df_no_lists.write_csv((tmp_path / "dangling.csv").open("w"))
 
 
+@pytest.mark.may_fail_cloud  # really hard to mimic this error
+@pytest.mark.write_disk
 def test_write_csv_raise_on_non_utf8_17328(
     df_no_lists: pl.DataFrame, tmp_path: Path
 ) -> None:
@@ -2613,7 +2684,7 @@ x"y,b,c
         pl.read_csv(malformed, has_header=False)
     with pytest.raises(pl.exceptions.ComputeError):
         pl.scan_csv(malformed, has_header=False).collect()
-    with pytest.warns(UserWarning):
+    with pytest.warns(UserWarning, match="CSV malformed:"):
         pl.read_csv(malformed, has_header=False, ignore_errors=True)
 
     # long: trigger SIMD code path (> 64 bytes)
@@ -2666,7 +2737,7 @@ x"y,b,c
         (";", "never", None, None, True, b"123,75;60,0;9\n"),
     ],
 )
-def test_write_csv_decimal_comma(
+def test_write_csv_float_type_decimal_comma(
     separator: str,
     quote_style: CsvQuoteStyle | None,
     scientific: bool | None,
@@ -2724,6 +2795,7 @@ def test_write_csv_decimal_comma(
             decimal_comma=decimal_comma,
             include_header=True,
         )
+        buf.seek(0)
         out = pl.read_csv(
             buf, decimal_comma=decimal_comma, separator=separator, schema=df.schema
         )
@@ -2740,6 +2812,94 @@ def test_write_csv_decimal_comma(
             decimal_comma=decimal_comma,
             include_header=True,
         )
+        buf.seek(0)
+        out = pl.scan_csv(
+            buf, decimal_comma=decimal_comma, separator=separator, schema=df.schema
+        ).collect()
+        assert_frame_equal(df, out)
+
+
+@pytest.mark.parametrize(
+    (
+        "separator",
+        "quote_style",
+        "decimal_comma",
+        "expected",
+    ),
+    [
+        (",", None, False, b"123.75,60.0,9\n"),
+        (",", None, True, b'"123,75","60,0",9\n'),
+        (";", None, False, b"123.75;60.0;9\n"),
+        (";", None, True, b"123,75;60,0;9\n"),
+        (",", "always", True, b'"123,75","60,0","9"\n'),
+        (",", "necessary", True, b'"123,75","60,0",9\n'),
+        (",", "non_numeric", True, b'"123,75","60,0",9\n'),
+        (",", "never", True, b"123,75,60,0,9\n"),  # mal-formed
+        (";", "always", True, b'"123,75";"60,0";"9"\n'),
+        (";", "necessary", True, b"123,75;60,0;9\n"),
+    ],
+)
+def test_write_csv_decimal_type_decimal_comma(
+    separator: str,
+    quote_style: CsvQuoteStyle | None,
+    decimal_comma: bool,
+    expected: bytes,
+) -> None:
+    schema = {
+        "a": pl.Decimal(scale=2),
+        "b": pl.Decimal(scale=1),
+        "c": pl.Decimal(scale=0),
+    }
+
+    df = pl.DataFrame(
+        data={
+            "a": [123.75],
+            "b": [60.0],
+            "c": [9],
+        },
+        schema=schema,
+    )
+
+    buf = io.BytesIO()
+    df.write_csv(
+        buf,
+        separator=separator,
+        quote_style=quote_style,
+        decimal_comma=decimal_comma,
+        include_header=False,
+    )
+    buf.seek(0)
+    assert buf.read() == expected
+
+    # Round-trip testing: assert df == read_csv(write_csv(df))
+    # eager
+    round_trip = not (quote_style == "never" and decimal_comma and separator == ",")
+    if round_trip:
+        print("BOO")
+        buf.seek(0)
+        df.write_csv(
+            buf,
+            separator=separator,
+            quote_style=quote_style,
+            decimal_comma=decimal_comma,
+            include_header=True,
+        )
+        buf.seek(0)
+        out = pl.read_csv(
+            buf, decimal_comma=decimal_comma, separator=separator, schema=df.schema
+        )
+        assert_frame_equal(df, out)
+
+        # lazy
+        buf.seek(0)
+        df.lazy().sink_csv(
+            buf,
+            separator=separator,
+            quote_style=quote_style,
+            decimal_comma=decimal_comma,
+            include_header=True,
+        )
+        buf.seek(0)
         out = pl.scan_csv(
             buf, decimal_comma=decimal_comma, separator=separator, schema=df.schema
         ).collect()
@@ -2781,3 +2941,28 @@ def test_stop_split_fields_simd_23651() -> None:
     df = pl.read_csv(buf, truncate_ragged_lines=True, has_header=False, schema=schema)
     assert df.shape == (7, 27)
     assert df["column_26"].null_count() == 7
+
+
+def test_read_csv_decimal_header_only_200008() -> None:
+    csv = "a,b"
+
+    df = pl.read_csv(csv.encode(), schema={"a": pl.Decimal(scale=2), "b": pl.String})
+    assert df.dtypes == [pl.Decimal(scale=2), pl.String]
+
+
+@pytest.mark.parametrize(
+    "dt",
+    [
+        pl.Enum(["a"]),
+        pl.Categorical(),
+    ],
+)
+def test_write_csv_categorical_23939(dt: pl.DataType) -> None:
+    n_rows = pl.thread_pool_size() * 1024 + 1
+    df = pl.DataFrame(
+        {
+            "b": pl.Series(["a"] * n_rows, dtype=dt),
+        }
+    )
+    expected = "b\n" + "a\n" * n_rows
+    assert df.write_csv() == expected

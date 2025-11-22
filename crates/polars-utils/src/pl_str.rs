@@ -26,17 +26,17 @@ pub struct PlSmallStr(Inner);
 
 #[cfg(feature = "dsl-schema")]
 impl schemars::JsonSchema for PlSmallStr {
-    fn is_referenceable() -> bool {
-        false
+    fn inline_schema() -> bool {
+        String::inline_schema()
     }
 
-    fn schema_name() -> std::string::String {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
         String::schema_name()
     }
     fn schema_id() -> std::borrow::Cow<'static, str> {
         String::schema_id()
     }
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         String::json_schema(generator)
     }
 }
@@ -158,6 +158,13 @@ impl From<String> for PlSmallStr {
     #[inline(always)]
     fn from(value: String) -> Self {
         Self::from_string(value)
+    }
+}
+
+impl From<PlSmallStr> for String {
+    #[inline(always)]
+    fn from(value: PlSmallStr) -> Self {
+        value.to_string()
     }
 }
 

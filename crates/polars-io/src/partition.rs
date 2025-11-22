@@ -11,7 +11,7 @@ use crate::parquet::write::ParquetWriteOptions;
 #[cfg(feature = "ipc")]
 use crate::prelude::IpcWriterOptions;
 use crate::prelude::URL_ENCODE_CHAR_SET;
-use crate::utils::file::try_get_writeable;
+use crate::utils::file::Writeable;
 use crate::{SerWriter, WriteDataFrameToFile};
 
 impl WriteDataFrameToFile for ParquetWriteOptions {
@@ -21,8 +21,8 @@ impl WriteDataFrameToFile for ParquetWriteOptions {
         addr: PlPathRef<'_>,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<()> {
-        let f = try_get_writeable(addr, cloud_options)?;
-        self.to_writer(f).finish(df)?;
+        let mut f = Writeable::try_new(addr, cloud_options)?;
+        self.to_writer(&mut *f).finish(df)?;
         Ok(())
     }
 }
@@ -35,8 +35,8 @@ impl WriteDataFrameToFile for IpcWriterOptions {
         addr: PlPathRef<'_>,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<()> {
-        let f = try_get_writeable(addr, cloud_options)?;
-        self.to_writer(f).finish(df)?;
+        let mut f = Writeable::try_new(addr, cloud_options)?;
+        self.to_writer(&mut *f).finish(df)?;
         Ok(())
     }
 }
@@ -134,10 +134,7 @@ pub fn write_partitioned_dataset(
         let (n_files, rows_per_file) = get_n_files_and_rows_per_file(&df);
 
         if n_files == 1 {
-            write_part(
-                df.clone(),
-                dir_path.as_ref().join(get_path_for_index(0)).as_ref(),
-            )
+            write_part(df, dir_path.as_ref().join(get_path_for_index(0)).as_ref())
         } else {
             (0..df.height())
                 .step_by(rows_per_file)
@@ -149,10 +146,7 @@ pub fn write_partitioned_dataset(
                         .into_par_iter()
                         .map(|&(idx, slice_start)| {
                             let df = df.slice(slice_start as i64, rows_per_file);
-                            write_part(
-                                df.clone(),
-                                dir_path.as_ref().join(get_path_for_index(idx)).as_ref(),
-                            )
+                            write_part(df, dir_path.as_ref().join(get_path_for_index(idx)).as_ref())
                         })
                         .reduce(
                             || PolarsResult::Ok(()),

@@ -134,9 +134,15 @@ pub trait DataFrameJoinOps: IntoDf {
         if let JoinType::Cross = args.how {
             if let Some(JoinTypeOptions::Cross(cross_options)) = &options {
                 assert!(args.slice.is_none());
-                return fused_cross_filter(left_df, other, args.suffix.clone(), cross_options);
+                return fused_cross_filter(
+                    left_df,
+                    other,
+                    args.suffix.clone(),
+                    cross_options,
+                    args.maintain_order,
+                );
             }
-            return left_df.cross_join(other, args.suffix.clone(), args.slice);
+            return left_df.cross_join(other, args.suffix.clone(), args.slice, args.maintain_order);
         }
 
         // Clear literals if a frame is empty. Otherwise we could get an oob
@@ -383,7 +389,7 @@ pub trait DataFrameJoinOps: IntoDf {
                         out?,
                         names_left.as_slice(),
                         drop_names.as_slice(),
-                        suffix.clone(),
+                        suffix,
                         left_df,
                     ))
                 } else {
@@ -609,7 +615,7 @@ trait DataFrameJoinOpsPrivate: IntoDf {
                 )
             };
 
-        _finish_join(df_left, df_right, args.suffix.clone())
+        _finish_join(df_left, df_right, args.suffix)
     }
 }
 

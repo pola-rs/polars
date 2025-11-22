@@ -23,6 +23,7 @@ use crate::expression::StreamExpr;
 use crate::morsel::{MorselSeq, SourceToken};
 use crate::nodes::io_sinks::phase::PhaseOutcome;
 use crate::nodes::{Morsel, TaskPriority};
+use crate::pipe::{PortSender, port_channel};
 
 pub mod by_key;
 pub mod max_size;
@@ -37,9 +38,8 @@ pub struct PerPartitionSortBy {
     pub maintain_order: bool,
 }
 
-pub type CreateNewSinkFn = Arc<
-    dyn Send + Sync + Fn(SchemaRef, SinkTarget) -> PolarsResult<Box<dyn SinkNode + Send + Sync>>,
->;
+pub type CreateNewSinkFn =
+    Arc<dyn Send + Sync + Fn(SchemaRef, SinkTarget) -> PolarsResult<Box<dyn SinkNode + Send>>>;
 
 pub fn get_create_new_fn(
     file_type: FileType,
@@ -56,7 +56,7 @@ pub fn get_create_new_fn(
                 sink_options.clone(),
                 ipc_writer_options,
                 cloud_options.clone(),
-            )) as Box<dyn SinkNode + Send + Sync>;
+            )) as Box<dyn SinkNode + Send>;
             Ok(sink)
         }) as _,
         #[cfg(feature = "json")]
@@ -65,7 +65,7 @@ pub fn get_create_new_fn(
                 target,
                 sink_options.clone(),
                 cloud_options.clone(),
-            )) as Box<dyn SinkNode + Send + Sync>;
+            )) as Box<dyn SinkNode + Send>;
             Ok(sink)
         }) as _,
         #[cfg(feature = "parquet")]
@@ -78,7 +78,7 @@ pub fn get_create_new_fn(
                     &parquet_writer_options,
                     cloud_options.clone(),
                     collect_metrics,
-                )?) as Box<dyn SinkNode + Send + Sync>;
+                )?) as Box<dyn SinkNode + Send>;
                 Ok(sink)
             }) as _
         },
@@ -90,7 +90,7 @@ pub fn get_create_new_fn(
                 sink_options.clone(),
                 csv_writer_options.clone(),
                 cloud_options.clone(),
-            )) as Box<dyn SinkNode + Send + Sync>;
+            )) as Box<dyn SinkNode + Send>;
             Ok(sink)
         }) as _,
         #[cfg(not(any(
@@ -106,7 +106,7 @@ pub fn get_create_new_fn(
 }
 
 enum SinkSender {
-    Connector(connector::Sender<Morsel>),
+    Connector(PortSender),
     Distributor(distributor_channel::Sender<Morsel>),
 }
 
@@ -173,7 +173,7 @@ async fn open_new_sink(
     Option<(
         FuturesUnordered<AbortOnDropHandle<PolarsResult<()>>>,
         SinkSender,
-        Box<dyn SinkNode + Send + Sync>,
+        Box<dyn SinkNode + Send>,
     )>,
 > {
     let separator = '/'; // note: accepted by both Windows and Linux
@@ -184,7 +184,7 @@ async fn open_new_sink(
     let target = if let Some(file_path_cb) = file_path_cb {
         let keys = keys.map_or(Vec::new(), |keys| {
             keys.iter()
-                .map(|k| polars_plan::dsl::PartitionTargetContextKey {
+                .map(|k| polars_plan::dsl::sink::PartitionTargetContextKey {
                     name: k.name().clone(),
                     raw_value: Scalar::new(k.dtype().clone(), k.get(0).unwrap().into_static()),
                 })
@@ -226,7 +226,7 @@ async fn open_new_sink(
             *DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE,
         );
         let (txs, rxs) = (0..state.num_pipelines)
-            .map(|_| connector::connector())
+            .map(|_| port_channel(None))
             .collect::<(Vec<_>, Vec<_>)>();
         join_handles.extend(dist_rxs.into_iter().zip(txs).map(|(mut dist_rx, mut tx)| {
             spawn(TaskPriority::High, async move {
@@ -241,14 +241,14 @@ async fn open_new_sink(
 
         (SinkInputPort::Parallel(rxs), SinkSender::Distributor(tx))
     } else {
-        let (tx, rx) = connector::connector();
+        let (tx, rx) = port_channel(None);
         (SinkInputPort::Serial(rx), SinkSender::Connector(tx))
     };
 
     // Handle sorting per partition.
     if let Some(per_partition_sort_by) = per_partition_sort_by {
         let num_selectors = per_partition_sort_by.selectors.len();
-        let (tx, mut rx) = connector::connector();
+        let (tx, mut rx) = port_channel(None);
 
         let state = state.in_memory_exec_state.split();
         let selectors = per_partition_sort_by.selectors.clone();
@@ -300,6 +300,7 @@ async fn open_new_sink(
     }
 
     let (mut sink_input_tx, sink_input_rx) = connector::connector();
+    node.initialize(state)?;
     node.spawn_sink(sink_input_rx, state, &mut join_handles);
     let mut join_handles =
         FuturesUnordered::from_iter(join_handles.into_iter().map(AbortOnDropHandle::new));

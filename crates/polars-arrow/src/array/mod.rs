@@ -82,6 +82,8 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
     /// used to downcast trait objects (`dyn Array`) to concrete arrays.
     fn dtype(&self) -> &ArrowDataType;
 
+    fn dtype_mut(&mut self) -> &mut ArrowDataType;
+
     /// The validity of the [`Array`]: every array has an optional [`Bitmap`] that, when available
     /// specifies whether the array slot is valid or not (null).
     /// When the validity is [`None`], all slots are valid.
@@ -582,6 +584,11 @@ macro_rules! impl_common_array {
         }
 
         #[inline]
+        fn dtype_mut(&mut self) -> &mut ArrowDataType {
+            &mut self.dtype
+        }
+
+        #[inline]
         fn split_at_boxed(&self, offset: usize) -> (Box<dyn Array>, Box<dyn Array>) {
             let (lhs, rhs) = $crate::array::Splitable::split_at(self, offset);
             (Box::new(lhs), Box::new(rhs))
@@ -648,7 +655,7 @@ pub fn clone(array: &dyn Array) -> Box<dyn Array> {
 
 // see https://users.rust-lang.org/t/generic-for-dyn-a-or-box-dyn-a-or-arc-dyn-a/69430/3
 // for details
-impl<'a> AsRef<(dyn Array + 'a)> for dyn Array {
+impl<'a> AsRef<dyn Array + 'a> for dyn Array {
     fn as_ref(&self) -> &(dyn Array + 'a) {
         self
     }

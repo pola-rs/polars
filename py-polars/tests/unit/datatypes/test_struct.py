@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import operator
 from dataclasses import dataclass
 from datetime import datetime, time
 from typing import TYPE_CHECKING, Any, Callable
@@ -15,7 +16,7 @@ from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars._typing import PolarsDataType
+    from polars._typing import PolarsDataType, SerializationFormat
 
 
 def test_struct_to_list() -> None:
@@ -276,16 +277,16 @@ def test_list_to_struct() -> None:
     ]
 
     df = pl.DataFrame({"a": [[1, 2], [1, 2, 3]]})
-    assert df.to_series().list.to_struct(n_field_strategy="max_width").to_list() == [
+    assert df.to_series().list.to_struct("max_width").to_list() == [
         {"field_0": 1, "field_1": 2, "field_2": None},
         {"field_0": 1, "field_1": 2, "field_2": 3},
     ]
 
     # set upper bound
     df = pl.DataFrame({"lists": [[1, 1, 1], [0, 1, 0], [1, 0, 0]]})
-    assert df.lazy().select(
-        pl.col("lists").list.to_struct(upper_bound=3, _eager=True)
-    ).unnest("lists").sum().collect().columns == ["field_0", "field_1", "field_2"]
+    assert df.lazy().select(pl.col("lists").list.to_struct(upper_bound=3)).unnest(
+        "lists"
+    ).sum().collect().columns == ["field_0", "field_1", "field_2"]
 
 
 def test_sort_df_with_list_struct() -> None:
@@ -840,6 +841,49 @@ def test_struct_arithmetic_schema() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "df",
+    [
+        pl.DataFrame({"a": [10], "b": [20], "c": [30]}),
+        pl.DataFrame({"a": [10.0], "b": [20.0], "c": [30.0]}),
+    ],
+)
+@pytest.mark.parametrize(
+    "rhs",
+    [
+        pl.struct("c"),
+        pl.lit(7),
+        pl.lit(7.0),
+    ],
+)
+@pytest.mark.parametrize(
+    "op",
+    [
+        operator.add,
+        operator.sub,
+        operator.floordiv,
+        operator.truediv,
+        operator.mod,
+        operator.mul,
+    ],
+)
+def test_struct_arithmetic_schema_match(
+    df: pl.DataFrame,
+    rhs: pl.Expr,
+    op: Any,
+) -> None:
+    # 1 field on the LHS struct
+    lhs = pl.struct("a")
+    q = df.lazy().select(op(lhs, rhs))
+    assert q.collect_schema() == q.collect().schema
+
+    # 2 fields on the LHS struct
+    df = df.with_columns(pl.struct(pl.all()).alias("ab"))
+    lhs = pl.col("ab")
+    q = df.lazy().select(op(lhs, rhs))
+    assert q.collect_schema() == q.collect().schema
+
+
 def test_struct_field() -> None:
     df = pl.DataFrame(
         {
@@ -1108,7 +1152,7 @@ def test_zfs_struct_fns() -> None:
 
 @pytest.mark.parametrize("format", ["binary", "json"])
 @pytest.mark.parametrize("size", [0, 1, 2, 13])
-def test_zfs_serialization_roundtrip(format: pl.SerializationFormat, size: int) -> None:
+def test_zfs_serialization_roundtrip(format: SerializationFormat, size: int) -> None:
     a = pl.Series("a", [{}] * size, pl.Struct([])).to_frame()
 
     f = io.BytesIO()
@@ -1147,7 +1191,7 @@ def test_list_to_struct_19208() -> None:
         }
     )
     assert pl.concat([df[0], df[1], df[2]]).select(
-        pl.col("nested").list.to_struct(_eager=True)
+        pl.col("nested").list.to_struct(upper_bound=1)
     ).to_dict(as_series=False) == {
         "nested": [{"field_0": {"a": 1}}, {"field_0": None}, {"field_0": {"a": 3}}]
     }
@@ -1302,3 +1346,72 @@ def test_struct_nulls_in_equality_23527() -> None:
     )
     expected = pl.DataFrame({"a": [False, True, True, False, False, True]})
     assert_frame_equal(out, expected)
+
+
+def test_struct_null_propagation_23955() -> None:
+    df = pl.DataFrame({"a": [{"b": None}, None]})
+    df = df.with_columns(
+        c=pl.col("a").struct.with_fields(
+            pl.field("b").fill_null(pl.lit(10, dtype=pl.Int32))
+        )
+    )
+    df = df.with_columns(d=pl.col("c").struct.field("b")).select(pl.col("d"))
+    assert_frame_equal(df, pl.DataFrame({"d": [10, None]}, schema={"d": pl.Int32}))
+
+
+def test_struct_notagg_partial_sort_24499() -> None:
+    df = pl.DataFrame({"g": [10, 10, 10], "a": [2, 1, 3], "b": [5, 4, 6]})
+
+    # lhs
+    out = df.group_by("g").agg(pl.struct(pl.col("a").sort(), pl.col("b")))
+    expected = pl.DataFrame(
+        {"g": [10], "a": [[{"a": 1, "b": 5}, {"a": 2, "b": 4}, {"a": 3, "b": 6}]]}
+    )
+    assert_frame_equal(out, expected)
+
+    # rhs
+    out = df.group_by("g").agg(pl.struct(pl.col("a"), pl.col("b").sort()))
+    expected = pl.DataFrame(
+        {"g": [10], "a": [[{"a": 2, "b": 4}, {"a": 1, "b": 5}, {"a": 3, "b": 6}]]}
+    )
+    assert_frame_equal(out, expected)
+
+    # both
+    out = df.group_by("g").agg(pl.struct(pl.col("a").sort(), pl.col("b").sort()))
+    expected = pl.DataFrame(
+        {"g": [10], "a": [[{"a": 1, "b": 4}, {"a": 2, "b": 5}, {"a": 3, "b": 6}]]}
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_struct_reverse_chunked_25269() -> None:
+    s = pl.Series([None, {"a": None}])
+    assert_series_equal(
+        pl.concat([s.head(1), s.tail(1)]).reverse(), pl.Series([{"a": None}, None])
+    )
+
+
+def test_struct_equal_missing_null_25360() -> None:
+    lf = pl.LazyFrame({"a": [{"x": 0}]})
+
+    q1 = lf.select(a1=pl.col.a.slice(1, 1).first())
+    q2 = lf.group_by(pl.lit(1)).agg(a2=pl.col.a.slice(1, 1).first()).drop("literal")
+
+    q = pl.concat([q1, q2], how="horizontal").collect()
+
+    result = q.select(
+        eq=pl.col.a1.eq(pl.col.a2),
+        eq_missing=pl.col.a1.eq_missing(pl.col.a2),
+        ne=pl.col.a1.ne(pl.col.a2),
+        ne_missing=pl.col.a1.ne_missing(pl.col.a2),
+    )
+
+    assert_frame_equal(
+        result,
+        pl.select(
+            eq=pl.lit(None, pl.Boolean),
+            eq_missing=True,
+            ne=pl.lit(None, pl.Boolean),
+            ne_missing=False,
+        ),
+    )

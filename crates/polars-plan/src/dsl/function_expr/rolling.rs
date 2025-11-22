@@ -11,6 +11,7 @@ pub enum RollingFunction {
     Quantile,
     Var,
     Std,
+    Rank,
     #[cfg(feature = "moment")]
     Skew,
     #[cfg(feature = "moment")]
@@ -21,6 +22,7 @@ pub enum RollingFunction {
         // Whether is Corr or Cov
         is_corr: bool,
     },
+    Map(PlanCallback<Series, Series>),
 }
 
 impl Display for RollingFunction {
@@ -35,6 +37,7 @@ impl Display for RollingFunction {
             Quantile => "quantile",
             Var => "var",
             Std => "std",
+            Rank => "rank",
             #[cfg(feature = "moment")]
             Skew => "skew",
             #[cfg(feature = "moment")]
@@ -47,6 +50,7 @@ impl Display for RollingFunction {
                     "cov"
                 }
             },
+            Map(_) => "map",
         };
 
         write!(f, "rolling_{name}")

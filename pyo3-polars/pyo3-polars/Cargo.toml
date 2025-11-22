@@ -1,6 +1,6 @@
 [package]
 name = "pyo3-polars"
-version = "0.21.0"
+version = "0.25.0"
 edition = "2021"
 license = "MIT"
 readme = "../README.md"
@@ -28,7 +28,7 @@ thiserror = "1"
 
 [features]
 # Polars python is needed because all variants need to be activated of the DSL.
-lazy = ["polars/serde-lazy", "polars-plan", "polars-lazy/serde", "polars-utils", "polars-lazy/python"]
+lazy = ["polars/serde-lazy", "polars/lazy", "polars-plan", "polars-lazy/serde", "polars-utils", "polars-lazy/python"]
 derive = ["pyo3-polars-derive", "polars-plan/python", "polars-ffi", "serde-pickle", "serde"]
 dtype-full = ["polars/dtype-full", "dtype-decimal", "dtype-array", "dtype-struct", "dtype-categorical"]
 object = ["polars/object"]
@@ -36,3 +36,4 @@ dtype-decimal = ["polars/dtype-decimal"]
 dtype-struct = ["polars/dtype-struct"]
 dtype-array = ["polars/dtype-array"]
 dtype-categorical = ["polars/dtype-categorical"]
+dtype-extension = ["polars/dtype-extension"]

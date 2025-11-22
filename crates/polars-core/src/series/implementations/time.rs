@@ -7,6 +7,7 @@
 //! opting for a little more run time cost. We cast to the physical type -> apply the operation and
 //! (depending on the result) cast back to the original type
 //!
+
 use super::*;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
@@ -242,6 +243,14 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
             .into_series()
     }
 
+    fn deposit(&self, validity: &Bitmap) -> Series {
+        self.0
+            .physical()
+            .deposit(validity)
+            .into_time()
+            .into_series()
+    }
+
     fn len(&self) -> usize {
         self.0.len()
     }
@@ -321,6 +330,10 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
         self.0.physical().arg_unique()
     }
 
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        ChunkUnique::unique_id(self.0.physical())
+    }
+
     fn is_null(&self) -> BooleanChunked {
         self.0.is_null()
     }
@@ -343,21 +356,31 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
 
     fn max_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.physical().max_reduce();
-        let av = sc.value().cast(self.dtype()).into_static();
+        let av = sc.value().as_time();
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
     fn min_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.physical().min_reduce();
-        let av = sc.value().cast(self.dtype()).into_static();
+        let av = sc.value().as_time();
+        Ok(Scalar::new(self.dtype().clone(), av))
+    }
+
+    fn mean_reduce(&self) -> PolarsResult<Scalar> {
+        let mean = self.mean().map(|v| v as i64);
+        let av = AnyValue::from(mean).as_time();
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
     fn median_reduce(&self) -> PolarsResult<Scalar> {
-        let av = AnyValue::from(self.median().map(|v| v as i64))
-            .cast(self.dtype())
-            .into_static();
+        let median = self.median().map(|v| v as i64);
+        let av = AnyValue::from(median).as_time();
         Ok(Scalar::new(self.dtype().clone(), av))
+    }
+
+    #[cfg(feature = "approx_unique")]
+    fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
+        Ok(ChunkApproxNUnique::approx_n_unique(self.0.physical()))
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

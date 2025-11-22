@@ -1,7 +1,9 @@
-from .io_plugin import RandomSource
+from .io_plugin import RandomSource, new_bernoulli, new_uniform
 from typing import Any, Iterator
 from polars.io.plugins import register_io_source
 import polars as pl
+
+__all__ = ["RandomSource", "new_bernoulli", "new_uniform", "scan_random"]
 
 
 def scan_random(samplers: list[Any], size: int = 1000) -> pl.LazyFrame:

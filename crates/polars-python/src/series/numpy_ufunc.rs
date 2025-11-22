@@ -80,7 +80,7 @@ macro_rules! impl_ufuncs {
             // have to convert that NumPy array into a pl.Series.
             fn $name(&self, lambda: &Bound<PyAny>, allocate_out: bool) -> PyResult<PySeries> {
                 // numpy array object, and a *mut ptr
-                Python::with_gil(|py| {
+                Python::attach(|py| {
                     if !allocate_out {
                         // We're not going to allocate the output array.
                         // Instead, we'll let the ufunc do it.
@@ -108,9 +108,10 @@ macro_rules! impl_ufuncs {
                             // args and the lambda return have a reference, making a total of 3
                             assert!(get_refcnt(&out_array) <= 3);
 
-                            let validity = self.series.chunks()[0].validity().cloned();
+                            let s = self.series.read();
+                            let validity = s.chunks()[0].validity().cloned();
                             let ca = ChunkedArray::<$type>::from_vec_validity(
-                                self.series.name().clone(),
+                                s.name().clone(),
                                 av,
                                 validity,
                             );

@@ -14,6 +14,9 @@ from deltalake.exceptions import DeltaError, TableNotFoundError
 from deltalake.table import TableMerger
 
 import polars as pl
+from polars.io.cloud.credential_provider._builder import (
+    _init_credential_provider_builder,
+)
 from polars.testing import assert_frame_equal, assert_frame_not_equal
 
 
@@ -520,6 +523,7 @@ def test_read_delta_arrow_map_type(tmp_path: Path) -> None:
     assert_frame_equal(pl.read_delta(table_path), expect)
 
 
+@pytest.mark.may_fail_cloud  # reason: inspects logs
 @pytest.mark.write_disk
 def test_scan_delta_nanosecond_timestamp(
     tmp_path: Path,
@@ -714,3 +718,45 @@ def test_scan_delta_storage_options_from_delta_table(
         assert_frame_equal(q.collect(), df)
 
     assert storage_options_checked
+
+
+def test_scan_delta_loads_aws_profile_endpoint_url(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    cfg_file_path = tmp_path / "config"
+
+    cfg_file_path.write_text("""\
+[profile endpoint_333]
+aws_access_key_id=A
+aws_secret_access_key=A
+endpoint_url = http://localhost:333
+""")
+
+    monkeypatch.setenv("AWS_CONFIG_FILE", str(cfg_file_path))
+    monkeypatch.setenv("AWS_PROFILE", "endpoint_333")
+
+    assert (
+        builder := _init_credential_provider_builder(
+            "auto", "s3://.../...", storage_options=None, caller_name="test"
+        )
+    ) is not None
+
+    assert isinstance(
+        provider := builder.build_credential_provider(),
+        pl.CredentialProviderAWS,
+    )
+
+    assert provider._can_use_as_provider()
+
+    assert provider._storage_update_options() == {
+        "endpoint_url": "http://localhost:333"
+    }
+
+    with pytest.raises(DeltaError, match="http://localhost:333"):
+        pl.scan_delta("s3://.../...")
+
+    with pytest.raises(DeltaError, match="http://localhost:333"):
+        pl.DataFrame({"x": 1}).write_delta("s3://.../...", mode="append")

@@ -276,6 +276,16 @@ where
 
                 use BitRepr as B;
                 match (left_by, right_by) {
+                    (B::U8(left_by), B::U8(right_by)) => {
+                        asof_join_by_numeric::<T, UInt8Type, A, F>(
+                            &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
+                        )?
+                    },
+                    (B::U16(left_by), B::U16(right_by)) => {
+                        asof_join_by_numeric::<T, UInt16Type, A, F>(
+                            &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
+                        )?
+                    },
                     (B::U32(left_by), B::U32(right_by)) => {
                         asof_join_by_numeric::<T, UInt32Type, A, F>(
                             &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
@@ -286,9 +296,9 @@ where
                             &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
                         )?
                     },
-                    #[cfg(feature = "dtype-i128")]
-                    (B::I128(left_by), B::I128(right_by)) => {
-                        asof_join_by_numeric::<T, Int128Type, A, F>(
+                    #[cfg(feature = "dtype-u128")]
+                    (B::U128(left_by), B::U128(right_by)) => {
+                        asof_join_by_numeric::<T, UInt128Type, A, F>(
                             &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
                         )?
                     },
@@ -427,6 +437,13 @@ fn dispatch_join_type(
                 ca, right_asof, left_by, right_by, strategy, tolerance, allow_eq,
             )
         },
+        #[cfg(feature = "dtype-u128")]
+        DataType::UInt128 => {
+            let ca = left_asof.u128().unwrap();
+            dispatch_join_strategy_numeric(
+                ca, right_asof, left_by, right_by, strategy, tolerance, allow_eq,
+            )
+        },
         DataType::Float32 => {
             let ca = left_asof.f32().unwrap();
             dispatch_join_strategy_numeric(
@@ -463,7 +480,7 @@ fn dispatch_join_type(
                 allow_eq,
             )
         },
-        _ => {
+        DataType::Int8 | DataType::UInt8 | DataType::Int16 | DataType::UInt16 => {
             let left_asof = left_asof.cast(&DataType::Int32).unwrap();
             let right_asof = right_asof.cast(&DataType::Int32).unwrap();
             let ca = left_asof.i32().unwrap();
@@ -477,6 +494,7 @@ fn dispatch_join_type(
                 allow_eq,
             )
         },
+        dt => polars_bail!(opq = asof_join, dt),
     }
 }
 

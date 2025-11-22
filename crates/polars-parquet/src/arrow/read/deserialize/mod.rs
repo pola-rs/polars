@@ -1,5 +1,6 @@
 //! APIs to read from Parquet format.
 
+mod binary;
 mod binview;
 mod boolean;
 mod categorical;
@@ -125,7 +126,7 @@ fn is_primitive(dtype: &ArrowDataType) -> bool {
             | arrow::datatypes::PhysicalType::LargeBinary
             | arrow::datatypes::PhysicalType::FixedSizeBinary
             | arrow::datatypes::PhysicalType::Dictionary(_)
-    )
+    ) && !matches!(dtype, ArrowDataType::Extension(_))
 }
 
 fn columns_to_iter_recursive(
@@ -134,7 +135,7 @@ fn columns_to_iter_recursive(
     field: Field,
     init: Vec<InitNested>,
     filter: Option<Filter>,
-) -> ParquetResult<(NestedState, Box<dyn Array>, Bitmap)> {
+) -> ParquetResult<(NestedState, Vec<Box<dyn Array>>, Bitmap)> {
     if init.is_empty() && is_primitive(&field.dtype) {
         let (_, array, pred_true_mask) = page_iter_to_array(
             columns.pop().unwrap(),
@@ -198,7 +199,7 @@ pub fn column_iter_to_arrays(
     types: Vec<&PrimitiveType>,
     field: Field,
     filter: Option<Filter>,
-) -> PolarsResult<(Box<dyn Array>, Bitmap)> {
+) -> PolarsResult<(Vec<Box<dyn Array>>, Bitmap)> {
     let (_, array, pred_true_mask) =
         columns_to_iter_recursive(columns, types, field, vec![], filter)?;
     Ok((array, pred_true_mask))

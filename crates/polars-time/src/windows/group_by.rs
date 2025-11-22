@@ -1,5 +1,14 @@
+use std::collections::VecDeque;
+
 use arrow::legacy::time_zone::Tz;
+use arrow::temporal_conversions::{
+    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
+};
 use arrow::trusted_len::TrustedLen;
+use chrono::NaiveDateTime;
+#[cfg(feature = "timezones")]
+use chrono::TimeZone as _;
+use now::DateTimeNow;
 use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;
@@ -36,7 +45,9 @@ pub enum Label {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[strum(serialize_all = "snake_case")]
+#[derive(Default)]
 pub enum StartBy {
+    #[default]
     WindowBound,
     DataPoint,
     /// only useful if periods are weekly
@@ -47,12 +58,6 @@ pub enum StartBy {
     Friday,
     Saturday,
     Sunday,
-}
-
-impl Default for StartBy {
-    fn default() -> Self {
-        Self::WindowBound
-    }
 }
 
 impl StartBy {
@@ -82,18 +87,33 @@ fn update_groups_and_bounds(
     upper_bound: &mut Vec<i64>,
     groups: &mut Vec<[IdxSize; 2]>,
 ) {
-    'bounds: for bi in bounds_iter {
+    let mut iter = bounds_iter.into_iter();
+    let mut stride = 0;
+
+    'bounds: while let Some(bi) = iter.nth(stride) {
+        let mut has_member = false;
         // find starting point of window
         for &t in &time[start..time.len().saturating_sub(1)] {
             // the window is behind the time values.
             if bi.is_future(t, closed_window) {
+                stride = iter.get_stride(t);
                 continue 'bounds;
             }
             if bi.is_member_entry(t, closed_window) {
+                has_member = true;
                 break;
             }
+            // element drops out of the window
             start += 1;
         }
+
+        // update stride so we can fast-forward in case of sparse data
+        stride = if has_member {
+            0
+        } else {
+            debug_assert!(start < time.len());
+            iter.get_stride(time[start])
+        };
 
         // find members of this window
         let mut end = start;
@@ -523,7 +543,7 @@ fn prune_splits_on_duplicates(time: &[i64], thread_offsets: &mut Vec<(usize, usi
         }
     }
     // Check last block
-    if thread_offsets.len() % 2 == 0 {
+    if thread_offsets.len().is_multiple_of(2) {
         let window = &thread_offsets[thread_offsets.len() - 2..];
         if is_valid(window) {
             new.push(thread_offsets[thread_offsets.len() - 1])
@@ -778,6 +798,485 @@ pub fn group_by_values(
                 .collect::<PolarsResult<Vec<_>>>()?;
             Ok(flatten_par(&vals))
         })
+    }
+}
+
+pub struct RollingWindower {
+    period: Duration,
+    offset: Duration,
+    closed: ClosedWindow,
+
+    add: fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64>,
+    tz: Option<Tz>,
+
+    start: IdxSize,
+    end: IdxSize,
+    length: IdxSize,
+
+    active: VecDeque<ActiveWindow>,
+}
+
+struct ActiveWindow {
+    start: i64,
+    end: i64,
+}
+
+impl ActiveWindow {
+    #[inline(always)]
+    fn above_lower_bound(&self, t: i64, closed: ClosedWindow) -> bool {
+        (t > self.start)
+            | (matches!(closed, ClosedWindow::Left | ClosedWindow::Both) & (t == self.start))
+    }
+
+    #[inline(always)]
+    fn below_upper_bound(&self, t: i64, closed: ClosedWindow) -> bool {
+        (t < self.end)
+            | (matches!(closed, ClosedWindow::Right | ClosedWindow::Both) & (t == self.end))
+    }
+}
+
+fn skip_in_2d_list(l: &[&[i64]], mut n: usize) -> (usize, usize) {
+    let mut y = 0;
+    while y < l.len() && (n >= l[y].len() || l[y].is_empty()) {
+        n -= l[y].len();
+        y += 1;
+    }
+    assert!(n == 0 || y < l.len());
+    (n, y)
+}
+fn increment_2d(x: &mut usize, y: &mut usize, l: &[&[i64]]) {
+    *x += 1;
+    while *y < l.len() && *x == l[*y].len() {
+        *y += 1;
+        *x = 0;
+    }
+}
+
+impl RollingWindower {
+    pub fn new(
+        period: Duration,
+        offset: Duration,
+        closed: ClosedWindow,
+        tu: TimeUnit,
+        tz: Option<Tz>,
+    ) -> Self {
+        Self {
+            period,
+            offset,
+            closed,
+
+            add: match tu {
+                TimeUnit::Nanoseconds => Duration::add_ns,
+                TimeUnit::Microseconds => Duration::add_us,
+                TimeUnit::Milliseconds => Duration::add_ms,
+            },
+            tz,
+
+            start: 0,
+            end: 0,
+            length: 0,
+
+            active: Default::default(),
+        }
+    }
+
+    /// Insert new values into the windower.
+    ///
+    /// This should be given all the old values that were not processed yet.
+    pub fn insert(
+        &mut self,
+        time: &[&[i64]],
+        windows: &mut Vec<[IdxSize; 2]>,
+    ) -> PolarsResult<IdxSize> {
+        let (mut i_x, mut i_y) = skip_in_2d_list(time, (self.length - self.start) as usize);
+        let (mut s_x, mut s_y) = skip_in_2d_list(time, 0); // skip over empty lists
+        let (mut e_x, mut e_y) = skip_in_2d_list(time, (self.end - self.start) as usize);
+
+        let time_start = self.start;
+        let mut i = self.length;
+        while i_y < time.len() {
+            let t = time[i_y][i_x];
+            let window_start = (self.add)(&self.offset, t, self.tz.as_ref())?;
+            // For datetime arithmetic, it does *NOT* hold 0 + a - a == 0. Therefore, we make sure
+            // that if `offset` and `period` are inverses we keep the `t`.
+            let window_end = if self.offset == -self.period {
+                t
+            } else {
+                (self.add)(&self.period, window_start, self.tz.as_ref())?
+            };
+
+            self.active.push_back(ActiveWindow {
+                start: window_start,
+                end: window_end,
+            });
+
+            while let Some(w) = self.active.front() {
+                if w.below_upper_bound(t, self.closed) {
+                    break;
+                }
+
+                let w = self.active.pop_front().unwrap();
+                while self.start < i && !w.above_lower_bound(time[s_y][s_x], self.closed) {
+                    increment_2d(&mut s_x, &mut s_y, time);
+                    self.start += 1;
+                }
+                while self.end < i && w.below_upper_bound(time[e_y][e_x], self.closed) {
+                    increment_2d(&mut e_x, &mut e_y, time);
+                    self.end += 1;
+                }
+                windows.push([self.start, self.end - self.start]);
+            }
+
+            increment_2d(&mut i_x, &mut i_y, time);
+            i += 1;
+        }
+
+        self.length = i;
+        Ok(self.start - time_start)
+    }
+
+    /// Process all remaining items and signal that no more items are coming.
+    pub fn finalize(&mut self, time: &[&[i64]], windows: &mut Vec<[IdxSize; 2]>) {
+        assert_eq!(
+            time.iter().map(|t| t.len()).sum::<usize>() as IdxSize,
+            self.length - self.start
+        );
+
+        let (mut s_x, mut s_y) = skip_in_2d_list(time, 0);
+        let (mut e_x, mut e_y) = skip_in_2d_list(time, (self.end - self.start) as usize);
+
+        windows.extend(self.active.drain(..).map(|w| {
+            while self.start < self.length && !w.above_lower_bound(time[s_y][s_x], self.closed) {
+                increment_2d(&mut s_x, &mut s_y, time);
+                self.start += 1;
+            }
+            while self.end < self.length && w.below_upper_bound(time[e_y][e_x], self.closed) {
+                increment_2d(&mut e_x, &mut e_y, time);
+                self.end += 1;
+            }
+            [self.start, self.end - self.start]
+        }));
+
+        self.start = 0;
+        self.end = 0;
+        self.length = 0;
+    }
+
+    pub fn reset(&mut self) {
+        self.active.clear();
+        self.start = 0;
+        self.end = 0;
+        self.length = 0;
+    }
+}
+
+#[derive(Debug)]
+struct ActiveDynWindow {
+    start: IdxSize,
+    lower_bound: i64,
+    upper_bound: i64,
+}
+
+#[inline(always)]
+fn is_above_lower_bound(t: i64, lb: i64, closed: ClosedWindow) -> bool {
+    (t > lb) | (matches!(closed, ClosedWindow::Left | ClosedWindow::Both) & (t == lb))
+}
+#[inline(always)]
+fn is_below_upper_bound(t: i64, ub: i64, closed: ClosedWindow) -> bool {
+    (t < ub) | (matches!(closed, ClosedWindow::Right | ClosedWindow::Both) & (t == ub))
+}
+
+pub struct GroupByDynamicWindower {
+    period: Duration,
+    offset: Duration,
+    every: Duration,
+    closed: ClosedWindow,
+
+    start_by: StartBy,
+
+    add: fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64>,
+    // Not-to-exceed duration (upper limit).
+    nte: fn(&Duration) -> i64,
+    tu: TimeUnit,
+    tz: Option<Tz>,
+
+    include_lower_bound: bool,
+    include_upper_bound: bool,
+
+    num_seen: IdxSize,
+    next_lower_bound: i64,
+    active: VecDeque<ActiveDynWindow>,
+}
+
+impl GroupByDynamicWindower {
+    #[expect(clippy::too_many_arguments)]
+    pub fn new(
+        period: Duration,
+        offset: Duration,
+        every: Duration,
+        start_by: StartBy,
+        closed: ClosedWindow,
+        tu: TimeUnit,
+        tz: Option<Tz>,
+        include_lower_bound: bool,
+        include_upper_bound: bool,
+    ) -> Self {
+        Self {
+            period,
+            offset,
+            every,
+            closed,
+
+            start_by,
+
+            add: match tu {
+                TimeUnit::Nanoseconds => Duration::add_ns,
+                TimeUnit::Microseconds => Duration::add_us,
+                TimeUnit::Milliseconds => Duration::add_ms,
+            },
+            nte: match tu {
+                TimeUnit::Nanoseconds => Duration::nte_duration_ns,
+                TimeUnit::Microseconds => Duration::nte_duration_us,
+                TimeUnit::Milliseconds => Duration::nte_duration_ms,
+            },
+            tu,
+            tz,
+
+            include_lower_bound,
+            include_upper_bound,
+
+            num_seen: 0,
+            next_lower_bound: 0,
+            active: Default::default(),
+        }
+    }
+
+    pub fn find_first_window_around(
+        &self,
+        mut lower_bound: i64,
+        target: i64,
+    ) -> PolarsResult<Result<(i64, i64), i64>> {
+        let mut upper_bound = (self.add)(&self.period, lower_bound, self.tz.as_ref())?;
+        while !is_below_upper_bound(target, upper_bound, self.closed) {
+            let gap = target - lower_bound;
+            let nth = match self.tu {
+                TimeUnit::Nanoseconds
+                    if gap > self.every.nte_duration_ns() + self.period.nte_duration_ns() =>
+                {
+                    ((gap - self.period.nte_duration_ns()) as usize)
+                        / (self.every.nte_duration_ns() as usize)
+                },
+                TimeUnit::Microseconds
+                    if gap > self.every.nte_duration_us() + self.period.nte_duration_us() =>
+                {
+                    ((gap - self.period.nte_duration_us()) as usize)
+                        / (self.every.nte_duration_us() as usize)
+                },
+                TimeUnit::Milliseconds
+                    if gap > self.every.nte_duration_ms() + self.period.nte_duration_ms() =>
+                {
+                    ((gap - self.period.nte_duration_ms()) as usize)
+                        / (self.every.nte_duration_ms() as usize)
+                },
+                _ => 1,
+            };
+
+            let nth: i64 = nth.try_into().unwrap();
+            lower_bound = (self.add)(&(self.every * nth), lower_bound, self.tz.as_ref())?;
+            upper_bound = (self.add)(&self.period, lower_bound, self.tz.as_ref())?;
+        }
+
+        if is_above_lower_bound(target, lower_bound, self.closed) {
+            Ok(Ok((lower_bound, upper_bound)))
+        } else {
+            Ok(Err(lower_bound))
+        }
+    }
+
+    fn start_lower_bound(&self, first: i64) -> PolarsResult<i64> {
+        match self.start_by {
+            StartBy::DataPoint => Ok(first),
+            StartBy::WindowBound => {
+                let get_earliest_bounds = match self.tu {
+                    TimeUnit::Nanoseconds => Window::get_earliest_bounds_ns,
+                    TimeUnit::Microseconds => Window::get_earliest_bounds_us,
+                    TimeUnit::Milliseconds => Window::get_earliest_bounds_ms,
+                };
+                Ok((get_earliest_bounds)(
+                    &Window::new(self.every, self.period, self.offset),
+                    first,
+                    self.closed,
+                    self.tz.as_ref(),
+                )?
+                .start)
+            },
+            _ => {
+                {
+                    #[allow(clippy::type_complexity)]
+                    let (from, to): (
+                        fn(i64) -> NaiveDateTime,
+                        fn(NaiveDateTime) -> i64,
+                    ) = match self.tu {
+                        TimeUnit::Nanoseconds => {
+                            (timestamp_ns_to_datetime, datetime_to_timestamp_ns)
+                        },
+                        TimeUnit::Microseconds => {
+                            (timestamp_us_to_datetime, datetime_to_timestamp_us)
+                        },
+                        TimeUnit::Milliseconds => {
+                            (timestamp_ms_to_datetime, datetime_to_timestamp_ms)
+                        },
+                    };
+                    // find beginning of the week.
+                    let dt = from(first);
+                    match self.tz.as_ref() {
+                        #[cfg(feature = "timezones")]
+                        Some(tz) => {
+                            let dt = tz.from_utc_datetime(&dt);
+                            let dt = dt.beginning_of_week();
+                            let dt = dt.naive_utc();
+                            let start = to(dt);
+                            // adjust start of the week based on given day of the week
+                            let start = (self.add)(
+                                &Duration::parse(&format!("{}d", self.start_by.weekday().unwrap())),
+                                start,
+                                self.tz.as_ref(),
+                            )?;
+                            // apply the 'offset'
+                            let start = (self.add)(&self.offset, start, self.tz.as_ref())?;
+                            // make sure the first datapoint has a chance to be included
+                            // and compute the end of the window defined by the 'period'
+                            Ok(ensure_t_in_or_in_front_of_window(
+                                self.every,
+                                first,
+                                self.add,
+                                self.nte,
+                                self.period,
+                                start,
+                                self.closed,
+                                self.tz.as_ref(),
+                            )?
+                            .start)
+                        },
+                        _ => {
+                            let tz = chrono::Utc;
+                            let dt = dt.and_local_timezone(tz).unwrap();
+                            let dt = dt.beginning_of_week();
+                            let dt = dt.naive_utc();
+                            let start = to(dt);
+                            // adjust start of the week based on given day of the week
+                            let start = (self.add)(
+                                &Duration::parse(&format!("{}d", self.start_by.weekday().unwrap())),
+                                start,
+                                None,
+                            )
+                            .unwrap();
+                            // apply the 'offset'
+                            let start = (self.add)(&self.offset, start, None).unwrap();
+                            // make sure the first datapoint has a chance to be included
+                            // and compute the end of the window defined by the 'period'
+                            Ok(ensure_t_in_or_in_front_of_window(
+                                self.every,
+                                first,
+                                self.add,
+                                self.nte,
+                                self.period,
+                                start,
+                                self.closed,
+                                None,
+                            )?
+                            .start)
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+    pub fn insert(
+        &mut self,
+        time: &[i64],
+        windows: &mut Vec<[IdxSize; 2]>,
+        lower_bound: &mut Vec<i64>,
+        upper_bound: &mut Vec<i64>,
+    ) -> PolarsResult<()> {
+        if time.is_empty() {
+            return Ok(());
+        }
+
+        if self.num_seen == 0 {
+            debug_assert!(self.active.is_empty());
+            self.next_lower_bound = self.start_lower_bound(time[0])?;
+        }
+
+        for &t in time {
+            while let Some(w) = self.active.front()
+                && !is_below_upper_bound(t, w.upper_bound, self.closed)
+            {
+                let w = self.active.pop_front().unwrap();
+                windows.push([w.start, self.num_seen - w.start]);
+                if self.include_lower_bound {
+                    lower_bound.push(w.lower_bound);
+                }
+                if self.include_upper_bound {
+                    upper_bound.push(w.upper_bound);
+                }
+            }
+
+            while is_above_lower_bound(t, self.next_lower_bound, self.closed) {
+                match self.find_first_window_around(self.next_lower_bound, t)? {
+                    Ok((lower_bound, upper_bound)) => {
+                        self.next_lower_bound =
+                            (self.add)(&self.every, lower_bound, self.tz.as_ref())?;
+                        self.active.push_back(ActiveDynWindow {
+                            start: self.num_seen,
+                            lower_bound,
+                            upper_bound,
+                        });
+                    },
+                    Err(lower_bound) => {
+                        self.next_lower_bound = lower_bound;
+                        break;
+                    },
+                }
+            }
+
+            self.num_seen += 1
+        }
+
+        Ok(())
+    }
+
+    pub fn lowest_needed_index(&self) -> IdxSize {
+        self.active.front().map_or(self.num_seen, |w| w.start)
+    }
+
+    pub fn finalize(
+        &mut self,
+        windows: &mut Vec<[IdxSize; 2]>,
+        lower_bound: &mut Vec<i64>,
+        upper_bound: &mut Vec<i64>,
+    ) {
+        for w in self.active.drain(..) {
+            windows.push([w.start, self.num_seen - w.start]);
+            if self.include_lower_bound {
+                lower_bound.push(w.lower_bound);
+            }
+            if self.include_upper_bound {
+                upper_bound.push(w.upper_bound);
+            }
+        }
+
+        self.next_lower_bound = 0;
+        self.num_seen = 0;
+    }
+
+    pub fn num_seen(&self) -> IdxSize {
+        self.num_seen
+    }
+
+    pub fn time_unit(&self) -> TimeUnit {
+        self.tu
     }
 }
 

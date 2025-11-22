@@ -18,14 +18,12 @@ pub trait PhysicalIoExpr: Send + Sync {
 #[derive(Debug, Clone)]
 pub enum SpecializedColumnPredicate {
     Equal(Scalar),
-
+    /// A closed (inclusive) range.
     Between(Scalar, Scalar),
-
     EqualOneOf(Box<[Scalar]>),
-
     StartsWith(Box<[u8]>),
     EndsWith(Box<[u8]>),
-    StartEndsWith(Box<[u8]>, Box<[u8]>),
+    RegexMatch(regex::bytes::Regex),
 }
 
 #[derive(Clone)]
@@ -63,7 +61,7 @@ impl ColumnPredicateExpr {
                 ),
                 S::StartsWith(s) => P::StartsWith(s),
                 S::EndsWith(s) => P::EndsWith(s),
-                S::StartEndsWith(start, end) => P::StartEndsWith(start, end),
+                S::RegexMatch(s) => P::RegexMatch(s),
             })
         });
 
@@ -487,18 +485,12 @@ impl ScanIOPredicate {
         }
         self.live_columns = Arc::new(live_columns);
 
-        let mut predicate_on_all_null_inserted_column = false;
-
         if let Some(skip_batch_predicate) = self.skip_batch_predicate.take() {
             let mut sbp_constant_columns = Vec::with_capacity(constant_columns.len() * 3);
             for (c, v) in constant_columns.iter() {
                 sbp_constant_columns.push((format_pl_smallstr!("{c}_min"), v.clone()));
                 sbp_constant_columns.push((format_pl_smallstr!("{c}_max"), v.clone()));
                 let nc = if v.is_null() {
-                    if self.column_predicates.predicates.contains_key(c) {
-                        predicate_on_all_null_inserted_column = true;
-                    }
-
                     AnyValue::Null
                 } else {
                     (0 as IdxSize).into()
@@ -517,13 +509,6 @@ impl ScanIOPredicate {
             column_predicates.predicates.remove(c);
         }
         self.column_predicates = Arc::new(column_predicates);
-
-        if predicate_on_all_null_inserted_column {
-            // TODO:
-            // We currently switch this to false because don't skip the batch properly on all-NULL inserted columns.
-            // It can be removed once the batch is being skipped properly.
-            Arc::make_mut(&mut self.column_predicates).is_sumwise_complete = false;
-        }
 
         self.predicate = Arc::new(PhysicalExprWithConstCols {
             constants: constant_columns,

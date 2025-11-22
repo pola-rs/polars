@@ -67,7 +67,7 @@ def test_cov_corr_f32_type() -> None:
 def test_cov(fruits_cars: pl.DataFrame) -> None:
     ldf = fruits_cars.lazy()
     for cov_ab in (pl.cov(pl.col("A"), pl.col("B")), pl.cov("A", "B")):
-        assert cast(float, ldf.select(cov_ab).collect().item()) == -2.5
+        assert cast("float", ldf.select(cov_ab).collect().item()) == -2.5
 
 
 def test_std(fruits_cars: pl.DataFrame) -> None:
@@ -133,7 +133,7 @@ def test_count() -> None:
             "one_null_float": [2],
             "no_nulls_int": [3],
         },
-    ).cast(pl.UInt32)
+    ).cast(pl.get_index_type())
     assert_frame_equal(lf_result, expected)
     assert_frame_equal(df_result, expected.collect())
 

@@ -14,10 +14,11 @@ from numpy import nan
 import polars as pl
 from polars._utils.convert import parse_as_duration_string
 from polars.exceptions import ComputeError, InvalidOperationError
+from polars.meta.index_type import get_index_type
 from polars.testing import assert_frame_equal, assert_series_equal
-from polars.testing.parametric import column, dataframes
+from polars.testing.parametric import column, dataframes, series
 from polars.testing.parametric.strategies.dtype import _time_units
-from tests.unit.conftest import INTEGER_DTYPES
+from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
     from hypothesis.strategies import SearchStrategy
@@ -26,6 +27,7 @@ if TYPE_CHECKING:
         ClosedInterval,
         PolarsDataType,
         QuantileMethod,
+        RankMethod,
         TimeUnit,
     )
 
@@ -69,6 +71,7 @@ def test_rolling_kernels_and_rolling(
         pl.col("values")
         .rolling_quantile_by("dt", period, quantile=0.2, closed=closed)
         .alias("quantile"),
+        pl.col("values").rolling_rank_by("dt", period, closed=closed).alias("rank"),
     )
     out2 = (
         example_df.set_sorted("dt")
@@ -80,6 +83,7 @@ def test_rolling_kernels_and_rolling(
                 pl.col("values").mean().alias("mean"),
                 pl.col("values").std().alias("std"),
                 pl.col("values").quantile(quantile=0.2).alias("quantile"),
+                pl.col("values").rank().last().alias("rank"),
             ]
         )
     )
@@ -241,6 +245,7 @@ def test_rolling_kurtosis() -> None:
         ("rolling_max_by", [None, 1, 2, 3, 4, 5], pl.Int64),
         ("rolling_std_by", [None, None, None, None, None, None], pl.Float64),
         ("rolling_var_by", [None, None, None, None, None, None], pl.Float64),
+        ("rolling_rank_by", [None, 1.0, 1.0, 1.0, 1.0, 1.0], pl.Float64),
     ],
 )
 def test_rolling_crossing_dst(
@@ -734,8 +739,8 @@ def test_rolling_cov_corr_nulls() -> None:
     df1_expected = pl.DataFrame({"a": [None, None, None, None, 0.62204709]})
     df2_expected = pl.DataFrame({"a": [None, None, None, None, None, 0.62204709]})
 
-    assert_frame_equal(val_1, df1_expected, atol=0.0000001)
-    assert_frame_equal(val_2, df2_expected, atol=0.0000001)
+    assert_frame_equal(val_1, df1_expected, abs_tol=0.0000001)
+    assert_frame_equal(val_2, df2_expected, abs_tol=0.0000001)
 
     val_1 = df1.select(
         pl.rolling_cov("a", "lag_a", window_size=10, min_samples=5, ddof=1)
@@ -747,8 +752,8 @@ def test_rolling_cov_corr_nulls() -> None:
     df1_expected = pl.DataFrame({"a": [None, None, None, None, 0.009445]})
     df2_expected = pl.DataFrame({"a": [None, None, None, None, None, 0.009445]})
 
-    assert_frame_equal(val_1, df1_expected, atol=0.0000001)
-    assert_frame_equal(val_2, df2_expected, atol=0.0000001)
+    assert_frame_equal(val_1, df1_expected, abs_tol=0.0000001)
+    assert_frame_equal(val_2, df2_expected, abs_tol=0.0000001)
 
 
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
@@ -856,7 +861,7 @@ def test_rolling_aggregations_with_over_11225() -> None:
             "group": ["A", "A", "B", "B", "B"],
             "rolling_row_mean": [None, 0.0, None, 2.0, 2.5],
         },
-        schema_overrides={"index": pl.UInt32},
+        schema_overrides={"index": pl.get_index_type()},
     )
     assert_frame_equal(result, expected)
 
@@ -1598,6 +1603,79 @@ def test_rolling_quantile_nearest_with_nulls_23932() -> None:
     assert_series_equal(out["a"], expected)
 
 
+def test_wtd_min_periods_less_window() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]}).with_columns(
+        pl.col("a")
+        .rolling_mean(
+            window_size=3, weights=[0.25, 0.5, 0.25], min_samples=2, center=True
+        )
+        .alias("kernel_mean")
+    )
+
+    expected = pl.DataFrame(
+        {"a": [1, 2, 3, 4, 5], "kernel_mean": [1.333333, 2, 3, 4, 4.666667]}
+    )
+
+    assert_frame_equal(df, expected)
+
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]}).with_columns(
+        pl.col("a")
+        .rolling_sum(
+            window_size=3, weights=[0.25, 0.5, 0.25], min_samples=2, center=True
+        )
+        .alias("kernel_sum")
+    )
+    expected = pl.DataFrame(
+        {"a": [1, 2, 3, 4, 5], "kernel_sum": [1.0, 2.0, 3.0, 4.0, 3.5]}
+    )
+
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]}).with_columns(
+        pl.col("a")
+        .rolling_mean(
+            window_size=3, weights=[0.2, 0.3, 0.5], min_samples=2, center=False
+        )
+        .alias("kernel_mean")
+    )
+
+    expected = pl.DataFrame(
+        {"a": [1, 2, 3, 4, 5], "kernel_mean": [None, 1.625, 2.3, 3.3, 4.3]}
+    )
+
+    assert_frame_equal(df, expected)
+
+    df = pl.DataFrame({"a": [1, 2]}).with_columns(
+        pl.col("a")
+        .rolling_mean(
+            window_size=3, weights=[0.25, 0.5, 0.25], min_samples=2, center=True
+        )
+        .alias("kernel_mean")
+    )
+
+    # Handle edge case where the window size is larger than the number of elements
+    expected = pl.DataFrame({"a": [1, 2], "kernel_mean": [1.333333, 1.666667]})
+    assert_frame_equal(df, expected)
+
+    df = pl.DataFrame({"a": [1, 2]}).with_columns(
+        pl.col("a")
+        .rolling_mean(
+            window_size=3, weights=[0.25, 0.25, 0.5], min_samples=1, center=False
+        )
+        .alias("kernel_mean")
+    )
+
+    expected = pl.DataFrame({"a": [1, 2], "kernel_mean": [1.0, 2 * 2 / 3 + 1 * 1 / 3]})
+
+    df = pl.DataFrame({"a": [1]}).with_columns(
+        pl.col("a")
+        .rolling_sum(
+            6, center=True, min_samples=0, weights=[1, 10, 100, 1000, 10_000, 100_000]
+        )
+        .alias("kernel_sum")
+    )
+    expected = pl.DataFrame({"a": [1], "kernel_sum": [1000.0]})
+    assert_frame_equal(df, expected)
+
+
 def test_rolling_median_23480() -> None:
     vals = [None] * 17 + [3262645.8, 856191.4, 1635379.0, 34707156.0]
     evals = [None] * 19 + [1635379.0, (3262645.8 + 1635379.0) / 2]
@@ -1630,3 +1708,98 @@ def test_rolling_sum_non_finite_23115(with_nulls: bool) -> None:
         for i in range(1000)
     ]
     assert_series_equal(pl.Series(data).rolling_sum(4, min_samples=2), pl.Series(naive))
+
+
+@pytest.mark.parametrize(
+    ("method", "out_dtype"),
+    [
+        ("average", pl.Float64),
+        ("min", get_index_type()),
+        ("max", get_index_type()),
+        ("dense", get_index_type()),
+    ],
+)
+@pytest.mark.parametrize("center", [False, True])
+@given(
+    s=series(name="a", allowed_dtypes=NUMERIC_DTYPES, min_size=1, max_size=50),
+    window_size=st.integers(1, 50),
+)
+def test_rolling_rank(
+    s: pl.Series,
+    window_size: int,
+    method: RankMethod,
+    out_dtype: pl.DataType,
+    center: bool,
+) -> None:
+    df = pl.DataFrame({"a": s})
+    expected = (
+        df.with_row_index()
+        .with_columns(
+            a=pl.col("a")
+            .rank(method=method)
+            .rolling(index_column="index", period=f"{window_size}i")
+            .list.last()
+            .cast(out_dtype)
+        )
+        .with_columns(
+            a=pl.when(pl.col("index") < window_size - 1)
+            .then(None)
+            .otherwise(pl.col("a"))
+        )
+        .drop("index")
+    )
+    if center:
+        expected = expected.with_columns(a=pl.col("a").shift(-((window_size - 1) // 2)))
+    actual = df.lazy().select(
+        pl.col("a").rolling_rank(window_size=window_size, method=method, center=center)
+    )
+
+    try:
+        assert actual.collect_schema() == actual.collect().schema, (
+            f"expected {actual.collect_schema()}, got {actual.collect().schema}"
+        )
+        assert_frame_equal(actual.collect(), expected)
+        print("PASS", file=sys.stderr)
+    except AssertionError:
+        print("FAIL", file=sys.stderr)
+        print(f"{actual.collect() = }", file=sys.stderr)
+        print(f"{expected = }", file=sys.stderr)
+        print(f"{s = }", file=sys.stderr)
+        raise
+
+
+@pytest.mark.parametrize("center", [False, True])
+@given(
+    s=series(name="a", allowed_dtypes=NUMERIC_DTYPES, min_size=1, max_size=50),
+    window_size=st.integers(1, 50),
+)
+def test_rolling_rank_method_random(
+    s: pl.Series, window_size: int, center: bool
+) -> None:
+    df = pl.DataFrame({"a": s})
+    actual = df.lazy().with_columns(
+        lo=pl.col("a").rolling_rank(
+            window_size=window_size, method="min", center=center
+        ),
+        hi=pl.col("a").rolling_rank(
+            window_size=window_size, method="max", center=center
+        ),
+        random=pl.col("a").rolling_rank(
+            window_size=window_size,
+            method="random",
+            center=center,
+        ),
+    )
+
+    assert actual.collect_schema() == actual.collect().schema, (
+        f"expected {actual.collect_schema()}, got {actual.collect().schema}"
+    )
+    assert (
+        actual.select(
+            (
+                (pl.col("lo") <= pl.col("random")) & (pl.col("random") <= pl.col("hi"))
+            ).all()
+        )
+        .collect()
+        .item()
+    )

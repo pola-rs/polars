@@ -35,7 +35,11 @@ fn infer_and_finish<'py, A: ApplyLambda<'py>>(
             .map(|ca| ca.into_series().into())
     } else if out.hasattr("_s")? {
         let py_pyseries = out.getattr("_s").unwrap();
-        let series = py_pyseries.extract::<PySeries>().unwrap().series;
+        let series = py_pyseries
+            .extract::<PySeries>()
+            .unwrap()
+            .series
+            .into_inner();
         let dt = series.dtype();
         applyer
             .apply_lambda_with_list_out_type(
@@ -49,7 +53,11 @@ fn infer_and_finish<'py, A: ApplyLambda<'py>>(
     } else if out.is_instance_of::<PyList>() || out.is_instance_of::<PyTuple>() {
         let series = pl_series(py).call1(py, (out,))?;
         let py_pyseries = series.getattr(py, "_s").unwrap();
-        let series = py_pyseries.extract::<PySeries>(py).unwrap().series;
+        let series = py_pyseries
+            .extract::<PySeries>(py)
+            .unwrap()
+            .series
+            .into_inner();
 
         let dt = series.dtype();
         check_nested_object(dt)?;
@@ -67,7 +75,7 @@ fn infer_and_finish<'py, A: ApplyLambda<'py>>(
         //     pl.Series(lambda(value))
         let lambda_owned = lambda.to_owned().unbind();
         let new_lambda = PyCFunction::new_closure(py, None, None, move |args, _kwargs| {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let out = lambda_owned.call1(py, args)?;
                 // check if Series, if not, call series constructor on it
                 pl_series(py).call1(py, (out,))
@@ -187,7 +195,7 @@ pub trait ApplyLambda<'py> {
     fn apply_lambda_with_list_out_type(
         &self,
         py: Python<'py>,
-        lambda: PyObject,
+        lambda: Py<PyAny>,
         init_null_count: usize,
         first_value: Option<&Series>,
         dt: &DataType,
@@ -245,14 +253,20 @@ fn call_lambda_series_out<'py, T>(
     py: Python<'py>,
     lambda: &Bound<'py, PyAny>,
     in_val: T,
-) -> PyResult<Series>
+) -> PyResult<Option<Series>>
 where
     T: IntoPyObject<'py>,
 {
     let arg = PyTuple::new(py, [in_val])?;
     let out = lambda.call1(arg)?;
-    let py_series = out.getattr("_s")?;
-    py_series.extract::<PySeries>().map(|s| s.series)
+    if out.is_none() {
+        Ok(None)
+    } else {
+        let py_series = out.getattr("_s")?;
+        py_series
+            .extract::<PySeries>()
+            .map(|s| Some(s.series.into_inner()))
+    }
 }
 
 fn extract_anyvalues<'py, T, I>(
@@ -428,7 +442,7 @@ impl<'py> ApplyLambda<'py> for BooleanChunked {
     fn apply_lambda_with_list_out_type(
         &self,
         py: Python<'py>,
-        lambda: PyObject,
+        lambda: Py<PyAny>,
         init_null_count: usize,
         first_value: Option<&Series>,
         dt: &DataType,
@@ -441,10 +455,9 @@ impl<'py> ApplyLambda<'py> for BooleanChunked {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
-                .map(|opt_val| {
-                    opt_val
-                        .map(|val| call_lambda_series_out(py, lambda, val))
-                        .transpose()
+                .map(|opt_val| match opt_val {
+                    None => Ok(None),
+                    Some(val) => call_lambda_series_out(py, lambda, val),
                 });
             iterator_to_list(
                 dt,
@@ -647,7 +660,7 @@ where
     fn apply_lambda_with_list_out_type(
         &self,
         py: Python<'py>,
-        lambda: PyObject,
+        lambda: Py<PyAny>,
         init_null_count: usize,
         first_value: Option<&Series>,
         dt: &DataType,
@@ -660,10 +673,9 @@ where
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
-                .map(|opt_val| {
-                    opt_val
-                        .map(|val| call_lambda_series_out(py, lambda, val))
-                        .transpose()
+                .map(|opt_val| match opt_val {
+                    None => Ok(None),
+                    Some(val) => call_lambda_series_out(py, lambda, val),
                 });
             iterator_to_list(
                 dt,
@@ -861,7 +873,7 @@ impl<'py> ApplyLambda<'py> for StringChunked {
     fn apply_lambda_with_list_out_type(
         &self,
         py: Python<'py>,
-        lambda: PyObject,
+        lambda: Py<PyAny>,
         init_null_count: usize,
         first_value: Option<&Series>,
         dt: &DataType,
@@ -874,10 +886,9 @@ impl<'py> ApplyLambda<'py> for StringChunked {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
-                .map(|opt_val| {
-                    opt_val
-                        .map(|val| call_lambda_series_out(py, lambda, val))
-                        .transpose()
+                .map(|opt_val| match opt_val {
+                    None => Ok(None),
+                    Some(val) => call_lambda_series_out(py, lambda, val),
                 });
             iterator_to_list(
                 dt,
@@ -953,7 +964,10 @@ fn call_series_lambda(
     let py_pyseries = out
         .getattr("_s")
         .expect("could not get Series attribute '_s'");
-    Ok(py_pyseries.extract::<PySeries>().ok().map(|s| s.series))
+    Ok(py_pyseries
+        .extract::<PySeries>()
+        .ok()
+        .map(|s| s.series.into_inner()))
 }
 
 impl<'py> ApplyLambda<'py> for ListChunked {
@@ -1157,7 +1171,7 @@ impl<'py> ApplyLambda<'py> for ListChunked {
     fn apply_lambda_with_list_out_type(
         &self,
         py: Python<'py>,
-        lambda: PyObject,
+        lambda: Py<PyAny>,
         init_null_count: usize,
         first_value: Option<&Series>,
         dt: &DataType,
@@ -1472,7 +1486,7 @@ impl<'py> ApplyLambda<'py> for ArrayChunked {
     fn apply_lambda_with_list_out_type(
         &self,
         py: Python<'py>,
-        lambda: PyObject,
+        lambda: Py<PyAny>,
         init_null_count: usize,
         first_value: Option<&Series>,
         dt: &DataType,
@@ -1728,7 +1742,7 @@ impl<'py> ApplyLambda<'py> for ObjectChunked<ObjectValue> {
     fn apply_lambda_with_list_out_type(
         &self,
         py: Python<'py>,
-        lambda: PyObject,
+        lambda: Py<PyAny>,
         init_null_count: usize,
         first_value: Option<&Series>,
         dt: &DataType,
@@ -1741,10 +1755,9 @@ impl<'py> ApplyLambda<'py> for ObjectChunked<ObjectValue> {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
-                .map(|opt_val| {
-                    opt_val
-                        .map(|val| call_lambda_series_out(py, lambda, val))
-                        .transpose()
+                .map(|opt_val| match opt_val {
+                    None => Ok(None),
+                    Some(val) => call_lambda_series_out(py, lambda, val),
                 });
             iterator_to_list(
                 dt,
@@ -1933,7 +1946,7 @@ impl<'py> ApplyLambda<'py> for StructChunked {
     fn apply_lambda_with_list_out_type(
         &self,
         py: Python<'py>,
-        lambda: PyObject,
+        lambda: Py<PyAny>,
         init_null_count: usize,
         first_value: Option<&Series>,
         dt: &DataType,
@@ -1944,7 +1957,7 @@ impl<'py> ApplyLambda<'py> for StructChunked {
             .skip(init_null_count + skip)
             .map(|val| match val {
                 AnyValue::Null => Ok(None),
-                _ => call_lambda_series_out(py, lambda, Wrap(val)).map(Some),
+                _ => call_lambda_series_out(py, lambda, Wrap(val)),
             });
         iterator_to_list(
             dt,

@@ -1,9 +1,9 @@
 mod samplers;
 
 use polars::prelude::*;
-use polars_python::{PyDataFrame, PyExpr, PySchema};
 use pyo3::prelude::*;
 use pyo3_polars::error::PyPolarsErr;
+use pyo3_polars::{PyDataFrame, PyExpr, PySchema};
 
 use crate::samplers::PySampler;
 
@@ -46,11 +46,11 @@ impl RandomSource {
                 Field::new(s.name().into(), s.dtype())
             })
             .collect::<Schema>();
-        PySchema::from(schema)
+        PySchema(Arc::new(schema))
     }
 
     fn try_set_predicate(&mut self, predicate: PyExpr) {
-        self.predicate = Some(predicate.inner);
+        self.predicate = Some(predicate.0);
     }
 
     fn set_with_columns(&mut self, columns: Vec<String>) {
@@ -105,7 +105,7 @@ impl RandomSource {
                     .map_err(PyPolarsErr::from)?;
             }
 
-            Ok(Some(PyDataFrame::from(df)))
+            Ok(Some(PyDataFrame(df)))
         } else {
             Ok(None)
         }

@@ -7,6 +7,7 @@ use polars_io::csv::read::CsvReadOptions;
 use polars_io::ipc::IpcScanOptions;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::read::ParquetOptions;
+use polars_utils::unique_id::UniqueId;
 
 #[cfg(feature = "python")]
 use crate::dsl::python_dsl::PythonFunction;
@@ -51,7 +52,6 @@ impl DslBuilder {
     }
 
     #[cfg(feature = "parquet")]
-    #[allow(clippy::too_many_arguments)]
     pub fn scan_parquet(
         sources: ScanSources,
         options: ParquetOptions,
@@ -67,7 +67,6 @@ impl DslBuilder {
     }
 
     #[cfg(feature = "ipc")]
-    #[allow(clippy::too_many_arguments)]
     pub fn scan_ipc(
         sources: ScanSources,
         options: IpcScanOptions,
@@ -77,6 +76,21 @@ impl DslBuilder {
             sources,
             unified_scan_args: Box::new(unified_scan_args),
             scan_type: Box::new(FileScanDsl::Ipc { options }),
+            cached_ir: Default::default(),
+        }
+        .into())
+    }
+
+    #[cfg(feature = "scan_lines")]
+    pub fn scan_lines(
+        sources: ScanSources,
+        unified_scan_args: UnifiedScanArgs,
+        name: PlSmallStr,
+    ) -> PolarsResult<Self> {
+        Ok(DslPlan::Scan {
+            sources,
+            unified_scan_args: Box::new(unified_scan_args),
+            scan_type: Box::new(FileScanDsl::Lines { name }),
             cached_ir: Default::default(),
         }
         .into())
@@ -117,7 +131,11 @@ impl DslBuilder {
 
     pub fn cache(self) -> Self {
         let input = Arc::new(self.0);
-        DslPlan::Cache { input }.into()
+        DslPlan::Cache {
+            input,
+            id: UniqueId::new(),
+        }
+        .into()
     }
 
     pub fn drop(self, columns: Selector) -> Self {
@@ -188,6 +206,17 @@ impl DslBuilder {
         .into()
     }
 
+    pub fn pipe_with_schema(
+        self,
+        callback: PlanCallback<(Vec<DslPlan>, Vec<SchemaRef>), DslPlan>,
+    ) -> Self {
+        DslPlan::PipeWithSchema {
+            input: Arc::new([self.0]),
+            callback,
+        }
+        .into()
+    }
+
     pub fn with_context(self, contexts: Vec<DslPlan>) -> Self {
         DslPlan::ExtContext {
             input: Arc::new(self.0),
@@ -215,11 +244,13 @@ impl DslBuilder {
         .into()
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn group_by<E: AsRef<[Expr]>>(
         self,
         keys: Vec<Expr>,
+        predicates: Vec<Expr>,
         aggs: E,
-        apply: Option<(Arc<dyn DataFrameUdf>, SchemaRef)>,
+        apply: Option<(PlanCallback<DataFrame, DataFrame>, SchemaRef)>,
         maintain_order: bool,
         #[cfg(feature = "dynamic_group_by")] dynamic_options: Option<DynamicGroupOptions>,
         #[cfg(feature = "dynamic_group_by")] rolling_options: Option<RollingGroupOptions>,
@@ -236,6 +267,7 @@ impl DslBuilder {
         DslPlan::GroupBy {
             input: Arc::new(self.0),
             keys,
+            predicates,
             aggs,
             apply,
             maintain_order,
@@ -267,13 +299,39 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn explode(self, columns: Selector, allow_empty: bool) -> Self {
+    pub fn explode(self, columns: Selector, options: ExplodeOptions, allow_empty: bool) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
             function: DslFunction::Explode {
                 columns,
+                options,
                 allow_empty,
             },
+        }
+        .into()
+    }
+
+    #[cfg(feature = "pivot")]
+    #[expect(clippy::too_many_arguments)]
+    pub fn pivot(
+        self,
+        on: Selector,
+        on_columns: Arc<DataFrame>,
+        index: Selector,
+        values: Selector,
+        agg: Expr,
+        maintain_order: bool,
+        separator: PlSmallStr,
+    ) -> Self {
+        DslPlan::Pivot {
+            input: Arc::new(self.0),
+            on,
+            on_columns,
+            index,
+            values,
+            agg,
+            maintain_order,
+            separator,
         }
         .into()
     }

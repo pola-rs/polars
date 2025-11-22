@@ -14,11 +14,10 @@ When you deploy Polars Cloud the following infrastructure is setup.
 </figure>
 
 1. A `VPC` and two `subnets` in which Polars EC2 workers can run.
-1. Two `security groups`. One for batch mode, which does not have any public ports, and one for
-   interactive mode, which allows direct communication between your local environment and the
-   cluster.
-1. `PolarsWorker` IAM role. Polars EC2 workers run under this IAM role.
-1. `UserInitiated` & `Unattended` IAM role. The `UserInitiated` role has the permissions to start
+2. Two `security groups`. One for the default mode that allows direct communication between your
+   local environment and the cluster, and one for proxy mode, which does not have any public ports.
+3. `PolarsWorker` IAM role. Polars EC2 workers run under this IAM role.
+4. `UserInitiated` & `Unattended` IAM role. The `UserInitiated` role has the permissions to start
    Polars EC2 workers in your environment. The `Unattended` role can terminate unused compute
    clusters that you might have forgot about.
 
@@ -57,7 +56,7 @@ The list below show an overview of the required permissions for each of the role
 
 ??? Worker
 
-    - s3:PutObject 
+    - s3:PutObject
     - s3:GetObject
     - s3:ListBucket
 
@@ -75,9 +74,9 @@ related resources). However, you can choose to use your own network configuratio
 "Deploy with custom template" option. This allows you to deploy into an existing VPC and subnets of
 your choice.
 
-You can configure these subnets to align with your business requirements. For batch mode, outbound
-traffic must be allowed. For interactive mode, the Python client accessing Polars Cloud must have
-access, so the subnet must be public, but allows for access controls such as IP-whitelisting.
+You can configure these subnets to align with your business requirements. By default, the Python
+client accessing Polars Cloud must have access, so the subnet must be public, but allows for access
+controls such as IP-whitelisting. For proxy mode, outbound traffic must be allowed.
 
 ## Custom requirements
 

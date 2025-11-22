@@ -11,21 +11,10 @@ pub struct MetaNameSpace(pub(crate) Expr);
 
 impl MetaNameSpace {
     /// Pop latest expression and return the input(s) of the popped expression.
-    pub fn pop(self, schema: Option<&Schema>) -> PolarsResult<Vec<Expr>> {
-        let schema = match schema {
-            None => &Default::default(),
-            Some(s) => s,
-        };
-        let mut arena = Arena::with_capacity(8);
-        let mut ctx = ExprToIRContext::new_no_verification(&mut arena, schema);
-        let expr = to_expr_ir(self.0, &mut ctx)?;
-        let ae = arena.get(expr.node());
-        let mut inputs = Vec::with_capacity(2);
-        ae.inputs_rev(&mut inputs);
-        Ok(inputs
-            .iter()
-            .map(|node| node_to_expr(*node, &arena))
-            .collect())
+    pub fn pop(self, _schema: Option<&Schema>) -> PolarsResult<Vec<Expr>> {
+        let mut out = Vec::new();
+        self.0.nodes_owned(&mut out);
+        Ok(out)
     }
 
     /// Get the root column names.

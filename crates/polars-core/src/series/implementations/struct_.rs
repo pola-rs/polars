@@ -4,7 +4,7 @@ use arrow::bitmap::Bitmap;
 
 use super::*;
 use crate::chunked_array::StructChunked;
-use crate::prelude::row_encode::_get_rows_encoded_ca_unordered;
+use crate::prelude::row_encode::{_get_rows_encoded_ca_unordered, encode_rows_unordered};
 use crate::prelude::*;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
 
@@ -153,6 +153,10 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         self.0.take_unchecked(_idx).into_series()
     }
 
+    fn deposit(&self, validity: &Bitmap) -> Series {
+        self.0.deposit(validity).into_series()
+    }
+
     fn len(&self) -> usize {
         self.0.len()
     }
@@ -228,6 +232,11 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         let groups = self.group_tuples(main_thread, true)?;
         let first = groups.take_group_firsts();
         Ok(IdxCa::from_vec(self.name().clone(), first))
+    }
+
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        let ca = encode_rows_unordered(&[self.0.clone().into_column()])?;
+        ChunkUnique::unique_id(&ca)
     }
 
     fn has_nulls(&self) -> bool {

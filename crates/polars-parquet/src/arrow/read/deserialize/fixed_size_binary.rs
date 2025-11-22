@@ -2,23 +2,25 @@ use arrow::array::{FixedSizeBinaryArray, Splitable};
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
+use arrow::pushable::Pushable;
 use arrow::storage::SharedStorage;
 use arrow::types::{
-    Bytes1Alignment1, Bytes2Alignment2, Bytes4Alignment4, Bytes8Alignment8, Bytes12Alignment4,
-    Bytes16Alignment16, Bytes32Alignment16,
+    AlignedBytes, Bytes1Alignment1, Bytes2Alignment2, Bytes4Alignment4, Bytes8Alignment8,
+    Bytes12Alignment4, Bytes16Alignment16, Bytes32Alignment16,
 };
 use bytemuck::Zeroable;
 
+use super::Filter;
 use super::dictionary_encoded::append_validity;
 use super::utils::array_chunks::ArrayChunks;
 use super::utils::{Decoder, dict_indices_decoder, freeze_validity};
-use super::{Filter, PredicateFilter};
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::encoding::{Encoding, hybrid_rle};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{DataPage, DictPage, split_buffer};
 use crate::read::deserialize::dictionary_encoded::constrain_page_validity;
-use crate::read::deserialize::utils;
+use crate::read::deserialize::utils::{self, Decoded};
+use crate::read::expr::{ParquetScalar, SpecializedParquetColumnExpr};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
@@ -168,6 +170,19 @@ impl FSBVec {
             FSBVec::Other(vec, size) => vec.len() / size,
         }
     }
+
+    fn capacity(&self) -> usize {
+        match self {
+            FSBVec::Size1(vec) => vec.capacity(),
+            FSBVec::Size2(vec) => vec.capacity(),
+            FSBVec::Size4(vec) => vec.capacity(),
+            FSBVec::Size8(vec) => vec.capacity(),
+            FSBVec::Size12(vec) => vec.capacity(),
+            FSBVec::Size16(vec) => vec.capacity(),
+            FSBVec::Size32(vec) => vec.capacity(),
+            FSBVec::Other(vec, size) => vec.capacity() / size,
+        }
+    }
 }
 
 impl utils::Decoded for (FSBVec, BitmapBuilder) {
@@ -188,6 +203,10 @@ impl utils::Decoded for (FSBVec, BitmapBuilder) {
         }
         self.1.extend_constant(n, false);
     }
+
+    fn remaining_capacity(&self) -> usize {
+        (self.0.capacity() - self.0.len()).min(self.1.capacity() - self.1.len())
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -195,7 +214,6 @@ fn decode_fsb_plain(
     size: usize,
     values: &[u8],
     target: &mut FSBVec,
-    pred_true_mask: &mut BitmapBuilder,
     validity: &mut BitmapBuilder,
     is_optional: bool,
     filter: Option<Filter>,
@@ -216,7 +234,6 @@ fn decode_fsb_plain(
                 filter,
                 validity,
                 $target,
-                pred_true_mask,
             )
         }};
     }
@@ -327,9 +344,7 @@ fn decode_fsb_dict(
     size: usize,
     values: HybridRleDecoder<'_>,
     dict: &FixedSizeBinaryArray,
-    dict_mask: Option<&Bitmap>,
     target: &mut FSBVec,
-    pred_true_mask: &mut BitmapBuilder,
     validity: &mut BitmapBuilder,
     is_optional: bool,
     filter: Option<Filter>,
@@ -346,13 +361,11 @@ fn decode_fsb_dict(
             super::dictionary_encoded::decode_dict_dispatch(
                 values,
                 dict,
-                dict_mask,
                 is_optional,
                 page_validity,
                 filter,
                 validity,
                 $target,
-                pred_true_mask,
             )
         }};
     }
@@ -520,7 +533,6 @@ impl Decoder for BinaryDecoder {
             page.buffer.as_ref(),
             &mut target,
             &mut BitmapBuilder::new(),
-            &mut BitmapBuilder::new(),
             false,
             None,
             None,
@@ -533,12 +545,13 @@ impl Decoder for BinaryDecoder {
         ))
     }
 
-    fn has_predicate_specialization(
-        &self,
+    fn evaluate_predicate(
+        &mut self,
         _state: &utils::State<'_, Self>,
-        _predicate: &PredicateFilter,
+        _predicate: Option<&SpecializedParquetColumnExpr>,
+        _pred_true_mask: &mut BitmapBuilder,
+        _dict_mask: Option<&Bitmap>,
     ) -> ParquetResult<bool> {
-        // @TODO: This can be enabled for the fast paths
         Ok(false)
     }
 
@@ -583,15 +596,14 @@ impl Decoder for BinaryDecoder {
         &mut self,
         state: utils::State<'_, Self>,
         decoded: &mut Self::DecodedState,
-        pred_true_mask: &mut BitmapBuilder,
         filter: Option<Filter>,
+        _chunks: &mut Vec<Self::Output>,
     ) -> ParquetResult<()> {
         match state.translation {
             StateTranslation::Plain(values, size) => decode_fsb_plain(
                 size,
                 values,
                 &mut decoded.0,
-                pred_true_mask,
                 &mut decoded.1,
                 state.is_optional,
                 filter,
@@ -601,14 +613,57 @@ impl Decoder for BinaryDecoder {
                 self.size,
                 values,
                 state.dict.unwrap(),
-                state.dict_mask,
                 &mut decoded.0,
-                pred_true_mask,
                 &mut decoded.1,
                 state.is_optional,
                 filter,
                 state.page_validity.as_ref(),
             ),
         }
+    }
+
+    fn extend_constant(
+        &mut self,
+        decoded: &mut Self::DecodedState,
+        length: usize,
+        value: &ParquetScalar,
+    ) -> ParquetResult<()> {
+        if value.is_null() {
+            decoded.extend_nulls(length);
+        }
+
+        let value = value.as_binary().unwrap();
+        assert_eq!(value.len(), decoded.0.size());
+        match &mut decoded.0 {
+            FSBVec::Size1(v) => {
+                v.extend_constant(length, <_>::from_unaligned(value.try_into().unwrap()))
+            },
+            FSBVec::Size2(v) => {
+                v.extend_constant(length, <_>::from_unaligned(value.try_into().unwrap()))
+            },
+            FSBVec::Size4(v) => {
+                v.extend_constant(length, <_>::from_unaligned(value.try_into().unwrap()))
+            },
+            FSBVec::Size8(v) => {
+                v.extend_constant(length, <_>::from_unaligned(value.try_into().unwrap()))
+            },
+            FSBVec::Size12(v) => {
+                v.extend_constant(length, <_>::from_unaligned(value.try_into().unwrap()))
+            },
+            FSBVec::Size16(v) => {
+                v.extend_constant(length, <_>::from_unaligned(value.try_into().unwrap()))
+            },
+            FSBVec::Size32(v) => {
+                v.extend_constant(length, <_>::from_unaligned(value.try_into().unwrap()))
+            },
+            FSBVec::Other(v, size) => {
+                v.reserve(*size * length);
+                for _ in 0..length {
+                    v.extend_from_slice(value);
+                }
+            },
+        }
+
+        Ok(())
     }
 }

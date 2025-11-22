@@ -106,7 +106,12 @@ impl Series {
             InvalidOperation: "at least one dimension must be specified"
         );
 
-        let leaf_array = self.get_leaf_array().rechunk();
+        let leaf_array = self
+            .trim_lists_to_normalized_offsets()
+            .as_ref()
+            .unwrap_or(self)
+            .get_leaf_array()
+            .rechunk();
         let size = leaf_array.len();
 
         let mut total_dim_size = 1;
@@ -173,7 +178,7 @@ impl Series {
         );
 
         polars_ensure!(
-            size % total_dim_size == 0,
+            size.is_multiple_of(total_dim_size),
             InvalidOperation: "cannot reshape array of size {} into shape {}", size, format_tuple!(dimensions)
         );
 
@@ -217,7 +222,10 @@ impl Series {
 
         let s = self;
         let s = if let DataType::List(_) = s.dtype() {
-            Cow::Owned(s.explode(true)?)
+            Cow::Owned(s.explode(ExplodeOptions {
+                empty_as_null: false,
+                keep_nulls: true,
+            })?)
         } else {
             Cow::Borrowed(s)
         };
@@ -328,7 +336,14 @@ mod test {
             let out = s.reshape_list(&dims)?;
             assert_eq!(out.len(), list_len);
             assert!(matches!(out.dtype(), DataType::List(_)));
-            assert_eq!(out.explode(false)?.len(), 4);
+            assert_eq!(
+                out.explode(ExplodeOptions {
+                    empty_as_null: true,
+                    keep_nulls: true,
+                })?
+                .len(),
+                4
+            );
         }
 
         Ok(())

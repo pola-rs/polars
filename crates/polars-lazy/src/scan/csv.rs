@@ -1,3 +1,5 @@
+#[cfg(feature = "csv")]
+use arrow::buffer::Buffer;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::csv::read::{
@@ -35,7 +37,7 @@ impl LazyCsvReader {
         self
     }
 
-    pub fn new_paths(paths: Arc<[PlPath]>) -> Self {
+    pub fn new_paths(paths: Buffer<PlPath>) -> Self {
         Self::new_with_sources(ScanSources::Paths(paths))
     }
 
@@ -51,7 +53,7 @@ impl LazyCsvReader {
     }
 
     pub fn new(path: PlPath) -> Self {
-        Self::new_with_sources(ScanSources::Paths([path].into()))
+        Self::new_with_sources(ScanSources::Paths(Buffer::from_iter([path])))
     }
 
     /// Skip this number of rows after the header location.
@@ -275,7 +277,12 @@ impl LazyCsvReader {
             ScanSources::Paths(paths) => {
                 // TODO: Path expansion should happen when converting to the IR
                 // https://github.com/pola-rs/polars/issues/17634
-                let paths = expand_paths(&paths[..], self.glob(), self.cloud_options())?;
+                let paths = expand_paths(
+                    &paths[..],
+                    self.glob(),
+                    &[], // hidden_file_prefix
+                    &mut self.cloud_options,
+                )?;
 
                 let Some(path) = paths.first() else {
                     polars_bail!(ComputeError: "no paths specified for this reader");
@@ -337,15 +344,19 @@ impl LazyFileListReader for LazyCsvReader {
                 rechunk,
                 cache: self.cache,
                 glob: self.glob,
+                hidden_file_prefix: None,
                 projection: None,
+                column_mapping: None,
+                default_values: None,
                 row_index,
                 pre_slice,
                 cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
                 missing_columns_policy: MissingColumnsPolicy::Raise,
                 extra_columns_policy: ExtraColumnsPolicy::Raise,
                 include_file_paths: self.include_file_paths,
-                column_mapping: None,
                 deletion_files: None,
+                table_statistics: None,
+                row_count: None,
             },
         )?
         .build()

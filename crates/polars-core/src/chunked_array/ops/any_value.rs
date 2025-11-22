@@ -39,6 +39,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         DataType::UInt16 => downcast_and_pack!(UInt16Array, UInt16),
         DataType::UInt32 => downcast_and_pack!(UInt32Array, UInt32),
         DataType::UInt64 => downcast_and_pack!(UInt64Array, UInt64),
+        DataType::UInt128 => downcast_and_pack!(UInt128Array, UInt128),
         DataType::Int8 => downcast_and_pack!(Int8Array, Int8),
         DataType::Int16 => downcast_and_pack!(Int16Array, Int16),
         DataType::Int32 => downcast_and_pack!(Int32Array, Int32),
@@ -130,8 +131,10 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         DataType::Decimal(precision, scale) => {
             let arr = &*(arr as *const dyn Array as *const Int128Array);
             let v = arr.value_unchecked(idx);
-            AnyValue::Decimal(v, scale.unwrap_or_else(|| unreachable!()))
+            AnyValue::Decimal(v, *precision, *scale)
         },
+        #[cfg(feature = "dtype-extension")]
+        DataType::Extension(typ, storage) => arr_to_any_value(arr, idx, storage),
         #[cfg(feature = "object")]
         DataType::Object(_) => {
             // We should almost never hit this. The only known exception is when we put objects in

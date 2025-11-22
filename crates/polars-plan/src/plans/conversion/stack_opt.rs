@@ -2,6 +2,7 @@ use std::borrow::Borrow;
 
 use self::type_check::TypeCheckRule;
 use super::*;
+use crate::constants::PL_ELEMENT_NAME;
 
 /// Applies expression simplification and type coercion during conversion to IR.
 pub struct ConversionOptimizer {
@@ -141,10 +142,11 @@ impl ConversionOptimizer {
                 };
                 let expr = expr_arena
                     .get(*expr)
-                    .get_type(schema, Context::Default, expr_arena)?;
+                    .to_dtype(&ToFieldContext::new(expr_arena, schema))?;
 
                 let element_dtype = variant.element_dtype(&expr)?;
-                let schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
+                let mut schema = schema.clone();
+                schema.insert(PL_ELEMENT_NAME.clone(), element_dtype.clone());
                 self.schemas.push(schema);
                 self.scratch.push((*evaluation, self.schemas.len()));
             }

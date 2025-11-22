@@ -19,15 +19,7 @@ impl PySeries {
         return_dtype: Option<Wrap<DataType>>,
         skip_nulls: bool,
     ) -> PyResult<PySeries> {
-        let series = &self.series;
-
-        if return_dtype.is_none() {
-            polars_warn!(
-                MapWithoutReturnDtypeWarning,
-                "Calling `map_elements` without specifying `return_dtype` can lead to unpredictable results. \
-                Specify `return_dtype` to silence this warning."
-            )
-        }
+        let series = &self.series.read().clone(); // Clone so we don't deadlock on re-entrance.
 
         if skip_nulls && (series.null_count() == series.len()) {
             if let Some(return_dtype) = return_dtype {
@@ -64,9 +56,9 @@ impl PySeries {
 
         }
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             if matches!(
-                self.series.dtype(),
+                series.dtype(),
                 DataType::Datetime(_, _)
                     | DataType::Date
                     | DataType::Duration(_)
@@ -78,8 +70,8 @@ impl PySeries {
                     | DataType::Decimal(_, _)
             ) || !skip_nulls
             {
-                let mut avs = Vec::with_capacity(self.series.len());
-                let s = self.series.rechunk();
+                let mut avs = Vec::with_capacity(series.len());
+                let s = series.rechunk();
 
                 for av in s.iter() {
                     let out = match (skip_nulls, av) {
@@ -95,7 +87,7 @@ impl PySeries {
                     };
                     avs.push(out)
                 }
-                let out = Series::new(self.series.name().clone(), &avs);
+                let out = Series::new(series.name().clone(), &avs);
                 let dtype = out.dtype();
                 if dtype.is_nested() {
                     check_nested_object(dtype)?;
@@ -204,6 +196,17 @@ impl PySeries {
                     )?;
                     ca.into_series()
                 },
+                Some(DataType::UInt128) => {
+                    let ca: UInt128Chunked = dispatch_apply!(
+                        series,
+                        apply_lambda_with_primitive_out_type,
+                        py,
+                        function,
+                        0,
+                        None
+                    )?;
+                    ca.into_series()
+                },
                 Some(DataType::Float32) => {
                     let ca: Float32Chunked = dispatch_apply!(
                         series,
@@ -256,9 +259,13 @@ impl PySeries {
                     let dtype_py = Wrap((*inner).clone());
                     let function_wrapped =
                         PyCFunction::new_closure(py, None, None, move |args, _kwargs| {
-                            Python::with_gil(|py| {
+                            Python::attach(|py| {
                                 let out = function_owned.call1(py, args)?;
-                                pl_series(py).call1(py, ("", out, &dtype_py))
+                                if out.is_none(py) {
+                                    Ok(py.None())
+                                } else {
+                                    pl_series(py).call1(py, ("", out, &dtype_py))
+                                }
                             })
                         })?
                         .into_any()
@@ -293,6 +300,7 @@ impl PySeries {
                 _ => return dispatch_apply!(series, apply_lambda_unknown, py, function),
             };
 
+            assert!(out.dtype().is_known());
             Ok(out.into())
         })
     }

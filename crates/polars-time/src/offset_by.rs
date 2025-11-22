@@ -92,11 +92,11 @@ pub fn impl_offset_by(ts: &Series, offsets: &Series) -> PolarsResult<Series> {
     let out = match dtype {
         DataType::Date => {
             let ts = ts
-                .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
+                .cast(&DataType::Datetime(TimeUnit::Microseconds, None))
                 .unwrap();
             let datetime = ts.datetime().unwrap();
             let out = apply_offsets_to_datetime(datetime, offsets, None)?;
-            out.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
+            out.cast(&DataType::Datetime(TimeUnit::Microseconds, None))
                 .unwrap()
                 .cast(&DataType::Date)
         },

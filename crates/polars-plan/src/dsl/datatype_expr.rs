@@ -11,7 +11,7 @@ use super::{
     ArrayDataTypeFunction, DataTypeFunction, DataTypeSelector, Expr, StructDataTypeFunction,
 };
 use crate::frame::OptFlags;
-use crate::plans::{ExprToIRContext, expand_expression, to_expr_ir};
+use crate::plans::{ExprToIRContext, ToFieldContext, expand_expression, to_expr_ir};
 
 #[derive(Clone, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -91,7 +91,7 @@ fn into_datatype_impl(
             let e = to_expr_ir(expr, &mut ctx)?;
             let dtype = arena
                 .get(e.node())
-                .to_dtype(schema, Default::default(), &arena)?;
+                .to_dtype(&ToFieldContext::new(&arena, schema))?;
             polars_ensure!(!dtype.contains_unknown(),InvalidOperation:"DataType expression is not allowed to instantiate to `unknown`");
             dtype
         },
@@ -102,7 +102,7 @@ fn into_datatype_impl(
             Some(self_dtype) => self_dtype.clone(),
         },
         D::InnerDataType { input, validation } => {
-            let dt = input.into_datatype(schema)?;
+            let dt = into_datatype_impl(*input, schema, self_dtype)?;
             let Some(validation) = validation else {
                 return dt.try_into_inner_dtype();
             };
@@ -121,7 +121,7 @@ fn into_datatype_impl(
         },
         D::Int(dt_expr, f) => {
             use DataType as DT;
-            let dt = dt_expr.into_datatype(schema)?;
+            let dt = into_datatype_impl(*dt_expr, schema, self_dtype)?;
             polars_ensure!(dt.is_integer(), InvalidOperation: "`{dt}` is not an integer type");
             match f {
                 IntDataTypeExpr::ToUnsigned => match dt {
@@ -148,7 +148,7 @@ fn into_datatype_impl(
             }
         },
         D::Struct(dt_expr, f) => {
-            let fields: Vec<Field> = match dt_expr.into_datatype(schema)? {
+            let fields: Vec<Field> = match into_datatype_impl(*dt_expr, schema, self_dtype)? {
                 #[cfg(feature = "dtype-struct")]
                 DataType::Struct(fields) => fields,
                 dt => polars_bail!(InvalidOperation: "`{dt}` is not a `struct`"),
@@ -185,16 +185,21 @@ fn into_datatype_impl(
                 },
             }
         },
-        D::WrapInList(dt_expr) => DataType::List(Box::new(dt_expr.into_datatype(schema)?)),
+        D::WrapInList(dt_expr) => {
+            DataType::List(Box::new(into_datatype_impl(*dt_expr, schema, self_dtype)?))
+        },
         D::WrapInArray(dt_expr, width) => feature_gated!("dtype-array", {
-            DataType::Array(Box::new(dt_expr.into_datatype(schema)?), width)
+            DataType::Array(
+                Box::new(into_datatype_impl(*dt_expr, schema, self_dtype)?),
+                width,
+            )
         }),
         D::StructWithFields(field_exprs) => feature_gated!("dtype-struct", {
             use polars_core::prelude::{Field, InitHashMaps, PlHashSet};
             let mut seen = PlHashSet::with_capacity(field_exprs.len());
             let mut fields = Vec::with_capacity(field_exprs.len());
             for (name, dt_expr) in field_exprs {
-                let dt = dt_expr.into_datatype(schema)?;
+                let dt = into_datatype_impl(dt_expr, schema, self_dtype)?;
                 if !seen.insert(name.clone()) {
                     polars_bail!(
                         InvalidOperation:
@@ -270,6 +275,15 @@ impl DataTypeExpr {
 
     pub fn wrap_in_array(self, width: usize) -> Self {
         Self::WrapInArray(Box::new(self), width)
+    }
+
+    pub fn default_value(self, n: usize, numeric_to_one: bool, num_list_values: usize) -> Expr {
+        Expr::DataTypeFunction(DataTypeFunction::DefaultValue {
+            dt_expr: self,
+            n,
+            numeric_to_one,
+            num_list_values,
+        })
     }
 
     pub fn int(self) -> DataTypeExprIntNameSpace {

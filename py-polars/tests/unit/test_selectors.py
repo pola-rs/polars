@@ -1,6 +1,6 @@
 import pickle
 from collections import OrderedDict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal as PyDecimal
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -375,7 +375,7 @@ def test_select_decimal(df: pl.DataFrame) -> None:
     df = pl.DataFrame(
         schema={
             "zz0": pl.Float64,
-            "zz1": pl.Decimal,
+            "zz1": pl.Decimal(38, 5),
             "zz2": pl.Decimal(10, 10),
         }
     )
@@ -842,7 +842,7 @@ def test_selector_or() -> None:
 
     expected = pl.DataFrame(
         {"idx": [0, 1, 2], "str": ["x", "y", "z"]},
-        schema_overrides={"idx": pl.UInt32},
+        schema_overrides={"idx": pl.get_index_type()},
     )
     assert_frame_equal(result, expected)
 
@@ -880,7 +880,7 @@ def test_selector_list_of_lists_18499() -> None:
     )
 
     with pytest.raises(TypeError, match="cannot turn 'list' into selector"):
-        lf.unique(subset=[["bar", "ham"]])  # type: ignore[list-item]
+        lf.unique(subset=[["bar", "ham"]])
 
 
 def test_selector_python_dtypes() -> None:
@@ -1128,3 +1128,16 @@ def test_pickle_selector_11425() -> None:
 def test_list_eval_selector_23667() -> None:
     df = pl.DataFrame({"x": [[1, 2], [3]]})
     assert_frame_equal(df, df.select(pl.all().list.eval(pl.element())))
+
+
+def test_datetime_selectors_23767() -> None:
+    df = pl.DataFrame(
+        {"a": [datetime(2020, 1, 1)], "b": [datetime(2020, 1, 2, tzinfo=timezone.utc)]}
+    )
+
+    assert df.select(pl.selectors.datetime("us", time_zone=None)).columns == ["a"]
+    assert df.select(pl.selectors.datetime("us", time_zone=["UTC"])).columns == ["b"]
+    assert df.select(pl.selectors.datetime("us", time_zone=[None, "UTC"])).columns == [
+        "a",
+        "b",
+    ]

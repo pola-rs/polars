@@ -224,7 +224,7 @@ impl DataFrame {
         self.columns.iter().map(func).collect()
     }
     // Reduce monomorphization.
-    pub fn _apply_columns(&self, func: &(dyn Fn(&Column) -> Column)) -> Vec<Column> {
+    pub fn _apply_columns(&self, func: &dyn Fn(&Column) -> Column) -> Vec<Column> {
         self.columns.iter().map(func).collect()
     }
     // Reduce monomorphization.
@@ -295,6 +295,8 @@ impl DataFrame {
                 columns[0].name(), height, col.name(), col.len()
             );
         }
+
+        ensure_names_unique(&columns, |s| s.name().as_str())?;
 
         Ok(DataFrame {
             height,
@@ -386,6 +388,13 @@ impl DataFrame {
             columns: vec![],
             cached_schema: OnceLock::new(),
         }
+    }
+
+    /// Create an empty `DataFrame` with empty columns as per the `schema`.
+    pub fn empty_with_arc_schema(schema: Arc<Schema>) -> Self {
+        let mut df = Self::empty_with_schema(&schema);
+        df.cached_schema = OnceLock::from(schema);
+        df
     }
 
     /// Create an empty `DataFrame` with empty columns as per the `schema`.
@@ -2039,8 +2048,26 @@ impl DataFrame {
     /// # Safety
     /// The indices must be in-bounds.
     pub unsafe fn take_unchecked_impl(&self, idx: &IdxCa, allow_threads: bool) -> Self {
-        let cols = if allow_threads {
-            POOL.install(|| self._apply_columns_par(&|c| c.take_unchecked(idx)))
+        let cols = if allow_threads && POOL.current_num_threads() > 1 {
+            POOL.install(|| {
+                if POOL.current_num_threads() > self.width() {
+                    let stride = usize::max(idx.len().div_ceil(POOL.current_num_threads()), 256);
+                    self._apply_columns_par(&|c| {
+                        (0..idx.len().div_ceil(stride))
+                            .into_par_iter()
+                            .map(|i| c.take_unchecked(&idx.slice((i * stride) as i64, stride)))
+                            .reduce(
+                                || Column::new_empty(c.name().clone(), c.dtype()),
+                                |mut a, b| {
+                                    a.append_owned(b).unwrap();
+                                    a
+                                },
+                            )
+                    })
+                } else {
+                    self._apply_columns_par(&|c| c.take_unchecked(idx))
+                }
+            })
         } else {
             self._apply_columns(&|s| s.take_unchecked(idx))
         };
@@ -2056,8 +2083,30 @@ impl DataFrame {
     /// # Safety
     /// The indices must be in-bounds.
     pub unsafe fn take_slice_unchecked_impl(&self, idx: &[IdxSize], allow_threads: bool) -> Self {
-        let cols = if allow_threads {
-            POOL.install(|| self._apply_columns_par(&|s| s.take_slice_unchecked(idx)))
+        let cols = if allow_threads && POOL.current_num_threads() > 1 {
+            POOL.install(|| {
+                if POOL.current_num_threads() > self.width() {
+                    let stride = usize::max(idx.len().div_ceil(POOL.current_num_threads()), 256);
+                    self._apply_columns_par(&|c| {
+                        (0..idx.len().div_ceil(stride))
+                            .into_par_iter()
+                            .map(|i| {
+                                let idx = &idx[i * stride..];
+                                let idx = &idx[..idx.len().min(stride)];
+                                c.take_slice_unchecked(idx)
+                            })
+                            .reduce(
+                                || Column::new_empty(c.name().clone(), c.dtype()),
+                                |mut a, b| {
+                                    a.append_owned(b).unwrap();
+                                    a
+                                },
+                            )
+                    })
+                } else {
+                    self._apply_columns_par(&|s| s.take_slice_unchecked(idx))
+                }
+            })
         } else {
             self._apply_columns(&|s| s.take_slice_unchecked(idx))
         };
@@ -2065,6 +2114,8 @@ impl DataFrame {
     }
 
     /// Rename a column in the [`DataFrame`].
+    ///
+    /// Should not be called in a loop as that can lead to quadratic behavior.
     ///
     /// # Example
     ///
@@ -2091,6 +2142,37 @@ impl DataFrame {
             .map(|c| c.rename(name))?;
         self.clear_schema();
 
+        Ok(self)
+    }
+
+    pub fn rename_many<'a>(
+        &mut self,
+        renames: impl Iterator<Item = (&'a str, PlSmallStr)>,
+    ) -> PolarsResult<&mut Self> {
+        let mut schema = self.schema().as_ref().clone();
+        self.clear_schema();
+
+        for (from, to) in renames {
+            if from == to.as_str() {
+                continue;
+            }
+
+            polars_ensure!(
+                !schema.contains(&to),
+                Duplicate: "column rename attempted with already existing name \"{to}\""
+            );
+
+            match schema.get_full(from) {
+                None => polars_bail!(col_not_found = from),
+                Some((idx, _, _)) => {
+                    let (n, _) = schema.get_at_index_mut(idx).unwrap();
+                    *n = to.clone();
+                    self.columns.get_mut(idx).unwrap().rename(to);
+                },
+            }
+        }
+
+        self.cached_schema = OnceLock::from(Arc::new(schema));
         Ok(self)
     }
 
@@ -2271,7 +2353,6 @@ impl DataFrame {
 
             let (repr, materialized_at) = match col {
                 Column::Series(s) => ("series", s.materialized_at()),
-                Column::Partitioned(_) => ("partitioned", None),
                 Column::Scalar(_) => ("scalar", None),
             };
             let sorted_asc = flags.contains(StatisticsFlags::IS_SORTED_ASC);
@@ -2719,6 +2800,7 @@ impl DataFrame {
         (a, b)
     }
 
+    #[must_use]
     pub fn clear(&self) -> Self {
         let col = self.columns.iter().map(|s| s.clear()).collect::<Vec<_>>();
         unsafe { DataFrame::new_no_checks(0, col) }
@@ -3271,7 +3353,7 @@ impl DataFrame {
             match groups.as_ref() {
                 GroupsType::Idx(idx) => {
                     // Rechunk as the gather may rechunk for every group #17562.
-                    let mut df = df.clone();
+                    let mut df = df;
                     df.as_single_chunk();
                     Ok(idx
                         .into_iter()
@@ -3327,19 +3409,37 @@ impl DataFrame {
     /// Unnest the given `Struct` columns. This means that the fields of the `Struct` type will be
     /// inserted as columns.
     #[cfg(feature = "dtype-struct")]
-    pub fn unnest<I: IntoVec<PlSmallStr>>(&self, cols: I) -> PolarsResult<DataFrame> {
+    pub fn unnest<I: IntoVec<PlSmallStr>>(
+        &self,
+        cols: I,
+        separator: Option<&str>,
+    ) -> PolarsResult<DataFrame> {
         let cols = cols.into_vec();
-        self.unnest_impl(cols.into_iter().collect())
+        self.unnest_impl(cols.into_iter().collect(), separator)
     }
 
     #[cfg(feature = "dtype-struct")]
-    fn unnest_impl(&self, cols: PlHashSet<PlSmallStr>) -> PolarsResult<DataFrame> {
+    fn unnest_impl(
+        &self,
+        cols: PlHashSet<PlSmallStr>,
+        separator: Option<&str>,
+    ) -> PolarsResult<DataFrame> {
         let mut new_cols = Vec::with_capacity(std::cmp::min(self.width() * 2, self.width() + 128));
         let mut count = 0;
         for s in &self.columns {
             if cols.contains(s.name()) {
                 let ca = s.struct_()?.clone();
-                new_cols.extend(ca.fields_as_series().into_iter().map(Column::from));
+                new_cols.extend(ca.fields_as_series().into_iter().map(|mut f| {
+                    if let Some(separator) = &separator {
+                        f.rename(polars_utils::format_pl_smallstr!(
+                            "{}{}{}",
+                            s.name(),
+                            separator,
+                            f.name()
+                        ));
+                    }
+                    Column::from(f)
+                }));
                 count += 1;
             } else {
                 new_cols.push(s.clone())

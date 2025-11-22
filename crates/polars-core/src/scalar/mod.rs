@@ -1,6 +1,5 @@
 mod from;
 mod new;
-pub mod reduce;
 #[cfg(any(feature = "serde", feature = "dsl-schema"))]
 mod serde;
 
@@ -85,9 +84,7 @@ impl Scalar {
     }
 
     pub fn as_any_value(&self) -> AnyValue<'_> {
-        self.value
-            .strict_cast(&self.dtype)
-            .unwrap_or_else(|| self.value.clone())
+        self.value.clone()
     }
 
     pub fn into_series(self, name: PlSmallStr) -> Series {

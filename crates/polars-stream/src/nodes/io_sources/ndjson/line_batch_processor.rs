@@ -12,7 +12,7 @@ use crate::async_primitives::linearizer::Inserter;
 use crate::morsel::SourceToken;
 use crate::nodes::MorselSeq;
 use crate::nodes::compute_node_prelude::*;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::output::FileReaderOutputSend;
+use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
 
 /// Parses chunks into DataFrames (or counts rows depending on state).
 pub(super) struct LineBatchProcessor {

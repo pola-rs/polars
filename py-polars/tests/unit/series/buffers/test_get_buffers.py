@@ -25,7 +25,7 @@ def test_get_buffers_with_validity() -> None:
     expected_values = pl.Series([1.5, 0.0, 3.5])
     assert_series_equal(result["values"], expected_values)
 
-    validity = cast(pl.Series, result["validity"])
+    validity = cast("pl.Series", result["validity"])
     expected_validity = pl.Series([True, False, True])
     assert_series_equal(validity, expected_validity)
 
@@ -42,11 +42,11 @@ def test_get_buffers_string_type() -> None:
     )
     assert_series_equal(result["values"], expected_values)
 
-    validity = cast(pl.Series, result["validity"])
+    validity = cast("pl.Series", result["validity"])
     expected_validity = pl.Series([True, True, False, True, True])
     assert_series_equal(validity, expected_validity)
 
-    offsets = cast(pl.Series, result["offsets"])
+    offsets = cast("pl.Series", result["offsets"])
     expected_offsets = pl.Series([0, 1, 3, 3, 9, 9], dtype=pl.Int64)
     assert_series_equal(offsets, expected_offsets)
 
@@ -59,7 +59,7 @@ def test_get_buffers_logical_sliced() -> None:
     expected_values = pl.Series([0, 2], dtype=pl.Int32)
     assert_series_equal(result["values"], expected_values)
 
-    validity = cast(pl.Series, result["validity"])
+    validity = cast("pl.Series", result["validity"])
     expected_validity = pl.Series([False, True])
     assert_series_equal(validity, expected_validity)
 
@@ -76,7 +76,7 @@ def test_get_buffers_chunked() -> None:
     assert_series_equal(result["values"], expected_values)
     assert result["values"].n_chunks() == 2
 
-    validity = cast(pl.Series, result["validity"])
+    validity = cast("pl.Series", result["validity"])
     expected_validity = pl.Series([True, True, False, True])
     assert_series_equal(validity, expected_validity)
     assert validity.n_chunks() == 2
@@ -94,12 +94,12 @@ def test_get_buffers_chunked_string_type() -> None:
     assert_series_equal(result["values"], expected_values)
     assert result["values"].n_chunks() == 1
 
-    validity = cast(pl.Series, result["validity"])
+    validity = cast("pl.Series", result["validity"])
     expected_validity = pl.Series([True, True, False, True, True])
     assert_series_equal(validity, expected_validity)
     assert validity.n_chunks() == 1
 
-    offsets = cast(pl.Series, result["offsets"])
+    offsets = cast("pl.Series", result["offsets"])
     expected_offsets = pl.Series([0, 1, 3, 3, 9, 9], dtype=pl.Int64)
     assert_series_equal(offsets, expected_offsets)
     assert offsets.n_chunks() == 1

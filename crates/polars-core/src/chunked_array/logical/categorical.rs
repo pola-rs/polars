@@ -35,7 +35,13 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
     }
 
     pub(crate) fn get_flags(&self) -> StatisticsFlags {
-        self.phys.get_flags()
+        // If we use lexical ordering then physical sortedness does not imply
+        // our sortedness.
+        let mut flags = self.phys.get_flags();
+        if self.uses_lexical_ordering() {
+            flags.set_sorted(IsSorted::Not);
+        }
+        flags
     }
 
     /// Set flags for the ChunkedArray.

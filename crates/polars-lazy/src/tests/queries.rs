@@ -89,7 +89,7 @@ fn test_lazy_udf() {
     let df = get_df();
     let new = df
         .lazy()
-        .select([col("sepal_width").map(|s| Ok(Some(s * 200.0)), GetOutput::same_type())])
+        .select([col("sepal_width").map(|s| Ok(s * 200.0), |_, f| Ok(f.clone()))])
         .collect()
         .unwrap();
     assert_eq!(
@@ -248,7 +248,7 @@ fn test_lazy_query_2() {
     let df = load_df();
     let ldf = df
         .lazy()
-        .with_column(col("a").map(|s| Ok(Some(s * 2)), GetOutput::same_type()))
+        .with_column(col("a").map(|s| Ok(s * 2), |_, f| Ok(f.clone())))
         .filter(col("a").lt(lit(2)))
         .select([col("b"), col("a")]);
 
@@ -284,13 +284,16 @@ fn test_lazy_query_4() -> PolarsResult<()> {
         .agg([
             col("day").alias("day"),
             col("cumcases")
-                .apply(
-                    |s: Column| (&s - &(s.shift(1))).map(Some),
-                    GetOutput::same_type(),
-                )
+                .apply(|s: Column| &s - &(s.shift(1)), |_, f| Ok(f.clone()))
                 .alias("diff_cases"),
         ])
-        .explode(by_name(["day", "diff_cases"], true))
+        .explode(
+            by_name(["day", "diff_cases"], true),
+            ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            },
+        )
         .join(
             base_df,
             [col("uid"), col("day")],
@@ -731,8 +734,8 @@ fn test_lazy_group_by_apply() {
     df.lazy()
         .group_by([col("fruits")])
         .agg([col("cars").apply(
-            |s: Column| Ok(Some(Column::new("".into(), &[s.len() as u32]))),
-            GetOutput::from_type(DataType::UInt32),
+            |s: Column| Ok(Column::new("".into(), &[s.len() as u32])),
+            |_, f| Ok(Field::new(f.name().clone(), DataType::UInt32)),
         )])
         .collect()
         .unwrap();
@@ -1042,7 +1045,14 @@ fn test_group_by_cum_sum() -> PolarsResult<()> {
         .collect()?;
 
     assert_eq!(
-        Vec::from(out.column("vals")?.explode(false)?.i32()?),
+        Vec::from(
+            out.column("vals")?
+                .explode(ExplodeOptions {
+                    empty_as_null: true,
+                    keep_nulls: true
+                })?
+                .i32()?
+        ),
         [1, 5, 11, 3, 12, 20]
             .iter()
             .copied()
@@ -1103,7 +1113,13 @@ fn test_multiple_explode() -> PolarsResult<()> {
         .lazy()
         .group_by([col("a")])
         .agg([col("b").alias("b_list"), col("c").alias("c_list")])
-        .explode(by_name(["c_list", "b_list"], true))
+        .explode(
+            by_name(["c_list", "b_list"], true),
+            ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            },
+        )
         .collect()?;
     assert_eq!(out.shape(), (5, 3));
 
@@ -1304,7 +1320,10 @@ fn test_sort_by() -> PolarsResult<()> {
         .group_by_stable([col("b")])
         .agg([col("a").sort_by([col("b"), col("c")], SortMultipleOptions::default())])
         .collect()?;
-    let a = out.column("a")?.explode(false)?;
+    let a = out.column("a")?.explode(ExplodeOptions {
+        empty_as_null: true,
+        keep_nulls: true,
+    })?;
     assert_eq!(
         Vec::from(a.i32().unwrap()),
         &[Some(3), Some(1), Some(2), Some(5), Some(4)]
@@ -1317,7 +1336,10 @@ fn test_sort_by() -> PolarsResult<()> {
         .agg([col("a").sort_by([col("b"), col("c")], SortMultipleOptions::default())])
         .collect()?;
 
-    let a = out.column("a")?.explode(false)?;
+    let a = out.column("a")?.explode(ExplodeOptions {
+        empty_as_null: true,
+        keep_nulls: true,
+    })?;
     assert_eq!(
         Vec::from(a.i32().unwrap()),
         &[Some(3), Some(1), Some(2), Some(5), Some(4)]
@@ -1694,7 +1716,10 @@ fn test_single_ranked_group() -> PolarsResult<()> {
             .over_with_options(Some([col("group")]), None, WindowMapping::Join)?])
         .collect()?;
 
-    let out = out.column("value")?.explode(false)?;
+    let out = out.column("value")?.explode(ExplodeOptions {
+        empty_as_null: true,
+        keep_nulls: true,
+    })?;
     let out = out.f64()?;
     assert_eq!(
         Vec::from(out),
@@ -1763,7 +1788,10 @@ fn test_is_in() -> PolarsResult<()> {
         )])
         .collect()?;
     let out = out.column("cars").unwrap();
-    let out = out.explode(false)?;
+    let out = out.explode(ExplodeOptions {
+        empty_as_null: true,
+        keep_nulls: true,
+    })?;
     let out = out.bool().unwrap();
     assert_eq!(
         Vec::from(out),
@@ -1781,7 +1809,10 @@ fn test_is_in() -> PolarsResult<()> {
         .collect()?;
 
     let out = out.column("cars").unwrap();
-    let out = out.explode(false)?;
+    let out = out.explode(ExplodeOptions {
+        empty_as_null: true,
+        keep_nulls: true,
+    })?;
     let out = out.bool().unwrap();
     assert_eq!(
         Vec::from(out),
@@ -1970,6 +2001,46 @@ fn test_over_with_options_empty_join() -> PolarsResult<()> {
     let sc: Schema = Schema::from_iter(vec![f1]);
 
     assert_eq!(&**empty_df_out.schema(), &sc);
+
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "serde")]
+fn test_named_udfs() -> PolarsResult<()> {
+    use polars_plan::dsl::named_serde::{ExprRegistry, set_named_serde_registry};
+
+    let lf = DataFrame::new(vec![Column::new("a".into(), vec![1, 2, 3, 4])])?.lazy();
+
+    struct X;
+    impl ExprRegistry for X {
+        fn get_function(&self, name: &str, payload: &[u8]) -> Option<Arc<dyn AnonymousColumnsUdf>> {
+            assert_eq!(name, "test-function");
+            assert_eq!(payload, b"check");
+            Some(Arc::new(BaseColumnUdf::new(
+                |c: &mut [Column]| Ok(std::mem::take(&mut c[0]) * 2),
+                |_: &Schema, f: &[Field]| Ok(f[0].clone()),
+            )))
+        }
+    }
+
+    set_named_serde_registry(Arc::new(X) as _);
+
+    let expr = Expr::AnonymousFunction {
+        input: vec![Expr::Column("a".into())],
+        function: LazySerde::Named {
+            name: "test-function".into(),
+            payload: Some(bytes::Bytes::from("check")),
+            value: None,
+        },
+        options: FunctionOptions::default(),
+        fmt_str: Box::new("test".into()),
+    };
+
+    assert_eq!(
+        lf.select(&[expr]).collect()?,
+        DataFrame::new(vec![Column::new("a".into(), vec![2, 4, 6, 8])])?,
+    );
 
     Ok(())
 }

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypedDict
 
 import pytest
@@ -16,8 +17,6 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric.strategies import dataframes
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from polars._typing import EngineType
     from polars.io.partition import BasePartitionContext, KeyedPartitionContext
 
@@ -293,6 +292,7 @@ def test_partition_parted(tmp_path: Path, io_type: IOType, engine: EngineType) -
             pl.Struct,
             pl.Array,
             pl.List,
+            pl.Extension,  # Can't be cast to string
         ],
     )
 )
@@ -339,10 +339,7 @@ def test_max_size_partition_collect_files(tmp_path: Path) -> None:
     output_files = []
 
     def file_path_cb(ctx: BasePartitionContext) -> Path:
-        print(ctx)
-        print(ctx.full_path)
         output_files.append(ctx.full_path)
-        print(ctx.file_path)
         return ctx.file_path
 
     (io_type["sink"])(
@@ -546,3 +543,46 @@ def test_parquet_preserve_order_within_partition_23376(tmp_path: Path) -> None:
     df.lazy().sink_parquet(pl.PartitionMaxSize(tmp_path, max_size=1))
     out = pl.scan_parquet(tmp_path).collect().to_series().to_list()
     assert ll == out
+
+
+@pytest.mark.write_disk
+def test_file_path_cb_new_cloud_path(tmp_path: Path) -> None:
+    i = 0
+
+    def new_path(_: Any) -> str:
+        nonlocal i
+        p = f"file://{tmp_path}/pms-{i}.parquet"
+        i += 1
+        return p
+
+    pl.LazyFrame({"a": [1, 2]}).sink_csv(
+        pl.PartitionMaxSize("s3://bucket-x", file_path=new_path, max_size=1)
+    )
+
+
+@pytest.mark.write_disk
+def test_partition_empty_string_24545(tmp_path: Path) -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["", None, "abc", "xyz"],
+            "b": [1, 2, 3, 4],
+        }
+    )
+
+    df.write_parquet(tmp_path, partition_by="a")
+
+    assert_frame_equal(pl.read_parquet(tmp_path), df)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("dtype", [pl.Int64(), pl.Date(), pl.Datetime()])
+def test_partition_empty_dtype_24545(tmp_path: Path, dtype: pl.DataType) -> None:
+    df = pl.DataFrame({"b": [1, 2, 3, 4]}).with_columns(
+        a=pl.col.b.cast(dtype),
+    )
+
+    df.write_parquet(tmp_path, partition_by="a")
+    extra = pl.select(b=pl.lit(0, pl.Int64), a=pl.lit(None, dtype))
+    extra.write_parquet(Path(tmp_path / "a=" / "000.parquet"), mkdir=True)
+
+    assert_frame_equal(pl.read_parquet(tmp_path), pl.concat([extra, df]))

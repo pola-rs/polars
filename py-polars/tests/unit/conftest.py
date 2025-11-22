@@ -27,7 +27,13 @@ load_profile(
 
 # Data type groups
 SIGNED_INTEGER_DTYPES = [pl.Int8(), pl.Int16(), pl.Int32(), pl.Int64(), pl.Int128()]
-UNSIGNED_INTEGER_DTYPES = [pl.UInt8(), pl.UInt16(), pl.UInt32(), pl.UInt64()]
+UNSIGNED_INTEGER_DTYPES = [
+    pl.UInt8(),
+    pl.UInt16(),
+    pl.UInt32(),
+    pl.UInt64(),
+    pl.UInt128(),
+]
 INTEGER_DTYPES = SIGNED_INTEGER_DTYPES + UNSIGNED_INTEGER_DTYPES
 FLOAT_DTYPES = [pl.Float32(), pl.Float64()]
 NUMERIC_DTYPES = INTEGER_DTYPES + FLOAT_DTYPES
@@ -135,7 +141,7 @@ for T in ["T", " "]:
 
 @pytest.fixture(params=ISO8601_FORMATS_DATETIME)
 def iso8601_format_datetime(request: pytest.FixtureRequest) -> list[str]:
-    return cast(list[str], request.param)
+    return cast("list[str]", request.param)
 
 
 ISO8601_TZ_AWARE_FORMATS_DATETIME = []
@@ -158,7 +164,7 @@ for T in ["T", " "]:
 
 @pytest.fixture(params=ISO8601_TZ_AWARE_FORMATS_DATETIME)
 def iso8601_tz_aware_format_datetime(request: pytest.FixtureRequest) -> list[str]:
-    return cast(list[str], request.param)
+    return cast("list[str]", request.param)
 
 
 ISO8601_FORMATS_DATE = []
@@ -170,7 +176,7 @@ for date_sep in ("/", "-"):
 
 @pytest.fixture(params=ISO8601_FORMATS_DATE)
 def iso8601_format_date(request: pytest.FixtureRequest) -> list[str]:
-    return cast(list[str], request.param)
+    return cast("list[str]", request.param)
 
 
 class MemoryUsage:
@@ -222,7 +228,7 @@ def memory_usage_without_pyarrow() -> Generator[MemoryUsage, Any, Any]:
 
     Memory usage from PyArrow is not tracked.
     """
-    if not pl.polars._debug:  # type: ignore[attr-defined]
+    if not pl._plr._debug:
         pytest.skip("Memory usage only available in debug/dev builds.")
 
     if os.getenv("POLARS_FORCE_ASYNC", "0") == "1":

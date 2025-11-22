@@ -1,7 +1,9 @@
 use std::borrow::Cow;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
-use arrow::datatypes::{ArrowDataType, ArrowSchema, ExtensionType, Field, TimeUnit};
+use arrow::datatypes::{
+    ArrowDataType, ArrowSchema, ExtensionType, Field, PARQUET_EMPTY_STRUCT, TimeUnit,
+};
 use arrow::io::ipc::write::{default_ipc_fields, schema_to_bytes};
 use base64::Engine as _;
 use base64::engine::general_purpose;
@@ -56,7 +58,7 @@ fn convert_dtype(dtype: ArrowDataType) -> ArrowDataType {
 }
 
 fn insert_field_metadata(field: &mut Cow<Field>, options: &ColumnWriteOptions) {
-    if !options.metadata.is_empty() {
+    if !options.metadata.is_empty() || matches!(field.dtype(), D::Struct(fs) if fs.is_empty()) {
         let field = field.to_mut();
         let mut metadata = field.metadata.as_deref().cloned().unwrap_or_default();
 
@@ -65,6 +67,9 @@ fn insert_field_metadata(field: &mut Cow<Field>, options: &ColumnWriteOptions) {
                 kv.key.as_str().into(),
                 kv.value.as_deref().unwrap_or_default().into(),
             );
+        }
+        if matches!(field.dtype(), D::Struct(fs) if fs.is_empty()) {
+            metadata.insert(PARQUET_EMPTY_STRUCT.into(), "".into());
         }
         field.metadata = Some(Arc::new(metadata));
     }
@@ -79,6 +84,10 @@ fn insert_field_metadata(field: &mut Cow<Field>, options: &ColumnWriteOptions) {
     use ArrowDataType as D;
     match field.dtype() {
         D::Struct(f) => {
+            if let ChildWriteOptions::Leaf(_) = &options.children {
+                return;
+            }
+
             let ChildWriteOptions::Struct(o) = &options.children else {
                 unreachable!();
             };
@@ -302,9 +311,24 @@ pub fn to_parquet_type(field: &Field, options: &ColumnWriteOptions) -> PolarsRes
         ),
         ArrowDataType::Struct(fields) => {
             if fields.is_empty() {
-                polars_bail!(InvalidOperation:
-                    "Unable to write struct type with no child field to Parquet. Consider adding a dummy child field.".to_string(),
-                )
+                static ALLOW_EMPTY_STRUCTS: LazyLock<bool> = LazyLock::new(|| {
+                    std::env::var("POLARS_ALLOW_PQ_EMPTY_STRUCT").is_ok_and(|v| v.as_str() == "1")
+                });
+
+                if *ALLOW_EMPTY_STRUCTS {
+                    return Ok(ParquetType::try_from_primitive(
+                        name,
+                        PhysicalType::Boolean,
+                        repetition,
+                        None,
+                        None,
+                        field_id,
+                    )?);
+                } else {
+                    polars_bail!(InvalidOperation:
+                        "Unable to write struct type with no child field to Parquet. Consider adding a dummy child field.".to_string(),
+                    )
+                }
             }
 
             let ChildWriteOptions::Struct(struct_write_options) = &options.children else {
@@ -325,7 +349,7 @@ pub fn to_parquet_type(field: &Field, options: &ColumnWriteOptions) -> PolarsRes
         },
         ArrowDataType::Dictionary(_, value, _) => {
             assert!(!value.is_nested());
-            let dict_field = Field::new(name.clone(), value.as_ref().clone(), field.is_nullable);
+            let dict_field = Field::new(name, value.as_ref().clone(), field.is_nullable);
             return to_parquet_type(&dict_field, options);
         },
         ArrowDataType::FixedSizeBinary(size) => {
@@ -383,7 +407,9 @@ pub fn to_parquet_type(field: &Field, options: &ColumnWriteOptions) -> PolarsRes
             Some(PrimitiveConvertedType::Interval),
             None,
         ),
-        ArrowDataType::Int128 => (PhysicalType::FixedLenByteArray(16), None, None),
+        ArrowDataType::UInt128 | ArrowDataType::Int128 => {
+            (PhysicalType::FixedLenByteArray(16), None, None)
+        },
         ArrowDataType::List(f)
         | ArrowDataType::FixedSizeList(f, _)
         | ArrowDataType::LargeList(f) => {

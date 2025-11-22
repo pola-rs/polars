@@ -104,6 +104,7 @@ impl<B: ArrayBuilder> StaticArrayBuilder for FixedSizeListArrayBuilder<B> {
                 length,
                 repeats,
             );
+        self.length += repeats * length.min(other.len().saturating_sub(start));
     }
 
     unsafe fn gather_extend(

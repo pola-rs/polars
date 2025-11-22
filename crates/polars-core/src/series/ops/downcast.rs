@@ -98,6 +98,12 @@ impl Series {
         try_unpack_chunked!(self, DataType::UInt64 => UInt64Chunked)
     }
 
+    /// Unpack to [`ChunkedArray`] of dtype [`DataType::UInt128`]
+    #[cfg(feature = "dtype-u128")]
+    pub fn try_u128(&self) -> Option<&UInt128Chunked> {
+        try_unpack_chunked!(self, DataType::UInt128 => UInt128Chunked)
+    }
+
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Boolean`]
     pub fn try_bool(&self) -> Option<&BooleanChunked> {
         try_unpack_chunked!(self, DataType::Boolean => BooleanChunked)
@@ -178,6 +184,12 @@ impl Series {
     #[cfg(feature = "dtype-categorical")]
     pub fn try_cat32(&self) -> Option<&Categorical32Chunked> {
         self.try_cat::<Categorical32Type>()
+    }
+
+    /// Unpack to [`ExtensionChunked`] of dtype [`DataType::Extension`].
+    #[cfg(feature = "dtype-extension")]
+    pub fn try_ext(&self) -> Option<&ExtensionChunked> {
+        try_unpack_chunked!(self, DataType::Extension(_, _) => ExtensionChunked)
     }
 
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Struct`]
@@ -276,6 +288,13 @@ impl Series {
     pub fn u64(&self) -> PolarsResult<&UInt64Chunked> {
         self.try_u64()
             .ok_or_else(|| unpack_chunked_err!(self => "UInt64"))
+    }
+
+    /// Unpack to [`ChunkedArray`] of dtype [`DataType::UInt128`]
+    #[cfg(feature = "dtype-u128")]
+    pub fn u128(&self) -> PolarsResult<&UInt128Chunked> {
+        self.try_u128()
+            .ok_or_else(|| unpack_chunked_err!(self => "UInt128"))
     }
 
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Boolean`]
@@ -391,6 +410,13 @@ impl Series {
 
         self.try_struct()
             .ok_or_else(|| unpack_chunked_err!(self => "Struct"))
+    }
+
+    /// Unpack to [`ExtensionChunked`] of dtype [`DataType::Extension`].
+    #[cfg(feature = "dtype-extension")]
+    pub fn ext(&self) -> PolarsResult<&ExtensionChunked> {
+        self.try_ext()
+            .ok_or_else(|| unpack_chunked_err!(self => "Extension"))
     }
 
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Null`]

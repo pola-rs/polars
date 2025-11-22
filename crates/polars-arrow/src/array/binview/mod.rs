@@ -620,8 +620,14 @@ impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {
         BinaryViewArrayGeneric::len(self)
     }
 
+    #[inline(always)]
     fn dtype(&self) -> &ArrowDataType {
-        T::dtype()
+        &self.dtype
+    }
+
+    #[inline(always)]
+    fn dtype_mut(&mut self) -> &mut ArrowDataType {
+        &mut self.dtype
     }
 
     fn validity(&self) -> Option<&Bitmap> {

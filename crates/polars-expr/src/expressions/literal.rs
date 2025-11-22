@@ -7,7 +7,7 @@ use polars_core::utils::NoNull;
 use polars_plan::constants::get_literal_name;
 
 use super::*;
-use crate::expressions::{AggregationContext, PartitionedAggregation, PhysicalExpr};
+use crate::expressions::{AggregationContext, PhysicalExpr};
 
 pub struct LiteralExpr(pub LiteralValue, Expr);
 
@@ -101,11 +101,40 @@ impl PhysicalExpr for LiteralExpr {
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let s = self.evaluate(df, state)?;
-        Ok(AggregationContext::from_literal(s, Cow::Borrowed(groups)))
-    }
 
-    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
-        Some(self)
+        if self.0.is_scalar() {
+            Ok(AggregationContext::from_agg_state(
+                AggState::LiteralScalar(s),
+                Cow::Borrowed(groups),
+            ))
+        } else {
+            // A non-scalar literal value expands to those values for every group.
+
+            let lit_length = s.len() as IdxSize;
+            polars_ensure!(
+                (groups.len() as IdxSize).checked_mul(lit_length).is_some(),
+                bigidx,
+                ctx = "group_by",
+                size = groups.len() as u64 * lit_length as u64
+            );
+            let groups = GroupsType::Slice {
+                groups: (0..groups.len() as IdxSize)
+                    .map(|i| [i * lit_length, lit_length])
+                    .collect(),
+                overlapping: false,
+            };
+            let agg_state = AggState::AggregatedList(Column::new_scalar(
+                s.name().clone(),
+                Scalar::new_list(s.take_materialized_series()),
+                groups.len(),
+            ));
+
+            let groups = groups.into_sliceable();
+            Ok(AggregationContext::from_agg_state(
+                agg_state,
+                Cow::Owned(groups),
+            ))
+        }
     }
 
     fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
@@ -118,25 +147,5 @@ impl PhysicalExpr for LiteralExpr {
 
     fn is_scalar(&self) -> bool {
         self.0.is_scalar()
-    }
-}
-
-impl PartitionedAggregation for LiteralExpr {
-    fn evaluate_partitioned(
-        &self,
-        df: &DataFrame,
-        _groups: &GroupPositions,
-        state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        self.evaluate(df, state)
-    }
-
-    fn finalize(
-        &self,
-        partitioned: Column,
-        _groups: &GroupPositions,
-        _state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        Ok(partitioned)
     }
 }

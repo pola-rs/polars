@@ -7,6 +7,7 @@ use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{DataPage, split_buffer};
 use crate::parquet::read::levels::get_bit_width;
+use crate::read::deserialize::utils::Decoded;
 
 pub struct Nested {
     validity: Option<BitmapBuilder>,
@@ -577,7 +578,7 @@ impl<D: utils::Decoder> PageDecoder<D> {
     pub fn collect_nested(
         mut self,
         filter: Option<Filter>,
-    ) -> ParquetResult<(NestedState, D::Output, Bitmap)> {
+    ) -> ParquetResult<(NestedState, Vec<D::Output>, Bitmap)> {
         let init = self.init_nested.as_mut().unwrap();
 
         // @TODO: We should probably count the filter so that we don't overallocate
@@ -622,10 +623,8 @@ impl<D: utils::Decoder> PageDecoder<D> {
 
         let mut top_level_filter = top_level_filter.iter();
 
-        loop {
-            let Some(page) = self.iter.next() else {
-                break;
-            };
+        let mut chunks = Vec::new();
+        while let Some(page) = self.iter.next() {
             let page = page?;
             let page = page.decompress(&mut self.iter)?;
 
@@ -678,8 +677,8 @@ impl<D: utils::Decoder> PageDecoder<D> {
             state.decode(
                 &mut self.decoder,
                 &mut target,
-                &mut BitmapBuilder::new(), // This will not get used or filled
                 Some(Filter::Mask(leaf_filter)),
+                &mut chunks,
             )?;
 
             self.iter.reuse_page_buffer(page);
@@ -692,8 +691,10 @@ impl<D: utils::Decoder> PageDecoder<D> {
         ));
         _ = nested_state.pop().unwrap();
 
-        let array = self.decoder.finalize(self.dtype, self.dict, target)?;
+        if target.len() > 0 || chunks.is_empty() {
+            chunks.push(self.decoder.finalize(self.dtype, self.dict, target)?);
+        }
 
-        Ok((nested_state, array, Bitmap::new()))
+        Ok((nested_state, chunks, Bitmap::new()))
     }
 }

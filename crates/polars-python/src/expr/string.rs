@@ -239,18 +239,8 @@ impl PyExpr {
     }
 
     #[cfg(feature = "extract_jsonpath")]
-    #[pyo3(signature = (dtype=None, infer_schema_len=None))]
-    fn str_json_decode(
-        &self,
-        dtype: Option<PyDataTypeExpr>,
-        infer_schema_len: Option<usize>,
-    ) -> Self {
-        let dtype = dtype.map(|wrap| wrap.inner);
-        self.inner
-            .clone()
-            .str()
-            .json_decode(dtype, infer_schema_len)
-            .into()
+    fn str_json_decode(&self, dtype: PyDataTypeExpr) -> Self {
+        self.inner.clone().str().json_decode(dtype.inner).into()
     }
 
     #[cfg(feature = "extract_jsonpath")]
@@ -313,8 +303,8 @@ impl PyExpr {
         self.inner.clone().str().splitn(by.inner, n).into()
     }
 
-    fn str_to_decimal(&self, infer_len: usize) -> Self {
-        self.inner.clone().str().to_decimal(infer_len).into()
+    fn str_to_decimal(&self, scale: usize) -> Self {
+        self.inner.clone().str().to_decimal(scale).into()
     }
 
     #[cfg(feature = "find_many")]
@@ -370,5 +360,13 @@ impl PyExpr {
     #[cfg(feature = "regex")]
     fn str_escape_regex(&self) -> Self {
         self.inner.clone().str().escape_regex().into()
+    }
+
+    #[staticmethod]
+    fn str_format(f_string: String, exprs: Vec<PyExpr>) -> PyResult<Self> {
+        let exprs = exprs.into_iter().map(|e| e.inner).collect::<Vec<_>>();
+        Ok(format_str(&f_string, exprs)
+            .map_err(PyPolarsErr::from)?
+            .into())
     }
 }

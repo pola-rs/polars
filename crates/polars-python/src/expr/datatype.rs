@@ -6,7 +6,7 @@ use super::selector::{PySelector, parse_datatype_selector};
 use crate::error::PyPolarsErr;
 use crate::prelude::Wrap;
 
-#[pyclass]
+#[pyclass(frozen)]
 #[repr(transparent)]
 #[derive(Clone)]
 pub struct PyDataTypeExpr {
@@ -90,6 +90,13 @@ impl PyDataTypeExpr {
 
     pub fn to_signed_integer(&self) -> Self {
         self.inner.clone().int().to_signed().into()
+    }
+
+    pub fn default_value(&self, n: usize, numeric_to_one: bool, num_list_values: usize) -> PyExpr {
+        self.inner
+            .clone()
+            .default_value(n, numeric_to_one, num_list_values)
+            .into()
     }
 
     pub fn list_inner_dtype(&self) -> Self {

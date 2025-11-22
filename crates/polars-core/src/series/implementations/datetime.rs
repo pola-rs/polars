@@ -260,6 +260,14 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .into_series()
     }
 
+    fn deposit(&self, validity: &Bitmap) -> Series {
+        self.0
+            .physical()
+            .deposit(validity)
+            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_series()
+    }
+
     fn len(&self) -> usize {
         self.0.len()
     }
@@ -332,6 +340,10 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         self.0.physical().arg_unique()
     }
 
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        ChunkUnique::unique_id(self.0.physical())
+    }
+
     fn is_null(&self) -> BooleanChunked {
         self.0.is_null()
     }
@@ -362,23 +374,40 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
 
     fn max_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.physical().max_reduce();
-
-        Ok(Scalar::new(self.dtype().clone(), sc.value().clone()))
+        let av = sc
+            .value()
+            .as_datetime_owned(self.0.time_unit(), self.0.time_zone_arc());
+        Ok(Scalar::new(self.dtype().clone(), av))
     }
 
     fn min_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.physical().min_reduce();
+        let av = sc
+            .value()
+            .as_datetime_owned(self.0.time_unit(), self.0.time_zone_arc());
+        Ok(Scalar::new(self.dtype().clone(), av))
+    }
 
-        Ok(Scalar::new(self.dtype().clone(), sc.value().clone()))
+    fn mean_reduce(&self) -> PolarsResult<Scalar> {
+        let mean = self.mean().map(|v| v as i64);
+        let av = AnyValue::from(mean).as_datetime_owned(self.0.time_unit(), self.0.time_zone_arc());
+        Ok(Scalar::new(self.dtype().clone(), av))
     }
 
     fn median_reduce(&self) -> PolarsResult<Scalar> {
-        let av: AnyValue = self.median().map(|v| v as i64).into();
+        let median = self.median().map(|v| v as i64);
+        let av =
+            AnyValue::from(median).as_datetime_owned(self.0.time_unit(), self.0.time_zone_arc());
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
     fn quantile_reduce(&self, _quantile: f64, _method: QuantileMethod) -> PolarsResult<Scalar> {
         Ok(Scalar::new(self.dtype().clone(), AnyValue::Null))
+    }
+
+    #[cfg(feature = "approx_unique")]
+    fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
+        Ok(ChunkApproxNUnique::approx_n_unique(self.0.physical()))
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

@@ -281,6 +281,11 @@ pub trait AsofJoin: IntoDf {
         let right_key = right_key.to_physical_repr();
 
         let mut take_idx = match left_key.dtype() {
+            #[cfg(feature = "dtype-i128")]
+            DataType::Int128 => {
+                let ca = left_key.i128().unwrap();
+                join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
+            },
             DataType::Int64 => {
                 let ca = left_key.i64().unwrap();
                 join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
@@ -289,9 +294,9 @@ pub trait AsofJoin: IntoDf {
                 let ca = left_key.i32().unwrap();
                 join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
             },
-            #[cfg(feature = "dtype-i128")]
-            DataType::Int128 => {
-                let ca = left_key.i128().unwrap();
+            #[cfg(feature = "dtype-u128")]
+            DataType::UInt128 => {
+                let ca = left_key.u128().unwrap();
                 join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
             },
             DataType::UInt64 => {
@@ -323,12 +328,13 @@ pub trait AsofJoin: IntoDf {
                 let right_binary = right_key.cast(&DataType::Binary).unwrap();
                 join_asof::<BinaryType>(&ca.as_binary(), &right_binary, strategy, allow_eq)
             },
-            _ => {
+            DataType::Int8 | DataType::UInt8 | DataType::Int16 | DataType::UInt16 => {
                 let left_key = left_key.cast(&DataType::Int32).unwrap();
                 let right_key = right_key.cast(&DataType::Int32).unwrap();
                 let ca = left_key.i32().unwrap();
                 join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
             },
+            dt => polars_bail!(opq = asof_join, dt),
         }?;
         try_raise_keyboard_interrupt();
 

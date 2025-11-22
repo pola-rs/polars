@@ -97,14 +97,14 @@ impl private::PrivateSeries for SeriesWrap<DateChunked> {
     fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
         match rhs.dtype() {
             DataType::Date => {
-                let dt = DataType::Datetime(TimeUnit::Milliseconds, None);
+                let dt = DataType::Datetime(TimeUnit::Microseconds, None);
                 let lhs = self.cast(&dt, CastOptions::NonStrict)?;
                 let rhs = rhs.cast(&dt)?;
                 lhs.subtract(&rhs)
             },
             DataType::Duration(_) => std::ops::Sub::sub(
                 &self.cast(
-                    &DataType::Datetime(TimeUnit::Milliseconds, None),
+                    &DataType::Datetime(TimeUnit::Microseconds, None),
                     CastOptions::NonStrict,
                 )?,
                 rhs,
@@ -118,7 +118,7 @@ impl private::PrivateSeries for SeriesWrap<DateChunked> {
         match rhs.dtype() {
             DataType::Duration(_) => std::ops::Add::add(
                 &self.cast(
-                    &DataType::Datetime(TimeUnit::Milliseconds, None),
+                    &DataType::Datetime(TimeUnit::Microseconds, None),
                     CastOptions::NonStrict,
                 )?,
                 rhs,
@@ -263,6 +263,14 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
             .into_series()
     }
 
+    fn deposit(&self, validity: &Bitmap) -> Series {
+        self.0
+            .physical()
+            .deposit(validity)
+            .into_date()
+            .into_series()
+    }
+
     fn len(&self) -> usize {
         self.0.len()
     }
@@ -348,6 +356,10 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
         self.0.physical().arg_unique()
     }
 
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        ChunkUnique::unique_id(self.0.physical())
+    }
+
     fn is_null(&self) -> BooleanChunked {
         self.0.is_null()
     }
@@ -370,25 +382,35 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
 
     fn max_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.physical().max_reduce();
-        let av = sc.value().cast(self.dtype()).into_static();
+        let av = sc.value().as_date();
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
     fn min_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.physical().min_reduce();
-        let av = sc.value().cast(self.dtype()).into_static();
+        let av = sc.value().as_date();
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
+    #[cfg(feature = "dtype-datetime")]
+    fn mean_reduce(&self) -> PolarsResult<Scalar> {
+        let mean = self.mean().map(|v| (v * US_IN_DAY as f64) as i64);
+        let dtype = DataType::Datetime(TimeUnit::Microseconds, None);
+        let av = AnyValue::from(mean).as_datetime(TimeUnit::Microseconds, None);
+        Ok(Scalar::new(dtype, av))
+    }
+
+    #[cfg(feature = "dtype-datetime")]
     fn median_reduce(&self) -> PolarsResult<Scalar> {
-        let av: AnyValue = self
-            .median()
-            .map(|v| (v * (MS_IN_DAY as f64)) as i64)
-            .into();
-        Ok(Scalar::new(
-            DataType::Datetime(TimeUnit::Milliseconds, None),
-            av,
-        ))
+        let median = self.median().map(|v| (v * (US_IN_DAY as f64)) as i64);
+        let dtype = DataType::Datetime(TimeUnit::Microseconds, None);
+        let av = AnyValue::from(median).as_datetime(TimeUnit::Microseconds, None);
+        Ok(Scalar::new(dtype, av))
+    }
+
+    #[cfg(feature = "approx_unique")]
+    fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
+        Ok(ChunkApproxNUnique::approx_n_unique(self.0.physical()))
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

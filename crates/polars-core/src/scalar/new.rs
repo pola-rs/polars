@@ -51,10 +51,10 @@ impl Scalar {
     }
 
     #[cfg(feature = "dtype-decimal")]
-    pub fn new_decimal(value: i128, scale: usize) -> Self {
+    pub fn new_decimal(value: i128, precision: usize, scale: usize) -> Self {
         Scalar::new(
-            DataType::Decimal(Some(38), Some(scale)),
-            AnyValue::Decimal(value, scale),
+            DataType::Decimal(precision, scale),
+            AnyValue::Decimal(value, precision, scale),
         )
     }
 
@@ -86,13 +86,13 @@ impl Scalar {
         use polars_dtype::categorical::Categories;
 
         let categories = Categories::new(name, namespace, physical);
-        let dt_mapping = categories.mapping().clone();
-        let av_mapping = categories.mapping().clone();
+        let dt_mapping = categories.mapping();
+        let av_mapping = categories.mapping();
 
         let value = av_mapping.insert_cat(value)?;
 
         Ok(Scalar::new(
-            DataType::Categorical(categories.clone(), dt_mapping),
+            DataType::Categorical(categories, dt_mapping),
             AnyValue::CategoricalOwned(value, av_mapping),
         ))
     }

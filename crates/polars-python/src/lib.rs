@@ -26,6 +26,7 @@ pub mod error;
 pub mod exceptions;
 pub mod export;
 pub mod expr;
+pub mod extension;
 pub mod file;
 #[cfg(feature = "pymethods")]
 pub mod functions;
@@ -47,6 +48,9 @@ pub mod sql;
 pub mod testing;
 pub mod timeout;
 pub mod utils;
+
+#[cfg(feature = "c_api")]
+pub mod c_api;
 
 use crate::conversion::Wrap;
 

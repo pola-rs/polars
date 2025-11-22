@@ -202,7 +202,7 @@ pub trait JoinDispatch: IntoDf {
                 out?,
                 &[s_left.name().clone()],
                 &[s_right.name().clone()],
-                args.suffix.clone(),
+                args.suffix,
                 df_self,
             ))
         } else {

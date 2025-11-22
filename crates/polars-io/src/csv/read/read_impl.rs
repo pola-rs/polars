@@ -345,6 +345,9 @@ impl<'a> CoreReader<'a> {
                         .collect::<Schema>(),
                 )
             };
+
+            cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
+
             if let Some(ref row_index) = self.row_index {
                 df.insert_column(0, Series::new_empty(row_index.name.clone(), &IDX_DTYPE))?;
             }
@@ -373,28 +376,17 @@ impl<'a> CoreReader<'a> {
         // We have to do this after parsing as there can be comments.
         let total_line_count = &RelaxedCell::new_usize(0);
 
-        #[cfg(not(target_family = "wasm"))]
-        let pool;
-        #[cfg(not(target_family = "wasm"))]
-        let pool = if n_threads == POOL.current_num_threads() {
-            &POOL
-        } else {
-            pool = rayon::ThreadPoolBuilder::new()
-                .num_threads(n_threads)
-                .build()
-                .map_err(|_| polars_err!(ComputeError: "could not spawn threads"))?;
-            &pool
-        };
-        #[cfg(target_family = "wasm")]
-        let pool = &POOL;
-
-        let counter = CountLines::new(self.parse_options.quote_char, self.parse_options.eol_char);
+        let counter = CountLines::new(
+            self.parse_options.quote_char,
+            self.parse_options.eol_char,
+            None,
+        );
         let mut total_offset = 0;
         let mut previous_total_offset = 0;
         let check_utf8 = matches!(self.parse_options.encoding, CsvEncoding::Utf8)
             && self.schema.iter_fields().any(|f| f.dtype().is_string());
 
-        pool.scope(|s| {
+        POOL.scope(|s| {
             // Pass 1: identify chunks for parallel processing (line parsing).
             loop {
                 let b = unsafe { bytes.get_unchecked(total_offset..) };
@@ -415,13 +407,13 @@ impl<'a> CoreReader<'a> {
                         std::ptr::eq(b.as_ptr().add(b.len()), bytes.as_ptr().add(bytes.len()))
                     } {
                     total_offset = bytes.len();
-                    (b, 1)
+                    let c = if is_comment_line(bytes, self.parse_options.comment_prefix.as_ref()) {
+                        0
+                    } else {
+                        1
+                    };
+                    (b, c)
                 } else {
-                    if count == 0 {
-                        chunk_size *= 2;
-                        continue;
-                    }
-
                     let end = total_offset + position + 1;
                     let b = unsafe { bytes.get_unchecked(total_offset..end) };
 
@@ -448,14 +440,23 @@ impl<'a> CoreReader<'a> {
                         let result = slf
                             .read_chunk(b, projection, 0, count, Some(0), b.len())
                             .and_then(|mut df| {
-
                                 // Check malformed
-                                if df.height() > count || (df.height() < count && slf.parse_options.comment_prefix.is_none()) {
+                                if df.height() > count
+                                    || (df.height() < count
+                                        && slf.parse_options.comment_prefix.is_none())
+                                {
                                     // Note: in case data is malformed, df.height() is more likely to be correct than count.
-                                    let msg = format!("CSV malformed: expected {} rows, actual {} rows, in chunk starting at byte offset {}, length {}",
-                                        count, df.height(), previous_total_offset, b.len());
+                                    let msg = format!(
+                                        "CSV malformed: expected {} rows, \
+                                        actual {} rows, in chunk starting at \
+                                        byte offset {}, length {}",
+                                        count,
+                                        df.height(),
+                                        previous_total_offset,
+                                        b.len()
+                                    );
                                     if slf.ignore_errors {
-                                        polars_warn!(msg);
+                                        polars_warn!("{}", msg);
                                     } else {
                                         polars_bail!(ComputeError: msg);
                                     }
@@ -490,15 +491,14 @@ impl<'a> CoreReader<'a> {
 
                     // Check just after we spawned a chunk. That mean we processed all data up until
                     // row count.
-                    if self.n_rows.is_some()
-                        && total_line_count.load() > self.n_rows.unwrap()
-                    {
+                    if self.n_rows.is_some() && total_line_count.load() > self.n_rows.unwrap() {
                         break;
                     }
                 }
                 total_bytes_offset += b.len();
             }
         });
+
         let mut results = std::mem::take(&mut *results.lock().unwrap());
         results.sort_unstable_by_key(|k| k.0);
         let mut dfs = results
@@ -611,9 +611,9 @@ pub fn find_starting_point(
         // Skip utf8 byte-order-mark (BOM)
         bytes = skip_bom(bytes);
 
-        // \n\n can be a empty string row of a single column
-        // in other cases we skip it.
-        if schema_len > 1 {
+        // \n\n can be an empty row in a single column without header,
+        // in other cases we skip leading empty lines.
+        if schema_len > 1 || has_header {
             bytes = skip_line_ending(bytes, eol_char)
         }
         bytes

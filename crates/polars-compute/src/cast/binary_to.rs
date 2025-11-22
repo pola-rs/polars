@@ -28,14 +28,15 @@ impl_parse!(i8);
 impl_parse!(i16);
 impl_parse!(i32);
 impl_parse!(i64);
+#[cfg(feature = "dtype-i128")]
+impl_parse!(i128);
 
 impl_parse!(u8);
 impl_parse!(u16);
 impl_parse!(u32);
 impl_parse!(u64);
-
-#[cfg(feature = "dtype-i128")]
-impl_parse!(i128);
+#[cfg(feature = "dtype-u128")]
+impl_parse!(u128);
 
 impl Parse for f32 {
     fn parse(val: &[u8]) -> Option<Self>
@@ -132,7 +133,9 @@ where
 pub fn binary_to_dictionary<O: Offset, K: DictionaryKey>(
     from: &BinaryArray<O>,
 ) -> PolarsResult<DictionaryArray<K>> {
-    let mut array = MutableDictionaryArray::<K, MutableBinaryArray<O>>::new();
+    let mut array = MutableDictionaryArray::<K, MutableBinaryArray<O>>::empty_with_value_dtype(
+        from.dtype().clone(),
+    );
     array.reserve(from.len());
     array.try_extend(from.iter())?;
 

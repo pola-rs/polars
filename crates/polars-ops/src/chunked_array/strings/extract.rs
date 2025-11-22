@@ -36,7 +36,7 @@ fn extract_groups_array(
     }
 
     let values = builders.into_iter().map(|a| a.freeze().boxed()).collect();
-    Ok(StructArray::new(dtype.clone(), arr.len(), values, arr.validity().cloned()).boxed())
+    Ok(StructArray::new(dtype, arr.len(), values, arr.validity().cloned()).boxed())
 }
 
 #[cfg(feature = "extract_groups")]

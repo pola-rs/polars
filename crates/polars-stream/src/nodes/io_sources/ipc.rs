@@ -20,14 +20,14 @@ use polars_utils::mmap::MemSlice;
 use polars_utils::priority::Priority;
 use polars_utils::slice_enum::Slice;
 
-use super::multi_file_reader::reader_interface::output::FileReaderOutputRecv;
-use super::multi_file_reader::reader_interface::{BeginReadArgs, calc_row_position_after_slice};
+use super::multi_scan::reader_interface::output::FileReaderOutputRecv;
+use super::multi_scan::reader_interface::{BeginReadArgs, calc_row_position_after_slice};
 use crate::async_executor::{AbortOnDropHandle, JoinHandle, TaskPriority, spawn};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
-use crate::nodes::io_sources::multi_file_reader::reader_interface::output::FileReaderOutputSend;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::{
+use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
+use crate::nodes::io_sources::multi_scan::reader_interface::{
     FileReader, FileReaderCallbacks, Projection,
 };
 use crate::{DEFAULT_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_LINEARIZER_BUFFER_SIZE};
@@ -41,9 +41,9 @@ pub mod builder {
     use polars_plan::dsl::ScanSource;
 
     use super::IpcFileReader;
-    use crate::nodes::io_sources::multi_file_reader::reader_interface::FileReader;
-    use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
-    use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
+    use crate::nodes::io_sources::multi_scan::reader_interface::FileReader;
+    use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
+    use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
 
     #[derive(Debug)]
     pub struct IpcReaderBuilder {
@@ -60,7 +60,7 @@ pub mod builder {
         fn reader_capabilities(&self) -> ReaderCapabilities {
             use ReaderCapabilities as RC;
 
-            RC::ROW_INDEX | RC::PRE_SLICE | RC::NEGATIVE_PRE_SLICE
+            RC::NEEDS_FILE_CACHE_INIT | RC::ROW_INDEX | RC::PRE_SLICE | RC::NEGATIVE_PRE_SLICE
         }
 
         fn build_file_reader(
@@ -98,7 +98,7 @@ pub mod builder {
 const ROW_COUNT_OVERFLOW_ERR: PolarsError = PolarsError::ComputeError(ErrString::new_static(
     "\
 IPC file produces more than 2^32 rows; \
-consider compiling with polars-bigidx feature (polars-u64-idx package on python)",
+consider compiling with polars-bigidx feature (pip install polars[rt64])",
 ));
 
 struct IpcFileReader {
@@ -156,7 +156,7 @@ impl FileReader for IpcFileReader {
         // TODO: Streaming reads
         if let ScanSourceRef::Path(addr) = self.scan_source.as_scan_source_ref() {
             polars_io::file_cache::init_entries_from_uri_list(
-                &[Arc::from(addr.to_str())],
+                [Arc::from(addr.to_str())].into_iter(),
                 self.cloud_options.as_deref(),
             )?;
         }
@@ -223,17 +223,17 @@ impl FileReader for IpcFileReader {
             None
         };
 
-        if let Some(mut n_rows_in_file_tx) = n_rows_in_file_tx {
-            _ = n_rows_in_file_tx.try_send(self._n_rows_in_file()?);
+        if let Some(n_rows_in_file_tx) = n_rows_in_file_tx {
+            _ = n_rows_in_file_tx.send(self._n_rows_in_file()?);
         }
 
-        if let Some(mut row_position_on_end_tx) = row_position_on_end_tx {
+        if let Some(row_position_on_end_tx) = row_position_on_end_tx {
             _ = row_position_on_end_tx
-                .try_send(self._row_position_after_slice(normalized_pre_slice.clone())?);
+                .send(self._row_position_after_slice(normalized_pre_slice.clone())?);
         }
 
-        if let Some(mut file_schema_tx) = file_schema_tx {
-            _ = file_schema_tx.try_send(file_schema_pl.clone());
+        if let Some(file_schema_tx) = file_schema_tx {
+            _ = file_schema_tx.send(file_schema_pl.clone());
         }
 
         if normalized_pre_slice.as_ref().is_some_and(|x| x.len() == 0) {
@@ -242,8 +242,8 @@ impl FileReader for IpcFileReader {
             if verbose {
                 eprintln!(
                     "[IpcFileReader]: early return: \
-                    n_rows_in_file: {} \
-                    pre_slice: {:?} \
+                    n_rows_in_file: {}, \
+                    pre_slice: {:?}, \
                     resolved_pre_slice: {:?} \
                     ",
                     self._n_rows_in_file()?,
@@ -458,11 +458,10 @@ impl FileReader for IpcFileReader {
             })
             .collect::<Vec<_>>();
 
-        let memslice = memslice.clone();
-        let metadata = metadata.clone();
-        let slice = slice.clone();
-        let row_index = row_index.clone();
-        let projection_info = projection_info.clone();
+        let memslice = memslice;
+        let metadata = metadata;
+        let row_index = row_index;
+        let projection_info = projection_info;
 
         // Walker task.
         //

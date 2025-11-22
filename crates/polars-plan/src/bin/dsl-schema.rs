@@ -34,7 +34,7 @@ mod impls {
     use std::path::Path;
 
     use polars_plan::dsl::DslPlan;
-    use schemars::schema::SchemaObject;
+    use schemars::Schema;
     use sha2::Digest;
 
     const DEFAULT_HASHES_PATH: &str = "crates/polars-plan/dsl-schema-hashes.json";
@@ -107,12 +107,18 @@ mod impls {
 
         let mut hashes = serde_json::Map::new();
 
-        // Insert the top level enum schema
-        hashes.insert(String::from("DslPlan"), schema_hash(&schema.schema).into());
-
         // Insert the subschemas
-        for (name, def) in schema.definitions {
-            hashes.insert(name, schema_hash(&def.into_object()).into());
+        if let Some(definitions) = schema.get("$defs") {
+            if let Some(definitions) = definitions.as_object() {
+                for (name, def) in definitions {
+                    let mut def = def.to_owned();
+                    def.sort_all_objects();
+                    let schema: &Schema = (&def).try_into().unwrap();
+                    hashes.insert(name.into(), schema_hash(schema).into());
+                }
+
+                assert!(definitions.contains_key("DslPlan"));
+            }
         }
 
         hashes.sort_keys();
@@ -120,7 +126,7 @@ mod impls {
         serde_json::to_string_pretty(&hashes).expect("failed to serialize schema hashes file")
     }
 
-    fn schema_hash(schema: &SchemaObject) -> String {
+    fn schema_hash(schema: &Schema) -> String {
         let mut digest = sha2::Sha256::new();
         serde_json::to_writer(&mut digest, schema).expect("failed to serialize the schema");
         let hash = digest.finalize();
