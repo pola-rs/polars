@@ -1213,6 +1213,11 @@ class BaseExtension(DataType):
     .. warning::
         This functionality is considered **unstable**. It may be changed at any
         point without it being considered a breaking change.
+
+    See Also
+    --------
+    Extension
+    polars.register_extension_type
     """
 
     def __init__(
@@ -1299,9 +1304,17 @@ class BaseExtension(DataType):
 
 class Extension(BaseExtension):
     """
-    Generic extension data type for non-registered extensions.
+    Generic extension data type.
+
+    When `UNKNOWN_EXTENSION_TYPE_BEHAVIOR` is set to `"load_as_extension"`, any
+    non-registered extension type will be loaded as this type.
 
     .. warning::
         This functionality is considered **unstable**. It may be changed at any
         point without it being considered a breaking change.
+
+    See Also
+    --------
+    BaseExtension
+    polars.register_extension_type
     """

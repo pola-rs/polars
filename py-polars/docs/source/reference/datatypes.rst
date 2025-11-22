@@ -68,8 +68,10 @@ Other
     :toctree: api/
     :nosignatures:
 
+    BaseExtension
     Binary
     Boolean
+    Extension
     Null
     Object
     Unknown
