@@ -17,7 +17,7 @@ use super::*;
 // It is no longer needed to increment this. We use the schema hashes to check for compatibility.
 //
 // Only increment if you need to make a breaking change that doesn't change the schema hashes.
-pub const DSL_VERSION: (u16, u16) = (24, 0);
+pub const DSL_VERSION: (u16, u16) = (24, 1);
 const DSL_MAGIC_BYTES: &[u8] = b"DSL_VERSION";
 
 const DSL_SCHEMA_HASH: SchemaHash<'static> = SchemaHash::from_hash_file();

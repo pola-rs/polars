@@ -58,6 +58,8 @@ pub enum IRListFunction {
     ToArray(usize),
     #[cfg(feature = "list_to_struct")]
     ToStruct(Arc<[PlSmallStr]>),
+    #[cfg(feature = "list_zip")]
+    Zip(bool),
 }
 
 impl IRListFunction {
@@ -137,6 +139,10 @@ impl IRListFunction {
                 .ensure_is_list()?
                 .try_map_dtype(|dt| map_list_dtype_to_array_dtype(dt, *width)),
             NUnique => mapper.ensure_is_list()?.with_dtype(IDX_DTYPE),
+            #[cfg(feature = "list_zip")]
+            Zip(_) => mapper.with_dtype(DataType::List(Box::new(DataType::Struct(
+                mapper.args().to_vec(),
+            )))),
             #[cfg(feature = "list_to_struct")]
             ToStruct(names) => mapper.try_map_dtype(|dtype| {
                 let DataType::List(inner_dtype) = dtype else {
@@ -206,6 +212,8 @@ impl IRListFunction {
             L::ToArray(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "list_to_struct")]
             L::ToStruct(_) => FunctionOptions::elementwise(),
+            #[cfg(feature = "list_zip")]
+            L::Zip(_) => FunctionOptions::elementwise(),
         }
     }
 }
@@ -279,6 +287,8 @@ impl Display for IRListFunction {
             ToArray(_) => "to_array",
             #[cfg(feature = "list_to_struct")]
             ToStruct(_) => "to_struct",
+            #[cfg(feature = "list_zip")]
+            Zip(_) => "zip",
         };
         write!(f, "list.{name}")
     }
