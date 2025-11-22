@@ -331,17 +331,41 @@ impl Series {
                 .cast(&DataType::Float64)
                 .unwrap()
                 .agg_quantile(groups, quantile, method),
-            dt if dt.is_primitive_numeric() || dt.is_temporal() => {
-                let ca = s.to_physical_repr();
-                let physical_type = ca.dtype();
-                let s = apply_method_physical_integer!(ca, agg_quantile, groups, quantile, method);
-                if dt.is_logical() {
-                    // back to physical and then
-                    // back to logical type
-                    s.cast(physical_type).unwrap().cast(dt).unwrap()
-                } else {
-                    s
-                }
+            #[cfg(feature = "dtype-datetime")]
+            dt @ Datetime(_, _) => self
+                .to_physical_repr()
+                .agg_quantile(groups, quantile, method)
+                .cast(&Int64)
+                .unwrap()
+                .cast(dt)
+                .unwrap(),
+            #[cfg(feature = "dtype-duration")]
+            dt @ Duration(_) => self
+                .to_physical_repr()
+                .agg_quantile(groups, quantile, method)
+                .cast(&Int64)
+                .unwrap()
+                .cast(dt)
+                .unwrap(),
+            #[cfg(feature = "dtype-time")]
+            Time => self
+                .to_physical_repr()
+                .agg_quantile(groups, quantile, method)
+                .cast(&Int64)
+                .unwrap()
+                .cast(&Time)
+                .unwrap(),
+            #[cfg(feature = "dtype-date")]
+            Date => (self
+                .to_physical_repr()
+                .agg_quantile(groups, quantile, method)
+                .cast(&Float64)
+                .unwrap()
+                * (US_IN_DAY as f64))
+                .cast(&Datetime(TimeUnit::Microseconds, None))
+                .unwrap(),
+            dt if dt.is_primitive_numeric() => {
+                apply_method_physical_integer!(s, agg_quantile, groups, quantile, method)
             },
             _ => Series::full_null(PlSmallStr::EMPTY, groups.len(), s.dtype()),
         }

@@ -408,6 +408,22 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
         Ok(Scalar::new(dtype, av))
     }
 
+    #[cfg(feature = "dtype-datetime")]
+    fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
+        let quantile = self.0.physical().quantile_reduce(quantile, method)?;
+        let av = match quantile.value() {
+            AnyValue::Float64(v) => {
+                let datetime_us_value = (v * (US_IN_DAY as f64)) as i64;
+                AnyValue::Datetime(datetime_us_value, TimeUnit::Microseconds, None)
+            },
+            v => polars_bail!(ComputeError: "`quantile` not implemented for {}", v.dtype()),
+        };
+        Ok(Scalar::new(
+            DataType::Datetime(TimeUnit::Microseconds, None),
+            av,
+        ))
+    }
+
     #[cfg(feature = "approx_unique")]
     fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
         Ok(ChunkApproxNUnique::approx_n_unique(self.0.physical()))
