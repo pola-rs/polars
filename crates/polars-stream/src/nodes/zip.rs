@@ -10,6 +10,7 @@ use polars_utils::itertools::Itertools;
 use super::compute_node_prelude::*;
 use crate::DEFAULT_ZIP_HEAD_BUFFER_SIZE;
 use crate::morsel::SourceToken;
+use crate::physical_plan::ExtendBehavior;
 
 /// The head of an input stream.
 #[derive(Debug)]
@@ -117,19 +118,19 @@ impl InputHead {
 }
 
 pub struct ZipNode {
-    null_extend: bool,
+    extend_behavior: ExtendBehavior,
     out_seq: MorselSeq,
     input_heads: Vec<InputHead>,
 }
 
 impl ZipNode {
-    pub fn new(null_extend: bool, schemas: Vec<Arc<Schema>>) -> Self {
+    pub fn new(extend_behavior: ExtendBehavior, schemas: Vec<Arc<Schema>>) -> Self {
         let input_heads = schemas
             .into_iter()
-            .map(|s| InputHead::new(s, !null_extend))
+            .map(|s| InputHead::new(s, matches!(extend_behavior, ExtendBehavior::Broadcast)))
             .collect();
         Self {
-            null_extend,
+            extend_behavior,
             out_seq: MorselSeq::new(0),
             input_heads,
         }
@@ -138,10 +139,10 @@ impl ZipNode {
 
 impl ComputeNode for ZipNode {
     fn name(&self) -> &str {
-        if self.null_extend {
-            "zip-null-extend"
-        } else {
-            "zip"
+        match self.extend_behavior {
+            ExtendBehavior::FillNulls => "zip-fill-nulls",
+            ExtendBehavior::Broadcast => "zip-broadcast",
+            ExtendBehavior::Raise => "zip-raise",
         }
     }
 
@@ -176,11 +177,23 @@ impl ComputeNode for ZipNode {
                 input_head.is_broadcast == Some(false) && input_head.total_len > 0;
         }
 
-        if !self.null_extend {
-            polars_ensure!(
-                !(at_least_one_non_broadcast_done && at_least_one_non_broadcast_nonempty),
-                ShapeMismatch: "zip node received non-equal length inputs"
-            );
+        match self.extend_behavior {
+            ExtendBehavior::Broadcast => {
+                polars_ensure!(
+                    !(at_least_one_non_broadcast_done && at_least_one_non_broadcast_nonempty),
+                    ShapeMismatch: "zip node received non-equal length inputs"
+                );
+            },
+            ExtendBehavior::Raise => {
+                if let Some(first_len) = self.input_heads.first().map(|h| h.total_len) {
+                    let all_len_equal = self.input_heads.iter().all(|h| h.total_len == first_len);
+                    polars_ensure!(
+                        all_len_equal,
+                        ShapeMismatch: "zip node received non-equal length inputs"
+                    );
+                }
+            },
+            _ => {},
         }
 
         let all_output_sent = all_done_or_broadcast && !all_broadcast;
@@ -288,7 +301,8 @@ impl ComputeNode for ZipNode {
                 for input_head in &mut self.input_heads {
                     out.push(input_head.take(common_size));
                 }
-                let out_df = concat_df_horizontal(&out, false)?;
+                let strict_concat = matches!(self.extend_behavior, ExtendBehavior::Raise);
+                let out_df = concat_df_horizontal(&out, false, strict_concat)?;
                 out.clear();
 
                 let morsel = Morsel::new(out_df, self.out_seq, source_token.clone());
@@ -333,7 +347,8 @@ impl ComputeNode for ZipNode {
                 for input_head in &mut self.input_heads {
                     out.push(input_head.consume_broadcast());
                 }
-                let out_df = concat_df_horizontal(&out, false)?;
+                let strict_concat = matches!(self.extend_behavior, ExtendBehavior::Raise);
+                let out_df = concat_df_horizontal(&out, false, strict_concat)?;
                 out.clear();
 
                 let morsel = Morsel::new(out_df, self.out_seq, source_token.clone());

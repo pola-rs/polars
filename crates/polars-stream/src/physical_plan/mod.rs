@@ -94,6 +94,26 @@ impl PhysStream {
     }
 }
 
+/// Behaviour when handling multiple DataFrames with different heights.
+
+#[derive(Clone, Debug, Copy)]
+#[cfg_attr(
+    feature = "physical_plan_visualization",
+    derive(serde::Serialize, serde::Deserialize)
+)]
+#[cfg_attr(
+    feature = "physical_plan_visualization_schema",
+    derive(schemars::JsonSchema)
+)]
+pub enum ExtendBehavior {
+    /// Fill the shorter DataFrames with nulls to the height of the longest DataFrame.
+    FillNulls,
+    /// All inputs must be the same height, or have length 1 in which case they are broadcast.
+    Broadcast,
+    /// Raise an error if the DataFrames have different heights.
+    Raise,
+}
+
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "physical_plan_visualization",
@@ -265,10 +285,7 @@ pub enum PhysNodeKind {
 
     Zip {
         inputs: Vec<PhysStream>,
-        /// If true shorter inputs are extended with nulls to the longest input,
-        /// if false all inputs must be the same length, or have length 1 in
-        /// which case they are broadcast.
-        null_extend: bool,
+        extend_behavior: ExtendBehavior,
     },
 
     #[allow(unused)]
