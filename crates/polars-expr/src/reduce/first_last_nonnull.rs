@@ -477,13 +477,14 @@ impl<P: NonNullPolicy + 'static> GroupedReduction for GenericFirstLastNonNullGro
 
     fn finalize(&mut self) -> PolarsResult<Series> {
         self.seqs.clear();
-        unsafe {
-            let mut buf = AnyValueBufferTrusted::new(&self.in_dtype, self.values.len());
-            for v in core::mem::take(&mut self.values) {
-                buf.add_unchecked_owned_physical(&v);
-            }
-            Ok(buf.into_series())
+        let phys_type = self.in_dtype.to_physical();
+        let mut buf = AnyValueBufferTrusted::new(&phys_type, self.values.len());
+        for v in core::mem::take(&mut self.values) {
+            // SAFETY: v is cast to physical.
+            unsafe { buf.add_unchecked_owned_physical(&v.to_physical()) };
         }
+        // SAFETY: dtype is valid for series.
+        unsafe { buf.into_series().from_physical_unchecked(&self.in_dtype) }
     }
 
     fn as_any(&self) -> &dyn Any {

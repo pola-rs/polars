@@ -3451,6 +3451,7 @@ dependencies = [
  "polars-utils",
  "proptest",
  "rand 0.9.1",
+ "regex",
  "schemars",
  "serde",
  "simdutf8",

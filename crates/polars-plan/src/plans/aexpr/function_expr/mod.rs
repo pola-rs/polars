@@ -14,6 +14,8 @@ mod correlation;
 mod cum;
 #[cfg(feature = "temporal")]
 mod datetime;
+#[cfg(feature = "dtype-extension")]
+mod extension;
 #[cfg(feature = "fused")]
 mod fused;
 mod list;
@@ -66,6 +68,8 @@ pub use self::business::IRBusinessFunction;
 pub use self::cat::IRCategoricalFunction;
 #[cfg(feature = "temporal")]
 pub use self::datetime::IRTemporalFunction;
+#[cfg(feature = "dtype-extension")]
+pub use self::extension::IRExtensionFunction;
 pub use self::pow::IRPowFunction;
 #[cfg(feature = "range")]
 pub use self::range::IRRangeFunction;
@@ -91,6 +95,8 @@ pub enum IRFunctionExpr {
     BinaryExpr(IRBinaryFunction),
     #[cfg(feature = "dtype-categorical")]
     Categorical(IRCategoricalFunction),
+    #[cfg(feature = "dtype-extension")]
+    Extension(IRExtensionFunction),
     ListExpr(IRListFunction),
     #[cfg(feature = "strings")]
     StringExpr(IRStringFunction),
@@ -156,7 +162,9 @@ pub enum IRFunctionExpr {
     DropNans,
     DropNulls,
     #[cfg(feature = "mode")]
-    Mode,
+    Mode {
+        maintain_order: bool,
+    },
     #[cfg(feature = "moment")]
     Skew(bool),
     #[cfg(feature = "moment")]
@@ -388,6 +396,8 @@ impl Hash for IRFunctionExpr {
             BinaryExpr(f) => f.hash(state),
             #[cfg(feature = "dtype-categorical")]
             Categorical(f) => f.hash(state),
+            #[cfg(feature = "dtype-extension")]
+            Extension(f) => f.hash(state),
             ListExpr(f) => f.hash(state),
             #[cfg(feature = "strings")]
             StringExpr(f) => f.hash(state),
@@ -491,7 +501,9 @@ impl Hash for IRFunctionExpr {
                 nulls_last.hash(state);
             },
             #[cfg(feature = "mode")]
-            Mode => {},
+            Mode { maintain_order } => {
+                maintain_order.hash(state);
+            },
             #[cfg(feature = "abs")]
             Abs => {},
             Negate => {},
@@ -688,6 +700,8 @@ impl Display for IRFunctionExpr {
             BinaryExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "dtype-categorical")]
             Categorical(func) => return write!(f, "{func}"),
+            #[cfg(feature = "dtype-extension")]
+            Extension(func) => return write!(f, "{func}"),
             ListExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "strings")]
             StringExpr(func) => return write!(f, "{func}"),
@@ -734,7 +748,13 @@ impl Display for IRFunctionExpr {
             DropNans => "drop_nans",
             DropNulls => "drop_nulls",
             #[cfg(feature = "mode")]
-            Mode => "mode",
+            Mode { maintain_order } => {
+                if *maintain_order {
+                    "mode_stable"
+                } else {
+                    "mode"
+                }
+            },
             #[cfg(feature = "moment")]
             Skew(_) => "skew",
             #[cfg(feature = "moment")]
@@ -974,6 +994,8 @@ impl IRFunctionExpr {
             F::BinaryExpr(e) => e.function_options(),
             #[cfg(feature = "dtype-categorical")]
             F::Categorical(e) => e.function_options(),
+            #[cfg(feature = "dtype-extension")]
+            F::Extension(e) => e.function_options(),
             F::ListExpr(e) => e.function_options(),
             #[cfg(feature = "strings")]
             F::StringExpr(e) => e.function_options(),
@@ -1017,7 +1039,7 @@ impl IRFunctionExpr {
             F::FillNullWithStrategy(strategy) if strategy.is_elementwise() => {
                 FunctionOptions::elementwise()
             },
-            F::FillNullWithStrategy(_) => FunctionOptions::groupwise(),
+            F::FillNullWithStrategy(_) => FunctionOptions::length_preserving(),
             #[cfg(feature = "rolling_window")]
             F::RollingExpr { .. } => FunctionOptions::length_preserving(),
             #[cfg(feature = "rolling_window_by")]
@@ -1032,11 +1054,15 @@ impl IRFunctionExpr {
             F::DropNulls => FunctionOptions::row_separable()
                 .flag(FunctionFlags::ALLOW_EMPTY_INPUTS | FunctionFlags::NON_ORDER_PRODUCING),
             #[cfg(feature = "mode")]
-            F::Mode => FunctionOptions::groupwise().flag(
-                FunctionFlags::NON_ORDER_OBSERVING
-                    | FunctionFlags::TERMINATES_INPUT_ORDER
-                    | FunctionFlags::NON_ORDER_PRODUCING,
-            ),
+            F::Mode { maintain_order } => FunctionOptions::groupwise().with_flags(|f| {
+                let f = f | FunctionFlags::NON_ORDER_PRODUCING;
+
+                if !*maintain_order {
+                    f | FunctionFlags::NON_ORDER_OBSERVING | FunctionFlags::TERMINATES_INPUT_ORDER
+                } else {
+                    f
+                }
+            }),
             #[cfg(feature = "moment")]
             F::Skew(_) => FunctionOptions::aggregation().flag(FunctionFlags::NON_ORDER_OBSERVING),
             #[cfg(feature = "moment")]
@@ -1044,7 +1070,13 @@ impl IRFunctionExpr {
                 FunctionOptions::aggregation().flag(FunctionFlags::NON_ORDER_OBSERVING)
             },
             #[cfg(feature = "dtype-array")]
-            F::Reshape(_) => FunctionOptions::groupwise(),
+            F::Reshape(dims) => {
+                if dims.len() == 1 && dims[0] == ReshapeDimension::Infer {
+                    FunctionOptions::row_separable()
+                } else {
+                    FunctionOptions::groupwise()
+                }
+            },
             #[cfg(feature = "repeat_by")]
             F::RepeatBy => FunctionOptions::elementwise(),
             F::ArgUnique => FunctionOptions::groupwise(),

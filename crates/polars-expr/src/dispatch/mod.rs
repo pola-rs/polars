@@ -106,6 +106,8 @@ mod cat;
 mod cum;
 #[cfg(feature = "temporal")]
 mod datetime;
+#[cfg(feature = "dtype-extension")]
+mod extension;
 mod groups_dispatch;
 mod horizontal;
 mod list;
@@ -142,6 +144,8 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         F::BinaryExpr(func) => binary::function_expr_to_udf(func),
         #[cfg(feature = "dtype-categorical")]
         F::Categorical(func) => cat::function_expr_to_udf(func),
+        #[cfg(feature = "dtype-extension")]
+        F::Extension(func) => extension::function_expr_to_udf(func),
         F::ListExpr(func) => list::function_expr_to_udf(func),
         #[cfg(feature = "strings")]
         F::StringExpr(func) => strings::function_expr_to_udf(func),
@@ -280,7 +284,7 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
             map_as_slice!(misc::clip, has_min, has_max)
         },
         #[cfg(feature = "mode")]
-        F::Mode => map!(misc::mode),
+        F::Mode { maintain_order } => map!(misc::mode, maintain_order),
         #[cfg(feature = "moment")]
         F::Skew(bias) => map!(misc::skew, bias),
         #[cfg(feature = "moment")]

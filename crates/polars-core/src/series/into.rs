@@ -177,6 +177,18 @@ impl ToArrowConverter {
                     cast_unchecked(array, &ArrowDataType::LargeBinary).unwrap()
                 }
             },
+            #[cfg(feature = "dtype-extension")]
+            DataType::Extension(typ, storage_dtype) => {
+                use arrow::datatypes::ExtensionType;
+
+                let mut arr = self.array_to_arrow(array, storage_dtype);
+                *arr.dtype_mut() = ArrowDataType::Extension(Box::new(ExtensionType {
+                    name: typ.name().into(),
+                    metadata: typ.serialize_metadata().map(|md| md.into()),
+                    inner: arr.dtype().clone(),
+                }));
+                arr
+            },
             _ => {
                 assert!(!dtype.is_logical());
                 array.to_boxed()

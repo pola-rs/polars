@@ -407,7 +407,7 @@ def test_dataframe_from_repr() -> None:
         pl.LazyFrame(
             {
                 "a": [1, 2, None],
-                "b": [4.5, 5.5, 6.5],
+                "b": [4.5, 5.23e13, -3.12e12],
                 "c": ["x", "y", "z"],
                 "d": [True, False, True],
                 "e": [None, "", None],

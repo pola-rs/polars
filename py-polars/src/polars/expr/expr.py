@@ -62,6 +62,7 @@ from polars.expr.array import ExprArrayNameSpace
 from polars.expr.binary import ExprBinaryNameSpace
 from polars.expr.categorical import ExprCatNameSpace
 from polars.expr.datetime import ExprDateTimeNameSpace
+from polars.expr.ext import ExprExtensionNameSpace
 from polars.expr.list import ExprListNameSpace
 from polars.expr.meta import ExprMetaNameSpace
 from polars.expr.name import ExprNameNameSpace
@@ -137,6 +138,7 @@ class Expr:
         "bin",
         "cat",
         "dt",
+        "ext",
         "list",
         "meta",
         "name",
@@ -1788,11 +1790,16 @@ class Expr:
         other_pyexpr = parse_into_expression(other)
         return wrap_expr(self._pyexpr.dot(other_pyexpr))
 
-    def mode(self) -> Expr:
+    def mode(self, *, maintain_order: bool = False) -> Expr:
         """
         Compute the most occurring value(s).
 
         Can return multiple Values.
+
+        Parameters
+        ----------
+        maintain_order
+            Maintain order of data. This requires more work.
 
         Examples
         --------
@@ -1812,7 +1819,7 @@ class Expr:
         │ 1   ┆ 1   │
         └─────┴─────┘
         """
-        return wrap_expr(self._pyexpr.mode())
+        return wrap_expr(self._pyexpr.mode(maintain_order=maintain_order))
 
     def cast(
         self,
@@ -4959,13 +4966,20 @@ Consider using {self}.implode() instead"""
         │ b     ┆ [2, 3, 4] │
         └───────┴───────────┘
         """
-        return wrap_expr(self._pyexpr.explode())
+        return self.explode(empty_as_null=True, keep_nulls=True)
 
-    def explode(self) -> Expr:
+    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Expr:
         """
         Explode a list expression.
 
         This means that every item is expanded to a new row.
+
+        Parameters
+        ----------
+        empty_as_null
+            Explode an empty list/array into a `null`.
+        keep_nulls
+            Explode a `null` list/array into a `null`.
 
         Returns
         -------
@@ -5000,7 +5014,9 @@ Consider using {self}.implode() instead"""
         │ 4      │
         └────────┘
         """
-        return wrap_expr(self._pyexpr.explode())
+        return wrap_expr(
+            self._pyexpr.explode(empty_as_null=empty_as_null, keep_nulls=keep_nulls)
+        )
 
     def implode(self) -> Expr:
         """
@@ -11673,6 +11689,15 @@ Consider using {self}.implode() instead"""
         └─────┘
         """
         return ExprStructNameSpace(self)
+
+    @property
+    def ext(self) -> ExprExtensionNameSpace:
+        """
+        Create an object namespace of all extension type related expressions.
+
+        See the individual method pages for full details.
+        """
+        return ExprExtensionNameSpace(self)
 
     def _skip_batch_predicate(self, schema: SchemaDict) -> Expr | None:
         result = self._pyexpr.skip_batch_predicate(schema)

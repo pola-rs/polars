@@ -1106,8 +1106,8 @@ def test_hybrid_rle() -> None:
             pl.UInt8,
             pl.UInt32,
             pl.Int64,
-            # pl.Date, # Turned off because of issue #17599
-            # pl.Time, # Turned off because of issue #17599
+            pl.Date,
+            pl.Time,
             pl.Binary,
             pl.Float32,
             pl.Float64,
@@ -3620,3 +3620,96 @@ def test_parquet_is_in_multiple_pages_25312() -> None:
             }
         ),
     )
+
+
+@given(s=series(name="a", dtype=pl.String()))
+def test_regex_prefiltering_parametric(s: pl.Series) -> None:
+    f = io.BytesIO()
+    s.to_frame().write_parquet(f)
+
+    predicates = [
+        pl.col.a.str.starts_with("aaa"),
+        pl.col.a.str.ends_with("aaa"),
+        pl.col.a.str.contains("aaa"),
+    ]
+
+    if (it := s.first()) is not None:
+        assert isinstance(it, str)
+        escape = pl.escape_regex(it)
+        predicates += [
+            pl.col.a.str.starts_with(it),
+            pl.col.a.str.starts_with(it[1:]),
+            pl.col.a.str.starts_with(it[:-1]),
+            pl.col.a.str.ends_with(it),
+            pl.col.a.str.ends_with(it[1:]),
+            pl.col.a.str.ends_with(it[:-1]),
+            pl.col.a.str.contains(escape),
+            pl.col.a.str.contains(it, literal=True),
+            pl.col.a.str.contains(it[1:], literal=True),
+        ]
+
+    if (it := s.last()) is not None:
+        assert isinstance(it, str)
+        escape = pl.escape_regex(it)
+        predicates += [
+            pl.col.a.str.starts_with(it),
+            pl.col.a.str.starts_with(it[1:]),
+            pl.col.a.str.starts_with(it[:-1]),
+            pl.col.a.str.ends_with(it),
+            pl.col.a.str.ends_with(it[1:]),
+            pl.col.a.str.ends_with(it[:-1]),
+            pl.col.a.str.contains(escape),
+            pl.col.a.str.contains(it, literal=True),
+            pl.col.a.str.contains(it[1:], literal=True),
+        ]
+
+    for p in predicates:
+        f.seek(0)
+        assert_series_equal(
+            pl.scan_parquet(f).filter(p).collect().to_series(),
+            s.to_frame().filter(p).to_series(),
+        )
+
+
+@given(
+    s=series(
+        name="a",
+        allowed_dtypes=[pl.Int8, pl.UInt8, pl.Int32, pl.UInt32, pl.Int64, pl.UInt64],
+    ),
+    start=st.integers(),
+    end=st.integers(),
+)
+def test_between_prefiltering_parametric(s: pl.Series, start: int, end: int) -> None:
+    f = io.BytesIO()
+    s.to_frame().write_parquet(f)
+
+    if s.dtype.is_unsigned_integer():
+        start = abs(start)
+        end = abs(end)
+
+    start %= s.upper_bound().item() + 1
+    end %= s.upper_bound().item() + 1
+
+    if start > end:
+        t = start
+        start = end
+        end = t
+
+    predicates = [
+        pl.col.a.is_between(pl.lit(start, s.dtype), pl.lit(end, s.dtype)),
+        pl.col.a > pl.lit(start, s.dtype),
+        pl.col.a < pl.lit(end, s.dtype),
+        pl.col.a >= pl.lit(start, s.dtype),
+        pl.col.a <= pl.lit(end, s.dtype),
+        pl.col.a.is_in(pl.lit([start, end], pl.List(s.dtype))),
+        pl.col.a == pl.lit(start, s.dtype),
+        pl.lit(True, pl.Boolean),
+        pl.lit(False, pl.Boolean),
+    ]
+
+    for p in predicates:
+        f.seek(0)
+        assert_series_equal(
+            pl.scan_parquet(f).filter(p).collect().to_series(),
+            s.to_frame().filter(p).to_series(),
+        )

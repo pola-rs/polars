@@ -1015,14 +1015,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2.0 ┆ 2.5 ┆ 3.0 │
         └─────┴─────┴─────┘
         """
-        return self._from_pyldf(
-            self._ldf.pipe_with_schema(
-                lambda lf_and_schema: function(
-                    self._from_pyldf(lf_and_schema[0]),
-                    lf_and_schema[1],
-                )._ldf
-            )
-        )
+
+        def wrapper(lf_and_schema: Any) -> PyLazyFrame:
+            # The last index is because we return a list for multiple inputs
+            # to make `pipe_with_schemas` (plural) work, but we don't use that
+            return function(
+                self._from_pyldf(lf_and_schema[0][0]),
+                lf_and_schema[1][0],
+            )._ldf
+
+        return self._from_pyldf(self._ldf.pipe_with_schema(wrapper))
 
     def describe(
         self,
@@ -3654,6 +3656,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> None: ...
+
     @overload
     def sink_batches(
         self,
@@ -3665,6 +3668,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> pl.LazyFrame: ...
+
     @unstable()
     def sink_batches(
         self,
@@ -7360,6 +7364,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         columns: ColumnNameOrSelector | Iterable[ColumnNameOrSelector],
         *more_columns: ColumnNameOrSelector,
+        empty_as_null: bool = True,
+        keep_nulls: bool = True,
     ) -> LazyFrame:
         """
         Explode the DataFrame to long format by exploding the given columns.
@@ -7371,6 +7377,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             columns being exploded must be of the `List` or `Array` data type.
         *more_columns
             Additional names of columns to explode, specified as positional arguments.
+        empty_as_null
+            Explode an empty list/array into a `null`.
+        keep_nulls
+            Explode a `null` list/array into a `null`.
 
         Examples
         --------
@@ -7400,7 +7410,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         subset = parse_list_into_selector(columns) | parse_list_into_selector(  # type: ignore[arg-type]
             more_columns
         )
-        return self._from_pyldf(self._ldf.explode(subset=subset._pyselector))
+        return self._from_pyldf(
+            self._ldf.explode(
+                subset=subset._pyselector,
+                empty_as_null=empty_as_null,
+                keep_nulls=keep_nulls,
+            )
+        )
 
     def unique(
         self,
@@ -8344,7 +8360,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def set_sorted(
         self,
-        column: str,
+        column: str | list[str],
         *more_columns: str,
         descending: bool | list[bool] = False,
         nulls_last: bool | list[bool] = False,
@@ -8357,7 +8373,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Parameters
         ----------
         column
-            Column that is sorted
+            Column(s) that is sorted
         more_columns
             Columns that are sorted over after `column`.
         descending
@@ -8371,11 +8387,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Use with care!
 
         """
-        # NOTE: Only accepts 1 column on purpose! User think they are sorted by
-        # the combined multicolumn values.
-        if not isinstance(column, str):
-            msg = "expected a 'str' for argument 'column' in 'set_sorted'"
-            raise TypeError(msg)
+        cs: list[str]
+        if isinstance(column, str):
+            cs = [column] + list(more_columns)
+        else:
+            cs = column + list(more_columns)
 
         ds: list[bool]
         nl: list[bool]
@@ -8388,11 +8404,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         else:
             nl = nulls_last
 
-        return self._from_pyldf(
-            self._ldf.hint_sorted(
-                [column] + list(more_columns), descending=ds, nulls_last=nl
-            )
-        )
+        return self._from_pyldf(self._ldf.hint_sorted(cs, descending=ds, nulls_last=nl))
 
     @unstable()
     def update(

@@ -929,7 +929,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     options,
                 })
             },
-            #[cfg(feature = "range")]
+            #[cfg(feature = "moment")]
             AExpr::Function {
                 function: ref function @ (IRFunctionExpr::Skew(..) | IRFunctionExpr::Kurtosis(..)),
                 ref input,
@@ -1418,7 +1418,7 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
             ((p_to - s_to) >= (p_from - s_from)) && (s_to >= s_from)
         },
         #[cfg(feature = "dtype-decimal")]
-        (DataType::Decimal(p_to, s_to), dt) if dt.is_primitive_numeric() => {
+        (DataType::Decimal(p_to, s_to), dt) if dt.is_integer() => {
             // Given the precision and scale of decimals, figure out the ranges
             // of expressible integers:
             let max_int_value = 10i128.pow((*p_to - *s_to) as u32) - 1;

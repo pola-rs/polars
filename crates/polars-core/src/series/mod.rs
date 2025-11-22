@@ -397,7 +397,7 @@ impl Series {
             {
                 true
             },
-            dt if dt.is_primitive() && dt == slf.dtype() => true,
+            dt if (dt.is_primitive() || dt.is_extension()) && dt == slf.dtype() => true,
             _ => false,
         };
 
@@ -575,8 +575,22 @@ impl Series {
                     .map(|ca| ca.into_series())
             },
 
+            #[cfg(feature = "dtype-extension")]
+            (_, D::Extension(typ, storage)) => {
+                let storage_series = self.from_physical_unchecked(storage.as_ref())?;
+                let ext = ExtensionChunked::from_storage(typ.clone(), storage_series);
+                Ok(ext.into_series())
+            },
+
             _ => panic!("invalid from_physical({dtype:?}) for {:?}", self.dtype()),
         }
+    }
+
+    #[cfg(feature = "dtype-extension")]
+    pub fn into_extension(self, typ: ExtensionTypeInstance) -> Series {
+        assert!(!self.dtype().is_extension());
+        let ext = ExtensionChunked::from_storage(typ, self);
+        ext.into_series()
     }
 
     /// Cast numerical types to f64, and keep floats as is.
@@ -625,11 +639,11 @@ impl Series {
     }
 
     /// Explode a list Series. This expands every item to a new row..
-    pub fn explode(&self, skip_empty: bool) -> PolarsResult<Series> {
+    pub fn explode(&self, options: ExplodeOptions) -> PolarsResult<Series> {
         match self.dtype() {
-            DataType::List(_) => self.list().unwrap().explode(skip_empty),
+            DataType::List(_) => self.list().unwrap().explode(options),
             #[cfg(feature = "dtype-array")]
-            DataType::Array(_, _) => self.array().unwrap().explode(skip_empty),
+            DataType::Array(_, _) => self.array().unwrap().explode(options),
             _ => Ok(self.clone()),
         }
     }
@@ -714,6 +728,7 @@ impl Series {
     /// * List(inner) -> List(physical of inner)
     /// * Array(inner) -> Array(physical of inner)
     /// * Struct -> Struct with physical repr of each struct column
+    /// * Extension -> physical of storage type
     pub fn to_physical_repr(&self) -> Cow<'_, Series> {
         use DataType::*;
         match self.dtype() {
@@ -750,8 +765,22 @@ impl Series {
                 Cow::Borrowed(_) => Cow::Borrowed(self),
                 Cow::Owned(ca) => Cow::Owned(ca.into_series()),
             },
+            #[cfg(feature = "dtype-extension")]
+            Extension(_, _) => self.ext().unwrap().storage().to_physical_repr(),
             _ => Cow::Borrowed(self),
         }
+    }
+
+    /// If the Series is an Extension type, return its storage Series.
+    /// Otherwise, return itself.
+    pub fn to_storage(&self) -> &Series {
+        #[cfg(feature = "dtype-extension")]
+        {
+            if let DataType::Extension(_, _) = self.dtype() {
+                return self.ext().unwrap().storage();
+            }
+        }
+        self
     }
 
     /// Traverse and collect every nth element in a new array.

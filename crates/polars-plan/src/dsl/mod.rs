@@ -2,7 +2,6 @@
 //! Domain specific language for the Lazy API.
 #[cfg(feature = "dtype-categorical")]
 pub mod cat;
-
 #[cfg(feature = "dtype-categorical")]
 pub use cat::*;
 #[cfg(feature = "rolling_window_by")]
@@ -21,6 +20,8 @@ mod datatype_expr;
 #[cfg(feature = "temporal")]
 pub mod dt;
 mod expr;
+#[cfg(feature = "dtype-extension")]
+mod extension;
 mod format;
 mod from;
 pub mod function_expr;
@@ -55,6 +56,8 @@ pub use arity::*;
 pub use array::*;
 pub use datatype_expr::DataTypeExpr;
 pub use expr::*;
+#[cfg(feature = "dtype-extension")]
+pub use extension::*;
 pub use function_expr::*;
 pub use functions::*;
 pub use list::*;
@@ -217,14 +220,17 @@ impl Expr {
 
     /// Alias for `explode`.
     pub fn flatten(self) -> Self {
-        self.explode()
+        self.explode(ExplodeOptions {
+            empty_as_null: true,
+            keep_nulls: true,
+        })
     }
 
     /// Explode the String/List column.
-    pub fn explode(self) -> Self {
+    pub fn explode(self, options: ExplodeOptions) -> Self {
         Expr::Explode {
             input: Arc::new(self),
-            skip_empty: false,
+            options,
         }
     }
 
@@ -1083,8 +1089,8 @@ impl Expr {
 
     #[cfg(feature = "mode")]
     /// Compute the mode(s) of this column. This is the most occurring value.
-    pub fn mode(self) -> Expr {
-        self.map_unary(FunctionExpr::Mode)
+    pub fn mode(self, maintain_order: bool) -> Expr {
+        self.map_unary(FunctionExpr::Mode { maintain_order })
     }
 
     #[cfg(feature = "interpolate")]
@@ -1635,6 +1641,12 @@ impl Expr {
     #[cfg(feature = "dtype-categorical")]
     pub fn cat(self) -> cat::CategoricalNameSpace {
         cat::CategoricalNameSpace(self)
+    }
+
+    /// Get the [`extension::ExtensionNameSpace`].
+    #[cfg(feature = "dtype-extension")]
+    pub fn ext(self) -> extension::ExtensionNameSpace {
+        extension::ExtensionNameSpace(self)
     }
 
     /// Get the [`struct_::StructNameSpace`].

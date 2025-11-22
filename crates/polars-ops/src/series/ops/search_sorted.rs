@@ -10,10 +10,20 @@ pub fn search_sorted(
     descending: bool,
 ) -> PolarsResult<IdxCa> {
     let original_dtype = s.dtype();
+    polars_ensure!(
+        original_dtype == search_values.dtype(),
+        op = "search_sorted",
+        original_dtype,
+        search_values.dtype()
+    );
 
     if s.dtype().is_categorical() {
-        // See https://github.com/pola-rs/polars/issues/20171
-        polars_bail!(InvalidOperation: "'search_sorted' is not supported on dtype: {}", s.dtype())
+        return search_sorted(
+            &s.cast(&DataType::String).unwrap(),
+            &search_values.cast(&DataType::String)?,
+            side,
+            descending,
+        );
     }
 
     let s = s.to_physical_repr();

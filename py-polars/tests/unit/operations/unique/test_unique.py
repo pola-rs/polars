@@ -381,3 +381,20 @@ def test_unique_list_arr_non_numeric(stable: bool) -> None:
         pl.Series([["A"], ["B"]], dtype=pl.Array(pl.String, 1)),
         check_order=stable,
     )
+
+
+@pytest.mark.parametrize("maintain_order", [False, True])
+@pytest.mark.parametrize("stable", [False, True])
+def test_unique_on_literal_in_agg(maintain_order: bool, stable: bool) -> None:
+    df = (
+        pl.DataFrame({"a": [0, 1]})
+        .group_by("a", maintain_order=maintain_order)
+        .agg(b=pl.lit(1, pl.Int64).unique(maintain_order=stable))
+    )
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {"a": [0, 1], "b": [[1], [1]]}, schema_overrides={"b": pl.List(pl.Int64)}
+        ),
+        check_row_order=maintain_order,
+    )

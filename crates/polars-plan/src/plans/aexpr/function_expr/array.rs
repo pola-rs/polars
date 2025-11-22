@@ -34,9 +34,7 @@ pub enum IRArrayFunction {
     #[cfg(feature = "array_count")]
     CountMatches,
     Shift,
-    Explode {
-        skip_empty: bool,
-    },
+    Explode(ExplodeOptions),
     Concat,
     Slice(i64, i64),
     #[cfg(feature = "array_to_struct")]

@@ -447,7 +447,6 @@ fn build_fallback_node_with_ctx(
         .map(|expr| {
             create_physical_expr(
                 expr,
-                Context::Default,
                 ctx.expr_arena,
                 &ctx.phys_sm[input_stream.node].output_schema,
                 &mut conv_state,
@@ -616,7 +615,7 @@ fn lower_exprs_with_ctx(
 
             AExpr::Explode {
                 expr: inner,
-                skip_empty,
+                options,
             } => {
                 // While explode is streamable, it is not elementwise, so we
                 // have to transform it to a select node.
@@ -624,7 +623,7 @@ fn lower_exprs_with_ctx(
                 let exploded_name = unique_column_name();
                 let trans_inner = ctx.expr_arena.add(AExpr::Explode {
                     expr: trans_exprs[0],
-                    skip_empty,
+                    options,
                 });
                 let explode_expr =
                     ExprIR::new(trans_inner, OutputName::Alias(exploded_name.clone()));
@@ -774,6 +773,7 @@ fn lower_exprs_with_ctx(
                     ctx.phys_sm,
                     ctx.cache,
                     StreamingLowerIRContext::from(&*ctx),
+                    false,
                 )?;
                 input_streams.insert(group_by_stream);
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(tmp_name)));
@@ -826,6 +826,7 @@ fn lower_exprs_with_ctx(
                     StreamingLowerIRContext {
                         prepare_visualization: ctx.prepare_visualization,
                     },
+                    false,
                 )?;
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(tmp_count_name)));
                 input_streams.insert(stream);
@@ -888,6 +889,7 @@ fn lower_exprs_with_ctx(
                     StreamingLowerIRContext {
                         prepare_visualization: ctx.prepare_visualization,
                     },
+                    false,
                 )?;
 
                 let value = ExprIR::new(
@@ -913,7 +915,7 @@ fn lower_exprs_with_ctx(
             #[cfg(feature = "mode")]
             AExpr::Function {
                 input: ref inner_exprs,
-                function: IRFunctionExpr::Mode,
+                function: IRFunctionExpr::Mode { maintain_order },
                 options: _,
             } => {
                 // Transform:
@@ -951,7 +953,7 @@ fn lower_exprs_with_ctx(
                     &keys,
                     &aggs,
                     Arc::new(group_by_output_schema),
-                    false,
+                    maintain_order,
                     Default::default(),
                     None,
                     ctx.expr_arena,
@@ -960,6 +962,7 @@ fn lower_exprs_with_ctx(
                     StreamingLowerIRContext {
                         prepare_visualization: ctx.prepare_visualization,
                     },
+                    false,
                 )?;
 
                 let stream = build_select_stream_with_ctx(
@@ -1032,6 +1035,7 @@ fn lower_exprs_with_ctx(
                     StreamingLowerIRContext {
                         prepare_visualization: ctx.prepare_visualization,
                     },
+                    false,
                 )?;
 
                 let expr = AExprBuilder::col(idx_name.clone(), ctx.expr_arena)
@@ -1050,6 +1054,8 @@ fn lower_exprs_with_ctx(
                 options: _,
             } if is_scalar_ae(inner_exprs[1].node(), ctx.expr_arena) => {
                 // Translate left and right side separately (they could have different lengths).
+
+                use polars_core::prelude::ExplodeOptions;
                 let left_on_name = unique_column_name();
                 let right_on_name = unique_column_name();
                 let (trans_input_left, trans_expr_left) =
@@ -1057,10 +1063,15 @@ fn lower_exprs_with_ctx(
                 let right_expr_exploded_node = match ctx.expr_arena.get(inner_exprs[1].node()) {
                     // expr.implode().explode() ~= expr (and avoids rechunking)
                     AExpr::Agg(IRAggExpr::Implode(n)) => *n,
-                    _ => ctx.expr_arena.add(AExpr::Explode {
-                        expr: inner_exprs[1].node(),
-                        skip_empty: true,
-                    }),
+                    _ => AExprBuilder::new_from_node(inner_exprs[1].node())
+                        .explode(
+                            ctx.expr_arena,
+                            ExplodeOptions {
+                                empty_as_null: false,
+                                keep_nulls: true,
+                            },
+                        )
+                        .node(),
                 };
                 let (trans_input_right, trans_expr_right) =
                     lower_exprs_with_ctx(input, &[right_expr_exploded_node], ctx)?;
@@ -1737,6 +1748,7 @@ fn lower_exprs_with_ctx(
                         ctx.phys_sm,
                         ctx.cache,
                         StreamingLowerIRContext::from(&*ctx),
+                        false,
                     )?;
 
                     let len_node = ctx.expr_arena.add(AExpr::Len);
@@ -1987,6 +1999,7 @@ fn lower_exprs_with_ctx(
                     period,
                     offset,
                     closed: closed_window,
+                    slice: None,
                     aggs: vec![AExprBuilder::new_from_node(function).expr_ir(out_name.clone())],
                 };
                 let node_key = ctx

@@ -88,7 +88,7 @@ pub(super) fn convert_functions(
                 #[cfg(feature = "array_count")]
                 A::CountMatches => IA::CountMatches,
                 A::Shift => IA::Shift,
-                A::Explode { skip_empty } => IA::Explode { skip_empty },
+                A::Explode(options) => IA::Explode(options),
                 A::Concat => IA::Concat,
                 A::Slice(offset, length) => IA::Slice(offset, length),
                 #[cfg(feature = "array_to_struct")]
@@ -142,6 +142,20 @@ pub(super) fn convert_functions(
                 C::EndsWith(v) => IC::EndsWith(v),
                 #[cfg(feature = "strings")]
                 C::Slice(s, e) => IC::Slice(s, e),
+            })
+        },
+        #[cfg(feature = "dtype-extension")]
+        F::Extension(extension_function) => {
+            use {ExtensionFunction as E, IRExtensionFunction as IE};
+            I::Extension(match extension_function {
+                E::To(dtype) => {
+                    let concrete_dtype = dtype.into_datatype(ctx.schema)?;
+                    polars_ensure!(matches!(concrete_dtype, DataType::Extension(_, _)),
+                        InvalidOperation: "ext.to() requires an Extension dtype, got {concrete_dtype:?}"
+                    );
+                    IE::To(concrete_dtype)
+                },
+                E::Storage => IE::Storage,
             })
         },
         F::ListExpr(list_function) => {
@@ -782,7 +796,7 @@ pub(super) fn convert_functions(
         F::DropNans => I::DropNans,
         F::DropNulls => I::DropNulls,
         #[cfg(feature = "mode")]
-        F::Mode => I::Mode,
+        F::Mode { maintain_order } => I::Mode { maintain_order },
         #[cfg(feature = "moment")]
         F::Skew(v) => I::Skew(v),
         #[cfg(feature = "moment")]

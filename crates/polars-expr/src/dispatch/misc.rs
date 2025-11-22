@@ -181,8 +181,8 @@ pub fn append(s: &[Column], upcast: bool) -> PolarsResult<Column> {
 }
 
 #[cfg(feature = "mode")]
-pub(super) fn mode(s: &Column) -> PolarsResult<Column> {
-    polars_ops::prelude::mode::mode(s.as_materialized_series()).map(Column::from)
+pub(super) fn mode(s: &Column, maintain_order: bool) -> PolarsResult<Column> {
+    polars_ops::prelude::mode::mode(s.as_materialized_series(), maintain_order).map(Column::from)
 }
 
 #[cfg(feature = "moment")]
@@ -425,11 +425,7 @@ pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Column> {
     let result = match is_sorted_flag {
         // If the Series is sorted, we can use an optimized binary search to
         // find the value.
-        IsSorted::Ascending | IsSorted::Descending
-            if !needle.is_null() &&
-            // search_sorted() doesn't support decimals at the moment.
-            !series.dtype().is_decimal() =>
-        {
+        IsSorted::Ascending | IsSorted::Descending if !needle.is_null() => {
             use polars_ops::series::SearchSortedSide;
 
             polars_ops::series::search_sorted(

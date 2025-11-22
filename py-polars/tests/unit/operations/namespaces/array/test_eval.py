@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Callable
 
 import pytest
@@ -179,3 +181,130 @@ def test_arr_agg_parametric(
     test_case(pl.Series("a", [[8], [0], None], pl.Array(pl.Int64, 1)))
     test_case(pl.Series("a", [None, [0], None], pl.Array(pl.Int64, 1)))
     test_case(pl.Series("a", [[1, 2, 3], [4, 5, 6]], pl.Array(pl.Int64, 3)))
+
+
+@pytest.mark.parametrize("insert_none", [False, True])
+@pytest.mark.parametrize("keys", [pl.lit(42), pl.col.g])
+@pytest.mark.parametrize("filter", [None, pl.lit(True), pl.col.b])
+@pytest.mark.parametrize(
+    ("expr", "as_list", "result"),
+    [
+        (
+            pl.element(),
+            False,
+            pl.Series("a", [[0, 1, 2], [5, 3, 4], [7, 7, 8]], pl.Array(pl.Int64, 3)),
+        ),
+        (
+            pl.element() + pl.element(),
+            False,
+            pl.Series(
+                "a", [[0, 2, 4], [10, 6, 8], [14, 14, 16]], pl.Array(pl.Int64, 3)
+            ),
+        ),
+        (
+            pl.element().rank(),
+            False,
+            pl.Series(
+                "a",
+                [[1.0, 2.0, 3.0], [3.0, 1.0, 2.0], [1.5, 1.5, 3.0]],
+                pl.Array(pl.Float64, 3),
+            ),
+        ),
+        (pl.element().unique(), True, pl.Series("a", [[0, 1, 2], [5, 3, 4], [7, 8]])),
+    ],
+)
+def test_arr_eval_with_filter_in_agg_25384(
+    insert_none: bool,
+    keys: pl.Expr,
+    filter: pl.Expr | None,
+    expr: pl.Expr,
+    as_list: bool,
+    result: pl.Series,
+) -> None:
+    s = pl.Series("a", [[0, 1, 2], [5, 3, 4], [7, 7, 8]], pl.Array(pl.Int64, 3))
+    df = s.to_frame().with_columns(
+        pl.Series("g", [10, 10, 20]), pl.Series("b", [True, True, True])
+    )
+    q_inner = (
+        pl.col("a").arr.eval(expr, as_list=as_list)
+        if filter is None
+        else pl.col("a").filter(filter).arr.eval(expr, as_list=as_list)
+    )
+
+    if insert_none:
+        df = df.with_columns(
+            pl.when(pl.int_range(0, pl.len()) != 1).then(pl.col.a).otherwise(None)
+        )
+        result = (
+            result.to_frame()
+            .with_columns(
+                pl.when(pl.int_range(0, pl.len()) != 1).then(pl.col.a).otherwise(None)
+            )
+            .to_series()
+        )
+
+    # no agg
+    q = df.lazy().select(q_inner)
+    assert_series_equal(q.collect().to_series(), result)
+
+    # over
+    q = df.lazy().select(q_inner.over(keys))
+    assert_series_equal(q.collect().to_series(), result)
+
+    # group_by
+    q = df.lazy().group_by(keys, maintain_order=True).agg(q_inner)
+    out = q.collect().select(pl.col.a).explode("a")
+    assert_series_equal(out.to_series(), result)
+
+
+@pytest.mark.parametrize("insert_none", [False, True])
+@pytest.mark.parametrize("keys", [pl.lit(42), pl.col.g])
+@pytest.mark.parametrize("filter", [None, pl.lit(True), pl.col.b])
+@pytest.mark.parametrize(
+    ("expr", "result"),
+    [
+        (pl.element().sum(), pl.Series("a", [1, 8, 22])),
+        (pl.element().null_count(), pl.Series("a", [1, 1, 0], pl.UInt32)),
+    ],
+)
+def test_arr_agg_with_filter_in_agg_25384(
+    insert_none: bool,
+    keys: pl.Expr,
+    filter: pl.Expr | None,
+    expr: pl.Expr,
+    result: pl.Series,
+) -> None:
+    s = pl.Series("a", [[0, 1, None], [5, 3, None], [7, 7, 8]], pl.Array(pl.Int64, 3))
+    df = s.to_frame().with_columns(
+        pl.Series("g", [10, 10, 20]), pl.Series("b", [True, True, True])
+    )
+    q_inner = (
+        pl.col("a").arr.agg(expr)
+        if filter is None
+        else pl.col("a").filter(filter).arr.agg(expr)
+    )
+
+    if insert_none:
+        df = df.with_columns(
+            pl.when(pl.int_range(0, pl.len()) != 1).then(pl.col.a).otherwise(None)
+        )
+        result = (
+            result.to_frame()
+            .with_columns(
+                pl.when(pl.int_range(0, pl.len()) != 1).then(pl.col.a).otherwise(None)
+            )
+            .to_series()
+        )
+
+    # no agg
+    q = df.lazy().select(q_inner)
+    assert_series_equal(q.collect().to_series(), result)
+
+    # over
+    q = df.lazy().select(q_inner.over(keys))
+    assert_series_equal(q.collect().to_series(), result)
+
+    # group_by
+    q = df.lazy().group_by(keys, maintain_order=True).agg(q_inner)
+    out = q.collect().select(pl.col.a).explode("a")
+    assert_series_equal(out.to_series(), result)
