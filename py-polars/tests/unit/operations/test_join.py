@@ -3964,3 +3964,10 @@ def test_join_asof_by_i128() -> None:
             schema={"a": pl.Int128, "i": pl.Int32, "b": pl.Int128},
         ),
     )
+
+
+def test_join_lazyframe_with_itself_after_sort_25395() -> None:
+    lf = pl.LazyFrame({"a": [1]})
+    result = lf.sort("a").join(lf, on="a").collect()
+
+    assert_frame_equal(result, pl.DataFrame({"a": [1]}))

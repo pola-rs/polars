@@ -64,24 +64,32 @@ pub(super) fn pushdown_orders(
                 //
                 // Remove sort.
                 let input = *input;
-                _ = ir_arena.take(node);
 
-                let node_outputs = outputs.remove(&node).unwrap();
-                for (to_node, to_input_idx) in node_outputs {
-                    *ir_arena
-                        .get_mut(to_node)
-                        .inputs_mut()
-                        .nth(to_input_idx)
-                        .unwrap() = input;
-                    outputs
-                        .get_mut(&input)
-                        .unwrap()
-                        .push((to_node, to_input_idx));
+                // Skip optimization if input node is missing from outputs (e.g. after CSE).
+                if !outputs.contains_key(&input) {
+                    [false].into()
+                } else {
+                    _ = ir_arena.take(node);
+
+                    let node_outputs = outputs.remove(&node).unwrap();
+                    for (to_node, to_input_idx) in node_outputs {
+                        *ir_arena
+                            .get_mut(to_node)
+                            .inputs_mut()
+                            .nth(to_input_idx)
+                            .unwrap() = input;
+                        outputs
+                            .get_mut(&input)
+                            .unwrap()
+                            .push((to_node, to_input_idx));
+                    }
+                    outputs.get_mut(&input).unwrap().retain(|(n, _)| *n != node);
+
+                    if !orders.contains_key(&input) {
+                        stack.push(input);
+                    }
+                    continue;
                 }
-                outputs.get_mut(&input).unwrap().retain(|(n, _)| *n != node);
-
-                stack.push(input);
-                continue;
             },
             IR::Sort {
                 by_column,
