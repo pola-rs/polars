@@ -69,6 +69,11 @@ impl private::PrivateSeries for SeriesWrap<StringChunked> {
         self.0.agg_max(groups)
     }
 
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_sum(&self, _groups: &GroupsType) -> Series {
+        invalid_operation_panic!(agg_sum, self)
+    }
+
     fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
         NumOpsDispatch::subtract(&self.0, rhs)
     }
