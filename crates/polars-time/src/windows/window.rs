@@ -8,6 +8,49 @@ use polars_core::prelude::*;
 
 use crate::prelude::*;
 
+const HOUR_IN_NS: i64 = 3_600_000_000_000;
+const HOUR_IN_US: i64 = 3_600_000_000;
+const HOUR_IN_MS: i64 = 3_600_000;
+
+/// Add duration, falling back to +1h on DST transition errors.
+fn add_duration_ns_with_dst_fallback(duration: &Duration, t: i64, tz: Option<&Tz>) -> i64 {
+    match duration.add_ns(t, tz) {
+        Ok(result) => result,
+        Err(_) => {
+            // on DST transition, skip forward 1 hour and retry
+            duration
+                .add_ns(t + HOUR_IN_NS, tz)
+                .unwrap_or(t + HOUR_IN_NS)
+        },
+    }
+}
+
+/// Add duration, falling back to +1h on DST transition errors.
+fn add_duration_us_with_dst_fallback(duration: &Duration, t: i64, tz: Option<&Tz>) -> i64 {
+    match duration.add_us(t, tz) {
+        Ok(result) => result,
+        Err(_) => {
+            // on DST transition, skip forward 1 hour and retry
+            duration
+                .add_us(t + HOUR_IN_US, tz)
+                .unwrap_or(t + HOUR_IN_US)
+        },
+    }
+}
+
+/// Add duration, falling back to +1h on DST transition errors.
+fn add_duration_ms_with_dst_fallback(duration: &Duration, t: i64, tz: Option<&Tz>) -> i64 {
+    match duration.add_ms(t, tz) {
+        Ok(result) => result,
+        Err(_) => {
+            // on DST transition, skip forward 1 hour and retry
+            duration
+                .add_ms(t + HOUR_IN_MS, tz)
+                .unwrap_or(t + HOUR_IN_MS)
+        },
+    }
+}
+
 /// Ensure that earliest datapoint (`t`) is in, or in front of, first window.
 ///
 /// For example, if we have:
@@ -346,19 +389,41 @@ impl Iterator for BoundsIter<'_> {
         if self.bi.start < self.boundary.stop {
             let out = self.bi;
             match self.tu {
-                // TODO: find some way to propagate error instead of unwrapping?
-                // Issue is that `next` needs to return `Option`.
                 TimeUnit::Nanoseconds => {
-                    self.bi.start = self.window.every.add_ns(self.bi.start, self.tz).unwrap();
-                    self.bi.stop = self.window.period.add_ns(self.bi.start, self.tz).unwrap();
+                    self.bi.start = add_duration_ns_with_dst_fallback(
+                        &self.window.every,
+                        self.bi.start,
+                        self.tz,
+                    );
+                    self.bi.stop = add_duration_ns_with_dst_fallback(
+                        &self.window.period,
+                        self.bi.start,
+                        self.tz,
+                    );
                 },
                 TimeUnit::Microseconds => {
-                    self.bi.start = self.window.every.add_us(self.bi.start, self.tz).unwrap();
-                    self.bi.stop = self.window.period.add_us(self.bi.start, self.tz).unwrap();
+                    self.bi.start = add_duration_us_with_dst_fallback(
+                        &self.window.every,
+                        self.bi.start,
+                        self.tz,
+                    );
+                    self.bi.stop = add_duration_us_with_dst_fallback(
+                        &self.window.period,
+                        self.bi.start,
+                        self.tz,
+                    );
                 },
                 TimeUnit::Milliseconds => {
-                    self.bi.start = self.window.every.add_ms(self.bi.start, self.tz).unwrap();
-                    self.bi.stop = self.window.period.add_ms(self.bi.start, self.tz).unwrap();
+                    self.bi.start = add_duration_ms_with_dst_fallback(
+                        &self.window.every,
+                        self.bi.start,
+                        self.tz,
+                    );
+                    self.bi.stop = add_duration_ms_with_dst_fallback(
+                        &self.window.period,
+                        self.bi.start,
+                        self.tz,
+                    );
                 },
             }
             Some(out)
@@ -372,22 +437,40 @@ impl Iterator for BoundsIter<'_> {
         if self.bi.start < self.boundary.stop {
             match self.tu {
                 TimeUnit::Nanoseconds => {
-                    self.bi.start = (self.window.every * n)
-                        .add_ns(self.bi.start, self.tz)
-                        .unwrap();
-                    self.bi.stop = (self.window.period).add_ns(self.bi.start, self.tz).unwrap();
+                    self.bi.start = add_duration_ns_with_dst_fallback(
+                        &(self.window.every * n),
+                        self.bi.start,
+                        self.tz,
+                    );
+                    self.bi.stop = add_duration_ns_with_dst_fallback(
+                        &self.window.period,
+                        self.bi.start,
+                        self.tz,
+                    );
                 },
                 TimeUnit::Microseconds => {
-                    self.bi.start = (self.window.every * n)
-                        .add_us(self.bi.start, self.tz)
-                        .unwrap();
-                    self.bi.stop = (self.window.period).add_us(self.bi.start, self.tz).unwrap();
+                    self.bi.start = add_duration_us_with_dst_fallback(
+                        &(self.window.every * n),
+                        self.bi.start,
+                        self.tz,
+                    );
+                    self.bi.stop = add_duration_us_with_dst_fallback(
+                        &self.window.period,
+                        self.bi.start,
+                        self.tz,
+                    );
                 },
                 TimeUnit::Milliseconds => {
-                    self.bi.start = (self.window.every * n)
-                        .add_ms(self.bi.start, self.tz)
-                        .unwrap();
-                    self.bi.stop = (self.window.period).add_ms(self.bi.start, self.tz).unwrap();
+                    self.bi.start = add_duration_ms_with_dst_fallback(
+                        &(self.window.every * n),
+                        self.bi.start,
+                        self.tz,
+                    );
+                    self.bi.stop = add_duration_ms_with_dst_fallback(
+                        &self.window.period,
+                        self.bi.start,
+                        self.tz,
+                    );
                 },
             }
             self.next()
