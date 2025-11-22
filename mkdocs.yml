@@ -152,9 +152,17 @@ nav:
         - polars-cloud/public-datasets.md
         - polars-cloud/faq.md
         - API Reference: https://docs.cloud.pola.rs
-        - polars-cloud/release-notes.md
     - API:
       - Reference guide: https://docs.cloud.pola.rs/
+  - Polars on-premise:
+      - polars-on-premise/index.md
+      - Kubernetes:
+        - polars-on-premise/kubernetes/getting-started.md
+      - Bare-metal:
+        - polars-on-premise/bare-metal/getting-started.md
+        - polars-on-premise/bare-metal/config-reference.md
+        - polars-on-premise/bare-metal/environment-variables.md
+        - polars-on-premise/bare-metal/python-environment.md
 not_in_nav: |
     /_build/
 validation:
