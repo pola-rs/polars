@@ -884,14 +884,12 @@ pub trait ListNameSpaceImpl: AsList {
                 rhs_builder.reserve(total_capacity);
 
                 let mut validity = MutableBitmap::with_capacity(rows);
-                let mut offsets = Offsets::with_capacity(rows + 1);
-                let mut length_so_far = 0;
-                offsets.try_push(0)?;
+                let mut offsets = Offsets::with_capacity(rows);
 
                 for row in 0..rows {
                     if !lhs_arr.is_valid(row) || !rhs_arr.is_valid(row) {
                         validity.push(false);
-                        offsets.try_push(length_so_far)?;
+                        offsets.try_push(0)?;
                         continue;
                     }
                     validity.push(true);
@@ -936,8 +934,7 @@ pub trait ListNameSpaceImpl: AsList {
                         rhs_builder.extend_nulls(target_len - r_len);
                     }
 
-                    length_so_far += target_len;
-                    offsets.try_push(length_so_far)?;
+                    offsets.try_push(target_len)?;
                 }
 
                 let lhs_final = lhs_builder.freeze_reset();

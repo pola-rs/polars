@@ -1261,7 +1261,6 @@ def test_list_diff_invalid_type() -> None:
         pl.Series([1, 2, 3]).list.diff()
 
 
-<<<<<<< HEAD
 def test_list_zip_basic() -> None:
     df = pl.DataFrame(
         {
