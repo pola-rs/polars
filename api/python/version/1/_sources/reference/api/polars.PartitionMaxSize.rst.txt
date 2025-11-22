@@ -1,0 +1,22 @@
+﻿polars.PartitionMaxSize
+=======================
+
+.. currentmodule:: polars
+
+.. autoclass:: PartitionMaxSize
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~PartitionMaxSize.__init__
+   
+   
+
+   
+   
+   
