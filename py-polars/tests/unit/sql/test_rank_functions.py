@@ -32,7 +32,6 @@ def test_rank_funcs_comparison(df_test: pl.DataFrame) -> None:
     assert_sql_matches(
         df_test,
         query=query,
-        check_dtypes=False,
         compare_with="sqlite",
         expected={
             "value": [10, 10, 20, 25, 25, 35, 40],
@@ -59,7 +58,6 @@ def test_rank_funcs_with_partition(df_test: pl.DataFrame) -> None:
     assert_sql_matches(
         df_test,
         query=query,
-        check_dtypes=False,
         compare_with="sqlite",
         expected={
             "category": ["A", "A", "A", "B", "B", "B", "C"],
@@ -82,7 +80,6 @@ def test_rank_funcs_with_partition(df_test: pl.DataFrame) -> None:
     assert_sql_matches(
         df,
         query=query,
-        check_dtypes=False,
         compare_with="sqlite",
         expected={
             "category": ["A", "A", "A", "B", "B", "B", "B", "C"],
@@ -110,7 +107,6 @@ def test_rank_funcs_desc(df_test: pl.DataFrame) -> None:
     assert_sql_matches(
         df_test,
         query=query,
-        check_dtypes=False,
         compare_with="sqlite",
         expected={
             "value": [10, 10, 20, 25, 25, 35, 40],
