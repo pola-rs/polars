@@ -7,7 +7,7 @@ use polars_dtype::categorical::{CategoricalPhysical, Categories, FrozenCategorie
 use polars_utils::pl_str::PlSmallStr;
 use proptest::prelude::*;
 
-use super::{DataType, Field, TimeUnit};
+use crate::prelude::{DataType, Field, TimeUnit};
 
 bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,7 +65,7 @@ impl Default for DataTypeArbitraryOptions {
     }
 }
 
-pub fn dtypes(
+pub fn dtypes_strategy(
     options: Rc<DataTypeArbitraryOptions>,
     nesting_level: usize,
 ) -> impl Strategy<Value = DataType> {
@@ -81,7 +81,7 @@ pub fn dtypes(
 
     (0..num_possible_types).prop_flat_map(move |i| {
         let selection =
-            S::from_bits_retain(1 << nth_set_bit_u32(options.allowed_dtypes.bits(), i).unwrap());
+            S::from_bits_retain(1 << nth_set_bit_u32(allowed_dtypes.bits(), i).unwrap());
 
         match selection {
             _ if selection == S::BOOLEAN => Just(DataType::Boolean).boxed(),
@@ -109,17 +109,17 @@ pub fn dtypes(
             #[cfg(feature = "object")]
             _ if selection == S::OBJECT => Just(DataType::Object("test_object")).boxed(),
             _ if selection == S::LIST => {
-                list_strategy(dtypes(options.clone(), nesting_level + 1)).boxed()
+                list_strategy(dtypes_strategy(Rc::clone(&options), nesting_level + 1)).boxed()
             },
             #[cfg(feature = "dtype-array")]
             _ if selection == S::ARRAY => array_strategy(
-                dtypes(options.clone(), nesting_level + 1),
+                dtypes_strategy(Rc::clone(&options), nesting_level + 1),
                 options.array_width_range.clone(),
             )
             .boxed(),
             #[cfg(feature = "dtype-struct")]
             _ if selection == S::STRUCT => struct_strategy(
-                dtypes(options.clone(), nesting_level + 1),
+                dtypes_strategy(Rc::clone(&options), nesting_level + 1),
                 options.struct_fields_range.clone(),
             )
             .boxed(),
@@ -242,16 +242,13 @@ fn struct_strategy(
     inner: impl Strategy<Value = DataType>,
     struct_fields_range: RangeInclusive<usize>,
 ) -> impl Strategy<Value = DataType> {
-    prop::collection::vec(inner, struct_fields_range).prop_map(|datatypes_vec| {
-        let fields_vec: Vec<Field> = datatypes_vec
+    prop::collection::vec(inner, struct_fields_range).prop_map(|fields_values| {
+        let fields: Vec<Field> = fields_values
             .into_iter()
             .enumerate()
-            .map(|(i, datatype)| {
-                let field_name = format!("field{i}");
-                Field::new(field_name.into(), datatype)
-            })
+            .map(|(i, datatype)| Field::new(format!("field{i}").into(), datatype))
             .collect();
 
-        DataType::Struct(fields_vec)
+        DataType::Struct(fields)
     })
 }
