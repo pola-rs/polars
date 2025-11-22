@@ -1,13 +1,24 @@
 use std::borrow::Cow;
 use std::fmt::Write;
 
-use arrow::array::ValueSize;
+#[cfg(feature = "list_zip")]
+use arrow::array::builder::{ShareStrategy, make_builder};
+#[cfg(feature = "list_zip")]
+use arrow::array::{Array, StructArray, ValueSize};
+#[cfg(feature = "list_zip")]
+use arrow::bitmap::MutableBitmap;
+#[cfg(feature = "list_zip")]
+use arrow::legacy::prelude::LargeListArray;
+#[cfg(feature = "dtype-struct")]
+use arrow::offset::Offsets;
 #[cfg(feature = "list_gather")]
 use num_traits::ToPrimitive;
 #[cfg(feature = "list_gather")]
 use num_traits::{NumCast, Signed, Zero};
 use polars_compute::gather::sublist::list::{index_is_oob, sublist_get};
 use polars_core::chunked_array::builder::get_list_builder;
+#[cfg(feature = "list_zip")]
+use polars_core::prelude::arity;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 use polars_core::utils::try_get_supertype;
@@ -833,9 +844,9 @@ pub trait ListNameSpaceImpl: AsList {
         Ok(out)
     }
 
-    /// Zip lists together element-wise into structs.
+    /// Zip two lists together element-wise into structs.
     #[cfg(feature = "list_zip")]
-    fn lst_zip(&self, others: &[Column], pad: bool) -> PolarsResult<ListChunked> {
+    fn lst_zip(&self, other: &ListChunked, pad: bool) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
 
         #[cfg(not(feature = "dtype-struct"))]
@@ -845,136 +856,117 @@ pub trait ListNameSpaceImpl: AsList {
 
         #[cfg(feature = "dtype-struct")]
         {
-            let mut other_list_cas = Vec::with_capacity(others.len());
-            let mut all_inner_types = Vec::with_capacity(others.len() + 1);
+            arity::try_binary(ca, other, |lhs_arr, rhs_arr| -> PolarsResult<_> {
+                let rows = lhs_arr.len();
+                let lhs_values = lhs_arr.values();
+                let rhs_values = rhs_arr.values();
 
-            all_inner_types.push(ca.inner_dtype().clone());
+                let lhs_offsets = lhs_arr.offsets().as_slice();
+                let rhs_offsets = rhs_arr.offsets().as_slice();
 
-            for other in others {
-                let other_ca = other.list().map_err(
-                    |_| polars_err!(ComputeError: "All inputs to lst_zip must be list columns"),
-                )?;
-                all_inner_types.push(other_ca.inner_dtype().clone());
-                other_list_cas.push(other_ca);
-            }
-
-            let field_names: Vec<PlSmallStr> = (0..(others.len() + 1))
-                .map(|i| format!("field_{i}").into())
-                .collect();
-
-            let fields: Vec<Field> = field_names
-                .iter()
-                .zip(all_inner_types.iter())
-                .map(|(name, dtype)| Field::new(name.clone(), dtype.clone()))
-                .collect();
-
-            let struct_dtype = DataType::Struct(fields);
-
-            let mut iters = Vec::with_capacity(other_list_cas.len());
-            for other_ca in &other_list_cas {
-                iters.push(other_ca.amortized_iter());
-            }
-
-            let mut builder = get_list_builder(
-                &struct_dtype,
-                ca.get_values_size()
-                    + other_list_cas
-                        .iter()
-                        .map(|ca| ca.get_values_size())
-                        .sum::<usize>(),
-                ca.len(),
-                ca.name().clone(),
-            );
-
-            for first_opt in ca.amortized_iter() {
-                match first_opt {
-                    Some(first_list) => {
-                        let mut other_lists = Vec::with_capacity(iters.len());
-                        let mut any_null = false;
-
-                        for iter in &mut iters {
-                            match iter.next().unwrap() {
-                                Some(s) => other_lists.push(s),
-                                None => {
-                                    any_null = true;
-                                    break;
-                                },
-                            }
-                        }
-
-                        if any_null {
-                            builder.append_null();
-                            continue;
-                        }
-
-                        let target_len = if pad {
-                            let mut max_len = first_list.as_ref().len();
-                            for other_list in &other_lists {
-                                max_len = max_len.max(other_list.as_ref().len());
-                            }
-                            max_len
+                let total_capacity: usize = lhs_offsets
+                    .windows(2)
+                    .zip(rhs_offsets.windows(2))
+                    .fold(0, |acc, (l, r)| {
+                        let l_len = (l[1] - l[0]) as usize;
+                        let r_len = (r[1] - r[0]) as usize;
+                        acc + if pad {
+                            l_len.max(r_len)
                         } else {
-                            let mut min_len = first_list.as_ref().len();
-                            for other_list in &other_lists {
-                                min_len = min_len.min(other_list.as_ref().len());
-                            }
-                            min_len
-                        };
-
-                        if target_len == 0 {
-                            let empty_fields: Vec<Series> = field_names
-                                .iter()
-                                .zip(all_inner_types.iter())
-                                .map(|(name, dtype)| Series::new_empty(name.clone(), dtype))
-                                .collect();
-
-                            let struct_chunked =
-                                StructChunked::from_series("".into(), 0, empty_fields.iter())?;
-                            builder.append_series(&struct_chunked.into_series())?;
-                            continue;
+                            l_len.min(r_len)
                         }
+                    });
 
-                        let mut field_series = Vec::with_capacity(field_names.len());
+                let mut lhs_builder = make_builder(lhs_values.dtype());
+                let mut rhs_builder = make_builder(rhs_values.dtype());
 
-                        let first_field = if pad && first_list.as_ref().len() < target_len {
-                            let null_count = target_len - first_list.as_ref().len();
-                            let extended = first_list.as_ref().clone();
-                            extended.extend_constant(AnyValue::Null, null_count)?
-                        } else {
-                            first_list.as_ref().slice(0, target_len)
-                        };
-                        let mut renamed_first = first_field;
-                        renamed_first.rename(field_names[0].clone());
-                        field_series.push(renamed_first);
+                lhs_builder.reserve(total_capacity);
+                rhs_builder.reserve(total_capacity);
 
-                        for (i, other_list) in other_lists.iter().enumerate() {
-                            let field = if pad && other_list.as_ref().len() < target_len {
-                                let null_count = target_len - other_list.as_ref().len();
-                                let extended = other_list.as_ref().clone();
-                                extended.extend_constant(AnyValue::Null, null_count)?
-                            } else {
-                                other_list.as_ref().slice(0, target_len)
-                            };
-                            let mut renamed_field = field;
-                            renamed_field.rename(field_names[i + 1].clone());
-                            field_series.push(renamed_field);
-                        }
+                let mut validity = MutableBitmap::with_capacity(rows);
+                let mut offsets = Offsets::with_capacity(rows + 1);
+                let mut length_so_far = 0;
+                offsets.try_push(0)?;
 
-                        let struct_chunked =
-                            StructChunked::from_series("".into(), target_len, field_series.iter())?;
+                for row in 0..rows {
+                    if !lhs_arr.is_valid(row) || !rhs_arr.is_valid(row) {
+                        validity.push(false);
+                        offsets.try_push(length_so_far)?;
+                        continue;
+                    }
+                    validity.push(true);
 
-                        builder.append_series(&struct_chunked.into_series())?;
-                    },
-                    None => {
-                        for iter in &mut iters {
-                            iter.next().unwrap();
-                        }
-                        builder.append_null();
-                    },
+                    let l_start = lhs_offsets[row] as usize;
+                    let l_len = (lhs_offsets[row + 1] - lhs_offsets[row]) as usize;
+
+                    let r_start = rhs_offsets[row] as usize;
+                    let r_len = (rhs_offsets[row + 1] - rhs_offsets[row]) as usize;
+
+                    let target_len = if pad {
+                        l_len.max(r_len)
+                    } else {
+                        l_len.min(r_len)
+                    };
+
+                    let l_copy = l_len.min(target_len);
+                    if l_copy > 0 {
+                        lhs_builder.subslice_extend(
+                            lhs_values.as_ref(),
+                            l_start,
+                            l_copy,
+                            ShareStrategy::Always,
+                        );
+                    }
+
+                    if pad && l_len < target_len {
+                        lhs_builder.extend_nulls(target_len - l_len);
+                    }
+
+                    let r_copy = r_len.min(target_len);
+                    if r_copy > 0 {
+                        rhs_builder.subslice_extend(
+                            rhs_values.as_ref(),
+                            r_start,
+                            r_copy,
+                            ShareStrategy::Always,
+                        );
+                    }
+
+                    if pad && r_len < target_len {
+                        rhs_builder.extend_nulls(target_len - r_len);
+                    }
+
+                    length_so_far += target_len;
+                    offsets.try_push(length_so_far)?;
                 }
-            }
 
-            Ok(builder.finish())
+                let lhs_final = lhs_builder.freeze_reset();
+                let rhs_final = rhs_builder.freeze_reset();
+
+                let struct_fields = vec![
+                    arrow::datatypes::Field::new("field_0".into(), lhs_final.dtype().clone(), true),
+                    arrow::datatypes::Field::new("field_1".into(), rhs_final.dtype().clone(), true),
+                ];
+
+                let struct_dtype = arrow::datatypes::ArrowDataType::Struct(struct_fields);
+                let struct_len = lhs_final.len();
+
+                let struct_arr = StructArray::new(
+                    struct_dtype.clone(),
+                    struct_len,
+                    vec![lhs_final, rhs_final],
+                    None,
+                );
+
+                let list_dtype = LargeListArray::default_datatype(struct_dtype);
+
+                Ok(LargeListArray::new(
+                    list_dtype,
+                    offsets.into(),
+                    Box::new(struct_arr),
+                    validity.into(),
+                ))
+            })
         }
     }
 }

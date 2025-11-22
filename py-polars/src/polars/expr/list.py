@@ -1579,4 +1579,4 @@ class ExprListNameSpace:
         └───────────┴─────────────────┴─────────────────────────────────┘
         """
         other_pyexpr = parse_into_expression(other)
-        return wrap_expr(self._pyexpr.list_zip([other_pyexpr], pad))
+        return wrap_expr(self._pyexpr.list_zip(other_pyexpr, pad))

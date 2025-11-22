@@ -12,6 +12,7 @@ from polars.exceptions import (
     ComputeError,
     InvalidOperationError,
     OutOfBoundsError,
+    SchemaError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import time_func

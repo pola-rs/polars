@@ -437,12 +437,12 @@ pub(super) fn n_unique(s: &Column) -> PolarsResult<Column> {
 #[cfg(feature = "list_zip")]
 pub(super) fn zip(s: &[Column], pad: bool) -> PolarsResult<Column> {
     polars_ensure!(
-        s.len() >= 2,
-        ComputeError: "zip expects at least 2 columns, got {}",
+        s.len() == 2,
+        ComputeError: "zip expects exactly 2 columns, got {}",
         s.len()
     );
     let first = s[0].list()?;
-    let others: Vec<_> = s[1..].iter().map(|c| c.clone()).collect();
+    let second = s[1].list()?;
 
-    first.lst_zip(&others, pad).map(|ca| ca.into_column())
+    first.lst_zip(second, pad).map(|ca| ca.into_column())
 }
