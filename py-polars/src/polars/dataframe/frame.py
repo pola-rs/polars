@@ -2977,43 +2977,43 @@ class DataFrame:
         file
             File path or writable file-like object to which the result will be written.
             If set to `None` (default), the output is returned as a string instead.
-        include_bom (default: False)
-            Whether to include UTF-8 BOM in the CSV output.
-        include_header (default: True)
-            Whether to include header in the CSV output.
-        separator (default: ",")
-            Separate CSV fields with this symbol.
-        line_terminator (default: "\n")
-            String used to end each row.
-        quote_char (default: '"')
-            Byte to use as quoting character.
-        batch_size (default: 1024)
-            Number of rows that will be processed per thread.
-        datetime_format (default: None)
+        include_bom
+            Whether to include UTF-8 BOM in the CSV output (default: False). 
+        include_header
+            Whether to include header in the CSV output (default: True).
+        separator
+            Separate CSV fields with this symbol (default: ",").
+        line_terminator
+            String used to end each row (default: "\n").
+        quote_char
+            Byte to use as quoting character (default: '"').
+        batch_size
+            Number of rows that will be processed per thread (default: 1024).
+        datetime_format
             A format string, with the specifiers defined by the
             `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             Rust crate. If no format specified, the default fractional-second
             precision is inferred from the maximum timeunit found in the frame's
             Datetime cols (if any).
-        date_format (default: None)
+        date_format
             A format string, with the specifiers defined by the
             `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
-            Rust crate.
-        time_format (default: None)
+            Rust crate (default: None).
+        time_format
             A format string, with the specifiers defined by the
             `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
-            Rust crate.
-        float_scientific (default: None)
+            Rust crate (default: None).
+        float_scientific
             Whether to use scientific form always (true), never (false), or
             automatically (None) for `Float32` and `Float64` datatypes.
-        float_precision (default: None)
+        float_precision
             Number of decimal places to write, applied to both `Float32` and
-            `Float64` datatypes.
-        decimal_comma (default: False)
+            `Float64` datatypes (default: None).
+        decimal_comma
             Use a comma as the decimal separator instead of a point in standard
             notation. Floats will be encapsulated in quotes if necessary; set the
-            field separator to override.
-        null_value (default: False)
+            field separator to override (default: False).
+        null_value
             A string representing null values (defaulting to the empty string).
         quote_style : {'necessary', 'always', 'non_numeric', 'never'}
             Determines the quoting strategy used.
@@ -3031,8 +3031,8 @@ class DataFrame:
               Namely, when writing a field that does not parse as a valid float
               or integer, then quotes will be used even if they aren`t strictly
               necessary.
-        storage_options (default: None)
-            Options that indicate how to connect to a cloud provider.
+        storage_options
+            Options that indicate how to connect to a cloud provider (default: None).
 
             The cloud providers currently supported are AWS, GCP, and Azure.
             See supported keys here:
@@ -3054,7 +3054,7 @@ class DataFrame:
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
         retries
-            Number of retries if accessing a cloud instance fails.
+            Number of retries if accessing a cloud instance fails (default: 2).
 
         Examples
         --------
