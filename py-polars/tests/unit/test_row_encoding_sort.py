@@ -44,7 +44,7 @@ def elem_order_sign(
             assert isinstance(lhs, pl.Series)
             assert isinstance(rhs, pl.Series)
 
-        if lhs.dtype == pl.Categorical(ordering="lexical"):
+        if isinstance(lhs.dtype, pl.Categorical):
             lhs = cast("Element", lhs.cast(pl.String))
             rhs = cast("Element", rhs.cast(pl.String))
             assert isinstance(lhs, pl.Series)
