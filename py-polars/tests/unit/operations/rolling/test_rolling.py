@@ -1803,3 +1803,87 @@ def test_rolling_rank_method_random(
         .collect()
         .item()
     )
+
+
+@pytest.mark.parametrize(
+    ("df", "expected"),
+    [
+        (
+            pl.DataFrame(
+                {"a": [1, 2, 3, 4], "offset": [0, 0, 0, 0], "len": [3, 1, 2, 1]}
+            ),
+            pl.DataFrame({"a": [6, 2, 7, 4]}),
+        ),
+        (
+            pl.DataFrame(
+                {
+                    "a": [1, 2, 3, 4, 5, 6],
+                    "offset": [0, 0, 2, 0, 0, 0],
+                    "len": [3, 1, 3, 3, 1, 1],
+                }
+            ),
+            pl.DataFrame({"a": [6, 2, 11, 15, 5, 6]}),
+        ),
+        (
+            pl.DataFrame(
+                {"a": [1, 2, 3, None], "offset": [0, 0, 0, 0], "len": [3, 1, 2, 1]}
+            ),
+            pl.DataFrame({"a": [6, 2, 3, 0]}),
+        ),
+        (
+            pl.DataFrame(
+                {
+                    "a": [1, 2, 3, 4, 5, None],
+                    "offset": [0, 0, 2, 0, 0, 0],
+                    "len": [3, 1, 3, 3, 1, 1],
+                }
+            ),
+            pl.DataFrame({"a": [6, 2, 5, 9, 5, 0]}),
+        ),
+    ],
+)
+def test_rolling_agg_sum_varying_slice_25434(
+    df: pl.DataFrame, expected: pl.DataFrame
+) -> None:
+    out = df.with_row_index().select(
+        pl.col("a")
+        .slice(pl.col("offset").first(), pl.col("len").first())
+        .sum()
+        .rolling("index", period=f"{df.height}i", offset="0i", closed="left")
+    )
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("with_nulls", [True, False])
+def test_rolling_agg_sum_varying_slice_fuzz(with_nulls: bool) -> None:
+    n = 1000
+    max_rand = 10
+
+    def opt_null(n: int) -> int | None:
+        return None if random.randint(0, max_rand) == max_rand and with_nulls else n
+
+    df = pl.DataFrame(
+        {
+            "a": [opt_null(i) for i in range(n)],
+            "offset": [random.randint(0, max_rand) for _ in range(n)],
+            "length": [random.randint(0, max_rand) for _ in range(n)],
+        }
+    )
+
+    out = df.with_row_index().select(
+        pl.col("a")
+        .slice(pl.col("offset").first(), pl.col("length").first())
+        .sum()
+        .rolling("index", period=f"{df.height}i", offset="0i", closed="left")
+    )
+
+    out = out.select(pl.col("a").fill_null(0))
+    df = df.with_columns(pl.col("a").fill_null(0))
+
+    (a, offset, length) = (
+        df["a"].to_list(),
+        df["offset"].to_list(),
+        df["length"].to_list(),
+    )
+    expected = [sum(a[i + offset[i] : i + offset[i] + length[i]]) for i in range(n)]
+    assert_frame_equal(out, pl.DataFrame({"a": expected}))

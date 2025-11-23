@@ -128,17 +128,25 @@ where
     // # Safety
     // The start, end range must be in-bounds.
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
-        if start >= self.last_end {
+        if start >= self.last_end || end <= self.last_start {
             self.reset();
             self.last_start = start;
             self.last_end = start;
         }
 
-        for val in &self.slice[self.last_start..start] {
+        for val in &self.slice[std::cmp::min(self.last_start, start)..start] {
             self.sub(*val);
         }
 
-        for val in &self.slice[self.last_end..end] {
+        for val in &self.slice[start..std::cmp::max(self.last_start, start)] {
+            self.add(*val);
+        }
+
+        for val in &self.slice[end..std::cmp::max(end, self.last_end)] {
+            self.sub(*val);
+        }
+
+        for val in &self.slice[std::cmp::min(self.last_end, end)..end] {
             self.add(*val);
         }
 
@@ -171,13 +179,13 @@ where
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
         let validity = unsafe { self.validity.unwrap_unchecked() };
 
-        if start >= self.last_end {
+        if start >= self.last_end || end <= self.last_start {
             self.reset();
             self.last_start = start;
             self.last_end = start;
         }
 
-        for idx in self.last_start..start {
+        for idx in std::cmp::min(self.last_start, start)..start {
             let valid = unsafe { validity.get_bit_unchecked(idx) };
             if valid {
                 self.sub(unsafe { *self.slice.get_unchecked(idx) });
@@ -186,7 +194,25 @@ where
             }
         }
 
-        for idx in self.last_end..end {
+        for idx in start..std::cmp::max(self.last_start, start) {
+            let valid = unsafe { validity.get_bit_unchecked(idx) };
+            if valid {
+                self.add(unsafe { *self.slice.get_unchecked(idx) });
+            } else {
+                self.null_count += 1;
+            }
+        }
+
+        for idx in end..std::cmp::max(end, self.last_end) {
+            let valid = unsafe { validity.get_bit_unchecked(idx) };
+            if valid {
+                self.sub(unsafe { *self.slice.get_unchecked(idx) });
+            } else {
+                self.null_count -= 1;
+            }
+        }
+
+        for idx in std::cmp::min(self.last_end, end)..end {
             let valid = unsafe { validity.get_bit_unchecked(idx) };
             if valid {
                 self.add(unsafe { *self.slice.get_unchecked(idx) });
