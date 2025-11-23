@@ -2969,7 +2969,7 @@ class DataFrame:
         ) = "auto",
         retries: int = 2,
     ) -> str | None:
-        """
+        r"""
         Write to comma-separated values (CSV) file.
 
         Parameters
@@ -2978,7 +2978,7 @@ class DataFrame:
             File path or writable file-like object to which the result will be written.
             If set to `None` (default), the output is returned as a string instead.
         include_bom
-            Whether to include UTF-8 BOM in the CSV output (default: False). 
+            Whether to include UTF-8 BOM in the CSV output (default: False).
         include_header
             Whether to include header in the CSV output (default: True).
         separator
