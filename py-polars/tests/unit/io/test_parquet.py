@@ -2708,7 +2708,7 @@ def test_parquet_cast_to_cat() -> None:
 
 def test_parquet_roundtrip_lex_cat_20288() -> None:
     f = io.BytesIO()
-    df = pl.Series("a", ["A", "B"], pl.Categorical(ordering="lexical")).to_frame()
+    df = pl.Series("a", ["A", "B"], pl.Categorical()).to_frame()
     df.write_parquet(f)
     f.seek(0)
     dt = pl.scan_parquet(f).collect_schema()["a"]
