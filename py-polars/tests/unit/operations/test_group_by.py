@@ -337,7 +337,7 @@ def test_group_by_quantile_date() -> None:
         }
     )
     assert result.collect_schema() == pl.Schema(
-        {
+        {  # type: ignore[arg-type]
             "group": pl.Int64,
             "nearest": dt,
             "higher": dt,
@@ -397,7 +397,7 @@ def test_group_by_quantile_datetime(tu: TimeUnit, time_zone: str) -> None:
         }
     )
     assert result.collect_schema() == pl.Schema(
-        {
+        {  # type: ignore[arg-type]
             "group": pl.Int64,
             "nearest": dt,
             "higher": dt,
@@ -440,7 +440,7 @@ def test_group_by_quantile_duration(tu: TimeUnit) -> None:
         }
     )
     assert result.collect_schema() == pl.Schema(
-        {
+        {  # type: ignore[arg-type]
             "group": pl.Int64,
             "nearest": dt,
             "higher": dt,
