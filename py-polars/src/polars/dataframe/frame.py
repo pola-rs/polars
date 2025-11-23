@@ -2918,7 +2918,7 @@ class DataFrame:
         quote_style: CsvQuoteStyle | None = None,
         storage_options: dict[str, Any] | None = None,
         credential_provider: CredentialProviderFunction
-        | Literal["auto"] 
+        | Literal["auto"]
         | None = "auto",
         retries: int = 2,
     ) -> str: ...
@@ -2943,8 +2943,8 @@ class DataFrame:
         null_value: str | None = None,
         quote_style: CsvQuoteStyle | None = None,
         storage_options: dict[str, Any] | None = None,
-        credential_provider: CredentialProviderFunction 
-        | Literal["auto"] 
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
         | None = "auto",
         retries: int = 2,
     ) -> None: ...
