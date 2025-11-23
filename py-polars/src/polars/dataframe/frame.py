@@ -2902,23 +2902,23 @@ class DataFrame:
         self,
         file: None = None,
         *,
-        include_bom: bool = ...,
-        include_header: bool = ...,
-        separator: str = ...,
-        line_terminator: str = ...,
-        quote_char: str = ...,
-        batch_size: int = ...,
-        datetime_format: str | None = ...,
-        date_format: str | None = ...,
-        time_format: str | None = ...,
-        float_scientific: bool | None = ...,
-        float_precision: int | None = ...,
-        decimal_comma: bool = ...,
-        null_value: str | None = ...,
-        quote_style: CsvQuoteStyle | None = ...,
-        storage_options: dict[str, Any] | None = ...,
-        credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
-        retries: int = ...,
+        include_bom: bool = False,
+        include_header: bool = True,
+        separator: str = ",",
+        line_terminator: str = "\n",
+        quote_char: str = '"',
+        batch_size: int = 1024,
+        datetime_format: str | None = None,
+        date_format: str | None = None,
+        time_format: str | None = None,
+        float_scientific: bool | None = None,
+        float_precision: int | None = None,
+        decimal_comma: bool = False,
+        null_value: str | None = None,
+        quote_style: CsvQuoteStyle | None = None,
+        storage_options: dict[str, Any] | None = None,
+        credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
+        retries: int = 2,
     ) -> str: ...
 
     @overload
@@ -2926,23 +2926,23 @@ class DataFrame:
         self,
         file: str | Path | IO[str] | IO[bytes],
         *,
-        include_bom: bool = ...,
-        include_header: bool = ...,
-        separator: str = ...,
-        line_terminator: str = ...,
-        quote_char: str = ...,
-        batch_size: int = ...,
-        datetime_format: str | None = ...,
-        date_format: str | None = ...,
-        time_format: str | None = ...,
-        float_scientific: bool | None = ...,
-        float_precision: int | None = ...,
-        decimal_comma: bool = ...,
-        null_value: str | None = ...,
-        quote_style: CsvQuoteStyle | None = ...,
-        storage_options: dict[str, Any] | None = ...,
-        credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
-        retries: int = ...,
+        include_bom: bool = False,
+        include_header: bool = True,
+        separator: str = ",",
+        line_terminator: str = "\n",
+        quote_char: str = '"',
+        batch_size: int = 1024,
+        datetime_format: str | None = None,
+        date_format: str | None = None,
+        time_format: str | None = None,
+        float_scientific: bool | None = None,
+        float_precision: int | None = None,
+        decimal_comma: bool = False,
+        null_value: str | None = None,
+        quote_style: CsvQuoteStyle | None = None,
+        storage_options: dict[str, Any] | None = None,
+        credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
+        retries: int = 2,
     ) -> None: ...
 
     def write_csv(
@@ -2977,43 +2977,43 @@ class DataFrame:
         file
             File path or writable file-like object to which the result will be written.
             If set to `None` (default), the output is returned as a string instead.
-        include_bom
+        include_bom (default: False)
             Whether to include UTF-8 BOM in the CSV output.
-        include_header
+        include_header (default: True)
             Whether to include header in the CSV output.
-        separator
+        separator (default: ",")
             Separate CSV fields with this symbol.
-        line_terminator
+        line_terminator (default: "\n")
             String used to end each row.
-        quote_char
+        quote_char (default: '"')
             Byte to use as quoting character.
-        batch_size
+        batch_size (default: 1024)
             Number of rows that will be processed per thread.
-        datetime_format
+        datetime_format (default: None)
             A format string, with the specifiers defined by the
             `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             Rust crate. If no format specified, the default fractional-second
             precision is inferred from the maximum timeunit found in the frame's
             Datetime cols (if any).
-        date_format
+        date_format (default: None)
             A format string, with the specifiers defined by the
             `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             Rust crate.
-        time_format
+        time_format (default: None)
             A format string, with the specifiers defined by the
             `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             Rust crate.
-        float_scientific
+        float_scientific (default: None)
             Whether to use scientific form always (true), never (false), or
             automatically (None) for `Float32` and `Float64` datatypes.
-        float_precision
+        float_precision (default: None)
             Number of decimal places to write, applied to both `Float32` and
             `Float64` datatypes.
-        decimal_comma
+        decimal_comma (default: False)
             Use a comma as the decimal separator instead of a point in standard
             notation. Floats will be encapsulated in quotes if necessary; set the
             field separator to override.
-        null_value
+        null_value (default: False)
             A string representing null values (defaulting to the empty string).
         quote_style : {'necessary', 'always', 'non_numeric', 'never'}
             Determines the quoting strategy used.
@@ -3031,7 +3031,7 @@ class DataFrame:
               Namely, when writing a field that does not parse as a valid float
               or integer, then quotes will be used even if they aren`t strictly
               necessary.
-        storage_options
+        storage_options (default: None)
             Options that indicate how to connect to a cloud provider.
 
             The cloud providers currently supported are AWS, GCP, and Azure.
