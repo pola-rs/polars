@@ -507,20 +507,6 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
     }
 }
 
-enum CategoricalOrdering {
-    Lexical,
-}
-
-impl<'py> IntoPyObject<'py> for Wrap<CategoricalOrdering> {
-    type Target = PyString;
-    type Output = Bound<'py, Self::Target>;
-    type Error = Infallible;
-
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        "lexical".into_pyobject(py)
-    }
-}
-
 impl<'py> IntoPyObject<'py> for Wrap<TimeUnit> {
     type Target = PyString;
     type Output = Bound<'py, Self::Target>;
@@ -861,27 +847,6 @@ impl<'py> FromPyObject<'py> for Wrap<Option<AvroCompression>> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "avro `compression` must be one of {{'uncompressed', 'snappy', 'deflate'}}, got {v}",
-                )));
-            },
-        };
-        Ok(Wrap(parsed))
-    }
-}
-
-impl<'py> FromPyObject<'py> for Wrap<CategoricalOrdering> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
-        let parsed = match &*ob.extract::<PyBackedStr>()? {
-            "lexical" => CategoricalOrdering::Lexical,
-            "physical" => {
-                polars_warn!(
-                    Deprecation,
-                    "physical ordering is deprecated, will use lexical ordering instead"
-                );
-                CategoricalOrdering::Lexical
-            },
-            v => {
-                return Err(PyValueError::new_err(format!(
-                    "categorical `ordering` must be one of {{'physical', 'lexical'}}, got {v}",
                 )));
             },
         };
