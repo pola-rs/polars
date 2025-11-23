@@ -61,7 +61,7 @@ pub(super) fn pushdown_orders(
                 ..
             } if slice.is_none() && all_outputs_unordered
             // Skip optimization if input node is missing from outputs (e.g. after CSE).
-            && !outputs.contains_key(input) =>
+            && outputs.contains_key(input) =>
             {
                 // _ -> Unordered
                 //
