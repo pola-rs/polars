@@ -21,6 +21,9 @@ from polars.testing import assert_frame_equal, assert_series_equal
 MY_CONSTANT = 3
 MY_DICT = {0: "a", 1: "b", 2: "c", 3: "d", 4: "e"}
 MY_LIST = [1, 2, 3]
+MY_STRING = "qwerty"
+MY_SUBSTRING = "we"
+MY_COLLECTION = [2, 3, 4]
 
 # column_name, function, expected_suggestion
 TEST_CASES = [
@@ -67,12 +70,58 @@ TEST_CASES = [
     ),
     ("a", "lambda x: x in (2, 3, 4)", 'pl.col("a").is_in((2, 3, 4))', None),
     ("a", "lambda x: x not in (2, 3, 4)", '~pl.col("a").is_in((2, 3, 4))', None),
+    ("a", "lambda x: x in MY_COLLECTION", 'pl.col("a").is_in(MY_COLLECTION)', None),
+    ("a", "lambda x: x in MY_DICT", 'pl.col("a").is_in(MY_DICT)', None),
+    (
+        "a",
+        "lambda x: (x + 1) in (1, 2, 3)",
+        '((pl.col("a") + 1).is_in((1, 2, 3)))',
+        None,
+    ),
     (
         "a",
         "lambda x: x in (1, 2, 3, 4, 3) and x % 2 == 0 and x > 0",
         'pl.col("a").is_in((1, 2, 3, 4, 3)) & ((pl.col("a") % 2) == 0) & (pl.col("a") > 0)',
         None,
     ),
+    # ---------------------------------------------
+    # string containment with 'in' operator
+    # ---------------------------------------------
+    (
+        "b",
+        "lambda x: x in MY_STRING",
+        'pl.lit(MY_STRING).str.contains(pl.col("b"))',
+        None,
+    ),
+    (
+        "b",
+        "lambda x: MY_SUBSTRING in x",
+        'pl.col("b").str.contains(pl.lit(MY_SUBSTRING))',
+        None,
+    ),
+    ("b", 'lambda x: "A" in x', "pl.col(\"b\").str.contains(pl.lit('A'))", None),
+    (
+        "b",
+        "lambda x: x not in MY_STRING",
+        '~pl.lit(MY_STRING).str.contains(pl.col("b"))',
+        None,
+    ),
+    ("b", "lambda x: x in x", 'pl.col("b").str.contains(pl.col("b"))', None),
+    (
+        "b",
+        'lambda x: "test" in x',
+        "pl.col(\"b\").str.contains(pl.lit('test'))",
+        None,
+    ),
+    (
+        "b",
+        'lambda x: x not in "hello"',
+        "~pl.lit('hello').str.contains(pl.col(\"b\"))",
+        None,
+    ),
+    # ---------------------------------------------
+    # constants
+    # ---------------------------------------------
     ("a", "lambda x: MY_CONSTANT + x", 'MY_CONSTANT + pl.col("a")', None),
     (
         "a",
@@ -310,6 +359,9 @@ EVAL_ENVIRONMENT = {
     "MY_CONSTANT": MY_CONSTANT,
     "MY_DICT": MY_DICT,
     "MY_LIST": MY_LIST,
+    "MY_STRING": MY_STRING,
+    "MY_SUBSTRING": MY_SUBSTRING,
+    "MY_COLLECTION": MY_COLLECTION,
     "cosh": cosh,
     "datetime": datetime,
     "dt": dt,
