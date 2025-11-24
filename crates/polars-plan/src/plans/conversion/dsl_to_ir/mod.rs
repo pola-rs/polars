@@ -803,7 +803,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
                 polars_ensure!(
                     aexpr_to_leaf_names_iter(agg_ae, ctxt.expr_arena).count() == 0,
-                    InvalidOperation: "explicit column references are not allowed in the `aggregate_function` of `pivot`"
+                    InvalidOperation: "explicit column references are not allowed in the `agg_function` of `pivot`"
                 );
 
                 for i in 0..on_columns.height() {

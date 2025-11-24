@@ -7740,6 +7740,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             selector_subset = parse_list_into_selector(subset)._pyselector
         return self._from_pyldf(self._ldf.drop_nulls(subset=selector_subset))
 
+    @deprecate_renamed_parameter("aggregate_function", "agg_function", version="1.36.0")
     def pivot(
         self,
         on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
@@ -7747,12 +7748,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
-        aggregate_function: PivotAgg | Expr | None = None,
+        agg_function: PivotAgg | Expr | None = None,
         maintain_order: bool = False,
         separator: str = "_",
     ) -> LazyFrame:
         """
         Create a spreadsheet-style pivot table as a DataFrame.
+
+        .. versionchanged:: 1.36.0
+            The `aggregate_function` parameter was renamed `agg_function`.
 
         Parameters
         ----------
@@ -7771,7 +7775,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             aggregation is specified, these are the values on which the aggregation will be computed.
             If None, all remaining columns not specified on `on` and `index` will be used.
             At least one of `index` and `values` must be specified.
-        aggregate_function
+        agg_function
             Choose from:
 
             - None: no aggregation takes place, will raise error if multiple values are in group.
@@ -7859,7 +7863,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └───────┴──────────────┴────────────────┴──────────────┴────────────────┘
 
         If you end up with multiple values per cell, you can specify how to aggregate
-        them with `aggregate_function`:
+        them with `agg_function`:
 
         >>> lf = pl.LazyFrame(
         ...     {
@@ -7870,7 +7874,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.pivot(
-        ...     "col", on_columns=["a", "b"], index="ix", aggregate_function="sum"
+        ...     "col", on_columns=["a", "b"], index="ix", agg_function="sum"
         ... ).collect()  # doctest: +IGNORE_RESULT
         shape: (2, 5)
         ┌─────┬───────┬───────┬───────┬───────┐
@@ -7897,7 +7901,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     on_columns=["x", "y"],
         ...     index="col1",
         ...     values="col3",
-        ...     aggregate_function=pl.element().tanh().mean(),
+        ...     agg_function=pl.element().tanh().mean(),
         ... ).collect()  # doctest: +IGNORE_RESULT
         shape: (2, 3)
         ┌──────┬──────────┬──────────┐
@@ -7925,39 +7929,39 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             index_selector = cs.all() - on_selector - values_selector
 
         agg = F.element()
-        if isinstance(aggregate_function, str):
-            if aggregate_function == "first":
+        if isinstance(agg_function, str):
+            if agg_function == "first":
                 agg = agg.first()
-            elif aggregate_function == "item":
+            elif agg_function == "item":
                 agg = agg.item()
-            elif aggregate_function == "sum":
+            elif agg_function == "sum":
                 agg = agg.sum()
-            elif aggregate_function == "max":
+            elif agg_function == "max":
                 agg = agg.max()
-            elif aggregate_function == "min":
+            elif agg_function == "min":
                 agg = agg.min()
-            elif aggregate_function == "mean":
+            elif agg_function == "mean":
                 agg = agg.mean()
-            elif aggregate_function == "median":
+            elif agg_function == "median":
                 agg = agg.median()
-            elif aggregate_function == "last":
+            elif agg_function == "last":
                 agg = agg.last()
-            elif aggregate_function == "len":
+            elif agg_function == "len":
                 agg = agg.len()
-            elif aggregate_function == "count":
+            elif agg_function == "count":
                 issue_deprecation_warning(
-                    "`aggregate_function='count'` input for `pivot` is deprecated."
-                    " Please use `aggregate_function='len'`.",
+                    "`agg_function='count'` input for `pivot` is deprecated."
+                    " Please use `agg_function='len'`.",
                     version="0.20.5",
                 )
                 agg = agg.len()
             else:
-                msg = f"invalid input for `aggregate_function` argument: {aggregate_function!r}"
+                msg = f"invalid input for `agg_function` argument: {agg_function!r}"
                 raise ValueError(msg)
-        elif aggregate_function is None:
+        elif agg_function is None:
             agg = agg.item(allow_empty=True)
         else:
-            agg = aggregate_function
+            agg = agg_function
 
         on_cols: pl.DataFrame
         if isinstance(on_columns, pl.DataFrame):

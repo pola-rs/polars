@@ -2039,7 +2039,7 @@ def digit(ascii_only: bool = False) -> Selector:  # noqa: FBT001
     ...     values="value",
     ...     index="key",
     ...     on="year",
-    ...     aggregate_function="sum",
+    ...     agg_function="sum",
     ... )
     >>> print(df)
     shape: (2, 3)

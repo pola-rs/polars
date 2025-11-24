@@ -9260,6 +9260,7 @@ class DataFrame:
         )
 
     @deprecate_renamed_parameter("columns", "on", version="1.0.0")
+    @deprecate_renamed_parameter("aggregate_function", "agg_function", version="1.36.0")
     def pivot(
         self,
         on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
@@ -9267,7 +9268,7 @@ class DataFrame:
         *,
         index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
-        aggregate_function: PivotAgg | Expr | None = None,
+        agg_function: PivotAgg | Expr | None = None,
         maintain_order: bool = True,
         sort_columns: bool = False,
         separator: str = "_",
@@ -9280,6 +9281,9 @@ class DataFrame:
 
         .. versionchanged:: 1.0.0
             The `columns` parameter was renamed `on`.
+
+        .. versionchanged:: 1.36.0
+            The `aggregate_function` parameter was renamed `agg_function`.
 
         Parameters
         ----------
@@ -9298,7 +9302,7 @@ class DataFrame:
             aggregation is specified, these are the values on which the aggregation will be computed.
             If None, all remaining columns not specified on `on` and `index` will be used.
             At least one of `index` and `values` must be specified.
-        aggregate_function
+        agg_function
             Choose from:
 
             - None: no aggregation takes place, will raise error if multiple values are in group.
@@ -9399,7 +9403,7 @@ class DataFrame:
         └───────┴──────────────┴────────────────┴──────────────┴────────────────┘
 
         If you end up with multiple values per cell, you can specify how to aggregate
-        them with `aggregate_function`:
+        them with `agg_function`:
 
         >>> df = pl.DataFrame(
         ...     {
@@ -9409,7 +9413,7 @@ class DataFrame:
         ...         "bar": [0, 2, 0, 0, 9, 4],
         ...     }
         ... )
-        >>> df.pivot("col", index="ix", aggregate_function="sum")
+        >>> df.pivot("col", index="ix", agg_function="sum")
         shape: (2, 5)
         ┌─────┬───────┬───────┬───────┬───────┐
         │ ix  ┆ foo_a ┆ foo_b ┆ bar_a ┆ bar_b │
@@ -9434,7 +9438,7 @@ class DataFrame:
         ...     "col2",
         ...     index="col1",
         ...     values="col3",
-        ...     aggregate_function=pl.element().tanh().mean(),
+        ...     agg_function=pl.element().tanh().mean(),
         ... )
         shape: (2, 3)
         ┌──────┬──────────┬──────────┐
@@ -9468,7 +9472,7 @@ class DataFrame:
                 on_columns=on_cols,
                 index=index,
                 values=values,
-                aggregate_function=aggregate_function,
+                agg_function=agg_function,
                 maintain_order=maintain_order,
                 separator=separator,
             )
