@@ -33,6 +33,7 @@ protocol_dtypes: list[PolarsDataType] = [
     pl.UInt16,
     pl.UInt32,
     pl.UInt64,
+    pl.Float16,
     pl.Float32,
     pl.Float64,
     pl.Boolean,
@@ -85,6 +86,7 @@ def test_to_dataframe_pyarrow_zero_copy_parametric(df: pl.DataFrame) -> None:
 @given(
     dataframes(
         allowed_dtypes=protocol_dtypes,
+        excluded_dtypes=[pl.Float16],  # Not yet supported by pandas
         allow_null=False,  # Bug: https://github.com/pola-rs/polars/issues/16190
     )
 )
@@ -105,6 +107,7 @@ def test_to_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
         excluded_dtypes=[
             pl.String,  # Polars String type does not match protocol spec
             pl.Categorical,
+            pl.Float16,  # Not yet supported by pandas
         ],
         allow_chunks=False,
         allow_null=False,  # Bug: https://github.com/pola-rs/polars/issues/16190
@@ -172,6 +175,7 @@ def test_from_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
         excluded_dtypes=[
             pl.String,  # Polars String type does not match protocol spec
             pl.Categorical,  # Categoricals come back as Enums
+            pl.Float16,  # NaN values come back as nulls
             pl.Float32,  # NaN values come back as nulls
             pl.Float64,  # NaN values come back as nulls
             pl.Boolean,  # pandas exports boolean buffers as byte-packed
@@ -193,6 +197,7 @@ def test_from_dataframe_pandas_zero_copy_parametric(df: pl.DataFrame) -> None:
         allowed_dtypes=protocol_dtypes,
         excluded_dtypes=[
             pl.Categorical,  # Categoricals come back as Enums
+            pl.Float16,  # NaN values come back as nulls
             pl.Float32,  # NaN values come back as nulls
             pl.Float64,  # NaN values come back as nulls
         ],
@@ -203,6 +208,10 @@ def test_from_dataframe_pandas_zero_copy_parametric(df: pl.DataFrame) -> None:
     )
 )
 def test_from_dataframe_pandas_native_parametric(df: pl.DataFrame) -> None:
+    # TODO: [amber] LEFT HERE
+    # I was just adding pl.Float16 to the excluded_dtypes above.
+    # I want to make sure that we really thoroughly test all of the different
+    # interop pathways with Float16
     df_pd = df.to_pandas()
     result = from_dataframe_interchange_protocol(df_pd)
     assert_frame_equal(result, df, categorical_as_str=True)
@@ -214,6 +223,7 @@ def test_from_dataframe_pandas_native_parametric(df: pl.DataFrame) -> None:
         excluded_dtypes=[
             pl.String,  # Polars String type does not match protocol spec
             pl.Categorical,  # Categoricals come back as Enums
+            pl.Float16,  # NaN values come back as nulls
             pl.Float32,  # NaN values come back as nulls
             pl.Float64,  # NaN values come back as nulls
             pl.Boolean,  # pandas exports boolean buffers as byte-packed

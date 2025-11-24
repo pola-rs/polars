@@ -85,6 +85,7 @@ impl IRFunctionExpr {
                     Map(_) => mapper.try_map_field(|field| {
                         if options.weights.is_some() {
                             let dtype = match field.dtype() {
+                                #[cfg(feature = "dtype-f16")]
                                 DataType::Float16 => DataType::Float16,
                                 DataType::Float32 => DataType::Float32,
                                 _ => DataType::Float64,
@@ -144,6 +145,7 @@ impl IRFunctionExpr {
             Product => mapper.map_dtype(|dtype| {
                 use DataType as T;
                 match dtype {
+                    #[cfg(feature = "dtype-f16")]
                     T::Float16 => T::Float16,
                     T::Float32 => T::Float32,
                     T::Float64 => T::Float64,
@@ -716,6 +718,7 @@ impl<'a> FieldsMapper<'a> {
             #[cfg(feature = "dtype-datetime")]
             Date => Datetime(TimeUnit::Microseconds, None),
             dt if dt.is_temporal() => dt,
+            #[cfg(feature = "dtype-f16")]
             Float16 => Float16,
             Float32 => Float32,
             _ => Float64,

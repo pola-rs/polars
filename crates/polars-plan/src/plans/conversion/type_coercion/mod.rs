@@ -1376,11 +1376,14 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
             // For floats, make sure it's in range where all integers convert
             // losslessly; this isn't quite every possible value that can be
             // converted losslessly, but it's good enough:
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 if (*value < 2i128.pow(11)) && (*value > -2i128.pow(11)) => true,
             DataType::Float32 if (*value < 2i128.pow(24)) && (*value > -2i128.pow(24)) => true,
             DataType::Float64 if (*value < 2i128.pow(53)) && (*value > -2i128.pow(53)) => true,
             // Make sure we have error message that reports the value:
             _ => polars_bail!(InvalidOperation: "cannot cast {} losslessly to {}", value, to),
         },
+        (DataType::Float16, DataType::UInt8 | DataType::Int8) => true,
         (
             DataType::Float32,
             DataType::UInt8 | DataType::UInt16 | DataType::Int8 | DataType::Int16,

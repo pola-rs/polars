@@ -44,7 +44,6 @@ from polars.datatypes import (
     Float16,
     Float32,
     Float64,
-    FloatType,
     Int8,
     Int16,
     Int32,
@@ -75,7 +74,7 @@ if TYPE_CHECKING:
     from hypothesis.strategies import SearchStrategy
 
     from polars._typing import PolarsDataType, SchemaDict, TimeUnit
-    from polars.datatypes import DataType, DataTypeClass
+    from polars.datatypes import DataType, DataTypeClass, FloatType
 
 _DEFAULT_LIST_LEN_LIMIT = 3
 _DEFAULT_N_CATEGORIES = 10
@@ -405,10 +404,10 @@ def data(
     if (strategy := _STATIC_STRATEGIES.get(dtype.base_type())) is not None:
         strategy = strategy
     elif dtype.is_float():
-        dtype = cast(FloatType, dtype)
+        dtype = cast("FloatType", dtype)
         bit_width = {Float16: 16, Float32: 32, Float64: 64}[type(dtype)]
         strategy = floats(
-            bit_width=cast(Literal[16, 32, 64], bit_width),
+            bit_width=cast("Literal[16, 32, 64]", bit_width),
             allow_nan=kwargs.pop("allow_nan", True),
             allow_infinity=kwargs.pop("allow_infinity", True),
         )
