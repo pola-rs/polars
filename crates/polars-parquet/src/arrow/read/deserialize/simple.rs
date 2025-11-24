@@ -6,7 +6,6 @@ use arrow::datatypes::{
 };
 use arrow::types::{days_ms, i256};
 use ethnum::I256;
-use num_traits::FromBytes;
 use polars_compute::cast::CastOptionsImpl;
 use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
@@ -506,39 +505,14 @@ pub fn page_iter_to_array(
         )?
         .collect_boxed(filter)?,
 
-        (PhysicalType::FixedLenByteArray(2), Float16) => {
-            // @NOTE: To reduce code bloat, we just use the FixedSizeBinary decoder.
-
-            let (nested, array, ptm) = PageDecoder::new(
-                &field.name,
-                pages,
-                ArrowDataType::FixedSizeBinary(2),
-                fixed_size_binary::BinaryDecoder { size: 2 },
-                init_nested,
-            )?
-            .collect(filter)?;
-
-            let array = array
-                .into_iter()
-                .map(|mut fsb_array| {
-                    let validity = fsb_array.take_validity();
-                    let values = fsb_array.values().as_slice();
-                    assert_eq!(values.len() % 2, 0);
-                    let values = values.chunks_exact(2);
-                    let values = values
-                        .map(|v| {
-                            // SAFETY: We know that `v` is always of size two.
-                            let le_bytes: [u8; 2] = unsafe { v.try_into().unwrap_unchecked() };
-                            pf16::from_le_bytes(&le_bytes)
-                        })
-                        .collect();
-                    Ok(PrimitiveArray::<pf16>::new(dtype.clone(), values, validity).to_boxed())
-                })
-                .collect::<ParquetResult<Vec<Box<dyn Array>>>>()?;
-
-            (nested, array, ptm)
-        },
-
+        (PhysicalType::FixedLenByteArray(2), Float16) => PageDecoder::new(
+            &field.name,
+            pages,
+            dtype,
+            primitive::FloatDecoder::<pf16, _, _>::unit(),
+            init_nested,
+        )?
+        .collect_boxed(filter)?,
         (PhysicalType::Float, Float32) => PageDecoder::new(
             &field.name,
             pages,

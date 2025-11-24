@@ -208,10 +208,6 @@ def test_from_dataframe_pandas_zero_copy_parametric(df: pl.DataFrame) -> None:
     )
 )
 def test_from_dataframe_pandas_native_parametric(df: pl.DataFrame) -> None:
-    # TODO: [amber] LEFT HERE
-    # I was just adding pl.Float16 to the excluded_dtypes above.
-    # I want to make sure that we really thoroughly test all of the different
-    # interop pathways with Float16
     df_pd = df.to_pandas()
     result = from_dataframe_interchange_protocol(df_pd)
     assert_frame_equal(result, df, categorical_as_str=True)
