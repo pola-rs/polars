@@ -332,29 +332,26 @@ impl Series {
                 .unwrap()
                 .agg_quantile(groups, quantile, method),
             #[cfg(feature = "dtype-datetime")]
-            dt @ Datetime(_, _) => self
+            Datetime(tu, tz) => self
                 .to_physical_repr()
                 .agg_quantile(groups, quantile, method)
                 .cast(&Int64)
                 .unwrap()
-                .cast(dt)
-                .unwrap(),
+                .into_datetime(*tu, tz.clone()),
             #[cfg(feature = "dtype-duration")]
-            dt @ Duration(_) => self
+            Duration(tu) => self
                 .to_physical_repr()
                 .agg_quantile(groups, quantile, method)
                 .cast(&Int64)
                 .unwrap()
-                .cast(dt)
-                .unwrap(),
+                .into_duration(*tu),
             #[cfg(feature = "dtype-time")]
             Time => self
                 .to_physical_repr()
                 .agg_quantile(groups, quantile, method)
                 .cast(&Int64)
                 .unwrap()
-                .cast(&Time)
-                .unwrap(),
+                .into_time(),
             #[cfg(feature = "dtype-date")]
             Date => (self
                 .to_physical_repr()
@@ -362,8 +359,9 @@ impl Series {
                 .cast(&Float64)
                 .unwrap()
                 * (US_IN_DAY as f64))
-                .cast(&Datetime(TimeUnit::Microseconds, None))
-                .unwrap(),
+                .cast(&DataType::Int64)
+                .unwrap()
+                .into_datetime(TimeUnit::Microseconds, None),
             dt if dt.is_primitive_numeric() => {
                 apply_method_physical_integer!(s, agg_quantile, groups, quantile, method)
             },

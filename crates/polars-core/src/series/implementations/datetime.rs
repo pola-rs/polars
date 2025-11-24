@@ -403,8 +403,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
 
     fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
         let quantile = self.0.physical().quantile_reduce(quantile, method)?;
-        let to = self.dtype().to_physical();
-        let av = quantile.value().cast(&to);
+        let av = quantile.value().cast(&DataType::Int64);
         Ok(Scalar::new(
             self.dtype().clone(),
             av.as_datetime_owned(self.0.time_unit(), self.0.time_zone_arc()),
