@@ -5,11 +5,14 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Any, no_type_check
 
 import pandas as pd
+import pyarrow.feather as paf
 import pytest
+from hypothesis import given
 
 import polars as pl
 from polars.interchange.protocol import CompatLevel
 from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing.parametric.strategies import dataframes
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -240,15 +243,6 @@ def test_glob_ipc(df: pl.DataFrame, tmp_path: Path) -> None:
         assert_frame_equal(result, df, categorical_as_str=True)
 
 
-def test_from_float16() -> None:
-    # Create a feather file with a 16-bit floating point column
-    pandas_df = pd.DataFrame({"column": [1.0]}, dtype="float16")
-    f = io.BytesIO()
-    pandas_df.to_feather(f)
-    f.seek(0)
-    assert pl.read_ipc(f, use_pyarrow=False).dtypes == [pl.Float16]
-
-
 @pytest.mark.write_disk
 def test_binview_ipc_mmap(tmp_path: Path) -> None:
     df = pl.DataFrame({"foo": ["aa" * 10, "bb", None, "small", "big" * 20]})
@@ -467,3 +461,67 @@ def test_roundtrip_empty_str_list_21163() -> None:
     bytes = df.serialize()
     deserialized = pl.DataFrame.deserialize(io.BytesIO(bytes))
     assert_frame_equal(df, deserialized)
+
+
+@pytest.mark.parametrize("compression", COMPRESSIONS)
+@given(
+    df=dataframes(
+        allowed_dtypes=[
+            pl.Float16,
+            pl.Float32,
+            pl.Float64,
+            pl.Int8,
+            pl.Int16,
+            pl.Int32,
+            pl.Int64,
+            pl.UInt8,
+            pl.UInt16,
+            pl.UInt32,
+            pl.UInt64,
+            pl.Boolean,
+            pl.Datetime,
+        ],
+        allow_null=False,
+        allow_nan=False,  # NaN values come back as nulls
+        max_size=1000,
+    )
+)
+def test_pandas_roundtrip(df: pl.DataFrame, compression: IpcCompression) -> None:
+    pd_df = df.to_pandas()
+    f = io.BytesIO()
+    pd_df.to_feather(f, compression=compression)
+    f.seek(0)
+    df_read = pl.read_ipc(f, use_pyarrow=False)
+    assert_frame_equal(df, df_read, categorical_as_str=True)
+    f = io.BytesIO()
+    df.write_ipc(f, compression=compression)
+    f.seek(0)
+    pd_df_read = pd.read_feather(f)
+    assert pd_df.equals(pd_df_read)
+
+
+@pytest.mark.parametrize("compression", COMPRESSIONS)
+@given(
+    df=dataframes(
+        excluded_dtypes=[
+            pl.Int128,
+            pl.UInt128,
+            pl.Categorical,
+            pl.Struct,
+            pl.Enum,
+        ],
+        max_size=1000,
+    )
+)
+def test_pyarrow_roundtrip(df: pl.DataFrame, compression: IpcCompression) -> None:
+    f = io.BytesIO()
+    df.write_ipc(f, compression=compression)
+    f.seek(0)
+
+    table = paf.read_table(f)
+    assert_frame_equal(df, pl.from_arrow(table))
+
+    f = io.BytesIO()
+    paf.write_feather(df.to_arrow(), f, compression=compression)
+    f.seek(0)
+    assert_frame_equal(df, pl.read_ipc(f, use_pyarrow=False))
