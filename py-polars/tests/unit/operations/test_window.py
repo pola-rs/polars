@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pytest
 
 import polars as pl
-
-if TYPE_CHECKING:
-    from polars._typing import WindowMappingStrategy
 from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import TimeUnit, WindowMappingStrategy
 
 
 def test_over_args() -> None:
@@ -161,6 +163,189 @@ def test_quantile_as_window() -> None:
     )
     expected = pl.Series("value", [1.0, 1.0, 2.0, 2.0])
     assert_series_equal(result, expected)
+
+
+def test_quantile_as_window_date() -> None:
+    df = pl.DataFrame(
+        {
+            "group": [1, 1, 1, 1, 2, 2, 2, 2],
+            "value": [date(2025, 1, x) for x in range(1, 9)],
+        }
+    )
+    result = df.lazy().select(
+        nearest=pl.col("value").quantile(0.5, "nearest").over("group"),
+        higher=pl.col("value").quantile(0.5, "higher").over("group"),
+        lower=pl.col("value").quantile(0.5, "lower").over("group"),
+        linear=pl.col("value").quantile(0.5, "linear").over("group"),
+    )
+    dt = pl.Datetime("us")
+    expected = pl.DataFrame(
+        {
+            "nearest": pl.Series(
+                [datetime(2025, 1, 3)] * 4 + [datetime(2025, 1, 7)] * 4, dtype=dt
+            ),
+            "higher": pl.Series(
+                [datetime(2025, 1, 3)] * 4 + [datetime(2025, 1, 7)] * 4, dtype=dt
+            ),
+            "lower": pl.Series(
+                [datetime(2025, 1, 2)] * 4 + [datetime(2025, 1, 6)] * 4, dtype=dt
+            ),
+            "linear": pl.Series(
+                [datetime(2025, 1, 2, 12)] * 4 + [datetime(2025, 1, 6, 12)] * 4,
+                dtype=dt,
+            ),
+        }
+    )
+    assert result.collect_schema() == pl.Schema(
+        {
+            "nearest": dt,
+            "higher": dt,
+            "lower": dt,
+            "linear": dt,
+        }
+    )
+    assert_frame_equal(result.collect(), expected)
+
+
+@pytest.mark.parametrize("tu", ["ms", "us", "ns"])
+@pytest.mark.parametrize("time_zone", [None, "Asia/Tokyo"])
+def test_quantile_as_window_datetime(tu: TimeUnit, time_zone: str | None) -> None:
+    dt = pl.Datetime(tu, time_zone)
+    tz = ZoneInfo(time_zone) if time_zone else None
+    df = pl.DataFrame(
+        {
+            "group": [1, 1, 1, 1, 2, 2, 2, 2],
+            "value": pl.Series(
+                [
+                    datetime(2025, 1, 1, tzinfo=tz),
+                    datetime(2025, 1, 2, tzinfo=tz),
+                    datetime(2025, 1, 3, tzinfo=tz),
+                    datetime(2025, 1, 4, tzinfo=tz),
+                    datetime(2025, 1, 5, tzinfo=tz),
+                    datetime(2025, 1, 6, tzinfo=tz),
+                    datetime(2025, 1, 7, tzinfo=tz),
+                    datetime(2025, 1, 8, tzinfo=tz),
+                ],
+                dtype=dt,
+            ),
+        }
+    )
+    result = df.lazy().select(
+        nearest=pl.col("value").quantile(0.5, "nearest").over("group"),
+        higher=pl.col("value").quantile(0.5, "higher").over("group"),
+        lower=pl.col("value").quantile(0.5, "lower").over("group"),
+        linear=pl.col("value").quantile(0.5, "linear").over("group"),
+    )
+    expected = pl.DataFrame(
+        {
+            "nearest": pl.Series(
+                [datetime(2025, 1, 3, tzinfo=tz)] * 4
+                + [datetime(2025, 1, 7, tzinfo=tz)] * 4,
+                dtype=dt,
+            ),
+            "higher": pl.Series(
+                [datetime(2025, 1, 3, tzinfo=tz)] * 4
+                + [datetime(2025, 1, 7, tzinfo=tz)] * 4,
+                dtype=dt,
+            ),
+            "lower": pl.Series(
+                [datetime(2025, 1, 2, tzinfo=tz)] * 4
+                + [datetime(2025, 1, 6, tzinfo=tz)] * 4,
+                dtype=dt,
+            ),
+            "linear": pl.Series(
+                [datetime(2025, 1, 2, 12, tzinfo=tz)] * 4
+                + [datetime(2025, 1, 6, 12, tzinfo=tz)] * 4,
+                dtype=dt,
+            ),
+        }
+    )
+    assert result.collect_schema() == pl.Schema(
+        {
+            "nearest": dt,
+            "higher": dt,
+            "lower": dt,
+            "linear": dt,
+        }
+    )
+    assert_frame_equal(result.collect(), expected)
+
+
+@pytest.mark.parametrize("tu", ["ms", "us", "ns"])
+def test_quantile_as_window_duration(tu: TimeUnit) -> None:
+    dt = pl.Duration(tu)
+    df = pl.DataFrame(
+        {
+            "group": [1, 1, 1, 1, 2, 2, 2, 2],
+            "value": pl.Series([timedelta(days=x) for x in range(1, 9)], dtype=dt),
+        }
+    )
+    result = df.lazy().select(
+        nearest=pl.col("value").quantile(0.5, "nearest").over("group"),
+        higher=pl.col("value").quantile(0.5, "higher").over("group"),
+        lower=pl.col("value").quantile(0.5, "lower").over("group"),
+        linear=pl.col("value").quantile(0.5, "linear").over("group"),
+    )
+    expected = pl.DataFrame(
+        {
+            "nearest": pl.Series(
+                [timedelta(days=3)] * 4 + [timedelta(days=7)] * 4, dtype=dt
+            ),
+            "higher": pl.Series(
+                [timedelta(days=3)] * 4 + [timedelta(days=7)] * 4, dtype=dt
+            ),
+            "lower": pl.Series(
+                [timedelta(days=2)] * 4 + [timedelta(days=6)] * 4, dtype=dt
+            ),
+            "linear": pl.Series(
+                [timedelta(days=2, hours=12)] * 4 + [timedelta(days=6, hours=12)] * 4,
+                dtype=dt,
+            ),
+        }
+    )
+    assert result.collect_schema() == pl.Schema(
+        {
+            "nearest": dt,
+            "higher": dt,
+            "lower": dt,
+            "linear": dt,
+        }
+    )
+    assert_frame_equal(result.collect(), expected)
+
+
+def test_quantile_as_window_time() -> None:
+    df = pl.DataFrame(
+        {
+            "group": [1, 1, 1, 1, 2, 2, 2, 2],
+            "value": pl.Series([time(hour=x) for x in range(1, 9)]),
+        }
+    )
+    result = df.lazy().select(
+        nearest=pl.col("value").quantile(0.5, "nearest").over("group"),
+        higher=pl.col("value").quantile(0.5, "higher").over("group"),
+        lower=pl.col("value").quantile(0.5, "lower").over("group"),
+        linear=pl.col("value").quantile(0.5, "linear").over("group"),
+    )
+    expected = pl.DataFrame(
+        {
+            "nearest": pl.Series([time(hour=3)] * 4 + [time(hour=7)] * 4),
+            "higher": pl.Series([time(hour=3)] * 4 + [time(hour=7)] * 4),
+            "lower": pl.Series([time(hour=2)] * 4 + [time(hour=6)] * 4),
+            "linear": pl.Series(
+                [time(hour=2, minute=30)] * 4 + [time(hour=6, minute=30)] * 4
+            ),
+        }
+    )
+    assert result.collect_schema() == pl.Schema(
+        {
+            "nearest": pl.Time,
+            "higher": pl.Time,
+            "lower": pl.Time,
+            "linear": pl.Time,
+        }
+    )
+    assert_frame_equal(result.collect(), expected)
 
 
 def test_cumulative_eval_window_functions() -> None:
