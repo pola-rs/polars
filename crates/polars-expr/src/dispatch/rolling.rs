@@ -1,8 +1,10 @@
 use std::ops::BitAnd;
 
+use arrow::temporal_conversions::MICROSECONDS_IN_DAY as US_IN_DAY;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::{
     AnyValue, ChunkCast, Column, DataType, IntoColumn, NamedFrom, RollingOptionsFixedWindow,
+    TimeUnit,
 };
 use polars_core::scalar::Scalar;
 use polars_core::series::Series;
@@ -44,10 +46,26 @@ pub(super) fn rolling_quantile(
     s: &Column,
     options: RollingOptionsFixedWindow,
 ) -> PolarsResult<Column> {
+    let dt = s.dtype();
+    let s = if dt.is_temporal() {
+        &s.to_physical_repr()
+    } else {
+        s
+    };
+
     // @scalar-opt
-    s.as_materialized_series()
-        .rolling_quantile(options)
-        .map(Column::from)
+    let out = s.as_materialized_series().rolling_quantile(options)?;
+
+    Ok(match dt {
+        DataType::Date => {
+            (out * US_IN_DAY).cast(&DataType::Datetime(TimeUnit::Microseconds, None))?
+        },
+        DataType::Datetime(tu, tz) => out.cast(&DataType::Datetime(*tu, tz.clone()))?,
+        DataType::Duration(tu) => out.cast(&DataType::Duration(*tu))?,
+        DataType::Time => out.cast(&DataType::Time)?,
+        _ => out,
+    }
+    .into_column())
 }
 
 pub(super) fn rolling_var(s: &Column, options: RollingOptionsFixedWindow) -> PolarsResult<Column> {
