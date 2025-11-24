@@ -3,6 +3,7 @@ from __future__ import annotations
 import gzip
 import io
 import json
+import math
 import re
 import zlib
 from collections import OrderedDict
@@ -13,6 +14,8 @@ from typing import TYPE_CHECKING
 
 import zstandard
 from hypothesis import given
+
+from polars.datatypes.group import FLOAT_DTYPES
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -67,6 +70,27 @@ def test_write_json_roundtrip(df: pl.DataFrame) -> None:
     f.write(df.write_json().encode())
     f.seek(0)
     result = pl.read_json(f, schema=df.schema)
+    assert_frame_equal(result, df)
+
+
+@given(
+    df=dataframes(
+        min_size=1,
+        allowed_dtypes=FLOAT_DTYPES,
+    )
+)
+def test_write_json_floats(df: pl.DataFrame) -> None:
+    f = io.BytesIO()
+    f.write(df.write_json().encode())
+    f.seek(0)
+    result = pl.read_json(f, schema=df.schema)
+
+    df = df.select(
+        pl.all()
+        .replace(math.inf, None)
+        .replace(-math.inf, None)
+        .replace(math.nan, None)
+    )
     assert_frame_equal(result, df)
 
 
