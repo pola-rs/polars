@@ -128,20 +128,31 @@ impl Writeable {
         }
     }
 
-    pub fn sync_on_close(&mut self, sync_on_close: SyncOnCloseType) -> std::io::Result<()> {
+    pub fn sync_all(&self) -> io::Result<()> {
         match self {
-            Writeable::Dyn(d) => {
-                crate::utils::sync_on_close::sync_on_close_dyn(sync_on_close, d.as_mut())
-            },
-            Writeable::Local(file) => {
-                crate::utils::sync_on_close::sync_on_close(sync_on_close, file)
-            },
+            Self::Dyn(v) => v.sync_all(),
+            Self::Local(v) => v.sync_all(),
             #[cfg(feature = "cloud")]
-            Writeable::Cloud(_) => Ok(()),
+            Self::Cloud(v) => v.sync_all(),
         }
     }
 
-    pub fn close(self) -> std::io::Result<()> {
+    pub fn sync_data(&self) -> io::Result<()> {
+        match self {
+            Self::Dyn(v) => v.sync_data(),
+            Self::Local(v) => v.sync_data(),
+            #[cfg(feature = "cloud")]
+            Self::Cloud(v) => v.sync_data(),
+        }
+    }
+
+    pub fn close(self, sync: SyncOnCloseType) -> std::io::Result<()> {
+        match sync {
+            SyncOnCloseType::All => self.sync_all()?,
+            SyncOnCloseType::Data => self.sync_data()?,
+            SyncOnCloseType::None => {},
+        }
+
         match self {
             Self::Dyn(mut v) => v.close(),
             Self::Local(v) => close_file(v),
@@ -236,22 +247,29 @@ mod async_writeable {
             Writeable::try_new(path, cloud_options).and_then(|x| x.try_into_async_writeable())
         }
 
-        pub async fn sync_on_close(
-            &mut self,
-            sync_on_close: SyncOnCloseType,
-        ) -> std::io::Result<()> {
+        pub async fn sync_all(&mut self) -> io::Result<()> {
             match self {
-                Self::Dyn(d) => task::block_in_place(|| {
-                    crate::utils::sync_on_close::sync_on_close_dyn(sync_on_close, d.0.as_mut())
-                }),
-                Self::Local(file) => {
-                    crate::utils::sync_on_close::tokio_sync_on_close(sync_on_close, file).await
-                },
+                Self::Dyn(v) => task::block_in_place(|| v.0.as_ref().sync_all()),
+                Self::Local(v) => v.sync_all().await,
                 Self::Cloud(_) => Ok(()),
             }
         }
 
-        pub async fn close(self) -> PolarsResult<()> {
+        pub async fn sync_data(&mut self) -> io::Result<()> {
+            match self {
+                Self::Dyn(v) => task::block_in_place(|| v.0.as_ref().sync_data()),
+                Self::Local(v) => v.sync_data().await,
+                Self::Cloud(_) => Ok(()),
+            }
+        }
+
+        pub async fn close(mut self, sync: SyncOnCloseType) -> PolarsResult<()> {
+            match sync {
+                SyncOnCloseType::All => self.sync_all().await?,
+                SyncOnCloseType::Data => self.sync_data().await?,
+                SyncOnCloseType::None => {},
+            }
+
             match self {
                 Self::Dyn(mut v) => {
                     v.shutdown().await.map_err(PolarsError::from)?;
