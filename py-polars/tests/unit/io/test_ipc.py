@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import typing
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, no_type_check
 
@@ -519,7 +520,7 @@ def test_pyarrow_roundtrip(df: pl.DataFrame, compression: IpcCompression) -> Non
     f.seek(0)
 
     table = paf.read_table(f)
-    assert_frame_equal(df, pl.from_arrow(table))
+    assert_frame_equal(df, typing.cast("pl.DataFrame", pl.from_arrow(table)))
 
     f = io.BytesIO()
     paf.write_feather(df.to_arrow(), f, compression=compression)
