@@ -180,7 +180,6 @@ pub fn aexpr_to_column_predicates(
                                 ) else {
                                     return None;
                                 };
-
                                 let l = l.to_any_value()?;
                                 let r = r.to_any_value()?;
                                 if l.dtype() != dtype || r.dtype() != dtype {
@@ -193,7 +192,13 @@ pub fn aexpr_to_column_predicates(
                                     ClosedInterval::Right => (false, true),
                                     ClosedInterval::None => (false, false),
                                 };
-
+                                if l > r {
+                                    // Really this ought to indicate that
+                                    // nothing should be loaded since the
+                                    // condition is impossible, but unclear how
+                                    // to do that at this abstraction layer.
+                                    return None;
+                                }
                                 is_between(
                                     &dtype,
                                     Some(Scalar::new(dtype.clone(), l.into_static())),
