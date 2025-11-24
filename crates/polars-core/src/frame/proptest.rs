@@ -25,16 +25,17 @@ pub fn dataframe_strategy(
     nesting_level: usize,
 ) -> impl Strategy<Value = DataFrame> {
     options
-        .num_columns
+        .series_options
+        .series_length_range
         .clone()
-        .prop_flat_map(move |num_cols| {
+        .prop_flat_map(move |series_length| {
+            let mut opts = options.series_options.clone();
+            opts.series_length_range = series_length..=series_length;
+
             prop::collection::vec(
-                series_strategy(options.series_options.clone().into(), nesting_level),
-                num_cols,
+                series_strategy(Rc::new(opts), nesting_level),
+                options.num_columns.clone(),
             )
         })
-        .prop_map(|series| {
-            let columns: Vec<Column> = series.into_iter().map(|series| series.into()).collect();
-            DataFrame::new(columns).unwrap()
-        })
+        .prop_map(|series| DataFrame::new(series.into_iter().map(Column::from).collect()).unwrap())
 }
