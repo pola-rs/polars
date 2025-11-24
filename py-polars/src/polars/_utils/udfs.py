@@ -712,11 +712,34 @@ class InstructionTranslator:
                     return f"{e1}.is_{not_}null()"
                 elif op in ("in", "not in"):
                     not_ = "" if op == "in" else "~"
-                    return (
-                        f"{not_}({e1}.is_in({e2}))"
-                        if " " in e1
-                        else f"{not_}{e1}.is_in({e2})"
-                    )
+                    is_collection = e2.startswith(("(", "[", "{", "frozenset("))
+                    if not is_collection and not e2.startswith(
+                        ("pl.col(", "'", '"')  # col ref, or string literal
+                    ):
+                        # bare variable: resolve its runtime type
+                        if not self._caller_variables:
+                            self._caller_variables = _get_all_caller_variables()
+                        var_value = self._caller_variables.get(e2)
+                        if isinstance(var_value, (list, tuple, set, frozenset, dict)):
+                            is_collection = True
+                        elif not isinstance(var_value, str):
+                            msg = "cannot determine operand type for 'in'"
+                            raise NotImplementedError(msg)
+
+                    if is_collection:
+                        return (
+                            f"{not_}({e1}.is_in({e2}))"
+                            if " " in e1
+                            else f"{not_}{e1}.is_in({e2})"
+                        )
+
+                    # string containment: x in s -> s contains x
+                    if e2.startswith("pl.col("):
+                        needle = e1 if e1.startswith("pl.col(") else f"pl.lit({e1})"
+                        haystack = e2
+                    else:
+                        needle, haystack = e1, f"pl.lit({e2})"
+                    return f"{not_}{haystack}.str.contains({needle}, literal=True)"
                 elif op == "replace_strict":
                     if not self._caller_variables:
                         self._caller_variables = _get_all_caller_variables()
