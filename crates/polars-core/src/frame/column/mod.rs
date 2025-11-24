@@ -1787,6 +1787,10 @@ impl Column {
         // @scalar-opt
         self.as_materialized_series().rechunk_validity()
     }
+
+    pub fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        self.as_materialized_series().unique_id()
+    }
 }
 
 impl Default for Column {

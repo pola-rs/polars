@@ -455,24 +455,25 @@ impl PhysicalExpr for EvalExpr {
         let mut input = self.input.evaluate_on_groups(df, groups, state)?;
         match self.variant {
             EvalVariant::List => {
-                let lst = input.get_values().list()?;
-                let out = self.evaluate_on_list_chunked(lst, state, false)?;
+                let input_col = input.flat_naive();
+                let out = self.evaluate_on_list_chunked(input_col.list()?, state, false)?;
                 input.with_values(out, false, Some(&self.expr))?;
             },
             EvalVariant::ListAgg => {
-                let lst = input.get_values().list()?;
-                let out = self.evaluate_on_list_chunked(lst, state, true)?;
+                let input_col = input.flat_naive();
+                let out = self.evaluate_on_list_chunked(input_col.list()?, state, true)?;
                 input.with_values(out, false, Some(&self.expr))?;
             },
             EvalVariant::Array { as_list } => feature_gated!("dtype-array", {
-                let arr = input.get_values().array()?;
-                let out = self.evaluate_on_array_chunked(arr, state, as_list, false)?;
-                input.with_values(out, true, Some(&self.expr))?;
+                let arr_col = input.flat_naive();
+                let out =
+                    self.evaluate_on_array_chunked(arr_col.array()?, state, as_list, false)?;
+                input.with_values(out, false, Some(&self.expr))?;
             }),
             EvalVariant::ArrayAgg => feature_gated!("dtype-array", {
-                let arr = input.get_values().array()?;
-                let out = self.evaluate_on_array_chunked(arr, state, true, true)?;
-                input.with_values(out, true, Some(&self.expr))?;
+                let arr_col = input.flat_naive();
+                let out = self.evaluate_on_array_chunked(arr_col.array()?, state, true, true)?;
+                input.with_values(out, false, Some(&self.expr))?;
             }),
             EvalVariant::Cumulative { min_samples } => {
                 let mut builder = AnonymousOwnedListBuilder::new(

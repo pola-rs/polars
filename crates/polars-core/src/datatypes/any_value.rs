@@ -211,6 +211,10 @@ impl AnyValue<'static> {
                     .collect(),
                 fields.clone(),
             ))),
+            #[cfg(feature = "dtype-extension")]
+            DT::Extension(_typ, storage) => {
+                AnyValue::default_value(storage, numeric_to_one, num_list_values)
+            },
             DT::Unknown(_) => unreachable!(),
         }
     }
@@ -891,15 +895,35 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-date")]
             AnyValue::Int32(v) => AnyValue::Date(*v),
             AnyValue::Null => AnyValue::Null,
-            dt => panic!("cannot create date from other type. dtype: {dt}"),
+            av => panic!("cannot create date from other type. dtype: {}", av.dtype()),
         }
     }
+
     #[cfg(feature = "dtype-datetime")]
     pub(crate) fn as_datetime(&self, tu: TimeUnit, tz: Option<&'a TimeZone>) -> AnyValue<'a> {
         match self {
             AnyValue::Int64(v) => AnyValue::Datetime(*v, tu, tz),
             AnyValue::Null => AnyValue::Null,
-            dt => panic!("cannot create date from other type. dtype: {dt}"),
+            av => panic!(
+                "cannot create datetime from other type. dtype: {}",
+                av.dtype()
+            ),
+        }
+    }
+
+    #[cfg(feature = "dtype-datetime")]
+    pub(crate) fn as_datetime_owned(
+        &self,
+        tu: TimeUnit,
+        tz: Option<Arc<TimeZone>>,
+    ) -> AnyValue<'static> {
+        match self {
+            AnyValue::Int64(v) => AnyValue::DatetimeOwned(*v, tu, tz),
+            AnyValue::Null => AnyValue::Null,
+            av => panic!(
+                "cannot create datetime from other type. dtype: {}",
+                av.dtype()
+            ),
         }
     }
 
@@ -908,7 +932,10 @@ impl<'a> AnyValue<'a> {
         match self {
             AnyValue::Int64(v) => AnyValue::Duration(*v, tu),
             AnyValue::Null => AnyValue::Null,
-            dt => panic!("cannot create date from other type. dtype: {dt}"),
+            av => panic!(
+                "cannot create duration from other type. dtype: {}",
+                av.dtype()
+            ),
         }
     }
 
@@ -917,7 +944,7 @@ impl<'a> AnyValue<'a> {
         match self {
             AnyValue::Int64(v) => AnyValue::Time(*v),
             AnyValue::Null => AnyValue::Null,
-            dt => panic!("cannot create date from other type. dtype: {dt}"),
+            av => panic!("cannot create time from other type. dtype: {}", av.dtype()),
         }
     }
 

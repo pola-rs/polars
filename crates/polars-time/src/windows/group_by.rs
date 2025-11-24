@@ -995,6 +995,8 @@ pub struct GroupByDynamicWindower {
     start_by: StartBy,
 
     add: fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64>,
+    // Not-to-exceed duration (upper limit).
+    nte: fn(&Duration) -> i64,
     tu: TimeUnit,
     tz: Option<Tz>,
 
@@ -1031,6 +1033,11 @@ impl GroupByDynamicWindower {
                 TimeUnit::Nanoseconds => Duration::add_ns,
                 TimeUnit::Microseconds => Duration::add_us,
                 TimeUnit::Milliseconds => Duration::add_ms,
+            },
+            nte: match tu {
+                TimeUnit::Nanoseconds => Duration::nte_duration_ns,
+                TimeUnit::Microseconds => Duration::nte_duration_us,
+                TimeUnit::Milliseconds => Duration::nte_duration_ms,
             },
             tu,
             tz,
@@ -1143,6 +1150,7 @@ impl GroupByDynamicWindower {
                                 self.every,
                                 first,
                                 self.add,
+                                self.nte,
                                 self.period,
                                 start,
                                 self.closed,
@@ -1171,6 +1179,7 @@ impl GroupByDynamicWindower {
                                 self.every,
                                 first,
                                 self.add,
+                                self.nte,
                                 self.period,
                                 start,
                                 self.closed,

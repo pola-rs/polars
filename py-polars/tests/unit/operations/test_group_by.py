@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import typing
 from collections import OrderedDict
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pytest
@@ -20,7 +21,7 @@ from polars.testing.parametric import column, dataframes, series
 if TYPE_CHECKING:
     from typing import Callable
 
-    from polars._typing import PolarsDataType
+    from polars._typing import PolarsDataType, TimeUnit
 
 
 def test_group_by() -> None:
@@ -304,6 +305,190 @@ def test_group_by_shorthand_quantile(df: pl.DataFrame) -> None:
     assert result.rows() == expected
 
 
+def test_group_by_quantile_date() -> None:
+    df = pl.DataFrame(
+        {
+            "group": [1, 1, 1, 1, 2, 2, 2, 2],
+            "value": [date(2025, 1, x) for x in range(1, 9)],
+        }
+    )
+    result = (
+        df.lazy()
+        .group_by("group", maintain_order=True)
+        .agg(
+            nearest=pl.col("value").quantile(0.5, "nearest"),
+            higher=pl.col("value").quantile(0.5, "higher"),
+            lower=pl.col("value").quantile(0.5, "lower"),
+            linear=pl.col("value").quantile(0.5, "linear"),
+        )
+    )
+    dt = pl.Datetime("us")
+    expected = pl.DataFrame(
+        {
+            "group": [1, 2],
+            "nearest": pl.Series(
+                [datetime(2025, 1, 3), datetime(2025, 1, 7)], dtype=dt
+            ),
+            "higher": pl.Series([datetime(2025, 1, 3), datetime(2025, 1, 7)], dtype=dt),
+            "lower": pl.Series([datetime(2025, 1, 2), datetime(2025, 1, 6)], dtype=dt),
+            "linear": pl.Series(
+                [datetime(2025, 1, 2, 12), datetime(2025, 1, 6, 12)], dtype=dt
+            ),
+        }
+    )
+    assert result.collect_schema() == pl.Schema(
+        {  # type: ignore[arg-type]
+            "group": pl.Int64,
+            "nearest": dt,
+            "higher": dt,
+            "lower": dt,
+            "linear": dt,
+        }
+    )
+    assert_frame_equal(result.collect(), expected)
+
+
+@pytest.mark.parametrize("tu", ["ms", "us", "ns"])
+@pytest.mark.parametrize("time_zone", [None, "Asia/Tokyo"])
+def test_group_by_quantile_datetime(tu: TimeUnit, time_zone: str) -> None:
+    dt = pl.Datetime(tu, time_zone)
+    tz = ZoneInfo(time_zone) if time_zone else None
+    df = pl.DataFrame(
+        {
+            "group": [1, 1, 1, 1, 2, 2, 2, 2],
+            "value": pl.Series(
+                [datetime(2025, 1, x, tzinfo=tz) for x in range(1, 9)],
+                dtype=dt,
+            ),
+        }
+    )
+    result = (
+        df.lazy()
+        .group_by("group", maintain_order=True)
+        .agg(
+            nearest=pl.col("value").quantile(0.5, "nearest"),
+            higher=pl.col("value").quantile(0.5, "higher"),
+            lower=pl.col("value").quantile(0.5, "lower"),
+            linear=pl.col("value").quantile(0.5, "linear"),
+        )
+    )
+    expected = pl.DataFrame(
+        {
+            "group": [1, 2],
+            "nearest": pl.Series(
+                [datetime(2025, 1, 3, tzinfo=tz), datetime(2025, 1, 7, tzinfo=tz)],
+                dtype=dt,
+            ),
+            "higher": pl.Series(
+                [datetime(2025, 1, 3, tzinfo=tz), datetime(2025, 1, 7, tzinfo=tz)],
+                dtype=dt,
+            ),
+            "lower": pl.Series(
+                [datetime(2025, 1, 2, tzinfo=tz), datetime(2025, 1, 6, tzinfo=tz)],
+                dtype=dt,
+            ),
+            "linear": pl.Series(
+                [
+                    datetime(2025, 1, 2, 12, tzinfo=tz),
+                    datetime(2025, 1, 6, 12, tzinfo=tz),
+                ],
+                dtype=dt,
+            ),
+        }
+    )
+    assert result.collect_schema() == pl.Schema(
+        {  # type: ignore[arg-type]
+            "group": pl.Int64,
+            "nearest": dt,
+            "higher": dt,
+            "lower": dt,
+            "linear": dt,
+        }
+    )
+    assert_frame_equal(result.collect(), expected)
+
+
+@pytest.mark.parametrize("tu", ["ms", "us", "ns"])
+def test_group_by_quantile_duration(tu: TimeUnit) -> None:
+    dt = pl.Duration(tu)
+    df = pl.DataFrame(
+        {
+            "group": [1, 1, 1, 1, 2, 2, 2, 2],
+            "value": pl.Series([timedelta(hours=x) for x in range(1, 9)], dtype=dt),
+        }
+    )
+    result = (
+        df.lazy()
+        .group_by("group", maintain_order=True)
+        .agg(
+            nearest=pl.col("value").quantile(0.5, "nearest"),
+            higher=pl.col("value").quantile(0.5, "higher"),
+            lower=pl.col("value").quantile(0.5, "lower"),
+            linear=pl.col("value").quantile(0.5, "linear"),
+        )
+    )
+    expected = pl.DataFrame(
+        {
+            "group": [1, 2],
+            "nearest": pl.Series([timedelta(hours=3), timedelta(hours=7)], dtype=dt),
+            "higher": pl.Series([timedelta(hours=3), timedelta(hours=7)], dtype=dt),
+            "lower": pl.Series([timedelta(hours=2), timedelta(hours=6)], dtype=dt),
+            "linear": pl.Series(
+                [timedelta(hours=2, minutes=30), timedelta(hours=6, minutes=30)],
+                dtype=dt,
+            ),
+        }
+    )
+    assert result.collect_schema() == pl.Schema(
+        {  # type: ignore[arg-type]
+            "group": pl.Int64,
+            "nearest": dt,
+            "higher": dt,
+            "lower": dt,
+            "linear": dt,
+        }
+    )
+    assert_frame_equal(result.collect(), expected)
+
+
+def test_group_by_quantile_time() -> None:
+    df = pl.DataFrame(
+        {
+            "group": [1, 1, 1, 1, 2, 2, 2, 2],
+            "value": pl.Series([time(hour=x) for x in range(1, 9)]),
+        }
+    )
+    result = (
+        df.lazy()
+        .group_by("group", maintain_order=True)
+        .agg(
+            nearest=pl.col("value").quantile(0.5, "nearest"),
+            higher=pl.col("value").quantile(0.5, "higher"),
+            lower=pl.col("value").quantile(0.5, "lower"),
+            linear=pl.col("value").quantile(0.5, "linear"),
+        )
+    )
+    expected = pl.DataFrame(
+        {
+            "group": [1, 2],
+            "nearest": pl.Series([time(hour=3), time(hour=7)]),
+            "higher": pl.Series([time(hour=3), time(hour=7)]),
+            "lower": pl.Series([time(hour=2), time(hour=6)]),
+            "linear": pl.Series([time(hour=2, minute=30), time(hour=6, minute=30)]),
+        }
+    )
+    assert result.collect_schema() == pl.Schema(
+        {
+            "group": pl.Int64,
+            "nearest": pl.Time,
+            "higher": pl.Time,
+            "lower": pl.Time,
+            "linear": pl.Time,
+        }
+    )
+    assert_frame_equal(result.collect(), expected)
+
+
 def test_group_by_args() -> None:
     df = pl.DataFrame(
         {
@@ -415,7 +600,7 @@ def test_group_by_sorted_empty_dataframe_3680() -> None:
     )
     assert df.rows() == []
     assert df.shape == (0, 2)
-    assert df.schema == {"key": pl.Categorical(ordering="lexical"), "val": pl.Float64}
+    assert df.schema == {"key": pl.Categorical(), "val": pl.Float64}
 
 
 def test_group_by_custom_agg_empty_list() -> None:
@@ -1474,6 +1659,24 @@ def test_group_by_shift_filter_23910(maintain_order: bool) -> None:
     )
 
 
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_group_by_having(maintain_order: bool) -> None:
+    df = pl.DataFrame(
+        {
+            "grp": ["A", "A", "B", "B", "C", "C"],
+            "value": [10, 15, 5, 15, 5, 10],
+        }
+    )
+
+    result = (
+        df.group_by("grp", maintain_order=maintain_order)
+        .having(pl.col("value").mean() >= 10)
+        .agg()
+    )
+    expected = pl.DataFrame({"grp": ["A", "B"]})
+    assert_frame_equal(result, expected, check_row_order=maintain_order)
+
+
 def test_group_by_tuple_typing_24112() -> None:
     df = pl.DataFrame({"id": ["a", "b", "a"], "val": [1, 2, 3]})
     for (id_,), _ in df.group_by("id"):
@@ -2140,23 +2343,30 @@ def test_group_by_drop_nans(s: pl.Series) -> None:
     ),
 )
 @pytest.mark.parametrize(
-    ("expr", "check_order", "returns_scalar", "length_preserving"),
+    ("expr", "check_order", "returns_scalar", "length_preserving", "is_window"),
     [
-        (pl.Expr.unique, False, False, False),
-        (lambda e: e.unique(maintain_order=True), True, False, False),
-        (pl.Expr.drop_nans, True, False, False),
-        (pl.Expr.drop_nulls, True, False, False),
-        (pl.Expr.null_count, True, False, False),
-        (pl.Expr.n_unique, True, True, False),
-        (lambda e: e.filter(pl.int_range(0, e.len()) % 3 == 0), True, False, False),
-        (pl.Expr.shift, True, False, True),
-        (pl.Expr.forward_fill, True, False, True),
-        (pl.Expr.backward_fill, True, False, True),
-        (pl.Expr.reverse, True, False, True),
+        (pl.Expr.unique, False, False, False, False),
+        (lambda e: e.unique(maintain_order=True), True, False, False, False),
+        (pl.Expr.drop_nans, True, False, False, False),
+        (pl.Expr.drop_nulls, True, False, False, False),
+        (pl.Expr.null_count, True, False, False, False),
+        (pl.Expr.n_unique, True, True, False, False),
+        (
+            lambda e: e.filter(pl.int_range(0, e.len()) % 3 == 0),
+            True,
+            False,
+            False,
+            False,
+        ),
+        (pl.Expr.shift, True, False, True, False),
+        (pl.Expr.forward_fill, True, False, True, False),
+        (pl.Expr.backward_fill, True, False, True, False),
+        (pl.Expr.reverse, True, False, True, False),
         (
             lambda e: (pl.int_range(e.len() - e.len(), e.len()) % 3 == 0).any(),
             True,
             True,
+            False,
             False,
         ),
         (
@@ -2164,11 +2374,49 @@ def test_group_by_drop_nans(s: pl.Series) -> None:
             True,
             True,
             False,
+            False,
         ),
-        (lambda e: e.head(2), True, False, False),
-        (pl.Expr.first, True, True, False),
-        (pl.Expr.mode, False, False, False),
-        (lambda e: e.gather(pl.int_range(0, e.len()).slice(1, 3)), True, False, False),
+        (lambda e: e.head(2), True, False, False, False),
+        (pl.Expr.first, True, True, False, False),
+        (pl.Expr.mode, False, False, False, False),
+        (lambda e: e.fill_null(e.first()).over(e), True, False, True, True),
+        (lambda e: e.first().over(e), True, False, True, True),
+        (
+            lambda e: e.fill_null(e.first()).over(e, mapping_strategy="join"),
+            True,
+            False,
+            True,
+            True,
+        ),
+        (
+            lambda e: e.fill_null(e.first()).over(e, mapping_strategy="explode"),
+            True,
+            False,
+            False,
+            True,
+        ),
+        (
+            lambda e: e.fill_null(strategy="forward").over([e, e]),
+            True,
+            False,
+            True,
+            True,
+        ),
+        (lambda e: e.fill_null(e.first()).over(e, order_by=e), True, False, True, True),
+        (
+            lambda e: e.fill_null(e.first()).over(e, order_by=e, descending=True),
+            True,
+            False,
+            True,
+            True,
+        ),
+        (
+            lambda e: e.gather(pl.int_range(0, e.len()).slice(1, 3)),
+            True,
+            False,
+            False,
+            False,
+        ),
     ],
 )
 def test_grouped_agg_parametric(
@@ -2177,14 +2425,22 @@ def test_grouped_agg_parametric(
     check_order: bool,
     returns_scalar: bool,
     length_preserving: bool,
+    is_window: bool,
 ) -> None:
     types: dict[str, tuple[Callable[[pl.Expr], pl.Expr], bool, bool]] = {
         "basic": (lambda e: e, False, True),
-        "first": (pl.Expr.first, True, False),
-        "slice": (lambda e: e.slice(1, 3), False, False),
-        "impl_expl": (lambda e: e.implode().explode(), False, False),
-        "rolling": (lambda e: e.rolling(pl.row_index(), period="3i"), False, True),
     }
+
+    if not is_window:
+        types["first"] = (pl.Expr.first, True, False)
+        types["slice"] = (lambda e: e.slice(1, 3), False, False)
+        types["impl_expl"] = (lambda e: e.implode().explode(), False, False)
+        types["rolling"] = (
+            lambda e: e.rolling(pl.row_index(), period="3i"),
+            False,
+            True,
+        )
+        types["over"] = (lambda e: e.forward_fill().over(e), False, True)
 
     def slit(s: pl.Series) -> pl.Expr:
         import polars._plr as plr
@@ -2220,7 +2476,8 @@ def test_grouped_agg_parametric(
         )
     )
 
-    types["literal"] = (lambda e: e, True, False)
+    if not is_window:
+        types["literal"] = (lambda e: e, True, False)
 
     def verify_index(i: int) -> None:
         idx_df = df.filter(pl.col.key == pl.lit(i, pl.UInt8))
@@ -2247,6 +2504,7 @@ def test_grouped_agg_parametric(
                 result_is_scalar = False
                 result_is_scalar |= returns_scalar and t_is_length_preserving
                 result_is_scalar |= t_is_scalar and length_preserving
+                result_is_scalar &= not is_window
 
                 if not result_is_scalar:
                     gb_s = gb_s.explode(empty_as_null=False)
@@ -2600,3 +2858,54 @@ def test_sorted_group_by_slice() -> None:
     assert_frame_equal(lf.slice(50, 1).collect(), expected.slice(50, 1))
     assert_frame_equal(lf.slice(20, 30).collect(), expected.slice(20, 30))
     assert_frame_equal(lf.slice(20, 30).collect(), expected.slice(20, 30))
+
+
+def test_agg_first_last_non_null_25405() -> None:
+    lf = pl.LazyFrame(
+        {
+            "a": [1, 1, 1, 1, 2, 2, 2, 2, 2],
+            "b": pl.Series([1, 2, 3, None, None, 4, 5, 6, None]),
+        }
+    )
+
+    # first
+    result = lf.group_by("a", maintain_order=True).agg(
+        pl.col("b").first(ignore_nulls=True)
+    )
+    expected = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "b": [1, 4],
+        }
+    )
+    assert_frame_equal(result.collect(), expected)
+
+    result = lf.with_columns(pl.col("b").first(ignore_nulls=True).over("a"))
+    expected = pl.DataFrame(
+        {
+            "a": [1, 1, 1, 1, 2, 2, 2, 2, 2],
+            "b": [1, 1, 1, 1, 4, 4, 4, 4, 4],
+        }
+    )
+    assert_frame_equal(result.collect(), expected)
+
+    # last
+    result = lf.group_by("a", maintain_order=True).agg(
+        pl.col("b").last(ignore_nulls=True)
+    )
+    expected = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "b": [3, 6],
+        }
+    )
+    assert_frame_equal(result.collect(), expected)
+
+    result = lf.with_columns(pl.col("b").last(ignore_nulls=True).over("a"))
+    expected = pl.DataFrame(
+        {
+            "a": [1, 1, 1, 1, 2, 2, 2, 2, 2],
+            "b": [3, 3, 3, 3, 6, 6, 6, 6, 6],
+        }
+    )
+    assert_frame_equal(result.collect(), expected)

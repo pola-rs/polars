@@ -34,9 +34,7 @@ def test_series_sort_idempotent(s: pl.Series) -> None:
             pl.Object,  # Unsortable type
             pl.Null,  # Bug, see: https://github.com/pola-rs/polars/issues/17007
             pl.Decimal,  # Bug, see: https://github.com/pola-rs/polars/issues/17009
-            pl.Categorical(
-                ordering="lexical"
-            ),  # Bug, see: https://github.com/pola-rs/polars/issues/20364
+            pl.Categorical(),  # Bug, see: https://github.com/pola-rs/polars/issues/20364
         ],
     )
 )
@@ -1174,7 +1172,7 @@ def test_sort_bool_nulls_last() -> None:
     "dtype",
     [
         pl.Enum(["a", "b"]),
-        pl.Categorical(ordering="lexical"),
+        pl.Categorical(),
     ],
 )
 def test_sort_cat_nulls_last(dtype: PolarsDataType) -> None:

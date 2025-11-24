@@ -185,13 +185,7 @@ pub fn python_scan_predicate(
                 // We don't have to use a physical expression as pyarrow deals with the filter.
                 None
             } else {
-                Some(create_physical_expr(
-                    e,
-                    Context::Default,
-                    expr_arena,
-                    &options.schema,
-                    state,
-                )?)
+                Some(create_physical_expr(e, expr_arena, &options.schema, state)?)
             }
         }
         // Convert to physical expression for the case the reader cannot consume the predicate.
@@ -199,13 +193,7 @@ pub fn python_scan_predicate(
             let dsl_expr = e.to_expr(expr_arena);
             predicate_serialized = polars_plan::plans::python::predicate::serialize(&dsl_expr)?;
 
-            Some(create_physical_expr(
-                e,
-                Context::Default,
-                expr_arena,
-                &options.schema,
-                state,
-            )?)
+            Some(create_physical_expr(e, expr_arena, &options.schema, state)?)
         }
     } else {
         None
@@ -384,8 +372,7 @@ fn create_physical_plan_impl(
                                 _ => panic!("enable filetype feature"),
                             }
 
-                            file.sync_on_close(unified_sink_args.sync_on_close)?;
-                            file.close()?;
+                            file.close(unified_sink_args.sync_on_close)?;
 
                             Ok(None)
                         }),
@@ -439,13 +426,8 @@ fn create_physical_plan_impl(
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
             let input = recurse!(input, state)?;
             let mut state = ExpressionConversionState::new(true);
-            let predicate = create_physical_expr(
-                &predicate,
-                Context::Default,
-                expr_arena,
-                &input_schema,
-                &mut state,
-            )?;
+            let predicate =
+                create_physical_expr(&predicate, expr_arena, &input_schema, &mut state)?;
             Ok(Box::new(executors::FilterExec::new(
                 predicate,
                 input,
@@ -538,13 +520,8 @@ fn create_physical_plan_impl(
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
             let input = recurse!(input, state)?;
             let mut state = ExpressionConversionState::new(POOL.current_num_threads() > expr.len());
-            let phys_expr = create_physical_expressions_from_irs(
-                &expr,
-                Context::Default,
-                expr_arena,
-                &input_schema,
-                &mut state,
-            )?;
+            let phys_expr =
+                create_physical_expressions_from_irs(&expr, expr_arena, &input_schema, &mut state)?;
 
             let allow_vertical_parallelism = options.should_broadcast && expr.iter().all(|e| is_elementwise_rec(e.node(), expr_arena))
                 // If all columns are literal we would get a 1 row per thread.
@@ -579,7 +556,6 @@ fn create_physical_plan_impl(
             let input_schema = lp_arena.get(input).schema(lp_arena);
             let by_column = create_physical_expressions_from_irs(
                 &by_column,
-                Context::Default,
                 expr_arena,
                 input_schema.as_ref(),
                 &mut ExpressionConversionState::new(true),
@@ -626,14 +602,12 @@ fn create_physical_plan_impl(
             let options = Arc::try_unwrap(options).unwrap_or_else(|options| (*options).clone());
             let phys_keys = create_physical_expressions_from_irs(
                 &keys,
-                Context::Default,
                 expr_arena,
                 &input_schema,
                 &mut ExpressionConversionState::new(true),
             )?;
             let phys_aggs = create_physical_expressions_from_irs(
                 &aggs,
-                Context::Aggregation,
                 expr_arena,
                 &input_schema,
                 &mut ExpressionConversionState::new(true),
@@ -739,14 +713,12 @@ fn create_physical_plan_impl(
 
             let left_on = create_physical_expressions_from_irs(
                 &left_on,
-                Context::Default,
                 expr_arena,
                 &schema_left,
                 &mut ExpressionConversionState::new(true),
             )?;
             let right_on = create_physical_expressions_from_irs(
                 &right_on,
-                Context::Default,
                 expr_arena,
                 &schema_right,
                 &mut ExpressionConversionState::new(true),
@@ -761,7 +733,6 @@ fn create_physical_plan_impl(
                     o.compile(|e| {
                         let phys_expr = create_physical_expr(
                             e,
-                            Context::Default,
                             expr_arena,
                             &schema,
                             &mut ExpressionConversionState::new(false),
@@ -808,7 +779,6 @@ fn create_physical_plan_impl(
 
             let phys_exprs = create_physical_expressions_from_irs(
                 &exprs,
-                Context::Default,
                 expr_arena,
                 &input_schema,
                 &mut state,

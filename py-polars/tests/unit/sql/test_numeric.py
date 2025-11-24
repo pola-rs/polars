@@ -47,6 +47,7 @@ def test_modulo() -> None:
     out = df.sql(
         """
         SELECT
+          ROW_NUMBER() AS idx,
           a % 2 AS a2,
           b % 3 AS b3,
           MOD(c, 4) AS c4,
@@ -58,11 +59,13 @@ def test_modulo() -> None:
         out,
         pl.DataFrame(
             {
+                "idx": [1, 2, 3, 4, 5],
                 "a2": [1.5, None, 1.0, 1 / 3, 1.0],
                 "b3": [0, 1, 2, 0, 1],
                 "c4": [3, 0, 1, 2, 3],
                 "d55": [0.0, 0.5, 2.0, None, 3.5],
-            }
+            },
+            schema_overrides={"idx": pl.UInt32},
         ),
     )
 

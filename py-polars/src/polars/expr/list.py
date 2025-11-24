@@ -1004,6 +1004,17 @@ class ExprListNameSpace:
         │ [10, 2, 1]  ┆ [2, 1]    │
         └─────────────┴───────────┘
         """
+        if isinstance(offset, Collection) and not isinstance(offset, str):
+            msg = f"'offset' must be an integer, string, or expression, not {type(offset).__name__}"
+            raise TypeError(msg)
+        if (
+            length is not None
+            and isinstance(length, Collection)
+            and not isinstance(length, str)
+        ):
+            msg = f"'length' must be an integer, string, or expression, not {type(length).__name__}"
+            raise TypeError(msg)
+
         offset_pyexpr = parse_into_expression(offset)
         length_pyexpr = parse_into_expression(length)
         return wrap_expr(self._pyexpr.list_slice(offset_pyexpr, length_pyexpr))

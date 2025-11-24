@@ -26,6 +26,7 @@ pub mod error;
 pub mod exceptions;
 pub mod export;
 pub mod expr;
+pub mod extension;
 pub mod file;
 #[cfg(feature = "pymethods")]
 pub mod functions;

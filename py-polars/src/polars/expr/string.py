@@ -2233,34 +2233,39 @@ class ExprStringNameSpace:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"s": ["pear", None, "papaya", "dragonfruit"]})
-        >>> df.with_columns(pl.col("s").str.slice(-3).alias("slice"))
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "s": ["pear", None, "papaya", "dragonfruit"],
+        ...         "idx": [1, 3, 5, 7],
+        ...     }
+        ... )
+        >>> df.select("s", substr=pl.col("s").str.slice(-3))
         shape: (4, 2)
-        ┌─────────────┬───────┐
-        │ s           ┆ slice │
-        │ ---         ┆ ---   │
-        │ str         ┆ str   │
-        ╞═════════════╪═══════╡
-        │ pear        ┆ ear   │
-        │ null        ┆ null  │
-        │ papaya      ┆ aya   │
-        │ dragonfruit ┆ uit   │
-        └─────────────┴───────┘
+        ┌─────────────┬────────┐
+        │ s           ┆ substr │
+        │ ---         ┆ ---    │
+        │ str         ┆ str    │
+        ╞═════════════╪════════╡
+        │ pear        ┆ ear    │
+        │ null        ┆ null   │
+        │ papaya      ┆ aya    │
+        │ dragonfruit ┆ uit    │
+        └─────────────┴────────┘
 
-        Using the optional `length` parameter
+        Using the optional `length` parameter and passing `offset` as an expression:
 
-        >>> df.with_columns(pl.col("s").str.slice(4, length=3).alias("slice"))
-        shape: (4, 2)
-        ┌─────────────┬───────┐
-        │ s           ┆ slice │
-        │ ---         ┆ ---   │
-        │ str         ┆ str   │
-        ╞═════════════╪═══════╡
-        │ pear        ┆       │
-        │ null        ┆ null  │
-        │ papaya      ┆ ya    │
-        │ dragonfruit ┆ onf   │
-        └─────────────┴───────┘
+        >>> df.with_columns(substr=pl.col("s").str.slice("idx", length=3))
+        shape: (4, 3)
+        ┌─────────────┬─────┬────────┐
+        │ s           ┆ idx ┆ substr │
+        │ ---         ┆ --- ┆ ---    │
+        │ str         ┆ i64 ┆ str    │
+        ╞═════════════╪═════╪════════╡
+        │ pear        ┆ 1   ┆ ear    │
+        │ null        ┆ 3   ┆ null   │
+        │ papaya      ┆ 5   ┆ a      │
+        │ dragonfruit ┆ 7   ┆ rui    │
+        └─────────────┴─────┴────────┘
         """
         offset_pyexpr = parse_into_expression(offset)
         length_pyexpr = parse_into_expression(length)

@@ -97,6 +97,10 @@ impl Series {
                 }
                 builder.to_series()
             },
+            #[cfg(feature = "dtype-extension")]
+            DataType::Extension(typ, storage_dtype) => {
+                Series::full_null(name, size, storage_dtype).into_extension(typ.clone())
+            },
             _ => {
                 macro_rules! primitive {
                     ($type:ty) => {{ ChunkedArray::<$type>::full_null(name, size).into_series() }};

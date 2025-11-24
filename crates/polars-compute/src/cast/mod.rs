@@ -1014,7 +1014,7 @@ fn cast_to_dictionary<K: DictionaryKey>(
 ) -> PolarsResult<Box<dyn Array>> {
     let array = cast(array, dict_value_type, options)?;
     let array = array.as_ref();
-    match *dict_value_type {
+    match dict_value_type.to_logical_type() {
         ArrowDataType::Int8 => primitive_to_dictionary_dyn::<i8, K>(array),
         ArrowDataType::Int16 => primitive_to_dictionary_dyn::<i16, K>(array),
         ArrowDataType::Int32 => primitive_to_dictionary_dyn::<i32, K>(array),

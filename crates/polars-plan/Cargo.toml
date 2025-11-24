@@ -100,6 +100,7 @@ dtype-duration = ["polars-core/dtype-duration", "polars-time/dtype-duration", "t
 dtype-time = ["polars-time/dtype-time", "temporal"]
 dtype-array = ["polars-core/dtype-array", "polars-ops/dtype-array"]
 dtype-categorical = ["polars-core/dtype-categorical"]
+dtype-extension = ["polars-core/dtype-extension", "polars-ops/dtype-extension"]
 dtype-struct = ["polars-core/dtype-struct"]
 object = ["polars-core/object", "polars-ops/object"]
 list_filter = ["polars-ops/list_filter"]
