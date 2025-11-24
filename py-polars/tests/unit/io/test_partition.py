@@ -293,6 +293,7 @@ def test_partition_parted(tmp_path: Path, io_type: IOType, engine: EngineType) -
             pl.Struct,
             pl.Array,
             pl.List,
+            pl.Extension,  # Can't be cast to string
         ],
     )
 )
@@ -339,10 +340,7 @@ def test_max_size_partition_collect_files(tmp_path: Path) -> None:
     output_files = []
 
     def file_path_cb(ctx: BasePartitionContext) -> Path:
-        print(ctx)
-        print(ctx.full_path)
         output_files.append(ctx.full_path)
-        print(ctx.file_path)
         return ctx.file_path
 
     (io_type["sink"])(

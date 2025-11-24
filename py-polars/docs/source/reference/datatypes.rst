@@ -60,6 +60,7 @@ String
 
     String
     Categorical
+    Categories
     Enum
     Utf8
 
@@ -69,8 +70,10 @@ Other
     :toctree: api/
     :nosignatures:
 
+    BaseExtension
     Binary
     Boolean
+    Extension
     Null
     Object
     Unknown

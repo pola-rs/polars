@@ -258,7 +258,7 @@ def test_init_structured_objects() -> None:
         )
         assert df.schema == {
             "ts": pl.Datetime("ms"),
-            "tk": pl.Categorical(ordering="lexical"),
+            "tk": pl.Categorical(),
             "pc": pl.Float64,
             "sz": pl.UInt16,
         }

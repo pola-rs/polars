@@ -88,7 +88,7 @@ pub(super) fn convert_functions(
                 #[cfg(feature = "array_count")]
                 A::CountMatches => IA::CountMatches,
                 A::Shift => IA::Shift,
-                A::Explode { skip_empty } => IA::Explode { skip_empty },
+                A::Explode(options) => IA::Explode(options),
                 A::Concat => IA::Concat,
                 A::Slice(offset, length) => IA::Slice(offset, length),
                 #[cfg(feature = "array_to_struct")]
@@ -142,6 +142,20 @@ pub(super) fn convert_functions(
                 C::EndsWith(v) => IC::EndsWith(v),
                 #[cfg(feature = "strings")]
                 C::Slice(s, e) => IC::Slice(s, e),
+            })
+        },
+        #[cfg(feature = "dtype-extension")]
+        F::Extension(extension_function) => {
+            use {ExtensionFunction as E, IRExtensionFunction as IE};
+            I::Extension(match extension_function {
+                E::To(dtype) => {
+                    let concrete_dtype = dtype.into_datatype(ctx.schema)?;
+                    polars_ensure!(matches!(concrete_dtype, DataType::Extension(_, _)),
+                        InvalidOperation: "ext.to() requires an Extension dtype, got {concrete_dtype:?}"
+                    );
+                    IE::To(concrete_dtype)
+                },
+                E::Storage => IE::Storage,
             })
         },
         F::ListExpr(list_function) => {
@@ -604,51 +618,85 @@ pub(super) fn convert_functions(
                 closed,
                 array_width,
             },
-            #[cfg(feature = "dtype-date")]
-            RangeFunction::DateRange { interval, closed } => {
-                polars_ensure!(e[0].is_scalar(ctx.arena), ShapeMismatch: "non-scalar start passed to `date_range`");
-                polars_ensure!(e[1].is_scalar(ctx.arena), ShapeMismatch: "non-scalar end passed to `date_range`");
-                IRRangeFunction::DateRange { interval, closed }
+            #[cfg(all(feature = "range", feature = "dtype-date"))]
+            RangeFunction::DateRange {
+                interval,
+                closed,
+                arg_type,
+            } => {
+                use DateRangeArgs::*;
+                let arg_names = match arg_type {
+                    StartEndSamples => vec!["start", "end", "num_samples"],
+                    StartEndInterval => vec!["start", "end"],
+                    StartIntervalSamples => vec!["start", "num_samples"],
+                    EndIntervalSamples => vec!["end", "num_samples"],
+                };
+                for (idx, &name) in arg_names.iter().enumerate() {
+                    polars_ensure!(e[idx].is_scalar(ctx.arena), ShapeMismatch: "non-scalar {name} passed to `date_range`");
+                }
+                IRRangeFunction::DateRange {
+                    interval,
+                    closed,
+                    arg_type,
+                }
             },
-            #[cfg(feature = "dtype-date")]
-            RangeFunction::DateRanges { interval, closed } => {
-                IRRangeFunction::DateRanges { interval, closed }
+            #[cfg(all(feature = "range", feature = "dtype-date"))]
+            RangeFunction::DateRanges {
+                interval,
+                closed,
+                arg_type,
+            } => IRRangeFunction::DateRanges {
+                interval,
+                closed,
+                arg_type,
             },
-            #[cfg(feature = "dtype-datetime")]
+            #[cfg(all(feature = "range", feature = "dtype-datetime"))]
             RangeFunction::DatetimeRange {
                 interval,
                 closed,
                 time_unit,
                 time_zone,
+                arg_type,
             } => {
-                polars_ensure!(e[0].is_scalar(ctx.arena), ShapeMismatch: "non-scalar start passed to `datetime_range`");
-                polars_ensure!(e[1].is_scalar(ctx.arena), ShapeMismatch: "non-scalar end passed to `datetime_range`");
+                use DateRangeArgs::*;
+                let arg_names = match arg_type {
+                    StartEndSamples => vec!["start", "end", "num_samples"],
+                    StartEndInterval => vec!["start", "end"],
+                    StartIntervalSamples => vec!["start", "num_samples"],
+                    EndIntervalSamples => vec!["end", "num_samples"],
+                };
+                for (idx, &name) in arg_names.iter().enumerate() {
+                    polars_ensure!(e[idx].is_scalar(ctx.arena), ShapeMismatch: "non-scalar {name} passed to `datetime_range`");
+                }
                 IRRangeFunction::DatetimeRange {
                     interval,
                     closed,
                     time_unit,
                     time_zone,
+                    arg_type,
                 }
             },
-            #[cfg(feature = "dtype-datetime")]
+            #[cfg(all(feature = "range", feature = "dtype-datetime"))]
             RangeFunction::DatetimeRanges {
                 interval,
                 closed,
                 time_unit,
                 time_zone,
+                arg_type,
             } => IRRangeFunction::DatetimeRanges {
                 interval,
                 closed,
                 time_unit,
                 time_zone,
+                arg_type,
             },
-            #[cfg(feature = "dtype-time")]
+            #[cfg(all(feature = "range", feature = "dtype-time"))]
             RangeFunction::TimeRange { interval, closed } => {
                 polars_ensure!(e[0].is_scalar(ctx.arena), ShapeMismatch: "non-scalar start passed to `time_range`");
                 polars_ensure!(e[1].is_scalar(ctx.arena), ShapeMismatch: "non-scalar end passed to `time_range`");
                 IRRangeFunction::TimeRange { interval, closed }
             },
-            #[cfg(feature = "dtype-time")]
+            #[cfg(all(feature = "range", feature = "dtype-time"))]
             RangeFunction::TimeRanges { interval, closed } => {
                 IRRangeFunction::TimeRanges { interval, closed }
             },
@@ -748,7 +796,7 @@ pub(super) fn convert_functions(
         F::DropNans => I::DropNans,
         F::DropNulls => I::DropNulls,
         #[cfg(feature = "mode")]
-        F::Mode => I::Mode,
+        F::Mode { maintain_order } => I::Mode { maintain_order },
         #[cfg(feature = "moment")]
         F::Skew(v) => I::Skew(v),
         #[cfg(feature = "moment")]

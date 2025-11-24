@@ -104,6 +104,7 @@ from polars.series.array import ArrayNameSpace
 from polars.series.binary import BinaryNameSpace
 from polars.series.categorical import CatNameSpace
 from polars.series.datetime import DateTimeNameSpace
+from polars.series.ext import ExtensionNameSpace
 from polars.series.list import ListNameSpace
 from polars.series.plotting import SeriesPlot
 from polars.series.string import StringNameSpace
@@ -265,6 +266,7 @@ class Series:
         "bin",
         "cat",
         "dt",
+        "ext",
         "list",
         "plot",
         "str",
@@ -406,8 +408,8 @@ class Series:
              - The raw pointer to a C ArrowArray struct
              - The raw pointer to a C ArrowSchema struct
 
-        Warning
-        -------
+        Warnings
+        --------
         This will read the `array` pointer without moving it. The host process should
         garbage collect the heap pointer, but not its contents.
         """
@@ -433,16 +435,13 @@ class Series:
         The series should only contain a single chunk. If you want to export all chunks,
         first call `Series.get_chunks` to give you a list of chunks.
 
-        Warning
-        -------
-        Safety
-        This function will write to the pointers given in `out_ptr` and `out_schema_ptr`
-        and thus is highly unsafe.
-
-        Leaking
-        If you don't pass the ArrowArray struct to a consumer,
-        array memory will leak. This is a low-level function intended for
-        expert users.
+        Warnings
+        --------
+        * Safety: This function will write to the pointers given in `out_ptr`
+          and `out_schema_ptr` and thus is highly unsafe.
+        * Leaking: If you don't pass the ArrowArray struct to a consumer,
+          array memory will leak. This is a low-level function intended for
+          expert users.
         """
         self._s._export_arrow_to_c(out_ptr, out_schema_ptr)
 
@@ -1436,7 +1435,9 @@ class Series:
             raise TypeError(msg)
 
     def __array__(
-        self, dtype: npt.DTypeLike | None = None, copy: bool | None = None
+        self,
+        dtype: npt.DTypeLike | None = None,
+        copy: bool | None = None,  # noqa: FBT001
     ) -> np.ndarray[Any, Any]:
         """
         Return a NumPy ndarray with the given data type.
@@ -4187,11 +4188,18 @@ class Series:
         ]
         """
 
-    def explode(self) -> Series:
+    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Series:
         """
         Explode a list Series.
 
         This means that every item is expanded to a new row.
+
+        Parameters
+        ----------
+        empty_as_null
+            Explode an empty list into a `null`.
+        keep_nulls
+            Explode a `null` list into a `null`.
 
         Returns
         -------
@@ -4982,7 +4990,7 @@ class Series:
         """
         return self._s.len()
 
-    def set(self, filter: Series, value: int | float | str | bool | None) -> Series:
+    def set(self, filter: Series, value: Any) -> Series:
         """
         Set masked values.
 
@@ -5027,11 +5035,8 @@ class Series:
         │ 3       │
         └─────────┘
         """
-        f = get_ffi_func("set_with_mask_<>", self.dtype, self._s)
-        if f is None:
-            msg = f"Series of type {self.dtype} can not be set"
-            raise NotImplementedError(msg)
-        return self._from_pyseries(f(filter._s, value))
+        value_s = Series([value], dtype=self.dtype)
+        return wrap_s(self._s.set(filter._s, value_s._s))
 
     def scatter(
         self,
@@ -5150,10 +5155,10 @@ class Series:
             null
         ]
         """
-        if n < 0:
-            msg = f"`n` should be greater than or equal to 0, got {n}"
-            raise ValueError(msg)
-        # faster path
+        if not (is_int := isinstance(n, int)) or n < 0:  # type: ignore[redundant-expr]
+            msg = f"`n` should be an integer >= 0, got {n}"
+            err = TypeError if not is_int else ValueError
+            raise err(msg)
         if n == 0:
             return self._from_pyseries(self._s.clear())
         s = (
@@ -5445,11 +5450,16 @@ class Series:
             raise ShapeError(msg)
         return self._s.dot(other._s)
 
-    def mode(self) -> Series:
+    def mode(self, *, maintain_order: bool = False) -> Series:
         """
         Compute the most occurring value(s).
 
         Can return multiple Values.
+
+        Parameters
+        ----------
+        maintain_order
+            Maintain order of data. This requires more work.
 
         Examples
         --------
@@ -9160,21 +9170,35 @@ class Series:
         """Perform an aggregation of bitwise XORs."""
         return self._s.bitwise_xor()
 
-    def first(self) -> PythonLiteral | None:
+    def first(self, *, ignore_nulls: bool = False) -> PythonLiteral | None:
         """
         Get the first element of the Series.
 
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the first non-null value is returned, otherwise `None` is
+            returned if no non-null value exists.
+
         Returns `None` if the Series is empty.
         """
-        return self._s.first()
+        return self._s.first(ignore_nulls=ignore_nulls)
 
-    def last(self) -> PythonLiteral | None:
+    def last(self, *, ignore_nulls: bool = False) -> PythonLiteral | None:
         """
         Get the last element of the Series.
 
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the last non-null value is returned, otherwise `None` is
+            returned if no non-null value exists.
+
         Returns `None` if the Series is empty.
         """
-        return self._s.last()
+        return self._s.last(ignore_nulls=ignore_nulls)
 
     def approx_n_unique(self) -> PythonLiteral | None:
         """
@@ -9283,6 +9307,11 @@ class Series:
     def struct(self) -> StructNameSpace:
         """Create an object namespace of all struct related methods."""
         return StructNameSpace(self)
+
+    @property
+    def ext(self) -> ExtensionNameSpace:
+        """Create an object namespace of all extension type related methods."""
+        return ExtensionNameSpace(self)
 
     @property
     @unstable()

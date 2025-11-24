@@ -11,6 +11,8 @@ mod _serde;
 mod aliases;
 mod any_value;
 mod dtype;
+#[cfg(feature = "dtype-extension")]
+pub mod extension;
 mod field;
 mod into_scalar;
 #[cfg(feature = "object")]

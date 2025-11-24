@@ -3,6 +3,7 @@ use std::num::NonZeroUsize;
 use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_ops::frame::MaintainOrderJoin;
 use polars_ops::prelude::{JoinCoalesce, JoinValidation};
+use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
@@ -94,12 +95,31 @@ pub enum PhysNodeProperties {
         aggs: Vec<PlSmallStr>,
     },
     #[cfg(feature = "dynamic_group_by")]
+    DynamicGroupBy {
+        index_column: PlSmallStr,
+        period: PlSmallStr,
+        every: PlSmallStr,
+        offset: PlSmallStr,
+        start_by: PlSmallStr,
+        label: PlSmallStr,
+        include_boundaries: bool,
+        closed_window: PlSmallStr,
+        aggs: Vec<PlSmallStr>,
+        slice: Option<(u64, u64)>,
+    },
+    #[cfg(feature = "dynamic_group_by")]
     RollingGroupBy {
         index_column: PlSmallStr,
         period: PlSmallStr,
         offset: PlSmallStr,
         closed_window: PlSmallStr,
+        slice: Option<(u64, u64)>,
         aggs: Vec<PlSmallStr>,
+    },
+    SortedGroupBy {
+        key: PlSmallStr,
+        aggs: Vec<PlSmallStr>,
+        slice: Option<(IdxSize, IdxSize)>,
     },
     InMemoryMap {
         format_str: PlSmallStr,
@@ -136,7 +156,7 @@ pub enum PhysNodeProperties {
         maintain_order: MaintainOrderJoin,
         validation: JoinValidation,
         suffix: Option<PlSmallStr>,
-        slice: Option<[i128; 2]>,
+        slice: Option<(i64, u64)>,
     },
     InMemoryAsOfJoin {
         left_on: PlSmallStr,
@@ -147,7 +167,7 @@ pub enum PhysNodeProperties {
         /// [value, dtype_str]
         tolerance: Option<[PlSmallStr; 2]>,
         suffix: Option<PlSmallStr>,
-        slice: Option<[i128; 2]>,
+        slice: Option<(i64, u64)>,
         coalesce: JoinCoalesce,
         allow_eq: bool,
         check_sortedness: bool,
@@ -157,10 +177,11 @@ pub enum PhysNodeProperties {
         right_on: Vec<PlSmallStr>,
         inequality_operators: Vec<polars_ops::frame::InequalityOperator>,
         suffix: Option<PlSmallStr>,
-        slice: Option<[i128; 2]>,
+        slice: Option<(i64, u64)>,
     },
     Map {
         display_str: PlSmallStr,
+        format_str: PlSmallStr,
     },
     MultiScan {
         scan_type: PlSmallStr,
@@ -170,7 +191,7 @@ pub enum PhysNodeProperties {
         file_projection_builder_type: PlSmallStr,
         row_index_name: Option<PlSmallStr>,
         row_index_offset: Option<u64>,
-        pre_slice: Option<[i128; 2]>,
+        pre_slice: Option<(i64, u64)>,
         predicate: Option<PlSmallStr>,
         has_table_statistics: bool,
         include_file_paths: Option<PlSmallStr>,
@@ -179,8 +200,8 @@ pub enum PhysNodeProperties {
     },
     Multiplexer,
     NegativeSlice {
-        offset: i128,
-        length: i128,
+        offset: i64,
+        length: u64,
     },
     OrderedUnion {
         num_inputs: u64,
@@ -224,7 +245,7 @@ pub enum PhysNodeProperties {
     },
     Sort {
         by_exprs: Vec<PlSmallStr>,
-        slice: Option<[i128; 2]>,
+        slice: Option<(i64, u64)>,
         descending: Vec<bool>,
         nulls_last: Vec<bool>,
         multithreaded: bool,
@@ -232,8 +253,8 @@ pub enum PhysNodeProperties {
         limit: Option<u64>,
     },
     Slice {
-        offset: i128,
-        length: i128,
+        offset: i64,
+        length: u64,
     },
     TopK {
         by_exprs: Vec<PlSmallStr>,

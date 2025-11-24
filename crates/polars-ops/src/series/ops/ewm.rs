@@ -1,6 +1,6 @@
-pub use arrow::legacy::kernels::ewm::EWMOptions;
-use arrow::legacy::kernels::ewm::{ewm_std as kernel_ewm_std, ewm_var as kernel_ewm_var};
+pub use polars_compute::ewm::EWMOptions;
 use polars_compute::ewm::mean::ewm_mean as kernel_ewm_mean;
+use polars_compute::ewm::{ewm_std as kernel_ewm_std, ewm_var as kernel_ewm_var};
 use polars_core::prelude::*;
 
 fn check_alpha(alpha: f64) -> PolarsResult<()> {

@@ -11,15 +11,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Clear existing label
+      - name: Fetch PR merge commit
         run: |
-          curl -s \
-          -X DELETE \
-          -H 'Accept: application/vnd.github.v3+json' \
-          -H 'Authorization: token ${{ github.token }}' \
-          'https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.number }}/labels/changes-dsl' \
-          || true
+          git fetch origin refs/pull/${{ github.event.number }}/merge:pr-merge-commit
 
-      - uses: actions/labeler@v5
-        with:
-          configuration-path: .github/changes-dsl-labeler-config.yml
+      - name: Update label
+        run: |
+          if [ "$(git diff origin/main..pr-merge-commit crates/polars-plan/dsl-schema-hashes.json)" ]; then
+            curl -s \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H 'Authorization: token ${{ github.token }}' \
+            'https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.number }}/labels' \
+            -d '{"labels":["changes-dsl"]}' \
+            || true
+          else
+            curl -s \
+            -X DELETE \
+            -H 'Accept: application/vnd.github.v3+json' \
+            -H 'Authorization: token ${{ github.token }}' \
+            'https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.number }}/labels/changes-dsl' \
+            || true
+          fi

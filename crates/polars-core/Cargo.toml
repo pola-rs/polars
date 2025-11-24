@@ -123,11 +123,12 @@ dtype-i8 = []
 dtype-i16 = []
 dtype-i128 = ["polars-compute/dtype-i128"]
 dtype-decimal = ["arrow/dtype-decimal", "polars-compute/cast", "polars-compute/dtype-decimal", "dtype-i128"]
+dtype-extension = ["polars-dtype/dtype-extension"]
 dtype-u8 = []
 dtype-u16 = []
 dtype-u128 = ["polars-compute/dtype-u128"]
 dtype-f16 = ["polars-compute/dtype-f16"]
-dtype-categorical = []
+dtype-categorical = ["polars-dtype/dtype-categorical"]
 dtype-struct = []
 
 # scale to terabytes?

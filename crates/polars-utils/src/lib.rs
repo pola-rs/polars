@@ -84,3 +84,4 @@ pub mod pl_serialize;
 pub mod kahan_sum;
 pub use either;
 pub use idx_vec::UnitVec;
+pub mod chunked_bytes_cursor;

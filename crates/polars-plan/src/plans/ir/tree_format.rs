@@ -1,4 +1,4 @@
-use std::fmt;
+use std::fmt::{self, Write};
 
 use polars_core::error::*;
 use polars_utils::format_list_truncated;
@@ -25,14 +25,16 @@ impl fmt::Display for TreeFmtAExpr<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self.0 {
             AExpr::Element => "element()",
-            AExpr::Explode {
-                expr: _,
-                skip_empty: false,
-            } => "explode",
-            AExpr::Explode {
-                expr: _,
-                skip_empty: true,
-            } => "explode(skip_empty)",
+            AExpr::Explode { expr: _, options } => {
+                f.write_str("explode(")?;
+                match (options.empty_as_null, options.keep_nulls) {
+                    (true, true) => {},
+                    (true, false) => f.write_str("keep_nulls=false")?,
+                    (false, true) => f.write_str("empty_as_null=false")?,
+                    (false, false) => f.write_str("empty_as_null=false, keep_nulls=false")?,
+                }
+                return f.write_char(')');
+            },
             AExpr::Column(name) => return write!(f, "col({name})"),
             AExpr::Literal(lv) => return write!(f, "lit({lv:?})"),
             AExpr::BinaryExpr { op, .. } => return write!(f, "binary: {op}"),
@@ -76,7 +78,9 @@ impl fmt::Display for TreeFmtAExpr<'_> {
             },
             AExpr::Eval { .. } => "list.eval",
             AExpr::Function { function, .. } => return write!(f, "function: {function}"),
-            AExpr::Window { .. } => "window",
+            #[cfg(feature = "dynamic_group_by")]
+            AExpr::Rolling { .. } => "rolling",
+            AExpr::Over { .. } => "window",
             AExpr::Slice { .. } => "slice",
             AExpr::Len => constants::LEN,
         };
@@ -345,7 +349,7 @@ impl<'a> TreeFmtNode<'a> {
                                 SinkTypeIR::Memory => "SINK (memory)",
                                 SinkTypeIR::Callback(..) => "SINK (callback)",
                                 SinkTypeIR::File { .. } => "SINK (file)",
-                                SinkTypeIR::Partition { .. } => "SINK (partition)",
+                                SinkTypeIR::Partitioned { .. } => "SINK (partition)",
                             },
                         ),
                         vec![self.lp_node(None, *input)],

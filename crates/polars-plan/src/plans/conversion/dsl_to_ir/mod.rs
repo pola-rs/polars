@@ -5,12 +5,15 @@ use hive::hive_partitions_from_paths;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::config::verbose;
 use polars_utils::format_pl_smallstr;
+use polars_utils::itertools::Itertools;
 use polars_utils::plpath::PlPath;
 use polars_utils::unique_id::UniqueId;
 
 use super::convert_utils::SplitPredicates;
 use super::stack_opt::ConversionOptimizer;
 use super::*;
+use crate::constants::PL_ELEMENT_NAME;
+use crate::dsl::PartitionedSinkOptions;
 
 mod concat;
 mod datatype_fn_to_ir;
@@ -458,11 +461,51 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
         DslPlan::GroupBy {
             input,
             keys,
-            aggs,
+            predicates,
+            mut aggs,
             apply,
             maintain_order,
             options,
         } => {
+            // If the group by contains any predicates, we update the plan by turning the
+            // predicates into aggregations and filtering on them. Then, we recursively call
+            // this function.
+            if !predicates.is_empty() {
+                let predicate_names = (0..predicates.len())
+                    .map(|i| PlSmallStr::from_string(format!("__POLARS_HAVING_{i}")))
+                    .collect::<Arc<[_]>>();
+                let predicates = predicates
+                    .into_iter()
+                    .zip(predicate_names.iter())
+                    .map(|(p, name)| p.alias(name.clone()))
+                    .collect_vec();
+                aggs.extend(predicates);
+
+                let lp = DslPlan::GroupBy {
+                    input,
+                    keys,
+                    predicates: vec![],
+                    aggs,
+                    apply,
+                    maintain_order,
+                    options,
+                };
+                let lp = DslBuilder::from(lp)
+                    .filter(
+                        all_horizontal(
+                            predicate_names.iter().map(|n| col(n.clone())).collect_vec(),
+                        )
+                        .unwrap(),
+                    )
+                    .drop(Selector::ByName {
+                        names: predicate_names,
+                        strict: true,
+                    })
+                    .build();
+                return to_alp_impl(lp, ctxt);
+            }
+
+            // NOTE: As we went into this branch, we know that no predicates are provided.
             let input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(group_by)))?;
 
@@ -502,7 +545,6 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 maintain_order,
                 options,
             };
-
             return run_conversion(lp, ctxt, "group_by")
                 .map_err(|e| e.context(failed_here!(group_by)));
         },
@@ -668,22 +710,194 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             return run_conversion(lp, ctxt, "match_to_schema");
         },
         DslPlan::PipeWithSchema { input, callback } => {
-            let input_owned = owned(input);
-
             // Derive the schema from the input
-            let input = to_alp_impl(input_owned.clone(), ctxt)
-                .map_err(|e| e.context(failed_here!(pipe_with_schema)))?;
-            let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
+            let mut inputs = Vec::with_capacity(input.len());
+            let mut input_schemas = Vec::with_capacity(input.len());
 
-            let input_owned = DslPlan::IR {
-                dsl: Arc::new(input_owned),
-                version: ctxt.lp_arena.version(),
-                node: Some(input),
-            };
+            for plan in input.as_ref() {
+                let ir = to_alp_impl(plan.clone(), ctxt)?;
+                let schema = ctxt.lp_arena.get(ir).schema(ctxt.lp_arena).into_owned();
+
+                let dsl = DslPlan::IR {
+                    dsl: Arc::new(plan.clone()),
+                    version: ctxt.lp_arena.version(),
+                    node: Some(ir),
+                };
+                inputs.push(dsl);
+                input_schemas.push(schema);
+            }
 
             // Adjust the input and start conversion again
-            let input_adjusted = callback.call((input_owned, input_schema.into_owned()))?;
+            let input_adjusted = callback.call((inputs, input_schemas))?;
             return to_alp_impl(input_adjusted, ctxt);
+        },
+        #[cfg(feature = "pivot")]
+        DslPlan::Pivot {
+            input,
+            on,
+            on_columns,
+            index,
+            values,
+            agg,
+            maintain_order,
+            separator,
+        } => {
+            let input =
+                to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(unique)))?;
+            let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
+
+            let on = on.into_columns(input_schema.as_ref(), &Default::default())?;
+            let index = index.into_columns(input_schema.as_ref(), &Default::default())?;
+            let values = values.into_columns(input_schema.as_ref(), &Default::default())?;
+
+            polars_ensure!(!on.is_empty(), InvalidOperation: "`pivot` called without `on` columns.");
+            polars_ensure!(on.len() == on_columns.width(), InvalidOperation: "`pivot` expected `on` and `on_columns` to have the same amount of columns.");
+            if on.len() > 1 {
+                polars_ensure!(
+                    on_columns.get_columns().iter().zip(on.iter()).all(|(c, o)| o == c.name()),
+                    InvalidOperation: "`pivot` has mismatching column names between `on` and `on_columns`."
+                );
+            }
+            polars_ensure!(!values.is_empty(), InvalidOperation: "`pivot` called without `values` columns.");
+
+            let on_titles = if on_columns.width() == 1 {
+                on_columns.get_columns()[0].cast(&DataType::String)?
+            } else {
+                on_columns
+                    .as_ref()
+                    .clone()
+                    .into_struct(PlSmallStr::EMPTY)
+                    .cast(&DataType::String)?
+                    .into_column()
+            };
+            let on_titles = on_titles.str()?;
+
+            let mut expr_schema = input_schema.as_ref().as_ref().clone();
+            let mut out = Vec::with_capacity(1);
+            let mut aggs = Vec::<ExprIR>::with_capacity(values.len() * on_columns.height());
+            for value in values.iter() {
+                out.clear();
+                let value_dtype = input_schema.try_get(value)?;
+                expr_schema.insert(PL_ELEMENT_NAME.clone(), value_dtype.clone());
+                expand_expression(
+                    &agg,
+                    &Default::default(),
+                    &expr_schema,
+                    &mut out,
+                    ctxt.opt_flags,
+                )?;
+                polars_ensure!(
+                    out.len() == 1,
+                    InvalidOperation: "Pivot expression are not allowed to expand to more than 1 expression"
+                );
+                let agg = out.pop().unwrap();
+                let agg_ae = to_expr_ir(
+                    agg,
+                    &mut ExprToIRContext::new_with_opt_eager(
+                        ctxt.expr_arena,
+                        &expr_schema,
+                        ctxt.opt_flags,
+                    ),
+                )?
+                .node();
+
+                polars_ensure!(
+                    aexpr_to_leaf_names_iter(agg_ae, ctxt.expr_arena).count() == 0,
+                    InvalidOperation: "explicit column references are not allowed in the `aggregate_function` of `pivot`"
+                );
+
+                for i in 0..on_columns.height() {
+                    let mut name = String::new();
+                    if values.len() > 1 {
+                        name.push_str(value.as_str());
+                        name.push_str(separator.as_str());
+                    }
+
+                    name.push_str(on_titles.get(i).unwrap_or("null"));
+
+                    fn on_predicate(
+                        on: &PlSmallStr,
+                        on_column: &Column,
+                        i: usize,
+                        expr_arena: &mut Arena<AExpr>,
+                    ) -> AExprBuilder {
+                        let e = AExprBuilder::col(on.clone(), expr_arena);
+                        e.eq(
+                            AExprBuilder::lit_scalar(
+                                Scalar::new(
+                                    on_column.dtype().clone(),
+                                    on_column.get(i).unwrap().into_static(),
+                                ),
+                                expr_arena,
+                            ),
+                            expr_arena,
+                        )
+                    }
+
+                    let predicate = if on.len() == 1 {
+                        on_predicate(&on[0], &on_columns.get_columns()[0], i, ctxt.expr_arena)
+                    } else {
+                        AExprBuilder::function(
+                            on.iter()
+                                .enumerate()
+                                .map(|(j, on_col)| {
+                                    on_predicate(
+                                        on_col,
+                                        &on_columns.get_columns()[j],
+                                        i,
+                                        ctxt.expr_arena,
+                                    )
+                                    .expr_ir(on_col.clone())
+                                })
+                                .collect::<Vec<_>>(),
+                            IRFunctionExpr::Boolean(IRBooleanFunction::AllHorizontal),
+                            ctxt.expr_arena,
+                        )
+                    };
+
+                    let replacement_element = AExprBuilder::col(value.clone(), ctxt.expr_arena)
+                        .filter(predicate, ctxt.expr_arena)
+                        .node();
+
+                    #[recursive::recursive]
+                    fn deep_clone_element_replace(
+                        ae: Node,
+                        arena: &mut Arena<AExpr>,
+                        replacement: Node,
+                    ) -> Node {
+                        let slf = arena.get(ae).clone();
+                        if matches!(slf, AExpr::Element) {
+                            return deep_clone_ae(replacement, arena);
+                        } else if matches!(slf, AExpr::Len) {
+                            // For backwards-compatibility, we support providing `pl.len()` to mean
+                            // the length of the group here.
+                            let element = deep_clone_ae(replacement, arena);
+                            return AExprBuilder::new_from_node(element).len(arena).node();
+                        }
+
+                        let mut children = vec![];
+                        slf.children_rev(&mut children);
+                        for child in &mut children {
+                            *child = deep_clone_element_replace(*child, arena, replacement);
+                        }
+                        children.reverse();
+
+                        arena.add(slf.replace_children(&children))
+                    }
+                    aggs.push(ExprIR::new(
+                        deep_clone_element_replace(agg_ae, ctxt.expr_arena, replacement_element),
+                        OutputName::Alias(name.into()),
+                    ));
+                }
+            }
+
+            let keys = index
+                .into_iter()
+                .map(|i| AExprBuilder::col(i.clone(), ctxt.expr_arena).expr_ir(i))
+                .collect();
+            IRBuilder::new(input, ctxt.expr_arena, ctxt.lp_arena)
+                .group_by(keys, aggs, None, maintain_order, Default::default())
+                .build()
         },
         DslPlan::Distinct { input, options } => {
             let input =
@@ -792,6 +1006,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             match function {
                 DslFunction::Explode {
                     columns,
+                    options,
                     allow_empty,
                 } => {
                     let columns = columns.into_columns(&input_schema, &Default::default())?;
@@ -801,6 +1016,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     }
                     let function = FunctionIR::Explode {
                         columns: columns.into_iter().collect(),
+                        options,
                         schema: Default::default(),
                     };
                     let ir = IR::MapFunction { input, function };
@@ -1030,85 +1246,93 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let payload = match payload {
                 SinkType::Memory => SinkTypeIR::Memory,
                 SinkType::Callback(f) => SinkTypeIR::Callback(f),
-                SinkType::File(f) => SinkTypeIR::File(f),
-                SinkType::Partition(f) => SinkTypeIR::Partition(PartitionSinkTypeIR {
-                    base_path: f.base_path,
-                    file_path_cb: f.file_path_cb,
-                    file_type: f.file_type,
-                    sink_options: f.sink_options,
-                    variant: match f.variant {
-                        PartitionVariant::MaxSize(max_size) => {
-                            PartitionVariantIR::MaxSize(max_size)
-                        },
-                        PartitionVariant::Parted {
-                            key_exprs,
-                            include_key,
-                        } => {
-                            let eirs = to_expr_irs(
-                                key_exprs,
-                                &mut ExprToIRContext::new_with_opt_eager(
-                                    ctxt.expr_arena,
-                                    &input_schema,
-                                    ctxt.opt_flags,
-                                ),
-                            )?;
-                            ctxt.conversion_optimizer
-                                .fill_scratch(&eirs, ctxt.expr_arena);
+                SinkType::File(options) => SinkTypeIR::File(options),
+                SinkType::Partitioned(PartitionedSinkOptions {
+                    base_path,
+                    file_path_provider,
+                    partition_strategy,
+                    finish_callback,
+                    file_format,
+                    unified_sink_args,
+                }) => {
+                    let expr_to_ir_cx = &mut ExprToIRContext::new_with_opt_eager(
+                        ctxt.expr_arena,
+                        &input_schema,
+                        ctxt.opt_flags,
+                    );
 
-                            PartitionVariantIR::Parted {
-                                key_exprs: eirs,
-                                include_key,
-                            }
-                        },
-                        PartitionVariant::ByKey {
-                            key_exprs,
-                            include_key,
+                    let partition_strategy = match partition_strategy {
+                        PartitionStrategy::Keyed {
+                            keys,
+                            include_keys,
+                            keys_pre_grouped,
+                            per_partition_sort_by,
                         } => {
-                            let eirs = to_expr_irs(
-                                key_exprs,
-                                &mut ExprToIRContext::new_with_opt_eager(
-                                    ctxt.expr_arena,
-                                    &input_schema,
-                                    ctxt.opt_flags,
-                                ),
-                            )?;
-                            ctxt.conversion_optimizer
-                                .fill_scratch(&eirs, ctxt.expr_arena);
-
-                            PartitionVariantIR::ByKey {
-                                key_exprs: eirs,
-                                include_key,
-                            }
-                        },
-                    },
-                    cloud_options: f.cloud_options,
-                    per_partition_sort_by: match f.per_partition_sort_by {
-                        None => None,
-                        Some(sort_by) => Some(
-                            sort_by
+                            let keys = to_expr_irs(keys, expr_to_ir_cx)?;
+                            let per_partition_sort_by: Vec<SortColumnIR> = per_partition_sort_by
                                 .into_iter()
                                 .map(|s| {
-                                    let expr = to_expr_ir(
-                                        s.expr,
-                                        &mut ExprToIRContext::new_with_opt_eager(
-                                            ctxt.expr_arena,
-                                            &input_schema,
-                                            ctxt.opt_flags,
-                                        ),
-                                    )?;
-                                    ctxt.conversion_optimizer
-                                        .push_scratch(expr.node(), ctxt.expr_arena);
-                                    Ok(SortColumnIR {
+                                    let SortColumn {
                                         expr,
-                                        descending: s.descending,
-                                        nulls_last: s.nulls_last,
+                                        descending,
+                                        nulls_last,
+                                    } = s;
+                                    Ok(SortColumnIR {
+                                        expr: to_expr_ir(expr, expr_to_ir_cx)?,
+                                        descending,
+                                        nulls_last,
                                     })
                                 })
-                                .collect::<PolarsResult<Vec<_>>>()?,
-                        ),
-                    },
-                    finish_callback: f.finish_callback,
-                }),
+                                .collect::<PolarsResult<_>>()?;
+
+                            PartitionStrategyIR::Keyed {
+                                keys,
+                                include_keys,
+                                keys_pre_grouped,
+                                per_partition_sort_by,
+                            }
+                        },
+                        PartitionStrategy::MaxRowsPerFile {
+                            max_rows_per_file,
+                            per_file_sort_by,
+                        } => {
+                            let per_file_sort_by: Vec<SortColumnIR> = per_file_sort_by
+                                .into_iter()
+                                .map(|s| {
+                                    let SortColumn {
+                                        expr,
+                                        descending,
+                                        nulls_last,
+                                    } = s;
+                                    Ok(SortColumnIR {
+                                        expr: to_expr_ir(expr, expr_to_ir_cx)?,
+                                        descending,
+                                        nulls_last,
+                                    })
+                                })
+                                .collect::<PolarsResult<_>>()?;
+
+                            PartitionStrategyIR::MaxRowsPerFile {
+                                max_rows_per_file,
+                                per_file_sort_by,
+                            }
+                        },
+                    };
+
+                    let options = PartitionedSinkOptionsIR {
+                        base_path,
+                        file_path_provider,
+                        partition_strategy,
+                        finish_callback,
+                        file_format,
+                        unified_sink_args,
+                    };
+
+                    ctxt.conversion_optimizer
+                        .fill_scratch(options.expr_irs_iter(), ctxt.expr_arena);
+
+                    SinkTypeIR::Partitioned(options)
+                },
             };
 
             let lp = IR::Sink { input, payload };
@@ -1296,6 +1520,7 @@ fn resolve_group_by(
 
     Ok((keys, aggs, Arc::new(output_schema)))
 }
+
 fn stats_helper<F, E>(condition: F, expr: E, schema: &Schema) -> Vec<Expr>
 where
     F: Fn(&DataType) -> bool,

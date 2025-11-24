@@ -140,10 +140,11 @@ impl StructChunked {
 
         let field_series = self.fields_as_series();
         for (i, s) in field_series.iter().enumerate() {
-            if let Cow::Owned(physical) = s.to_physical_repr() {
+            let phys = s.to_physical_repr();
+            if phys.dtype() != s.dtype() {
                 physicals.reserve(field_series.len());
                 physicals.extend(field_series[..i].iter().cloned());
-                physicals.push(physical);
+                physicals.push(phys.into_owned());
                 break;
             }
         }
@@ -357,13 +358,27 @@ impl StructChunked {
             .map(func)
             .collect::<PolarsResult<Vec<_>>>()?;
         Self::from_series(self.name().clone(), self.len(), fields.iter()).map(|mut ca| {
+            assert_eq!(ca.len(), self.len());
             if self.null_count > 0 {
-                // SAFETY: we don't change types/ lengths.
-                unsafe {
-                    for (new, this) in ca.downcast_iter_mut().zip(self.downcast_iter()) {
+                if ca
+                    .chunk_lengths()
+                    .zip(self.chunk_lengths())
+                    .all(|(l, r)| l == r)
+                {
+                    // SAFETY: only null_count adjusted, recalculated afterwards.
+                    for (new, this) in unsafe { ca.downcast_iter_mut() }.zip(self.downcast_iter()) {
                         new.set_validity(this.validity().cloned())
                     }
+                } else {
+                    let mut slf_validity = self.rechunk_validity().unwrap();
+                    // SAFETY: only null_count adjusted, recalculated afterwards.
+                    for new in unsafe { ca.downcast_iter_mut() } {
+                        let this_validity;
+                        (this_validity, slf_validity) = slf_validity.split_at(new.len());
+                        new.set_validity((this_validity.unset_bits() > 0).then_some(this_validity));
+                    }
                 }
+                ca.compute_len();
             }
             ca
         })

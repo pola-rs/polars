@@ -1004,6 +1004,17 @@ class ExprListNameSpace:
         │ [10, 2, 1]  ┆ [2, 1]    │
         └─────────────┴───────────┘
         """
+        if isinstance(offset, Collection) and not isinstance(offset, str):
+            msg = f"'offset' must be an integer, string, or expression, not {type(offset).__name__}"
+            raise TypeError(msg)
+        if (
+            length is not None
+            and isinstance(length, Collection)
+            and not isinstance(length, str)
+        ):
+            msg = f"'length' must be an integer, string, or expression, not {type(length).__name__}"
+            raise TypeError(msg)
+
         offset_pyexpr = parse_into_expression(offset)
         length_pyexpr = parse_into_expression(length)
         return wrap_expr(self._pyexpr.list_slice(offset_pyexpr, length_pyexpr))
@@ -1059,9 +1070,16 @@ class ExprListNameSpace:
         n_pyexpr = parse_into_expression(n)
         return wrap_expr(self._pyexpr.list_tail(n_pyexpr))
 
-    def explode(self) -> Expr:
+    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Expr:
         """
         Returns a column with a separate row for every list element.
+
+        Parameters
+        ----------
+        empty_as_null
+            Explode an empty list into a `null`.
+        keep_nulls
+            Explode a `null` list into a `null`.
 
         Returns
         -------
@@ -1090,7 +1108,9 @@ class ExprListNameSpace:
         │ 6   │
         └─────┘
         """
-        return wrap_expr(self._pyexpr.explode())
+        return wrap_expr(
+            self._pyexpr.explode(empty_as_null=empty_as_null, keep_nulls=keep_nulls)
+        )
 
     def count_matches(self, element: IntoExpr) -> Expr:
         """

@@ -15,7 +15,7 @@ use binary::process_binary;
 ))]
 use datetime::coerce_temporal_dt;
 #[cfg(all(feature = "range", feature = "dtype-datetime"))]
-use datetime::temporal_range_output_type;
+use datetime::{ensure_datetime, ensure_int, temporal_range_output_type};
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 #[cfg(all(
@@ -23,7 +23,10 @@ use polars_core::prelude::*;
     any(feature = "dtype-date", feature = "dtype-datetime")
 ))]
 use polars_core::utils::try_get_supertype;
-use polars_core::utils::{get_supertype, get_supertype_with_options, materialize_dyn_int};
+use polars_core::utils::{
+    get_numeric_upcast_supertype_lossless, get_supertype, get_supertype_with_options,
+    materialize_dyn_int,
+};
 use polars_utils::format_list;
 use polars_utils::itertools::Itertools;
 
@@ -535,24 +538,9 @@ impl OptimizationRule for TypeCoercionRule {
                             }
                         },
                         CastingRules::FirstArgLossless => {
-                            if super_type.is_integer() {
-                                for other in &input[1..] {
-                                    let other = other.dtype(schema, expr_arena)?;
-                                    if other.is_float() {
-                                        polars_bail!(InvalidOperation: "cannot cast lossless between {} and {}", super_type, other)
-                                    }
-                                }
-                            }
-                            if super_type.is_categorical() || super_type.is_enum() {
-                                for other in &input[1..] {
-                                    let other = other.dtype(schema, expr_arena)?;
-                                    if !(other.is_string()
-                                        || other.is_null()
-                                        || *other == super_type)
-                                    {
-                                        polars_bail!(InvalidOperation: "cannot cast lossless between {} and {}", super_type, other)
-                                    }
-                                }
+                            for other in &input[1..] {
+                                let other = other.dtype(schema, expr_arena)?;
+                                can_cast_to_lossless(&super_type, other)?;
                             }
                         },
                     }
@@ -941,7 +929,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     options,
                 })
             },
-            #[cfg(feature = "range")]
+            #[cfg(feature = "moment")]
             AExpr::Function {
                 function: ref function @ (IRFunctionExpr::Skew(..) | IRFunctionExpr::Kurtosis(..)),
                 ref input,
@@ -975,34 +963,72 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     ref function @ IRFunctionExpr::Range(IRRangeFunction::DateRange {
                         interval: _,
                         closed: _,
+                        arg_type,
                     })
                     | ref function @ IRFunctionExpr::Range(IRRangeFunction::DateRanges {
                         interval: _,
                         closed: _,
+                        arg_type,
                     }),
                 ref input,
                 options,
             } => {
+                let (from_types, to_types) = match arg_type {
+                    DateRangeArgs::StartEndInterval => {
+                        let start = try_get_dtype(expr_arena, input[0].node(), schema)?;
+                        let end = try_get_dtype(expr_arena, input[1].node(), schema)?;
+                        ensure_datetime!(start);
+                        ensure_datetime!(end);
+                        let from_types = [Some(start), Some(end), None];
+                        let to_types = [Some(DataType::Date), Some(DataType::Date), None];
+                        (from_types, to_types)
+                    },
+                    DateRangeArgs::StartEndSamples => {
+                        let start = try_get_dtype(expr_arena, input[0].node(), schema)?;
+                        let end = try_get_dtype(expr_arena, input[1].node(), schema)?;
+                        let num_samples = try_get_dtype(expr_arena, input[2].node(), schema)?;
+                        ensure_datetime!(start);
+                        ensure_datetime!(end);
+                        ensure_int!(num_samples);
+                        let from_types = [Some(start), Some(end), Some(num_samples)];
+                        let to_types = [
+                            Some(DataType::Date),
+                            Some(DataType::Date),
+                            Some(DataType::Int64),
+                        ];
+                        (from_types, to_types)
+                    },
+                    DateRangeArgs::StartIntervalSamples => {
+                        let start = try_get_dtype(expr_arena, input[0].node(), schema)?;
+                        let num_samples = try_get_dtype(expr_arena, input[1].node(), schema)?;
+                        ensure_datetime!(start);
+                        ensure_int!(num_samples);
+                        let from_types = [Some(start), Some(num_samples), None];
+                        let to_types = [Some(DataType::Date), Some(DataType::Int64), None];
+                        (from_types, to_types)
+                    },
+                    DateRangeArgs::EndIntervalSamples => {
+                        let end = try_get_dtype(expr_arena, input[0].node(), schema)?;
+                        let num_samples = try_get_dtype(expr_arena, input[1].node(), schema)?;
+                        ensure_datetime!(end);
+                        ensure_int!(num_samples);
+                        let from_types = [Some(end), Some(num_samples), None];
+                        let to_types = [Some(DataType::Date), Some(DataType::Int64), None];
+                        (from_types, to_types)
+                    },
+                };
+
+                let from_iter = from_types.into_iter();
+                let to_iter = to_types.into_iter();
                 let mut input = input.clone();
                 let function = function.clone();
-
-                // Determine the current and target dtypes.
-                let type_start = try_get_dtype(expr_arena, input[0].node(), schema)?;
-                let type_end = try_get_dtype(expr_arena, input[1].node(), schema)?;
-                let from_types = [type_start, type_end];
-
-                // Upcast input expressions if necessary.
-                let from_iter = from_types.into_iter();
                 let mut modified = false;
-                for (i, from_dtype) in from_iter.enumerate() {
-                    if from_dtype != DataType::Date {
-                        modified = true;
-                        coerce_temporal_dt(
-                            &from_dtype,
-                            &DataType::Date,
-                            &mut input[i],
-                            expr_arena,
-                        )?;
+                for (i, (from_dtype, to_dtype)) in from_iter.zip(to_iter).enumerate() {
+                    if let (Some(from_dt), Some(to_dt)) = (from_dtype, to_dtype) {
+                        if from_dt != to_dt {
+                            modified = true;
+                            coerce_temporal_dt(&from_dt, &to_dt, &mut input[i], expr_arena)?;
+                        }
                     }
                 }
 
@@ -1024,33 +1050,81 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                         closed: _,
                         time_unit: ref tu,
                         time_zone: ref tz,
+                        arg_type,
                     })
                     | ref function @ IRFunctionExpr::Range(IRRangeFunction::DatetimeRanges {
                         ref interval,
                         closed: _,
                         time_unit: ref tu,
                         time_zone: ref tz,
+                        arg_type,
                     }),
                 ref input,
                 options,
             } => {
+                let (from_types, to_types) = match arg_type {
+                    DateRangeArgs::StartEndInterval => {
+                        let start = try_get_dtype(expr_arena, input[0].node(), schema)?;
+                        let end = try_get_dtype(expr_arena, input[1].node(), schema)?;
+                        ensure_datetime!(start);
+                        ensure_datetime!(end);
+                        let initial_st = try_get_supertype(&start, &end).unwrap();
+                        let supertype = temporal_range_output_type(initial_st, tu, tz, interval)?;
+                        let from_types = [Some(start), Some(end), None];
+                        let to_types = [Some(supertype.clone()), Some(supertype), None];
+                        (from_types, to_types)
+                    },
+                    DateRangeArgs::StartEndSamples => {
+                        let start = try_get_dtype(expr_arena, input[0].node(), schema)?;
+                        let end = try_get_dtype(expr_arena, input[1].node(), schema)?;
+                        let num_samples = try_get_dtype(expr_arena, input[2].node(), schema)?;
+                        ensure_datetime!(start);
+                        ensure_datetime!(end);
+                        ensure_int!(num_samples);
+                        let initial_st = try_get_supertype(&start, &end)?;
+                        let supertype = temporal_range_output_type(initial_st, tu, tz, interval)?;
+                        let from_types = [Some(start), Some(end), Some(num_samples)];
+                        let to_types = [
+                            Some(supertype.clone()),
+                            Some(supertype),
+                            Some(DataType::Int64),
+                        ];
+                        (from_types, to_types)
+                    },
+                    DateRangeArgs::StartIntervalSamples => {
+                        let start = try_get_dtype(expr_arena, input[0].node(), schema)?;
+                        let num_samples = try_get_dtype(expr_arena, input[1].node(), schema)?;
+                        ensure_datetime!(start);
+                        ensure_int!(num_samples);
+                        let supertype =
+                            temporal_range_output_type(start.clone(), tu, tz, interval)?;
+                        let from_types = [Some(start), Some(num_samples), None];
+                        let to_types = [Some(supertype), Some(DataType::Int64), None];
+                        (from_types, to_types)
+                    },
+                    DateRangeArgs::EndIntervalSamples => {
+                        let end = try_get_dtype(expr_arena, input[0].node(), schema)?;
+                        let num_samples = try_get_dtype(expr_arena, input[1].node(), schema)?;
+                        ensure_datetime!(end);
+                        ensure_int!(num_samples);
+                        let supertype = temporal_range_output_type(end.clone(), tu, tz, interval)?;
+                        let from_types = [Some(end), Some(num_samples), None];
+                        let to_types = [Some(supertype), Some(DataType::Int64), None];
+                        (from_types, to_types)
+                    },
+                };
+
+                let from_iter = from_types.into_iter();
+                let to_iter = to_types.into_iter();
                 let mut input = input.clone();
                 let function = function.clone();
-
-                // Determine the current and target dtypes.
-                let type_start = try_get_dtype(expr_arena, input[0].node(), schema)?;
-                let type_end = try_get_dtype(expr_arena, input[1].node(), schema)?;
-                let default = try_get_supertype(&type_start, &type_end)?;
-                let supertype = temporal_range_output_type(default, tu, tz, interval)?;
-                let from_types = [type_start, type_end];
-
-                // Upcast input expressions if necessary.
-                let from_iter = from_types.into_iter();
                 let mut modified = false;
-                for (i, from_dtype) in from_iter.enumerate() {
-                    if from_dtype != supertype {
-                        modified = true;
-                        coerce_temporal_dt(&from_dtype, &supertype, &mut input[i], expr_arena)?;
+                for (i, (from_dtype, to_dtype)) in from_iter.zip(to_iter).enumerate() {
+                    if let (Some(from_dt), Some(to_dt)) = (from_dtype, to_dtype) {
+                        if from_dt != to_dt {
+                            modified = true;
+                            coerce_temporal_dt(&from_dt, &to_dt, &mut input[i], expr_arena)?;
+                        }
                     }
                 }
 
@@ -1278,4 +1352,124 @@ fn inline_implode(expr: Node, expr_arena: &mut Arena<AExpr>) -> PolarsResult<Opt
     };
 
     Ok(out)
+}
+
+/// Can we cast the `from` dtype to the `to` dtype without losing information?
+fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
+    let can_cast = match (to, from) {
+        (a, b) if a == b => true,
+        (_, DataType::Null) => true,
+        // Here we know the exact value, so we can report it to the user if it
+        // doesn't fit:
+        (to, DataType::Unknown(UnknownKind::Int(value))) => match to {
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(to_precision, to_scale)
+                if {
+                    let max = 10i128.pow((to_precision - to_scale) as u32);
+                    let min = -max;
+                    *value < max && *value > min
+                } =>
+            {
+                true
+            },
+            to if to.is_integer() && to.value_within_range(AnyValue::Int128(*value)) => true,
+            // For floats, make sure it's in range where all integers convert
+            // losslessly; this isn't quite every possible value that can be
+            // converted losslessly, but it's good enough:
+            DataType::Float32 if (*value < 2i128.pow(24)) && (*value > -2i128.pow(24)) => true,
+            DataType::Float64 if (*value < 2i128.pow(53)) && (*value > -2i128.pow(53)) => true,
+            // Make sure we have error message that reports the value:
+            _ => polars_bail!(InvalidOperation: "cannot cast {} losslessly to {}", value, to),
+        },
+        (
+            DataType::Float32,
+            DataType::UInt8 | DataType::UInt16 | DataType::Int8 | DataType::Int16,
+        ) => true,
+        (
+            DataType::Float64,
+            DataType::UInt8
+            | DataType::UInt16
+            | DataType::UInt32
+            | DataType::Int8
+            | DataType::Int16
+            | DataType::Int32,
+        ) => true,
+        // When casting unknown float to Float32 we can't tell if the value will
+        // fit, so can't do anything. When casting to Float64 we can assume
+        // it'll work since presumably it's no larger than a f64 in practice.
+        (DataType::Float64, DataType::Unknown(UnknownKind::Float)) => true,
+        // Handles both String and UnknownKind::Str:
+        (DataType::String, from) => from.is_string(),
+        (to, from) if to.is_primitive_numeric() && from.is_primitive_numeric() => {
+            if let Some(upcast) = get_numeric_upcast_supertype_lossless(to, from) {
+                &upcast == to
+            } else {
+                false
+            }
+        },
+        #[cfg(feature = "dtype-categorical")]
+        (DataType::Enum(_, _), from) => from.is_string(),
+        #[cfg(feature = "dtype-categorical")]
+        (DataType::Categorical(_, _), from) => from.is_string(),
+        #[cfg(feature = "dtype-decimal")]
+        (DataType::Decimal(p_to, s_to), DataType::Decimal(p_from, s_from)) => {
+            // 1. The numbers in `from` should fit in `to`'s range.
+            // 2. The scale in `from` should fit in `to`'s scale.
+            ((p_to - s_to) >= (p_from - s_from)) && (s_to >= s_from)
+        },
+        #[cfg(feature = "dtype-decimal")]
+        (DataType::Decimal(p_to, s_to), dt) if dt.is_integer() => {
+            // Given the precision and scale of decimals, figure out the ranges
+            // of expressible integers:
+            let max_int_value = 10i128.pow((*p_to - *s_to) as u32) - 1;
+            let min_int_value = -max_int_value;
+            // The datatype's range must fit in the decimal datatypes's range:
+            max_int_value >= dt.max().unwrap().value().extract::<i128>().unwrap()
+                && min_int_value <= dt.min().unwrap().value().extract::<i128>().unwrap()
+        },
+        // Can't check for more granular time_unit in less-granular time_unit
+        // data, or we'll cast away valid/necessary precision (eg: nanosecs to
+        // millisecs):
+        (DataType::Datetime(to_unit, _), DataType::Datetime(from_unit, _)) => to_unit <= from_unit,
+        (DataType::Duration(to_unit), DataType::Duration(from_unit)) => to_unit <= from_unit,
+        (DataType::List(to), DataType::List(from)) => return can_cast_to_lossless(to, from),
+        #[cfg(feature = "dtype-array")]
+        (DataType::List(to), DataType::Array(from, _)) => return can_cast_to_lossless(to, from),
+        // If list doesn't fit array size it'll get handled when casting
+        // actually happens.
+        #[cfg(feature = "dtype-array")]
+        (DataType::Array(to, _), DataType::List(from)) => return can_cast_to_lossless(to, from),
+        #[cfg(feature = "dtype-array")]
+        (DataType::Array(to, to_count), DataType::Array(from, from_count)) => {
+            if from_count != to_count {
+                false
+            } else {
+                return can_cast_to_lossless(to, from);
+            }
+        },
+        #[cfg(feature = "dtype-struct")]
+        (DataType::Struct(to_fields), DataType::Struct(from_fields)) => {
+            if to_fields.len() != from_fields.len() {
+                false
+            } else {
+                return to_fields.iter().zip(from_fields.iter()).try_for_each(
+                    |(to_field, from_field)| {
+                        polars_ensure!(
+                            to_field.name == from_field.name,
+                            InvalidOperation:
+                            "cannot cast losslessly from {} to {}",
+                            from,
+                            to
+                        );
+                        can_cast_to_lossless(&to_field.dtype, &from_field.dtype)
+                    },
+                );
+            }
+        },
+        _ => false,
+    };
+    if !can_cast {
+        polars_bail!(InvalidOperation: "cannot cast losslessly from {} to {}", from, to)
+    }
+    Ok(())
 }

@@ -356,6 +356,10 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
         self.0.physical().arg_unique()
     }
 
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        ChunkUnique::unique_id(self.0.physical())
+    }
+
     fn is_null(&self) -> BooleanChunked {
         self.0.is_null()
     }
@@ -378,33 +382,30 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
 
     fn max_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.physical().max_reduce();
-        let av = sc.value().cast(self.dtype()).into_static();
+        let av = sc.value().as_date();
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
     fn min_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.physical().min_reduce();
-        let av = sc.value().cast(self.dtype()).into_static();
+        let av = sc.value().as_date();
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
+    #[cfg(feature = "dtype-datetime")]
     fn mean_reduce(&self) -> PolarsResult<Scalar> {
         let mean = self.mean().map(|v| (v * US_IN_DAY as f64) as i64);
-        Ok(Scalar::new(
-            DataType::Datetime(TimeUnit::Microseconds, None),
-            mean.into(),
-        ))
+        let dtype = DataType::Datetime(TimeUnit::Microseconds, None);
+        let av = AnyValue::from(mean).as_datetime(TimeUnit::Microseconds, None);
+        Ok(Scalar::new(dtype, av))
     }
 
+    #[cfg(feature = "dtype-datetime")]
     fn median_reduce(&self) -> PolarsResult<Scalar> {
-        let av: AnyValue = self
-            .median()
-            .map(|v| (v * (US_IN_DAY as f64)) as i64)
-            .into();
-        Ok(Scalar::new(
-            DataType::Datetime(TimeUnit::Microseconds, None),
-            av,
-        ))
+        let median = self.median().map(|v| (v * (US_IN_DAY as f64)) as i64);
+        let dtype = DataType::Datetime(TimeUnit::Microseconds, None);
+        let av = AnyValue::from(median).as_datetime(TimeUnit::Microseconds, None);
+        Ok(Scalar::new(dtype, av))
     }
 
     #[cfg(feature = "approx_unique")]

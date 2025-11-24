@@ -27,7 +27,7 @@ pub use traverse::*;
 mod properties;
 pub use aexpr::function_expr::schema::FieldsMapper;
 pub use builder::AExprBuilder;
-pub use evaluate::into_column;
+pub use evaluate::{constant_evaluate, into_column};
 pub use properties::*;
 pub use schema::ToFieldContext;
 
@@ -47,12 +47,15 @@ pub enum IRAggExpr {
     },
     Median(Node),
     NUnique(Node),
-    First(Node),
-    Last(Node),
     Item {
         input: Node,
+        /// Return a missing value if there are no values.
         allow_empty: bool,
     },
+    First(Node),
+    FirstNonNull(Node),
+    Last(Node),
+    LastNonNull(Node),
     Mean(Node),
     Implode(Node),
     Quantile {
@@ -150,7 +153,9 @@ impl From<IRAggExpr> for GroupByMethod {
             Median(_) => GroupByMethod::Median,
             NUnique(_) => GroupByMethod::NUnique,
             First(_) => GroupByMethod::First,
+            FirstNonNull(_) => GroupByMethod::FirstNonNull,
             Last(_) => GroupByMethod::Last,
+            LastNonNull(_) => GroupByMethod::LastNonNull,
             Item { allow_empty, .. } => GroupByMethod::Item { allow_empty },
             Mean(_) => GroupByMethod::Mean,
             Implode(_) => GroupByMethod::Implode,
@@ -177,7 +182,7 @@ pub enum AExpr {
     Element,
     Explode {
         expr: Node,
-        skip_empty: bool,
+        options: ExplodeOptions,
     },
     Column(PlSmallStr),
     Literal(LiteralValue),
@@ -249,11 +254,19 @@ pub enum AExpr {
         function: IRFunctionExpr,
         options: FunctionOptions,
     },
-    Window {
+    Over {
         function: Node,
         partition_by: Vec<Node>,
         order_by: Option<(Node, SortOptions)>,
-        options: WindowType,
+        mapping: WindowMapping,
+    },
+    #[cfg(feature = "dynamic_group_by")]
+    Rolling {
+        function: Node,
+        index_column: Node,
+        period: Duration,
+        offset: Duration,
+        closed_window: ClosedWindow,
     },
     Slice {
         input: Node,
@@ -308,7 +321,12 @@ impl AExpr {
             AExpr::Sort { expr, .. } => is_scalar_ae(*expr, arena),
             AExpr::Gather { returns_scalar, .. } => *returns_scalar,
             AExpr::SortBy { expr, .. } => is_scalar_ae(*expr, arena),
-            AExpr::Window { function, .. } => is_scalar_ae(*function, arena),
+
+            // Over and Rolling implicitly zip with the context and thus are never scalars
+            AExpr::Over { .. } => false,
+            #[cfg(feature = "dynamic_group_by")]
+            AExpr::Rolling { .. } => false,
+
             AExpr::Explode { .. }
             | AExpr::Column(_)
             | AExpr::Filter { .. }
@@ -343,6 +361,13 @@ impl AExpr {
         match self {
             AExpr::Element => true,
             AExpr::Column(_) => true,
+
+            // Over and Rolling implicitly zip with the context and thus should always be length
+            // preserving
+            AExpr::Over { mapping, .. } => !matches!(mapping, WindowMapping::Explode),
+            #[cfg(feature = "dynamic_group_by")]
+            AExpr::Rolling { .. } => true,
+
             AExpr::AnonymousStreamingAgg { .. }
             | AExpr::Literal(_)
             | AExpr::Agg(_)
@@ -379,7 +404,6 @@ impl AExpr {
                 std::iter::once(*expr).chain(by.iter().copied()),
                 arena,
             ),
-            AExpr::Window { function, .. } => is_length_preserving_ae(*function, arena),
 
             AExpr::Explode { .. } | AExpr::Filter { .. } | AExpr::Slice { .. } => false,
         }
@@ -444,4 +468,18 @@ impl AExpr {
             _ => false,
         }
     }
+}
+
+#[recursive::recursive]
+pub fn deep_clone_ae(ae: Node, arena: &mut Arena<AExpr>) -> Node {
+    let slf = arena.get(ae).clone();
+
+    let mut children = vec![];
+    slf.children_rev(&mut children);
+    for child in &mut children {
+        *child = deep_clone_ae(*child, arena);
+    }
+    children.reverse();
+
+    arena.add(slf.replace_children(&children))
 }

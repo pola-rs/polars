@@ -14,6 +14,7 @@ version_check = { workspace = true }
 [dependencies]
 arrow = { workspace = true }
 bitflags = { workspace = true }
+chrono-tz = { workspace = true, optional = true }
 hashbrown = { workspace = true }
 libloading = { workspace = true, optional = true }
 num-traits = { workspace = true }
@@ -51,6 +52,7 @@ dtype-full = [
   "dtype-datetime",
   "dtype-decimal",
   "dtype-duration",
+  "dtype-extension",
   "dtype-i16",
   "dtype-i128",
   "dtype-i8",
@@ -69,6 +71,7 @@ dtype-date = ["polars-plan/dtype-date", "polars-time/dtype-date", "temporal"]
 dtype-datetime = ["polars-plan/dtype-datetime", "polars-time/dtype-datetime", "temporal"]
 dtype-decimal = ["polars-plan/dtype-decimal", "dtype-i128"]
 dtype-duration = ["polars-plan/dtype-duration", "polars-time/dtype-duration", "temporal"]
+dtype-extension = ["polars-plan/dtype-extension", "polars-ops/dtype-extension"]
 dtype-i16 = ["polars-plan/dtype-i16"]
 dtype-i8 = ["polars-plan/dtype-i8"]
 dtype-i128 = ["polars-plan/dtype-i128"]
@@ -153,7 +156,7 @@ offset_by = ["polars-plan/offset_by"]
 
 bitwise = ["polars-core/bitwise", "polars-plan/bitwise"]
 round_series = ["polars-plan/round_series", "polars-ops/round_series"]
-dynamic_group_by = ["polars-plan/dynamic_group_by", "polars-time", "temporal"]
+dynamic_group_by = ["polars-plan/dynamic_group_by", "polars-time", "temporal", "chrono-tz"]
 propagate_nans = ["polars-plan/propagate_nans", "polars-ops/propagate_nans"]
 allow_unused = []
 

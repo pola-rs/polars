@@ -40,7 +40,7 @@ pyo3 = { workspace = true, optional = true }
 rayon = { workspace = true }
 recursive = { workspace = true }
 regex = { workspace = true, optional = true }
-schemars = { workspace = true, features = ["either"], optional = true }
+schemars = { workspace = true, features = ["either1"], optional = true }
 serde = { workspace = true, features = ["rc"], optional = true }
 serde_json = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
@@ -101,6 +101,7 @@ dtype-duration = ["polars-core/dtype-duration", "polars-time/dtype-duration", "t
 dtype-time = ["polars-time/dtype-time", "temporal"]
 dtype-array = ["polars-core/dtype-array", "polars-ops/dtype-array"]
 dtype-categorical = ["polars-core/dtype-categorical"]
+dtype-extension = ["polars-core/dtype-extension", "polars-ops/dtype-extension"]
 dtype-struct = ["polars-core/dtype-struct"]
 object = ["polars-core/object", "polars-ops/object"]
 list_filter = ["polars-ops/list_filter"]

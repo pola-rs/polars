@@ -146,7 +146,7 @@ impl SinkNode for IpcSinkNode {
 
         let io_task = polars_io::pl_async::get_runtime().spawn(async move {
             let mut file = target
-                .open_into_writeable_async(&sink_options, cloud_options.as_ref())
+                .open_into_writeable_async(cloud_options.as_ref(), sink_options.mkdir)
                 .await?;
             let writer = BufWriter::new(&mut *file);
             let mut writer = IpcWriter::new(writer)
@@ -505,6 +505,8 @@ where
                     .collect(),
                 dictionary_id: None,
             },
+            #[cfg(feature = "dtype-extension")]
+            Extension(_, storage) => self.dtype_to_ipc_field(storage.as_ref()),
             _ => {
                 assert!(!dtype.is_nested());
                 IpcField {

@@ -145,6 +145,11 @@ impl Series {
             DataType::Decimal(precision, scale) => {
                 any_values_to_decimal(values, *precision, *scale, strict)?.into_series()
             },
+            #[cfg(feature = "dtype-extension")]
+            DataType::Extension(typ, storage) => {
+                Series::from_any_values_and_dtype(name.clone(), values, storage, strict)?
+                    .into_extension(typ.clone())
+            },
             DataType::List(inner) => any_values_to_list(values, inner, strict)?.into_series(),
             #[cfg(feature = "dtype-array")]
             DataType::Array(inner, size) => any_values_to_array(values, inner, strict, *size)?

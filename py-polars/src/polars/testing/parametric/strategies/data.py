@@ -31,6 +31,7 @@ from polars._utils.constants import (
 )
 from polars.datatypes import (
     Array,
+    BaseExtension,
     Binary,
     Boolean,
     Categorical,
@@ -453,6 +454,8 @@ def data(
     elif dtype == Struct:
         fields = getattr(dtype, "fields", None) or [Field("f0", Null())]
         strategy = structs(fields, allow_null=allow_null, **kwargs)
+    elif isinstance(dtype, BaseExtension):
+        strategy = data(dtype.ext_storage(), allow_null=allow_null, **kwargs)
     else:
         msg = f"unsupported data type: {dtype}"
         raise InvalidArgument(msg)

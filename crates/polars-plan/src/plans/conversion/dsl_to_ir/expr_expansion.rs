@@ -110,8 +110,9 @@ fn function_input_wildcard_expansion(function: &FunctionExpr) -> FunctionExpansi
         expand_into_inputs |= matches!(function, F::FfiPlugin { flags, .. } if flags.flags.contains(FunctionFlags::INPUT_WILDCARD_EXPANSION));
         allow_empty_inputs |= matches!(function, F::FfiPlugin { flags, .. } if flags.flags.contains(FunctionFlags::ALLOW_EMPTY_INPUTS));
     }
-    #[cfg(feature = "concat_str")]
+    #[cfg(all(feature = "strings", feature = "concat_str"))]
     {
+        use crate::dsl::StringFunction;
         expand_into_inputs |= matches!(
             function,
             F::StringExpr(StringFunction::ConcatHorizontal { .. })
@@ -459,6 +460,14 @@ fn expand_expression_rec(
                     opt_flags,
                     |e| Expr::Agg(AggExpr::First(Arc::new(e))),
                 )?,
+                AggExpr::FirstNonNull(expr) => expand_single(
+                    expr.as_ref(),
+                    ignored_selector_columns,
+                    schema,
+                    out,
+                    opt_flags,
+                    |e| Expr::Agg(AggExpr::FirstNonNull(Arc::new(e))),
+                )?,
                 AggExpr::Last(expr) => expand_single(
                     expr.as_ref(),
                     ignored_selector_columns,
@@ -466,6 +475,14 @@ fn expand_expression_rec(
                     out,
                     opt_flags,
                     |e| Expr::Agg(AggExpr::Last(Arc::new(e))),
+                )?,
+                AggExpr::LastNonNull(expr) => expand_single(
+                    expr.as_ref(),
+                    ignored_selector_columns,
+                    schema,
+                    out,
+                    opt_flags,
+                    |e| Expr::Agg(AggExpr::LastNonNull(Arc::new(e))),
                 )?,
                 AggExpr::Item { input, allow_empty } => expand_single(
                     input.as_ref(),
@@ -678,7 +695,7 @@ fn expand_expression_rec(
                 }
             }
         },
-        Expr::Explode { input, skip_empty } => {
+        Expr::Explode { input, options } => {
             _ = expand_single(
                 input.as_ref(),
                 ignored_selector_columns,
@@ -687,7 +704,7 @@ fn expand_expression_rec(
                 opt_flags,
                 |e| Expr::Explode {
                     input: Arc::new(e),
-                    skip_empty: *skip_empty,
+                    options: *options,
                 },
             )?
         },
@@ -704,11 +721,34 @@ fn expand_expression_rec(
                 },
             )?
         },
-        Expr::Window {
+        #[cfg(feature = "dynamic_group_by")]
+        Expr::Rolling {
+            function,
+            index_column,
+            period,
+            offset,
+            closed_window,
+        } => {
+            _ = expand_expression_by_combination(
+                &[function.as_ref().clone(), index_column.as_ref().clone()],
+                ignored_selector_columns,
+                schema,
+                out,
+                opt_flags,
+                |e| Expr::Rolling {
+                    function: Arc::new(e[0].clone()),
+                    index_column: Arc::new(e[1].clone()),
+                    period: *period,
+                    offset: *offset,
+                    closed_window: *closed_window,
+                },
+            )?
+        },
+        Expr::Over {
             function,
             partition_by,
             order_by,
-            options,
+            mapping,
         } => {
             let mut exprs =
                 Vec::with_capacity(partition_by.len() + 1 + usize::from(order_by.is_some()));
@@ -723,13 +763,13 @@ fn expand_expression_rec(
                 schema,
                 out,
                 opt_flags,
-                |e| Expr::Window {
+                |e| Expr::Over {
                     function: Arc::new(e[0].clone()),
                     partition_by: e[1..e.len() - usize::from(order_by.is_some())].to_vec(),
                     order_by: order_by
                         .as_ref()
                         .map(|(_, options)| (Arc::new(e.last().unwrap().clone()), *options)),
-                    options: options.clone(),
+                    mapping: *mapping,
                 },
             )?
         },

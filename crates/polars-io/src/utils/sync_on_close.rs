@@ -1,5 +1,7 @@
 use std::{fs, io};
 
+use crate::utils::file::WriteableTrait;
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -15,6 +17,17 @@ pub enum SyncOnCloseType {
 }
 
 pub fn sync_on_close(sync_on_close: SyncOnCloseType, file: &mut fs::File) -> io::Result<()> {
+    match sync_on_close {
+        SyncOnCloseType::None => Ok(()),
+        SyncOnCloseType::Data => file.sync_data(),
+        SyncOnCloseType::All => file.sync_all(),
+    }
+}
+
+pub fn sync_on_close_dyn(
+    sync_on_close: SyncOnCloseType,
+    file: &mut dyn WriteableTrait,
+) -> io::Result<()> {
     match sync_on_close {
         SyncOnCloseType::None => Ok(()),
         SyncOnCloseType::Data => file.sync_data(),

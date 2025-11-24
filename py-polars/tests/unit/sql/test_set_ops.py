@@ -8,8 +8,8 @@ from polars.testing import assert_frame_equal
 
 
 def test_except_intersect() -> None:
-    df1 = pl.DataFrame({"x": [1, 9, 1, 1], "y": [2, 3, 4, 4], "z": [5, 5, 5, 5]})  # noqa: F841
-    df2 = pl.DataFrame({"x": [1, 9, 1], "y": [2, None, 4], "z": [7, 6, 5]})  # noqa: F841
+    df1 = pl.DataFrame({"x": [1, 9, 1, 1], "y": [2, 3, 4, 4], "z": [5, 5, 5, 5]})
+    df2 = pl.DataFrame({"x": [1, 9, 1], "y": [2, None, 4], "z": [7, 6, 5]})
 
     res_e = pl.sql("SELECT x, y, z FROM df1 EXCEPT SELECT * FROM df2", eager=True)
     res_i = pl.sql("SELECT * FROM df1 INTERSECT SELECT x, y, z FROM df2", eager=True)
@@ -40,14 +40,14 @@ def test_except_intersect() -> None:
 
 
 def test_except_intersect_by_name() -> None:
-    df1 = pl.DataFrame(  # noqa: F841
+    df1 = pl.DataFrame(
         {
             "x": [1, 9, 1, 1],
             "y": [2, 3, 4, 4],
             "z": [5, 5, 5, 5],
         }
     )
-    df2 = pl.DataFrame(  # noqa: F841
+    df2 = pl.DataFrame(
         {
             "y": [2, None, 4],
             "w": ["?", "!", "%"],
@@ -79,8 +79,8 @@ def test_except_intersect_by_name() -> None:
     ],
 )
 def test_except_intersect_all_unsupported(op: str, op_subtype: str) -> None:
-    df1 = pl.DataFrame({"n": [1, 1, 1, 2, 2, 2, 3]})  # noqa: F841
-    df2 = pl.DataFrame({"n": [1, 1, 2, 2]})  # noqa: F841
+    df1 = pl.DataFrame({"n": [1, 1, 1, 2, 2, 2, 3]})
+    df2 = pl.DataFrame({"n": [1, 1, 2, 2]})
 
     with pytest.raises(
         SQLInterfaceError,
@@ -114,7 +114,7 @@ def test_update_statement_error() -> None:
 
     with pytest.raises(
         SQLInterfaceError,
-        match="'UPDATE large SET FQDN = u.FQDN, NS1 = u.NS1, NS2 = u.NS2, NS3 = u.NS3 FROM u WHERE large.FQDN = u.FQDN' operation is currently unsupported",
+        match=r"'UPDATE large SET FQDN = u\.FQDN, NS1 = u\.NS1, NS2 = u\.NS2, NS3 = u\.NS3 FROM u WHERE large\.FQDN = u\.FQDN' operation is currently unsupported",
     ):
         ctx.execute("""
             WITH u AS (
@@ -138,9 +138,9 @@ def test_update_statement_error() -> None:
 
 
 @pytest.mark.parametrize("op", ["EXCEPT", "INTERSECT", "UNION"])
-def test_except_intersect_errors(op: str) -> None:
-    df1 = pl.DataFrame({"x": [1, 9, 1, 1], "y": [2, 3, 4, 4], "z": [5, 5, 5, 5]})  # noqa: F841
-    df2 = pl.DataFrame({"x": [1, 9, 1], "y": [2, None, 4], "z": [7, 6, 5]})  # noqa: F841
+def test_except_intersect_union_errors(op: str) -> None:
+    df1 = pl.DataFrame({"x": [1, 9, 1, 1], "y": [2, 3, 4, 4], "z": [5, 5, 5, 5]})
+    df2 = pl.DataFrame({"x": [1, 9, 1], "y": [2, None, 4], "z": [7, 6, 5]})
 
     if op != "UNION":
         with pytest.raises(
@@ -185,6 +185,12 @@ def test_except_intersect_errors(op: str) -> None:
         ),
         (
             ["c1", "c2"],
+            ["c1 AS x1", "c2 AS x2"],
+            "",
+            [(1, "zz"), (2, "yy"), (3, "xx")],
+        ),
+        (
+            ["c1", "c2"],
             ["c2", "c1"],
             "BY NAME",
             [(1, "zz"), (2, "yy"), (3, "xx")],
@@ -214,3 +220,38 @@ def test_union(
             SELECT {", ".join(cols2)} FROM frame2
         """
         assert sorted(ctx.execute(query).rows()) == expected
+
+
+def test_union_nonmatching_colnames() -> None:
+    # SQL allows "UNION" (aka: polars `concat`) on column names that don't match;
+    # this behaves positionally, with column names coming from the first table
+    with pl.SQLContext(
+        df1=pl.DataFrame(
+            data={"Value": [100, 200], "Tag": ["hello", "foo"]},
+            schema_overrides={"Value": pl.Int16},
+        ),
+        df2=pl.DataFrame(
+            data={"Number": [300, 400], "String": ["world", "bar"]},
+            schema_overrides={"Number": pl.Int32},
+        ),
+        eager=True,
+    ) as ctx:
+        res = ctx.execute(
+            query="""
+            SELECT u.* FROM (
+                SELECT * FROM df1
+                UNION
+                SELECT * FROM df2
+            ) u ORDER BY Value
+            """
+        )
+        assert res.schema == {
+            "Value": pl.Int32,
+            "Tag": pl.String,
+        }
+        assert res.rows() == [
+            (100, "hello"),
+            (200, "foo"),
+            (300, "world"),
+            (400, "bar"),
+        ]

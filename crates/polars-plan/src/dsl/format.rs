@@ -1,4 +1,4 @@
-use std::fmt;
+use std::fmt::{self, Write};
 
 use crate::prelude::*;
 
@@ -13,41 +13,53 @@ impl fmt::Debug for Expr {
         use Expr::*;
         match self {
             Element => f.write_str("element()"),
-            Window {
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling {
+                function,
+                index_column,
+                period,
+                offset,
+                closed_window: _,
+            } => {
+                write!(
+                    f,
+                    "{:?}.rolling(by='{}', offset={}, period={})",
+                    function, index_column, offset, period
+                )
+            },
+            Over {
                 function,
                 partition_by,
                 order_by,
-                options,
-            } => match options {
-                #[cfg(feature = "dynamic_group_by")]
-                WindowType::Rolling(options) => {
+                mapping: _,
+            } => {
+                if let Some((order_by, _)) = order_by {
                     write!(
                         f,
-                        "{:?}.rolling(by='{}', offset={}, period={})",
-                        function, options.index_column, options.offset, options.period
+                        "{function:?}.over(partition_by: {partition_by:?}, order_by: {order_by:?})"
                     )
-                },
-                _ => {
-                    if let Some((order_by, _)) = order_by {
-                        write!(
-                            f,
-                            "{function:?}.over(partition_by: {partition_by:?}, order_by: {order_by:?})"
-                        )
-                    } else {
-                        write!(f, "{function:?}.over({partition_by:?})")
-                    }
-                },
+                } else {
+                    write!(f, "{function:?}.over({partition_by:?})")
+                }
             },
             DataTypeFunction(dtype_fn) => fmt::Debug::fmt(dtype_fn, f),
             Len => write!(f, "len()"),
             Explode {
                 input: expr,
-                skip_empty: false,
-            } => write!(f, "{expr:?}.explode()"),
-            Explode {
-                input: expr,
-                skip_empty: true,
-            } => write!(f, "{expr:?}.explode(skip_empty)"),
+                options,
+            } => {
+                write!(f, "{expr:?}.explode(")?;
+                if !options.empty_as_null {
+                    f.write_str("empty_as_null=false")?;
+                }
+                if !options.keep_nulls {
+                    if options.empty_as_null {
+                        f.write_str(", ")?;
+                    }
+                    f.write_str("keep_nulls=false")?;
+                }
+                f.write_char(')')
+            },
             Alias(expr, name) => write!(f, "{expr:?}.alias(\"{name}\")"),
             Column(name) => write!(f, "col(\"{name}\")"),
             Literal(v) => write!(f, "{v:?}"),
@@ -112,7 +124,9 @@ impl fmt::Debug for Expr {
                     Median(expr) => write!(f, "{expr:?}.median()"),
                     Mean(expr) => write!(f, "{expr:?}.mean()"),
                     First(expr) => write!(f, "{expr:?}.first()"),
+                    FirstNonNull(expr) => write!(f, "{expr:?}.first_non_null()"),
                     Last(expr) => write!(f, "{expr:?}.last()"),
+                    LastNonNull(expr) => write!(f, "{expr:?}.last_non_null()"),
                     Item { input, allow_empty } => {
                         if *allow_empty {
                             write!(f, "{input:?}.item(allow_empty=true)")

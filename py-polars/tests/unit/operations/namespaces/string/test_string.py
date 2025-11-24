@@ -1178,7 +1178,7 @@ def test_replace_all() -> None:
     )
 
 
-def test_replace_all_literal_no_caputures() -> None:
+def test_replace_all_literal_no_captures() -> None:
     # When using literal = True, capture groups should be disabled
 
     # Single row code path in Rust
@@ -1206,7 +1206,7 @@ def test_replace_all_literal_no_caputures() -> None:
     assert df2.get_column("text2")[1] == "I lost $2 yesterday."
 
 
-def test_replace_literal_no_caputures() -> None:
+def test_replace_literal_no_captures() -> None:
     # When using literal = True, capture groups should be disabled
 
     # Single row code path in Rust
@@ -2103,3 +2103,11 @@ def test_str_replace_null_19601() -> None:
         df.select(result=pl.col("key").str.replace("1", pl.col("1"))),
         pl.DataFrame({"result": ["---", "2"]}),
     )
+
+
+def test_str_json_decode_25237() -> None:
+    s = pl.Series(['[{"a": 0, "b": 1}, {"b": 2}]'])
+
+    dtypes = {s.str.json_decode().dtype for _ in range(20)}
+
+    assert len(dtypes) == 1

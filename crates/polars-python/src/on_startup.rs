@@ -169,23 +169,37 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
             },
             to_py: polars_utils::python_convert_registry::ToPythonConvertRegistry {
                 df: Arc::new(|df| {
-                    Python::attach(|py| PyDataFrame::new(*df.downcast().unwrap()).into_py_any(py))
+                    Python::attach(|py| {
+                        PyDataFrame::new(df.downcast_ref::<DataFrame>().unwrap().clone())
+                            .into_py_any(py)
+                    })
                 }),
                 series: Arc::new(|series| {
-                    Python::attach(|py| PySeries::new(*series.downcast().unwrap()).into_py_any(py))
+                    Python::attach(|py| {
+                        PySeries::new(series.downcast_ref::<Series>().unwrap().clone())
+                            .into_py_any(py)
+                    })
                 }),
                 dsl_plan: Arc::new(|dsl_plan| {
                     Python::attach(|py| {
                         PyLazyFrame::from(LazyFrame::from(
-                            *dsl_plan.downcast::<polars_plan::dsl::DslPlan>().unwrap(),
+                            dsl_plan
+                                .downcast_ref::<polars_plan::dsl::DslPlan>()
+                                .unwrap()
+                                .clone(),
                         ))
                         .into_py_any(py)
                     })
                 }),
                 schema: Arc::new(|schema| {
                     Python::attach(|py| {
-                        Wrap(*schema.downcast::<polars_core::schema::Schema>().unwrap())
-                            .into_py_any(py)
+                        Wrap(
+                            schema
+                                .downcast_ref::<polars_core::schema::Schema>()
+                                .unwrap()
+                                .clone(),
+                        )
+                        .into_py_any(py)
                     })
                 }),
             },
@@ -218,5 +232,17 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
         if catch_keyboard_interrupt {
             register_polars_keyboard_interrupt_hook();
         }
+
+        use polars_core::datatypes::extension::UnknownExtensionTypeBehavior;
+        let behavior = match std::env::var("POLARS_UNKNOWN_EXTENSION_TYPE_BEHAVIOR").as_deref() {
+            Ok("load_as_storage") => UnknownExtensionTypeBehavior::LoadAsStorage,
+            Ok("load_as_extension") => UnknownExtensionTypeBehavior::LoadAsGeneric,
+            Ok("") | Err(_) => UnknownExtensionTypeBehavior::WarnAndLoadAsStorage,
+            _ => {
+                polars_warn!("Invalid value for 'POLARS_UNKNOWN_EXTENSION_TYPE_BEHAVIOR' environment variable. Expected one of 'load_as_storage' or 'load_as_extension'.");
+                UnknownExtensionTypeBehavior::WarnAndLoadAsStorage
+            },
+        };
+        polars_core::datatypes::extension::set_unknown_extension_type_behavior(behavior);
     });
 }

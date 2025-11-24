@@ -283,7 +283,7 @@ def test_csv_scan_skip_lines_len_22889(
     lf = pl.scan_csv(bb, skip_lines=2).select(pl.len())
     assert_fast_count(lf, 1, capfd=capfd, monkeypatch=monkeypatch)
 
-    ## trigger multi-threading code path
+    # trigger multi-threading code path
     bb_10k = b"1\n2\n3\n4\n5\n6\n7\n8\n9\n0\n" * 1000
     lf = pl.scan_csv(bb_10k, skip_lines=1000, has_header=False).select(pl.len())
     assert_fast_count(lf, 9000, capfd=capfd, monkeypatch=monkeypatch)

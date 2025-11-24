@@ -33,7 +33,6 @@ from polars._dependencies import polars_cloud as pc
 from polars._dependencies import pyarrow as pa
 from polars._typing import (
     ParquetMetadata,
-    PartitioningScheme,
 )
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
 from polars._utils.convert import negate_duration_string, parse_as_duration_string
@@ -96,7 +95,7 @@ from polars.datatypes import (
     parse_into_dtype,
 )
 from polars.datatypes.group import DataTypeGroup
-from polars.exceptions import PerformanceWarning
+from polars.exceptions import InvalidOperationError, PerformanceWarning
 from polars.interchange.protocol import CompatLevel
 from polars.lazyframe.engine_config import GPUEngine
 from polars.lazyframe.group_by import LazyGroupBy
@@ -115,10 +114,11 @@ if TYPE_CHECKING:
     from io import IOBase
     from typing import IO, Literal
 
+    from polars.io.partition import _SinkDirectory
     from polars.lazyframe.opt_flags import QueryOptFlags
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
-        from polars._plr import PyExpr, PyPartitioning, PySelector
+        from polars._plr import PyExpr, PySelector
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
         import polars._plr as plr
@@ -143,6 +143,7 @@ if TYPE_CHECKING:
         MaintainOrderJoin,
         Orientation,
         ParquetMetadata,
+        PivotAgg,
         PlanStage,
         PolarsDataType,
         PythonDataType,
@@ -184,14 +185,16 @@ def _select_engine(engine: EngineType) -> EngineType:
 
 
 def _to_sink_target(
-    path: str | Path | IO[bytes] | IO[str] | PartitioningScheme,
-) -> str | Path | IO[bytes] | IO[str] | PyPartitioning:
+    path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
+) -> str | Path | IO[bytes] | IO[str] | _SinkDirectory:
+    from polars.io.partition import _SinkDirectory
+
     if isinstance(path, (str, Path)):
         return normalize_filepath(path)
     elif isinstance(path, io.IOBase):
-        return path  # type: ignore[return-value]
-    elif isinstance(path, PartitioningScheme):
-        return path._py_partitioning
+        return path
+    elif isinstance(path, _SinkDirectory):
+        return path
     elif callable(getattr(path, "write", None)):
         # This allows for custom writers
         return path
@@ -1012,14 +1015,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2.0 ┆ 2.5 ┆ 3.0 │
         └─────┴─────┴─────┘
         """
-        return self._from_pyldf(
-            self._ldf.pipe_with_schema(
-                lambda lf_and_schema: function(
-                    self._from_pyldf(lf_and_schema[0]),
-                    lf_and_schema[1],
-                )._ldf
-            )
-        )
+
+        def wrapper(lf_and_schema: Any) -> PyLazyFrame:
+            # The last index is because we return a list for multiple inputs
+            # to make `pipe_with_schemas` (plural) work, but we don't use that
+            return function(
+                self._from_pyldf(lf_and_schema[0][0]),
+                lf_and_schema[1][0],
+            )._ldf
+
+        return self._from_pyldf(self._ldf.pipe_with_schema(wrapper))
 
     def describe(
         self,
@@ -2577,7 +2582,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_parquet(
         self,
-        path: str | Path | IO[bytes] | PartitioningScheme,
+        path: str | Path | IO[bytes] | _SinkDirectory,
         *,
         compression: str = "zstd",
         compression_level: int | None = None,
@@ -2605,7 +2610,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_parquet(
         self,
-        path: str | Path | IO[bytes] | PartitioningScheme,
+        path: str | Path | IO[bytes] | _SinkDirectory,
         *,
         compression: str = "zstd",
         compression_level: int | None = None,
@@ -2632,7 +2637,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def sink_parquet(
         self,
-        path: str | Path | IO[bytes] | PartitioningScheme,
+        path: str | Path | IO[bytes] | _SinkDirectory,
         *,
         compression: str = "zstd",
         compression_level: int | None = None,
@@ -2843,18 +2848,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         del credential_provider
 
-        if storage_options:
-            storage_options = list(storage_options.items())  # type: ignore[assignment]
-        else:
-            # Handle empty dict input
-            storage_options = None
-
         target = _to_sink_target(path)
-        sink_options = {
-            "sync_on_close": sync_on_close or "none",
-            "maintain_order": maintain_order,
-            "mkdir": mkdir,
-        }
 
         if isinstance(metadata, dict):
             if metadata:
@@ -2892,17 +2886,27 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 msg = f"field_overwrites got the wrong type {type(field_overwrites)}"
                 raise TypeError(msg)
 
+        from polars.io.partition import _SinkOptions
+
+        sink_options = _SinkOptions(
+            mkdir=mkdir,
+            maintain_order=maintain_order,
+            sync_on_close=sync_on_close,
+            storage_options=(
+                list(storage_options.items()) if storage_options is not None else None
+            ),
+            credential_provider=credential_provider_builder,
+            retries=retries,
+        )
+
         ldf_py = self._ldf.sink_parquet(
             target=target,
+            sink_options=sink_options,
             compression=compression,
             compression_level=compression_level,
             statistics=statistics,
             row_group_size=row_group_size,
             data_page_size=data_page_size,
-            cloud_options=storage_options,
-            credential_provider=credential_provider_builder,
-            retries=retries,
-            sink_options=sink_options,
             metadata=metadata,
             field_overwrites=field_overwrites_dicts,
         )
@@ -2917,7 +2921,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_ipc(
         self,
-        path: str | Path | IO[bytes] | PartitioningScheme,
+        path: str | Path | IO[bytes] | _SinkDirectory,
         *,
         compression: IpcCompression | None = "uncompressed",
         compat_level: CompatLevel | None = None,
@@ -2937,7 +2941,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_ipc(
         self,
-        path: str | Path | IO[bytes] | PartitioningScheme,
+        path: str | Path | IO[bytes] | _SinkDirectory,
         *,
         compression: IpcCompression | None = "uncompressed",
         compat_level: CompatLevel | None = None,
@@ -2956,7 +2960,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def sink_ipc(
         self,
-        path: str | Path | IO[bytes] | PartitioningScheme,
+        path: str | Path | IO[bytes] | _SinkDirectory,
         *,
         compression: IpcCompression | None = "uncompressed",
         compat_level: CompatLevel | None = None,
@@ -3097,18 +3101,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         del credential_provider
 
-        if storage_options:
-            storage_options = list(storage_options.items())  # type: ignore[assignment]
-        else:
-            # Handle empty dict input
-            storage_options = None
-
         target = _to_sink_target(path)
-        sink_options = {
-            "sync_on_close": sync_on_close or "none",
-            "maintain_order": maintain_order,
-            "mkdir": mkdir,
-        }
 
         compat_level_py: int | bool
         if compat_level is None:
@@ -3122,14 +3115,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if compression is None:
             compression = "uncompressed"
 
-        ldf_py = self._ldf.sink_ipc(
-            target=target,
-            compression=compression,
-            compat_level=compat_level_py,
-            cloud_options=storage_options,
+        from polars.io.partition import _SinkOptions
+
+        sink_options = _SinkOptions(
+            mkdir=mkdir,
+            maintain_order=maintain_order,
+            sync_on_close=sync_on_close,
+            storage_options=(
+                list(storage_options.items()) if storage_options is not None else None
+            ),
             credential_provider=credential_provider_builder,
             retries=retries,
+        )
+
+        ldf_py = self._ldf.sink_ipc(
+            target=target,
             sink_options=sink_options,
+            compression=compression,
+            compat_level=compat_level_py,
         )
 
         if not lazy:
@@ -3142,7 +3145,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_csv(
         self,
-        path: str | Path | IO[bytes] | IO[str] | PartitioningScheme,
+        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
         *,
         include_bom: bool = False,
         include_header: bool = True,
@@ -3174,7 +3177,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_csv(
         self,
-        path: str | Path | IO[bytes] | IO[str] | PartitioningScheme,
+        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
         *,
         include_bom: bool = False,
         include_header: bool = True,
@@ -3205,7 +3208,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def sink_csv(
         self,
-        path: str | Path | IO[bytes] | IO[str] | PartitioningScheme,
+        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
         *,
         include_bom: bool = False,
         include_header: bool = True,
@@ -3409,21 +3412,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         del credential_provider
 
-        if storage_options:
-            storage_options = list(storage_options.items())  # type: ignore[assignment]
-        else:
-            # Handle empty dict input
-            storage_options = None
-
         target = _to_sink_target(path)
-        sink_options = {
-            "sync_on_close": sync_on_close or "none",
-            "maintain_order": maintain_order,
-            "mkdir": mkdir,
-        }
+
+        from polars.io.partition import _SinkOptions
+
+        sink_options = _SinkOptions(
+            mkdir=mkdir,
+            maintain_order=maintain_order,
+            sync_on_close=sync_on_close,
+            storage_options=(
+                list(storage_options.items()) if storage_options is not None else None
+            ),
+            credential_provider=credential_provider_builder,
+            retries=retries,
+        )
 
         ldf_py = self._ldf.sink_csv(
             target=target,
+            sink_options=sink_options,
             include_bom=include_bom,
             include_header=include_header,
             separator=ord(separator),
@@ -3438,10 +3444,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             decimal_comma=decimal_comma,
             null_value=null_value,
             quote_style=quote_style,
-            cloud_options=storage_options,
-            credential_provider=credential_provider_builder,
-            retries=retries,
-            sink_options=sink_options,
         )
 
         if not lazy:
@@ -3454,7 +3456,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_ndjson(
         self,
-        path: str | Path | IO[bytes] | IO[str] | PartitioningScheme,
+        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
         *,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
@@ -3472,7 +3474,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_ndjson(
         self,
-        path: str | Path | IO[bytes] | IO[str] | PartitioningScheme,
+        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
         *,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
@@ -3489,7 +3491,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def sink_ndjson(
         self,
-        path: str | Path | IO[bytes] | IO[str] | PartitioningScheme,
+        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
         *,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
@@ -3619,26 +3621,22 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         del credential_provider
 
-        if storage_options:
-            storage_options = list(storage_options.items())  # type: ignore[assignment]
-        else:
-            # Handle empty dict input
-            storage_options = None
-
         target = _to_sink_target(path)
-        sink_options = {
-            "sync_on_close": sync_on_close or "none",
-            "maintain_order": maintain_order,
-            "mkdir": mkdir,
-        }
 
-        ldf_py = self._ldf.sink_json(
-            target=target,
-            cloud_options=storage_options,
+        from polars.io.partition import _SinkOptions
+
+        sink_options = _SinkOptions(
+            mkdir=mkdir,
+            maintain_order=maintain_order,
+            sync_on_close=sync_on_close,
+            storage_options=(
+                list(storage_options.items()) if storage_options is not None else None
+            ),
             credential_provider=credential_provider_builder,
             retries=retries,
-            sink_options=sink_options,
         )
+
+        ldf_py = self._ldf.sink_json(target=target, sink_options=sink_options)
 
         if not lazy:
             ldf_py = ldf_py.with_optimizations(optimizations._pyoptflags)
@@ -3658,6 +3656,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> None: ...
+
     @overload
     def sink_batches(
         self,
@@ -3669,6 +3668,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> pl.LazyFrame: ...
+
     @unstable()
     def sink_batches(
         self,
@@ -7364,6 +7364,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         columns: ColumnNameOrSelector | Iterable[ColumnNameOrSelector],
         *more_columns: ColumnNameOrSelector,
+        empty_as_null: bool = True,
+        keep_nulls: bool = True,
     ) -> LazyFrame:
         """
         Explode the DataFrame to long format by exploding the given columns.
@@ -7375,6 +7377,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             columns being exploded must be of the `List` or `Array` data type.
         *more_columns
             Additional names of columns to explode, specified as positional arguments.
+        empty_as_null
+            Explode an empty list/array into a `null`.
+        keep_nulls
+            Explode a `null` list/array into a `null`.
 
         Examples
         --------
@@ -7404,7 +7410,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         subset = parse_list_into_selector(columns) | parse_list_into_selector(  # type: ignore[arg-type]
             more_columns
         )
-        return self._from_pyldf(self._ldf.explode(subset=subset._pyselector))
+        return self._from_pyldf(
+            self._ldf.explode(
+                subset=subset._pyselector,
+                empty_as_null=empty_as_null,
+                keep_nulls=keep_nulls,
+            )
+        )
 
     def unique(
         self,
@@ -7727,6 +7739,245 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if subset is not None:
             selector_subset = parse_list_into_selector(subset)._pyselector
         return self._from_pyldf(self._ldf.drop_nulls(subset=selector_subset))
+
+    def pivot(
+        self,
+        on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
+        on_columns: Sequence[Any] | pl.Series | pl.DataFrame,
+        *,
+        index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        aggregate_function: PivotAgg | Expr | None = None,
+        maintain_order: bool = False,
+        separator: str = "_",
+    ) -> LazyFrame:
+        """
+        Create a spreadsheet-style pivot table as a DataFrame.
+
+        Parameters
+        ----------
+        on
+            The column(s) whose values will be used as the new columns of the output
+            DataFrame.
+        on_columns
+            What value combinations will be considered for the output table.
+        index
+            The column(s) that remain from the input to the output. The output DataFrame will have one row
+            for each unique combination of the `index`'s values.
+            If None, all remaining columns not specified on `on` and `values` will be used. At least one
+            of `index` and `values` must be specified.
+        values
+            The existing column(s) of values which will be moved under the new columns from index. If an
+            aggregation is specified, these are the values on which the aggregation will be computed.
+            If None, all remaining columns not specified on `on` and `index` will be used.
+            At least one of `index` and `values` must be specified.
+        aggregate_function
+            Choose from:
+
+            - None: no aggregation takes place, will raise error if multiple values are in group.
+            - A predefined aggregate function string, one of
+              {'min', 'max', 'first', 'last', 'sum', 'mean', 'median', 'len', 'item'}
+            - An expression to do the aggregation. The expression can only access data from the respective
+              'values' columns as generated by pivot, through `pl.element()`.
+        maintain_order
+            Ensure the values of `index` are sorted by discovery order.
+        separator
+            Used as separator/delimiter in generated column names in case of multiple
+            `values` columns.
+
+        Returns
+        -------
+        DataFrame
+
+        Notes
+        -----
+        In some other frameworks, you might know this operation as `pivot_wider`.
+
+        Examples
+        --------
+        You can use `pivot` to reshape a dataframe from "long" to "wide" format.
+
+        For example, suppose we have a dataframe of test scores achieved by some
+        students, where each row represents a distinct test.
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "name": ["Cady", "Cady", "Karen", "Karen"],
+        ...         "subject": ["maths", "physics", "maths", "physics"],
+        ...         "test_1": [98, 99, 61, 58],
+        ...         "test_2": [100, 100, 60, 60],
+        ...     }
+        ... )
+        >>> df
+        shape: (4, 4)
+        ┌───────┬─────────┬────────┬────────┐
+        │ name  ┆ subject ┆ test_1 ┆ test_2 │
+        │ ---   ┆ ---     ┆ ---    ┆ ---    │
+        │ str   ┆ str     ┆ i64    ┆ i64    │
+        ╞═══════╪═════════╪════════╪════════╡
+        │ Cady  ┆ maths   ┆ 98     ┆ 100    │
+        │ Cady  ┆ physics ┆ 99     ┆ 100    │
+        │ Karen ┆ maths   ┆ 61     ┆ 60     │
+        │ Karen ┆ physics ┆ 58     ┆ 60     │
+        └───────┴─────────┴────────┴────────┘
+
+        Using `pivot`, we can reshape so we have one row per student, with different
+        subjects as columns, and their `test_1` scores as values:
+
+        >>> df.lazy().pivot(
+        ...     "subject",
+        ...     on_columns=["maths", "physics"],
+        ...     index="name",
+        ...     values="test_1",
+        ... ).collect()  # doctest: +IGNORE_RESULT
+        shape: (2, 3)
+        ┌───────┬───────┬─────────┐
+        │ name  ┆ maths ┆ physics │
+        │ ---   ┆ ---   ┆ ---     │
+        │ str   ┆ i64   ┆ i64     │
+        ╞═══════╪═══════╪═════════╡
+        │ Cady  ┆ 98    ┆ 99      │
+        │ Karen ┆ 61    ┆ 58      │
+        └───────┴───────┴─────────┘
+
+        You can use selectors too - here we include all test scores in the pivoted table:
+
+        >>> import polars.selectors as cs
+        >>> df.lazy().pivot(
+        ...     "subject",
+        ...     on_columns=["maths", "physics"],
+        ...     values=cs.starts_with("test"),
+        ... ).collect()  # doctest: +IGNORE_RESULT
+        shape: (2, 5)
+        ┌───────┬──────────────┬────────────────┬──────────────┬────────────────┐
+        │ name  ┆ test_1_maths ┆ test_1_physics ┆ test_2_maths ┆ test_2_physics │
+        │ ---   ┆ ---          ┆ ---            ┆ ---          ┆ ---            │
+        │ str   ┆ i64          ┆ i64            ┆ i64          ┆ i64            │
+        ╞═══════╪══════════════╪════════════════╪══════════════╪════════════════╡
+        │ Cady  ┆ 98           ┆ 99             ┆ 100          ┆ 100            │
+        │ Karen ┆ 61           ┆ 58             ┆ 60           ┆ 60             │
+        └───────┴──────────────┴────────────────┴──────────────┴────────────────┘
+
+        If you end up with multiple values per cell, you can specify how to aggregate
+        them with `aggregate_function`:
+
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "ix": [1, 1, 2, 2, 1, 2],
+        ...         "col": ["a", "a", "a", "a", "b", "b"],
+        ...         "foo": [0, 1, 2, 2, 7, 1],
+        ...         "bar": [0, 2, 0, 0, 9, 4],
+        ...     }
+        ... )
+        >>> lf.pivot(
+        ...     "col", on_columns=["a", "b"], index="ix", aggregate_function="sum"
+        ... ).collect()  # doctest: +IGNORE_RESULT
+        shape: (2, 5)
+        ┌─────┬───────┬───────┬───────┬───────┐
+        │ ix  ┆ foo_a ┆ foo_b ┆ bar_a ┆ bar_b │
+        │ --- ┆ ---   ┆ ---   ┆ ---   ┆ ---   │
+        │ i64 ┆ i64   ┆ i64   ┆ i64   ┆ i64   │
+        ╞═════╪═══════╪═══════╪═══════╪═══════╡
+        │ 1   ┆ 1     ┆ 7     ┆ 2     ┆ 9     │
+        │ 2   ┆ 4     ┆ 1     ┆ 0     ┆ 4     │
+        └─────┴───────┴───────┴───────┴───────┘
+
+        You can also pass a custom aggregation function using
+        :meth:`polars.element`:
+
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "col1": ["a", "a", "a", "b", "b", "b"],
+        ...         "col2": ["x", "x", "x", "x", "y", "y"],
+        ...         "col3": [6, 7, 3, 2, 5, 7],
+        ...     }
+        ... )
+        >>> lf.pivot(
+        ...     "col2",
+        ...     on_columns=["x", "y"],
+        ...     index="col1",
+        ...     values="col3",
+        ...     aggregate_function=pl.element().tanh().mean(),
+        ... ).collect()  # doctest: +IGNORE_RESULT
+        shape: (2, 3)
+        ┌──────┬──────────┬──────────┐
+        │ col1 ┆ x        ┆ y        │
+        │ ---  ┆ ---      ┆ ---      │
+        │ str  ┆ f64      ┆ f64      │
+        ╞══════╪══════════╪══════════╡
+        │ a    ┆ 0.998347 ┆ null     │
+        │ b    ┆ 0.964028 ┆ 0.999954 │
+        └──────┴──────────┴──────────┘
+        """  # noqa: W505
+        if index is None and values is None:
+            msg = "`pivot` needs either `index or `values` needs to be specified"
+            raise InvalidOperationError(msg)
+
+        on_selector = parse_list_into_selector(on)
+        if values is not None:
+            values_selector = parse_list_into_selector(values)
+        if index is not None:
+            index_selector = parse_list_into_selector(index)
+
+        if values is None:
+            values_selector = cs.all() - on_selector - index_selector
+        if index is None:
+            index_selector = cs.all() - on_selector - values_selector
+
+        agg = F.element()
+        if isinstance(aggregate_function, str):
+            if aggregate_function == "first":
+                agg = agg.first()
+            elif aggregate_function == "item":
+                agg = agg.item()
+            elif aggregate_function == "sum":
+                agg = agg.sum()
+            elif aggregate_function == "max":
+                agg = agg.max()
+            elif aggregate_function == "min":
+                agg = agg.min()
+            elif aggregate_function == "mean":
+                agg = agg.mean()
+            elif aggregate_function == "median":
+                agg = agg.median()
+            elif aggregate_function == "last":
+                agg = agg.last()
+            elif aggregate_function == "len":
+                agg = agg.len()
+            elif aggregate_function == "count":
+                issue_deprecation_warning(
+                    "`aggregate_function='count'` input for `pivot` is deprecated."
+                    " Please use `aggregate_function='len'`.",
+                    version="0.20.5",
+                )
+                agg = agg.len()
+            else:
+                msg = f"invalid input for `aggregate_function` argument: {aggregate_function!r}"
+                raise ValueError(msg)
+        elif aggregate_function is None:
+            agg = agg.item(allow_empty=True)
+        else:
+            agg = aggregate_function
+
+        on_cols: pl.DataFrame
+        if isinstance(on_columns, pl.DataFrame):
+            on_cols = on_columns
+        elif isinstance(on_columns, pl.Series):
+            on_cols = on_columns.to_frame()
+        else:
+            on_cols = pl.Series(on_columns).to_frame()
+
+        return self._from_pyldf(
+            self._ldf.pivot(
+                on=on_selector._pyselector,
+                on_columns=on_cols._df,
+                index=index_selector._pyselector,
+                values=values_selector._pyselector,
+                agg=agg._pyexpr,
+                maintain_order=maintain_order,
+                separator=separator,
+            )
+        )
 
     def unpivot(
         self,
@@ -8109,7 +8360,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def set_sorted(
         self,
-        column: str,
+        column: str | list[str],
         *more_columns: str,
         descending: bool | list[bool] = False,
         nulls_last: bool | list[bool] = False,
@@ -8122,7 +8373,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Parameters
         ----------
         column
-            Column that is sorted
+            Column(s) that is sorted
         more_columns
             Columns that are sorted over after `column`.
         descending
@@ -8136,11 +8387,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Use with care!
 
         """
-        # NOTE: Only accepts 1 column on purpose! User think they are sorted by
-        # the combined multicolumn values.
-        if not isinstance(column, str):
-            msg = "expected a 'str' for argument 'column' in 'set_sorted'"
-            raise TypeError(msg)
+        cs: list[str]
+        if isinstance(column, str):
+            cs = [column] + list(more_columns)
+        else:
+            cs = column + list(more_columns)
 
         ds: list[bool]
         nl: list[bool]
@@ -8153,11 +8404,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         else:
             nl = nulls_last
 
-        return self._from_pyldf(
-            self._ldf.hint_sorted(
-                [column] + list(more_columns), descending=ds, nulls_last=nl
-            )
-        )
+        return self._from_pyldf(self._ldf.hint_sorted(cs, descending=ds, nulls_last=nl))
 
     @unstable()
     def update(

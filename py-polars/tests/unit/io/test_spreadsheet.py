@@ -515,7 +515,7 @@ def test_read_mixed_dtype_columns(
         "Employee ID": pl.Utf8(),
         "Employee Name": pl.Utf8(),
         "Date": pl.Date(),
-        "Details": pl.Categorical("lexical"),
+        "Details": pl.Categorical(),
         "Asset ID": pl.Utf8(),
     }
     df = read_spreadsheet(
@@ -1201,7 +1201,7 @@ def test_excel_write_worksheet_object() -> None:
 
     with pytest.raises(  # noqa: SIM117
         ValueError,
-        match="the given workbook object .* is not the parent of worksheet 'frame_data'",
+        match=r"the given workbook object .* is not the parent of worksheet 'frame_data'",
     ):
         with Workbook(BytesIO()) as wb:
             df.write_excel(wb, worksheet=ws)

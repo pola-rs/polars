@@ -60,15 +60,15 @@ impl<'de, Args, Out> serde::Deserialize<'de> for PlanCallback<Args, Out> {
 
 #[cfg(feature = "dsl-schema")]
 impl<Args, Out> schemars::JsonSchema for PlanCallback<Args, Out> {
-    fn schema_name() -> String {
-        "PlanCallback".to_owned()
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "PlanCallback".into()
     }
 
     fn schema_id() -> std::borrow::Cow<'static, str> {
         std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "PlanCallback"))
     }
 
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         Vec::<u8>::json_schema(generator)
     }
 }
@@ -104,7 +104,7 @@ mod _python {
     use std::sync::Arc;
 
     use polars_utils::pl_str::PlSmallStr;
-    use pyo3::types::{PyAnyMethods, PyTuple};
+    use pyo3::types::{PyAnyMethods, PyList, PyTuple};
     use pyo3::*;
 
     macro_rules! impl_pycb_type {
@@ -149,7 +149,7 @@ mod _python {
             impl super::PlanCallbackArgs for $type {
                 fn into_pyany<'py>(self, _py: Python<'py>) -> PyResult<Py<PyAny>> {
                     let registry = polars_utils::python_convert_registry::get_python_convert_registry();
-                    (registry.to_py.$to)(Box::new(self) as _)
+                    (registry.to_py.$to)(&self)
                 }
             }
 
@@ -233,6 +233,17 @@ mod _python {
     impl<T: super::PlanCallbackArgs + Clone> super::PlanCallbackArgs for Arc<T> {
         fn into_pyany<'py>(self, py: Python<'py>) -> PyResult<Py<PyAny>> {
             Arc::unwrap_or_clone(self).into_pyany(py)
+        }
+    }
+
+    impl<T: super::PlanCallbackArgs + Clone> super::PlanCallbackArgs for Vec<T> {
+        fn into_pyany<'py>(self, py: Python<'py>) -> PyResult<Py<PyAny>> {
+            let items: Vec<Py<PyAny>> = self
+                .into_iter()
+                .map(|v| v.into_pyany(py))
+                .collect::<PyResult<Vec<_>>>()?;
+
+            Ok(PyList::new(py, items)?.into())
         }
     }
 

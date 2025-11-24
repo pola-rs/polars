@@ -5,6 +5,26 @@ use polars_utils::arena::Arena;
 
 use crate::plans::{AExpr, ExprIR, IRFunctionExpr, IRTemporalFunction, LiteralValue};
 
+#[macro_export]
+macro_rules! ensure_datetime {
+    ($dtype:ident) => {
+        polars_ensure!(
+            matches!($dtype, DataType::Datetime(_, _) | DataType::Date),
+            ComputeError: "'{}' must be Date or Datetime, got {:?}", stringify!($dtype), $dtype
+        )
+    }
+}
+#[macro_export]
+macro_rules! ensure_int {
+    ($dtype:ident) => {
+        polars_ensure!(
+            $dtype.is_integer(),
+            ComputeError: "'{}' must be Date or Datetime, got {:?}", stringify!($dtype), $dtype
+        )
+    }
+}
+pub use {ensure_datetime, ensure_int};
+
 /// Cast a date or datetime node to a supertype.
 ///
 /// If the target datetime type has a timezone, then:
@@ -114,19 +134,24 @@ pub(super) fn convert_tz(
     Ok(())
 }
 
-// Determines the output data type, including user-specified t tz, and interval.
+#[doc(hidden)]
 #[cfg(feature = "dtype-datetime")]
-pub(super) fn temporal_range_output_type(
-    start_end_supertype: DataType,
+// Determine the output dtype, given a `Date`/`Datetime` dtype and optional time unit, time zone, and
+// interval string.
+//
+// If an explicit time unit is provided, it is used regardless of the interval's temporal
+// granularity.
+pub fn temporal_range_output_type(
+    dt: DataType,
     tu: &Option<TimeUnit>,
     tz: &Option<TimeZone>,
-    interval: &Duration,
+    interval: &Option<Duration>,
 ) -> PolarsResult<DataType> {
-    let mut dtype_out = match (&start_end_supertype, tu) {
+    let mut dtype_out = match (&dt, tu) {
         (DataType::Date, time_unit) => {
             if let Some(tu) = time_unit {
                 DataType::Datetime(*tu, None)
-            } else if interval.nanoseconds() % 1_000 != 0 {
+            } else if interval.is_some_and(|i| i.nanoseconds() % 1_000 != 0) {
                 DataType::Datetime(TimeUnit::Nanoseconds, None)
             } else {
                 // No datatype, use microseconds
@@ -134,7 +159,7 @@ pub(super) fn temporal_range_output_type(
             }
         },
         // overwrite nothing, keep as-is
-        (DataType::Datetime(_, _), None) => start_end_supertype,
+        (DataType::Datetime(_, _), None) => dt,
         // overwrite time unit, keep timezone
         (DataType::Datetime(_, tz), Some(tu)) => DataType::Datetime(*tu, tz.clone()),
         (dt, _) => {

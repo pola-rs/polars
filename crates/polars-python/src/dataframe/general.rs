@@ -5,8 +5,6 @@ use either::Either;
 use parking_lot::{RwLock, RwLockWriteGuard};
 use polars::prelude::*;
 use polars_ffi::version_0::SeriesExport;
-#[cfg(feature = "pivot")]
-use polars_lazy::frame::pivot::{pivot, pivot_stable};
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
@@ -15,6 +13,7 @@ use pyo3::types::{PyList, PyType};
 
 use self::row_encode::{_get_rows_encoded_ca, _get_rows_encoded_ca_unordered};
 use super::PyDataFrame;
+use crate::PyLazyFrame;
 use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 use crate::map::dataframe::{
@@ -25,7 +24,6 @@ use crate::prelude::strings_to_pl_smallstr;
 use crate::py_modules::polars;
 use crate::series::{PySeries, ToPySeries, ToSeries};
 use crate::utils::EnterPolarsExt;
-use crate::{PyExpr, PyLazyFrame};
 
 #[pymethods]
 impl PyDataFrame {
@@ -416,7 +414,7 @@ impl PyDataFrame {
         value_name: Option<&str>,
         variable_name: Option<&str>,
     ) -> PyResult<Self> {
-        use polars_ops::pivot::UnpivotDF;
+        use polars_ops::unpivot::UnpivotDF;
         let args = UnpivotArgsIR {
             on: strings_to_pl_smallstr(on),
             index: strings_to_pl_smallstr(index),
@@ -425,25 +423,6 @@ impl PyDataFrame {
         };
 
         py.enter_polars_df(|| self.df.read().unpivot2(args))
-    }
-
-    #[cfg(feature = "pivot")]
-    #[pyo3(signature = (on, index, values, maintain_order, sort_columns, aggregate_expr, separator))]
-    pub fn pivot_expr(
-        &self,
-        py: Python<'_>,
-        on: Vec<String>,
-        index: Option<Vec<String>>,
-        values: Option<Vec<String>>,
-        maintain_order: bool,
-        sort_columns: bool,
-        aggregate_expr: Option<PyExpr>,
-        separator: Option<&str>,
-    ) -> PyResult<Self> {
-        let df = self.df.read().clone(); // Clone to avoid dead lock on re-entrance in aggregate_expr.
-        let fun = if maintain_order { pivot_stable } else { pivot };
-        let agg_expr = aggregate_expr.map(|expr| expr.inner);
-        py.enter_polars_df(|| fun(&df, on, index, values, sort_columns, agg_expr, separator))
     }
 
     pub fn partition_by(

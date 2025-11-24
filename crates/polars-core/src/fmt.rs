@@ -160,7 +160,7 @@ macro_rules! format_array {
         )?;
 
         let ellipsis = get_ellipsis();
-        let truncate = match $a.dtype() {
+        let truncate = match $a.dtype().to_storage() {
             DataType::String => true,
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_, _) | DataType::Enum(_, _) => true,
@@ -446,6 +446,11 @@ impl Debug for Series {
                     self.name(),
                     "Series"
                 )
+            },
+            #[cfg(feature = "dtype-extension")]
+            DataType::Extension(_, _) => {
+                let dt = format!("{}", self.dtype());
+                format_array!(f, self.ext().unwrap(), &dt, self.name(), "Series")
             },
             dt => panic!("{dt:?} not impl"),
         }

@@ -770,3 +770,9 @@ def test_join_projection_pushdown_struct_field_as_key_24446() -> None:
             ]
         ),
     )
+
+
+def test_proj_pushdown_set_sorted_25247() -> None:
+    q = pl.LazyFrame({"a": [1, 2, 3], "b": [3, 2, 1]}).set_sorted("a").select("b")
+    plan = q.explain()
+    assert "set_sorted" not in plan

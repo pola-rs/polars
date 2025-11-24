@@ -1,5 +1,3 @@
-#[cfg(feature = "dsl-schema")]
-use std::borrow::Cow;
 #[cfg(feature = "python")]
 use std::convert::Infallible;
 use std::fmt::{Display, LowerExp};
@@ -17,10 +15,6 @@ use numpy::Element;
 use pyo3::types::{PyAnyMethods, PyFloat};
 #[cfg(feature = "python")]
 use pyo3::{FromPyObject, IntoPyObject, Python};
-#[cfg(feature = "dsl-schema")]
-use schemars::schema::Schema;
-#[cfg(feature = "dsl-schema")]
-use schemars::{JsonSchema, SchemaGenerator};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -54,24 +48,17 @@ use crate::nulls::IsNull;
 pub struct pf16(pub half::f16);
 
 #[cfg(feature = "dsl-schema")]
-impl JsonSchema for pf16 {
-    fn schema_name() -> String {
+impl schemars::JsonSchema for pf16 {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
         "pf16".into()
     }
 
-    fn schema_id() -> Cow<'static, str> {
-        concat!(module_path!(), "::pf16").into()
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "pf16"))
     }
 
-    fn json_schema(_: &mut SchemaGenerator) -> Schema {
-        use schemars::schema::*;
-
-        SchemaObject {
-            instance_type: Some(InstanceType::Number.into()),
-            format: Some("half".to_owned()),
-            ..Default::default()
-        }
-        .into()
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        f32::json_schema(generator)
     }
 }
 

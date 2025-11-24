@@ -14,6 +14,8 @@ pub use temporal::time_zone::TimeZone;
 use super::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::get_object_physical_type;
+#[cfg(feature = "dtype-extension")]
+pub use crate::datatypes::extension::ExtensionTypeInstance;
 use crate::utils::materialize_dyn_int;
 
 pub trait MetaDataExt: IntoMetadata {
@@ -135,6 +137,8 @@ pub enum DataType {
     Enum(Arc<FrozenCategories>, Arc<CategoricalMapping>),
     #[cfg(feature = "dtype-struct")]
     Struct(Vec<Field>),
+    #[cfg(feature = "dtype-extension")]
+    Extension(ExtensionTypeInstance, Box<DataType>),
     // some logical types we cannot know statically, e.g. Datetime
     Unknown(UnknownKind),
 }
@@ -467,6 +471,18 @@ impl DataType {
                     .collect();
                 Struct(new_fields)
             },
+            #[cfg(feature = "dtype-extension")]
+            Extension(_, storage) => storage.to_physical(),
+            _ => self.clone(),
+        }
+    }
+
+    #[must_use]
+    pub fn to_storage(&self) -> DataType {
+        use DataType::*;
+        match self {
+            #[cfg(feature = "dtype-extension")]
+            Extension(_, storage) => storage.to_storage(),
             _ => self.clone(),
         }
     }
@@ -524,7 +540,16 @@ impl DataType {
     }
 
     pub fn is_nested(&self) -> bool {
-        self.is_list() || self.is_struct() || self.is_array()
+        match self {
+            DataType::List(_) => true,
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(_, _) => true,
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(_) => true,
+            #[cfg(feature = "dtype-extension")]
+            DataType::Extension(_, storage) => storage.is_nested(),
+            _ => false,
+        }
     }
 
     /// Check if this [`DataType`] is a struct
@@ -734,6 +759,17 @@ impl DataType {
         }
     }
 
+    pub fn is_extension(&self) -> bool {
+        #[cfg(feature = "dtype-extension")]
+        {
+            matches!(self, DataType::Extension(_, _))
+        }
+        #[cfg(not(feature = "dtype-extension"))]
+        {
+            false
+        }
+    }
+
     /// Convert to an Arrow Field.
     pub fn to_arrow_field(&self, name: PlSmallStr, compat_level: CompatLevel) -> ArrowField {
         let metadata = match self {
@@ -928,6 +964,14 @@ impl DataType {
                 Ok(ArrowDataType::Struct(fields))
             },
             BinaryOffset => Ok(ArrowDataType::LargeBinary),
+            #[cfg(feature = "dtype-extension")]
+            Extension(typ, inner) => Ok(ArrowDataType::Extension(Box::new(
+                arrow::datatypes::ExtensionType {
+                    name: typ.name().into(),
+                    inner: inner.try_to_arrow(compat_level)?,
+                    metadata: typ.serialize_metadata().map(|m| m.into()),
+                },
+            ))),
             Unknown(kind) => {
                 let dt = match kind {
                     UnknownKind::Any => ArrowDataType::Unknown,
@@ -1080,6 +1124,7 @@ impl Display for DataType {
             DataType::Decimal(p, s) => return write!(f, "decimal[{p},{s}]"),
             DataType::String => "str",
             DataType::Binary => "binary",
+            DataType::BinaryOffset => "binary[offset]",
             DataType::Date => "date",
             DataType::Datetime(tu, None) => return write!(f, "datetime[{tu}]"),
             DataType::Datetime(tu, Some(tz)) => return write!(f, "datetime[{tu}, {tz}]"),
@@ -1106,13 +1151,14 @@ impl Display for DataType {
             DataType::Enum(_, _) => "enum",
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => return write!(f, "struct[{}]", fields.len()),
+            #[cfg(feature = "dtype-extension")]
+            DataType::Extension(typ, _) => return write!(f, "ext[{}]", typ.0.dyn_display()),
             DataType::Unknown(kind) => match kind {
                 UnknownKind::Any => "unknown",
                 UnknownKind::Int(_) => "dyn int",
                 UnknownKind::Float => "dyn float",
                 UnknownKind::Str => "dyn str",
             },
-            DataType::BinaryOffset => "binary[offset]",
         };
         f.write_str(s)
     }
@@ -1189,6 +1235,8 @@ impl std::fmt::Debug for DataType {
             #[cfg(feature = "object")]
             Object(_) => write!(f, "Object"),
             Null => write!(f, "Null"),
+            #[cfg(feature = "dtype-extension")]
+            Extension(typ, inner) => write!(f, "Extension({}, {inner:?})", typ.0.dyn_debug()),
             Unknown(kind) => write!(f, "Unknown({kind:?})"),
         }
     }
