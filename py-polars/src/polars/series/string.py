@@ -2127,8 +2127,9 @@ class StringNameSpace:
             "Can me feel the love tonight"
         ]
 
-        Using `leftmost` and changing order of tokens in `patterns`, you can get fine control over replacement
-        logic, while default behavior does not provide guarantees in case of overlapping patterns:
+        Using `leftmost` and changing order of tokens in `patterns`, you can get fine
+        control over replacement logic, while default behavior does not provide
+        guarantees in case of overlapping patterns:
 
         >>> s = pl.Series("haystack", ["abcd"])
         >>> patterns = {"b": "x", "abc": "y", "abcd": "z"}
