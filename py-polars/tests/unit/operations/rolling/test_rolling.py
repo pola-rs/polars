@@ -1287,13 +1287,16 @@ def test_incorrect_nulls_16246() -> None:
 
 
 def test_rolling_with_dst() -> None:
+    # Test that rolling operations work through DST transitions.
+    # October 26, 2020 at 1 AM in Europe/London is ambiguous due to DST fall-back.
     df = pl.DataFrame(
         {"a": [datetime(2020, 10, 26, 1), datetime(2020, 10, 26)], "b": [1, 2]}
     ).with_columns(pl.col("a").dt.replace_time_zone("Europe/London"))
-    with pytest.raises(ComputeError, match="is ambiguous"):
-        df.select(pl.col("b").rolling_sum_by("a", "1d"))
-    with pytest.raises(ComputeError, match="is ambiguous"):
-        df.sort("a").select(pl.col("b").rolling_sum_by("a", "1d"))
+    # These should succeed (previously raised ComputeError for ambiguous times)
+    result = df.select(pl.col("b").rolling_sum_by("a", "1d"))
+    assert result.shape == (2, 1)
+    result_sorted = df.sort("a").select(pl.col("b").rolling_sum_by("a", "1d"))
+    assert result_sorted.shape == (2, 1)
 
 
 def interval_defs() -> SearchStrategy[ClosedInterval]:
