@@ -1021,6 +1021,8 @@ def test_agg_with_slice_then_cast_23682(
         pl.DataFrame({"a": [10]}, schema={"a": pl.Float16}),
         pl.DataFrame({"a": [10]}, schema={"a": pl.Float32}),
         pl.DataFrame({"a": [10]}, schema={"a": pl.Float64}),
+        pl.DataFrame({"a": [10]}, schema={"a": pl.Int128}),
+        pl.DataFrame({"a": [10]}, schema={"a": pl.UInt128}),
         pl.DataFrame({"a": ["a"]}, schema={"a": pl.String}),
         pl.DataFrame({"a": [None]}, schema={"a": pl.Null}),
         pl.DataFrame({"a": [10]}, schema={"a": pl.Decimal()}),

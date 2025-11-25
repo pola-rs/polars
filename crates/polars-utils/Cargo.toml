@@ -9,6 +9,7 @@ repository = { workspace = true }
 description = "Private utils for the Polars DataFrame library"
 
 [dependencies]
+argminmax = { workspace = true, features = ["float", "half"] }
 bincode = { workspace = true, optional = true }
 bytemuck = { workspace = true }
 bytes = { workspace = true }

@@ -40,6 +40,7 @@ impl_parse!(u64);
 #[cfg(feature = "dtype-u128")]
 impl_parse!(u128);
 
+#[cfg(feature = "dtype-f16")]
 impl Parse for pf16 {
     fn parse(val: &[u8]) -> Option<Self>
     where

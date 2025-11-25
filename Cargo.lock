@@ -135,6 +135,7 @@ version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "70f13d10a41ac8d2ec79ee34178d61e6f47a29c2edfe7ef1721c7383b0359e65"
 dependencies = [
+ "half",
  "num-traits",
 ]
 
@@ -3749,6 +3750,7 @@ dependencies = [
 name = "polars-utils"
 version = "0.52.0"
 dependencies = [
+ "argminmax",
  "bincode",
  "bytemuck",
  "bytes",

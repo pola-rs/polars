@@ -1,10 +1,10 @@
-use argminmax::ArgMinMax;
 use arrow::array::Array;
 use polars_core::chunked_array::ops::float_sorted_arg_max::{
     float_arg_max_sorted_ascending, float_arg_max_sorted_descending,
 };
 use polars_core::series::IsSorted;
 use polars_core::with_match_categorical_physical_type;
+use polars_utils::arg_min_max::ArgMinMax;
 
 use super::*;
 
@@ -22,18 +22,24 @@ macro_rules! with_match_physical_numeric_polars_type {(
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
     use DataType::*;
     match $key_type {
-            #[cfg(feature = "dtype-i8")]
+        #[cfg(feature = "dtype-i8")]
         Int8 => __with_ty__! { Int8Type },
-            #[cfg(feature = "dtype-i16")]
+        #[cfg(feature = "dtype-i16")]
         Int16 => __with_ty__! { Int16Type },
         Int32 => __with_ty__! { Int32Type },
         Int64 => __with_ty__! { Int64Type },
-            #[cfg(feature = "dtype-u8")]
+        #[cfg(feature = "dtype-u128")]
+        Int128 => __with_ty__! { Int128Type },
+        #[cfg(feature = "dtype-u8")]
         UInt8 => __with_ty__! { UInt8Type },
-            #[cfg(feature = "dtype-u16")]
+        #[cfg(feature = "dtype-u16")]
         UInt16 => __with_ty__! { UInt16Type },
         UInt32 => __with_ty__! { UInt32Type },
         UInt64 => __with_ty__! { UInt64Type },
+        #[cfg(feature = "dtype-u128")]
+        UInt128 => __with_ty__! { UInt128Type },
+        #[cfg(feature = "dtype-f16")]
+        Float16 => __with_ty__! { Float16Type },
         Float32 => __with_ty__! { Float32Type },
         Float64 => __with_ty__! { Float64Type },
         dt => panic!("not implemented for dtype {:?}", dt),
@@ -69,11 +75,6 @@ impl ArgAgg for Series {
             Boolean => {
                 let ca = self.bool().unwrap();
                 arg_min_bool(ca)
-            },
-            #[cfg(feature = "dtype-f16")]
-            Float16 => {
-                // TODO: Dispatch to ArgMinMax directly
-                phys_s.cast(&DataType::Float32).unwrap().arg_min()
             },
             dt if dt.is_primitive_numeric() => {
                 with_match_physical_numeric_polars_type!(phys_s.dtype(), |$T| {

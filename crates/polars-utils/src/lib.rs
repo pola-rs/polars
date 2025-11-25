@@ -16,6 +16,7 @@ pub mod chunks;
 pub mod clmul;
 mod config;
 pub use config::check_allow_importing_interval_as_struct;
+pub mod arg_min_max;
 pub mod cpuid;
 pub mod decimal;
 pub mod error;
