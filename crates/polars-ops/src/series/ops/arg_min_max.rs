@@ -28,7 +28,7 @@ macro_rules! with_match_physical_numeric_polars_type {(
         Int16 => __with_ty__! { Int16Type },
         Int32 => __with_ty__! { Int32Type },
         Int64 => __with_ty__! { Int64Type },
-        #[cfg(feature = "dtype-u128")]
+        #[cfg(feature = "dtype-i128")]
         Int128 => __with_ty__! { Int128Type },
         #[cfg(feature = "dtype-u8")]
         UInt8 => __with_ty__! { UInt8Type },
