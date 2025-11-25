@@ -2126,6 +2126,42 @@ class StringNameSpace:
             "Tell you what me need, what me really really need"
             "Can me feel the love tonight"
         ]
+
+        Using `leftmost` and changing order of tokens in `patterns`, you can get fine control over replacement
+        logic, while default behavior does not provide guarantees in case of overlapping patterns:
+
+        >>> s = pl.Series("haystack", ["abcd"])
+        >>> patterns = {"b": "x", "abc": "y", "abcd": "z"}
+        >>> s.str.replace_many(patterns)
+        shape: (1,)
+        Series: 'haystack' [str]
+        [
+            "axcd"
+        ]
+
+        Note that here `replaced` can be any of `axcd`, `yd` or `z`.
+
+        Adding `leftmost=True` matches pattern with leftmost start index first:
+
+        >>> s = pl.Series("haystack", ["abcd"])
+        >>> patterns = {"b": "x", "abc": "y", "abcd": "z"}
+        >>> s.str.replace_many(patterns, leftmost=True)
+        shape: (1,)
+        Series: 'haystack' [str]
+        [
+            "yd"
+        ]
+
+        Changing order inside patterns to match 'abcd' first:
+
+        >>> s = pl.Series("haystack", ["abcd"])
+        >>> patterns = {"abcd": "z", "abc": "y", "b": "x"}
+        >>> s.str.replace_many(patterns, leftmost=True)
+        shape: (1,)
+        Series: 'haystack' [str]
+        [
+            "z"
+        ]
         """
 
     @unstable()
