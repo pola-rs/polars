@@ -223,7 +223,7 @@ pivot = ["polars-lazy?/pivot", "polars-ops/pivot", "dtype-struct", "rows"]
 product = ["polars-core/product"]
 propagate_nans = ["polars-lazy?/propagate_nans"]
 range = ["polars-lazy?/range"]
-rank = ["polars-lazy?/rank", "polars-ops/rank"]
+rank = ["polars-lazy?/rank", "polars-ops/rank", "polars-sql?/rank"]
 reinterpret = ["polars-core/reinterpret", "polars-lazy?/reinterpret", "polars-ops/reinterpret"]
 repeat_by = ["polars-ops/repeat_by", "polars-lazy?/repeat_by"]
 replace = ["polars-ops/replace", "polars-lazy?/replace"]
@@ -398,6 +398,13 @@ dtype-struct = [
   "polars-io/dtype-struct",
   "polars-lazy?/dtype-struct",
   "polars-ops/dtype-struct",
+]
+dtype-extension = [
+  "polars-core/dtype-extension",
+  "polars-expr/dtype-extension",
+  "polars-lazy?/dtype-extension",
+  "polars-ops/dtype-extension",
+  "polars-plan/dtype-extension",
 ]
 hist = ["polars-ops/hist", "polars-lazy/hist"]
 

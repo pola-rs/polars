@@ -205,8 +205,8 @@ def test_interpolate_vs_numpy(data: st.DataObject, x_dtype: pl.DataType) -> None
     # Strategy for `ts` values if float; for Date we let hypothesis generate valid dates
     if x_dtype == pl.Float64:
         by_strategy = st.floats(
-            min_value=-1e150,
-            max_value=1e150,
+            min_value=-100,
+            max_value=100,
             allow_nan=False,
             allow_infinity=False,
             allow_subnormal=False,
@@ -219,8 +219,18 @@ def test_interpolate_vs_numpy(data: st.DataObject, x_dtype: pl.DataType) -> None
         data.draw(
             dataframes(
                 [
-                    column("ts", dtype=x_dtype, allow_null=False, strategy=by_strategy),
-                    column("value", dtype=pl.Float64, allow_null=True),
+                    column(
+                        "ts",
+                        dtype=x_dtype,
+                        allow_null=False,
+                        strategy=by_strategy,
+                    ),
+                    column(
+                        "value",
+                        dtype=pl.Float64,
+                        allow_null=True,
+                        strategy=by_strategy,
+                    ),
                 ],
                 min_size=1,
             )
@@ -261,9 +271,8 @@ def test_interpolate_vs_numpy(data: st.DataObject, x_dtype: pl.DataType) -> None
         "value"
     ]
 
-    # Allow a tiny absolute error due to NumPy quirks
-    assert_series_equal(result, expected, abs_tol=1e-4, check_names=False)
-
+    # We increase the absolute error threshold, numpy has some instability, see #22348.
+    assert_series_equal(result, expected, abs_tol=1e-3)
     result_from_unsorted = (
         dataframe.sort("ts", descending=True)
         .with_columns(pl.col("value").interpolate_by("ts"))

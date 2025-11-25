@@ -374,7 +374,7 @@ pub fn execute_graph(
         }
 
         if let Some(m) = metrics.as_ref() {
-            m.lock().flush(graph);
+            m.lock().flush(&graph.pipes);
         }
     }
 

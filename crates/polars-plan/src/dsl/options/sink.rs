@@ -339,7 +339,7 @@ impl SinkFinishCallback {
             Self::Python(f) => pyo3::Python::attach(|py| {
                 let converter =
                     polars_utils::python_convert_registry::get_python_convert_registry();
-                let df = (converter.to_py.df)(Box::new(df) as Box<dyn std::any::Any>)?;
+                let df = (converter.to_py.df)(&df as _)?;
                 f.call1(py, (df,))?;
                 PolarsResult::Ok(())
             }),

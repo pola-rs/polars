@@ -59,11 +59,15 @@ pub(super) fn pushdown_orders(
                 slice,
                 sort_options: _,
                 ..
-            } if slice.is_none() && all_outputs_unordered => {
+            } if slice.is_none() && all_outputs_unordered
+            // Skip optimization if input node is missing from outputs (e.g. after CSE).
+            && outputs.contains_key(input) =>
+            {
                 // _ -> Unordered
                 //
                 // Remove sort.
                 let input = *input;
+
                 _ = ir_arena.take(node);
 
                 let node_outputs = outputs.remove(&node).unwrap();
@@ -80,7 +84,9 @@ pub(super) fn pushdown_orders(
                 }
                 outputs.get_mut(&input).unwrap().retain(|(n, _)| *n != node);
 
-                stack.push(input);
+                if !orders.contains_key(&input) {
+                    stack.push(input);
+                }
                 continue;
             },
             IR::Sort {

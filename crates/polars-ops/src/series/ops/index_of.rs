@@ -98,6 +98,8 @@ pub fn index_of(series: &Series, needle: Scalar) -> PolarsResult<Option<usize>> 
     use DataType as DT;
     match series.dtype().to_physical() {
         DT::Null => unreachable!("handled above"),
+        #[cfg(feature = "dtype-extension")]
+        DT::Extension(..) => unreachable!("handled above"),
         DT::Boolean => Ok(if needle.value().extract_bool().unwrap() {
             series.bool().unwrap().first_true_idx()
         } else {

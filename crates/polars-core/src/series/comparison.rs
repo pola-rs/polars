@@ -23,36 +23,58 @@ macro_rules! impl_eq_compare {
             rhs.len()
         );
 
-        #[cfg(feature = "dtype-categorical")]
         match (lhs.dtype(), rhs.dtype()) {
+            #[cfg(feature = "dtype-categorical")]
             (Categorical(lcats, _), Categorical(rcats, _)) => {
                 ensure_same_categories(lcats, rcats)?;
                 return with_match_categorical_physical_type!(lcats.physical(), |$C| {
                     lhs.cat::<$C>().unwrap().$method(rhs.cat::<$C>().unwrap())
                 })
             },
+            #[cfg(feature = "dtype-categorical")]
             (Enum(lfcats, _), Enum(rfcats, _)) => {
                 ensure_same_frozen_categories(lfcats, rfcats)?;
                 return with_match_categorical_physical_type!(lfcats.physical(), |$C| {
                     lhs.cat::<$C>().unwrap().$method(rhs.cat::<$C>().unwrap())
                 })
             },
+            #[cfg(feature = "dtype-categorical")]
             (Categorical(_, _) | Enum(_, _), String) => {
                 return with_match_categorical_physical_type!(lhs.dtype().cat_physical().unwrap(), |$C| {
                     Ok(lhs.cat::<$C>().unwrap().$method(rhs.str().unwrap()))
                 })
             },
+            #[cfg(feature = "dtype-categorical")]
             (String, Categorical(_, _) | Enum(_, _)) => {
                 return with_match_categorical_physical_type!(rhs.dtype().cat_physical().unwrap(), |$C| {
                     Ok(rhs.cat::<$C>().unwrap().$method(lhs.str().unwrap()))
                 })
+            },
+
+            #[cfg(feature = "dtype-extension")]
+            (le @ Extension(_, _), re @ Extension(_, _)) if le == re => {
+                let lhs = lhs.ext().unwrap();
+                let rhs = rhs.ext().unwrap();
+                return lhs.storage().$method(rhs.storage());
+            },
+
+            #[cfg(feature = "dtype-extension")]
+            (Extension(_, storage), rdt) if **storage == *rdt => {
+                let lhs = lhs.ext().unwrap();
+                return lhs.storage().$method(rhs);
+            },
+
+            #[cfg(feature = "dtype-extension")]
+            (ldt, Extension(_, storage)) if *ldt == **storage => {
+                let rhs = rhs.ext().unwrap();
+                return lhs.$method(rhs.storage());
             },
             _ => (),
         };
 
         let (lhs, rhs) = coerce_lhs_rhs(lhs, rhs)
             .map_err(|_| polars_err!(
-                    SchemaMismatch: "could not evaluate comparison between series '{}' of dtype: {} and series '{}' of dtype: {}",
+                    SchemaMismatch: "could not evaluate comparison between series '{}' of dtype: {:?} and series '{}' of dtype: {:?}",
                     lhs.name(), lhs.dtype(), rhs.name(), rhs.dtype()
             ))?;
         let lhs = lhs.to_physical_repr();
@@ -118,37 +140,58 @@ macro_rules! impl_ineq_compare {
             rhs.name(), rhs.len()
         );
 
-        #[cfg(feature = "dtype-categorical")]
         match (lhs.dtype(), rhs.dtype()) {
+            #[cfg(feature = "dtype-categorical")]
             (Categorical(lcats, _), Categorical(rcats, _)) => {
                 ensure_same_categories(lcats, rcats)?;
                 return with_match_categorical_physical_type!(lcats.physical(), |$C| {
                     lhs.cat::<$C>().unwrap().$method(rhs.cat::<$C>().unwrap())
                 })
             },
+            #[cfg(feature = "dtype-categorical")]
             (Enum(lfcats, _), Enum(rfcats, _)) => {
                 ensure_same_frozen_categories(lfcats, rfcats)?;
                 return with_match_categorical_physical_type!(lfcats.physical(), |$C| {
                     lhs.cat::<$C>().unwrap().$method(rhs.cat::<$C>().unwrap())
                 })
             },
+            #[cfg(feature = "dtype-categorical")]
             (Categorical(_, _) | Enum(_, _), String) => {
                 return with_match_categorical_physical_type!(lhs.dtype().cat_physical().unwrap(), |$C| {
                     lhs.cat::<$C>().unwrap().$method(rhs.str().unwrap())
                 })
             },
+            #[cfg(feature = "dtype-categorical")]
             (String, Categorical(_, _) | Enum(_, _)) => {
                 return with_match_categorical_physical_type!(rhs.dtype().cat_physical().unwrap(), |$C| {
                     // We use the reverse method as string <-> enum comparisons are only implemented one-way.
                     rhs.cat::<$C>().unwrap().$rev_method(lhs.str().unwrap())
                 })
             },
+            #[cfg(feature = "dtype-extension")]
+            (le @ Extension(_, _), re @ Extension(_, _)) if le == re => {
+                let lhs = lhs.ext().unwrap();
+                let rhs = rhs.ext().unwrap();
+                return lhs.storage().$method(rhs.storage());
+            },
+
+            #[cfg(feature = "dtype-extension")]
+            (Extension(_, storage), rdt) if **storage == *rdt => {
+                let lhs = lhs.ext().unwrap();
+                return lhs.storage().$method(rhs);
+            },
+
+            #[cfg(feature = "dtype-extension")]
+            (ldt, Extension(_, storage)) if *ldt == **storage => {
+                let rhs = rhs.ext().unwrap();
+                return lhs.$method(rhs.storage());
+            },
             _ => (),
         };
 
         let (lhs, rhs) = coerce_lhs_rhs(lhs, rhs).map_err(|_|
             polars_err!(
-                SchemaMismatch: "could not evaluate '{}' comparison between series '{}' of dtype: {} and series '{}' of dtype: {}",
+                SchemaMismatch: "could not evaluate '{}' comparison between series '{}' of dtype: {:?} and series '{}' of dtype: {:?}",
                 $op,
                 lhs.name(), lhs.dtype(),
                 rhs.name(), rhs.dtype()
@@ -328,6 +371,8 @@ impl ChunkCompareEq<&str> for Series {
                     self.cat::<$C>().unwrap().equal(rhs)
                 }),
             ),
+            #[cfg(feature = "dtype-extension")]
+            DataType::Extension(_, _) => self.ext().unwrap().storage().equal(rhs),
             _ => Ok(BooleanChunked::full(self.name().clone(), false, self.len())),
         }
     }
@@ -342,6 +387,8 @@ impl ChunkCompareEq<&str> for Series {
                     self.cat::<$C>().unwrap().equal_missing(rhs)
                 }),
             ),
+            #[cfg(feature = "dtype-extension")]
+            DataType::Extension(_, _) => self.ext().unwrap().storage().equal_missing(rhs),
             _ => Ok(replace_non_null(
                 self.name().clone(),
                 self.0.chunks(),
@@ -360,6 +407,8 @@ impl ChunkCompareEq<&str> for Series {
                     self.cat::<$C>().unwrap().not_equal(rhs)
                 }),
             ),
+            #[cfg(feature = "dtype-extension")]
+            DataType::Extension(_, _) => self.ext().unwrap().storage().not_equal(rhs),
             _ => Ok(BooleanChunked::full(self.name().clone(), true, self.len())),
         }
     }
@@ -374,6 +423,8 @@ impl ChunkCompareEq<&str> for Series {
                     self.cat::<$C>().unwrap().not_equal_missing(rhs)
                 }),
             ),
+            #[cfg(feature = "dtype-extension")]
+            DataType::Extension(_, _) => self.ext().unwrap().storage().not_equal_missing(rhs),
             _ => Ok(replace_non_null(self.name().clone(), self.0.chunks(), true)),
         }
     }
@@ -392,6 +443,8 @@ impl ChunkCompareIneq<&str> for Series {
                     self.cat::<$C>().unwrap().gt(rhs)
                 }),
             ),
+            #[cfg(feature = "dtype-extension")]
+            DataType::Extension(_, _) => self.ext().unwrap().storage().gt(rhs),
             _ => polars_bail!(
                 ComputeError: "cannot compare str value to series of type {}", self.dtype(),
             ),
@@ -408,6 +461,8 @@ impl ChunkCompareIneq<&str> for Series {
                     self.cat::<$C>().unwrap().gt_eq(rhs)
                 }),
             ),
+            #[cfg(feature = "dtype-extension")]
+            DataType::Extension(_, _) => self.ext().unwrap().storage().gt_eq(rhs),
             _ => polars_bail!(
                 ComputeError: "cannot compare str value to series of type {}", self.dtype(),
             ),
@@ -424,6 +479,8 @@ impl ChunkCompareIneq<&str> for Series {
                     self.cat::<$C>().unwrap().lt(rhs)
                 }),
             ),
+            #[cfg(feature = "dtype-extension")]
+            DataType::Extension(_, _) => self.ext().unwrap().storage().lt(rhs),
             _ => polars_bail!(
                 ComputeError: "cannot compare str value to series of type {}", self.dtype(),
             ),
@@ -440,6 +497,8 @@ impl ChunkCompareIneq<&str> for Series {
                     self.cat::<$C>().unwrap().lt_eq(rhs)
                 }),
             ),
+            #[cfg(feature = "dtype-extension")]
+            DataType::Extension(_, _) => self.ext().unwrap().storage().lt_eq(rhs),
             _ => polars_bail!(
                 ComputeError: "cannot compare str value to series of type {}", self.dtype(),
             ),

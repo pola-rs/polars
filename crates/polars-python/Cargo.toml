@@ -78,6 +78,7 @@ features = [
   "dot_diagram",
   "dot_product",
   "dtype-categorical",
+  "dtype-extension",
   "dtype-full",
   "dynamic_group_by",
   "ewma",
