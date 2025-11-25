@@ -147,14 +147,19 @@ impl PhysicalExpr for SliceExpr {
                             .collect();
                         GroupsType::Idx(groups)
                     },
-                    GroupsType::Slice { groups, .. } => {
+                    GroupsType::Slice {
+                        groups,
+                        overlapping,
+                        monotonic,
+                    } => {
                         let groups = groups
                             .iter()
                             .map(|&[first, len]| slice_groups_slice(offset, length, first, len))
                             .collect_trusted();
                         GroupsType::Slice {
                             groups,
-                            overlapping: false,
+                            overlapping: *overlapping,
+                            monotonic: *monotonic,
                         }
                     },
                 }
@@ -185,7 +190,11 @@ impl PhysicalExpr for SliceExpr {
                             .collect();
                         GroupsType::Idx(groups)
                     },
-                    GroupsType::Slice { groups, .. } => {
+                    GroupsType::Slice {
+                        groups,
+                        overlapping,
+                        monotonic: _,
+                    } => {
                         let groups = groups
                             .iter()
                             .zip(length.into_no_null_iter())
@@ -195,7 +204,8 @@ impl PhysicalExpr for SliceExpr {
                             .collect_trusted();
                         GroupsType::Slice {
                             groups,
-                            overlapping: false,
+                            overlapping: *overlapping,
+                            monotonic: false,
                         }
                     },
                 }
@@ -226,7 +236,11 @@ impl PhysicalExpr for SliceExpr {
                             .collect();
                         GroupsType::Idx(groups)
                     },
-                    GroupsType::Slice { groups, .. } => {
+                    GroupsType::Slice {
+                        groups,
+                        overlapping,
+                        monotonic: _,
+                    } => {
                         let groups = groups
                             .iter()
                             .zip(offset.into_no_null_iter())
@@ -236,7 +250,8 @@ impl PhysicalExpr for SliceExpr {
                             .collect_trusted();
                         GroupsType::Slice {
                             groups,
-                            overlapping: false,
+                            overlapping: *overlapping,
+                            monotonic: false,
                         }
                     },
                 }
@@ -273,7 +288,11 @@ impl PhysicalExpr for SliceExpr {
                             .collect();
                         GroupsType::Idx(groups)
                     },
-                    GroupsType::Slice { groups, .. } => {
+                    GroupsType::Slice {
+                        groups,
+                        overlapping,
+                        monotonic: _,
+                    } => {
                         let groups = groups
                             .iter()
                             .zip(offset.into_no_null_iter())
@@ -284,7 +303,8 @@ impl PhysicalExpr for SliceExpr {
                             .collect_trusted();
                         GroupsType::Slice {
                             groups,
-                            overlapping: false,
+                            overlapping: *overlapping,
+                            monotonic: false,
                         }
                     },
                 }

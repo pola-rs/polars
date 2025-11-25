@@ -152,6 +152,7 @@ where
             return Ok(GroupsType::Slice {
                 groups: self.rechunk().create_groups_from_sorted(multithreaded),
                 overlapping: false,
+                monotonic: true,
             });
         }
 
@@ -228,6 +229,7 @@ impl IntoGroupsType for BinaryChunked {
             return Ok(GroupsType::Slice {
                 groups: out,
                 overlapping: false,
+                monotonic: true,
             });
         }
 
@@ -262,6 +264,7 @@ impl IntoGroupsType for BinaryOffsetChunked {
             return Ok(GroupsType::Slice {
                 groups: out,
                 overlapping: false,
+                monotonic: true,
             });
         } else if self.is_sorted_any() {
             let mut groups = Vec::new();
@@ -270,6 +273,7 @@ impl IntoGroupsType for BinaryOffsetChunked {
                 return Ok(GroupsType::Slice {
                     groups,
                     overlapping: false,
+                    monotonic: true,
                 });
             };
 
@@ -305,6 +309,7 @@ impl IntoGroupsType for BinaryOffsetChunked {
             return Ok(GroupsType::Slice {
                 groups,
                 overlapping: false,
+                monotonic: true,
             });
         }
 

@@ -122,6 +122,7 @@ impl PhysicalExpr for LiteralExpr {
                     .map(|i| [i * lit_length, lit_length])
                     .collect(),
                 overlapping: false,
+                monotonic: true,
             };
             let agg_state = AggState::AggregatedList(Column::new_scalar(
                 s.name().clone(),

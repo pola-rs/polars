@@ -187,6 +187,7 @@ impl Series {
             GroupsType::Slice {
                 groups,
                 overlapping: _,
+                monotonic: _,
             } => groups
                 .into_par_iter()
                 .map_with(CloneWrapper(state), |state, [start, len]| {

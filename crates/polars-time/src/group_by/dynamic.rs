@@ -362,6 +362,7 @@ impl Wrap<&DataFrame> {
             PolarsResult::Ok(GroupsType::Slice {
                 groups,
                 overlapping,
+                monotonic: true,
             })
         } else {
             let vals = dt.physical().downcast_iter().next().unwrap();
@@ -380,6 +381,7 @@ impl Wrap<&DataFrame> {
             PolarsResult::Ok(GroupsType::Slice {
                 groups,
                 overlapping,
+                monotonic: true,
             })
         }?;
         // note that if 'group_by' is none we can be sure that the index column, the lower column and the
@@ -470,6 +472,7 @@ impl Wrap<&DataFrame> {
             PolarsResult::Ok(GroupsType::Slice {
                 groups,
                 overlapping: true,
+                monotonic: true,
             })
         } else {
             // a requirement for the index
@@ -488,6 +491,7 @@ impl Wrap<&DataFrame> {
                     tz,
                 )?,
                 overlapping: true,
+                monotonic: true,
             })
         }?;
 
