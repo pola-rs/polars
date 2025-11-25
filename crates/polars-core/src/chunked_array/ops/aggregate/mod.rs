@@ -54,7 +54,8 @@ where
             if T::is_f16() {
                 let f16_arr =
                     std::mem::transmute::<&PrimitiveArray<T>, &PrimitiveArray<pf16>>(array);
-                let sum = float_sum::sum_arr_as_f16(f16_arr);
+                // We do not trust the numerical accuracy of f16 summation
+                let sum: pf16 = float_sum::sum_arr_as_f32(f16_arr).as_();
                 std::mem::transmute_copy::<pf16, T>(&sum)
             } else if T::is_f32() {
                 let f32_arr =

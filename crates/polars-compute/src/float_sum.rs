@@ -289,18 +289,6 @@ where
     }
 }
 
-pub fn sum_arr_as_f16<T>(arr: &PrimitiveArray<T>) -> pf16
-where
-    T: NativeType + FloatSum<pf16>,
-{
-    let validity = arr.validity().filter(|_| arr.null_count() > 0);
-    if let Some(mask) = validity {
-        FloatSum::sum_with_validity(arr.values(), mask)
-    } else {
-        FloatSum::sum(arr.values())
-    }
-}
-
 pub fn sum_arr_as_f32<T>(arr: &PrimitiveArray<T>) -> f32
 where
     T: NativeType + FloatSum<f32>,
