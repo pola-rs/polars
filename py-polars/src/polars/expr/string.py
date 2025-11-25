@@ -2715,10 +2715,7 @@ class ExprStringNameSpace:
         └────────────────────────────────────────────────────┴───────────────────────────────────────────────────┘
 
         Using `leftmost` and changing order of tokens in `patterns`, you can get fine control over replacement
-        logic, following `Aho-Corasick crate documentation <https://docs.rs/aho-corasick/latest/aho_corasick/struct.AhoCorasickBuilder.html#method.match_kind>`_
-        and its examples.
-
-        Default behavior -- when going left to right, match first found pattern:
+        logic, while default behavior does not provide guarantees in case of overlapping patterns:
 
         >>> df = pl.DataFrame({"haystack": ["abcd"]})
         >>> patterns = {"b": "x", "abc": "y", "abcd": "z"}
@@ -2731,6 +2728,8 @@ class ExprStringNameSpace:
         ╞══════════╪══════════╡
         │ abcd     ┆ axcd     │
         └──────────┴──────────┘
+
+        Note that here `replaced` can be any of `axcd`, `yd` or `z`.
 
         Adding `leftmost=True` matches pattern with leftmost start index first:
 
@@ -2762,20 +2761,6 @@ class ExprStringNameSpace:
         │ str      ┆ str      │
         ╞══════════╪══════════╡
         │ abcd     ┆ z        │
-        └──────────┴──────────┘
-
-        Note that this will not affect the default behavior:
-
-        >>> df = pl.DataFrame({"haystack": ["abcd"]})
-        >>> patterns = {"abcd": "z", "abc": "y", "b": "x"}
-        >>> df.with_columns(replaced=pl.col("haystack").str.replace_many(patterns))
-        shape: (1, 2)
-        ┌──────────┬──────────┐
-        │ haystack ┆ replaced │
-        │ ---      ┆ ---      │
-        │ str      ┆ str      │
-        ╞══════════╪══════════╡
-        │ abcd     ┆ axcd     │
         └──────────┴──────────┘
         """  # noqa: W505
         if replace_with is no_default:
