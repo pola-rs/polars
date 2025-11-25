@@ -96,10 +96,8 @@ fn sort_by_groups_single_by(
             map_sorted_indices_to_group_slice(&sorted_idx, first)
         },
     };
-    let first = new_idx
-        .first()
-        .ok_or_else(|| polars_err!(ComputeError: "{}", ERR_MSG))?;
 
+    let first = new_idx.first().unwrap_or(&0);
     Ok((*first, new_idx))
 }
 
