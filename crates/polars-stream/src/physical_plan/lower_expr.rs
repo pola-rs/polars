@@ -494,7 +494,7 @@ fn simplify_input_streams(
         for input_stream in input_streams {
             if let PhysNodeKind::Zip {
                 inputs,
-                zip_behavior: ZipBehavior::Broadcast | ZipBehavior::Strict,
+                zip_behavior: ZipBehavior::Broadcast,
             } = &ctx.phys_sm[input_stream.node].kind
             {
                 flattened_input_streams.extend(inputs);
