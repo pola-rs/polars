@@ -507,15 +507,15 @@ pub trait SeriesOpsTime: AsSeries {
                     use polars_utils::float16::pf16;
 
                     let ca: &mut ChunkedArray<Float16Type> = s._get_inner_mut().as_mut();
-                    ca.apply_mut(|v| v.powf(pf16::from_f64(0.5).unwrap()))
+                    ca.apply_mut(|v| v.sqrt())
                 },
                 DataType::Float32 => {
                     let ca: &mut ChunkedArray<Float32Type> = s._get_inner_mut().as_mut();
-                    ca.apply_mut(|v| v.powf(0.5))
+                    ca.apply_mut(|v| v.sqrt())
                 },
                 DataType::Float64 => {
                     let ca: &mut ChunkedArray<Float64Type> = s._get_inner_mut().as_mut();
-                    ca.apply_mut(|v| v.powf(0.5))
+                    ca.apply_mut(|v| v.sqrt())
                 },
                 _ => unreachable!(),
             }
@@ -535,7 +535,7 @@ pub trait SeriesOpsTime: AsSeries {
                     use polars_utils::float16::pf16;
 
                     let ca: &mut ChunkedArray<Float16Type> = s._get_inner_mut().as_mut();
-                    ca.apply_mut(|v| v.powf(pf16::from_f64(0.5).unwrap()))
+                    ca.apply_mut(|v| v.sqrt())
                 },
                 DataType::Float32 => {
                     let ca: &mut ChunkedArray<Float32Type> = s._get_inner_mut().as_mut();
