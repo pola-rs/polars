@@ -659,7 +659,7 @@ fn to_graph_rec<'a>(
 
         Zip {
             inputs,
-            null_extend,
+            zip_behavior,
         } => {
             let input_schemas = inputs
                 .iter()
@@ -670,7 +670,7 @@ fn to_graph_rec<'a>(
                 .map(|i| PolarsResult::Ok((to_graph_rec(i.node, ctx)?, i.port)))
                 .try_collect_vec()?;
             ctx.graph.add_node(
-                nodes::zip::ZipNode::new(*null_extend, input_schemas),
+                nodes::zip::ZipNode::new(*zip_behavior, input_schemas),
                 input_keys,
             )
         },
