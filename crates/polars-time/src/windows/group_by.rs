@@ -19,6 +19,9 @@ use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
 use crate::prelude::*;
+use crate::windows::window::{
+    duration_add_ms_dst_safe, duration_add_ns_dst_safe, duration_add_us_dst_safe,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -257,9 +260,9 @@ pub(crate) fn group_by_values_iter_lookbehind(
     debug_assert!(offset.duration_ns() == period.duration_ns());
     debug_assert!(offset.negative);
     let add = match tu {
-        TimeUnit::Nanoseconds => Duration::add_ns,
-        TimeUnit::Microseconds => Duration::add_us,
-        TimeUnit::Milliseconds => Duration::add_ms,
+        TimeUnit::Nanoseconds => duration_add_ns_dst_safe,
+        TimeUnit::Microseconds => duration_add_us_dst_safe,
+        TimeUnit::Milliseconds => duration_add_ms_dst_safe,
     };
 
     let upper_bound = upper_bound.unwrap_or(time.len());
@@ -338,9 +341,9 @@ pub(crate) fn group_by_values_iter_window_behind_t(
     tz: Option<Tz>,
 ) -> impl TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + '_ {
     let add = match tu {
-        TimeUnit::Nanoseconds => Duration::add_ns,
-        TimeUnit::Microseconds => Duration::add_us,
-        TimeUnit::Milliseconds => Duration::add_ms,
+        TimeUnit::Nanoseconds => duration_add_ns_dst_safe,
+        TimeUnit::Microseconds => duration_add_us_dst_safe,
+        TimeUnit::Milliseconds => duration_add_ms_dst_safe,
     };
 
     let mut start = 0;
@@ -398,9 +401,9 @@ pub(crate) fn group_by_values_iter_partial_lookbehind(
     tz: Option<Tz>,
 ) -> impl TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + '_ {
     let add = match tu {
-        TimeUnit::Nanoseconds => Duration::add_ns,
-        TimeUnit::Microseconds => Duration::add_us,
-        TimeUnit::Milliseconds => Duration::add_ms,
+        TimeUnit::Nanoseconds => duration_add_ns_dst_safe,
+        TimeUnit::Microseconds => duration_add_us_dst_safe,
+        TimeUnit::Milliseconds => duration_add_ms_dst_safe,
     };
 
     let mut start = 0;
@@ -459,9 +462,9 @@ pub(crate) fn group_by_values_iter_lookahead(
     let upper_bound = upper_bound.unwrap_or(time.len());
 
     let add = match tu {
-        TimeUnit::Nanoseconds => Duration::add_ns,
-        TimeUnit::Microseconds => Duration::add_us,
-        TimeUnit::Milliseconds => Duration::add_ms,
+        TimeUnit::Nanoseconds => duration_add_ns_dst_safe,
+        TimeUnit::Microseconds => duration_add_us_dst_safe,
+        TimeUnit::Milliseconds => duration_add_ms_dst_safe,
     };
     let mut start = start_offset;
     let mut end = start;
@@ -866,9 +869,9 @@ impl RollingWindower {
             closed,
 
             add: match tu {
-                TimeUnit::Nanoseconds => Duration::add_ns,
-                TimeUnit::Microseconds => Duration::add_us,
-                TimeUnit::Milliseconds => Duration::add_ms,
+                TimeUnit::Nanoseconds => duration_add_ns_dst_safe,
+                TimeUnit::Microseconds => duration_add_us_dst_safe,
+                TimeUnit::Milliseconds => duration_add_ms_dst_safe,
             },
             tz,
 
@@ -1030,9 +1033,9 @@ impl GroupByDynamicWindower {
             start_by,
 
             add: match tu {
-                TimeUnit::Nanoseconds => Duration::add_ns,
-                TimeUnit::Microseconds => Duration::add_us,
-                TimeUnit::Milliseconds => Duration::add_ms,
+                TimeUnit::Nanoseconds => duration_add_ns_dst_safe,
+                TimeUnit::Microseconds => duration_add_us_dst_safe,
+                TimeUnit::Milliseconds => duration_add_ms_dst_safe,
             },
             nte: match tu {
                 TimeUnit::Nanoseconds => Duration::nte_duration_ns,
