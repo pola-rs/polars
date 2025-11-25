@@ -50,7 +50,7 @@ pub struct pf16(pub half::f16);
 #[cfg(feature = "dsl-schema")]
 impl schemars::JsonSchema for pf16 {
     fn schema_name() -> std::borrow::Cow<'static, str> {
-        "pf16".into()
+        "f16".into()
     }
 
     fn schema_id() -> std::borrow::Cow<'static, str> {
