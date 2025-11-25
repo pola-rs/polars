@@ -287,7 +287,7 @@ pub fn mean_horizontal(
     match num_rows {
         0 => Ok(None),
         1 => Ok(Some(match columns[0].dtype() {
-            dt if dt != &DataType::Float16 && dt != &DataType::Float32 && !dt.is_decimal() => {
+            dt if !matches!(dt, DataType::Float16 | DataType::Float32) && !dt.is_decimal() => {
                 columns[0].cast(&DataType::Float64)?
             },
             _ => columns[0].clone(),
