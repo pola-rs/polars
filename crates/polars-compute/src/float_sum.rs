@@ -7,7 +7,6 @@ use arrow::bitmap::Bitmap;
 use arrow::bitmap::bitmask::BitMask;
 use arrow::types::NativeType;
 use num_traits::{AsPrimitive, Float};
-use polars_utils::float16::pf16;
 
 const STRIPE: usize = 16;
 const PAIRWISE_RECURSION_LIMIT: usize = 128;

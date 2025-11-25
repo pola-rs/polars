@@ -140,19 +140,6 @@ impl WrappingSum for i128 {
     }
 }
 
-#[cfg(feature = "simd")]
-impl WrappingSum for pf16 {
-    fn wrapping_sum(vals: &[Self]) -> Self {
-        vals.iter()
-            .copied()
-            .fold(pf16::from_bits(0), |a, b| a.wrapping_add(&b))
-    }
-
-    fn wrapping_sum_with_validity(vals: &[Self], mask: &BitMask) -> Self {
-        wrapping_sum_with_mask_scalar(vals, mask)
-    }
-}
-
 pub trait WrappingSum: Sized {
     fn wrapping_sum(vals: &[Self]) -> Self;
     fn wrapping_sum_with_validity(vals: &[Self], mask: &BitMask) -> Self;
