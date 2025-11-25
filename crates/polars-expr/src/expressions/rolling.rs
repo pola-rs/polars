@@ -126,7 +126,7 @@ impl PhysicalExpr for RollingExpr {
         //
         // This is not strictly necessary but allows us to reuse the existing `RollingWindower`
         // struct.
-        let (slice_groups, overlapping) = match &**index_column.groups {
+        let (slice_groups, overlapping, monotonic) = match &**index_column.groups {
             GroupsType::Idx(idx) => {
                 let mut data = Vec::with_capacity(num_elements);
                 let mut slices = Vec::with_capacity(groups.len());
@@ -135,12 +135,13 @@ impl PhysicalExpr for RollingExpr {
                     data.extend(i.iter().map(|i| index_column_data[*i as usize]));
                 }
                 index_column_data = Cow::Owned(data);
-                (Cow::Owned(slices), false)
+                (Cow::Owned(slices), false, true)
             },
             GroupsType::Slice {
                 groups,
                 overlapping,
-            } => (Cow::Borrowed(groups), *overlapping),
+                monotonic,
+            } => (Cow::Borrowed(groups), *overlapping, *monotonic),
         };
 
         // We need to make sure there are no length mismatches, otherwise we will have problems
@@ -156,6 +157,7 @@ impl PhysicalExpr for RollingExpr {
             GroupsType::Slice {
                 groups,
                 overlapping: _,
+                monotonic: _,
             } => groups
                 .iter()
                 .zip(slice_groups.iter())
@@ -195,6 +197,7 @@ impl PhysicalExpr for RollingExpr {
             GroupsType::Slice {
                 groups,
                 overlapping: _,
+                monotonic,
             } => {
                 let mut nested_groups = Vec::with_capacity(num_elements);
                 let mut i = 0;
@@ -209,6 +212,7 @@ impl PhysicalExpr for RollingExpr {
                 GroupsType::Slice {
                     groups: nested_groups,
                     overlapping: true,
+                    monotonic: *monotonic,
                 }
             },
         };
@@ -230,6 +234,7 @@ impl PhysicalExpr for RollingExpr {
                 GroupsType::Slice {
                     groups: slice_groups.into_owned(),
                     overlapping,
+                    monotonic,
                 }
                 .into_sliceable(),
             ),

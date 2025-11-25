@@ -141,6 +141,7 @@ impl DynamicGroupBy {
         let groups = GroupsType::Slice {
             groups: windows,
             overlapping: true,
+            monotonic: true,
         }
         .into_sliceable();
 

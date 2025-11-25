@@ -98,9 +98,10 @@ unsafe fn group_nan_max<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
         }),
         GroupsType::Slice {
             groups: groups_slice,
-            ..
+            overlapping,
+            monotonic,
         } => {
-            if _use_rolling_kernels(groups_slice, ca.chunks()) {
+            if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, ca.chunks()) {
                 let arr = ca.downcast_iter().next().unwrap();
                 let values = arr.values().as_slice();
                 let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
@@ -163,9 +164,10 @@ unsafe fn group_nan_min<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
         }),
         GroupsType::Slice {
             groups: groups_slice,
-            ..
+            overlapping,
+            monotonic,
         } => {
-            if _use_rolling_kernels(groups_slice, ca.chunks()) {
+            if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, ca.chunks()) {
                 let arr = ca.downcast_iter().next().unwrap();
                 let values = arr.values().as_slice();
                 let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));

@@ -127,6 +127,7 @@ impl EvalExpr {
         let groups = GroupsType::Slice {
             groups,
             overlapping: false,
+            monotonic: true,
         };
         let groups = Cow::Owned(groups.into_sliceable());
 
@@ -267,6 +268,7 @@ impl EvalExpr {
         let groups = GroupsType::Slice {
             groups,
             overlapping: false,
+            monotonic: true,
         };
         let groups = Cow::Owned(groups.into_sliceable());
 
@@ -393,6 +395,7 @@ impl EvalExpr {
         let groups = GroupsType::Slice {
             groups,
             overlapping: true,
+            monotonic: true,
         };
 
         let groups = groups.into_sliceable();

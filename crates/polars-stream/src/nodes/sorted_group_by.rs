@@ -82,6 +82,7 @@ impl SortedGroupBy {
                 })
                 .collect(),
             overlapping: false,
+            monotonic: true,
         }
         .into_sliceable();
 

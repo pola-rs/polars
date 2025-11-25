@@ -163,6 +163,7 @@ impl<'a> AggregationContext<'a> {
                             GroupsType::Slice {
                                 groups,
                                 overlapping: false,
+                                monotonic: true,
                             }
                             .into_sliceable(),
                         )
@@ -185,6 +186,7 @@ impl<'a> AggregationContext<'a> {
                             GroupsType::Slice {
                                 groups,
                                 overlapping: false,
+                                monotonic: true,
                             }
                             .into_sliceable(),
                         )
@@ -305,6 +307,7 @@ impl<'a> AggregationContext<'a> {
                     GroupsType::Slice {
                         groups,
                         overlapping: false,
+                        monotonic: true,
                     }
                     .into_sliceable(),
                 );
@@ -332,6 +335,7 @@ impl<'a> AggregationContext<'a> {
                     GroupsType::Slice {
                         groups,
                         overlapping: false,
+                        monotonic: true,
                     }
                     .into_sliceable(),
                 );
@@ -630,6 +634,7 @@ impl<'a> AggregationContext<'a> {
             GroupsType::Slice {
                 groups,
                 overlapping: true,
+                monotonic: _,
             } => {
                 // @NOTE: Slice groups are sorted by their `start` value.
                 let mut offset = 0;
@@ -645,6 +650,7 @@ impl<'a> AggregationContext<'a> {
             GroupsType::Slice {
                 groups,
                 overlapping: false,
+                monotonic: _,
             } => groups.iter().map(|[_, l]| *l as usize).sum::<usize>() == num_values,
         }
     }
@@ -660,6 +666,7 @@ impl<'a> AggregationContext<'a> {
                     GroupsType::Slice {
                         groups: (0..c.len() as IdxSize).map(|i| [i, 1]).collect(),
                         overlapping: false,
+                        monotonic: true,
                     }
                     .into_sliceable(),
                 );
@@ -671,6 +678,7 @@ impl<'a> AggregationContext<'a> {
                     GroupsType::Slice {
                         groups: vec![[0, 1]; self.groups.len()],
                         overlapping: true,
+                        monotonic: true,
                     }
                     .into_sliceable(),
                 );

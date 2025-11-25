@@ -123,6 +123,7 @@ impl PrivateSeries for NullChunked {
             GroupsType::Slice {
                 groups: vec![[0, self.length]],
                 overlapping: false,
+                monotonic: true,
             }
         })
     }

@@ -256,11 +256,13 @@ pub enum GroupsType {
     Slice {
         // the groups slices
         groups: GroupsSlice,
-        // Indicates if the groups may overlap, as is typically the case with `rolling`
-        // or `dynamic_group_by`.
-        // Example use cases: avoid memory explosion when calling aggregation; unroll groups
-        // when exploding an aggregated list with overlapping groups.
+        /// Indicates if the groups may overlap, i.e., at least one index MAY be
+        /// included in more than one group slice.
         overlapping: bool,
+        /// Indicates if the groups are rolling, i.e. for every consecutive group
+        /// slice (offset, len), and given start = offset and end = offset + len,
+        /// then both new_start >= start AND new_end >= end MUST be true.
+        monotonic: bool,
     },
 }
 
@@ -520,6 +522,7 @@ impl GroupsType {
             GroupsType::Slice {
                 groups,
                 overlapping: _,
+                monotonic: _,
             } => groups.iter().map(|[_, l]| *l as usize).sum(),
         }
     }
@@ -717,6 +720,7 @@ impl GroupPositions {
                 GroupsType::Slice {
                     groups,
                     overlapping: false,
+                    monotonic: true,
                 }
                 .into_sliceable()
             },
@@ -727,11 +731,14 @@ impl GroupPositions {
         match &*self.sliced {
             GroupsType::Idx(_) => None,
             GroupsType::Slice {
-                overlapping: true, ..
+                groups: _,
+                overlapping: true,
+                monotonic: _,
             } => None,
             GroupsType::Slice {
                 groups,
                 overlapping: false,
+                monotonic: _,
             } => Some(groups),
         }
     }
@@ -765,6 +772,7 @@ fn slice_groups_inner(g: &GroupsType, offset: i64, len: usize) -> ManuallyDrop<G
         GroupsType::Slice {
             groups,
             overlapping,
+            monotonic,
         } => {
             let groups = unsafe {
                 let groups = slice_slice(groups, offset, len);
@@ -775,6 +783,7 @@ fn slice_groups_inner(g: &GroupsType, offset: i64, len: usize) -> ManuallyDrop<G
             ManuallyDrop::new(GroupsType::Slice {
                 groups,
                 overlapping: *overlapping,
+                monotonic: *monotonic,
             })
         },
     }

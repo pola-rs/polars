@@ -690,6 +690,7 @@ impl Column {
                         // @NOTE: this group is always valid since s is non-empty.
                         groups: vec![[0, 1]],
                         overlapping: false,
+                        monotonic: true,
                     },
                 );
 

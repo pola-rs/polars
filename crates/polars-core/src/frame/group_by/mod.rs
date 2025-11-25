@@ -89,6 +89,7 @@ impl DataFrame {
                 Ok(GroupsType::Slice {
                     groups,
                     overlapping: false,
+                    monotonic: true,
                 })
             } else {
                 let rows = if multithreaded {
@@ -277,6 +278,7 @@ impl<'a> GroupBy<'a> {
                         GroupsType::Slice {
                             groups,
                             overlapping,
+                            monotonic: _,
                         } => {
                             if *overlapping && !groups.is_empty() {
                                 // Groups can be sliced.
