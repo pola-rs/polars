@@ -502,9 +502,7 @@ pub trait SeriesOpsTime: AsSeries {
             match s.dtype().clone() {
                 #[cfg(feature = "dtype-f16")]
                 DataType::Float16 => {
-                    use num_traits::FromPrimitive;
                     use num_traits::real::Real;
-                    use polars_utils::float16::pf16;
 
                     let ca: &mut ChunkedArray<Float16Type> = s._get_inner_mut().as_mut();
                     ca.apply_mut(|v| v.sqrt())
@@ -530,9 +528,7 @@ pub trait SeriesOpsTime: AsSeries {
             match s.dtype().clone() {
                 #[cfg(feature = "dtype-f16")]
                 DataType::Float16 => {
-                    use num_traits::FromPrimitive;
                     use num_traits::real::Real;
-                    use polars_utils::float16::pf16;
 
                     let ca: &mut ChunkedArray<Float16Type> = s._get_inner_mut().as_mut();
                     ca.apply_mut(|v| v.sqrt())

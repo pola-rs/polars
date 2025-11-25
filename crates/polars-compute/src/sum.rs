@@ -140,6 +140,17 @@ impl WrappingSum for i128 {
     }
 }
 
+#[cfg(feature = "simd")]
+impl WrappingSum for pf16 {
+    fn wrapping_sum(_vals: &[Self]) -> Self {
+        unimplemented!("should have been dispatched to other sum kernel")
+    }
+
+    fn wrapping_sum_with_validity(_vals: &[Self], _mask: &BitMask) -> Self {
+        unimplemented!("should have been dispatched to other sum kernel")
+    }
+}
+
 pub trait WrappingSum: Sized {
     fn wrapping_sum(vals: &[Self]) -> Self;
     fn wrapping_sum_with_validity(vals: &[Self], mask: &BitMask) -> Self;
