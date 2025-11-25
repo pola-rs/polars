@@ -1,6 +1,7 @@
 use num_traits::AsPrimitive;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
+use polars_utils::float16::pf16;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
@@ -23,21 +24,72 @@ pub trait RoundSeries: SeriesSealed {
     fn round(&self, decimals: u32, mode: RoundMode) -> PolarsResult<Series> {
         let s = self.as_series();
 
-        // TODO: Implement for Float16 directly
-        if s.dtype() == &DataType::Float16 {
-            return s
-                .cast(&DataType::Float32)?
-                .round(decimals, mode)
-                .and_then(|s| s.cast(&DataType::Float16));
+        #[cfg(feature = "dtype-f16")]
+        if let Ok(ca) = s.f16() {
+            match mode {
+                RoundMode::HalfToEven => {
+                    return if decimals == 0 {
+                        let s = ca
+                            .apply_values(|val| f32::from(val).round_ties_even().into())
+                            .into_series();
+                        Ok(s)
+                    } else if decimals >= 11 {
+                        // More precise than smallest denormal.
+                        Ok(s.clone())
+                    } else {
+                        let multiplier = 10.0_f32.powi(decimals as i32);
+                        let s = ca
+                            .apply_values(|val| {
+                                let val_f32: f32 = val.into();
+                                let ret: pf16 =
+                                    ((val_f32 * multiplier).round_ties_even() / multiplier).into();
+                                if ret.is_finite() {
+                                    ret
+                                } else {
+                                    // We return the original value which is correct both for overflows and non-finite inputs.
+                                    val
+                                }
+                            })
+                            .into_series();
+                        Ok(s)
+                    };
+                },
+                RoundMode::HalfAwayFromZero => {
+                    return if decimals == 0 {
+                        let s = ca
+                            .apply_values(|val| f32::from(val).round().into())
+                            .into_series();
+                        Ok(s)
+                    } else if decimals >= 11 {
+                        // More precise than smallest denormal.
+                        Ok(s.clone())
+                    } else {
+                        let multiplier = 10.0_f32.powi(decimals as i32);
+                        let s = ca
+                            .apply_values(|val| {
+                                let val_f32: f32 = val.into();
+                                let ret: pf16 =
+                                    ((val_f32 * multiplier).round() / multiplier).into();
+                                if ret.is_finite() {
+                                    ret
+                                } else {
+                                    // We return the original value which is correct both for overflows and non-finite inputs.
+                                    val
+                                }
+                            })
+                            .into_series();
+                        Ok(s)
+                    };
+                },
+            }
         }
-
         if let Ok(ca) = s.f32() {
             match mode {
                 RoundMode::HalfToEven => {
                     return if decimals == 0 {
                         let s = ca.apply_values(|val| val.round_ties_even()).into_series();
                         Ok(s)
-                    } else if decimals >= 326 {
+                    } else if decimals >= 47 {
                         // More precise than smallest denormal.
                         Ok(s.clone())
                     } else {
@@ -63,7 +115,7 @@ pub trait RoundSeries: SeriesSealed {
                     return if decimals == 0 {
                         let s = ca.apply_values(|val| val.round()).into_series();
                         Ok(s)
-                    } else if decimals >= 326 {
+                    } else if decimals >= 47 {
                         // More precise than smallest denormal.
                         Ok(s.clone())
                     } else {
