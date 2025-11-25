@@ -88,7 +88,8 @@ jobs:
 
       - name: Install Polars
         run: |
-          pip install --no-deps -e .
+          pip install uv
+          uv pip install --no-deps -e .
           maturin develop --manifest-path runtime/polars-runtime-32/Cargo.toml --uv
 
       - name: Run doctests
