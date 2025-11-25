@@ -175,7 +175,6 @@ macro_rules! compare {
             PH::Primitive(PR::UInt32) => call_binary!(PrimitiveArray<u32>),
             PH::Primitive(PR::UInt64) => call_binary!(PrimitiveArray<u64>),
             PH::Primitive(PR::UInt128) => call_binary!(PrimitiveArray<u128>),
-            #[cfg(feature = "dtype-f16")]
             PH::Primitive(PR::Float16) => call_binary!(PrimitiveArray<pf16>),
             PH::Primitive(PR::Float32) => call_binary!(PrimitiveArray<f32>),
             PH::Primitive(PR::Float64) => call_binary!(PrimitiveArray<f64>),
