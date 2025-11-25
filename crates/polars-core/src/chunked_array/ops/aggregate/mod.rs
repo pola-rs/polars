@@ -318,12 +318,12 @@ impl VarAggSeries for Float16Chunked {
 
 impl VarAggSeries for Float32Chunked {
     fn var_reduce(&self, ddof: u8) -> Scalar {
-        let v = self.var(ddof).map(AsPrimitive::<f32>::as_);
+        let v = self.var(ddof).map(|v| v as f32);
         Scalar::new(DataType::Float32, v.into())
     }
 
     fn std_reduce(&self, ddof: u8) -> Scalar {
-        let v = self.std(ddof).map(AsPrimitive::<f32>::as_);
+        let v = self.std(ddof).map(|v| v as f32);
         Scalar::new(DataType::Float32, v.into())
     }
 }
