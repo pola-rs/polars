@@ -3873,7 +3873,7 @@ class DataFrame:
             credential_provider=credential_provider,
             retries=retries,
             optimizations=QueryOptFlags._eager(),
-            engine="in-memory",
+            engine="streaming",
         )
         return target if return_bytes else None  # type: ignore[return-value]
 
