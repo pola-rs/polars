@@ -4162,7 +4162,7 @@ class DataFrame:
             return
 
         target: str | Path | IO[bytes] | _SinkDirectory = file
-        engine: EngineType = "in-memory"
+        engine: EngineType = "streaming"
         if partition_by is not None:
             if not isinstance(file, str):
                 msg = "expected file to be a `str` since partition-by is set"
@@ -4172,7 +4172,6 @@ class DataFrame:
 
             target = PartitionByKey(file, by=partition_by)
             mkdir = True
-            engine = "streaming"
 
         from polars.lazyframe.opt_flags import QueryOptFlags
 
