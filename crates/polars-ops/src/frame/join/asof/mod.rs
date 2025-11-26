@@ -120,7 +120,7 @@ struct AsofJoinNearestState {
     allow_eq: bool,
 }
 
-impl<T: NumericNative + std::fmt::Debug> AsofJoinState<T> for AsofJoinNearestState {
+impl<T: NumericNative> AsofJoinState<T> for AsofJoinNearestState {
     fn new(allow_eq: bool) -> Self {
         AsofJoinNearestState {
             allow_eq,
@@ -184,23 +184,22 @@ impl<T: NumericNative + std::fmt::Debug> AsofJoinState<T> for AsofJoinNearestSta
                 self.best_bound = Some(scan_offset);
                 scan_offset += 1;
 
-                if self.allow_eq {
-                    // It is possible there are later elements equal to our
-                    // scan, so keep going on.
-                    while scan_offset < n_right {
-                        if let Some(next_right_val) = right(scan_offset) {
-                            if next_right_val == scan_right_val {
-                                self.best_bound = Some(scan_offset);
-                            } else {
-                                break;
-                            }
+                // It is possible there are later elements equal to our
+                // scan, so keep going on.
+                while scan_offset < n_right {
+                    if let Some(next_right_val) = right(scan_offset) {
+                        if next_right_val == scan_right_val && self.allow_eq {
+                            self.best_bound = Some(scan_offset);
+                        } else {
+                            break;
                         }
-                        scan_offset += 1;
                     }
+
+                    scan_offset += 1;
                 }
-            } else {
-                break;
             }
+
+            break;
         }
 
         self.best_bound
