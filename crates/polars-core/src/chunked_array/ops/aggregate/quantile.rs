@@ -100,6 +100,66 @@ fn quantile_slice<T: ToPrimitive + TotalOrd + Copy>(
     }
 }
 
+fn quantiles_slice<T: ToPrimitive + TotalOrd + Copy>(
+    vals: &mut [T],
+    quantiles: &[f64],
+    method: QuantileMethod,
+) -> PolarsResult<Vec<Option<f64>>> {
+    // Validate all quantiles
+    for &q in quantiles {
+        polars_ensure!(
+            (0.0..=1.0).contains(&q),
+            ComputeError: "quantile should be between 0.0 and 1.0"
+        );
+    }
+
+    if vals.is_empty() {
+        return Ok(vec![None; quantiles.len()]);
+    }
+    if vals.len() == 1 {
+        let v = vals[0].to_f64();
+        return Ok(vec![v; quantiles.len()]);
+    }
+
+    // For multiple quantiles, just sort once
+    vals.sort_by(TotalOrd::tot_cmp);
+    let n = vals.len();
+
+    let mut out = Vec::with_capacity(quantiles.len());
+
+    for &q in quantiles {
+        let (idx, float_idx, top_idx) = quantile_idx(q, n, 0, method);
+
+        // No nulls here, so unwrap is safe
+        let lower = Some(vals[idx].to_f64().unwrap());
+
+        let opt = match method {
+            QuantileMethod::Midpoint => {
+                if top_idx == idx {
+                    lower
+                } else {
+                    let upper = Some(vals[idx + 1].to_f64().unwrap());
+                    midpoint_interpol(lower.unwrap(), upper.unwrap()).to_f64()
+                }
+            },
+            QuantileMethod::Linear => {
+                if top_idx == idx {
+                    lower
+                } else {
+                    let upper = Some(vals[idx + 1].to_f64().unwrap());
+                    linear_interpol(lower.unwrap(), upper.unwrap(), idx, float_idx).to_f64()
+                }
+            },
+            _ => lower,
+        };
+
+        out.push(opt);
+    }
+
+    Ok(out)
+}
+
+
 fn generic_quantile<T>(
     ca: ChunkedArray<T>,
     quantile: f64,
@@ -147,6 +207,64 @@ where
     Ok(opt)
 }
 
+
+fn generic_quantiles<T>(
+    ca: ChunkedArray<T>,
+    quantiles: &[f64],
+    method: QuantileMethod,
+) -> PolarsResult<Vec<Option<f64>>>
+where
+    T: PolarsNumericType,
+{
+    // Validate all quantiles
+    for &q in quantiles {
+        polars_ensure!(
+            (0.0..=1.0).contains(&q),
+            ComputeError: "`quantile` should be between 0.0 and 1.0",
+        );
+    }
+
+    let null_count = ca.null_count();
+    let length = ca.len();
+
+    if null_count == length {
+        return Ok(vec![None; quantiles.len()]);
+    }
+
+    let sorted = ca.sort(false);
+    let mut out = Vec::with_capacity(quantiles.len());
+
+    for &q in quantiles {
+        let (idx, float_idx, top_idx) = quantile_idx(q, length, null_count, method);
+
+        let lower = sorted.get(idx).map(|v| v.to_f64().unwrap());
+
+        let opt = match method {
+            QuantileMethod::Midpoint => {
+                if top_idx == idx {
+                    lower
+                } else {
+                    let upper = sorted.get(idx + 1).map(|v| v.to_f64().unwrap());
+                    midpoint_interpol(lower.unwrap(), upper.unwrap()).to_f64()
+                }
+            },
+            QuantileMethod::Linear => {
+                if top_idx == idx {
+                    lower
+                } else {
+                    let upper = sorted.get(idx + 1).map(|v| v.to_f64().unwrap());
+                    linear_interpol(lower.unwrap(), upper.unwrap(), idx, float_idx).to_f64()
+                }
+            },
+            _ => lower,
+        };
+
+        out.push(opt);
+    }
+
+    Ok(out)
+}
+
 impl<T> ChunkQuantile<f64> for ChunkedArray<T>
 where
     T: PolarsIntegerType,
@@ -159,6 +277,16 @@ where
             quantile_slice(&mut owned, quantile, method)
         } else {
             generic_quantile(self.clone(), quantile, method)
+        }
+    }
+
+    fn quantiles(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Vec<Option<f64>>> {
+        // in case of sorted data, the sort is free, so don't take quickselect route
+        if let (Ok(slice), false) = (self.cont_slice(), self.is_sorted_ascending_flag()) {
+            let mut owned = slice.to_vec();
+            quantiles_slice(&mut owned, quantiles, method)
+        } else {
+            generic_quantiles(self.clone(), quantiles, method)
         }
     }
 
@@ -192,6 +320,8 @@ where
     }
 }
 
+
+
 impl ChunkQuantile<f32> for Float32Chunked {
     fn quantile(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<f32>> {
         // in case of sorted data, the sort is free, so don't take quickselect route
@@ -202,6 +332,23 @@ impl ChunkQuantile<f32> for Float32Chunked {
             generic_quantile(self.clone(), quantile, method)
         };
         out.map(|v| v.map(|v| v as f32))
+    }
+
+    fn quantiles(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Vec<Option<f32>>> {
+        // in case of sorted data, the sort is free, so don't take quickselect route
+        let out = if let (Ok(slice), false) = (self.cont_slice(), self.is_sorted_ascending_flag()) {
+            let mut owned = slice.to_vec();
+            quantiles_slice(&mut owned, quantiles, method)
+        } else {
+            generic_quantiles(self.clone(), quantiles, method)
+        };
+        
+        out.map(|vec_f64| {
+            vec_f64
+                .into_iter()
+                .map(|opt| opt.map(|v| v as f32))
+                .collect::<Vec<Option<f32>>>()
+        })
     }
 
     fn median(&self) -> Option<f32> {
@@ -217,6 +364,16 @@ impl ChunkQuantile<f64> for Float64Chunked {
             quantile_slice(&mut owned, quantile, method)
         } else {
             generic_quantile(self.clone(), quantile, method)
+        }
+    }
+
+    fn quantiles(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Vec<Option<f64>>> {
+        // in case of sorted data, the sort is free, so don't take quickselect route
+        if let (Ok(slice), false) = (self.cont_slice(), self.is_sorted_ascending_flag()) {
+            let mut owned = slice.to_vec();
+            quantiles_slice(&mut owned, quantiles, method)
+        } else {
+            generic_quantiles(self.clone(), quantiles, method)
         }
     }
 
