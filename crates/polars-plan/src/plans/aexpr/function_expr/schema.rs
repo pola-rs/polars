@@ -529,6 +529,8 @@ impl<'a> FieldsMapper<'a> {
             DataType::Float32 => DataType::Float32,
             DataType::Float64 => DataType::Float64,
             dt if dt.is_primitive_numeric() => DataType::Float64,
+            #[cfg(feature = "dtype-date")]
+            DataType::Date => DataType::Datetime(TimeUnit::Microseconds, None),
             #[cfg(feature = "dtype-datetime")]
             dt @ DataType::Datetime(_, _) => dt.clone(),
             #[cfg(feature = "dtype-duration")]

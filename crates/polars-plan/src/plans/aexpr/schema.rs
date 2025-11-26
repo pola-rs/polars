@@ -158,28 +158,14 @@ impl AExpr {
                         Ok(field)
                     },
                     Median(expr) => {
-                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
-                        match field.dtype {
-                            Date => field.coerce(Datetime(TimeUnit::Microseconds, None)),
-                            _ => {
-                                let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
-                                let mapper = FieldsMapper::new(&field);
-                                return mapper.moment_dtype();
-                            },
-                        }
-                        Ok(field)
+                        let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
+                        let mapper = FieldsMapper::new(&field);
+                        mapper.moment_dtype()
                     },
                     Mean(expr) => {
-                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
-                        match field.dtype {
-                            Date => field.coerce(Datetime(TimeUnit::Microseconds, None)),
-                            _ => {
-                                let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
-                                let mapper = FieldsMapper::new(&field);
-                                return mapper.moment_dtype();
-                            },
-                        }
-                        Ok(field)
+                        let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
+                        let mapper = FieldsMapper::new(&field);
+                        mapper.moment_dtype()
                     },
                     Implode(expr) => {
                         let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
@@ -212,16 +198,9 @@ impl AExpr {
                         Ok(field)
                     },
                     Quantile { expr, .. } => {
-                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
-                        match field.dtype {
-                            Date => field.coerce(Datetime(TimeUnit::Microseconds, None)),
-                            _ => {
-                                let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
-                                let mapper = FieldsMapper::new(&field);
-                                return mapper.moment_dtype();
-                            },
-                        }
-                        Ok(field)
+                        let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
+                        let mapper = FieldsMapper::new(&field);
+                        mapper.moment_dtype()
                     },
                 }
             },

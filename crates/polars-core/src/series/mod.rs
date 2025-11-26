@@ -866,7 +866,7 @@ impl Series {
     }
 
     #[cfg(feature = "dtype-decimal")]
-    pub(crate) fn into_decimal(self, precision: usize, scale: usize) -> PolarsResult<Series> {
+    pub fn into_decimal(self, precision: usize, scale: usize) -> PolarsResult<Series> {
         match self.dtype() {
             DataType::Int128 => Ok(self
                 .i128()
@@ -884,7 +884,7 @@ impl Series {
     }
 
     #[cfg(feature = "dtype-time")]
-    pub(crate) fn into_time(self) -> Series {
+    pub fn into_time(self) -> Series {
         match self.dtype() {
             DataType::Int64 => self.i64().unwrap().clone().into_time().into_series(),
             DataType::Time => self
@@ -898,7 +898,7 @@ impl Series {
         }
     }
 
-    pub(crate) fn into_date(self) -> Series {
+    pub fn into_date(self) -> Series {
         #[cfg(not(feature = "dtype-date"))]
         {
             panic!("activate feature dtype-date")
@@ -918,7 +918,7 @@ impl Series {
     }
 
     #[allow(unused_variables)]
-    pub(crate) fn into_datetime(self, timeunit: TimeUnit, tz: Option<TimeZone>) -> Series {
+    pub fn into_datetime(self, timeunit: TimeUnit, tz: Option<TimeZone>) -> Series {
         #[cfg(not(feature = "dtype-datetime"))]
         {
             panic!("activate feature dtype-datetime")
@@ -944,7 +944,7 @@ impl Series {
     }
 
     #[allow(unused_variables)]
-    pub(crate) fn into_duration(self, timeunit: TimeUnit) -> Series {
+    pub fn into_duration(self, timeunit: TimeUnit) -> Series {
         #[cfg(not(feature = "dtype-duration"))]
         {
             panic!("activate feature dtype-duration")
