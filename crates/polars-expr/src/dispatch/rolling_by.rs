@@ -62,12 +62,12 @@ pub(super) fn rolling_quantile_by(
         .rolling_quantile_by(by.as_materialized_series(), options)?;
 
     Ok(match dt {
-        DataType::Date => {
-            (out * US_IN_DAY).cast(&DataType::Datetime(TimeUnit::Microseconds, None))?
-        },
-        DataType::Datetime(tu, tz) => out.cast(&DataType::Datetime(*tu, tz.clone()))?,
-        DataType::Duration(tu) => out.cast(&DataType::Duration(*tu))?,
-        DataType::Time => out.cast(&DataType::Time)?,
+        DataType::Date => (out * US_IN_DAY as f64)
+            .cast(&DataType::Int64)?
+            .into_datetime(TimeUnit::Microseconds, None),
+        DataType::Datetime(tu, tz) => out.cast(&DataType::Int64)?.into_datetime(*tu, tz.clone()),
+        DataType::Duration(tu) => out.cast(&DataType::Int64)?.into_duration(*tu),
+        DataType::Time => out.cast(&DataType::Int64)?.into_time(),
         _ => out,
     }
     .into_column())
