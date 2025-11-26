@@ -192,13 +192,6 @@ pub fn aexpr_to_column_predicates(
                                     ClosedInterval::Right => (false, true),
                                     ClosedInterval::None => (false, false),
                                 };
-                                if l > r {
-                                    // Really this ought to indicate that
-                                    // nothing should be loaded since the
-                                    // condition is impossible, but unclear how
-                                    // to do that at this abstraction layer.
-                                    return None;
-                                }
                                 is_between(
                                     &dtype,
                                     Some(Scalar::new(dtype.clone(), l.into_static())),
@@ -338,7 +331,14 @@ fn is_between(
                     if !high_closed {
                         *h = h.checked_sub(1)?;
                     }
-                    assert!(*l <= *h);
+                    if *l > *h {
+                        // Really this ought to indicate that nothing should be
+                        // loaded since the condition is impossible, but unclear
+                        // how to do that at this abstraction layer. Could add
+                        // SpecializedColumnPredicate::Impossible or something,
+                        // maybe.
+                        return None;
+                    }
                 },
                 )+
                 _ => return None,

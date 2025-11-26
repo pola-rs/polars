@@ -1,4 +1,5 @@
 import itertools
+from io import BytesIO
 
 import pytest
 
@@ -413,3 +414,19 @@ def test_slice_pushdown_within_concat_24734() -> None:
     assert plan.index("SLICE[offset: 0, len: 3]") > plan.index("PLAN 0:")
 
     assert_frame_equal(q, pl.LazyFrame({"x": [3, 2]}))
+
+
+def test_is_between_pushdown_25499() -> None:
+    f = BytesIO()
+    pl.LazyFrame(
+        {"a": [0, 1, 2, 3, 4]}, schema_overrides={"a": pl.UInt32}
+    ).sink_parquet(f)
+    parquet = f.getvalue()
+
+    expr = pl.lit(3, dtype=pl.UInt32).is_between(
+        pl.lit(1, dtype=pl.UInt32), pl.col("a")
+    )
+
+    df1 = pl.scan_parquet(parquet).filter(expr).collect()
+    df2 = pl.scan_parquet(parquet).collect().filter(expr)
+    assert_frame_equal(df1, df2)
