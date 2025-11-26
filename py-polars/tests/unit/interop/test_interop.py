@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import io
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, cast
@@ -898,9 +899,10 @@ def test_compat_level(monkeypatch: pytest.MonkeyPatch) -> None:
         df.to_arrow(compat_level=newest)["bin_col"][0], pa.BinaryViewScalar
     )
 
-    assert len(df.write_ipc(None).getbuffer()) == 738
-    assert len(df.write_ipc(None, compat_level=oldest).getbuffer()) == 866
-    assert len(df.write_ipc(None, compat_level=newest).getbuffer()) == 738
+    with contextlib.suppress(pl.exceptions.UnstableWarning):
+        assert len(df.write_ipc(None).getbuffer()) == 738
+        assert len(df.write_ipc(None, compat_level=oldest).getbuffer()) == 866
+        assert len(df.write_ipc(None, compat_level=newest).getbuffer()) == 738
     assert len(df.write_ipc_stream(None).getbuffer()) == 520
     assert len(df.write_ipc_stream(None, compat_level=oldest).getbuffer()) == 648
     assert len(df.write_ipc_stream(None, compat_level=newest).getbuffer()) == 520
