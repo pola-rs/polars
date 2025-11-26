@@ -6,10 +6,12 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
+from hypothesis import given
 
 import polars as pl
 from polars.exceptions import DuplicateError, InvalidOperationError
 from polars.testing import assert_frame_equal
+from polars.testing.parametric.strategies.core import dataframes
 
 if TYPE_CHECKING:
     from polars._typing import AsofJoinStrategy, PolarsIntegerType
@@ -1287,6 +1289,33 @@ def test_join_asof_no_exact_matches() -> None:
     }
 
 
+@pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
+@given(
+    df_left=dataframes(cols=1, allowed_dtypes=pl.Int32),
+    df_right=dataframes(cols=1, allowed_dtypes=pl.Int32),
+)
+def test_join_asof_no_exact_matches_parametric(
+    strategy: AsofJoinStrategy, df_left: pl.DataFrame, df_right: pl.DataFrame
+) -> None:
+    df_left = df_left.set_sorted("col0")
+    df_right = df_right.set_sorted("col0")
+
+    out = df_left.join_asof(
+        df_right,
+        on="col0",
+        strategy=strategy,
+        suffix="_right",
+        coalesce=False,
+        allow_exact_matches=False,
+    )
+
+    for l_val, r_val in zip(
+        out["col0"],
+        out["col0_right"],
+    ):
+        assert l_val != r_val or r_val is None
+
+
 def test_join_asof_not_sorted() -> None:
     df = pl.DataFrame({"a": [1, 1, 1, 2, 2, 2], "b": [2, 1, 3, 1, 2, 3]})
     with pytest.raises(InvalidOperationError, match="is not sorted"):
@@ -1509,3 +1538,31 @@ def test_join_asof_on_cast_expr_24999(by: str | None) -> None:
         expect = expect.with_columns(pl.col("one").alias("one_right"))
 
     assert_frame_equal(q.collect(), expect)
+
+
+@pytest.mark.parametrize(
+    ("left", "right", "expected_left", "expected_right"),
+    [
+        ([], [], [], []),
+        ([1], [2], [1], [2]),
+        ([], [1, 2], [], []),
+        ([1, 2], [], [1, 2], [None, None]),
+        ([1, 2], [1, 2], [1, 2], [2, 1]),
+    ],
+)
+def test_join_asof_nearest_no_exact_matches_25468(
+    left: list[int],
+    right: list[int],
+    expected_left: list[int],
+    expected_right: list[int],
+) -> None:
+    df_left = pl.DataFrame({"a": left}, schema={"a": pl.Int32})
+    df_right = pl.DataFrame({"a": right}, schema={"a": pl.Int32})
+    expected_df = pl.DataFrame(
+        {"a": expected_left, "a_right": expected_right},
+        schema={"a": pl.Int32, "a_right": pl.Int32},
+    )
+    result = df_left.join_asof(
+        df_right, on="a", strategy="nearest", coalesce=False, allow_exact_matches=False
+    )
+    assert_frame_equal(result, expected_df)
