@@ -355,7 +355,7 @@ def test_sort_by_different_lengths() -> None:
         }
     )
     with pytest.raises(
-        ComputeError,
+        ShapeError,
         match=r"expressions in 'sort_by' must have matching group lengths",
     ):
         df.group_by("group").agg(
@@ -365,12 +365,22 @@ def test_sort_by_different_lengths() -> None:
         )
 
     with pytest.raises(
-        ComputeError,
+        ShapeError,
         match=r"expressions in 'sort_by' must have matching group lengths",
     ):
         df.group_by("group").agg(
             [
                 pl.col("col1").sort_by(pl.col("col2").arg_unique()),
+            ]
+        )
+
+    with pytest.raises(
+        ShapeError,
+        match=r"expressions in 'sort_by' must have matching group lengths",
+    ):
+        df.group_by("group").agg(
+            [
+                pl.col("col1").sort_by(pl.col("col2").first()),
             ]
         )
 
@@ -508,7 +518,7 @@ def test_sort_by_err_9259() -> None:
         {"a": [1, 1, 1], "b": [3, 2, 1], "c": [1, 1, 2]},
         schema={"a": pl.Float32, "b": pl.Float32, "c": pl.Float32},
     )
-    with pytest.raises(ComputeError):
+    with pytest.raises(ShapeError):
         df.lazy().group_by("c").agg(
             [pl.col("a").sort_by(pl.col("b").filter(pl.col("b") > 100)).sum()]
         ).collect()
@@ -580,7 +590,7 @@ def test_sort_by_error() -> None:
     )
 
     with pytest.raises(
-        ComputeError,
+        ShapeError,
         match="expressions in 'sort_by' must have matching group lengths",
     ):
         df.group_by("id", maintain_order=True).agg(
