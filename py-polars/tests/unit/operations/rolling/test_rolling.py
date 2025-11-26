@@ -19,7 +19,7 @@ from polars.meta.index_type import get_index_type
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes, series
 from polars.testing.parametric.strategies.dtype import _time_units
-from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES
+from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES, TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
     from hypothesis.strategies import SearchStrategy
@@ -1921,7 +1921,12 @@ def test_rolling_sum_non_finite_23115(with_nulls: bool) -> None:
 )
 @pytest.mark.parametrize("center", [False, True])
 @given(
-    s=series(name="a", allowed_dtypes=NUMERIC_DTYPES, min_size=1, max_size=50),
+    s=series(
+        name="a",
+        allowed_dtypes=NUMERIC_DTYPES + TEMPORAL_DTYPES + [pl.Boolean],
+        min_size=1,
+        max_size=50,
+    ),
     window_size=st.integers(1, 50),
 )
 def test_rolling_rank(
@@ -1970,7 +1975,12 @@ def test_rolling_rank(
 
 @pytest.mark.parametrize("center", [False, True])
 @given(
-    s=series(name="a", allowed_dtypes=NUMERIC_DTYPES, min_size=1, max_size=50),
+    s=series(
+        name="a",
+        allowed_dtypes=NUMERIC_DTYPES + TEMPORAL_DTYPES + [pl.Boolean],
+        min_size=1,
+        max_size=50,
+    ),
     window_size=st.integers(1, 50),
 )
 def test_rolling_rank_method_random(
