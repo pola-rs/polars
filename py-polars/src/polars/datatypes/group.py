@@ -10,6 +10,7 @@ from polars.datatypes.classes import (
     Datetime,
     Decimal,
     Duration,
+    Float16,
     Float32,
     Float64,
     Int8,
@@ -99,7 +100,7 @@ UNSIGNED_INTEGER_DTYPES: frozenset[PolarsIntegerType] = DataTypeGroup(
 INTEGER_DTYPES: frozenset[PolarsIntegerType] = (
     SIGNED_INTEGER_DTYPES | UNSIGNED_INTEGER_DTYPES
 )
-FLOAT_DTYPES: frozenset[PolarsDataType] = DataTypeGroup([Float32, Float64])
+FLOAT_DTYPES: frozenset[PolarsDataType] = DataTypeGroup([Float16, Float32, Float64])
 NUMERIC_DTYPES: frozenset[PolarsDataType] = DataTypeGroup(
     FLOAT_DTYPES | INTEGER_DTYPES | frozenset([Decimal])
 )
