@@ -1026,7 +1026,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     let exprs = input_schema
                         .iter()
                         .filter_map(|(name, dtype)| match dtype {
-                            DataType::Float32 | DataType::Float64 => Some(
+                            DataType::Float16 | DataType::Float32 | DataType::Float64 => Some(
                                 col(name.clone())
                                     .fill_nan(fill_value.clone())
                                     .alias(name.clone()),

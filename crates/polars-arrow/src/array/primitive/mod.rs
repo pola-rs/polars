@@ -1,6 +1,7 @@
 use std::ops::Range;
 
 use either::Either;
+use polars_utils::float16::pf16;
 
 use super::{Array, Splitable};
 use crate::array::iterator::NonNullValuesIter;
@@ -9,7 +10,7 @@ use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::buffer::Buffer;
 use crate::datatypes::*;
 use crate::trusted_len::TrustedLen;
-use crate::types::{NativeType, days_ms, f16, i256, months_days_ns};
+use crate::types::{NativeType, days_ms, i256, months_days_ns};
 
 mod ffi;
 pub(super) mod fmt;
@@ -567,7 +568,7 @@ pub type DaysMsArray = PrimitiveArray<days_ms>;
 /// A type definition [`PrimitiveArray`] for [`months_days_ns`]
 pub type MonthsDaysNsArray = PrimitiveArray<months_days_ns>;
 /// A type definition [`PrimitiveArray`] for `f16`
-pub type Float16Array = PrimitiveArray<f16>;
+pub type Float16Array = PrimitiveArray<pf16>;
 /// A type definition [`PrimitiveArray`] for `f32`
 pub type Float32Array = PrimitiveArray<f32>;
 /// A type definition [`PrimitiveArray`] for `f64`
@@ -600,7 +601,7 @@ pub type DaysMsVec = MutablePrimitiveArray<days_ms>;
 /// A type definition [`MutablePrimitiveArray`] for [`months_days_ns`]
 pub type MonthsDaysNsVec = MutablePrimitiveArray<months_days_ns>;
 /// A type definition [`MutablePrimitiveArray`] for `f16`
-pub type Float16Vec = MutablePrimitiveArray<f16>;
+pub type Float16Vec = MutablePrimitiveArray<pf16>;
 /// A type definition [`MutablePrimitiveArray`] for `f32`
 pub type Float32Vec = MutablePrimitiveArray<f32>;
 /// A type definition [`MutablePrimitiveArray`] for `f64`

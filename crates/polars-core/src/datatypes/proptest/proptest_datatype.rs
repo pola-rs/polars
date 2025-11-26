@@ -149,7 +149,11 @@ fn int_strategy() -> impl Strategy<Value = DataType> {
 }
 
 fn float_strategy() -> impl Strategy<Value = DataType> {
-    prop_oneof![Just(DataType::Float32), Just(DataType::Float64),]
+    prop_oneof![
+        Just(DataType::Float16),
+        Just(DataType::Float32),
+        Just(DataType::Float64),
+    ]
 }
 
 #[cfg(feature = "dtype-decimal")]
