@@ -414,7 +414,7 @@ impl<'a> AnyValue<'a> {
     pub fn null_to_none(self) -> Option<Self> {
         match self {
             AnyValue::Null => None,
-            av => Some(av)
+            av => Some(av),
         }
     }
 

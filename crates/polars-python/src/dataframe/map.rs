@@ -1,6 +1,5 @@
 use parking_lot::RwLockWriteGuard;
-use polars::frame::row::rows_to_schema_first_non_null;
-use polars::frame::row::Row;
+use polars::frame::row::{Row, rows_to_schema_first_non_null};
 use polars_core::utils::CustomIterTools;
 use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
@@ -25,7 +24,11 @@ impl PyDataFrame {
         df.as_single_chunk_par(); // Needed for series iter.
         let df = RwLockWriteGuard::downgrade(df);
         let height = df.height();
-        let col_series: Vec<_> = df.get_columns().iter().map(|s| s.as_materialized_series().clone()).collect();
+        let col_series: Vec<_> = df
+            .get_columns()
+            .iter()
+            .map(|s| s.as_materialized_series().clone())
+            .collect();
         let mut iters: Vec<_> = col_series.iter().map(|c| c.iter()).collect();
         drop(df); // Release lock before calling lambda.
 
@@ -38,7 +41,7 @@ impl PyDataFrame {
         // Simple case: return type set.
         if let Some(output_type) = &output_type {
             let avs = lambda_result_iter
-                .map(|res| Ok(res?.extract::<Wrap<AnyValue>>().map(|w| w.0)?))
+                .map(|res| res?.extract::<Wrap<AnyValue>>().map(|w| w.0))
                 .collect::<PyResult<Vec<AnyValue>>>()?;
             let s = Series::from_any_values_and_dtype(
                 PlSmallStr::from_static("map"),
@@ -83,25 +86,18 @@ impl PyDataFrame {
                 null_count,
                 inference_size,
                 peek_iter,
-            ).map_err(PyPolarsErr::from)?;
+            )
+            .map_err(PyPolarsErr::from)?;
             Ok((PyDataFrame::from(out_df).into_py_any(py)?, true))
         } else {
             let avs = peek_iter
-                .map(|res| Ok(res?.extract::<Wrap<AnyValue>>().map(|w| w.0)?))
+                .map(|res| res?.extract::<Wrap<AnyValue>>().map(|w| w.0))
                 .collect::<PyResult<Vec<AnyValue>>>()?;
-            let s = Series::from_any_values(
-                PlSmallStr::from_static("map"),
-                &avs,
-                true,
-            )
-            .map_err(PyPolarsErr::from)?;
+            let s = Series::from_any_values(PlSmallStr::from_static("map"), &avs, true)
+                .map_err(PyPolarsErr::from)?;
 
             let out = if null_count > 0 {
-                let mut tmp = Series::full_null(
-                    s.name().clone(),
-                    null_count,
-                    s.dtype(),
-                );
+                let mut tmp = Series::full_null(s.name().clone(), null_count, s.dtype());
                 tmp.append_owned(s).map_err(PyPolarsErr::from)?;
                 tmp
             } else {
@@ -111,7 +107,6 @@ impl PyDataFrame {
         }
     }
 }
-
 
 fn collect_lambda_ret_with_rows_output<'py>(
     height: usize,
@@ -164,12 +159,7 @@ fn collect_lambda_ret_with_rows_output<'py>(
         DataFrame::try_from_rows_iter_and_schema(iter, &schema)
     } else {
         // SAFETY: we know the iterators size.
-        let iter = unsafe {
-            buf.iter()
-                .map(Ok)
-                .chain(row_iter)
-                .trust_my_length(height)
-        };
+        let iter = unsafe { buf.iter().map(Ok).chain(row_iter).trust_my_length(height) };
         DataFrame::try_from_rows_iter_and_schema(iter, &schema)
     }
 }

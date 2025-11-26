@@ -50,7 +50,7 @@ macro_rules! apply_all_polars_dtypes {
                 CategoricalPhysical::U16 => $self.cat16().unwrap().$method($($args),*),
                 CategoricalPhysical::U32 => $self.cat32().unwrap().$method($($args),*),
             },
-            
+
             #[cfg(feature = "object")]
             DataType::Object(_) => {
                 $self
@@ -62,7 +62,7 @@ macro_rules! apply_all_polars_dtypes {
             DataType::Extension(_, _) => $self.ext().unwrap().$method($($args),*),
 
             DataType::Null => $self.null().unwrap().$method($($args),*),
-            
+
             dt @ (DataType::BinaryOffset | DataType::Unknown(_)) => panic!("dtype {:?} not supported", dt)
         }
     }

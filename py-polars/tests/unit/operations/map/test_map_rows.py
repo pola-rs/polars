@@ -1,11 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
-
-import pytest
-
 import polars as pl
-from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
 
