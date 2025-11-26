@@ -1,11 +1,20 @@
-use aho_corasick::{AhoCorasick, AhoCorasickBuilder};
+use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
 use arrow::array::Utf8ViewArray;
 use polars_core::prelude::arity::unary_elementwise;
 use polars_core::prelude::*;
 use polars_core::utils::align_chunks_binary;
 
-fn build_ac(patterns: &StringChunked, ascii_case_insensitive: bool) -> PolarsResult<AhoCorasick> {
+fn build_ac(
+    patterns: &StringChunked,
+    ascii_case_insensitive: bool,
+    leftmost: bool,
+) -> PolarsResult<AhoCorasick> {
     AhoCorasickBuilder::new()
+        .match_kind(if leftmost {
+            MatchKind::LeftmostFirst
+        } else {
+            MatchKind::Standard
+        })
         .ascii_case_insensitive(ascii_case_insensitive)
         .build(patterns.downcast_iter().flatten().flatten())
         .map_err(|e| polars_err!(ComputeError: "could not build aho corasick automaton {}", e))
@@ -14,8 +23,14 @@ fn build_ac(patterns: &StringChunked, ascii_case_insensitive: bool) -> PolarsRes
 fn build_ac_arr(
     patterns: &Utf8ViewArray,
     ascii_case_insensitive: bool,
+    leftmost: bool,
 ) -> PolarsResult<AhoCorasick> {
     AhoCorasickBuilder::new()
+        .match_kind(if leftmost {
+            MatchKind::LeftmostFirst
+        } else {
+            MatchKind::Standard
+        })
         .ascii_case_insensitive(ascii_case_insensitive)
         .build(patterns.into_iter().flatten())
         .map_err(|e| polars_err!(ComputeError: "could not build aho corasick automaton {}", e))
@@ -46,7 +61,7 @@ pub fn contains_any(
         keep_nulls: true,
     })?;
     let patterns = patterns.str()?;
-    let ac = build_ac(patterns, ascii_case_insensitive)?;
+    let ac = build_ac(patterns, ascii_case_insensitive, false)?;
 
     Ok(unary_elementwise(ca, |opt_val| {
         opt_val.map(|val| ac.find(val).is_some())
@@ -58,6 +73,7 @@ pub fn replace_all(
     patterns: &ListChunked,
     replace_with: &ListChunked,
     ascii_case_insensitive: bool,
+    leftmost: bool,
 ) -> PolarsResult<StringChunked> {
     let mut length = 1;
     for (argument_idx, (argument, l)) in [
@@ -116,7 +132,7 @@ pub fn replace_all(
         .flatten()
         .collect::<Vec<_>>();
 
-    let ac = build_ac(patterns, ascii_case_insensitive)?;
+    let ac = build_ac(patterns, ascii_case_insensitive, leftmost)?;
 
     Ok(unary_elementwise(ca, |opt_val| {
         opt_val.map(|val| ac.replace_all(val, replace_with.as_slice()))
@@ -145,7 +161,10 @@ pub fn extract_many(
     patterns: &ListChunked,
     ascii_case_insensitive: bool,
     overlapping: bool,
+    leftmost: bool,
 ) -> PolarsResult<ListChunked> {
+    // ensure that either overlapping == false, or overlapping == true and leftmost == false
+    polars_ensure!(!overlapping | !leftmost, InvalidOperation: "can not match overlapping patterns when leftmost == True");
     match (ca.len(), patterns.len()) {
         (1, _) => match ca.get(0) {
             None => Ok(ListChunked::full_null_with_dtype(
@@ -165,7 +184,7 @@ pub fn extract_many(
                             let pat = pat.str()?;
                             let pat = pat.rechunk();
                             let pat = pat.downcast_as_array();
-                            let ac = build_ac_arr(pat, ascii_case_insensitive)?;
+                            let ac = build_ac_arr(pat, ascii_case_insensitive, leftmost)?;
                             push_str(val, &mut builder, &ac, overlapping);
                         },
                     }
@@ -179,7 +198,7 @@ pub fn extract_many(
                 keep_nulls: true,
             })?;
             let patterns = patterns.str()?;
-            let ac = build_ac(patterns, ascii_case_insensitive)?;
+            let ac = build_ac(patterns, ascii_case_insensitive, leftmost)?;
             let mut builder =
                 ListStringChunkedBuilder::new(ca.name().clone(), ca.len(), ca.len() * 2);
 
@@ -205,7 +224,7 @@ pub fn extract_many(
                         (None, _) | (_, None) => builder.append_null(),
                         (Some(val), Some(pat)) => {
                             let pat = pat.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
-                            let ac = build_ac_arr(pat, ascii_case_insensitive)?;
+                            let ac = build_ac_arr(pat, ascii_case_insensitive, leftmost)?;
                             push_str(val, &mut builder, &ac, overlapping);
                         },
                     }
@@ -235,7 +254,9 @@ pub fn find_many(
     patterns: &ListChunked,
     ascii_case_insensitive: bool,
     overlapping: bool,
+    leftmost: bool,
 ) -> PolarsResult<ListChunked> {
+    polars_ensure!(!overlapping | !leftmost, InvalidOperation: "can not match overlapping patterns when leftmost == True");
     type B = ListPrimitiveChunkedBuilder<UInt32Type>;
     match (ca.len(), patterns.len()) {
         (1, _) => match ca.get(0) {
@@ -259,7 +280,7 @@ pub fn find_many(
                             let pat = pat.str()?;
                             let pat = pat.rechunk();
                             let pat = pat.downcast_as_array();
-                            let ac = build_ac_arr(pat, ascii_case_insensitive)?;
+                            let ac = build_ac_arr(pat, ascii_case_insensitive, leftmost)?;
                             push_idx(val, &mut builder, &ac, overlapping);
                         },
                     }
@@ -273,7 +294,7 @@ pub fn find_many(
                 keep_nulls: true,
             })?;
             let patterns = patterns.str()?;
-            let ac = build_ac(patterns, ascii_case_insensitive)?;
+            let ac = build_ac(patterns, ascii_case_insensitive, leftmost)?;
             let mut builder = B::new(ca.name().clone(), ca.len(), ca.len() * 2, DataType::UInt32);
 
             for opt_val in ca.iter() {
@@ -295,7 +316,7 @@ pub fn find_many(
                         (None, _) | (_, None) => builder.append_null(),
                         (Some(val), Some(pat)) => {
                             let pat = pat.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
-                            let ac = build_ac_arr(pat, ascii_case_insensitive)?;
+                            let ac = build_ac_arr(pat, ascii_case_insensitive, leftmost)?;
                             push_idx(val, &mut builder, &ac, overlapping);
                         },
                     }

@@ -1103,12 +1103,18 @@ def test_hybrid_rle() -> None:
             pl.List,
             pl.Array,
             pl.Int8,
+            pl.Int16,
+            pl.Int32,
+            pl.Int64,
+            pl.Int128,
             pl.UInt8,
             pl.UInt32,
-            pl.Int64,
+            pl.UInt64,
+            pl.UInt128,
             pl.Date,
             pl.Time,
             pl.Binary,
+            pl.Float16,
             pl.Float32,
             pl.Float64,
             pl.String,
@@ -1460,6 +1466,38 @@ def test_null_array_dict_pages_18085() -> None:
     test.to_parquet(f)
     f.seek(0)
     pl.read_parquet(f)
+
+
+@given(
+    df=dataframes(
+        min_size=1,
+        max_size=1000,
+        allowed_dtypes=[
+            pl.List,
+            pl.Float16,
+            pl.Float32,
+            pl.Float64,
+        ],
+        allow_masked_out=False,  # PyArrow does not support this
+    ),
+    row_group_size=st.integers(min_value=10, max_value=1000),
+)
+def test_byte_stream_split_encoding_roundtrip(
+    df: pl.DataFrame, row_group_size: int
+) -> None:
+    f = io.BytesIO()
+    pq.write_table(
+        df.to_arrow(),
+        f,
+        compression="NONE",
+        use_dictionary=False,
+        column_encoding="BYTE_STREAM_SPLIT",
+        write_statistics=False,
+        row_group_size=row_group_size,
+    )
+
+    f.seek(0)
+    assert_frame_equal(pl.read_parquet(f), df)
 
 
 @given(
@@ -2267,7 +2305,7 @@ def test_decode_f16() -> None:
         }
     )
 
-    df = pl.Series("x", values, pl.Float32).to_frame()
+    df = pl.Series("x", values, pl.Float16).to_frame()
 
     f = io.BytesIO()
     pq.write_table(table, f)

@@ -163,8 +163,7 @@ impl SinkNode for ParquetSinkNode {
             let file_size = writer.finish()?;
             drop(writer);
 
-            file.sync_on_close(sink_options.sync_on_close)?;
-            file.close()?;
+            file.close(sink_options.sync_on_close)?;
 
             output_file_size.store(file_size);
             PolarsResult::Ok(())
