@@ -15,7 +15,7 @@ impl Default for DataFrameArbitraryOptions {
     fn default() -> Self {
         Self {
             series_options: SeriesArbitraryOptions::default(),
-            num_columns: 1..=5,
+            num_columns: 0..=5,
         }
     }
 }

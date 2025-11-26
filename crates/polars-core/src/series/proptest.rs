@@ -84,9 +84,9 @@ impl Default for SeriesArbitraryOptions {
         Self {
             allowed_dtypes: SeriesArbitrarySelection::all(),
             max_nesting_level: 3,
-            series_length_range: 1..=5,
-            categories_range: 1..=3,
-            struct_fields_range: 1..=3,
+            series_length_range: 0..=5,
+            categories_range: 0..=3,
+            struct_fields_range: 0..=3,
         }
     }
 }
