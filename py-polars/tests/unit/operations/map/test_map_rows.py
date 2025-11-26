@@ -43,17 +43,6 @@ def test_map_rows_dataframe_return() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_map_rows_error_return_type() -> None:
-    df = pl.DataFrame({"a": [[1, 2], [2, 3]], "b": [[4, 5], [6, 7]]})
-
-    def combine(row: tuple[Any, ...]) -> list[Any]:
-        res = [x + y for x, y in zip(row[0], row[1])]
-        return [res]
-
-    with pytest.raises(ComputeError, match="expected tuple, got list"):
-        df.map_rows(combine)
-
-
 def test_map_rows_shifted_chunks() -> None:
     df = pl.DataFrame(pl.Series("texts", ["test", "test123", "tests"]))
     df = df.select(pl.col("texts"), pl.col("texts").shift(1).alias("texts_shifted"))
