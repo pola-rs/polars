@@ -1071,7 +1071,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             &input_schema,
                         ),
                         StatsFunction::Quantile { quantile, method } => stats_helper(
-                            |dt| dt.is_primitive_numeric() || dt.is_decimal(),
+                            |dt| dt.is_primitive_numeric() || dt.is_decimal() || dt.is_temporal(),
                             |name| col(name.clone()).quantile(quantile.clone(), method),
                             &input_schema,
                         ),
