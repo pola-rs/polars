@@ -1,8 +1,6 @@
 use crate::float16::pf16;
 
 pub trait ArgMinMax {
-    fn argminmax(&self) -> (usize, usize);
-
     fn argmin(&self) -> usize;
 
     fn argmax(&self) -> usize;
@@ -11,10 +9,6 @@ pub trait ArgMinMax {
 macro_rules! impl_argminmax {
     ($T:ty) => {
         impl ArgMinMax for $T {
-            fn argminmax(&self) -> (usize, usize) {
-                argminmax::ArgMinMax::argminmax(self)
-            }
-
             fn argmin(&self) -> usize {
                 argminmax::ArgMinMax::argmin(self)
             }
@@ -38,24 +32,6 @@ impl_argminmax!(&[f32]);
 impl_argminmax!(&[f64]);
 
 impl ArgMinMax for &[i128] {
-    fn argminmax(&self) -> (usize, usize) {
-        let mut min_val = i128::MAX;
-        let mut max_val = i128::MIN;
-        let mut min_idx = 0;
-        let mut max_idx = 0;
-        for (idx, val) in self.iter().enumerate() {
-            if *val < min_val {
-                min_val = *val;
-                min_idx = idx;
-            }
-            if *val > max_val {
-                max_val = *val;
-                max_idx = idx;
-            }
-        }
-        (min_idx, max_idx)
-    }
-
     fn argmin(&self) -> usize {
         let mut min_val = i128::MAX;
         let mut min_idx = 0;
@@ -82,24 +58,6 @@ impl ArgMinMax for &[i128] {
 }
 
 impl ArgMinMax for &[u128] {
-    fn argminmax(&self) -> (usize, usize) {
-        let mut min_val = u128::MAX;
-        let mut max_val = u128::MIN;
-        let mut min_idx = 0;
-        let mut max_idx = 0;
-        for (idx, val) in self.iter().enumerate() {
-            if *val < min_val {
-                min_val = *val;
-                min_idx = idx;
-            }
-            if *val > max_val {
-                max_val = *val;
-                max_idx = idx;
-            }
-        }
-        (min_idx, max_idx)
-    }
-
     fn argmin(&self) -> usize {
         let mut min_val = u128::MAX;
         let mut min_idx = 0;
@@ -126,11 +84,6 @@ impl ArgMinMax for &[u128] {
 }
 
 impl ArgMinMax for &[pf16] {
-    fn argminmax(&self) -> (usize, usize) {
-        let transmuted: &&[half::f16] = unsafe { std::mem::transmute(self) };
-        argminmax::ArgMinMax::argminmax(transmuted)
-    }
-
     fn argmin(&self) -> usize {
         let transmuted: &&[half::f16] = unsafe { std::mem::transmute(self) };
         argminmax::ArgMinMax::argmin(transmuted)
