@@ -186,9 +186,9 @@ impl<T: NumericNative> AsofJoinState<T> for AsofJoinNearestState {
 
                 // It is possible there are later elements equal to our
                 // scan, so keep going on.
-                while self.allow_eq && scan_offset < n_right {
+                while scan_offset < n_right {
                     if let Some(next_right_val) = right(scan_offset) {
-                        if next_right_val == scan_right_val {
+                        if next_right_val == scan_right_val && self.allow_eq {
                             self.best_bound = Some(scan_offset);
                         } else {
                             break;
