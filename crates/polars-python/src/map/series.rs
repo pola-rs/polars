@@ -1,6 +1,6 @@
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
-use pyo3::types::{PyBool, PyCFunction, PyFloat, PyList, PyString, PyTuple};
+use pyo3::types::{PyBool, PyCFunction, PyFloat, PyList, PyNone, PyString, PyTuple};
 
 use super::*;
 use crate::py_modules::{pl_series, polars};
@@ -220,6 +220,23 @@ pub trait ApplyLambda<'py> {
     ) -> PyResult<ObjectChunked<ObjectValue>>;
 }
 
+pub trait ApplyLambdaGeneric<'py> {
+    fn apply_generic(
+        &self,
+        py: Python<'py>,
+        lambda: &Bound<'py, PyAny>,
+        skip_nulls: bool,
+    ) -> PyResult<Series>;
+
+    fn apply_generic_with_dtype(
+        &self,
+        py: Python<'py>,
+        lambda: &Bound<'py, PyAny>,
+        datatype: &DataType,
+        skip_nulls: bool,
+    ) -> PyResult<Series>;
+}
+
 pub fn call_lambda<'py, T>(
     py: Python<'py>,
     lambda: &Bound<'py, PyAny>,
@@ -299,6 +316,65 @@ where
         avs.push(av)
     }
     Ok(avs)
+}
+
+fn call_and_collect_anyvalues<'py, T, I>(
+    py: Python<'py>,
+    lambda: &Bound<'py, PyAny>,
+    len: usize,
+    iter: I,
+    skip_nulls: bool,
+) -> PyResult<Vec<AnyValue<'static>>>
+where
+    T: IntoPyObject<'py>,
+    I: Iterator<Item = Option<T>>,
+{
+    let mut avs = Vec::with_capacity(len);
+    for opt_val in iter {
+        let arg = match opt_val {
+            None if skip_nulls => {
+                avs.push(AnyValue::Null);
+                continue;
+            },
+            None => {
+                PyTuple::new(py, [PyNone::get(py)])?
+            }
+            Some(val) => {
+                PyTuple::new(py, [val])?
+            }
+        };
+        let out = lambda.call1(arg)?;
+        let av: Option<Wrap<AnyValue>> = if out.is_none() {
+            Ok(None)
+        } else {
+            out.extract().map(Some)
+        }?;
+        avs.push(av.map(|w| w.0).unwrap_or(AnyValue::Null));
+    }
+    Ok(avs)
+}
+
+impl<'py> ApplyLambdaGeneric<'py> for BooleanChunked {
+    fn apply_generic(
+        &self,
+        py: Python<'py>,
+        lambda: &Bound<'py, PyAny>,
+        skip_nulls: bool
+    ) -> PyResult<Series> {
+        let avs = call_and_collect_anyvalues(py, lambda, self.len(), self.into_iter(), skip_nulls)?;
+        Ok(Series::from_any_values(self.name().clone(), &avs, true).map_err(PyPolarsErr::from)?)
+    }
+
+    fn apply_generic_with_dtype(
+        &self,
+        py: Python<'py>,
+        lambda: &Bound<'py, PyAny>,
+        datatype: &DataType,
+        skip_nulls: bool,
+    ) -> PyResult<Series> {
+        let avs = call_and_collect_anyvalues(py, lambda, self.len(), self.into_iter(), skip_nulls)?;
+        Ok(Series::from_any_values_and_dtype(self.name().clone(), &avs, datatype, true).map_err(PyPolarsErr::from)?)
+    }
 }
 
 impl<'py> ApplyLambda<'py> for BooleanChunked {
@@ -479,7 +555,6 @@ impl<'py> ApplyLambda<'py> for BooleanChunked {
     ) -> PyResult<Series> {
         let iter = self.into_iter().skip(init_null_count + 1);
         let avs = extract_anyvalues(py, lambda, self.len(), init_null_count, iter, first_value)?;
-
         Ok(Series::new(self.name().clone(), &avs))
     }
 
@@ -511,6 +586,33 @@ impl<'py> ApplyLambda<'py> for BooleanChunked {
                 self.len(),
             )
         }
+    }
+}
+
+impl<'py, T> ApplyLambdaGeneric<'py> for ChunkedArray<T>
+where
+    T: PyPolarsNumericType,
+    T::Native: IntoPyObject<'py> + FromPyObject<'py>,
+{
+    fn apply_generic(
+        &self,
+        py: Python<'py>,
+        lambda: &Bound<'py, PyAny>,
+        skip_nulls: bool
+    ) -> PyResult<Series> {
+        let avs = call_and_collect_anyvalues(py, lambda, self.len(), self.into_iter(), skip_nulls)?;
+        Ok(Series::from_any_values(self.name().clone(), &avs, true).map_err(PyPolarsErr::from)?)
+    }
+
+    fn apply_generic_with_dtype(
+        &self,
+        py: Python<'py>,
+        lambda: &Bound<'py, PyAny>,
+        datatype: &DataType,
+        skip_nulls: bool,
+    ) -> PyResult<Series> {
+        let avs = call_and_collect_anyvalues(py, lambda, self.len(), self.into_iter(), skip_nulls)?;
+        Ok(Series::from_any_values_and_dtype(self.name().clone(), &avs, datatype, true).map_err(PyPolarsErr::from)?)
     }
 }
 
@@ -729,6 +831,30 @@ where
                 self.len(),
             )
         }
+    }
+}
+
+impl<'py> ApplyLambdaGeneric<'py> for StringChunked {
+    fn apply_generic(
+        &self,
+        py: Python<'py>,
+        lambda: &Bound<'py, PyAny>,
+        skip_nulls: bool
+    ) -> PyResult<Series> {
+        let avs = call_and_collect_anyvalues(py, lambda, self.len(), self.into_iter(), skip_nulls)?;
+        Ok(Series::from_any_values(self.name().clone(), &avs, true).map_err(PyPolarsErr::from)?)
+    }
+
+    fn apply_generic_with_dtype(
+        &self,
+        py: Python<'py>,
+        lambda: &Bound<'py, PyAny>,
+        datatype: &DataType,
+        skip_nulls: bool,
+    ) -> PyResult<Series> {
+        let avs = call_and_collect_anyvalues(py, lambda, self.len(), self.into_iter(), skip_nulls)?;
+        dbg!(&avs);
+        Ok(Series::from_any_values_and_dtype(self.name().clone(), &avs, datatype, true).map_err(PyPolarsErr::from)?)
     }
 }
 
@@ -968,6 +1094,31 @@ fn call_series_lambda(
         .extract::<PySeries>()
         .ok()
         .map(|s| s.series.into_inner()))
+}
+
+impl<'py> ApplyLambdaGeneric<'py> for ListChunked {
+    fn apply_generic(
+        &self,
+        py: Python<'py>,
+        lambda: &Bound<'py, PyAny>,
+        skip_nulls: bool
+    ) -> PyResult<Series> {
+        let it = self.into_iter().map(|opt_s| opt_s.map(Wrap));
+        let avs = call_and_collect_anyvalues(py, lambda, self.len(), it, skip_nulls)?;
+        Ok(Series::from_any_values(self.name().clone(), &avs, true).map_err(PyPolarsErr::from)?)
+    }
+
+    fn apply_generic_with_dtype(
+        &self,
+        py: Python<'py>,
+        lambda: &Bound<'py, PyAny>,
+        datatype: &DataType,
+        skip_nulls: bool,
+    ) -> PyResult<Series> {
+        let it = self.into_iter().map(|opt_s| opt_s.map(Wrap));
+        let avs = call_and_collect_anyvalues(py, lambda, self.len(), it, skip_nulls)?;
+        Ok(Series::from_any_values_and_dtype(self.name().clone(), &avs, datatype, true).map_err(PyPolarsErr::from)?)
+    }
 }
 
 impl<'py> ApplyLambda<'py> for ListChunked {
@@ -1281,6 +1432,32 @@ impl<'py> ApplyLambda<'py> for ListChunked {
                 self.len(),
             )
         }
+    }
+}
+
+#[cfg(feature = "dtype-array")]
+impl<'py> ApplyLambdaGeneric<'py> for ArrayChunked {
+    fn apply_generic(
+        &self,
+        py: Python<'py>,
+        lambda: &Bound<'py, PyAny>,
+        skip_nulls: bool
+    ) -> PyResult<Series> {
+        let it = self.into_iter().map(|opt_s| Some(PySeries::new(opt_s?)));
+        let avs = call_and_collect_anyvalues(py, lambda, self.len(), it, skip_nulls)?;
+        Ok(Series::from_any_values(self.name().clone(), &avs, true).map_err(PyPolarsErr::from)?)
+    }
+
+    fn apply_generic_with_dtype(
+        &self,
+        py: Python<'py>,
+        lambda: &Bound<'py, PyAny>,
+        datatype: &DataType,
+        skip_nulls: bool,
+    ) -> PyResult<Series> {
+        let it = self.into_iter().map(|opt_s| Some(PySeries::new(opt_s?)));
+        let avs = call_and_collect_anyvalues(py, lambda, self.len(), it, skip_nulls)?;
+        Ok(Series::from_any_values_and_dtype(self.name().clone(), &avs, datatype, true).map_err(PyPolarsErr::from)?)
     }
 }
 
@@ -1601,6 +1778,30 @@ impl<'py> ApplyLambda<'py> for ArrayChunked {
 }
 
 #[cfg(feature = "object")]
+impl<'py> ApplyLambdaGeneric<'py> for ObjectChunked<ObjectValue> {
+    fn apply_generic(
+        &self,
+        py: Python<'py>,
+        lambda: &Bound<'py, PyAny>,
+        skip_nulls: bool
+    ) -> PyResult<Series> {
+        let avs = call_and_collect_anyvalues(py, lambda, self.len(), self.into_iter(), skip_nulls)?;
+        Ok(Series::from_any_values(self.name().clone(), &avs, true).map_err(PyPolarsErr::from)?)
+    }
+
+    fn apply_generic_with_dtype(
+        &self,
+        py: Python<'py>,
+        lambda: &Bound<'py, PyAny>,
+        datatype: &DataType,
+        skip_nulls: bool,
+    ) -> PyResult<Series> {
+        let avs = call_and_collect_anyvalues(py, lambda, self.len(), self.into_iter(), skip_nulls)?;
+        Ok(Series::from_any_values_and_dtype(self.name().clone(), &avs, datatype, true).map_err(PyPolarsErr::from)?)
+    }
+}
+
+#[cfg(feature = "object")]
 impl<'py> ApplyLambda<'py> for ObjectChunked<ObjectValue> {
     fn apply_lambda_unknown(
         &self,
@@ -1817,6 +2018,31 @@ fn iter_struct(ca: &StructChunked) -> impl Iterator<Item = AnyValue<'_>> {
     (0..ca.len()).map(|i| unsafe { ca.get_any_value_unchecked(i) })
 }
 
+impl<'py> ApplyLambdaGeneric<'py> for StructChunked {
+    fn apply_generic(
+        &self,
+        py: Python<'py>,
+        lambda: &Bound<'py, PyAny>,
+        skip_nulls: bool
+    ) -> PyResult<Series> {
+        let it = (0..self.len()).map(|i| unsafe { self.get_any_value_unchecked(i).null_to_none().map(Wrap) });
+        let avs = call_and_collect_anyvalues(py, lambda, self.len(), it, skip_nulls)?;
+        Ok(Series::from_any_values(self.name().clone(), &avs, true).map_err(PyPolarsErr::from)?)
+    }
+
+    fn apply_generic_with_dtype(
+        &self,
+        py: Python<'py>,
+        lambda: &Bound<'py, PyAny>,
+        datatype: &DataType,
+        skip_nulls: bool,
+    ) -> PyResult<Series> {
+        let it = (0..self.len()).map(|i| unsafe { self.get_any_value_unchecked(i).null_to_none().map(Wrap) });
+        let avs = call_and_collect_anyvalues(py, lambda, self.len(), it, skip_nulls)?;
+        Ok(Series::from_any_values_and_dtype(self.name().clone(), &avs, datatype, true).map_err(PyPolarsErr::from)?)
+    }
+}
+
 impl<'py> ApplyLambda<'py> for StructChunked {
     fn apply_lambda_unknown(
         &self,
@@ -2015,5 +2241,123 @@ impl<'py> ApplyLambda<'py> for StructChunked {
             self.name().clone(),
             self.len(),
         )
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+impl<'py> ApplyLambdaGeneric<'py> for BinaryChunked {
+    fn apply_generic(
+        &self,
+        py: Python<'py>,
+        lambda: &Bound<'py, PyAny>,
+        skip_nulls: bool
+    ) -> PyResult<Series> {
+        let avs = call_and_collect_anyvalues(py, lambda, self.len(), self.into_iter(), skip_nulls)?;
+        Ok(Series::from_any_values(self.name().clone(), &avs, true).map_err(PyPolarsErr::from)?)
+    }
+
+    fn apply_generic_with_dtype(
+        &self,
+        py: Python<'py>,
+        lambda: &Bound<'py, PyAny>,
+        datatype: &DataType,
+        skip_nulls: bool,
+    ) -> PyResult<Series> {
+        let avs = call_and_collect_anyvalues(py, lambda, self.len(), self.into_iter(), skip_nulls)?;
+        Ok(Series::from_any_values_and_dtype(self.name().clone(), &avs, datatype, true).map_err(PyPolarsErr::from)?)
+    }
+}
+
+
+
+
+
+impl<'py, L, P> ApplyLambdaGeneric<'py> for Logical<L, P>
+where L: PolarsDataType, P: PolarsDataType, Logical<L, P>: LogicalType
+{
+    fn apply_generic(
+        &self,
+        py: Python<'py>,
+        lambda: &Bound<'py, PyAny>,
+        skip_nulls: bool
+    ) -> PyResult<Series> {
+        let it = (0..self.len()).map(|i| unsafe { self.get_any_value_unchecked(i).null_to_none().map(Wrap) });
+        let avs = call_and_collect_anyvalues(py, lambda, self.len(), it, skip_nulls)?;
+        Ok(Series::from_any_values(self.name().clone(), &avs, true).map_err(PyPolarsErr::from)?)
+    }
+
+    fn apply_generic_with_dtype(
+        &self,
+        py: Python<'py>,
+        lambda: &Bound<'py, PyAny>,
+        datatype: &DataType,
+        skip_nulls: bool,
+    ) -> PyResult<Series> {
+        let it = (0..self.len()).map(|i| unsafe { self.get_any_value_unchecked(i).null_to_none().map(Wrap) });
+        let avs = call_and_collect_anyvalues(py, lambda, self.len(), it, skip_nulls)?;
+        Ok(Series::from_any_values_and_dtype(self.name().clone(), &avs, datatype, true).map_err(PyPolarsErr::from)?)
+    }
+}
+
+
+
+impl<'py> ApplyLambdaGeneric<'py> for NullChunked {
+    fn apply_generic(
+        &self,
+        py: Python<'py>,
+        lambda: &Bound<'py, PyAny>,
+        skip_nulls: bool
+    ) -> PyResult<Series> {
+        let it = (0..self.len()).map(|_| None::<Wrap<AnyValue<'static>>>);
+        let avs = call_and_collect_anyvalues(py, lambda, self.len(), it, skip_nulls)?;
+        Ok(Series::from_any_values(self.name().clone(), &avs, true).map_err(PyPolarsErr::from)?)
+    }
+
+    fn apply_generic_with_dtype(
+        &self,
+        py: Python<'py>,
+        lambda: &Bound<'py, PyAny>,
+        datatype: &DataType,
+        skip_nulls: bool,
+    ) -> PyResult<Series> {
+        let it = (0..self.len()).map(|_| None::<Wrap<AnyValue<'static>>>);
+        let avs = call_and_collect_anyvalues(py, lambda, self.len(), it, skip_nulls)?;
+        Ok(Series::from_any_values_and_dtype(self.name().clone(), &avs, datatype, true).map_err(PyPolarsErr::from)?)
+    }
+}
+
+impl<'py> ApplyLambdaGeneric<'py> for ExtensionChunked {
+    fn apply_generic(
+        &self,
+        _py: Python<'py>,
+        _lambda: &Bound<'py, PyAny>,
+        _skip_nulls: bool
+    ) -> PyResult<Series> {
+        unreachable!()
+    }
+
+    fn apply_generic_with_dtype(
+        &self,
+        _py: Python<'py>,
+        _lambda: &Bound<'py, PyAny>,
+        _datatype: &DataType,
+        _skip_nulls: bool,
+    ) -> PyResult<Series> {
+        unreachable!()
     }
 }

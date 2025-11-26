@@ -409,6 +409,15 @@ impl<'a> AnyValue<'a> {
         }
     }
 
+    /// Converts AnyValue::Null to None, anything else to Some(self).
+    #[inline]
+    pub fn null_to_none(self) -> Option<Self> {
+        match self {
+            AnyValue::Null => None,
+            av => Some(av)
+        }
+    }
+
     /// Cast `AnyValue` to the provided data type and return a new `AnyValue` with type `dtype`,
     /// if possible.
     pub fn strict_cast(&self, dtype: &'a DataType) -> Option<AnyValue<'a>> {
