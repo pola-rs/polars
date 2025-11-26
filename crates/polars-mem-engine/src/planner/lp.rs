@@ -319,12 +319,6 @@ fn create_physical_plan_impl(
                                 },
                                 #[cfg(feature = "ipc")]
                                 FileType::Ipc(options) => {
-                                    if cfg!(debug_assertions) {
-                                        panic!(
-                                            "in-memory IPC file write is disabled; ensure Engine::Streaming is set"
-                                        );
-                                    }
-
                                     use polars_io::SerWriter;
                                     use polars_io::ipc::IpcWriter;
                                     IpcWriter::new(BufWriter::new(writer))
