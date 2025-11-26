@@ -1,7 +1,6 @@
 // Hugging Face path resolution support
 
 use std::borrow::Cow;
-use std::collections::VecDeque;
 
 use polars_error::{PolarsResult, polars_bail, to_compute_err};
 use polars_utils::plpath::PlPath;
@@ -143,10 +142,6 @@ impl HFAPIResponse {
     fn is_file(&self) -> bool {
         self.type_ == "file"
     }
-
-    fn is_directory(&self) -> bool {
-        self.type_ == "directory"
-    }
 }
 
 /// API response is paginated with a `link` header.
@@ -240,8 +235,6 @@ pub(super) async fn expand_paths_hf(
     let client = &client.build().unwrap();
 
     let mut out_paths = vec![];
-    let mut stack = VecDeque::new();
-    let mut entries = vec![];
     let mut hive_idx_tracker = HiveIdxTracker {
         idx: usize::MAX,
         paths,
@@ -287,43 +280,35 @@ pub(super) async fn expand_paths_hf(
 
         hive_idx_tracker.update(file_uri.len(), path_idx)?;
 
-        assert!(stack.is_empty());
-        stack.push_back(prefix.into_owned());
+        // Use recursive tree API to fetch all files at once (with pagination).
+        // This avoids rate limiting by eliminating per-directory API calls.
+        // See: https://github.com/pola-rs/polars/issues/25389
+        let uri = format!(
+            "{}?recursive=true",
+            repo_location.get_api_uri(&prefix)
+        );
+        let mut gp = GetPages {
+            uri: Some(uri),
+            client,
+        };
 
-        while let Some(rel_path) = stack.pop_front() {
-            assert!(entries.is_empty());
+        while let Some(bytes) = gp.next().await {
+            let bytes = bytes?;
+            let response: Vec<HFAPIResponse> = decode_json_response(bytes.as_ref())?;
 
-            let uri = repo_location.get_api_uri(rel_path.as_str());
-            let mut gp = GetPages {
-                uri: Some(uri),
-                client,
-            };
+            for entry in response {
+                // Only include files with size > 0
+                if entry.is_file() && entry.size > 0 {
+                    // If we have a glob pattern, filter by it; otherwise include all files
+                    let matches = if let Some(matcher) = expansion_matcher {
+                        matcher.is_matching(entry.path.as_str())
+                    } else {
+                        true
+                    };
 
-            if let Some(matcher) = expansion_matcher {
-                while let Some(bytes) = gp.next().await {
-                    let bytes = bytes?;
-                    let bytes = bytes.as_ref();
-                    let response: Vec<HFAPIResponse> = decode_json_response(bytes)?;
-                    entries.extend(response.into_iter().filter(|x| {
-                        !x.is_file() || (x.size > 0 && matcher.is_matching(x.path.as_str()))
-                    }));
-                }
-            } else {
-                while let Some(bytes) = gp.next().await {
-                    let bytes = bytes?;
-                    let bytes = bytes.as_ref();
-                    let response: Vec<HFAPIResponse> = decode_json_response(bytes)?;
-                    entries.extend(response.into_iter().filter(|x| !x.is_file() || x.size > 0));
-                }
-            }
-
-            entries.sort_unstable_by(|a, b| a.path.as_str().partial_cmp(b.path.as_str()).unwrap());
-
-            for e in entries.drain(..) {
-                if e.is_file() {
-                    out_paths.push(PlPath::from_string(repo_location.get_file_uri(&e.path)));
-                } else if e.is_directory() {
-                    stack.push_back(e.path);
+                    if matches {
+                        out_paths.push(PlPath::from_string(repo_location.get_file_uri(&entry.path)));
+                    }
                 }
             }
         }
