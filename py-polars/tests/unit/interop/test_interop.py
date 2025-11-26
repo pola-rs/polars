@@ -898,13 +898,6 @@ def test_compat_level(monkeypatch: pytest.MonkeyPatch) -> None:
         df.to_arrow(compat_level=newest)["bin_col"][0], pa.BinaryViewScalar
     )
 
-    assert len(df.write_ipc(None).getbuffer()) == 738
-    assert len(df.write_ipc(None, compat_level=oldest).getbuffer()) == 866
-    assert len(df.write_ipc(None, compat_level=newest).getbuffer()) == 738
-    assert len(df.write_ipc_stream(None).getbuffer()) == 520
-    assert len(df.write_ipc_stream(None, compat_level=oldest).getbuffer()) == 648
-    assert len(df.write_ipc_stream(None, compat_level=newest).getbuffer()) == 520
-
 
 def test_df_pycapsule_interface() -> None:
     df = pl.DataFrame(

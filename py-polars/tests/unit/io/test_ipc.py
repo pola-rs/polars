@@ -62,7 +62,6 @@ def test_ipc_roundtrip_stream_parametric(
         max_cols=1,
         min_size=1,
         max_size=1000,
-        excluded_dtypes=[pl.Categorical],  # Can trigger dictionary replacement (#25487)
     )
 )
 @pytest.mark.slow
