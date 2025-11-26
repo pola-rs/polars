@@ -3273,10 +3273,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Rust crate.
         float_scientific
             Whether to use scientific form always (true), never (false), or
-            automatically (None) for `Float32` and `Float64` datatypes.
+            automatically (None) for floating-point datatypes.
         float_precision
-            Number of decimal places to write, applied to both `Float32` and
-            `Float64` datatypes.
+            Number of decimal places to write, applied to both floating-point
+            datatypes.
         decimal_comma
             Use a comma as the decimal separator instead of a point. Floats will be
             encapsulated in quotes if necessary; set the field separator to override.

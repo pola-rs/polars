@@ -69,6 +69,11 @@ pub fn aexpr_to_column_predicates(
                 is_sumwise_complete = false;
                 continue;
             },
+            #[cfg(feature = "dtype-f16")]
+            D::Float16 => {
+                is_sumwise_complete = false;
+                continue;
+            },
             D::Float32 | D::Float64 => {
                 is_sumwise_complete = false;
                 continue;

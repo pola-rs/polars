@@ -1,3 +1,5 @@
+#[cfg(feature = "simd")]
+use polars_utils::float16::pf16;
 use polars_utils::min_max::MinMax;
 
 pub use self::dyn_array::{
@@ -37,6 +39,8 @@ impl<T> NotSimdPrimitive for T {}
 impl NotSimdPrimitive for u128 {}
 #[cfg(feature = "simd")]
 impl NotSimdPrimitive for i128 {}
+#[cfg(feature = "simd")]
+impl NotSimdPrimitive for pf16 {}
 
 mod dyn_array;
 mod scalar;

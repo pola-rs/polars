@@ -1,6 +1,7 @@
 use bytemuck::{Pod, Zeroable};
+use polars_utils::float16::pf16;
 
-use super::{days_ms, f16, i256, months_days_ns};
+use super::{days_ms, i256, months_days_ns};
 use crate::array::View;
 
 /// A representation of a type as raw bytes with the same alignment as the original type.
@@ -140,7 +141,7 @@ impl PrimitiveSizeAlignmentPair {
 
 impl_aligned_bytes! {
     (Bytes1Alignment1, 1, 1, S1A1, [u8, i8], u8),
-    (Bytes2Alignment2, 2, 2, S2A2, [u16, i16, f16], u16),
+    (Bytes2Alignment2, 2, 2, S2A2, [u16, i16, pf16], u16),
     (Bytes4Alignment4, 4, 4, S4A4, [u32, i32, f32], u32),
     (Bytes8Alignment8, 8, 8, S8A8, [u64, i64, f64], u64),
     (Bytes8Alignment4, 8, 4, S8A4, [days_ms]),

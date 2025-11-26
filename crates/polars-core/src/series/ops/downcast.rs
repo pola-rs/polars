@@ -68,6 +68,12 @@ impl Series {
         try_unpack_chunked!(self, DataType::Int128 => Int128Chunked)
     }
 
+    /// Unpack to [`ChunkedArray`] of dtype [`DataType::Float16`]
+    #[cfg(feature = "dtype-f16")]
+    pub fn try_f16(&self) -> Option<&Float16Chunked> {
+        try_unpack_chunked!(self, DataType::Float16 => Float16Chunked)
+    }
+
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Float32`]
     pub fn try_f32(&self) -> Option<&Float32Chunked> {
         try_unpack_chunked!(self, DataType::Float32 => Float32Chunked)
@@ -252,6 +258,13 @@ impl Series {
     pub fn i128(&self) -> PolarsResult<&Int128Chunked> {
         self.try_i128()
             .ok_or_else(|| unpack_chunked_err!(self => "Int128"))
+    }
+
+    /// Unpack to [`ChunkedArray`] of dtype [`DataType::Float16`]
+    #[cfg(feature = "dtype-f16")]
+    pub fn f16(&self) -> PolarsResult<&Float16Chunked> {
+        self.try_f16()
+            .ok_or_else(|| unpack_chunked_err!(self => "Float16"))
     }
 
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Float32`]

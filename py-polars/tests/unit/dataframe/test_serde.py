@@ -28,6 +28,7 @@ def test_df_serde_roundtrip_binary(df: pl.DataFrame) -> None:
 
 
 @given(df=dataframes())
+@example(df=pl.DataFrame({"a": {"a": 1.0}}, schema={"a": pl.Struct({"a": pl.Float16})}))
 @example(df=pl.DataFrame({"a": [None, None]}, schema={"a": pl.Null}))
 @example(df=pl.DataFrame(schema={"a": pl.List(pl.String)}))
 def test_df_serde_roundtrip_json(df: pl.DataFrame) -> None:

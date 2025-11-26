@@ -430,3 +430,32 @@ def test_is_between_pushdown_25499() -> None:
     df1 = pl.scan_parquet(parquet).filter(expr).collect()
     df2 = pl.scan_parquet(parquet).collect().filter(expr)
     assert_frame_equal(df1, df2)
+
+
+def test_slice_pushdown_expr_25473() -> None:
+    lf = pl.LazyFrame({"a": [0, 1, 2, 3, 4]})
+
+    assert_frame_equal(
+        lf.select((pl.col("a") + 1).slice(-4, 2)).collect(), pl.DataFrame({"a": [2, 3]})
+    )
+
+    assert_frame_equal(
+        lf.select(
+            a=(
+                pl.when(pl.col("a") == 1).then(pl.lit("one")).otherwise(pl.lit("other"))
+            ).slice(-4, 2)
+        ).collect(),
+        pl.DataFrame({"a": ["one", "other"]}),
+    )
+
+    assert_frame_equal(
+        lf.select(a=pl.col("a").is_in(pl.Series([1]).implode()).slice(-4, 2)).collect(),
+        pl.DataFrame({"a": [True, False]}),
+    )
+
+    q = pl.LazyFrame().select(
+        pl.lit(pl.Series([0, 1, 2, 3, 4])).is_in(pl.Series([[3], [1]])).slice(-2, 1)
+    )
+
+    with pytest.raises(pl.exceptions.ShapeError, match=r"lengths.*5 != 2"):
+        q.collect()
