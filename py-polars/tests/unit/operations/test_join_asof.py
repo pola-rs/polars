@@ -1297,8 +1297,8 @@ def test_join_asof_no_exact_matches() -> None:
 def test_join_asof_no_exact_matches_parametric(
     strategy: AsofJoinStrategy, df_left: pl.DataFrame, df_right: pl.DataFrame
 ) -> None:
-    df_left = df_left.set_sorted("col0")
-    df_right = df_right.set_sorted("col0")
+    df_left = df_left.sort("col0")
+    df_right = df_right.sort("col0")
 
     out = df_left.join_asof(
         df_right,
