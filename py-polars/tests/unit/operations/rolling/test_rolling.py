@@ -56,7 +56,6 @@ def example_df() -> pl.DataFrame:
 def test_rolling_kernels_and_rolling(
     example_df: pl.DataFrame, period: str | timedelta, closed: ClosedInterval
 ) -> None:
-    print(example_df)  # kdn
     out1 = example_df.set_sorted("dt").select(
         pl.col("dt"),
         # this differs from group_by aggregation because the empty window is
@@ -88,8 +87,6 @@ def test_rolling_kernels_and_rolling(
             ]
         )
     )
-    print(out1)  # kdn
-    print(out2)  # kdn
     assert_frame_equal(out1, out2)
 
 
