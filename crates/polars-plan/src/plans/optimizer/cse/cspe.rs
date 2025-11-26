@@ -395,7 +395,6 @@ fn insert_caches(
 /// will never be used. So we prune caches that don't fit their count.
 ///
 /// `conctat([lf.select(), lf.select(), lf])`
-///
 fn prune_unused_caches(lp_arena: &mut Arena<IR>, cid2c: &CacheId2Caches) {
     for (count, nodes) in cid2c.values() {
         if *count == nodes.len() as u32 {
@@ -403,10 +402,10 @@ fn prune_unused_caches(lp_arena: &mut Arena<IR>, cid2c: &CacheId2Caches) {
         }
 
         for node in nodes {
-            let IR::Cache { input, .. } = lp_arena.get(*node) else {
+            let IR::Cache { input, .. } = lp_arena.take(*node) else {
                 unreachable!()
             };
-            lp_arena.swap(*input, *node)
+            lp_arena.swap(input, *node)
         }
     }
 }
@@ -415,25 +414,11 @@ pub(super) fn elim_cmn_subplans(
     root: Node,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-) -> (Node, bool) {
+) -> (Node, bool, CacheId2Caches) {
     let (lp, changed, cid2c) = insert_caches(root, lp_arena, expr_arena);
     if changed {
         prune_unused_caches(lp_arena, &cid2c);
     }
-    // The CSPE only finds the longest trail duplicates, so we must recursively apply the
-    // optimization
-    // Below the inserted caches, might be more duplicates. So we recurse one time to find
-    // inner duplicates as well.
-    // TODO! reactivate this and recursively deal with projection/predicate pushdown.
-    //for (_, (_count, caches_nodes)) in cid2c.iter() {
-    //    // The last node seems the one traversed by the planners. This is validated by tests.
-    //    // We could traverse all nodes, but it would be duplicate work.
-    //    if let Some(cache) = caches_nodes.last() {
-    //        if let IR::Cache { input, id: _ } = lp_arena.get(*cache) {
-    //            let _ = elim_cmn_subplans(*input, lp_arena, expr_arena);
-    //        }
-    //    }
-    //}
 
-    (lp, changed)
+    (lp, changed, cid2c)
 }
