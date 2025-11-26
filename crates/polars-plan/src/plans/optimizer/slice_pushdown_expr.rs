@@ -87,7 +87,7 @@ impl OptimizationRule for SlicePushDown {
                     assert_eq!(scratch.len(), 1);
 
                     pushdown(scratch, offset, length, expr_arena)
-                        .then(|| ae.replace_inputs(&scratch))
+                        .then(|| ae.replace_inputs(scratch))
                 },
                 BinaryExpr { left, right, op } => {
                     let left = *left;
