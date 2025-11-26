@@ -1,4 +1,4 @@
-use std::borrow::Borrow;
+use std::borrow::{Borrow, BorrowMut};
 use std::hash::Hash;
 #[cfg(feature = "cse")]
 use std::hash::Hasher;
@@ -84,6 +84,12 @@ impl PartialEq for ExprIR {
 impl Borrow<Node> for ExprIR {
     fn borrow(&self) -> &Node {
         &self.node
+    }
+}
+
+impl BorrowMut<Node> for ExprIR {
+    fn borrow_mut(&mut self) -> &mut Node {
+        &mut self.node
     }
 }
 
