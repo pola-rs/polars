@@ -166,3 +166,25 @@ def test_reshape_sliced_list_25114() -> None:
 
     assert_series_equal(s.slice(0, 1).reshape((-1,)), pl.Series("values", [0, 1, 2, 3]))
     assert_series_equal(s.slice(1, 1).reshape((-1,)), pl.Series("values", [4, 5, 6, 7]))
+
+
+# Both should raise, currently only first, TODO(): Make parameterized test
+def test_reshape_list_not_fitting() -> None:
+    df = pl.DataFrame({"a": list(range(2 * 3 * 2))})
+    with pytest.raises(
+        InvalidOperationError,
+        match=re.escape(
+            f"cannot reshape array of size 12 into shape (12, 3)"
+        ),
+    ):
+        q = df.lazy().select(pl.col("a").reshape((12, 3)))
+        q.collect()
+
+    with pytest.raises(
+        InvalidOperationError,
+        match=re.escape(
+            f"cannot reshape array of size 12 into shape (2, 3)"
+        ),
+    ):
+        q = df.lazy().select(pl.col("a").reshape((2, 3)))
+        q.collect()
