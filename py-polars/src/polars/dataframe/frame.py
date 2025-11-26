@@ -106,6 +106,7 @@ from polars.exceptions import (
     ModuleUpgradeRequiredError,
     NoRowsReturnedError,
     TooManyRowsReturnedError,
+    UnstableWarning,
 )
 from polars.functions import col, lit
 from polars.interchange.protocol import CompatLevel
@@ -3865,16 +3866,17 @@ class DataFrame:
 
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        self.lazy().sink_ipc(
-            target,
-            compression=compression,
-            compat_level=compat_level,
-            storage_options=storage_options,
-            credential_provider=credential_provider,
-            retries=retries,
-            optimizations=QueryOptFlags._eager(),
-            engine="streaming",
-        )
+        with contextlib.suppress(UnstableWarning):
+            self.lazy().sink_ipc(
+                target,
+                compression=compression,
+                compat_level=compat_level,
+                storage_options=storage_options,
+                credential_provider=credential_provider,
+                retries=retries,
+                optimizations=QueryOptFlags._eager(),
+                engine="streaming",
+            )
         return target if return_bytes else None  # type: ignore[return-value]
 
     @overload
