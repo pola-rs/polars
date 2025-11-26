@@ -1376,11 +1376,14 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
             // For floats, make sure it's in range where all integers convert
             // losslessly; this isn't quite every possible value that can be
             // converted losslessly, but it's good enough:
-            DataType::Float32 if (*value < 2i128.pow(24)) && (*value > -2i128.pow(24)) => true,
-            DataType::Float64 if (*value < 2i128.pow(53)) && (*value > -2i128.pow(53)) => true,
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 if (*value < 2i128.pow(11)) && (*value > -(2i128.pow(11))) => true,
+            DataType::Float32 if (*value < 2i128.pow(24)) && (*value > -(2i128.pow(24))) => true,
+            DataType::Float64 if (*value < 2i128.pow(53)) && (*value > -(2i128.pow(53))) => true,
             // Make sure we have error message that reports the value:
             _ => polars_bail!(InvalidOperation: "cannot cast {} losslessly to {}", value, to),
         },
+        (DataType::Float16, DataType::UInt8 | DataType::Int8) => true,
         (
             DataType::Float32,
             DataType::UInt8 | DataType::UInt16 | DataType::Int8 | DataType::Int16,
@@ -1418,7 +1421,7 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
             ((p_to - s_to) >= (p_from - s_from)) && (s_to >= s_from)
         },
         #[cfg(feature = "dtype-decimal")]
-        (DataType::Decimal(p_to, s_to), dt) if dt.is_primitive_numeric() => {
+        (DataType::Decimal(p_to, s_to), dt) if dt.is_integer() => {
             // Given the precision and scale of decimals, figure out the ranges
             // of expressible integers:
             let max_int_value = 10i128.pow((*p_to - *s_to) as u32) - 1;

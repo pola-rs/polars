@@ -18,7 +18,8 @@ use polars_plan::dsl::{
 };
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{
-    AExpr, FunctionIR, IR, IRAggExpr, LiteralValue, is_sorted, write_ir_non_recursive,
+    AExpr, FunctionIR, IR, IRAggExpr, LiteralValue, are_keys_sorted_any, is_sorted,
+    write_ir_non_recursive,
 };
 use polars_plan::prelude::GroupbyOptions;
 use polars_utils::arena::{Arena, Node};
@@ -35,6 +36,7 @@ use crate::nodes::io_sources::multi_scan;
 use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
+use crate::physical_plan::ZipBehavior;
 use crate::physical_plan::lower_expr::{ExprCache, build_select_stream, lower_exprs};
 use crate::physical_plan::lower_group_by::build_group_by_stream;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
@@ -653,8 +655,13 @@ pub fn lower_ir(
         IR::HConcat {
             inputs,
             schema: _,
-            options: _,
+            options,
         } => {
+            let zip_behavior = if options.strict {
+                ZipBehavior::Strict
+            } else {
+                ZipBehavior::NullExtend
+            };
             let inputs = inputs
                 .clone() // Needed to borrow ir_arena mutably.
                 .into_iter()
@@ -662,7 +669,7 @@ pub fn lower_ir(
                 .collect::<Result<_, _>>()?;
             PhysNodeKind::Zip {
                 inputs,
-                null_extend: true,
+                zip_behavior,
             }
         },
 
@@ -1022,9 +1029,6 @@ pub fn lower_ir(
             maintain_order,
             options,
         } => {
-            let are_keys_sorted = is_sorted(*input, ir_arena, expr_arena)
-                .is_some_and(|s| s.is_sorted_any(keys, expr_arena));
-
             let input = *input;
             let keys = keys.clone();
             let aggs = aggs.clone();
@@ -1034,6 +1038,15 @@ pub fn lower_ir(
             let options = options.clone();
 
             let phys_input = lower_ir!(input)?;
+
+            let input_schema = &phys_sm[phys_input.node].output_schema;
+            let are_keys_sorted = are_keys_sorted_any(
+                is_sorted(input, ir_arena, expr_arena).as_ref(),
+                &keys,
+                expr_arena,
+                input_schema,
+            );
+
             return build_group_by_stream(
                 phys_input,
                 &keys,
@@ -1261,8 +1274,12 @@ pub fn lower_ir(
                 ));
             }
 
-            let are_keys_sorted = is_sorted(input, ir_arena, expr_arena)
-                .is_some_and(|s| s.is_sorted_any(&keys, expr_arena));
+            let are_keys_sorted = are_keys_sorted_any(
+                is_sorted(input, ir_arena, expr_arena).as_ref(),
+                &keys,
+                expr_arena,
+                input_schema,
+            );
 
             let mut stream = build_group_by_stream(
                 phys_input,

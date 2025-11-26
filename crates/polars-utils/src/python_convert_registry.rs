@@ -5,7 +5,7 @@ use std::sync::{Arc, LazyLock, RwLock};
 use pyo3::{Py, PyAny, PyResult};
 
 pub type FromPython = Arc<dyn Fn(Py<PyAny>) -> PyResult<Box<dyn Any>> + Send + Sync>;
-pub type ToPython = Arc<dyn Fn(Box<dyn Any>) -> PyResult<Py<PyAny>> + Send + Sync>;
+pub type ToPython = Arc<dyn Fn(&dyn Any) -> PyResult<Py<PyAny>> + Send + Sync>;
 
 #[derive(Clone)]
 pub struct FromPythonConvertRegistry {

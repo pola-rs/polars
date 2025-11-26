@@ -9,10 +9,11 @@ use polars_plan::prelude::*;
 use polars_utils::format_pl_smallstr;
 use sqlparser::ast::{
     BinaryOperator, CreateTable, Delete, Distinct, ExcludeSelectItem, Expr as SQLExpr, FromTable,
-    FunctionArg, GroupByExpr, Ident, JoinConstraint, JoinOperator, ObjectName, ObjectType, Offset,
-    OrderBy, Query, RenameSelectItem, Select, SelectItem, SetExpr, SetOperator, SetQuantifier,
-    Statement, TableAlias, TableFactor, TableWithJoins, UnaryOperator, Value as SQLValue, Values,
-    Visit, Visitor, WildcardAdditionalOptions,
+    FunctionArg, GroupByExpr, Ident, JoinConstraint, JoinOperator, NamedWindowDefinition,
+    NamedWindowExpr, ObjectName, ObjectType, Offset, OrderBy, Query, RenameSelectItem, Select,
+    SelectItem, SetExpr, SetOperator, SetQuantifier, Statement, TableAlias, TableFactor,
+    TableWithJoins, UnaryOperator, Value as SQLValue, Values, Visit, Visitor,
+    WildcardAdditionalOptions, WindowSpec,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -63,6 +64,7 @@ pub struct SQLContext {
     cte_map: PlHashMap<String, LazyFrame>,
     table_aliases: PlHashMap<String, String>,
     joined_aliases: PlHashMap<String, PlHashMap<String, String>>,
+    pub(crate) named_windows: PlHashMap<String, WindowSpec>,
 }
 
 impl Default for SQLContext {
@@ -73,6 +75,7 @@ impl Default for SQLContext {
             cte_map: Default::default(),
             table_aliases: Default::default(),
             joined_aliases: Default::default(),
+            named_windows: Default::default(),
             lp_arena: Default::default(),
             expr_arena: Default::default(),
         }
@@ -166,6 +169,7 @@ impl SQLContext {
         self.cte_map.clear();
         self.table_aliases.clear();
         self.joined_aliases.clear();
+        self.named_windows.clear();
 
         Ok(res)
     }
@@ -646,6 +650,30 @@ impl SQLContext {
         Ok(())
     }
 
+    fn register_named_windows(
+        &mut self,
+        named_windows: &[NamedWindowDefinition],
+    ) -> PolarsResult<()> {
+        for NamedWindowDefinition(name, expr) in named_windows {
+            let spec = match expr {
+                NamedWindowExpr::NamedWindow(ref_name) => self
+                    .named_windows
+                    .get(&ref_name.value)
+                    .ok_or_else(|| {
+                        polars_err!(
+                            SQLInterface:
+                            "named window '{}' references undefined window '{}'",
+                            name.value, ref_name.value
+                        )
+                    })?
+                    .clone(),
+                NamedWindowExpr::WindowSpec(spec) => spec.clone(),
+            };
+            self.named_windows.insert(name.value.clone(), spec);
+        }
+        Ok(())
+    }
+
     /// execute the 'FROM' part of the query
     fn execute_from_statement(&mut self, tbl_expr: &TableWithJoins) -> PolarsResult<LazyFrame> {
         let (l_name, mut lf) = self.get_table(&tbl_expr.relation)?;
@@ -753,6 +781,7 @@ impl SQLContext {
             from: _,
             group_by: _,
             having: _,
+            named_window: _,
             projection: _,
             selection: _,
 
@@ -767,7 +796,6 @@ impl SQLContext {
             ref distribute_by,
             ref into,
             ref lateral_views,
-            ref named_window,
             ref prewhere,
             ref qualify,
             ref sort_by,
@@ -776,17 +804,17 @@ impl SQLContext {
         } = *select_stmt;
 
         // Raise specific error messages for unsupported attributes
-        polars_ensure!(cluster_by.is_empty(), SQLInterface: "CLUSTER BY clause is not supported");
-        polars_ensure!(connect_by.is_none(), SQLInterface: "CONNECT BY clause is not supported");
-        polars_ensure!(distribute_by.is_empty(), SQLInterface: "DISTRIBUTE BY clause is not supported");
-        polars_ensure!(into.is_none(), SQLInterface: "SELECT INTO clause is not supported");
-        polars_ensure!(lateral_views.is_empty(), SQLInterface: "LATERAL VIEW clause is not supported");
-        polars_ensure!(named_window.is_empty(), SQLInterface: "WINDOW clause support is coming soon");
-        polars_ensure!(prewhere.is_none(), SQLInterface: "PREWHERE clause is not supported");
-        polars_ensure!(qualify.is_none(), SQLInterface: "QUALIFY clause is not currently supported");
-        polars_ensure!(sort_by.is_empty(), SQLInterface: "SORT BY clause is not supported; use ORDER BY instead");
-        polars_ensure!(top.is_none(), SQLInterface: "TOP clause is not supported; use LIMIT instead");
-        polars_ensure!(value_table_mode.is_none(), SQLInterface: "SELECT AS VALUE/STRUCT is not supported");
+        polars_ensure!(cluster_by.is_empty(), SQLInterface: "`CLUSTER BY` clause is not supported");
+        polars_ensure!(connect_by.is_none(), SQLInterface: "`CONNECT BY` clause is not supported");
+        polars_ensure!(distribute_by.is_empty(), SQLInterface: "`DISTRIBUTE BY` clause is not supported");
+        polars_ensure!(into.is_none(), SQLInterface: "`SELECT INTO`clause  is not supported");
+        polars_ensure!(lateral_views.is_empty(), SQLInterface: "`LATERAL VIEW` clause is not supported");
+        polars_ensure!(prewhere.is_none(), SQLInterface: "`PREWHERE` clause is not supported");
+        polars_ensure!(qualify.is_none(), SQLInterface: "`QUALIFY` clause is not supported");
+        polars_ensure!(sort_by.is_empty(), SQLInterface: "SORT BY` clause is not supported; use `ORDER BY` instead");
+        polars_ensure!(top.is_none(), SQLInterface: "`TOP` clause is not supported; use `LIMIT` instead");
+        polars_ensure!(value_table_mode.is_none(), SQLInterface: "`SELECT AS VALUE/STRUCT` is not supported");
+
         Ok(())
     }
 
@@ -794,6 +822,9 @@ impl SQLContext {
     fn execute_select(&mut self, select_stmt: &Select, query: &Query) -> PolarsResult<LazyFrame> {
         // Check that the statement doesn't contain unsupported SELECT clauses
         self.validate_select(select_stmt)?;
+
+        // Parse named windows first, as they may be referenced in the SELECT clause
+        self.register_named_windows(&select_stmt.named_window)?;
 
         let mut lf = if select_stmt.from.is_empty() {
             DataFrame::empty().lazy()
@@ -819,7 +850,43 @@ impl SQLContext {
             replace: vec![],
         };
 
-        let projections = self.column_projections(select_stmt, &schema, &mut select_modifiers)?;
+        let mut projections =
+            self.column_projections(select_stmt, &schema, &mut select_modifiers)?;
+
+        // Apply UNNEST (explode) at the frame level to ensure that
+        // we maintain row-coherence of the exploded result(s)
+        let mut explode_names = Vec::with_capacity(projections.len());
+        for expr in &projections {
+            for e in expr {
+                if let Expr::Explode { input, .. } = e {
+                    if let Expr::Column(name) = input.as_ref() {
+                        explode_names.push(name.clone());
+                    }
+                }
+            }
+        }
+        if !explode_names.is_empty() {
+            explode_names.dedup();
+            lf = lf.explode(
+                Selector::ByName {
+                    names: Arc::from(explode_names),
+                    strict: true,
+                },
+                ExplodeOptions {
+                    empty_as_null: true,
+                    keep_nulls: true,
+                },
+            );
+            projections = projections
+                .into_iter()
+                .map(|p| {
+                    p.map_expr(|e| match e {
+                        Expr::Explode { input, .. } => input.as_ref().clone(),
+                        _ => e,
+                    })
+                })
+                .collect();
+        }
 
         // Check for "GROUP BY ..." (after determining projections)
         let mut group_by_keys: Vec<Expr> = Vec::new();
@@ -932,7 +999,6 @@ impl SQLContext {
                     // height. E.g.:
                     //
                     // * SELECT COUNT(*) FROM df ORDER BY sort_key;
-                    // * SELECT UNNEST(list_col) FROM df ORDER BY sort_key;
                     //
                     // For these cases we truncate / extend the sorting columns with NULLs to match
                     // the output height. We do this by projecting independently and then joining

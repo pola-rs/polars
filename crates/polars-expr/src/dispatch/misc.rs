@@ -425,11 +425,7 @@ pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Column> {
     let result = match is_sorted_flag {
         // If the Series is sorted, we can use an optimized binary search to
         // find the value.
-        IsSorted::Ascending | IsSorted::Descending
-            if !needle.is_null() &&
-            // search_sorted() doesn't support decimals at the moment.
-            !series.dtype().is_decimal() =>
-        {
+        IsSorted::Ascending | IsSorted::Descending if !needle.is_null() => {
             use polars_ops::series::SearchSortedSide;
 
             polars_ops::series::search_sorted(
@@ -569,6 +565,12 @@ pub(super) fn coalesce(s: &mut [Column]) -> PolarsResult<Column> {
 
 pub(super) fn drop_nans(s: Column) -> PolarsResult<Column> {
     match s.dtype() {
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            let ca = s.f16()?;
+            let mask = ca.is_not_nan() | ca.is_null();
+            ca.filter(&mask).map(|ca| ca.into_column())
+        },
         DataType::Float32 => {
             let ca = s.f32()?;
             let mask = ca.is_not_nan() | ca.is_null();
@@ -708,6 +710,15 @@ pub(super) fn corr(s: &[Column], method: IRCorrelationMethod) -> PolarsResult<Co
 
         use polars_ops::chunked_array::cov::cov;
         let ret = match a.dtype() {
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => {
+                use num_traits::AsPrimitive;
+                use polars_utils::float16::pf16;
+
+                let ret =
+                    cov(a.f16().unwrap(), b.f16().unwrap(), ddof).map(AsPrimitive::<pf16>::as_);
+                return Ok(Column::new(name, &[ret]));
+            },
             DataType::Float32 => {
                 let ret = cov(a.f32().unwrap(), b.f32().unwrap(), ddof).map(|v| v as f32);
                 return Ok(Column::new(name, &[ret]));
@@ -733,6 +744,15 @@ pub(super) fn corr(s: &[Column], method: IRCorrelationMethod) -> PolarsResult<Co
 
         use polars_ops::chunked_array::cov::pearson_corr;
         let ret = match a.dtype() {
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => {
+                use num_traits::AsPrimitive;
+                use polars_utils::float16::pf16;
+
+                let ret =
+                    pearson_corr(a.f16().unwrap(), b.f16().unwrap()).map(AsPrimitive::<pf16>::as_);
+                return Ok(Column::new(name, &[ret]));
+            },
             DataType::Float32 => {
                 let ret = pearson_corr(a.f32().unwrap(), b.f32().unwrap()).map(|v| v as f32);
                 return Ok(Column::new(name, &[ret]));

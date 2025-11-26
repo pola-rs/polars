@@ -18,6 +18,7 @@ pub trait PhysicalIoExpr: Send + Sync {
 #[derive(Debug, Clone)]
 pub enum SpecializedColumnPredicate {
     Equal(Scalar),
+    /// A closed (inclusive) range.
     Between(Scalar, Scalar),
     EqualOneOf(Box<[Scalar]>),
     StartsWith(Box<[u8]>),

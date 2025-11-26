@@ -106,6 +106,7 @@ from polars.exceptions import (
     ModuleUpgradeRequiredError,
     NoRowsReturnedError,
     TooManyRowsReturnedError,
+    UnstableWarning,
 )
 from polars.functions import col, lit
 from polars.interchange.protocol import CompatLevel
@@ -3005,10 +3006,10 @@ class DataFrame:
             Rust crate.
         float_scientific
             Whether to use scientific form always (true), never (false), or
-            automatically (None) for `Float32` and `Float64` datatypes.
+            automatically (None) for floating-point datatypes.
         float_precision
-            Number of decimal places to write, applied to both `Float32` and
-            `Float64` datatypes.
+            Number of decimal places to write, applied to both floating-point
+            data types.
         decimal_comma
             Use a comma as the decimal separator instead of a point in standard
             notation. Floats will be encapsulated in quotes if necessary; set the
@@ -3865,16 +3866,17 @@ class DataFrame:
 
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        self.lazy().sink_ipc(
-            target,
-            compression=compression,
-            compat_level=compat_level,
-            storage_options=storage_options,
-            credential_provider=credential_provider,
-            retries=retries,
-            optimizations=QueryOptFlags._eager(),
-            engine="in-memory",
-        )
+        with contextlib.suppress(UnstableWarning):
+            self.lazy().sink_ipc(
+                target,
+                compression=compression,
+                compat_level=compat_level,
+                storage_options=storage_options,
+                credential_provider=credential_provider,
+                retries=retries,
+                optimizations=QueryOptFlags._eager(),
+                engine="streaming",
+            )
         return target if return_bytes else None  # type: ignore[return-value]
 
     @overload
@@ -4162,7 +4164,7 @@ class DataFrame:
             return
 
         target: str | Path | IO[bytes] | _SinkDirectory = file
-        engine: EngineType = "in-memory"
+        engine: EngineType = "streaming"
         if partition_by is not None:
             if not isinstance(file, str):
                 msg = "expected file to be a `str` since partition-by is set"
@@ -4172,7 +4174,6 @@ class DataFrame:
 
             target = PartitionByKey(file, by=partition_by)
             mkdir = True
-            engine = "streaming"
 
         from polars.lazyframe.opt_flags import QueryOptFlags
 
@@ -7063,7 +7064,9 @@ class DataFrame:
                     f"    group_by({value!r})"
                 )
                 raise TypeError(msg)
-        return GroupBy(self, *by, **named_by, maintain_order=maintain_order)
+        return GroupBy(
+            self, *by, **named_by, maintain_order=maintain_order, predicates=None
+        )
 
     @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
     def rolling(
@@ -7220,6 +7223,7 @@ class DataFrame:
             offset=offset,
             closed=closed,
             group_by=group_by,
+            predicates=None,
         )
 
     @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
@@ -7540,6 +7544,7 @@ class DataFrame:
             closed=closed,
             group_by=group_by,
             start_by=start_by,
+            predicates=None,
         )
 
     @deprecate_renamed_parameter("by", "group_by", version="0.20.14")

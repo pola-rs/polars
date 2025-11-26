@@ -229,8 +229,7 @@ impl ColumnSelectorBuilder {
         }
 
         // Eq here should be cheap as we have intercepted all nested types above.
-
-        debug_assert!(!target_dtype.is_nested());
+        debug_assert!(!target_dtype.is_nested() || target_dtype.is_extension());
 
         if target_dtype == incoming_dtype {
             return Ok(input_selector);
@@ -280,7 +279,9 @@ impl ColumnSelectorBuilder {
 
         if target_dtype.is_float() && incoming_dtype.is_float() {
             match (target_dtype, incoming_dtype) {
-                (DataType::Float64, DataType::Float32) => {
+                (DataType::Float64, DataType::Float32)
+                | (DataType::Float64, DataType::Float16)
+                | (DataType::Float32, DataType::Float16) => {
                     if !self.cast_columns_policy.float_upcast {
                         return mismatch_err(
                             "hint: pass cast_options=pl.ScanCastOptions(float_cast='upcast')",
@@ -288,7 +289,9 @@ impl ColumnSelectorBuilder {
                     }
                 },
 
-                (DataType::Float32, DataType::Float64) => {
+                (DataType::Float16, DataType::Float32)
+                | (DataType::Float16, DataType::Float64)
+                | (DataType::Float32, DataType::Float64) => {
                     if !self.cast_columns_policy.float_downcast {
                         return mismatch_err(
                             "hint: pass cast_options=pl.ScanCastOptions(float_cast='downcast')",

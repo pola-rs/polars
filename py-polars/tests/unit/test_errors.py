@@ -355,7 +355,7 @@ def test_sort_by_different_lengths() -> None:
         }
     )
     with pytest.raises(
-        ComputeError,
+        ShapeError,
         match=r"expressions in 'sort_by' must have matching group lengths",
     ):
         df.group_by("group").agg(
@@ -365,12 +365,22 @@ def test_sort_by_different_lengths() -> None:
         )
 
     with pytest.raises(
-        ComputeError,
+        ShapeError,
         match=r"expressions in 'sort_by' must have matching group lengths",
     ):
         df.group_by("group").agg(
             [
                 pl.col("col1").sort_by(pl.col("col2").arg_unique()),
+            ]
+        )
+
+    with pytest.raises(
+        ShapeError,
+        match=r"expressions in 'sort_by' must have matching group lengths",
+    ):
+        df.group_by("group").agg(
+            [
+                pl.col("col1").sort_by(pl.col("col2").first()),
             ]
         )
 
@@ -508,7 +518,7 @@ def test_sort_by_err_9259() -> None:
         {"a": [1, 1, 1], "b": [3, 2, 1], "c": [1, 1, 2]},
         schema={"a": pl.Float32, "b": pl.Float32, "c": pl.Float32},
     )
-    with pytest.raises(ComputeError):
+    with pytest.raises(ShapeError):
         df.lazy().group_by("c").agg(
             [pl.col("a").sort_by(pl.col("b").filter(pl.col("b") > 100)).sum()]
         ).collect()
@@ -580,7 +590,7 @@ def test_sort_by_error() -> None:
     )
 
     with pytest.raises(
-        ComputeError,
+        ShapeError,
         match="expressions in 'sort_by' must have matching group lengths",
     ):
         df.group_by("id", maintain_order=True).agg(
@@ -642,17 +652,10 @@ def test_raise_invalid_arithmetic() -> None:
         df.select(pl.col("a") - pl.col("a"))
 
 
-def test_raise_on_sorted_multi_args() -> None:
-    with pytest.raises(TypeError):
-        pl.DataFrame({"a": [1], "b": [1]}).set_sorted(
-            ["a", "b"]  # type: ignore[arg-type]
-        )
-
-
 def test_err_invalid_comparison() -> None:
     with pytest.raises(
         SchemaError,
-        match="could not evaluate comparison between series 'a' of dtype: date and series 'b' of dtype: bool",
+        match="could not evaluate comparison between series 'a' of dtype: Date and series 'b' of dtype: Boolean",
     ):
         _ = pl.Series("a", [date(2020, 1, 1)]) == pl.Series("b", [True])
 

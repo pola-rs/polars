@@ -580,20 +580,23 @@ where
         }
     }
 
+    /// # Panics
+    /// Panics if the [`ChunkedArray`] is empty.
     #[inline]
     pub fn first(&self) -> Option<T::Physical<'_>> {
-        unsafe {
-            let arr = self.downcast_get_unchecked(0);
-            arr.get_unchecked(0)
-        }
+        self.iter().next().unwrap()
     }
 
+    /// # Panics
+    /// Panics if the [`ChunkedArray`] is empty.
     #[inline]
     pub fn last(&self) -> Option<T::Physical<'_>> {
-        unsafe {
-            let arr = self.downcast_get_unchecked(self.chunks.len().checked_sub(1)?);
-            arr.get_unchecked(arr.len().checked_sub(1)?)
-        }
+        let arr = self
+            .downcast_iter()
+            .rev()
+            .find(|arr| !arr.is_empty())
+            .unwrap();
+        unsafe { arr.get_unchecked(arr.len() - 1) }
     }
 
     pub fn set_validity(&mut self, validity: &Bitmap) {
@@ -739,14 +742,17 @@ impl ArrayChunked {
                 vec![FixedSizeListArray::new(arrow_dtype, length, values, None).into_boxed()],
             );
         }
-
+        let mut total_len = 0;
         let chunks = chunks
             .into_iter()
             .map(|chunk| {
                 debug_assert_eq!(chunk.len() % width, 0);
-                FixedSizeListArray::new(arrow_dtype.clone(), length, chunk, None).into_boxed()
+                let chunk_len = chunk.len() / width;
+                total_len += chunk_len;
+                FixedSizeListArray::new(arrow_dtype.clone(), chunk_len, chunk, None).into_boxed()
             })
             .collect();
+        debug_assert_eq!(total_len, length);
 
         unsafe { Self::new_with_dims(field, chunks, length, 0) }
     }

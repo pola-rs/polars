@@ -1015,14 +1015,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2.0 ┆ 2.5 ┆ 3.0 │
         └─────┴─────┴─────┘
         """
-        return self._from_pyldf(
-            self._ldf.pipe_with_schema(
-                lambda lf_and_schema: function(
-                    self._from_pyldf(lf_and_schema[0]),
-                    lf_and_schema[1],
-                )._ldf
-            )
-        )
+
+        def wrapper(lf_and_schema: Any) -> PyLazyFrame:
+            # The last index is because we return a list for multiple inputs
+            # to make `pipe_with_schemas` (plural) work, but we don't use that
+            return function(
+                self._from_pyldf(lf_and_schema[0][0]),
+                lf_and_schema[1][0],
+            )._ldf
+
+        return self._from_pyldf(self._ldf.pipe_with_schema(wrapper))
 
     def describe(
         self,
@@ -3271,10 +3273,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Rust crate.
         float_scientific
             Whether to use scientific form always (true), never (false), or
-            automatically (None) for `Float32` and `Float64` datatypes.
+            automatically (None) for floating-point datatypes.
         float_precision
-            Number of decimal places to write, applied to both `Float32` and
-            `Float64` datatypes.
+            Number of decimal places to write, applied to both floating-point
+            datatypes.
         decimal_comma
             Use a comma as the decimal separator instead of a point. Floats will be
             encapsulated in quotes if necessary; set the field separator to override.
@@ -3654,6 +3656,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> None: ...
+
     @overload
     def sink_batches(
         self,
@@ -3665,6 +3668,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> pl.LazyFrame: ...
+
     @unstable()
     def sink_batches(
         self,
@@ -8356,7 +8360,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def set_sorted(
         self,
-        column: str,
+        column: str | list[str],
         *more_columns: str,
         descending: bool | list[bool] = False,
         nulls_last: bool | list[bool] = False,
@@ -8369,7 +8373,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Parameters
         ----------
         column
-            Column that is sorted
+            Column(s) that is sorted
         more_columns
             Columns that are sorted over after `column`.
         descending
@@ -8383,11 +8387,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Use with care!
 
         """
-        # NOTE: Only accepts 1 column on purpose! User think they are sorted by
-        # the combined multicolumn values.
-        if not isinstance(column, str):
-            msg = "expected a 'str' for argument 'column' in 'set_sorted'"
-            raise TypeError(msg)
+        cs: list[str]
+        if isinstance(column, str):
+            cs = [column] + list(more_columns)
+        else:
+            cs = column + list(more_columns)
 
         ds: list[bool]
         nl: list[bool]
@@ -8400,11 +8404,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         else:
             nl = nulls_last
 
-        return self._from_pyldf(
-            self._ldf.hint_sorted(
-                [column] + list(more_columns), descending=ds, nulls_last=nl
-            )
-        )
+        return self._from_pyldf(self._ldf.hint_sorted(cs, descending=ds, nulls_last=nl))
 
     @unstable()
     def update(

@@ -5,7 +5,9 @@ use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
 use arrow::offset::{Offset, Offsets};
 use arrow::types::NativeType;
+use num_traits::AsPrimitive;
 use polars_error::PolarsResult;
+use polars_utils::float16::pf16;
 
 use super::CastOptionsImpl;
 
@@ -37,6 +39,16 @@ impl_parse!(u32);
 impl_parse!(u64);
 #[cfg(feature = "dtype-u128")]
 impl_parse!(u128);
+
+#[cfg(feature = "dtype-f16")]
+impl Parse for pf16 {
+    fn parse(val: &[u8]) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        fast_float2::parse(val).ok().map(|f: f32| f.as_())
+    }
+}
 
 impl Parse for f32 {
     fn parse(val: &[u8]) -> Option<Self>
@@ -133,7 +145,9 @@ where
 pub fn binary_to_dictionary<O: Offset, K: DictionaryKey>(
     from: &BinaryArray<O>,
 ) -> PolarsResult<DictionaryArray<K>> {
-    let mut array = MutableDictionaryArray::<K, MutableBinaryArray<O>>::new();
+    let mut array = MutableDictionaryArray::<K, MutableBinaryArray<O>>::empty_with_value_dtype(
+        from.dtype().clone(),
+    );
     array.reserve(from.len());
     array.try_extend(from.iter())?;
 

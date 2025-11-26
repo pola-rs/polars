@@ -140,10 +140,11 @@ impl StructChunked {
 
         let field_series = self.fields_as_series();
         for (i, s) in field_series.iter().enumerate() {
-            if let Cow::Owned(physical) = s.to_physical_repr() {
+            let phys = s.to_physical_repr();
+            if phys.dtype() != s.dtype() {
                 physicals.reserve(field_series.len());
                 physicals.extend(field_series[..i].iter().cloned());
-                physicals.push(physical);
+                physicals.push(phys.into_owned());
                 break;
             }
         }

@@ -22,6 +22,7 @@ use slotmap::SlotMap;
 
 use super::fmt::fmt_exprs;
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream, StreamingLowerIRContext};
+use crate::physical_plan::ZipBehavior;
 use crate::physical_plan::lower_group_by::build_group_by_stream;
 use crate::physical_plan::lower_ir::{build_filter_stream, build_row_idx_stream};
 
@@ -447,7 +448,6 @@ fn build_fallback_node_with_ctx(
         .map(|expr| {
             create_physical_expr(
                 expr,
-                Context::Default,
                 ctx.expr_arena,
                 &ctx.phys_sm[input_stream.node].output_schema,
                 &mut conv_state,
@@ -494,7 +494,7 @@ fn simplify_input_streams(
         for input_stream in input_streams {
             if let PhysNodeKind::Zip {
                 inputs,
-                null_extend: false,
+                zip_behavior: ZipBehavior::Broadcast,
             } = &ctx.phys_sm[input_stream.node].kind
             {
                 flattened_input_streams.extend(inputs);
@@ -2050,7 +2050,7 @@ fn lower_exprs_with_ctx(
         .collect();
     let zip_kind = PhysNodeKind::Zip {
         inputs: zip_inputs,
-        null_extend: false,
+        zip_behavior: ZipBehavior::Broadcast,
     };
     let zip_node = ctx
         .phys_sm

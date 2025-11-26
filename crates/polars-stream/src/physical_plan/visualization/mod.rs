@@ -933,7 +933,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
             },
             PhysNodeKind::Zip {
                 inputs,
-                null_extend,
+                zip_behavior,
             } => {
                 for input in inputs {
                     phys_node_inputs.push(input.node);
@@ -941,7 +941,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
 
                 let properties = PhysNodeProperties::Zip {
                     num_inputs: inputs.len().try_into().unwrap(),
-                    null_extend: *null_extend,
+                    zip_behavior: *zip_behavior,
                 };
 
                 PhysNodeInfo {

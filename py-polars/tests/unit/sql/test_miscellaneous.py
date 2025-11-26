@@ -143,7 +143,7 @@ def test_cte_aliasing() -> None:
               test1 AS (SELECT * FROM df1),
               test2 AS (SELECT * FROM df2),
               test3 AS (
-                SELECT t1.colx, t2.colz
+                SELECT ROW_NUMBER() OVER (ORDER BY colx) AS n, t1.colx, t2.colz
                 FROM test1 t1
                 LEFT JOIN test2 t2 ON t1.colx = t2.colx
             )
@@ -151,7 +151,8 @@ def test_cte_aliasing() -> None:
         """,
         eager=True,
     )
-    assert df3.rows() == [("bb", None), ("aa", 20)]
+    expected = [(2, "bb", None), (1, "aa", 20)]
+    assert expected == df3.rows()
 
 
 def test_distinct() -> None:
@@ -271,11 +272,12 @@ def test_nested_subquery_table_leakage() -> None:
 
 
 def test_register_context() -> None:
-    # use as context manager unregisters tables created within each scope
-    # on exit from that scope; arbitrary levels of nesting are supported.
+    # context manager usage should unregister tables created in each
+    # scope on context exit; supports arbitrary levels of nesting.
     with pl.SQLContext() as ctx:
         _lf1 = pl.LazyFrame({"a": [1, 2, 3], "b": ["m", "n", "o"]})
         _lf2 = pl.LazyFrame({"a": [2, 3, 4], "c": ["p", "q", "r"]})
+
         ctx.register_globals()
         assert ctx.tables() == ["_lf1", "_lf2"]
 
@@ -515,7 +517,9 @@ def test_select_output_heights_20058_21084(filter_expr: str, order_expr: str) ->
 
 
 def test_select_explode_height_filter_order_by() -> None:
-    # Note: `unnest()` from SQL equates to `Expr.explode()`
+    # Note: `unnest()` from SQL equates to `pl.Dataframe.explode()
+    # The ordering is applied after the explosion/unnest.
+    # `
     df = pl.DataFrame(
         {
             "list_long": [[1, 2, 3], [4, 5, 6]],
@@ -525,28 +529,24 @@ def test_select_explode_height_filter_order_by() -> None:
         }
     )
 
-    # Height of unnest is larger than height of sort_key, the sort_key is
-    # extended with NULLs.
-
+    # Unnest/explode is applied at the dataframe level, sort is applied afterward
     assert_frame_equal(
         df.sql("SELECT UNNEST(list_long) as list FROM self ORDER BY sort_key"),
-        pl.Series("list", [2, 1, 3, 4, 5, 6]).to_frame(),
-        check_row_order=False,  # this is wrong at the moment
+        pl.Series("list", [4, 5, 6, 1, 2, 3]).to_frame(),
     )
 
+    # No NULLS: since order is applied after explode on the dataframe level
     assert_frame_equal(
         df.sql(
             "SELECT UNNEST(list_long) as list FROM self ORDER BY sort_key NULLS FIRST"
         ),
-        pl.Series("list", [3, 4, 5, 6, 2, 1]).to_frame(),
-        check_row_order=False,  # this is wrong at the moment
+        pl.Series("list", [4, 5, 6, 1, 2, 3]).to_frame(),
     )
 
     # Literals are broadcasted to output height of UNNEST:
     assert_frame_equal(
         df.sql("SELECT UNNEST(list_long) as list, 1 as x FROM self ORDER BY sort_key"),
-        pl.select(pl.Series("list", [2, 1, 3, 4, 5, 6]), x=1),
-        check_row_order=False,  # this is wrong at the moment
+        pl.select(pl.Series("list", [4, 5, 6, 1, 2, 3]), x=1),
     )
 
     # Note: Filter applies before projections in SQL
@@ -555,15 +555,13 @@ def test_select_explode_height_filter_order_by() -> None:
             "SELECT UNNEST(list_long) as list FROM self WHERE filter_mask ORDER BY sort_key"
         ),
         pl.Series("list", [4, 5, 6]).to_frame(),
-        check_row_order=False,  # this is wrong at the moment
     )
 
     assert_frame_equal(
         df.sql(
             "SELECT UNNEST(list_long) as list FROM self WHERE filter_mask_all_true ORDER BY sort_key"
         ),
-        pl.Series("list", [2, 1, 3, 4, 5, 6]).to_frame(),
-        check_row_order=False,  # this is wrong at the moment
+        pl.Series("list", [4, 5, 6, 1, 2, 3]).to_frame(),
     )
 
 

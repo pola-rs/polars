@@ -130,6 +130,7 @@ performant = [
   "chunked_ids",
   "dtype-u8",
   "dtype-u16",
+  "dtype-f16",
   "dtype-struct",
   "cse",
   "polars-ops/performant",
@@ -223,7 +224,7 @@ pivot = ["polars-lazy?/pivot", "polars-ops/pivot", "dtype-struct", "rows"]
 product = ["polars-core/product"]
 propagate_nans = ["polars-lazy?/propagate_nans"]
 range = ["polars-lazy?/range"]
-rank = ["polars-lazy?/rank", "polars-ops/rank"]
+rank = ["polars-lazy?/rank", "polars-ops/rank", "polars-sql?/rank"]
 reinterpret = ["polars-core/reinterpret", "polars-lazy?/reinterpret", "polars-ops/reinterpret"]
 repeat_by = ["polars-ops/repeat_by", "polars-lazy?/repeat_by"]
 replace = ["polars-ops/replace", "polars-lazy?/replace"]
@@ -292,6 +293,7 @@ dtype-full = [
   "dtype-u8",
   "dtype-u16",
   "dtype-u128",
+  "dtype-f16",
   "dtype-categorical",
   "dtype-struct",
 ]
@@ -387,6 +389,13 @@ dtype-u128 = [
   "polars-ops/dtype-u128",
   "polars-time?/dtype-u128",
 ]
+dtype-f16 = [
+  "polars-core/dtype-f16",
+  "polars-io/dtype-f16",
+  "polars-lazy?/dtype-f16",
+  "polars-ops/dtype-f16",
+  "polars-time?/dtype-f16",
+]
 dtype-categorical = [
   "polars-core/dtype-categorical",
   "polars-io/dtype-categorical",
@@ -398,6 +407,13 @@ dtype-struct = [
   "polars-io/dtype-struct",
   "polars-lazy?/dtype-struct",
   "polars-ops/dtype-struct",
+]
+dtype-extension = [
+  "polars-core/dtype-extension",
+  "polars-expr/dtype-extension",
+  "polars-lazy?/dtype-extension",
+  "polars-ops/dtype-extension",
+  "polars-plan/dtype-extension",
 ]
 hist = ["polars-ops/hist", "polars-lazy/hist"]
 

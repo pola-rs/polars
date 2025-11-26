@@ -92,7 +92,7 @@ def test_respect_dtype_with_series_from_numpy() -> None:
         (np.uint16, pl.UInt16),
         (np.uint32, pl.UInt32),
         (np.uint64, pl.UInt64),
-        (np.float16, pl.Float32),  # << note: we don't currently have a native f16
+        (np.float16, pl.Float16),
         (np.float32, pl.Float32),
         (np.float64, pl.Float64),
     ],

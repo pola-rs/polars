@@ -357,6 +357,14 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IC::Slice(s, l) => C::Slice(s, l),
             })
         },
+        #[cfg(feature = "dtype-extension")]
+        IF::Extension(f) => {
+            use {ExtensionFunction as E, IRExtensionFunction as IE};
+            F::Extension(match f {
+                IE::To(dtype) => E::To(dtype.into()),
+                IE::Storage => E::Storage,
+            })
+        },
         IF::ListExpr(f) => {
             use {IRListFunction as IL, ListFunction as L};
             F::ListExpr(match f {
@@ -507,24 +515,30 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 #[cfg(feature = "find_many")]
                 IB::ReplaceMany {
                     ascii_case_insensitive,
+                    leftmost,
                 } => B::ReplaceMany {
                     ascii_case_insensitive,
+                    leftmost,
                 },
                 #[cfg(feature = "find_many")]
                 IB::ExtractMany {
                     ascii_case_insensitive,
                     overlapping,
+                    leftmost,
                 } => B::ExtractMany {
                     ascii_case_insensitive,
                     overlapping,
+                    leftmost,
                 },
                 #[cfg(feature = "find_many")]
                 IB::FindMany {
                     ascii_case_insensitive,
                     overlapping,
+                    leftmost,
                 } => B::FindMany {
                     ascii_case_insensitive,
                     overlapping,
+                    leftmost,
                 },
                 #[cfg(feature = "regex")]
                 IB::EscapeRegex => B::EscapeRegex,

@@ -169,8 +169,7 @@ impl SinkNode for IpcSinkNode {
             writer.finish()?;
             drop(writer);
 
-            file.sync_on_close(sink_options.sync_on_close)?;
-            file.close()?;
+            file.close(sink_options.sync_on_close)?;
 
             PolarsResult::Ok(())
         });
@@ -505,6 +504,8 @@ where
                     .collect(),
                 dictionary_id: None,
             },
+            #[cfg(feature = "dtype-extension")]
+            Extension(_, storage) => self.dtype_to_ipc_field(storage.as_ref()),
             _ => {
                 assert!(!dtype.is_nested());
                 IpcField {
