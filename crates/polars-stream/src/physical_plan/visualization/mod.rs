@@ -6,8 +6,8 @@ use polars_plan::dsl::{JoinTypeOptionsIR, PartitionVariantIR, SinkOptions, SinkT
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::prelude::AExpr;
 use polars_utils::arena::Arena;
-use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::{IdxSize, format_pl_smallstr};
 
 pub mod models;
 pub use models::{PhysNodeInfo, PhysicalPlanVisualizationData};
@@ -187,12 +187,55 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                 }
             },
             #[cfg(feature = "dynamic_group_by")]
+            PhysNodeKind::DynamicGroupBy {
+                input,
+                options,
+                aggs,
+                slice,
+            } => {
+                use polars_time::DynamicGroupOptions;
+                use polars_utils::IdxSize;
+
+                phys_node_inputs.push(input.node);
+
+                let DynamicGroupOptions {
+                    index_column,
+                    every,
+                    period,
+                    offset,
+                    label,
+                    include_boundaries,
+                    closed_window,
+                    start_by,
+                } = options;
+
+                let properties = PhysNodeProperties::DynamicGroupBy {
+                    index_column: index_column.clone(),
+                    period: format_pl_smallstr!("{period}"),
+                    every: format_pl_smallstr!("{every}"),
+                    offset: format_pl_smallstr!("{offset}"),
+                    start_by: PlSmallStr::from_static(start_by.into()),
+                    label: PlSmallStr::from_static(label.into()),
+                    include_boundaries: *include_boundaries,
+                    closed_window: PlSmallStr::from_static(closed_window.into()),
+                    aggs: expr_list(aggs, self.expr_arena),
+                    slice: slice.map(|(o, l)| (IdxSize::into(o), IdxSize::into(l))),
+                };
+
+                PhysNodeInfo {
+                    title: properties.variant_name(),
+                    properties,
+                    ..Default::default()
+                }
+            },
+            #[cfg(feature = "dynamic_group_by")]
             PhysNodeKind::RollingGroupBy {
                 input,
                 index_column,
                 period,
                 offset,
                 closed,
+                slice,
                 aggs,
             } => {
                 phys_node_inputs.push(input.node);
@@ -202,7 +245,28 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     period: format_pl_smallstr!("{period}"),
                     offset: format_pl_smallstr!("{offset}"),
                     closed_window: PlSmallStr::from_static(closed.into()),
+                    slice: slice.map(|(o, l)| (IdxSize::into(o), IdxSize::into(l))),
                     aggs: expr_list(aggs, self.expr_arena),
+                };
+
+                PhysNodeInfo {
+                    title: properties.variant_name(),
+                    properties,
+                    ..Default::default()
+                }
+            },
+            PhysNodeKind::SortedGroupBy {
+                input,
+                key,
+                aggs,
+                slice,
+            } => {
+                phys_node_inputs.push(input.node);
+
+                let properties = PhysNodeProperties::SortedGroupBy {
+                    key: key.clone(),
+                    aggs: expr_list(aggs, self.expr_arena),
+                    slice: slice.map(|(o, l)| (IdxSize::into(o), IdxSize::into(l))),
                 };
 
                 PhysNodeInfo {
@@ -438,11 +502,21 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     ..Default::default()
                 }
             },
-            PhysNodeKind::Map { input, map } => {
+            PhysNodeKind::Map {
+                input,
+                map,
+                format_str,
+            } => {
                 phys_node_inputs.push(input.node);
 
                 let properties = PhysNodeProperties::Map {
                     display_str: map.display_str(),
+                    format_str: format_str.as_deref().map_or(
+                        PlSmallStr::from_static(
+                            "error: prepare_visualization was not set during conversion",
+                        ),
+                        PlSmallStr::from_str,
+                    ),
                 };
 
                 PhysNodeInfo {
@@ -554,7 +628,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     ..Default::default()
                 }
             },
-            PhysNodeKind::PartitionSink {
+            PhysNodeKind::PartitionedSink {
                 input,
                 base_path,
                 file_path_cb,
@@ -859,7 +933,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
             },
             PhysNodeKind::Zip {
                 inputs,
-                null_extend,
+                zip_behavior,
             } => {
                 for input in inputs {
                     phys_node_inputs.push(input.node);
@@ -867,7 +941,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
 
                 let properties = PhysNodeProperties::Zip {
                     num_inputs: inputs.len().try_into().unwrap(),
-                    null_extend: *null_extend,
+                    zip_behavior: *zip_behavior,
                 };
 
                 PhysNodeInfo {

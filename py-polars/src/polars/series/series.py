@@ -104,6 +104,7 @@ from polars.series.array import ArrayNameSpace
 from polars.series.binary import BinaryNameSpace
 from polars.series.categorical import CatNameSpace
 from polars.series.datetime import DateTimeNameSpace
+from polars.series.ext import ExtensionNameSpace
 from polars.series.list import ListNameSpace
 from polars.series.plotting import SeriesPlot
 from polars.series.string import StringNameSpace
@@ -265,6 +266,7 @@ class Series:
         "bin",
         "cat",
         "dt",
+        "ext",
         "list",
         "plot",
         "str",
@@ -4186,11 +4188,18 @@ class Series:
         ]
         """
 
-    def explode(self) -> Series:
+    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Series:
         """
         Explode a list Series.
 
         This means that every item is expanded to a new row.
+
+        Parameters
+        ----------
+        empty_as_null
+            Explode an empty list into a `null`.
+        keep_nulls
+            Explode a `null` list into a `null`.
 
         Returns
         -------
@@ -4981,7 +4990,7 @@ class Series:
         """
         return self._s.len()
 
-    def set(self, filter: Series, value: int | float | str | bool | None) -> Series:  # noqa: FBT001
+    def set(self, filter: Series, value: Any) -> Series:
         """
         Set masked values.
 
@@ -5026,11 +5035,8 @@ class Series:
         │ 3       │
         └─────────┘
         """
-        f = get_ffi_func("set_with_mask_<>", self.dtype, self._s)
-        if f is None:
-            msg = f"Series of type {self.dtype} can not be set"
-            raise NotImplementedError(msg)
-        return self._from_pyseries(f(filter._s, value))
+        value_s = Series([value], dtype=self.dtype)
+        return wrap_s(self._s.set(filter._s, value_s._s))
 
     def scatter(
         self,
@@ -5444,11 +5450,16 @@ class Series:
             raise ShapeError(msg)
         return self._s.dot(other._s)
 
-    def mode(self) -> Series:
+    def mode(self, *, maintain_order: bool = False) -> Series:
         """
         Compute the most occurring value(s).
 
         Can return multiple Values.
+
+        Parameters
+        ----------
+        maintain_order
+            Maintain order of data. This requires more work.
 
         Examples
         --------
@@ -8776,7 +8787,8 @@ class Series:
         Returns
         -------
         Expr
-            Float32 if input is Float32, otherwise Float64.
+            :class:`Float16` if input is `Float16`, :class:`.Float32` if input is
+            `Float32`, otherwise :class:`.Float64`.
 
         Examples
         --------
@@ -9158,21 +9170,35 @@ class Series:
         """Perform an aggregation of bitwise XORs."""
         return self._s.bitwise_xor()
 
-    def first(self) -> PythonLiteral | None:
+    def first(self, *, ignore_nulls: bool = False) -> PythonLiteral | None:
         """
         Get the first element of the Series.
 
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the first non-null value is returned, otherwise `None` is
+            returned if no non-null value exists.
+
         Returns `None` if the Series is empty.
         """
-        return self._s.first()
+        return self._s.first(ignore_nulls=ignore_nulls)
 
-    def last(self) -> PythonLiteral | None:
+    def last(self, *, ignore_nulls: bool = False) -> PythonLiteral | None:
         """
         Get the last element of the Series.
 
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the last non-null value is returned, otherwise `None` is
+            returned if no non-null value exists.
+
         Returns `None` if the Series is empty.
         """
-        return self._s.last()
+        return self._s.last(ignore_nulls=ignore_nulls)
 
     def approx_n_unique(self) -> PythonLiteral | None:
         """
@@ -9281,6 +9307,11 @@ class Series:
     def struct(self) -> StructNameSpace:
         """Create an object namespace of all struct related methods."""
         return StructNameSpace(self)
+
+    @property
+    def ext(self) -> ExtensionNameSpace:
+        """Create an object namespace of all extension type related methods."""
+        return ExtensionNameSpace(self)
 
     @property
     @unstable()

@@ -1,6 +1,8 @@
 pub mod callback_sink;
 #[cfg(feature = "cum_agg")]
 pub mod cum_agg;
+#[cfg(feature = "dynamic_group_by")]
+pub mod dynamic_group_by;
 pub mod dynamic_slice;
 #[cfg(feature = "ewma")]
 pub mod ewm;
@@ -30,6 +32,7 @@ pub mod rolling_group_by;
 pub mod select;
 pub mod shift;
 pub mod simple_projection;
+pub mod sorted_group_by;
 pub mod streaming_slice;
 pub mod top_k;
 pub mod with_row_index;

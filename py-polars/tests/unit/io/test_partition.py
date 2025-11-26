@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypedDict
 
 import pytest
-from hypothesis import given
+from hypothesis import example, given
 
 import polars as pl
 from polars.io.partition import (
@@ -280,6 +280,7 @@ def test_partition_parted(tmp_path: Path, io_type: IOType, engine: EngineType) -
 @pytest.mark.parametrize("io_type", [io_types[2], io_types[3]])
 @pytest.mark.parametrize("engine", engines)
 @pytest.mark.write_disk
+@example(df=pl.DataFrame({"a": [0.0, -0.0]}, schema={"a": pl.Float16}))
 @given(
     df=dataframes(
         min_cols=1,
@@ -292,6 +293,7 @@ def test_partition_parted(tmp_path: Path, io_type: IOType, engine: EngineType) -
             pl.Struct,
             pl.Array,
             pl.List,
+            pl.Extension,  # Can't be cast to string
         ],
     )
 )
@@ -338,10 +340,7 @@ def test_max_size_partition_collect_files(tmp_path: Path) -> None:
     output_files = []
 
     def file_path_cb(ctx: BasePartitionContext) -> Path:
-        print(ctx)
-        print(ctx.full_path)
         output_files.append(ctx.full_path)
-        print(ctx.file_path)
         return ctx.file_path
 
     (io_type["sink"])(

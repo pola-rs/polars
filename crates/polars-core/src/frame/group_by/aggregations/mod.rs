@@ -22,6 +22,8 @@ use polars_compute::rolling::{
     SumWindow, quantile_filter,
 };
 use polars_utils::float::IsFloat;
+#[cfg(feature = "dtype-f16")]
+use polars_utils::float16::pf16;
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::kahan_sum::KahanSum;
 use polars_utils::min_max::MinMax;
@@ -231,6 +233,16 @@ where
     }
 }
 
+#[cfg(feature = "dtype-f16")]
+impl QuantileDispatcher<pf16> for Float16Chunked {
+    fn _quantile(self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<pf16>> {
+        self.quantile_faster(quantile, method)
+    }
+    fn _median(self) -> Option<pf16> {
+        self.median_faster()
+    }
+}
+
 impl QuantileDispatcher<f32> for Float32Chunked {
     fn _quantile(self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<f32>> {
         self.quantile_faster(quantile, method)
@@ -435,13 +447,9 @@ where
 {
     pub(crate) unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
         // faster paths
-        match (self.is_sorted_flag(), self.null_count()) {
-            (IsSorted::Ascending, 0) => {
-                return self.clone().into_series().agg_first(groups);
-            },
-            (IsSorted::Descending, 0) => {
-                return self.clone().into_series().agg_last(groups);
-            },
+        match self.is_sorted_flag() {
+            IsSorted::Ascending => return self.clone().into_series().agg_first_non_null(groups),
+            IsSorted::Descending => return self.clone().into_series().agg_last_non_null(groups),
             _ => {},
         }
         match groups {

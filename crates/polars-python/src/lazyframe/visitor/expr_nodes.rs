@@ -679,8 +679,18 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 arguments: vec![n.0],
                 options: py.None(),
             },
+            IRAggExpr::FirstNonNull(n) => Agg {
+                name: "first_non_null".into_py_any(py)?,
+                arguments: vec![n.0],
+                options: py.None(),
+            },
             IRAggExpr::Last(n) => Agg {
                 name: "last".into_py_any(py)?,
+                arguments: vec![n.0],
+                options: py.None(),
+            },
+            IRAggExpr::LastNonNull(n) => Agg {
+                name: "last_non_null".into_py_any(py)?,
                 arguments: vec![n.0],
                 options: py.None(),
             },
@@ -771,6 +781,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 },
                 IRFunctionExpr::Categorical(_) => {
                     return Err(PyNotImplementedError::new_err("categorical expr"));
+                },
+                IRFunctionExpr::Extension(_) => {
+                    return Err(PyNotImplementedError::new_err("extension expr"));
                 },
                 IRFunctionExpr::ListExpr(_) => {
                     return Err(PyNotImplementedError::new_err("list expr"));
@@ -917,7 +930,13 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     #[cfg(feature = "find_many")]
                     IRStringFunction::ReplaceMany {
                         ascii_case_insensitive,
-                    } => (PyStringFunction::ReplaceMany, ascii_case_insensitive).into_py_any(py),
+                        leftmost,
+                    } => (
+                        PyStringFunction::ReplaceMany,
+                        ascii_case_insensitive,
+                        leftmost,
+                    )
+                        .into_py_any(py),
                     #[cfg(feature = "find_many")]
                     IRStringFunction::ExtractMany { .. } => {
                         return Err(PyNotImplementedError::new_err("extract_many"));
@@ -1205,7 +1224,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::Shift => ("shift",).into_py_any(py),
                 IRFunctionExpr::DropNans => ("drop_nans",).into_py_any(py),
                 IRFunctionExpr::DropNulls => ("drop_nulls",).into_py_any(py),
-                IRFunctionExpr::Mode => ("mode",).into_py_any(py),
+                IRFunctionExpr::Mode { maintain_order } => {
+                    ("mode", *maintain_order).into_py_any(py)
+                },
                 IRFunctionExpr::Skew(bias) => ("skew", bias).into_py_any(py),
                 IRFunctionExpr::Kurtosis(fisher, bias) => {
                     ("kurtosis", fisher, bias).into_py_any(py)

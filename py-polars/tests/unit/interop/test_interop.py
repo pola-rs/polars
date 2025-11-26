@@ -407,7 +407,7 @@ def test_dataframe_from_repr() -> None:
         pl.LazyFrame(
             {
                 "a": [1, 2, None],
-                "b": [4.5, 5.5, 6.5],
+                "b": [4.5, 5.23e13, -3.12e12],
                 "c": ["x", "y", "z"],
                 "d": [True, False, True],
                 "e": [None, "", None],
@@ -430,7 +430,7 @@ def test_dataframe_from_repr() -> None:
     assert frame.schema == {
         "a": pl.Int64,
         "b": pl.Float64,
-        "c": pl.Categorical(ordering="lexical"),
+        "c": pl.Categorical(),
         "d": pl.Boolean,
         "e": pl.String,
         "f": pl.Date,
@@ -942,11 +942,7 @@ def test_misaligned_nested_arrow_19097() -> None:
 
 
 def test_arrow_roundtrip_lex_cat_20288() -> None:
-    tb = (
-        pl.Series("a", ["A", "B"], pl.Categorical(ordering="lexical"))
-        .to_frame()
-        .to_arrow()
-    )
+    tb = pl.Series("a", ["A", "B"], pl.Categorical()).to_frame().to_arrow()
     df = pl.from_arrow(tb)
     assert isinstance(df, pl.DataFrame)
     dt = df.schema["a"]

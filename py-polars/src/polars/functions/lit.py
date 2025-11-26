@@ -16,7 +16,7 @@ from polars._dependencies import (
 )
 from polars._dependencies import numpy as np
 from polars._utils.wrap import wrap_expr
-from polars.datatypes import Date, Datetime, Duration
+from polars.datatypes import BaseExtension, Date, Datetime, Duration
 from polars.datatypes.convert import DataTypeMappings
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -79,7 +79,12 @@ def lit(
     """
     time_unit: TimeUnit
 
-    if isinstance(value, datetime):
+    if isinstance(dtype, BaseExtension):
+        return lit(value, dtype.ext_storage()).ext.to(dtype)
+    elif isinstance(dtype, type) and issubclass(dtype, BaseExtension):
+        msg = f"dtype '{dtype}' is a BaseExtension class, it should be an instance"
+        raise TypeError(msg)
+    elif isinstance(value, datetime):
         if dtype == Date:
             return wrap_expr(plr.lit(value.date(), allow_object=False, is_scalar=True))
 
@@ -127,19 +132,19 @@ def lit(
                 raise TypeError(msg)
 
         dt_utc = value.replace(tzinfo=timezone.utc)
-        expr = wrap_expr(plr.lit(dt_utc, allow_object=False, is_scalar=True)).cast(
-            Datetime(time_unit)
-        )
+        dt_utc_s = pl.Series("literal", [dt_utc]).cast(Datetime(time_unit))
         if tz is not None:
-            expr = expr.dt.replace_time_zone(
+            dt_utc_s = dt_utc_s.dt.replace_time_zone(
                 tz, ambiguous="earliest" if value.fold == 0 else "latest"
             )
+        expr = wrap_expr(plr.lit(dt_utc_s._s, allow_object=False, is_scalar=True))
         return expr
 
     elif isinstance(value, timedelta):
-        expr = wrap_expr(plr.lit(value, allow_object=False, is_scalar=True))
+        value_s = pl.Series("literal", [value])
         if dtype is not None and (tu := getattr(dtype, "time_unit", None)) is not None:
-            expr = expr.cast(Duration(tu))
+            value_s = value_s.cast(Duration(tu))
+        expr = wrap_expr(plr.lit(value_s._s, allow_object=False, is_scalar=True))
         return expr
 
     elif isinstance(value, time):
@@ -149,11 +154,10 @@ def lit(
         if dtype == Datetime:
             time_unit = getattr(dtype, "time_unit", "us") or "us"
             dt_utc = datetime(value.year, value.month, value.day)
-            expr = wrap_expr(plr.lit(dt_utc, allow_object=False, is_scalar=True)).cast(
-                Datetime(time_unit)
-            )
+            dt_utc_s = pl.Series("literal", [dt_utc]).cast(Datetime(time_unit))
             if (time_zone := getattr(dtype, "time_zone", None)) is not None:
-                expr = expr.dt.replace_time_zone(str(time_zone))
+                dt_utc_s = dt_utc_s.dt.replace_time_zone(str(time_zone))
+            expr = wrap_expr(plr.lit(dt_utc_s._s, allow_object=False, is_scalar=True))
             return expr
         else:
             return wrap_expr(plr.lit(value, allow_object=False, is_scalar=True))
@@ -181,7 +185,8 @@ def lit(
         return lit(value.value, dtype=dtype)
 
     if dtype:
-        return wrap_expr(plr.lit(value, allow_object, is_scalar=True)).cast(dtype)
+        value_s = pl.Series("literal", [value]).cast(dtype)
+        return wrap_expr(plr.lit(value_s._s, allow_object, is_scalar=True))
 
     if _check_for_numpy(value) and isinstance(value, np.generic):
         # note: the item() is a py-native datetime/timedelta when units < 'ns'

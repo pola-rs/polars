@@ -230,8 +230,8 @@ impl FileReader for CsvFileReader {
 
         let inferred_schema = Arc::new(inferred_schema);
 
-        if let Some(mut tx) = file_schema_tx {
-            _ = tx.try_send(inferred_schema.clone())
+        if let Some(tx) = file_schema_tx {
+            _ = tx.send(inferred_schema.clone())
         }
 
         let projection: Vec<usize> = projected_schema
@@ -381,13 +381,13 @@ impl FileReader for CsvFileReader {
                 let row_position = IdxSize::try_from(row_position)
                     .map_err(|_| polars_err!(bigidx, ctx = "csv file", size = row_position))?;
 
-                if let Some(mut n_rows_in_file_tx) = n_rows_in_file_tx {
+                if let Some(n_rows_in_file_tx) = n_rows_in_file_tx {
                     assert!(needs_full_row_count);
-                    _ = n_rows_in_file_tx.try_send(row_position);
+                    _ = n_rows_in_file_tx.send(row_position);
                 }
 
-                if let Some(mut row_position_on_end_tx) = row_position_on_end_tx {
-                    _ = row_position_on_end_tx.try_send(row_position);
+                if let Some(row_position_on_end_tx) = row_position_on_end_tx {
+                    _ = row_position_on_end_tx.send(row_position);
                 }
 
                 Ok(())
@@ -676,7 +676,7 @@ impl ChunkReader {
                 chunk.len()
             );
             if self.ignore_errors {
-                polars_warn!(msg);
+                polars_warn!("{}", msg);
             } else {
                 polars_bail!(ComputeError: msg);
             }

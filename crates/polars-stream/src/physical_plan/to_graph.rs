@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use num_traits::AsPrimitive;
 use parking_lot::Mutex;
 use polars_core::prelude::PlRandomState;
 use polars_core::schema::Schema;
@@ -13,7 +14,7 @@ use polars_mem_engine::create_physical_plan;
 use polars_mem_engine::scan_predicate::create_scan_predicate;
 use polars_plan::dsl::{JoinOptionsIR, PartitionVariantIR, ScanSources};
 use polars_plan::plans::expr_ir::ExprIR;
-use polars_plan::plans::{AExpr, ArenaExprIter, Context, IR, IRAggExpr};
+use polars_plan::plans::{AExpr, ArenaExprIter, IR, IRAggExpr};
 use polars_plan::prelude::{FileType, FunctionFlags};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
@@ -55,7 +56,6 @@ fn create_stream_expr(
     let reentrant = has_potential_recurring_entrance(expr_ir.node(), ctx.expr_arena);
     let phys = create_physical_expr(
         expr_ir,
-        Context::Default,
         ctx.expr_arena,
         schema,
         &mut ctx.expr_conversion_state,
@@ -373,7 +373,7 @@ fn to_graph_rec<'a>(
             }
         },
 
-        PartitionSink {
+        PartitionedSink {
             input,
             base_path,
             file_path_cb,
@@ -487,10 +487,37 @@ fn to_graph_rec<'a>(
             )
         },
 
-        Map { input, map } => {
+        Map {
+            input,
+            map,
+            format_str: _,
+        } => {
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.graph.add_node(
                 nodes::map::MapNode::new(map.clone()),
+                [(input_key, input.port)],
+            )
+        },
+
+        SortedGroupBy {
+            input,
+            key,
+            aggs,
+            slice,
+        } => {
+            let input_schema = ctx.phys_sm[input.node].output_schema.clone();
+            let input_key = to_graph_rec(input.node, ctx)?;
+            let aggs = aggs
+                .iter()
+                .map(|e| {
+                    Ok((
+                        e.output_name().clone(),
+                        create_stream_expr(e, ctx, &input_schema)?,
+                    ))
+                })
+                .collect::<PolarsResult<Arc<[_]>>>()?;
+            ctx.graph.add_node(
+                nodes::sorted_group_by::SortedGroupBy::new(key.clone(), aggs, *slice, input_schema),
                 [(input_key, input.port)],
             )
         },
@@ -633,7 +660,7 @@ fn to_graph_rec<'a>(
 
         Zip {
             inputs,
-            null_extend,
+            zip_behavior,
         } => {
             let input_schemas = inputs
                 .iter()
@@ -644,7 +671,7 @@ fn to_graph_rec<'a>(
                 .map(|i| PolarsResult::Ok((to_graph_rec(i.node, ctx)?, i.port)))
                 .try_collect_vec()?;
             ctx.graph.add_node(
-                nodes::zip::ZipNode::new(*null_extend, input_schemas),
+                nodes::zip::ZipNode::new(*zip_behavior, input_schemas),
                 input_keys,
             )
         },
@@ -762,7 +789,12 @@ fn to_graph_rec<'a>(
             for agg in aggs {
                 has_order_sensitive_agg |= matches!(
                     ctx.expr_arena.get(agg.node()),
-                    AExpr::Agg(IRAggExpr::First(..) | IRAggExpr::Last(..))
+                    AExpr::Agg(
+                        IRAggExpr::First(_)
+                            | IRAggExpr::FirstNonNull(_)
+                            | IRAggExpr::Last(_)
+                            | IRAggExpr::LastNonNull(_)
+                    )
                 );
                 let (reduction, input_node) =
                     into_reduction(agg.node(), ctx.expr_arena, input_schema)?;
@@ -790,12 +822,41 @@ fn to_graph_rec<'a>(
         },
 
         #[cfg(feature = "dynamic_group_by")]
+        DynamicGroupBy {
+            input,
+            options,
+            aggs,
+            slice,
+        } => {
+            let input_schema = &ctx.phys_sm[input.node].output_schema;
+            let input_key = to_graph_rec(input.node, ctx)?;
+            let aggs = aggs
+                .iter()
+                .map(|e| {
+                    Ok((
+                        e.output_name().clone(),
+                        create_stream_expr(e, ctx, input_schema)?,
+                    ))
+                })
+                .collect::<PolarsResult<Arc<[_]>>>()?;
+            ctx.graph.add_node(
+                nodes::dynamic_group_by::DynamicGroupBy::new(
+                    input_schema.clone(),
+                    options.clone(),
+                    aggs,
+                    *slice,
+                )?,
+                [(input_key, input.port)],
+            )
+        },
+        #[cfg(feature = "dynamic_group_by")]
         RollingGroupBy {
             input,
             index_column,
             period,
             offset,
             closed,
+            slice,
             aggs,
         } => {
             let input_schema = &ctx.phys_sm[input.node].output_schema;
@@ -816,6 +877,7 @@ fn to_graph_rec<'a>(
                     *period,
                     *offset,
                     *closed,
+                    *slice,
                     aggs,
                 )?,
                 [(input_key, input.port)],
@@ -1250,7 +1312,7 @@ fn to_graph_rec<'a>(
                 EwmMean { .. } => {
                     with_match_physical_float_type!(dtype, |$T| {
                         let state: EwmMeanState<$T> = EwmMeanState::new(
-                            options.alpha as $T,
+                            AsPrimitive::<$T>::as_(options.alpha),
                             options.adjust,
                             options.min_periods,
                             options.ignore_nulls,
@@ -1261,7 +1323,7 @@ fn to_graph_rec<'a>(
                 },
                 _ => with_match_physical_float_type!(dtype, |$T| {
                     let state: EwmCovState<$T> = EwmCovState::new(
-                        options.alpha as $T,
+                        AsPrimitive::<$T>::as_(options.alpha),
                         options.adjust,
                         options.bias,
                         options.min_periods,

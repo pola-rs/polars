@@ -500,13 +500,20 @@ pub trait SeriesOpsTime: AsSeries {
     ) -> PolarsResult<Series> {
         self.rolling_var_by(by, options).map(|mut s| {
             match s.dtype().clone() {
+                #[cfg(feature = "dtype-f16")]
+                DataType::Float16 => {
+                    use num_traits::real::Real;
+
+                    let ca: &mut ChunkedArray<Float16Type> = s._get_inner_mut().as_mut();
+                    ca.apply_mut(|v| v.sqrt())
+                },
                 DataType::Float32 => {
                     let ca: &mut ChunkedArray<Float32Type> = s._get_inner_mut().as_mut();
-                    ca.apply_mut(|v| v.powf(0.5))
+                    ca.apply_mut(|v| v.sqrt())
                 },
                 DataType::Float64 => {
                     let ca: &mut ChunkedArray<Float64Type> = s._get_inner_mut().as_mut();
-                    ca.apply_mut(|v| v.powf(0.5))
+                    ca.apply_mut(|v| v.sqrt())
                 },
                 _ => unreachable!(),
             }
@@ -519,6 +526,13 @@ pub trait SeriesOpsTime: AsSeries {
     fn rolling_std(&self, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
         self.rolling_var(options).map(|mut s| {
             match s.dtype().clone() {
+                #[cfg(feature = "dtype-f16")]
+                DataType::Float16 => {
+                    use num_traits::real::Real;
+
+                    let ca: &mut ChunkedArray<Float16Type> = s._get_inner_mut().as_mut();
+                    ca.apply_mut(|v| v.sqrt())
+                },
                 DataType::Float32 => {
                     let ca: &mut ChunkedArray<Float32Type> = s._get_inner_mut().as_mut();
                     ca.apply_mut(|v| v.sqrt())

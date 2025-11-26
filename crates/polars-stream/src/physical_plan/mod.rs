@@ -29,6 +29,8 @@ pub mod visualization;
 
 pub use fmt::visualize_plan;
 use polars_plan::prelude::{FileType, PlanCallback};
+#[cfg(feature = "dynamic_group_by")]
+use polars_time::DynamicGroupOptions;
 use polars_time::{ClosedWindow, Duration};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
@@ -90,6 +92,26 @@ impl PhysStream {
     pub fn first(node: PhysNodeKey) -> Self {
         Self { node, port: 0 }
     }
+}
+
+/// Behaviour when handling multiple DataFrames with different heights.
+
+#[derive(Clone, Debug, Copy)]
+#[cfg_attr(
+    feature = "physical_plan_visualization",
+    derive(serde::Serialize, serde::Deserialize)
+)]
+#[cfg_attr(
+    feature = "physical_plan_visualization_schema",
+    derive(schemars::JsonSchema)
+)]
+pub enum ZipBehavior {
+    /// Fill the shorter DataFrames with nulls to the height of the longest DataFrame.
+    NullExtend,
+    /// All inputs must be the same height, or have length 1 in which case they are broadcast.
+    Broadcast,
+    /// Raise an error if the DataFrames have different heights.
+    Strict,
 }
 
 #[derive(Clone, Debug)]
@@ -176,7 +198,7 @@ pub enum PhysNodeKind {
         cloud_options: Option<CloudOptions>,
     },
 
-    PartitionSink {
+    PartitionedSink {
         input: PhysStream,
         base_path: Arc<PlPath>,
         file_path_cb: Option<PartitionTargetCallback>,
@@ -206,6 +228,16 @@ pub enum PhysNodeKind {
     Map {
         input: PhysStream,
         map: Arc<dyn DataFrameUdf>,
+
+        /// A formatted explain of what the in-memory map. This usually calls format on the IR.
+        format_str: Option<String>,
+    },
+
+    SortedGroupBy {
+        input: PhysStream,
+        key: PlSmallStr,
+        aggs: Vec<ExprIR>,
+        slice: Option<(IdxSize, IdxSize)>,
     },
 
     Sort {
@@ -253,10 +285,7 @@ pub enum PhysNodeKind {
 
     Zip {
         inputs: Vec<PhysStream>,
-        /// If true shorter inputs are extended with nulls to the longest input,
-        /// if false all inputs must be the same length, or have length 1 in
-        /// which case they are broadcast.
-        null_extend: bool,
+        zip_behavior: ZipBehavior,
     },
 
     #[allow(unused)]
@@ -306,12 +335,21 @@ pub enum PhysNodeKind {
     },
 
     #[cfg(feature = "dynamic_group_by")]
+    DynamicGroupBy {
+        input: PhysStream,
+        options: DynamicGroupOptions,
+        aggs: Vec<ExprIR>,
+        slice: Option<(IdxSize, IdxSize)>,
+    },
+
+    #[cfg(feature = "dynamic_group_by")]
     RollingGroupBy {
         input: PhysStream,
         index_column: PlSmallStr,
         period: Duration,
         offset: Duration,
         closed: ClosedWindow,
+        slice: Option<(IdxSize, IdxSize)>,
         aggs: Vec<ExprIR>,
     },
 
@@ -408,8 +446,9 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::InMemorySink { input }
             | PhysNodeKind::CallbackSink { input, .. }
             | PhysNodeKind::FileSink { input, .. }
-            | PhysNodeKind::PartitionSink { input, .. }
+            | PhysNodeKind::PartitionedSink { input, .. }
             | PhysNodeKind::InMemoryMap { input, .. }
+            | PhysNodeKind::SortedGroupBy { input, .. }
             | PhysNodeKind::Map { input, .. }
             | PhysNodeKind::Sort { input, .. }
             | PhysNodeKind::Multiplexer { input }
@@ -422,6 +461,11 @@ fn visit_node_inputs_mut(
                 visit(input);
             },
 
+            #[cfg(feature = "dynamic_group_by")]
+            PhysNodeKind::DynamicGroupBy { input, .. } => {
+                rec!(input.node);
+                visit(input);
+            },
             #[cfg(feature = "dynamic_group_by")]
             PhysNodeKind::RollingGroupBy { input, .. } => {
                 rec!(input.node);

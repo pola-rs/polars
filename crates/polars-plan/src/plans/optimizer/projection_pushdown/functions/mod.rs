@@ -17,13 +17,15 @@ pub(super) fn process_functions(
 ) -> PolarsResult<IR> {
     use FunctionIR::*;
     match function {
-        Explode { columns, .. } => {
+        Explode {
+            columns, options, ..
+        } => {
             columns
                 .iter()
                 .for_each(|name| add_str_to_accumulated(name.clone(), &mut ctx, expr_arena));
             proj_pd.pushdown_and_assign(input, ctx, lp_arena, expr_arena)?;
             Ok(IRBuilder::new(input, expr_arena, lp_arena)
-                .explode(columns)
+                .explode(columns, options)
                 .build())
         },
         #[cfg(feature = "pivot")]

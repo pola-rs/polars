@@ -241,7 +241,7 @@ pub async fn build_object_store(
 
     let cloud_location = CloudLocation::new(path.as_ref(), glob)?;
     let cloud_type = path.as_ref().scheme().map_or(CloudType::File, |scheme| {
-        CloudType::from_cloud_scheme(&scheme)
+        CloudType::from_cloud_scheme(scheme)
     });
 
     let store = PolarsObjectStoreBuilder {

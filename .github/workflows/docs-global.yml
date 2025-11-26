@@ -92,7 +92,10 @@ jobs:
       - name: Build documentation
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: mkdocs build
+        run: |
+          mkdocs build
+          cargo clean
+          uv clean
 
       - name: Add .nojekyll
         if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'

@@ -14,6 +14,8 @@ mod datetime;
 mod decimal;
 #[cfg(feature = "dtype-duration")]
 mod duration;
+#[cfg(feature = "dtype-extension")]
+mod extension;
 mod floats;
 mod list;
 pub(crate) mod null;
@@ -40,6 +42,7 @@ use crate::chunked_array::ops::compare_inner::{
 };
 
 // Utility wrapper struct
+#[repr(transparent)]
 pub(crate) struct SeriesWrap<T>(pub T);
 
 impl<T: PolarsDataType> From<ChunkedArray<T>> for SeriesWrap<ChunkedArray<T>> {
@@ -357,6 +360,10 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "algorithm_group_by")]
             fn arg_unique(&self) -> PolarsResult<IdxCa> {
                 ChunkUnique::arg_unique(&self.0)
+            }
+
+            fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+                ChunkUnique::unique_id(&self.0)
             }
 
             fn is_null(&self) -> BooleanChunked {

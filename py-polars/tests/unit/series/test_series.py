@@ -356,9 +356,9 @@ def test_date_agg() -> None:
 @pytest.mark.parametrize(
     ("s", "min", "max"),
     [
-        (pl.Series(["c", "b", "a"], dtype=pl.Categorical("lexical")), "a", "c"),
-        (pl.Series([None, "a", "c", "b"], dtype=pl.Categorical("lexical")), "a", "c"),
-        (pl.Series([], dtype=pl.Categorical("lexical")), None, None),
+        (pl.Series(["c", "b", "a"], dtype=pl.Categorical()), "a", "c"),
+        (pl.Series([None, "a", "c", "b"], dtype=pl.Categorical()), "a", "c"),
+        (pl.Series([], dtype=pl.Categorical()), None, None),
         (pl.Series(["c", "b", "a"], dtype=pl.Enum(["c", "b", "a"])), "c", "a"),
         (pl.Series(["c", "b", "a"], dtype=pl.Enum(["c", "b", "a", "d"])), "c", "a"),
     ],
@@ -1454,8 +1454,8 @@ def test_arg_sort() -> None:
         (pl.Series(["a", "c", "b"]), 0, 1),
         (pl.Series([None, "a", None, "b"]), 1, 3),
         # Categorical
-        (pl.Series(["c", "b", "a"], dtype=pl.Categorical(ordering="lexical")), 2, 0),
-        (pl.Series("s", [None, "c", "b", None, "a"], pl.Categorical("lexical")), 4, 1),
+        (pl.Series(["c", "b", "a"], dtype=pl.Categorical()), 2, 0),
+        (pl.Series("s", [None, "c", "b", None, "a"], pl.Categorical()), 4, 1),
     ],
 )
 def test_arg_min_arg_max(series: pl.Series, argmin: int, argmax: int) -> None:
@@ -1475,7 +1475,7 @@ def test_arg_min_arg_max(series: pl.Series, argmin: int, argmax: int) -> None:
         pl.Series([None, None], dtype=pl.Boolean),
         pl.Series([None, None], dtype=pl.String),
         pl.Series([None, None], dtype=pl.Categorical),
-        pl.Series([None, None], dtype=pl.Categorical(ordering="lexical")),
+        pl.Series([None, None], dtype=pl.Categorical()),
         # Empty Series
         pl.Series([], dtype=pl.Int32),
         pl.Series([], dtype=pl.Boolean),
@@ -1885,6 +1885,18 @@ def test_cumulative_eval() -> None:
     expr3 = expr1 - expr2
     expected3 = pl.Series("values", [0, -3, -8, -15, -24])
     assert_series_equal(s.cumulative_eval(expr3), expected3)
+
+
+def test_first_last() -> None:
+    # Ensure multiple chunks
+    s1 = pl.Series("a", [None, None], dtype=pl.Int32)
+    s2 = pl.Series("a", [None, 3, 4, None], dtype=pl.Int32)
+    s3 = pl.Series("a", [None, None], dtype=pl.Int32)
+    s = s1.append(s2).append(s3)
+    assert s.first() is None
+    assert s.first(ignore_nulls=True) == 3
+    assert s.last() is None
+    assert s.last(ignore_nulls=True) == 4
 
 
 def test_clip() -> None:

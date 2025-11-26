@@ -96,10 +96,8 @@ fn sort_by_groups_single_by(
             map_sorted_indices_to_group_slice(&sorted_idx, first)
         },
     };
-    let first = new_idx
-        .first()
-        .ok_or_else(|| polars_err!(ComputeError: "{}", ERR_MSG))?;
 
+    let first = new_idx.first().unwrap_or(&0);
     Ok((*first, new_idx))
 }
 
@@ -412,7 +410,15 @@ impl PhysicalExpr for SortByExpr {
         // group_by operation - we must ensure that we are as well.
         if ordered_by_group_operation {
             let s = ac_in.aggregated();
-            ac_in.with_values(s.explode(false).unwrap(), false, None)?;
+            ac_in.with_values(
+                s.explode(ExplodeOptions {
+                    empty_as_null: true,
+                    keep_nulls: true,
+                })
+                .unwrap(),
+                false,
+                None,
+            )?;
         }
 
         ac_in.with_groups(groups.into_sliceable());

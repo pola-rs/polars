@@ -2353,7 +2353,6 @@ impl DataFrame {
 
             let (repr, materialized_at) = match col {
                 Column::Series(s) => ("series", s.materialized_at()),
-                Column::Partitioned(_) => ("partitioned", None),
                 Column::Scalar(_) => ("scalar", None),
             };
             let sorted_asc = flags.contains(StatisticsFlags::IS_SORTED_ASC);

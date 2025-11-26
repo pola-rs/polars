@@ -1,21 +1,21 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, cast
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pytest
 from hypothesis import given
 
 import polars as pl
-from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
 from polars.testing.parametric import dataframes
 
 if TYPE_CHECKING:
     import numpy.typing as npt
 
-    from polars._typing import PolarsDataType
+    from polars._typing import PolarsDataType, TimeUnit
 
 
 def test_quantile_expr_input() -> None:
@@ -107,6 +107,162 @@ def test_quantile() -> None:
     assert s.quantile(0.5, "nearest") == 2
     assert s.quantile(0.5, "lower") == 2
     assert s.quantile(0.5, "higher") == 2
+
+
+def test_quantile_date() -> None:
+    s = pl.Series(
+        "a", [date(2025, 1, 1), date(2025, 1, 2), date(2025, 1, 3), date(2025, 1, 4)]
+    )
+    assert s.quantile(0.5, "nearest") == datetime(2025, 1, 3)
+    assert s.quantile(0.5, "lower") == datetime(2025, 1, 2)
+    assert s.quantile(0.5, "higher") == datetime(2025, 1, 3)
+    assert s.quantile(0.5, "linear") == datetime(2025, 1, 2, 12)
+
+    df = s.to_frame().lazy()
+    result = df.select(
+        nearest=pl.col("a").quantile(0.5, "nearest"),
+        lower=pl.col("a").quantile(0.5, "lower"),
+        higher=pl.col("a").quantile(0.5, "higher"),
+        linear=pl.col("a").quantile(0.5, "linear"),
+    )
+    dt = pl.Datetime("us")
+    assert result.collect_schema() == pl.Schema(
+        {
+            "nearest": dt,
+            "lower": dt,
+            "higher": dt,
+            "linear": dt,
+        }
+    )
+    expected = pl.DataFrame(
+        {
+            "nearest": pl.Series([datetime(2025, 1, 3)], dtype=dt),
+            "lower": pl.Series([datetime(2025, 1, 2)], dtype=dt),
+            "higher": pl.Series([datetime(2025, 1, 3)], dtype=dt),
+            "linear": pl.Series([datetime(2025, 1, 2, 12)], dtype=dt),
+        }
+    )
+    assert_frame_equal(result.collect(), expected)
+
+
+@pytest.mark.parametrize("tu", ["ms", "us", "ns"])
+@pytest.mark.parametrize("tz", [None, "Asia/Tokyo", "UTC"])
+def test_quantile_datetime(tu: TimeUnit, tz: str) -> None:
+    time_zone = ZoneInfo(tz) if tz else None
+    dt = pl.Datetime(tu, time_zone)
+
+    s = pl.Series(
+        "a",
+        [
+            datetime(2025, 1, 1, tzinfo=time_zone),
+            datetime(2025, 1, 2, tzinfo=time_zone),
+            datetime(2025, 1, 3, tzinfo=time_zone),
+            datetime(2025, 1, 4, tzinfo=time_zone),
+        ],
+        dtype=dt,
+    )
+    assert s.quantile(0.5, "nearest") == datetime(2025, 1, 3, tzinfo=time_zone)
+    assert s.quantile(0.5, "lower") == datetime(2025, 1, 2, tzinfo=time_zone)
+    assert s.quantile(0.5, "higher") == datetime(2025, 1, 3, tzinfo=time_zone)
+    assert s.quantile(0.5, "linear") == datetime(2025, 1, 2, 12, tzinfo=time_zone)
+
+    df = s.to_frame().lazy()
+    result = df.select(
+        nearest=pl.col("a").quantile(0.5, "nearest"),
+        lower=pl.col("a").quantile(0.5, "lower"),
+        higher=pl.col("a").quantile(0.5, "higher"),
+        linear=pl.col("a").quantile(0.5, "linear"),
+    )
+    assert result.collect_schema() == pl.Schema(
+        {
+            "nearest": dt,
+            "lower": dt,
+            "higher": dt,
+            "linear": dt,
+        }
+    )
+    expected = pl.DataFrame(
+        {
+            "nearest": pl.Series([datetime(2025, 1, 3, tzinfo=time_zone)], dtype=dt),
+            "lower": pl.Series([datetime(2025, 1, 2, tzinfo=time_zone)], dtype=dt),
+            "higher": pl.Series([datetime(2025, 1, 3, tzinfo=time_zone)], dtype=dt),
+            "linear": pl.Series([datetime(2025, 1, 2, 12, tzinfo=time_zone)], dtype=dt),
+        }
+    )
+    assert_frame_equal(result.collect(), expected)
+
+
+@pytest.mark.parametrize("tu", ["ms", "us", "ns"])
+def test_quantile_duration(tu: TimeUnit) -> None:
+    dt = pl.Duration(tu)
+
+    s = pl.Series(
+        "a",
+        [timedelta(days=1), timedelta(days=2), timedelta(days=3), timedelta(days=4)],
+        dtype=dt,
+    )
+    assert s.quantile(0.5, "nearest") == timedelta(days=3)
+    assert s.quantile(0.5, "lower") == timedelta(days=2)
+    assert s.quantile(0.5, "higher") == timedelta(days=3)
+    assert s.quantile(0.5, "linear") == timedelta(days=2, hours=12)
+
+    df = s.to_frame().lazy()
+    result = df.select(
+        nearest=pl.col("a").quantile(0.5, "nearest"),
+        lower=pl.col("a").quantile(0.5, "lower"),
+        higher=pl.col("a").quantile(0.5, "higher"),
+        linear=pl.col("a").quantile(0.5, "linear"),
+    )
+    assert result.collect_schema() == pl.Schema(
+        {
+            "nearest": dt,
+            "lower": dt,
+            "higher": dt,
+            "linear": dt,
+        }
+    )
+    expected = pl.DataFrame(
+        {
+            "nearest": pl.Series([timedelta(days=3)], dtype=dt),
+            "lower": pl.Series([timedelta(days=2)], dtype=dt),
+            "higher": pl.Series([timedelta(days=3)], dtype=dt),
+            "linear": pl.Series([timedelta(days=2, hours=12)], dtype=dt),
+        }
+    )
+    assert_frame_equal(result.collect(), expected)
+
+
+def test_quantile_time() -> None:
+    s = pl.Series("a", [time(hour=1), time(hour=2), time(hour=3), time(hour=4)])
+    assert s.quantile(0.5, "nearest") == time(hour=3)
+    assert s.quantile(0.5, "lower") == time(hour=2)
+    assert s.quantile(0.5, "higher") == time(hour=3)
+    assert s.quantile(0.5, "linear") == time(hour=2, minute=30)
+
+    df = s.to_frame().lazy()
+    result = df.select(
+        nearest=pl.col("a").quantile(0.5, "nearest"),
+        lower=pl.col("a").quantile(0.5, "lower"),
+        higher=pl.col("a").quantile(0.5, "higher"),
+        linear=pl.col("a").quantile(0.5, "linear"),
+    )
+    assert result.collect_schema() == pl.Schema(
+        {
+            "nearest": pl.Time,
+            "lower": pl.Time,
+            "higher": pl.Time,
+            "linear": pl.Time,
+        }
+    )
+    expected = pl.DataFrame(
+        {
+            "nearest": pl.Series([time(hour=3)]),
+            "lower": pl.Series([time(hour=2)]),
+            "higher": pl.Series([time(hour=3)]),
+            "linear": pl.Series([time(hour=2, minute=30)]),
+        }
+    )
+    assert_frame_equal(result.collect(), expected)
 
 
 @pytest.mark.slow
@@ -242,12 +398,16 @@ def test_online_variance() -> None:
 def test_implode_and_agg() -> None:
     df = pl.DataFrame({"type": ["water", "fire", "water", "earth"]})
 
-    # this would OOB
-    with pytest.raises(
-        InvalidOperationError,
-        match=r"'implode' followed by an aggregation is not allowed",
-    ):
-        df.group_by("type").agg(pl.col("type").implode().first().alias("foo"))
+    assert_frame_equal(
+        df.group_by("type").agg(pl.col("type").implode().first().alias("foo")),
+        pl.DataFrame(
+            {
+                "type": ["water", "fire", "earth"],
+                "foo": [["water", "water"], ["fire"], ["earth"]],
+            }
+        ),
+        check_row_order=False,
+    )
 
     # implode + function should be allowed in group_by
     assert df.group_by("type", maintain_order=True).agg(
@@ -434,6 +594,7 @@ def test_agg_filter_over_empty_df_13610() -> None:
 
 
 @pytest.mark.may_fail_cloud  # reason: output order is defined for this in cloud
+@pytest.mark.may_fail_auto_streaming
 @pytest.mark.slow
 def test_agg_empty_sum_after_filter_14734() -> None:
     f = (
@@ -747,11 +908,13 @@ def test_sort_by_over_multiple_nulls_last() -> None:
     assert_frame_equal(out, expected)
 
 
-def test_slice_after_agg_raises() -> None:
-    with pytest.raises(
-        InvalidOperationError, match=r"cannot slice\(\) an aggregated scalar value"
-    ):
-        pl.select(a=1, b=1).group_by("a").agg(pl.col("b").first().slice(99, 0))
+def test_slice_after_agg() -> None:
+    assert_frame_equal(
+        pl.select(a=pl.lit(1, dtype=pl.Int64), b=pl.lit(1, dtype=pl.Int64))
+        .group_by("a")
+        .agg(pl.col("b").first().slice(99, 0)),
+        pl.DataFrame({"a": [1], "b": [[]]}, schema_overrides={"b": pl.List(pl.Int64)}),
+    )
 
 
 def test_agg_scalar_empty_groups_20115() -> None:
@@ -855,8 +1018,11 @@ def test_agg_with_slice_then_cast_23682(
         pl.DataFrame({"a": [b"a"]}, schema={"a": pl.Binary}),
         pl.DataFrame({"a": ["a"]}, schema={"a": pl.Utf8}),
         pl.DataFrame({"a": [10]}, schema={"a": pl.Int32}),
+        pl.DataFrame({"a": [10]}, schema={"a": pl.Float16}),
         pl.DataFrame({"a": [10]}, schema={"a": pl.Float32}),
         pl.DataFrame({"a": [10]}, schema={"a": pl.Float64}),
+        pl.DataFrame({"a": [10]}, schema={"a": pl.Int128}),
+        pl.DataFrame({"a": [10]}, schema={"a": pl.UInt128}),
         pl.DataFrame({"a": ["a"]}, schema={"a": pl.String}),
         pl.DataFrame({"a": [None]}, schema={"a": pl.Null}),
         pl.DataFrame({"a": [10]}, schema={"a": pl.Decimal()}),
@@ -1035,3 +1201,78 @@ def test_all_any_on_list_raises_error() -> None:
             pl.exceptions.InvalidOperationError, match=r"expected boolean"
         ):
             lf.select(expr).collect(engine="streaming")
+
+
+@pytest.mark.parametrize("null_endpoints", [True, False])
+@pytest.mark.parametrize("ignore_nulls", [True, False])
+@pytest.mark.parametrize(
+    ("dtype", "first_value", "last_value"),
+    [
+        # Struct
+        (
+            pl.Struct({"x": pl.Enum(["c0", "c1"]), "y": pl.Float32}),
+            {"x": "c0", "y": 1.2},
+            {"x": "c1", "y": 3.4},
+        ),
+        # List
+        (pl.List(pl.UInt8), [1], [2]),
+        # Array
+        (pl.Array(pl.Int16, 2), [1, 2], [3, 4]),
+        # Date (logical test)
+        (pl.Date, date(2025, 1, 1), date(2025, 1, 2)),
+        # Float (primitive test)
+        (pl.Float32, 1.0, 2.0),
+    ],
+)
+def test_first_last_nested(
+    null_endpoints: bool,
+    ignore_nulls: bool,
+    dtype: PolarsDataType,
+    first_value: Any,
+    last_value: Any,
+) -> None:
+    s = pl.Series([first_value, last_value], dtype=dtype)
+    if null_endpoints:
+        # Test the case where the first/last value is null
+        null = pl.Series([None], dtype=dtype)
+        s = pl.concat((null, s, null))
+
+    lf = pl.LazyFrame({"a": s})
+
+    # first
+    result = lf.select(pl.col("a").first(ignore_nulls=ignore_nulls)).collect()
+    expected = pl.DataFrame(
+        {
+            "a": pl.Series(
+                [None if null_endpoints and not ignore_nulls else first_value],
+                dtype=dtype,
+            )
+        }
+    )
+    assert_frame_equal(result, expected)
+
+    # last
+    result = lf.select(pl.col("a").last(ignore_nulls=ignore_nulls)).collect()
+    expected = pl.DataFrame(
+        {
+            "a": pl.Series(
+                [None if null_endpoints and not ignore_nulls else last_value],
+                dtype=dtype,
+            ),
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_struct_enum_agg_streaming_24936() -> None:
+    s = (
+        pl.Series(
+            "a",
+            [{"f0": "c0"}],
+            dtype=pl.Struct({"f0": pl.Enum(categories=["c0"])}),
+        ),
+    )
+    df = pl.DataFrame(s)
+
+    q = df.lazy().select(pl.all(ignore_nulls=False).first())
+    assert_frame_equal(q.collect(), df)

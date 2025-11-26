@@ -245,20 +245,16 @@ where
 
 pub fn aexpr_to_leaf_names_iter(
     node: Node,
-    arena: &Arena<AExpr>,
-) -> impl Iterator<Item = PlSmallStr> + '_ {
+    arena: &'_ Arena<AExpr>,
+) -> impl Iterator<Item = &'_ PlSmallStr> + '_ {
     aexpr_to_column_nodes_iter(node, arena).map(|node| match arena.get(node.0) {
-        AExpr::Column(name) => name.clone(),
+        AExpr::Column(name) => name,
         _ => unreachable!(),
     })
 }
 
 pub fn aexpr_to_leaf_names(node: Node, arena: &Arena<AExpr>) -> Vec<PlSmallStr> {
-    aexpr_to_leaf_names_iter(node, arena).collect()
-}
-
-pub fn aexpr_to_leaf_name(node: Node, arena: &Arena<AExpr>) -> PlSmallStr {
-    aexpr_to_leaf_names_iter(node, arena).next().unwrap()
+    aexpr_to_leaf_names_iter(node, arena).cloned().collect()
 }
 
 /// check if a selection/projection can be done on the downwards schema
