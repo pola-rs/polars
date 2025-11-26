@@ -9,7 +9,7 @@ use polars_utils::pl_str::PlSmallStr;
 use proptest::prelude::*;
 use proptest::strategy::BoxedStrategy;
 
-use crate::datatypes::PolarsObjectSafe;
+use crate::datatypes::{PolarsObjectSafe, pf16};
 #[cfg(feature = "dtype-categorical")]
 use crate::prelude::CategoricalMapping;
 use crate::prelude::{
@@ -460,6 +460,7 @@ fn av_int_strategy() -> impl Strategy<Value = AnyValue<'static>> {
 
 fn av_float_strategy() -> impl Strategy<Value = AnyValue<'static>> {
     prop_oneof![
+        any::<u16>().prop_map(|bits| AnyValue::Float16(pf16::from_bits(bits))),
         any::<f32>().prop_map(AnyValue::Float32),
         any::<f64>().prop_map(AnyValue::Float64),
     ]
