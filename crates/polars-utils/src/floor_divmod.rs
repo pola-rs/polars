@@ -1,3 +1,5 @@
+use crate::float16::pf16;
+
 pub trait FloorDivMod: Sized {
     // Returns the flooring division and associated modulo of lhs / rhs.
     // This is the same division / modulo combination as Python.
@@ -73,6 +75,7 @@ impl_signed_div_mod!(i32);
 impl_signed_div_mod!(i64);
 impl_signed_div_mod!(i128);
 impl_signed_div_mod!(isize);
+impl_float_div_mod!(pf16);
 impl_float_div_mod!(f32);
 impl_float_div_mod!(f64);
 
