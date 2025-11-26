@@ -32,7 +32,7 @@ where
             has_column_height_projection = true;
         } else {
             // Unknown non-scalar height
-            // TODO: Can technically push still slices with offset >=0.
+            // TODO: Can technically still push slices with offset >=0.
             return false;
         }
     }
