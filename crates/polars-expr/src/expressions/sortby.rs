@@ -49,7 +49,7 @@ static ERR_MSG: &str = "expressions in 'sort_by' must have matching group length
 fn check_groups(a: &GroupsType, b: &GroupsType) -> PolarsResult<()> {
     polars_ensure!(a.iter().zip(b.iter()).all(|(a, b)| {
         a.len() == b.len()
-    }), ComputeError: ERR_MSG);
+    }), ShapeMismatch: ERR_MSG);
     Ok(())
 }
 
@@ -309,6 +309,12 @@ impl PhysicalExpr for SortByExpr {
                 .iter()
                 .all(|ac_sort_by| ac_sort_by.groups.len() == ac_in.groups.len())
         );
+
+        // Enable reliable length checks downstream
+        ac_in.set_groups_for_undefined_agg_states();
+        ac_sort_by
+            .iter_mut()
+            .for_each(|ac| ac.set_groups_for_undefined_agg_states());
 
         // If every input is a LiteralScalar, we return a LiteralScalar.
         // Otherwise, we convert any LiteralScalar to AggregatedList.
