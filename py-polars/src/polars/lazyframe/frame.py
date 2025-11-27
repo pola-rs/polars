@@ -2551,6 +2551,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Resolve the schema of this LazyFrame.
 
+        .. caution::
+            Computing the schema of a LazyFrame is a potentially expensive operation,
+            as it may involve reading metadata from (slow) disk storage, or performing
+            network requests if the data is remote.
+
         Examples
         --------
         Determine the schema.

@@ -13,13 +13,12 @@ use crate::error::PyPolarsErr;
 use crate::series::PySeries;
 use crate::timeout::{cancel_polars_timeout, schedule_polars_timeout};
 
-// was redefined because I could not get feature flags activated?
+/// Calls method on downcasted ChunkedArray for all possible publicly exposed Polars dtypes.
 #[macro_export]
-macro_rules! apply_method_all_arrow_series2 {
+macro_rules! apply_all_polars_dtypes {
     ($self:expr, $method:ident, $($args:expr),*) => {
         match $self.dtype() {
             DataType::Boolean => $self.bool().unwrap().$method($($args),*),
-            DataType::String => $self.str().unwrap().$method($($args),*),
             DataType::UInt8 => $self.u8().unwrap().$method($($args),*),
             DataType::UInt16 => $self.u16().unwrap().$method($($args),*),
             DataType::UInt32 => $self.u32().unwrap().$method($($args),*),
@@ -33,11 +32,38 @@ macro_rules! apply_method_all_arrow_series2 {
             DataType::Float16 => $self.f16().unwrap().$method($($args),*),
             DataType::Float32 => $self.f32().unwrap().$method($($args),*),
             DataType::Float64 => $self.f64().unwrap().$method($($args),*),
-            DataType::Date => $self.date().unwrap().physical().$method($($args),*),
-            DataType::Datetime(_, _) => $self.datetime().unwrap().physical().$method($($args),*),
+            DataType::String => $self.str().unwrap().$method($($args),*),
+            DataType::Binary => $self.binary().unwrap().$method($($args),*),
+            DataType::Decimal(_, _) => $self.decimal().unwrap().$method($($args),*),
+
+            DataType::Date => $self.date().unwrap().$method($($args),*),
+            DataType::Datetime(_, _) => $self.datetime().unwrap().$method($($args),*),
+            DataType::Duration(_) => $self.duration().unwrap().$method($($args),*),
+            DataType::Time => $self.time().unwrap().$method($($args),*),
+
             DataType::List(_) => $self.list().unwrap().$method($($args),*),
             DataType::Struct(_) => $self.struct_().unwrap().$method($($args),*),
-            dt => panic!("dtype {:?} not supported", dt)
+            DataType::Array(_, _) => $self.array().unwrap().$method($($args),*),
+
+            dt @ (DataType::Categorical(_, _) | DataType::Enum(_, _)) => match dt.cat_physical().unwrap() {
+                CategoricalPhysical::U8 => $self.cat8().unwrap().$method($($args),*),
+                CategoricalPhysical::U16 => $self.cat16().unwrap().$method($($args),*),
+                CategoricalPhysical::U32 => $self.cat32().unwrap().$method($($args),*),
+            },
+
+            #[cfg(feature = "object")]
+            DataType::Object(_) => {
+                $self
+                .as_any()
+                .downcast_ref::<ObjectChunked<ObjectValue>>()
+                .unwrap()
+                .$method($($args),*)
+            },
+            DataType::Extension(_, _) => $self.ext().unwrap().$method($($args),*),
+
+            DataType::Null => $self.null().unwrap().$method($($args),*),
+
+            dt @ (DataType::BinaryOffset | DataType::Unknown(_)) => panic!("dtype {:?} not supported", dt)
         }
     }
 }
