@@ -1506,7 +1506,6 @@ pub(crate) fn parse_parquet_compression(
                 })
                 .transpose()?,
         ),
-        "lzo" => ParquetCompression::Lzo,
         "brotli" => ParquetCompression::Brotli(
             compression_level
                 .map(|lvl| {
@@ -1525,7 +1524,7 @@ pub(crate) fn parse_parquet_compression(
         ),
         e => {
             return Err(PyValueError::new_err(format!(
-                "parquet `compression` must be one of {{'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'lz4', 'zstd'}}, got {e}",
+                "parquet `compression` must be one of {{'uncompressed', 'snappy', 'gzip', 'brotli', 'lz4', 'zstd'}}, got {e}",
             )));
         },
     };
