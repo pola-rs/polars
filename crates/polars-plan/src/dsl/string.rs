@@ -58,10 +58,12 @@ impl StringNameSpace {
         patterns: Expr,
         replace_with: Expr,
         ascii_case_insensitive: bool,
+        leftmost: bool,
     ) -> Expr {
         self.0.map_ternary(
             StringFunction::ReplaceMany {
                 ascii_case_insensitive,
+                leftmost,
             },
             patterns,
             replace_with,
@@ -81,11 +83,13 @@ impl StringNameSpace {
         patterns: Expr,
         ascii_case_insensitive: bool,
         overlapping: bool,
+        leftmost: bool,
     ) -> Expr {
         self.0.map_binary(
             StringFunction::ExtractMany {
                 ascii_case_insensitive,
                 overlapping,
+                leftmost,
             },
             patterns,
         )
@@ -104,11 +108,13 @@ impl StringNameSpace {
         patterns: Expr,
         ascii_case_insensitive: bool,
         overlapping: bool,
+        leftmost: bool,
     ) -> Expr {
         self.0.map_binary(
             StringFunction::FindMany {
                 ascii_case_insensitive,
                 overlapping,
+                leftmost,
             },
             patterns,
         )

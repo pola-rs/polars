@@ -1,5 +1,7 @@
 use num_traits::Num;
 
+use crate::float16::pf16;
+
 pub trait AbsDiff {
     type Abs: Num + PartialOrd + Copy + std::fmt::Debug + Send + Sync;
 
@@ -49,6 +51,7 @@ impl_trivial_abs_diff!(u32, u32::MAX);
 impl_trivial_abs_diff!(u64, u64::MAX);
 impl_trivial_abs_diff!(u128, u128::MAX);
 impl_trivial_abs_diff!(usize, usize::MAX);
+impl_trivial_abs_diff!(pf16, pf16::INFINITY);
 impl_trivial_abs_diff!(f32, f32::INFINITY);
 impl_trivial_abs_diff!(f64, f64::INFINITY);
 impl_signed_abs_diff!(i8, u8);

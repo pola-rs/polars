@@ -1,8 +1,10 @@
 use std::ops::BitAnd;
 
+use arrow::temporal_conversions::MICROSECONDS_IN_DAY as US_IN_DAY;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::{
     AnyValue, ChunkCast, Column, DataType, IntoColumn, NamedFrom, RollingOptionsFixedWindow,
+    TimeUnit,
 };
 use polars_core::scalar::Scalar;
 use polars_core::series::Series;
@@ -44,10 +46,26 @@ pub(super) fn rolling_quantile(
     s: &Column,
     options: RollingOptionsFixedWindow,
 ) -> PolarsResult<Column> {
+    let dt = s.dtype();
+    let s = if dt.is_temporal() {
+        &s.to_physical_repr()
+    } else {
+        s
+    };
+
     // @scalar-opt
-    s.as_materialized_series()
-        .rolling_quantile(options)
-        .map(Column::from)
+    let out = s.as_materialized_series().rolling_quantile(options)?;
+
+    Ok(match dt {
+        DataType::Date => (out * US_IN_DAY as f64)
+            .cast(&DataType::Int64)?
+            .into_datetime(TimeUnit::Microseconds, None),
+        DataType::Datetime(tu, tz) => out.cast(&DataType::Int64)?.into_datetime(*tu, tz.clone()),
+        DataType::Duration(tu) => out.cast(&DataType::Int64)?.into_duration(*tu),
+        DataType::Time => out.cast(&DataType::Int64)?.into_time(),
+        _ => out,
+    }
+    .into_column())
 }
 
 pub(super) fn rolling_var(s: &Column, options: RollingOptionsFixedWindow) -> PolarsResult<Column> {
@@ -100,6 +118,16 @@ fn det_count_x_y(window_size: usize, len: usize, dtype: &DataType) -> Series {
         DataType::Float32 => {
             let values = (0..len)
                 .map(|v| std::cmp::min(window_size, v + 1) as f32)
+                .collect::<Vec<_>>();
+            Series::new(PlSmallStr::EMPTY, values)
+        },
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            use num_traits::AsPrimitive;
+            use polars_utils::float16::pf16;
+            let values = (0..len)
+                .map(|v| std::cmp::min(window_size, v + 1))
+                .map(AsPrimitive::<pf16>::as_)
                 .collect::<Vec<_>>();
             Series::new(PlSmallStr::EMPTY, values)
         },

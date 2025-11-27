@@ -86,15 +86,6 @@ def test_polars_dtype_to_dtype_unsupported_type() -> None:
         polars_dtype_to_dtype(polars_dtype)
 
 
-def test_dtype_to_polars_dtype_unsupported_type() -> None:
-    dtype = (DtypeKind.FLOAT, 16, "e", NE)
-    with pytest.raises(
-        NotImplementedError,
-        match=r"unsupported data type: \(<DtypeKind\.FLOAT: 2>, 16, 'e', '='\)",
-    ):
-        dtype_to_polars_dtype(dtype)
-
-
 def test_dtype_to_polars_dtype_unsupported_temporal_type() -> None:
     dtype = (DtypeKind.DATETIME, 64, "tss:", NE)
     with pytest.raises(

@@ -169,8 +169,7 @@ impl SinkNode for IpcSinkNode {
             writer.finish()?;
             drop(writer);
 
-            file.sync_on_close(sink_options.sync_on_close)?;
-            file.close()?;
+            file.close(sink_options.sync_on_close)?;
 
             PolarsResult::Ok(())
         });

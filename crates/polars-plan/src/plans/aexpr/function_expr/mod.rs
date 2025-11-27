@@ -79,7 +79,9 @@ pub use self::rolling::IRRollingFunction;
 pub use self::rolling_by::IRRollingFunctionBy;
 pub use self::row_encode::RowEncodingVariant;
 #[cfg(feature = "strings")]
-pub use self::strings::{IRStringFunction, TZ_AWARE_RE};
+pub use self::strings::IRStringFunction;
+#[cfg(all(feature = "strings", feature = "regex", feature = "timezones"))]
+pub use self::strings::TZ_AWARE_RE;
 #[cfg(feature = "dtype-struct")]
 pub use self::struct_::IRStructFunction;
 #[cfg(feature = "trigonometry")]

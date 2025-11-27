@@ -3,11 +3,12 @@ mod quantile;
 mod var;
 
 use arrow::types::NativeType;
-use num_traits::{Float, One, ToPrimitive, Zero};
+use num_traits::{AsPrimitive, Float, One, ToPrimitive, Zero};
 use polars_compute::float_sum;
 use polars_compute::min_max::MinMaxKernel;
 use polars_compute::rolling::QuantileMethod;
 use polars_compute::sum::{WrappingSum, wrapping_sum_arr};
+use polars_utils::float16::pf16;
 use polars_utils::min_max::MinMax;
 pub use quantile::*;
 pub use var::*;
@@ -50,7 +51,13 @@ where
 
     if T::is_float() {
         unsafe {
-            if T::is_f32() {
+            if T::is_f16() {
+                let f16_arr =
+                    std::mem::transmute::<&PrimitiveArray<T>, &PrimitiveArray<pf16>>(array);
+                // We do not trust the numerical accuracy of f16 summation
+                let sum: pf16 = float_sum::sum_arr_as_f32(f16_arr).as_();
+                std::mem::transmute_copy::<pf16, T>(&sum)
+            } else if T::is_f32() {
                 let f32_arr =
                     std::mem::transmute::<&PrimitiveArray<T>, &PrimitiveArray<f32>>(array);
                 let sum = float_sum::sum_arr_as_f32(f32_arr);
@@ -61,7 +68,7 @@ where
                 let sum = float_sum::sum_arr_as_f64(f64_arr);
                 std::mem::transmute_copy::<f64, T>(&sum)
             } else {
-                unreachable!("only supported float types are f32 and f64");
+                unreachable!("only supported float types are f16, f32 and f64");
             }
         }
     } else {
@@ -297,6 +304,19 @@ where
     }
 }
 
+#[cfg(feature = "dtype-f16")]
+impl VarAggSeries for Float16Chunked {
+    fn var_reduce(&self, ddof: u8) -> Scalar {
+        let v = self.var(ddof).map(AsPrimitive::<pf16>::as_);
+        Scalar::new(DataType::Float16, v.into())
+    }
+
+    fn std_reduce(&self, ddof: u8) -> Scalar {
+        let v = self.std(ddof).map(AsPrimitive::<pf16>::as_);
+        Scalar::new(DataType::Float16, v.into())
+    }
+}
+
 impl VarAggSeries for Float32Chunked {
     fn var_reduce(&self, ddof: u8) -> Scalar {
         let v = self.var(ddof).map(|v| v as f32);
@@ -342,6 +362,19 @@ where
     fn median_reduce(&self) -> Scalar {
         let v = self.median();
         Scalar::new(DataType::Float64, v.into())
+    }
+}
+
+#[cfg(feature = "dtype-f16")]
+impl QuantileAggSeries for Float16Chunked {
+    fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
+        let v = self.quantile(quantile, method)?;
+        Ok(Scalar::new(DataType::Float16, v.into()))
+    }
+
+    fn median_reduce(&self) -> Scalar {
+        let v = self.median();
+        Scalar::new(DataType::Float16, v.into())
     }
 }
 

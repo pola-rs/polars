@@ -46,6 +46,13 @@ pub fn ewm_mean_by(
             half_life,
             times_is_sorted,
         ),
+        #[cfg(feature = "dtype-f16")]
+        (DataType::Float16, DataType::Int64) => func(
+            s.f16().unwrap(),
+            times.i64().unwrap(),
+            half_life,
+            times_is_sorted,
+        ),
         #[cfg(feature = "dtype-datetime")]
         (_, DataType::Datetime(time_unit, _)) => {
             let half_life = adjust_half_life_to_time_unit(half_life, time_unit);
@@ -78,7 +85,7 @@ pub fn ewm_mean_by(
             )
         },
         _ => {
-            polars_bail!(InvalidOperation: "expected series to be Float64, Float32, \
+            polars_bail!(InvalidOperation: "expected series to be Float64, Float32, Float16, \
                 Int64, Int32, UInt64, UInt32, and `by` to be Date, Datetime, Int64, Int32, \
                 UInt64, or UInt32")
         },
