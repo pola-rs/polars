@@ -173,7 +173,7 @@ pub fn datetime_range_impl_start_end_samples(
         };
 
         let mut values: Vec<i64> = (0..num_samples)
-            .map(|x| (x as f64 * bin_width + start) as i64)
+            .map(move |x| (x as f64 * bin_width + start) as i64)
             .collect();
 
         // For right-closed and fully-closed interval, ensure the last point is exact.

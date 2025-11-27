@@ -89,8 +89,7 @@ def datetime_range(
         Interval of the range periods, specified as a Python `timedelta` object
         or using the Polars duration string language (see "Notes" section below).
     num_samples
-        Number of periods in the date range. This corresponds to the number of points in
-        the output array, and is thus one more than the number of intervals.
+        Number of samples in the output.
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     time_unit : {None, 'ns', 'us', 'ms'}
@@ -348,8 +347,7 @@ def datetime_ranges(
         Interval of the range periods, specified as a Python `timedelta` object
         or using the Polars duration string language (see "Notes" section below).
     num_samples
-        Number of periods in the date range. This corresponds to the number of points in
-        the output array, and is thus one more than the number of intervals.
+        Number of samples in the output.
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     time_unit : {None, 'ns', 'us', 'ms'}

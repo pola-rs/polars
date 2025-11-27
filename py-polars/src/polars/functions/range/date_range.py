@@ -83,8 +83,7 @@ def date_range(
         or using the Polars duration string language (see "Notes" section below).
         Must consist of full days.
     num_samples
-        Number of periods in the date range. This corresponds to the number of points in
-        the output array, and is thus one more than the number of intervals.
+        Number of samples in the output.
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive). Only 'closed' is
         supported for `date_range`.
@@ -307,8 +306,7 @@ def date_ranges(
         or using the Polars duration string language (see "Notes" section below).
         Must consist of full days.
     num_samples
-        Number of periods in the date range. This corresponds to the number of points in
-        the output array, and is thus one more than the number of intervals.
+        Number of samples in the output.
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     eager
