@@ -38,17 +38,20 @@ struct HFRepoLocation {
 
 impl HFRepoLocation {
     fn new(bucket: &str, repository: &str, revision: &str) -> Self {
-        // Don't percent-encode bucket/repository/revision - they are path segments
-        // that should preserve slashes. E.g. "HuggingFaceFW/fineweb-2" must stay as-is,
-        // not become "HuggingFaceFW%2Ffineweb-2" which would be misclassified by the Hub.
+        // Don't percent-encode bucket/repository - they are path segments where
+        // slashes are separators. E.g. "HuggingFaceFW/fineweb-2" must stay as-is.
+        // DO encode revision - slashes in revisions like "refs/convert/parquet"
+        // are part of the revision name, not path separators.
         // See: https://github.com/pola-rs/polars/issues/25389
+        let encoded_revision =
+            percent_encoding::percent_encode(revision.as_bytes(), URL_ENCODE_CHAR_SET);
         let api_base_path = format!(
             "https://huggingface.co/api/{}/{}/tree/{}/",
-            bucket, repository, revision
+            bucket, repository, encoded_revision
         );
         let download_base_path = format!(
             "https://huggingface.co/{}/{}/resolve/{}/",
-            bucket, repository, revision
+            bucket, repository, encoded_revision
         );
 
         Self {
@@ -444,6 +447,18 @@ mod tests {
         assert_eq!(
             file_uri,
             "https://huggingface.co/datasets/HuggingFaceFW/fineweb-2/resolve/main/special-chars/%5B*.parquet"
+        );
+
+        // Check that revision slashes ARE encoded (they're part of the revision name)
+        // e.g. "refs/convert/parquet" -> "refs%2Fconvert%2Fparquet"
+        let loc = HFRepoLocation::new("datasets", "user/repo", "refs/convert/parquet");
+        assert_eq!(
+            loc.api_base_path,
+            "https://huggingface.co/api/datasets/user/repo/tree/refs%2Fconvert%2Fparquet/"
+        );
+        assert_eq!(
+            loc.download_base_path,
+            "https://huggingface.co/datasets/user/repo/resolve/refs%2Fconvert%2Fparquet/"
         );
     }
 }
