@@ -11,7 +11,16 @@ use crate::cloud::{
 };
 use crate::path_utils::HiveIdxTracker;
 use crate::pl_async::with_concurrency_budget;
+use crate::prelude::URL_ENCODE_CHAR_SET;
 use crate::utils::decode_json_response;
+
+/// Percent-encoding character set for HF Hub paths.
+/// Like URL_ENCODE_CHAR_SET but preserves slashes (/) and encodes brackets.
+/// HF Hub rate limiting classifies URLs by path structure - encoding slashes
+/// causes requests to be misclassified as "pages" (100/5min limit) instead of
+/// "resolvers" (3000/5min limit). See: https://github.com/pola-rs/polars/issues/25389
+const HF_PATH_ENCODE_CHAR_SET: &percent_encoding::AsciiSet =
+    &URL_ENCODE_CHAR_SET.remove(b'/').add(b'[').add(b']');
 
 #[derive(Debug, PartialEq)]
 struct HFPathParts {
@@ -49,14 +58,22 @@ impl HFRepoLocation {
     }
 
     fn get_file_uri(&self, rel_path: &str) -> String {
-        // No encoding needed - paths come from HF API or user input and should
-        // preserve slashes. Encoding slashes causes HF to misclassify rate limits.
+        // Encode special characters but preserve slashes.
+        // Slashes must remain unencoded for correct HF rate limit classification.
         // See: https://github.com/pola-rs/polars/issues/25389
-        format!("{}{}", self.download_base_path, rel_path)
+        format!(
+            "{}{}",
+            self.download_base_path,
+            percent_encoding::percent_encode(rel_path.as_bytes(), HF_PATH_ENCODE_CHAR_SET)
+        )
     }
 
     fn get_api_uri(&self, rel_path: &str) -> String {
-        format!("{}{}", self.api_base_path, rel_path)
+        format!(
+            "{}{}",
+            self.api_base_path,
+            percent_encoding::percent_encode(rel_path.as_bytes(), HF_PATH_ENCODE_CHAR_SET)
+        )
     }
 }
 
@@ -386,9 +403,10 @@ mod tests {
     }
 
     #[test]
-    fn test_hf_url_no_slash_encoding() {
-        // Verify URLs preserve slashes (don't encode as %2F)
-        // This is critical for correct rate limit classification by HF Hub.
+    fn test_hf_url_encoding() {
+        // Verify URLs preserve slashes (don't encode as %2F) but encode special chars.
+        // Slashes must remain for correct rate limit classification by HF Hub.
+        // Special chars (spaces, colons) must be encoded for file downloads to work.
         // See: https://github.com/pola-rs/polars/issues/25389
         use super::HFRepoLocation;
 
@@ -409,6 +427,23 @@ mod tests {
         assert_eq!(
             file_uri,
             "https://huggingface.co/datasets/HuggingFaceFW/fineweb-2/resolve/main/data/aai_Latn/train/000_00000.parquet"
+        );
+
+        // Check that special characters ARE encoded (spaces -> %20, colons -> %3A)
+        // This is needed for hive-partitioned paths like "date2=2023-01-01 00:00:00.000000"
+        let file_uri = loc.get_file_uri(
+            "hive_dates/date1=2024-01-01/date2=2023-01-01 00:00:00.000000/00000000.parquet",
+        );
+        assert_eq!(
+            file_uri,
+            "https://huggingface.co/datasets/HuggingFaceFW/fineweb-2/resolve/main/hive_dates/date1%3D2024-01-01/date2%3D2023-01-01%2000%3A00%3A00.000000/00000000.parquet"
+        );
+
+        // Check that brackets are encoded ([ -> %5B, ] -> %5D)
+        let file_uri = loc.get_file_uri("special-chars/[*.parquet");
+        assert_eq!(
+            file_uri,
+            "https://huggingface.co/datasets/HuggingFaceFW/fineweb-2/resolve/main/special-chars/%5B*.parquet"
         );
     }
 }
