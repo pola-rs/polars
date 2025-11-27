@@ -2,15 +2,30 @@ use std::fmt;
 use std::sync::Arc;
 
 use polars_error::PolarsResult;
+use polars_utils::python_function::PythonObject;
 
 use crate::dsl::SpecialEq;
 
-#[derive(Eq, PartialEq, strum_macros::IntoStaticStr)]
+#[derive(strum_macros::IntoStaticStr)]
 pub enum PlanCallback<Args, Out> {
     #[cfg(feature = "python")]
     Python(SpecialEq<Arc<polars_utils::python_function::PythonFunction>>),
     Rust(SpecialEq<Arc<dyn Fn(Args) -> PolarsResult<Out> + Send + Sync>>),
 }
+
+impl<Args, Out> PartialEq for PlanCallback<Args, Out> {
+    fn eq(&self, other: &Self) -> bool {
+        use PlanCallback as C;
+
+        match (self, other) {
+            (C::Python(l), C::Python(r)) => SpecialEq::eq(l, r) || PythonObject::eq(&l, &r),
+            (C::Rust(l), C::Rust(r)) => l.eq(r),
+            _ => false,
+        }
+    }
+}
+
+impl<Args, Out> Eq for PlanCallback<Args, Out> {}
 
 impl<Args, Out> fmt::Debug for PlanCallback<Args, Out> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {

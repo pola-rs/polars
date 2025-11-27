@@ -1,4 +1,5 @@
 use polars::prelude::sink::{PartitionTargetCallback, SinkFinishCallback};
+use polars::prelude::sink2::FileProviderType;
 use polars::prelude::{PartitionStrategy, PlPath, SinkDestination, SortColumn};
 use polars_utils::IdxSize;
 use polars_utils::python_function::PythonObject;
@@ -21,12 +22,19 @@ impl PyFileSinkDestination<'_> {
     pub fn extract_file_sink_destination(&self) -> PyResult<SinkDestination> {
         let py = self.0.py();
 
-        let Ok(sink_output_dataclass) = self.0.getattr(intern!(py, "_pl_sink_directory")) else {
-            let v: Wrap<polars_plan::dsl::SinkTarget> = self.0.extract()?;
-
-            return Ok(SinkDestination::File { target: v.0 });
+        if let Ok(sink_output_dataclass) = self.0.getattr(intern!(py, "_pl_sink_directory")) {
+            return self.extract_from_py_sink_directory(sink_output_dataclass);
         };
 
+        let v: Wrap<polars_plan::dsl::SinkTarget> = self.0.extract()?;
+
+        Ok(SinkDestination::File { target: v.0 })
+    }
+
+    fn extract_from_py_sink_directory(
+        &self,
+        sink_output_dataclass: Bound<'_, PyAny>,
+    ) -> PyResult<SinkDestination> {
         /// Extract from `SinkDirectoryInner` dataclass.
         #[derive(FromPyObject)]
         struct Extract {
@@ -98,19 +106,8 @@ impl PyFileSinkDestination<'_> {
             return Err(PyValueError::new_err(format!(
                 "cannot use '{parameter_name}' without specifying `partition_by`"
             )));
-        } else if let Some(max_rows_per_file) = max_rows_per_file {
-            PartitionStrategy::MaxRowsPerFile {
-                max_rows_per_file,
-                per_file_sort_by: per_file_sort_by
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|x| SortColumn {
-                        expr: x.inner,
-                        descending: false,
-                        nulls_last: false,
-                    })
-                    .collect(),
-            }
+        } else if max_rows_per_file.is_some() {
+            PartitionStrategy::FileSize
         } else {
             return Err(PyValueError::new_err(
                 "at least one of ('partition_by', 'max_rows_per_file') \
@@ -120,10 +117,13 @@ impl PyFileSinkDestination<'_> {
 
         Ok(SinkDestination::Partitioned {
             base_path: base_path.0,
-            file_path_provider: file_path_provider
-                .map(|x| PartitionTargetCallback::Python(PythonObject(x))),
+            file_path_provider: file_path_provider.map(|x| {
+                FileProviderType::Legacy(PartitionTargetCallback::Python(PythonObject(x)))
+            }),
             partition_strategy,
             finish_callback: finish_callback.map(|x| SinkFinishCallback::Python(PythonObject(x))),
+            max_rows_per_file,
+            approximate_bytes_per_file: None,
         })
     }
 }
