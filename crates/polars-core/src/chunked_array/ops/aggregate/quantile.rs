@@ -342,6 +342,25 @@ macro_rules! impl_chunk_quantile_for_float_chunked {
                 out.map(|v| v.map(|v| v.as_()))
             }
 
+            fn quantiles(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Vec<Option<$T>>> {
+                // in case of sorted data, the sort is free, so don't take quickselect route
+                let out = if let (Ok(slice), false) =
+                    (self.cont_slice(), self.is_sorted_ascending_flag())
+                {
+                    let mut owned = slice.to_vec();
+                    quantiles_slice(&mut owned, quantiles, method)
+                } else {
+                    generic_quantiles(self.clone(), quantiles, method)
+                };
+
+                out.map(|vec_t| {
+                    vec_t
+                        .into_iter()
+                        .map(|opt| opt.map(|v| AsPrimitive::<$T>::as_(v)))
+                        .collect::<Vec<Option<$T>>>()
+                })
+            }
+
             fn median(&self) -> Option<$T> {
                 self.quantile(0.5, QuantileMethod::Linear).unwrap() // unwrap fine since quantile in range
             }
