@@ -100,7 +100,7 @@
   "OpaquePythonUdf": "7f75d02fabfb7c7101ba8a92d75d7a140ace24e5867df9badea0d4b7d1ac95fe",
   "Operator": "e39a6040d3f97b9328268f93eec17f3a81893c565a1188d43ee8262f9e838221",
   "ParallelStrategy": "18f11b0b9ebd4048510a9580e6ee13d7d0410b9dc75ee0c97bb3b1a5b62108b0",
-  "ParquetCompression": "d3aa69ab3968a3c260fd7bf07b1364e4871427c9fe0b1b6df4cdcc439ca4cbca",
+  "ParquetCompression": "3cda42fb3b12983a3e62f0e238383fe60d94946305d9d27c1cbdde519f761427",
   "ParquetFieldOverwrites": "27a4e8b0e6a9275267787405537fa3d8dace92ee4f604f8c0bf6fa315743642c",
   "ParquetOptions": "74d3ef3add9e1f569e69721588bb7ffbfda70b6e329a287147fa6c10a46f5e00",
   "ParquetWriteOptions": "afdff5bcb56e137b4bf66ad040fb65d4d4c01706520725a8a5a567e0a95b3981",
