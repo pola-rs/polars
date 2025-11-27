@@ -372,6 +372,14 @@ impl QuantileAggSeries for Float16Chunked {
         Ok(Scalar::new(DataType::Float16, v.into()))
     }
 
+    fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
+        let v = self.quantiles(quantiles, method)?; // Vec<Option<f64>>
+        // build a Float64 series from the optional results, preserving nulls
+        let s = Float16Chunked::from_iter_options(PlSmallStr::from_static("quantiles"), v.into_iter()).into_series();
+        let dtype = DataType::List(Box::new(s.dtype().clone()));
+        Ok(Scalar::new(dtype, AnyValue::List(s)))
+    }
+
     fn median_reduce(&self) -> Scalar {
         let v = self.median();
         Scalar::new(DataType::Float16, v.into())
