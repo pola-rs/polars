@@ -496,7 +496,7 @@ impl AggQuantileExpr {
                     polars_bail!(ComputeError: "quantile expression produced no values");
                 }
                 Ok(out)
-            }
+            },
 
             // List literal like `pl.lit([0.3, 0.5])` -> a ListChunked with one element
             DataType::List(inner) if inner.as_ref().is_float() => {
@@ -535,7 +535,7 @@ impl AggQuantileExpr {
                     polars_bail!(ComputeError: "quantile list is empty");
                 }
                 Ok(out)
-            }
+            },
 
             // Anything else is an error.
             dt => polars_bail!(
@@ -633,7 +633,7 @@ impl PhysicalExpr for AggQuantileExpr {
                         // fallback to input field
                         Ok(input_field)
                     }
-                }
+                },
                 _ => Ok(input_field),
             },
             Err(_) => Ok(input_field),

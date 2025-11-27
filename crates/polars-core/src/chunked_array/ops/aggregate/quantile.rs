@@ -10,7 +10,8 @@ pub trait QuantileAggSeries {
     fn median_reduce(&self) -> Scalar;
     /// Get the quantile of the [`ChunkedArray`] as a new [`Series`] of length 1.
     fn quantile_reduce(&self, _quantile: f64, _method: QuantileMethod) -> PolarsResult<Scalar>;
-    fn quantiles_reduce(&self, _quantiles: &[f64], _method: QuantileMethod) -> PolarsResult<Scalar>;
+    fn quantiles_reduce(&self, _quantiles: &[f64], _method: QuantileMethod)
+    -> PolarsResult<Scalar>;
 }
 
 /// helper
@@ -143,26 +144,26 @@ fn quantiles_slice<T: ToPrimitive + TotalOrd + Copy>(
         let (idx, float_idx, top_idx) = quantile_idx(q, n, 0, method);
 
         // No nulls here, so unwrap is safe
-        let lower = Some(vals[idx].to_f64().unwrap());
+        let lower = vals[idx].to_f64().unwrap();
 
         let opt = match method {
             QuantileMethod::Midpoint => {
                 if top_idx == idx {
-                    lower
+                    Some(lower)
                 } else {
-                    let upper = Some(vals[idx + 1].to_f64().unwrap());
-                    midpoint_interpol(lower.unwrap(), upper.unwrap()).to_f64()
+                    let upper = vals[idx + 1].to_f64().unwrap();
+                    midpoint_interpol(lower, upper).to_f64()
                 }
             },
             QuantileMethod::Linear => {
                 if top_idx == idx {
-                    lower
+                    Some(lower)
                 } else {
-                    let upper = Some(vals[idx + 1].to_f64().unwrap());
-                    linear_interpol(lower.unwrap(), upper.unwrap(), idx, float_idx).to_f64()
+                    let upper = vals[idx + 1].to_f64().unwrap();
+                    linear_interpol(lower, upper, idx, float_idx).to_f64()
                 }
             },
-            _ => lower,
+            _ => Some(lower),
         };
 
         out.push(opt);
@@ -240,12 +241,16 @@ where
             let mut owned = slice.to_vec();
             quantile_slice(&mut owned, quantile, method)
         } else {
-            let re_val = generic_quantiles(self.clone(), &vec![quantile], method)?;
+            let re_val = generic_quantiles(self.clone(), &[quantile], method)?;
             Ok(re_val.into_iter().next().unwrap())
         }
     }
 
-    fn quantiles(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Vec<Option<f64>>> {
+    fn quantiles(
+        &self,
+        quantiles: &[f64],
+        method: QuantileMethod,
+    ) -> PolarsResult<Vec<Option<f64>>> {
         // in case of sorted data, the sort is free, so don't take quickselect route
         if let (Ok(slice), false) = (self.cont_slice(), self.is_sorted_ascending_flag()) {
             let mut owned = slice.to_vec();
@@ -285,8 +290,6 @@ where
     }
 }
 
-
-
 macro_rules! impl_chunk_quantile_for_float_chunked {
     ($T:ty, $CA:ty) => {
         impl ChunkQuantile<$T> for $CA {
@@ -298,13 +301,17 @@ macro_rules! impl_chunk_quantile_for_float_chunked {
                     let mut owned = slice.to_vec();
                     quantile_slice(&mut owned, quantile, method)
                 } else {
-                    let re_val = generic_quantiles(self.clone(), &vec![quantile], method)?;
+                    let re_val = generic_quantiles(self.clone(), &[quantile], method)?;
                     Ok(re_val.into_iter().next().unwrap())
                 };
                 out.map(|v| v.map(|v| v.as_()))
             }
 
-            fn quantiles(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Vec<Option<$T>>> {
+            fn quantiles(
+                &self,
+                quantiles: &[f64],
+                method: QuantileMethod,
+            ) -> PolarsResult<Vec<Option<$T>>> {
                 // in case of sorted data, the sort is free, so don't take quickselect route
                 let out = if let (Ok(slice), false) =
                     (self.cont_slice(), self.is_sorted_ascending_flag())

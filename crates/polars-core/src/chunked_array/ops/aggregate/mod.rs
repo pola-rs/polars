@@ -354,7 +354,9 @@ where
     fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
         let v = self.quantiles(quantiles, method)?; // Vec<Option<f64>>
         // build a Float64 series from the optional results, preserving nulls
-        let s = Float64Chunked::from_iter_options(PlSmallStr::from_static("quantiles"), v.into_iter()).into_series();
+        let s =
+            Float64Chunked::from_iter_options(PlSmallStr::from_static("quantiles"), v.into_iter())
+                .into_series();
         let dtype = DataType::List(Box::new(s.dtype().clone()));
         Ok(Scalar::new(dtype, AnyValue::List(s)))
     }
@@ -375,7 +377,9 @@ impl QuantileAggSeries for Float16Chunked {
     fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
         let v = self.quantiles(quantiles, method)?; // Vec<Option<f64>>
         // build a Float64 series from the optional results, preserving nulls
-        let s = Float16Chunked::from_iter_options(PlSmallStr::from_static("quantiles"), v.into_iter()).into_series();
+        let s =
+            Float16Chunked::from_iter_options(PlSmallStr::from_static("quantiles"), v.into_iter())
+                .into_series();
         let dtype = DataType::List(Box::new(s.dtype().clone()));
         Ok(Scalar::new(dtype, AnyValue::List(s)))
     }
@@ -395,7 +399,9 @@ impl QuantileAggSeries for Float32Chunked {
     fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
         let v = self.quantiles(quantiles, method)?; // Vec<Option<f32>>
         // build a Float32 series from the optional results, preserving nulls
-        let s = Float32Chunked::from_iter_options(PlSmallStr::from_static("quantiles"), v.into_iter()).into_series();
+        let s =
+            Float32Chunked::from_iter_options(PlSmallStr::from_static("quantiles"), v.into_iter())
+                .into_series();
         let dtype = DataType::List(Box::new(s.dtype().clone()));
         Ok(Scalar::new(dtype, AnyValue::List(s)))
     }
@@ -414,7 +420,9 @@ impl QuantileAggSeries for Float64Chunked {
 
     fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
         let v = self.quantiles(quantiles, method)?; // Vec<Option<f64>>
-        let s = Float64Chunked::from_iter_options(PlSmallStr::from_static("quantiles"), v.into_iter()).into_series();
+        let s =
+            Float64Chunked::from_iter_options(PlSmallStr::from_static("quantiles"), v.into_iter())
+                .into_series();
         let dtype = DataType::List(Box::new(s.dtype().clone()));
         Ok(Scalar::new(dtype, AnyValue::List(s)))
     }

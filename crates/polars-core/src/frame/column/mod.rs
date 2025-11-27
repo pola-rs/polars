@@ -1599,7 +1599,11 @@ impl Column {
             .quantile_reduce(quantile, method)
     }
 
-    pub fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
+    pub fn quantiles_reduce(
+        &self,
+        quantiles: &[f64],
+        method: QuantileMethod,
+    ) -> PolarsResult<Scalar> {
         self.as_materialized_series()
             .quantiles_reduce(quantiles, method)
     }
