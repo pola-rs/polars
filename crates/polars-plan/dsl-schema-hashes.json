@@ -108,7 +108,7 @@
   "PartitionStrategy": "9c34cb8c72fd52e2ff3a686f07c124cdac56acb784d41978769c827f8d52f331",
   "PartitionTargetCallback": "5bbddd4f899afa592c318b20bb8d0bdfe2877fa5bf1a63d9cd0da908ac3aec0e",
   "PartitionTargetCallback2": "5bbddd4f899afa592c318b20bb8d0bdfe2877fa5bf1a63d9cd0da908ac3aec0e",
-  "PartitionedSinkOptions": "fc889ee9060835ff3268648ed8806cd10e454b064b4c148bae3fee0375111b80",
+  "PartitionedSinkOptions": "775e09d4707e447246606cc8f2fc78ddfe7ba7ce1ec463b310179e56eaeeb09b",
   "PlCloudPath": "d431beb43f079687c5cfc9171418e201f8869f27885dafa30aaebe87e186b5dc",
   "PlCredentialProvider": "5bbddd4f899afa592c318b20bb8d0bdfe2877fa5bf1a63d9cd0da908ac3aec0e",
   "PlPath": "235194d00fce98697b0bce627dfb193046bc373a17d8918ce3c47a36a9bb1319",
