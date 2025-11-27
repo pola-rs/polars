@@ -151,6 +151,7 @@ impl FileProviderType {
                 use FileProviderType as P;
                 match &self.0 {
                     P::Hive { extension } => write!(f, "Hive {{ extension: {} }}", extension),
+                    #[cfg(feature = "python")]
                     P::Function(FileProviderFunction::Python(_)) => write!(f, "PythonFileProvider"),
                     P::Function(FileProviderFunction::Rust(_)) => write!(f, "RustFileProvider"),
                     P::Legacy(_) => write!(f, "Legacy"),

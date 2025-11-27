@@ -2,6 +2,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use polars_error::PolarsResult;
+#[cfg(feature = "python")]
 use polars_utils::python_function::PythonObject;
 
 use crate::dsl::SpecialEq;
@@ -18,6 +19,7 @@ impl<Args, Out> PartialEq for PlanCallback<Args, Out> {
         use PlanCallback as C;
 
         match (self, other) {
+            #[cfg(feature = "python")]
             (C::Python(l), C::Python(r)) => SpecialEq::eq(l, r) || PythonObject::eq(l, r),
             (C::Rust(l), C::Rust(r)) => l.eq(r),
             _ => false,
