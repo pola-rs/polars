@@ -60,7 +60,10 @@ fn midpoint_interpol<T: Float>(lower: T, upper: T) -> T {
     }
 }
 
-// Uses quickselect instead of sorting all data
+// Quickselect algorithm is used when
+//    1. The data is not already sorted
+//    2. We can make a contiguous slice of the data
+//    3. We only need a single quantile
 fn quantile_slice<T: ToPrimitive + TotalOrd + Copy>(
     vals: &mut [T],
     quantile: f64,
@@ -104,6 +107,11 @@ fn quantile_slice<T: ToPrimitive + TotalOrd + Copy>(
     }
 }
 
+// This function is called if multiple quantiles are requested
+// but we are able to make a contiguous slice of the data.
+// Right now, we do the same thing as the generic function: sort once and
+// get all quantiles from the sorted data. But we could consider multi-quickselect
+// algorithms in the future.
 fn quantiles_slice<T: ToPrimitive + TotalOrd + Copy>(
     vals: &mut [T],
     quantiles: &[f64],
@@ -163,55 +171,7 @@ fn quantiles_slice<T: ToPrimitive + TotalOrd + Copy>(
     Ok(out)
 }
 
-
-fn generic_quantile<T>(
-    ca: ChunkedArray<T>,
-    quantile: f64,
-    method: QuantileMethod,
-) -> PolarsResult<Option<f64>>
-where
-    T: PolarsNumericType,
-{
-    polars_ensure!(
-        (0.0..=1.0).contains(&quantile),
-        ComputeError: "`quantile` should be between 0.0 and 1.0",
-    );
-
-    let null_count = ca.null_count();
-    let length = ca.len();
-
-    if null_count == length {
-        return Ok(None);
-    }
-
-    let (idx, float_idx, top_idx) = quantile_idx(quantile, length, null_count, method);
-    let sorted = ca.sort(false);
-    let lower = sorted.get(idx).map(|v| v.to_f64().unwrap());
-
-    let opt = match method {
-        QuantileMethod::Midpoint => {
-            if top_idx == idx {
-                lower
-            } else {
-                let upper = sorted.get(idx + 1).map(|v| v.to_f64().unwrap());
-                midpoint_interpol(lower.unwrap(), upper.unwrap()).to_f64()
-            }
-        },
-        QuantileMethod::Linear => {
-            if top_idx == idx {
-                lower
-            } else {
-                let upper = sorted.get(idx + 1).map(|v| v.to_f64().unwrap());
-
-                linear_interpol(lower.unwrap(), upper.unwrap(), idx, float_idx).to_f64()
-            }
-        },
-        _ => lower,
-    };
-    Ok(opt)
-}
-
-
+// This function is called if data is already sorted or we cannot make a contiguous slice
 fn generic_quantiles<T>(
     ca: ChunkedArray<T>,
     quantiles: &[f64],
@@ -280,7 +240,8 @@ where
             let mut owned = slice.to_vec();
             quantile_slice(&mut owned, quantile, method)
         } else {
-            generic_quantile(self.clone(), quantile, method)
+            let re_val = generic_quantiles(self.clone(), &vec![quantile], method)?;
+            Ok(re_val.into_iter().next().unwrap())
         }
     }
 
@@ -337,7 +298,8 @@ macro_rules! impl_chunk_quantile_for_float_chunked {
                     let mut owned = slice.to_vec();
                     quantile_slice(&mut owned, quantile, method)
                 } else {
-                    generic_quantile(self.clone(), quantile, method)
+                    let re_val = generic_quantiles(self.clone(), &vec![quantile], method)?;
+                    Ok(re_val.into_iter().next().unwrap())
                 };
                 out.map(|v| v.map(|v| v.as_()))
             }
