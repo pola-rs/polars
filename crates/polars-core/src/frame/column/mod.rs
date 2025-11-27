@@ -1591,6 +1591,11 @@ impl Column {
             .quantile_reduce(quantile, method)
     }
 
+    pub fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
+        self.as_materialized_series()
+            .quantiles_reduce(quantiles, method)
+    }
+
     pub(crate) fn estimated_size(&self) -> usize {
         // @scalar-opt
         self.as_materialized_series().estimated_size()

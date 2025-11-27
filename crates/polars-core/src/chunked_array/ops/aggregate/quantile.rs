@@ -7,6 +7,7 @@ pub trait QuantileAggSeries {
     fn median_reduce(&self) -> Scalar;
     /// Get the quantile of the [`ChunkedArray`] as a new [`Series`] of length 1.
     fn quantile_reduce(&self, _quantile: f64, _method: QuantileMethod) -> PolarsResult<Scalar>;
+    fn quantiles_reduce(&self, _quantiles: &[f64], _method: QuantileMethod) -> PolarsResult<Scalar>;
 }
 
 /// helper

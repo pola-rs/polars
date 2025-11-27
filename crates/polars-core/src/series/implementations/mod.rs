@@ -415,6 +415,10 @@ macro_rules! impl_dyn_series {
                 QuantileAggSeries::quantile_reduce(&self.0, quantile, method)
             }
 
+            fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
+                QuantileAggSeries::quantiles_reduce(&self.0, quantiles, method)
+            }
+
             #[cfg(feature = "bitwise")]
             fn and_reduce(&self) -> PolarsResult<Scalar> {
                 let dt = <$pdt as PolarsDataType>::get_static_dtype();
