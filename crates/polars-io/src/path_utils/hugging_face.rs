@@ -11,7 +11,6 @@ use crate::cloud::{
 };
 use crate::path_utils::HiveIdxTracker;
 use crate::pl_async::with_concurrency_budget;
-use crate::prelude::URL_ENCODE_CHAR_SET;
 use crate::utils::decode_json_response;
 
 #[derive(Debug, PartialEq)]
@@ -30,17 +29,17 @@ struct HFRepoLocation {
 
 impl HFRepoLocation {
     fn new(bucket: &str, repository: &str, revision: &str) -> Self {
-        let bucket = percent_encode(bucket.as_bytes());
-        let repository = percent_encode(repository.as_bytes());
-
-        // "https://huggingface.co/api/ [datasets | spaces] / {username} / {reponame} / tree / {revision} / {path from root}"
+        // Don't percent-encode bucket/repository/revision - they are path segments
+        // that should preserve slashes. E.g. "HuggingFaceFW/fineweb-2" must stay as-is,
+        // not become "HuggingFaceFW%2Ffineweb-2" which would be misclassified by the Hub.
+        // See: https://github.com/pola-rs/polars/issues/25389
         let api_base_path = format!(
-            "{}{}{}{}{}{}{}",
-            "https://huggingface.co/api/", bucket, "/", repository, "/tree/", revision, "/"
+            "https://huggingface.co/api/{}/{}/tree/{}/",
+            bucket, repository, revision
         );
         let download_base_path = format!(
-            "{}{}{}{}{}{}{}",
-            "https://huggingface.co/", bucket, "/", repository, "/resolve/", revision, "/"
+            "https://huggingface.co/{}/{}/resolve/{}/",
+            bucket, repository, revision
         );
 
         Self {
@@ -50,19 +49,14 @@ impl HFRepoLocation {
     }
 
     fn get_file_uri(&self, rel_path: &str) -> String {
-        format!(
-            "{}{}",
-            self.download_base_path,
-            percent_encode(rel_path.as_bytes())
-        )
+        // No encoding needed - paths come from HF API or user input and should
+        // preserve slashes. Encoding slashes causes HF to misclassify rate limits.
+        // See: https://github.com/pola-rs/polars/issues/25389
+        format!("{}{}", self.download_base_path, rel_path)
     }
 
     fn get_api_uri(&self, rel_path: &str) -> String {
-        format!(
-            "{}{}",
-            self.api_base_path,
-            percent_encode(rel_path.as_bytes())
-        )
+        format!("{}{}", self.api_base_path, rel_path)
     }
 }
 
@@ -317,10 +311,6 @@ pub(super) async fn expand_paths_hf(
     Ok((hive_idx_tracker.idx, out_paths))
 }
 
-fn percent_encode(bytes: &[u8]) -> percent_encoding::PercentEncode<'_> {
-    percent_encoding::percent_encode(bytes, URL_ENCODE_CHAR_SET)
-}
-
 mod tests {
 
     #[test]
@@ -394,6 +384,33 @@ mod tests {
         assert_eq!(
             GetPages::find_link(link, "non-existent".as_bytes()).map(Result::unwrap),
             None,
+        );
+    }
+
+    #[test]
+    fn test_hf_url_no_slash_encoding() {
+        // Verify URLs preserve slashes (don't encode as %2F)
+        // This is critical for correct rate limit classification by HF Hub.
+        // See: https://github.com/pola-rs/polars/issues/25389
+        use super::HFRepoLocation;
+
+        let loc = HFRepoLocation::new("datasets", "HuggingFaceFW/fineweb-2", "main");
+
+        // Check base paths don't encode slashes
+        assert_eq!(
+            loc.api_base_path,
+            "https://huggingface.co/api/datasets/HuggingFaceFW/fineweb-2/tree/main/"
+        );
+        assert_eq!(
+            loc.download_base_path,
+            "https://huggingface.co/datasets/HuggingFaceFW/fineweb-2/resolve/main/"
+        );
+
+        // Check file URIs preserve slashes in paths
+        let file_uri = loc.get_file_uri("data/aai_Latn/train/000_00000.parquet");
+        assert_eq!(
+            file_uri,
+            "https://huggingface.co/datasets/HuggingFaceFW/fineweb-2/resolve/main/data/aai_Latn/train/000_00000.parquet"
         );
     }
 }
