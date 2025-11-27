@@ -170,6 +170,16 @@ fn struct_dict<'a, 'py>(
     Ok(dict)
 }
 
+impl<'py> IntoPyObject<'py> for Wrap<Series> {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        to_series(py, PySeries::new(self.0))
+    }
+}
+
 impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
