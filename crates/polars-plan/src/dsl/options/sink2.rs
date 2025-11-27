@@ -142,27 +142,6 @@ pub enum FileProviderType {
     Legacy(PartitionTargetCallback),
 }
 
-impl FileProviderType {
-    pub fn verbose_print_display(&self) -> impl std::fmt::Display + '_ {
-        struct VerbosePrintDisplay<'a>(&'a FileProviderType);
-
-        impl std::fmt::Display for VerbosePrintDisplay<'_> {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                use FileProviderType as P;
-                match &self.0 {
-                    P::Hive { extension } => write!(f, "Hive {{ extension: {} }}", extension),
-                    #[cfg(feature = "python")]
-                    P::Function(FileProviderFunction::Python(_)) => write!(f, "PythonFileProvider"),
-                    P::Function(FileProviderFunction::Rust(_)) => write!(f, "RustFileProvider"),
-                    P::Legacy(_) => write!(f, "Legacy"),
-                }
-            }
-        }
-
-        VerbosePrintDisplay(self)
-    }
-}
-
 impl FileProviderFunction {
     pub fn get_file(&self, args: FileProviderArgs) -> PolarsResult<FileProviderReturn> {
         match self {
