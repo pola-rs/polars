@@ -25,8 +25,8 @@ def date_range(
     start: date | datetime | IntoExprColumn | None = None,
     end: date | datetime | IntoExprColumn | None = None,
     interval: str | timedelta | None = None,
-    num_samples: int | None = None,
     *,
+    num_samples: int | None = None,
     closed: ClosedInterval = ...,
     eager: Literal[False] = ...,
 ) -> Expr: ...
@@ -37,8 +37,8 @@ def date_range(
     start: date | datetime | IntoExprColumn | None = None,
     end: date | datetime | IntoExprColumn | None = None,
     interval: str | timedelta | None = None,
-    num_samples: int | None = None,
     *,
+    num_samples: int | None = None,
     closed: ClosedInterval = ...,
     eager: Literal[True],
 ) -> Series: ...
@@ -49,8 +49,8 @@ def date_range(
     start: date | datetime | IntoExprColumn | None = None,
     end: date | datetime | IntoExprColumn | None = None,
     interval: str | timedelta | None = None,
-    num_samples: int | None = None,
     *,
+    num_samples: int | None = None,
     closed: ClosedInterval = ...,
     eager: bool,
 ) -> Series | Expr: ...
@@ -60,8 +60,8 @@ def date_range(
     start: date | datetime | IntoExprColumn | None = None,
     end: date | datetime | IntoExprColumn | None = None,
     interval: str | timedelta | None = None,
-    num_samples: int | None = None,
     *,
+    num_samples: int | None = None,
     closed: ClosedInterval = "both",
     eager: bool = False,
 ) -> Series | Expr:
@@ -249,8 +249,8 @@ def date_ranges(
     start: date | datetime | IntoExprColumn | None = None,
     end: date | datetime | IntoExprColumn | None = None,
     interval: str | timedelta = ...,
-    num_samples: int | IntoExprColumn | None = None,
     *,
+    num_samples: int | IntoExprColumn | None = None,
     closed: ClosedInterval = ...,
     eager: Literal[False] = ...,
 ) -> Expr: ...
@@ -261,8 +261,8 @@ def date_ranges(
     start: date | datetime | IntoExprColumn | None = None,
     end: date | datetime | IntoExprColumn | None = None,
     interval: str | timedelta | None = None,
-    num_samples: int | IntoExprColumn | None = None,
     *,
+    num_samples: int | IntoExprColumn | None = None,
     closed: ClosedInterval = ...,
     eager: Literal[True],
 ) -> Series: ...
@@ -273,8 +273,8 @@ def date_ranges(
     start: date | datetime | IntoExprColumn | None = None,
     end: date | datetime | IntoExprColumn | None = None,
     interval: str | timedelta | None = None,
-    num_samples: int | IntoExprColumn | None = None,
     *,
+    num_samples: int | IntoExprColumn | None = None,
     closed: ClosedInterval = ...,
     eager: bool,
 ) -> Series | Expr: ...
@@ -284,8 +284,8 @@ def date_ranges(
     start: date | datetime | IntoExprColumn | None = None,
     end: date | datetime | IntoExprColumn | None = None,
     interval: str | timedelta | None = None,
-    num_samples: int | IntoExprColumn | None = None,
     *,
+    num_samples: int | IntoExprColumn | None = None,
     closed: ClosedInterval = "both",
     eager: bool = False,
 ) -> Series | Expr:
