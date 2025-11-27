@@ -138,7 +138,7 @@ ParallelStrategy: TypeAlias = Literal[
     "auto", "columns", "row_groups", "prefiltered", "none"
 ]
 ParquetCompression: TypeAlias = Literal[
-    "lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"
+    "lz4", "uncompressed", "snappy", "gzip", "brotli", "zstd"
 ]
 PivotAgg: TypeAlias = Literal[
     "min", "max", "first", "last", "sum", "mean", "median", "len", "item"
