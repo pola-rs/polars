@@ -1541,25 +1541,25 @@ def test_join_asof_on_cast_expr_24999(by: str | None) -> None:
 
 
 @pytest.mark.parametrize(
-    ("left", "right", "expected_left", "expected_right"),
+    ("left", "right", "expected_right"),
     [
-        ([], [], [], []),
-        ([1], [2], [1], [2]),
-        ([], [1, 2], [], []),
-        ([1, 2], [], [1, 2], [None, None]),
-        ([1, 2], [1, 2], [1, 2], [2, 1]),
+        ([], [], []),
+        ([1], [2], [2]),
+        ([], [1, 2], []),
+        ([1, 2], [], [None, None]),
+        ([1, 2], [1, 2], [2, 1]),
+        ([1, 2, 2, 2, 3], [1, 2, 2, 2, 3], [2, 3, 3, 3, 2]),
     ],
 )
 def test_join_asof_nearest_no_exact_matches_25468(
     left: list[int],
     right: list[int],
-    expected_left: list[int],
     expected_right: list[int],
 ) -> None:
     df_left = pl.DataFrame({"a": left}, schema={"a": pl.Int32})
     df_right = pl.DataFrame({"a": right}, schema={"a": pl.Int32})
     expected_df = pl.DataFrame(
-        {"a": expected_left, "a_right": expected_right},
+        {"a": left, "a_right": expected_right},
         schema={"a": pl.Int32, "a_right": pl.Int32},
     )
     result = df_left.join_asof(
