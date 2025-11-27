@@ -27,8 +27,8 @@ pub enum SinkDestination {
         partition_strategy: PartitionStrategy,
         /// TODO: Remove
         finish_callback: Option<SinkFinishCallback>,
-        max_rows_per_file: Option<IdxSize>,
-        approximate_bytes_per_file: Option<u64>,
+        max_rows_per_file: IdxSize,
+        approximate_bytes_per_file: u64,
     },
 }
 

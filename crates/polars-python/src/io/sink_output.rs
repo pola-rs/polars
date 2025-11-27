@@ -122,8 +122,8 @@ impl PyFileSinkDestination<'_> {
             }),
             partition_strategy,
             finish_callback: finish_callback.map(|x| SinkFinishCallback::Python(PythonObject(x))),
-            max_rows_per_file,
-            approximate_bytes_per_file: None,
+            max_rows_per_file: max_rows_per_file.unwrap_or(IdxSize::MAX),
+            approximate_bytes_per_file: u64::MAX,
         })
     }
 }

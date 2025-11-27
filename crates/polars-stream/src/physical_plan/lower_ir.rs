@@ -338,10 +338,9 @@ pub fn lower_ir(
 
                         (v, per_partition_sort_by)
                     },
-                    PartitionStrategyIR::FileSize => (
-                        PartitionVariantIR::MaxSize((*max_rows_per_file).unwrap_or(IdxSize::MAX)),
-                        &vec![],
-                    ),
+                    PartitionStrategyIR::FileSize => {
+                        (PartitionVariantIR::MaxSize(*max_rows_per_file), &vec![])
+                    },
                 };
 
                 let per_partition_sort_by = per_partition_sort_by.clone();

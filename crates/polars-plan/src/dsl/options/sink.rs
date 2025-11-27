@@ -551,8 +551,8 @@ pub struct PartitionedSinkOptions {
     pub finish_callback: Option<SinkFinishCallback>,
     pub file_format: Arc<FileType>,
     pub unified_sink_args: UnifiedSinkArgs,
-    pub max_rows_per_file: Option<IdxSize>,
-    pub approximate_bytes_per_file: Option<u64>,
+    pub max_rows_per_file: IdxSize,
+    pub approximate_bytes_per_file: u64,
 }
 
 impl PartitionedSinkOptions {
@@ -638,8 +638,8 @@ pub struct PartitionedSinkOptionsIR {
     pub finish_callback: Option<SinkFinishCallback>,
     pub file_format: Arc<FileType>,
     pub unified_sink_args: UnifiedSinkArgs,
-    pub max_rows_per_file: Option<IdxSize>,
-    pub approximate_bytes_per_file: Option<u64>,
+    pub max_rows_per_file: IdxSize,
+    pub approximate_bytes_per_file: u64,
 }
 
 impl PartitionedSinkOptionsIR {
