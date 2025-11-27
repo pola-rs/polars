@@ -4046,7 +4046,7 @@ class Expr:
 
     def quantile(
         self,
-        quantile: float | Expr,
+        quantile: float | list[float] | Expr,
         interpolation: QuantileMethod = "nearest",
     ) -> Expr:
         """
@@ -4055,7 +4055,9 @@ class Expr:
         Parameters
         ----------
         quantile
-            Quantile between 0.0 and 1.0.
+            Quantile(s) between 0.0 and 1.0. Can be a single float or a list of floats.
+            - If a single float, returns a single f64 value per row.
+            - If a list of floats, returns a list of f64 values per row (one value per quantile).
         interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
             Interpolation method.
 
@@ -4107,6 +4109,15 @@ class Expr:
         ╞═════╡
         │ 1.5 │
         └─────┘
+        >>> df.select(pl.col("a").quantile([0.25, 0.5]))
+        shape: (1, 1)
+        ┌───────────────┐
+        │ a             │
+        │ ---           │
+        │ list[f64]     │
+        ╞═══════════════╡
+        │ [1.5, 2.5]    │
+        └───────────────┘
         """  # noqa: W505
         quantile_pyexpr = parse_into_expression(quantile)
         return wrap_expr(self._pyexpr.quantile(quantile_pyexpr, interpolation))
