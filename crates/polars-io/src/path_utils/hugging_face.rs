@@ -277,10 +277,7 @@ pub(super) async fn expand_paths_hf(
         // Use recursive tree API to fetch all files at once (with pagination).
         // This avoids rate limiting by eliminating per-directory API calls.
         // See: https://github.com/pola-rs/polars/issues/25389
-        let uri = format!(
-            "{}?recursive=true",
-            repo_location.get_api_uri(&prefix)
-        );
+        let uri = format!("{}?recursive=true", repo_location.get_api_uri(&prefix));
         let mut gp = GetPages {
             uri: Some(uri),
             client,
@@ -301,7 +298,8 @@ pub(super) async fn expand_paths_hf(
                     };
 
                     if matches {
-                        out_paths.push(PlPath::from_string(repo_location.get_file_uri(&entry.path)));
+                        out_paths
+                            .push(PlPath::from_string(repo_location.get_file_uri(&entry.path)));
                     }
                 }
             }
