@@ -9,11 +9,8 @@ announcement.
 
 ## System-wide installation
 
-Ensure that the `LD_LIBRARY_PATH` is correctly set after installing the dependencies.
-
 ```shell
-$ uv pip install --break-system-packages -r requirements.txt polars==PINNED_VERSION
-$ export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:$(uv run python -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")"
+$ uv pip install --break-system-packages -r requirements.txt polars[cloudpickle]==PINNED_VERSION
 $ polars-on-premise service --config-path /etc/polars-cloud/config.toml
 ```
 
@@ -23,7 +20,7 @@ It's also possible to run `polars-on-premise` using a virtual environment.
 
 ```shell
 $ uv venv .venv
-$ uv pip install -r requirements.txt polars==PINNED_VERSION
-$ export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:$(uv run python -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")"
+$ uv pip install -r requirements.txt polars[cloudpickle]==PINNED_VERSION
+$ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$(uv run python -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")
 $ polars-on-premise service --config-path /etc/polars-cloud/config.toml
 ```

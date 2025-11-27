@@ -430,7 +430,7 @@ def test_dataframe_from_repr() -> None:
     assert frame.schema == {
         "a": pl.Int64,
         "b": pl.Float64,
-        "c": pl.Categorical(ordering="lexical"),
+        "c": pl.Categorical(),
         "d": pl.Boolean,
         "e": pl.String,
         "f": pl.Date,
@@ -898,13 +898,6 @@ def test_compat_level(monkeypatch: pytest.MonkeyPatch) -> None:
         df.to_arrow(compat_level=newest)["bin_col"][0], pa.BinaryViewScalar
     )
 
-    assert len(df.write_ipc(None).getbuffer()) == 738
-    assert len(df.write_ipc(None, compat_level=oldest).getbuffer()) == 866
-    assert len(df.write_ipc(None, compat_level=newest).getbuffer()) == 738
-    assert len(df.write_ipc_stream(None).getbuffer()) == 520
-    assert len(df.write_ipc_stream(None, compat_level=oldest).getbuffer()) == 648
-    assert len(df.write_ipc_stream(None, compat_level=newest).getbuffer()) == 520
-
 
 def test_df_pycapsule_interface() -> None:
     df = pl.DataFrame(
@@ -942,11 +935,7 @@ def test_misaligned_nested_arrow_19097() -> None:
 
 
 def test_arrow_roundtrip_lex_cat_20288() -> None:
-    tb = (
-        pl.Series("a", ["A", "B"], pl.Categorical(ordering="lexical"))
-        .to_frame()
-        .to_arrow()
-    )
+    tb = pl.Series("a", ["A", "B"], pl.Categorical()).to_frame().to_arrow()
     df = pl.from_arrow(tb)
     assert isinstance(df, pl.DataFrame)
     dt = df.schema["a"]

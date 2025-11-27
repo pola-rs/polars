@@ -378,6 +378,12 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
+    fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
+        let quantile = self.0.physical().quantile_reduce(quantile, method)?;
+        let av = quantile.value().cast(&DataType::Int64);
+        Ok(Scalar::new(self.dtype().clone(), av.as_time()))
+    }
+
     #[cfg(feature = "approx_unique")]
     fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
         Ok(ChunkApproxNUnique::approx_n_unique(self.0.physical()))

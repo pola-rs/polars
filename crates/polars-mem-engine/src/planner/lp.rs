@@ -372,8 +372,7 @@ fn create_physical_plan_impl(
                                 _ => panic!("enable filetype feature"),
                             }
 
-                            file.sync_on_close(unified_sink_args.sync_on_close)?;
-                            file.close()?;
+                            file.close(unified_sink_args.sync_on_close)?;
 
                             Ok(None)
                         }),

@@ -651,6 +651,8 @@ impl Series {
     /// Check if numeric value is NaN (note this is different than missing/ null)
     pub fn is_nan(&self) -> PolarsResult<BooleanChunked> {
         match self.dtype() {
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => Ok(self.f16().unwrap().is_nan()),
             DataType::Float32 => Ok(self.f32().unwrap().is_nan()),
             DataType::Float64 => Ok(self.f64().unwrap().is_nan()),
             DataType::Null => Ok(BooleanChunked::full_null(self.name().clone(), self.len())),
@@ -666,6 +668,8 @@ impl Series {
     /// Check if numeric value is NaN (note this is different than missing/null)
     pub fn is_not_nan(&self) -> PolarsResult<BooleanChunked> {
         match self.dtype() {
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => Ok(self.f16().unwrap().is_not_nan()),
             DataType::Float32 => Ok(self.f32().unwrap().is_not_nan()),
             DataType::Float64 => Ok(self.f64().unwrap().is_not_nan()),
             dt if dt.is_primitive_numeric() => {
@@ -680,6 +684,8 @@ impl Series {
     /// Check if numeric value is finite
     pub fn is_finite(&self) -> PolarsResult<BooleanChunked> {
         match self.dtype() {
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => Ok(self.f16().unwrap().is_finite()),
             DataType::Float32 => Ok(self.f32().unwrap().is_finite()),
             DataType::Float64 => Ok(self.f64().unwrap().is_finite()),
             DataType::Null => Ok(BooleanChunked::full_null(self.name().clone(), self.len())),
@@ -695,6 +701,8 @@ impl Series {
     /// Check if numeric value is infinite
     pub fn is_infinite(&self) -> PolarsResult<BooleanChunked> {
         match self.dtype() {
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => Ok(self.f16().unwrap().is_infinite()),
             DataType::Float32 => Ok(self.f32().unwrap().is_infinite()),
             DataType::Float64 => Ok(self.f64().unwrap().is_infinite()),
             DataType::Null => Ok(BooleanChunked::full_null(self.name().clone(), self.len())),
@@ -837,6 +845,8 @@ impl Series {
                 Int128 => Ok(self.i128().unwrap().prod_reduce()),
                 #[cfg(feature = "dtype-u128")]
                 UInt128 => Ok(self.u128().unwrap().prod_reduce()),
+                #[cfg(feature = "dtype-f16")]
+                Float16 => Ok(self.f16().unwrap().prod_reduce()),
                 Float32 => Ok(self.f32().unwrap().prod_reduce()),
                 Float64 => Ok(self.f64().unwrap().prod_reduce()),
                 dt => {
@@ -856,7 +866,7 @@ impl Series {
     }
 
     #[cfg(feature = "dtype-decimal")]
-    pub(crate) fn into_decimal(self, precision: usize, scale: usize) -> PolarsResult<Series> {
+    pub fn into_decimal(self, precision: usize, scale: usize) -> PolarsResult<Series> {
         match self.dtype() {
             DataType::Int128 => Ok(self
                 .i128()
@@ -874,7 +884,7 @@ impl Series {
     }
 
     #[cfg(feature = "dtype-time")]
-    pub(crate) fn into_time(self) -> Series {
+    pub fn into_time(self) -> Series {
         match self.dtype() {
             DataType::Int64 => self.i64().unwrap().clone().into_time().into_series(),
             DataType::Time => self
@@ -888,7 +898,7 @@ impl Series {
         }
     }
 
-    pub(crate) fn into_date(self) -> Series {
+    pub fn into_date(self) -> Series {
         #[cfg(not(feature = "dtype-date"))]
         {
             panic!("activate feature dtype-date")
@@ -908,7 +918,7 @@ impl Series {
     }
 
     #[allow(unused_variables)]
-    pub(crate) fn into_datetime(self, timeunit: TimeUnit, tz: Option<TimeZone>) -> Series {
+    pub fn into_datetime(self, timeunit: TimeUnit, tz: Option<TimeZone>) -> Series {
         #[cfg(not(feature = "dtype-datetime"))]
         {
             panic!("activate feature dtype-datetime")
@@ -934,7 +944,7 @@ impl Series {
     }
 
     #[allow(unused_variables)]
-    pub(crate) fn into_duration(self, timeunit: TimeUnit) -> Series {
+    pub fn into_duration(self, timeunit: TimeUnit) -> Series {
         #[cfg(not(feature = "dtype-duration"))]
         {
             panic!("activate feature dtype-duration")

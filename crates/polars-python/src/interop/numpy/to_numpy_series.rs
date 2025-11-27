@@ -2,7 +2,7 @@ use ndarray::IntoDimension;
 use num_traits::{Float, NumCast};
 use numpy::npyffi::flags;
 use numpy::{Element, PyArray1};
-use polars_core::prelude::*;
+use polars::prelude::*;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::{IntoPyObjectExt, intern};
@@ -203,6 +203,7 @@ fn series_to_numpy_with_copy(py: Python<'_>, s: &Series, writable: bool) -> Py<P
             let s = s.cast(&DataType::Float64).unwrap();
             series_to_numpy(py, &s, writable, true).unwrap()
         },
+        Float16 => numeric_series_to_numpy::<Float16Type, pf16>(py, s),
         Float32 => numeric_series_to_numpy::<Float32Type, f32>(py, s),
         Float64 => numeric_series_to_numpy::<Float64Type, f64>(py, s),
         Boolean => boolean_series_to_numpy(py, s),

@@ -5,6 +5,7 @@ use chrono::{Duration as ChronoDuration, NaiveDate, NaiveDateTime};
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::materialize_dyn_int;
+use polars_utils::float16::pf16;
 use polars_utils::hashing::hash_to_partition;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -491,6 +492,8 @@ macro_rules! make_dyn_lit {
 }
 
 make_literal!(bool, Boolean);
+
+make_literal_typed!(pf16, Float16);
 make_literal_typed!(f32, Float32);
 make_literal_typed!(f64, Float64);
 make_literal_typed!(i8, Int8);
@@ -502,7 +505,9 @@ make_literal_typed!(u8, UInt8);
 make_literal_typed!(u16, UInt16);
 make_literal_typed!(u32, UInt32);
 make_literal_typed!(u64, UInt64);
+make_literal_typed!(u128, UInt128);
 
+make_dyn_lit!(pf16, Float);
 make_dyn_lit!(f32, Float);
 make_dyn_lit!(f64, Float);
 make_dyn_lit!(i8, Int);
@@ -514,6 +519,7 @@ make_dyn_lit!(u16, Int);
 make_dyn_lit!(u32, Int);
 make_dyn_lit!(u64, Int);
 make_dyn_lit!(i128, Int);
+make_dyn_lit!(u128, Int);
 
 /// The literal Null
 pub struct Null {}
