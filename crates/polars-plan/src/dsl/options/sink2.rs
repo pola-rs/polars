@@ -164,7 +164,7 @@ impl FileProviderType {
 }
 
 impl FileProviderFunction {
-    pub fn call(&self, args: FileProviderArgs) -> PolarsResult<FileProviderReturn> {
+    pub fn get_file(&self, args: FileProviderArgs) -> PolarsResult<FileProviderReturn> {
         match self {
             Self::Rust(func) => (func)(args),
             #[cfg(feature = "python")]
