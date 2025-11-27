@@ -18,7 +18,7 @@ impl<Args, Out> PartialEq for PlanCallback<Args, Out> {
         use PlanCallback as C;
 
         match (self, other) {
-            (C::Python(l), C::Python(r)) => SpecialEq::eq(l, r) || PythonObject::eq(&l, &r),
+            (C::Python(l), C::Python(r)) => SpecialEq::eq(l, r) || PythonObject::eq(l, r),
             (C::Rust(l), C::Rust(r)) => l.eq(r),
             _ => false,
         }
