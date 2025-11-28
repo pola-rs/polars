@@ -482,9 +482,9 @@ impl AggQuantileExpr {
         let s = col.as_materialized_series_maintain_scalar();
         // Try to coerce scalar/series to Float64 first (handles ints passed as 1)
         if let Ok(s_float) = s.cast(&DataType::Float64) {
-            let ca = s_float.f64().map_err(|_| {
-                polars_err!(ComputeError: "failed to cast quantile expression to float64")
-            })?;
+            let ca = s_float.f64().map_err(
+                |_| polars_err!(ComputeError: "failed to cast quantile expression to float64"),
+            )?;
             let mut out = Vec::with_capacity(ca.len());
             for v in ca.into_iter() {
                 match v {
@@ -523,13 +523,13 @@ impl AggQuantileExpr {
                 };
 
                 // cast inner to float64 to handle int lists
-                let inner_f = inner_s.cast(&DataType::Float64).map_err(|_| {
-                    polars_err!(ComputeError: "failed to cast quantile list inner to float64")
-                })?;
+                let inner_f = inner_s.cast(&DataType::Float64).map_err(
+                    |_| polars_err!(ComputeError: "failed to cast quantile list inner to float64"),
+                )?;
 
-                let ca = inner_f.f64().map_err(|_| {
-                    polars_err!(ComputeError: "failed to interpret quantile list as f64")
-                })?;
+                let ca = inner_f.f64().map_err(
+                    |_| polars_err!(ComputeError: "failed to interpret quantile list as f64"),
+                )?;
                 let mut out = Vec::with_capacity(ca.len());
                 for v in ca.into_iter() {
                     match v {
@@ -541,7 +541,7 @@ impl AggQuantileExpr {
                     polars_bail!(ComputeError: "quantile list is empty");
                 }
                 Ok(out)
-            }
+            },
             dt => polars_bail!(
                 SchemaMismatch:
                 "invalid series dtype: expected numeric or `list[numeric]`, got `{}` for series with name `{}`",
