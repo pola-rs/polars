@@ -5,7 +5,7 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
 
-use crate::plans::{AExpr, IR, IRPlan, IRPlanRef};
+use crate::plans::{AExpr, ExprIR, IR, IRPlan, IRPlanRef};
 
 /// Returns a pruned copy of this plan with new arenas (without unreachable nodes).
 ///
@@ -145,6 +145,15 @@ impl<'a> CopyContext<'a> {
         if let AExpr::Eval { evaluation, .. } = &mut dst_expr {
             *evaluation = self.copy_expr(*evaluation);
         }
+        if let AExpr::StructEval { evaluation, .. } = &mut dst_expr {
+            for e in evaluation.iter_mut() {
+                *e = ExprIR::new(
+                    self.copy_expr(e.node()),
+                    crate::plans::OutputName::Alias(e.output_name().clone()),
+                );
+            }
+        }
+        //kdn TODO copy-expr - AExpr::StructEval -- IAMHERE
 
         self.dst_expr.add(dst_expr)
     }
