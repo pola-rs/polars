@@ -2294,7 +2294,8 @@ class Series:
         drop_first
             Remove the first category from the variable being encoded.
         drop_nulls
-            If there are `None` values in the series, a `null` column is not generated
+            If there are `None` values in the series, a `null` column is not generated.
+            Null values in the nput are represented by zero vectors.
 
         Examples
         --------
@@ -2320,6 +2321,20 @@ class Series:
         ╞═════╪═════╡
         │ 0   ┆ 0   │
         │ 1   ┆ 0   │
+        │ 0   ┆ 1   │
+        └─────┴─────┘
+
+        >>> s = pl.Series("a", [1, 2, None, 3])
+        >>> s.to_dummies(drop_nulls=True, drop_first=True)
+        shape: (4, 2)
+        ┌─────┬─────┐
+        │ a_2 ┆ a_3 │
+        │ --- ┆ --- │
+        │ u8  ┆ u8  │
+        ╞═════╪═════╡
+        │ 0   ┆ 0   │
+        │ 1   ┆ 0   │
+        │ 0   ┆ 0   │
         │ 0   ┆ 1   │
         └─────┴─────┘
         """
