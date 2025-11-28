@@ -5,6 +5,7 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::{
     DataType, Field, IDX_DTYPE, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap,
 };
+use polars_core::scalar::Scalar;
 use polars_core::schema::{Schema, SchemaExt};
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
@@ -139,7 +140,8 @@ pub fn is_input_independent_rec(
     let ret = match arena.get(expr_key) {
         // Handled separately in `Eval`.
         AExpr::Element => unreachable!(),
-        AExpr::StructField(_) => true, //kdn TODO STREAMING REVIEW
+        // Mapped to `Column` in `StructEval`.
+        AExpr::StructField(_) => unreachable!(),
         AExpr::Explode { expr: inner, .. }
         | AExpr::Cast {
             expr: inner,
@@ -221,10 +223,13 @@ pub fn is_input_independent_rec(
             evaluation: _,
             variant: _,
         } => is_input_independent_rec(*expr, arena, cache),
-        AExpr::StructEval {
-            expr,
-            evaluation: _,
-        } => is_input_independent_rec(*expr, arena, cache), //kdn TODO STREAMING REVIEW
+        AExpr::StructEval { expr, evaluation } => {
+            //kdn TODO STREAMING REVIEW
+            is_input_independent_rec(*expr, arena, cache)
+                && evaluation
+                    .iter()
+                    .all(|expr| is_input_independent_rec(expr.node(), arena, cache))
+        },
         AExpr::Window {
             function,
             partition_by,
@@ -297,7 +302,8 @@ pub fn is_length_preserving_rec(
     let ret = match arena.get(expr_key) {
         // Handled separately in `Eval`.
         AExpr::Element => unreachable!(),
-        AExpr::StructField(_) => unreachable!(), //kdn TODO STREAMING REVIEW
+        // Mapped to `Column` in `StructEval`.
+        AExpr::StructField(_) => unreachable!(),
 
         AExpr::Gather { .. }
         | AExpr::Explode { .. }
@@ -373,7 +379,7 @@ pub fn is_length_preserving_rec(
         AExpr::StructEval {
             expr,
             evaluation: _,
-        } => is_length_preserving_rec(*expr, arena, cache), //kdn TODO STREAMING REVIEW
+        } => is_length_preserving_rec(*expr, arena, cache),
         AExpr::Over {
             function: _, // Actually shouldn't matter for window functions.
             partition_by: _,
@@ -614,7 +620,8 @@ fn lower_exprs_with_ctx(
         match ctx.expr_arena.get(expr).clone() {
             // Handled separately in `Eval` expressions.
             AExpr::Element => unreachable!(),
-            AExpr::StructField(_) => unreachable!(), //kdn TODO STREAMING REVIEW
+            // Mapped to `Column` in `StructEval`.
+            AExpr::StructField(_) => unreachable!(),
 
             AExpr::Explode {
                 expr: inner,
@@ -1531,10 +1538,125 @@ fn lower_exprs_with_ctx(
                     transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
                 },
             },
-            AExpr::StructEval { .. } => {  //kdn TODO STREAMING REVIEW
+            AExpr::StructEval { expr: inner, mut evaluation } => {
+                // Transform (simplified):
+                //    expr.struct.with_fields(evaluation).alias(name)
+                //      ->
+                //    .select(expr)
+                //    .with_columns(validity = expr.is_not_null())
+                //    .map(df.struct.unnest()))
+                //    .with_columns([evaluation])
+                //    .select(pl.when(validity).then(as_struct()).alias(name)
+                //
+                // Any reference to `StructField(x)` gets remapped to `Column(PREFIX_x)` prior to 
+                // calling `unnest()`, with PREFIX being unique for each StructEval expression.
+
+                // Evaluate input `expr` and capture `col` references from `evaluation`
                 let out_name = unique_column_name();
-                fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
-                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+                let inner_expr_ir = ExprIR::new(inner, OutputName::Alias(out_name.clone()));
+                let mut expr_irs = Vec::new();
+                expr_irs.push(inner_expr_ir);
+
+                // Any column expression inside evaluation must be added explicitly.
+                let eval_col_names: PlHashSet<_> = evaluation
+                    .iter()
+                    .flat_map(|expr| polars_plan::utils::aexpr_to_leaf_names_iter(expr.node(), ctx.expr_arena))
+                    .collect();
+                for name in eval_col_names {
+                        expr_irs.push(ExprIR::new(
+                        ctx.expr_arena.add(AExpr::Column(name.clone())),
+                        OutputName::ColumnLhs(name),
+                    ));
+                }
+                let stream = build_select_stream_with_ctx(input, &expr_irs, ctx)?;
+
+                // Capture validity as an extra column.
+                let validity_name = polars_utils::format_pl_smallstr!("{}{}", out_name, PlSmallStr::from_static("_VLD"));
+                let validity_input_node = ctx.expr_arena.add(AExpr::Column(out_name.clone()));
+                let validity_expr_ir = ExprIR::new(validity_input_node, OutputName::Alias(validity_name.clone()));
+                let validity_expr = AExprBuilder::function(
+                    vec![validity_expr_ir],
+                    IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull),
+                    ctx.expr_arena
+                );
+                let validity_node = validity_expr.node();
+                let validity_expr_ir = ExprIR::new(validity_node, OutputName::Alias(validity_name.clone()) );
+                let stream = build_hstack_stream(
+                    stream,
+                    &[validity_expr_ir],
+                    ctx.expr_arena,
+                    ctx.phys_sm,
+                    ctx.cache,
+                    StreamingLowerIRContext{prepare_visualization: ctx.prepare_visualization}
+                )?;
+
+                // Rewrite any `StructField(x)`` expression into a `Col(prefix_x)`` expression.
+                let separator = PlSmallStr::from_static("_FLD_");
+                let field_prefix = polars_utils::format_pl_smallstr!("{}{}", out_name, separator);
+                evaluation.iter_mut().for_each(|e| {
+                    e.set_node(structfield_to_column(e.node(), ctx.expr_arena, &field_prefix))
+                });
+
+                // Unnest.
+                let unnest_fn = FunctionIR::Unnest { columns: Arc::new([out_name.clone()]), separator: Some(separator.clone()) };
+                let input_schema = ctx.phys_sm[stream.node].output_schema.clone();
+                let output_schema = unnest_fn.schema(&input_schema)?.into_owned(); //kdn TODO: can we drop schema?
+                let map = Arc::new(move |df| unnest_fn.evaluate(df)); // kdn TODO format_str
+                let node_kind = PhysNodeKind::Map {
+                    input: stream,
+                    map,
+                };
+                let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, node_kind));
+                let stream = PhysStream::first(node_key);
+
+                // Evaluate `evaluation`, using `with_columns`.
+                // This requires output names to be prefixed, as they refer to the local StructField namespace.
+                // Note, native columns are still included in the stream but could be dropped (nice-to-have).
+                evaluation.iter_mut().for_each(
+                    |e| { *e = e.with_alias(
+                        polars_utils::format_pl_smallstr!("{}{}", &field_prefix, e.output_name()));
+                    }
+                );
+                let stream = build_hstack_stream(
+                    stream,
+                    &evaluation,
+                    ctx.expr_arena,
+                    ctx.phys_sm,
+                    ctx.cache,
+                    StreamingLowerIRContext{prepare_visualization: ctx.prepare_visualization}
+                )?;
+
+                // Nest any column that belongs to the StructField namespace back into a Struct.
+                let mut fields_expr_irs = Vec::new();
+                let eval_schema = ctx.phys_sm[stream.node].output_schema.clone();
+                for (name, _) in eval_schema.iter() {
+                    if let Some(stripped_name) = name.strip_prefix(field_prefix.as_str()) {
+                        let node = ctx.expr_arena.add(AExpr::Column(name.clone()));
+                        fields_expr_irs.push(ExprIR::from_node(node, ctx.expr_arena).with_alias(PlSmallStr::from_str(stripped_name)));
+                    }
+                }
+                let as_struct_expr = AExprBuilder::function(
+                        fields_expr_irs,
+                        IRFunctionExpr::AsStruct,
+                        ctx.expr_arena,
+                );
+                let as_struct_node = as_struct_expr.node();
+
+                // Apply validity.
+                let with_validity = AExprBuilder::when_then_otherwise(
+                    AExprBuilder::col(validity_name.clone(),ctx.expr_arena),
+                    AExprBuilder::new_from_node(as_struct_node),
+                    AExprBuilder::lit(LiteralValue::Scalar(Scalar::null(DataType::Null)), ctx.expr_arena),
+                    ctx.expr_arena
+                );
+                let with_validity_node = with_validity.node();
+                let validity_expr_ir = ExprIR::new(with_validity_node, OutputName::Alias(out_name.clone()));
+                let stream = build_select_stream_with_ctx(stream, &[validity_expr_ir], ctx)?;
+                let exit_node = ctx.expr_arena.add(AExpr::Column(out_name.clone()));
+
+                // Finalize.
+                input_streams.insert(stream);
+                transformed_exprs.push(exit_node);
             },
             AExpr::Ternary {
                 predicate,
@@ -2168,7 +2290,7 @@ pub fn lower_exprs(
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
-    ctx: StreamingLowerIRContext,
+    ctx: StreamingLowerIRContext, //kdn TBD: add structfield_prefix
 ) -> PolarsResult<(PhysStream, Vec<ExprIR>)> {
     let mut ctx = LowerExprContext {
         expr_arena,

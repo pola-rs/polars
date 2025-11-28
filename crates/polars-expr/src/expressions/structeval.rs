@@ -70,12 +70,6 @@ impl PhysicalExpr for StructEvalExpr {
         groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        //kdn: TODO TEST
-        // - elementwise: sum
-        // - not row-separable: cum_sum
-        // - aggregations: first
-        // - window..
-
         // Evaluate input.
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
         ac.groups();
@@ -85,9 +79,6 @@ impl PhysicalExpr for StructEvalExpr {
         state.with_fields_ac = Arc::new(Some(ac.into_static()));
 
         // Collect evaluation fields.
-        //kdn TODO check lengths and error handling
-        //kdn TODO check validity
-
         let mut acs = Vec::with_capacity(self.evaluation.len() + 1);
         acs.push(ac);
         for e in self.evaluation.iter() {
@@ -103,19 +94,13 @@ impl PhysicalExpr for StructEvalExpr {
         let len = iters[0].size_hint().0;
         let ca = (0..len)
             .map(|_| {
-                let series: PolarsResult<Vec<_>> = iters
-                    .iter_mut()
-                    .map(|i| {
-                        i.next()
-                            .flatten()
-                            .ok_or_else(|| polars_err!(InvalidOperation: "kdn TODO"))
-                    })
-                    .collect();
-                let series = series?;
-                let cols: Vec<_> = series
-                    .iter()
-                    .map(|s| s.as_ref().clone().into_column())
-                    .collect();
+                let mut cols = Vec::with_capacity(iters.len());
+                for i in &mut iters {
+                    match i.next().unwrap() {
+                        None => return Ok(None),
+                        Some(s) => cols.push(s.as_ref().clone().into_column()),
+                    }
+                }
                 let out = with_fields(&cols)?;
                 Ok(Some(out))
             })

@@ -1423,6 +1423,10 @@ def test_struct_equal_missing_null_25360() -> None:
     ("eval", "expected"),
     [
         (
+            pl.field("x"),
+            pl.DataFrame({"x": [10, 20, 30]}),
+        ),
+        (
             pl.col("a"),
             pl.DataFrame({"x": [10, 20, 30], "a": [1, 2, 3]}),
         ),
@@ -1461,8 +1465,9 @@ def test_struct_equal_missing_null_25360() -> None:
     ],
 )
 @pytest.mark.parametrize("inject_none", [True, False])
+@pytest.mark.parametrize("select", [True, False])
 def test_struct_with_fields_col_and_field_alias(
-    eval: pl.Expr, expected: pl.DataFrame, inject_none: bool
+    eval: pl.Expr, expected: pl.DataFrame, inject_none: bool, select: bool
 ) -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "s": [{"x": 10}, {"x": 20}, {"x": 30}]})
 
@@ -1474,21 +1479,95 @@ def test_struct_with_fields_col_and_field_alias(
             pl.when(pl.arange(0, pl.len()) != 1).then(pl.all()).otherwise(None)
         )
 
+    out = (
+        df.select(pl.col.s.struct.with_fields(eval))
+        if select
+        else df.with_columns(pl.col.s.struct.with_fields(eval))
+    )
+
     out = df.select(pl.col.s.struct.with_fields(eval))
     out = out.select(pl.col.s.struct.unnest())
     assert_frame_equal(out, expected)
 
 
+@pytest.mark.parametrize(
+    ("eval", "expected"),
+    [
+        (
+            pl.col("a").cum_sum(),
+            pl.DataFrame({"x": [10, 20, None], "a": [1, 3, None]}),
+        ),
+        (
+            pl.field("x").cum_sum(),
+            pl.DataFrame({"x": [10, 30, None]}),
+        ),
+        (
+            pl.col("a").cum_sum() + pl.field("x"),
+            pl.DataFrame({"x": [10, 20, None], "a": [11, 23, None]}),
+        ),
+        (
+            pl.field("x").cum_sum() + pl.col("a"),
+            pl.DataFrame({"x": [11, 32, None]}),
+        ),
+        (
+            pl.col("a").cum_sum() + pl.field("x").first(),
+            pl.DataFrame({"x": [10, 20, None], "a": [11, 13, None]}),
+        ),
+        (
+            pl.field("x").cum_sum() + pl.col("a").first(),
+            pl.DataFrame({"x": [11, 31, None]}),
+        ),
+        (
+            pl.col("a").reverse().cum_sum() + pl.field("x"),
+            pl.DataFrame({"x": [10, 20, None], "a": [13, 25, None]}),
+        ),
+        (
+            pl.field("x").reverse().cum_sum() + pl.col("a"),
+            pl.DataFrame({"x": [None, 22, None]}),
+        ),
+    ],
+)
+@pytest.mark.parametrize("select", [True, False])
+def test_struct_with_fields_non_elementwise(
+    eval: pl.Expr, expected: pl.DataFrame, select: bool
+) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "s": [{"x": 10}, {"x": 20}, None]})
+
+    out = (
+        df.select(pl.col.s.struct.with_fields(eval))
+        if select
+        else df.with_columns(pl.col.s.struct.with_fields(eval))
+    )
+
+    out = df.select(pl.col.s.struct.with_fields(eval))
+    print(out)
+    print(expected)
+    assert out["s"].has_nulls()
+
+    out = out.select(pl.col.s.struct.unnest())
+    assert_frame_equal(out, expected)
+
+
 def test_struct_with_fields_multiple() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "s": [{"x": 10}, {"x": 20}, {"x": 30}]})
+    df = pl.DataFrame(
+        {"a": [1, 2, 3, None], "s": [{"x": 10}, {"x": 20}, {"x": 30}, None]}
+    )
     e1 = pl.col("a")
-    e2 = pl.field("x") - 1
-    e3 = pl.field("x").alias("y") + pl.col("a")
+    e2 = pl.field("x")
+    e3 = pl.field("x").cum_sum().alias("y") + pl.col("a")
     e4 = pl.field("x").reverse().alias("z") + pl.col("a")
+
     out = df.select(pl.col.s.struct.with_fields(e1, e2, e3, e4))
+    assert out["s"].has_nulls()
+
     out = out.select(pl.col.s.struct.unnest())
     expected = pl.DataFrame(
-        {"x": [9, 19, 29], "a": [1, 2, 3], "y": [11, 22, 33], "z": [31, 22, 13]}
+        {
+            "x": [10, 20, 30, None],
+            "a": [1, 2, 3, None],
+            "y": [11, 32, 63, None],
+            "z": [None, 32, 23, None],
+        }
     )
     assert_frame_equal(out, expected)
 
@@ -1513,6 +1592,18 @@ def test_struct_with_fields_non_deterministic_24568() -> None:
         (
             pl.field("x") + pl.col("a").cum_sum(),
             pl.DataFrame({"g": [10, 20], "s": [[{"x": 11}, {"x": 23}], [{"x": 35}]]}),
+        ),
+        (
+            pl.field("x").cum_sum() + pl.col("a"),
+            pl.DataFrame({"g": [10, 20], "s": [[{"x": 11}, {"x": 32}], [{"x": 35}]]}),
+        ),
+        (
+            pl.field("x") + pl.col("a").reverse(),
+            pl.DataFrame({"g": [10, 20], "s": [[{"x": 12}, {"x": 21}], [{"x": 35}]]}),
+        ),
+        (
+            pl.field("x").reverse() + pl.col("a"),
+            pl.DataFrame({"g": [10, 20], "s": [[{"x": 21}, {"x": 12}], [{"x": 35}]]}),
         ),
         (
             pl.field("x") + pl.col("a").last(),
@@ -1549,11 +1640,11 @@ def test_struct_with_fields_raises_on_duplicate_field_25207() -> None:
 def test_struct_with_fields_selector_24687(selector: pl.Expr) -> None:
     df = pl.DataFrame(
         {
-            "s": [{"a": 1, "b": 1}, {"a": 3, "b": 3}],
-            "t": [{"a": 1, "b": 1}, {"a": 3, "b": 3}],
+            "s": [{"a": 1, "b": 1}, {"a": 3, "b": 3}, None],
+            "t": [{"a": 1, "b": 1}, {"a": 3, "b": 3}, None],
         }
     )
-    expr = pl.field("b").replace(3, -3)
+    expr = pl.field("b").replace(3, 33)
     expected = df
     for name in ["s", "t"]:
         expected = expected.with_columns(pl.col(name).struct.with_fields(expr))
@@ -1569,3 +1660,103 @@ def test_struct_with_fields_non_len_preserving() -> None:
     ).select(pl.col.s.struct.unnest())
     expected = pl.DataFrame({"x": [20, 60]})
     assert_frame_equal(out, expected)
+
+
+def test_struct_with_fields_projection_pushdown() -> None:
+    df = pl.DataFrame({"a": [1], "b": [2]})
+    f = io.BytesIO()
+    df.write_parquet(f)
+
+    f.seek(0)
+    q = (
+        pl.scan_parquet(f)
+        .with_columns(s=pl.struct("a"))
+        .select(pl.col.s.struct.with_fields("b"))
+    )
+    out = q.collect().select(pl.col.s.struct.unnest())
+    assert_frame_equal(out, df)
+
+
+def test_struct_with_fields_nested_list_contains_struct() -> None:
+    df = pl.DataFrame(
+        {
+            "s": [[{"a": 1, "b": 1}, {"a": 2, "b": 3}, None], None],
+        }
+    )
+    q = df.lazy().select(
+        pl.col.s.list.eval(pl.element().struct.with_fields(pl.field("a").cum_sum()))
+    )
+    out = q.collect()
+    expected = pl.DataFrame(
+        {
+            "s": [[{"a": 1, "b": 1}, {"a": 3, "b": 3}, None], None],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.xfail  # TODO: should work after rebase kdn
+def test_struct_with_fields_nested_struct_contains_list() -> None:
+    df = pl.DataFrame(
+        {
+            "s": [{"a": 1, "b": [1, 2]}, {"a": 3, "b": [3, None]}, None],
+        }
+    )
+    q = df.lazy().select(
+        pl.col.s.struct.with_fields(
+            pl.field("b").list.eval(pl.element() * pl.element())
+        )
+    )
+    out = q.collect()
+    expected = pl.DataFrame(
+        {
+            "s": [{"a": 1, "b": [1, 4]}, {"a": 3, "b": [9, None]}, None],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_struct_with_fields_nested_struct_contains_struct() -> None:
+    df = pl.DataFrame(
+        {
+            "n": [1, 2, 3, 4, 5],
+            "s": [
+                {"a": 1, "b": {"b_x": 1, "b_y": 1}},
+                {"a": 2, "b": {"b_x": 2, "b_y": 2}},
+                {"a": 3, "b": {"b_x": 3, "b_y": None}},
+                {"a": 4, "b": None},
+                None,
+            ],
+        }
+    )
+    q = df.lazy().select(
+        pl.col.s.struct.with_fields(
+            pl.field("b").struct.with_fields(
+                pl.field("b_x").cum_sum().alias("b_z") + pl.field("b_y") + pl.col("n")
+            )
+        )
+    )
+    out = q.collect()
+    expected = pl.DataFrame(
+        {
+            "s": [
+                {"a": 1, "b": {"b_x": 1, "b_y": 1, "b_z": 3}},
+                {"a": 2, "b": {"b_x": 2, "b_y": 2, "b_z": 7}},
+                {"a": 3, "b": {"b_x": 3, "b_y": None, "b_z": None}},
+                {"a": 4, "b": None},
+                None,
+            ],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_struct_with_fields_chained() -> None:
+    df = pl.DataFrame({"a": [1, 2, None], "s": [{"x": 10}, {"x": 20}, None]})
+    q = df.lazy().select(
+        pl.col.s.struct.with_fields(
+            pl.field("x").cum_sum() + pl.col.a
+        ).struct.with_fields(pl.field("x").cum_sum() + pl.col.a)
+    )
+    expected = pl.DataFrame({"s": [{"x": 12}, {"x": 45}, None]})
+    assert_frame_equal(q.collect(), expected)

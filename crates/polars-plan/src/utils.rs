@@ -363,3 +363,36 @@ pub fn rename_columns(
         .unwrap()
         .node()
 }
+
+/// Rename any `StructField(x)` to its corresponding `Column(prefix_x)` using the provided prefix.
+pub fn structfield_to_column(
+    node: Node,
+    expr_arena: &mut Arena<AExpr>,
+    prefix: &PlSmallStr,
+) -> Node {
+    struct MapStructFields<'a>(&'a PlSmallStr);
+    impl RewritingVisitor for MapStructFields<'_> {
+        type Node = AexprNode;
+        type Arena = Arena<AExpr>;
+
+        fn mutate(
+            &mut self,
+            node: Self::Node,
+            arena: &mut Self::Arena,
+        ) -> PolarsResult<Self::Node> {
+            if let AExpr::StructField(name) = arena.get(node.node()) {
+                let mut new_name = self.0.clone().to_string();
+                new_name.push_str(name);
+                let new_name = PlSmallStr::from_string(new_name);
+                return Ok(AexprNode::new(arena.add(AExpr::Column(new_name))));
+            }
+
+            Ok(node)
+        }
+    }
+
+    AexprNode::new(node)
+        .rewrite(&mut MapStructFields(prefix), expr_arena)
+        .unwrap()
+        .node()
+}

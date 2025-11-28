@@ -29,6 +29,7 @@ impl PhysicalExpr for FieldExpr {
         Some(&self.expr)
     }
 
+    // In-memory engine only.
     fn evaluate(&self, _df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let ca = state
             .with_fields
@@ -39,13 +40,13 @@ impl PhysicalExpr for FieldExpr {
         ca.field_by_name(self.name.as_str()).map(Column::from)
     }
 
+    // In-memory engine only.
     fn evaluate_on_groups<'a>(
         &self,
         _df: &DataFrame,
         _groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        //kdn TODO REVIEW
         let ac = state
             .with_fields_ac
             .as_ref()

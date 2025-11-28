@@ -199,7 +199,7 @@ impl ExprIR {
         }
     }
 
-    pub(crate) fn set_node(&mut self, node: Node) {
+    pub fn set_node(&mut self, node: Node) {
         self.node = node;
         self.output_dtype = OnceLock::new();
     }
