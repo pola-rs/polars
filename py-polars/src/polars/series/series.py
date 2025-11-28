@@ -2282,7 +2282,7 @@ class Series:
 
         Return a list of quantiles:
 
-        >>> s.quantile([0.25, 0.75], interpolation='linear')
+        >>> s.quantile([0.25, 0.75], interpolation="linear")
         [1.5, 2.5]
         """  # noqa: W505
         return self._s.quantile(quantile, interpolation)

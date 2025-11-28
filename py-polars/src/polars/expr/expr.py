@@ -4109,15 +4109,15 @@ class Expr:
         ╞═════╡
         │ 1.5 │
         └─────┘
-        >>> df.select(pl.col("a").quantile([0.25, 0.5]))
+        >>> df.select(pl.col("a").quantile([0.25, 0.75], interpolation="linear"))
         shape: (1, 1)
-        ┌───────────────┐
-        │ a             │
-        │ ---           │
-        │ list[f64]     │
-        ╞═══════════════╡
-        │ [1.5, 2.5]    │
-        └───────────────┘
+        ┌──────────────┐
+        │ a            │
+        │ ---          │
+        │ list[f64]    │
+        ╞══════════════╡
+        │ [1.25, 3.75] │
+        └──────────────┘
         """  # noqa: W505
         quantile_pyexpr = parse_into_expression(quantile)
         return wrap_expr(self._pyexpr.quantile(quantile_pyexpr, interpolation))
