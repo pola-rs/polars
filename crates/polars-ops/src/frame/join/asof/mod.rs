@@ -112,8 +112,10 @@ impl<T: PartialOrd> AsofJoinState<T> for AsofJoinBackwardState {
 
 #[derive(Default)]
 struct AsofJoinNearestState {
-    // best_bound is the nearest value to left_val, with ties broken towards the last element.
-    best_bound: Option<IdxSize>,
+    /// The previous nearest value, that is strictly smaller than the current
+    /// nearest value.
+    last_strictly_smaller_nearest: Option<IdxSize>,
+    /// Pointer to the index of the next value to scan in the right array.
     scan_offset: IdxSize,
     allow_eq: bool,
 }
@@ -121,9 +123,8 @@ struct AsofJoinNearestState {
 impl<T: NumericNative> AsofJoinState<T> for AsofJoinNearestState {
     fn new(allow_eq: bool) -> Self {
         AsofJoinNearestState {
-            scan_offset: Default::default(),
-            best_bound: Default::default(),
             allow_eq,
+            ..Default::default()
         }
     }
     #[inline]
@@ -133,52 +134,69 @@ impl<T: NumericNative> AsofJoinState<T> for AsofJoinNearestState {
         mut right: F,
         n_right: IdxSize,
     ) -> Option<IdxSize> {
-        // Skipping ahead to the first value greater than left_val. This is
-        // cheaper than computing differences.
-        while self.scan_offset < n_right {
-            if let Some(scan_right_val) = right(self.scan_offset) {
-                if lt_allow_eq(&scan_right_val, left_val, self.allow_eq) {
-                    self.best_bound = Some(self.scan_offset);
-                } else {
-                    // Now we must compute a difference to see if scan_right_val
-                    // is closer than our current best bound.
-                    let scan_is_better = if let Some(best_idx) = self.best_bound {
-                        let best_right_val = unsafe { right(best_idx).unwrap_unchecked() };
-                        let best_diff = left_val.abs_diff(best_right_val);
-                        let scan_diff = left_val.abs_diff(scan_right_val);
+        let mut nearest = self.scan_offset.checked_sub(1);
 
-                        lt_allow_eq(&scan_diff, &best_diff, self.allow_eq)
-                    } else {
-                        true
-                    };
-
-                    if scan_is_better {
-                        self.best_bound = Some(self.scan_offset);
-                        self.scan_offset += 1;
-
-                        // It is possible there are later elements equal to our
-                        // scan, so keep going on.
-                        while self.scan_offset < n_right {
-                            if let Some(next_right_val) = right(self.scan_offset) {
-                                if next_right_val == scan_right_val && self.allow_eq {
-                                    self.best_bound = Some(self.scan_offset);
-                                } else {
-                                    break;
-                                }
-                            }
-
-                            self.scan_offset += 1;
-                        }
-                    }
-
-                    break;
-                }
-            }
-
-            self.scan_offset += 1;
+        if !self.allow_eq
+            && let Some(prev) = nearest
+            && let Some(right_val) = right(prev)
+            && right_val == *left_val
+        {
+            debug_assert!(self.last_strictly_smaller_nearest != nearest);
+            nearest = self.last_strictly_smaller_nearest;
+            self.last_strictly_smaller_nearest = None;
         }
 
-        self.best_bound
+        while self.scan_offset < n_right {
+            let Some(scan_right_val) = right(self.scan_offset) else {
+                self.scan_offset += 1;
+                continue;
+            };
+
+            // Skipping ahead to the first value greater than left_val.
+            // This is cheaper than computing differences.
+            if !self.allow_eq && scan_right_val == *left_val {
+                self.last_strictly_smaller_nearest = Some(self.scan_offset);
+                self.scan_offset += 1;
+                continue;
+            }
+            if scan_right_val <= *left_val {
+                nearest = Some(self.scan_offset);
+                self.scan_offset += 1;
+                continue;
+            }
+
+            // Now we must compute a difference to see if scan_right_val
+            // is closer than our current best bound.
+            let scan_is_better = if let Some(best_idx) = nearest {
+                let best_right_val = unsafe { right(best_idx).unwrap_unchecked() };
+                let best_diff = left_val.abs_diff(best_right_val);
+                let scan_diff = left_val.abs_diff(scan_right_val);
+                scan_diff <= best_diff
+            } else {
+                true
+            };
+
+            if scan_is_better {
+                nearest = Some(self.scan_offset);
+                self.scan_offset += 1;
+
+                // It is possible there are later elements equal to our
+                // scan, so keep going on.
+                while self.scan_offset < n_right {
+                    if let Some(next_right_val) = right(self.scan_offset) {
+                        if next_right_val == scan_right_val && self.allow_eq {
+                            nearest = Some(self.scan_offset);
+                        } else {
+                            return nearest;
+                        }
+                    }
+                    self.scan_offset += 1;
+                }
+            }
+            return nearest;
+        }
+
+        nearest
     }
 }
 
