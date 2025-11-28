@@ -117,7 +117,6 @@ def test_streaming_group_by_types() -> None:
                     pl.col("person_name").first().alias("str_first"),
                     pl.col("person_name").last().alias("str_last"),
                     pl.col("person_name").mean().alias("str_mean"),
-                    pl.col("person_name").sum().alias("str_sum"),
                     pl.col("bool").first().alias("bool_first"),
                     pl.col("bool").last().alias("bool_first"),
                 ]

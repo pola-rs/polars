@@ -13,7 +13,10 @@ from hypothesis import given
 import polars as pl
 import polars.selectors as cs
 from polars import Expr
-from polars.exceptions import ColumnNotFoundError
+from polars.exceptions import (
+    ColumnNotFoundError,
+    InvalidOperationError,
+)
 from polars.meta import get_index_type
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes, series
@@ -2909,3 +2912,11 @@ def test_agg_first_last_non_null_25405() -> None:
         }
     )
     assert_frame_equal(result.collect(), expected)
+
+
+def test_group_by_sum_on_strings_should_error_24659() -> None:
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"`sum`.*operation not supported for dtype.*str",
+    ):
+        pl.DataFrame({"str": ["a", "b"]}).group_by(1).agg(pl.col.str.sum())
