@@ -32,15 +32,6 @@ pub(crate) struct HashableEqLP<'a> {
     ignore_cache: bool,
 }
 
-impl HashableEqLP<'_> {
-    /// When encountering a Cache node, ignore it and take the input.
-    #[cfg(feature = "cse")]
-    pub(crate) fn ignore_caches(mut self) -> Self {
-        self.ignore_cache = true;
-        self
-    }
-}
-
 fn hash_option_expr<H: Hasher>(expr: &Option<ExprIR>, expr_arena: &Arena<AExpr>, state: &mut H) {
     if let Some(e) = expr {
         e.traverse_and_hash(expr_arena, state)
