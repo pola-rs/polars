@@ -57,6 +57,7 @@ lint: .venv  ## Run lint checks (only)
 .PHONY: fmt
 fmt: .venv  ## Run autoformatting (python and rust)
 	$(VENV_BIN)/ruff format
+# 	$(VENV_BIN)/typos ..
 	cargo fmt --all
 	-dprint fmt
 
