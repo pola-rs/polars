@@ -104,6 +104,7 @@ uuid = { version = "1.15.1", features = ["v4"] }
 version_check = "0.9.4"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 zstd = "0.13"
+blake3 = { version = "1.8.2" }
 
 polars = { version = "0.52.0", path = "crates/polars", default-features = false }
 polars-compute = { version = "0.52.0", path = "crates/polars-compute", default-features = false }

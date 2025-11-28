@@ -294,7 +294,7 @@ fn skip_pre_visit(ae: &AExpr, is_groupby: bool) -> bool {
 // pre-visit: min                EEIE                     -
 // pre-visit: col(f00)           EEIEE                    -
 // post-visit: col(f00)	         EEIEE                    EEIEI                        id: col(f00)
-// post-visit: min	             EEIEI                    EEII                         id: min!col(f00)
+// post-visit: min	         EEIEI                    EEII                         id: min!col(f00)
 // post-visit: binary: *         EEII                     EI                           id: binary: *!min!col(f00)!col(bar)
 // post-visit: sum               EI                       I                            id: sum!binary: *!min!col(f00)!col(bar)
 struct ExprIdentifierVisitor<'a> {

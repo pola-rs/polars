@@ -2,6 +2,7 @@ use std::hash::BuildHasher;
 
 use hashbrown::hash_map::RawEntryMut;
 use polars_utils::unique_id::UniqueId;
+use polars_utils::{UnitVec, unitvec};
 
 use super::*;
 use crate::prelude::visitor::IRNode;
@@ -16,7 +17,7 @@ mod identifier_impl {
     /// have little collisions
     /// We will do a full expression comparison to check if the
     /// expressions with equal identifiers are truly equal
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     pub(super) struct Identifier {
         inner: Option<u64>,
         last_node: Option<IRNode>,
@@ -90,6 +91,7 @@ mod identifier_impl {
 }
 use identifier_impl::*;
 
+#[derive(Debug)]
 struct IdentifierMap<V> {
     inner: PlHashMap<Identifier, V>,
 }
@@ -371,21 +373,37 @@ fn insert_caches(
     let mut sp_count = Default::default();
     let mut id_array = Default::default();
 
+    let mut sp_nodes = Default::default();
+
     with_ir_arena(lp_arena, expr_arena, |arena| {
         let lp_node = IRNode::new_mutate(root);
         let mut visitor = LpIdentifierVisitor::new(&mut sp_count, &mut id_array);
 
         lp_node.visit(&mut visitor, arena).map(|_| ()).unwrap();
 
-        if visitor.has_subplan {
-            let lp_node = IRNode::new_mutate(root);
-            let mut rewriter = CommonSubPlanRewriter::new(&sp_count, &id_array);
-            lp_node.rewrite(&mut rewriter, arena).unwrap();
+        let mut vis2 = LpIdentifierVisitor2::new(&mut sp_nodes);
+        lp_node.visit(&mut vis2, arena).map(|_| ()).unwrap();
+        dbg!(
+            &sp_nodes,
+            &sp_count,
+            &sp_nodes.inner.len(),
+            sp_count.inner.len(),
+        );
 
-            (root, rewriter.rewritten, rewriter.cache_id_to_caches)
-        } else {
-            (root, false, Default::default())
+        for (nodes, count) in sp_nodes.inner.values().zip(sp_count.inner.values()) {
+            assert!(nodes.len() == count.1 as usize)
         }
+
+        //if visitor.has_subplan {
+        //    let lp_node = IRNode::new_mutate(root);
+        //    let mut rewriter = CommonSubPlanRewriter::new(&sp_count, &id_array);
+        //    lp_node.rewrite(&mut rewriter, arena).unwrap();
+        //
+        //    (root, rewriter.rewritten, rewriter.cache_id_to_caches)
+        //} else {
+        //    (root, false, Default::default())
+        //}
+        (root, false, Default::default())
     })
 }
 
@@ -422,3 +440,87 @@ pub(super) fn elim_cmn_subplans(
 
     (lp, changed, cid2c)
 }
+
+//type SubPlanNodes = IdentifierMap<UnitVec<Node>>;
+//
+//struct LpIdentifierVisitor2<'a> {
+//    sp_count: &'a mut SubPlanNodes,
+//    traversal_path: Vec<Node>,
+//    identifier_path: Vec<Identifier>,
+//    // Index in pre-visit traversal order.
+//    pre_visit_idx: usize,
+//    post_visit_idx: usize,
+//    visit_stack: Vec<VisitRecord>,
+//    has_subplan: bool,
+//}
+//
+//impl LpIdentifierVisitor2<'_> {
+//    fn new<'a>(sp_count: &'a mut SubPlanNodes) -> LpIdentifierVisitor2<'a> {
+//        LpIdentifierVisitor2 {
+//            sp_count,
+//            traversal_path: vec![],
+//            identifier_path: vec![],
+//            pre_visit_idx: 0,
+//            post_visit_idx: 0,
+//            visit_stack: vec![],
+//            has_subplan: false,
+//        }
+//    }
+//
+//    fn pop_until_entered(&mut self) -> (usize, Identifier) {
+//        let mut id = Identifier::new();
+//
+//        while let Some(item) = self.visit_stack.pop() {
+//            match item {
+//                VisitRecord::Entered(idx) => return (idx, id),
+//                VisitRecord::SubPlanId(s) => {
+//                    id.combine(&s);
+//                },
+//            }
+//        }
+//        unreachable!()
+//    }
+//}
+//
+//impl Visitor for LpIdentifierVisitor2<'_> {
+//    type Node = IRNode;
+//    type Arena = IRNodeArena;
+//
+//    fn pre_visit(
+//        &mut self,
+//        node: &Self::Node,
+//        arena: &Self::Arena,
+//    ) -> PolarsResult<VisitRecursion> {
+//        self.visit_stack
+//            .push(VisitRecord::Entered(self.pre_visit_idx));
+//        self.pre_visit_idx += 1;
+//
+//        if skip_children(node.to_alp(&arena.0)) {
+//            Ok(VisitRecursion::Skip)
+//        } else {
+//            Ok(VisitRecursion::Continue)
+//        }
+//    }
+//
+//    fn post_visit(
+//        &mut self,
+//        node: &Self::Node,
+//        arena: &Self::Arena,
+//    ) -> PolarsResult<VisitRecursion> {
+//        self.post_visit_idx += 1;
+//
+//        let (pre_visit_idx, sub_plan_id) = self.pop_until_entered();
+//
+//        // Create the Id of this node.
+//        let id: Identifier = sub_plan_id.add_alp_node(node, &arena.0, &arena.1);
+//
+//        // We popped until entered, push this Id on the stack so the trail
+//        // is available for the parent plan.
+//        self.visit_stack.push(VisitRecord::SubPlanId(id.clone()));
+//
+//        let sp_count = self.sp_count.entry(id, || unitvec![], &arena.0, &arena.1);
+//        sp_count.push(node.node());
+//        self.has_subplan |= sp_count.len() > 1;
+//        Ok(VisitRecursion::Continue)
+//    }
+//}
