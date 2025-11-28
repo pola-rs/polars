@@ -557,7 +557,8 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         // Extract the float64 series from the list
         if let AnyValue::List(float_s) = result.value() {
             let float_ca = float_s.f64().unwrap();
-            let int_s = float_ca.iter()
+            let int_s = float_ca
+                .iter()
                 .map(|v: Option<f64>| v.map(|f| f as i64))
                 .collect::<Int64Chunked>()
                 .into_series();
@@ -566,7 +567,7 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
             let casted = int_s.cast(&duration_dtype)?;
             Ok(Scalar::new(
                 DataType::List(Box::new(duration_dtype)),
-                AnyValue::List(casted)
+                AnyValue::List(casted),
             ))
         } else {
             polars_bail!(ComputeError: "expected list scalar from quantiles_reduce")

@@ -514,13 +514,14 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         if let AnyValue::List(float_s) = result.value() {
             let scale_factor = self.scale_factor() as f64;
             let float_ca = float_s.f64().unwrap();
-            let scaled_s = float_ca.iter()
+            let scaled_s = float_ca
+                .iter()
                 .map(|v: Option<f64>| v.map(|f| f / scale_factor))
                 .collect::<Float64Chunked>()
                 .into_series();
             Ok(Scalar::new(
                 DataType::List(Box::new(self.dtype().clone())),
-                AnyValue::List(scaled_s)
+                AnyValue::List(scaled_s),
             ))
         } else {
             polars_bail!(ComputeError: "expected list scalar from quantiles_reduce")
