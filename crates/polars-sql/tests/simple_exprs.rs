@@ -525,7 +525,7 @@ fn test_arr_agg() {
             vec![col("a").implode().alias("a")],
         ),
         (
-            "SELECT unnest(ARRAY_AGG(DISTINCT a)) FROM df",
+            "SELECT UNNEST(ARRAY_AGG(DISTINCT a)) FROM df",
             vec![
                 col("a")
                     .unique_stable()

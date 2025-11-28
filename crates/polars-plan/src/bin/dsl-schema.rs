@@ -93,8 +93,13 @@ mod impls {
     fn check_hashes(path: impl AsRef<Path>) {
         let file_hashes =
             std::fs::read_to_string(path).expect("failed to read the schema hashes from the file");
-        if file_hashes != current_schema_hashes() {
+        let expected = current_schema_hashes();
+        if file_hashes != expected {
             eprintln!("the schema hashes are not up to date, run `make update-dsl-schema-hashes`");
+
+            eprintln!("expected schema hashes:");
+            eprintln!("{}", expected);
+
             std::process::exit(1);
         }
         eprintln!("the DSL schema hashes are up to date");
