@@ -15,7 +15,7 @@ print(df)
 # --8<-- [end:df]
 
 # --8<-- [start:eager]
-out = df.pivot("bar", index="foo", values="N", aggregate_function="first")
+out = df.pivot("bar", index="foo", values="N", agg_function="first")
 print(out)
 # --8<-- [end:eager]
 
@@ -23,7 +23,7 @@ print(out)
 q = (
     df.lazy()
     .collect()
-    .pivot(index="foo", on="bar", values="N", aggregate_function="first")
+    .pivot(index="foo", on="bar", values="N", agg_function="first")
     .lazy()
 )
 out = q.collect()

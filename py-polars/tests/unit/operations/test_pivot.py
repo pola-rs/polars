@@ -22,7 +22,7 @@ def test_pivot() -> None:
             "N": [1, 2, 2, 4, 2],
         }
     )
-    result = df.pivot("bar", values="N", aggregate_function=None)
+    result = df.pivot("bar", values="N", agg_function=None)
 
     expected = pl.DataFrame(
         [
@@ -45,7 +45,7 @@ def test_pivot_no_values() -> None:
             "N2": [1, 2, 2, 4, 2],
         }
     )
-    result = df.pivot(on="bar", index="foo", aggregate_function=None)
+    result = df.pivot(on="bar", index="foo", agg_function=None)
     expected = pl.DataFrame(
         {
             "foo": ["A", "B", "C"],
@@ -80,7 +80,7 @@ def test_pivot_list() -> None:
         index="a",
         on="a",
         values="b",
-        aggregate_function="first",
+        agg_function="first",
         sort_columns=True,
     )
     assert_frame_equal(out, expected)
@@ -107,7 +107,7 @@ def test_pivot_aggregate(agg_fn: PivotAgg, expected_rows: list[tuple[Any]]) -> N
         }
     )
     result = df.pivot(
-        index="b", on="a", values="c", aggregate_function=agg_fn, sort_columns=True
+        index="b", on="a", values="c", agg_function=agg_fn, sort_columns=True
     )
     assert result.rows() == expected_rows
 
@@ -145,7 +145,7 @@ def test_pivot_categorical_index(maintain_order: bool) -> None:
         index=["A"],
         on="B",
         values="B",
-        aggregate_function="len",
+        agg_function="len",
         maintain_order=maintain_order,
     )
     expected = pl.DataFrame(
@@ -163,7 +163,7 @@ def test_pivot_categorical_index(maintain_order: bool) -> None:
         index=["A"],
         on="B",
         values="B",
-        aggregate_function=pl.len(),
+        agg_function=pl.len(),
         maintain_order=maintain_order,
     )
     assert_frame_equal(result, expected, check_row_order=maintain_order)
@@ -180,7 +180,7 @@ def test_pivot_categorical_index(maintain_order: bool) -> None:
         index=["A", "C"],
         on="B",
         values="B",
-        aggregate_function="len",
+        agg_function="len",
         maintain_order=maintain_order,
     )
     expected = pl.DataFrame(
@@ -219,7 +219,7 @@ def test_pivot_multiple_values_column_names_5116() -> None:
             on="c2",
             values=["x1", "x2"],
             separator="|",
-            aggregate_function=None,
+            agg_function=None,
         )
 
     result = df.pivot(
@@ -227,7 +227,7 @@ def test_pivot_multiple_values_column_names_5116() -> None:
         on="c2",
         values=["x1", "x2"],
         separator="|",
-        aggregate_function="first",
+        agg_function="first",
     )
     expected = {
         "c1": ["A", "B"],
@@ -254,7 +254,7 @@ def test_pivot_duplicate_names_7731(maintain_order: bool) -> None:
         index=cs.float(),
         on=cs.string(),
         values=cs.integer(),
-        aggregate_function="first",
+        agg_function="first",
         maintain_order=maintain_order,
     )
     expected = pl.DataFrame(
@@ -287,7 +287,7 @@ def test_pivot_multiple_columns_12407() -> None:
         }
     )
     result = df.pivot(
-        index="b", on=["c", "e"], values=["a"], aggregate_function="len"
+        index="b", on=["c", "e"], values=["a"], agg_function="len"
     ).to_dict(as_series=False)
     expected = {"b": ["a", "b"], '{"s","x"}': [1, 0], '{"f","y"}': [0, 1]}
     assert result == expected
@@ -370,7 +370,7 @@ def test_pivot_name_already_exists() -> None:
             ["a", "b"],
             index='{"a","b"}',
             values="a",
-            aggregate_function="first",
+            agg_function="first",
         )
 
 
@@ -389,11 +389,11 @@ def test_pivot_floats() -> None:
         match="aggregation 'item' expected no or a single value, got 2 values",
     ):
         result = df.pivot(
-            index="weight", on="quantity", values="price", aggregate_function=None
+            index="weight", on="quantity", values="price", agg_function=None
         )
 
     result = df.pivot(
-        index="weight", on="quantity", values="price", aggregate_function="first"
+        index="weight", on="quantity", values="price", agg_function="first"
     )
     expected = {
         "weight": [1.0, 4.4, 8.8],
@@ -407,7 +407,7 @@ def test_pivot_floats() -> None:
         index=["article", "weight"],
         on="quantity",
         values="price",
-        aggregate_function=None,
+        agg_function=None,
     )
     expected = {
         "article": ["a", "a", "b", "b"],
@@ -429,7 +429,7 @@ def test_pivot_reinterpret_5907() -> None:
     )
 
     result = df.pivot(
-        index=["A"], on=["B"], values=["C"], aggregate_function=pl.element().sum()
+        index=["A"], on=["B"], values=["C"], agg_function=pl.element().sum()
     )
     expected = {"A": [3, -2], "x": [100, 50], "y": [500, -80]}
     assert result.to_dict(as_series=False) == expected
@@ -458,9 +458,9 @@ def test_pivot_temporal_logical_types(dtype: PolarsTemporalType) -> None:
             "value": [0] * 8,
         }
     )
-    assert df.pivot(
-        index="idx", on="foo", values="value", aggregate_function=None
-    ).to_dict(as_series=False) == {
+    assert df.pivot(index="idx", on="foo", values="value", agg_function=None).to_dict(
+        as_series=False
+    ) == {
         "idx": idx.to_list(),
         "a": [0, 0, 0, None, None, None, None, None],
         "b": [None, None, None, 0, 0, 0, 0, 0],
@@ -475,7 +475,7 @@ def test_pivot_negative_duration() -> None:
         pl.Series(name="value", values=range(len(df1) * len(df2)))
     )
     assert df.pivot(
-        index="delta", on="root", values="value", aggregate_function=None
+        index="delta", on="root", values="value", agg_function=None
     ).to_dict(as_series=False) == {
         "delta": [
             timedelta(days=-2),
@@ -488,7 +488,7 @@ def test_pivot_negative_duration() -> None:
     }
 
 
-def test_aggregate_function_default() -> None:
+def test_agg_function_default() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": ["foo", "foo"], "c": ["x", "x"]})
     with pytest.raises(
         ComputeError,
@@ -497,7 +497,7 @@ def test_aggregate_function_default() -> None:
         df.pivot(index="b", on="c", values="a")
 
 
-def test_pivot_aggregate_function_count_deprecated() -> None:
+def test_pivot_agg_function_count_deprecated() -> None:
     df = pl.DataFrame(
         {
             "foo": ["A", "A", "B", "B", "C"],
@@ -506,7 +506,7 @@ def test_pivot_aggregate_function_count_deprecated() -> None:
         }
     )
     with pytest.deprecated_call():
-        df.pivot(index="foo", on="bar", values="N", aggregate_function="count")  # type: ignore[arg-type]
+        df.pivot(index="foo", on="bar", values="N", agg_function="count")  # type: ignore[arg-type]
 
 
 def test_pivot_struct() -> None:
@@ -518,9 +518,9 @@ def test_pivot_struct() -> None:
     }
     df = pl.DataFrame(data).with_columns(nums=pl.struct(["num1", "num2"]))
 
-    assert df.pivot(
-        values="nums", index="id", on="week", aggregate_function="first"
-    ).to_dict(as_series=False) == {
+    assert df.pivot(values="nums", index="id", on="week", agg_function="first").to_dict(
+        as_series=False
+    ) == {
         "id": ["a", "b", "c"],
         "1": [
             {"num1": 1, "num2": 4},
@@ -596,7 +596,7 @@ def test_pivot_string_17081() -> None:
             "c": ["7", "8", "9"],
         }
     )
-    assert df.pivot(index="a", on="b", values="c", aggregate_function="min").to_dict(
+    assert df.pivot(index="a", on="b", values="c", agg_function="min").to_dict(
         as_series=False
     ) == {
         "a": ["1", "2", "3"],
@@ -632,11 +632,9 @@ def test_pivot_agg_column_ref_invalid_22479() -> None:
     )
     with pytest.raises(
         pl.exceptions.InvalidOperationError,
-        match="explicit column references are not allowed in the `aggregate_function` of `pivot`",
+        match="explicit column references are not allowed in the `agg_function` of `pivot`",
     ):
-        df.pivot(
-            on="a", index="b", values="c", aggregate_function=pl.element().sort_by("d")
-        )
+        df.pivot(on="a", index="b", values="c", agg_function=pl.element().sort_by("d"))
 
 
 def test_pivot_agg_null_methods_23408() -> None:
@@ -651,7 +649,7 @@ def test_pivot_agg_null_methods_23408() -> None:
         on="on",
         index="idx",
         values="val",
-        aggregate_function=pl.element().first().is_null(),
+        agg_function=pl.element().first().is_null(),
     )
     expected = pl.DataFrame(
         {"idx": [0, 1], "a": [False, False], "b": [False, True], "c": [True, False]}
@@ -662,9 +660,33 @@ def test_pivot_agg_null_methods_23408() -> None:
         on="on",
         index="idx",
         values="val",
-        aggregate_function=pl.element().first().fill_null("xx"),
+        agg_function=pl.element().first().fill_null("xx"),
     )
     expected = pl.DataFrame(
         {"idx": [0, 1], "a": ["aa", "aa"], "b": ["bb", "xx"], "c": ["xx", "cc"]}
     )
     assert_frame_equal(out, expected)
+
+
+def test_pivot_aggregate_function_deprecated() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": ["A", "A", "B", "B", "C"],
+            "N": [1, 2, 2, 4, 2],
+            "bar": ["k", "l", "m", "n", "o"],
+        }
+    )
+
+    args = ("foo",)
+
+    kwargs = {
+        "index": "foo",
+        "values": "N",
+        "aggregate_function": "count",
+    }
+    with pytest.deprecated_call():
+        df.pivot(*args, **kwargs)  # type: ignore[arg-type]
+
+    # TODO: move this test to lazyframe pivot tests, when those are available
+    with pytest.deprecated_call():
+        df.lazy().pivot(*args, "bar", **kwargs)  # type: ignore[arg-type]
