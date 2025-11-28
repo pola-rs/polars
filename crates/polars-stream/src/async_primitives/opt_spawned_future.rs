@@ -28,9 +28,9 @@ where
     O: Send + 'static,
 {
     /// Spawns the future onto the async executor.
-    pub fn spawn(fut: F) -> Self {
+    pub fn spawn(task_priority: TaskPriority, fut: F) -> Self {
         LocalOrSpawnedFuture::Spawned {
-            handle: AbortOnDropHandle::new(spawn(TaskPriority::Low, fut)),
+            handle: AbortOnDropHandle::new(spawn(task_priority, fut)),
         }
     }
 }
@@ -69,10 +69,24 @@ where
     F: Future<Output = O> + Send + 'static,
     O: Send + 'static,
 {
-    parallelize_first_to_local_impl(futures_iter).into_iter()
+    parallelize_first_to_local_impl(TaskPriority::Low, futures_iter).into_iter()
+}
+
+#[expect(unused)]
+pub fn parallelize_first_to_local_priority<I, F, O>(
+    task_priority: TaskPriority,
+    futures_iter: I,
+) -> impl ExactSizeIterator<Item = impl Future<Output = O> + Send + 'static>
+where
+    I: Iterator<Item = F>,
+    F: Future<Output = O> + Send + 'static,
+    O: Send + 'static,
+{
+    parallelize_first_to_local_impl(task_priority, futures_iter).into_iter()
 }
 
 fn parallelize_first_to_local_impl<I, F, O>(
+    task_priority: TaskPriority,
     mut futures_iter: I,
 ) -> UnitVec<LocalOrSpawnedFuture<F, O>>
 where
@@ -95,8 +109,10 @@ where
     // Note:
     // * The local future must come first to ensure we don't block polling it.
     // * Remaining futures must all be spawned upfront into the Vec for them to run parallel.
-    futures.extend([first_fut, LocalOrSpawnedFuture::spawn(second_fut)]);
-    futures.extend(futures_iter.map(LocalOrSpawnedFuture::spawn));
+    futures.push(first_fut);
+    futures.push(LocalOrSpawnedFuture::spawn(task_priority, second_fut));
+
+    futures.extend(futures_iter.map(|x| LocalOrSpawnedFuture::spawn(task_priority, x)));
 
     futures
 }
