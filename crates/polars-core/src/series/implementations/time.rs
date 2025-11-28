@@ -378,11 +378,7 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
-    fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
-        let quantile = self.0.physical().quantile_reduce(quantile, method)?;
-        let av = quantile.value().cast(&DataType::Int64);
-        Ok(Scalar::new(self.dtype().clone(), av.as_time()))
-    }
+    
 
     fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
         let result = self.0.physical().quantiles_reduce(quantiles, method)?;

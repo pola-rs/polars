@@ -1594,10 +1594,6 @@ impl Column {
             Column::Scalar(s) => s.as_single_value_series().n_unique(),
         }
     }
-    pub fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
-        self.as_materialized_series()
-            .quantile_reduce(quantile, method)
-    }
 
     pub fn quantiles_reduce(
         &self,

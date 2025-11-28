@@ -556,16 +556,11 @@ impl PhysicalExpr for AggQuantileExpr {
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let input = self.input.evaluate(df, state)?;
         let quantile = self.get_quantile(df, state)?;
-        if quantile.len() == 1 {
-            input
-                .quantile_reduce(quantile[0], self.method)
-                .map(|sc| sc.into_column(input.name().clone()))
-        } else {
-            input
-                .quantiles_reduce(&quantile, self.method)
-                .map(|sc| sc.into_column(input.name().clone()))
-        }
+        input
+            .quantiles_reduce(&quantile, self.method)
+            .map(|sc| sc.into_column(input.name().clone()))
     }
+
     #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
         &self,
@@ -585,15 +580,9 @@ impl PhysicalExpr for AggQuantileExpr {
         let quantile = self.get_quantile(df, state)?;
 
         if let AggState::LiteralScalar(c) = &mut ac.state {
-            if quantile.len() == 1 {
-                *c = c
-                    .quantile_reduce(quantile[0], self.method)?
-                    .into_column(keep_name);
-            } else {
-                *c = c
-                    .quantiles_reduce(&quantile, self.method)?
-                    .into_column(keep_name);
-            }
+            *c = c
+                .quantiles_reduce(&quantile, self.method)?
+                .into_column(keep_name);
             return Ok(ac);
         }
 
