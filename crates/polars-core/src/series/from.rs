@@ -113,6 +113,8 @@ impl Series {
                 })
             },
             Boolean => BooleanChunked::from_chunks(name, chunks).into_series(),
+            #[cfg(feature = "dtype-f16")]
+            Float16 => Float16Chunked::from_chunks(name, chunks).into_series(),
             Float32 => Float32Chunked::from_chunks(name, chunks).into_series(),
             Float64 => Float64Chunked::from_chunks(name, chunks).into_series(),
             BinaryOffset => BinaryOffsetChunked::from_chunks(name, chunks).into_series(),
@@ -239,10 +241,11 @@ impl Series {
                 "dtype-i128",
                 Ok(Int128Chunked::from_chunks(name, chunks).into_series())
             ),
+            #[cfg(feature = "dtype-f16")]
             ArrowDataType::Float16 => {
                 let chunks =
-                    cast_chunks(&chunks, &DataType::Float32, CastOptions::NonStrict).unwrap();
-                Ok(Float32Chunked::from_chunks(name, chunks).into_series())
+                    cast_chunks(&chunks, &DataType::Float16, CastOptions::NonStrict).unwrap();
+                Ok(Float16Chunked::from_chunks(name, chunks).into_series())
             },
             ArrowDataType::Float32 => Ok(Float32Chunked::from_chunks(name, chunks).into_series()),
             ArrowDataType::Float64 => Ok(Float64Chunked::from_chunks(name, chunks).into_series()),

@@ -24,6 +24,7 @@ chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
 comfy-table = { version = "7.1.1", default-features = false, optional = true }
 either = { workspace = true }
+half = { workspace = true, optional = true, features = ["num-traits", "bytemuck"] }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
 itoa = { workspace = true }
@@ -126,6 +127,7 @@ dtype-extension = ["polars-dtype/dtype-extension"]
 dtype-u8 = []
 dtype-u16 = []
 dtype-u128 = ["polars-compute/dtype-u128"]
+dtype-f16 = ["polars-compute/dtype-f16"]
 dtype-categorical = ["polars-dtype/dtype-categorical"]
 dtype-struct = []
 

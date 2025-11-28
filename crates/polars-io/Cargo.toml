@@ -21,7 +21,7 @@ polars-utils = { workspace = true, features = ['mmap'] }
 arrow = { workspace = true }
 async-trait = { workspace = true, optional = true }
 atoi_simd = { workspace = true, optional = true }
-blake3 = { version = "1.6.1", optional = true }
+blake3 = { workspace = true, optional = true }
 bytes = { workspace = true }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
@@ -86,6 +86,7 @@ dtype-u128 = ["polars-core/dtype-u128"]
 dtype-i8 = ["polars-core/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16"]
 dtype-i128 = ["polars-core/dtype-i128"]
+dtype-f16 = ["polars-core/dtype-f16"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-date = ["polars-core/dtype-date", "polars-time/dtype-date"]
 dtype-extension = ["polars-core/dtype-extension"]

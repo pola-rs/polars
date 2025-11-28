@@ -174,7 +174,7 @@ def test_map_elements_type_propagation() -> None:
                     pl.col("b")
                     .implode()
                     .map_elements(
-                        lambda s: s[0]["c"],
+                        lambda s: float(s[0]["c"]) if s[0]["c"] is not None else None,
                         return_dtype=pl.Float64,
                     )
                 )

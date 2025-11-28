@@ -8,6 +8,7 @@ use arrow::offset::{Offset, Offsets};
 use arrow::temporal_conversions;
 use arrow::types::NativeType;
 use num_traits::NumCast;
+use polars_utils::float16::pf16;
 use simd_json::{BorrowedValue, StaticNode};
 
 use super::*;
@@ -404,7 +405,9 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
         ArrowDataType::UInt64 => {
             fill_array_from::<_, _, PrimitiveArray<u64>>(deserialize_primitive_into, dtype, rows)
         },
-        ArrowDataType::Float16 => unreachable!(),
+        ArrowDataType::Float16 => {
+            fill_array_from::<_, _, PrimitiveArray<pf16>>(deserialize_primitive_into, dtype, rows)
+        },
         ArrowDataType::Float32 => {
             fill_array_from::<_, _, PrimitiveArray<f32>>(deserialize_primitive_into, dtype, rows)
         },
@@ -428,7 +431,7 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
             dtype,
             allow_extra_fields_in_struct,
         )?)),
-        _ => todo!(),
+        adt => unimplemented!("Deserialization from JSON not implemented for {adt:?}"),
     }
 }
 

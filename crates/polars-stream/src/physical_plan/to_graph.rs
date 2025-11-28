@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use num_traits::AsPrimitive;
 use parking_lot::Mutex;
 use polars_core::prelude::PlRandomState;
 use polars_core::schema::Schema;
@@ -659,7 +660,7 @@ fn to_graph_rec<'a>(
 
         Zip {
             inputs,
-            null_extend,
+            zip_behavior,
         } => {
             let input_schemas = inputs
                 .iter()
@@ -670,7 +671,7 @@ fn to_graph_rec<'a>(
                 .map(|i| PolarsResult::Ok((to_graph_rec(i.node, ctx)?, i.port)))
                 .try_collect_vec()?;
             ctx.graph.add_node(
-                nodes::zip::ZipNode::new(*null_extend, input_schemas),
+                nodes::zip::ZipNode::new(*zip_behavior, input_schemas),
                 input_keys,
             )
         },
@@ -1311,7 +1312,7 @@ fn to_graph_rec<'a>(
                 EwmMean { .. } => {
                     with_match_physical_float_type!(dtype, |$T| {
                         let state: EwmMeanState<$T> = EwmMeanState::new(
-                            options.alpha as $T,
+                            AsPrimitive::<$T>::as_(options.alpha),
                             options.adjust,
                             options.min_periods,
                             options.ignore_nulls,
@@ -1322,7 +1323,7 @@ fn to_graph_rec<'a>(
                 },
                 _ => with_match_physical_float_type!(dtype, |$T| {
                     let state: EwmCovState<$T> = EwmCovState::new(
-                        options.alpha as $T,
+                        AsPrimitive::<$T>::as_(options.alpha),
                         options.adjust,
                         options.bias,
                         options.min_periods,

@@ -51,6 +51,7 @@ pub use polars_dtype::categorical::{
 };
 use polars_utils::abs_diff::AbsDiff;
 use polars_utils::float::IsFloat;
+use polars_utils::float16::pf16;
 use polars_utils::min_max::MinMax;
 use polars_utils::nulls::IsNull;
 use polars_utils::total_ord::TotalHash;
@@ -220,6 +221,8 @@ impl_polars_num_datatype!(PolarsIntegerType, Int32Type, Int32, i32, i32);
 impl_polars_num_datatype!(PolarsIntegerType, Int64Type, Int64, i64, i64);
 #[cfg(feature = "dtype-i128")]
 impl_polars_num_datatype!(PolarsIntegerType, Int128Type, Int128, i128, i128);
+#[cfg(feature = "dtype-f16")]
+impl_polars_num_datatype!(PolarsFloatType, Float16Type, Float16, pf16, pf16);
 impl_polars_num_datatype!(PolarsFloatType, Float32Type, Float32, f32, f32);
 impl_polars_num_datatype!(PolarsFloatType, Float64Type, Float64, f64, f64);
 
@@ -365,6 +368,8 @@ impl_phys_dtype!(Int32Type);
 impl_phys_dtype!(Int64Type);
 impl_phys_dtype!(UInt32Type);
 impl_phys_dtype!(UInt64Type);
+#[cfg(feature = "dtype-f16")]
+impl_phys_dtype!(Float16Type);
 impl_phys_dtype!(Float32Type);
 impl_phys_dtype!(Float64Type);
 
@@ -407,6 +412,8 @@ pub type Int32Chunked = ChunkedArray<Int32Type>;
 pub type Int64Chunked = ChunkedArray<Int64Type>;
 #[cfg(feature = "dtype-i128")]
 pub type Int128Chunked = ChunkedArray<Int128Type>;
+#[cfg(feature = "dtype-f16")]
+pub type Float16Chunked = ChunkedArray<Float16Type>;
 pub type Float32Chunked = ChunkedArray<Float32Type>;
 pub type Float64Chunked = ChunkedArray<Float64Type>;
 pub type StringChunked = ChunkedArray<StringType>;
@@ -489,6 +496,11 @@ impl NumericNative for u64 {
 impl NumericNative for u128 {
     type PolarsType = UInt128Type;
     type TrueDivPolarsType = Float64Type;
+}
+#[cfg(feature = "dtype-f16")]
+impl NumericNative for pf16 {
+    type PolarsType = Float16Type;
+    type TrueDivPolarsType = Float16Type;
 }
 impl NumericNative for f32 {
     type PolarsType = Float32Type;

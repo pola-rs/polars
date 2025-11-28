@@ -85,6 +85,7 @@ pub fn get_row_encoding_context(dtype: &DataType) -> Option<RowEncodingContext> 
         | DataType::Int32
         | DataType::Int64
         | DataType::Int128
+        | DataType::Float16
         | DataType::Float32
         | DataType::Float64
         | DataType::String

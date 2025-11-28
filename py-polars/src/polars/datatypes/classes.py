@@ -406,6 +406,22 @@ class UInt128(UnsignedIntegerType):
     """
 
 
+class Float16(FloatType):
+    """16-bit floating point type.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+
+    .. warning::
+        Regular computing platforms do not natively support `Float16` operations,
+        and compute operations on `Float16` will be significantly slower as a result
+        than operation on :class:`Float32` or :class:`Float64`.
+        As such, it is recommended to cast to `Float32` before doing any compute
+        operations, and cast back to `Float16` afterward if needed.
+    """
+
+
 class Float32(FloatType):
     """32-bit floating point type."""
 

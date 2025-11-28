@@ -12,6 +12,7 @@ use polars_utils::slice_enum::Slice;
 use slotmap::{Key, SecondaryMap, SlotMap};
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind};
+use crate::physical_plan::ZipBehavior;
 
 /// A style of a graph node.
 enum NodeStyle {
@@ -418,12 +419,12 @@ fn visualize_plan_rec(
         PhysNodeKind::OrderedUnion { inputs } => ("ordered-union".to_string(), inputs.as_slice()),
         PhysNodeKind::Zip {
             inputs,
-            null_extend,
+            zip_behavior,
         } => {
-            let label = if *null_extend {
-                "zip-null-extend"
-            } else {
-                "zip"
+            let label = match zip_behavior {
+                ZipBehavior::NullExtend => "zip-null-extend",
+                ZipBehavior::Broadcast => "zip-broadcast",
+                ZipBehavior::Strict => "zip-strict",
             };
             (label.to_string(), inputs.as_slice())
         },

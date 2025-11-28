@@ -7,6 +7,8 @@ mod general;
 #[cfg(feature = "pymethods")]
 mod io;
 #[cfg(feature = "pymethods")]
+mod map;
+#[cfg(feature = "pymethods")]
 mod serde;
 
 use parking_lot::RwLock;

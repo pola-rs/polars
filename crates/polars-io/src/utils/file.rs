@@ -41,19 +41,14 @@ impl Writeable {
         path: PlPathRef<'_>,
         #[cfg_attr(not(feature = "cloud"), allow(unused))] cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<Self> {
-        let verbose = config::verbose();
-
         match path {
             PlPathRef::Cloud(_) => {
                 feature_gated!("cloud", {
                     use crate::cloud::BlockingCloudWriter;
 
-                    if verbose {
-                        eprintln!("Writeable: try_new: cloud: {}", path.to_str())
-                    }
-
                     let writer = crate::pl_async::get_runtime()
                         .block_in_place_on(BlockingCloudWriter::new(path, cloud_options))?;
+
                     Ok(Self::Cloud(writer))
                 })
             },
@@ -62,10 +57,6 @@ impl Writeable {
                     use crate::cloud::BlockingCloudWriter;
 
                     let path = resolve_homedir(&path);
-
-                    if verbose {
-                        eprintln!("Writeable: try_new: forced async: {}", path.display())
-                    }
 
                     create_file(&path)?;
                     let path = std::fs::canonicalize(&path)?;
@@ -81,29 +72,16 @@ impl Writeable {
                         }
                     );
 
-                    if verbose {
-                        eprintln!("Writeable: try_new: forced async converted path: {path}")
-                    }
-
                     let writer = crate::pl_async::get_runtime().block_in_place_on(
                         BlockingCloudWriter::new(PlPathRef::new(&path), cloud_options),
                     )?;
+
                     Ok(Self::Cloud(writer))
                 })
             },
             PlPathRef::Local(path) => {
                 let path = resolve_homedir(&path);
                 create_file(&path)?;
-
-                // Note: `canonicalize` does not work on some systems.
-
-                if verbose {
-                    eprintln!(
-                        "Writeable: try_new: local: {} (canonicalize: {:?})",
-                        path.display(),
-                        std::fs::canonicalize(&path)
-                    )
-                }
 
                 Ok(Self::Local(polars_utils::open_file_write(&path)?))
             },

@@ -1,11 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
-
-import pytest
-
 import polars as pl
-from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
 
@@ -41,17 +36,6 @@ def test_map_rows_dataframe_return() -> None:
         }
     )
     assert_frame_equal(result, expected)
-
-
-def test_map_rows_error_return_type() -> None:
-    df = pl.DataFrame({"a": [[1, 2], [2, 3]], "b": [[4, 5], [6, 7]]})
-
-    def combine(row: tuple[Any, ...]) -> list[Any]:
-        res = [x + y for x, y in zip(row[0], row[1])]
-        return [res]
-
-    with pytest.raises(ComputeError, match="expected tuple, got list"):
-        df.map_rows(combine)
 
 
 def test_map_rows_shifted_chunks() -> None:

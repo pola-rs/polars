@@ -2,6 +2,7 @@
 use std::any::Any;
 use std::sync::OnceLock;
 
+use polars::prelude::sink2::FileProviderReturn;
 use polars::prelude::*;
 use polars_core::chunked_array::object::builder::ObjectChunkedBuilder;
 use polars_core::chunked_array::object::registry::AnonymousObjectBuilder;
@@ -139,6 +140,11 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
                             )?
                             .0,
                         ) as _)
+                    })
+                }),
+                file_provider_result: Arc::new(|py_f| {
+                    Python::attach(|py| {
+                        Ok(Box::new(py_f.extract::<Wrap<FileProviderReturn>>(py)?.0) as _)
                     })
                 }),
                 series: Arc::new(|py_f| {

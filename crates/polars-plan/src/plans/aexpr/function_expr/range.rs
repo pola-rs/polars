@@ -73,6 +73,8 @@ fn map_linspace_dtype(mapper: &FieldsMapper) -> PolarsResult<DataType> {
     let start_dtype = fields[0].dtype();
     let end_dtype = fields[1].dtype();
     Ok(match (start_dtype, end_dtype) {
+        #[cfg(feature = "dtype-f16")]
+        (&DataType::Float16, &DataType::Float16) => DataType::Float16,
         (&DataType::Float32, &DataType::Float32) => DataType::Float32,
         // A linear space of a Date produces a sequence of Datetimes
         (dt1, dt2) if dt1.is_temporal() && dt1 == dt2 => {

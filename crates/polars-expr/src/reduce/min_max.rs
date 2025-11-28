@@ -22,6 +22,10 @@ pub fn new_min_reduction(
     use VecMaskGroupedReduction as VMGR;
     Ok(match &dtype {
         Boolean => Box::new(BoolMinGroupedReduction::default()),
+        #[cfg(all(feature = "dtype-f16", feature = "propagate_nans"))]
+        Float16 if propagate_nans => {
+            Box::new(VMGR::new(dtype, NumReducer::<NanMin<Float16Type>>::new()))
+        },
         #[cfg(feature = "propagate_nans")]
         Float32 if propagate_nans => {
             Box::new(VMGR::new(dtype, NumReducer::<NanMin<Float32Type>>::new()))
@@ -30,6 +34,8 @@ pub fn new_min_reduction(
         Float64 if propagate_nans => {
             Box::new(VMGR::new(dtype, NumReducer::<NanMin<Float64Type>>::new()))
         },
+        #[cfg(feature = "dtype-f16")]
+        Float16 => Box::new(VMGR::new(dtype, NumReducer::<Min<Float16Type>>::new())),
         Float32 => Box::new(VMGR::new(dtype, NumReducer::<Min<Float32Type>>::new())),
         Float64 => Box::new(VMGR::new(dtype, NumReducer::<Min<Float64Type>>::new())),
         Null => Box::new(NullGroupedReduction::default()),
@@ -58,6 +64,10 @@ pub fn new_max_reduction(
     use VecMaskGroupedReduction as VMGR;
     Ok(match &dtype {
         Boolean => Box::new(BoolMaxGroupedReduction::default()),
+        #[cfg(all(feature = "dtype-f16", feature = "propagate_nans"))]
+        Float16 if propagate_nans => {
+            Box::new(VMGR::new(dtype, NumReducer::<NanMax<Float16Type>>::new()))
+        },
         #[cfg(feature = "propagate_nans")]
         Float32 if propagate_nans => {
             Box::new(VMGR::new(dtype, NumReducer::<NanMax<Float32Type>>::new()))
@@ -66,6 +76,8 @@ pub fn new_max_reduction(
         Float64 if propagate_nans => {
             Box::new(VMGR::new(dtype, NumReducer::<NanMax<Float64Type>>::new()))
         },
+        #[cfg(feature = "dtype-f16")]
+        Float16 => Box::new(VMGR::new(dtype, NumReducer::<Max<Float16Type>>::new())),
         Float32 => Box::new(VMGR::new(dtype, NumReducer::<Max<Float32Type>>::new())),
         Float64 => Box::new(VMGR::new(dtype, NumReducer::<Max<Float64Type>>::new())),
         Null => Box::new(NullGroupedReduction::default()),

@@ -117,10 +117,7 @@ impl IR {
                         keys.iter()
                             .chain(per_partition_sort_by.iter().map(|x| &x.expr)),
                     ) as _),
-                    PartitionStrategyIR::MaxRowsPerFile {
-                        max_rows_per_file: _,
-                        per_file_sort_by,
-                    } => Exprs::Boxed(Box::new(per_file_sort_by.iter().map(|x| &x.expr)) as _),
+                    PartitionStrategyIR::FileSize => Exprs::Empty,
                 },
             },
 
@@ -196,12 +193,7 @@ impl IR {
                         keys.iter_mut()
                             .chain(per_partition_sort_by.iter_mut().map(|x| &mut x.expr)),
                     ) as _),
-                    PartitionStrategyIR::MaxRowsPerFile {
-                        max_rows_per_file: _,
-                        per_file_sort_by,
-                    } => ExprsMut::Boxed(
-                        Box::new(per_file_sort_by.iter_mut().map(|x| &mut x.expr)) as _,
-                    ),
+                    PartitionStrategyIR::FileSize => ExprsMut::Empty,
                 },
             },
 

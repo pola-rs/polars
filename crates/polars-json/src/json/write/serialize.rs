@@ -16,6 +16,8 @@ use arrow::temporal_conversions::{
 };
 use arrow::types::NativeType;
 use chrono::{Duration, NaiveDate, NaiveDateTime, NaiveTime};
+use num_traits::{Float, ToPrimitive};
+use polars_utils::float16::pf16;
 use streaming_iterator::StreamingIterator;
 
 use super::utf8;
@@ -105,6 +107,26 @@ where
                 buf.extend(b"null")
             } else {
                 write_float(buf, *x)
+            }
+        } else {
+            buf.extend(b"null")
+        }
+    };
+
+    materialize_serializer(f, array.iter(), offset, take)
+}
+
+fn float16_serializer<'a>(
+    array: &'a PrimitiveArray<pf16>,
+    offset: usize,
+    take: usize,
+) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync> {
+    let f = |x: Option<&pf16>, buf: &mut Vec<u8>| {
+        if let Some(x) = x {
+            if pf16::is_nan(*x) || pf16::is_infinite(*x) {
+                buf.extend(b"null")
+            } else {
+                write_float(buf, x.to_f32().unwrap())
             }
         } else {
             buf.extend(b"null")
@@ -468,6 +490,9 @@ pub(crate) fn new_serializer<'a>(
         },
         ArrowDataType::UInt64 => {
             primitive_serializer::<u64>(array.as_any().downcast_ref().unwrap(), offset, take)
+        },
+        ArrowDataType::Float16 => {
+            float16_serializer(array.as_any().downcast_ref().unwrap(), offset, take)
         },
         ArrowDataType::Float32 => {
             float_serializer::<f32>(array.as_any().downcast_ref().unwrap(), offset, take)

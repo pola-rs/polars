@@ -88,18 +88,17 @@ def test_cat_to_local() -> None:
 
 
 def test_cat_uses_lexical_ordering() -> None:
-    s = pl.Series(["a", "b", None, "b"]).cast(pl.Categorical)
-    assert s.cat.uses_lexical_ordering()
+    with pytest.warns(DeprecationWarning, match="ordering parameter"):
+        physical_cat = pl.Categorical(ordering="physical")
 
-    s = s.cast(pl.Categorical())
-    assert s.cat.uses_lexical_ordering()
+    for dtype in [pl.Categorical, pl.Categorical(), physical_cat]:
+        s = pl.Series(["a", "b", None, "b"]).cast(dtype)  # type: ignore[arg-type]
 
-    with pytest.warns(
-        DeprecationWarning,
-        match="ordering is now always lexical",
-    ):
-        s = s.cast(pl.Categorical(ordering="physical"))
-    assert s.cat.uses_lexical_ordering()
+        with pytest.warns(
+            DeprecationWarning,
+            match="Categoricals are now always ordered lexically",
+        ):
+            assert s.cat.uses_lexical_ordering()
 
 
 @pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum])

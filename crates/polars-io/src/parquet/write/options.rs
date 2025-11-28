@@ -67,7 +67,6 @@ pub enum ParquetCompression {
     Uncompressed,
     Snappy,
     Gzip(Option<GzipLevel>),
-    Lzo,
     Brotli(Option<BrotliLevel>),
     Zstd(Option<ZstdLevel>),
     Lz4Raw,
@@ -127,7 +126,6 @@ impl From<ParquetCompression> for CompressionOptions {
             Gzip(level) => {
                 CompressionOptions::Gzip(level.map(|v| GzipLevelParquet::try_new(v.0).unwrap()))
             },
-            Lzo => CompressionOptions::Lzo,
             Brotli(level) => {
                 CompressionOptions::Brotli(level.map(|v| BrotliLevelParquet::try_new(v.0).unwrap()))
             },

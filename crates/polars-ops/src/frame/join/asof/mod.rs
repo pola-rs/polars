@@ -307,6 +307,11 @@ pub trait AsofJoin: IntoDf {
                 let ca = left_key.u32().unwrap();
                 join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
             },
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => {
+                let ca = left_key.f16().unwrap();
+                join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
+            },
             DataType::Float32 => {
                 let ca = left_key.f32().unwrap();
                 join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)

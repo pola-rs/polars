@@ -1,7 +1,19 @@
+use num_traits::FromPrimitive;
+use polars_utils::float16::pf16;
+
 use super::*;
 
 pub(super) fn mean_with_nulls(ca: &ArrayChunked) -> PolarsResult<Series> {
     let mut out = match ca.inner_dtype() {
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            let out: Float16Chunked = ca
+                .apply_amortized_generic(|s| {
+                    s.and_then(|s| s.as_ref().mean().map(|v| pf16::from_f64(v).unwrap()))
+                })
+                .with_name(ca.name().clone());
+            out.into_series()
+        },
         DataType::Float32 => {
             let out: Float32Chunked = ca
                 .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().mean().map(|v| v as f32)))
@@ -28,6 +40,15 @@ pub(super) fn mean_with_nulls(ca: &ArrayChunked) -> PolarsResult<Series> {
 
 pub(super) fn median_with_nulls(ca: &ArrayChunked) -> PolarsResult<Series> {
     let mut out = match ca.inner_dtype() {
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            let out: Float16Chunked = ca
+                .apply_amortized_generic(|s| {
+                    s.and_then(|s| s.as_ref().median().map(|v| pf16::from_f64(v).unwrap()))
+                })
+                .with_name(ca.name().clone());
+            out.into_series()
+        },
         DataType::Float32 => {
             let out: Float32Chunked = ca
                 .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().median().map(|v| v as f32)))
@@ -54,6 +75,15 @@ pub(super) fn median_with_nulls(ca: &ArrayChunked) -> PolarsResult<Series> {
 
 pub(super) fn std_with_nulls(ca: &ArrayChunked, ddof: u8) -> PolarsResult<Series> {
     let mut out = match ca.inner_dtype() {
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            let out: Float16Chunked = ca
+                .apply_amortized_generic(|s| {
+                    s.and_then(|s| s.as_ref().std(ddof).map(|v| pf16::from_f64(v).unwrap()))
+                })
+                .with_name(ca.name().clone());
+            out.into_series()
+        },
         DataType::Float32 => {
             let out: Float32Chunked = ca
                 .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().std(ddof).map(|v| v as f32)))
@@ -82,6 +112,15 @@ pub(super) fn std_with_nulls(ca: &ArrayChunked, ddof: u8) -> PolarsResult<Series
 
 pub(super) fn var_with_nulls(ca: &ArrayChunked, ddof: u8) -> PolarsResult<Series> {
     let mut out = match ca.inner_dtype() {
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            let out: Float16Chunked = ca
+                .apply_amortized_generic(|s| {
+                    s.and_then(|s| s.as_ref().var(ddof).map(|v| pf16::from_f64(v).unwrap()))
+                })
+                .with_name(ca.name().clone());
+            out.into_series()
+        },
         DataType::Float32 => {
             let out: Float32Chunked = ca
                 .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().var(ddof).map(|v| v as f32)))

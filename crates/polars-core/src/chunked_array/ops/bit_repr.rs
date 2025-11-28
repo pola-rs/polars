@@ -205,6 +205,8 @@ impl Reinterpret for Float32Chunked {
 impl Reinterpret for ListChunked {
     fn reinterpret_signed(&self) -> Series {
         match self.inner_dtype() {
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => reinterpret_list_chunked::<Float16Type, Int16Type>(self),
             DataType::Float32 => reinterpret_list_chunked::<Float32Type, Int32Type>(self),
             DataType::Float64 => reinterpret_list_chunked::<Float64Type, Int64Type>(self),
             _ => unimplemented!(),
@@ -214,6 +216,8 @@ impl Reinterpret for ListChunked {
 
     fn reinterpret_unsigned(&self) -> Series {
         match self.inner_dtype() {
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => reinterpret_list_chunked::<Float16Type, UInt16Type>(self),
             DataType::Float32 => reinterpret_list_chunked::<Float32Type, UInt32Type>(self),
             DataType::Float64 => reinterpret_list_chunked::<Float64Type, UInt64Type>(self),
             _ => unimplemented!(),
@@ -232,12 +236,14 @@ impl Reinterpret for Float64Chunked {
     }
 }
 
-impl UInt64Chunked {
+#[cfg(feature = "dtype-f16")]
+impl UInt16Chunked {
     #[doc(hidden)]
-    pub fn _reinterpret_float(&self) -> Float64Chunked {
+    pub fn _reinterpret_float(&self) -> Float16Chunked {
         reinterpret_chunked_array(self)
     }
 }
+
 impl UInt32Chunked {
     #[doc(hidden)]
     pub fn _reinterpret_float(&self) -> Float32Chunked {
@@ -245,8 +251,31 @@ impl UInt32Chunked {
     }
 }
 
+impl UInt64Chunked {
+    #[doc(hidden)]
+    pub fn _reinterpret_float(&self) -> Float64Chunked {
+        reinterpret_chunked_array(self)
+    }
+}
+
 /// Used to save compilation paths. Use carefully. Although this is safe,
 /// if misused it can lead to incorrect results.
+#[cfg(feature = "dtype-f16")]
+impl Float16Chunked {
+    pub fn apply_as_ints<F>(&self, f: F) -> Series
+    where
+        F: Fn(&Series) -> Series,
+    {
+        let BitRepr::U16(s) = self.to_bit_repr() else {
+            unreachable!()
+        };
+        let s = s.into_series();
+        let out = f(&s);
+        let out = out.u16().unwrap();
+        out._reinterpret_float().into()
+    }
+}
+
 impl Float32Chunked {
     pub fn apply_as_ints<F>(&self, f: F) -> Series
     where

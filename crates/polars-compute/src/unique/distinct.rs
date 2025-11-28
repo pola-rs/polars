@@ -3,8 +3,9 @@ use arrow::array::{Array, BinaryViewArray, BooleanArray, PrimitiveArray, StaticA
 use arrow::bitmap::bitmask::BitMask;
 use arrow::datatypes::ArrowDataType;
 use arrow::legacy::prelude::LargeBinaryArray;
-use arrow::types::{NativeType, PrimitiveType, f16};
+use arrow::types::{NativeType, PrimitiveType};
 use polars_utils::aliases::PlHashSet;
+use polars_utils::float16::pf16;
 use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
 use polars_utils::{IdxSize, UnitVec};
 
@@ -58,7 +59,7 @@ pub fn amortized_unique_from_dtype(dtype: &ArrowDataType) -> Box<dyn AmortizedUn
             PrimitiveType::UInt32 => Box::new(PrimitiveArgUnique::<u32>::default()) as _,
             PrimitiveType::UInt64 => Box::new(PrimitiveArgUnique::<u64>::default()) as _,
             PrimitiveType::UInt128 => Box::new(PrimitiveArgUnique::<u128>::default()) as _,
-            PrimitiveType::Float16 => Box::new(PrimitiveArgUnique::<f16>::default()) as _,
+            PrimitiveType::Float16 => Box::new(PrimitiveArgUnique::<pf16>::default()) as _,
             PrimitiveType::Float32 => Box::new(PrimitiveArgUnique::<f32>::default()) as _,
             PrimitiveType::Float64 => Box::new(PrimitiveArgUnique::<f64>::default()) as _,
             PrimitiveType::Int256 => unreachable!(),

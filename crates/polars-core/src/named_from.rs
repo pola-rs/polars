@@ -8,6 +8,8 @@ use chrono::NaiveDate;
 use chrono::NaiveDateTime;
 #[cfg(feature = "dtype-time")]
 use chrono::NaiveTime;
+#[cfg(feature = "dtype-f16")]
+use polars_utils::float16::pf16;
 
 use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
@@ -48,6 +50,8 @@ impl_named_from_owned!(Vec<u32>, UInt32Type);
 impl_named_from_owned!(Vec<u64>, UInt64Type);
 #[cfg(feature = "dtype-u128")]
 impl_named_from_owned!(Vec<u128>, UInt128Type);
+#[cfg(feature = "dtype-f16")]
+impl_named_from_owned!(Vec<pf16>, Float16Type);
 impl_named_from_owned!(Vec<f32>, Float32Type);
 impl_named_from_owned!(Vec<f64>, Float64Type);
 
@@ -85,6 +89,8 @@ impl_named_from!([i32], Int32Type, from_slice);
 impl_named_from!([i64], Int64Type, from_slice);
 #[cfg(any(feature = "dtype-i128", feature = "dtype-decimal"))]
 impl_named_from!([i128], Int128Type, from_slice);
+#[cfg(feature = "dtype-f16")]
+impl_named_from!([pf16], Float16Type, from_slice);
 impl_named_from!([f32], Float32Type, from_slice);
 impl_named_from!([f64], Float64Type, from_slice);
 impl_named_from!([Option<String>], StringType, from_slice_options);
@@ -106,6 +112,8 @@ impl_named_from!([Option<i32>], Int32Type, from_slice_options);
 impl_named_from!([Option<i64>], Int64Type, from_slice_options);
 #[cfg(any(feature = "dtype-i128", feature = "dtype-decimal"))]
 impl_named_from!([Option<i128>], Int128Type, from_slice_options);
+#[cfg(feature = "dtype-f16")]
+impl_named_from!([Option<pf16>], Float16Type, from_slice_options);
 impl_named_from!([Option<f32>], Float32Type, from_slice_options);
 impl_named_from!([Option<f64>], Float64Type, from_slice_options);
 

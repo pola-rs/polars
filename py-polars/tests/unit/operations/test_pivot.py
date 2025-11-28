@@ -668,3 +668,24 @@ def test_pivot_agg_null_methods_23408() -> None:
         {"idx": [0, 1], "a": ["aa", "aa"], "b": ["bb", "xx"], "c": ["xx", "cc"]}
     )
     assert_frame_equal(out, expected)
+
+
+def test_pivot_obj_25527() -> None:
+    df = pl.DataFrame(
+        {
+            "idx": [0, 0, 1, 1],
+            "key": ["foo", "bar", "foo", "bar"],
+            "value": ["obj 0 foo", "obj 0 bar", "obj 1 foo", "obj 1 bar"],
+        },
+        schema={
+            "idx": pl.Int64,
+            "key": pl.String,
+            "value": pl.Object,
+        },
+    )
+
+    out = df.pivot(on="key", index="idx")
+    assert out["foo"].to_list() == ["obj 0 foo", "obj 1 foo"]
+    assert out["foo"].dtype == pl.Object
+    assert out["bar"].to_list() == ["obj 0 bar", "obj 1 bar"]
+    assert out["bar"].dtype == pl.Object

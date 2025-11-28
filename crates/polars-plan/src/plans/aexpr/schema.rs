@@ -158,28 +158,14 @@ impl AExpr {
                         Ok(field)
                     },
                     Median(expr) => {
-                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
-                        match field.dtype {
-                            Date => field.coerce(Datetime(TimeUnit::Microseconds, None)),
-                            _ => {
-                                let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
-                                let mapper = FieldsMapper::new(&field);
-                                return mapper.moment_dtype();
-                            },
-                        }
-                        Ok(field)
+                        let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
+                        let mapper = FieldsMapper::new(&field);
+                        mapper.moment_dtype()
                     },
                     Mean(expr) => {
-                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
-                        match field.dtype {
-                            Date => field.coerce(Datetime(TimeUnit::Microseconds, None)),
-                            _ => {
-                                let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
-                                let mapper = FieldsMapper::new(&field);
-                                return mapper.moment_dtype();
-                            },
-                        }
-                        Ok(field)
+                        let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
+                        let mapper = FieldsMapper::new(&field);
+                        mapper.moment_dtype()
                     },
                     Implode(expr) => {
                         let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
@@ -212,16 +198,9 @@ impl AExpr {
                         Ok(field)
                     },
                     Quantile { expr, .. } => {
-                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
-                        match field.dtype {
-                            Date => field.coerce(Datetime(TimeUnit::Microseconds, None)),
-                            _ => {
-                                let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
-                                let mapper = FieldsMapper::new(&field);
-                                return mapper.moment_dtype();
-                            },
-                        }
-                        Ok(field)
+                        let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
+                        let mapper = FieldsMapper::new(&field);
+                        mapper.moment_dtype()
                     },
                 }
             },
@@ -736,9 +715,25 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
             let dtype = get_truediv_dtype(list_dtype.leaf_dtype(), other_dtype.leaf_dtype())?;
             list_dtype.cast_leaf(dtype)
         },
+        #[cfg(feature = "dtype-f16")]
+        (Boolean, Float16) => Float16,
         (Boolean, Float32) => Float32,
         (Boolean, b) if b.is_numeric() => Float64,
         (Boolean, Boolean) => Float64,
+        #[cfg(all(feature = "dtype-f16", feature = "dtype-u8"))]
+        (Float16, UInt8 | Int8) => Float16,
+        #[cfg(all(feature = "dtype-f16", feature = "dtype-u16"))]
+        (Float16, UInt16 | Int16) => Float32,
+        #[cfg(feature = "dtype-f16")]
+        (Float16, Unknown(UnknownKind::Int(_))) => Float16,
+        #[cfg(feature = "dtype-f16")]
+        (Float16, other) if other.is_integer() => Float64,
+        #[cfg(feature = "dtype-f16")]
+        (Float16, Float32) => Float32,
+        #[cfg(feature = "dtype-f16")]
+        (Float16, Float64) => Float64,
+        #[cfg(feature = "dtype-f16")]
+        (Float16, _) => Float16,
         #[cfg(feature = "dtype-u8")]
         (Float32, UInt8 | Int8) => Float32,
         #[cfg(feature = "dtype-u16")]
@@ -754,6 +749,10 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
         (Decimal(_, scale_left), Decimal(_, scale_right)) => {
             Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
         },
+        #[cfg(all(feature = "dtype-u8", feature = "dtype-f16"))]
+        (UInt8 | Int8, Float16) => Float16,
+        #[cfg(all(feature = "dtype-u16", feature = "dtype-f16"))]
+        (UInt16 | Int16, Float16) => Float32,
         #[cfg(feature = "dtype-u8")]
         (UInt8 | Int8, Float32) => Float32,
         #[cfg(feature = "dtype-u16")]

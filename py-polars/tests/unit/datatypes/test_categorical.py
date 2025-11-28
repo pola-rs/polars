@@ -951,8 +951,8 @@ def test_categorical_serialization_prunes_unused_categories_24034() -> None:
         schema={"a": cat_dtype},
     )
 
-    lf.sink_ipc(f := io.BytesIO())
-    lf_repeat_100.sink_ipc(f_repeat_100 := io.BytesIO())
+    lf.collect().write_ipc(f := io.BytesIO())
+    lf_repeat_100.collect().write_ipc(f_repeat_100 := io.BytesIO())
     ipc_bytes = f.getvalue()
     ipc_repeat_100_bytes = f_repeat_100.getvalue()
 
@@ -961,8 +961,8 @@ def test_categorical_serialization_prunes_unused_categories_24034() -> None:
     ipc_stream_bytes = f.getvalue()
     ipc_stream_repeat_100_bytes = f_repeat_100.getvalue()
 
-    lf.sink_parquet(f := io.BytesIO())
-    lf_repeat_100.sink_parquet(f_repeat_100 := io.BytesIO())
+    lf.collect().write_parquet(f := io.BytesIO())
+    lf_repeat_100.collect().write_parquet(f_repeat_100 := io.BytesIO())
     parquet_bytes = f.getvalue()
     parquet_repeat_100_bytes = f_repeat_100.getvalue()
 

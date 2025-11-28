@@ -41,7 +41,38 @@ impl Hash for AExpr {
             },
             AExpr::Over { mapping, .. } => mapping.hash(state),
             AExpr::BinaryExpr { op, .. } => op.hash(state),
-            _ => {},
+            AExpr::Element => {},
+            AExpr::Explode { expr: _, options } => options.hash(state),
+            AExpr::Sort { expr: _, options } => options.hash(state),
+            AExpr::Gather {
+                expr: _,
+                idx: _,
+                returns_scalar,
+            } => returns_scalar.hash(state),
+            AExpr::Filter { input: _, by: _ } => {},
+            AExpr::Ternary {
+                predicate: _,
+                truthy: _,
+                falsy: _,
+            } => {},
+            AExpr::AnonymousStreamingAgg {
+                input: _,
+                fmt_str,
+                function: _,
+            } => {
+                fmt_str.hash(state);
+            },
+            AExpr::Eval {
+                expr: _,
+                evaluation: _,
+                variant,
+            } => variant.hash(state),
+            AExpr::Slice {
+                input: _,
+                offset: _,
+                length: _,
+            } => {},
+            AExpr::Len => {},
         }
     }
 }
