@@ -4,6 +4,7 @@ use num_traits::signum;
 use polars_core::chunked_array::temporal::time_to_time64ns;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
+use polars_ops::series::{ClosedInterval, new_linear_space_i64};
 
 use crate::prelude::*;
 
@@ -20,7 +21,7 @@ pub fn date_range(
     end: Option<NaiveDateTime>,
     interval: Option<Duration>,
     num_samples: Option<i64>,
-    closed: ClosedWindow,
+    closed: ClosedInterval,
     tu: TimeUnit,
     tz: Option<&Tz>,
 ) -> PolarsResult<DatetimeChunked> {
@@ -87,7 +88,7 @@ pub fn datetime_range_impl_start_end_interval(
     start: i64,
     end: i64,
     interval: Duration,
-    closed: ClosedWindow,
+    closed: ClosedInterval,
     tu: TimeUnit,
     tz: Option<&Tz>,
 ) -> PolarsResult<DatetimeChunked> {
@@ -119,7 +120,7 @@ pub fn datetime_range_impl_start_interval_samples(
     start: i64,
     interval: Duration,
     num_samples: i64,
-    closed: ClosedWindow,
+    closed: ClosedInterval,
     tu: TimeUnit,
     tz: Option<&Tz>,
 ) -> PolarsResult<DatetimeChunked> {
@@ -148,54 +149,16 @@ pub fn datetime_range_impl_start_end_samples(
     start: i64,
     end: i64,
     num_samples: i64,
-    closed: ClosedWindow,
+    closed: ClosedInterval,
     tu: TimeUnit,
     tz: Option<&Tz>,
 ) -> PolarsResult<DatetimeChunked> {
-    let ascending = start >= end;
-    let values = if num_samples == 0 {
-        Vec::<i64>::new()
-    } else {
-        // The bin width depends on the interval closure.
-        let divisor = match closed {
-            ClosedWindow::None => num_samples + 1,
-            ClosedWindow::Left => num_samples,
-            ClosedWindow::Right => num_samples,
-            ClosedWindow::Both => num_samples - 1,
-        };
-        let bin_width = (end - start) as f64 / (divisor as f64);
-
-        // For left-open intervals, increase the left by one interval.
-        let start = if closed == ClosedWindow::None || closed == ClosedWindow::Right {
-            start as f64 + bin_width
-        } else {
-            start as f64
-        };
-
-        let mut values: Vec<i64> = (0..num_samples)
-            .map(move |x| (x as f64 * bin_width + start) as i64)
-            .collect();
-
-        // For right-closed and fully-closed interval, ensure the last point is exact.
-        if closed == ClosedWindow::Right || closed == ClosedWindow::Both {
-            let last = values.len() - 1;
-            values[last] = end;
-        }
-        values
-    };
-    let out = Int64Chunked::new_vec(name, values);
-    let mut out = match tz {
+    let s = new_linear_space_i64(start, end, num_samples, closed, name);
+    let out = match tz {
         #[cfg(feature = "timezones")]
-        Some(tz) => out.into_datetime(tu, Some(TimeZone::from_chrono(tz))),
-        _ => out.into_datetime(tu, None),
+        Some(tz) => s.into_datetime(tu, Some(TimeZone::from_chrono(tz))),
+        _ => s.into_datetime(tu, None),
     };
-
-    let flag = if ascending {
-        IsSorted::Ascending
-    } else {
-        IsSorted::Descending
-    };
-    out.physical_mut().set_sorted_flag(flag);
     Ok(out)
 }
 
@@ -205,7 +168,7 @@ pub fn time_range(
     start: NaiveTime,
     end: NaiveTime,
     interval: Duration,
-    closed: ClosedWindow,
+    closed: ClosedInterval,
 ) -> PolarsResult<TimeChunked> {
     let start = time_to_time64ns(&start);
     let end = time_to_time64ns(&end);
@@ -218,7 +181,7 @@ pub fn time_range_impl(
     start: i64,
     end: i64,
     interval: Duration,
-    closed: ClosedWindow,
+    closed: ClosedInterval,
 ) -> PolarsResult<TimeChunked> {
     let mut out = Int64Chunked::new_vec(
         name,
@@ -242,7 +205,7 @@ pub(crate) fn datetime_range_i64_start_end_interval(
     mut start: i64,
     mut end: i64,
     interval: Duration,
-    closed: ClosedWindow,
+    closed: ClosedInterval,
     time_unit: TimeUnit,
     time_zone: Option<&Tz>,
 ) -> PolarsResult<Vec<i64>> {
@@ -270,10 +233,10 @@ pub(crate) fn datetime_range_i64_start_end_interval(
         );
 
         // Update end points based on interval closure.
-        if closed == ClosedWindow::Right || closed == ClosedWindow::None {
+        if closed == ClosedInterval::Right || closed == ClosedInterval::None {
             start += step; // This works whether step is negative or positive.
         };
-        if closed == ClosedWindow::Left || closed == ClosedWindow::None {
+        if closed == ClosedInterval::Left || closed == ClosedInterval::None {
             end -= signum(step); // If our interval is negative, we increment the end
         }
 
@@ -302,12 +265,12 @@ pub(crate) fn datetime_range_i64_start_end_interval(
     // Shift the left limit if we're right-closed or none
     let mut t = start;
     let mut i = 0;
-    if closed == ClosedWindow::Right || closed == ClosedWindow::None {
+    if closed == ClosedInterval::Right || closed == ClosedInterval::None {
         t = offset_fn(&interval, start, time_zone)?;
         i += 1;
     }
     // Shift the right limit if we're right-closed or none
-    if closed == ClosedWindow::Left || closed == ClosedWindow::None {
+    if closed == ClosedInterval::Left || closed == ClosedInterval::None {
         end = offset_fn(&(-interval), end, time_zone)?;
     }
 
@@ -332,7 +295,7 @@ pub(crate) fn datetime_range_i64_start_interval_samples(
     mut start: i64,
     interval: Duration,
     num_samples: i64,
-    closed: ClosedWindow,
+    closed: ClosedInterval,
     time_unit: TimeUnit,
     time_zone: Option<&Tz>,
 ) -> PolarsResult<Vec<i64>> {
@@ -360,7 +323,7 @@ pub(crate) fn datetime_range_i64_start_interval_samples(
         }
 
         // If the interval is left-open, start one interval away.
-        if closed == ClosedWindow::Right || closed == ClosedWindow::None {
+        if closed == ClosedInterval::Right || closed == ClosedInterval::None {
             start += step;
         }
 
@@ -386,7 +349,7 @@ pub(crate) fn datetime_range_i64_start_interval_samples(
     };
 
     // Start with one interval offset if we're not left-closed.
-    let t0 = (closed == ClosedWindow::Right || closed == ClosedWindow::None) as i64;
+    let t0 = (closed == ClosedInterval::Right || closed == ClosedInterval::None) as i64;
     let ts = (t0..t0 + num_samples)
         .map(|t| offset_fn(&(interval * t), start, time_zone))
         .collect::<PolarsResult<Vec<i64>>>()?;
