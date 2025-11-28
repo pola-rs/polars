@@ -35,7 +35,7 @@ impl Hasher for Blake3Hasher {
 
 mod identifier_impl {
     use super::*;
-    #[derive(Clone, Debug)]
+    #[derive(Clone)]
     pub(super) struct Identifier {
         inner: Option<[u8; 32]>,
     }
@@ -96,7 +96,6 @@ mod identifier_impl {
 }
 use identifier_impl::*;
 
-#[derive(Debug)]
 struct IdentifierMap<V> {
     inner: PlHashMap<Identifier, V>,
 }
@@ -132,7 +131,7 @@ impl<V> Default for IdentifierMap<V> {
         Self::new()
     }
 }
-
+/// Identifier maps to Expr Node and count.
 type SubPlanCount = IdentifierMap<(Node, u32)>;
 /// (post_visit_idx, identifier);
 type IdentifierArray = Vec<(usize, Identifier)>;
@@ -394,10 +393,10 @@ fn prune_unused_caches(lp_arena: &mut Arena<IR>, cid2c: &CacheId2Caches) {
         }
 
         for node in nodes {
-            let IR::Cache { input, .. } = lp_arena.take(*node) else {
+            let IR::Cache { input, .. } = lp_arena.get(*node) else {
                 unreachable!()
             };
-            lp_arena.swap(input, *node)
+            lp_arena.swap(*input, *node)
         }
     }
 }
