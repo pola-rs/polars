@@ -26,6 +26,7 @@ polars-utils = { workspace = true }
 
 arrow = { workspace = true }
 bitflags = { workspace = true }
+blake3 = { workspace = true, optional = true }
 bytemuck = { workspace = true }
 bytes = { workspace = true, features = ["serde"] }
 chrono = { workspace = true, optional = true }
@@ -200,7 +201,7 @@ meta = []
 pivot = ["polars-core/rows", "polars-ops/pivot"]
 top_k = ["polars-ops/top_k"]
 semi_anti_join = ["polars-ops/semi_anti_join"]
-cse = []
+cse = ["blake3"]
 propagate_nans = ["polars-ops/propagate_nans"]
 coalesce = []
 fused = ["polars-ops/fused"]

@@ -2,6 +2,27 @@ use std::fmt::{self, Write};
 
 use crate::prelude::*;
 
+/// Wrapper for formatting expressions with comma-separated arguments; also
+/// streamlines column refs to their quoted names (e.g.: `col("x") -> "x").
+struct FmtArgs<'a>(&'a [Expr]);
+
+impl fmt::Display for FmtArgs<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (i, expr) in self.0.iter().enumerate() {
+            if i > 0 {
+                f.write_str(", ")?;
+            }
+            match expr {
+                // unpack column to name...
+                Expr::Column(name) => write!(f, "\"{name}\"")?,
+                // ...leaving other expressions as-is
+                other => write!(f, "{other:?}")?,
+            }
+        }
+        Ok(())
+    }
+}
+
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(self, f)
@@ -171,6 +192,10 @@ impl fmt::Debug for Expr {
                 ".when({predicate:?}).then({truthy:?}).otherwise({falsy:?})",
             ),
             Function { input, function } => {
+                #[cfg(feature = "dtype-struct")]
+                if matches!(function, FunctionExpr::AsStruct) {
+                    return write!(f, "as_struct({})", FmtArgs(input));
+                }
                 if input.len() >= 2 {
                     write!(f, "{:?}.{function}({:?})", input[0], &input[1..])
                 } else {
