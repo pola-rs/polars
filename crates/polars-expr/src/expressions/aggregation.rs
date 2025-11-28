@@ -480,29 +480,30 @@ impl AggQuantileExpr {
         // (preserving scalar semantics where applicable).
         let col = self.quantile.evaluate(df, state)?;
         let s = col.as_materialized_series_maintain_scalar();
+        // Try to coerce scalar/series to Float64 first (handles ints passed as 1)
+        if let Ok(s_float) = s.cast(&DataType::Float64) {
+            let ca = s_float.f64().map_err(|_| {
+                polars_err!(ComputeError: "failed to cast quantile expression to float64")
+            })?;
+            let mut out = Vec::with_capacity(ca.len());
+            for v in ca.into_iter() {
+                match v {
+                    Some(f) => out.push(f),
+                    None => polars_bail!(ComputeError: "quantile expression contains null"),
+                }
+            }
+            if out.is_empty() {
+                polars_bail!(ComputeError: "quantile expression produced no values");
+            }
+            return Ok(out);
+        }
 
+        // If that failed, check for a List literal and try to extract inner numeric values.
         match s.dtype() {
-            // Single scalar or series of Float64 values
-            DataType::Float64 => {
-                let ca = s.f64().unwrap();
-                let mut out = Vec::with_capacity(ca.len());
-                for v in ca.into_iter() {
-                    match v {
-                        Some(f) => out.push(f),
-                        None => polars_bail!(ComputeError: "quantile expression contains null"),
-                    }
-                }
-                if out.is_empty() {
-                    polars_bail!(ComputeError: "quantile expression produced no values");
-                }
-                Ok(out)
-            },
-
-            // List literal like `pl.lit([0.3, 0.5])` -> a ListChunked with one element
-            DataType::List(inner) if inner.as_ref().is_float() => {
+            DataType::List(inner) if inner.as_ref().is_numeric() => {
                 let list = s.list().unwrap();
 
-                // Expect a single element containing the inner float series
+                // Expect a single element containing the inner numeric series
                 if list.len() != 1 {
                     polars_bail!(
                         ComputeError:
@@ -511,8 +512,6 @@ impl AggQuantileExpr {
                     );
                 }
 
-                // `list.get(0)` yields the physical arrow array (Box<dyn Array>).
-                // Convert into an `ArrayRef` and then construct a `Series` with the inner dtype.
                 let inner_arr_box = list.get(0).unwrap();
                 let inner_arr: ArrayRef = inner_arr_box;
                 let inner_s = unsafe {
@@ -523,7 +522,14 @@ impl AggQuantileExpr {
                     )
                 };
 
-                let ca = inner_s.f64().unwrap();
+                // cast inner to float64 to handle int lists
+                let inner_f = inner_s.cast(&DataType::Float64).map_err(|_| {
+                    polars_err!(ComputeError: "failed to cast quantile list inner to float64")
+                })?;
+
+                let ca = inner_f.f64().map_err(|_| {
+                    polars_err!(ComputeError: "failed to interpret quantile list as f64")
+                })?;
                 let mut out = Vec::with_capacity(ca.len());
                 for v in ca.into_iter() {
                     match v {
@@ -535,12 +541,10 @@ impl AggQuantileExpr {
                     polars_bail!(ComputeError: "quantile list is empty");
                 }
                 Ok(out)
-            },
-
-            // Anything else is an error.
+            }
             dt => polars_bail!(
                 SchemaMismatch:
-                "invalid series dtype: expected `Float64` or `list[f64]`, got `{}` for series with name `{}`",
+                "invalid series dtype: expected numeric or `list[numeric]`, got `{}` for series with name `{}`",
                 dt,
                 s.name(),
             ),
