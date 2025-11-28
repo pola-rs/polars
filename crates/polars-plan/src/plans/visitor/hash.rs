@@ -20,7 +20,7 @@ impl IRNode {
             node: *self,
             lp_arena,
             expr_arena,
-            ignore_cache: false,
+            hash_as_equality: false,
         }
     }
 }
@@ -29,7 +29,14 @@ pub(crate) struct HashableEqLP<'a> {
     node: IRNode,
     lp_arena: &'a Arena<IR>,
     expr_arena: &'a Arena<AExpr>,
-    ignore_cache: bool,
+    hash_as_equality: bool,
+}
+
+impl HashableEqLP<'_> {
+    pub fn hash_as_equality(mut self) -> Self {
+        self.hash_as_equality = true;
+        self
+    }
 }
 
 fn hash_option_expr<H: Hasher>(expr: &Option<ExprIR>, expr_arena: &Arena<AExpr>, state: &mut H) {
@@ -100,6 +107,9 @@ impl Hash for HashableEqLP<'_> {
             } => {
                 // Hash the Python function object using the pointer to the object
                 // This should be the same as calling id() in python, but we don't need the GIL
+
+                use std::sync::atomic::AtomicU64;
+                static UNIQUE_COUNT: AtomicU64 = AtomicU64::new(0);
                 if let Some(scan_fn) = scan_fn {
                     let ptr_addr = scan_fn.0.as_ptr() as usize;
                     ptr_addr.hash(state);
@@ -113,7 +123,13 @@ impl Hash for HashableEqLP<'_> {
                 n_rows.hash(state);
                 hash_python_predicate(predicate, self.expr_arena, state);
                 validate_schema.hash(state);
-                is_pure.hash(state);
+
+                if self.hash_as_equality && !*is_pure {
+                    let val = UNIQUE_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    val.hash(state)
+                } else {
+                    is_pure.hash(state)
+                }
             },
             IR::Slice {
                 offset,
@@ -238,7 +254,7 @@ impl Hash for HashableEqLP<'_> {
             IR::Sink { input: _, payload } => {
                 payload.traverse_and_hash(self.expr_arena, state);
             },
-            IR::SinkMultiple { .. } => {},
+            IR::SinkMultiple { inputs: _ } => {},
             IR::Cache { input: _, id } => {
                 id.hash(state);
             },
@@ -590,27 +606,6 @@ impl PartialEq for HashableEqLP<'_> {
                     let r = IRNode::new(r);
                     let l_alp = l.to_alp(self.lp_arena);
                     let r_alp = r.to_alp(self.lp_arena);
-
-                    if self.ignore_cache {
-                        match (l_alp, r_alp) {
-                            (IR::Cache { input: l, .. }, IR::Cache { input: r, .. }) => {
-                                scratch_1.push(*l);
-                                scratch_2.push(*r);
-                                continue;
-                            },
-                            (IR::Cache { input: l, .. }, _) => {
-                                scratch_1.push(*l);
-                                scratch_2.push(r.node());
-                                continue;
-                            },
-                            (_, IR::Cache { input: r, .. }) => {
-                                scratch_1.push(l.node());
-                                scratch_2.push(*r);
-                                continue;
-                            },
-                            _ => {},
-                        }
-                    }
 
                     if !l
                         .hashable_and_cmp(self.lp_arena, self.expr_arena)

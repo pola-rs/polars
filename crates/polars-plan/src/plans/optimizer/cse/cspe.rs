@@ -81,7 +81,9 @@ mod identifier_impl {
             expr_arena: &Arena<AExpr>,
         ) -> Self {
             let mut h = Blake3Hasher::new();
-            alp.hashable_and_cmp(lp_arena, expr_arena).hash(&mut h);
+            alp.hashable_and_cmp(lp_arena, expr_arena)
+                .hash_as_equality()
+                .hash(&mut h);
             let hashed = h.finalize();
 
             let inner = Some(self.inner.map_or(hashed, |l| {
