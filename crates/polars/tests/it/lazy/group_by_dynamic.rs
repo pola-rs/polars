@@ -25,7 +25,7 @@ fn test_group_by_dynamic_week_bounds() -> PolarsResult<()> {
         stop,
         Some(Duration::parse("1d")),
         None,
-        ClosedWindow::Left,
+        ClosedInterval::Left,
         TimeUnit::Milliseconds,
         None,
     )?

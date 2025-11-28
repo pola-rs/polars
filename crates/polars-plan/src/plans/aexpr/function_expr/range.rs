@@ -3,7 +3,7 @@ use std::fmt::{Display, Formatter};
 use polars_core::prelude::*;
 use polars_ops::series::ClosedInterval;
 #[cfg(feature = "temporal")]
-use polars_time::{ClosedWindow, Duration};
+use polars_time::Duration;
 
 use super::{FunctionOptions, IRFunctionExpr};
 #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
@@ -31,19 +31,19 @@ pub enum IRRangeFunction {
     #[cfg(feature = "dtype-date")]
     DateRange {
         interval: Option<Duration>,
-        closed: ClosedWindow,
+        closed: ClosedInterval,
         arg_type: DateRangeArgs,
     },
     #[cfg(feature = "dtype-date")]
     DateRanges {
         interval: Option<Duration>,
-        closed: ClosedWindow,
+        closed: ClosedInterval,
         arg_type: DateRangeArgs,
     },
     #[cfg(feature = "dtype-datetime")]
     DatetimeRange {
         interval: Option<Duration>,
-        closed: ClosedWindow,
+        closed: ClosedInterval,
         time_unit: Option<TimeUnit>,
         time_zone: Option<TimeZone>,
         arg_type: DateRangeArgs,
@@ -51,7 +51,7 @@ pub enum IRRangeFunction {
     #[cfg(feature = "dtype-datetime")]
     DatetimeRanges {
         interval: Option<Duration>,
-        closed: ClosedWindow,
+        closed: ClosedInterval,
         time_unit: Option<TimeUnit>,
         time_zone: Option<TimeZone>,
         arg_type: DateRangeArgs,
@@ -59,12 +59,12 @@ pub enum IRRangeFunction {
     #[cfg(feature = "dtype-time")]
     TimeRange {
         interval: Duration,
-        closed: ClosedWindow,
+        closed: ClosedInterval,
     },
     #[cfg(feature = "dtype-time")]
     TimeRanges {
         interval: Duration,
-        closed: ClosedWindow,
+        closed: ClosedInterval,
     },
 }
 
