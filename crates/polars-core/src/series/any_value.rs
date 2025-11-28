@@ -815,7 +815,12 @@ fn any_values_to_struct(
                     let av_values: Vec<_> = av._iter_struct_av().collect();
                     _any_values_to_struct(av_fields, &av_values, i, field, fields, &mut field_avs);
                 },
-                AnyValue::List(s) | AnyValue::Array(s, _) if s.len() == fields.len() => {
+                AnyValue::List(s) if s.len() == fields.len() => {
+                    let av = unsafe { s.get_unchecked(i) };
+                    field_avs.push(av);
+                },
+                #[cfg(feature = "dtype-array")]
+                AnyValue::Array(s, _) if s.len() == fields.len() => {
                     let av = unsafe { s.get_unchecked(i) };
                     field_avs.push(av);
                 },
