@@ -410,6 +410,28 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         ))
     }
 
+    fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
+        let result = self.0.physical().quantiles_reduce(quantiles, method)?;
+        // result is a List Scalar with inner dtype Float64
+        // Extract the float64 series from the list
+        if let AnyValue::List(float_s) = result.value() {
+            let float_ca = float_s.f64().unwrap();
+            let int_s = float_ca.iter()
+                .map(|v: Option<f64>| v.map(|f| f as i64))
+                .collect::<Int64Chunked>()
+                .into_series();
+            // Cast the int64 series to the datetime type
+            let datetime_dtype = self.dtype().clone();
+            let casted = int_s.cast(&datetime_dtype)?;
+            Ok(Scalar::new(
+                DataType::List(Box::new(datetime_dtype)),
+                AnyValue::List(casted)
+            ))
+        } else {
+            polars_bail!(ComputeError: "expected list scalar from quantiles_reduce")
+        }
+    }
+
     #[cfg(feature = "approx_unique")]
     fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
         Ok(ChunkApproxNUnique::approx_n_unique(self.0.physical()))
