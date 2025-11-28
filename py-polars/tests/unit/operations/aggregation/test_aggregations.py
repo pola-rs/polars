@@ -307,10 +307,10 @@ def test_quantile_vs_numpy(tp: type, n: int) -> None:
     df = pl.DataFrame({"a": a})
 
     expected = df.select(
-        pl.col.x.quantile(0.25).alias("low"), pl.col.x.quantile(0.75).alias("high")
+        pl.col.a.quantile(0.25).alias("low"), pl.col.a.quantile(0.75).alias("high")
     ).select(pl.concat_list(["low", "high"]).alias("quantiles"))
 
-    result = df.select(pl.col.x.quantile([0.25, 0.75]).alias("quantiles"))
+    result = df.select(pl.col.a.quantile([0.25, 0.75]).alias("quantiles"))
 
     assert_frame_equal(expected, result)
 
