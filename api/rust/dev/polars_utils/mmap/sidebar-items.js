@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["ensure_not_mapped"],"static":["UNMAP_POOL"],"struct":["MMapSemaphore","MemReader","MemSlice","Mmap"]};
