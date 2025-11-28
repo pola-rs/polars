@@ -71,7 +71,7 @@ def test_dtype_to_polars_dtype_categorical(dtype: Dtype) -> None:
     "polars_dtype",
     [
         pl.Categorical,
-        pl.Categorical("lexical"),
+        pl.Categorical(),
         pl.Enum,
         pl.Enum(["a", "b"]),
     ],
@@ -84,15 +84,6 @@ def test_polars_dtype_to_dtype_unsupported_type() -> None:
     polars_dtype = pl.List(pl.Int8)
     with pytest.raises(ValueError, match="not supported"):
         polars_dtype_to_dtype(polars_dtype)
-
-
-def test_dtype_to_polars_dtype_unsupported_type() -> None:
-    dtype = (DtypeKind.FLOAT, 16, "e", NE)
-    with pytest.raises(
-        NotImplementedError,
-        match=r"unsupported data type: \(<DtypeKind\.FLOAT: 2>, 16, 'e', '='\)",
-    ):
-        dtype_to_polars_dtype(dtype)
 
 
 def test_dtype_to_polars_dtype_unsupported_temporal_type() -> None:

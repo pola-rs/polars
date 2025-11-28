@@ -156,6 +156,14 @@ where
         }
 
         let out = match self.dtype() {
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => {
+                // Convince the compiler that we are this type.
+                let ca: &Float16Chunked = unsafe {
+                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<Float16Type>)
+                };
+                num_groups_proxy(ca, multithreaded, sorted)
+            },
             DataType::Float32 => {
                 // Convince the compiler that we are this type.
                 let ca: &Float32Chunked = unsafe {

@@ -31,9 +31,6 @@ anonymous_result_dst = "s3://my-bucket/path/to/dir"
 allow_shared_disk = false
 n_workers = 4
 
-[worker]
-enabled = false
-
 [observatory]
 enabled = true
 
@@ -57,9 +54,6 @@ cluster_id = "foobarbaz"
 cublet_id = "worker_0"
 license = "/etc/polars/license.json"
 memory_limit = 10737418240 # 10 GiB
-
-[scheduler]
-enabled = false
 
 [worker]
 enabled = true

@@ -44,6 +44,8 @@ impl<T: NativeType> NotSimdPrimitive for T {}
 impl NotSimdPrimitive for u128 {}
 #[cfg(feature = "simd")]
 impl NotSimdPrimitive for i128 {}
+#[cfg(feature = "simd")]
+impl NotSimdPrimitive for pf16 {}
 
 // Trait to allow blanket impl for all SIMD types when simd is enabled.
 #[cfg(feature = "simd")]
@@ -66,3 +68,5 @@ mod _simd_primitive {
 
 #[cfg(feature = "simd")]
 pub use _simd_primitive::SimdPrimitive;
+#[cfg(feature = "simd")]
+use polars_utils::float16::pf16;

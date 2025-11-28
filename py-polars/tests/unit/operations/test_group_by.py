@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import typing
 from collections import OrderedDict
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pytest
@@ -20,7 +21,7 @@ from polars.testing.parametric import column, dataframes, series
 if TYPE_CHECKING:
     from typing import Callable
 
-    from polars._typing import PolarsDataType
+    from polars._typing import PolarsDataType, TimeUnit
 
 
 def test_group_by() -> None:
@@ -304,6 +305,190 @@ def test_group_by_shorthand_quantile(df: pl.DataFrame) -> None:
     assert result.rows() == expected
 
 
+def test_group_by_quantile_date() -> None:
+    df = pl.DataFrame(
+        {
+            "group": [1, 1, 1, 1, 2, 2, 2, 2],
+            "value": [date(2025, 1, x) for x in range(1, 9)],
+        }
+    )
+    result = (
+        df.lazy()
+        .group_by("group", maintain_order=True)
+        .agg(
+            nearest=pl.col("value").quantile(0.5, "nearest"),
+            higher=pl.col("value").quantile(0.5, "higher"),
+            lower=pl.col("value").quantile(0.5, "lower"),
+            linear=pl.col("value").quantile(0.5, "linear"),
+        )
+    )
+    dt = pl.Datetime("us")
+    expected = pl.DataFrame(
+        {
+            "group": [1, 2],
+            "nearest": pl.Series(
+                [datetime(2025, 1, 3), datetime(2025, 1, 7)], dtype=dt
+            ),
+            "higher": pl.Series([datetime(2025, 1, 3), datetime(2025, 1, 7)], dtype=dt),
+            "lower": pl.Series([datetime(2025, 1, 2), datetime(2025, 1, 6)], dtype=dt),
+            "linear": pl.Series(
+                [datetime(2025, 1, 2, 12), datetime(2025, 1, 6, 12)], dtype=dt
+            ),
+        }
+    )
+    assert result.collect_schema() == pl.Schema(
+        {  # type: ignore[arg-type]
+            "group": pl.Int64,
+            "nearest": dt,
+            "higher": dt,
+            "lower": dt,
+            "linear": dt,
+        }
+    )
+    assert_frame_equal(result.collect(), expected)
+
+
+@pytest.mark.parametrize("tu", ["ms", "us", "ns"])
+@pytest.mark.parametrize("time_zone", [None, "Asia/Tokyo"])
+def test_group_by_quantile_datetime(tu: TimeUnit, time_zone: str) -> None:
+    dt = pl.Datetime(tu, time_zone)
+    tz = ZoneInfo(time_zone) if time_zone else None
+    df = pl.DataFrame(
+        {
+            "group": [1, 1, 1, 1, 2, 2, 2, 2],
+            "value": pl.Series(
+                [datetime(2025, 1, x, tzinfo=tz) for x in range(1, 9)],
+                dtype=dt,
+            ),
+        }
+    )
+    result = (
+        df.lazy()
+        .group_by("group", maintain_order=True)
+        .agg(
+            nearest=pl.col("value").quantile(0.5, "nearest"),
+            higher=pl.col("value").quantile(0.5, "higher"),
+            lower=pl.col("value").quantile(0.5, "lower"),
+            linear=pl.col("value").quantile(0.5, "linear"),
+        )
+    )
+    expected = pl.DataFrame(
+        {
+            "group": [1, 2],
+            "nearest": pl.Series(
+                [datetime(2025, 1, 3, tzinfo=tz), datetime(2025, 1, 7, tzinfo=tz)],
+                dtype=dt,
+            ),
+            "higher": pl.Series(
+                [datetime(2025, 1, 3, tzinfo=tz), datetime(2025, 1, 7, tzinfo=tz)],
+                dtype=dt,
+            ),
+            "lower": pl.Series(
+                [datetime(2025, 1, 2, tzinfo=tz), datetime(2025, 1, 6, tzinfo=tz)],
+                dtype=dt,
+            ),
+            "linear": pl.Series(
+                [
+                    datetime(2025, 1, 2, 12, tzinfo=tz),
+                    datetime(2025, 1, 6, 12, tzinfo=tz),
+                ],
+                dtype=dt,
+            ),
+        }
+    )
+    assert result.collect_schema() == pl.Schema(
+        {  # type: ignore[arg-type]
+            "group": pl.Int64,
+            "nearest": dt,
+            "higher": dt,
+            "lower": dt,
+            "linear": dt,
+        }
+    )
+    assert_frame_equal(result.collect(), expected)
+
+
+@pytest.mark.parametrize("tu", ["ms", "us", "ns"])
+def test_group_by_quantile_duration(tu: TimeUnit) -> None:
+    dt = pl.Duration(tu)
+    df = pl.DataFrame(
+        {
+            "group": [1, 1, 1, 1, 2, 2, 2, 2],
+            "value": pl.Series([timedelta(hours=x) for x in range(1, 9)], dtype=dt),
+        }
+    )
+    result = (
+        df.lazy()
+        .group_by("group", maintain_order=True)
+        .agg(
+            nearest=pl.col("value").quantile(0.5, "nearest"),
+            higher=pl.col("value").quantile(0.5, "higher"),
+            lower=pl.col("value").quantile(0.5, "lower"),
+            linear=pl.col("value").quantile(0.5, "linear"),
+        )
+    )
+    expected = pl.DataFrame(
+        {
+            "group": [1, 2],
+            "nearest": pl.Series([timedelta(hours=3), timedelta(hours=7)], dtype=dt),
+            "higher": pl.Series([timedelta(hours=3), timedelta(hours=7)], dtype=dt),
+            "lower": pl.Series([timedelta(hours=2), timedelta(hours=6)], dtype=dt),
+            "linear": pl.Series(
+                [timedelta(hours=2, minutes=30), timedelta(hours=6, minutes=30)],
+                dtype=dt,
+            ),
+        }
+    )
+    assert result.collect_schema() == pl.Schema(
+        {  # type: ignore[arg-type]
+            "group": pl.Int64,
+            "nearest": dt,
+            "higher": dt,
+            "lower": dt,
+            "linear": dt,
+        }
+    )
+    assert_frame_equal(result.collect(), expected)
+
+
+def test_group_by_quantile_time() -> None:
+    df = pl.DataFrame(
+        {
+            "group": [1, 1, 1, 1, 2, 2, 2, 2],
+            "value": pl.Series([time(hour=x) for x in range(1, 9)]),
+        }
+    )
+    result = (
+        df.lazy()
+        .group_by("group", maintain_order=True)
+        .agg(
+            nearest=pl.col("value").quantile(0.5, "nearest"),
+            higher=pl.col("value").quantile(0.5, "higher"),
+            lower=pl.col("value").quantile(0.5, "lower"),
+            linear=pl.col("value").quantile(0.5, "linear"),
+        )
+    )
+    expected = pl.DataFrame(
+        {
+            "group": [1, 2],
+            "nearest": pl.Series([time(hour=3), time(hour=7)]),
+            "higher": pl.Series([time(hour=3), time(hour=7)]),
+            "lower": pl.Series([time(hour=2), time(hour=6)]),
+            "linear": pl.Series([time(hour=2, minute=30), time(hour=6, minute=30)]),
+        }
+    )
+    assert result.collect_schema() == pl.Schema(
+        {
+            "group": pl.Int64,
+            "nearest": pl.Time,
+            "higher": pl.Time,
+            "lower": pl.Time,
+            "linear": pl.Time,
+        }
+    )
+    assert_frame_equal(result.collect(), expected)
+
+
 def test_group_by_args() -> None:
     df = pl.DataFrame(
         {
@@ -415,7 +600,7 @@ def test_group_by_sorted_empty_dataframe_3680() -> None:
     )
     assert df.rows() == []
     assert df.shape == (0, 2)
-    assert df.schema == {"key": pl.Categorical(ordering="lexical"), "val": pl.Float64}
+    assert df.schema == {"key": pl.Categorical(), "val": pl.Float64}
 
 
 def test_group_by_custom_agg_empty_list() -> None:
