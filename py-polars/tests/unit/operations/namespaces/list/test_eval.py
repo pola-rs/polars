@@ -608,3 +608,23 @@ def test_list_agg_after_filter_in_agg_25361(
     )
     assert_frame_equal(out, expected)
     assert out.select(pl.col.a.count()).item() == df.select(pl.col.a.count()).item()
+
+
+def test_list_eval_after_slice() -> None:
+    df = pl.DataFrame({"list": [[1], range(1, 10), range(1, 10)]})
+    df_concat = pl.concat([df, df.slice(1)])
+    grouped_result = df_concat.select_seq(
+        has_no_duplicates=(
+            ~pl.col("list").list.eval(pl.element().is_duplicated()).list.any()
+        )
+    )
+    assert all(grouped_result.to_series().to_list())
+
+
+def test_list_agg_after_slice() -> None:
+    df = pl.DataFrame({"list": [[1], range(1, 10), range(1, 10)]})
+    df_concat = pl.concat([df, df.slice(1)])
+    grouped_result = df_concat.select_seq(
+        has_no_duplicates=~pl.col("list").list.agg(pl.element().is_duplicated().any())
+    )
+    assert all(grouped_result.to_series().to_list())
