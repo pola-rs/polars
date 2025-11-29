@@ -132,7 +132,7 @@ impl ListChunked {
 
     /// Get the inner values as [`Series`], ignoring the list offsets.
     pub fn get_inner(&self) -> Series {
-        let chunks: Vec<_> = self.downcast_iter().map(|c| c.values_sliced()).collect();
+        let chunks: Vec<_> = self.downcast_iter().map(|c| c.values().clone()).collect();
 
         // SAFETY: Data type of arrays matches because they are chunks from the same array.
         unsafe {
@@ -141,7 +141,7 @@ impl ListChunked {
     }
 
     pub fn inner_length(&self) -> usize {
-        self.downcast_iter().map(|c| c.values_sliced().len()).sum()
+        self.downcast_iter().map(|c| c.values().len()).sum()
     }
 
     /// Ignore the list indices and apply `func` to the inner type as [`Series`].
@@ -200,7 +200,7 @@ impl ListChunked {
             if ca.chunks().len() == values.chunks().len()
                 && ca
                     .downcast_iter()
-                    .map(|arr| arr.offsets().range() as usize)
+                    .map(|arr| arr.values().len())
                     .zip(values.chunks().iter().map(|arr| arr.len()))
                     .all_equal()
             {
@@ -212,7 +212,7 @@ impl ListChunked {
             let mut arr = chunks.pop().unwrap();
             chunks.extend(ca.downcast_iter().map(|ca_arr| {
                 let chunk;
-                (chunk, arr) = arr.split_at_boxed(ca_arr.offsets().range() as usize);
+                (chunk, arr) = arr.split_at_boxed(ca_arr.values().len());
                 chunk
             }));
             assert!(arr.is_empty());
@@ -226,10 +226,10 @@ impl ListChunked {
             .downcast_iter()
             .zip(values.into_chunks())
             .map(|(ca_arr, v_arr)| {
-                debug_assert_eq!(ca_arr.values_sliced().len(), v_arr.len());
+                debug_assert_eq!(ca_arr.values().len(), v_arr.len());
                 LargeListArray::new(
                     LargeListArray::default_datatype(v_arr.dtype().clone()),
-                    ca_arr.offsets().clone_zeroed(),
+                    (ca_arr.offsets()).clone(),
                     v_arr,
                     ca_arr.validity().cloned(),
                 )
