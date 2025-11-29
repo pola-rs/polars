@@ -391,9 +391,9 @@ class ExprMetaNameSpace:
         return_as_string:
             If True, return as string rather than printing to stdout.
         schema
-            Optionally provide a schema for the expression tree formatter. This is a mapping
-            of column names to their data types. If provided, it may be used to enhance the
-            tree formatting with type information.
+            Optionally provide a schema for the expression tree formatter.
+            This is a mapping of column names to their data types. If provided,
+            it may be used to enhance the tree formatting with type information.
 
         Examples
         --------
@@ -433,9 +433,9 @@ class ExprMetaNameSpace:
         figsize
             Passed to matplotlib if `show == True`.
         schema
-            Optionally provide a schema for the expression tree formatter. This is a mapping
-            of column names to their data types. If provided, it may be used to enhance the
-            tree formatting with type information.
+            Optionally provide a schema for the expression tree formatter.
+            This is a mapping of column names to their data types. If provided,
+            it may be used to enhance the tree formatting with type information.
 
         Examples
         --------
