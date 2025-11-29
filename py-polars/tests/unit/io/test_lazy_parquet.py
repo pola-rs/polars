@@ -958,6 +958,7 @@ import os
 os.environ["POLARS_MAX_THREADS"] = "1"
 os.environ["POLARS_VERBOSE"] = "1"
 
+import asyncio
 import io
 import sys
 from threading import Thread
@@ -976,6 +977,7 @@ q = (
 )
 
 results = [
+    pl.DataFrame(),
     pl.DataFrame(),
     pl.DataFrame(),
     pl.DataFrame(),
@@ -1008,12 +1010,20 @@ def run():
 
     results[4] = q.collect(background=True).fetch_blocking()
 
+    print("QUERY-FENCE", file=sys.stderr)
+
+    async def collect_async():
+        return await q.collect_async()
+
+    results[5] = asyncio.run(collect_async())
+
 
 t = Thread(target=run, daemon=True)
 t.start()
 t.join(5)
 
 assert [x.equals(pl.DataFrame({"x": 1})) for x in results] == [
+    True,
     True,
     True,
     True,
