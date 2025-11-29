@@ -1481,7 +1481,10 @@ def test_list_zip_series_comprehensive() -> None:
     expected = pl.Series(
         "first_series",
         [
-            [{"first_series": 1, "second_series": "x"}, {"first_series": 2, "second_series": "y"}],
+            [
+                {"first_series": 1, "second_series": "x"},
+                {"first_series": 2, "second_series": "y"},
+            ],
             [{"first_series": 3, "second_series": "z"}],
         ],
     )
@@ -1533,13 +1536,17 @@ def test_list_zip_error_duplicate_names() -> None:
         }
     )
 
-    with pytest.raises(pl.exceptions.DuplicateError, match="has more than one occurrence"):
+    with pytest.raises(
+        pl.exceptions.DuplicateError, match="has more than one occurrence"
+    ):
         df.select(pl.col("a").list.zip(pl.col("a")))
 
     s1 = pl.Series("same_name", [[1, 2], [3, 4]])
     s2 = pl.Series("same_name", [[5, 6], [7, 8]])
 
-    with pytest.raises(pl.exceptions.DuplicateError, match="has more than one occurrence"):
+    with pytest.raises(
+        pl.exceptions.DuplicateError, match="has more than one occurrence"
+    ):
         s1.list.zip(s2)
 
 
@@ -1578,9 +1585,7 @@ def test_list_zip_broadcast() -> None:
         }
     )
     result = df.select(
-        pl.col("a")
-        .list.zip(pl.lit(pl.Series("b", [["x", "y"]])))
-        .alias("zipped")
+        pl.col("a").list.zip(pl.lit(pl.Series("b", [["x", "y"]]))).alias("zipped")
     )
     expected = pl.DataFrame(
         {

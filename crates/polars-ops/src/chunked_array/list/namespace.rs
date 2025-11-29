@@ -884,106 +884,118 @@ pub trait ListNameSpaceImpl: AsList {
                 Cow::Borrowed(other)
             };
 
-            arity::try_binary(ca.as_ref(), other.as_ref(), |lhs_arr, rhs_arr| -> PolarsResult<_> {
-                let rows = lhs_arr.len();
-                let lhs_values = lhs_arr.values();
-                let rhs_values = rhs_arr.values();
+            arity::try_binary(
+                ca.as_ref(),
+                other.as_ref(),
+                |lhs_arr, rhs_arr| -> PolarsResult<_> {
+                    let rows = lhs_arr.len();
+                    let lhs_values = lhs_arr.values();
+                    let rhs_values = rhs_arr.values();
 
-                let lhs_offsets = lhs_arr.offsets();
-                let rhs_offsets = rhs_arr.offsets();
+                    let lhs_offsets = lhs_arr.offsets();
+                    let rhs_offsets = rhs_arr.offsets();
 
-                let total_capacity: usize = lhs_offsets
-                    .lengths()
-                    .zip(rhs_offsets.lengths())
-                    .map(|(l, r)| if pad { l.max(r) } else { l.min(r) })
-                    .sum();
+                    let total_capacity: usize = lhs_offsets
+                        .lengths()
+                        .zip(rhs_offsets.lengths())
+                        .map(|(l, r)| if pad { l.max(r) } else { l.min(r) })
+                        .sum();
 
-                let mut lhs_builder = make_builder(lhs_values.dtype());
-                let mut rhs_builder = make_builder(rhs_values.dtype());
+                    let mut lhs_builder = make_builder(lhs_values.dtype());
+                    let mut rhs_builder = make_builder(rhs_values.dtype());
 
-                lhs_builder.reserve(total_capacity);
-                rhs_builder.reserve(total_capacity);
+                    lhs_builder.reserve(total_capacity);
+                    rhs_builder.reserve(total_capacity);
 
-                let mut validity = MutableBitmap::with_capacity(rows);
-                let mut offsets = Offsets::with_capacity(rows);
+                    let mut validity = MutableBitmap::with_capacity(rows);
+                    let mut offsets = Offsets::with_capacity(rows);
 
-                let lhs_iter = lhs_offsets.offset_and_length_iter();
-                let rhs_iter = rhs_offsets.offset_and_length_iter();
+                    let lhs_iter = lhs_offsets.offset_and_length_iter();
+                    let rhs_iter = rhs_offsets.offset_and_length_iter();
 
-                for (row, ((l_start, l_len), (r_start, r_len))) in
-                    lhs_iter.zip(rhs_iter).enumerate()
-                {
-                    if !lhs_arr.is_valid(row) || !rhs_arr.is_valid(row) {
-                        validity.push(false);
-                        offsets.try_push(0)?;
-                        continue;
+                    for (row, ((l_start, l_len), (r_start, r_len))) in
+                        lhs_iter.zip(rhs_iter).enumerate()
+                    {
+                        if !lhs_arr.is_valid(row) || !rhs_arr.is_valid(row) {
+                            validity.push(false);
+                            offsets.try_push(0)?;
+                            continue;
+                        }
+                        validity.push(true);
+
+                        let target_len = if pad {
+                            l_len.max(r_len)
+                        } else {
+                            l_len.min(r_len)
+                        };
+
+                        let l_copy = l_len.min(target_len);
+                        if l_copy > 0 {
+                            lhs_builder.subslice_extend(
+                                lhs_values.as_ref(),
+                                l_start,
+                                l_copy,
+                                ShareStrategy::Always,
+                            );
+                        }
+
+                        if pad && l_len < target_len {
+                            lhs_builder.extend_nulls(target_len - l_len);
+                        }
+
+                        let r_copy = r_len.min(target_len);
+                        if r_copy > 0 {
+                            rhs_builder.subslice_extend(
+                                rhs_values.as_ref(),
+                                r_start,
+                                r_copy,
+                                ShareStrategy::Always,
+                            );
+                        }
+
+                        if pad && r_len < target_len {
+                            rhs_builder.extend_nulls(target_len - r_len);
+                        }
+
+                        offsets.try_push(target_len)?;
                     }
-                    validity.push(true);
 
-                    let target_len = if pad {
-                        l_len.max(r_len)
-                    } else {
-                        l_len.min(r_len)
-                    };
+                    let lhs_final = lhs_builder.freeze_reset();
+                    let rhs_final = rhs_builder.freeze_reset();
 
-                    let l_copy = l_len.min(target_len);
-                    if l_copy > 0 {
-                        lhs_builder.subslice_extend(
-                            lhs_values.as_ref(),
-                            l_start,
-                            l_copy,
-                            ShareStrategy::Always,
-                        );
-                    }
+                    let struct_fields = vec![
+                        arrow::datatypes::Field::new(
+                            lhs_name.clone(),
+                            lhs_final.dtype().clone(),
+                            true,
+                        ),
+                        arrow::datatypes::Field::new(
+                            rhs_name.clone(),
+                            rhs_final.dtype().clone(),
+                            true,
+                        ),
+                    ];
 
-                    if pad && l_len < target_len {
-                        lhs_builder.extend_nulls(target_len - l_len);
-                    }
+                    let struct_dtype = arrow::datatypes::ArrowDataType::Struct(struct_fields);
+                    let struct_len = lhs_final.len();
 
-                    let r_copy = r_len.min(target_len);
-                    if r_copy > 0 {
-                        rhs_builder.subslice_extend(
-                            rhs_values.as_ref(),
-                            r_start,
-                            r_copy,
-                            ShareStrategy::Always,
-                        );
-                    }
+                    let struct_arr = StructArray::new(
+                        struct_dtype.clone(),
+                        struct_len,
+                        vec![lhs_final, rhs_final],
+                        None,
+                    );
 
-                    if pad && r_len < target_len {
-                        rhs_builder.extend_nulls(target_len - r_len);
-                    }
+                    let list_dtype = LargeListArray::default_datatype(struct_dtype);
 
-                    offsets.try_push(target_len)?;
-                }
-
-                let lhs_final = lhs_builder.freeze_reset();
-                let rhs_final = rhs_builder.freeze_reset();
-
-                let struct_fields = vec![
-                    arrow::datatypes::Field::new(lhs_name.clone(), lhs_final.dtype().clone(), true),
-                    arrow::datatypes::Field::new(rhs_name.clone(), rhs_final.dtype().clone(), true),
-                ];
-
-                let struct_dtype = arrow::datatypes::ArrowDataType::Struct(struct_fields);
-                let struct_len = lhs_final.len();
-
-                let struct_arr = StructArray::new(
-                    struct_dtype.clone(),
-                    struct_len,
-                    vec![lhs_final, rhs_final],
-                    None,
-                );
-
-                let list_dtype = LargeListArray::default_datatype(struct_dtype);
-
-                Ok(LargeListArray::new(
-                    list_dtype,
-                    offsets.into(),
-                    Box::new(struct_arr),
-                    validity.into(),
-                ))
-            })
+                    Ok(LargeListArray::new(
+                        list_dtype,
+                        offsets.into(),
+                        Box::new(struct_arr),
+                        validity.into(),
+                    ))
+                },
+            )
         }
     }
 }
