@@ -189,11 +189,13 @@ impl Series {
             .to_arrow(CompatLevel::newest());
         let mut prev_dtype = leaf_array.dtype().clone();
         let mut prev_array = leaf_array.chunks()[0].clone();
+        let inferred_size = (size / total_dim_size) as u64;
+        let outer_dimension = dimensions[0].get_or_infer(inferred_size);
 
         // We pop the outer dimension as that is the height of the series.
         for dim in dimensions[1..].iter().rev() {
             // Infer dimension if needed
-            let dim = dim.get_or_infer((size / total_dim_size) as u64);
+            let dim = dim.get_or_infer(inferred_size);
             prev_arrow_dtype = prev_arrow_dtype.to_fixed_size_list(dim as usize, true);
             prev_dtype = DataType::Array(Box::new(prev_dtype), dim as usize);
 
@@ -205,6 +207,13 @@ impl Series {
             )
             .boxed();
         }
+
+        // Check if height is bigger than reshape dimension
+        polars_ensure!(
+            prev_array.len() as u64 == outer_dimension,
+            InvalidOperation: "cannot reshape array of size {} into shape {}", size, format_tuple!(dimensions)
+        );
+
         Ok(unsafe {
             Series::from_chunks_and_dtype_unchecked(
                 leaf_array.name().clone(),
