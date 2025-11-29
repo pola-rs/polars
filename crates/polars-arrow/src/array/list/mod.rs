@@ -197,6 +197,18 @@ impl<O: Offset> ListArray<O> {
     pub fn values(&self) -> &Box<dyn Array> {
         &self.values
     }
+
+    /// The values, sliced by the offsets. This represents the "logical" values.
+    #[inline]
+    pub fn values_sliced(&self) -> Box<dyn Array> {
+        let first_offset = self.offsets.first().to_usize();
+        let offset_range = self.offsets.range().to_usize();
+        if first_offset != 0 || offset_range != self.values().len() {
+            self.values.sliced(first_offset, offset_range)
+        } else {
+            self.values.to_boxed()
+        }
+    }
 }
 
 impl<O: Offset> ListArray<O> {

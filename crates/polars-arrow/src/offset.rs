@@ -582,6 +582,17 @@ impl<O: Offset> OffsetsBuffer<O> {
 
         (self.0[end + 1] - self.0[start]).to_usize()
     }
+
+    /// Clone this offset buffer, making sure the first offset is zero.
+    pub fn clone_zeroed(&self) -> Self {
+        let first = *self.first();
+        let buffer = self
+            .as_slice()
+            .iter()
+            .map(|o| *o - first)
+            .collect::<Buffer<O>>();
+        Self(buffer)
+    }
 }
 
 impl From<&OffsetsBuffer<i32>> for OffsetsBuffer<i64> {

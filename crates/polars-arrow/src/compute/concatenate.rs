@@ -367,13 +367,7 @@ fn concatenate_list<O: Offset, A: AsRef<dyn Array>>(arrays: &[A]) -> PolarsResul
             .iter()
             .map(|arr| {
                 let arr: &ListArray<O> = arr.as_ref().as_any().downcast_ref().unwrap();
-                let first_offset = arr.offsets().first().to_usize();
-                let offset_range = arr.offsets().range().to_usize();
-                if first_offset != 0 || offset_range != arr.values().len() {
-                    arr.values().sliced(first_offset, offset_range)
-                } else {
-                    arr.values().to_boxed()
-                }
+                arr.values_sliced()
             })
             .collect_vec();
         concatenate_unchecked(&inner_sliced_arrays[..])?
