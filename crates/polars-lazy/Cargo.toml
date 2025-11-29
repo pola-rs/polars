@@ -103,6 +103,7 @@ dtype-full = [
   "dtype-u16",
   "dtype-u128",
   "dtype-u8",
+  "dtype-f16",
 ]
 dtype-array = [
   "polars-plan/dtype-array",
@@ -181,6 +182,12 @@ dtype-u16 = [
   "polars-stream?/dtype-u16",
 ]
 dtype-u8 = ["polars-plan/dtype-u8", "polars-expr/dtype-u8", "polars-mem-engine/dtype-u8", "polars-stream?/dtype-u8"]
+dtype-f16 = [
+  "polars-plan/dtype-f16",
+  "polars-expr/dtype-f16",
+  "polars-mem-engine/dtype-f16",
+  "polars-stream?/dtype-f16",
+]
 
 object = ["polars-plan/object", "polars-mem-engine/object", "polars-stream?/object"]
 ffi_plugin = ["polars-expr/ffi_plugin"]

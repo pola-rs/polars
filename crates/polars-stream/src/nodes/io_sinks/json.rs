@@ -80,8 +80,7 @@ impl SinkNode for NDJsonSinkNode {
                 }
             }
 
-            file.sync_on_close(sink_options.sync_on_close).await?;
-            file.close().await?;
+            file.close(sink_options.sync_on_close).await?;
 
             PolarsResult::Ok(())
         });

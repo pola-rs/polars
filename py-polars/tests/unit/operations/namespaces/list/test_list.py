@@ -1613,3 +1613,27 @@ def test_list_df_invalid_type_in_planner() -> None:
 
     with pytest.raises(pl.exceptions.InvalidOperationError):
         q.collect_schema()
+
+
+def test_list_slice_invalid_length_type_22025() -> None:
+    df = pl.DataFrame([pl.Series("a", [["a"], ["eb", "d"]], pl.List(pl.String))])
+
+    with pytest.raises(
+        TypeError, match="'length' must be an integer, string, or expression"
+    ):
+        df.select(pl.col.a.list.slice(0, [0, 0]))  # type: ignore[arg-type]
+
+    with pytest.raises(
+        TypeError, match="'offset' must be an integer, string, or expression"
+    ):
+        df.select(pl.col.a.list.slice([0, 0], 1))  # type: ignore[arg-type]
+
+    with pytest.raises(
+        TypeError, match="'offset' must be an integer, string, or expression"
+    ):
+        df.select(pl.col.a.list.slice((0, 0), 1))  # type: ignore[arg-type]
+
+    with pytest.raises(
+        TypeError, match="'length' must be an integer, string, or expression"
+    ):
+        df.select(pl.col.a.list.slice(0, {0, 1}))  # type: ignore[arg-type]

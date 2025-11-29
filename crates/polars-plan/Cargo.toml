@@ -26,6 +26,7 @@ polars-utils = { workspace = true }
 
 arrow = { workspace = true }
 bitflags = { workspace = true }
+blake3 = { workspace = true, optional = true }
 bytemuck = { workspace = true }
 bytes = { workspace = true, features = ["serde"] }
 chrono = { workspace = true, optional = true }
@@ -93,6 +94,7 @@ dtype-u128 = ["polars-core/dtype-u128", "polars-ops/dtype-u128"]
 dtype-i8 = ["polars-core/dtype-i8"]
 dtype-i128 = ["polars-core/dtype-i128"]
 dtype-i16 = ["polars-core/dtype-i16"]
+dtype-f16 = ["polars-core/dtype-f16"]
 dtype-decimal = ["polars-core/dtype-decimal", "polars-ops/dtype-decimal", "dtype-i128"]
 dtype-date = ["polars-time/dtype-date", "temporal"]
 dtype-datetime = ["polars-time/dtype-datetime", "temporal"]
@@ -200,7 +202,7 @@ meta = []
 pivot = ["polars-core/rows", "polars-ops/pivot"]
 top_k = ["polars-ops/top_k"]
 semi_anti_join = ["polars-ops/semi_anti_join"]
-cse = []
+cse = ["blake3"]
 propagate_nans = ["polars-ops/propagate_nans"]
 coalesce = []
 fused = ["polars-ops/fused"]
@@ -316,6 +318,7 @@ features = [
   "semi_anti_join",
   "replace",
   "dtype-u16",
+  "dtype-f16",
   "regex",
   "dtype-decimal",
   "arg_where",

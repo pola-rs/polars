@@ -517,24 +517,30 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 #[cfg(feature = "find_many")]
                 IB::ReplaceMany {
                     ascii_case_insensitive,
+                    leftmost,
                 } => B::ReplaceMany {
                     ascii_case_insensitive,
+                    leftmost,
                 },
                 #[cfg(feature = "find_many")]
                 IB::ExtractMany {
                     ascii_case_insensitive,
                     overlapping,
+                    leftmost,
                 } => B::ExtractMany {
                     ascii_case_insensitive,
                     overlapping,
+                    leftmost,
                 },
                 #[cfg(feature = "find_many")]
                 IB::FindMany {
                     ascii_case_insensitive,
                     overlapping,
+                    leftmost,
                 } => B::FindMany {
                     ascii_case_insensitive,
                     overlapping,
+                    leftmost,
                 },
                 #[cfg(feature = "regex")]
                 IB::EscapeRegex => B::EscapeRegex,

@@ -27,6 +27,7 @@ repository = "https://github.com/pola-rs/polars"
 [workspace.dependencies]
 aho-corasick = "1.1"
 arboard = { version = "3.4.0", default-features = false }
+argminmax = { version = "0.6.3", default-features = false, features = ["float", "half"] }
 async-channel = { version = "2.3.1" }
 async-trait = { version = "0.1.59" }
 atoi_simd = "0.16"
@@ -53,6 +54,7 @@ fast-float2 = { version = "^0.2.2" }
 flate2 = { version = "1", default-features = false }
 foldhash = "0.2.0"
 futures = "0.3.25"
+half = { version = "2.7.1", features = ["num-traits"] }
 hashbrown = { version = "0.16.0", features = ["rayon", "serde"] }
 hex = "0.4.3"
 indexmap = { version = "2.12", features = ["std", "serde"] }
@@ -64,6 +66,7 @@ memchr = "2.6"
 memmap = { package = "memmap2", version = "0.9" }
 ndarray = { version = "0.16", default-features = false }
 num-bigint = "0.4.6"
+num-derive = "0.4.2"
 num-traits = "0.2"
 numpy = "0.26"
 object_store = { version = "0.12", default-features = false, features = ["fs"] }
@@ -104,6 +107,7 @@ uuid = { version = "1.15.1", features = ["v4"] }
 version_check = "0.9.4"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 zstd = "0.13"
+blake3 = { version = "1.8.2" }
 
 polars = { version = "0.52.0", path = "crates/polars", default-features = false }
 polars-compute = { version = "0.52.0", path = "crates/polars-compute", default-features = false }

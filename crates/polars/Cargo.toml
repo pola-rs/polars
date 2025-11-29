@@ -130,6 +130,7 @@ performant = [
   "chunked_ids",
   "dtype-u8",
   "dtype-u16",
+  "dtype-f16",
   "dtype-struct",
   "cse",
   "polars-ops/performant",
@@ -293,6 +294,7 @@ dtype-full = [
   "dtype-u8",
   "dtype-u16",
   "dtype-u128",
+  "dtype-f16",
   "dtype-categorical",
   "dtype-struct",
 ]
@@ -387,6 +389,13 @@ dtype-u128 = [
   "polars-lazy?/dtype-u128",
   "polars-ops/dtype-u128",
   "polars-time?/dtype-u128",
+]
+dtype-f16 = [
+  "polars-core/dtype-f16",
+  "polars-io/dtype-f16",
+  "polars-lazy?/dtype-f16",
+  "polars-ops/dtype-f16",
+  "polars-time?/dtype-f16",
 ]
 dtype-categorical = [
   "polars-core/dtype-categorical",

@@ -170,6 +170,16 @@ fn struct_dict<'a, 'py>(
     Ok(dict)
 }
 
+impl<'py> IntoPyObject<'py> for Wrap<Series> {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        to_series(py, PySeries::new(self.0))
+    }
+}
+
 impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
@@ -217,6 +227,10 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
             },
             DataType::Int128 => {
                 let class = pl.getattr(intern!(py, "Int128"))?;
+                class.call0()
+            },
+            DataType::Float16 => {
+                let class = pl.getattr(intern!(py, "Float16"))?;
                 class.call0()
             },
             DataType::Float32 => {
@@ -373,6 +387,7 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
                     "UInt32" => DataType::UInt32,
                     "UInt64" => DataType::UInt64,
                     "UInt128" => DataType::UInt128,
+                    "Float16" => DataType::Float16,
                     "Float32" => DataType::Float32,
                     "Float64" => DataType::Float64,
                     "Boolean" => DataType::Boolean,
@@ -413,6 +428,7 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
             "UInt32" => DataType::UInt32,
             "UInt64" => DataType::UInt64,
             "UInt128" => DataType::UInt128,
+            "Float16" => DataType::Float16,
             "Float32" => DataType::Float32,
             "Float64" => DataType::Float64,
             "Boolean" => DataType::Boolean,
@@ -504,20 +520,6 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
             },
         };
         Ok(Wrap(dtype))
-    }
-}
-
-enum CategoricalOrdering {
-    Lexical,
-}
-
-impl<'py> IntoPyObject<'py> for Wrap<CategoricalOrdering> {
-    type Target = PyString;
-    type Output = Bound<'py, Self::Target>;
-    type Error = Infallible;
-
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        "lexical".into_pyobject(py)
     }
 }
 
@@ -861,27 +863,6 @@ impl<'py> FromPyObject<'py> for Wrap<Option<AvroCompression>> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "avro `compression` must be one of {{'uncompressed', 'snappy', 'deflate'}}, got {v}",
-                )));
-            },
-        };
-        Ok(Wrap(parsed))
-    }
-}
-
-impl<'py> FromPyObject<'py> for Wrap<CategoricalOrdering> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
-        let parsed = match &*ob.extract::<PyBackedStr>()? {
-            "lexical" => CategoricalOrdering::Lexical,
-            "physical" => {
-                polars_warn!(
-                    Deprecation,
-                    "physical ordering is deprecated, will use lexical ordering instead"
-                );
-                CategoricalOrdering::Lexical
-            },
-            v => {
-                return Err(PyValueError::new_err(format!(
-                    "categorical `ordering` must be one of {{'physical', 'lexical'}}, got {v}",
                 )));
             },
         };
@@ -1535,7 +1516,6 @@ pub(crate) fn parse_parquet_compression(
                 })
                 .transpose()?,
         ),
-        "lzo" => ParquetCompression::Lzo,
         "brotli" => ParquetCompression::Brotli(
             compression_level
                 .map(|lvl| {
@@ -1554,7 +1534,7 @@ pub(crate) fn parse_parquet_compression(
         ),
         e => {
             return Err(PyValueError::new_err(format!(
-                "parquet `compression` must be one of {{'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'lz4', 'zstd'}}, got {e}",
+                "parquet `compression` must be one of {{'uncompressed', 'snappy', 'gzip', 'brotli', 'lz4', 'zstd'}}, got {e}",
             )));
         },
     };

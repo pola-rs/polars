@@ -24,7 +24,7 @@ polars-plan = { workspace = true }
 polars-row = { workspace = true }
 polars-testing = { workspace = true }
 polars-time = { workspace = true }
-polars-utils = { workspace = true }
+polars-utils = { workspace = true, features = ["python"] }
 
 arboard = { workspace = true, optional = true }
 arrow = { workspace = true }
@@ -201,6 +201,7 @@ dtype-u16 = []
 dtype-i128 = []
 dtype-u128 = []
 dtype-array = []
+dtype-f16 = []
 object = ["polars/object"]
 
 dtypes = [
@@ -211,6 +212,7 @@ dtypes = [
   "dtype-u8",
   "dtype-i128",
   "dtype-u128",
+  "dtype-f16",
   "object",
 ]
 
