@@ -9,8 +9,8 @@ use polars_core::frame::DataFrame;
 #[cfg(feature = "dtype-array")]
 use polars_core::prelude::ArrayChunked;
 use polars_core::prelude::{
-    ChunkCast, ChunkExplode, Column, Field, GroupPositions, GroupsType, IdxCa, IntoColumn,
-    ListBuilderTrait, ListChunked,
+    ChunkCast, ChunkExplode, ChunkNestingUtils, Column, Field, GroupPositions, GroupsType, IdxCa,
+    IntoColumn, ListBuilderTrait, ListChunked,
 };
 use polars_core::schema::Schema;
 use polars_core::series::Series;
@@ -67,6 +67,9 @@ impl EvalExpr {
         is_agg: bool,
     ) -> PolarsResult<Column> {
         let df = DataFrame::empty();
+        let ca = ca
+            .trim_lists_to_normalized_offsets()
+            .map_or(Cow::Borrowed(ca), Cow::Owned);
 
         // Fast path: Empty or only nulls.
         if ca.null_count() == ca.len() {
@@ -196,6 +199,9 @@ impl EvalExpr {
         is_agg: bool,
     ) -> PolarsResult<Column> {
         let df = DataFrame::empty();
+        let ca = ca
+            .trim_lists_to_normalized_offsets()
+            .map_or(Cow::Borrowed(ca), Cow::Owned);
 
         // Fast path: Empty or only nulls.
         if ca.null_count() == ca.len() {
