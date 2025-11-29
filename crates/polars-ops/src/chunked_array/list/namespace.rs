@@ -857,26 +857,46 @@ pub trait ListNameSpaceImpl: AsList {
 
         #[cfg(feature = "dtype-struct")]
         {
-            arity::try_binary(ca, other, |lhs_arr, rhs_arr| -> PolarsResult<_> {
+            let lhs_name = ca.name().clone();
+            let rhs_name = other.name().clone();
+
+            polars_ensure!(
+                lhs_name != rhs_name,
+                Duplicate: "column with name '{}' has more than one occurrence", lhs_name
+            );
+
+            polars_ensure!(
+                ca.len() == other.len() || ca.len() == 1 || other.len() == 1,
+                length_mismatch = "list.zip",
+                ca.len(),
+                other.len()
+            );
+
+            // Handle broadcasting
+            let ca = if ca.len() == 1 && other.len() != 1 {
+                Cow::Owned(ca.new_from_index(0, other.len()))
+            } else {
+                Cow::Borrowed(ca)
+            };
+            let other = if other.len() == 1 && ca.len() != 1 {
+                Cow::Owned(other.new_from_index(0, ca.len()))
+            } else {
+                Cow::Borrowed(other)
+            };
+
+            arity::try_binary(ca.as_ref(), other.as_ref(), |lhs_arr, rhs_arr| -> PolarsResult<_> {
                 let rows = lhs_arr.len();
                 let lhs_values = lhs_arr.values();
                 let rhs_values = rhs_arr.values();
 
-                let lhs_offsets = lhs_arr.offsets().as_slice();
-                let rhs_offsets = rhs_arr.offsets().as_slice();
+                let lhs_offsets = lhs_arr.offsets();
+                let rhs_offsets = rhs_arr.offsets();
 
                 let total_capacity: usize = lhs_offsets
-                    .windows(2)
-                    .zip(rhs_offsets.windows(2))
-                    .fold(0, |acc, (l, r)| {
-                        let l_len = (l[1] - l[0]) as usize;
-                        let r_len = (r[1] - r[0]) as usize;
-                        acc + if pad {
-                            l_len.max(r_len)
-                        } else {
-                            l_len.min(r_len)
-                        }
-                    });
+                    .lengths()
+                    .zip(rhs_offsets.lengths())
+                    .map(|(l, r)| if pad { l.max(r) } else { l.min(r) })
+                    .sum();
 
                 let mut lhs_builder = make_builder(lhs_values.dtype());
                 let mut rhs_builder = make_builder(rhs_values.dtype());
@@ -887,19 +907,18 @@ pub trait ListNameSpaceImpl: AsList {
                 let mut validity = MutableBitmap::with_capacity(rows);
                 let mut offsets = Offsets::with_capacity(rows);
 
-                for row in 0..rows {
+                let lhs_iter = lhs_offsets.offset_and_length_iter();
+                let rhs_iter = rhs_offsets.offset_and_length_iter();
+
+                for (row, ((l_start, l_len), (r_start, r_len))) in
+                    lhs_iter.zip(rhs_iter).enumerate()
+                {
                     if !lhs_arr.is_valid(row) || !rhs_arr.is_valid(row) {
                         validity.push(false);
                         offsets.try_push(0)?;
                         continue;
                     }
                     validity.push(true);
-
-                    let l_start = lhs_offsets[row] as usize;
-                    let l_len = (lhs_offsets[row + 1] - lhs_offsets[row]) as usize;
-
-                    let r_start = rhs_offsets[row] as usize;
-                    let r_len = (rhs_offsets[row + 1] - rhs_offsets[row]) as usize;
 
                     let target_len = if pad {
                         l_len.max(r_len)
@@ -942,8 +961,8 @@ pub trait ListNameSpaceImpl: AsList {
                 let rhs_final = rhs_builder.freeze_reset();
 
                 let struct_fields = vec![
-                    arrow::datatypes::Field::new("field_0".into(), lhs_final.dtype().clone(), true),
-                    arrow::datatypes::Field::new("field_1".into(), rhs_final.dtype().clone(), true),
+                    arrow::datatypes::Field::new(lhs_name.clone(), lhs_final.dtype().clone(), true),
+                    arrow::datatypes::Field::new(rhs_name.clone(), rhs_final.dtype().clone(), true),
                 ];
 
                 let struct_dtype = arrow::datatypes::ArrowDataType::Struct(struct_fields);

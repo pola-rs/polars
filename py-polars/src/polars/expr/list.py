@@ -1513,9 +1513,14 @@ class ExprListNameSpace:
             self._pyexpr.list_set_operation(other_pyexpr, "symmetric_difference")
         )
 
+    @unstable()
     def zip(self, other: IntoExpr, *, pad: bool = False) -> Expr:
         """
         Zip this list with another list element-wise into structs.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         This combines elements from two lists position-wise into struct values.
         Lists are aligned element-by-element, and the resulting list length is
