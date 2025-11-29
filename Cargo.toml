@@ -37,6 +37,7 @@ base64 = "0.22.0"
 bigdecimal = "0.4.8"
 bincode = { version = "2.0", features = ["serde", "std"] }
 bitflags = "2"
+blake3 = { version = "1.8.2" }
 boxcar = "0.2.12"
 bytemuck = { version = "1.22", features = ["derive", "extern_crate_alloc"] }
 bytes = { version = "1.10" }
@@ -107,7 +108,6 @@ uuid = { version = "1.15.1", features = ["v4"] }
 version_check = "0.9.4"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 zstd = "0.13"
-blake3 = { version = "1.8.2" }
 
 polars = { version = "0.52.0", path = "crates/polars", default-features = false }
 polars-compute = { version = "0.52.0", path = "crates/polars-compute", default-features = false }

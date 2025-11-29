@@ -67,6 +67,8 @@ pub fn function_expr_to_udf(func: IRListFunction) -> SpecialEq<Arc<dyn ColumnsUd
         NUnique => map!(n_unique),
         #[cfg(feature = "list_to_struct")]
         ToStruct(names) => map!(to_struct, &names),
+        #[cfg(feature = "list_zip")]
+        Zip(pad) => map_as_slice!(zip, pad),
     }
 }
 
@@ -430,4 +432,17 @@ pub(super) fn to_struct(s: &Column, names: &Arc<[PlSmallStr]>) -> PolarsResult<C
 
 pub(super) fn n_unique(s: &Column) -> PolarsResult<Column> {
     Ok(s.list()?.lst_n_unique()?.into_column())
+}
+
+#[cfg(feature = "list_zip")]
+pub(super) fn zip(s: &[Column], pad: bool) -> PolarsResult<Column> {
+    polars_ensure!(
+        s.len() == 2,
+        ComputeError: "zip expects exactly 2 columns, got {}",
+        s.len()
+    );
+    let first = s[0].list()?;
+    let second = s[1].list()?;
+
+    first.lst_zip(second, pad).map(|ca| ca.into_column())
 }
