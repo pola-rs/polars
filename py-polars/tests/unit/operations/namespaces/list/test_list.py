@@ -1584,10 +1584,10 @@ def test_list_zip_broadcast() -> None:
             "a": [[1, 2], [3, 4], [5, 6]],
         }
     )
-    result = df.select(
+    df_result = df.select(
         pl.col("a").list.zip(pl.lit(pl.Series("b", [["x", "y"]]))).alias("zipped")
     )
-    expected = pl.DataFrame(
+    df_expected = pl.DataFrame(
         {
             "zipped": [
                 [{"a": 1, "b": "x"}, {"a": 2, "b": "y"}],
@@ -1596,7 +1596,7 @@ def test_list_zip_broadcast() -> None:
             ]
         }
     )
-    assert_frame_equal(result, expected)
+    assert_frame_equal(df_result, df_expected)
 
     s1 = pl.Series("a", [[1, 2, 3]])
     s2 = pl.Series("b", [["x"], ["y", "z"]])
