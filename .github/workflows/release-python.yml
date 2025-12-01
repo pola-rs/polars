@@ -393,7 +393,7 @@ jobs:
       - name: Get version from Cargo.toml
         id: version
         run: |
-          VERSION=$(grep -m 1 -oP 'version = "\K[^"]+' py-polars/runtime/template/Cargo.toml)
+          VERSION=$(grep -m 1 -oP 'version = "\K[^"]+' py-polars/runtime/template/Cargo.template.toml)
           if [[ "$VERSION" == *"-"* ]]; then
             IS_PRERELEASE=true
           else
