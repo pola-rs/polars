@@ -375,6 +375,7 @@ impl OptimizationRule for TypeCoercionRule {
                     options,
                 })
             },
+            #[cfg(feature = "hist")]
             AExpr::Function {
                 function: ref function @ IRFunctionExpr::Hist { .. },
                 ref input,
