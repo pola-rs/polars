@@ -180,7 +180,6 @@ pub fn optimize(
                     root,
                     ir_arena,
                     expr_arena,
-                    members,
                     pushdown_maintain_errors,
                     &opt_flags,
                     verbose,

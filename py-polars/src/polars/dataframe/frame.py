@@ -106,6 +106,7 @@ from polars.exceptions import (
     ModuleUpgradeRequiredError,
     NoRowsReturnedError,
     TooManyRowsReturnedError,
+    UnstableWarning,
 )
 from polars.functions import col, lit
 from polars.interchange.protocol import CompatLevel
@@ -3865,16 +3866,17 @@ class DataFrame:
 
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        self.lazy().sink_ipc(
-            target,
-            compression=compression,
-            compat_level=compat_level,
-            storage_options=storage_options,
-            credential_provider=credential_provider,
-            retries=retries,
-            optimizations=QueryOptFlags._eager(),
-            engine="in-memory",
-        )
+        with contextlib.suppress(UnstableWarning):
+            self.lazy().sink_ipc(
+                target,
+                compression=compression,
+                compat_level=compat_level,
+                storage_options=storage_options,
+                credential_provider=credential_provider,
+                retries=retries,
+                optimizations=QueryOptFlags._eager(),
+                engine="streaming",
+            )
         return target if return_bytes else None  # type: ignore[return-value]
 
     @overload
@@ -3983,7 +3985,7 @@ class DataFrame:
         file
             File path or writable file-like object to which the result will be written.
             This should be a path to a directory if writing a partitioned dataset.
-        compression : {'lz4', 'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'zstd'}
+        compression : {'lz4', 'uncompressed', 'snappy', 'gzip', 'brotli', 'zstd'}
             Choose "zstd" for good compression performance.
             Choose "lz4" for fast compression/decompression.
             Choose "snappy" for more backwards compatibility guarantees
@@ -4162,7 +4164,7 @@ class DataFrame:
             return
 
         target: str | Path | IO[bytes] | _SinkDirectory = file
-        engine: EngineType = "in-memory"
+        engine: EngineType = "streaming"
         if partition_by is not None:
             if not isinstance(file, str):
                 msg = "expected file to be a `str` since partition-by is set"
@@ -4172,7 +4174,6 @@ class DataFrame:
 
             target = PartitionByKey(file, by=partition_by)
             mkdir = True
-            engine = "streaming"
 
         from polars.lazyframe.opt_flags import QueryOptFlags
 

@@ -1,8 +1,10 @@
 use std::ops::BitAnd;
 
+use arrow::temporal_conversions::MICROSECONDS_IN_DAY as US_IN_DAY;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::{
     AnyValue, ChunkCast, Column, DataType, IntoColumn, NamedFrom, RollingOptionsFixedWindow,
+    TimeUnit,
 };
 use polars_core::scalar::Scalar;
 use polars_core::series::Series;
@@ -11,6 +13,32 @@ use polars_plan::dsl::RollingCovOptions;
 use polars_plan::prelude::PlanCallback;
 use polars_time::prelude::SeriesOpsTime;
 use polars_utils::pl_str::PlSmallStr;
+
+fn roll_with_temporal_conversion<F: FnOnce(&Series) -> PolarsResult<Series>>(
+    s: &Column,
+    op: F,
+) -> PolarsResult<Column> {
+    let dt = s.dtype();
+    let s = if dt.is_temporal() {
+        &s.to_physical_repr()
+    } else {
+        s
+    };
+
+    // @scalar-opt
+    let out = op(s.as_materialized_series())?;
+
+    Ok(match dt {
+        DataType::Date => (out * US_IN_DAY as f64)
+            .cast(&DataType::Int64)?
+            .into_datetime(TimeUnit::Microseconds, None),
+        DataType::Datetime(tu, tz) => out.cast(&DataType::Int64)?.into_datetime(*tu, tz.clone()),
+        DataType::Duration(tu) => out.cast(&DataType::Int64)?.into_duration(*tu),
+        DataType::Time => out.cast(&DataType::Int64)?.into_time(),
+        _ => out,
+    }
+    .into_column())
+}
 
 pub(super) fn rolling_min(s: &Column, options: RollingOptionsFixedWindow) -> PolarsResult<Column> {
     // @scalar-opt
@@ -27,10 +55,7 @@ pub(super) fn rolling_max(s: &Column, options: RollingOptionsFixedWindow) -> Pol
 }
 
 pub(super) fn rolling_mean(s: &Column, options: RollingOptionsFixedWindow) -> PolarsResult<Column> {
-    // @scalar-opt
-    s.as_materialized_series()
-        .rolling_mean(options)
-        .map(Column::from)
+    roll_with_temporal_conversion(s, |s| s.rolling_mean(options))
 }
 
 pub(super) fn rolling_sum(s: &Column, options: RollingOptionsFixedWindow) -> PolarsResult<Column> {
@@ -44,10 +69,7 @@ pub(super) fn rolling_quantile(
     s: &Column,
     options: RollingOptionsFixedWindow,
 ) -> PolarsResult<Column> {
-    // @scalar-opt
-    s.as_materialized_series()
-        .rolling_quantile(options)
-        .map(Column::from)
+    roll_with_temporal_conversion(s, |s| s.rolling_quantile(options))
 }
 
 pub(super) fn rolling_var(s: &Column, options: RollingOptionsFixedWindow) -> PolarsResult<Column> {
