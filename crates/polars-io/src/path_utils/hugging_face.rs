@@ -11,16 +11,16 @@ use crate::cloud::{
 };
 use crate::path_utils::HiveIdxTracker;
 use crate::pl_async::with_concurrency_budget;
-use crate::prelude::URL_ENCODE_CHAR_SET;
-use crate::utils::decode_json_response;
+use crate::utils::{URL_ENCODE_CHARSET, decode_json_response};
 
 /// Percent-encoding character set for HF Hub paths.
-/// Like URL_ENCODE_CHAR_SET but preserves slashes (/) and encodes brackets.
-/// HF Hub rate limiting classifies URLs by path structure - encoding slashes
-/// causes requests to be misclassified as "pages" (100/5min limit) instead of
-/// "resolvers" (3000/5min limit). See: https://github.com/pola-rs/polars/issues/25389
-const HF_PATH_ENCODE_CHAR_SET: &percent_encoding::AsciiSet =
-    &URL_ENCODE_CHAR_SET.remove(b'/').add(b'[').add(b']');
+///
+/// This is URL_ENCODE_CHARSET with slashes preserved - by not encoding slashes,
+/// the API request will be counted under a higher "resolvers" ratelimit of (3000/5min)
+/// compared to the default "pages" limit of (100/5min limit).
+///
+/// ref <https://github.com/pola-rs/polars/issues/25389>
+const HF_PATH_ENCODE_CHARSET: &percent_encoding::AsciiSet = &URL_ENCODE_CHARSET.remove(b'/');
 
 #[derive(Debug, PartialEq)]
 struct HFPathParts {
@@ -38,13 +38,13 @@ struct HFRepoLocation {
 
 impl HFRepoLocation {
     fn new(bucket: &str, repository: &str, revision: &str) -> Self {
-        // Don't percent-encode bucket/repository - they are path segments where
-        // slashes are separators. E.g. "HuggingFaceFW/fineweb-2" must stay as-is.
-        // DO encode revision - slashes in revisions like "refs/convert/parquet"
-        // are part of the revision name, not path separators.
-        // See: https://github.com/pola-rs/polars/issues/25389
+        // * Don't percent-encode bucket/repository - they are path segments where
+        //   slashes are separators. E.g. "HuggingFaceFW/fineweb-2" must stay as-is.
+        // * DO encode revision - slashes in revisions like "refs/convert/parquet"
+        //   are part of the revision name, not path separators.
+        //   See: https://github.com/pola-rs/polars/issues/25389
         let encoded_revision =
-            percent_encoding::percent_encode(revision.as_bytes(), URL_ENCODE_CHAR_SET);
+            percent_encoding::percent_encode(revision.as_bytes(), URL_ENCODE_CHARSET);
         let api_base_path = format!(
             "https://huggingface.co/api/{}/{}/tree/{}/",
             bucket, repository, encoded_revision
@@ -61,13 +61,10 @@ impl HFRepoLocation {
     }
 
     fn get_file_uri(&self, rel_path: &str) -> String {
-        // Encode special characters but preserve slashes.
-        // Slashes must remain unencoded for correct HF rate limit classification.
-        // See: https://github.com/pola-rs/polars/issues/25389
         format!(
             "{}{}",
             self.download_base_path,
-            percent_encoding::percent_encode(rel_path.as_bytes(), HF_PATH_ENCODE_CHAR_SET)
+            percent_encoding::percent_encode(rel_path.as_bytes(), HF_PATH_ENCODE_CHARSET)
         )
     }
 
@@ -75,7 +72,7 @@ impl HFRepoLocation {
         format!(
             "{}{}",
             self.api_base_path,
-            percent_encoding::percent_encode(rel_path.as_bytes(), HF_PATH_ENCODE_CHAR_SET)
+            percent_encoding::percent_encode(rel_path.as_bytes(), HF_PATH_ENCODE_CHARSET)
         )
     }
 }
@@ -294,9 +291,6 @@ pub(super) async fn expand_paths_hf(
 
         hive_idx_tracker.update(file_uri.len(), path_idx)?;
 
-        // Use recursive tree API to fetch all files at once (with pagination).
-        // This avoids rate limiting by eliminating per-directory API calls.
-        // See: https://github.com/pola-rs/polars/issues/25389
         let uri = format!("{}?recursive=true", repo_location.get_api_uri(&prefix));
         let mut gp = GetPages {
             uri: Some(uri),
