@@ -141,7 +141,8 @@ fn default_by_key_file_path_cb(
             .get(0)
             .unwrap_or("__HIVE_DEFAULT_PARTITION__")
             .as_bytes();
-        let value = percent_encoding::percent_encode(value, polars_io::utils::URL_ENCODE_CHAR_SET);
+        let value =
+            percent_encoding::percent_encode(value, polars_io::utils::HIVE_VALUE_ENCODE_CHARSET);
         write!(&mut file_path, "{name}={value}").unwrap();
         file_path.push(separator);
     }

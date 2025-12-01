@@ -556,6 +556,18 @@ pub trait SeriesOpsTime: AsSeries {
     ) -> PolarsResult<Series> {
         let s = self.as_series().clone();
 
+        match s.dtype() {
+            DataType::Boolean => return s.cast(&DataType::UInt8)?.rolling_rank_by(by, options),
+            dt if dt.is_temporal() => return s.to_physical_repr().rolling_rank_by(by, options),
+            dt => {
+                polars_ensure!(
+                    dt.is_primitive_numeric() && !dt.is_unknown(),
+                    op = "rolling_rank_by",
+                    dt
+                );
+            },
+        }
+
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
             let mut ca = ca.clone();
@@ -573,6 +585,18 @@ pub trait SeriesOpsTime: AsSeries {
     #[cfg(feature = "rolling_window")]
     fn rolling_rank(&self, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
         let s = self.as_series();
+
+        match s.dtype() {
+            DataType::Boolean => return s.cast(&DataType::UInt8)?.rolling_rank(options),
+            dt if dt.is_temporal() => return s.to_physical_repr().rolling_rank(options),
+            dt => {
+                polars_ensure!(
+                    dt.is_primitive_numeric() && !dt.is_unknown(),
+                    op = "rolling_rank",
+                    dt
+                );
+            },
+        }
 
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();

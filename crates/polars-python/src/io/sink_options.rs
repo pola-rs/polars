@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use polars::prelude::sync_on_close::SyncOnCloseType;
 use polars::prelude::{CloudScheme, UnifiedSinkArgs};
 use pyo3::types::PyAnyMethods;
@@ -48,7 +50,7 @@ impl PySinkOptions<'_> {
             mkdir,
             maintain_order,
             sync_on_close,
-            cloud_options,
+            cloud_options: cloud_options.map(Arc::new),
         };
 
         Ok(unified_sink_args)

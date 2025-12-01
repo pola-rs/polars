@@ -283,5 +283,5 @@ def test_err_nested_object() -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError):
         df.select(pl.col("obj").map_elements(mapper))
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ComputeError):
         df.select(pl.col("obj").map_elements(mapper, return_dtype=pl.List(pl.Object)))
