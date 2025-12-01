@@ -378,13 +378,17 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
-    
-
     fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
         let result = self.0.physical().quantiles_reduce(quantiles, method)?;
         // result is a List Scalar with inner dtype Float64
         // Extract the float64 series from the list
-        if let AnyValue::List(float_s) = result.value() {
+        if let AnyValue::Float64(f) = result.value() {
+            // Convert the float64 value to an i64 representing nanoseconds since midnight
+            let int_value = *f as i64;
+            let time_value = AnyValue::from(int_value).as_time();
+            Ok(Scalar::new(self.dtype().clone(), time_value))
+        }
+        else if let AnyValue::List(float_s) = result.value() {
             let float_ca = float_s.f64().unwrap();
             let int_s = float_ca
                 .iter()

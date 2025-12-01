@@ -542,12 +542,14 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
-    
-
     fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
         let result = self.0.physical().quantiles_reduce(quantiles, method)?;
-        // result is a List Scalar with inner dtype Float64
-        // Extract the float64 series from the list
+        // Result could either be a single value or a list of values
+        if let AnyValue::Float64(f) = result.value() {
+            let int_value = *f as i64;
+            let duration_value = AnyValue::from(int_value).as_duration(self.0.time_unit());
+            return Ok(Scalar::new(self.dtype().clone(), duration_value));
+        }
         if let AnyValue::List(float_s) = result.value() {
             let float_ca = float_s.f64().unwrap();
             let int_s = float_ca
@@ -555,7 +557,7 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
                 .map(|v: Option<f64>| v.map(|f| f as i64))
                 .collect::<Int64Chunked>()
                 .into_series();
-            // Cast the int64 series to the duration type
+
             let duration_dtype = self.dtype().clone();
             let casted = int_s.cast(&duration_dtype)?;
             Ok(Scalar::new(
