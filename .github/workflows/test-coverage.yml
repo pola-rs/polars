@@ -23,7 +23,7 @@ defaults:
     shell: bash
 
 env:
-  RUSTFLAGS: '-C link-arg=-Wl,--compress-debug-sections=zstd -C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target'
+  RUSTFLAGS: '-C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target'
   RUST_BACKTRACE: 1
   LLVM_PROFILE_FILE: ${{ github.workspace }}/target/polars-%p-%3m.profraw
   CARGO_LLVM_COV: 1
