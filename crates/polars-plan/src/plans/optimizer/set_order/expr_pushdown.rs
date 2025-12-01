@@ -107,26 +107,32 @@ pub fn resolve_observable_orders(
     aexpr: &AExpr,
     expr_arena: &Arena<AExpr>,
 ) -> Result<ObservableOrders, ColumnOrderObserved> {
-    ObservableOrdersResolver::new(ObservableOrders::Column, expr_arena)
+    ObservableOrdersResolver::new(ObservableOrders::Column, expr_arena, None)
         .resolve_observable_orders(aexpr)
 }
 
 pub(super) struct ObservableOrdersResolver<'a> {
     column_ordering: ObservableOrders,
     expr_arena: &'a Arena<AExpr>,
+    structfield_ordering: Option<ObservableOrders>,
 }
 
 impl<'a> ObservableOrdersResolver<'a> {
-    pub(super) fn new(column_ordering: ObservableOrders, expr_arena: &'a Arena<AExpr>) -> Self {
+    pub(super) fn new(
+        column_ordering: ObservableOrders,
+        expr_arena: &'a Arena<AExpr>,
+        structfield_ordering: Option<ObservableOrders>,
+    ) -> Self {
         Self {
             column_ordering,
             expr_arena,
+            structfield_ordering,
         }
     }
 
     #[recursive::recursive]
     pub(super) fn resolve_observable_orders(
-        &self,
+        &mut self,
         aexpr: &AExpr,
     ) -> Result<ObservableOrders, ColumnOrderObserved> {
         macro_rules! rec {
@@ -153,7 +159,13 @@ impl<'a> ObservableOrdersResolver<'a> {
             AExpr::Explode { expr, .. } => rec!(*expr) | O::Independent,
 
             AExpr::Column(_) => self.column_ordering,
-            AExpr::StructField(_) => self.column_ordering, //kdn TODO ORDER REVIEW
+            AExpr::StructField(_) => {
+                dbg!("match arm StructField"); //kdn
+                let Some(ordering) = self.structfield_ordering else {
+                    unreachable!()
+                };
+                ordering
+            }, //kdn TODO ORDER REVIEW
             AExpr::Literal(lv) if lv.is_scalar() => O::None,
             AExpr::Literal(_) => O::Independent,
 
@@ -317,14 +329,12 @@ impl<'a> ObservableOrdersResolver<'a> {
             },
 
             AExpr::StructEval { expr, evaluation } => {
+                dbg!("match arm StructEval"); //kdn
                 //kdn TODO ORDER REVIEW - THIS IS PROBABLY NOT RIGHT
                 let mut zipped = rec!(*expr);
+                self.structfield_ordering = Some(zipped);
                 for e in evaluation {
                     zipped = zipped.zip_with(rec!(e.node()))?;
-                }
-                // let evaluation: Vec<_> = evaluation.iter().map(|e| rec!(e.node())).collect();
-                if zipped.column_ordering_observable() {
-                    return Err(ColumnOrderObserved);
                 }
                 zipped
             },
