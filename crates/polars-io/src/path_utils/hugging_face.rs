@@ -440,7 +440,7 @@ mod tests {
         let file_uri = loc.get_file_uri("special-chars/[*.parquet");
         assert_eq!(
             file_uri,
-            "https://huggingface.co/datasets/HuggingFaceFW/fineweb-2/resolve/main/special-chars/%5B*.parquet"
+            "https://huggingface.co/datasets/HuggingFaceFW/fineweb-2/resolve/main/special-chars/%5B%2A.parquet"
         );
 
         // Check that revision slashes ARE encoded (they're part of the revision name)
