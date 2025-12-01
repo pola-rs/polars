@@ -127,8 +127,7 @@ impl Histogram for UniformWidthHistogram<Float64Type> {
             return Ok(Series::new_empty(name, &IDX_DTYPE));
         }
         let ca = s.f64()?;
-        let lower = self.lower as f64;
-        let scale = self.num_bins as f64 / (self.upper as f64 - lower);
+        let scale = self.num_bins as f64 / (self.upper - self.lower);
         let max_idx = self.num_bins - 1;
         let bin_width = (self.upper - self.lower) / self.num_bins as f64;
 
@@ -139,7 +138,7 @@ impl Histogram for UniformWidthHistogram<Float64Type> {
                     let mut idx = (scale * (item - self.lower)) as usize;
 
                     // Adjust for float imprecision providing idx > 1 ULP of the breaks
-                    let current_break = lower + bin_width * idx as f64;
+                    let current_break = self.lower + bin_width * idx as f64;
                     if item <= current_break {
                         idx -= 1;
                     } else if item > current_break + bin_width {
