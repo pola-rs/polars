@@ -4,6 +4,7 @@ use arrow::legacy::utils::CustomIterTools;
 use arrow::types::NativeType;
 use num_traits::{NumCast, ToPrimitive};
 use polars_core::prelude::*;
+use polars_utils::float16::pf16;
 
 use crate::chunked_array::sum::sum_slice;
 
@@ -48,6 +49,7 @@ pub(super) fn sum_array_numerical(ca: &ArrayChunked, inner_type: &DataType) -> S
                 UInt32 => dispatch_sum::<u32, u32>(values, width, arr.validity()),
                 UInt64 => dispatch_sum::<u64, u64>(values, width, arr.validity()),
                 UInt128 => dispatch_sum::<u128, u128>(values, width, arr.validity()),
+                Float16 => dispatch_sum::<pf16, pf16>(values, width, arr.validity()),
                 Float32 => dispatch_sum::<f32, f32>(values, width, arr.validity()),
                 Float64 => dispatch_sum::<f64, f64>(values, width, arr.validity()),
                 _ => unimplemented!(),
@@ -136,6 +138,14 @@ pub(super) fn sum_with_nulls(ca: &ArrayChunked, inner_dtype: &DataType) -> Polar
             #[cfg(feature = "dtype-i128")]
             Int128 => {
                 let out: Int128Chunked = ca
+                    .amortized_iter()
+                    .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
+                    .collect();
+                out.into_series()
+            },
+            #[cfg(feature = "dtype-f16")]
+            Float16 => {
+                let out: Float16Chunked = ca
                     .amortized_iter()
                     .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
                     .collect();

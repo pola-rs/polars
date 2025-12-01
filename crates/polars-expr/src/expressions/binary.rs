@@ -73,6 +73,8 @@ pub fn apply_operator(left: &Column, right: &Column, op: Operator) -> PolarsResu
         Operator::TrueDivide => match left.dtype() {
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, _) => left / right,
+            #[cfg(feature = "dtype-f16")]
+            Float16 => left / right,
             Duration(_) | Date | Datetime(_, _) | Float32 | Float64 => left / right,
             #[cfg(feature = "dtype-array")]
             Array(..) => left / right,

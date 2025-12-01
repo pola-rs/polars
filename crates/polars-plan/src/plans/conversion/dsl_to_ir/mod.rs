@@ -14,6 +14,7 @@ use super::stack_opt::ConversionOptimizer;
 use super::*;
 use crate::constants::PL_ELEMENT_NAME;
 use crate::dsl::PartitionedSinkOptions;
+use crate::dsl::sink2::FileProviderType;
 
 mod concat;
 mod datatype_fn_to_ir;
@@ -1026,7 +1027,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     let exprs = input_schema
                         .iter()
                         .filter_map(|(name, dtype)| match dtype {
-                            DataType::Float32 | DataType::Float64 => Some(
+                            DataType::Float16 | DataType::Float32 | DataType::Float64 => Some(
                                 col(name.clone())
                                     .fill_nan(fill_value.clone())
                                     .alias(name.clone()),
@@ -1254,6 +1255,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     finish_callback,
                     file_format,
                     unified_sink_args,
+                    max_rows_per_file,
+                    approximate_bytes_per_file,
                 }) => {
                     let expr_to_ir_cx = &mut ExprToIRContext::new_with_opt_eager(
                         ctxt.expr_arena,
@@ -1292,40 +1295,22 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                                 per_partition_sort_by,
                             }
                         },
-                        PartitionStrategy::MaxRowsPerFile {
-                            max_rows_per_file,
-                            per_file_sort_by,
-                        } => {
-                            let per_file_sort_by: Vec<SortColumnIR> = per_file_sort_by
-                                .into_iter()
-                                .map(|s| {
-                                    let SortColumn {
-                                        expr,
-                                        descending,
-                                        nulls_last,
-                                    } = s;
-                                    Ok(SortColumnIR {
-                                        expr: to_expr_ir(expr, expr_to_ir_cx)?,
-                                        descending,
-                                        nulls_last,
-                                    })
-                                })
-                                .collect::<PolarsResult<_>>()?;
-
-                            PartitionStrategyIR::MaxRowsPerFile {
-                                max_rows_per_file,
-                                per_file_sort_by,
-                            }
-                        },
+                        PartitionStrategy::FileSize => PartitionStrategyIR::FileSize,
                     };
 
                     let options = PartitionedSinkOptionsIR {
                         base_path,
-                        file_path_provider,
+                        file_path_provider: file_path_provider.unwrap_or_else(|| {
+                            FileProviderType::Hive {
+                                extension: PlSmallStr::from_static(file_format.extension()),
+                            }
+                        }),
                         partition_strategy,
                         finish_callback,
                         file_format,
                         unified_sink_args,
+                        max_rows_per_file,
+                        approximate_bytes_per_file,
                     };
 
                     ctxt.conversion_optimizer

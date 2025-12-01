@@ -140,6 +140,7 @@ def tuple_order(
 @given(
     s=series(
         excluded_dtypes=[
+            pl.Float16,  # We cannot really deal with totalOrder
             pl.Float32,  # We cannot really deal with totalOrder
             pl.Float64,  # We cannot really deal with totalOrder
             pl.Decimal,  # Bug: see https://github.com/pola-rs/polars/issues/20308
@@ -184,6 +185,7 @@ def test_series_sort_parametric(s: pl.Series) -> None:
 @given(
     df=dataframes(
         excluded_dtypes=[
+            pl.Float16,  # We cannot really deal with totalOrder
             pl.Float32,  # We cannot really deal with totalOrder
             pl.Float64,  # We cannot really deal with totalOrder
             pl.Decimal,  # Bug: see https://github.com/pola-rs/polars/issues/20308

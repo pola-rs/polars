@@ -292,6 +292,10 @@ impl Column {
     pub fn try_u128(&self) -> Option<&UInt128Chunked> {
         self.as_materialized_series().try_u128()
     }
+    #[cfg(feature = "dtype-f16")]
+    pub fn try_f16(&self) -> Option<&Float16Chunked> {
+        self.as_materialized_series().try_f16()
+    }
     pub fn try_f32(&self) -> Option<&Float32Chunked> {
         self.as_materialized_series().try_f32()
     }
@@ -389,6 +393,10 @@ impl Column {
     #[cfg(feature = "dtype-u128")]
     pub fn u128(&self) -> PolarsResult<&UInt128Chunked> {
         self.as_materialized_series().u128()
+    }
+    #[cfg(feature = "dtype-f16")]
+    pub fn f16(&self) -> PolarsResult<&Float16Chunked> {
+        self.as_materialized_series().f16()
     }
     pub fn f32(&self) -> PolarsResult<&Float32Chunked> {
         self.as_materialized_series().f32()

@@ -135,6 +135,7 @@ version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "70f13d10a41ac8d2ec79ee34178d61e6f47a29c2edfe7ef1721c7383b0359e65"
 dependencies = [
+ "half",
  "num-traits",
 ]
 
@@ -1245,6 +1246,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "crunchy"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
+
+[[package]]
 name = "crypto-bigint"
 version = "0.4.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1774,6 +1781,20 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+]
+
+[[package]]
+name = "half"
+version = "2.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ea2d84b969582b4b1864a92dc5d27cd2b77b622a8d79306834f1be5ba20d84b"
+dependencies = [
+ "bytemuck",
+ "cfg-if",
+ "crunchy",
+ "num-traits",
+ "serde",
+ "zerocopy",
 ]
 
 [[package]]
@@ -2662,6 +2683,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "51d515d32fb182ee37cda2ccdcb92950d6a3c2893aa280e540671c2cd0f3b1d9"
 
 [[package]]
+name = "num-derive"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed3955f1a9c7c0c15e092f9c887db08b1fc683305fdf6eb6684f22555355e202"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.104",
+]
+
+[[package]]
 name = "num-integer"
 version = "0.1.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2708,6 +2740,7 @@ version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b2dba356160b54f5371b550575b78130a54718b4c6e46b3f33a6da74a27e78b"
 dependencies = [
+ "half",
  "libc",
  "ndarray",
  "num-complex",
@@ -3079,6 +3112,7 @@ dependencies = [
  "futures",
  "getrandom 0.2.16",
  "getrandom 0.3.3",
+ "half",
  "hashbrown 0.16.0",
  "itoa",
  "lz4",
@@ -3122,6 +3156,7 @@ dependencies = [
  "chrono",
  "either",
  "fast-float2",
+ "half",
  "hashbrown 0.16.0",
  "itoa",
  "num-bigint",
@@ -3151,6 +3186,7 @@ dependencies = [
  "chrono-tz",
  "comfy-table",
  "either",
+ "half",
  "hashbrown 0.16.0",
  "indexmap",
  "itoa",
@@ -3476,6 +3512,7 @@ name = "polars-plan"
 version = "0.52.0"
 dependencies = [
  "bitflags",
+ "blake3",
  "bytemuck",
  "bytes",
  "chrono",
@@ -3573,7 +3610,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-32"
-version = "1.35.1"
+version = "1.36.0-beta.1"
 dependencies = [
  "either",
  "libc",
@@ -3584,7 +3621,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-64"
-version = "1.35.1"
+version = "1.36.0-beta.1"
 dependencies = [
  "either",
  "libc",
@@ -3595,7 +3632,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-compat"
-version = "1.35.1"
+version = "1.36.0-beta.1"
 dependencies = [
  "either",
  "libc",
@@ -3650,6 +3687,7 @@ dependencies = [
  "crossbeam-utils",
  "futures",
  "memmap2",
+ "num-traits",
  "parking_lot",
  "percent-encoding",
  "pin-project-lite",
@@ -3713,6 +3751,7 @@ dependencies = [
 name = "polars-utils"
 version = "0.52.0"
 dependencies = [
+ "argminmax",
  "bincode",
  "bytemuck",
  "bytes",
@@ -3720,11 +3759,14 @@ dependencies = [
  "either",
  "flate2",
  "foldhash 0.2.0",
+ "half",
  "hashbrown 0.16.0",
  "indexmap",
  "libc",
  "memmap2",
+ "num-derive",
  "num-traits",
+ "numpy",
  "polars-error",
  "proptest",
  "pyo3",

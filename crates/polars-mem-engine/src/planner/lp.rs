@@ -299,7 +299,7 @@ fn create_physical_plan_impl(
                         name,
                         f: Box::new(move |mut df, _state| {
                             let mut file = target.open_into_writeable(
-                                unified_sink_args.cloud_options.as_ref(),
+                                unified_sink_args.cloud_options.as_deref(),
                                 unified_sink_args.mkdir,
                             )?;
                             let writer = &mut *file;
