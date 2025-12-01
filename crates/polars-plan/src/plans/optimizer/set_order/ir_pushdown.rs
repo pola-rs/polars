@@ -66,6 +66,7 @@ pub(super) fn pushdown_orders(
                 // _ -> Unordered
                 //
                 // Remove sort.
+                dbg!("remove sort"); //kdn
                 let input = *input;
 
                 _ = ir_arena.take(node);
