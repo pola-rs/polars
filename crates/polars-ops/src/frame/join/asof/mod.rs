@@ -114,9 +114,9 @@ impl<T: PartialOrd> AsofJoinState<T> for AsofJoinBackwardState {
 struct AsofJoinNearestState {
     /// The previous nearest value, that is strictly smaller than the current
     /// nearest value.
-    last_strictly_smaller_nearest: Option<IdxSize>,
-    /// Pointer to the index of the next value to scan in the right array.
-    scan_offset: IdxSize,
+    strictly_smaller_nearest: Option<IdxSize>,
+    /// The next nearest value, that is strictly greater than the current
+    strictly_greater_nearest: IdxSize,
     allow_eq: bool,
 }
 
@@ -134,69 +134,55 @@ impl<T: NumericNative> AsofJoinState<T> for AsofJoinNearestState {
         mut right: F,
         n_right: IdxSize,
     ) -> Option<IdxSize> {
-        let mut nearest = self.scan_offset.checked_sub(1);
+        while self.strictly_greater_nearest < n_right {
+            let Some(scan_right_val) = right(self.strictly_greater_nearest) else {
+                self.strictly_greater_nearest += 1;
+                continue;
+            };
+            if scan_right_val > *left_val {
+                break;
+            }
+            self.strictly_greater_nearest += 1;
+        }
 
-        if !self.allow_eq
-            && let Some(prev) = nearest
-            && let Some(right_val) = right(prev)
-            && right_val == *left_val
+        if self.allow_eq
+            && self.strictly_greater_nearest > 0
+            && right(self.strictly_greater_nearest - 1) == Some(*left_val)
         {
-            debug_assert!(self.last_strictly_smaller_nearest != nearest);
-            nearest = self.last_strictly_smaller_nearest;
-            self.last_strictly_smaller_nearest = None;
+            return Some(self.strictly_greater_nearest - 1);
         }
 
-        while self.scan_offset < n_right {
-            let Some(scan_right_val) = right(self.scan_offset) else {
-                self.scan_offset += 1;
+        let mut cursor = self.strictly_smaller_nearest.unwrap_or(0);
+        while cursor < self.strictly_greater_nearest {
+            let Some(scan_right_val) = right(cursor) else {
+                cursor += 1;
                 continue;
             };
-
-            // Skipping ahead to the first value greater than left_val.
-            // This is cheaper than computing differences.
-            if !self.allow_eq && scan_right_val == *left_val {
-                self.last_strictly_smaller_nearest = Some(self.scan_offset);
-                self.scan_offset += 1;
-                continue;
+            if scan_right_val >= *left_val {
+                break;
             }
-            if scan_right_val <= *left_val {
-                nearest = Some(self.scan_offset);
-                self.scan_offset += 1;
-                continue;
-            }
+            self.strictly_smaller_nearest = Some(cursor);
+            cursor += 1;
+            continue;
+        }
 
-            // Now we must compute a difference to see if scan_right_val
-            // is closer than our current best bound.
-            let scan_is_better = if let Some(best_idx) = nearest {
-                let best_right_val = unsafe { right(best_idx).unwrap_unchecked() };
-                let best_diff = left_val.abs_diff(best_right_val);
-                let scan_diff = left_val.abs_diff(scan_right_val);
-                scan_diff <= best_diff
-            } else {
-                true
-            };
-
-            if scan_is_better {
-                nearest = Some(self.scan_offset);
-                self.scan_offset += 1;
-
-                // It is possible there are later elements equal to our
-                // scan, so keep going on.
-                while self.scan_offset < n_right {
-                    if let Some(next_right_val) = right(self.scan_offset) {
-                        if next_right_val == scan_right_val && self.allow_eq {
-                            nearest = Some(self.scan_offset);
-                        } else {
-                            return nearest;
-                        }
-                    }
-                    self.scan_offset += 1;
+        let mut right_get = |idx: IdxSize| (idx < n_right).then(|| right(idx)).flatten();
+        let lower = self.strictly_smaller_nearest.and_then(&mut right_get);
+        let upper = right_get(self.strictly_greater_nearest);
+        match (lower, upper) {
+            (None, None) => None,
+            (Some(_), None) => self.strictly_smaller_nearest,
+            (None, Some(_)) => Some(self.strictly_greater_nearest),
+            (Some(lo), Some(hi)) => {
+                let lo_diff = left_val.abs_diff(lo);
+                let hi_diff = left_val.abs_diff(hi);
+                if hi_diff <= lo_diff {
+                    Some(self.strictly_greater_nearest)
+                } else {
+                    self.strictly_smaller_nearest
                 }
-            }
-            return nearest;
+            },
         }
-
-        nearest
     }
 }
 
