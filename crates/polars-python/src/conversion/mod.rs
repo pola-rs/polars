@@ -23,6 +23,7 @@ use polars::prelude::default_values::{
 use polars::prelude::deletion::DeletionFilesList;
 use polars::series::ops::NullBehavior;
 use polars_compute::decimal::dec128_verify_prec_scale;
+use polars_core::datatypes::extension::get_extension_type_or_generic;
 use polars_core::schema::iceberg::IcebergSchema;
 use polars_core::utils::arrow::array::Array;
 use polars_core::utils::arrow::types::NativeType;
@@ -169,6 +170,16 @@ fn struct_dict<'a, 'py>(
     Ok(dict)
 }
 
+impl<'py> IntoPyObject<'py> for Wrap<Series> {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        to_series(py, PySeries::new(self.0))
+    }
+}
+
 impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
@@ -216,6 +227,10 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
             },
             DataType::Int128 => {
                 let class = pl.getattr(intern!(py, "Int128"))?;
+                class.call0()
+            },
+            DataType::Float16 => {
+                let class = pl.getattr(intern!(py, "Float16"))?;
                 class.call0()
             },
             DataType::Float32 => {
@@ -306,6 +321,21 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
                 let class = pl.getattr(intern!(py, "Null"))?;
                 class.call0()
             },
+            DataType::Extension(typ, storage) => {
+                let py_storage = Wrap((**storage).clone()).into_pyobject(py)?;
+                let py_typ = pl
+                    .getattr(intern!(py, "get_extension_type"))?
+                    .call1((typ.name(),))?;
+                let class = if py_typ.is_none()
+                    || py_typ.str().map(|s| s == "storage").ok() == Some(true)
+                {
+                    pl.getattr(intern!(py, "Extension"))?
+                } else {
+                    py_typ
+                };
+                let from_params = class.getattr(intern!(py, "ext_from_params"))?;
+                from_params.call1((typ.name(), py_storage, typ.serialize_metadata()))
+            },
             DataType::Unknown(UnknownKind::Int(v)) => {
                 Wrap(materialize_dyn_int(*v).dtype()).into_pyobject(py)
             },
@@ -357,6 +387,7 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
                     "UInt32" => DataType::UInt32,
                     "UInt64" => DataType::UInt64,
                     "UInt128" => DataType::UInt128,
+                    "Float16" => DataType::Float16,
                     "Float32" => DataType::Float32,
                     "Float64" => DataType::Float64,
                     "Boolean" => DataType::Boolean,
@@ -397,6 +428,7 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
             "UInt32" => DataType::UInt32,
             "UInt64" => DataType::UInt64,
             "UInt128" => DataType::UInt128,
+            "Float16" => DataType::Float16,
             "Float32" => DataType::Float32,
             "Float64" => DataType::Float64,
             "Boolean" => DataType::Boolean,
@@ -467,26 +499,27 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
             "Object" => DataType::Object(OBJECT_NAME),
             "Unknown" => DataType::Unknown(Default::default()),
             dt => {
+                let base_ext = polars(py)
+                    .getattr(py, intern!(py, "BaseExtension"))
+                    .unwrap();
+                if ob.is_instance(base_ext.bind(py))? {
+                    let ext_name_f = ob.getattr(intern!(py, "ext_name"))?;
+                    let ext_metadata_f = ob.getattr(intern!(py, "ext_metadata"))?;
+                    let ext_storage_f = ob.getattr(intern!(py, "ext_storage"))?;
+                    let name: String = ext_name_f.call0()?.extract()?;
+                    let metadata: Option<String> = ext_metadata_f.call0()?.extract()?;
+                    let storage: Wrap<DataType> = ext_storage_f.call0()?.extract()?;
+                    let ext_typ =
+                        get_extension_type_or_generic(&name, &storage.0, metadata.as_deref());
+                    return Ok(Wrap(DataType::Extension(ext_typ, Box::new(storage.0))));
+                }
+
                 return Err(PyTypeError::new_err(format!(
                     "'{dt}' is not a Polars data type",
                 )));
             },
         };
         Ok(Wrap(dtype))
-    }
-}
-
-enum CategoricalOrdering {
-    Lexical,
-}
-
-impl<'py> IntoPyObject<'py> for Wrap<CategoricalOrdering> {
-    type Target = PyString;
-    type Output = Bound<'py, Self::Target>;
-    type Error = Infallible;
-
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        "lexical".into_pyobject(py)
     }
 }
 
@@ -830,27 +863,6 @@ impl<'py> FromPyObject<'py> for Wrap<Option<AvroCompression>> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "avro `compression` must be one of {{'uncompressed', 'snappy', 'deflate'}}, got {v}",
-                )));
-            },
-        };
-        Ok(Wrap(parsed))
-    }
-}
-
-impl<'py> FromPyObject<'py> for Wrap<CategoricalOrdering> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
-        let parsed = match &*ob.extract::<PyBackedStr>()? {
-            "lexical" => CategoricalOrdering::Lexical,
-            "physical" => {
-                polars_warn!(
-                    Deprecation,
-                    "physical ordering is deprecated, will use lexical ordering instead"
-                );
-                CategoricalOrdering::Lexical
-            },
-            v => {
-                return Err(PyValueError::new_err(format!(
-                    "categorical `ordering` must be one of {{'physical', 'lexical'}}, got {v}",
                 )));
             },
         };
@@ -1504,7 +1516,6 @@ pub(crate) fn parse_parquet_compression(
                 })
                 .transpose()?,
         ),
-        "lzo" => ParquetCompression::Lzo,
         "brotli" => ParquetCompression::Brotli(
             compression_level
                 .map(|lvl| {
@@ -1523,7 +1534,7 @@ pub(crate) fn parse_parquet_compression(
         ),
         e => {
             return Err(PyValueError::new_err(format!(
-                "parquet `compression` must be one of {{'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'lz4', 'zstd'}}, got {e}",
+                "parquet `compression` must be one of {{'uncompressed', 'snappy', 'gzip', 'brotli', 'lz4', 'zstd'}}, got {e}",
             )));
         },
     };

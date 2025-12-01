@@ -2,6 +2,7 @@
 use std::any::Any;
 use std::sync::OnceLock;
 
+use polars::prelude::sink2::FileProviderReturn;
 use polars::prelude::*;
 use polars_core::chunked_array::object::builder::ObjectChunkedBuilder;
 use polars_core::chunked_array::object::registry::AnonymousObjectBuilder;
@@ -141,6 +142,11 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
                         ) as _)
                     })
                 }),
+                file_provider_result: Arc::new(|py_f| {
+                    Python::attach(|py| {
+                        Ok(Box::new(py_f.extract::<Wrap<FileProviderReturn>>(py)?.0) as _)
+                    })
+                }),
                 series: Arc::new(|py_f| {
                     Python::attach(|py| {
                         Ok(Box::new(py_f.extract::<PySeries>(py)?.series.into_inner()) as _)
@@ -232,5 +238,17 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
         if catch_keyboard_interrupt {
             register_polars_keyboard_interrupt_hook();
         }
+
+        use polars_core::datatypes::extension::UnknownExtensionTypeBehavior;
+        let behavior = match std::env::var("POLARS_UNKNOWN_EXTENSION_TYPE_BEHAVIOR").as_deref() {
+            Ok("load_as_storage") => UnknownExtensionTypeBehavior::LoadAsStorage,
+            Ok("load_as_extension") => UnknownExtensionTypeBehavior::LoadAsGeneric,
+            Ok("") | Err(_) => UnknownExtensionTypeBehavior::WarnAndLoadAsStorage,
+            _ => {
+                polars_warn!("Invalid value for 'POLARS_UNKNOWN_EXTENSION_TYPE_BEHAVIOR' environment variable. Expected one of 'load_as_storage' or 'load_as_extension'.");
+                UnknownExtensionTypeBehavior::WarnAndLoadAsStorage
+            },
+        };
+        polars_core::datatypes::extension::set_unknown_extension_type_behavior(behavior);
     });
 }

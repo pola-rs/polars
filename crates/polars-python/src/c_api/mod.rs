@@ -4,7 +4,7 @@ pub mod allocator;
 // Since Python Polars cannot share its version into here and we need to be able to build this
 // package correctly without `py-polars`, we need to mirror the version here.
 // example: 1.35.0-beta.1
-pub static PYPOLARS_VERSION: &str = "1.35.1";
+pub static PYPOLARS_VERSION: &str = "1.36.0-beta.1";
 
 // We allow multiple features to be set simultaneously so checking with all-features
 // is possible. In the case multiple are set or none at all, we set the repr to "unknown".
@@ -45,7 +45,7 @@ use crate::lazygroupby::PyLazyGroupBy;
 use crate::series::PySeries;
 #[cfg(feature = "sql")]
 use crate::sql::PySQLContext;
-use crate::{datatypes, exceptions, functions, testing};
+use crate::{datatypes, exceptions, extension, functions, testing};
 
 #[pymodule]
 fn _ir_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
@@ -339,6 +339,12 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(datatypes::_get_dtype_min))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(datatypes::_known_timezones))
+        .unwrap();
+
+    // Extension type registry.
+    m.add_wrapped(wrap_pyfunction!(extension::_register_extension_type))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(extension::_unregister_extension_type))
         .unwrap();
 
     // Testing

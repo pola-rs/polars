@@ -321,11 +321,17 @@ impl PyExpr {
         patterns: PyExpr,
         replace_with: PyExpr,
         ascii_case_insensitive: bool,
+        leftmost: bool,
     ) -> Self {
         self.inner
             .clone()
             .str()
-            .replace_many(patterns.inner, replace_with.inner, ascii_case_insensitive)
+            .replace_many(
+                patterns.inner,
+                replace_with.inner,
+                ascii_case_insensitive,
+                leftmost,
+            )
             .into()
     }
 
@@ -335,11 +341,17 @@ impl PyExpr {
         patterns: PyExpr,
         ascii_case_insensitive: bool,
         overlapping: bool,
+        leftmost: bool,
     ) -> Self {
         self.inner
             .clone()
             .str()
-            .extract_many(patterns.inner, ascii_case_insensitive, overlapping)
+            .extract_many(
+                patterns.inner,
+                ascii_case_insensitive,
+                overlapping,
+                leftmost,
+            )
             .into()
     }
 
@@ -349,11 +361,17 @@ impl PyExpr {
         patterns: PyExpr,
         ascii_case_insensitive: bool,
         overlapping: bool,
+        leftmost: bool,
     ) -> Self {
         self.inner
             .clone()
             .str()
-            .find_many(patterns.inner, ascii_case_insensitive, overlapping)
+            .find_many(
+                patterns.inner,
+                ascii_case_insensitive,
+                overlapping,
+                leftmost,
+            )
             .into()
     }
 

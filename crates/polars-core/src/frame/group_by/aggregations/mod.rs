@@ -22,6 +22,8 @@ use polars_compute::rolling::{
     SumWindow, quantile_filter,
 };
 use polars_utils::float::IsFloat;
+#[cfg(feature = "dtype-f16")]
+use polars_utils::float16::pf16;
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::kahan_sum::KahanSum;
 use polars_utils::min_max::MinMax;
@@ -227,6 +229,16 @@ where
         self.quantile_faster(quantile, method)
     }
     fn _median(self) -> Option<f64> {
+        self.median_faster()
+    }
+}
+
+#[cfg(feature = "dtype-f16")]
+impl QuantileDispatcher<pf16> for Float16Chunked {
+    fn _quantile(self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<pf16>> {
+        self.quantile_faster(quantile, method)
+    }
+    fn _median(self) -> Option<pf16> {
         self.median_faster()
     }
 }

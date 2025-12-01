@@ -9,10 +9,11 @@ use polars_plan::prelude::*;
 use polars_utils::format_pl_smallstr;
 use sqlparser::ast::{
     BinaryOperator, CreateTable, Delete, Distinct, ExcludeSelectItem, Expr as SQLExpr, FromTable,
-    FunctionArg, GroupByExpr, Ident, JoinConstraint, JoinOperator, ObjectName, ObjectType, Offset,
-    OrderBy, Query, RenameSelectItem, Select, SelectItem, SetExpr, SetOperator, SetQuantifier,
-    Statement, TableAlias, TableFactor, TableWithJoins, UnaryOperator, Value as SQLValue, Values,
-    Visit, Visitor, WildcardAdditionalOptions,
+    FunctionArg, GroupByExpr, Ident, JoinConstraint, JoinOperator, NamedWindowDefinition,
+    NamedWindowExpr, ObjectName, ObjectType, Offset, OrderBy, Query, RenameSelectItem, Select,
+    SelectItem, SetExpr, SetOperator, SetQuantifier, Statement, TableAlias, TableFactor,
+    TableWithJoins, UnaryOperator, Value as SQLValue, Values, Visit, Visitor,
+    WildcardAdditionalOptions, WindowSpec,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -63,6 +64,7 @@ pub struct SQLContext {
     cte_map: PlHashMap<String, LazyFrame>,
     table_aliases: PlHashMap<String, String>,
     joined_aliases: PlHashMap<String, PlHashMap<String, String>>,
+    pub(crate) named_windows: PlHashMap<String, WindowSpec>,
 }
 
 impl Default for SQLContext {
@@ -73,6 +75,7 @@ impl Default for SQLContext {
             cte_map: Default::default(),
             table_aliases: Default::default(),
             joined_aliases: Default::default(),
+            named_windows: Default::default(),
             lp_arena: Default::default(),
             expr_arena: Default::default(),
         }
@@ -166,6 +169,7 @@ impl SQLContext {
         self.cte_map.clear();
         self.table_aliases.clear();
         self.joined_aliases.clear();
+        self.named_windows.clear();
 
         Ok(res)
     }
@@ -646,6 +650,30 @@ impl SQLContext {
         Ok(())
     }
 
+    fn register_named_windows(
+        &mut self,
+        named_windows: &[NamedWindowDefinition],
+    ) -> PolarsResult<()> {
+        for NamedWindowDefinition(name, expr) in named_windows {
+            let spec = match expr {
+                NamedWindowExpr::NamedWindow(ref_name) => self
+                    .named_windows
+                    .get(&ref_name.value)
+                    .ok_or_else(|| {
+                        polars_err!(
+                            SQLInterface:
+                            "named window '{}' references undefined window '{}'",
+                            name.value, ref_name.value
+                        )
+                    })?
+                    .clone(),
+                NamedWindowExpr::WindowSpec(spec) => spec.clone(),
+            };
+            self.named_windows.insert(name.value.clone(), spec);
+        }
+        Ok(())
+    }
+
     /// execute the 'FROM' part of the query
     fn execute_from_statement(&mut self, tbl_expr: &TableWithJoins) -> PolarsResult<LazyFrame> {
         let (l_name, mut lf) = self.get_table(&tbl_expr.relation)?;
@@ -753,6 +781,7 @@ impl SQLContext {
             from: _,
             group_by: _,
             having: _,
+            named_window: _,
             projection: _,
             selection: _,
 
@@ -767,7 +796,6 @@ impl SQLContext {
             ref distribute_by,
             ref into,
             ref lateral_views,
-            ref named_window,
             ref prewhere,
             ref qualify,
             ref sort_by,
@@ -776,17 +804,17 @@ impl SQLContext {
         } = *select_stmt;
 
         // Raise specific error messages for unsupported attributes
-        polars_ensure!(cluster_by.is_empty(), SQLInterface: "CLUSTER BY clause is not supported");
-        polars_ensure!(connect_by.is_none(), SQLInterface: "CONNECT BY clause is not supported");
-        polars_ensure!(distribute_by.is_empty(), SQLInterface: "DISTRIBUTE BY clause is not supported");
-        polars_ensure!(into.is_none(), SQLInterface: "SELECT INTO clause is not supported");
-        polars_ensure!(lateral_views.is_empty(), SQLInterface: "LATERAL VIEW clause is not supported");
-        polars_ensure!(named_window.is_empty(), SQLInterface: "WINDOW clause support is coming soon");
-        polars_ensure!(prewhere.is_none(), SQLInterface: "PREWHERE clause is not supported");
-        polars_ensure!(qualify.is_none(), SQLInterface: "QUALIFY clause is not currently supported");
-        polars_ensure!(sort_by.is_empty(), SQLInterface: "SORT BY clause is not supported; use ORDER BY instead");
-        polars_ensure!(top.is_none(), SQLInterface: "TOP clause is not supported; use LIMIT instead");
-        polars_ensure!(value_table_mode.is_none(), SQLInterface: "SELECT AS VALUE/STRUCT is not supported");
+        polars_ensure!(cluster_by.is_empty(), SQLInterface: "`CLUSTER BY` clause is not supported");
+        polars_ensure!(connect_by.is_none(), SQLInterface: "`CONNECT BY` clause is not supported");
+        polars_ensure!(distribute_by.is_empty(), SQLInterface: "`DISTRIBUTE BY` clause is not supported");
+        polars_ensure!(into.is_none(), SQLInterface: "`SELECT INTO`clause  is not supported");
+        polars_ensure!(lateral_views.is_empty(), SQLInterface: "`LATERAL VIEW` clause is not supported");
+        polars_ensure!(prewhere.is_none(), SQLInterface: "`PREWHERE` clause is not supported");
+        polars_ensure!(qualify.is_none(), SQLInterface: "`QUALIFY` clause is not supported");
+        polars_ensure!(sort_by.is_empty(), SQLInterface: "SORT BY` clause is not supported; use `ORDER BY` instead");
+        polars_ensure!(top.is_none(), SQLInterface: "`TOP` clause is not supported; use `LIMIT` instead");
+        polars_ensure!(value_table_mode.is_none(), SQLInterface: "`SELECT AS VALUE/STRUCT` is not supported");
+
         Ok(())
     }
 
@@ -795,6 +823,10 @@ impl SQLContext {
         // Check that the statement doesn't contain unsupported SELECT clauses
         self.validate_select(select_stmt)?;
 
+        // Parse named windows first, as they may be referenced in the SELECT clause
+        self.register_named_windows(&select_stmt.named_window)?;
+
+        // Get `FROM` table/data
         let mut lf = if select_stmt.from.is_empty() {
             DataFrame::empty().lazy()
         } else {
@@ -807,11 +839,11 @@ impl SQLContext {
             self.execute_from_statement(from.first().unwrap())?
         };
 
-        // Filter expression (WHERE clause)
-        let schema = self.get_frame_schema(&mut lf)?;
+        // Apply `WHERE` constraint
+        let mut schema = self.get_frame_schema(&mut lf)?;
         lf = self.process_where(lf, &select_stmt.selection, false, Some(schema.clone()))?;
 
-        // 'SELECT *' modifiers
+        // Determine projections
         let mut select_modifiers = SelectModifiers {
             ilike: None,
             exclude: PlHashSet::new(),
@@ -822,22 +854,36 @@ impl SQLContext {
         let mut projections =
             self.column_projections(select_stmt, &schema, &mut select_modifiers)?;
 
-        // Dataframe Level explode (UNNEST CLAUSE)
-        // Collect column names to explode
-        let mut explode_names = Vec::with_capacity(projections.len());
+        // Apply `UNNEST` expressions
+        let mut explode_names = Vec::new();
+        let mut explode_exprs = Vec::new();
+        let mut explode_lookup = PlHashMap::new();
+
         for expr in &projections {
             for e in expr {
                 if let Expr::Explode { input, .. } = e {
-                    if let Expr::Column(name) = input.as_ref() {
-                        explode_names.push(name.clone());
+                    match input.as_ref() {
+                        Expr::Column(name) => explode_names.push(name.clone()),
+                        other_expr => {
+                            // Note: skip aggregate expressions; those are handled in the GROUP BY phase
+                            if !has_expr(other_expr, |e| matches!(e, Expr::Agg(_) | Expr::Len)) {
+                                let temp_name = PlSmallStr::from(format!(
+                                    "__POLARS_UNNEST_{}",
+                                    explode_exprs.len()
+                                ));
+                                explode_exprs.push(other_expr.clone().alias(temp_name.as_str()));
+                                explode_lookup.insert(other_expr.clone(), temp_name.clone());
+                                explode_names.push(temp_name);
+                            }
+                        },
                     }
                 }
             }
         }
-
         if !explode_names.is_empty() {
-            // Apply explosions 1 by 1.
-            explode_names.dedup();
+            if !explode_exprs.is_empty() {
+                lf = lf.with_columns(explode_exprs);
+            }
             lf = lf.explode(
                 Selector::ByName {
                     names: Arc::from(explode_names),
@@ -848,17 +894,21 @@ impl SQLContext {
                     keep_nulls: true,
                 },
             );
-
-            // Remove the explode expressions from the projections to be executed.
             projections = projections
                 .into_iter()
                 .map(|p| {
+                    // Update "projections" with column refs to the now-exploded expressions
                     p.map_expr(|e| match e {
-                        Expr::Explode { input, .. } => input.as_ref().clone(),
+                        Expr::Explode { input, .. } => explode_lookup
+                            .get(input.as_ref())
+                            .map(|name| Expr::Column(name.clone()))
+                            .unwrap_or_else(|| input.as_ref().clone()),
                         _ => e,
                     })
                 })
                 .collect();
+
+            schema = self.get_frame_schema(&mut lf)?;
         }
 
         // Check for "GROUP BY ..." (after determining projections)

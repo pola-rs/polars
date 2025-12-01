@@ -144,6 +144,20 @@ pub(super) fn convert_functions(
                 C::Slice(s, e) => IC::Slice(s, e),
             })
         },
+        #[cfg(feature = "dtype-extension")]
+        F::Extension(extension_function) => {
+            use {ExtensionFunction as E, IRExtensionFunction as IE};
+            I::Extension(match extension_function {
+                E::To(dtype) => {
+                    let concrete_dtype = dtype.into_datatype(ctx.schema)?;
+                    polars_ensure!(matches!(concrete_dtype, DataType::Extension(_, _)),
+                        InvalidOperation: "ext.to() requires an Extension dtype, got {concrete_dtype:?}"
+                    );
+                    IE::To(concrete_dtype)
+                },
+                E::Storage => IE::Storage,
+            })
+        },
         F::ListExpr(list_function) => {
             use {IRListFunction as IL, ListFunction as L};
             I::ListExpr(match list_function {
@@ -305,24 +319,30 @@ pub(super) fn convert_functions(
                 #[cfg(feature = "find_many")]
                 S::ReplaceMany {
                     ascii_case_insensitive,
+                    leftmost,
                 } => IS::ReplaceMany {
                     ascii_case_insensitive,
+                    leftmost,
                 },
                 #[cfg(feature = "find_many")]
                 S::ExtractMany {
                     ascii_case_insensitive,
                     overlapping,
+                    leftmost,
                 } => IS::ExtractMany {
                     ascii_case_insensitive,
                     overlapping,
+                    leftmost,
                 },
                 #[cfg(feature = "find_many")]
                 S::FindMany {
                     ascii_case_insensitive,
                     overlapping,
+                    leftmost,
                 } => IS::FindMany {
                     ascii_case_insensitive,
                     overlapping,
+                    leftmost,
                 },
                 #[cfg(feature = "regex")]
                 S::EscapeRegex => IS::EscapeRegex,

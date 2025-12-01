@@ -1491,8 +1491,8 @@ impl PyLazyFrame {
             .iter()
             .map(|c| Sorted {
                 column: PlSmallStr::from_str(c.as_str()),
-                descending: false,
-                nulls_last: false,
+                descending: Some(false),
+                nulls_last: Some(false),
             })
             .collect::<Vec<_>>();
 
@@ -1501,18 +1501,18 @@ impl PyLazyFrame {
                 sorted
                     .iter_mut()
                     .zip(descending)
-                    .for_each(|(s, d)| s.descending = d);
+                    .for_each(|(s, d)| s.descending = Some(d));
             } else if descending[0] {
-                sorted.iter_mut().for_each(|s| s.descending = true);
+                sorted.iter_mut().for_each(|s| s.descending = Some(true));
             }
 
             if nulls_last.len() != 1 {
                 sorted
                     .iter_mut()
                     .zip(nulls_last)
-                    .for_each(|(s, d)| s.nulls_last = d);
+                    .for_each(|(s, d)| s.nulls_last = Some(d));
             } else if nulls_last[0] {
-                sorted.iter_mut().for_each(|s| s.nulls_last = true);
+                sorted.iter_mut().for_each(|s| s.nulls_last = Some(true));
             }
         }
 

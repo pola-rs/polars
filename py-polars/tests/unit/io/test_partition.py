@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypedDict
 
 import pytest
-from hypothesis import given
+from hypothesis import example, given
 
 import polars as pl
 from polars.io.partition import (
@@ -280,6 +280,7 @@ def test_partition_parted(tmp_path: Path, io_type: IOType, engine: EngineType) -
 @pytest.mark.parametrize("io_type", [io_types[2], io_types[3]])
 @pytest.mark.parametrize("engine", engines)
 @pytest.mark.write_disk
+@example(df=pl.DataFrame({"a": [0.0, -0.0]}, schema={"a": pl.Float16}))
 @given(
     df=dataframes(
         min_cols=1,
@@ -292,6 +293,7 @@ def test_partition_parted(tmp_path: Path, io_type: IOType, engine: EngineType) -
             pl.Struct,
             pl.Array,
             pl.List,
+            pl.Extension,  # Can't be cast to string
         ],
     )
 )
@@ -405,67 +407,6 @@ def test_partition_key_order_22645() -> None:
         ("b=2", "c=44"),
         ("b=3", "c=45"),
     ]
-
-
-@pytest.mark.parametrize(("io_type"), io_types)
-@pytest.mark.parametrize("engine", engines)
-@pytest.mark.parametrize(
-    ("df", "sorts"),
-    [
-        (pl.DataFrame({"a": [2, 1, 0, 4, 3, 5, 7, 8, 9]}), "a"),
-        (
-            pl.DataFrame(
-                {"a": [2, 1, 0, 4, 3, 5, 7, 8, 9], "b": [f"s{i}" for i in range(9)]}
-            ),
-            "a",
-        ),
-        (
-            pl.DataFrame(
-                {"a": [2, 1, 0, 4, 3, 5, 7, 8, 9], "b": [f"s{i}" for i in range(9)]}
-            ),
-            ["a", "b"],
-        ),
-        (
-            pl.DataFrame(
-                {"a": [2, 1, 0, 4, 3, 5, 7, 8, 9], "b": [f"s{i}" for i in range(9)]}
-            ),
-            "b",
-        ),
-        (
-            pl.DataFrame(
-                {"a": [2, 1, 0, 4, 3, 5, 7, 8, 9], "b": [f"s{i}" for i in range(9)]}
-            ),
-            pl.col.a - pl.col.b.str.slice(1).cast(pl.Int64),
-        ),
-    ],
-)
-def test_partition_to_memory_sort_by(
-    io_type: IOType,
-    engine: EngineType,
-    df: pl.DataFrame,
-    sorts: str | pl.Expr | list[str | pl.Expr],
-) -> None:
-    output_files = {}
-
-    def file_path_cb(ctx: BasePartitionContext) -> io.BytesIO:
-        f = io.BytesIO()
-        output_files[ctx.file_path] = f
-        return f
-
-    io_type["sink"](
-        df.lazy(),
-        PartitionMaxSize(
-            "", file_path=file_path_cb, max_size=3, per_partition_sort_by=sorts
-        ),
-        engine=engine,
-    )
-
-    assert len(output_files) == df.height / 3
-    for i, (_, value) in enumerate(output_files.items()):
-        value.seek(0)
-        assert_frame_equal(
-            io_type["scan"](value).collect(), df.slice(i * 3, 3).sort(sorts)
-        )
 
 
 @pytest.mark.parametrize(("io_type"), io_types)

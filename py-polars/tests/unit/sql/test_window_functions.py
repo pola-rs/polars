@@ -47,15 +47,15 @@ def test_over_with_partition_by(df_test: pl.DataFrame) -> None:
             category,
             value,
             ROW_NUMBER() OVER (PARTITION BY category ORDER BY value) AS row_num,
-            COUNT(*) OVER (PARTITION BY category) AS cat_count,
-            SUM(value) OVER (PARTITION BY category) AS cat_sum
+            COUNT(*) OVER w0 AS cat_count,
+            SUM(value) OVER w0 AS cat_sum
         FROM self
+        WINDOW w0 AS (PARTITION BY category)
         ORDER BY category, value
     """
     assert_sql_matches(
         df,
         query=query,
-        check_dtypes=False,
         compare_with="sqlite",
         expected={
             "category": ["A", "A", "A", "B", "B", "C"],
@@ -104,7 +104,6 @@ def test_window_function_over_empty(df_test: pl.DataFrame) -> None:
     assert_sql_matches(
         df_test,
         query=query,
-        check_dtypes=False,
         compare_with="sqlite",
         expected={
             "id": [1, 2, 3, 4, 5, 6, 7],
@@ -155,7 +154,6 @@ def test_window_function_misc_aggregations(df_test: pl.DataFrame) -> None:
     assert_sql_matches(
         df,
         query=query,
-        check_dtypes=False,
         compare_with="sqlite",
         expected={
             "category": ["A", "A", "B", "B", "C"],
@@ -189,7 +187,6 @@ def test_window_function_partition_by_multi() -> None:
     assert_sql_matches(
         df,
         query=query,
-        check_dtypes=False,
         compare_with="sqlite",
         expected={
             "region": ["North", "North", "North", "South", "South", "South"],
@@ -380,7 +377,6 @@ def test_window_function_over_clause_misc() -> None:
     assert_sql_matches(
         df,
         query=query,
-        check_dtypes=False,
         compare_with="sqlite",
         expected={"id": [1, 2, 3, 4], "cnt": [4, 4, 4, 4]},
     )
@@ -393,7 +389,6 @@ def test_window_function_over_clause_misc() -> None:
     assert_sql_matches(
         df,
         query=query,
-        check_dtypes=False,
         compare_with="sqlite",
         expected={
             "id": [1, 2, 3, 4],
@@ -430,7 +425,6 @@ def test_window_function_over_clause_misc() -> None:
     assert_sql_matches(
         df,
         query=query,
-        check_dtypes=False,
         compare_with="sqlite",
         expected={
             "id": [1, 2, 3, 4],
@@ -438,6 +432,75 @@ def test_window_function_over_clause_misc() -> None:
             "value": [10, 20, 30, 40],
             "cnt": [1, 2, 1, 2],
         },
+    )
+
+
+def test_window_named_window(df_test: pl.DataFrame) -> None:
+    # One named window, applied multiple times
+    query = """
+        SELECT
+            category,
+            value,
+            SUM(value) OVER w AS cumsum,
+            MIN(value) OVER w AS cummin,
+            MAX(value) OVER w AS cummax
+        FROM self
+        WINDOW w AS (PARTITION BY category ORDER BY value)
+        ORDER BY category, value
+    """
+    assert_sql_matches(
+        df_test,
+        query=query,
+        compare_with="sqlite",
+        expected=pl.DataFrame(
+            {
+                "category": ["A", "A", "A", "B", "B", "B", "C"],
+                "value": [10, 20, 30, 15, 25, 40, 35],
+                "cumsum": [10, 30, 60, 15, 40, 80, 35],
+                "cummin": [10, 10, 10, 15, 15, 15, 35],
+                "cummax": [10, 20, 30, 15, 25, 40, 35],
+            }
+        ),
+    )
+
+
+def test_window_multiple_named_windows(df_test: pl.DataFrame) -> None:
+    # Multiple named windows with different properties
+    query = """
+        SELECT
+            category,
+            value,
+            AVG(value) OVER w1 AS category_avg,
+            SUM(value) OVER w2 AS running_sum,
+            COUNT(*) OVER w3 AS total_count
+        FROM self
+        WINDOW
+            w1 AS (PARTITION BY category),
+            w2 AS (ORDER BY value),
+            w3 AS ()
+        ORDER BY category, value
+    """
+    assert_sql_matches(
+        df_test,
+        query=query,
+        compare_with="sqlite",
+        expected=pl.DataFrame(
+            {
+                "category": ["A", "A", "A", "B", "B", "B", "C"],
+                "value": [10, 20, 30, 15, 25, 40, 35],
+                "category_avg": [
+                    20.0,
+                    20.0,
+                    20.0,
+                    26.666667,
+                    26.666667,
+                    26.666667,
+                    35.0,
+                ],
+                "running_sum": [10, 45, 100, 25, 70, 175, 135],
+                "total_count": [7, 7, 7, 7, 7, 7, 7],
+            }
+        ),
     )
 
 

@@ -69,6 +69,11 @@ pub fn aexpr_to_column_predicates(
                 is_sumwise_complete = false;
                 continue;
             },
+            #[cfg(feature = "dtype-f16")]
+            D::Float16 => {
+                is_sumwise_complete = false;
+                continue;
+            },
             D::Float32 | D::Float64 => {
                 is_sumwise_complete = false;
                 continue;
@@ -166,13 +171,13 @@ pub fn aexpr_to_column_predicates(
                             } => {
                                 let (Some(l), Some(r)) = (
                                     constant_evaluate(
-                                        input[0].node(),
+                                        input[1].node(),
                                         expr_arena,
                                         schema,
                                         0,
                                     )?,
                                     constant_evaluate(
-                                        input[1].node(),
+                                        input[2].node(),
                                         expr_arena,
                                         schema,
                                         0,
@@ -180,7 +185,6 @@ pub fn aexpr_to_column_predicates(
                                 ) else {
                                     return None;
                                 };
-
                                 let l = l.to_any_value()?;
                                 let r = r.to_any_value()?;
                                 if l.dtype() != dtype || r.dtype() != dtype {
@@ -193,7 +197,6 @@ pub fn aexpr_to_column_predicates(
                                     ClosedInterval::Right => (false, true),
                                     ClosedInterval::None => (false, false),
                                 };
-
                                 is_between(
                                     &dtype,
                                     Some(Scalar::new(dtype.clone(), l.into_static())),
@@ -352,7 +355,14 @@ fn is_between(
                     if !high_closed {
                         *h = h.checked_sub(1)?;
                     }
-                    assert!(*l <= *h);
+                    if *l > *h {
+                        // Really this ought to indicate that nothing should be
+                        // loaded since the condition is impossible, but unclear
+                        // how to do that at this abstraction layer. Could add
+                        // SpecializedColumnPredicate::Impossible or something,
+                        // maybe.
+                        return None;
+                    }
                 },
                 )+
                 _ => return None,
@@ -544,6 +554,31 @@ mod tests {
             (col(col_name).gt_eq(typed_lit(-10i8)), -10, 127),
         ];
         for (expr, expected_min, expected_max) in test_values {
+            let predicate = column_predicate_for_expr(DataType::Int8, col_name, expr.clone())?;
+            if let Some(SpecializedColumnPredicate::Between(actual_min, actual_max)) = predicate {
+                assert_eq!(
+                    (expected_min.into(), expected_max.into()),
+                    (actual_min, actual_max)
+                );
+            } else {
+                panic!("{predicate:?} is unexpected for {expr:?}");
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn column_predicate_is_between() -> PolarsResult<()> {
+        let col_name = "testcol";
+        // ClosedInterval, expected min, expected max:
+        let test_values: [(_, i8, i8); _] = [
+            (ClosedInterval::Both, 1, 10),
+            (ClosedInterval::Left, 1, 9),
+            (ClosedInterval::Right, 2, 10),
+            (ClosedInterval::None, 2, 9),
+        ];
+        for (interval, expected_min, expected_max) in test_values {
+            let expr = col(col_name).is_between(typed_lit(1i8), typed_lit(10i8), interval);
             let predicate = column_predicate_for_expr(DataType::Int8, col_name, expr.clone())?;
             if let Some(SpecializedColumnPredicate::Between(actual_min, actual_max)) = predicate {
                 assert_eq!(

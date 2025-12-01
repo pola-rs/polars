@@ -67,6 +67,7 @@ where
             .unwrap_or(0);
 
         let arr = Box::new(ObjectArray {
+            dtype: ArrowDataType::FixedSizeBinary(size_of::<T>()),
             values: self.values.into(),
             validity: null_bitmap,
         });
@@ -134,6 +135,7 @@ where
         let field = Arc::new(Field::new(name, DataType::Object(T::type_name())));
         let len = v.len();
         let arr = Box::new(ObjectArray {
+            dtype: ArrowDataType::FixedSizeBinary(size_of::<T>()),
             values: v.into(),
             validity: None,
         });
@@ -150,6 +152,7 @@ where
         let len = v.len();
         let null_count = validity.as_ref().map(|v| v.unset_bits()).unwrap_or(0);
         let arr = Box::new(ObjectArray {
+            dtype: ArrowDataType::FixedSizeBinary(size_of::<T>()),
             values: v.into(),
             validity,
         });
@@ -191,6 +194,7 @@ impl<T: PolarsObject> ArrayBuilder for ObjectChunkedBuilder<T> {
 
     fn freeze(self) -> Box<dyn Array> {
         Box::new(ObjectArray {
+            dtype: ArrowDataType::FixedSizeBinary(size_of::<T>()),
             values: self.values.into(),
             validity: self.bitmask_builder.into_opt_validity(),
         })
@@ -198,6 +202,7 @@ impl<T: PolarsObject> ArrayBuilder for ObjectChunkedBuilder<T> {
 
     fn freeze_reset(&mut self) -> Box<dyn Array> {
         Box::new(ObjectArray {
+            dtype: ArrowDataType::FixedSizeBinary(size_of::<T>()),
             values: core::mem::take(&mut self.values).into(),
             validity: core::mem::take(&mut self.bitmask_builder).into_opt_validity(),
         })

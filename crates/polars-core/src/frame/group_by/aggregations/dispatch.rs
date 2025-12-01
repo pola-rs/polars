@@ -10,9 +10,9 @@ impl Series {
         self.slice(first as i64, len as usize)
     }
 
-    fn restore_logical(&self, out: Series) -> Series {
-        if self.dtype().is_logical() {
-            out.cast(self.dtype()).unwrap()
+    unsafe fn restore_logical(&self, out: Series) -> Series {
+        if self.dtype().is_logical() && !out.dtype().is_logical() {
+            out.from_physical_unchecked(self.dtype()).unwrap()
         } else {
             out
         }
@@ -331,17 +331,39 @@ impl Series {
                 .cast(&DataType::Float64)
                 .unwrap()
                 .agg_quantile(groups, quantile, method),
-            dt if dt.is_primitive_numeric() || dt.is_temporal() => {
-                let ca = s.to_physical_repr();
-                let physical_type = ca.dtype();
-                let s = apply_method_physical_integer!(ca, agg_quantile, groups, quantile, method);
-                if dt.is_logical() {
-                    // back to physical and then
-                    // back to logical type
-                    s.cast(physical_type).unwrap().cast(dt).unwrap()
-                } else {
-                    s
-                }
+            #[cfg(feature = "dtype-datetime")]
+            Datetime(tu, tz) => self
+                .to_physical_repr()
+                .agg_quantile(groups, quantile, method)
+                .cast(&Int64)
+                .unwrap()
+                .into_datetime(*tu, tz.clone()),
+            #[cfg(feature = "dtype-duration")]
+            Duration(tu) => self
+                .to_physical_repr()
+                .agg_quantile(groups, quantile, method)
+                .cast(&Int64)
+                .unwrap()
+                .into_duration(*tu),
+            #[cfg(feature = "dtype-time")]
+            Time => self
+                .to_physical_repr()
+                .agg_quantile(groups, quantile, method)
+                .cast(&Int64)
+                .unwrap()
+                .into_time(),
+            #[cfg(feature = "dtype-date")]
+            Date => (self
+                .to_physical_repr()
+                .agg_quantile(groups, quantile, method)
+                .cast(&Float64)
+                .unwrap()
+                * (US_IN_DAY as f64))
+                .cast(&DataType::Int64)
+                .unwrap()
+                .into_datetime(TimeUnit::Microseconds, None),
+            dt if dt.is_primitive_numeric() => {
+                apply_method_physical_integer!(s, agg_quantile, groups, quantile, method)
             },
             _ => Series::full_null(PlSmallStr::EMPTY, groups.len(), s.dtype()),
         }

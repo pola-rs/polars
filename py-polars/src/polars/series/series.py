@@ -104,6 +104,7 @@ from polars.series.array import ArrayNameSpace
 from polars.series.binary import BinaryNameSpace
 from polars.series.categorical import CatNameSpace
 from polars.series.datetime import DateTimeNameSpace
+from polars.series.ext import ExtensionNameSpace
 from polars.series.list import ListNameSpace
 from polars.series.plotting import SeriesPlot
 from polars.series.string import StringNameSpace
@@ -265,6 +266,7 @@ class Series:
         "bin",
         "cat",
         "dt",
+        "ext",
         "list",
         "plot",
         "str",
@@ -8785,7 +8787,8 @@ class Series:
         Returns
         -------
         Expr
-            Float32 if input is Float32, otherwise Float64.
+            :class:`Float16` if input is `Float16`, :class:`.Float32` if input is
+            `Float32`, otherwise :class:`.Float64`.
 
         Examples
         --------
@@ -9304,6 +9307,11 @@ class Series:
     def struct(self) -> StructNameSpace:
         """Create an object namespace of all struct related methods."""
         return StructNameSpace(self)
+
+    @property
+    def ext(self) -> ExtensionNameSpace:
+        """Create an object namespace of all extension type related methods."""
+        return ExtensionNameSpace(self)
 
     @property
     @unstable()

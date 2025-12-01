@@ -1593,7 +1593,7 @@ impl SQLFunctionVisitor<'_> {
             ArrayReverse => self.visit_unary(|e| e.list().reverse()),
             ArraySum => self.visit_unary(|e| e.list().sum()),
             ArrayToString => self.visit_arr_to_string(),
-            ArrayUnique => self.visit_unary(|e| e.list().unique()),
+            ArrayUnique => self.visit_unary(|e| e.list().unique_stable()),
             Explode => self.visit_unary(|e| {
                 e.explode(ExplodeOptions {
                     empty_as_null: true,
@@ -1883,6 +1883,25 @@ impl SQLFunctionVisitor<'_> {
         .and_then(|e| self.apply_window_spec(e, &self.func.over))
     }
 
+    /// Resolve a WindowType to a concrete WindowSpec (handles named window references)
+    fn resolve_window_spec(&self, window_type: &WindowType) -> PolarsResult<WindowSpec> {
+        match window_type {
+            WindowType::WindowSpec(spec) => Ok(spec.clone()),
+            WindowType::NamedWindow(name) => self
+                .ctx
+                .named_windows
+                .get(&name.value)
+                .cloned()
+                .ok_or_else(|| {
+                    polars_err!(
+                        SQLInterface:
+                        "named window '{}' was not found",
+                        name.value
+                    )
+                }),
+        }
+    }
+
     /// Some functions have cumulative equivalents that can be applied to window specs
     /// e.g. SUM(a) OVER (ORDER BY b DESC) -> CUMSUM(a, false)
     fn visit_unary_with_opt_cumulative(
@@ -1891,14 +1910,11 @@ impl SQLFunctionVisitor<'_> {
         cumulative_fn: impl Fn(Expr, bool) -> Expr,
     ) -> PolarsResult<Expr> {
         match self.func.over.as_ref() {
-            Some(WindowType::WindowSpec(spec)) => {
-                self.apply_cumulative_window(f, cumulative_fn, spec)
+            Some(window_type) => {
+                let spec = self.resolve_window_spec(window_type)?;
+                self.apply_cumulative_window(f, cumulative_fn, &spec)
             },
-            Some(WindowType::NamedWindow(named_window)) => polars_bail!(
-                SQLInterface: "named windows are not (yet) supported; found {:?}",
-                named_window
-            ),
-            _ => self.visit_unary(f),
+            None => self.visit_unary(f),
         }
     }
 
@@ -1980,29 +1996,41 @@ impl SQLFunctionVisitor<'_> {
         match args.as_slice() {
             [FunctionArgExpr::Expr(sql_expr)] => {
                 let mut base = parse_sql_expr(sql_expr, self.ctx, self.active_schema)?;
-                if is_distinct {
-                    base = base.unique_stable();
-                }
-                for clause in clauses {
+                let mut order_by_clause = None;
+                let mut limit_clause = None;
+                for clause in &clauses {
                     match clause {
                         FunctionArgumentClause::OrderBy(order_exprs) => {
-                            base = self.apply_order_by(base, order_exprs.as_slice())?;
+                            order_by_clause = Some(order_exprs.as_slice());
                         },
                         FunctionArgumentClause::Limit(limit_expr) => {
-                            let limit = parse_sql_expr(&limit_expr, self.ctx, self.active_schema)?;
-                            match limit {
-                                Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n)))
-                                    if n >= 0 =>
-                                {
-                                    base = base.head(Some(n as usize))
-                                },
-                                _ => {
-                                    polars_bail!(SQLSyntax: "LIMIT in ARRAY_AGG must be a positive integer")
-                                },
-                            };
+                            limit_clause = Some(limit_expr);
                         },
                         _ => {},
                     }
+                }
+                if !is_distinct {
+                    // No DISTINCT: apply ORDER BY normally
+                    if let Some(order_by) = order_by_clause {
+                        base = self.apply_order_by(base, order_by)?;
+                    }
+                } else {
+                    // DISTINCT: apply unique, then sort the result
+                    base = base.unique_stable();
+                    if let Some(order_by) = order_by_clause {
+                        base = self.apply_order_by_to_distinct_array(base, order_by, sql_expr)?;
+                    }
+                }
+                if let Some(limit_expr) = limit_clause {
+                    let limit = parse_sql_expr(limit_expr, self.ctx, self.active_schema)?;
+                    match limit {
+                        Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) if n >= 0 => {
+                            base = base.head(Some(n as usize))
+                        },
+                        _ => {
+                            polars_bail!(SQLSyntax: "LIMIT in ARRAY_AGG must be a positive integer")
+                        },
+                    };
                 }
                 Ok(base.implode())
             },
@@ -2132,6 +2160,27 @@ impl SQLFunctionVisitor<'_> {
         ))
     }
 
+    fn apply_order_by_to_distinct_array(
+        &mut self,
+        expr: Expr,
+        order_by: &[OrderByExpr],
+        base_sql_expr: &SQLExpr,
+    ) -> PolarsResult<Expr> {
+        // If ORDER BY references the base expression, use .sort() directly
+        if order_by.len() == 1 && order_by[0].expr == *base_sql_expr {
+            let desc_order = !order_by[0].asc.unwrap_or(true);
+            let nulls_last = !order_by[0].nulls_first.unwrap_or(desc_order);
+            return Ok(expr.sort(
+                SortOptions::default()
+                    .with_order_descending(desc_order)
+                    .with_nulls_last(nulls_last)
+                    .with_maintain_order(true),
+            ));
+        }
+        // Otherwise, fall back to `sort_by` (may need to handle further edge-cases later)
+        self.apply_order_by(expr, order_by)
+    }
+
     /// Parse ORDER BY (in OVER clause), validating uniform direction.
     fn parse_order_by_in_window(
         &mut self,
@@ -2163,44 +2212,36 @@ impl SQLFunctionVisitor<'_> {
         expr: Expr,
         window_type: &Option<WindowType>,
     ) -> PolarsResult<Expr> {
-        Ok(match &window_type {
-            Some(WindowType::WindowSpec(window_spec)) => {
-                self.validate_window_frame(&window_spec.window_frame)?;
+        let Some(window_type) = window_type else {
+            return Ok(expr);
+        };
+        let window_spec = self.resolve_window_spec(window_type)?;
+        self.validate_window_frame(&window_spec.window_frame)?;
 
-                let partition_by = if window_spec.partition_by.is_empty() {
-                    None
-                } else {
-                    Some(
-                        window_spec
-                            .partition_by
-                            .iter()
-                            .map(|p| parse_sql_expr(p, self.ctx, self.active_schema))
-                            .collect::<PolarsResult<Vec<_>>>()?,
-                    )
-                };
-                let order_by = if window_spec.order_by.is_empty() {
-                    None
-                } else {
-                    let (order_exprs, all_desc) =
-                        self.parse_order_by_in_window(&window_spec.order_by)?;
-                    let sort_opts = SortOptions::default().with_order_descending(all_desc);
-                    Some((order_exprs, sort_opts))
-                };
+        let partition_by = if window_spec.partition_by.is_empty() {
+            None
+        } else {
+            Some(
+                window_spec
+                    .partition_by
+                    .iter()
+                    .map(|p| parse_sql_expr(p, self.ctx, self.active_schema))
+                    .collect::<PolarsResult<Vec<_>>>()?,
+            )
+        };
+        let order_by = if window_spec.order_by.is_empty() {
+            None
+        } else {
+            let (order_exprs, all_desc) = self.parse_order_by_in_window(&window_spec.order_by)?;
+            let sort_opts = SortOptions::default().with_order_descending(all_desc);
+            Some((order_exprs, sort_opts))
+        };
 
-                // Apply window spec
-                match (partition_by, order_by) {
-                    (None, None) => expr,
-                    (Some(part), None) => expr.over(part),
-                    (part, Some(order)) => {
-                        expr.over_with_options(part, Some(order), Default::default())?
-                    },
-                }
-            },
-            Some(WindowType::NamedWindow(named_window)) => polars_bail!(
-                SQLInterface: "named windows are not (yet) supported; found {:?}",
-                named_window
-            ),
-            None => expr,
+        // Apply window spec
+        Ok(match (partition_by, order_by) {
+            (None, None) => expr,
+            (Some(part), None) => expr.over(part),
+            (part, Some(order)) => expr.over_with_options(part, Some(order), Default::default())?,
         })
     }
 
