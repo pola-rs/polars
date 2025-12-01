@@ -8,9 +8,9 @@ use rayon::prelude::*;
 
 use crate::cloud::CloudOptions;
 use crate::parquet::write::ParquetWriteOptions;
+use crate::prelude::HIVE_VALUE_ENCODE_CHARSET;
 #[cfg(feature = "ipc")]
 use crate::prelude::IpcWriterOptions;
-use crate::prelude::URL_ENCODE_CHAR_SET;
 use crate::utils::file::Writeable;
 use crate::{SerWriter, WriteDataFrameToFile};
 
@@ -86,7 +86,7 @@ pub fn write_partitioned_dataset(
                                 .get(0)
                                 .unwrap_or("__HIVE_DEFAULT_PARTITION__")
                                 .as_bytes(),
-                            URL_ENCODE_CHAR_SET
+                            HIVE_VALUE_ENCODE_CHARSET
                         )
                     )
                 })
