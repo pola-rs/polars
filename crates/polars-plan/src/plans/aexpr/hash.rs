@@ -14,7 +14,7 @@ impl Hash for AExpr {
 
         match self {
             AExpr::Column(name) => name.hash(state),
-            AExpr::StructFields => {},
+            AExpr::StructField(name) => name.hash(state), //kdn TODO REVIEW
             AExpr::Literal(lv) => lv.hash(state),
             AExpr::Function {
                 options,
