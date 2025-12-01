@@ -3,7 +3,7 @@ from __future__ import annotations
 import abc
 import os
 import threading
-from typing import TYPE_CHECKING, Any, Callable, Literal, Union
+from typing import TYPE_CHECKING, Any, Callable, Final, Literal, Union
 
 import polars._utils.logging
 from polars._utils.cache import LRUCache
@@ -30,7 +30,7 @@ if TYPE_CHECKING:
         from typing_extensions import TypeAlias
 
 # https://docs.rs/object_store/latest/object_store/enum.ClientConfigKey.html
-OBJECT_STORE_CLIENT_OPTIONS: frozenset[str] = frozenset(
+OBJECT_STORE_CLIENT_OPTIONS: Final[frozenset[str]] = frozenset(
     [
         "allow_http",
         "allow_invalid_certificates",
