@@ -112,12 +112,14 @@ impl<T: PartialOrd> AsofJoinState<T> for AsofJoinBackwardState {
 
 #[derive(Default)]
 struct AsofJoinNearestState {
-    /// The nearest value that is strictly smaller than the current
+    /// The last value that is strictly smaller than the current
     /// left value.
     strictly_smaller: Option<IdxSize>,
-    /// The last value of a chunk of equal values which is strictly greater
-    /// than the current left value.
-    strictly_greater: IdxSize,
+    /// If `allow_eq == false`: the first value strictly greater than the
+    /// current left value.
+    /// If `allow_eq == true`: the last value of the first chunk of equal
+    /// values that are strictly greater than the current left value.
+    upper_candidate: IdxSize,
     allow_eq: bool,
 }
 
@@ -137,34 +139,34 @@ impl<T: NumericNative> AsofJoinState<T> for AsofJoinNearestState {
     ) -> Option<IdxSize> {
         // Skipping ahead to the first value greater than left_val. This is
         // cheaper than computing differences.
-        while self.strictly_greater < n_right {
-            let Some(scan_right_val) = right(self.strictly_greater) else {
-                self.strictly_greater += 1;
+        while self.upper_candidate < n_right {
+            let Some(scan_right_val) = right(self.upper_candidate) else {
+                self.upper_candidate += 1;
                 continue;
             };
             if scan_right_val > *left_val {
                 break;
             }
-            self.strictly_greater += 1;
+            self.upper_candidate += 1;
         }
 
         if self.allow_eq
-            && self.strictly_greater > 0
-            && right(self.strictly_greater - 1) == Some(*left_val)
+            && self.upper_candidate > 0
+            && right(self.upper_candidate - 1) == Some(*left_val)
         {
-            return Some(self.strictly_greater - 1);
+            return Some(self.upper_candidate - 1);
         }
 
         // It is possible there are later elements equal to our
         // scan, so keep going on.
-        while self.strictly_greater + 1 < n_right
-            && right(self.strictly_greater + 1) == right(self.strictly_greater)
+        while self.upper_candidate + 1 < n_right
+            && right(self.upper_candidate + 1) == right(self.upper_candidate)
         {
-            self.strictly_greater += 1;
+            self.upper_candidate += 1;
         }
 
         let mut cursor = self.strictly_smaller.unwrap_or(0);
-        while cursor < self.strictly_greater {
+        while cursor < self.upper_candidate {
             let Some(scan_right_val) = right(cursor) else {
                 cursor += 1;
                 continue;
@@ -178,16 +180,16 @@ impl<T: NumericNative> AsofJoinState<T> for AsofJoinNearestState {
 
         let mut right_get = |idx: IdxSize| (idx < n_right).then(|| right(idx)).flatten();
         let lower = self.strictly_smaller.and_then(&mut right_get);
-        let upper = right_get(self.strictly_greater);
+        let upper = right_get(self.upper_candidate);
         match (lower, upper) {
             (None, None) => None,
             (Some(_), None) => self.strictly_smaller,
-            (None, Some(_)) => Some(self.strictly_greater),
+            (None, Some(_)) => Some(self.upper_candidate),
             (Some(lo), Some(hi)) => {
                 let lo_diff = left_val.abs_diff(lo);
                 let hi_diff = left_val.abs_diff(hi);
                 if hi_diff <= lo_diff {
-                    Some(self.strictly_greater)
+                    Some(self.upper_candidate)
                 } else {
                     self.strictly_smaller
                 }
