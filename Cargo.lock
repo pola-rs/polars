@@ -3512,6 +3512,7 @@ name = "polars-plan"
 version = "0.52.0"
 dependencies = [
  "bitflags",
+ "blake3",
  "bytemuck",
  "bytes",
  "chrono",

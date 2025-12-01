@@ -17,6 +17,7 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::plpath::{CloudScheme, PlPath};
 
 use super::{ExprIR, FileType};
+use crate::dsl::sink2::FileProviderType;
 use crate::dsl::{AExpr, Expr, PartitionStrategy, PartitionStrategyIR, SpecialEq, UnifiedSinkArgs};
 use crate::prelude::PlanCallback;
 
@@ -544,12 +545,14 @@ pub struct SortColumnIR {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PartitionedSinkOptions {
     pub base_path: PlPath,
-    pub file_path_provider: Option<PartitionTargetCallback>,
+    pub file_path_provider: Option<FileProviderType>,
     pub partition_strategy: PartitionStrategy,
     /// TODO: Move this to UnifiedSinkArgs
     pub finish_callback: Option<SinkFinishCallback>,
-    pub file_format: Box<FileType>,
+    pub file_format: Arc<FileType>,
     pub unified_sink_args: UnifiedSinkArgs,
+    pub max_rows_per_file: IdxSize,
+    pub approximate_bytes_per_file: u64,
 }
 
 impl PartitionedSinkOptions {
@@ -629,12 +632,14 @@ impl SinkTypeIR {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PartitionedSinkOptionsIR {
     pub base_path: PlPath,
-    pub file_path_provider: Option<PartitionTargetCallback>,
+    pub file_path_provider: FileProviderType,
     pub partition_strategy: PartitionStrategyIR,
     /// TODO: Move this to UnifiedSinkArgs
     pub finish_callback: Option<SinkFinishCallback>,
-    pub file_format: Box<FileType>,
+    pub file_format: Arc<FileType>,
     pub unified_sink_args: UnifiedSinkArgs,
+    pub max_rows_per_file: IdxSize,
+    pub approximate_bytes_per_file: u64,
 }
 
 impl PartitionedSinkOptionsIR {
@@ -644,7 +649,7 @@ impl PartitionedSinkOptionsIR {
 
     pub fn expr_irs_iter(&self) -> impl ExactSizeIterator<Item = &ExprIR> {
         let mut partition_key_exprs: &[ExprIR] = &[];
-        let sort_exprs: &[SortColumnIR];
+        let mut sort_exprs: &[SortColumnIR] = &[];
 
         match &self.partition_strategy {
             PartitionStrategyIR::Keyed {
@@ -656,12 +661,7 @@ impl PartitionedSinkOptionsIR {
                 partition_key_exprs = keys.as_slice();
                 sort_exprs = per_partition_sort_by.as_slice();
             },
-            PartitionStrategyIR::MaxRowsPerFile {
-                max_rows_per_file: _,
-                per_file_sort_by,
-            } => {
-                sort_exprs = per_file_sort_by.as_slice();
-            },
+            PartitionStrategyIR::FileSize => {},
         };
 
         (0..partition_key_exprs.len() + sort_exprs.len()).map(|i| {
@@ -682,6 +682,8 @@ impl PartitionedSinkOptionsIR {
             finish_callback,
             file_format,
             unified_sink_args,
+            max_rows_per_file,
+            approximate_bytes_per_file,
         } = self;
 
         base_path.hash(state);
@@ -690,6 +692,8 @@ impl PartitionedSinkOptionsIR {
         finish_callback.hash(state);
         file_format.hash(state);
         unified_sink_args.hash(state);
+        max_rows_per_file.hash(state);
+        approximate_bytes_per_file.hash(state);
     }
 }
 
@@ -731,6 +735,6 @@ impl PartitionVariantIR {
 #[derive(Clone, Debug, Hash, PartialEq)]
 pub struct FileSinkOptions {
     pub target: SinkTarget,
-    pub file_format: Box<FileType>,
+    pub file_format: Arc<FileType>,
     pub unified_sink_args: UnifiedSinkArgs,
 }
