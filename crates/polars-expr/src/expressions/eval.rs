@@ -105,6 +105,8 @@ impl EvalExpr {
         }
 
         let offsets = ca.offsets()?;
+        // Detect accidental inclusion of sliced-out elements from chunks after the 1st (if present).
+        assert_eq!(i64::try_from(flattened_len).unwrap(), *offsets.last());
 
         // Create groups for all valid array elements.
         let groups = if ca.has_nulls() {
@@ -247,6 +249,8 @@ impl EvalExpr {
                 out.clone().into_column()
             });
         }
+
+        assert_eq!(flattened_len, ca.width() * ca.len());
 
         // Create groups for all valid array elements.
         let groups = if ca.has_nulls() {
