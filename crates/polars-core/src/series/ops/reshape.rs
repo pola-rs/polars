@@ -208,7 +208,6 @@ impl Series {
             .boxed();
         }
 
-        // Check if height is bigger than reshape dimension
         polars_ensure!(
             prev_array.len() as u64 == outer_dimension,
             InvalidOperation: "cannot reshape array of size {} into shape {}", size, format_tuple!(dimensions)
