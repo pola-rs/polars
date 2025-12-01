@@ -773,7 +773,7 @@ def test_asof_join() -> None:
         trades.sort(by=["ticker", "dates"]), on="dates", by="ticker", strategy="nearest"
     )["bid_right"].to_list() == [
         98.0,
-        720.77,
+        720.92,
         720.92,
         720.92,
         51.95,

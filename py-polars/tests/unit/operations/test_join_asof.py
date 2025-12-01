@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import itertools
+import random
 import warnings
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -518,6 +520,73 @@ def test_asof_join_nearest() -> None:
 
     out = df1.join_asof(df2, on="asof_key", strategy="nearest")
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("allow_exact_matches", [True, False])
+def test_asof_join_nearest_reference(allow_exact_matches: bool) -> None:
+    def asof_join_nearest_reference(
+        df_left: pl.DataFrame, df_right: pl.DataFrame
+    ) -> pl.DataFrame:
+        schema = {"key": pl.Int32, "value": pl.Int32, "value_right": pl.Int32}
+        result = pl.DataFrame(schema=schema)
+        for left_row in df_left.iter_rows():
+            cross_product_sorted = (
+                pl.DataFrame(
+                    {
+                        "key": pl.Series([left_row[0]] * len(df_right), dtype=pl.Int32),
+                        "value": pl.Series(
+                            [left_row[1]] * len(df_right), dtype=pl.Int32
+                        ),
+                        "key_right": df_right["key"],
+                        "value_right": df_right["value"],
+                    },
+                )
+                .with_row_index()
+                .filter(
+                    pl.when(allow_exact_matches)
+                    .then(pl.lit(True))
+                    .otherwise(pl.col("key") != pl.col("key_right"))
+                )
+                .sort(
+                    (pl.col("key") - pl.col("key_right")).abs(),
+                    -pl.col("index").cast(pl.Int32),
+                )
+                .drop("index", "key_right")
+            )
+            if len(cross_product_sorted) == 0:
+                result = result.vstack(
+                    pl.DataFrame([left_row + (None,)], schema=schema, orient="row"),
+                )
+            else:
+                best_match = cross_product_sorted[0]
+                result = result.vstack(best_match)
+        return result
+
+    test_dfs = []
+    rng = random.Random()
+    for n_a, n_b, n_c, n_d in itertools.product([0, 1, 2], repeat=4):
+        a = rng.randint(0, 10)
+        b = rng.randint(0, 10)
+        c = rng.randint(0, 10)
+        d = rng.randint(0, 10)
+        keys = [a] * n_a + [b] * n_b + [c] * n_c + [d] * n_d
+        values = [rng.randint(0, 100000) for _ in keys]
+
+        df = pl.DataFrame(
+            {"key": keys, "value": values}, schema={"key": pl.Int32, "value": pl.Int32}
+        ).sort(by="key")
+        test_dfs.append(df)
+
+    for df_left, df_right in itertools.product(test_dfs, repeat=2):
+        expected = asof_join_nearest_reference(df_left, df_right)
+        actual = df_left.join_asof(
+            df_right,
+            on="key",
+            strategy="nearest",
+            allow_exact_matches=allow_exact_matches,
+        )
+        assert_frame_equal(actual, expected)
 
 
 def test_asof_join_nearest_with_tolerance() -> None:

@@ -112,11 +112,12 @@ impl<T: PartialOrd> AsofJoinState<T> for AsofJoinBackwardState {
 
 #[derive(Default)]
 struct AsofJoinNearestState {
-    /// The previous nearest value, that is strictly smaller than the current
-    /// nearest value.
-    strictly_smaller_nearest: Option<IdxSize>,
-    /// The next nearest value, that is strictly greater than the current
-    strictly_greater_nearest: IdxSize,
+    /// The nearest value that is strictly smaller than the current
+    /// left value.
+    strictly_smaller: Option<IdxSize>,
+    /// The last value of a chunk of equal values which is strictly greater
+    /// than the current left value.
+    strictly_greater: IdxSize,
     allow_eq: bool,
 }
 
@@ -134,26 +135,36 @@ impl<T: NumericNative> AsofJoinState<T> for AsofJoinNearestState {
         mut right: F,
         n_right: IdxSize,
     ) -> Option<IdxSize> {
-        while self.strictly_greater_nearest < n_right {
-            let Some(scan_right_val) = right(self.strictly_greater_nearest) else {
-                self.strictly_greater_nearest += 1;
+        // Skipping ahead to the first value greater than left_val. This is
+        // cheaper than computing differences.
+        while self.strictly_greater < n_right {
+            let Some(scan_right_val) = right(self.strictly_greater) else {
+                self.strictly_greater += 1;
                 continue;
             };
             if scan_right_val > *left_val {
                 break;
             }
-            self.strictly_greater_nearest += 1;
+            self.strictly_greater += 1;
         }
 
         if self.allow_eq
-            && self.strictly_greater_nearest > 0
-            && right(self.strictly_greater_nearest - 1) == Some(*left_val)
+            && self.strictly_greater > 0
+            && right(self.strictly_greater - 1) == Some(*left_val)
         {
-            return Some(self.strictly_greater_nearest - 1);
+            return Some(self.strictly_greater - 1);
         }
 
-        let mut cursor = self.strictly_smaller_nearest.unwrap_or(0);
-        while cursor < self.strictly_greater_nearest {
+        // It is possible there are later elements equal to our
+        // scan, so keep going on.
+        while self.strictly_greater + 1 < n_right
+            && right(self.strictly_greater + 1) == right(self.strictly_greater)
+        {
+            self.strictly_greater += 1;
+        }
+
+        let mut cursor = self.strictly_smaller.unwrap_or(0);
+        while cursor < self.strictly_greater {
             let Some(scan_right_val) = right(cursor) else {
                 cursor += 1;
                 continue;
@@ -161,25 +172,24 @@ impl<T: NumericNative> AsofJoinState<T> for AsofJoinNearestState {
             if scan_right_val >= *left_val {
                 break;
             }
-            self.strictly_smaller_nearest = Some(cursor);
+            self.strictly_smaller = Some(cursor);
             cursor += 1;
-            continue;
         }
 
         let mut right_get = |idx: IdxSize| (idx < n_right).then(|| right(idx)).flatten();
-        let lower = self.strictly_smaller_nearest.and_then(&mut right_get);
-        let upper = right_get(self.strictly_greater_nearest);
+        let lower = self.strictly_smaller.and_then(&mut right_get);
+        let upper = right_get(self.strictly_greater);
         match (lower, upper) {
             (None, None) => None,
-            (Some(_), None) => self.strictly_smaller_nearest,
-            (None, Some(_)) => Some(self.strictly_greater_nearest),
+            (Some(_), None) => self.strictly_smaller,
+            (None, Some(_)) => Some(self.strictly_greater),
             (Some(lo), Some(hi)) => {
                 let lo_diff = left_val.abs_diff(lo);
                 let hi_diff = left_val.abs_diff(hi);
                 if hi_diff <= lo_diff {
-                    Some(self.strictly_greater_nearest)
+                    Some(self.strictly_greater)
                 } else {
-                    self.strictly_smaller_nearest
+                    self.strictly_smaller
                 }
             },
         }
