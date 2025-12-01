@@ -67,6 +67,9 @@ impl EvalExpr {
         is_agg: bool,
     ) -> PolarsResult<Column> {
         let df = DataFrame::empty();
+        let ca = ca
+            .trim_lists_to_normalized_offsets()
+            .map_or(Cow::Borrowed(ca), Cow::Owned);
 
         // Fast path: Empty or only nulls.
         if ca.null_count() == ca.len() {
@@ -100,10 +103,6 @@ impl EvalExpr {
 
             return Ok(column);
         }
-
-        let ca = ca
-            .trim_lists_to_normalized_offsets()
-            .map_or(Cow::Borrowed(ca), Cow::Owned);
 
         let offsets = ca.offsets()?;
 
@@ -200,6 +199,9 @@ impl EvalExpr {
         is_agg: bool,
     ) -> PolarsResult<Column> {
         let df = DataFrame::empty();
+        let ca = ca
+            .trim_lists_to_normalized_offsets()
+            .map_or(Cow::Borrowed(ca), Cow::Owned);
 
         // Fast path: Empty or only nulls.
         if ca.null_count() == ca.len() {
@@ -245,10 +247,6 @@ impl EvalExpr {
                 out.clone().into_column()
             });
         }
-
-        let ca = ca
-            .trim_lists_to_normalized_offsets()
-            .map_or(Cow::Borrowed(ca), Cow::Owned);
 
         // Create groups for all valid array elements.
         let groups = if ca.has_nulls() {
