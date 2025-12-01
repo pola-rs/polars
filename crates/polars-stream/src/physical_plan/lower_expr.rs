@@ -230,7 +230,18 @@ pub fn is_input_independent_rec(
                     .iter()
                     .all(|expr| is_input_independent_rec(expr.node(), arena, cache))
         },
-        AExpr::Window {
+        #[cfg(feature = "dynamic_group_by")]
+        AExpr::Rolling {
+            function,
+            index_column,
+            period: _,
+            offset: _,
+            closed_window: _,
+        } => {
+            is_input_independent_rec(*function, arena, cache)
+                && is_input_independent_rec(*index_column, arena, cache)
+        },
+        AExpr::Over {
             function,
             partition_by,
             order_by,
@@ -1561,11 +1572,12 @@ fn lower_exprs_with_ctx(
                 let eval_col_names: PlHashSet<_> = evaluation
                     .iter()
                     .flat_map(|expr| polars_plan::utils::aexpr_to_leaf_names_iter(expr.node(), ctx.expr_arena))
+                    .cloned()
                     .collect();
                 for name in eval_col_names {
                         expr_irs.push(ExprIR::new(
                         ctx.expr_arena.add(AExpr::Column(name.clone())),
-                        OutputName::ColumnLhs(name),
+                        OutputName::ColumnLhs(name.clone()), //kdn TODO REVIEW clone
                     ));
                 }
                 let stream = build_select_stream_with_ctx(input, &expr_irs, ctx)?;
@@ -1605,6 +1617,7 @@ fn lower_exprs_with_ctx(
                 let node_kind = PhysNodeKind::Map {
                     input: stream,
                     map,
+                    format_str: None, //kdn TODO
                 };
                 let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, node_kind));
                 let stream = PhysStream::first(node_key);

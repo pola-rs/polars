@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Mutex, RwLock};
 use std::time::Duration;
 
+use arrow::bitmap::Bitmap;
 use bitflags::bitflags;
 use polars_core::config::verbose;
 use polars_core::prelude::*;

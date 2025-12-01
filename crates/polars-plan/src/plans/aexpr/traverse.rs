@@ -303,7 +303,8 @@ impl AExpr {
     pub fn replace_children(mut self, inputs: &[Node]) -> Self {
         use AExpr::*;
         let input = match &mut self {
-            Element | Column(_) | Literal(_) | StructFields | Len => return self,
+            Element | Column(_) | Literal(_) | Len => return self,
+            StructField(_) => return self, //kdn TODO REVIEW
             Cast { expr, .. } => expr,
             Explode { expr, .. } => expr,
             BinaryExpr { left, right, .. } => {
