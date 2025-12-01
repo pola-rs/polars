@@ -539,6 +539,13 @@ mod tests {
         Ok(())
     }
 
+    /// Can't cast across different categories of dtypes.
+    #[test]
+    fn column_predicates_equality_different_dtype() -> PolarsResult<()> {
+        assert!(equality_column_predicate(DataType::Int8, lit("hello"))?.is_none());
+        Ok(())
+    }
+
     #[test]
     fn column_predicate_for_inequality_operators() -> PolarsResult<()> {
         let col_name = "testcol";
