@@ -49,7 +49,6 @@ fn new_histogram(
     };
     Ok(hist)
 }
-// }
 
 impl UniformWidthHistogram<Float64Type> {
     fn new(ca: &ChunkedArray<Float64Type>, num_bins: Option<usize>) -> Self {
