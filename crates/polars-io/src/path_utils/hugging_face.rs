@@ -12,7 +12,7 @@ use crate::cloud::{
 };
 use crate::path_utils::HiveIdxTracker;
 use crate::pl_async::with_concurrency_budget;
-use crate::prelude::URL_ENCODE_CHAR_SET;
+use crate::prelude::HIVE_VALUE_ENCODE_CHARSET;
 use crate::utils::decode_json_response;
 
 #[derive(Debug, PartialEq)]
@@ -333,7 +333,7 @@ pub(super) async fn expand_paths_hf(
 }
 
 fn percent_encode(bytes: &[u8]) -> percent_encoding::PercentEncode<'_> {
-    percent_encoding::percent_encode(bytes, URL_ENCODE_CHAR_SET)
+    percent_encoding::percent_encode(bytes, HIVE_VALUE_ENCODE_CHARSET)
 }
 
 mod tests {
