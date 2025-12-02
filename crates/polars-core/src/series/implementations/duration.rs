@@ -556,13 +556,11 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
                 .iter()
                 .map(|v: Option<f64>| v.map(|f| f as i64))
                 .collect::<Int64Chunked>()
+                .into_duration(self.0.time_unit())
                 .into_series();
-
-            let duration_dtype = self.dtype().clone();
-            let casted = int_s.cast(&duration_dtype)?;
             Ok(Scalar::new(
-                DataType::List(Box::new(duration_dtype)),
-                AnyValue::List(casted),
+                DataType::List(Box::new(self.dtype().clone())),
+                AnyValue::List(int_s),
             ))
         } else {
             polars_bail!(ComputeError: "expected list scalar from quantiles_reduce")

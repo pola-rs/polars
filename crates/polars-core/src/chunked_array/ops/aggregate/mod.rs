@@ -347,13 +347,11 @@ where
     T::Native: Ord + WrappingSum,
 {
     fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
-        let v = self.quantiles(quantiles, method)?; // Vec<Option<f64>>
+        let v = self.quantiles(quantiles, method)?;
         if v.len() == 1 {
-            // If we had a single quantile requested, we should return a single float value
-            return Ok(Scalar::new(DataType::Float64, v[0].into()));
+            Ok(Scalar::new(DataType::Float64, v[0].into()))
         }
         else {
-            // If had multiple quantiles requested, we return a List Series
             let s =
                 Float64Chunked::from_iter_options(PlSmallStr::from_static("quantiles"), v.into_iter())
                     .into_series();
@@ -371,9 +369,9 @@ where
 #[cfg(feature = "dtype-f16")]
 impl QuantileAggSeries for Float16Chunked {
     fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
-        let v = self.quantiles(quantiles, method)?; // Vec<Option<f64>>
+        let v = self.quantiles(quantiles, method)?;
         if v.len() == 1 {
-            return Ok(Scalar::new(DataType::Float16, v[0].into()));
+            Ok(Scalar::new(DataType::Float16, v[0].into()))
         }
         else {
             let s =
@@ -394,7 +392,7 @@ impl QuantileAggSeries for Float32Chunked {
     fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
         let v = self.quantiles(quantiles, method)?;
         if v.len() == 1 {
-            return Ok(Scalar::new(DataType::Float32, v[0].into()));
+            Ok(Scalar::new(DataType::Float32, v[0].into()))
         }
         else {
             let s =
@@ -413,9 +411,9 @@ impl QuantileAggSeries for Float32Chunked {
 
 impl QuantileAggSeries for Float64Chunked {
     fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
-        let v = self.quantiles(quantiles, method)?; // Vec<Option<f64>>
+        let v = self.quantiles(quantiles, method)?;
         if v.len() == 1 {
-            return Ok(Scalar::new(DataType::Float64, v[0].into()));
+            Ok(Scalar::new(DataType::Float64, v[0].into()))
         }
         else {
             let s =

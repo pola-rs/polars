@@ -415,18 +415,15 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         }
         else if let AnyValue::List(float_s) = result.value() {
             let float_ca = float_s.f64().unwrap();
-            
             let int_s = float_ca
                 .iter()
                 .map(|v: Option<f64>| v.map(|f| f as i64))
                 .collect::<Int64Chunked>()
+                .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
                 .into_series();
-            // Cast the int64 series to the datetime type
-            let datetime_dtype = self.dtype().clone();
-            let casted = int_s.cast(&datetime_dtype)?;
             Ok(Scalar::new(
-                DataType::List(Box::new(datetime_dtype)),
-                AnyValue::List(casted),
+                DataType::List(Box::new(self.dtype().clone())),
+                AnyValue::List(int_s),
             ))
         } else {
             polars_bail!(ComputeError: "expected list scalar from quantiles_reduce")

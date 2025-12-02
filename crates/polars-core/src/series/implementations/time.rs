@@ -394,13 +394,11 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
                 .iter()
                 .map(|v: Option<f64>| v.map(|f| f as i64))
                 .collect::<Int64Chunked>()
+                .into_time()
                 .into_series();
-            // Cast the int64 series to the time type
-            let time_dtype = self.dtype().clone();
-            let casted = int_s.cast(&time_dtype)?;
             Ok(Scalar::new(
-                DataType::List(Box::new(time_dtype)),
-                AnyValue::List(casted),
+                DataType::List(Box::new(self.dtype().clone())),
+                AnyValue::List(int_s),
             ))
         } else {
             polars_bail!(ComputeError: "expected list scalar from quantiles_reduce")

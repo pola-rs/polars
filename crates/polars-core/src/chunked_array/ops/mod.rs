@@ -299,12 +299,9 @@ pub trait ChunkQuantile<T> {
         &self,
         quantiles: &[f64],
         _method: QuantileMethod,
-    ) -> PolarsResult<Vec<Option<T>>> {
-        let mut out = Vec::with_capacity(quantiles.len());
-        for _q in quantiles {
-            out.push(None);
-        }
-        Ok(out)
+    ) -> PolarsResult<Vec<Option<T>>> 
+    where T: Clone {
+        Ok(vec![None; quantiles.len()])
     }
 }
 
