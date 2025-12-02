@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import Final, TypedDict
 
 
 class ArrowDriverProperties(TypedDict):
@@ -18,7 +18,7 @@ class ArrowDriverProperties(TypedDict):
 
 
 # arrow driver properties should be specified from highest `minimum_version` to lowest
-ARROW_DRIVER_REGISTRY: dict[str, list[ArrowDriverProperties]] = {
+ARROW_DRIVER_REGISTRY: Final[dict[str, list[ArrowDriverProperties]]] = {
     # In version 1.6.0, ADBC released `Cursor.fetch_arrow`, returning an object
     # implementing the Arrow PyCapsule interface (not requiring PyArrow). This should be
     # used if the version permits.

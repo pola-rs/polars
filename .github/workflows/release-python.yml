@@ -380,6 +380,7 @@ jobs:
         if: inputs.dry-run == false
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
+          skip-existing: true
           verbose: true
 
   publish-to-github:
@@ -393,7 +394,7 @@ jobs:
       - name: Get version from Cargo.toml
         id: version
         run: |
-          VERSION=$(grep -m 1 -oP 'version = "\K[^"]+' py-polars/runtime/template/Cargo.toml)
+          VERSION=$(grep -m 1 -oP 'version = "\K[^"]+' py-polars/runtime/template/Cargo.template.toml)
           if [[ "$VERSION" == *"-"* ]]; then
             IS_PRERELEASE=true
           else

@@ -21,7 +21,6 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 import polars as pl
-from polars.exceptions import ComputeError
 from polars.io.parquet import ParquetFieldOverwrites
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes
@@ -62,7 +61,6 @@ COMPRESSIONS = [
     "uncompressed",
     "snappy",
     "gzip",
-    # "lzo",  # LZO compression currently not supported by Arrow backend
     "brotli",
     "zstd",
 ]
@@ -145,23 +143,6 @@ def test_read_parquet_respects_rechunk_16416(
     assert result.n_chunks() == expected_chunks
 
 
-def test_to_from_buffer_lzo(df: pl.DataFrame) -> None:
-    buf = io.BytesIO()
-    # Writing lzo compressed parquet files is not supported for now.
-    with pytest.raises(ComputeError):
-        df.write_parquet(buf, compression="lzo", use_pyarrow=False)
-    buf.seek(0)
-
-    buf = io.BytesIO()
-    with pytest.raises(OSError):
-        # Writing lzo compressed parquet files is not supported for now.
-        df.write_parquet(buf, compression="lzo", use_pyarrow=True)
-    buf.seek(0)
-    # Invalid parquet file as writing failed.
-    with pytest.raises(ComputeError):
-        _ = pl.read_parquet(buf)
-
-
 @pytest.mark.write_disk
 @pytest.mark.parametrize("compression", COMPRESSIONS)
 def test_to_from_file(
@@ -173,27 +154,6 @@ def test_to_from_file(
     df.write_parquet(file_path, compression=compression)
     read_df = pl.read_parquet(file_path)
     assert_frame_equal(df, read_df, categorical_as_str=True)
-
-
-@pytest.mark.write_disk
-def test_to_from_file_lzo(df: pl.DataFrame, tmp_path: Path) -> None:
-    tmp_path.mkdir(exist_ok=True)
-
-    file_path = tmp_path / "small.avro"
-
-    # Writing lzo compressed parquet files is not supported for now.
-    with pytest.raises(ComputeError):
-        df.write_parquet(file_path, compression="lzo", use_pyarrow=False)
-    # Invalid parquet file as writing failed.
-    with pytest.raises(ComputeError):
-        _ = pl.read_parquet(file_path)
-
-    # Writing lzo compressed parquet files is not supported for now.
-    with pytest.raises(OSError):
-        df.write_parquet(file_path, compression="lzo", use_pyarrow=True)
-    # Invalid parquet file as writing failed.
-    with pytest.raises(FileNotFoundError):
-        _ = pl.read_parquet(file_path)
 
 
 def test_select_columns() -> None:
