@@ -7,7 +7,7 @@ import sys
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
 from inspect import isclass
-from typing import TYPE_CHECKING, Any, ForwardRef, NoReturn, Union, get_args
+from typing import TYPE_CHECKING, Any, Final, ForwardRef, NoReturn, Union, get_args
 
 import polars._reexport as pl
 from polars.datatypes.classes import (
@@ -135,7 +135,7 @@ def _parse_generic_into_dtype(input: Any) -> PolarsDataType:
     return List(inner_dtype)
 
 
-PY_TYPE_STR_TO_DTYPE: SchemaDict = {
+PY_TYPE_STR_TO_DTYPE: Final[SchemaDict] = {
     "Decimal": Decimal,
     "NoneType": Null(),
     "bool": Boolean(),
