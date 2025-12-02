@@ -80,7 +80,8 @@ impl AExpr {
             },
             StructEval { expr, evaluation } => {
                 // We don't use the evaluation here because it does not contain inputs.
-                _ = evaluation;
+                // kdn TODO - This requires changes in run_conversion to handle the schema stacking.
+                container.extend(evaluation.iter().rev().map(ExprIR::node));
                 container.extend([*expr]);
             },
             Slice {
@@ -303,8 +304,7 @@ impl AExpr {
     pub fn replace_children(mut self, inputs: &[Node]) -> Self {
         use AExpr::*;
         let input = match &mut self {
-            Element | Column(_) | Literal(_) | Len => return self,
-            StructField(_) => return self, //kdn TODO REVIEW
+            Element | Column(_) | StructField(_) | Literal(_) | Len => return self,
             Cast { expr, .. } => expr,
             Explode { expr, .. } => expr,
             BinaryExpr { left, right, .. } => {
@@ -377,12 +377,14 @@ impl AExpr {
                 *evaluation = inputs[1];
                 return self;
             },
-            StructEval {
-                expr,
-                evaluation,
-            } => {
-                todo!() //kdn TODO
-            }
+            StructEval { expr, evaluation } => {
+                assert_eq!(inputs.len(), evaluation.len() + 1);
+                *expr = inputs[0];
+                for (e, node) in evaluation.iter_mut().zip(inputs[1..].iter()) {
+                    e.set_node(*node);
+                }
+                return self;
+            },
             Slice {
                 input,
                 offset,

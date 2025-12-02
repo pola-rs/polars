@@ -562,7 +562,7 @@ fn create_physical_expr_inner(
 
             let evaluation = evaluation
                 .iter()
-                .map(|e| create_physical_expr(e, expr_arena, &eval_schema, state)) //kdn TODO: from exprir or node?
+                .map(|e| create_physical_expr(e, expr_arena, &eval_schema, state))
                 .collect::<PolarsResult<Vec<_>>>()?;
 
             Ok(Arc::new(StructEvalExpr::new(

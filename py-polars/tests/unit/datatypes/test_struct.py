@@ -1590,6 +1590,14 @@ def test_struct_with_fields_non_deterministic_24568() -> None:
     ("expr", "expected"),
     [
         (
+            pl.field("x"),
+            pl.DataFrame({"g": [10, 20], "s": [[{"x": 10}, {"x": 20}], [{"x": 30}]]}),
+        ),
+        (
+            pl.col("a").alias("x"),
+            pl.DataFrame({"g": [10, 20], "s": [[{"x": 1}, {"x": 2}], [{"x": 5}]]}),
+        ),
+        (
             pl.field("x") + pl.col("a").cum_sum(),
             pl.DataFrame({"g": [10, 20], "s": [[{"x": 11}, {"x": 23}], [{"x": 35}]]}),
         ),
@@ -1760,3 +1768,13 @@ def test_struct_with_fields_chained() -> None:
     )
     expected = pl.DataFrame({"s": [{"x": 12}, {"x": 45}, None]})
     assert_frame_equal(q.collect(), expected)
+
+
+def test_struct_with_fields_order_observe() -> None:
+    df = pl.DataFrame({"a": [1, 1, 2]})
+    q = (
+        df.lazy()
+        .sort(pl.col.a)
+        .select(pl.col.a.value_counts().struct.with_fields(pl.field("count") * 2))
+    )
+    assert "SORT" not in q.explain()

@@ -160,12 +160,11 @@ impl<'a> ObservableOrdersResolver<'a> {
 
             AExpr::Column(_) => self.column_ordering,
             AExpr::StructField(_) => {
-                dbg!("match arm StructField"); //kdn
                 let Some(ordering) = self.structfield_ordering else {
                     unreachable!()
                 };
                 ordering
-            }, //kdn TODO ORDER REVIEW
+            },
             AExpr::Literal(lv) if lv.is_scalar() => O::None,
             AExpr::Literal(_) => O::Independent,
 
@@ -329,8 +328,6 @@ impl<'a> ObservableOrdersResolver<'a> {
             },
 
             AExpr::StructEval { expr, evaluation } => {
-                dbg!("match arm StructEval"); //kdn
-                //kdn TODO ORDER REVIEW - THIS IS PROBABLY NOT RIGHT
                 let mut zipped = rec!(*expr);
                 self.structfield_ordering = Some(zipped);
                 for e in evaluation {

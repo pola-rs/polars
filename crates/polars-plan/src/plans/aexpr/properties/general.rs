@@ -147,13 +147,10 @@ pub fn is_prop<P: Fn(&AExpr) -> bool>(
                     return;
                 }
             };
-
-            // ae.inputs_rev(stack); //kdn TODO ADD DISPATCH on inputs_only flag
-            ae.children_rev(stack);
+            ae.inputs_rev(stack);
         })(),
         _ => {
-            // ae.inputs_rev(stack); //kdn TODO ADD DISPATCH on inputs_only flag
-            ae.children_rev(stack);
+            ae.inputs_rev(stack);
         },
     }
 

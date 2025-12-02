@@ -24,7 +24,6 @@ impl FunctionIR {
     }
 
     pub fn schema<'a>(
-        //kdn TODO check (crate)
         &self,
         input_schema: &'a SchemaRef,
     ) -> PolarsResult<Cow<'a, SchemaRef>> {

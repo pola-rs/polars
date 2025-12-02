@@ -394,7 +394,7 @@ pub fn aexpr_sortedness(
                 nulls_last: fst.nulls_last,
             })
         },
-        AExpr::StructField(_) => todo!(), //kdn
+        AExpr::StructField(_) => todo!(), //kdn TODO
         AExpr::Literal(lv) if lv.is_scalar() => Some(AExprSorted {
             descending: Some(false),
             nulls_last: Some(false),

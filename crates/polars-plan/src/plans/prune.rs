@@ -153,7 +153,6 @@ impl<'a> CopyContext<'a> {
                 );
             }
         }
-        //kdn TODO copy-expr - AExpr::StructEval -- IAMHERE
 
         self.dst_expr.add(dst_expr)
     }

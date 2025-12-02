@@ -239,7 +239,6 @@ fn try_lower_elementwise_scalar_agg_expr(
         },
 
         AExpr::StructEval { expr, evaluation } => {
-            // panic!("BOMB"); //kdn TODO TRIGGER PATH
             let (expr, evaluation) = (*expr, evaluation.clone());
             let expr = lower_rec!(expr)?;
             Some(expr_arena.add(AExpr::StructEval { expr, evaluation }))
@@ -452,6 +451,7 @@ fn try_build_streaming_group_by(
     }
 
     let mut uniq_agg_exprs = PlIndexMap::new();
+
     for agg in aggs {
         let trans_node = try_lower_elementwise_scalar_agg_expr(
             agg.node(),
