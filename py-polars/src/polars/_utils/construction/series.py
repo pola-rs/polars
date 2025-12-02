@@ -510,7 +510,9 @@ def numpy_to_pyseries(
         values, dtype = numpy_values_and_dtype(values)
         constructor = numpy_type_to_constructor(values, dtype)
         return constructor(
-            name, values, nan_to_null if dtype in (np.float32, np.float64) else strict
+            name,
+            values,
+            nan_to_null if dtype in (np.float16, np.float32, np.float64) else strict,
         )
     else:
         original_shape = values.shape
