@@ -4,7 +4,7 @@ import decimal
 import functools
 import io
 import warnings
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from itertools import chain
 from typing import TYPE_CHECKING, Any, Callable, Literal, cast
@@ -3711,3 +3711,55 @@ def test_between_prefiltering_parametric(s: pl.Series, start: int, end: int) -> 
             pl.scan_parquet(f).filter(p).collect().to_series(),
             s.to_frame().filter(p).to_series(),
         )
+
+
+@pytest.mark.parametrize(
+    ("pl_dtype", "pa_dtype"),
+    [
+        (pl.Null, pa.null()),
+        (pl.Boolean, pa.bool_()),
+        (pl.String, pa.large_string()),
+        (pl.Binary, pa.large_binary()),
+        (pl.Int8, pa.int8()),
+        (pl.Int16, pa.int16()),
+        (pl.Int32, pa.int32()),
+        (pl.Int64, pa.int64()),
+        # Int128 is a custom polars type
+        (pl.UInt8, pa.uint8()),
+        (pl.UInt16, pa.uint16()),
+        (pl.UInt32, pa.uint32()),
+        (pl.UInt64, pa.uint64()),
+        # UInt128 is a custom polars type
+        (pl.Float16, pa.float16()),
+        (pl.Float32, pa.float32()),
+        (pl.Float64, pa.float64()),
+        (pl.Decimal(38, 10), pa.decimal128(38, 10)),
+        (pl.Categorical, pa.dictionary(pa.uint32(), pa.string())),
+        (pl.Enum(["x", "y", "z"]), pa.dictionary(pa.uint8(), pa.string())),
+        (pl.List(pl.Int32), pa.large_list(pa.int32())),
+        (pl.Array(pl.Int32, 3), pa.list_(pa.int32(), 3)),
+        (
+            pl.Struct({"x": pl.Int32, "y": pl.Utf8}),
+            pa.struct(
+                [
+                    pa.field("x", pa.int32()),
+                    pa.field("y", pa.string_view()),
+                ]
+            ),
+        ),
+        (pl.Date, pa.date32()),
+        (pl.Datetime(time_unit="ms"), pa.timestamp("ms")),
+        (pl.Datetime(time_unit="ms", time_zone="CET"), pa.timestamp("ms", tz="CET")),
+        (pl.Duration(time_unit="ms"), pa.duration("ms")),
+        (pl.Time, pa.time64("ns")),
+    ],
+)
+def test_parquet_schema_correctness(
+    pl_dtype: pl.DataType, pa_dtype: pa.DataType
+) -> None:
+    f = io.BytesIO()
+    df = pl.DataFrame({"a": []}, schema={"a": pl_dtype})
+    df.write_parquet(f, use_pyarrow=False)
+    f.seek(0)
+    table = pq.read_table(f)
+    assert table["a"].type == pa_dtype, f"{table['a'].type} != {pa_dtype}"
