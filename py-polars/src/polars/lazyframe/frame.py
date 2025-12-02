@@ -9161,7 +9161,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             msg = "`limit` cannot be None. If you want to show the complete lazyframe, call `.collect().show()` on it."
             raise ValueError(msg)
 
-        self.head(limit).collect().show(
+        self.head(limit).collect(engine="streaming").show(
             limit,
             ascii_tables=ascii_tables,
             decimal_separator=decimal_separator,
