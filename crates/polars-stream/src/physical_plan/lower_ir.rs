@@ -1129,6 +1129,23 @@ pub fn lower_ir(
             let options = options.options.clone();
             let phys_left = lower_ir!(input_left)?;
             let phys_right = lower_ir!(input_right)?;
+            let input_left_schema = &phys_sm[phys_left.node].output_schema;
+            let input_right_schema = &phys_sm[phys_right.node].output_schema;
+            let left_is_sorted = are_keys_sorted_any(
+                is_sorted(input_left, ir_arena, expr_arena).as_ref(),
+                &left_on,
+                expr_arena,
+                input_left_schema,
+            );
+            let right_is_sorted = are_keys_sorted_any(
+                is_sorted(input_right, ir_arena, expr_arena).as_ref(),
+                &right_on,
+                expr_arena,
+                input_right_schema,
+            );
+
+            dbg!(left_is_sorted, right_is_sorted);
+
             if (args.how.is_equi() || args.how.is_semi_anti()) && !args.validation.needs_checks() {
                 // When lowering the expressions for the keys we need to ensure we keep around the
                 // payload columns, otherwise the input nodes can get replaced by input-independent
@@ -1163,7 +1180,18 @@ pub fn lower_ir(
                 trans_left_on.drain(left_on.len()..);
                 trans_right_on.drain(right_on.len()..);
 
-                let node = if args.how.is_equi() {
+                let node = if args.how.is_equi() && left_is_sorted && right_is_sorted {
+                    phys_sm.insert(PhysNode::new(
+                        output_schema,
+                        PhysNodeKind::MergeJoin {
+                            input_left: trans_input_left,
+                            input_right: trans_input_right,
+                            left_on: trans_left_on,
+                            right_on: trans_right_on,
+                            args: args.clone(),
+                        },
+                    ))
+                } else if args.how.is_equi() {
                     phys_sm.insert(PhysNode::new(
                         output_schema,
                         PhysNodeKind::EquiJoin {

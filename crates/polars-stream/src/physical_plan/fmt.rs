@@ -634,6 +634,13 @@ fn visualize_plan_rec(
             right_on,
             args,
         }
+        | PhysNodeKind::MergeJoin {
+            input_left,
+            input_right,
+            left_on,
+            right_on,
+            args,
+        }
         | PhysNodeKind::SemiAntiJoin {
             input_left,
             input_right,

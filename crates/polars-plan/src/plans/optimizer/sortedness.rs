@@ -92,7 +92,7 @@ fn is_sorted_rec(
     sortedness.insert(root, None);
 
     // @NOTE: Most of the below implementations are very very conservative.
-    let sorted = match ir_arena.get(root) {
+    let sorted = match dbg!(ir_arena.get(root)) {
         #[cfg(feature = "python")]
         IR::PythonScan { .. } => None,
         IR::Slice {
@@ -108,7 +108,7 @@ fn is_sorted_rec(
         IR::DataFrameScan { df, .. } => Some(IRSorted(
             [df.get_columns()
                 .iter()
-                .find_map(|c| match c.is_sorted_flag() {
+                .find_map(|c| match dbg!(c.is_sorted_flag()) {
                     IsSorted::Not => None,
                     IsSorted::Ascending => Some(Sorted {
                         column: c.name().clone(),
@@ -356,7 +356,7 @@ fn is_sorted_rec(
     };
 
     sortedness.insert(root, sorted.clone());
-    sorted
+    dbg!(sorted)
 }
 
 pub struct AExprSorted {

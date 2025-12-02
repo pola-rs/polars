@@ -1117,6 +1117,13 @@ fn to_graph_rec<'a>(
             right_on,
             args,
         }
+        | MergeJoin {
+            input_left,
+            input_right,
+            left_on,
+            right_on,
+            args,
+        }
         | SemiAntiJoin {
             input_left,
             input_right,
@@ -1183,6 +1190,22 @@ fn to_graph_rec<'a>(
                         args,
                         output_bool,
                         ctx.num_pipelines,
+                    )?,
+                    [
+                        (left_input_key, input_left.port),
+                        (right_input_key, input_right.port),
+                    ],
+                ),
+                MergeJoin { .. } => ctx.graph.add_node(
+                    nodes::joins::merge_join::MergeJoinNode::new(
+                        left_input_schema,
+                        right_input_schema,
+                        left_key_schema,
+                        right_key_schema,
+                        unique_key_schema,
+                        left_key_selectors,
+                        right_key_selectors,
+                        args,
                     )?,
                     [
                         (left_input_key, input_left.port),
