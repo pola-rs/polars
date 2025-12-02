@@ -163,7 +163,7 @@ def test_from_dataframe_pyarrow_zero_copy_parametric(df: pl.DataFrame) -> None:
 )
 def test_from_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas(use_pyarrow_extension_array=True)
-    result = from_dataframe_interchange_protocol(df_pd)  # type: ignore[arg-type]
+    result = from_dataframe_interchange_protocol(df_pd)  # type: ignore[arg-type,unused-ignore]
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
@@ -185,7 +185,7 @@ def test_from_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
 )
 def test_from_dataframe_pandas_zero_copy_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas(use_pyarrow_extension_array=True)
-    result = from_dataframe_interchange_protocol(df_pd, allow_copy=False)  # type: ignore[arg-type]
+    result = from_dataframe_interchange_protocol(df_pd, allow_copy=False)  # type: ignore[arg-type,unused-ignore]
     assert_frame_equal(result, df)
 
 
@@ -204,7 +204,7 @@ def test_from_dataframe_pandas_zero_copy_parametric(df: pl.DataFrame) -> None:
 )
 def test_from_dataframe_pandas_native_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas()
-    result = from_dataframe_interchange_protocol(df_pd)  # type: ignore[arg-type]
+    result = from_dataframe_interchange_protocol(df_pd)  # type: ignore[arg-type,unused-ignore]
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
@@ -226,7 +226,7 @@ def test_from_dataframe_pandas_native_parametric(df: pl.DataFrame) -> None:
 )
 def test_from_dataframe_pandas_native_zero_copy_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas()
-    result = from_dataframe_interchange_protocol(df_pd, allow_copy=False)  # type: ignore[arg-type]
+    result = from_dataframe_interchange_protocol(df_pd, allow_copy=False)  # type: ignore[arg-type,unused-ignore]
     assert_frame_equal(result, df)
 
 
