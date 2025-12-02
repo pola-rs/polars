@@ -27,8 +27,8 @@ impl FixedSizeBinaryArray {
     ///
     /// # Errors
     /// This function returns an error iff:
-    /// * The `dtype`'s physical type is not [`crate::datatypes::PhysicalType::FixedSizeBinary`]
-    /// * The length of `values` is not a multiple of `size` in `dtype`
+    /// * The `dtype`'s logical type is not in [`FixedSizeBinary`, `Float16`], or
+    /// * The length of `values` is not a multiple of `size` in `dtype`, or
     /// * the validity's length is not equal to `values.len() / size`.
     pub fn try_new(
         dtype: ArrowDataType,
