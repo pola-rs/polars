@@ -258,7 +258,8 @@ impl PartitionTargetContextKey {
             .map_err(|err| pyo3::exceptions::PyRuntimeError::new_err(err.to_string()))?;
         let value = value.str().unwrap();
         let value = value.get(0).unwrap_or("null").as_bytes();
-        let value = percent_encoding::percent_encode(value, polars_io::utils::URL_ENCODE_CHAR_SET);
+        let value =
+            percent_encoding::percent_encode(value, polars_io::utils::HIVE_VALUE_ENCODE_CHARSET);
         Ok(value.to_string())
     }
     #[getter]

@@ -608,3 +608,41 @@ def test_list_agg_after_filter_in_agg_25361(
     )
     assert_frame_equal(out, expected)
     assert out.select(pl.col.a.count()).item() == df.select(pl.col.a.count()).item()
+
+
+def test_array_eval_after_slice() -> None:
+    df = pl.DataFrame({"array": [[0], [1]]}, schema={"array": pl.Array(pl.Int64, 1)})
+    df = pl.concat([df, df.slice(1)], rechunk=False)
+
+    assert_frame_equal(
+        df.select(pl.col("array").arr.eval(pl.element().first(), as_list=True)),
+        pl.DataFrame({"array": [[0], [1], [1]]}),
+    )
+
+
+def test_list_eval_after_slice() -> None:
+    df = pl.DataFrame({"list": [[1], range(1, 10), range(1, 10)]})
+    df_concat = pl.concat([df, df.slice(1)])
+    grouped_result = df_concat.select_seq(
+        has_no_duplicates=(
+            ~pl.col("list").list.eval(pl.element().is_duplicated()).list.any()
+        )
+    )
+    assert all(grouped_result.to_series().to_list())
+
+    df = pl.DataFrame({"list": [[0], [1]]})
+    df = pl.concat([df, df.slice(1)], rechunk=False)
+
+    assert_frame_equal(
+        df.select(pl.col("list").list.eval(pl.element().first())),
+        pl.DataFrame({"list": [[0], [1], [1]]}),
+    )
+
+
+def test_list_agg_after_slice() -> None:
+    df = pl.DataFrame({"list": [[1], range(1, 10), range(1, 10)]})
+    df_concat = pl.concat([df, df.slice(1)])
+    grouped_result = df_concat.select_seq(
+        has_no_duplicates=~pl.col("list").list.agg(pl.element().is_duplicated().any())
+    )
+    assert all(grouped_result.to_series().to_list())
