@@ -119,7 +119,9 @@ impl StreamingQuery {
 
         let top_ir = ir_arena.get(node).clone();
 
-        let metrics = if std::env::var("POLARS_TRACK_METRICS").as_deref() == Ok("1") {
+        let metrics = if std::env::var("POLARS_TRACK_METRICS").as_deref() == Ok("1")
+            || std::env::var("POLARS_LOG_METRICS").as_deref() == Ok("1")
+        {
             crate::async_executor::track_task_metrics(true);
             Some(Arc::default())
         } else {
@@ -153,7 +155,9 @@ impl StreamingQuery {
         let query_elapsed = query_start.elapsed();
 
         // Print metrics.
-        if let Some(lock) = metrics {
+        if let Some(lock) = metrics
+            && std::env::var("POLARS_LOG_METRICS").as_deref() == Ok("1")
+        {
             let mut total_query_ns = 0;
             let mut lines = Vec::new();
             let m = lock.lock();
