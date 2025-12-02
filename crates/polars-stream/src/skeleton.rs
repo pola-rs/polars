@@ -58,9 +58,9 @@ pub fn visualize_physical_plan(
 pub struct StreamingQuery {
     top_ir: IR,
     pub graph: Graph,
-    root_phys_node: PhysNodeKey,
-    phys_sm: SlotMap<PhysNodeKey, PhysNode>,
-    phys_to_graph: SecondaryMap<PhysNodeKey, GraphNodeKey>,
+    pub root_phys_node: PhysNodeKey,
+    pub phys_sm: SlotMap<PhysNodeKey, PhysNode>,
+    pub phys_to_graph: SecondaryMap<PhysNodeKey, GraphNodeKey>,
     pub metrics: Option<Arc<Mutex<GraphMetrics>>>,
 }
 
