@@ -1,7 +1,5 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
-#[cfg(feature = "object")]
-use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
 use crate::utils::index_to_chunked_index;
