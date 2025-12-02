@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, timedelta, timezone
 from itertools import permutations
 from typing import TYPE_CHECKING, Any, cast
@@ -21,6 +22,12 @@ from tests.unit.conftest import (
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
+
+
+def assert_expression_repr_matches(expression: pl.Expr, match: str) -> None:
+    """Assert that the `repr` of a given Expression matches expectation."""
+    pattern = rf"<Expr \['{re.escape(match)}'\] at 0x[\dA-Fa-f]+>$"
+    assert re.search(pattern, repr(expression)) is not None
 
 
 def test_arg_true() -> None:
@@ -696,32 +703,39 @@ def test_tail() -> None:
 
 def test_repr_short_expression() -> None:
     expr = pl.functions.all().len().name.prefix("length-long:")
-    # we cut off the last ten characters because that includes the
-    # memory location which will vary between runs
-    result = repr(expr).split("0x")[0]
-
-    expected = "<Expr ['cs.all().len().name.prefix(len…'] at "
-    assert result == expected
+    assert_expression_repr_matches(
+        expression=expr,
+        match="cs.all().len().name.prefix(len…",
+    )
 
 
 def test_repr_long_expression() -> None:
     expr = pl.functions.col(pl.String).str.count_matches("")
-
-    # we cut off the last ten characters because that includes the
-    # memory location which will vary between runs
-    result = repr(expr).split("0x")[0]
-
-    # note the … denoting that there was truncated text
-    expected = "<Expr ['cs.string().str.count_matches(…'] at "
-    assert result == expected
-    assert repr(expr).endswith(">")
+    assert_expression_repr_matches(
+        expression=expr,
+        match="cs.string().str.count_matches(…",
+    )
 
 
 def test_repr_gather() -> None:
-    result = repr(pl.col("a").gather(0))
-    assert 'col("a").gather(dyn int: 0)' in result
-    result = repr(pl.col("a").get(0))
-    assert 'col("a").get(dyn int: 0)' in result
+    assert_expression_repr_matches(
+        expression=pl.col("a").gather(0),
+        match='col("a").gather(dyn int: 0)',
+    )
+    assert_expression_repr_matches(
+        expression=pl.col("a").get(0),
+        match='col("a").get(dyn int: 0)',
+    )
+
+
+def test_repr_miscellaneous() -> None:
+    expr = pl.struct("x", pl.col("y"), pl.col("z").sin() ** 2)
+    assert_expression_repr_matches(
+        expression=expr,
+        match='as_struct("x", "y", col("z").s…',
+    )
+    full_repr = expr._pyexpr.to_str()
+    assert full_repr == 'as_struct("x", "y", col("z").sin().pow([dyn int: 2]))'
 
 
 def test_replace_no_cse() -> None:

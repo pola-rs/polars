@@ -37,6 +37,7 @@ base64 = "0.22.0"
 bigdecimal = "0.4.8"
 bincode = { version = "2.0", features = ["serde", "std"] }
 bitflags = "2"
+blake3 = { version = "1.8.2" }
 boxcar = "0.2.12"
 bytemuck = { version = "1.22", features = ["derive", "extern_crate_alloc"] }
 bytes = { version = "1.10" }

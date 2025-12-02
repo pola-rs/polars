@@ -298,7 +298,6 @@ class PartitionMaxSize(_SinkDirectory):
         file_path: Callable[[BasePartitionContext], Path | str | IO[bytes] | IO[str]]
         | None = None,
         max_size: int,
-        per_partition_sort_by: str | Expr | Sequence[str | Expr] | None = None,
         finish_callback: Callable[[DataFrame], None] | None = None,
     ) -> None:
         issue_unstable_warning("partitioning strategies are considered unstable.")
@@ -310,7 +309,6 @@ class PartitionMaxSize(_SinkDirectory):
             file_path_provider=file_path_provider,
             max_rows_per_file=max_size,
             finish_callback=finish_callback,
-            per_file_sort_by=per_partition_sort_by,
         )
 
 

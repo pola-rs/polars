@@ -12,6 +12,7 @@ use polars_mem_engine::create_physical_plan;
 use polars_plan::constants::get_literal_name;
 use polars_plan::dsl::default_values::DefaultFieldValues;
 use polars_plan::dsl::deletion::DeletionFilesList;
+use polars_plan::dsl::sink2::FileProviderType;
 use polars_plan::dsl::{
     CallbackSinkType, ExtraColumnsPolicy, FileScanIR, FileSinkOptions, PartitionStrategyIR,
     PartitionVariantIR, PartitionedSinkOptionsIR, SinkOptions, SinkTypeIR, UnifiedSinkArgs,
@@ -292,7 +293,7 @@ pub fn lower_ir(
                     sink_options,
                     file_type,
                     input: phys_input,
-                    cloud_options,
+                    cloud_options: cloud_options.map(Arc::unwrap_or_clone),
                 }
             },
             SinkTypeIR::Partitioned(PartitionedSinkOptionsIR {
@@ -302,11 +303,17 @@ pub fn lower_ir(
                 finish_callback,
                 file_format,
                 unified_sink_args,
+                max_rows_per_file,
+                approximate_bytes_per_file: _,
             }) => {
                 // Convert to old parameters for now
 
                 let base_path = base_path.clone();
-                let file_path_cb = file_path_provider.clone();
+                let file_path_cb = match file_path_provider {
+                    FileProviderType::Legacy(callback) => Some(callback.clone()),
+                    FileProviderType::Hive { .. } => None,
+                    FileProviderType::Function(_) => None,
+                };
                 let file_type = file_format.as_ref().clone();
                 let finish_callback = finish_callback.clone();
 
@@ -331,13 +338,9 @@ pub fn lower_ir(
 
                         (v, per_partition_sort_by)
                     },
-                    PartitionStrategyIR::MaxRowsPerFile {
-                        max_rows_per_file,
-                        per_file_sort_by,
-                    } => (
-                        PartitionVariantIR::MaxSize(*max_rows_per_file),
-                        per_file_sort_by,
-                    ),
+                    PartitionStrategyIR::FileSize => {
+                        (PartitionVariantIR::MaxSize(*max_rows_per_file), &vec![])
+                    },
                 };
 
                 let per_partition_sort_by = per_partition_sort_by.clone();
@@ -399,7 +402,7 @@ pub fn lower_ir(
                     sink_options,
                     variant,
                     file_type,
-                    cloud_options,
+                    cloud_options: cloud_options.map(Arc::unwrap_or_clone),
                     per_partition_sort_by: (!per_partition_sort_by.is_empty())
                         .then_some(per_partition_sort_by),
                     finish_callback,

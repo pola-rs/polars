@@ -1551,3 +1551,17 @@ def test_literal_from_timedelta(value: time, dtype: pl.Duration | None) -> None:
     out = pl.select(pl.lit(value, dtype=dtype))
     assert out.schema == OrderedDict({"literal": dtype or pl.Duration("us")})
     assert out.item() == value
+
+
+def test_out_of_range_date_year_11991() -> None:
+    # Out-of-range dates should return null instead of wrong values or panicking
+    # Regression test for #11991 where out-of-range dates silently returned
+    # the input value
+    s = pl.Series([-96_465_659]).cast(pl.Date)
+    result = s.dt.year()
+    # Should return null, not the input value -96465659
+    assert result[0] is None
+
+    # is_leap_year should also return null for out-of-range dates
+    result_leap = s.dt.is_leap_year()
+    assert result_leap[0] is None

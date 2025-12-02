@@ -3985,7 +3985,7 @@ class DataFrame:
         file
             File path or writable file-like object to which the result will be written.
             This should be a path to a directory if writing a partitioned dataset.
-        compression : {'lz4', 'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'zstd'}
+        compression : {'lz4', 'uncompressed', 'snappy', 'gzip', 'brotli', 'zstd'}
             Choose "zstd" for good compression performance.
             Choose "lz4" for fast compression/decompression.
             Choose "snappy" for more backwards compatibility guarantees
