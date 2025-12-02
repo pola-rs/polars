@@ -380,6 +380,7 @@ jobs:
         if: inputs.dry-run == false
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
+          skip-existing: true
           verbose: true
 
   publish-to-github:
