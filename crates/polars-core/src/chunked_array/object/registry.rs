@@ -32,7 +32,7 @@ pub struct ObjectRegistry {
     // A function that converts AnyValue to Box<dyn Any> of the PyObject type
     pyobject_converter: Option<PyObjectConverter>,
     pub physical_dtype: ArrowDataType,
-    /// A function that gets an AnyValue from a Box<dyn Array>.
+    // A function that gets an AnyValue from a Box<dyn Array>.
     array_getter: ObjectArrayGetter,
 }
 
