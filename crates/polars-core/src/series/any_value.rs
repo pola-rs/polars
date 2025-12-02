@@ -327,7 +327,7 @@ fn any_values_to_string(values: &[AnyValue], strict: bool) -> PolarsResult<Strin
                 #[cfg(feature = "dtype-f16")]
                 AnyValue::Float16(f) => {
                     float_buf.clear();
-                    SerPrimitive::write(float_buf, *f as f64);
+                    SerPrimitive::write(float_buf, f64::from(*f));
                     let s = std::str::from_utf8(float_buf).unwrap();
                     buffer.push_str(s);
                 },
@@ -416,7 +416,7 @@ fn any_values_to_string(values: &[AnyValue], strict: bool) -> PolarsResult<Strin
                 },
                 #[cfg(feature = "dtype-f16")]
                 AnyValue::Float16(f) => {
-                    SerPrimitive::write(&mut float_buf, *f as f64);
+                    SerPrimitive::write(&mut float_buf, f64::from(*f));
                     let s = std::str::from_utf8(&float_buf).unwrap();
                     builder.append_value(s);
                 },
