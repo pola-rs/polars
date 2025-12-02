@@ -4,7 +4,7 @@ import decimal
 import functools
 import io
 import warnings
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from itertools import chain
 from typing import TYPE_CHECKING, Any, Callable, Literal, cast
