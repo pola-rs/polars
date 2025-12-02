@@ -7,8 +7,8 @@ use std::fmt::{Debug, Formatter};
 use std::ops::Deref;
 use std::sync::{Arc, LazyLock, RwLock};
 
-use arrow::array::{Array, ArrayRef};
 use arrow::array::builder::ArrayBuilder;
+use arrow::array::{Array, ArrayRef};
 use arrow::datatypes::ArrowDataType;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -21,7 +21,7 @@ use crate::series::{IntoSeries, Series};
 pub type BuilderConstructor =
     Box<dyn Fn(PlSmallStr, usize) -> Box<dyn AnonymousObjectBuilder> + Send + Sync>;
 pub type ObjectConverter = Arc<dyn Fn(AnyValue) -> Box<dyn Any> + Send + Sync>;
-pub type PyObjectConverter = Arc<dyn Fn(AnyValue) ->Box<dyn Any> + Send + Sync>;
+pub type PyObjectConverter = Arc<dyn Fn(AnyValue) -> Box<dyn Any> + Send + Sync>;
 pub type ObjectArrayGetter = Arc<dyn Fn(&dyn Array, usize) -> Option<AnyValue<'_>> + Send + Sync>;
 
 pub struct ObjectRegistry {
@@ -125,7 +125,7 @@ pub fn register_object_builder(
     object_converter: ObjectConverter,
     pyobject_converter: PyObjectConverter,
     physical_dtype: ArrowDataType,
-    array_getter: ObjectArrayGetter
+    array_getter: ObjectArrayGetter,
 ) {
     let reg = GLOBAL_OBJECT_REGISTRY.deref();
     let mut reg = reg.write().unwrap();
@@ -135,7 +135,7 @@ pub fn register_object_builder(
         object_converter: Some(object_converter),
         pyobject_converter: Some(pyobject_converter),
         physical_dtype,
-        array_getter
+        array_getter,
     })
 }
 
