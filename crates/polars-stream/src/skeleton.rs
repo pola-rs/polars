@@ -153,7 +153,9 @@ impl StreamingQuery {
         let query_elapsed = query_start.elapsed();
 
         // Print metrics.
-        if let Some(lock) = metrics {
+        if let Some(lock) = metrics
+            && std::env::var("POLARS_LOG_METRICS").as_deref() == Ok("1")
+        {
             let mut total_query_ns = 0;
             let mut lines = Vec::new();
             let m = lock.lock();
