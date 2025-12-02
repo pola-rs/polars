@@ -505,9 +505,11 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         if let AnyValue::Float64(f) = result.value() {
             let scale_factor = self.scale_factor() as f64;
             let scaled_value = f / scale_factor;
-            Ok(Scalar::new(DataType::Float64, AnyValue::Float64(scaled_value)))
-        } 
-        else if let AnyValue::List(float_s) = result.value() {
+            Ok(Scalar::new(
+                DataType::Float64,
+                AnyValue::Float64(scaled_value),
+            ))
+        } else if let AnyValue::List(float_s) = result.value() {
             let scale_factor = self.scale_factor() as f64;
             let float_ca = float_s.f64().unwrap();
             let scaled_s = float_ca

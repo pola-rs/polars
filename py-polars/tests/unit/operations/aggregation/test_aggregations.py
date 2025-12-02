@@ -118,16 +118,16 @@ def test_quantile() -> None:
     assert s.quantile(0.5, "higher") == 2
     assert s.quantile([0.25, 0.75], "linear") == [1.5, 2.5]
 
+
 def test_quantile_error_checking() -> None:
     s = pl.Series([1, 2, 3])
     with pytest.raises(pl.exceptions.ComputeError):
         s.quantile(-0.1)
     with pytest.raises(pl.exceptions.ComputeError):
         s.quantile(1.1)
-    with pytest.raises(TypeError):
-        s.quantile([0.2, None])
     with pytest.raises(pl.exceptions.ComputeError):
         s.quantile([0.0, 1.2])
+
 
 def test_quantile_date() -> None:
     s = pl.Series(

@@ -411,16 +411,13 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
     #[cfg(feature = "dtype-datetime")]
     fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
         let result = self.0.physical().quantiles_reduce(quantiles, method)?;
-        // result is a List Scalar with inner dtype Float64
-        // Extract the float64 series, convert to datetime int64, and rebuild
         if let AnyValue::Float64(f) = result.value() {
-            // Convert the float64 value to an i64 representing microseconds since epoch
             let int_value = (f * (US_IN_DAY as f64)) as i64;
-            let datetime_value = AnyValue::from(int_value).as_datetime(TimeUnit::Microseconds, None);
+            let datetime_value =
+                AnyValue::from(int_value).as_datetime(TimeUnit::Microseconds, None);
             let dtype = DataType::Datetime(TimeUnit::Microseconds, None);
             Ok(Scalar::new(dtype, datetime_value))
-        }
-        else if let AnyValue::List(float_s) = result.value() {
+        } else if let AnyValue::List(float_s) = result.value() {
             let float_ca = float_s.f64().unwrap();
             let int_s = float_ca
                 .iter()

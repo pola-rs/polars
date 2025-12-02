@@ -387,8 +387,7 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
             let int_value = *f as i64;
             let time_value = AnyValue::from(int_value).as_time();
             Ok(Scalar::new(self.dtype().clone(), time_value))
-        }
-        else if let AnyValue::List(float_s) = result.value() {
+        } else if let AnyValue::List(float_s) = result.value() {
             let float_ca = float_s.f64().unwrap();
             let int_s = float_ca
                 .iter()

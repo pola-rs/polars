@@ -350,11 +350,12 @@ where
         let v = self.quantiles(quantiles, method)?;
         if v.len() == 1 {
             Ok(Scalar::new(DataType::Float64, v[0].into()))
-        }
-        else {
-            let s =
-                Float64Chunked::from_iter_options(PlSmallStr::from_static("quantiles"), v.into_iter())
-                    .into_series();
+        } else {
+            let s = Float64Chunked::from_iter_options(
+                PlSmallStr::from_static("quantiles"),
+                v.into_iter(),
+            )
+            .into_series();
             let dtype = DataType::List(Box::new(s.dtype().clone()));
             Ok(Scalar::new(dtype, AnyValue::List(s)))
         }
@@ -372,11 +373,12 @@ impl QuantileAggSeries for Float16Chunked {
         let v = self.quantiles(quantiles, method)?;
         if v.len() == 1 {
             Ok(Scalar::new(DataType::Float16, v[0].into()))
-        }
-        else {
-            let s =
-            Float16Chunked::from_iter_options(PlSmallStr::from_static("quantiles"), v.into_iter())
-                .into_series();
+        } else {
+            let s = Float16Chunked::from_iter_options(
+                PlSmallStr::from_static("quantiles"),
+                v.into_iter(),
+            )
+            .into_series();
             let dtype = DataType::List(Box::new(s.dtype().clone()));
             Ok(Scalar::new(dtype, AnyValue::List(s)))
         }
@@ -393,11 +395,12 @@ impl QuantileAggSeries for Float32Chunked {
         let v = self.quantiles(quantiles, method)?;
         if v.len() == 1 {
             Ok(Scalar::new(DataType::Float32, v[0].into()))
-        }
-        else {
-            let s =
-            Float32Chunked::from_iter_options(PlSmallStr::from_static("quantiles"), v.into_iter())
-                .into_series();
+        } else {
+            let s = Float32Chunked::from_iter_options(
+                PlSmallStr::from_static("quantiles"),
+                v.into_iter(),
+            )
+            .into_series();
             let dtype = DataType::List(Box::new(s.dtype().clone()));
             Ok(Scalar::new(dtype, AnyValue::List(s)))
         }
@@ -414,11 +417,12 @@ impl QuantileAggSeries for Float64Chunked {
         let v = self.quantiles(quantiles, method)?;
         if v.len() == 1 {
             Ok(Scalar::new(DataType::Float64, v[0].into()))
-        }
-        else {
-            let s =
-            Float64Chunked::from_iter_options(PlSmallStr::from_static("quantiles"), v.into_iter())
-                .into_series();
+        } else {
+            let s = Float64Chunked::from_iter_options(
+                PlSmallStr::from_static("quantiles"),
+                v.into_iter(),
+            )
+            .into_series();
             let dtype = DataType::List(Box::new(s.dtype().clone()));
             Ok(Scalar::new(dtype, AnyValue::List(s)))
         }

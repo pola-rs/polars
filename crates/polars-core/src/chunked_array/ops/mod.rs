@@ -295,12 +295,10 @@ pub trait ChunkQuantile<T> {
     }
     /// Aggregate a given set of quantiles of the ChunkedArray.
     /// Returns `None` if the array is empty or only contains null values.
-    fn quantiles(
-        &self,
-        quantiles: &[f64],
-        _method: QuantileMethod,
-    ) -> PolarsResult<Vec<Option<T>>> 
-    where T: Clone {
+    fn quantiles(&self, quantiles: &[f64], _method: QuantileMethod) -> PolarsResult<Vec<Option<T>>>
+    where
+        T: Clone,
+    {
         Ok(vec![None; quantiles.len()])
     }
 }

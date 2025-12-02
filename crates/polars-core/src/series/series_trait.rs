@@ -543,9 +543,12 @@ pub trait SeriesTrait:
                 // extract first element from the inner series
                 let av = s.get(0).map_or(AnyValue::Null, AnyValue::into_static);
                 Ok(Scalar::new(s.dtype().clone(), av))
-            }
+            },
             // fallback: if quantiles_reduce returned a non-list scalar, return it as-is
-            _ => Ok(Scalar::new(list_scalar.dtype().clone(), list_scalar.value().clone())),
+            _ => Ok(Scalar::new(
+                list_scalar.dtype().clone(),
+                list_scalar.value().clone(),
+            )),
         }
     }
     /// Get multiple quantiles of the ChunkedArray as a new `List` Scalar (single value series of length 1).

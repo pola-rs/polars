@@ -494,9 +494,7 @@ impl AggQuantileExpr {
 
         match s.dtype() {
             DataType::Float64 => {
-                let v: Vec<f64> = s.f64()?
-                    .into_no_null_iter()
-                    .collect();
+                let v: Vec<f64> = s.f64()?.into_no_null_iter().collect();
                 Ok(v)
             },
             DataType::Int32 => {
@@ -504,10 +502,7 @@ impl AggQuantileExpr {
                 // which is expected by one of the existing documentation examples of dataframe.quantile
                 // I'm not totally sure this is a great documentation example or that 0 and 1 should
                 // be considered valid quantiles... but maintaining existing behavior for now.
-                let v: Vec<f64> = s.i32()?
-                    .into_no_null_iter()
-                    .map(|i| i as f64)
-                    .collect();
+                let v: Vec<f64> = s.i32()?.into_no_null_iter().map(|i| i as f64).collect();
                 Ok(v)
             },
             DataType::Int64 => {
@@ -515,10 +510,7 @@ impl AggQuantileExpr {
                 // which is expected by one of the existing documentation examples of dataframe.quantile
                 // I'm not totally sure this is a great documentation example or that 0 and 1 should
                 // be considered valid quantiles... but maintaining existing behavior for now.
-                let v: Vec<f64> = s.i64()?
-                    .into_no_null_iter()
-                    .map(|i| i as f64)
-                    .collect();
+                let v: Vec<f64> = s.i64()?.into_no_null_iter().map(|i| i as f64).collect();
                 Ok(v)
             },
             dt => polars_bail!(
@@ -529,78 +521,77 @@ impl AggQuantileExpr {
             ),
         }
     }
-        
 
-        // let v = s.f64().into_iter()
-    
-        // // Try to coerce scalar/series to Float64 first (handles ints passed as 1)
-        // if let Ok(s_float) = s.cast(&DataType::Float64) {
-        //     let ca = s_float.f64().map_err(
-        //         |_| polars_err!(ComputeError: "failed to cast quantile expression to float64"),
-        //     )?;
-        //     let mut out = Vec::with_capacity(ca.len());
-        //     for v in ca.into_iter() {
-        //         match v {
-        //             Some(f) => out.push(f),
-        //             None => polars_bail!(ComputeError: "quantile expression contains null"),
-        //         }
-        //     }
-        //     if out.is_empty() {
-        //         polars_bail!(ComputeError: "quantile expression produced no values");
-        //     }
-        //     return Ok(out);
-        // }
+    // let v = s.f64().into_iter()
 
-        // // If that failed, check for a List literal and try to extract inner numeric values.
-        // match s.dtype() {
-        //     DataType::List(inner) if inner.as_ref().is_numeric() => {
-        //         let list = s.list().unwrap();
+    // // Try to coerce scalar/series to Float64 first (handles ints passed as 1)
+    // if let Ok(s_float) = s.cast(&DataType::Float64) {
+    //     let ca = s_float.f64().map_err(
+    //         |_| polars_err!(ComputeError: "failed to cast quantile expression to float64"),
+    //     )?;
+    //     let mut out = Vec::with_capacity(ca.len());
+    //     for v in ca.into_iter() {
+    //         match v {
+    //             Some(f) => out.push(f),
+    //             None => polars_bail!(ComputeError: "quantile expression contains null"),
+    //         }
+    //     }
+    //     if out.is_empty() {
+    //         polars_bail!(ComputeError: "quantile expression produced no values");
+    //     }
+    //     return Ok(out);
+    // }
 
-        //         // Expect a single element containing the inner numeric series
-        //         if list.len() != 1 {
-        //             polars_bail!(
-        //                 ComputeError:
-        //                 "quantile list literal must contain exactly one element (the inner list), got {}",
-        //                 list.len()
-        //             );
-        //         }
+    // // If that failed, check for a List literal and try to extract inner numeric values.
+    // match s.dtype() {
+    //     DataType::List(inner) if inner.as_ref().is_numeric() => {
+    //         let list = s.list().unwrap();
 
-        //         let inner_arr_box = list.get(0).unwrap();
-        //         let inner_arr: ArrayRef = inner_arr_box;
-        //         let inner_s = unsafe {
-        //             Series::from_chunks_and_dtype_unchecked(
-        //                 PlSmallStr::EMPTY,
-        //                 vec![inner_arr],
-        //                 inner.as_ref(),
-        //             )
-        //         };
+    //         // Expect a single element containing the inner numeric series
+    //         if list.len() != 1 {
+    //             polars_bail!(
+    //                 ComputeError:
+    //                 "quantile list literal must contain exactly one element (the inner list), got {}",
+    //                 list.len()
+    //             );
+    //         }
 
-        //         // cast inner to float64 to handle int lists
-        //         let inner_f = inner_s.cast(&DataType::Float64).map_err(
-        //             |_| polars_err!(ComputeError: "failed to cast quantile list inner to float64"),
-        //         )?;
+    //         let inner_arr_box = list.get(0).unwrap();
+    //         let inner_arr: ArrayRef = inner_arr_box;
+    //         let inner_s = unsafe {
+    //             Series::from_chunks_and_dtype_unchecked(
+    //                 PlSmallStr::EMPTY,
+    //                 vec![inner_arr],
+    //                 inner.as_ref(),
+    //             )
+    //         };
 
-        //         let ca = inner_f.f64().map_err(
-        //             |_| polars_err!(ComputeError: "failed to interpret quantile list as f64"),
-        //         )?;
-        //         let mut out = Vec::with_capacity(ca.len());
-        //         for v in ca.into_iter() {
-        //             match v {
-        //                 Some(f) => out.push(f),
-        //                 None => polars_bail!(ComputeError: "quantile list contains null"),
-        //             }
-        //         }
-        //         if out.is_empty() {
-        //             polars_bail!(ComputeError: "quantile list is empty");
-        //         }
-        //         Ok(out)
-        //     },
-        //     dt => polars_bail!(
-        //         SchemaMismatch:
-        //         "invalid series dtype: expected numeric or `list[numeric]`, got `{}` for series with name `{}`",
-        //         dt,
-        //         s.name(),
-        //     ),
+    //         // cast inner to float64 to handle int lists
+    //         let inner_f = inner_s.cast(&DataType::Float64).map_err(
+    //             |_| polars_err!(ComputeError: "failed to cast quantile list inner to float64"),
+    //         )?;
+
+    //         let ca = inner_f.f64().map_err(
+    //             |_| polars_err!(ComputeError: "failed to interpret quantile list as f64"),
+    //         )?;
+    //         let mut out = Vec::with_capacity(ca.len());
+    //         for v in ca.into_iter() {
+    //             match v {
+    //                 Some(f) => out.push(f),
+    //                 None => polars_bail!(ComputeError: "quantile list contains null"),
+    //             }
+    //         }
+    //         if out.is_empty() {
+    //             polars_bail!(ComputeError: "quantile list is empty");
+    //         }
+    //         Ok(out)
+    //     },
+    //     dt => polars_bail!(
+    //         SchemaMismatch:
+    //         "invalid series dtype: expected numeric or `list[numeric]`, got `{}` for series with name `{}`",
+    //         dt,
+    //         s.name(),
+    //     ),
 }
 
 impl PhysicalExpr for AggQuantileExpr {
