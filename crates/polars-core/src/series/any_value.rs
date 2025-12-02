@@ -324,6 +324,13 @@ fn any_values_to_string(values: &[AnyValue], strict: bool) -> PolarsResult<Strin
                     let s = std::str::from_utf8(float_buf).unwrap();
                     buffer.push_str(s);
                 },
+                #[cfg(feature = "dtype-f16")]
+                AnyValue::Float16(f) => {
+                    float_buf.clear();
+                    SerPrimitive::write(float_buf, *f as f64);
+                    let s = std::str::from_utf8(float_buf).unwrap();
+                    buffer.push_str(s);
+                },
                 #[cfg(feature = "dtype-struct")]
                 AnyValue::StructOwned(payload) => {
                     buffer.push('{');
@@ -392,6 +399,11 @@ fn any_values_to_string(values: &[AnyValue], strict: bool) -> PolarsResult<Strin
                 AnyValue::StringOwned(s) => builder.append_value(s),
                 AnyValue::Null => builder.append_null(),
                 AnyValue::Binary(_) | AnyValue::BinaryOwned(_) => builder.append_null(),
+
+                // Explicitly convert and dump floating-point values to strings
+                // to preserve as much precision as possible.
+                // Using write!(..., "{av}") steps through Display formatting
+                // which rounds to an arbitrary precision thus losing information.
                 AnyValue::Float64(f) => {
                     SerPrimitive::write(&mut float_buf, *f);
                     let s = std::str::from_utf8(&float_buf).unwrap();
@@ -399,6 +411,12 @@ fn any_values_to_string(values: &[AnyValue], strict: bool) -> PolarsResult<Strin
                 },
                 AnyValue::Float32(f) => {
                     SerPrimitive::write(&mut float_buf, *f as f64); // promote to f64 for serialization
+                    let s = std::str::from_utf8(&float_buf).unwrap();
+                    builder.append_value(s);
+                },
+                #[cfg(feature = "dtype-f16")]
+                AnyValue::Float16(f) => {
+                    SerPrimitive::write(&mut float_buf, *f as f64);
                     let s = std::str::from_utf8(&float_buf).unwrap();
                     builder.append_value(s);
                 },
