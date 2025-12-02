@@ -208,6 +208,7 @@ impl FixedSizeBinaryArray {
 impl FixedSizeBinaryArray {
     pub(crate) fn maybe_get_size(dtype: &ArrowDataType) -> PolarsResult<usize> {
         match dtype.to_logical_type() {
+            ArrowDataType::Float16 => Ok(2),
             ArrowDataType::FixedSizeBinary(size) => {
                 polars_ensure!(*size != 0, ComputeError: "FixedSizeBinaryArray expects a positive size");
                 Ok(*size)
