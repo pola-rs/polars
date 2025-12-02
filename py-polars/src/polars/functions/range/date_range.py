@@ -75,9 +75,9 @@ def date_range(
     Parameters
     ----------
     start
-        Lower bound of the date range.
+        First value of the date range.
     end
-        Upper bound of the date range.
+        Last value of the date range.
     interval
         Interval of the range periods, specified as a Python `timedelta` object
         or using the Polars duration string language (see "Notes" section below).
@@ -298,9 +298,9 @@ def date_ranges(
     Parameters
     ----------
     start
-        Lower bound of the date range.
+        First value of the date range.
     end
-        Upper bound of the date range.
+        Last value of the date range.
     interval
         Interval of the range periods, specified as a Python `timedelta` object
         or using the Polars duration string language (see "Notes" section below).
@@ -326,7 +326,7 @@ def date_ranges(
     Notes
     -----
     When `start`, `end`, and `num_samples` are provided, the `closed` parameter must be
-    'closed'.
+    'none'.
 
     `interval` is created according to the following string language:
 

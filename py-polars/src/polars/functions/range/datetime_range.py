@@ -82,9 +82,9 @@ def datetime_range(
     Parameters
     ----------
     start
-        Lower bound of the datetime range.
+        First value of the datetime range.
     end
-        Upper bound of the datetime range.
+        Last value of the datetime range.
     interval
         Interval of the range periods, specified as a Python `timedelta` object
         or using the Polars duration string language (see "Notes" section below).
@@ -340,9 +340,9 @@ def datetime_ranges(
     Parameters
     ----------
     start
-        Lower bound of the datetime range.
+        First value of the datetime range.
     end
-        Upper bound of the datetime range.
+        Last value of the datetime range.
     interval
         Interval of the range periods, specified as a Python `timedelta` object
         or using the Polars duration string language (see "Notes" section below).
