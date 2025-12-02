@@ -89,7 +89,7 @@ pub fn unique_counts(s: &Series) -> PolarsResult<Series> {
                     if first_true < first_null {
                         vec![num_falses, num_trues, num_nulls]
                     } else {
-                        vec![num_falses, num_nulls, num_falses]
+                        vec![num_falses, num_nulls, num_trues]
                     }
                 },
                 Some(true) => {
