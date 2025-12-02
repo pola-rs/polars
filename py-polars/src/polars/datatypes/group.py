@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 from polars.datatypes.classes import (
     Array,
@@ -79,7 +79,7 @@ class DataTypeGroup(frozenset):  # type: ignore[type-arg]
         return super().__contains__(item)
 
 
-SIGNED_INTEGER_DTYPES: frozenset[PolarsIntegerType] = DataTypeGroup(
+SIGNED_INTEGER_DTYPES: Final[frozenset[PolarsIntegerType]] = DataTypeGroup(
     [
         Int8,
         Int16,
@@ -88,7 +88,7 @@ SIGNED_INTEGER_DTYPES: frozenset[PolarsIntegerType] = DataTypeGroup(
         Int128,
     ]
 )
-UNSIGNED_INTEGER_DTYPES: frozenset[PolarsIntegerType] = DataTypeGroup(
+UNSIGNED_INTEGER_DTYPES: Final[frozenset[PolarsIntegerType]] = DataTypeGroup(
     [
         UInt8,
         UInt16,
@@ -97,15 +97,17 @@ UNSIGNED_INTEGER_DTYPES: frozenset[PolarsIntegerType] = DataTypeGroup(
         UInt128,
     ]
 )
-INTEGER_DTYPES: frozenset[PolarsIntegerType] = (
+INTEGER_DTYPES: Final[frozenset[PolarsIntegerType]] = (
     SIGNED_INTEGER_DTYPES | UNSIGNED_INTEGER_DTYPES
 )
-FLOAT_DTYPES: frozenset[PolarsDataType] = DataTypeGroup([Float16, Float32, Float64])
-NUMERIC_DTYPES: frozenset[PolarsDataType] = DataTypeGroup(
+FLOAT_DTYPES: Final[frozenset[PolarsDataType]] = DataTypeGroup(
+    [Float16, Float32, Float64]
+)
+NUMERIC_DTYPES: Final[frozenset[PolarsDataType]] = DataTypeGroup(
     FLOAT_DTYPES | INTEGER_DTYPES | frozenset([Decimal])
 )
 
-DATETIME_DTYPES: frozenset[PolarsDataType] = DataTypeGroup(
+DATETIME_DTYPES: Final[frozenset[PolarsDataType]] = DataTypeGroup(
     [
         Datetime,
         Datetime("ms"),
@@ -116,7 +118,7 @@ DATETIME_DTYPES: frozenset[PolarsDataType] = DataTypeGroup(
         Datetime("ns", "*"),
     ]
 )
-DURATION_DTYPES: frozenset[PolarsDataType] = DataTypeGroup(
+DURATION_DTYPES: Final[frozenset[PolarsDataType]] = DataTypeGroup(
     [
         Duration,
         Duration("ms"),
@@ -124,8 +126,8 @@ DURATION_DTYPES: frozenset[PolarsDataType] = DataTypeGroup(
         Duration("ns"),
     ]
 )
-TEMPORAL_DTYPES: frozenset[PolarsTemporalType] = DataTypeGroup(
+TEMPORAL_DTYPES: Final[frozenset[PolarsTemporalType]] = DataTypeGroup(
     frozenset([Date, Time]) | DATETIME_DTYPES | DURATION_DTYPES
 )
 
-NESTED_DTYPES: frozenset[PolarsDataType] = DataTypeGroup([List, Struct, Array])
+NESTED_DTYPES: Final[frozenset[PolarsDataType]] = DataTypeGroup([List, Struct, Array])
