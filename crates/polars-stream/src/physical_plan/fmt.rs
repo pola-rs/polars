@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use polars_plan::dsl::PartitionVariantIR;
+use polars_plan::dsl::{PartitionStrategyIR, PartitionVariantIR};
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, EscapeLabel};
 use polars_plan::prelude::FileType;
@@ -291,6 +291,25 @@ fn visualize_plan_rec(
             };
 
             match file_type {
+                #[cfg(feature = "parquet")]
+                FileType::Parquet(_) => (format!("{variant}[parquet]"), from_ref(input)),
+                #[cfg(feature = "ipc")]
+                FileType::Ipc(_) => (format!("{variant}[ipc]"), from_ref(input)),
+                #[cfg(feature = "csv")]
+                FileType::Csv(_) => (format!("{variant}[csv]"), from_ref(input)),
+                #[cfg(feature = "json")]
+                FileType::Json(_) => (format!("{variant}[ndjson]"), from_ref(input)),
+                #[allow(unreachable_patterns)]
+                _ => todo!(),
+            }
+        },
+        PhysNodeKind::PartitionedSink2 { input, options } => {
+            let variant = match options.partition_strategy {
+                PartitionStrategyIR::Keyed { .. } => "partition-keyed",
+                PartitionStrategyIR::FileSize => "partition-file-size",
+            };
+
+            match options.file_format.as_ref() {
                 #[cfg(feature = "parquet")]
                 FileType::Parquet(_) => (format!("{variant}[parquet]"), from_ref(input)),
                 #[cfg(feature = "ipc")]

@@ -710,6 +710,10 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     ..Default::default()
                 }
             },
+            PhysNodeKind::PartitionedSink2 { input, options: _ } => {
+                phys_node_inputs.push(input.node);
+                unreachable!()
+            },
             PhysNodeKind::PeakMinMax { input, is_peak_max } => {
                 phys_node_inputs.push(input.node);
 

@@ -12,7 +12,7 @@ use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_mem_engine::scan_predicate::create_scan_predicate;
-use polars_plan::dsl::{JoinOptionsIR, PartitionVariantIR, ScanSources};
+use polars_plan::dsl::{JoinOptionsIR, PartitionVariantIR, PartitionedSinkOptionsIR, ScanSources};
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, IR, IRAggExpr};
 use polars_plan::prelude::{FileType, FunctionFlags};
@@ -371,6 +371,27 @@ fn to_graph_rec<'a>(
                     panic!("activate source feature")
                 },
             }
+        },
+
+        #[expect(unused)]
+        PartitionedSink2 {
+            input,
+            options:
+                PartitionedSinkOptionsIR {
+                    base_path,
+                    file_path_provider,
+                    partition_strategy,
+                    finish_callback: _,
+                    file_format,
+                    unified_sink_args,
+                    max_rows_per_file,
+                    approximate_bytes_per_file,
+                },
+        } => {
+            let input_schema = ctx.phys_sm[input.node].output_schema.clone();
+            let input_key = to_graph_rec(input.node, ctx)?;
+
+            todo!();
         },
 
         PartitionedSink {

@@ -296,6 +296,7 @@ pub fn lower_ir(
                     cloud_options: cloud_options.map(Arc::unwrap_or_clone),
                 }
             },
+
             SinkTypeIR::Partitioned(PartitionedSinkOptionsIR {
                 base_path,
                 file_path_provider,

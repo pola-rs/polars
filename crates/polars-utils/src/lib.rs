@@ -27,6 +27,7 @@ pub mod hashing;
 pub mod idx_map;
 pub mod idx_mapper;
 pub mod idx_vec;
+pub mod marked_usize;
 pub mod mem;
 pub mod min_max;
 pub mod order_statistic_tree;
