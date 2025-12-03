@@ -17,7 +17,6 @@ pub(super) fn to_expr_irs(
     input: Vec<Expr>,
     ctx: &mut ExprToIRContext,
 ) -> PolarsResult<Vec<ExprIR>> {
-    dbg!("start to_expr_irs");
     let original_with_fields = ctx.with_fields.clone();
     input
         .into_iter()
@@ -69,7 +68,7 @@ impl<'a> ExprToIRContext<'a> {
         }
     }
 
-    /// If the `schema` is extended with an extra Struct schema field, use it to 
+    /// If the `schema` is extended with an extra Struct schema field, use it to
     /// populate `with_fields`.
     pub fn new_with_fields(arena: &'a mut Arena<AExpr>, schema: &'a Schema) -> Self {
         let with_fields = match schema.get(&PL_STRUCTFIELDS_NAME) {
@@ -119,7 +118,6 @@ pub(super) fn to_aexpr_impl(
     expr: Expr,
     ctx: &mut ExprToIRContext,
 ) -> PolarsResult<(Node, PlSmallStr)> {
-    dbg!("start to_aexpr_impl");
     let owned = Arc::unwrap_or_clone;
 
     macro_rules! recurse {
@@ -146,11 +144,7 @@ pub(super) fn to_aexpr_impl(
     }
 
     let (v, output_name) = match expr {
-        Expr::Element => {
-            dbg!("match arm Expr::Column"); //kdn
-            dbg!(&ctx.with_fields);
-            (AExpr::Element, PlSmallStr::EMPTY)
-        },
+        Expr::Element => (AExpr::Element, PlSmallStr::EMPTY),
         Expr::Explode { input, options } => {
             let (expr, output_name) = recurse_arc!(input)?;
             (AExpr::Explode { expr, options }, output_name)
@@ -161,8 +155,6 @@ pub(super) fn to_aexpr_impl(
             (AExpr::Literal(lv), output_name)
         },
         Expr::Column(name) => {
-            dbg!("match arm Expr::Column"); //kdn
-            dbg!(&ctx.with_fields);
             if ctx.check_column_names {
                 ctx.schema.try_index_of(&name)?;
             }
@@ -490,8 +482,6 @@ pub(super) fn to_aexpr_impl(
             evaluation,
             variant,
         } => {
-            dbg!("match arm Expr::Eval"); //kdn
-            dbg!(&ctx.with_fields);
             let (expr, output_name) = recurse_arc!(expr)?;
             let expr_dtype = ctx.arena.get(expr).to_dtype(&ctx.to_field_ctx())?;
             let element_dtype = variant.element_dtype(&expr_dtype)?;
@@ -544,8 +534,6 @@ pub(super) fn to_aexpr_impl(
             )
         },
         Expr::StructEval { expr, evaluation } => {
-            dbg!("match arm Expr::StructEval"); //kdn
-            dbg!(&ctx.with_fields);
             let (expr, output_name) = recurse_arc!(expr)?;
             let expr_dtype = ctx.arena.get(expr).to_dtype(&ctx.to_field_ctx())?;
 
@@ -606,8 +594,6 @@ pub(super) fn to_aexpr_impl(
         },
         #[cfg(feature = "dtype-struct")]
         Expr::Field(name) => {
-            dbg!("match arm Field"); //kdn
-            dbg!(&ctx.with_fields);
             assert_eq!(
                 name.len(),
                 1,

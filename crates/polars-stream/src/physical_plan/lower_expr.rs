@@ -140,8 +140,7 @@ pub fn is_input_independent_rec(
     let ret = match arena.get(expr_key) {
         // Handled separately in `Eval`.
         AExpr::Element => unreachable!(),
-        // Mapped to `Column` in `StructEval`.
-        AExpr::StructField(_) => unreachable!(),
+        AExpr::StructField(_) => false,
         AExpr::Explode { expr: inner, .. }
         | AExpr::Cast {
             expr: inner,

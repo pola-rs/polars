@@ -65,7 +65,7 @@ impl ConversionOptimizer {
         self.scratch.push((expr, 0));
         // traverse all subexpressions and add to the stack
         let expr = unsafe { expr_arena.get_unchecked(expr) };
-        //kdn TODO REVIEW FINAL
+
         expr.inputs_rev_strict(&mut ExtendVec {
             out: &mut self.scratch,
             schema_idx: 0,
