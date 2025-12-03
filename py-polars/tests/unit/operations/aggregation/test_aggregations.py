@@ -15,7 +15,7 @@ from polars.testing.parametric import dataframes
 if TYPE_CHECKING:
     import numpy.typing as npt
 
-    from polars._typing import PolarsDataType, TimeUnit
+    from polars._typing import PolarsDataType, QuantileMethod, TimeUnit
 
 
 def test_quantile_expr_input() -> None:
@@ -25,6 +25,186 @@ def test_quantile_expr_input() -> None:
         df.select([pl.col("a").quantile(pl.col("b").sum() + 0.1)]),
         df.select(pl.col("a").quantile(0.6)),
     )
+
+
+def test_quantile_varying_by_group_20951() -> None:
+    # https://github.com/pola-rs/polars/issues/20951
+    df = pl.DataFrame(
+        {
+            "value": [1, 2, 1, 2],
+            "quantile": [0, 0, 1, 1],
+        }
+    )
+    result = (
+        df.group_by(pl.col.quantile)
+        .agg(pl.col.value.quantile(pl.col.quantile.first()))
+        .sort("quantile")
+    )
+
+    expected = pl.DataFrame(
+        {
+            "quantile": [0, 1],
+            "value": [1.0, 2.0],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+    # Also test via lazy API
+    result_lazy = (
+        df.lazy()
+        .group_by(pl.col.quantile)
+        .agg(pl.col.value.quantile(pl.col.quantile.first()))
+        .sort("quantile")
+        .collect()
+    )
+    assert_frame_equal(result_lazy, expected)
+
+
+def _naive_varying_quantile_groupby(
+    df: pl.DataFrame,
+    group_col: str,
+    value_col: str,
+    q_col: str,
+    method: QuantileMethod = "linear",
+) -> pl.DataFrame:
+    """Naive implementation for verification."""
+    grouped = df.group_by(group_col).agg(
+        pl.col(value_col).alias("values"), pl.col(q_col).first().alias("q")
+    )
+
+    results = []
+    for row in grouped.iter_rows(named=True):
+        group_val = row[group_col]
+        values = row["values"]
+        quantile_val = row["q"]
+        quantile_result = pl.Series(values).quantile(quantile_val, interpolation=method)
+        results.append({group_col: group_val, value_col: quantile_result})
+
+    return pl.DataFrame(results).sort(group_col)
+
+
+@pytest.mark.parametrize(
+    "method",
+    ["nearest", "higher", "lower", "midpoint", "linear", "equiprobable"],
+)
+@pytest.mark.parametrize(
+    ("dtype", "test_values"),
+    [
+        (pl.Int32, [1, 2, 3, 4]),
+        (pl.Int64, [1, 2, 3, 4]),
+        (pl.Float32, [1.0, 2.0, 3.0, 4.0]),
+        (pl.Float64, [1.0, 2.0, 3.0, 4.0]),
+        (
+            pl.Date,
+            [date(2020, 1, 1), date(2020, 1, 2), date(2020, 6, 1), date(2020, 6, 2)],
+        ),
+        (
+            pl.Datetime,
+            [
+                datetime(2020, 1, 1),
+                datetime(2020, 1, 2),
+                datetime(2020, 6, 1),
+                datetime(2020, 6, 2),
+            ],
+        ),
+        (
+            pl.Duration,
+            [
+                timedelta(hours=1),
+                timedelta(hours=2),
+                timedelta(hours=10),
+                timedelta(hours=20),
+            ],
+        ),
+        (pl.Time, [time(1, 0), time(2, 0), time(10, 0), time(20, 0)]),
+    ],
+)
+def test_quantile_varying_by_group(
+    method: QuantileMethod, dtype: pl.DataType, test_values: list[Any]
+) -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["a", "a", "a", "a", "b", "b", "b", "b"],
+            "value": pl.Series(test_values * 2, dtype=dtype),
+            "q": [0.25] * 4 + [0.75] * 4,
+        }
+    )
+
+    result = (
+        df.group_by("group")
+        .agg(pl.col.value.quantile(pl.col.q.first(), interpolation=method))
+        .sort("group")
+    )
+
+    # Verify against naive implementation
+    naive_result = _naive_varying_quantile_groupby(df, "group", "value", "q", method)
+    assert_frame_equal(result, naive_result, check_dtypes=False)
+
+
+def test_quantile_varying_by_group_edge_cases() -> None:
+    # Out of range quantile (q > 1)
+    df = pl.DataFrame(
+        {
+            "group": ["a", "a", "b", "b"],
+            "value": [1, 2, 10, 20],
+            "q": [0.5, 0.5, 1.5, 1.5],
+        }
+    )
+    result = (
+        df.group_by("group").agg(pl.col.value.quantile(pl.col.q.first())).sort("group")
+    )
+    assert result["value"][0] == 2.0
+    assert result["value"][1] is None
+
+    # Out of range quantile (q < 0)
+    df = pl.DataFrame(
+        {
+            "group": ["a", "a", "b", "b"],
+            "value": [1, 2, 10, 20],
+            "q": [-0.5, -0.5, 0.5, 0.5],
+        }
+    )
+    result = (
+        df.group_by("group").agg(pl.col.value.quantile(pl.col.q.first())).sort("group")
+    )
+    assert result["value"][0] is None
+    assert result["value"][1] == 20.0  # default interpolation is "nearest"
+
+    # Null quantile value
+    df = pl.DataFrame(
+        {
+            "group": ["a", "a", "b", "b"],
+            "value": [1, 2, 10, 20],
+            "q": [None, None, 0.5, 0.5],
+        }
+    )
+    result = (
+        df.group_by("group").agg(pl.col.value.quantile(pl.col.q.first())).sort("group")
+    )
+    assert result["value"][0] is None
+    assert result["value"][1] == 20.0  # default interpolation is "nearest"
+
+    # Single element groups
+    df = pl.DataFrame({"group": ["a", "b"], "value": [5.0, 10.0], "q": [0.0, 1.0]})
+    result = (
+        df.group_by("group").agg(pl.col.value.quantile(pl.col.q.first())).sort("group")
+    )
+    expected = pl.DataFrame({"group": ["a", "b"], "value": [5.0, 10.0]})
+    assert_frame_equal(result, expected)
+
+    # Maintain order
+    df = pl.DataFrame(
+        {
+            "group": ["a", "a", "a", "b", "b", "b"],
+            "value": [1.0, 2.0, 3.0, 10.0, 20.0, 30.0],
+            "q": [0.0, 0.0, 0.0, 0.5, 0.5, 0.5],
+        }
+    ).sort("group")
+    result = df.group_by("group", maintain_order=True).agg(
+        pl.col.value.quantile(pl.col.q.first())
+    )
+    expected = pl.DataFrame({"group": ["a", "b"], "value": [1.0, 20.0]})
+    assert_frame_equal(result, expected)
 
 
 def test_boolean_aggs() -> None:
