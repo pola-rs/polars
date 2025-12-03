@@ -239,7 +239,7 @@ mod test {
 
         // Specify neither on nor index
         let args = UnpivotArgsIR {
-            on: Some(vec![]),
+            on: None,
             index: vec![],
             ..Default::default()
         };
@@ -259,7 +259,7 @@ mod test {
 
         // Specify index but not on
         let args = UnpivotArgsIR {
-            on: Some(vec![]),
+            on: None,
             index: vec!["A".into()],
             ..Default::default()
         };
