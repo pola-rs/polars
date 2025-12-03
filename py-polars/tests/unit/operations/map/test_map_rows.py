@@ -66,3 +66,16 @@ def test_map_elements_infer() -> None:
 
     assert schema.names() == ["a"]
     assert schema.dtypes() == [pl.String]
+
+
+def test_map_rows_object_dtype() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [0, 0, 1, 2, 2],
+            "b": [object(), 2, 0, 0, 1],
+        },
+        schema={"a": pl.Int64, "b": pl.Object},
+    )
+
+    out = df.map_rows(lambda _d: 1)
+    assert_frame_equal(out, pl.DataFrame({"map": [1, 1, 1, 1, 1]}))

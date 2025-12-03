@@ -3711,3 +3711,67 @@ def test_between_prefiltering_parametric(s: pl.Series, start: int, end: int) -> 
             pl.scan_parquet(f).filter(p).collect().to_series(),
             s.to_frame().filter(p).to_series(),
         )
+
+
+@pytest.mark.parametrize(
+    ("pl_dtype", "pa_dtype", "pa_dtype_nested"),
+    [
+        (pl.Null, pa.null(), None),
+        (pl.Boolean, pa.bool_(), None),
+        (pl.String, pa.large_string(), pa.string_view()),
+        (pl.Binary, pa.large_binary(), pa.binary_view()),
+        (pl.Int8, pa.int8(), None),
+        (pl.Int16, pa.int16(), None),
+        (pl.Int32, pa.int32(), None),
+        (pl.Int64, pa.int64(), None),
+        # Int128 is a custom polars type
+        (pl.UInt8, pa.uint8(), None),
+        (pl.UInt16, pa.uint16(), None),
+        (pl.UInt32, pa.uint32(), None),
+        (pl.UInt64, pa.uint64(), None),
+        # UInt128 is a custom polars type
+        (pl.Float16, pa.float16(), None),
+        (pl.Float32, pa.float32(), None),
+        (pl.Float64, pa.float64(), None),
+        (pl.Decimal(38, 10), pa.decimal128(38, 10), None),
+        (pl.Categorical, pa.dictionary(pa.uint32(), pa.string()), None),
+        (pl.Enum(["x", "y", "z"]), pa.dictionary(pa.uint8(), pa.string()), None),
+        (pl.List(pl.Int32), pa.large_list(pa.int32()), None),
+        (pl.Array(pl.Int32, 3), pa.list_(pa.int32(), 3), None),
+        (
+            pl.Struct({"x": pl.Int32, "y": pl.Utf8}),
+            pa.struct(
+                [
+                    pa.field("x", pa.int32()),
+                    pa.field("y", pa.string_view()),
+                ]
+            ),
+            None,
+        ),
+        (pl.Date, pa.date32(), None),
+        (pl.Datetime(time_unit="ms"), pa.timestamp("ms"), None),
+        (
+            pl.Datetime(time_unit="ms", time_zone="CET"),
+            pa.timestamp("ms", tz="CET"),
+            None,
+        ),
+        (pl.Duration(time_unit="ms"), pa.duration("ms"), None),
+        (pl.Time, pa.time64("ns"), None),
+    ],
+)
+def test_parquet_schema_correctness(
+    pl_dtype: pl.DataType, pa_dtype: pa.DataType, pa_dtype_nested: pa.DataType | None
+) -> None:
+    f = io.BytesIO()
+    df = pl.DataFrame({"a": []}, schema={"a": pl_dtype})
+    df.write_parquet(f, use_pyarrow=False)
+    f.seek(0)
+    table = pq.read_table(f)
+    assert table["a"].type == pa_dtype
+
+    f.truncate(0)
+    df = pl.DataFrame({"a": []}, schema={"a": pl.Struct([pl.Field("f0", pl_dtype)])})
+    df.write_parquet(f, use_pyarrow=False)
+    f.seek(0)
+    table = pq.read_table(f)
+    assert table["a"].type == pa.struct([pa.field("f0", pa_dtype_nested or pa_dtype)])

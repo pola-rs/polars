@@ -817,19 +817,40 @@ pub fn _broadcast_bools(n_cols: usize, values: &mut Vec<bool>) {
     }
 }
 
-pub(crate) fn prepare_arg_sort(
-    columns: Vec<Column>,
-    sort_options: &mut SortMultipleOptions,
-) -> PolarsResult<(Column, Vec<Column>)> {
-    let n_cols = columns.len();
+/// # Panics
+/// Panics if `columns` is empty.
+pub fn arg_sort(columns: &[Column], mut sort_options: SortMultipleOptions) -> PolarsResult<IdxCa> {
+    assert!(!columns.is_empty());
 
-    let mut columns = columns;
+    if let [c] = columns {
+        Ok(c.arg_sort(SortOptions {
+            descending: sort_options.descending[0],
+            nulls_last: sort_options.nulls_last[0],
+            multithreaded: sort_options.multithreaded,
+            maintain_order: sort_options.maintain_order,
+            limit: sort_options.limit,
+        }))
+    } else if sort_options.nulls_last.iter().all(|&x| x)
+        || columns.iter().any(|c| c.dtype().is_nested())
+        || std::env::var("POLARS_ROW_FMT_SORT").is_ok()
+    {
+        argsort_multiple_row_fmt(
+            columns,
+            sort_options.descending,
+            sort_options.nulls_last,
+            sort_options.multithreaded,
+        )
+    } else {
+        let n_cols = columns.len();
 
-    _broadcast_bools(n_cols, &mut sort_options.descending);
-    _broadcast_bools(n_cols, &mut sort_options.nulls_last);
+        _broadcast_bools(n_cols, &mut sort_options.descending);
+        _broadcast_bools(n_cols, &mut sort_options.nulls_last);
 
-    let first = columns.remove(0);
-    Ok((first, columns))
+        columns[0]
+            .clone()
+            .as_materialized_series()
+            .arg_sort_multiple(&columns[1..], &sort_options)
+    }
 }
 
 /// This is a perfect sort particularly useful for an arg_sort of an arg_sort

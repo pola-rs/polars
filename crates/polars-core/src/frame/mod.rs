@@ -46,7 +46,7 @@ use strum_macros::IntoStaticStr;
 use crate::POOL;
 #[cfg(feature = "row_hash")]
 use crate::hashing::_df_rows_to_hashes_threaded_vertical;
-use crate::prelude::sort::{argsort_multiple_row_fmt, prepare_arg_sort};
+use crate::prelude::sort::arg_sort;
 use crate::series::IsSorted;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash, IntoStaticStr)]
@@ -2196,7 +2196,7 @@ impl DataFrame {
     pub fn sort_impl(
         &self,
         by_column: Vec<Column>,
-        mut sort_options: SortMultipleOptions,
+        sort_options: SortMultipleOptions,
         slice: Option<(i64, usize)>,
     ) -> PolarsResult<Self> {
         if by_column.is_empty() {
@@ -2274,6 +2274,7 @@ impl DataFrame {
         }
 
         let has_nested = by_column.iter().any(|s| s.dtype().is_nested());
+        let allow_threads = sort_options.multithreaded;
 
         // a lot of indirection in both sorting and take
         let mut df = self.clone();
@@ -2300,24 +2301,7 @@ impl DataFrame {
                 }
                 s.arg_sort(options)
             },
-            _ => {
-                if sort_options.nulls_last.iter().all(|&x| x)
-                    || has_nested
-                    || std::env::var("POLARS_ROW_FMT_SORT").is_ok()
-                {
-                    argsort_multiple_row_fmt(
-                        &by_column,
-                        sort_options.descending,
-                        sort_options.nulls_last,
-                        sort_options.multithreaded,
-                    )?
-                } else {
-                    let (first, other) = prepare_arg_sort(by_column, &mut sort_options)?;
-                    first
-                        .as_materialized_series()
-                        .arg_sort_multiple(&other, &sort_options)?
-                }
-            },
+            _ => arg_sort(&by_column, sort_options)?,
         };
 
         if let Some((offset, len)) = slice {
@@ -2326,7 +2310,7 @@ impl DataFrame {
 
         // SAFETY:
         // the created indices are in bounds
-        let mut df = unsafe { df.take_unchecked_impl(&take, sort_options.multithreaded) };
+        let mut df = unsafe { df.take_unchecked_impl(&take, allow_threads) };
         set_sorted(&mut df);
         Ok(df)
     }
@@ -3475,6 +3459,10 @@ impl DataFrame {
         );
         self.vstack_mut_owned_unchecked(df);
         Ok(())
+    }
+
+    pub fn into_columns(self) -> Vec<Column> {
+        self.columns
     }
 }
 

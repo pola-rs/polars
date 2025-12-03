@@ -47,6 +47,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Free some disk space (remove unused packages)
+        uses: jlumbroso/free-disk-space@v1.3.1
+        if: ${{ matrix.os != 'windows-latest' }}
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
