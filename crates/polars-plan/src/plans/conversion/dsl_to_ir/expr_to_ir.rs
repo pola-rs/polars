@@ -17,12 +17,13 @@ pub(super) fn to_expr_irs(
     input: Vec<Expr>,
     ctx: &mut ExprToIRContext,
 ) -> PolarsResult<Vec<ExprIR>> {
-    let original_with_fields = ctx.with_fields;
+    dbg!("start to_expr_irs");
+    let original_with_fields = ctx.with_fields.clone();
     input
         .into_iter()
         .map(|e| {
             let e = to_expr_ir(e, ctx)?;
-            ctx.with_fields = original_with_fields;
+            ctx.with_fields = original_with_fields.clone();
             Ok(e)
         })
         .collect()
@@ -48,7 +49,7 @@ fn to_aexpr_impl_materialized_lit(
 }
 
 pub struct ExprToIRContext<'a> {
-    pub(super) with_fields: Option<(Node, &'a Schema)>,
+    pub(super) with_fields: Option<Schema>,
     pub arena: &'a mut Arena<AExpr>,
     pub schema: &'a Schema,
 
@@ -61,6 +62,29 @@ impl<'a> ExprToIRContext<'a> {
     pub fn new(arena: &'a mut Arena<AExpr>, schema: &'a Schema) -> Self {
         Self {
             with_fields: None,
+            arena,
+            schema,
+            allow_unknown: false,
+            check_column_names: true,
+        }
+    }
+
+    /// If the `schema` is extended with an extra Struct schema field, use it to 
+    /// populate `with_fields`.
+    pub fn new_with_fields(arena: &'a mut Arena<AExpr>, schema: &'a Schema) -> Self {
+        let with_fields = match schema.get(&PL_STRUCTFIELDS_NAME) {
+            Some(dtype) => {
+                let DataType::Struct(fields) = &dtype else {
+                    unreachable!()
+                };
+                let struct_schema = Schema::from_iter(fields.iter().cloned());
+                Some(struct_schema)
+            },
+            _ => None,
+        };
+
+        Self {
+            with_fields,
             arena,
             schema,
             allow_unknown: false,
@@ -95,6 +119,7 @@ pub(super) fn to_aexpr_impl(
     expr: Expr,
     ctx: &mut ExprToIRContext,
 ) -> PolarsResult<(Node, PlSmallStr)> {
+    dbg!("start to_aexpr_impl");
     let owned = Arc::unwrap_or_clone;
 
     macro_rules! recurse {
@@ -121,7 +146,11 @@ pub(super) fn to_aexpr_impl(
     }
 
     let (v, output_name) = match expr {
-        Expr::Element => (AExpr::Element, PlSmallStr::EMPTY),
+        Expr::Element => {
+            dbg!("match arm Expr::Column"); //kdn
+            dbg!(&ctx.with_fields);
+            (AExpr::Element, PlSmallStr::EMPTY)
+        },
         Expr::Explode { input, options } => {
             let (expr, output_name) = recurse_arc!(input)?;
             (AExpr::Explode { expr, options }, output_name)
@@ -132,6 +161,8 @@ pub(super) fn to_aexpr_impl(
             (AExpr::Literal(lv), output_name)
         },
         Expr::Column(name) => {
+            dbg!("match arm Expr::Column"); //kdn
+            dbg!(&ctx.with_fields);
             if ctx.check_column_names {
                 ctx.schema.try_index_of(&name)?;
             }
@@ -459,6 +490,8 @@ pub(super) fn to_aexpr_impl(
             evaluation,
             variant,
         } => {
+            dbg!("match arm Expr::Eval"); //kdn
+            dbg!(&ctx.with_fields);
             let (expr, output_name) = recurse_arc!(expr)?;
             let expr_dtype = ctx.arena.get(expr).to_dtype(&ctx.to_field_ctx())?;
             let element_dtype = variant.element_dtype(&expr_dtype)?;
@@ -476,7 +509,7 @@ pub(super) fn to_aexpr_impl(
             let mut evaluation_schema = ctx.schema.clone();
             evaluation_schema.insert(get_pl_element_name(), element_dtype.clone());
             let mut evaluation_ctx = ExprToIRContext {
-                with_fields: None,
+                with_fields: ctx.with_fields.clone(),
                 schema: &evaluation_schema,
                 arena: ctx.arena,
                 allow_unknown: ctx.allow_unknown,
@@ -511,6 +544,8 @@ pub(super) fn to_aexpr_impl(
             )
         },
         Expr::StructEval { expr, evaluation } => {
+            dbg!("match arm Expr::StructEval"); //kdn
+            dbg!(&ctx.with_fields);
             let (expr, output_name) = recurse_arc!(expr)?;
             let expr_dtype = ctx.arena.get(expr).to_dtype(&ctx.to_field_ctx())?;
 
@@ -527,7 +562,7 @@ pub(super) fn to_aexpr_impl(
             let mut field_names = PlHashSet::new();
             for e in evaluation {
                 let mut eval_ctx = ExprToIRContext {
-                    with_fields: Some((expr, &struct_schema)),
+                    with_fields: Some(struct_schema.clone()),
                     arena: ctx.arena,
                     schema: &eval_schema,
                     allow_unknown: ctx.allow_unknown,
@@ -571,6 +606,8 @@ pub(super) fn to_aexpr_impl(
         },
         #[cfg(feature = "dtype-struct")]
         Expr::Field(name) => {
+            dbg!("match arm Field"); //kdn
+            dbg!(&ctx.with_fields);
             assert_eq!(
                 name.len(),
                 1,
@@ -578,7 +615,7 @@ pub(super) fn to_aexpr_impl(
             );
             let name = &name[0];
 
-            let Some((_input, with_fields)) = &ctx.with_fields else {
+            let Some(with_fields) = &ctx.with_fields else {
                 polars_bail!(InvalidOperation: "`pl.field()` called outside of struct context");
             };
 

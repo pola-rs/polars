@@ -259,6 +259,8 @@ fn expand_expression_rec(
     out: &mut Vec<Expr>,
     opt_flags: &mut OptFlags,
 ) -> PolarsResult<usize> {
+    dbg!("start expand_expression_rec"); //kdn
+
     let start_len = out.len();
     match &expr {
         Expr::Element => out.push(expr.clone()),
@@ -926,6 +928,7 @@ fn expand_expression_rec(
             }
         },
         Expr::StructEval { expr, evaluation } => {
+            dbg!("match arm Expr::StructEval in expand_expression_rec"); //kdn
             let mut expr_out = Vec::with_capacity(1);
             expand_expression_rec(
                 expr,

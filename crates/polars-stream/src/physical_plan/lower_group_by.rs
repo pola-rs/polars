@@ -239,14 +239,12 @@ fn try_lower_elementwise_scalar_agg_expr(
         },
 
         AExpr::StructEval { expr, evaluation } => {
-            // kdn TEST
             let (expr, evaluation) = (*expr, evaluation.clone());
             let expr = lower_rec!(expr)?;
 
             let new_evaluation = evaluation
                 .into_iter()
                 .map(|i| {
-                    // The function may be sensitive to names (e.g. pl.struct), so we restore them.
                     let new_node = lower_rec!(i.node())?;
                     Some(ExprIR::new(
                         new_node,

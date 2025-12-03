@@ -469,7 +469,7 @@ impl Expr {
         schema: &Schema,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<Field> {
-        let mut ctx = ExprToIRContext::new(expr_arena, schema);
+        let mut ctx = ExprToIRContext::new_with_fields(expr_arena, schema);
         ctx.allow_unknown = true;
         let expr = to_expr_ir(self.clone(), &mut ctx)?;
         let (node, output_name) = expr.into_inner();
