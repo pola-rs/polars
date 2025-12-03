@@ -1,4 +1,3 @@
-use parking_lot::RwLockWriteGuard;
 use polars::frame::row::{Row, rows_to_schema_first_non_null};
 use polars_core::utils::CustomIterTools;
 use pyo3::IntoPyObjectExt;
@@ -20,9 +19,7 @@ impl PyDataFrame {
         output_type: Option<Wrap<DataType>>,
         inference_size: usize,
     ) -> PyResult<(Py<PyAny>, bool)> {
-        let mut df = self.df.write();
-        df.as_single_chunk_par(); // Needed for series iter.
-        let df = RwLockWriteGuard::downgrade(df);
+        let df = self.df.read();
         let height = df.height();
         let col_series: Vec<_> = df
             .get_columns()
