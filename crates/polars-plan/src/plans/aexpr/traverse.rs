@@ -79,8 +79,7 @@ impl AExpr {
                 container.extend([*expr]);
             },
             StructEval { expr, evaluation } => {
-                // We don't use the evaluation here because it does not contain inputs.
-                // kdn TODO - This requires changes in run_conversion to handle the schema stacking.
+                // Evaluation is included. In case this is not allowed, use `inputs_rev_strict()`.
                 container.extend(evaluation.iter().rev().map(ExprIR::node));
                 container.extend([*expr]);
             },
@@ -91,6 +90,31 @@ impl AExpr {
             } => {
                 container.extend([*length, *offset, *input]);
             },
+        }
+    }
+
+    /// Push the inputs of this node to the given container, in reverse order.
+    /// This ensures the primary node responsible for the name is pushed last.
+    ///
+    /// Unlike `inputs_rev`, this excludes Eval expressions. These use an extended schema,
+    /// determined by their input, which implies a different traversal order.
+    ///
+    /// This is subtly different from `children_rev` as this only includes the input expressions,
+    /// not expressions used during evaluation.
+    pub fn inputs_rev_strict<E>(&self, container: &mut E)
+    where
+        E: Extend<Node>,
+    {
+        use AExpr::*;
+
+        match self {
+            StructEval { expr, evaluation } => {
+                // Evaluation is explicitly excluded. It is up to the caller to handle
+                // any tree traversal if required.
+                _ = evaluation;
+                container.extend([*expr]);
+            },
+            expr => expr.inputs_rev(container),
         }
     }
 
