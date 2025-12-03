@@ -65,7 +65,8 @@ impl ConversionOptimizer {
         self.scratch.push((expr, 0));
         // traverse all subexpressions and add to the stack
         let expr = unsafe { expr_arena.get_unchecked(expr) };
-        expr.inputs_rev(&mut ExtendVec {
+        //kdn TODO REVIEW FINAL
+        expr.inputs_rev_strict(&mut ExtendVec {
             out: &mut self.scratch,
             schema_idx: 0,
         });
@@ -152,6 +153,7 @@ impl ConversionOptimizer {
             }
 
             // Similar for StructEval
+            // Effectively, we are mimicking in-order traversal logic.
             if let AExpr::StructEval { expr, evaluation } = expr {
                 let schema = if schema_idx == 0 {
                     &schema
@@ -193,7 +195,7 @@ impl ConversionOptimizer {
 
             let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
             // traverse subexpressions and add to the stack
-            expr.inputs_rev(&mut ExtendVec {
+            expr.inputs_rev_strict(&mut ExtendVec {
                 out: &mut self.scratch,
                 schema_idx,
             });
