@@ -514,6 +514,22 @@ impl AggQuantileExpr {
             method,
         }
     }
+
+    fn get_quantile_from_scalar(&self, quantile_ac: &AggregationContext) -> PolarsResult<f64> {
+        let quantile_col = quantile_ac.get_values();
+        polars_ensure!(quantile_col.len() <= 1, ComputeError:
+            "polars only supports computing a single quantile; \
+            make sure the 'quantile' expression input produces a single quantile"
+        );
+        quantile_col.get(0).unwrap().try_extract()
+    }
+
+    fn get_quantiles_per_group(&self, quantile_ac: &AggregationContext) -> PolarsResult<Vec<f64>> {
+        let quantile_col = quantile_ac.get_values();
+        let quantile_col = quantile_col.cast(&DataType::Float64)?;
+        let quantile_ca = quantile_col.f64()?;
+        Ok(quantile_ca.iter().map(|v| v.unwrap_or(f64::NAN)).collect())
+    }
 }
 
 impl PhysicalExpr for AggQuantileExpr {
@@ -568,6 +584,7 @@ impl PhysicalExpr for AggQuantileExpr {
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
+        let quantile_ac = self.quantile.evaluate_on_groups(df, groups, state)?;
 
         // AggregatedScalar has no defined group structure. We fix it up here, so that we can
         // reliably call `agg_quantile` functions with the groups.
@@ -576,31 +593,52 @@ impl PhysicalExpr for AggQuantileExpr {
         // don't change names by aggregations as is done in polars-core
         let keep_name = ac.get_values().name().clone();
 
-        let quantile_column = self.quantile.evaluate(df, state)?;
-        polars_ensure!(quantile_column.len() <= 1, ComputeError:
-            "polars only supports computing a single quantile in a groupby aggregation context"
-        );
-        let quantile: f64 = quantile_column.get(0).unwrap().try_extract()?;
+        // Check if quantile is a literal/scalar (same for all groups) or varies per group
+        let is_uniform_quantile = quantile_ac.is_literal()
+            || matches!(quantile_ac.agg_state(), AggState::LiteralScalar(_));
 
-        if let AggState::LiteralScalar(c) = &mut ac.state {
-            *c = c
-                .quantile_reduce(quantile, self.method)?
-                .into_column(keep_name);
-            return Ok(ac);
+        if is_uniform_quantile {
+            // Fast path: single quantile value for all groups
+            let quantile = self.get_quantile_from_scalar(&quantile_ac)?;
+
+            if let AggState::LiteralScalar(c) = &mut ac.state {
+                *c = c
+                    .quantile_reduce(quantile, self.method)?
+                    .into_column(keep_name);
+                return Ok(ac);
+            }
+
+            // SAFETY:
+            // groups are in bounds
+            let mut agg = unsafe {
+                ac.flat_naive()
+                    .into_owned()
+                    .agg_quantile(ac.groups(), quantile, self.method)
+            };
+            agg.rename(keep_name);
+            Ok(AggregationContext::from_agg_state(
+                AggregatedScalar(agg),
+                Cow::Borrowed(groups),
+            ))
+        } else {
+            // Different quantile value per group
+            let quantiles = self.get_quantiles_per_group(&quantile_ac)?;
+
+            // SAFETY:
+            // groups are in bounds
+            let mut agg = unsafe {
+                ac.flat_naive().into_owned().agg_varying_quantile(
+                    ac.groups(),
+                    &quantiles,
+                    self.method,
+                )
+            };
+            agg.rename(keep_name);
+            Ok(AggregationContext::from_agg_state(
+                AggregatedScalar(agg),
+                Cow::Borrowed(groups),
+            ))
         }
-
-        // SAFETY:
-        // groups are in bounds
-        let mut agg = unsafe {
-            ac.flat_naive()
-                .into_owned()
-                .agg_quantile(ac.groups(), quantile, self.method)
-        };
-        agg.rename(keep_name);
-        Ok(AggregationContext::from_agg_state(
-            AggregatedScalar(agg),
-            Cow::Borrowed(groups),
-        ))
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
