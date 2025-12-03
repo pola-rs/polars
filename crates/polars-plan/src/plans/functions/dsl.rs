@@ -105,14 +105,18 @@ impl DslFunction {
                     ),
                 };
 
-                let index = args.index.into_columns(input_schema, &Default::default())?;
+                let index = args
+                    .index
+                    .into_columns(input_schema, &Default::default())?
+                    .into_vec();
 
-                let args = UnpivotArgsIR {
+                let args = UnpivotArgsIR::new(
+                    input_schema.iter().map(|(name, _)| name.clone()).collect(),
                     on,
-                    index: index.into_iter().collect(),
-                    variable_name: args.variable_name.clone(),
-                    value_name: args.value_name,
-                };
+                    index,
+                    args.variable_name,
+                    args.value_name,
+                );
 
                 FunctionIR::Unpivot {
                     args: Arc::new(args),

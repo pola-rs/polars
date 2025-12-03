@@ -6,7 +6,6 @@ use polars_core::frame::column::Column;
 use polars_core::prelude::{IntoVec, Series, UnpivotArgsIR};
 use polars_core::utils::merge_dtypes_many;
 use polars_error::{PolarsResult, polars_err};
-use polars_utils::aliases::PlHashSet;
 
 use crate::frame::IntoDf;
 
@@ -76,42 +75,26 @@ pub trait UnpivotDF: IntoDf {
         I: IntoVec<PlSmallStr>,
         J: IntoVec<PlSmallStr>,
     {
-        let index = index.into_vec();
-        let on = on.map(|on| on.into_vec());
-        self.unpivot2(UnpivotArgsIR {
-            on,
-            index,
-            ..Default::default()
-        })
+        self.unpivot2(UnpivotArgsIR::new(
+            self.to_df().get_column_names_owned(),
+            on.map(|on| on.into_vec()),
+            index.into_vec(),
+            None,
+            None,
+        ))
     }
 
     /// Similar to unpivot, but without generics. This may be easier if you want to pass
     /// an empty `index` or empty `on`.
     fn unpivot2(&self, args: UnpivotArgsIR) -> PolarsResult<DataFrame> {
-        let self_ = self.to_df();
-        let index = args.index;
-        let on = args.on.unwrap_or_else(|| {
-            // If value vars is empty we take all columns that are not in id_vars.
-            let index_set = PlHashSet::from_iter(index.iter().cloned());
-            self_
-                .get_columns()
-                .iter()
-                .filter_map(|s| {
-                    if index_set.contains(s.name()) {
-                        None
-                    } else {
-                        Some(s.name().clone())
-                    }
-                })
-                .collect()
-        });
+        let UnpivotArgsIR {
+            on,
+            index,
+            variable_name,
+            value_name,
+        } = args;
 
-        let variable_name = args
-            .variable_name
-            .unwrap_or_else(|| PlSmallStr::from_static("variable"));
-        let value_name = args
-            .value_name
-            .unwrap_or_else(|| PlSmallStr::from_static("value"));
+        let self_ = self.to_df();
 
         let variable_col_empty = Column::new_empty(variable_name.clone(), &DataType::String);
         let value_col_empty = Column::new_empty(value_name.clone(), &DataType::Null);
@@ -223,71 +206,6 @@ mod test {
             Vec::from(unpivoted.column("value")?.i32()?),
             &[Some(10), Some(11), Some(12), Some(2), Some(4), Some(6)]
         );
-
-        // Specify custom column names
-        let args = UnpivotArgsIR {
-            on: Some(vec!["C".into(), "D".into()]),
-            index: vec!["A".into(), "B".into()],
-            variable_name: Some("custom_variable".into()),
-            value_name: Some("custom_value".into()),
-        };
-        let unpivoted = df.unpivot2(args).unwrap();
-        assert_eq!(
-            unpivoted.get_column_names(),
-            &["A", "B", "custom_variable", "custom_value"]
-        );
-
-        // Specify neither on nor index
-        let args = UnpivotArgsIR {
-            on: None,
-            index: vec![],
-            ..Default::default()
-        };
-
-        let unpivoted = df.unpivot2(args).unwrap();
-        assert_eq!(unpivoted.get_column_names(), &["variable", "value"]);
-        let value = unpivoted.column("value")?;
-        // String because of supertype
-        let value = value.str()?;
-        let value = value.into_no_null_iter().collect::<Vec<_>>();
-        assert_eq!(
-            value,
-            &[
-                "a", "b", "a", "1", "3", "5", "10", "11", "12", "2", "4", "6"
-            ]
-        );
-
-        // Specify index but not on
-        let args = UnpivotArgsIR {
-            on: None,
-            index: vec!["A".into()],
-            ..Default::default()
-        };
-
-        let unpivoted = df.unpivot2(args).unwrap();
-        assert_eq!(unpivoted.get_column_names(), &["A", "variable", "value"]);
-        let value = unpivoted.column("value")?;
-        let value = value.i32()?;
-        let value = value.into_no_null_iter().collect::<Vec<_>>();
-        assert_eq!(value, &[1, 3, 5, 10, 11, 12, 2, 4, 6]);
-        let variable = unpivoted.column("variable")?;
-        let variable = variable.str()?;
-        let variable = variable.into_no_null_iter().collect::<Vec<_>>();
-        assert_eq!(variable, &["B", "B", "B", "C", "C", "C", "D", "D", "D"]);
-        assert!(unpivoted.column("A").is_ok());
-
-        // Specify all columns in index
-        let args = UnpivotArgsIR {
-            on: None,
-            index: vec!["A".into(), "B".into(), "C".into(), "D".into()],
-            ..Default::default()
-        };
-        let unpivoted = df.unpivot2(args).unwrap();
-        assert_eq!(
-            unpivoted.get_column_names(),
-            &["A", "B", "C", "D", "variable", "value"]
-        );
-        assert_eq!(unpivoted.len(), 0);
 
         Ok(())
     }

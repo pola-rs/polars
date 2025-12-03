@@ -3,18 +3,12 @@ use super::*;
 #[allow(clippy::too_many_arguments)]
 pub(super) fn process_unpivot(
     proj_pd: &mut ProjectionPushDown,
-    lp: IR,
     args: &Arc<UnpivotArgsIR>,
     input: Node,
     ctx: ProjectionContext,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<IR> {
-    let Some(on) = args.on.as_ref() else {
-        // TODO use unified logic to model what happens if on is None. For now restart projection pushdown.
-        return proj_pd.no_pushdown_restart_opt(lp, ctx, lp_arena, expr_arena);
-    };
-
     let (acc_projections, mut local_projections, projected_names) = split_acc_projections(
         ctx.acc_projections,
         lp_arena.get(input).schema(lp_arena).as_ref(),
@@ -32,7 +26,8 @@ pub(super) fn process_unpivot(
         .iter()
         .for_each(|name| add_str_to_accumulated(name.clone(), &mut ctx, expr_arena));
 
-    on.iter()
+    args.on
+        .iter()
         .for_each(|name| add_str_to_accumulated(name.clone(), &mut ctx, expr_arena));
 
     proj_pd.pushdown_and_assign(input, ctx, lp_arena, expr_arena)?;

@@ -410,12 +410,13 @@ impl PyDataFrame {
         variable_name: Option<&str>,
     ) -> PyResult<Self> {
         use polars_ops::unpivot::UnpivotDF;
-        let args = UnpivotArgsIR {
-            on: on.map(strings_to_pl_smallstr),
-            index: strings_to_pl_smallstr(index),
-            value_name: value_name.map(|s| s.into()),
-            variable_name: variable_name.map(|s| s.into()),
-        };
+        let args = UnpivotArgsIR::new(
+            self.df.read().get_column_names_owned(),
+            on.map(strings_to_pl_smallstr),
+            strings_to_pl_smallstr(index),
+            value_name.map(|s| s.into()),
+            variable_name.map(|s| s.into()),
+        );
 
         py.enter_polars_df(|| self.df.read().unpivot2(args))
     }
