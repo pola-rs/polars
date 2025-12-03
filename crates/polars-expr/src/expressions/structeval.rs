@@ -72,7 +72,7 @@ impl PhysicalExpr for StructEvalExpr {
     ) -> PolarsResult<AggregationContext<'a>> {
         // Evaluate input.
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
-        ac.groups();
+        ac.set_groups_for_undefined_agg_states();
 
         // Set ExecutionState.
         let mut state = state.clone();
@@ -86,7 +86,8 @@ impl PhysicalExpr for StructEvalExpr {
             acs.push(ac);
         }
 
-        // Apply with_fields.
+        // Apply with_fields. We default to group_aware as groups may have diverged.
+        // @TODO. Performance can be optimized: elementwise, re-use PlIndexMap, etc.
         let mut iters = acs
             .iter_mut()
             .map(|ac| ac.iter_groups(true))
@@ -108,10 +109,24 @@ impl PhysicalExpr for StructEvalExpr {
 
         drop(iters);
 
-        // Update AC.
+        // Update AC, same logic as ApplyExpr.
         let mut ac = acs.swap_remove(0);
-        ac.with_agg_state(AggState::AggregatedList(ca.into_column()));
-        ac.with_update_groups(UpdateGroups::WithSeriesLen);
+        let col = if matches!(
+            ac.agg_state(),
+            AggState::AggregatedScalar(_) | AggState::LiteralScalar(_)
+        ) {
+            let out = ca.explode(ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            })?;
+            ac.update_groups = UpdateGroups::No;
+            out.into_column()
+        } else {
+            ac.with_update_groups(UpdateGroups::WithSeriesLen);
+            ca.into_series().into()
+        };
+
+        ac.with_values_and_args(col, true, self.as_expression(), false, self.is_scalar())?;
         Ok(ac)
     }
 

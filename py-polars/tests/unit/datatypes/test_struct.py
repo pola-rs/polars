@@ -1638,6 +1638,57 @@ def test_struct_with_fields_group_by(
     assert_frame_equal(q.collect(), expected, check_row_order=maintain_order)
 
 
+@pytest.mark.parametrize(
+    ("expr", "expected"),
+    [
+        (
+            pl.field("x"),
+            pl.DataFrame({"g": [10, 20], "s": [{"x": 10}, {"x": 30}]}),
+        ),
+        (
+            pl.field("x") + pl.col("a").last(),
+            pl.DataFrame({"g": [10, 20], "s": [{"x": 12}, {"x": 35}]}),
+        ),
+        (
+            pl.field("x").cum_sum(),
+            pl.DataFrame({"g": [10, 20], "s": [{"x": 10}, {"x": 30}]}),
+        ),
+        (
+            pl.field("x").reverse(),
+            pl.DataFrame({"g": [10, 20], "s": [{"x": 10}, {"x": 30}]}),
+        ),
+    ],
+)
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_struct_with_fields_group_by_scalar(
+    expr: pl.Expr, expected: pl.DataFrame, maintain_order: bool
+) -> None:
+    df = pl.DataFrame(
+        {"g": [10, 10, 20], "a": [1, 2, 5], "s": [{"x": 10}, {"x": 20}, {"x": 30}]}
+    )
+    q = (
+        df.lazy()
+        .group_by(pl.col("g"), maintain_order=maintain_order)
+        .agg(pl.col("s").first().struct.with_fields(expr))
+    )
+    assert_frame_equal(q.collect(), expected, check_row_order=maintain_order)
+
+
+def test_struct_with_fields_group_by_literal() -> None:
+    df = pl.DataFrame({"g": [10, 10, 20]})
+    q = (
+        df.lazy()
+        .group_by(pl.col("g"))
+        .agg(
+            pl.lit({"x": 10}, dtype=pl.Struct({"x": pl.Int64}))
+            .alias("s")
+            .struct.with_fields(pl.field("x"))
+        )
+    )
+    expected = pl.DataFrame({"g": [10, 20], "s": [{"x": 10}, {"x": 10}]})
+    assert_frame_equal(q.collect(), expected, check_row_order=False)
+
+
 def test_struct_with_fields_raises_on_duplicate_field_25207() -> None:
     df = pl.DataFrame({"a": [1], "s": [{"x": 1}]})
     with pytest.raises(DuplicateError):
@@ -1703,7 +1754,6 @@ def test_struct_with_fields_nested_list_contains_struct() -> None:
     assert_frame_equal(out, expected)
 
 
-@pytest.mark.xfail  # TODO: should work after rebase kdn
 def test_struct_with_fields_nested_struct_contains_list() -> None:
     df = pl.DataFrame(
         {

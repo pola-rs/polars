@@ -109,7 +109,9 @@ impl AExpr {
                         InvalidOperation: "expected `Struct` dtype for `with_fields` Expr, got `{}`", 
                         struct_field.dtype()));
                 };
-                //kdn: TODO PERFORMANCE: remove linear search
+                // @NOTE. Linear search performance is not ideal. An alternative approach
+                // would be to map each field to a new column with a temporary name (see streaming engine),
+                // and extend the schema accordingly.
                 for f in fields {
                     if f.name() == name {
                         return Ok(f.clone());

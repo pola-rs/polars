@@ -187,7 +187,7 @@ fn try_lower_elementwise_scalar_agg_expr(
         // Should be handled separately in `Eval`.
         AExpr::Element => unreachable!(),
         // Mapped to `Column` in `StructEval`.
-        AExpr::StructField(_) => unreachable!(),
+        AExpr::StructField(_) => None, //kdn TODO REVIEW
 
         AExpr::Column(_) => {
             // Implicit implode not yet supported.
@@ -239,10 +239,27 @@ fn try_lower_elementwise_scalar_agg_expr(
         },
 
         AExpr::StructEval { expr, evaluation } => {
+            // kdn TEST
             let (expr, evaluation) = (*expr, evaluation.clone());
             let expr = lower_rec!(expr)?;
-            Some(expr_arena.add(AExpr::StructEval { expr, evaluation }))
-        }, //kdn TODO STREAMING REVIEW - PROBABLY WRONG.. evaluation can be pl.col.x.cum_sum() etc
+
+            let new_evaluation = evaluation
+                .into_iter()
+                .map(|i| {
+                    // The function may be sensitive to names (e.g. pl.struct), so we restore them.
+                    let new_node = lower_rec!(i.node())?;
+                    Some(ExprIR::new(
+                        new_node,
+                        OutputName::Alias(i.output_name().clone()),
+                    ))
+                })
+                .collect::<Option<Vec<_>>>()?;
+
+            Some(expr_arena.add(AExpr::StructEval {
+                expr,
+                evaluation: new_evaluation,
+            }))
+        }, //kdn TODO STREAMING REVIEW - TEST
 
         AExpr::Ternary {
             predicate,
