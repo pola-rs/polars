@@ -175,7 +175,7 @@ impl<'a> Iterator for SeriesIter<'a> {
                 self.idx_in_cur_arr += 1;
                 return Some(ret);
             }
-            
+
             if self.cur_arr_idx + 1 < self.arrays.len() {
                 self.total_elems_in_remaining_arrays -= self.cur_arr_len;
                 self.cur_arr_idx += 1;
