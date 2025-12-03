@@ -11,8 +11,8 @@ use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
     CastColumnsPolicy, JoinTypeOptionsIR, MissingColumnsPolicy, PartitionTargetCallback,
-    PartitionVariantIR, ScanSources, SinkFinishCallback, SinkOptions, SinkTarget, SortColumnIR,
-    TableStatistics,
+    PartitionVariantIR, PartitionedSinkOptionsIR, ScanSources, SinkFinishCallback, SinkOptions,
+    SinkTarget, SortColumnIR, TableStatistics,
 };
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::{AExpr, DataFrameUdf, IR};
@@ -208,6 +208,11 @@ pub enum PhysNodeKind {
         cloud_options: Option<CloudOptions>,
         per_partition_sort_by: Option<Vec<SortColumnIR>>,
         finish_callback: Option<SinkFinishCallback>,
+    },
+
+    PartitionedSink2 {
+        input: PhysStream,
+        options: PartitionedSinkOptionsIR,
     },
 
     SinkMultiple {
@@ -447,6 +452,7 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::CallbackSink { input, .. }
             | PhysNodeKind::FileSink { input, .. }
             | PhysNodeKind::PartitionedSink { input, .. }
+            | PhysNodeKind::PartitionedSink2 { input, .. }
             | PhysNodeKind::InMemoryMap { input, .. }
             | PhysNodeKind::SortedGroupBy { input, .. }
             | PhysNodeKind::Map { input, .. }
