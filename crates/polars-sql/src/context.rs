@@ -9,11 +9,11 @@ use polars_plan::prelude::*;
 use polars_utils::format_pl_smallstr;
 use sqlparser::ast::{
     BinaryOperator, CreateTable, Delete, Distinct, ExcludeSelectItem, Expr as SQLExpr, FromTable,
-    FunctionArg, GroupByExpr, Ident, JoinConstraint, JoinOperator, NamedWindowDefinition,
-    NamedWindowExpr, ObjectName, ObjectType, Offset, OrderBy, Query, RenameSelectItem, Select,
-    SelectItem, SetExpr, SetOperator, SetQuantifier, Statement, TableAlias, TableFactor,
-    TableWithJoins, UnaryOperator, Value as SQLValue, Values, Visit, Visitor,
-    WildcardAdditionalOptions, WindowSpec,
+    Function as SQLFunction, FunctionArg, FunctionArgExpr, FunctionArgumentList, FunctionArguments,
+    GroupByExpr, Ident, JoinConstraint, JoinOperator, NamedWindowDefinition, NamedWindowExpr,
+    ObjectName, ObjectType, Offset, OrderBy, Query, RenameSelectItem, Select, SelectItem, SetExpr,
+    SetOperator, SetQuantifier, Statement, TableAlias, TableFactor, TableWithJoins, UnaryOperator,
+    Value as SQLValue, Values, Visit, Visitor, WildcardAdditionalOptions, WindowSpec,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -1076,15 +1076,54 @@ impl SQLContext {
             };
             lf
         } else {
-            lf = self.process_group_by(lf, &group_by_keys, &projections)?;
+            // Extract aggregate functions from HAVING clause (if any) and prepare
+            // to compute them during GROUP BY. This ensures aggregates like COUNT(*)
+            // are evaluated during aggregation, not post-aggregation where they would
+            // return incorrect results.
+            let (having_aggregates, rewritten_having) = match select_stmt.having.as_ref() {
+                Some(having_expr) => {
+                    let (aggs, rewritten) = extract_having_aggregates(having_expr);
+                    (aggs, Some(rewritten))
+                },
+                None => (Vec::new(), None),
+            };
+
+            // Convert HAVING aggregates to Polars expressions and add to projections
+            let mut extended_projections = projections.clone();
+            let mut having_agg_aliases = Vec::new();
+            for (sql_func, alias) in &having_aggregates {
+                // Parse the aggregate function using the pre-aggregation schema
+                let agg_expr =
+                    parse_sql_expr(&SQLExpr::Function(sql_func.clone()), self, Some(&schema))?;
+                extended_projections.push(agg_expr.alias(alias.as_str()));
+                having_agg_aliases.push(alias.clone());
+            }
+
+            lf = self.process_group_by(lf, &group_by_keys, &extended_projections)?;
             lf = self.process_order_by(lf, &query.order_by, None)?;
 
             // Apply optional 'having' clause, post-aggregation.
-            let schema = Some(self.get_frame_schema(&mut lf)?);
-            match select_stmt.having.as_ref() {
-                Some(expr) => lf.filter(parse_sql_expr(expr, self, schema.as_deref())?),
+            lf = match rewritten_having {
+                Some(ref expr) => {
+                    let schema = Some(self.get_frame_schema(&mut lf)?);
+                    lf.filter(parse_sql_expr(expr, self, schema.as_deref())?)
+                },
                 None => lf,
+            };
+
+            // Drop internal HAVING aggregate columns
+            if !having_agg_aliases.is_empty() {
+                let names: Arc<[PlSmallStr]> = having_agg_aliases
+                    .iter()
+                    .map(|s| PlSmallStr::from(s.as_str()))
+                    .collect();
+                lf = lf.drop(Selector::ByName {
+                    names,
+                    strict: false,
+                });
             }
+
+            lf
         };
 
         // Apply optional DISTINCT clause.
@@ -1883,6 +1922,228 @@ fn expr_refers_to_table(expr: &SQLExpr, table_name: &str) -> bool {
     };
     let _ = expr.visit(&mut table_finder);
     table_finder.found
+}
+
+/// SQL aggregate function names (lowercase).
+const SQL_AGGREGATE_FUNCTIONS: &[&str] = &[
+    "avg",
+    "corr",
+    "count",
+    "first",
+    "last",
+    "max",
+    "median",
+    "min",
+    "stddev",
+    "stddev_samp",
+    "stdev",
+    "stdev_samp",
+    "sum",
+    "var",
+    "var_samp",
+    "variance",
+];
+
+/// Check if a function name is an aggregate function.
+fn is_aggregate_function(name: &str) -> bool {
+    SQL_AGGREGATE_FUNCTIONS.contains(&name.to_lowercase().as_str())
+}
+
+/// Visitor that extracts aggregate function calls from a SQL expression.
+/// For each aggregate found, it stores the original function and an alias.
+struct HavingAggregateExtractor {
+    /// Extracted aggregates: (original function expr, generated alias)
+    aggregates: Vec<(SQLFunction, String)>,
+    counter: usize,
+}
+
+impl HavingAggregateExtractor {
+    fn new() -> Self {
+        Self {
+            aggregates: Vec::new(),
+            counter: 0,
+        }
+    }
+
+    fn generate_alias(&mut self) -> String {
+        let alias = format!("__POLARS_HAVING_AGG_{}__", self.counter);
+        self.counter += 1;
+        alias
+    }
+}
+
+impl Visitor for HavingAggregateExtractor {
+    type Break = ();
+
+    fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<Self::Break> {
+        if let SQLExpr::Function(func) = expr {
+            let func_name = func.name.to_string();
+            if is_aggregate_function(&func_name) {
+                let alias = self.generate_alias();
+                self.aggregates.push((func.clone(), alias));
+            }
+        }
+        ControlFlow::Continue(())
+    }
+}
+
+/// Rewrite aggregate function calls in a SQL expression to reference pre-computed column aliases.
+fn rewrite_having_aggregates(expr: &SQLExpr, rewrites: &PlHashMap<String, String>) -> SQLExpr {
+    match expr {
+        SQLExpr::Function(func) => {
+            let func_str = format!("{func}");
+            if let Some(alias) = rewrites.get(&func_str) {
+                // Replace the function call with a column reference to the alias
+                SQLExpr::Identifier(Ident::new(alias.clone()))
+            } else {
+                // Not an aggregate - recurse into function arguments
+                let rewritten_args = match &func.args {
+                    FunctionArguments::List(FunctionArgumentList {
+                        args,
+                        duplicate_treatment,
+                        clauses,
+                    }) => {
+                        let new_args: Vec<FunctionArg> = args
+                            .iter()
+                            .map(|arg| match arg {
+                                FunctionArg::Unnamed(FunctionArgExpr::Expr(e)) => {
+                                    FunctionArg::Unnamed(FunctionArgExpr::Expr(
+                                        rewrite_having_aggregates(e, rewrites),
+                                    ))
+                                },
+                                FunctionArg::Named {
+                                    name,
+                                    arg: FunctionArgExpr::Expr(e),
+                                    operator,
+                                } => FunctionArg::Named {
+                                    name: name.clone(),
+                                    arg: FunctionArgExpr::Expr(rewrite_having_aggregates(
+                                        e, rewrites,
+                                    )),
+                                    operator: operator.clone(),
+                                },
+                                FunctionArg::ExprNamed {
+                                    name,
+                                    arg: FunctionArgExpr::Expr(e),
+                                    operator,
+                                } => FunctionArg::ExprNamed {
+                                    name: rewrite_having_aggregates(name, rewrites),
+                                    arg: FunctionArgExpr::Expr(rewrite_having_aggregates(
+                                        e, rewrites,
+                                    )),
+                                    operator: operator.clone(),
+                                },
+                                other => other.clone(),
+                            })
+                            .collect();
+                        FunctionArguments::List(FunctionArgumentList {
+                            args: new_args,
+                            duplicate_treatment: *duplicate_treatment,
+                            clauses: clauses.clone(),
+                        })
+                    },
+                    other => other.clone(),
+                };
+                SQLExpr::Function(SQLFunction {
+                    name: func.name.clone(),
+                    uses_odbc_syntax: func.uses_odbc_syntax,
+                    parameters: func.parameters.clone(),
+                    args: rewritten_args,
+                    filter: func.filter.clone(),
+                    null_treatment: func.null_treatment,
+                    over: func.over.clone(),
+                    within_group: func.within_group.clone(),
+                })
+            }
+        },
+        SQLExpr::BinaryOp { left, op, right } => SQLExpr::BinaryOp {
+            left: Box::new(rewrite_having_aggregates(left, rewrites)),
+            op: op.clone(),
+            right: Box::new(rewrite_having_aggregates(right, rewrites)),
+        },
+        SQLExpr::UnaryOp { op, expr: inner } => SQLExpr::UnaryOp {
+            op: *op,
+            expr: Box::new(rewrite_having_aggregates(inner, rewrites)),
+        },
+        SQLExpr::Nested(inner) => {
+            SQLExpr::Nested(Box::new(rewrite_having_aggregates(inner, rewrites)))
+        },
+        SQLExpr::Between {
+            expr: inner,
+            negated,
+            low,
+            high,
+        } => SQLExpr::Between {
+            expr: Box::new(rewrite_having_aggregates(inner, rewrites)),
+            negated: *negated,
+            low: Box::new(rewrite_having_aggregates(low, rewrites)),
+            high: Box::new(rewrite_having_aggregates(high, rewrites)),
+        },
+        SQLExpr::InList {
+            expr: inner,
+            list,
+            negated,
+        } => SQLExpr::InList {
+            expr: Box::new(rewrite_having_aggregates(inner, rewrites)),
+            list: list
+                .iter()
+                .map(|e| rewrite_having_aggregates(e, rewrites))
+                .collect(),
+            negated: *negated,
+        },
+        SQLExpr::IsNull(inner) => {
+            SQLExpr::IsNull(Box::new(rewrite_having_aggregates(inner, rewrites)))
+        },
+        SQLExpr::IsNotNull(inner) => {
+            SQLExpr::IsNotNull(Box::new(rewrite_having_aggregates(inner, rewrites)))
+        },
+        SQLExpr::Case {
+            operand,
+            conditions,
+            results,
+            else_result,
+        } => SQLExpr::Case {
+            operand: operand
+                .as_ref()
+                .map(|e| Box::new(rewrite_having_aggregates(e, rewrites))),
+            conditions: conditions
+                .iter()
+                .map(|e| rewrite_having_aggregates(e, rewrites))
+                .collect(),
+            results: results
+                .iter()
+                .map(|e| rewrite_having_aggregates(e, rewrites))
+                .collect(),
+            else_result: else_result
+                .as_ref()
+                .map(|e| Box::new(rewrite_having_aggregates(e, rewrites))),
+        },
+        // For other expression types, return as-is
+        _ => expr.clone(),
+    }
+}
+
+/// Extract aggregate functions from a HAVING clause and prepare rewrites.
+/// Returns the extracted aggregates and a rewritten HAVING expression.
+fn extract_having_aggregates(having: &SQLExpr) -> (Vec<(SQLFunction, String)>, SQLExpr) {
+    // First pass: extract all aggregate functions
+    let mut extractor = HavingAggregateExtractor::new();
+    let _ = having.visit(&mut extractor);
+
+    if extractor.aggregates.is_empty() {
+        return (Vec::new(), having.clone());
+    }
+
+    // Build rewrite map
+    let mut rewrites = PlHashMap::new();
+    for (func, alias) in &extractor.aggregates {
+        rewrites.insert(format!("{func}"), alias.clone());
+    }
+
+    // Second pass: rewrite the expression to use aliases
+    let rewritten = rewrite_having_aggregates(having, &rewrites);
+
+    (extractor.aggregates, rewritten)
 }
 
 /// Determine which parsed join expressions actually belong in `left_om` and which in `right_on`.

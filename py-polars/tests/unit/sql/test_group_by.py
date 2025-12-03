@@ -247,6 +247,83 @@ def test_group_by_errors() -> None:
         df.sql("SELECT a, COUNT(a) AS n FROM self HAVING n > 1")
 
 
+def test_group_by_having_with_aggregate_22926() -> None:
+    # https://github.com/pola-rs/polars/issues/22926
+    df = pl.DataFrame({"a": [1, 1, 1, 2, 2, 3]})
+    df2 = pl.DataFrame({"a": [1, 1, 1, 2, 2, 3], "b": [10, 20, 30, 5, 15, 100]})
+    df_null = pl.DataFrame({"a": [1, 1, 2], "b": [None, None, 5]})
+
+    result = df.sql("SELECT a FROM self GROUP BY a HAVING count(*) > 2")
+    assert result["a"].to_list() == [1]
+
+    result = df.sql(
+        "SELECT a FROM self GROUP BY a HAVING count(*) >= 2 AND count(*) <= 3"
+    )
+    assert sorted(result["a"].to_list()) == [1, 2]
+
+    result = df2.sql("SELECT a FROM self GROUP BY a HAVING sum(b) > 50")
+    assert sorted(result["a"].to_list()) == [1, 3]
+
+    result = df2.sql(
+        "SELECT a, avg(b) as avg_b FROM self GROUP BY a HAVING avg(b) > 15"
+    )
+    assert sorted(result["a"].to_list()) == [1, 3]
+
+    result = df.sql("SELECT a FROM self GROUP BY a HAVING (count(*) > 1)")
+    assert sorted(result["a"].to_list()) == [1, 2]
+
+    result = df.sql("SELECT a, count(*) as cnt FROM self GROUP BY a HAVING cnt > 2")
+    assert result["a"].to_list() == [1]
+    assert result["cnt"].to_list() == [3]
+
+    result = df.sql("SELECT a FROM self GROUP BY a HAVING NOT count(*) < 2")
+    assert sorted(result["a"].to_list()) == [1, 2]
+
+    result = df.sql("SELECT a FROM self GROUP BY a HAVING count(*) BETWEEN 2 AND 3")
+    assert sorted(result["a"].to_list()) == [1, 2]
+
+    result = df.sql("SELECT a FROM self GROUP BY a HAVING count(*) NOT BETWEEN 1 AND 2")
+    assert result["a"].to_list() == [1]
+
+    result = df.sql("SELECT a FROM self GROUP BY a HAVING count(*) IN (1, 3)")
+    assert sorted(result["a"].to_list()) == [1, 3]
+
+    result = df.sql("SELECT a FROM self GROUP BY a HAVING count(*) NOT IN (1, 2)")
+    assert result["a"].to_list() == [1]
+
+    result = df_null.sql("SELECT a FROM self GROUP BY a HAVING max(b) IS NULL")
+    assert result["a"].to_list() == [1]
+
+    result = df_null.sql("SELECT a FROM self GROUP BY a HAVING max(b) IS NOT NULL")
+    assert result["a"].to_list() == [2]
+
+    result = df.sql("""
+        SELECT a FROM self GROUP BY a
+        HAVING CASE WHEN count(*) > 2 THEN 1 ELSE 0 END = 1
+    """)
+    assert result["a"].to_list() == [1]
+
+    result = df2.sql("""
+        SELECT a FROM self GROUP BY a
+        HAVING CASE WHEN sum(b) < 10 THEN 0 ELSE sum(b) END > 50
+    """)
+    assert sorted(result["a"].to_list()) == [1, 3]
+
+    result = df2.sql("SELECT a FROM self GROUP BY a HAVING abs(sum(b)) > 50")
+    assert sorted(result["a"].to_list()) == [1, 3]
+
+    result = df2.sql("SELECT a FROM self GROUP BY a HAVING round(abs(avg(b))) > 15")
+    assert sorted(result["a"].to_list()) == [1, 3]
+
+    result = df2.sql(
+        "SELECT a FROM self GROUP BY a HAVING abs(sum(b)) + abs(avg(b)) > 100"
+    )
+    assert sorted(result["a"].to_list()) == [3]
+
+    result = df2.sql("SELECT a FROM self GROUP BY a HAVING abs(abs(sum(b))) > 50")
+    assert sorted(result["a"].to_list()) == [1, 3]
+
+
 def test_group_by_output_struct() -> None:
     df = pl.DataFrame({"g": [1], "x": [2], "y": [3]})
     out = df.group_by("g").agg(pl.struct(pl.col.x.min(), pl.col.y.sum()))
