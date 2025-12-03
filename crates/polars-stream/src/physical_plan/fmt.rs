@@ -650,6 +650,7 @@ fn visualize_plan_rec(
             output_bool: _,
         } => {
             let label = match phys_sm[node_key].kind {
+                PhysNodeKind::MergeJoin { .. } => "merge-join",
                 PhysNodeKind::EquiJoin { .. } => "equi-join",
                 PhysNodeKind::InMemoryJoin { .. } => "in-memory-join",
                 PhysNodeKind::CrossJoin { .. } => "cross-join",

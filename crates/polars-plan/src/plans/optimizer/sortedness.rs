@@ -92,7 +92,7 @@ fn is_sorted_rec(
     sortedness.insert(root, None);
 
     // @NOTE: Most of the below implementations are very very conservative.
-    let sorted = match dbg!(ir_arena.get(root)) {
+    let sorted = match ir_arena.get(root) {
         #[cfg(feature = "python")]
         IR::PythonScan { .. } => None,
         IR::Slice {
@@ -356,7 +356,7 @@ fn is_sorted_rec(
     };
 
     sortedness.insert(root, sorted.clone());
-    dbg!(sorted)
+    sorted
 }
 
 pub struct AExprSorted {

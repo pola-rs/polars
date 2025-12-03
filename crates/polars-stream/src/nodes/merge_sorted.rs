@@ -36,7 +36,7 @@ impl MergeSortedNode {
 /// Find a part amongst both unmerged buffers which is mergeable.
 ///
 /// This returns `None` if there is nothing mergeable at this point.
-fn find_mergeable(
+pub(crate) fn find_mergeable(
     left_unmerged: &mut VecDeque<DataFrame>,
     right_unmerged: &mut VecDeque<DataFrame>,
 
@@ -254,6 +254,7 @@ impl ComputeNode for MergeSortedNode {
                         scope.spawn_task(TaskPriority::High, async move {
                             let mut max_seq = morsel_offset;
                             while let Ok(mut morsel) = recv.recv().await {
+                                dbg!(&morsel);
                                 // Ensure the morsel sequence id stream is monotone non-decreasing.
                                 let seq = morsel.seq().offset_by(morsel_offset);
                                 max_seq = max_seq.max(seq);
@@ -300,6 +301,7 @@ impl ComputeNode for MergeSortedNode {
                     // Buffer all the morsels that were already produced.
                     unmerged.push_back(morsel.into_df());
                     while let Ok(morsel) = port.recv().await {
+                        dbg!(&morsel);
                         unmerged.push_back(morsel.into_df());
                     }
                 }
@@ -375,6 +377,7 @@ impl ComputeNode for MergeSortedNode {
                             }
                             break;
                         };
+                        dbg!(&m);
                         empty_unmerged.push_back(m.into_df());
                     }
 

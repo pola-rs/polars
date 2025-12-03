@@ -70,7 +70,7 @@ impl EquiJoinParams {
 
 /// A payload selector contains for each column whether that column should be
 /// included in the payload, and if yes with what name.
-fn compute_payload_selector(
+pub(super) fn compute_payload_selector(
     this: &Schema,
     other: &Schema,
     this_key_schema: &Schema,

@@ -1131,6 +1131,7 @@ pub fn lower_ir(
             let phys_right = lower_ir!(input_right)?;
             let input_left_schema = &phys_sm[phys_left.node].output_schema;
             let input_right_schema = &phys_sm[phys_right.node].output_schema;
+
             let left_is_sorted = are_keys_sorted_any(
                 is_sorted(input_left, ir_arena, expr_arena).as_ref(),
                 &left_on,
