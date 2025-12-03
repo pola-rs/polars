@@ -186,20 +186,20 @@ fn unpivot_schema<'a>(
     // We need to determine the supertype of all value columns.
     let mut supertype = DataType::Null;
 
-    // take all columns that are not in `id_vars` as `value_var`
-    if args.on.is_empty() {
+    if let Some(on) = &args.on {
+        for name in on {
+            let dtype = input_schema.try_get(name)?;
+            supertype = try_get_supertype(&supertype, dtype)?;
+        }
+    } else {
         let id_vars = PlHashSet::from_iter(&args.index);
         for (name, dtype) in input_schema.iter() {
             if !id_vars.contains(name) {
                 supertype = try_get_supertype(&supertype, dtype)?;
             }
         }
-    } else {
-        for name in &args.on {
-            let dtype = input_schema.try_get(name)?;
-            supertype = try_get_supertype(&supertype, dtype)?;
-        }
     }
+
     new_schema.with_column(value_name, supertype);
     let schema = Arc::new(new_schema);
     *guard = Some(schema.clone());

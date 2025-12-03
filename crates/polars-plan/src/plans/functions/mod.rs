@@ -409,7 +409,9 @@ impl Display for FunctionIR {
                 } = args.as_ref();
 
                 f.write_str("UNPIVOT on: ")?;
-                fmt_column_delimited(f, on, "[", "]")?;
+                if let Some(on) = on {
+                    fmt_column_delimited(f, on, "[", "]")?;
+                }
                 fmt_column_delimited(f, index, "[", "]")?;
                 if let Some(variable_name) = variable_name {
                     write!(f, ", variable_name: {variable_name}")?;

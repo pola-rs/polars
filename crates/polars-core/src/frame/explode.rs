@@ -25,7 +25,7 @@ fn get_exploded(
 #[derive(Clone, Default, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct UnpivotArgsIR {
-    pub on: Vec<PlSmallStr>,
+    pub on: Option<Vec<PlSmallStr>>,
     pub index: Vec<PlSmallStr>,
     pub variable_name: Option<PlSmallStr>,
     pub value_name: Option<PlSmallStr>,

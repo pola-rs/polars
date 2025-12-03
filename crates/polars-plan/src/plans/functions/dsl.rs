@@ -96,11 +96,19 @@ impl DslFunction {
         let function = match self {
             #[cfg(feature = "pivot")]
             DslFunction::Unpivot { args } => {
-                let on = args.on.into_columns(input_schema, &Default::default())?;
+                let on = match args.on {
+                    None => None,
+                    Some(on) => Some(
+                        on.into_columns(input_schema, &Default::default())?
+                            .into_iter()
+                            .collect::<Vec<_>>(),
+                    ),
+                };
+
                 let index = args.index.into_columns(input_schema, &Default::default())?;
 
                 let args = UnpivotArgsIR {
-                    on: on.into_iter().collect(),
+                    on,
                     index: index.into_iter().collect(),
                     variable_name: args.variable_name.clone(),
                     value_name: args.value_name,

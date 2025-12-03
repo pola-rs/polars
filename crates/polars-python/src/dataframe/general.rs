@@ -404,14 +404,14 @@ impl PyDataFrame {
     pub fn unpivot(
         &self,
         py: Python<'_>,
-        on: Vec<PyBackedStr>,
+        on: Option<Vec<PyBackedStr>>,
         index: Vec<PyBackedStr>,
         value_name: Option<&str>,
         variable_name: Option<&str>,
     ) -> PyResult<Self> {
         use polars_ops::unpivot::UnpivotDF;
         let args = UnpivotArgsIR {
-            on: strings_to_pl_smallstr(on),
+            on: on.map(strings_to_pl_smallstr),
             index: strings_to_pl_smallstr(index),
             value_name: value_name.map(|s| s.into()),
             variable_name: variable_name.map(|s| s.into()),

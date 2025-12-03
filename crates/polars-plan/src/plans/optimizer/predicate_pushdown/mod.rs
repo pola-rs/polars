@@ -505,7 +505,7 @@ impl PredicatePushDown {
                             let condition = |name: &PlSmallStr| {
                                 name == variable_name
                                     || name == value_name
-                                    || args.on.iter().any(|s| s == name)
+                                    || args.index.iter().any(|s| s == name)
                             };
                             let local_predicates = transfer_to_local_by_name(
                                 expr_arena,

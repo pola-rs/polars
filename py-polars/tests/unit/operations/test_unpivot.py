@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 
 import polars as pl
@@ -116,3 +118,81 @@ def test_unpivot_categorical() -> None:
 def test_unpivot_index_not_found_23165() -> None:
     with pytest.raises(pl.exceptions.ColumnNotFoundError):
         pl.DataFrame({"a": [1]}).unpivot(index="b")
+
+
+def test_unpivot_empty_on_25474() -> None:
+    data = {
+        "a": ["x", "y"],
+        "b": [1, 3],
+        "c": [2, 4],
+        "d": ["str_a", "str_b"],
+    }
+
+    def assert_eq_df_lf(on: Any, index: Any, expected_data: list[pl.Series]) -> None:
+        df_result = pl.DataFrame(data).unpivot(on, index=index)
+        lf_result = pl.LazyFrame(data).unpivot(on, index=index).collect()
+        expected_result = pl.DataFrame(expected_data)
+
+        assert_frame_equal(df_result, lf_result, check_row_order=False)
+        assert_frame_equal(df_result, expected_result, check_row_order=False)
+
+    assert_eq_df_lf(
+        pl.selectors.numeric(),
+        "a",
+        [
+            pl.Series("a", ["x", "y", "x", "y"], dtype=pl.String),
+            pl.Series("variable", ["b", "b", "c", "c"], dtype=pl.String),
+            pl.Series("value", [1, 3, 2, 4], dtype=pl.Int64),
+        ],
+    )
+
+    assert_eq_df_lf(
+        pl.selectors.date(),
+        "a",
+        [
+            pl.Series("a", [], dtype=pl.String),
+            pl.Series("variable", [], dtype=pl.String),
+            pl.Series("value", [], dtype=pl.Null),
+        ],
+    )
+
+    assert_eq_df_lf(
+        pl.selectors.date(),
+        "b",
+        [
+            pl.Series("b", [], dtype=pl.Int64),
+            pl.Series("variable", [], dtype=pl.String),
+            pl.Series("value", [], dtype=pl.Null),
+        ],
+    )
+
+    assert_eq_df_lf(
+        [],
+        "a",
+        [
+            pl.Series("a", [], dtype=pl.String),
+            pl.Series("variable", [], dtype=pl.String),
+            pl.Series("value", [], dtype=pl.Null),
+        ],
+    )
+
+    assert_eq_df_lf(
+        None,
+        "a",
+        [
+            pl.Series("a", ["x", "y", "x", "y", "x", "y"], dtype=pl.String),
+            pl.Series("variable", ["b", "b", "c", "c", "d", "d"], dtype=pl.String),
+            pl.Series("value", ["1", "3", "2", "4", "str_a", "str_b"], dtype=pl.String),
+        ],
+    )
+
+    assert_eq_df_lf(
+        None,
+        ["b", "a"],
+        [
+            pl.Series("b", [1, 3, 1, 3], dtype=pl.Int64),
+            pl.Series("a", ["x", "y", "x", "y"], dtype=pl.String),
+            pl.Series("variable", ["c", "c", "d", "d"], dtype=pl.String),
+            pl.Series("value", ["2", "4", "str_a", "str_b"], dtype=pl.String),
+        ],
+    )
