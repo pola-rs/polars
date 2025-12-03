@@ -106,6 +106,15 @@ impl Writeable {
         }
     }
 
+    pub fn as_buffered(&mut self) -> BufferedWriteable<'_> {
+        match self {
+            Writeable::Dyn(v) => BufferedWriteable::BufWriter(std::io::BufWriter::new(v.as_mut())),
+            Writeable::Local(v) => BufferedWriteable::BufWriter(std::io::BufWriter::new(v)),
+            #[cfg(feature = "cloud")]
+            Writeable::Cloud(v) => BufferedWriteable::Direct(v as _),
+        }
+    }
+
     pub fn sync_all(&self) -> io::Result<()> {
         match self {
             Self::Dyn(v) => v.sync_all(),
@@ -164,6 +173,31 @@ impl DerefMut for Writeable {
     }
 }
 
+/// Avoid BufWriter wrapping on writers that already have internal buffering.
+pub enum BufferedWriteable<'a> {
+    BufWriter(std::io::BufWriter<&'a mut (dyn std::io::Write + Send)>),
+    Direct(&'a mut (dyn std::io::Write + Send)),
+}
+
+impl<'a> Deref for BufferedWriteable<'a> {
+    type Target = dyn io::Write + Send + 'a;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::BufWriter(v) => v as _,
+            Self::Direct(v) => v,
+        }
+    }
+}
+
+impl DerefMut for BufferedWriteable<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            Self::BufWriter(v) => v as _,
+            Self::Direct(v) => v,
+        }
+    }
+}
 #[cfg(feature = "cloud")]
 mod async_writeable {
     use std::io;

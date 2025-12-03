@@ -1,7 +1,5 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
-#[cfg(feature = "object")]
-use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
 use crate::utils::index_to_chunked_index;
@@ -138,8 +136,8 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         DataType::Extension(typ, storage) => arr_to_any_value(arr, idx, storage),
         #[cfg(feature = "object")]
         DataType::Object(_) => {
-            let arr = arr.as_any().downcast_ref::<FixedSizeBinaryArray>().unwrap();
-            PolarsExtension::arr_to_av(arr, idx)
+            use crate::chunked_array::object::registry::get_object_array_getter;
+            get_object_array_getter()(arr, idx).unwrap()
         },
         DataType::Null => AnyValue::Null,
         DataType::BinaryOffset => downcast_and_pack!(LargeBinaryArray, Binary),
