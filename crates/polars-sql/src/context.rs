@@ -1076,15 +1076,14 @@ impl SQLContext {
             };
             lf
         } else {
-            lf = self.process_group_by(lf, &group_by_keys, &projections)?;
+            let having = select_stmt
+                .having
+                .as_ref()
+                .map(|expr| parse_sql_expr(expr, self, Some(&schema)))
+                .transpose()?;
+            lf = self.process_group_by(lf, &group_by_keys, &projections, having)?;
             lf = self.process_order_by(lf, &query.order_by, None)?;
-
-            // Apply optional 'having' clause, post-aggregation.
-            let schema = Some(self.get_frame_schema(&mut lf)?);
-            match select_stmt.having.as_ref() {
-                Some(expr) => lf.filter(parse_sql_expr(expr, self, schema.as_deref())?),
-                None => lf,
-            }
+            lf
         };
 
         // Apply optional DISTINCT clause.
@@ -1528,6 +1527,7 @@ impl SQLContext {
         mut lf: LazyFrame,
         group_by_keys: &[Expr],
         projections: &[Expr],
+        having: Option<Expr>,
     ) -> PolarsResult<LazyFrame> {
         let schema_before = self.get_frame_schema(&mut lf)?;
         let group_by_keys_schema =
@@ -1609,13 +1609,61 @@ impl SQLContext {
                 }
             }
         }
-        let aggregated = lf.group_by(group_by_keys).agg(&aggregation_projection);
+
+        // Process HAVING clause: identify aggregate expressions, reusing those already
+        // in projections, or compute as temporary columns and then post-filter/discard
+        let having_filter = if let Some(having_expr) = having {
+            let mut agg_to_name: Vec<(Expr, PlSmallStr)> = aggregation_projection
+                .iter()
+                .filter_map(|p| match p {
+                    Expr::Alias(inner, name) if matches!(**inner, Expr::Agg(_) | Expr::Len) => {
+                        Some((inner.as_ref().clone(), name.clone()))
+                    },
+                    e @ (Expr::Agg(_) | Expr::Len) => Some((
+                        e.clone(),
+                        e.to_field(&schema_before)
+                            .map(|f| f.name)
+                            .unwrap_or_default(),
+                    )),
+                    _ => None,
+                })
+                .collect();
+
+            let mut n_having_aggs = 0;
+            let updated_having = having_expr.map_expr(|e| {
+                if !matches!(&e, Expr::Agg(_) | Expr::Len) {
+                    return e;
+                }
+                let name = agg_to_name
+                    .iter()
+                    .find_map(|(expr, n)| (*expr == e).then(|| n.clone()))
+                    .unwrap_or_else(|| {
+                        let n = PlSmallStr::from(format!("__POLARS_HAVING_{n_having_aggs}"));
+                        aggregation_projection.push(e.clone().alias(n.clone()));
+                        agg_to_name.push((e.clone(), n.clone()));
+                        n_having_aggs += 1;
+                        n
+                    });
+                col(name)
+            });
+            Some(updated_having)
+        } else {
+            None
+        };
+
+        // Apply HAVING filter after aggregation
+        let mut aggregated = lf.group_by(group_by_keys).agg(&aggregation_projection);
+        if let Some(filter_expr) = having_filter {
+            aggregated = aggregated.filter(filter_expr);
+        }
+
         let projection_schema =
             expressions_to_schema(projections, &schema_before, |duplicate_name: &str| {
                 format!("group_by aggregations contained duplicate output name '{duplicate_name}'")
             })?;
 
-        // A final projection to get the proper order and any deferred transforms/aliases.
+        // A final projection to get the proper order and any deferred transforms/aliases
+        // (will also drop any temporary columns created for the HAVING post-filter).
         let final_projection = projection_schema
             .iter_names()
             .zip(projections)
