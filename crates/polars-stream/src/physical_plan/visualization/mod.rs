@@ -2,7 +2,10 @@ use std::collections::VecDeque;
 
 use polars_core::prelude::SortMultipleOptions;
 use polars_ops::frame::{JoinArgs, JoinType};
-use polars_plan::dsl::{JoinTypeOptionsIR, PartitionVariantIR, SinkOptions, SinkTarget};
+use polars_plan::dsl::{
+    JoinTypeOptionsIR, PartitionStrategyIR, PartitionVariantIR, PartitionedSinkOptionsIR,
+    SinkOptions, SinkTarget, SortColumnIR, UnifiedSinkArgs,
+};
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::prelude::AExpr;
 use polars_utils::arena::Arena;
@@ -124,7 +127,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     },
                 file_type,
                 input,
-                cloud_options: _,
+                cloud_options,
             } => {
                 phys_node_inputs.push(input.node);
 
@@ -133,10 +136,11 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                         SinkTarget::Path(p) => format_pl_smallstr!("Path({})", p.to_str()),
                         SinkTarget::Dyn(_) => PlSmallStr::from_static("DynWriteable"),
                     },
+                    file_format: PlSmallStr::from_static(file_type.into()),
                     sync_on_close: *sync_on_close,
                     maintain_order: *maintain_order,
                     mkdir: *mkdir,
-                    file_type: PlSmallStr::from_static(file_type.into()),
+                    cloud_options: cloud_options.is_some(),
                 };
 
                 PhysNodeInfo {
@@ -710,9 +714,89 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     ..Default::default()
                 }
             },
-            PhysNodeKind::PartitionedSink2 { input, options: _ } => {
+            PhysNodeKind::PartitionedSink2 {
+                input,
+                options:
+                    PartitionedSinkOptionsIR {
+                        base_path,
+                        file_path_provider,
+                        partition_strategy,
+                        finish_callback: _,
+                        file_format,
+                        unified_sink_args:
+                            UnifiedSinkArgs {
+                                mkdir,
+                                maintain_order,
+                                sync_on_close,
+                                cloud_options,
+                            },
+                        max_rows_per_file,
+                        approximate_bytes_per_file,
+                    },
+            } => {
                 phys_node_inputs.push(input.node);
-                unreachable!()
+
+                let mut partition_key_exprs: Option<Vec<PlSmallStr>> = None;
+                let mut include_keys_: Option<bool> = None;
+                let mut per_partition_sort_by_: Option<&[SortColumnIR]> = None;
+
+                match partition_strategy {
+                    PartitionStrategyIR::Keyed {
+                        keys,
+                        include_keys,
+                        keys_pre_grouped: _,
+                        per_partition_sort_by,
+                    } => {
+                        partition_key_exprs = Some(expr_list(keys, self.expr_arena));
+                        include_keys_ = Some(*include_keys);
+                        per_partition_sort_by_ = Some(per_partition_sort_by.as_slice());
+                    },
+                    PartitionStrategyIR::FileSize => {},
+                }
+
+                let (
+                    per_partition_sort_exprs,
+                    per_partition_sort_descending,
+                    per_partition_sort_nulls_last,
+                ) = per_partition_sort_by_
+                    .as_ref()
+                    .map_or((None, None, None), |x| {
+                        let (a, (b, c)): (Vec<_>, (Vec<_>, Vec<_>)) = x
+                            .iter()
+                            .map(|x| {
+                                (
+                                    format_pl_smallstr!("{}", x.expr.display(self.expr_arena)),
+                                    (x.descending, x.nulls_last),
+                                )
+                            })
+                            .unzip();
+
+                        (Some(a), Some(b), Some(c))
+                    });
+
+                let properties = PhysNodeProperties::PartitionSink2 {
+                    base_path: base_path.to_str().into(),
+                    file_path_provider: file_path_provider.clone(),
+                    file_format: PlSmallStr::from_static(file_format.as_ref().into()),
+                    partition_strategy: PlSmallStr::from_static(partition_strategy.into()),
+                    partition_key_exprs,
+                    include_keys: include_keys_,
+                    per_partition_sort_exprs,
+                    per_partition_sort_descending,
+                    per_partition_sort_nulls_last,
+                    mkdir: *mkdir,
+                    maintain_order: *maintain_order,
+                    sync_on_close: *sync_on_close,
+                    cloud_options: cloud_options.is_some(),
+                    max_rows_per_file: *max_rows_per_file,
+                    approximate_bytes_per_file: *approximate_bytes_per_file,
+                };
+
+                PhysNodeInfo {
+                    title: properties.variant_name(),
+                    properties,
+                    ..Default::default()
+                }
             },
             PhysNodeKind::PeakMinMax { input, is_peak_max } => {
                 phys_node_inputs.push(input.node);
