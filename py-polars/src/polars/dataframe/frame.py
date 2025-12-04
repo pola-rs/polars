@@ -9502,7 +9502,8 @@ class DataFrame:
         ----------
         on
             Column(s) or selector(s) to use as values variables; if `on`
-            is empty all columns that are not in `index` will be used.
+            is empty no columns will be used. If set to `None` (default)
+            all columns that are not in `index` will be used.
         index
             Column(s) or selector(s) to use as identifier variables.
         variable_name
@@ -9515,6 +9516,8 @@ class DataFrame:
         If you're coming from pandas, this is similar to `pandas.DataFrame.melt`,
         but with `index` replacing `id_vars` and `on` replacing `value_vars`.
         In other frameworks, you might know this operation as `pivot_longer`.
+
+        The resulting row order is unspecified.
 
         Examples
         --------
@@ -9541,7 +9544,7 @@ class DataFrame:
         │ z   ┆ c        ┆ 6     │
         └─────┴──────────┴───────┘
         """
-        on = [] if on is None else _expand_selectors(self, on)
+        on = None if on is None else _expand_selectors(self, on)
         index = [] if index is None else _expand_selectors(self, index)
 
         return self._from_pydf(self._df.unpivot(on, index, value_name, variable_name))

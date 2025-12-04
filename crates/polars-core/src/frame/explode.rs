@@ -27,8 +27,34 @@ fn get_exploded(
 pub struct UnpivotArgsIR {
     pub on: Vec<PlSmallStr>,
     pub index: Vec<PlSmallStr>,
-    pub variable_name: Option<PlSmallStr>,
-    pub value_name: Option<PlSmallStr>,
+    pub variable_name: PlSmallStr,
+    pub value_name: PlSmallStr,
+}
+
+impl UnpivotArgsIR {
+    pub fn new(
+        all_column_names: Vec<PlSmallStr>,
+        on: Option<Vec<PlSmallStr>>,
+        index: Vec<PlSmallStr>,
+        variable_name: Option<PlSmallStr>,
+        value_name: Option<PlSmallStr>,
+    ) -> Self {
+        let on = on.unwrap_or_else(|| {
+            // If value vars is empty we take all columns that are not in id_vars.
+            let index_set = PlHashSet::from_iter(index.iter().cloned());
+            all_column_names
+                .into_iter()
+                .filter(|s| !index_set.contains(s))
+                .collect()
+        });
+
+        Self {
+            on,
+            index,
+            variable_name: variable_name.unwrap_or_else(|| PlSmallStr::from_static("variable")),
+            value_name: value_name.unwrap_or_else(|| PlSmallStr::from_static("value")),
+        }
+    }
 }
 
 impl DataFrame {

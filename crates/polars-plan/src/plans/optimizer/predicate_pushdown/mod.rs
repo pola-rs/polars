@@ -492,20 +492,11 @@ impl PredicatePushDown {
                         },
                         #[cfg(feature = "pivot")]
                         FunctionIR::Unpivot { args, .. } => {
-                            let variable_name = &args
-                                .variable_name
-                                .clone()
-                                .unwrap_or_else(|| PlSmallStr::from_static("variable"));
-                            let value_name = &args
-                                .value_name
-                                .clone()
-                                .unwrap_or_else(|| PlSmallStr::from_static("value"));
-
                             // predicates that will be done at this level
                             let condition = |name: &PlSmallStr| {
-                                name == variable_name
-                                    || name == value_name
-                                    || args.on.iter().any(|s| s == name)
+                                name == &args.variable_name
+                                    || name == &args.value_name
+                                    || args.index.iter().any(|s| s == name)
                             };
                             let local_predicates = transfer_to_local_by_name(
                                 expr_arena,

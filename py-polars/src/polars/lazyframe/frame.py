@@ -8009,7 +8009,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         on
             Column(s) or selector(s) to use as values variables; if `on`
-            is empty all columns that are not in `index` will be used.
+            is empty no columns will be used. If set to `None` (default)
+            all columns that are not in `index` will be used.
         index
             Column(s) or selector(s) to use as identifier variables.
         variable_name
@@ -8024,6 +8025,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         If you're coming from pandas, this is similar to `pandas.DataFrame.melt`,
         but with `index` replacing `id_vars` and `on` replacing `value_vars`.
         In other frameworks, you might know this operation as `pivot_longer`.
+
+        The resulting row order is unspecified.
 
         Examples
         --------
@@ -8057,16 +8060,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 version="1.5.0",
             )
 
-        selector_on: pl.Selector = (
-            cs.empty() if on is None else parse_list_into_selector(on)
-        )
+        selector_on = None if on is None else parse_list_into_selector(on)._pyselector
+
         selector_index: pl.Selector = (
             cs.empty() if index is None else parse_list_into_selector(index)
         )
 
         return self._from_pyldf(
             self._ldf.unpivot(
-                selector_on._pyselector,
+                selector_on,
                 selector_index._pyselector,
                 value_name,
                 variable_name,
