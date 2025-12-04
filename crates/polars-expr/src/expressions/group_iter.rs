@@ -75,7 +75,9 @@ impl AggregationContext<'_> {
 
 impl AggregationContext<'_> {
     /// Iterate over groups lazily, i.e., without greedy aggregation into an AggList.
-    pub(super) fn iter_groups_lazy(
+    ///
+    /// # Safety: AmortSeries does not live longer than the next call to `next`.
+    pub(super) unsafe fn iter_groups_lazy(
         &mut self,
         keep_names: bool,
     ) -> Box<dyn Iterator<Item = Option<AmortSeries>> + '_> {

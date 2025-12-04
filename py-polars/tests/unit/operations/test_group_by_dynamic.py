@@ -1407,3 +1407,12 @@ def test_group_by_dynamic_large_offset(closed: ClosedInterval) -> None:
                     large, every, period, offset, closed
                 )
                 assert n_out == n_expected
+
+
+def test_group_by_dynamic_gather_every_lazy_iter_25567() -> None:
+    df = pl.DataFrame({"index": [1, 3], "value": [[4], [5]]})
+    out = df.group_by_dynamic("index", every="1i", period="2i").agg(
+        pl.all().gather_every(1)
+    )
+    expected = pl.DataFrame({"index": [1, 2, 3], "value": [[[4]], [[5]], [[5]]]})
+    assert_frame_equal(out, expected)
