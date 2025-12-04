@@ -783,13 +783,8 @@ pub(super) fn corr(s: &[Column], method: IRCorrelationMethod) -> PolarsResult<Co
         let name = PlSmallStr::from_static("spearman_rank_correlation");
         if propagate_nans && a.dtype().is_float() {
             for s in [&a, &b] {
-                if nan_max_s(s.as_materialized_series(), PlSmallStr::EMPTY)
-                    .get(0)
-                    .unwrap()
-                    .extract::<f64>()
-                    .unwrap()
-                    .is_nan()
-                {
+                let max = nan_max_s(s.as_materialized_series(), PlSmallStr::EMPTY);
+                if max.get(0).is_ok_and(|m| m.is_nan()) {
                     return Ok(Column::new(name, &[f64::NAN]));
                 }
             }
