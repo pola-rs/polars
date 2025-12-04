@@ -18,3 +18,6 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           configuration-path: .github/issue-labeler.yml
           enable-versioned-regex: 0
+          include-title: 1
+          include-body: 0
+          sync-labels: 1
