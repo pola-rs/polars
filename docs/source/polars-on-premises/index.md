@@ -1,16 +1,16 @@
-# Introducing Polars on-premise
+# Introducing Polars on-premises
 
-Interested in running Polars on-premise?
+Interested in running Polars on-premises?
 [Sign up here to apply](https://w0lzyfh2w8o.typeform.com/to/zuoDgoMv).
 
-After installing Polars on-premise either on bare-metal or on Kubernetes, you can connect to your
+After installing Polars on-premises either on bare-metal or on Kubernetes, you can connect to your
 cluster using the Polars Cloud Python client.
 
 ```python
 import polars as pl
 import polars_cloud as pc
 
-# Connect to your Polars on-premise cluster
+# Connect to your Polars on-premises cluster
 ctx = pc.ClusterContext(compute_address="your-cluster-compute-address", insecure=True)
 query = (
     pl.LazyFrame()
