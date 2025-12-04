@@ -79,7 +79,7 @@ pub enum PartitionStrategy {
 }
 
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, strum_macros::IntoStaticStr)]
 pub enum PartitionStrategyIR {
     Keyed {
         keys: Vec<ExprIR>,
