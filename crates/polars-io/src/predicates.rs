@@ -3,6 +3,7 @@ use std::fmt;
 use arrow::array::Array;
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::prelude::*;
+use polars_error::polars_err;
 #[cfg(feature = "parquet")]
 use polars_parquet::read::expr::{ParquetColumnExpr, ParquetScalar, SpecializedParquetColumnExpr};
 use polars_utils::format_pl_smallstr;
@@ -274,21 +275,24 @@ impl ColumnStats {
     }
 
     /// Returns the minimum and maximum values of the column as a single [`Series`].
-    pub fn to_min_max(&self) -> Option<Series> {
-        let min_val = self.get_min_state()?;
-        let max_val = self.get_max_state()?;
+    ///
+    /// Returns `Ok(None)` if min/max values are not available or contain nulls.
+    pub fn to_min_max(&self) -> PolarsResult<Option<Series>> {
+        let (Some(min_val), Some(max_val)) = (self.get_min_state(), self.get_max_state()) else {
+            return Ok(None);
+        };
         let dtype = self.dtype();
 
         if !use_min_max(dtype) {
-            return None;
+            return Ok(None);
         }
 
         let mut min_max_values = min_val.clone();
-        min_max_values.append(max_val).unwrap();
+        min_max_values.append(max_val)?;
         if min_max_values.null_count() > 0 {
-            None
+            Ok(None)
         } else {
-            Some(min_max_values)
+            Ok(Some(min_max_values))
         }
     }
 
@@ -366,7 +370,9 @@ pub trait SkipBatchPredicate: Send + Sync {
         ));
 
         for col in live_columns.iter() {
-            let dtype = self.schema().get(col).unwrap();
+            let dtype = self.schema().get(col).ok_or_else(|| {
+                polars_err!(ColumnNotFound: "column '{}' not found in schema during batch skip evaluation", col)
+            })?;
             let (min, max, nc) = match statistics.swap_remove(col) {
                 None => (
                     Scalar::null(dtype.clone()),
