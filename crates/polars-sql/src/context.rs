@@ -482,6 +482,70 @@ impl SQLContext {
         }
     }
 
+    /// Process UNNEST as a lateral operation when it contains column references
+    /// (handles `CROSS JOIN UNNEST(col) AS name` by exploding the referenced col).
+    fn process_unnest_lateral(
+        &self,
+        lf: LazyFrame,
+        alias: &Option<TableAlias>,
+        array_exprs: &[SQLExpr],
+        with_offset: bool,
+    ) -> PolarsResult<LazyFrame> {
+        let alias = alias
+            .as_ref()
+            .ok_or_else(|| polars_err!(SQLSyntax: "UNNEST table must have an alias"))?;
+        polars_ensure!(!with_offset, SQLInterface: "UNNEST tables do not (yet) support WITH ORDINALITY|OFFSET");
+
+        let (mut explode_cols, mut rename_from, mut rename_to) = (
+            Vec::with_capacity(array_exprs.len()),
+            Vec::with_capacity(array_exprs.len()),
+            Vec::with_capacity(array_exprs.len()),
+        );
+        let is_single_col = array_exprs.len() == 1;
+
+        for (i, arr_expr) in array_exprs.iter().enumerate() {
+            let col_name = match arr_expr {
+                SQLExpr::Identifier(ident) => PlSmallStr::from_str(&ident.value),
+                SQLExpr::CompoundIdentifier(parts) => {
+                    PlSmallStr::from_str(&parts.last().unwrap().value)
+                },
+                SQLExpr::Array(_) => polars_bail!(
+                    SQLInterface: "CROSS JOIN UNNEST with both literal arrays and column references is not supported"
+                ),
+                other => polars_bail!(
+                    SQLSyntax: "UNNEST expects column references or array literals, found {:?}", other
+                ),
+            };
+            // alias: column name from "AS t(col)", or table alias
+            if let Some(name) = alias
+                .columns
+                .get(i)
+                .map(|c| c.name.value.as_str())
+                .or_else(|| is_single_col.then_some(alias.name.value.as_str()))
+                .filter(|name| !name.is_empty() && *name != col_name.as_str())
+            {
+                rename_from.push(col_name.clone());
+                rename_to.push(PlSmallStr::from_str(name));
+            }
+            explode_cols.push(col_name);
+        }
+
+        let mut lf = lf.explode(
+            Selector::ByName {
+                names: Arc::from(explode_cols),
+                strict: true,
+            },
+            ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            },
+        );
+        if !rename_from.is_empty() {
+            lf = lf.rename(rename_from, rename_to, true);
+        }
+        Ok(lf)
+    }
+
     fn process_values(&mut self, values: &[Vec<SQLExpr>]) -> PolarsResult<LazyFrame> {
         let frame_rows: Vec<Row> = values.iter().map(|row| {
             let row_data: Result<Vec<_>, _> = row.iter().map(|expr| {
@@ -679,6 +743,23 @@ impl SQLContext {
         let (l_name, mut lf) = self.get_table(&tbl_expr.relation)?;
         if !tbl_expr.joins.is_empty() {
             for join in &tbl_expr.joins {
+                // Handle "CROSS JOIN UNNEST(col)" as a lateral join op
+                if let (
+                    JoinOperator::CrossJoin,
+                    TableFactor::UNNEST {
+                        alias,
+                        array_exprs,
+                        with_offset,
+                        ..
+                    },
+                ) = (&join.join_operator, &join.relation)
+                {
+                    if array_exprs.iter().any(|e| !matches!(e, SQLExpr::Array(_))) {
+                        lf = self.process_unnest_lateral(lf, alias, array_exprs, *with_offset)?;
+                        continue;
+                    }
+                }
+
                 let (r_name, mut rf) = self.get_table(&join.relation)?;
                 if r_name.is_empty() {
                     // Require non-empty to avoid duplicate column errors from nested self-joins.
