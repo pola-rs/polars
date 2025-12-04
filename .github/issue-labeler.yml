@@ -1,19 +1,19 @@
 # Automatically apply Issue labels based on string pattern matches in the issue title.
 # Note: the patterns/labels here are mirrored in `release-drafter.yml` (for PRs)
 documentation:
-  - '/docs|documentation/i'
+  - '/\bdocs\b|documentation/i'
 performance:
   - '/performance/i'
 regression:
   - '/regression/i'
 A-dtype-categorical:
-  - '/categorical|categories/i'
+  - '/categorical|categories|category/i'
 A-dtype-decimal:
   - '/decimal/i'
 A-dtype-object:
-  - '/Object/'
+  - '/\bObject\b/'
 A-dtype-struct:
-  - '/struct/i'
+  - '/\bstruct\b/i'
 A-gpu:
   - '/\bgpu\b/i'
 A-ide:
@@ -41,7 +41,7 @@ A-io-json:
 A-io-parquet:
   - '/parquet/i'
 A-io-spreadsheet:
-  - '/spreadsheet|excel/i'
+  - '/spreadsheet|excel|\bods\b/i'
 A-plugin:
   - '/plugin/i'
 A-sql:
