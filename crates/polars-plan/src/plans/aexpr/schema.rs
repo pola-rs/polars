@@ -148,6 +148,26 @@ impl AExpr {
                     Sum(expr) => {
                         let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
                         let dt = match field.dtype() {
+                            String | Binary | BinaryOffset | List(_) => {
+                                polars_bail!(
+                                    InvalidOperation: "`sum` operation not supported for dtype `{}`",
+                                    field.dtype()
+                                )
+                            },
+                            #[cfg(feature = "dtype-array")]
+                            Array(_, _) => {
+                                polars_bail!(
+                                    InvalidOperation: "`sum` operation not supported for dtype `{}`",
+                                    field.dtype()
+                                )
+                            },
+                            #[cfg(feature = "dtype-struct")]
+                            Struct(_) => {
+                                polars_bail!(
+                                    InvalidOperation: "`sum` operation not supported for dtype `{}`",
+                                    field.dtype()
+                                )
+                            },
                             Boolean => Some(IDX_DTYPE),
                             UInt8 | Int8 | Int16 | UInt16 => Some(Int64),
                             _ => None,
