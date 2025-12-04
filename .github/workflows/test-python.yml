@@ -71,10 +71,6 @@ jobs:
           echo "VENV=$GITHUB_WORKSPACE/py-polars/.venv" >> $GITHUB_ENV
 
       - name: Install Python dependencies
-        env:
-          AIOHTTP_NO_EXTENSIONS: ${{ endsWith(matrix.python-version, 't') && '1' || '' }} # TODO aiohttp does not support free-threading yet
-          UV_CONSTRAINT: ${{ endsWith(matrix.python-version, 't') && 'requirements-nogil-constraints.txt' || '' }}
-          UV_BUILD_CONSTRAINT: ${{ endsWith(matrix.python-version, 't') && 'requirements-nogil-constraints.txt' || '' }}
         run: |
           pip install uv
           # Install typing-extensions separately whilst the `--extra-index-url` in `requirements-ci.txt`
