@@ -11,9 +11,7 @@ pub trait FileWriterStarter: Send + Sync + 'static {
     fn writer_name(&self) -> &str;
 
     /// Hints to the sender how morsels should be sized.
-    fn ideal_morsel_size(&self) -> RowCountAndSize {
-        default_ideal_sink_morsel_size()
-    }
+    fn ideal_morsel_size(&self) -> RowCountAndSize;
 
     fn start_file_writer(
         &self,
@@ -32,10 +30,7 @@ pub(super) fn default_ideal_sink_morsel_size() -> RowCountAndSize {
                         panic!("invalid value for POLARS_IDEAL_SINK_MORSEL_SIZE_BYTES: {x}")
                     })
                 })
-                .unwrap_or(
-                    // Should rarely be hit in practice
-                    64 * 1024 * 1024,
-                )
+                .unwrap_or(64 * 1024 * 1024)
         },
     }
 }
