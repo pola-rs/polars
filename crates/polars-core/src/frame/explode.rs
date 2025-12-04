@@ -44,13 +44,7 @@ impl UnpivotArgsIR {
             let index_set = PlHashSet::from_iter(index.iter().cloned());
             all_column_names
                 .into_iter()
-                .filter_map(|s| {
-                    if index_set.contains(&s) {
-                        None
-                    } else {
-                        Some(s)
-                    }
-                })
+                .filter(|s| !index_set.contains(s))
                 .collect()
         });
 

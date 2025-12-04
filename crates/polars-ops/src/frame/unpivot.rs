@@ -105,7 +105,7 @@ pub trait UnpivotDF: IntoDf {
 
         // If the parameter `on` is empty or there are no columns available to use as value vars. we
         // want to produce an empty DataFrame but with the standard unpivot schema.
-        if on.is_empty() || index.len() == self_.width() {
+        if on.is_empty() {
             let mut out = self_.select(index)?.clear().take_columns();
 
             out.push(variable_col_empty);

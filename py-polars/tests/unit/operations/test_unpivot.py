@@ -117,17 +117,19 @@ def test_unpivot_categorical() -> None:
 
 
 def test_unpivot_index_not_found_23165() -> None:
-    with pytest.raises(pl.exceptions.ColumnNotFoundError):
+    with pytest.raises(pl.exceptions.SchemaFieldNotFoundError):
         pl.DataFrame({"a": [1]}).unpivot(index="b")
 
 
-def assert_eq_df_lf_impl(data: Any, expr: Any, on: Any, index: Any, expected_data: list[pl.Series]) -> None:
-        df_result = expr(pl.DataFrame(data), on, index)
-        lf_result = expr(pl.LazyFrame(data), on, index).collect()
-        expected_result = pl.DataFrame(expected_data)
+def assert_eq_df_lf_impl(
+    data: Any, expr: Any, on: Any, index: Any, expected_data: list[pl.Series]
+) -> None:
+    df_result = expr(pl.DataFrame(data), on, index)
+    lf_result = expr(pl.LazyFrame(data), on, index).collect()
+    expected_result = pl.DataFrame(expected_data)
 
-        assert_frame_equal(df_result, lf_result, check_row_order=False)
-        assert_frame_equal(df_result, expected_result, check_row_order=False)
+    assert_frame_equal(df_result, lf_result, check_row_order=False)
+    assert_frame_equal(df_result, expected_result, check_row_order=False)
 
 
 def test_unpivot_empty_on_25474() -> None:
@@ -139,7 +141,9 @@ def test_unpivot_empty_on_25474() -> None:
     }
 
     def assert_eq_df_lf(on: Any, index: Any, expected_data: list[pl.Series]) -> None:
-        logic = lambda frame, on, index: frame.unpivot(on, index=index)
+        def logic(frame: Any, on: Any, index: Any) -> Any:
+            return frame.unpivot(on, index=index)
+
         return assert_eq_df_lf_impl(data, logic, on, index, expected_data)
 
     assert_eq_df_lf(
@@ -214,29 +218,31 @@ def test_unpivot_predicate_pd() -> None:
         "c": [2, 4, 7],
         "d": [day_a, day_a, day_b],
     }
-    
+
     def assert_eq_df_lf(on: Any, index: Any, expected_data: list[pl.Series]) -> None:
-        logic = lambda frame, on, index: frame.unpivot(on, index=index).filter(pl.col.b == 1)
+        def logic(frame: Any, on: Any, index: Any) -> Any:
+            return frame.unpivot(on, index=index).filter(pl.col.b == 1)
+
         return assert_eq_df_lf_impl(data, logic, on, index, expected_data)
 
     assert_eq_df_lf(
         None,
         ["b", "a"],
         [
-            pl.Series('b', [1, 1, 1, 1], dtype=pl.Int64),
-            pl.Series('a', ['x', 'z', 'x', 'z'], dtype=pl.String),
-            pl.Series('variable', ['c', 'c', 'd', 'd'], dtype=pl.String),
-            pl.Series('value', [2, 7, 374466, 132675], dtype=pl.Int64),
-        ]
+            pl.Series("b", [1, 1, 1, 1], dtype=pl.Int64),
+            pl.Series("a", ["x", "z", "x", "z"], dtype=pl.String),
+            pl.Series("variable", ["c", "c", "d", "d"], dtype=pl.String),
+            pl.Series("value", [2, 7, 374466, 132675], dtype=pl.Int64),
+        ],
     )
 
     assert_eq_df_lf(
         pl.selectors.date(),
         ["b", "a"],
         [
-            pl.Series('b', [1, 1], dtype=pl.Int64),
-            pl.Series('a', ['x', 'z'], dtype=pl.String),
-            pl.Series('variable', ['d', 'd'], dtype=pl.String),
-            pl.Series('value', [day_a, day_b], dtype=pl.Date),
-        ]
+            pl.Series("b", [1, 1], dtype=pl.Int64),
+            pl.Series("a", ["x", "z"], dtype=pl.String),
+            pl.Series("variable", ["d", "d"], dtype=pl.String),
+            pl.Series("value", [day_a, day_b], dtype=pl.Date),
+        ],
     )
