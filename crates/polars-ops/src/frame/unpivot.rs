@@ -183,7 +183,6 @@ impl UnpivotDF for DataFrame {}
 #[cfg(test)]
 mod test {
     use polars_core::df;
-    use polars_core::utils::Container;
 
     use super::*;
 
