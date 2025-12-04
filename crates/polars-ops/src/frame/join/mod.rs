@@ -548,13 +548,8 @@ trait DataFrameJoinOpsPrivate: IntoDf {
         drop_names: Option<Vec<PlSmallStr>>,
     ) -> PolarsResult<DataFrame> {
         let left_df = self.to_df();
-        let ((join_tuples_left, join_tuples_right), sorted) = dbg!(_sort_or_hash_inner(
-            s_left,
-            s_right,
-            verbose,
-            args.validation,
-            args.nulls_equal
-        ))?;
+        let ((join_tuples_left, join_tuples_right), sorted) =
+            _sort_or_hash_inner(s_left, s_right, verbose, args.validation, args.nulls_equal)?;
 
         let mut join_tuples_left = &*join_tuples_left;
         let mut join_tuples_right = &*join_tuples_right;

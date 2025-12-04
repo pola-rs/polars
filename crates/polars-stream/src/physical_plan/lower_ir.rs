@@ -19,10 +19,10 @@ use polars_plan::dsl::{
 };
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{
-    AExpr, FunctionIR, IR, IRAggExpr, LiteralValue, are_keys_sorted_any, is_sorted,
+    AExpr, AExprBuilder, FunctionIR, IR, IRAggExpr, LiteralValue, are_keys_sorted_any, is_sorted,
     write_ir_non_recursive,
 };
-use polars_plan::prelude::GroupbyOptions;
+use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
@@ -457,12 +457,13 @@ pub fn lower_ir(
                 let key_dtype = key_dtype.clone();
                 let mut expr = AExprBuilder::col(key.clone(), expr_arena);
                 if key_dtype.is_nested() {
-                    expr = expr.row_encode_unary(
+                    expr = AExprBuilder::row_encode(
+                        vec![expr.expr_ir(key_name.clone())],
+                        vec![key_dtype],
                         RowEncodingVariant::Ordered {
                             descending: None,
                             nulls_last: None,
                         },
-                        key_dtype,
                         expr_arena,
                     );
                 }
@@ -1127,10 +1128,10 @@ pub fn lower_ir(
             let right_on = right_on.clone();
             let args = options.args.clone();
             let options = options.options.clone();
-            let phys_left = lower_ir!(input_left)?;
-            let phys_right = lower_ir!(input_right)?;
-            let input_left_schema = &phys_sm[phys_left.node].output_schema;
-            let input_right_schema = &phys_sm[phys_right.node].output_schema;
+            let mut phys_left = lower_ir!(input_left)?;
+            let mut phys_right = lower_ir!(input_right)?;
+            let input_left_schema = &phys_sm[phys_left.node].output_schema.clone();
+            let input_right_schema = &phys_sm[phys_right.node].output_schema.clone();
 
             let left_is_sorted = are_keys_sorted_any(
                 is_sorted(input_left, ir_arena, expr_arena).as_ref(),
@@ -1152,6 +1153,61 @@ pub fn lower_ir(
                 // payload columns, otherwise the input nodes can get replaced by input-independent
                 // nodes since the lowering code does not see we access any non-literal expressions.
                 // So we add dummy expressions before lowering and remove them afterwards.
+
+                // Transform left_on into a single column
+                let left_on_dtypes = left_on
+                    .iter()
+                    .map(|key| key.dtype(&input_left_schema, expr_arena).cloned())
+                    .try_collect_vec()?;
+                let right_on_dtypes = right_on
+                    .iter()
+                    .map(|key| key.dtype(&input_right_schema, expr_arena).cloned())
+                    .try_collect_vec()?;
+                if left_on_dtypes.len() > 1 || left_on_dtypes.iter().any(DataType::is_nested) {
+                    let mut exprs = Vec::new();
+                    for key in left_on.iter() {
+                        let expr = AExprBuilder::col(key.output_name().as_str(), expr_arena);
+                        exprs.push(expr.expr_ir(key.output_name().clone()));
+                    }
+                    let rev = RowEncodingVariant::Ordered {
+                        descending: None, // TODO: [amber]
+                        nulls_last: None,
+                    };
+                    let row_encoded =
+                        AExprBuilder::row_encode(exprs, left_on_dtypes, rev, expr_arena);
+                    phys_left = build_hstack_stream(
+                        phys_left,
+                        &[row_encoded.expr_ir(unique_column_name())],
+                        expr_arena,
+                        phys_sm,
+                        expr_cache,
+                        ctx,
+                    )?;
+                }
+                if right_on_dtypes.len() > 1 || right_on_dtypes.iter().any(DataType::is_nested) {
+                    let mut exprs = Vec::new();
+                    for key in right_on.iter() {
+                        let expr = AExprBuilder::col(key.output_name().as_str(), expr_arena);
+                        exprs.push(expr.expr_ir(key.output_name().clone()));
+                    }
+                    let rev = RowEncodingVariant::Ordered {
+                        descending: None, // TODO: [amber]
+                        nulls_last: None,
+                    };
+                    let row_encoded =
+                        AExprBuilder::row_encode(exprs, right_on_dtypes, rev, expr_arena);
+                    phys_right = build_hstack_stream(
+                        phys_right,
+                        &[row_encoded.expr_ir(unique_column_name())],
+                        expr_arena,
+                        phys_sm,
+                        expr_cache,
+                        ctx,
+                    )?;
+                }
+
+                // End [amber] edits
+
                 let mut aug_left_on = left_on.clone();
                 for name in phys_sm[phys_left.node].output_schema.iter_names() {
                     let col_expr = expr_arena.add(AExpr::Column(name.clone()));
@@ -1185,8 +1241,8 @@ pub fn lower_ir(
                     phys_sm.insert(PhysNode::new(
                         output_schema,
                         PhysNodeKind::MergeJoin {
-                            input_left: trans_input_left,
-                            input_right: trans_input_right,
+                            input_left: phys_left,
+                            input_right: phys_right,
                             left_on: trans_left_on,
                             right_on: trans_right_on,
                             args: args.clone(),

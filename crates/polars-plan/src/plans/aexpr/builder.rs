@@ -67,17 +67,13 @@ impl AExprBuilder {
         Self { node }
     }
 
-    pub fn row_encode_unary(
-        self,
+    pub fn row_encode(
+        exprs: Vec<ExprIR>,
+        dtypes: Vec<DataType>,
         variant: RowEncodingVariant,
-        dtype: DataType,
         arena: &mut Arena<AExpr>,
     ) -> Self {
-        Self::function(
-            vec![ExprIR::from_node(self.node(), arena)],
-            IRFunctionExpr::RowEncode(vec![dtype], variant),
-            arena,
-        )
+        Self::function(exprs, IRFunctionExpr::RowEncode(dtypes, variant), arena)
     }
 
     pub fn cast(self, dtype: DataType, arena: &mut Arena<AExpr>) -> Self {
