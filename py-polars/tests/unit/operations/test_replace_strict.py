@@ -419,3 +419,27 @@ def test_replace_strict_nested_mapping_22554() -> None:
         ),
         pl.Series([[42], [13], [37]]),
     )
+
+
+def test_replace_strict_expr_in_sequence() -> None:
+    s = pl.Series([1, 2, 3])
+
+    # Expression in old sequence with default
+    result = s.replace_strict([pl.lit(1)], [10], default=None)
+    expected = pl.Series([10, None, None])
+    assert_series_equal(result, expected, check_dtypes=False)
+
+    # Expression in new sequence with default
+    result = s.replace_strict([1], [pl.lit(10)], default=None)
+    expected = pl.Series([10, None, None])
+    assert_series_equal(result, expected, check_dtypes=False)
+
+    # Multiple values with expressions and default
+    result = s.replace_strict([pl.lit(1), 2], [10, pl.lit(20)], default=-1)
+    expected = pl.Series([10, 20, -1])
+    assert_series_equal(result, expected, check_dtypes=False)
+
+    # Scalar expressions are still allowed
+    result = s.replace_strict(pl.lit(1), pl.lit(10), default=pl.lit(None))
+    expected = pl.Series([10, None, None], dtype=pl.Int32)
+    assert_series_equal(result, expected)
