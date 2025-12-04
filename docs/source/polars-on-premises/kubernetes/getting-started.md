@@ -1,8 +1,8 @@
-First of all, make sure to obtain a license for Polars on-premise by
+First of all, make sure to obtain a license for Polars on-premises by
 [signing up here](https://w0lzyfh2w8o.typeform.com/to/zuoDgoMv). You will receive an access key for
 our private Docker registry as well as a license for running Polars Distributed on-premise.
 
-Polars-on-premise for Kubernetes is distributed through our Helm Chart, which can be found in our
+Polars-on-premises for Kubernetes is distributed through our Helm Chart, which can be found in our
 [helm-charts repository](https://github.com/polars-inc/helm-charts/).
 
 ## Usage
