@@ -44,6 +44,18 @@ pub enum IRArrayFunction {
 impl IRArrayFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         use IRArrayFunction::*;
+
+        // Ensure that we are array.
+        // The only function where this is not required is Concat, which is called from concat_arr()
+        // and coerces non-array dtypes to array types.
+        if !matches!(self, Concat) {
+            let dt = &mapper.args()[0].dtype;
+            polars_ensure!(
+                matches!(dt, DataType::Array(..)),
+                InvalidOperation: format!("expected Array dtype, got '{:?}'", dt),
+            );
+        }
+
         match self {
             Concat => Ok(Field::new(
                 mapper

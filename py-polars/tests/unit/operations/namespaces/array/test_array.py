@@ -554,7 +554,9 @@ def test_explode_19049() -> None:
     assert_frame_equal(result_df, expected_df)
 
     df = pl.DataFrame({"a": [1, 2, 3]}, schema={"a": pl.Int64})
-    with pytest.raises(InvalidOperationError, match="expected Array type, got: i64"):
+    with pytest.raises(
+        InvalidOperationError, match="expected Array dtype, got 'Int64'"
+    ):
         df.select(pl.col.a.arr.explode())
 
 
@@ -628,3 +630,44 @@ def test_arr_contains() -> None:
         s.arr.contains(1, nulls_equal=True),
         pl.Series([True, False, None], dtype=pl.Boolean),
     )
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col("a").arr.contains("z"),
+        pl.col("a").arr.explode(),
+        pl.col("a").arr.sum(),
+        pl.col("a").arr.to_list(),
+        pl.col("a").arr.to_struct(),
+        pl.col("a").arr.unique(),
+        pl.col("a").arr.all(),
+        pl.col("a").arr.any(),
+        pl.col("a").arr.arg_max(),
+        pl.col("a").arr.arg_min(),
+        pl.col("a").arr.count_matches("z"),
+        pl.col("a").arr.first(),
+        pl.col("a").arr.get(0),
+        pl.col("a").arr.join(""),
+        pl.col("a").arr.last(),
+        pl.col("a").arr.len(),
+        pl.col("a").arr.max(),
+        pl.col("a").arr.mean(),
+        pl.col("a").arr.median(),
+        pl.col("a").arr.min(),
+        pl.col("a").arr.n_unique(),
+        pl.col("a").arr.reverse(),
+        pl.col("a").arr.shift(1),
+        pl.col("a").arr.sort(),
+        pl.col("a").arr.std(),
+        pl.col("a").arr.var(),
+    ],
+)
+def test_schema_non_array(expr: pl.Expr) -> None:
+    lf = pl.LazyFrame({"a": ["a", "b", "c"]})
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="expected Array dtype, got 'String'",
+    ):
+        lf.select(expr).collect_schema()
