@@ -139,11 +139,7 @@ impl ApplyExpr {
         // In case of overlapping (rolling) groups, we build groups in a lazy manner to avoid
         // memory explosion.
         // TODO: Add parallel iterator path; support Idx GroupsType.
-        if matches!(ac.agg_state(), AggState::NotAggregated(_))
-            && let GroupsType::Slice {
-                overlapping: true, ..
-            } = ac.groups.as_ref().as_ref()
-        {
+        if matches!(ac.agg_state(), AggState::NotAggregated(_)) && ac.groups.is_overlapping() {
             let ca: ChunkedArray<_> = ac
                 .iter_groups_lazy(false)
                 .map(|opt| opt.map(|s| s.as_ref().clone()))

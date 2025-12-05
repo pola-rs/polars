@@ -124,10 +124,7 @@ impl EvalExpr {
                 .map(|(offset, length)| [offset as IdxSize, length as IdxSize])
                 .collect()
         };
-        let groups = GroupsType::Slice {
-            groups,
-            overlapping: false,
-        };
+        let groups = GroupsType::new_slice(groups, false, true);
         let groups = Cow::Owned(groups.into_sliceable());
 
         let mut state = state.clone();
@@ -264,10 +261,7 @@ impl EvalExpr {
                 .map(|i| [(i * ca.width()) as IdxSize, ca.width() as IdxSize])
                 .collect()
         };
-        let groups = GroupsType::Slice {
-            groups,
-            overlapping: false,
-        };
+        let groups = GroupsType::new_slice(groups, false, true);
         let groups = Cow::Owned(groups.into_sliceable());
 
         let mut state = state.clone();
@@ -390,10 +384,7 @@ impl EvalExpr {
             out
         };
 
-        let groups = GroupsType::Slice {
-            groups,
-            overlapping: true,
-        };
+        let groups = GroupsType::new_slice(groups, true, true);
 
         let groups = groups.into_sliceable();
 

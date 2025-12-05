@@ -200,6 +200,7 @@ impl BooleanChunked {
                     GroupsType::Slice {
                         groups,
                         overlapping: _,
+                        monotonic: _,
                     } => groups
                         .into_par_iter()
                         .map(|[start, length]| slice_kleene(values, validity, *start, *length))
@@ -220,6 +221,7 @@ impl BooleanChunked {
                     GroupsType::Slice {
                         groups,
                         overlapping: _,
+                        monotonic: _,
                     } => match validity {
                         None => groups
                             .into_par_iter()
