@@ -120,11 +120,7 @@ impl PrivateSeries for NullChunked {
         Ok(if self.is_empty() {
             GroupsType::default()
         } else {
-            GroupsType::Slice {
-                groups: vec![[0, self.length]],
-                overlapping: false,
-                monotonic: true,
-            }
+            GroupsType::new_slice(vec![[0, self.length]], false, true)
         })
     }
 

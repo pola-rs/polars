@@ -108,12 +108,7 @@ impl RollingGroupBy {
     ) -> PolarsResult<DataFrame> {
         assert_eq!(windows.len(), key.len());
 
-        let groups = GroupsType::Slice {
-            groups: windows,
-            overlapping: true,
-            monotonic: true,
-        }
-        .into_sliceable();
+        let groups = GroupsType::new_slice(windows, true, true).into_sliceable();
 
         // @NOTE:
         // Rechunk so we can use specialized rolling kernels.

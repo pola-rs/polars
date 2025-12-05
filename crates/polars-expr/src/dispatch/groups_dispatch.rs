@@ -314,14 +314,13 @@ pub fn drop_items<'a>(
     if let AggState::AggregatedScalar(c) = &mut ac.state {
         ac.state = AggState::NotAggregated(std::mem::take(c));
         ac.groups = Cow::Owned(
-            GroupsType::Slice {
-                groups: predicate
+            {
+                let groups = predicate
                     .iter()
                     .enumerate_idx()
                     .map(|(i, p)| [i, IdxSize::from(p)])
-                    .collect(),
-                overlapping: false,
-                monotonic: true,
+                    .collect();
+                GroupsType::new_slice(groups, false, true)
             }
             .into_sliceable(),
         );

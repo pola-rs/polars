@@ -156,11 +156,7 @@ impl PhysicalExpr for SliceExpr {
                             .iter()
                             .map(|&[first, len]| slice_groups_slice(offset, length, first, len))
                             .collect_trusted();
-                        GroupsType::Slice {
-                            groups,
-                            overlapping: *overlapping,
-                            monotonic: *monotonic,
-                        }
+                        GroupsType::new_slice(groups, *overlapping, *monotonic)
                     },
                 }
             },
@@ -202,11 +198,7 @@ impl PhysicalExpr for SliceExpr {
                                 slice_groups_slice(offset, length as usize, first, len)
                             })
                             .collect_trusted();
-                        GroupsType::Slice {
-                            groups,
-                            overlapping: *overlapping,
-                            monotonic: false,
-                        }
+                        GroupsType::new_slice(groups, *overlapping, false)
                     },
                 }
             },
@@ -248,11 +240,7 @@ impl PhysicalExpr for SliceExpr {
                                 slice_groups_slice(offset, length, first, len)
                             })
                             .collect_trusted();
-                        GroupsType::Slice {
-                            groups,
-                            overlapping: *overlapping,
-                            monotonic: false,
-                        }
+                        GroupsType::new_slice(groups, *overlapping, false)
                     },
                 }
             },
@@ -301,11 +289,7 @@ impl PhysicalExpr for SliceExpr {
                                 slice_groups_slice(offset, length as usize, first, len)
                             })
                             .collect_trusted();
-                        GroupsType::Slice {
-                            groups,
-                            overlapping: *overlapping,
-                            monotonic: false,
-                        }
+                        GroupsType::new_slice(groups, *overlapping, false)
                     },
                 }
             },

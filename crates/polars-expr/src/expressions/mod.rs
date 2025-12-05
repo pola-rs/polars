@@ -159,14 +159,8 @@ impl<'a> AggregationContext<'a> {
                                 out
                             })
                             .collect();
-                        self.groups = Cow::Owned(
-                            GroupsType::Slice {
-                                groups,
-                                overlapping: false,
-                                monotonic: true,
-                            }
-                            .into_sliceable(),
-                        )
+                        self.groups =
+                            Cow::Owned(GroupsType::new_slice(groups, false, true).into_sliceable())
                     },
                     // sliced groups are already in correct order,
                     // Update offsets in the case of overlapping groups
@@ -182,14 +176,8 @@ impl<'a> AggregationContext<'a> {
                                 new
                             })
                             .collect();
-                        self.groups = Cow::Owned(
-                            GroupsType::Slice {
-                                groups,
-                                overlapping: false,
-                                monotonic: true,
-                            }
-                            .into_sliceable(),
-                        )
+                        self.groups =
+                            Cow::Owned(GroupsType::new_slice(groups, false, true).into_sliceable())
                     },
                 }
                 self.update_groups = UpdateGroups::No;
@@ -303,14 +291,8 @@ impl<'a> AggregationContext<'a> {
                         out
                     })
                     .collect_trusted();
-                self.groups = Cow::Owned(
-                    GroupsType::Slice {
-                        groups,
-                        overlapping: false,
-                        monotonic: true,
-                    }
-                    .into_sliceable(),
-                );
+                self.groups =
+                    Cow::Owned(GroupsType::new_slice(groups, false, true).into_sliceable());
             },
             _ => {
                 let groups = {
@@ -331,14 +313,8 @@ impl<'a> AggregationContext<'a> {
                         })
                         .collect_trusted()
                 };
-                self.groups = Cow::Owned(
-                    GroupsType::Slice {
-                        groups,
-                        overlapping: false,
-                        monotonic: true,
-                    }
-                    .into_sliceable(),
-                );
+                self.groups =
+                    Cow::Owned(GroupsType::new_slice(groups, false, true).into_sliceable());
             },
         }
         self.update_groups = UpdateGroups::No;
@@ -567,10 +543,7 @@ impl<'a> AggregationContext<'a> {
                 if cfg!(debug_assertions) {
                     // Warning, so we find cases where we accidentally explode overlapping groups
                     // We don't want this as this can create a lot of data
-                    if let GroupsType::Slice {
-                        overlapping: true, ..
-                    } = self.groups.as_ref().as_ref()
-                    {
+                    if self.groups.is_overlapping() {
                         polars_warn!(
                             "performance - an aggregated list with overlapping groups may consume excessive memory"
                         )
@@ -662,26 +635,18 @@ impl<'a> AggregationContext<'a> {
             AggState::AggregatedList(_) | AggState::NotAggregated(_) => {},
             AggState::AggregatedScalar(c) => {
                 assert_eq!(self.update_groups, UpdateGroups::No);
-                self.groups = Cow::Owned(
-                    GroupsType::Slice {
-                        groups: (0..c.len() as IdxSize).map(|i| [i, 1]).collect(),
-                        overlapping: false,
-                        monotonic: true,
-                    }
-                    .into_sliceable(),
-                );
+                self.groups = Cow::Owned({
+                    let groups = (0..c.len() as IdxSize).map(|i| [i, 1]).collect();
+                    GroupsType::new_slice(groups, false, true).into_sliceable()
+                });
             },
             AggState::LiteralScalar(c) => {
                 assert_eq!(c.len(), 1);
                 assert_eq!(self.update_groups, UpdateGroups::No);
-                self.groups = Cow::Owned(
-                    GroupsType::Slice {
-                        groups: vec![[0, 1]; self.groups.len()],
-                        overlapping: true,
-                        monotonic: true,
-                    }
-                    .into_sliceable(),
-                );
+                self.groups = Cow::Owned({
+                    let groups = vec![[0, 1]; self.groups.len()];
+                    GroupsType::new_slice(groups, true, true).into_sliceable()
+                });
             },
         }
     }

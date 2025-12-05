@@ -971,11 +971,7 @@ impl PhysicalExpr for WindowExpr {
                     *length = exploded_length;
                 }
             }
-            GroupsType::Slice {
-                groups: strategy_explode_groups,
-                overlapping: false,
-                monotonic: true,
-            }
+            GroupsType::new_slice(strategy_explode_groups, false, true)
         } else {
             if needs_remap_to_rows {
                 let data_l = data.list()?;

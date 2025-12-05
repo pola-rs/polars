@@ -209,11 +209,7 @@ impl PhysicalExpr for RollingExpr {
                     );
                     i += *length as usize;
                 }
-                GroupsType::Slice {
-                    groups: nested_groups,
-                    overlapping: true,
-                    monotonic: *monotonic,
-                }
+                GroupsType::new_slice(nested_groups, true, *monotonic)
             },
         };
 
@@ -231,12 +227,8 @@ impl PhysicalExpr for RollingExpr {
         let out = AggregationContext {
             state: AggState::NotAggregated(out.into_column()),
             groups: Cow::Owned(
-                GroupsType::Slice {
-                    groups: slice_groups.into_owned(),
-                    overlapping,
-                    monotonic,
-                }
-                .into_sliceable(),
+                GroupsType::new_slice(slice_groups.into_owned(), overlapping, monotonic)
+                    .into_sliceable(),
             ),
             update_groups: UpdateGroups::No,
             original_len: false,

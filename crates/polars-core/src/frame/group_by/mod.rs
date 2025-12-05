@@ -86,11 +86,7 @@ impl DataFrame {
                 } else {
                     vec![[0, self.height() as IdxSize]]
                 };
-                Ok(GroupsType::Slice {
-                    groups,
-                    overlapping: false,
-                    monotonic: true,
-                })
+                Ok(GroupsType::new_slice(groups, false, true))
             } else {
                 let rows = if multithreaded {
                     encode_rows_vertical_par_unordered(&by)

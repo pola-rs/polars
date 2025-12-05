@@ -72,19 +72,15 @@ impl SortedGroupBy {
         idxs.drain(..windows_offset);
 
         let mut offset = 0;
-        let groups = GroupsType::Slice {
-            groups: idxs
-                .iter()
-                .map(|i| {
-                    let start = offset;
-                    offset += i;
-                    [start, *i]
-                })
-                .collect(),
-            overlapping: false,
-            monotonic: true,
-        }
-        .into_sliceable();
+        let groups = idxs
+            .iter()
+            .map(|i| {
+                let start = offset;
+                offset += i;
+                [start, *i]
+            })
+            .collect();
+        let groups = GroupsType::new_slice(groups, false, true).into_sliceable();
 
         let mut offset = 0;
         idxs.iter_mut().for_each(|idx| {

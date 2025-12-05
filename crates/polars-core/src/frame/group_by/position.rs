@@ -273,6 +273,64 @@ impl Default for GroupsType {
 }
 
 impl GroupsType {
+    pub fn new_slice(groups: GroupsSlice, overlapping: bool, monotonic: bool) -> Self {
+        #[cfg(debug_assertions)]
+        {
+            fn is_overlapping(groups: &GroupsSlice) -> bool {
+                if groups.len() < 2 {
+                    return false;
+                }
+                let mut groups = groups.clone();
+                groups.sort();
+                let mut prev_end = groups[0][1];
+
+                for g in &groups[1..] {
+                    let start = g[0];
+                    let end = g[1];
+                    if start < prev_end {
+                        return true;
+                    }
+                    if end > prev_end {
+                        prev_end = end;
+                    }
+                }
+                false
+            }
+
+            assert!(!is_overlapping(&groups) || overlapping);
+
+            fn is_monotonic(groups: &GroupsSlice) -> bool {
+                if groups.len() < 2 {
+                    return true;
+                }
+
+                let (offset, len) = (groups[0][0], groups[0][1]);
+                let mut prev_start = offset;
+                let mut prev_end = offset + len;
+
+                for g in &groups[1..] {
+                    let start = g[0];
+                    let end = g[0] + g[1];
+
+                    if start < prev_start || end < prev_end {
+                        return false;
+                    }
+
+                    prev_start = start;
+                    prev_end = end;
+                }
+                true
+            }
+            assert!(is_monotonic(&groups) || !monotonic);
+        }
+
+        Self::Slice {
+            groups,
+            overlapping,
+            monotonic,
+        }
+    }
+
     pub fn into_idx(self) -> GroupsIdx {
         match self {
             GroupsType::Idx(groups) => groups,
@@ -372,6 +430,16 @@ impl GroupsType {
             self,
             GroupsType::Slice {
                 overlapping: true,
+                ..
+            }
+        )
+    }
+
+    pub fn is_monotonic(&self) -> bool {
+        matches!(
+            self,
+            GroupsType::Slice {
+                monotonic: true,
                 ..
             }
         )
@@ -717,12 +785,7 @@ impl GroupPositions {
                     })
                     .collect();
 
-                GroupsType::Slice {
-                    groups,
-                    overlapping: false,
-                    monotonic: true,
-                }
-                .into_sliceable()
+                GroupsType::new_slice(groups, false, true).into_sliceable()
             },
         }
     }
@@ -780,11 +843,7 @@ fn slice_groups_inner(g: &GroupsType, offset: i64, len: usize) -> ManuallyDrop<G
                 Vec::from_raw_parts(ptr, groups.len(), groups.len())
             };
 
-            ManuallyDrop::new(GroupsType::Slice {
-                groups,
-                overlapping: *overlapping,
-                monotonic: *monotonic,
-            })
+            ManuallyDrop::new(GroupsType::new_slice(groups, *overlapping, *monotonic))
         },
     }
 }
