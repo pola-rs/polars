@@ -401,7 +401,6 @@ where
                     }
                 })
                 .collect_arr_trusted_with_dtype(arrow_dtype);
-
             ChunkedArray::with_chunk_like(self, arr)
         } else {
             let arr = by
@@ -1018,6 +1017,44 @@ mod test {
             let idx = IdxCa::new("".into(), [None, Some(1), Some(3), Some(2)]);
             let expected = s_1.rechunk().take(&idx).unwrap();
             assert!(out.equals_missing(&expected));
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "dtype-categorical")]
+    fn test_list_categorical_dtype_preserved_after_take() {
+        use polars_core::prelude::*;
+
+        unsafe {
+            // Create List(String) and convert to List(Categorical)
+            let mut builder = ListStringChunkedBuilder::new("a".into(), 2, 3);
+            builder.append_values_iter(["a", "b"].iter().copied());
+            builder.append_values_iter(["c", "d"].iter().copied());
+            let list_str = builder.finish().into_series();
+
+            let list_cat = list_str
+                .list()
+                .unwrap()
+                .apply_to_inner(&|s| s.cast(&DataType::from_categories(Categories::global())))
+                .unwrap()
+                .into_series();
+
+            // Append to create chunked series
+            let mut chunked = list_cat.clone();
+            chunked.append(&list_cat).unwrap();
+            assert_eq!(chunked.n_chunks(), 2);
+
+            // Perform chunked take
+            let by: [ChunkId<24>; 2] = [ChunkId::store(0, 0), ChunkId::store(1, 0)];
+            let out = chunked.take_chunked_unchecked(&by, IsSorted::Not, false);
+
+            // Verify the Polars dtype is preserved
+            // The bug was that List(Categorical) was becoming List(UInt32) after take
+            assert!(
+                matches!(out.dtype(), DataType::List(inner) if matches!(inner.as_ref(), DataType::Categorical(_, _))),
+                "List(Categorical) dtype should be preserved after take_chunked_unchecked. Got: {:?}",
+                out.dtype()
+            );
         }
     }
 }
