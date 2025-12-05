@@ -297,6 +297,16 @@ impl AExpr {
                 input,
                 options: _,
             } => {
+                if input.is_empty()
+                    && matches!(
+                        &function,
+                        IRFunctionExpr::StringExpr(IRStringFunction::Format { .. })
+                    )
+                {
+                    // Format empty was already checked.
+                    return Ok(Field::new("literal".into(), DataType::String));
+                }
+
                 let fields = func_args_to_fields(input, ctx)?;
                 polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", function);
                 let out = function.get_field(ctx.schema, &fields)?;
