@@ -359,7 +359,7 @@ impl ApplyExpr {
         // Length of the items to iterate over.
         let len = iters[0].size_hint().0;
 
-        let ca = if len == 0 {
+        let ca = if field.dtype().is_known() {
             let mut builder = get_list_builder(&field.dtype, len * 5, len, field.name);
             for _ in 0..len {
                 container.clear();
