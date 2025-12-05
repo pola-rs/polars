@@ -297,14 +297,16 @@ impl AExpr {
                 input,
                 options: _,
             } => {
-                if input.is_empty()
-                    && matches!(
-                        &function,
-                        IRFunctionExpr::StringExpr(IRStringFunction::Format { .. })
-                    )
+                #[cfg(feature = "strings")]
                 {
-                    // Format empty was already checked.
-                    return Ok(Field::new("literal".into(), DataType::String));
+                    if input.is_empty()
+                        && matches!(
+                            &function,
+                            IRFunctionExpr::StringExpr(IRStringFunction::Format { .. })
+                        )
+                    {
+                        return Ok(Field::new("literal".into(), DataType::String));
+                    }
                 }
 
                 let fields = func_args_to_fields(input, ctx)?;
