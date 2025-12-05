@@ -423,15 +423,15 @@ class ExprBinaryNameSpace:
         ...     pl.col("code").bin.head(2).alias("head"),
         ... )
         shape: (3, 3)
-        ┌────────┬─────────────────┬─────────┐
-        │ name   ┆ code            ┆ head    │
-        │ ---    ┆ ---             ┆ ---     │
-        │ str    ┆ binary          ┆ binary  │
-        ╞════════╪═════════════════╪═════════╡
-        │ black  ┆ b"\x00\x00\x00" ┆ b"\x00… │
-        │ yellow ┆ b"\xff\xff\x00" ┆ b"\xff… │
-        │ blue   ┆ b"\x00\x00\xff" ┆ b"\x00… │
-        └────────┴─────────────────┴─────────┘
+        ┌────────┬─────────────────┬─────────────┐
+        │ name   ┆ code            ┆ head        │
+        │ ---    ┆ ---             ┆ ---         │
+        │ str    ┆ binary          ┆ binary      │
+        ╞════════╪═════════════════╪═════════════╡
+        │ black  ┆ b"\x00\x00\x00" ┆ b"\x00\x00" │
+        │ yellow ┆ b"\xff\xff\x00" ┆ b"\xff\xff" │
+        │ blue   ┆ b"\x00\x00\xff" ┆ b"\x00\x00" │
+        └────────┴─────────────────┴─────────────┘
         """
         n_pyexpr = parse_into_expression(n, str_as_lit=False)
         return wrap_expr(self._pyexpr.bin_head(n_pyexpr))  # type: ignore[attr-defined]
@@ -469,15 +469,15 @@ class ExprBinaryNameSpace:
         ...     pl.col("code").bin.tail(2).alias("tail"),
         ... )
         shape: (3, 3)
-        ┌────────┬─────────────────┬─────────┐
-        │ name   ┆ code            ┆ tail    │
-        │ ---    ┆ ---             ┆ ---     │
-        │ str    ┆ binary          ┆ binary  │
-        ╞════════╪═════════════════╪═════════╡
-        │ black  ┆ b"\x00\x00\x00" ┆ b"\x00… │
-        │ yellow ┆ b"\xff\xff\x00" ┆ b"\xff… │
-        │ blue   ┆ b"\x00\x00\xff" ┆ b"\x00… │
-        └────────┴─────────────────┴─────────┘
+        ┌────────┬─────────────────┬─────────────┐
+        │ name   ┆ code            ┆ tail        │
+        │ ---    ┆ ---             ┆ ---         │
+        │ str    ┆ binary          ┆ binary      │
+        ╞════════╪═════════════════╪═════════════╡
+        │ black  ┆ b"\x00\x00\x00" ┆ b"\x00\x00" │
+        │ yellow ┆ b"\xff\xff\x00" ┆ b"\xff\x00" │
+        │ blue   ┆ b"\x00\x00\xff" ┆ b"\x00\xff" │
+        └────────┴─────────────────┴─────────────┘
         """
         n_pyexpr = parse_into_expression(n, str_as_lit=False)
         return wrap_expr(self._pyexpr.bin_tail(n_pyexpr))  # type: ignore[attr-defined]
