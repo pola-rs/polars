@@ -475,13 +475,30 @@ impl AggQuantileExpr {
         }
     }
 
-    fn get_quantile(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<f64> {
-        let quantile = self.quantile.evaluate(df, state)?;
-        polars_ensure!(quantile.len() <= 1, ComputeError:
-            "polars only supports computing a single quantile; \
-            make sure the 'quantile' expression input produces a single quantile"
-        );
-        quantile.get(0).unwrap().try_extract()
+    fn get_quantile(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Vec<f64>> {
+        let col = self.quantile.evaluate(df, state)?;
+        let s = col.as_materialized_series_maintain_scalar();
+
+        // If the user passed a list of quantiles, extract the inner series
+        let s = match s.dtype() {
+            DataType::List(_) => {
+                let list = s.list()?;
+                list.get_as_series(0).unwrap()
+            },
+            _ => s,
+        };
+
+        if s.has_nulls() {
+            polars_bail!(ComputeError: "quantile expression contains null values");
+        }
+
+        let v: Vec<f64> = s
+            .cast(&DataType::Float64)?
+            .f64()?
+            .into_no_null_iter()
+            .collect();
+
+        Ok(v)
     }
 }
 
@@ -494,9 +511,10 @@ impl PhysicalExpr for AggQuantileExpr {
         let input = self.input.evaluate(df, state)?;
         let quantile = self.get_quantile(df, state)?;
         input
-            .quantile_reduce(quantile, self.method)
+            .quantiles_reduce(&quantile, self.method)
             .map(|sc| sc.into_column(input.name().clone()))
     }
+
     #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
         &self,
@@ -517,27 +535,52 @@ impl PhysicalExpr for AggQuantileExpr {
 
         if let AggState::LiteralScalar(c) = &mut ac.state {
             *c = c
-                .quantile_reduce(quantile, self.method)?
+                .quantiles_reduce(&quantile, self.method)?
                 .into_column(keep_name);
             return Ok(ac);
         }
 
         // SAFETY:
         // groups are in bounds
-        let mut agg = unsafe {
-            ac.flat_naive()
-                .into_owned()
-                .agg_quantile(ac.groups(), quantile, self.method)
-        };
-        agg.rename(keep_name);
-        Ok(AggregationContext::from_agg_state(
-            AggregatedScalar(agg),
-            Cow::Borrowed(groups),
-        ))
+        if quantile.len() == 1 {
+            let mut agg = unsafe {
+                ac.flat_naive()
+                    .into_owned()
+                    .agg_quantile(ac.groups(), quantile[0], self.method)
+            };
+            agg.rename(keep_name);
+            Ok(AggregationContext::from_agg_state(
+                AggregatedScalar(agg),
+                Cow::Borrowed(groups),
+            ))
+        } else {
+            // grouped multi-quantiles not yet implemented
+            polars_bail!(ComputeError: "grouped quantiles for multiple probabilities is not supported yet");
+        }
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
-        self.input.to_field(input_schema)
+        // If the quantile expression is a literal that yields a list of floats,
+        // the aggregation returns a list of quantiles (one list per row/group).
+        // In that case, report `List(Float64)` as the output field.
+        let input_field = self.input.to_field(input_schema)?;
+        match self.quantile.to_field(input_schema) {
+            Ok(qf) => match qf.dtype() {
+                DataType::List(inner) => {
+                    if inner.is_float() {
+                        Ok(Field::new(
+                            input_field.name().clone(),
+                            DataType::List(Box::new(DataType::Float64)),
+                        ))
+                    } else {
+                        // fallback to input field
+                        Ok(input_field)
+                    }
+                },
+                _ => Ok(input_field),
+            },
+            Err(_) => Ok(input_field),
+        }
     }
 
     fn is_scalar(&self) -> bool {

@@ -341,12 +341,13 @@ macro_rules! impl_dyn_series {
             fn std_reduce(&self, ddof: u8) -> PolarsResult<Scalar> {
                 Ok(VarAggSeries::std_reduce(&self.0, ddof))
             }
-            fn quantile_reduce(
+
+            fn quantiles_reduce(
                 &self,
-                quantile: f64,
+                quantiles: &[f64],
                 method: QuantileMethod,
             ) -> PolarsResult<Scalar> {
-                QuantileAggSeries::quantile_reduce(&self.0, quantile, method)
+                QuantileAggSeries::quantiles_reduce(&self.0, quantiles, method)
             }
             #[cfg(feature = "bitwise")]
             fn and_reduce(&self) -> PolarsResult<Scalar> {

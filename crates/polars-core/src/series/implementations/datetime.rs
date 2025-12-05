@@ -401,13 +401,30 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
-    fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
-        let quantile = self.0.physical().quantile_reduce(quantile, method)?;
-        let av = quantile.value().cast(&DataType::Int64);
-        Ok(Scalar::new(
-            self.dtype().clone(),
-            av.as_datetime_owned(self.0.time_unit(), self.0.time_zone_arc()),
-        ))
+    fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
+        let result = self.0.physical().quantiles_reduce(quantiles, method)?;
+
+        if *result.dtype() == DataType::Float64 {
+            let av = result.value().cast(&DataType::Int64);
+            Ok(Scalar::new(
+                self.dtype().clone(),
+                av.as_datetime_owned(self.0.time_unit(), self.0.time_zone_arc()),
+            ))
+        } else if let AnyValue::List(float_s) = result.value() {
+            let float_ca = float_s.f64().unwrap();
+            let int_s = float_ca
+                .iter()
+                .map(|v: Option<f64>| v.map(|f| f as i64))
+                .collect::<Int64Chunked>()
+                .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+                .into_series();
+            Ok(Scalar::new(
+                DataType::List(Box::new(self.dtype().clone())),
+                AnyValue::List(int_s),
+            ))
+        } else {
+            polars_bail!(ComputeError: "expected list scalar from quantiles_reduce")
+        }
     }
 
     #[cfg(feature = "approx_unique")]

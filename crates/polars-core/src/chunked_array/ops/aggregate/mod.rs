@@ -346,9 +346,19 @@ where
     T: PolarsIntegerType,
     T::Native: Ord + WrappingSum,
 {
-    fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
-        let v = self.quantile(quantile, method)?;
-        Ok(Scalar::new(DataType::Float64, v.into()))
+    fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
+        let v = self.quantiles(quantiles, method)?;
+        if v.len() == 1 {
+            Ok(Scalar::new(DataType::Float64, v[0].into()))
+        } else {
+            let s = Float64Chunked::from_iter_options(
+                PlSmallStr::from_static("quantiles"),
+                v.into_iter(),
+            )
+            .into_series();
+            let dtype = DataType::List(Box::new(s.dtype().clone()));
+            Ok(Scalar::new(dtype, AnyValue::List(s)))
+        }
     }
 
     fn median_reduce(&self) -> Scalar {
@@ -359,9 +369,19 @@ where
 
 #[cfg(feature = "dtype-f16")]
 impl QuantileAggSeries for Float16Chunked {
-    fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
-        let v = self.quantile(quantile, method)?;
-        Ok(Scalar::new(DataType::Float16, v.into()))
+    fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
+        let v = self.quantiles(quantiles, method)?;
+        if v.len() == 1 {
+            Ok(Scalar::new(DataType::Float16, v[0].into()))
+        } else {
+            let s = Float16Chunked::from_iter_options(
+                PlSmallStr::from_static("quantiles"),
+                v.into_iter(),
+            )
+            .into_series();
+            let dtype = DataType::List(Box::new(s.dtype().clone()));
+            Ok(Scalar::new(dtype, AnyValue::List(s)))
+        }
     }
 
     fn median_reduce(&self) -> Scalar {
@@ -371,9 +391,19 @@ impl QuantileAggSeries for Float16Chunked {
 }
 
 impl QuantileAggSeries for Float32Chunked {
-    fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
-        let v = self.quantile(quantile, method)?;
-        Ok(Scalar::new(DataType::Float32, v.into()))
+    fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
+        let v = self.quantiles(quantiles, method)?;
+        if v.len() == 1 {
+            Ok(Scalar::new(DataType::Float32, v[0].into()))
+        } else {
+            let s = Float32Chunked::from_iter_options(
+                PlSmallStr::from_static("quantiles"),
+                v.into_iter(),
+            )
+            .into_series();
+            let dtype = DataType::List(Box::new(s.dtype().clone()));
+            Ok(Scalar::new(dtype, AnyValue::List(s)))
+        }
     }
 
     fn median_reduce(&self) -> Scalar {
@@ -383,9 +413,19 @@ impl QuantileAggSeries for Float32Chunked {
 }
 
 impl QuantileAggSeries for Float64Chunked {
-    fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
-        let v = self.quantile(quantile, method)?;
-        Ok(Scalar::new(DataType::Float64, v.into()))
+    fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
+        let v = self.quantiles(quantiles, method)?;
+        if v.len() == 1 {
+            Ok(Scalar::new(DataType::Float64, v[0].into()))
+        } else {
+            let s = Float64Chunked::from_iter_options(
+                PlSmallStr::from_static("quantiles"),
+                v.into_iter(),
+            )
+            .into_series();
+            let dtype = DataType::List(Box::new(s.dtype().clone()));
+            Ok(Scalar::new(dtype, AnyValue::List(s)))
+        }
     }
 
     fn median_reduce(&self) -> Scalar {
