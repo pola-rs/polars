@@ -276,7 +276,7 @@ impl GroupsType {
     pub fn new_slice(groups: GroupsSlice, overlapping: bool, monotonic: bool) -> Self {
         #[cfg(debug_assertions)]
         {
-            fn is_overlapping(groups: &GroupsSlice) -> bool {
+            fn groups_overlap(groups: &GroupsSlice) -> bool {
                 if groups.len() < 2 {
                     return false;
                 }
@@ -297,9 +297,9 @@ impl GroupsType {
                 false
             }
 
-            assert!(!is_overlapping(&groups) || overlapping);
+            assert!(!groups_overlap(&groups) || overlapping);
 
-            fn is_monotonic(groups: &GroupsSlice) -> bool {
+            fn groups_are_monotonic(groups: &GroupsSlice) -> bool {
                 if groups.len() < 2 {
                     return true;
                 }
@@ -321,7 +321,7 @@ impl GroupsType {
                 }
                 true
             }
-            assert!(is_monotonic(&groups) || !monotonic);
+            assert!(groups_are_monotonic(&groups) || !monotonic);
         }
 
         Self::Slice {
