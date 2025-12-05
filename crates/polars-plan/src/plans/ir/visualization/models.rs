@@ -239,5 +239,6 @@ pub enum IRNodeProperties {
     },
     Repartition {
         partitions: u32,
+        by: Vec<PlSmallStr>,
     },
 }

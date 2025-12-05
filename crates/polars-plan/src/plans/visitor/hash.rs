@@ -269,6 +269,7 @@ impl Hash for HashableEqLP<'_> {
             IR::Repartition {
                 input: _,
                 partitions,
+                by: _,
             } => {
                 partitions.hash(state);
             },

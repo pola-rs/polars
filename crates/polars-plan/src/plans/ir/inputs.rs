@@ -123,6 +123,7 @@ impl IR {
             Repartition {
                 input: _,
                 partitions: _,
+                by: _,
             } => Exprs::Empty,
             Invalid => unreachable!(),
         }
@@ -202,6 +203,7 @@ impl IR {
             Repartition {
                 input: _,
                 partitions: _,
+                by: _,
             } => ExprsMut::Empty,
 
             Invalid => unreachable!(),
@@ -254,6 +256,7 @@ impl IR {
             Repartition {
                 input,
                 partitions: _,
+                by: _,
             } => Inputs::single(*input),
             Invalid => unreachable!(),
         }
@@ -297,6 +300,7 @@ impl IR {
             Repartition {
                 input,
                 partitions: _,
+                by: _,
             } => InputsMut::single(input),
             Invalid => unreachable!(),
         }

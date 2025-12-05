@@ -723,6 +723,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
         IR::Repartition {
             input: _,
             partitions: _,
+            by: _,
         } => Err(PyNotImplementedError::new_err("repartition")),
         IR::Invalid => Err(PyNotImplementedError::new_err("Invalid")),
     }

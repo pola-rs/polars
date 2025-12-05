@@ -839,6 +839,7 @@ fn create_physical_plan_impl(
         Repartition {
             input,
             partitions: _,
+            by: _,
         } => {
             return recurse!(input, state);
         },

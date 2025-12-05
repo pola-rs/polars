@@ -1,7 +1,7 @@
 use std::fmt::{self, Write};
 
 use polars_core::error::*;
-use polars_utils::format_list_truncated;
+use polars_utils::{format_list, format_list_truncated};
 
 use crate::constants;
 use crate::plans::ir::IRPlanRef;
@@ -387,10 +387,20 @@ impl<'a> TreeFmtNode<'a> {
                             .chain([self.lp_node(Some("RIGHT PLAN:".to_string()), *input_right)])
                             .collect(),
                     ),
-                    Repartition { input, partitions } => ND(
-                        wh(h, &format!("REPARTITION ON {partitions} PARTITIONS")),
-                        vec![self.lp_node(None, *input)],
-                    ),
+                    Repartition {
+                        input,
+                        partitions,
+                        by,
+                    } => {
+                        let t = if by.is_empty() {
+                            format!("REPARTITION ON {partitions} PARTITIONS")
+                        } else {
+                            let by = format_list!(by);
+                            format!("REPARTITION ON {partitions} PARTITIONS BY {by}")
+                        };
+
+                        ND(wh(h, &t), vec![self.lp_node(None, *input)])
+                    },
                     Invalid => ND(wh(h, "INVALID"), vec![]),
                 }
             },

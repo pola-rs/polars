@@ -325,6 +325,7 @@ pub(super) fn pushdown_orders(
             IR::Repartition {
                 input: _,
                 partitions: _,
+                by: _,
             } => [false].into(),
             IR::SinkMultiple { .. } | IR::Invalid => unreachable!(),
         };

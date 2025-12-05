@@ -682,9 +682,11 @@ impl IRVisualizationDataGenerator<'_> {
             IR::Repartition {
                 input: _,
                 partitions,
+                by,
             } => {
                 let properties = IRNodeProperties::Repartition {
                     partitions: *partitions,
+                    by: by.clone(),
                 };
                 IRNodeInfo {
                     title: properties.variant_name(),

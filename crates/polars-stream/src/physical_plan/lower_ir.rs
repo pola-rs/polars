@@ -1337,6 +1337,7 @@ pub fn lower_ir(
         IR::Repartition {
             input,
             partitions: _,
+            by: _,
         } => {
             return lower_ir(
                 *input,
