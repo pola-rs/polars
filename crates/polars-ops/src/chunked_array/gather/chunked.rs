@@ -360,7 +360,7 @@ where
             });
 
             let arr = iter.collect_arr_trusted_with_dtype(arrow_dtype);
-            ChunkedArray::with_chunk(self.name().clone(), arr)
+            ChunkedArray::with_chunk_like(self, arr)
         } else {
             let iter = by.iter().map(|chunk_id| {
                 debug_assert!(
@@ -373,7 +373,7 @@ where
             });
 
             let arr = iter.collect_arr_trusted_with_dtype(arrow_dtype);
-            ChunkedArray::with_chunk(self.name().clone(), arr)
+            ChunkedArray::with_chunk_like(self, arr)
         };
         let sorted_flag = _update_gather_sorted_flag(self.is_sorted_flag(), sorted);
         out.set_sorted_flag(sorted_flag);
@@ -402,7 +402,7 @@ where
                 })
                 .collect_arr_trusted_with_dtype(arrow_dtype);
 
-            ChunkedArray::with_chunk(self.name().clone(), arr)
+            ChunkedArray::with_chunk_like(self, arr)
         } else {
             let arr = by
                 .iter()
@@ -417,7 +417,7 @@ where
                 })
                 .collect_arr_trusted_with_dtype(arrow_dtype);
 
-            ChunkedArray::with_chunk(self.name().clone(), arr)
+            ChunkedArray::with_chunk_like(self, arr)
         }
     }
 }
