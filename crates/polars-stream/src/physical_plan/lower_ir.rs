@@ -1334,6 +1334,21 @@ pub fn lower_ir(
 
             return Ok(stream);
         },
+        IR::Repartition {
+            input,
+            partitions: _,
+        } => {
+            return lower_ir(
+                *input,
+                ir_arena,
+                expr_arena,
+                phys_sm,
+                schema_cache,
+                expr_cache,
+                cache_nodes,
+                ctx,
+            );
+        },
         IR::ExtContext { .. } => todo!(),
         IR::Invalid => unreachable!(),
     };

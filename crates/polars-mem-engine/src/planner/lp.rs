@@ -836,6 +836,12 @@ fn create_physical_plan_impl(
             };
             Ok(Box::new(exec))
         },
+        Repartition {
+            input,
+            partitions: _,
+        } => {
+            return recurse!(input, state);
+        },
         Invalid => unreachable!(),
     }
 }

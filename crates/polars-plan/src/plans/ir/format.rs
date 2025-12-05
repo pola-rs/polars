@@ -982,6 +982,12 @@ pub fn write_ir_non_recursive(
             input_right: _,
             key,
         } => write!(f, "{:indent$}MERGE SORTED ON '{key}'", ""),
+        IR::Repartition {
+            input: _,
+            partitions,
+        } => {
+            write!(f, "{:indent$}REPARTITION TO {partitions} PARTITIONS", "")
+        },
         IR::Invalid => write!(f, "{:indent$}INVALID", ""),
     }
 }

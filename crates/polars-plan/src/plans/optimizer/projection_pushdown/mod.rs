@@ -704,9 +704,10 @@ impl ProjectionPushDown {
             } => process_hconcat(self, inputs, schema, options, ctx, lp_arena, expr_arena),
             lp @ Union { .. } => process_generic(self, lp, ctx, lp_arena, expr_arena),
             // These nodes only have inputs and exprs, so we can use same logic.
-            lp @ Slice { .. } | lp @ Sink { .. } | lp @ SinkMultiple { .. } => {
-                process_generic(self, lp, ctx, lp_arena, expr_arena)
-            },
+            lp @ Slice { .. }
+            | lp @ Sink { .. }
+            | lp @ SinkMultiple { .. }
+            | lp @ Repartition { .. } => process_generic(self, lp, ctx, lp_arena, expr_arena),
             Cache { .. } => {
                 // projections above this cache will be accumulated and pushed down
                 // later

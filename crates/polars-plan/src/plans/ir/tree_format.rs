@@ -387,6 +387,10 @@ impl<'a> TreeFmtNode<'a> {
                             .chain([self.lp_node(Some("RIGHT PLAN:".to_string()), *input_right)])
                             .collect(),
                     ),
+                    Repartition { input, partitions } => ND(
+                        wh(h, &format!("REPARTITION ON {partitions} PARTITIONS")),
+                        vec![self.lp_node(None, *input)],
+                    ),
                     Invalid => ND(wh(h, "INVALID"), vec![]),
                 }
             },

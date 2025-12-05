@@ -326,6 +326,12 @@ impl<'a> IRDotDisplay<'a> {
 
                 write_label(f, id, |f| write!(f, "MERGE_SORTED ON '{key}'",))?;
             },
+            Repartition { input, partitions } => {
+                recurse!(*input);
+                write_label(f, id, |f| {
+                    write!(f, "REPARTITION TO '{partitions}' PARTITIONS",)
+                })?;
+            },
             Invalid => write_label(f, id, |f| f.write_str("INVALID"))?,
         }
 

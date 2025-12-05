@@ -576,18 +576,18 @@ impl PredicatePushDown {
                 options,
                 acc_predicates,
             ),
-            lp @ Union { .. } => {
-                self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
-            },
-            lp @ Sort { .. } => {
-                self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, true)
-            },
-            lp @ Sink { .. } | lp @ SinkMultiple { .. } => {
-                self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
-            },
             // Pushed down passed these nodes
+            // Nodes don't have projections
+            lp @ Sink { .. }
+            | lp @ SinkMultiple { .. }
+            | lp @ Union { .. }
+            | lp @ Repartition { .. } => {
+                self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
+            },
+            // Nodes do have projections
             lp @ HStack { .. }
             | lp @ Select { .. }
+            | lp @ Sort { .. }
             | lp @ SimpleProjection { .. }
             | lp @ ExtContext { .. } => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, true)

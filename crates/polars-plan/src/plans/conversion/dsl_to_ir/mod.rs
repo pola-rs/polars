@@ -1370,6 +1370,12 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 _ => to_alp_impl(owned(dsl), ctxt),
             };
         },
+        DslPlan::Repartition { input, partitions } => {
+            let input = to_alp_impl(owned(input), ctxt)
+                .map_err(|e| e.context(failed_here!(repartition)))?;
+
+            IR::Repartition { input, partitions }
+        },
     };
     Ok(ctxt.lp_arena.add(v))
 }

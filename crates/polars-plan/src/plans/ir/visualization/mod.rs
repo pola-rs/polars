@@ -679,6 +679,19 @@ impl IRVisualizationDataGenerator<'_> {
                     ..Default::default()
                 }
             },
+            IR::Repartition {
+                input: _,
+                partitions,
+            } => {
+                let properties = IRNodeProperties::Repartition {
+                    partitions: *partitions,
+                };
+                IRNodeInfo {
+                    title: properties.variant_name(),
+                    properties,
+                    ..Default::default()
+                }
+            },
             #[cfg(feature = "python")]
             IR::PythonScan {
                 options:
