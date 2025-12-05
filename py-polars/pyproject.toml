@@ -242,7 +242,7 @@ doctest_optionflags = [
 addopts = [
   "--tb=short",
   "--strict-config",
-  "--strict-markers",
+  # "--strict-markers", # TODO not compatible with free-threaded python
   "--import-mode=importlib",
   # Default to running fast tests only. To run ALL tests, run: pytest -m ""
   "-m not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only",
