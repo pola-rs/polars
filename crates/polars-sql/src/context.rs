@@ -984,6 +984,7 @@ impl SQLContext {
             let mut retained_cols = Vec::with_capacity(projections.len());
             let mut retained_names = Vec::with_capacity(projections.len());
             let have_order_by = query.order_by.is_some();
+
             // Initialize containing InheritsContext to handle empty projection case.
             let mut projection_heights = ExprSqlProjectionHeightBehavior::InheritsContext;
 
