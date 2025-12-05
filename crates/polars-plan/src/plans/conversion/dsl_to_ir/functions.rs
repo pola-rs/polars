@@ -128,6 +128,9 @@ pub(super) fn convert_functions(
                     );
                     IB::Reinterpret(dtype, v)
                 },
+                B::Slice => IB::Slice,
+                B::Head => IB::Head,
+                B::Tail => IB::Tail,
             })
         },
         #[cfg(feature = "dtype-categorical")]
