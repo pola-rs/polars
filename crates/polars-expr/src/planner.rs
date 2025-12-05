@@ -1,5 +1,5 @@
 use polars_core::prelude::*;
-use polars_plan::constants::PL_ELEMENT_NAME;
+use polars_plan::constants::{get_literal_name, get_pl_element_name};
 use polars_plan::prelude::expr_ir::ExprIR;
 use polars_plan::prelude::*;
 use recursive::recursive;
@@ -223,7 +223,7 @@ fn create_physical_expr_inner(
 
             if apply_columns.is_empty() {
                 if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Literal(_))) {
-                    apply_columns.push(PlSmallStr::from_static("literal"))
+                    apply_columns.push(get_literal_name())
                 } else if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Len)) {
                     apply_columns.push(PlSmallStr::from_static("len"))
                 } else if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Element)) {
@@ -482,7 +482,7 @@ fn create_physical_expr_inner(
 
             let element_dtype = variant.element_dtype(&input_field.dtype)?;
             let mut eval_schema = schema.as_ref().clone();
-            eval_schema.insert(PL_ELEMENT_NAME.clone(), element_dtype.clone());
+            eval_schema.insert(get_pl_element_name(), element_dtype.clone());
             let evaluation =
                 create_physical_expr_inner(*evaluation, expr_arena, &Arc::new(eval_schema), state)?;
 

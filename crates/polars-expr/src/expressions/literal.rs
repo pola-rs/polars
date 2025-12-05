@@ -30,11 +30,11 @@ impl LiteralExpr {
                     }
                 }
 
-                sc.clone().into_column(get_literal_name().clone())
+                sc.clone().into_column(get_literal_name())
             },
             L::Series(s) => s.deref().clone().into_column(),
             lv @ L::Dyn(_) => polars_core::prelude::Series::from_any_values(
-                get_literal_name().clone(),
+                get_literal_name(),
                 &[lv.to_any_value().unwrap()],
                 false,
             )
@@ -138,7 +138,7 @@ impl PhysicalExpr for LiteralExpr {
 
     fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
         let dtype = self.0.get_datatype();
-        Ok(Field::new(PlSmallStr::from_static("literal"), dtype))
+        Ok(Field::new(get_literal_name(), dtype))
     }
     fn is_literal(&self) -> bool {
         true

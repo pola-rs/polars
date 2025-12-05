@@ -235,7 +235,7 @@ pub(super) fn convert_functions(
                             .arena
                             .add(AExpr::Literal(LiteralValue::Scalar(Scalar::from(format))));
 
-                        return Ok((out, get_literal_name().clone()));
+                        return Ok((out, get_literal_name()));
                     } else {
                         IS::Format { format, insertions }
                     }

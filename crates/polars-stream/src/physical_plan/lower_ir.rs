@@ -583,8 +583,7 @@ pub fn lower_ir(
                 let k_node =
                     expr_arena.add(AExpr::Literal(LiteralValue::Scalar(Scalar::from(limit))));
                 let k_selector = ExprIR::from_node(k_node, expr_arena);
-                let k_output_schema =
-                    Schema::from_iter([(get_literal_name().clone(), DataType::UInt64)]);
+                let k_output_schema = Schema::from_iter([(get_literal_name(), DataType::UInt64)]);
                 let k_node = phys_sm.insert(PhysNode::new(
                     Arc::new(k_output_schema),
                     PhysNodeKind::InputIndependentSelect {
