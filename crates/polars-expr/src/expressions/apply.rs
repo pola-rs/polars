@@ -138,21 +138,16 @@ impl ApplyExpr {
 
         // In case of overlapping (rolling) groups, we build groups in a lazy manner to avoid
         // memory explosion.
-        // TODO: Add parallel iterator path; support Idx GroupsType.
-        if matches!(ac.agg_state(), AggState::NotAggregated(_))
-            && ac.groups.is_overlapping()
-        {
-            // SAFETY: switch to deep_clone()
-            unsafe {
-                let ca: ChunkedArray<_> = {
-                    ac.iter_groups_lazy(false)
-                        .map(|opt| opt.map(|s| s.deep_clone()))
-                        .map(f)
-                        .collect::<PolarsResult<_>>()?
-                };
-
-                return self.finish_apply_groups(ac, ca.with_name(name));
-            }
+        // TODO: support Idx GroupsType.
+        if matches!(ac.agg_state(), AggState::NotAggregated(_)) && ac.groups.is_overlapping() {
+            let ca: ChunkedArray<_> = if self.allow_threading {
+                ac.par_iter_groups_lazy()
+                    .map(f)
+                    .collect::<PolarsResult<_>>()?
+            } else {
+                ac.iter_groups_lazy().map(f).collect::<PolarsResult<_>>()?
+            };
+            return self.finish_apply_groups(ac, ca.with_name(name));
         }
 
         // At this point, calling aggregated() will not lead to memory explosion.
