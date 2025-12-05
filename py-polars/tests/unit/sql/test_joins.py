@@ -9,6 +9,7 @@ import pytest
 import polars as pl
 from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
+from tests.unit.sql import assert_sql_matches
 
 
 @pytest.fixture
@@ -108,6 +109,44 @@ def test_join_cross_11927() -> None:
 
     res = pl.sql("SELECT * FROM df1 CROSS JOIN df3 WHERE df1.id = df3.id")
     assert res.collect().is_empty()
+
+
+def test_cross_join_unnest_from_table() -> None:
+    df = pl.DataFrame({"id": [1, 2], "items": [[100, 200], [300, 400, 500]]})
+    assert_sql_matches(
+        frames=df,
+        query="""
+            SELECT id, item
+            FROM self CROSS JOIN UNNEST(items) AS item
+            ORDER BY id DESC, item ASC
+        """,
+        compare_with="duckdb",
+        expected={
+            "id": [2, 2, 2, 1, 1],
+            "item": [300, 400, 500, 100, 200],
+        },
+    )
+
+
+def test_cross_join_unnest_from_cte() -> None:
+    assert_sql_matches(
+        {},
+        query="""
+            WITH data AS (
+                SELECT 'xyz' AS id, [0,1,2] AS items
+                UNION ALL
+                SELECT 'abc', [3,4]
+            )
+            SELECT id, item
+            FROM data CROSS JOIN UNNEST(items) AS item
+            ORDER BY item
+        """,
+        compare_with="duckdb",
+        expected={
+            "id": ["xyz", "xyz", "xyz", "abc", "abc"],
+            "item": [0, 1, 2, 3, 4],
+        },
+    )
 
 
 @pytest.mark.parametrize(

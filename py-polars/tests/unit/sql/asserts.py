@@ -4,6 +4,8 @@ import contextlib
 import sqlite3
 from typing import TYPE_CHECKING, Any, Literal
 
+import pytest
+
 import polars as pl
 from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES
 from polars.testing import assert_frame_equal
@@ -60,12 +62,10 @@ def _execute_with_duckdb(
     try:
         import duckdb
     except ImportError:
-        msg = (
-            "DuckDB not found; required for `compare_with='duckdb'`.\n"
-            "Install with: `pip install duckdb`"
+        # if not available locally, skip (will always be run on CI)
+        pytest.skip(
+            """DuckDB not installed; required for `assert_sql_matches` with "compare_with='duckdb'"."""
         )
-        raise ImportError(msg) from None
-
     with duckdb.connect(":memory:") as conn:
         for name, df in frames.items():
             conn.register(name, df)

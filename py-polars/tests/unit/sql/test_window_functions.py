@@ -360,7 +360,7 @@ def test_window_function_first_last() -> None:
             }
         )
         assert_frame_equal(df.sql(query), expected)
-        # assert_sql_matches(df, query=query, compare_with="duckdb", expected=expected)
+        assert_sql_matches(df, query=query, compare_with="duckdb", expected=expected)
 
 
 def test_window_function_over_clause_misc() -> None:
