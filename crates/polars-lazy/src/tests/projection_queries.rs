@@ -249,10 +249,7 @@ fn test_select_hconcat_pushdown_strict_25263() -> PolarsResult<()> {
     let lp_arena = plan.lp_arena;
 
     assert!(lp_arena.iter(node).all(|(_, plan)| match plan {
-        IR::DataFrameScan {
-            schema,
-            ..
-        } => {
+        IR::DataFrameScan { schema, .. } => {
             // make sure that we don't read any columns from `df_a`
             if schema.contains("a") {
                 panic!("should not have read any columns from `df_a`");
