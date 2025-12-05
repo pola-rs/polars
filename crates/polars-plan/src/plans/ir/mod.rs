@@ -168,6 +168,7 @@ pub enum IR {
     Repartition {
         input: Node,
         partitions: u32,
+        by: Vec<PlSmallStr>,
     },
 }
 

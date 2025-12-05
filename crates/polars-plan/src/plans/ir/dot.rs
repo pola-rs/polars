@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use polars_core::prelude::{InitHashMaps, PlHashSet};
 use polars_core::schema::Schema;
+use polars_utils::format_list;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
@@ -326,10 +327,23 @@ impl<'a> IRDotDisplay<'a> {
 
                 write_label(f, id, |f| write!(f, "MERGE_SORTED ON '{key}'",))?;
             },
-            Repartition { input, partitions } => {
+            Repartition {
+                input,
+                partitions,
+                by,
+            } => {
                 recurse!(*input);
+
                 write_label(f, id, |f| {
-                    write!(f, "REPARTITION TO '{partitions}' PARTITIONS",)
+                    if by.is_empty() {
+                        write!(f, "REPARTITION TO '{partitions}' PARTITIONS",)
+                    } else {
+                        write!(
+                            f,
+                            "REPARTITION TO '{partitions}' PARTITIONS BY {}",
+                            format_list!(by)
+                        )
+                    }
                 })?;
             },
             Invalid => write_label(f, id, |f| f.write_str("INVALID"))?,

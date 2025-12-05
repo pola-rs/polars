@@ -177,6 +177,7 @@ pub enum DslPlan {
     Repartition {
         input: Arc<DslPlan>,
         partitions: u32,
+        by: Vec<PlSmallStr>,
     },
 }
 
@@ -214,7 +215,7 @@ impl Clone for DslPlan {
             #[cfg(feature = "merge_sorted")]
             Self::MergeSorted { input_left, input_right, key } => Self::MergeSorted { input_left: input_left.clone(), input_right: input_right.clone(), key: key.clone() },
             Self::IR {node, dsl, version} => Self::IR {node: *node, dsl: dsl.clone(), version: *version},
-            Self::Repartition { input, partitions } => Self::Repartition { input: input.clone(), partitions: *partitions }
+            Self::Repartition { input, partitions, by } => Self::Repartition { input: input.clone(), partitions: *partitions, by: by.clone() }
         }
     }
 }

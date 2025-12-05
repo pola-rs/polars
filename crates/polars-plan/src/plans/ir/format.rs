@@ -3,8 +3,8 @@ use std::fmt::{self, Display, Formatter, Write};
 use polars_core::frame::DataFrame;
 use polars_core::schema::Schema;
 use polars_io::RowIndex;
-use polars_utils::format_list_truncated;
 use polars_utils::slice_enum::Slice;
+use polars_utils::{format_list, format_list_truncated};
 use recursive::recursive;
 
 use self::ir::dot::ScanSourcesDisplay;
@@ -985,8 +985,18 @@ pub fn write_ir_non_recursive(
         IR::Repartition {
             input: _,
             partitions,
+            by,
         } => {
-            write!(f, "{:indent$}REPARTITION TO {partitions} PARTITIONS", "")
+            if by.is_empty() {
+                write!(f, "{:indent$}REPARTITION TO {partitions} PARTITIONS", "")
+            } else {
+                write!(
+                    f,
+                    "{:indent$}REPARTITION TO {partitions} PARTITIONS BY {}",
+                    "",
+                    format_list!(by)
+                )
+            }
         },
         IR::Invalid => write!(f, "{:indent$}INVALID", ""),
     }
