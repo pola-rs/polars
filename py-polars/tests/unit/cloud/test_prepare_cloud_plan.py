@@ -104,3 +104,10 @@ def test_prepare_cloud_plan_fail_on_local_data_source(lf: pl.LazyFrame) -> None:
 def test_prepare_cloud_plan_succeed_on_local_data_source(lf: pl.LazyFrame) -> None:
     result = prepare_cloud_plan(lf, allow_local_scans=True)
     assert isinstance(result, bytes)
+
+
+def test_repartition() -> None:
+    assert (
+        "REPARTITION TO 2 PARTITIONS"
+        in pl.LazyFrame({"foo": [1, 2]}).repartition(2).explain()
+    )
