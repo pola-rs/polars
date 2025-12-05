@@ -14,6 +14,7 @@ use crate::dsl::{PartitionStrategyIR, SinkTypeIR, UnionOptions};
 use crate::plans::set_order::expr_pushdown::ColumnOrderObserved;
 use crate::plans::{AExpr, IR, is_scalar_ae};
 
+// Returns per node if the inputs are `order_observing`.
 pub(super) fn pushdown_orders(
     roots: &[Node],
     ir_arena: &mut Arena<IR>,
@@ -321,7 +322,11 @@ pub(super) fn pushdown_orders(
                 // This node is nonsense. Just do the most conservative thing you can.
                 std::iter::repeat_n(true, contexts.len() + 1).collect()
             },
-
+            IR::Repartition {
+                input: _,
+                partitions: _,
+                by: _,
+            } => [false].into(),
             IR::SinkMultiple { .. } | IR::Invalid => unreachable!(),
         };
 

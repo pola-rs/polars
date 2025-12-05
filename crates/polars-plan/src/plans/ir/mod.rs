@@ -165,6 +165,11 @@ pub enum IR {
     },
     #[default]
     Invalid,
+    Repartition {
+        input: Node,
+        partitions: u32,
+        by: Vec<PlSmallStr>,
+    },
 }
 
 impl IRPlan {

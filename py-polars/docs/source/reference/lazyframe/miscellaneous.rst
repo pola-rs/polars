@@ -20,6 +20,7 @@ Miscellaneous
     LazyFrame.pipe_with_schema
     LazyFrame.profile
     LazyFrame.remote
+    LazyFrame.repartition
 
 Serialization
 -------------

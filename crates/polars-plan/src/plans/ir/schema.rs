@@ -45,6 +45,7 @@ impl IR {
             SimpleProjection { .. } => "simple_projection",
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => "merge_sorted",
+            Repartition { .. } => "repartition",
             Invalid => "invalid",
         }
     }
@@ -111,6 +112,7 @@ impl IR {
             ExtContext { schema, .. } => schema,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { input_left, .. } => return arena.get(*input_left).schema(arena),
+            Repartition { input, .. } => return arena.get(*input).schema(arena),
             Invalid => unreachable!(),
         };
         Cow::Borrowed(schema)
@@ -171,6 +173,7 @@ impl IR {
             },
             #[cfg(feature = "merge_sorted")]
             MergeSorted { input_left, .. } => IR::schema_with_cache(*input_left, arena, cache),
+            Repartition { input, .. } => IR::schema_with_cache(*input, arena, cache),
             Invalid => unreachable!(),
         };
         cache.insert(node, schema.clone());

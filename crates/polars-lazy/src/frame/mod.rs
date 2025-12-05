@@ -1564,6 +1564,16 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
+    pub fn repartition(self, partitions: u32, by: Vec<PlSmallStr>) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = DslPlan::Repartition {
+            input: Arc::new(self.logical_plan),
+            partitions,
+            by,
+        };
+        Self::from_logical_plan(lp, opt_state)
+    }
+
     pub fn with_context<C: AsRef<[LazyFrame]>>(self, contexts: C) -> LazyFrame {
         let contexts = contexts
             .as_ref()

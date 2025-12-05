@@ -207,6 +207,13 @@ pub(super) fn pullup_orders(
                     set_unordered_output!();
                 }
             },
+            IR::Repartition {
+                input: _,
+                partitions: _,
+                by: _,
+            } => {
+                set_unordered_output!()
+            },
 
             IR::Cache { .. }
             | IR::SimpleProjection { .. }
