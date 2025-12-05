@@ -15,7 +15,7 @@ from polars.testing.parametric import dataframes
 if TYPE_CHECKING:
     import numpy.typing as npt
 
-    from polars._typing import PolarsDataType, TimeUnit
+    from polars._typing import PolarsDataType, QuantileMethod, TimeUnit
 
 
 def test_quantile_expr_input() -> None:
@@ -25,6 +25,276 @@ def test_quantile_expr_input() -> None:
         df.select([pl.col("a").quantile(pl.col("b").sum() + 0.1)]),
         df.select(pl.col("a").quantile(0.6)),
     )
+
+
+def test_quantile_varying_by_group_20951() -> None:
+    df = pl.DataFrame(
+        {
+            "value": [1, 2, 1, 2],
+            "quantile": [0, 0, 1, 1],
+        }
+    )
+    result = (
+        df.group_by(pl.col.quantile)
+        .agg(pl.col.value.quantile(pl.col.quantile.first()))
+        .sort("quantile")
+    )
+
+    expected = pl.DataFrame(
+        {
+            "quantile": [0, 1],
+            "value": [1.0, 2.0],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+    df = pl.DataFrame(
+        {
+            "group": ["a", "a", "a", "b", "b", "b"],
+            "value": [1, 2, 3, 10, 20, 30],
+            "q": [0.0, 0.0, 0.0, 0.5, 0.5, 0.5],
+        }
+    )
+    result = (
+        df.group_by("group").agg(pl.col.value.quantile(pl.col.q.first())).sort("group")
+    )
+
+    expected = pl.DataFrame(
+        {
+            "group": ["a", "b"],
+            "value": [1.0, 20.0],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    "method",
+    ["nearest", "higher", "lower", "midpoint", "linear", "equiprobable"],
+)
+def test_quantile_varying_by_group_methods(method: QuantileMethod) -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["a", "a", "a", "a", "b", "b", "b", "b"],
+            "value": [1, 2, 3, 4, 10, 20, 30, 40],
+            "q": [0.25] * 4 + [0.75] * 4,
+        }
+    )
+    result = (
+        df.group_by("group")
+        .agg(pl.col.value.quantile(pl.col.q.first(), interpolation=method))
+        .sort("group")
+    )
+    assert result.shape == (2, 2)
+    assert result["group"].to_list() == ["a", "b"]
+
+
+def test_quantile_varying_by_group_float32() -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["a", "a", "a", "b", "b", "b"],
+            "value": pl.Series([1.0, 2.0, 3.0, 10.0, 20.0, 30.0], dtype=pl.Float32),
+            "q": [0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        }
+    )
+    result = (
+        df.group_by("group").agg(pl.col.value.quantile(pl.col.q.first())).sort("group")
+    )
+
+    expected = pl.DataFrame(
+        {
+            "group": ["a", "b"],
+            "value": pl.Series([1.0, 30.0], dtype=pl.Float32),
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_quantile_varying_by_group_integer_types() -> None:
+    for dtype in [pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.UInt8, pl.UInt32]:
+        df = pl.DataFrame(
+            {
+                "group": ["a", "a", "b", "b"],
+                "value": pl.Series([1, 2, 10, 20], dtype=dtype),
+                "q": [0.0, 0.0, 1.0, 1.0],
+            }
+        )
+        result = (
+            df.group_by("group")
+            .agg(pl.col.value.quantile(pl.col.q.first()))
+            .sort("group")
+        )
+        assert result.shape == (2, 2)
+        assert result["value"].to_list() == [1.0, 20.0]
+
+
+def test_quantile_varying_by_group_datetime() -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["a", "a", "b", "b"],
+            "value": [
+                datetime(2020, 1, 1),
+                datetime(2020, 1, 2),
+                datetime(2020, 6, 1),
+                datetime(2020, 6, 2),
+            ],
+            "q": [0.0, 0.0, 1.0, 1.0],
+        }
+    )
+    result = (
+        df.group_by("group").agg(pl.col.value.quantile(pl.col.q.first())).sort("group")
+    )
+
+    expected = pl.DataFrame(
+        {
+            "group": ["a", "b"],
+            "value": [datetime(2020, 1, 1), datetime(2020, 6, 2)],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_quantile_varying_by_group_duration() -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["a", "a", "b", "b"],
+            "value": [
+                timedelta(hours=1),
+                timedelta(hours=2),
+                timedelta(hours=10),
+                timedelta(hours=20),
+            ],
+            "q": [0.0, 0.0, 1.0, 1.0],
+        }
+    )
+    result = (
+        df.group_by("group").agg(pl.col.value.quantile(pl.col.q.first())).sort("group")
+    )
+
+    expected = pl.DataFrame(
+        {
+            "group": ["a", "b"],
+            "value": [timedelta(hours=1), timedelta(hours=20)],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_quantile_varying_by_group_date() -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["a", "a", "b", "b"],
+            "value": [
+                date(2020, 1, 1),
+                date(2020, 1, 2),
+                date(2020, 6, 1),
+                date(2020, 6, 2),
+            ],
+            "q": [0.0, 0.0, 1.0, 1.0],
+        }
+    )
+    result = (
+        df.group_by("group").agg(pl.col.value.quantile(pl.col.q.first())).sort("group")
+    )
+    assert result.shape == (2, 2)
+    assert result["group"].to_list() == ["a", "b"]
+
+
+def test_quantile_varying_by_group_time() -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["a", "a", "b", "b"],
+            "value": [time(1, 0), time(2, 0), time(10, 0), time(20, 0)],
+            "q": [0.0, 0.0, 1.0, 1.0],
+        }
+    )
+    result = (
+        df.group_by("group").agg(pl.col.value.quantile(pl.col.q.first())).sort("group")
+    )
+
+    expected = pl.DataFrame(
+        {
+            "group": ["a", "b"],
+            "value": [time(1, 0), time(20, 0)],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_quantile_varying_by_group_out_of_range() -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["a", "a", "b", "b"],
+            "value": [1, 2, 10, 20],
+            "q": [0.5, 0.5, 1.5, 1.5],
+        }
+    )
+    result = (
+        df.group_by("group").agg(pl.col.value.quantile(pl.col.q.first())).sort("group")
+    )
+    assert result["value"][0] == 2.0
+    assert result["value"][1] is None
+
+
+def test_quantile_varying_by_group_empty_group() -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["a", "a", "b"],
+            "value": [1, 2, None],
+            "q": [0.5, 0.5, 0.5],
+        }
+    ).cast({"value": pl.Float64})
+    result = (
+        df.filter(pl.col.value.is_not_null())
+        .group_by("group")
+        .agg(pl.col.value.quantile(pl.col.q.first()))
+        .sort("group")
+    )
+    assert result.shape == (1, 2)
+    assert result["group"].to_list() == ["a"]
+
+
+def test_quantile_varying_by_group_single_element() -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["a", "b"],
+            "value": [5.0, 10.0],
+            "q": [0.0, 1.0],
+        }
+    )
+    result = (
+        df.group_by("group").agg(pl.col.value.quantile(pl.col.q.first())).sort("group")
+    )
+
+    expected = pl.DataFrame(
+        {
+            "group": ["a", "b"],
+            "value": [5.0, 10.0],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_quantile_varying_by_group_sorted_groups() -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["a", "a", "a", "b", "b", "b"],
+            "value": [1.0, 2.0, 3.0, 10.0, 20.0, 30.0],
+            "q": [0.0, 0.0, 0.0, 0.5, 0.5, 0.5],
+        }
+    ).sort("group")
+
+    result = df.group_by("group", maintain_order=True).agg(
+        pl.col.value.quantile(pl.col.q.first())
+    )
+
+    expected = pl.DataFrame(
+        {
+            "group": ["a", "b"],
+            "value": [1.0, 20.0],
+        }
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_boolean_aggs() -> None:
