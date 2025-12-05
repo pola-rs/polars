@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
-use futures::{StreamExt as _, TryStreamExt as _};
 use polars_core::frame::DataFrame;
-use polars_core::prelude::sort::arg_sort;
 use polars_core::prelude::{Column, IdxArr, SortMultipleOptions};
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
@@ -26,7 +24,9 @@ impl ArgSortBy {
             in_memory_exec_state,
         } = self;
 
-        let sort_by_cols: Vec<Column> = futures::stream::iter(parallelize_first_to_local(
+        let mut sort_by_cols: Vec<Column> = Vec::with_capacity(by.len());
+
+        for fut in parallelize_first_to_local(
             TaskPriority::Low,
             (0..by.len()).map(|i| {
                 let df = Arc::clone(df);
@@ -40,13 +40,14 @@ impl ArgSortBy {
                         .map(|c| c.rechunk())
                 }
             }),
-        ))
-        .then(|x| x)
-        .try_collect()
-        .await?;
+        ) {
+            sort_by_cols.push(fut.await?);
+        }
 
-        Ok(arg_sort(&sort_by_cols, sort_options)?
-            .downcast_as_array()
-            .clone())
+        Ok(
+            polars_core::prelude::sort::arg_sort(&sort_by_cols, sort_options)?
+                .downcast_as_array()
+                .clone(),
+        )
     }
 }

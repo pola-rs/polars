@@ -3,6 +3,7 @@ use std::num::NonZeroUsize;
 use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_ops::frame::MaintainOrderJoin;
 use polars_ops::prelude::{JoinCoalesce, JoinValidation};
+use polars_plan::dsl::sink2::FileProviderType;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -80,10 +81,11 @@ pub enum PhysNodeProperties {
     DynamicSlice,
     FileSink {
         target: PlSmallStr,
+        file_format: PlSmallStr,
         sync_on_close: SyncOnCloseType,
         maintain_order: bool,
         mkdir: bool,
-        file_type: PlSmallStr,
+        cloud_options: bool,
     },
     Filter {
         predicate: PlSmallStr,
@@ -223,6 +225,23 @@ pub enum PhysNodeProperties {
         sync_on_close: SyncOnCloseType,
         maintain_order: bool,
         mkdir: bool,
+    },
+    PartitionSink2 {
+        base_path: PlSmallStr,
+        file_path_provider: FileProviderType,
+        file_format: PlSmallStr,
+        partition_strategy: PlSmallStr,
+        partition_key_exprs: Option<Vec<PlSmallStr>>,
+        include_keys: Option<bool>,
+        per_partition_sort_exprs: Option<Vec<PlSmallStr>>,
+        per_partition_sort_descending: Option<Vec<bool>>,
+        per_partition_sort_nulls_last: Option<Vec<bool>>,
+        mkdir: bool,
+        maintain_order: bool,
+        sync_on_close: SyncOnCloseType,
+        cloud_options: bool,
+        max_rows_per_file: u64,
+        approximate_bytes_per_file: u64,
     },
     PeakMin,
     PeakMax,

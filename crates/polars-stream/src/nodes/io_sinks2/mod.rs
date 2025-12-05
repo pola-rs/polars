@@ -10,10 +10,13 @@ use crate::async_primitives::connector;
 use crate::execute::StreamingExecutionState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::nodes::TaskPriority;
-use crate::nodes::io_sinks2::config::IOSinkNodeConfig;
+use crate::nodes::io_sinks2::components::partitioner::Partitioner;
+use crate::nodes::io_sinks2::config::{IOSinkNodeConfig, IOSinkTarget};
+use crate::nodes::io_sinks2::pipeline_initialization::partition_by::start_partition_sink_pipeline;
 use crate::pipe::PortReceiver;
 pub mod components;
 pub mod config;
+pub mod pipeline_initialization;
 pub mod writers;
 
 pub struct IOSinkNode {
@@ -26,9 +29,20 @@ impl IOSinkNode {
     pub fn new(config: impl Into<Box<IOSinkNodeConfig>>) -> Self {
         let config = config.into();
 
+        let target_type = match config.target {
+            IOSinkTarget::Partitioned {
+                partitioner: Partitioner::Keyed(_),
+                ..
+            } => "partition-keyed",
+            IOSinkTarget::Partitioned {
+                partitioner: Partitioner::FileSize,
+                ..
+            } => "partition-file-size",
+        };
+
         let extension = config.file_format.extension();
 
-        let name = format_pl_smallstr!("io-sink[{extension}]");
+        let name = format_pl_smallstr!("io-sink[{target_type}[{extension}]]");
         let verbose = polars_core::config::verbose();
 
         IOSinkNode {
@@ -55,7 +69,7 @@ impl ComputeNode for IOSinkNode {
 
         recv[0] = if recv[0] == PortState::Done {
             // Ensure initialize / writes empty file for empty output.
-            self.state.initialize(execution_state, self.verbose)?;
+            self.state.initialize(&self.name, execution_state)?;
 
             match std::mem::replace(&mut self.state, IOSinkNodeState::Finished) {
                 IOSinkNodeState::Initialized {
@@ -64,7 +78,7 @@ impl ComputeNode for IOSinkNode {
                 } => {
                     if self.verbose {
                         eprintln!(
-                            "[{}]: Join on task_handle (recv PortState::Done)",
+                            "{}: Join on task_handle (recv PortState::Done)",
                             self.name()
                         );
                     }
@@ -102,10 +116,9 @@ impl ComputeNode for IOSinkNode {
         assert!(send_ports.is_empty());
 
         let phase_morsel_rx = recv_ports[0].take().unwrap().serial();
-        let verbose = self.verbose;
 
         join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
-            self.state.initialize(execution_state, verbose)?;
+            self.state.initialize(&self.name, execution_state)?;
 
             let IOSinkNodeState::Initialized {
                 phase_channel_tx, ..
@@ -125,7 +138,7 @@ impl ComputeNode for IOSinkNode {
 
                 if self.verbose {
                     eprintln!(
-                        "[{}]: Join on task_handle (phase_channel_tx Err)",
+                        "{}: Join on task_handle (phase_channel_tx Err)",
                         self.name()
                     );
                 }
@@ -158,8 +171,8 @@ impl IOSinkNodeState {
     /// Initialize state if not yet initialized.
     fn initialize(
         &mut self,
+        node_name: &PlSmallStr,
         execution_state: &StreamingExecutionState,
-        #[expect(unused)] verbose: bool,
     ) -> PolarsResult<()> {
         use IOSinkNodeState::*;
 
@@ -173,9 +186,7 @@ impl IOSinkNodeState {
 
         config.num_pipelines = execution_state.num_pipelines;
 
-        #[expect(unused)]
         let (phase_channel_tx, mut phase_channel_rx) = connector::connector::<PortReceiver>();
-        #[expect(unused)]
         let (mut multi_phase_tx, multi_phase_rx) = connector::connector();
 
         let first_morsel = Morsel::new(
@@ -201,6 +212,17 @@ impl IOSinkNodeState {
             }
         });
 
-        todo!()
+        let task_handle = match &config.target {
+            IOSinkTarget::Partitioned { .. } => {
+                start_partition_sink_pipeline(node_name, multi_phase_rx, *config, execution_state)?
+            },
+        };
+
+        *self = Initialized {
+            phase_channel_tx,
+            task_handle,
+        };
+
+        Ok(())
     }
 }
