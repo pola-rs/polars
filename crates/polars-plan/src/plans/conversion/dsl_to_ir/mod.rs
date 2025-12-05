@@ -473,7 +473,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             // this function.
             if !predicates.is_empty() {
                 let predicate_names = (0..predicates.len())
-                    .map(|i| PlSmallStr::from_string(format!("__POLARS_HAVING_{i}")))
+                    .map(|i| format_pl_smallstr!("__POLARS_HAVING_{i}"))
                     .collect::<Arc<[_]>>();
                 let predicates = predicates
                     .into_iter()
