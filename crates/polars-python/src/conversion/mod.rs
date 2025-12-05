@@ -1210,23 +1210,6 @@ impl<'py> FromPyObject<'py> for Wrap<SearchSortedSide> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<ClosedInterval> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
-        let parsed = match &*ob.extract::<PyBackedStr>()? {
-            "both" => ClosedInterval::Both,
-            "left" => ClosedInterval::Left,
-            "right" => ClosedInterval::Right,
-            "none" => ClosedInterval::None,
-            v => {
-                return Err(PyValueError::new_err(format!(
-                    "`closed` must be one of {{'both', 'left', 'right', 'none'}}, got {v}",
-                )));
-            },
-        };
-        Ok(Wrap(parsed))
-    }
-}
-
 impl<'py> FromPyObject<'py> for Wrap<WindowMapping> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {

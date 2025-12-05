@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, ShapeError
+from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -90,12 +90,6 @@ def test_time_range_start_later_than_end() -> None:
     result = pl.time_range(time(12), time(11), eager=True)
     expected = pl.Series("literal", dtype=pl.Time)
     assert_series_equal(result, expected)
-
-
-@pytest.mark.parametrize("interval", [timedelta(0), timedelta(minutes=-10)])
-def test_time_range_invalid_step(interval: timedelta) -> None:
-    with pytest.raises(ComputeError, match="`interval` must be positive"):
-        pl.time_range(time(11), time(12), interval=interval, eager=True)
 
 
 def test_time_range_lit_lazy() -> None:
@@ -265,3 +259,31 @@ def test_time_ranges_mismatched_chunks() -> None:
         ],
     )
     assert_series_equal(result, expected)
+
+
+def test_time_range_negative_interval() -> None:
+    expected = pl.Series("literal", [time(12), time(11, 40), time(11, 20), time(11)])
+
+    # left
+    result = pl.time_range(
+        time(12), time(11), interval=timedelta(minutes=-20), eager=True, closed="left"
+    )
+    assert_series_equal(result, expected[:-1])
+
+    # right
+    result = pl.time_range(
+        time(12), time(11), interval=timedelta(minutes=-20), eager=True, closed="right"
+    )
+    assert_series_equal(result, expected[1:])
+
+    # both
+    result = pl.time_range(
+        time(12), time(11), interval=timedelta(minutes=-20), eager=True, closed="both"
+    )
+    assert_series_equal(result, expected)
+
+    # none
+    result = pl.time_range(
+        time(12), time(11), interval=timedelta(minutes=-20), eager=True, closed="none"
+    )
+    assert_series_equal(result, expected[1:-1])
