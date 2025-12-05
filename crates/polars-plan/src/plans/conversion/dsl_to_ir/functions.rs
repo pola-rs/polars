@@ -227,7 +227,7 @@ pub(super) fn convert_functions(
                     if input_is_empty {
                         polars_ensure!(
                             insertions.is_empty(),
-                            ComputeError: "StringFormat didn't get any inputs, format: {}",
+                            ComputeError: "StringFormat didn't get any inputs, format: \"{}\"",
                             format
                         );
 
