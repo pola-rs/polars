@@ -70,6 +70,7 @@ def test_array_contains_literal(
 def test_array_contains_invalid_datatype() -> None:
     df = pl.DataFrame({"a": [[1, 2], [3, 4]]}, schema={"a": pl.List(pl.Int8)})
     with pytest.raises(
-        InvalidOperationError, match=r"expected Array dtype, got 'List\(Int8\)'"
+        InvalidOperationError,
+        match=r"expected Array datatype for array operation, got: List\(Int8\)",
     ):
         df.select(pl.col("a").arr.contains(2))

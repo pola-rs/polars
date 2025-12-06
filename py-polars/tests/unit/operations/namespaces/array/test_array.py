@@ -555,7 +555,8 @@ def test_explode_19049() -> None:
 
     df = pl.DataFrame({"a": [1, 2, 3]}, schema={"a": pl.Int64})
     with pytest.raises(
-        InvalidOperationError, match="expected Array dtype, got 'Int64'"
+        InvalidOperationError,
+        match="expected Array datatype for array operation, got: Int64",
     ):
         df.select(pl.col.a.arr.explode())
 
@@ -668,6 +669,6 @@ def test_schema_non_array(expr: pl.Expr) -> None:
 
     with pytest.raises(
         InvalidOperationError,
-        match="expected Array dtype, got 'String'",
+        match="expected Array datatype for array operation, got: String",
     ):
         lf.select(expr).collect_schema()
