@@ -365,6 +365,7 @@ pub fn rename_columns(
 }
 
 /// Rename any `StructField(x)` to its corresponding `Column(prefix_x)` using the provided prefix.
+#[cfg(feature = "dtype-struct")]
 pub fn structfield_to_column(
     node: Node,
     expr_arena: &mut Arena<AExpr>,

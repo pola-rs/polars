@@ -7,6 +7,7 @@ use polars_core::schema::Schema;
 use polars_plan::dsl::Expr;
 
 use super::PhysicalExpr;
+#[cfg(feature = "dtype-struct")]
 use crate::dispatch::struct_::with_fields;
 use crate::prelude::{AggState, AggregationContext, UpdateGroups};
 use crate::state::ExecutionState;

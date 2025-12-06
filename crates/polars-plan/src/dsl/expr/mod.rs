@@ -196,6 +196,7 @@ pub enum Expr {
     /// Evaluates the `evaluation` expressions on the output of the `expr`.
     ///
     /// Consequently, `expr` is an input and `evaluation` uses an extended schema that includes this input.
+    #[cfg(feature = "dtype-struct")]
     StructEval {
         expr: Arc<Expr>,
         evaluation: Vec<Expr>,
@@ -416,6 +417,7 @@ impl Hash for Expr {
                 evaluation.hash(state);
                 variant.hash(state);
             },
+            #[cfg(feature = "dtype-struct")]
             Expr::StructEval {
                 expr: input,
                 evaluation,

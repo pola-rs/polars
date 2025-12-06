@@ -188,6 +188,7 @@ pub enum AExpr {
     /// Struct field value in a `struct.with_fields` context.
     ///
     /// Equivalent of `pl.field(name)`.
+    #[cfg(feature = "dtype-struct")]
     StructField(PlSmallStr),
     Literal(LiteralValue),
     BinaryExpr {
@@ -248,6 +249,7 @@ pub enum AExpr {
 
         variant: EvalVariant,
     },
+    #[cfg(feature = "dtype-struct")]
     StructEval {
         expr: Node,
         evaluation: Vec<ExprIR>,
@@ -326,6 +328,7 @@ impl AExpr {
             AExpr::Eval { expr, variant, .. } => {
                 variant.is_length_preserving() && is_scalar_ae(*expr, arena)
             },
+            #[cfg(feature = "dtype-struct")]
             AExpr::StructEval { expr, .. } => is_scalar_ae(*expr, arena),
             AExpr::Sort { expr, .. } => is_scalar_ae(*expr, arena),
             AExpr::Gather { returns_scalar, .. } => *returns_scalar,
@@ -338,9 +341,10 @@ impl AExpr {
 
             AExpr::Explode { .. }
             | AExpr::Column(_)
-            | AExpr::StructField(_)
             | AExpr::Filter { .. }
             | AExpr::Slice { .. } => false,
+            #[cfg(feature = "dtype-struct")]
+            AExpr::StructField(_) => false,
         }
     }
 
@@ -371,6 +375,7 @@ impl AExpr {
         match self {
             AExpr::Element => true,
             AExpr::Column(_) => true,
+            #[cfg(feature = "dtype-struct")]
             AExpr::StructField(_) => true,
 
             // Over and Rolling implicitly zip with the context and thus should always be length
@@ -405,6 +410,7 @@ impl AExpr {
             AExpr::Eval { expr, variant, .. } => {
                 variant.is_length_preserving() && is_length_preserving_ae(*expr, arena)
             },
+            #[cfg(feature = "dtype-struct")]
             AExpr::StructEval { expr, .. } => is_length_preserving_ae(*expr, arena),
             AExpr::Sort { expr, .. } => is_length_preserving_ae(*expr, arena),
             AExpr::Gather {

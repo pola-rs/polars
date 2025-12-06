@@ -97,6 +97,7 @@ impl AExpr {
                 .schema
                 .get_field(name)
                 .ok_or_else(|| PolarsError::ColumnNotFound(name.to_string().into())),
+            #[cfg(feature = "dtype-struct")]
             StructField(name) => {
                 let struct_field = ctx
                     .schema
@@ -315,6 +316,7 @@ impl AExpr {
 
                 Ok(output_field)
             },
+            #[cfg(feature = "dtype-struct")]
             StructEval { expr, evaluation } => {
                 let struct_field = ctx.arena.get(*expr).to_field_impl(ctx)?;
                 let mut evaluation_schema = ctx.schema.clone();
@@ -415,7 +417,6 @@ impl AExpr {
             | Cast { expr, .. }
             | Ternary { truthy: expr, .. }
             | Eval { expr, .. }
-            | StructEval { expr, .. }
             | Slice { input: expr, .. }
             | Agg(Max { input: expr, .. })
             | Agg(Min { input: expr, .. })
@@ -442,6 +443,8 @@ impl AExpr {
                     input[0].output_name().clone()
                 }
             },
+            #[cfg(feature = "dtype-struct")]
+            StructEval { expr, .. } => expr_arena.get(*expr).to_name(expr_arena),
             Function {
                 input, function, ..
             } => match function.output_name().and_then(|v| v.into_inner()) {
@@ -450,6 +453,7 @@ impl AExpr {
                 None => input[0].output_name().clone(),
             },
             Column(name) => name.clone(),
+            #[cfg(feature = "dtype-struct")]
             StructField(name) => name.clone(),
             Literal(lv) => lv.output_column_name().clone(),
         }
