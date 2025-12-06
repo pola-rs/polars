@@ -667,7 +667,7 @@ pub trait ListNameSpaceImpl: AsList {
             1 => {
                 if let Some(fraction) = fraction.get(0) {
                     ca.try_apply_amortized(|s| {
-                        let n = (s.as_ref().len() as f64 * fraction) as usize;
+                        let n = (s.as_ref().len() as f64 * fraction).ceil() as usize;
                         s.as_ref().sample_n(n, with_replacement, shuffle, seed)
                     })
                 } else {
@@ -680,7 +680,7 @@ pub trait ListNameSpaceImpl: AsList {
             },
             _ => ca.try_zip_and_apply_amortized(fraction, |opt_s, opt_n| match (opt_s, opt_n) {
                 (Some(s), Some(fraction)) => {
-                    let n = (s.as_ref().len() as f64 * fraction) as usize;
+                    let n = (s.as_ref().len() as f64 * fraction).ceil() as usize;
                     s.as_ref()
                         .sample_n(n, with_replacement, shuffle, seed)
                         .map(Some)
