@@ -25,13 +25,10 @@ impl AExpr {
 
             Eval { variant, .. } => variant.is_elementwise(),
 
-            Element
-            | BinaryExpr { .. }
-            | Column(_)
-            | StructEval { .. }
-            | StructField(_)
-            | Ternary { .. }
-            | Cast { .. } => true,
+            Element | BinaryExpr { .. } | Column(_) | Ternary { .. } | Cast { .. } => true,
+
+            #[cfg(feature = "dtype-struct")]
+            StructEval { .. } | StructField(_) => true,
 
             #[cfg(feature = "dynamic_group_by")]
             Rolling { .. } => false,

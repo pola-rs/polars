@@ -394,6 +394,7 @@ pub fn aexpr_sortedness(
                 nulls_last: fst.nulls_last,
             })
         },
+        #[cfg(feature = "dtype-struct")]
         AExpr::StructField(_) => None,
         AExpr::Literal(lv) if lv.is_scalar() => Some(AExprSorted {
             descending: Some(false),
@@ -443,8 +444,10 @@ pub fn aexpr_sortedness(
         | AExpr::AnonymousStreamingAgg { .. }
         | AExpr::AnonymousFunction { .. }
         | AExpr::Eval { .. }
-        | AExpr::StructEval { .. }
         | AExpr::Over { .. } => None,
+
+        #[cfg(feature = "dtype-struct")]
+        AExpr::StructEval { .. } => None,
 
         #[cfg(feature = "dynamic_group_by")]
         AExpr::Rolling { .. } => None,

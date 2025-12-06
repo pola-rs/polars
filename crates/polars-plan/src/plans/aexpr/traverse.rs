@@ -13,7 +13,9 @@ impl AExpr {
         use AExpr::*;
 
         match self {
-            Element | Column(_) | StructField(_) | Literal(_) | Len => {},
+            Element | Column(_) | Literal(_) | Len => {},
+            #[cfg(feature = "dtype-struct")]
+            StructField(_) => {},
             BinaryExpr { left, op: _, right } => {
                 container.extend([*right, *left]);
             },
@@ -78,6 +80,7 @@ impl AExpr {
                 _ = evaluation;
                 container.extend([*expr]);
             },
+            #[cfg(feature = "dtype-struct")]
             StructEval { expr, evaluation } => {
                 // Evaluation is included. In case this is not allowed, use `inputs_rev_strict()`.
                 container.extend(evaluation.iter().rev().map(ExprIR::node));
@@ -108,6 +111,7 @@ impl AExpr {
         use AExpr::*;
 
         match self {
+            #[cfg(feature = "dtype-struct")]
             StructEval { expr, evaluation } => {
                 // Evaluation is explicitly excluded. It is up to the caller to handle
                 // any tree traversal if required.
@@ -127,7 +131,9 @@ impl AExpr {
         use AExpr::*;
 
         match self {
-            Element | Column(_) | StructField(_) | Literal(_) | Len => {},
+            Element | Column(_) | Literal(_) | Len => {},
+            #[cfg(feature = "dtype-struct")]
+            StructField(_) => {},
             BinaryExpr { left, op: _, right } => {
                 container.extend([*right, *left]);
             },
@@ -188,6 +194,7 @@ impl AExpr {
                 evaluation,
                 variant: _,
             } => container.extend([*evaluation, *expr]),
+            #[cfg(feature = "dtype-struct")]
             StructEval { expr, evaluation } => {
                 container.extend(evaluation.iter().rev().map(ExprIR::node));
                 container.extend([*expr]);
@@ -205,7 +212,9 @@ impl AExpr {
     pub fn replace_inputs(mut self, inputs: &[Node]) -> Self {
         use AExpr::*;
         let input = match &mut self {
-            Element | Column(_) | StructField(_) | Literal(_) | Len => return self,
+            Element | Column(_) | Literal(_) | Len => return self,
+            #[cfg(feature = "dtype-struct")]
+            StructField(_) => return self,
             Cast { expr, .. } => expr,
             Explode { expr, .. } => expr,
             BinaryExpr { left, right, .. } => {
@@ -278,6 +287,7 @@ impl AExpr {
                 _ = evaluation; // Intentional.
                 return self;
             },
+            #[cfg(feature = "dtype-struct")]
             StructEval { expr, evaluation } => {
                 *expr = inputs[0];
                 _ = evaluation; // Intentional.
@@ -328,7 +338,9 @@ impl AExpr {
     pub fn replace_children(mut self, inputs: &[Node]) -> Self {
         use AExpr::*;
         let input = match &mut self {
-            Element | Column(_) | StructField(_) | Literal(_) | Len => return self,
+            Element | Column(_) | Literal(_) | Len => return self,
+            #[cfg(feature = "dtype-struct")]
+            StructField(_) => return self,
             Cast { expr, .. } => expr,
             Explode { expr, .. } => expr,
             BinaryExpr { left, right, .. } => {
@@ -401,6 +413,7 @@ impl AExpr {
                 *evaluation = inputs[1];
                 return self;
             },
+            #[cfg(feature = "dtype-struct")]
             StructEval { expr, evaluation } => {
                 assert_eq!(inputs.len(), evaluation.len() + 1);
                 *expr = inputs[0];

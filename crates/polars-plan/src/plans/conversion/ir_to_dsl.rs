@@ -12,6 +12,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             options,
         },
         AExpr::Column(a) => Expr::Column(a),
+        #[cfg(feature = "dtype-struct")]
         AExpr::StructField(a) => Expr::Field(Arc::new([a])),
         AExpr::Literal(s) => Expr::Literal(s),
         AExpr::BinaryExpr { left, op, right } => {
@@ -241,6 +242,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             evaluation: Arc::new(node_to_expr(evaluation, expr_arena)),
             variant,
         },
+        #[cfg(feature = "dtype-struct")]
         AExpr::StructEval { expr, evaluation } => Expr::StructEval {
             expr: Arc::new(node_to_expr(expr, expr_arena)),
             evaluation: expr_irs_to_exprs(evaluation, expr_arena),

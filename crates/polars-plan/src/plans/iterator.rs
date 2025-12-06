@@ -88,6 +88,7 @@ macro_rules! push_expr {
                 $push($c, evaluation);
                 $push($c, expr);
             },
+            #[cfg(feature = "dtype-struct")]
             StructEval { expr, evaluation } => {
                 evaluation.$iter().rev().for_each(|e| $push_owned($c, e));
                 $push($c, expr);

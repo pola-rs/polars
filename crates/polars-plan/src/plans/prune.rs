@@ -145,6 +145,7 @@ impl<'a> CopyContext<'a> {
         if let AExpr::Eval { evaluation, .. } = &mut dst_expr {
             *evaluation = self.copy_expr(*evaluation);
         }
+        #[cfg(feature = "dtype-struct")]
         if let AExpr::StructEval { evaluation, .. } = &mut dst_expr {
             for e in evaluation.iter_mut() {
                 *e = ExprIR::new(

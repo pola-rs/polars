@@ -123,7 +123,9 @@ pub struct ExecutionState {
     // every join/union split gets an increment to distinguish between schema state
     pub branch_idx: usize,
     pub flags: RelaxedCell<u8>,
+    #[cfg(feature = "dtype-struct")]
     pub with_fields: Arc<Option<StructChunked>>,
+    #[cfg(feature = "dtype-struct")]
     pub with_fields_ac: Arc<Option<AggregationContext<'static>>>,
     pub ext_contexts: Arc<Vec<DataFrame>>,
     pub element: Arc<Option<(Column, Option<Bitmap>)>>,
@@ -143,7 +145,9 @@ impl ExecutionState {
             window_cache: Default::default(),
             branch_idx: 0,
             flags: RelaxedCell::from(StateFlags::init().as_u8()),
+            #[cfg(feature = "dtype-struct")]
             with_fields: Default::default(),
+            #[cfg(feature = "dtype-struct")]
             with_fields_ac: Default::default(),
             ext_contexts: Default::default(),
             element: Default::default(),
@@ -213,7 +217,9 @@ impl ExecutionState {
             ext_contexts: self.ext_contexts.clone(),
             // Retain input values for `pl.element` in Eval context
             element: self.element.clone(),
+            #[cfg(feature = "dtype-struct")]
             with_fields: self.with_fields.clone(),
+            #[cfg(feature = "dtype-struct")]
             with_fields_ac: self.with_fields_ac.clone(),
             node_timer: self.node_timer.clone(),
             stop: self.stop.clone(),

@@ -98,6 +98,7 @@ impl TreeWalker for Expr {
                 AnonymousFunction { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, options, fmt_str }
             },
             Eval { expr: input, evaluation, variant } => Eval { expr: am(input, &mut f)?, evaluation: am(evaluation, f)?, variant },
+            #[cfg(feature = "dtype-struct")]
             StructEval { expr: input, evaluation } => {
                 StructEval { expr: am(input, &mut f)?, evaluation: evaluation.into_iter().map(f).collect::<Result<_, _>>()?  }
             },

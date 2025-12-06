@@ -7,6 +7,7 @@ mod column;
 mod count;
 mod element;
 mod eval;
+#[cfg(feature = "dtype-struct")]
 mod field;
 mod filter;
 mod gather;
@@ -17,6 +18,7 @@ mod rolling;
 mod slice;
 mod sort;
 mod sortby;
+#[cfg(feature = "dtype-struct")]
 mod structeval;
 mod ternary;
 mod window;
@@ -36,6 +38,7 @@ pub(crate) use column::*;
 pub(crate) use count::*;
 pub(crate) use element::*;
 pub(crate) use eval::*;
+#[cfg(feature = "dtype-struct")]
 pub(crate) use field::*;
 pub(crate) use filter::*;
 pub(crate) use gather::*;
@@ -48,6 +51,7 @@ pub(crate) use rolling::RollingExpr;
 pub(crate) use slice::*;
 pub(crate) use sort::*;
 pub(crate) use sortby::*;
+#[cfg(feature = "dtype-struct")]
 pub(crate) use structeval::*;
 pub(crate) use ternary::*;
 pub use window::window_function_format_order_by;

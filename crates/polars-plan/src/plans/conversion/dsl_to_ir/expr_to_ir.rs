@@ -72,6 +72,7 @@ impl<'a> ExprToIRContext<'a> {
     /// populate `with_fields`.
     pub fn new_with_fields(arena: &'a mut Arena<AExpr>, schema: &'a Schema) -> Self {
         let with_fields = match schema.get(&PL_STRUCTFIELDS_NAME) {
+            #[cfg(feature = "dtype-struct")]
             Some(dtype) => {
                 let DataType::Struct(fields) = &dtype else {
                     unreachable!()
@@ -533,6 +534,7 @@ pub(super) fn to_aexpr_impl(
                 output_name,
             )
         },
+        #[cfg(feature = "dtype-struct")]
         Expr::StructEval { expr, evaluation } => {
             let (expr, output_name) = recurse_arc!(expr)?;
             let expr_dtype = ctx.arena.get(expr).to_dtype(&ctx.to_field_ctx())?;

@@ -159,6 +159,7 @@ impl<'a> ObservableOrdersResolver<'a> {
             AExpr::Explode { expr, .. } => rec!(*expr) | O::Independent,
 
             AExpr::Column(_) => self.column_ordering,
+            #[cfg(feature = "dtype-struct")]
             AExpr::StructField(_) => {
                 let Some(ordering) = self.structfield_ordering else {
                     unreachable!()
@@ -327,6 +328,7 @@ impl<'a> ObservableOrdersResolver<'a> {
                 },
             },
 
+            #[cfg(feature = "dtype-struct")]
             AExpr::StructEval { expr, evaluation } => {
                 let mut zipped = rec!(*expr);
                 self.structfield_ordering = Some(zipped);

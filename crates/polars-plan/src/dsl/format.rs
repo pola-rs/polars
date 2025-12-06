@@ -252,6 +252,7 @@ impl fmt::Debug for Expr {
                     "{input:?}.Cumulative_eval({evaluation:?}, min_samples={min_samples}"
                 ),
             },
+            #[cfg(feature = "dtype-struct")]
             StructEval {
                 expr: input,
                 evaluation,

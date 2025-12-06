@@ -135,6 +135,7 @@ impl ExprIR {
                     out.output_name = OutputName::ColumnLhs(name.clone());
                     break;
                 },
+                #[cfg(feature = "dtype-struct")]
                 AExpr::StructField(name) => {
                     out.output_name = OutputName::Field(name.clone());
                     break;

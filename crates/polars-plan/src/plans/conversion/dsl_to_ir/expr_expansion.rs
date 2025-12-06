@@ -925,6 +925,7 @@ fn expand_expression_rec(
                 }
             }
         },
+        #[cfg(feature = "dtype-struct")]
         Expr::StructEval { expr, evaluation } => {
             let mut expr_out = Vec::with_capacity(1);
             expand_expression_rec(

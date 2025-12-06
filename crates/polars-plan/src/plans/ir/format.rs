@@ -389,6 +389,7 @@ impl Display for ExprIRDisplay<'_> {
                 f.write_char(')')
             },
             Column(name) => write!(f, "col(\"{name}\")"),
+            #[cfg(feature = "dtype-struct")]
             StructField(name) => write!(f, "field(\"{name}\")"),
             Literal(v) => write!(f, "{v:?}"),
             BinaryExpr { left, op, right } => {
@@ -577,6 +578,7 @@ impl Display for ExprIRDisplay<'_> {
                     ),
                 }
             },
+            #[cfg(feature = "dtype-struct")]
             StructEval { expr, evaluation } => {
                 let expr = self.with_root(expr);
                 let evaluation = self.with_slice(evaluation);

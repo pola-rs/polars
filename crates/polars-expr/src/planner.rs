@@ -310,6 +310,7 @@ fn create_physical_expr_inner(
 
             Ok(Arc::new(ElementExpr::new(output_field)))
         },
+        #[cfg(feature = "dtype-struct")]
         StructField(field) => {
             let output_field = expr_arena
                 .get(expression)
@@ -545,6 +546,7 @@ fn create_physical_expr_inner(
                 evaluation_is_fallible,
             )))
         },
+        #[cfg(feature = "dtype-struct")]
         StructEval { expr, evaluation } => {
             let output_field = expr_arena
                 .get(expression)
