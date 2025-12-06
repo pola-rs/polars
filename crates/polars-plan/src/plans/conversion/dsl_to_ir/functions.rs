@@ -18,6 +18,7 @@ pub(super) fn convert_functions(
     use {FunctionExpr as F, IRFunctionExpr as I};
 
     // Converts inputs
+    let input_is_empty = input.is_empty();
     let e = to_expr_irs(input, ctx)?;
     let mut set_elementwise = false;
 
