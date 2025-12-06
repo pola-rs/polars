@@ -153,7 +153,8 @@ impl ConversionOptimizer {
             }
 
             // Similar for StructEval
-            // Effectively, we are mimicking in-order traversal logic.
+            // Effectively, we are mimicking in-order processing traversal logic (left > parent > right).
+            #[cfg(feature = "dtype-struct")]
             if let AExpr::StructEval { expr, evaluation } = expr {
                 let schema = if schema_idx == 0 {
                     &schema
