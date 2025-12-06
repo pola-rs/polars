@@ -68,10 +68,16 @@ impl IRArrayFunction {
                 )?,
             )),
             Length => mapper.ensure_is_array()?.with_dtype(IDX_DTYPE),
-            Min | Max => mapper.ensure_is_array()?.map_to_list_and_array_inner_dtype(),
+            Min | Max => mapper
+                .ensure_is_array()?
+                .map_to_list_and_array_inner_dtype(),
             Sum => mapper.ensure_is_array()?.nested_sum_type(),
-            ToList => mapper.ensure_is_array()?.try_map_dtype(map_array_dtype_to_list_dtype),
-            Unique(_) => mapper.ensure_is_array()?.try_map_dtype(map_array_dtype_to_list_dtype),
+            ToList => mapper
+                .ensure_is_array()?
+                .try_map_dtype(map_array_dtype_to_list_dtype),
+            Unique(_) => mapper
+                .ensure_is_array()?
+                .try_map_dtype(map_array_dtype_to_list_dtype),
             NUnique => mapper.ensure_is_array()?.with_dtype(IDX_DTYPE),
             Std(_) => mapper.ensure_is_array()?.moment_dtype(),
             Var(_) => mapper.ensure_is_array()?.var_dtype(),
@@ -82,7 +88,9 @@ impl IRArrayFunction {
             Sort(_) => mapper.ensure_is_array()?.with_same_dtype(),
             Reverse => mapper.ensure_is_array()?.with_same_dtype(),
             ArgMin | ArgMax => mapper.ensure_is_array()?.with_dtype(IDX_DTYPE),
-            Get(_) => mapper.ensure_is_array()?.map_to_list_and_array_inner_dtype(),
+            Get(_) => mapper
+                .ensure_is_array()?
+                .map_to_list_and_array_inner_dtype(),
             Join(_) => mapper.ensure_is_array()?.with_dtype(DataType::String),
             #[cfg(feature = "is_in")]
             Contains { nulls_equal: _ } => mapper.ensure_is_array()?.with_dtype(DataType::Boolean),
@@ -90,9 +98,9 @@ impl IRArrayFunction {
             CountMatches => mapper.ensure_is_array()?.with_dtype(IDX_DTYPE),
             Shift => mapper.ensure_is_array()?.with_same_dtype(),
             Explode { .. } => mapper.ensure_is_array()?.try_map_to_array_inner_dtype(),
-            Slice(offset, length) => {
-                mapper.ensure_is_array()?.try_map_dtype(map_to_array_fixed_length(offset, length))
-            },
+            Slice(offset, length) => mapper
+                .ensure_is_array()?
+                .try_map_dtype(map_to_array_fixed_length(offset, length)),
             #[cfg(feature = "array_to_struct")]
             ToStruct(name_generator) => mapper.ensure_is_array()?.try_map_dtype(|dtype| {
                 let DataType::Array(inner, width) = dtype else {
