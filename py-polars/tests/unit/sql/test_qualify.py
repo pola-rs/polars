@@ -166,11 +166,7 @@ def test_qualify_returns_no_rows(df_test: pl.DataFrame, qualify_clause: str) -> 
             FROM df QUALIFY {qualify_clause}
         """,
         compare_with="duckdb",
-        expected={
-            "id": pl.Series([], dtype=pl.Int64),
-            "category": pl.Series([], dtype=pl.String),
-            "value": pl.Series([], dtype=pl.Int64),
-        },
+        expected={"id": [], "category": [], "value": []},
     )
 
 
