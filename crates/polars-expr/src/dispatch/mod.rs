@@ -127,7 +127,7 @@ mod shift_and_fill;
 #[cfg(feature = "strings")]
 mod strings;
 #[cfg(feature = "dtype-struct")]
-mod struct_;
+pub(crate) mod struct_;
 #[cfg(feature = "temporal")]
 mod temporal;
 #[cfg(feature = "trigonometry")]
