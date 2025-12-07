@@ -117,12 +117,11 @@ impl PhysicalExpr for LiteralExpr {
                 ctx = "group_by",
                 size = groups.len() as u64 * lit_length as u64
             );
-            let groups = GroupsType::Slice {
-                groups: (0..groups.len() as IdxSize)
-                    .map(|i| [i * lit_length, lit_length])
-                    .collect(),
-                overlapping: false,
-            };
+            let groups = (0..groups.len() as IdxSize)
+                .map(|i| [i * lit_length, lit_length])
+                .collect();
+            let groups = GroupsType::new_slice(groups, false, true);
+
             let agg_state = AggState::AggregatedList(Column::new_scalar(
                 s.name().clone(),
                 Scalar::new_list(s.take_materialized_series()),

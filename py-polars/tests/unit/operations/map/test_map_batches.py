@@ -118,7 +118,7 @@ def test_lazy_map_schema() -> None:
 
     with pytest.raises(
         ComputeError,
-        match="Expected 'LazyFrame.map' to return a 'DataFrame', got a",
+        match=r"Expected 'LazyFrame\.map' to return a 'DataFrame', got a",
     ):
         df.lazy().map_batches(custom).collect()  # type: ignore[arg-type]
 
@@ -130,7 +130,7 @@ def test_lazy_map_schema() -> None:
 
     with pytest.raises(
         ComputeError,
-        match="The output schema of 'LazyFrame.map' is incorrect. Expected",
+        match=r"The output schema of 'LazyFrame\.map' is incorrect\. Expected",
     ):
         df.lazy().map_batches(custom2).collect()
 

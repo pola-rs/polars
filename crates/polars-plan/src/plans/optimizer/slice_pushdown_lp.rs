@@ -237,6 +237,9 @@ impl SlicePushDown {
                 #[cfg(feature = "python")]
                 FileScanIR::PythonDataset { .. } => true,
 
+                #[cfg(feature = "scan_lines")]
+                FileScanIR::Lines { .. } => true,
+
                 // TODO: This can be `true` after Anonymous scan dispatches to new-streaming.
                 FileScanIR::Anonymous { .. } => state.offset == 0,
             }  =>  {
@@ -344,18 +347,21 @@ impl SlicePushDown {
                     options,
                 })
             }
-            (Sort {input, by_column, mut slice,
-                sort_options}, Some(state)) => {
+            (Sort {input, by_column, slice, sort_options}, Some(state)) => {
+                // The slice argument on Sort should be inserted by slice pushdown,
+                // so it shouldn't exist yet (or be idempotently the same).
+                let new_slice = Some((state.offset, state.len as usize));
+                assert!(slice.is_none() || slice == new_slice);
+
                 // first restart optimization in inputs and get the updated LP
                 let input_lp = lp_arena.take(input);
                 let input_lp = self.pushdown(input_lp, None, lp_arena, expr_arena)?;
-                let input= lp_arena.add(input_lp);
+                let input = lp_arena.add(input_lp);
 
-                slice = Some((state.offset, state.len as usize));
                 Ok(Sort {
                     input,
                     by_column,
-                    slice,
+                    slice: new_slice,
                     sort_options
                 })
             }

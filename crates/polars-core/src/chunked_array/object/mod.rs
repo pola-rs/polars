@@ -24,6 +24,7 @@ pub struct ObjectArray<T>
 where
     T: PolarsObject,
 {
+    dtype: ArrowDataType,
     values: Buffer<T>,
     validity: Option<Bitmap>,
 }
@@ -165,7 +166,11 @@ where
     }
 
     fn dtype(&self) -> &ArrowDataType {
-        &ArrowDataType::FixedSizeBinary(size_of::<T>())
+        &self.dtype
+    }
+
+    fn dtype_mut(&mut self) -> &mut ArrowDataType {
+        &mut self.dtype
     }
 
     fn slice(&mut self, offset: usize, length: usize) {
@@ -233,10 +238,12 @@ impl<T: PolarsObject> Splitable for ObjectArray<T> {
         let (left_validity, right_validity) = unsafe { self.validity.split_at_unchecked(offset) };
         (
             Self {
+                dtype: self.dtype.clone(),
                 values: left_values,
                 validity: left_validity,
             },
             Self {
+                dtype: self.dtype.clone(),
                 values: right_values,
                 validity: right_validity,
             },
@@ -266,8 +273,9 @@ impl<T: PolarsObject> StaticArray for ObjectArray<T> {
         self.with_validity(validity)
     }
 
-    fn full_null(length: usize, _dtype: ArrowDataType) -> Self {
+    fn full_null(length: usize, dtype: ArrowDataType) -> Self {
         ObjectArray {
+            dtype,
             values: vec![T::default(); length].into(),
             validity: Some(Bitmap::new_with_value(false, length)),
         }
@@ -321,6 +329,7 @@ where
 impl<T: PolarsObject> From<Vec<T>> for ObjectArray<T> {
     fn from(values: Vec<T>) -> Self {
         Self {
+            dtype: ArrowDataType::FixedSizeBinary(size_of::<T>()),
             values: values.into(),
             validity: None,
         }

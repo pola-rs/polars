@@ -1,5 +1,9 @@
+mod agg;
 mod expr;
+
+pub use agg::{AnonymousStreamingAgg, OpaqueStreamingAgg};
 pub use expr::*;
+
 #[cfg(feature = "dsl-schema")]
 mod json_schema;
 #[cfg(feature = "serde")]

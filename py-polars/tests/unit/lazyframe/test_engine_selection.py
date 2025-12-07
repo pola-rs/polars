@@ -32,10 +32,11 @@ def test_engine_selection_background_warns(
 ) -> None:
     expect = df.collect()
     with pytest.warns(
-        UserWarning, match="GPU engine does not support streaming or background"
+        UserWarning,
+        match="GPU engine does not support streaming or background",
     ):
         got = df.collect(engine=engine, background=True)
-        assert_frame_equal(expect, got.fetch_blocking())
+    assert_frame_equal(expect, got.fetch_blocking())
 
 
 def test_engine_selection_eager_quiet(df: pl.LazyFrame, engine: EngineType) -> None:
@@ -46,5 +47,8 @@ def test_engine_selection_eager_quiet(df: pl.LazyFrame, engine: EngineType) -> N
 
 
 def test_engine_import_error_raises(df: pl.LazyFrame, engine: EngineType) -> None:
-    with pytest.raises(ImportError, match="GPU engine requested"):
+    with pytest.raises(
+        ImportError,
+        match="GPU engine requested",
+    ):
         df.collect(engine=engine)

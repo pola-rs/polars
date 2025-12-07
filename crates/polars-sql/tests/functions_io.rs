@@ -16,7 +16,7 @@ fn read_csv_tbl_func() {
             FROM read_csv('../../examples/datasets/foods1.csv')"#;
     let df_sql = context.execute(sql).unwrap().collect().unwrap();
     let create_tbl_res = df! {
-        "Response" => ["CREATE TABLE"]
+        "Response" => ["CREATE TABLE foods1"]
     }
     .unwrap();
     assert!(df_sql.equals(&create_tbl_res));
@@ -72,10 +72,10 @@ fn read_parquet_tbl() {
     let sql = r#"
             CREATE TABLE foods1 AS
             SELECT *
-            FROM read_parquet('../../examples/datasets/foods1.parquet')"#;
+            FROM Read_Parquet('../../examples/datasets/foods1.parquet')"#;
     let df_sql = context.execute(sql).unwrap().collect().unwrap();
     let create_tbl_res = df! {
-        "Response" => ["CREATE TABLE"]
+        "Response" => ["CREATE TABLE foods1"]
     }
     .unwrap();
     assert!(df_sql.equals(&create_tbl_res));
@@ -95,10 +95,10 @@ fn read_ipc_tbl() {
     let sql = r#"
             CREATE TABLE foods1 AS
             SELECT *
-            FROM read_ipc('../../examples/datasets/foods1.ipc')"#;
+            FROM READ_IPC('../../examples/datasets/foods1.ipc')"#;
     let df_sql = context.execute(sql).unwrap().collect().unwrap();
     let create_tbl_res = df! {
-        "Response" => ["CREATE TABLE"]
+        "Response" => ["CREATE TABLE foods1"]
     }
     .unwrap();
     assert!(df_sql.equals(&create_tbl_res));

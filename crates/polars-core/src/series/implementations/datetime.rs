@@ -340,6 +340,10 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         self.0.physical().arg_unique()
     }
 
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        ChunkUnique::unique_id(self.0.physical())
+    }
+
     fn is_null(&self) -> BooleanChunked {
         self.0.is_null()
     }
@@ -370,28 +374,40 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
 
     fn max_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.physical().max_reduce();
-
-        Ok(Scalar::new(self.dtype().clone(), sc.value().clone()))
+        let av = sc
+            .value()
+            .as_datetime_owned(self.0.time_unit(), self.0.time_zone_arc());
+        Ok(Scalar::new(self.dtype().clone(), av))
     }
 
     fn min_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.physical().min_reduce();
-
-        Ok(Scalar::new(self.dtype().clone(), sc.value().clone()))
+        let av = sc
+            .value()
+            .as_datetime_owned(self.0.time_unit(), self.0.time_zone_arc());
+        Ok(Scalar::new(self.dtype().clone(), av))
     }
 
     fn mean_reduce(&self) -> PolarsResult<Scalar> {
         let mean = self.mean().map(|v| v as i64);
-        Ok(Scalar::new(self.dtype().clone(), mean.into()))
-    }
-
-    fn median_reduce(&self) -> PolarsResult<Scalar> {
-        let av: AnyValue = self.median().map(|v| v as i64).into();
+        let av = AnyValue::from(mean).as_datetime_owned(self.0.time_unit(), self.0.time_zone_arc());
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
-    fn quantile_reduce(&self, _quantile: f64, _method: QuantileMethod) -> PolarsResult<Scalar> {
-        Ok(Scalar::new(self.dtype().clone(), AnyValue::Null))
+    fn median_reduce(&self) -> PolarsResult<Scalar> {
+        let median = self.median().map(|v| v as i64);
+        let av =
+            AnyValue::from(median).as_datetime_owned(self.0.time_unit(), self.0.time_zone_arc());
+        Ok(Scalar::new(self.dtype().clone(), av))
+    }
+
+    fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
+        let quantile = self.0.physical().quantile_reduce(quantile, method)?;
+        let av = quantile.value().cast(&DataType::Int64);
+        Ok(Scalar::new(
+            self.dtype().clone(),
+            av.as_datetime_owned(self.0.time_unit(), self.0.time_zone_arc()),
+        ))
     }
 
     #[cfg(feature = "approx_unique")]

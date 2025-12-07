@@ -4,10 +4,10 @@ use components::row_deletions::DeletionFilesProvider;
 use futures::StreamExt;
 use polars_core::prelude::{InitHashMaps, PlHashMap};
 use polars_error::PolarsResult;
+use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 
 use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
-use crate::nodes::io_sources::multi_scan::components::row_counter::RowCounter;
 use crate::nodes::io_sources::multi_scan::pipeline::models::ResolvedSliceInfo;
 use crate::nodes::io_sources::multi_scan::{MultiScanConfig, components};
 

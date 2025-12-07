@@ -51,7 +51,7 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan, allow_local_scans: bool) -> P
                     SinkType::Callback(_) => {
                         return ineligible_error("contains callback sink");
                     },
-                    SinkType::File(_) | SinkType::Partition(_) => {
+                    SinkType::File { .. } | SinkType::Partitioned { .. } => {
                         // The sink destination is passed around separately, can't check the
                         // eligibility here.
                     },
@@ -85,13 +85,13 @@ impl DslPlan {
             | Slice { input, .. }
             | HStack { input, .. }
             | MatchToSchema { input, .. }
-            | PipeWithSchema { input, .. }
             | MapFunction { input, .. }
             | Sink { input, .. }
             | Cache { input, .. } => scratch.push(input),
             Union { inputs, .. } | HConcat { inputs, .. } | SinkMultiple { inputs } => {
                 scratch.extend(inputs)
             },
+            PipeWithSchema { input, .. } => scratch.extend(input.iter()),
             Join {
                 input_left,
                 input_right,
@@ -106,6 +106,8 @@ impl DslPlan {
             },
             IR { dsl, .. } => scratch.push(dsl),
             Scan { .. } | DataFrameScan { .. } => (),
+            #[cfg(feature = "pivot")]
+            Pivot { input, .. } => scratch.push(input),
             #[cfg(feature = "python")]
             PythonScan { .. } => (),
             #[cfg(feature = "merge_sorted")]

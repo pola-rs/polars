@@ -2,6 +2,16 @@
 import polars as pl
 import polars_cloud as pc
 
+# --8<-- [start:manifest]
+ctx = pc.ComputeContext(workspace="your-workspace", cpus=4, memory=16)
+ctx.register("ManifestName")
+
+# On another process / machine
+ctx = pc.ComputeContext(workspace="your-workspace", name="ManifestName")
+ctx.start()
+
+# --8<-- [end:manifest]
+
 # --8<-- [start:setup]
 ctx = pc.ComputeContext(workspace="your-workspace", cpus=4, memory=16)
 

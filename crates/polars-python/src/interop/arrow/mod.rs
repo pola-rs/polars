@@ -4,7 +4,6 @@ use pyo3::exceptions::PyValueError;
 use pyo3::types::{PyAnyMethods, PyTuple};
 use pyo3::{Bound, IntoPyObject, PyAny, PyResult, intern, pyfunction};
 
-use crate::interop::arrow::to_rust::normalize_arrow_fields;
 use crate::prelude::Wrap;
 use crate::series::import_schema_pycapsule;
 use crate::utils::to_py_err;
@@ -24,7 +23,6 @@ pub fn init_polars_schema_from_arrow_c_schema(
         .call0()?;
 
     let field = import_schema_pycapsule(&schema_capsule.extract()?)?;
-    let field = normalize_arrow_fields(&field);
 
     let ArrowDataType::Struct(fields) = field.dtype else {
         return Err(PyValueError::new_err(format!(
@@ -65,7 +63,6 @@ pub fn polars_schema_field_from_arrow_c_schema(
         .call0()?;
 
     let field = import_schema_pycapsule(&schema_capsule.extract()?)?;
-    let field = normalize_arrow_fields(&field);
     let dtype = DataType::from_arrow_field(&field);
 
     let name = field.name.into_pyobject(py)?.into_any();

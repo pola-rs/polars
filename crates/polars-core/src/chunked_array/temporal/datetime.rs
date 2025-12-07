@@ -40,6 +40,13 @@ impl DatetimeChunked {
         }
     }
 
+    pub fn time_zone_arc(&self) -> Option<Arc<TimeZone>> {
+        match &self.dtype {
+            DataType::Datetime(_, tz) => tz.as_ref().map(|tz| Arc::new(tz.clone())),
+            _ => unreachable!(),
+        }
+    }
+
     /// Convert from Datetime into String with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     pub fn to_string(&self, format: &str) -> PolarsResult<StringChunked> {

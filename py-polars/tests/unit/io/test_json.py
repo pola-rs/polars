@@ -3,6 +3,7 @@ from __future__ import annotations
 import gzip
 import io
 import json
+import math
 import re
 import zlib
 from collections import OrderedDict
@@ -12,6 +13,9 @@ from io import BytesIO
 from typing import TYPE_CHECKING
 
 import zstandard
+from hypothesis import given
+
+from polars.datatypes.group import FLOAT_DTYPES
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -22,10 +26,11 @@ import pytest
 import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing.parametric import dataframes
 
 
 @pytest.mark.may_fail_cloud  # reason: object
-def test_write_json() -> None:
+def test_write_json_example() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", None]})
     out = df.write_json()
     assert out == '[{"a":1,"b":"a"},{"a":2,"b":"b"},{"a":3,"b":null}]'
@@ -35,6 +40,57 @@ def test_write_json() -> None:
     f.write(out.encode())
     f.seek(0)
     result = pl.read_json(f)
+    assert_frame_equal(result, df)
+
+
+@pytest.mark.may_fail_cloud  # reason: object
+@given(
+    df=dataframes(
+        min_size=1,
+        allow_infinity=False,
+        allow_nan=False,
+        excluded_dtypes=[
+            pl.Binary,
+            pl.Categorical,
+            pl.Date,
+            pl.Datetime,
+            pl.Decimal,
+            pl.Duration,  # See #20198
+            pl.Enum,
+            pl.Extension,
+            pl.Int128,
+            pl.Struct,
+            pl.Time,
+            pl.UInt128,
+        ],
+    )
+)
+def test_write_json_roundtrip(df: pl.DataFrame) -> None:
+    f = io.BytesIO()
+    f.write(df.write_json().encode())
+    f.seek(0)
+    result = pl.read_json(f, schema=df.schema)
+    assert_frame_equal(result, df)
+
+
+@given(
+    df=dataframes(
+        min_size=1,
+        allowed_dtypes=FLOAT_DTYPES,
+    )
+)
+def test_write_json_floats(df: pl.DataFrame) -> None:
+    f = io.BytesIO()
+    f.write(df.write_json().encode())
+    f.seek(0)
+    result = pl.read_json(f, schema=df.schema)
+
+    df = df.select(
+        pl.all()
+        .replace(math.inf, None)
+        .replace(-math.inf, None)
+        .replace(math.nan, None)
+    )
     assert_frame_equal(result, df)
 
 

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
 
 import polars as pl
+import polars.selectors as cs
 from polars.exceptions import ColumnNotFoundError
 from polars.testing import assert_frame_equal, assert_series_equal
 
@@ -22,14 +23,22 @@ def test_unique_predicate_pd() -> None:
             "z": [True, False],
         }
     )
-
-    result = (
-        lf.unique(subset=["x", "y"], maintain_order=True, keep="last")
-        .filter(pl.col("z"))
-        .collect()
-    )
-    expected = pl.DataFrame(schema={"x": pl.String, "y": pl.String, "z": pl.Boolean})
-    assert_frame_equal(result, expected)
+    for subset in (
+        ["x", "y"],
+        pl.exclude("z"),
+        pl.col("x", "y"),
+        ~cs.starts_with("z"),
+        [pl.col("x"), pl.col("y").str.len_bytes()],
+    ):
+        result = (
+            lf.unique(subset=subset, maintain_order=True, keep="last")
+            .filter(pl.col("z"))
+            .collect()
+        )
+        expected = pl.DataFrame(
+            schema={"x": pl.String, "y": pl.String, "z": pl.Boolean}
+        )
+        assert_frame_equal(result, expected)
 
     result = (
         lf.unique(subset=["x", "y"], maintain_order=True, keep="any")
@@ -125,7 +134,6 @@ def test_struct_unique_df() -> None:
             "struct": [{"x": 1, "y": 2}, {"x": 3, "y": 4}, {"x": 1, "y": 2}],
         }
     )
-
     df.select("numerical", "struct").unique().sort("numerical")
 
 
@@ -234,7 +242,18 @@ def test_categorical_updated_revmap_unique_20233() -> None:
     assert_series_equal(s.unique(), pl.Series("a", ["D"], pl.Categorical))
 
 
-def test_unique_check_order_20480() -> None:
+@pytest.mark.parametrize(
+    "subset",
+    [
+        "key",
+        ["key"],
+        pl.col("key"),
+        pl.col("key").str.extract(r"^([a-z]+)_"),
+        pl.exclude("value", "number"),
+        cs.exclude("number", "value"),
+    ],
+)
+def test_unique_check_order_20480(subset: Any) -> None:
     df = pl.DataFrame(
         [
             {
@@ -252,7 +271,7 @@ def test_unique_check_order_20480() -> None:
     assert (
         df.lazy()
         .sort("key", "number")
-        .unique(subset="key", keep="first")
+        .unique(subset=subset, keep="first")
         .collect()["number"]
         .item()
         == 1
@@ -326,3 +345,56 @@ def test_unique_keep_none_24260() -> None:
     data = pl.DataFrame({"a": [1, 3, 2], "b": [4, 4, 6]})
     out = data.lazy().unique(subset="b", keep="none").collect()
     assert_frame_equal(out, pl.DataFrame({"a": [2], "b": [6]}))
+
+
+def test_unique_column_subset_25233() -> None:
+    df = pl.DataFrame(
+        {
+            "time": pl.datetime_range(
+                start=datetime(2021, 12, 16),
+                end=datetime(2021, 12, 16, 1, 30),
+                interval="15m",
+                eager=True,
+            ),
+            "op_type": ["x", "y", "x", "y", "x", "x", "y"],
+            "value": [1, 2, 3, 4, 6, 7, 8],
+        }
+    )
+
+    result = df.unique(subset="op_type")
+    assert result.height == 2
+    assert result.select(pl.col.op_type.n_unique()).item() == 2
+
+
+@pytest.mark.parametrize("stable", [False, True])
+def test_unique_list_arr_non_numeric(stable: bool) -> None:
+    assert_series_equal(
+        pl.Series([["A"], ["B"], ["A"]]).unique(maintain_order=stable),
+        pl.Series([["A"], ["B"]]),
+        check_order=stable,
+    )
+
+    assert_series_equal(
+        pl.Series([["A"], ["B"], ["A"]], dtype=pl.Array(pl.String, 1)).unique(
+            maintain_order=stable
+        ),
+        pl.Series([["A"], ["B"]], dtype=pl.Array(pl.String, 1)),
+        check_order=stable,
+    )
+
+
+@pytest.mark.parametrize("maintain_order", [False, True])
+@pytest.mark.parametrize("stable", [False, True])
+def test_unique_on_literal_in_agg(maintain_order: bool, stable: bool) -> None:
+    df = (
+        pl.DataFrame({"a": [0, 1]})
+        .group_by("a", maintain_order=maintain_order)
+        .agg(b=pl.lit(1, pl.Int64).unique(maintain_order=stable))
+    )
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {"a": [0, 1], "b": [[1], [1]]}, schema_overrides={"b": pl.List(pl.Int64)}
+        ),
+        check_row_order=maintain_order,
+    )

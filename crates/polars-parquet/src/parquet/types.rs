@@ -1,4 +1,8 @@
-use arrow::types::{AlignedBytes, Bytes4Alignment4, Bytes8Alignment8, Bytes12Alignment4};
+use arrow::types::{
+    AlignedBytes, Bytes2Alignment2, Bytes4Alignment4, Bytes8Alignment8, Bytes12Alignment4,
+};
+use num_traits::{FromBytes, ToBytes};
+use polars_utils::float16::pf16;
 
 use crate::parquet::schema::types::PhysicalType;
 use crate::read::expr::ParquetScalar;
@@ -85,6 +89,30 @@ native!(i32, Bytes4Alignment4, PhysicalType::Int32, Int32);
 native!(i64, Bytes8Alignment8, PhysicalType::Int64, Int64);
 native!(f32, Bytes4Alignment4, PhysicalType::Float, Float32);
 native!(f64, Bytes8Alignment8, PhysicalType::Double, Float64);
+
+use crate::parquet::types::PhysicalType::FixedLenByteArray;
+
+no_parquet_scalar_impl!(pf16);
+impl NativeType for pf16 {
+    const TYPE: PhysicalType = FixedLenByteArray(2);
+    type Bytes = [u8; size_of::<Self>()];
+    type AlignedBytes = Bytes2Alignment2;
+
+    #[inline]
+    fn to_le_bytes(&self) -> Self::Bytes {
+        <Self as ToBytes>::to_le_bytes(self)
+    }
+
+    #[inline]
+    fn from_le_bytes(bytes: Self::Bytes) -> Self {
+        <Self as FromBytes>::from_le_bytes(&bytes)
+    }
+
+    #[inline]
+    fn ord(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(other).unwrap_or(std::cmp::Ordering::Equal)
+    }
+}
 
 no_parquet_scalar_impl!([u32; 3]);
 impl NativeType for [u32; 3] {

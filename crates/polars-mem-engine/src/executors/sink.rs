@@ -5,7 +5,7 @@ use polars_core::frame::DataFrame;
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
-use polars_plan::dsl::{FileType, SinkTypeIR};
+use polars_plan::dsl::{FileType, PartitionedSinkOptionsIR, SinkTypeIR};
 use polars_plan::plans::prune::prune;
 use polars_plan::plans::{AExpr, IR, IRPlan};
 use polars_utils::arena::{Arena, Node};
@@ -38,7 +38,7 @@ impl PartitionedSinkExecutor {
         let name = {
             let IR::Sink {
                 input: sink_input,
-                payload: SinkTypeIR::Partition(part),
+                payload: SinkTypeIR::Partitioned(PartitionedSinkOptionsIR { file_format, .. }),
             } = lp_arena.get_mut(root)
             else {
                 unreachable!();
@@ -48,7 +48,7 @@ impl PartitionedSinkExecutor {
             *sink_input = scan;
 
             // Generate a name based on the sink file type
-            format!("sink_{}[partitioned]", sink_name(&part.file_type))
+            format!("sink_{}[partitioned]", sink_name(file_format))
         };
 
         // Prune the subplan into separate arenas

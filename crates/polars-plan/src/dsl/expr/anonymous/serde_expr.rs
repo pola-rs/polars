@@ -119,6 +119,35 @@ impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn AnonymousColumnsUdf>> {
     }
 }
 
+impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn AnonymousStreamingAgg>> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'a>,
+    {
+        use serde::de::Error;
+        deserialize_map_bytes(deserializer, |buf| {
+            deserialize_anon_agg(&buf)
+                .map_err(|e| D::Error::custom(format!("{e}")))
+                .map(SpecialEq::new)
+        })?
+    }
+}
+
+pub(super) fn deserialize_anon_agg(buf: &[u8]) -> PolarsResult<Arc<dyn AnonymousStreamingAgg>> {
+    if buf.starts_with(NAMED_SERDE_MAGIC_BYTE_MARK) {
+        let (reg, name, payload) = deserialize_named_registry(buf)?;
+
+        if let Some(func) = reg.get_agg(name, payload)? {
+            Ok(func)
+        } else {
+            let msg = "name not found in named serde registry";
+            polars_bail!(ComputeError: msg)
+        }
+    } else {
+        polars_bail!(ComputeError: "deserialization not supported for this 'opaque' function")
+    }
+}
+
 // Serialize SpecialEq<T>
 
 impl Serialize for SpecialEq<Series> {

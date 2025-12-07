@@ -258,7 +258,7 @@ def test_init_structured_objects() -> None:
         )
         assert df.schema == {
             "ts": pl.Datetime("ms"),
-            "tk": pl.Categorical(ordering="lexical"),
+            "tk": pl.Categorical(),
             "pc": pl.Float64,
             "sz": pl.UInt16,
         }
@@ -1658,6 +1658,7 @@ def test_df_schema_sequences_incorrect_length() -> None:
     [
         ("f8", numpy_char_code_to_dtype, pl.Float64),
         ("f4", numpy_char_code_to_dtype, pl.Float32),
+        ("f2", numpy_char_code_to_dtype, pl.Float16),
         ("i4", numpy_char_code_to_dtype, pl.Int32),
         ("u1", numpy_char_code_to_dtype, pl.UInt8),
         ("?", numpy_char_code_to_dtype, pl.Boolean),

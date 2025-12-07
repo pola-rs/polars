@@ -3,10 +3,12 @@ use std::sync::Arc;
 
 use polars_core::config;
 use polars_core::error::{PolarsResult, polars_bail};
+use polars_core::frame::DataFrame;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "python")]
 use polars_utils::python_function::PythonObject;
+use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 use polars_utils::{format_pl_smallstr, unitvec};
 
@@ -100,7 +102,7 @@ pub(super) fn expand_datasets(
                     let mut out: Arc<[PlSmallStr]> =
                         PlHashSet::from_iter(aexpr_to_leaf_names_iter(x.node(), expr_arena))
                             .into_iter()
-                            .filter(|live_col| {
+                            .filter(|&live_col| {
                                 if unified_scan_args
                                     .row_index
                                     .as_ref()
@@ -112,6 +114,7 @@ pub(super) fn expand_datasets(
                                     true
                                 }
                             })
+                            .cloned()
                             .collect();
 
                     Arc::get_mut(&mut out).unwrap().sort_unstable();
@@ -270,7 +273,7 @@ pub(super) fn expand_datasets(
 
                         *sources = resolved_sources.clone();
 
-                        *scan_type = Box::new(match *resolved_scan_type.clone() {
+                        **scan_type = match *resolved_scan_type.clone() {
                             #[cfg(feature = "csv")]
                             FileScanDsl::Csv { options } => FileScanIR::Csv { options },
 
@@ -297,12 +300,15 @@ pub(super) fn expand_datasets(
                                 }
                             },
 
+                            #[cfg(feature = "scan_lines")]
+                            FileScanDsl::Lines { name } => FileScanIR::Lines { name },
+
                             FileScanDsl::Anonymous {
                                 options,
                                 function,
                                 file_info: _,
                             } => FileScanIR::Anonymous { options, function },
-                        });
+                        };
                     },
 
                     DslPlan::PythonScan { options } => {
@@ -327,6 +333,64 @@ pub(super) fn expand_datasets(
         }
 
         apply_scan_predicate_to_scan_ir(node, ir_arena, expr_arena)?;
+
+        let output_schema = ir_arena.get(node).schema(ir_arena);
+
+        let IR::Scan {
+            sources,
+            file_info: _,
+            hive_parts: _,
+            predicate,
+            predicate_file_skip_applied: _,
+            output_schema: _,
+            scan_type,
+            unified_scan_args,
+        } = ir_arena.get(node)
+        else {
+            unreachable!()
+        };
+
+        let df: DataFrame = if (sources.is_empty()
+            && !matches!(scan_type.as_ref(), FileScanIR::Anonymous { .. }))
+            || unified_scan_args
+                .pre_slice
+                .as_ref()
+                .is_some_and(|slice| slice.len() == 0)
+        {
+            if config::verbose() {
+                eprintln!("expand_datasets: scan IR replaced with empty DataFrameScan")
+            }
+
+            DataFrame::empty_with_schema(output_schema.as_ref())
+        } else if output_schema.is_empty()
+            && let Some((physical_rows, deleted_rows)) = unified_scan_args.row_count
+            && unified_scan_args.pre_slice.is_none()
+            && predicate.is_none()
+        {
+            let row_counter = RowCounter::new(physical_rows, deleted_rows);
+            row_counter.num_rows_idxsize()?;
+            let num_rows = row_counter.num_rows()?;
+
+            if config::verbose() {
+                eprintln!(
+                    "expand_datasets: scan IR replaced with 0-width DataFrameScan with height {} ({:?})",
+                    num_rows, &row_counter
+                )
+            }
+
+            DataFrame::empty_with_height(num_rows)
+        } else {
+            continue;
+        };
+
+        let schema = df.schema().clone();
+        let new_ir = IR::DataFrameScan {
+            df: Arc::new(df),
+            schema: schema.clone(),
+            output_schema: Some(schema),
+        };
+
+        ir_arena.replace(node, new_ir);
     }
 
     Ok(())

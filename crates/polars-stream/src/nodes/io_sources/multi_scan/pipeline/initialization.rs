@@ -5,12 +5,12 @@ use futures::StreamExt;
 use polars_core::prelude::PlHashMap;
 use polars_error::PolarsResult;
 use polars_mem_engine::scan_predicate::initialize_scan_predicate;
+use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 
 use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
 use crate::async_primitives::connector::{self};
 use crate::nodes::io_sources::multi_scan::components::bridge::{BridgeRecvPort, BridgeState};
-use crate::nodes::io_sources::multi_scan::components::row_counter::RowCounter;
 use crate::nodes::io_sources::multi_scan::components::row_deletions::{
     DeletionFilesProvider, ExternalFilterMask, RowDeletionsInit,
 };

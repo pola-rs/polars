@@ -155,3 +155,14 @@ def test_reshape_empty(shape: tuple[int, ...]) -> None:
     s = pl.Series("a", [], dtype=pl.Int64)
     expected_len = max(shape[0], 0)
     assert s.reshape(shape).len() == expected_len
+
+
+def test_reshape_sliced_list_25114() -> None:
+    s = pl.Series(
+        "values",
+        [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11], [12, 13, 14, 15]],
+        dtype=pl.List(pl.Int64),
+    )
+
+    assert_series_equal(s.slice(0, 1).reshape((-1,)), pl.Series("values", [0, 1, 2, 3]))
+    assert_series_equal(s.slice(1, 1).reshape((-1,)), pl.Series("values", [4, 5, 6, 7]))

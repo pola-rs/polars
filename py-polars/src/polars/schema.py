@@ -23,6 +23,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
+    import pyarrow as pa
+
     from polars import DataFrame, LazyFrame
     from polars._typing import ArrowSchemaExportable
 
@@ -30,6 +32,9 @@ if TYPE_CHECKING:
         from typing import TypeAlias
     else:
         from typing_extensions import TypeAlias
+else:
+    from polars._dependencies import pyarrow as pa
+
 
 if sys.version_info >= (3, 10):
 
@@ -198,6 +203,39 @@ class Schema(BaseSchema):
         [UInt8, List(UInt8)]
         """
         return list(self.values())
+
+    @unstable()
+    def to_arrow(self, *, compat_level: CompatLevel | None = None) -> pa.Schema:
+        """
+        Convert the schema to a pyarrow schema.
+
+        Parameters
+        ----------
+        compat_level
+            Use a specific compatibility level
+            when exporting Polars' internal data types.
+
+        Examples
+        --------
+        >>> pl.Schema({"x": pl.String}).to_arrow()
+        x: string_view
+        """
+
+        class SchemaCapsuleProvider:
+            def __init__(self, schema: Schema, compat_level: CompatLevel) -> None:
+                self.schema = schema
+                self.compat_level = compat_level
+
+            def __arrow_c_schema__(self) -> object:
+                return polars_schema_to_pycapsule(
+                    self.schema, self.compat_level._version
+                )
+
+        return pa.schema(
+            SchemaCapsuleProvider(
+                self, CompatLevel.newest() if compat_level is None else compat_level
+            )
+        )
 
     @overload
     def to_frame(self, *, eager: Literal[False]) -> LazyFrame: ...

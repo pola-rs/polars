@@ -8,7 +8,7 @@ use polars_utils::idx_vec::UnitVec;
 use polars_utils::unique_id::UniqueId;
 
 use super::expr_pullup::is_output_ordered;
-use crate::dsl::SinkTypeIR;
+use crate::dsl::{FileSinkOptions, PartitionedSinkOptionsIR, SinkTypeIR};
 use crate::plans::{AExpr, IR};
 
 pub(super) fn pullup_orders(
@@ -65,7 +65,7 @@ pub(super) fn pullup_orders(
                 maintain_order,
                 ..
             } => {
-                if !inputs_ordered[0] {
+                if !inputs_ordered[0] && *maintain_order {
                     // Unordered -> _
                     //   to
                     // maintain_order = false
@@ -77,8 +77,10 @@ pub(super) fn pullup_orders(
                         .any(|k| is_output_ordered(expr_arena.get(k.node()), expr_arena, false));
                     if !keys_produce_order {
                         *maintain_order = false;
-                        set_unordered_output!();
                     }
+                }
+                if !*maintain_order {
+                    set_unordered_output!();
                 }
             },
             IR::Sink { input: _, payload } => {
@@ -86,8 +88,13 @@ pub(super) fn pullup_orders(
                     // Set maintain order to false if input is unordered
                     match payload {
                         SinkTypeIR::Memory => {},
-                        SinkTypeIR::File(s) => s.sink_options.maintain_order = false,
-                        SinkTypeIR::Partition(s) => s.sink_options.maintain_order = false,
+                        SinkTypeIR::File(FileSinkOptions {
+                            unified_sink_args, ..
+                        })
+                        | SinkTypeIR::Partitioned(PartitionedSinkOptionsIR {
+                            unified_sink_args,
+                            ..
+                        }) => unified_sink_args.maintain_order = false,
                         SinkTypeIR::Callback(s) => s.maintain_order = false,
                     }
                 }
@@ -114,10 +121,10 @@ pub(super) fn pullup_orders(
                         _ => unreachable!(),
                     };
 
-                    if matches!(new_options.args.maintain_order, MOJ::None) {
-                        set_unordered_output!();
-                    }
                     *options = Arc::new(new_options);
+                }
+                if matches!(options.args.maintain_order, MOJ::None) {
+                    set_unordered_output!();
                 }
             },
             IR::Distinct { input: _, options } => {
@@ -126,6 +133,8 @@ pub(super) fn pullup_orders(
                     if options.keep_strategy != UniqueKeepStrategy::None {
                         options.keep_strategy = UniqueKeepStrategy::Any;
                     }
+                }
+                if !options.maintain_order {
                     set_unordered_output!();
                 }
             },

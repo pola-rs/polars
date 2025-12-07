@@ -1,6 +1,5 @@
 //! The typed heart of every Series column.
 #![allow(unsafe_op_in_unsafe_fn)]
-use std::iter::Map;
 use std::sync::Arc;
 
 use arrow::array::*;
@@ -50,15 +49,13 @@ pub mod temporal;
 mod to_vec;
 mod trusted_len;
 
-use std::slice::Iter;
-
 use arrow::legacy::prelude::*;
 #[cfg(feature = "dtype-struct")]
 pub use struct_::StructChunked;
 
 use self::flags::{StatisticsFlags, StatisticsFlagsIM};
 use crate::series::IsSorted;
-use crate::utils::{first_non_null, last_non_null};
+use crate::utils::{first_non_null, first_null, last_non_null};
 
 #[cfg(not(feature = "dtype-categorical"))]
 pub struct RevMapping {}
@@ -281,6 +278,34 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         out
     }
 
+    pub fn first_null(&self) -> Option<usize> {
+        if self.null_count() == 0 {
+            None
+        }
+        // We now know there is at least 1 non-null item in the array, and self.len() > 0
+        else if self.null_count() == self.len() {
+            Some(0)
+        } else if self.is_sorted_any() {
+            let out = if unsafe { self.downcast_get_unchecked(0).is_null_unchecked(0) } {
+                // nulls are all at the start
+                0
+            } else {
+                // nulls are all at the end
+                self.null_count()
+            };
+
+            debug_assert!(
+                // If we are lucky this catches something.
+                unsafe { self.get_unchecked(out) }.is_some(),
+                "incorrect sorted flag"
+            );
+
+            Some(out)
+        } else {
+            first_null(self.chunks().iter().map(|arr| arr.as_ref()))
+        }
+    }
+
     /// Get the index of the first non null value in this [`ChunkedArray`].
     pub fn first_non_null(&self) -> Option<usize> {
         if self.null_count() == self.len() {
@@ -306,7 +331,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
             Some(out)
         } else {
-            first_non_null(self.iter_validities())
+            first_non_null(self.chunks().iter().map(|arr| arr.as_ref()))
         }
     }
 
@@ -335,7 +360,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
             Some(out)
         } else {
-            last_non_null(self.iter_validities(), self.len())
+            last_non_null(self.chunks().iter().map(|arr| arr.as_ref()), self.len())
         }
     }
 
@@ -367,7 +392,9 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     /// Get the buffer of bits representing null values
     #[inline]
     #[allow(clippy::type_complexity)]
-    pub fn iter_validities(&self) -> Map<Iter<'_, ArrayRef>, fn(&ArrayRef) -> Option<&Bitmap>> {
+    pub fn iter_validities(
+        &self,
+    ) -> impl ExactSizeIterator<Item = Option<&Bitmap>> + DoubleEndedIterator {
         fn to_validity(arr: &ArrayRef) -> Option<&Bitmap> {
             arr.validity()
         }
@@ -553,20 +580,23 @@ where
         }
     }
 
+    /// # Panics
+    /// Panics if the [`ChunkedArray`] is empty.
     #[inline]
     pub fn first(&self) -> Option<T::Physical<'_>> {
-        unsafe {
-            let arr = self.downcast_get_unchecked(0);
-            arr.get_unchecked(0)
-        }
+        self.iter().next().unwrap()
     }
 
+    /// # Panics
+    /// Panics if the [`ChunkedArray`] is empty.
     #[inline]
     pub fn last(&self) -> Option<T::Physical<'_>> {
-        unsafe {
-            let arr = self.downcast_get_unchecked(self.chunks.len().checked_sub(1)?);
-            arr.get_unchecked(arr.len().checked_sub(1)?)
-        }
+        let arr = self
+            .downcast_iter()
+            .rev()
+            .find(|arr| !arr.is_empty())
+            .unwrap();
+        unsafe { arr.get_unchecked(arr.len() - 1) }
     }
 
     pub fn set_validity(&mut self, validity: &Bitmap) {
@@ -631,6 +661,27 @@ impl ListChunked {
         }
     }
 
+    pub fn has_empty_lists(&self) -> bool {
+        for arr in self.downcast_iter() {
+            if arr.is_empty() {
+                continue;
+            }
+
+            if match arr.validity() {
+                None => arr.offsets().lengths().any(|l| l == 0),
+                Some(validity) => arr
+                    .offsets()
+                    .lengths()
+                    .enumerate()
+                    .any(|(i, l)| l == 0 && unsafe { validity.get_bit_unchecked(i) }),
+            } {
+                return true;
+            }
+        }
+
+        false
+    }
+
     pub fn has_masked_out_values(&self) -> bool {
         for arr in self.downcast_iter() {
             if arr.is_empty() {
@@ -691,14 +742,17 @@ impl ArrayChunked {
                 vec![FixedSizeListArray::new(arrow_dtype, length, values, None).into_boxed()],
             );
         }
-
+        let mut total_len = 0;
         let chunks = chunks
             .into_iter()
             .map(|chunk| {
                 debug_assert_eq!(chunk.len() % width, 0);
-                FixedSizeListArray::new(arrow_dtype.clone(), length, chunk, None).into_boxed()
+                let chunk_len = chunk.len() / width;
+                total_len += chunk_len;
+                FixedSizeListArray::new(arrow_dtype.clone(), chunk_len, chunk, None).into_boxed()
             })
             .collect();
+        debug_assert_eq!(total_len, length);
 
         unsafe { Self::new_with_dims(field, chunks, length, 0) }
     }

@@ -20,12 +20,12 @@ def test_abs() -> None:
     # ints
     s = pl.Series([1, -2, 3, -4])
     assert_series_equal(s.abs(), pl.Series([1, 2, 3, 4]))
-    assert_series_equal(cast(pl.Series, np.abs(s)), pl.Series([1, 2, 3, 4]))
+    assert_series_equal(cast("pl.Series", np.abs(s)), pl.Series([1, 2, 3, 4]))
 
     # floats
     s = pl.Series([1.0, -2.0, 3, -4.0])
     assert_series_equal(s.abs(), pl.Series([1.0, 2.0, 3.0, 4.0]))
-    assert_series_equal(cast(pl.Series, np.abs(s)), pl.Series([1.0, 2.0, 3.0, 4.0]))
+    assert_series_equal(cast("pl.Series", np.abs(s)), pl.Series([1.0, 2.0, 3.0, 4.0]))
     assert_series_equal(
         pl.select(pl.lit(s).abs()).to_series(), pl.Series([1.0, 2.0, 3.0, 4.0])
     )

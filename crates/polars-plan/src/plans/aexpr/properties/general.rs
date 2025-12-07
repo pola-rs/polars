@@ -27,7 +27,11 @@ impl AExpr {
 
             Element | BinaryExpr { .. } | Column(_) | Ternary { .. } | Cast { .. } => true,
 
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling { .. } => false,
+
             Agg { .. }
+            | AnonymousStreamingAgg { .. }
             | Explode { .. }
             | Filter { .. }
             | Gather { .. }
@@ -35,7 +39,7 @@ impl AExpr {
             | Slice { .. }
             | Sort { .. }
             | SortBy { .. }
-            | Window { .. } => false,
+            | Over { .. } => false,
         }
     }
 

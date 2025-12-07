@@ -628,6 +628,8 @@ fn prepare_keys_multiple(s: &[Series], nulls_equal: bool) -> PolarsResult<Binary
         .map(|s| {
             let phys = s.to_physical_repr();
             match phys.dtype() {
+                #[cfg(feature = "dtype-f16")]
+                DataType::Float16 => phys.f16().unwrap().to_canonical().into_column(),
                 DataType::Float32 => phys.f32().unwrap().to_canonical().into_column(),
                 DataType::Float64 => phys.f64().unwrap().to_canonical().into_column(),
                 _ => phys.into_owned().into_column(),

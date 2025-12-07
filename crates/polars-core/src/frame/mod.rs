@@ -29,6 +29,8 @@ mod from;
 #[cfg(feature = "algorithm_group_by")]
 pub mod group_by;
 pub(crate) mod horizontal;
+#[cfg(feature = "proptest")]
+pub mod proptest;
 #[cfg(any(feature = "rows", feature = "object"))]
 pub mod row;
 mod top_k;
@@ -44,7 +46,7 @@ use strum_macros::IntoStaticStr;
 use crate::POOL;
 #[cfg(feature = "row_hash")]
 use crate::hashing::_df_rows_to_hashes_threaded_vertical;
-use crate::prelude::sort::{argsort_multiple_row_fmt, prepare_arg_sort};
+use crate::prelude::sort::arg_sort;
 use crate::series::IsSorted;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash, IntoStaticStr)]
@@ -388,6 +390,13 @@ impl DataFrame {
             columns: vec![],
             cached_schema: OnceLock::new(),
         }
+    }
+
+    /// Create an empty `DataFrame` with empty columns as per the `schema`.
+    pub fn empty_with_arc_schema(schema: Arc<Schema>) -> Self {
+        let mut df = Self::empty_with_schema(&schema);
+        df.cached_schema = OnceLock::from(schema);
+        df
     }
 
     /// Create an empty `DataFrame` with empty columns as per the `schema`.
@@ -2108,6 +2117,8 @@ impl DataFrame {
 
     /// Rename a column in the [`DataFrame`].
     ///
+    /// Should not be called in a loop as that can lead to quadratic behavior.
+    ///
     /// # Example
     ///
     /// ```
@@ -2136,6 +2147,37 @@ impl DataFrame {
         Ok(self)
     }
 
+    pub fn rename_many<'a>(
+        &mut self,
+        renames: impl Iterator<Item = (&'a str, PlSmallStr)>,
+    ) -> PolarsResult<&mut Self> {
+        let mut schema = self.schema().as_ref().clone();
+        self.clear_schema();
+
+        for (from, to) in renames {
+            if from == to.as_str() {
+                continue;
+            }
+
+            polars_ensure!(
+                !schema.contains(&to),
+                Duplicate: "column rename attempted with already existing name \"{to}\""
+            );
+
+            match schema.get_full(from) {
+                None => polars_bail!(col_not_found = from),
+                Some((idx, _, _)) => {
+                    let (n, _) = schema.get_at_index_mut(idx).unwrap();
+                    *n = to.clone();
+                    self.columns.get_mut(idx).unwrap().rename(to);
+                },
+            }
+        }
+
+        self.cached_schema = OnceLock::from(Arc::new(schema));
+        Ok(self)
+    }
+
     /// Sort [`DataFrame`] in place.
     ///
     /// See [`DataFrame::sort`] for more instruction.
@@ -2154,7 +2196,7 @@ impl DataFrame {
     pub fn sort_impl(
         &self,
         by_column: Vec<Column>,
-        mut sort_options: SortMultipleOptions,
+        sort_options: SortMultipleOptions,
         slice: Option<(i64, usize)>,
     ) -> PolarsResult<Self> {
         if by_column.is_empty() {
@@ -2232,6 +2274,7 @@ impl DataFrame {
         }
 
         let has_nested = by_column.iter().any(|s| s.dtype().is_nested());
+        let allow_threads = sort_options.multithreaded;
 
         // a lot of indirection in both sorting and take
         let mut df = self.clone();
@@ -2258,24 +2301,7 @@ impl DataFrame {
                 }
                 s.arg_sort(options)
             },
-            _ => {
-                if sort_options.nulls_last.iter().all(|&x| x)
-                    || has_nested
-                    || std::env::var("POLARS_ROW_FMT_SORT").is_ok()
-                {
-                    argsort_multiple_row_fmt(
-                        &by_column,
-                        sort_options.descending,
-                        sort_options.nulls_last,
-                        sort_options.multithreaded,
-                    )?
-                } else {
-                    let (first, other) = prepare_arg_sort(by_column, &mut sort_options)?;
-                    first
-                        .as_materialized_series()
-                        .arg_sort_multiple(&other, &sort_options)?
-                }
-            },
+            _ => arg_sort(&by_column, sort_options)?,
         };
 
         if let Some((offset, len)) = slice {
@@ -2284,7 +2310,7 @@ impl DataFrame {
 
         // SAFETY:
         // the created indices are in bounds
-        let mut df = unsafe { df.take_unchecked_impl(&take, sort_options.multithreaded) };
+        let mut df = unsafe { df.take_unchecked_impl(&take, allow_threads) };
         set_sorted(&mut df);
         Ok(df)
     }
@@ -2313,7 +2339,6 @@ impl DataFrame {
 
             let (repr, materialized_at) = match col {
                 Column::Series(s) => ("series", s.materialized_at()),
-                Column::Partitioned(_) => ("partitioned", None),
                 Column::Scalar(_) => ("scalar", None),
             };
             let sorted_asc = flags.contains(StatisticsFlags::IS_SORTED_ASC);
@@ -2761,6 +2786,7 @@ impl DataFrame {
         (a, b)
     }
 
+    #[must_use]
     pub fn clear(&self) -> Self {
         let col = self.columns.iter().map(|s| s.clear()).collect::<Vec<_>>();
         unsafe { DataFrame::new_no_checks(0, col) }
@@ -3433,6 +3459,10 @@ impl DataFrame {
         );
         self.vstack_mut_owned_unchecked(df);
         Ok(())
+    }
+
+    pub fn into_columns(self) -> Vec<Column> {
+        self.columns
     }
 }
 

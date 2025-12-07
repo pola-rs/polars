@@ -21,7 +21,10 @@ def test_shrink_dtype() -> None:
         }
     )
 
-    with pytest.warns(DeprecationWarning):
+    with pytest.warns(
+        DeprecationWarning,
+        match=r"use `Series\.shrink_dtype` instead",
+    ):
         out = df.select(pl.all().shrink_dtype())
 
     assert out.dtypes == [

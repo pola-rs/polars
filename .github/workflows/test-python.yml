@@ -47,6 +47,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Free some disk space (remove unused packages)
+        uses: jlumbroso/free-disk-space@v1.3.1
+        if: ${{ matrix.os != 'windows-latest' }}
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -89,7 +93,7 @@ jobs:
       - name: Install Polars
         run: |
           pip install --no-deps -e .
-          maturin develop --manifest-path runtime/Cargo.toml
+          maturin develop --manifest-path runtime/polars-runtime-32/Cargo.toml
 
       - name: Run doctests
         if: github.ref_name != 'main' && matrix.python-version == '3.13' && matrix.os == 'ubuntu-latest'

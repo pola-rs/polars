@@ -1,4 +1,3 @@
-# Polars Runtime
+Please only edit files in template, and when done run template.py.
 
-Packages that contain the binary shared libraries that back the polars python package. Not meant for
-general consumption and just meant as dependencies for the polars main package.
+Do not edit the files in autogen_runtime* directly.

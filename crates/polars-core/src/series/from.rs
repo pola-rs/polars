@@ -113,9 +113,17 @@ impl Series {
                 })
             },
             Boolean => BooleanChunked::from_chunks(name, chunks).into_series(),
+            #[cfg(feature = "dtype-f16")]
+            Float16 => Float16Chunked::from_chunks(name, chunks).into_series(),
             Float32 => Float32Chunked::from_chunks(name, chunks).into_series(),
             Float64 => Float64Chunked::from_chunks(name, chunks).into_series(),
             BinaryOffset => BinaryOffsetChunked::from_chunks(name, chunks).into_series(),
+            #[cfg(feature = "dtype-extension")]
+            Extension(typ, storage) => ExtensionChunked::from_storage(
+                typ.clone(),
+                Series::from_chunks_and_dtype_unchecked(name, chunks, storage),
+            )
+            .into_series(),
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
                 let mut ca =
@@ -166,7 +174,7 @@ impl Series {
     /// The caller must ensure that the given `dtype` matches all the `ArrayRef` dtypes.
     pub unsafe fn _try_from_arrow_unchecked_with_md(
         name: PlSmallStr,
-        chunks: Vec<ArrayRef>,
+        mut chunks: Vec<ArrayRef>,
         dtype: &ArrowDataType,
         md: Option<&Metadata>,
     ) -> PolarsResult<Self> {
@@ -233,10 +241,11 @@ impl Series {
                 "dtype-i128",
                 Ok(Int128Chunked::from_chunks(name, chunks).into_series())
             ),
+            #[cfg(feature = "dtype-f16")]
             ArrowDataType::Float16 => {
                 let chunks =
-                    cast_chunks(&chunks, &DataType::Float32, CastOptions::NonStrict).unwrap();
-                Ok(Float32Chunked::from_chunks(name, chunks).into_series())
+                    cast_chunks(&chunks, &DataType::Float16, CastOptions::NonStrict).unwrap();
+                Ok(Float16Chunked::from_chunks(name, chunks).into_series())
             },
             ArrowDataType::Float32 => Ok(Float32Chunked::from_chunks(name, chunks).into_series()),
             ArrowDataType::Float64 => Ok(Float64Chunked::from_chunks(name, chunks).into_series()),
@@ -437,7 +446,7 @@ impl Series {
             },
             #[cfg(feature = "object")]
             ArrowDataType::Extension(ext)
-                if ext.name == EXTENSION_NAME && ext.metadata.is_some() =>
+                if ext.name == POLARS_OBJECT_EXTENSION_NAME && ext.metadata.is_some() =>
             {
                 assert_eq!(chunks.len(), 1);
                 let arr = chunks[0]
@@ -456,6 +465,38 @@ impl Series {
                 };
                 Ok(s)
             },
+            #[cfg(feature = "dtype-extension")]
+            ArrowDataType::Extension(ext) => {
+                use crate::datatypes::extension::get_extension_type_or_storage;
+
+                for chunk in &mut chunks {
+                    debug_assert!(
+                        chunk.dtype() == dtype,
+                        "expected chunk dtype to be {:?}, got {:?}",
+                        dtype,
+                        chunk.dtype()
+                    );
+                    *chunk.dtype_mut() = ext.inner.clone();
+                }
+                let storage = Series::_try_from_arrow_unchecked_with_md(
+                    name.clone(),
+                    chunks,
+                    &ext.inner,
+                    md,
+                )?;
+
+                Ok(
+                    match get_extension_type_or_storage(
+                        &ext.name,
+                        storage.dtype(),
+                        ext.metadata.as_deref(),
+                    ) {
+                        Some(typ) => ExtensionChunked::from_storage(typ, storage).into_series(),
+                        None => storage,
+                    },
+                )
+            },
+
             #[cfg(feature = "dtype-struct")]
             ArrowDataType::Struct(_) => {
                 let (chunks, dtype) = to_physical_and_dtype(chunks, md);
@@ -528,6 +569,7 @@ impl Series {
                     .into_series())
                 })
             },
+
             dt => polars_bail!(ComputeError: "cannot create series from {:?}", dt),
         }
     }
@@ -555,6 +597,16 @@ unsafe fn to_physical_and_dtype(
         #[allow(unused_variables)]
         dt @ ArrowDataType::Dictionary(_, _, _) => {
             feature_gated!("dtype-categorical", {
+                let s = unsafe {
+                    let dt = dt.clone();
+                    Series::_try_from_arrow_unchecked_with_md(PlSmallStr::EMPTY, arrays, &dt, md)
+                }
+                .unwrap();
+                (s.chunks().clone(), s.dtype().clone())
+            })
+        },
+        dt @ ArrowDataType::Extension(_) => {
+            feature_gated!("dtype-extension", {
                 let s = unsafe {
                     let dt = dt.clone();
                     Series::_try_from_arrow_unchecked_with_md(PlSmallStr::EMPTY, arrays, &dt, md)
@@ -877,6 +929,7 @@ impl TryFrom<(&ArrowField, Vec<ArrayRef>)> for Series {
         let (field, chunks) = field_arr;
 
         let dtype = check_types(&chunks)?;
+        polars_ensure!(dtype == *field.dtype(), ComputeError: "Arrow Field dtype does not match the ArrayRef dtypes");
 
         // SAFETY:
         // dtype is checked

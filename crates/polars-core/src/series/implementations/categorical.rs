@@ -284,6 +284,10 @@ macro_rules! impl_cat_series {
                 self.0.physical().arg_unique()
             }
 
+            fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+                ChunkUnique::unique_id(self.0.physical())
+            }
+
             fn is_null(&self) -> BooleanChunked {
                 self.0.physical().is_null()
             }

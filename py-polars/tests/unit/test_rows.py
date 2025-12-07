@@ -233,9 +233,7 @@ def test_row_constructor_schema(primitive: pl.DataType) -> None:
 
 def test_row_constructor_uint64() -> None:
     # validate init with a valid UInt64 that exceeds Int64 upper bound
-    df = pl.DataFrame(
-        data=[[0], [int(2**63) + 1]], schema={"x": pl.UInt64}, orient="row"
-    )
+    df = pl.DataFrame(data=[[0], [(2**63) + 1]], schema={"x": pl.UInt64}, orient="row")
     assert df.rows() == [(0,), (9223372036854775809,)]
 
 
@@ -257,3 +255,18 @@ def test_physical_row_encoding() -> None:
             "files": ["AGG_202307.xlsx"],
         }
     ]
+
+
+def test_row_with_no_arguments() -> None:
+    # confirm that calling bare `.row()` on a single-row frame behaves
+    # consistently with calling `item()` on a single element frame
+    df = pl.DataFrame({"tag": ["xx"], "n": [1]})
+    assert df.row() == ("xx", 1)
+
+    # however, cannot call bare '.row()' if the frame does NOT have a single row
+    df = pl.DataFrame({"tag": ["xx", "yy"], "n": [1, 2]})
+    with pytest.raises(
+        ValueError,
+        match=r'can only call `\.row\(\)` without "index" or "by_predicate"',
+    ):
+        df.row()

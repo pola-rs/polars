@@ -100,10 +100,6 @@ impl DataFrameBuilder {
                 Column::Series(s) => {
                     builder.subslice_extend(s, start, length, share);
                 },
-                Column::Partitioned(p) => {
-                    // @scalar-opt
-                    builder.subslice_extend(p.as_materialized_series(), start, length, share);
-                },
                 Column::Scalar(sc) => {
                     let len = sc.len().saturating_sub(start).min(length);
                     let scalar_as_series = sc.scalar().clone().into_series(PlSmallStr::default());
@@ -131,16 +127,6 @@ impl DataFrameBuilder {
             match column {
                 Column::Series(s) => {
                     builder.subslice_extend_repeated(s, start, length, repeats, share);
-                },
-                Column::Partitioned(p) => {
-                    // @scalar-opt
-                    builder.subslice_extend_repeated(
-                        p.as_materialized_series(),
-                        start,
-                        length,
-                        repeats,
-                        share,
-                    );
                 },
                 Column::Scalar(sc) => {
                     let len = sc.len().saturating_sub(start).min(length);
@@ -170,16 +156,6 @@ impl DataFrameBuilder {
             match column {
                 Column::Series(s) => {
                     builder.subslice_extend_each_repeated(s, start, length, repeats, share);
-                },
-                Column::Partitioned(p) => {
-                    // @scalar-opt
-                    builder.subslice_extend_each_repeated(
-                        p.as_materialized_series(),
-                        start,
-                        length,
-                        repeats,
-                        share,
-                    );
                 },
                 Column::Scalar(sc) => {
                     let len = sc.len().saturating_sub(start).min(length);
@@ -212,10 +188,6 @@ impl DataFrameBuilder {
                 Column::Series(s) => {
                     builder.gather_extend(s, idxs, share);
                 },
-                Column::Partitioned(p) => {
-                    // @scalar-opt
-                    builder.gather_extend(p.as_materialized_series(), idxs, share);
-                },
                 Column::Scalar(sc) => {
                     let scalar_as_series = sc.scalar().clone().into_series(PlSmallStr::default());
                     builder.subslice_extend_repeated(&scalar_as_series, 0, 1, idxs.len(), share);
@@ -239,10 +211,6 @@ impl DataFrameBuilder {
             match column {
                 Column::Series(s) => {
                     builder.opt_gather_extend(s, idxs, share);
-                },
-                Column::Partitioned(p) => {
-                    // @scalar-opt
-                    builder.opt_gather_extend(p.as_materialized_series(), idxs, share);
                 },
                 Column::Scalar(sc) => {
                     let scalar_as_series = sc.scalar().clone().into_series(PlSmallStr::default());

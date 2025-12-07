@@ -8,10 +8,10 @@ use rayon::prelude::*;
 
 use crate::cloud::CloudOptions;
 use crate::parquet::write::ParquetWriteOptions;
+use crate::prelude::HIVE_VALUE_ENCODE_CHARSET;
 #[cfg(feature = "ipc")]
 use crate::prelude::IpcWriterOptions;
-use crate::prelude::URL_ENCODE_CHAR_SET;
-use crate::utils::file::try_get_writeable;
+use crate::utils::file::Writeable;
 use crate::{SerWriter, WriteDataFrameToFile};
 
 impl WriteDataFrameToFile for ParquetWriteOptions {
@@ -21,8 +21,8 @@ impl WriteDataFrameToFile for ParquetWriteOptions {
         addr: PlPathRef<'_>,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<()> {
-        let f = try_get_writeable(addr, cloud_options)?;
-        self.to_writer(f).finish(df)?;
+        let mut f = Writeable::try_new(addr, cloud_options)?;
+        self.to_writer(&mut *f).finish(df)?;
         Ok(())
     }
 }
@@ -35,8 +35,8 @@ impl WriteDataFrameToFile for IpcWriterOptions {
         addr: PlPathRef<'_>,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<()> {
-        let f = try_get_writeable(addr, cloud_options)?;
-        self.to_writer(f).finish(df)?;
+        let mut f = Writeable::try_new(addr, cloud_options)?;
+        self.to_writer(&mut *f).finish(df)?;
         Ok(())
     }
 }
@@ -86,7 +86,7 @@ pub fn write_partitioned_dataset(
                                 .get(0)
                                 .unwrap_or("__HIVE_DEFAULT_PARTITION__")
                                 .as_bytes(),
-                            URL_ENCODE_CHAR_SET
+                            HIVE_VALUE_ENCODE_CHARSET
                         )
                     )
                 })

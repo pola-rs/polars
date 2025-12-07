@@ -8,6 +8,7 @@ use std::ops::{Add, Div, Mul, Sub};
 use arrow::pushable::Pushable;
 use arrow::types::NativeType;
 use num_traits::NumCast;
+use polars_utils::float16::pf16;
 use polars_utils::index::{Bounded, Indexable, NullCount};
 use polars_utils::nulls::IsNull;
 use polars_utils::slice::SliceAble;
@@ -539,6 +540,8 @@ impl SealedRolling for u16 {}
 impl SealedRolling for u32 {}
 impl SealedRolling for u64 {}
 impl SealedRolling for i128 {}
+impl SealedRolling for u128 {}
+impl SealedRolling for pf16 {}
 impl SealedRolling for f32 {}
 impl SealedRolling for f64 {}
 

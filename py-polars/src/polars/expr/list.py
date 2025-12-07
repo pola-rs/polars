@@ -685,11 +685,16 @@ class ExprListNameSpace:
         return self.get(-1, null_on_oob=True)
 
     @unstable()
-    def item(self) -> Expr:
+    def item(self, *, allow_empty: bool = False) -> Expr:
         """
         Get the single value of the sublists.
 
         This errors if the sublist length is not exactly one.
+
+        Parameters
+        ----------
+        allow_empty
+            Allow having no values to return `null`.
 
         See Also
         --------
@@ -714,8 +719,20 @@ class ExprListNameSpace:
         Traceback (most recent call last):
         ...
         polars.exceptions.ComputeError: aggregation 'item' expected a single value, got 3 values
+        >>> df = pl.DataFrame({"a": [[], [1], [2]]})
+        >>> df.select(pl.col("a").list.item(allow_empty=True))
+        shape: (3, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ i64  │
+        ╞══════╡
+        │ null │
+        │ 1    │
+        │ 2    │
+        └──────┘
         """  # noqa: W505
-        return self.agg(F.element().item())
+        return self.agg(F.element().item(allow_empty=allow_empty))
 
     def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Expr:
         """
@@ -987,6 +1004,17 @@ class ExprListNameSpace:
         │ [10, 2, 1]  ┆ [2, 1]    │
         └─────────────┴───────────┘
         """
+        if isinstance(offset, Collection) and not isinstance(offset, str):
+            msg = f"'offset' must be an integer, string, or expression, not {type(offset).__name__}"
+            raise TypeError(msg)
+        if (
+            length is not None
+            and isinstance(length, Collection)
+            and not isinstance(length, str)
+        ):
+            msg = f"'length' must be an integer, string, or expression, not {type(length).__name__}"
+            raise TypeError(msg)
+
         offset_pyexpr = parse_into_expression(offset)
         length_pyexpr = parse_into_expression(length)
         return wrap_expr(self._pyexpr.list_slice(offset_pyexpr, length_pyexpr))
@@ -1042,9 +1070,16 @@ class ExprListNameSpace:
         n_pyexpr = parse_into_expression(n)
         return wrap_expr(self._pyexpr.list_tail(n_pyexpr))
 
-    def explode(self) -> Expr:
+    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Expr:
         """
         Returns a column with a separate row for every list element.
+
+        Parameters
+        ----------
+        empty_as_null
+            Explode an empty list into a `null`.
+        keep_nulls
+            Explode a `null` list into a `null`.
 
         Returns
         -------
@@ -1073,7 +1108,9 @@ class ExprListNameSpace:
         │ 6   │
         └─────┘
         """
-        return wrap_expr(self._pyexpr.explode())
+        return wrap_expr(
+            self._pyexpr.explode(empty_as_null=empty_as_null, keep_nulls=keep_nulls)
+        )
 
     def count_matches(self, element: IntoExpr) -> Expr:
         """

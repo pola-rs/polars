@@ -359,7 +359,12 @@ def test_total_ordering_float_series(lhs: float | None, rhs: float | None) -> No
     verify_total_ordering(lhs, rhs, 0.0, pl.Float32, pl.Float32)
     verify_total_ordering(lhs, rhs, 0.0, pl.Float64, pl.Float32)
     context: pytest.WarningsRecorder | ContextManager[None] = (
-        pytest.warns(UserWarning) if rhs is None else nullcontext()
+        pytest.warns(
+            UserWarning,
+            match=r"Consider using `\.is_null\(\)` or `\.is_not_null\(\)`",
+        )
+        if rhs is None
+        else nullcontext()
     )
     with context:
         verify_total_ordering_broadcast(lhs, rhs, 0.0, pl.Float32, pl.Float32)
@@ -386,7 +391,12 @@ INTERESTING_STRING_VALUES = [
 def test_total_ordering_string_series(lhs: str | None, rhs: str | None) -> None:
     verify_total_ordering(lhs, rhs, "", pl.String, pl.String)
     context: pytest.WarningsRecorder | ContextManager[None] = (
-        pytest.warns(UserWarning) if rhs is None else nullcontext()
+        pytest.warns(
+            UserWarning,
+            match=r"Consider using `\.is_null\(\)` or `\.is_not_null\(\)`",
+        )
+        if rhs is None
+        else nullcontext()
     )
     with context:
         verify_total_ordering_broadcast(lhs, rhs, "", pl.String, pl.String)
@@ -407,7 +417,12 @@ def test_total_ordering_cat_series(
     verify_total_ordering(lhs, rhs, "", pl.String, c[1])
     verify_total_ordering(lhs, rhs, "", c[2], pl.String)
     context: pytest.WarningsRecorder | ContextManager[None] = (
-        pytest.warns(UserWarning) if rhs is None else nullcontext()
+        pytest.warns(
+            UserWarning,
+            match=r"Consider using `\.is_null\(\)` or `\.is_not_null\(\)`",
+        )
+        if rhs is None
+        else nullcontext()
     )
     with context:
         verify_total_ordering_broadcast(lhs, rhs, "", c[3], c[3])
@@ -423,7 +438,12 @@ def test_total_ordering_binary_series(str_lhs: str | None, str_rhs: str | None) 
     rhs = None if str_rhs is None else str_rhs.encode("utf-8")
     verify_total_ordering(lhs, rhs, b"", pl.Binary, pl.Binary)
     context: pytest.WarningsRecorder | ContextManager[None] = (
-        pytest.warns(UserWarning) if rhs is None else nullcontext()
+        pytest.warns(
+            UserWarning,
+            match=r"Consider using `\.is_null\(\)` or `\.is_not_null\(\)`",
+        )
+        if rhs is None
+        else nullcontext()
     )
     with context:
         verify_total_ordering_broadcast(lhs, rhs, b"", pl.Binary, pl.Binary)
@@ -434,7 +454,12 @@ def test_total_ordering_binary_series(str_lhs: str | None, str_rhs: str | None) 
 def test_total_ordering_bool_series(lhs: bool | None, rhs: bool | None) -> None:
     verify_total_ordering(lhs, rhs, False, pl.Boolean, pl.Boolean)
     context: pytest.WarningsRecorder | ContextManager[None] = (
-        pytest.warns(UserWarning) if rhs is None else nullcontext()
+        pytest.warns(
+            UserWarning,
+            match=r"Consider using `\.is_null\(\)` or `\.is_not_null\(\)`",
+        )
+        if rhs is None
+        else nullcontext()
     )
     with context:
         verify_total_ordering_broadcast(lhs, rhs, False, pl.Boolean, pl.Boolean)

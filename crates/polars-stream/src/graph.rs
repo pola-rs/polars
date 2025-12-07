@@ -164,6 +164,7 @@ pub struct GraphNode {
 
 /// A pipe sends data between nodes.
 #[allow(unused)] // TODO: remove.
+#[derive(Clone)]
 pub struct LogicalPipe {
     // Node that we send data to.
     pub sender: GraphNodeKey,

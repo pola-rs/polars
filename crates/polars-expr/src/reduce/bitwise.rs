@@ -155,10 +155,11 @@ impl GroupedReduction for BoolXorGroupedReduction {
 
     fn update_group(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         group_idx: IdxSize,
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         assert!(values.dtype() == &DataType::Boolean);
         let values = values.as_materialized_series_maintain_scalar();
         let ca: &BooleanChunked = values.as_ref().as_ref();
@@ -176,11 +177,12 @@ impl GroupedReduction for BoolXorGroupedReduction {
 
     unsafe fn update_groups_while_evicting(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         subset: &[IdxSize],
         group_idxs: &[EvictIdx],
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         assert!(values.dtype() == &DataType::Boolean);
         assert!(subset.len() == group_idxs.len());
         let values = values.as_materialized_series(); // @scalar-opt

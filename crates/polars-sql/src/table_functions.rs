@@ -48,7 +48,7 @@ impl FromStr for PolarsTableFunctions {
 
     #[allow(unreachable_code)]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(match s {
+        Ok(match s.to_lowercase().as_str() {
             #[cfg(feature = "csv")]
             "read_csv" => PolarsTableFunctions::ReadCsv,
             #[cfg(feature = "parquet")]

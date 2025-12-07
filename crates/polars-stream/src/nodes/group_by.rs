@@ -104,7 +104,7 @@ struct GroupBySinkState {
     key_selectors: Vec<StreamExpr>,
     grouper: Box<dyn Grouper>,
     uniq_grouped_reduction_cols: Vec<PlSmallStr>,
-    grouped_reduction_cols: Vec<PlSmallStr>,
+    grouped_reduction_cols: Vec<Vec<PlSmallStr>>,
     grouped_reductions: Vec<Box<dyn GroupedReduction>>,
     locals: Vec<LocalGroupBySinkState>,
     random_state: PlRandomState,
@@ -131,6 +131,7 @@ impl GroupBySinkState {
                 let mut hot_idxs = Vec::new();
                 let mut hot_group_idxs = Vec::new();
                 let mut cold_idxs = Vec::new();
+                let mut in_cols = Vec::new();
                 while let Ok(morsel) = recv.recv().await {
                     // Compute hot group indices from key.
                     let seq = morsel.seq().to_u64();
@@ -155,26 +156,31 @@ impl GroupBySinkState {
                     );
 
                     // Drop columns not used for reductions (key-only columns).
-                    if uniq_grouped_reduction_cols.len() < grouped_reduction_cols.len() {
+                    if uniq_grouped_reduction_cols.len() < df.width() {
                         df = df._select_impl(uniq_grouped_reduction_cols).unwrap();
                     }
                     df.rechunk_mut(); // For gathers.
 
                     // Update hot reductions.
-                    for (col, reduction) in grouped_reduction_cols
+                    for (cols, reduction) in grouped_reduction_cols
                         .iter()
                         .zip(&mut local.hot_grouped_reductions)
                     {
+                        for col in cols {
+                            in_cols.push(df.column(col).unwrap());
+                        }
                         unsafe {
                             // SAFETY: we resize the reduction to the number of groups beforehand.
                             reduction.resize(local.hot_grouper.num_groups());
                             reduction.update_groups_while_evicting(
-                                df.column(col).unwrap(),
+                                &in_cols,
                                 &hot_idxs,
                                 &hot_group_idxs,
                                 seq,
                             )?;
                         }
+                        in_cols.clear();
+                        in_cols = in_cols.into_iter().map(|_| unreachable!()).collect(); // Clear lifetimes.
                     }
 
                     // Store cold keys.
@@ -290,6 +296,7 @@ impl GroupBySinkState {
                     // Insert morsels.
                     let mut skip_drop_attempt = false;
                     let mut group_idxs = Vec::new();
+                    let mut in_cols = Vec::new();
                     for (l, l_morsels) in locals.iter().zip(morsels_per_local) {
                         // Try to help with dropping.
                         if !skip_drop_attempt {
@@ -297,7 +304,7 @@ impl GroupBySinkState {
                         }
 
                         for (i, morsel) in l_morsels.iter().enumerate() {
-                            let (seq_id, keys, cols) = morsel;
+                            let (seq_id, keys, morsel_df) = morsel;
                             unsafe {
                                 let p_morsel_idxs_start =
                                     l.morsel_idxs_offsets_per_p[i * num_partitions + p];
@@ -312,18 +319,25 @@ impl GroupBySinkState {
                                     p_morsel_idxs,
                                     Some(&mut group_idxs),
                                 );
-                                for (c, r) in grouped_reduction_cols.iter().zip(&mut p_reductions) {
-                                    let values = cols.column(c.as_str()).unwrap();
+
+                                for (cols, r) in
+                                    grouped_reduction_cols.iter().zip(&mut p_reductions)
+                                {
+                                    for col in cols {
+                                        in_cols.push(morsel_df.column(col).unwrap());
+                                    }
                                     r.resize(p_grouper.num_groups());
                                     r.update_groups_subset(
-                                        values,
+                                        &in_cols,
                                         p_morsel_idxs,
                                         &group_idxs,
                                         *seq_id,
                                     )?;
+                                    in_cols.clear();
                                 }
                             }
                         }
+                        in_cols = in_cols.into_iter().map(|_| unreachable!()).collect(); // Clear lifetimes.
 
                         if let Some(l) = Arc::into_inner(l_morsels) {
                             // If we're the last thread to process this set of morsels we're probably
@@ -463,7 +477,7 @@ impl GroupByNode {
         key_schema: Arc<Schema>,
         key_selectors: Vec<StreamExpr>,
         grouper: Box<dyn Grouper>,
-        grouped_reduction_cols: Vec<PlSmallStr>,
+        grouped_reduction_cols: Vec<Vec<PlSmallStr>>,
         grouped_reductions: Vec<Box<dyn GroupedReduction>>,
         output_schema: Arc<Schema>,
         random_state: PlRandomState,
@@ -476,6 +490,7 @@ impl GroupByNode {
         let num_partitions = num_pipelines;
         let uniq_grouped_reduction_cols = grouped_reduction_cols
             .iter()
+            .flatten()
             .cloned()
             .collect::<PlHashSet<_>>()
             .into_iter()

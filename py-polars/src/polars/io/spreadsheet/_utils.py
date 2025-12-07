@@ -29,7 +29,7 @@ def PortableTemporaryFile(
     from tempfile import NamedTemporaryFile
 
     params = cast(
-        Any,
+        "Any",
         {
             "mode": mode,
             "buffering": buffering,

@@ -6,12 +6,12 @@ use object_store::ObjectStore;
 use object_store::buffered::BufWriter;
 use object_store::path::Path;
 use polars_error::PolarsResult;
-use polars_utils::file::WriteClose;
 use polars_utils::plpath::PlPathRef;
 use tokio::io::AsyncWriteExt;
 
 use super::{CloudOptions, object_path_from_str};
 use crate::pl_async::{get_runtime, get_upload_chunk_size};
+use crate::utils::file::WriteableTrait;
 
 fn clone_io_err(e: &std::io::Error) -> std::io::Error {
     std::io::Error::new(e.kind(), e.to_string())
@@ -110,9 +110,17 @@ impl std::io::Write for BlockingCloudWriter {
     }
 }
 
-impl WriteClose for BlockingCloudWriter {
-    fn close(mut self: Box<Self>) -> std::io::Result<()> {
-        BlockingCloudWriter::close(self.as_mut())
+impl WriteableTrait for BlockingCloudWriter {
+    fn close(&mut self) -> std::io::Result<()> {
+        BlockingCloudWriter::close(self)
+    }
+
+    fn sync_all(&self) -> std::io::Result<()> {
+        Ok(())
+    }
+
+    fn sync_data(&self) -> std::io::Result<()> {
+        Ok(())
     }
 }
 

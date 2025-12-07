@@ -78,7 +78,7 @@ impl SinkNode for CsvSinkNode {
             use tokio::io::AsyncWriteExt;
 
             let mut file = target
-                .open_into_writeable_async(&sink_options, cloud_options.as_ref())
+                .open_into_writeable_async(cloud_options.as_ref(), sink_options.mkdir)
                 .await?;
 
             // Write the header
@@ -110,8 +110,7 @@ impl SinkNode for CsvSinkNode {
                 }
             }
 
-            file.sync_on_close(sink_options.sync_on_close).await?;
-            file.close().await?;
+            file.close(sink_options.sync_on_close).await?;
 
             PolarsResult::Ok(())
         });

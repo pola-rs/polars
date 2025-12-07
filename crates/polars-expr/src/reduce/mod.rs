@@ -7,6 +7,7 @@ mod bitwise;
 mod convert;
 mod count;
 mod first_last;
+mod first_last_nonnull;
 mod len;
 mod mean;
 mod min_max;
@@ -47,7 +48,7 @@ pub trait GroupedReduction: Any + Send + Sync {
     /// order between calls/multiple reductions.
     fn update_group(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         group_idx: IdxSize,
         seq_id: u64,
     ) -> PolarsResult<()>;
@@ -61,13 +62,16 @@ pub trait GroupedReduction: Any + Send + Sync {
     /// The subset and group_idxs are in-bounds.
     unsafe fn update_groups_subset(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         subset: &[IdxSize],
         group_idxs: &[IdxSize],
         seq_id: u64,
     ) -> PolarsResult<()> {
         assert!(values.len() < (1 << (IdxSize::BITS - 1)));
-        let evict_group_idxs = core::mem::transmute::<&[IdxSize], &[EvictIdx]>(group_idxs);
+        // SAFETY: EvictIdx is a wrapper for IdxSize and has same alignment.
+        let evict_group_idxs = unsafe {
+            std::slice::from_raw_parts(group_idxs.as_ptr() as *const EvictIdx, subset.len())
+        };
         self.update_groups_while_evicting(values, subset, evict_group_idxs, seq_id)
     }
 
@@ -81,7 +85,7 @@ pub trait GroupedReduction: Any + Send + Sync {
     /// The subset and group_idxs are in-bounds.
     unsafe fn update_groups_while_evicting(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         subset: &[IdxSize],
         group_idxs: &[EvictIdx],
         seq_id: u64,
@@ -219,7 +223,7 @@ pub struct VecGroupedReduction<R: Reducer> {
 }
 
 impl<R: Reducer> VecGroupedReduction<R> {
-    fn new(in_dtype: DataType, reducer: R) -> Self {
+    pub fn new(in_dtype: DataType, reducer: R) -> Self {
         Self {
             values: Vec::new(),
             evicted_values: Vec::new(),
@@ -252,10 +256,12 @@ where
 
     fn update_group(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         group_idx: IdxSize,
         seq_id: u64,
     ) -> PolarsResult<()> {
+        assert!(values.len() == 1);
+        let values = values[0];
         assert!(values.dtype() == &self.in_dtype);
         let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
         let values = values.as_materialized_series(); // @scalar-opt
@@ -268,11 +274,12 @@ where
 
     unsafe fn update_groups_while_evicting(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         subset: &[IdxSize],
         group_idxs: &[EvictIdx],
         seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         assert!(values.dtype() == &self.in_dtype);
         assert!(subset.len() == group_idxs.len());
         let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
@@ -388,10 +395,11 @@ where
 
     fn update_group(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         group_idx: IdxSize,
         seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         assert!(values.dtype() == &self.in_dtype);
         let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
         let values = values.as_materialized_series(); // @scalar-opt
@@ -407,11 +415,12 @@ where
 
     unsafe fn update_groups_while_evicting(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         subset: &[IdxSize],
         group_idxs: &[EvictIdx],
         seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         assert!(values.dtype() == &self.in_dtype);
         assert!(subset.len() == group_idxs.len());
         let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
@@ -486,7 +495,7 @@ where
 }
 
 #[derive(Clone)]
-struct NullGroupedReduction {
+pub struct NullGroupedReduction {
     num_groups: IdxSize,
     num_evictions: IdxSize,
     output: Scalar,
@@ -515,21 +524,23 @@ impl GroupedReduction for NullGroupedReduction {
 
     fn update_group(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         _group_idx: IdxSize,
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         assert!(values.dtype().is_null());
         Ok(())
     }
 
     unsafe fn update_groups_while_evicting(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         subset: &[IdxSize],
         group_idxs: &[EvictIdx],
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         assert!(values.dtype().is_null());
         assert!(subset.len() == group_idxs.len());
         for g in group_idxs {

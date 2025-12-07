@@ -225,6 +225,10 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
         ChunkUnique::arg_unique(&self.0)
     }
 
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        ChunkUnique::unique_id(&self.0)
+    }
+
     fn is_null(&self) -> BooleanChunked {
         self.0.is_null()
     }

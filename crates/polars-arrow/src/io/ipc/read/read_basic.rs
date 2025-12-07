@@ -57,6 +57,9 @@ fn read_uncompressed_bytes<R: Read + Seek>(
             .take(buffer_length as u64)
             .read_to_end(&mut buffer)
             .unwrap();
+
+        polars_ensure!(buffer.len() == buffer_length, ComputeError: "Malformed IPC file: expected compressed buffer of len {buffer_length}, got {}", buffer.len());
+
         Ok(buffer)
     } else {
         unreachable!()
@@ -277,6 +280,8 @@ fn read_uncompressed_bitmap<R: Read + Seek>(
         .by_ref()
         .take(bytes as u64)
         .read_to_end(&mut buffer)?;
+
+    polars_ensure!(buffer.len() == bytes, ComputeError: "Malformed IPC file: expected compressed buffer of len {bytes}, got {}", buffer.len());
 
     Ok(buffer)
 }

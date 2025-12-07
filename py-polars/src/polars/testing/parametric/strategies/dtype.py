@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 import hypothesis.strategies as st
 from hypothesis.errors import InvalidArgument
 
+from polars import register_extension_type
 from polars.datatypes import (
     Array,
     Binary,
@@ -16,7 +17,9 @@ from polars.datatypes import (
     Decimal,
     Duration,
     Enum,
+    Extension,
     Field,
+    Float16,
     Float32,
     Float64,
     Int8,
@@ -44,16 +47,25 @@ if TYPE_CHECKING:
     from polars._typing import PolarsDataType, TimeUnit
     from polars.datatypes import DataTypeClass
 
+# A simple test extension type for parametric tests.
+TestExtension = Extension(
+    name="testing.parametric_test_extension",
+    storage=Int32(),
+    metadata="A parametric test extension type",
+)
+
+register_extension_type("testing.parametric_test_extension", Extension)
 
 # Supported data type classes which do not take any arguments
-_SIMPLE_DTYPES: list[DataTypeClass] = [
+_SIMPLE_DTYPES: list[PolarsDataType] = [
     Int8,
     Int16,
     Int32,
     Int64,
     Int128,
-    Float64,
+    Float16,
     Float32,
+    Float64,
     Boolean,
     UInt8,
     UInt16,
@@ -65,6 +77,7 @@ _SIMPLE_DTYPES: list[DataTypeClass] = [
     Date,
     Time,
     Null,
+    TestExtension,
     # TODO: Enable Object types by default when various issues are solved.
     # Object,
 ]
@@ -166,11 +179,13 @@ def _parse_dtype_restrictions(
     """
     # Split excluded dtypes into instances and classes
     excluded_dtypes_instance = []
-    excluded_dtypes_class = []
+    excluded_dtypes_class: list[PolarsDataType] = []
     if excluded_dtypes:
         for dt in excluded_dtypes:
             if isinstance(dt, DataType):
                 excluded_dtypes_instance.append(dt)
+            elif dt == Extension:
+                excluded_dtypes_class.append(TestExtension)
             else:
                 excluded_dtypes_class.append(dt)
 

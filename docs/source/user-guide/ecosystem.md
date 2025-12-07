@@ -97,8 +97,8 @@ Tables with Polars.
 [LanceDB](https://lancedb.com/) is a developer-friendly, serverless vector database for AI
 applications. They have added a direct integration with Polars. LanceDB can ingest Polars
 dataframes, return results as polars dataframes, and export the entire table as a polars lazyframe.
-You can find a quick tutorial in their blog
-[LanceDB + Polars](https://blog.lancedb.com/lancedb-polars-2d5eb32a8aa3)
+See the [LanceDB documentation](https://lancedb.com/docs/integrations/platforms/polars_arrow/) for
+more details.
 
 #### Mage
 
@@ -112,3 +112,12 @@ data. Learn about integration between Polars and Mage at
 dataflow graphs. It offers built-in support for Polars, allowing seamless integration of Polars
 dataframes in an interactive, reactive environment - such as displaying rich Polars tables, no-code
 transformations of Polars dataframes, or selecting points on a Polars-backed reactive chart.
+
+#### Narwhals
+
+[Narwhals](https://narwhals-dev.github.io/narwhals/) is a lightweight compatibility layer between
+dataframe libraries. It mirrors the Polars API and allows to run Polars natively, without any
+conversion overhead, in libraries like Plotly and others that have adopted it for dataframe
+interoperability.
+
+See the [Narwhals ecosystem](https://narwhals-dev.github.io/narwhals/ecosystem/) for more details.

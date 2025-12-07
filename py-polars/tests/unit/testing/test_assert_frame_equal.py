@@ -269,7 +269,7 @@ def test_compare_frame_equal_nested_nans() -> None:
 
     assert_frame_not_equal(df3, df4)
     for check_dtype in (True, False):
-        with pytest.raises(AssertionError, match="mismatch|different"):
+        with pytest.raises(AssertionError, match=r"mismatch|different"):
             assert_frame_equal(df3, df4, check_dtypes=check_dtype)
 
 
@@ -308,7 +308,7 @@ def test_assert_frame_equal_column_mismatch() -> None:
     df2 = pl.DataFrame({"b": [1, 2]})
     with pytest.raises(
         AssertionError,
-        match='DataFrames are different \\(columns mismatch: \\["a"\\] in left, but not in right\\)',
+        match=r'DataFrames are different \(columns mismatch: \["a"\] in left, but not in right\)',
     ):
         assert_frame_equal(df1, df2)
     assert_frame_not_equal(df1, df2)
@@ -319,7 +319,7 @@ def test_assert_frame_equal_column_mismatch2() -> None:
     df2 = pl.LazyFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]})
     with pytest.raises(
         AssertionError,
-        match="columns mismatch.*in right.*but not in left",
+        match=r"columns mismatch.*in right.*but not in left",
     ):
         assert_frame_equal(df1, df2)
     assert_frame_not_equal(df1, df2)

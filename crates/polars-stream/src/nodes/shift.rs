@@ -75,9 +75,6 @@ impl ShiftState {
                 break;
             }
             wait_group.wait().await;
-            if source_token.stop_requested() {
-                break;
-            }
         }
 
         Ok(())
@@ -137,9 +134,6 @@ impl ShiftState {
                 break;
             }
             wait_group.wait().await;
-            if source_token.stop_requested() {
-                break;
-            }
         }
 
         Ok(())

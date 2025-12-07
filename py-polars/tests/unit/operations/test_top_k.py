@@ -594,3 +594,10 @@ def test_top_k_non_elementwise_by_24163() -> None:
 
     expected = pl.DataFrame({"a": [7, 8]})
     assert_frame_equal(expected, query.collect(), check_row_order=False)
+
+
+def test_top_k_by_non_uniq_name_25072() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    result = df.sort(by=[pl.col.a, pl.col.a]).head(2)
+    expected = pl.DataFrame({"a": [1, 2], "b": [4, 5]})
+    assert_frame_equal(result, expected)

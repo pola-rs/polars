@@ -5,7 +5,7 @@ use polars_utils::check_allow_importing_interval_as_struct;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::*;
-pub static EXTENSION_NAME: &str = "POLARS_EXTENSION_TYPE";
+pub static POLARS_OBJECT_EXTENSION_NAME: &str = "_POLARS_PYTHON_OBJECT";
 
 /// Characterizes the name and the [`DataType`] of a column.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -173,7 +173,8 @@ impl DataType {
             #[cfg(feature = "dtype-i128")]
             ArrowDataType::Int128 => DataType::Int128,
             ArrowDataType::Boolean => DataType::Boolean,
-            ArrowDataType::Float16 => DataType::Float32,
+            #[cfg(feature = "dtype-f16")]
+            ArrowDataType::Float16 => DataType::Float16,
             ArrowDataType::Float32 => DataType::Float32,
             ArrowDataType::Float64 => DataType::Float64,
             #[cfg(feature = "dtype-array")]
@@ -250,7 +251,7 @@ impl DataType {
             ArrowDataType::Struct(_) => {
                 panic!("activate the 'dtype-struct' feature to handle struct data types")
             },
-            ArrowDataType::Extension(ext) if ext.name.as_str() == EXTENSION_NAME => {
+            ArrowDataType::Extension(ext) if ext.name.as_str() == POLARS_OBJECT_EXTENSION_NAME => {
                 #[cfg(feature = "object")]
                 {
                     DataType::Object("object")
@@ -258,6 +259,15 @@ impl DataType {
                 #[cfg(not(feature = "object"))]
                 {
                     panic!("activate the 'object' feature to be able to load POLARS_EXTENSION_TYPE")
+                }
+            },
+            #[cfg(feature = "dtype-extension")]
+            ArrowDataType::Extension(ext) => {
+                use crate::prelude::extension::get_extension_type_or_storage;
+                let storage = DataType::from_arrow(&ext.inner, md);
+                match get_extension_type_or_storage(&ext.name, &storage, ext.metadata.as_deref()) {
+                    Some(typ) => DataType::Extension(typ, Box::new(storage)),
+                    None => storage,
                 }
             },
             #[cfg(feature = "dtype-decimal")]

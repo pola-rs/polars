@@ -63,6 +63,8 @@ macro_rules! downcast_single_key_ca {
             DataType::Int128 => { let $ca = $self.i128().unwrap(); $($body)* },
             #[cfg(feature = "dtype-u128")]
             DataType::UInt128 => { let $ca = $self.u128().unwrap(); $($body)* },
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => { let $ca = $self.f16().unwrap(); $($body)* },
             DataType::Float32 => { let $ca = $self.f32().unwrap(); $($body)* },
             DataType::Float64 => { let $ca = $self.f64().unwrap(); $($body)* },
 
@@ -90,7 +92,6 @@ macro_rules! downcast_single_key_ca {
         }
     }}
 }
-pub(crate) use downcast_single_key_ca;
 
 /// Represents a DataFrame plus a hash per row, intended for keys in grouping
 /// or joining. The hashes may or may not actually be physically pre-computed,

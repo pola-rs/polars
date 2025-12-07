@@ -4,7 +4,7 @@ import re
 from collections.abc import Coroutine, Sequence
 from contextlib import suppress
 from inspect import Parameter, signature
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 from polars import functions as F
 from polars._utils.various import parse_version, qualified_type_name
@@ -40,7 +40,7 @@ if TYPE_CHECKING:
     from polars import DataFrame
     from polars._typing import ConnectionOrCursor, Cursor, SchemaDict
 
-_INVALID_QUERY_TYPES = {
+_INVALID_QUERY_TYPES: Final[set[str]] = {
     "ALTER",
     "ANALYZE",
     "CREATE",

@@ -10,7 +10,6 @@ import pytest
 
 import polars as pl
 import polars.io.cloud.credential_provider
-from polars._typing import PartitioningScheme
 from polars.io.cloud._utils import NoPickleOption
 from polars.io.cloud.credential_provider._builder import (
     AutoInit,
@@ -22,6 +21,7 @@ from polars.io.cloud.credential_provider._providers import (
     CachingCredentialProvider,
     UserProvidedGCPToken,
 )
+from polars.io.partition import _SinkDirectory
 
 
 @pytest.mark.parametrize(
@@ -762,7 +762,7 @@ def test_cached_credential_provider_returns_copied_creds() -> None:
     ],
 )
 def test_credential_provider_init_from_partition_target(
-    partition_target: PartitioningScheme,
+    partition_target: _SinkDirectory,
 ) -> None:
     assert isinstance(
         _init_credential_provider_builder(

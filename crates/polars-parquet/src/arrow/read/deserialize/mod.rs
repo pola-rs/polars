@@ -126,7 +126,7 @@ fn is_primitive(dtype: &ArrowDataType) -> bool {
             | arrow::datatypes::PhysicalType::LargeBinary
             | arrow::datatypes::PhysicalType::FixedSizeBinary
             | arrow::datatypes::PhysicalType::Dictionary(_)
-    )
+    ) && !matches!(dtype, ArrowDataType::Extension(_))
 }
 
 fn columns_to_iter_recursive(

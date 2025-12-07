@@ -118,7 +118,7 @@ def test_infer_schema_length(tmp_sqlite_inference_db: Path) -> None:
 
     with pytest.raises(
         ComputeError,
-        match='could not append value: "foo" of type: str.*`infer_schema_length`',
+        match=r'could not append value: "foo" of type: str.*`infer_schema_length`',
     ):
         pl.read_database(
             connection=conn,

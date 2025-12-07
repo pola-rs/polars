@@ -155,6 +155,12 @@ fn from_byte_array(
     converted_type: &Option<PrimitiveConvertedType>,
 ) -> ArrowDataType {
     match (logical_type, converted_type) {
+        (Some(PrimitiveLogicalType::Decimal(precision, scale)), _) => {
+            ArrowDataType::Decimal(*precision, *scale)
+        },
+        (None, Some(PrimitiveConvertedType::Decimal(precision, scale))) => {
+            ArrowDataType::Decimal(*precision, *scale)
+        },
         (Some(PrimitiveLogicalType::String), _) => ArrowDataType::Utf8View,
         (Some(PrimitiveLogicalType::Json), _) => ArrowDataType::BinaryView,
         (Some(PrimitiveLogicalType::Bson), _) => ArrowDataType::BinaryView,

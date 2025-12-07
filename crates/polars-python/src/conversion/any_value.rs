@@ -6,6 +6,7 @@ use chrono::{
 };
 use chrono_tz::Tz;
 use hashbrown::HashMap;
+use num_traits::ToPrimitive;
 #[cfg(feature = "object")]
 use polars::chunked_array::object::PolarsObjectSafe;
 #[cfg(feature = "object")]
@@ -75,6 +76,7 @@ pub(crate) fn any_value_into_py_object<'py>(
         AnyValue::Int32(v) => v.into_bound_py_any(py),
         AnyValue::Int64(v) => v.into_bound_py_any(py),
         AnyValue::Int128(v) => v.into_bound_py_any(py),
+        AnyValue::Float16(v) => v.to_f32().into_bound_py_any(py),
         AnyValue::Float32(v) => v.into_bound_py_any(py),
         AnyValue::Float64(v) => v.into_bound_py_any(py),
         AnyValue::Null => py.None().into_bound_py_any(py),
@@ -467,6 +469,24 @@ pub(crate) fn py_object_to_any_value(
         Ok(AnyValue::StructOwned(Box::new((vals, keys))))
     }
 
+    fn get_namedtuple(ob: &Bound<'_, PyAny>, strict: bool) -> PyResult<AnyValue<'static>> {
+        let tuple = ob.downcast::<PyTuple>().unwrap();
+        let len = tuple.len();
+        let fields = ob
+            .getattr(intern!(ob.py(), "_fields"))?
+            .downcast_into::<PyTuple>()?;
+        let mut keys = Vec::with_capacity(len);
+        let mut vals = Vec::with_capacity(len);
+        for (k, v) in fields.into_iter().zip(tuple.into_iter()) {
+            let key = k.extract::<Cow<str>>()?;
+            let val = py_object_to_any_value(&v, strict, true)?;
+            let dtype = val.dtype();
+            keys.push(Field::new(key.as_ref().into(), dtype));
+            vals.push(val)
+        }
+        Ok(AnyValue::StructOwned(Box::new((vals, keys))))
+    }
+
     fn get_object(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
         #[cfg(feature = "object")]
         {
@@ -500,7 +520,14 @@ pub(crate) fn py_object_to_any_value(
             Ok(get_str)
         } else if ob.is_instance_of::<PyBytes>() {
             Ok(get_bytes)
-        } else if ob.is_instance_of::<PyList>() || ob.is_instance_of::<PyTuple>() {
+        } else if ob.is_instance_of::<PyTuple>() {
+            // NamedTuple-like object?
+            if ob.hasattr(intern!(py, "_fields"))? {
+                Ok(get_namedtuple)
+            } else {
+                Ok(get_list)
+            }
+        } else if ob.is_instance_of::<PyList>() {
             Ok(get_list)
         } else if ob.is_instance_of::<PyDict>() {
             Ok(get_struct)
@@ -519,6 +546,8 @@ pub(crate) fn py_object_to_any_value(
             Ok(get_timedelta as InitFn)
         } else if ob.is_instance_of::<PyRange>() {
             Ok(get_list as InitFn)
+        } else if ob.is_instance(pl_series(py).bind(py))? {
+            Ok(get_list_from_series as InitFn)
         } else {
             static NDARRAY_TYPE: PyOnceLock<Py<PyType>> = PyOnceLock::new();
             if let Ok(ndarray_type) = NDARRAY_TYPE.import(py, "numpy", "ndarray") {

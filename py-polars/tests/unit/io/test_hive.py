@@ -1175,7 +1175,7 @@ def test_hive_filter_in_ir(
         )
 
     plan = pl.scan_parquet(tmp_path).filter(pl.col("a") < 0).explain()
-    assert plan.startswith("Parquet SCAN []")
+    assert plan.startswith("DF [")
 
     assert_frame_equal(
         pl.scan_parquet(tmp_path).with_row_index().filter(pl.col("a") == 2).collect(),

@@ -6,6 +6,7 @@ use super::models::{CatalogInfo, NamespaceInfo, TableCredentials, TableInfo};
 use super::schema::schema_to_column_info_list;
 use super::utils::{PageWalker, do_request};
 use crate::catalog::unity::models::{ColumnInfo, DataSourceFormat, TableType};
+use crate::cloud::USER_AGENT;
 use crate::impl_page_walk;
 use crate::utils::decode_json_response;
 
@@ -325,10 +326,10 @@ impl CatalogClientBuilder {
         Ok(CatalogClient {
             workspace_url,
             http_client: {
-                let builder = reqwest::ClientBuilder::new().user_agent("polars");
+                let builder = reqwest::ClientBuilder::new().user_agent(USER_AGENT);
 
                 let builder = if let Some(bearer_token) = self.bearer_token {
-                    use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue, USER_AGENT};
+                    use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 
                     let mut headers = HeaderMap::new();
 
@@ -337,7 +338,7 @@ impl CatalogClientBuilder {
                     auth_value.set_sensitive(true);
 
                     headers.insert(AUTHORIZATION, auth_value);
-                    headers.insert(USER_AGENT, "polars".try_into().unwrap());
+                    headers.insert(reqwest::header::USER_AGENT, USER_AGENT.try_into().unwrap());
 
                     builder.default_headers(headers)
                 } else {

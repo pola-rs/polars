@@ -7,7 +7,7 @@ from typing import Any, Callable, TypeVar, cast
 import pytest
 
 import polars as pl
-from polars._typing import PartitioningScheme
+from polars.io.partition import _SinkDirectory
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -160,9 +160,7 @@ def _patched_cloud(
 
             def _(lf: pl.LazyFrame, *args: Any, **kwargs: Any) -> pl.LazyFrame | None:
                 # The cloud client sinks to a "placeholder-path".
-                if args[0] == "placeholder-path" or isinstance(
-                    args[0], PartitioningScheme
-                ):
+                if args[0] == "placeholder-path" or isinstance(args[0], _SinkDirectory):
                     prev_lazy = kwargs.get("lazy", False)
                     kwargs["lazy"] = True
                     lf = prev_sink(lf, *args, **kwargs)

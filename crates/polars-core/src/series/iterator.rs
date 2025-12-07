@@ -80,11 +80,6 @@ impl Series {
     /// This will panic if the array is not rechunked first.
     pub fn iter(&self) -> SeriesIter<'_> {
         let dtype = self.dtype();
-        #[cfg(feature = "object")]
-        assert!(
-            !matches!(dtype, DataType::Object(_)),
-            "object dtype not supported in Series.iter"
-        );
         assert_eq!(self.chunks().len(), 1, "impl error");
         let arr = &*self.chunks()[0];
         let len = arr.len();
@@ -102,11 +97,6 @@ impl Series {
 
         assert_eq!(dtype, &phys_dtype, "impl error");
         assert_eq!(self.chunks().len(), 1, "impl error");
-        #[cfg(feature = "object")]
-        assert!(
-            !matches!(dtype, DataType::Object(_)),
-            "object dtype not supported in Series.iter"
-        );
         let arr = &*self.chunks()[0];
 
         if phys_dtype.is_primitive_numeric() {

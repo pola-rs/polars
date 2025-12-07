@@ -126,7 +126,10 @@ def test_streaming_apply(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
 
     q = pl.DataFrame({"a": [1, 2]}).lazy()
-    with pytest.warns(PolarsInefficientMapWarning, match="with this one instead"):
+    with pytest.warns(
+        PolarsInefficientMapWarning,
+        match="with this one instead",
+    ):
         (
             q.select(
                 pl.col("a").map_elements(lambda x: x * 2, return_dtype=pl.Int64)
@@ -180,13 +183,13 @@ def test_streaming_generic_left_and_inner_join_from_disk(tmp_path: Path) -> None
     join_strategies: list[JoinStrategy] = ["left", "inner"]
     for how in join_strategies:
         assert_frame_equal(
-            lf0.join(
-                lf1, left_on="id", right_on="id_r", how=how, maintain_order="left"
-            ).collect(engine="streaming"),
+            lf0.join(lf1, left_on="id", right_on="id_r", how=how).collect(
+                engine="streaming"
+            ),
             lf0.join(lf1, left_on="id", right_on="id_r", how=how).collect(
                 engine="in-memory"
             ),
-            check_row_order=how == "left",
+            check_row_order=False,
         )
 
 

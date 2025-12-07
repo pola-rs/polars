@@ -462,7 +462,7 @@ def test_cast_options_ignore_extra_columns() -> None:
 
     with pytest.raises(
         pl.exceptions.SchemaError,
-        match="extra column in file outside of expected schema: b, hint: specify.* or pass",
+        match=r"extra column in file outside of expected schema: b, hint: specify.* or pass",
     ):
         pl.scan_parquet(files, schema={"a": pl.Int64}).collect()
 

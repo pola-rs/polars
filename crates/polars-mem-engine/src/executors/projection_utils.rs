@@ -19,7 +19,7 @@ type IdAndExpression = (u32, Arc<dyn PhysicalExpr>);
 fn rolling_evaluate(
     df: &DataFrame,
     state: &ExecutionState,
-    rolling: PlHashMap<&RollingGroupOptions, Vec<IdAndExpression>>,
+    rolling: PlHashMap<RollingGroupOptions, Vec<IdAndExpression>>,
 ) -> PolarsResult<Vec<Vec<(u32, Column)>>> {
     POOL.install(|| {
         rolling
@@ -79,7 +79,13 @@ fn window_evaluate(
                 e.as_expression()
                     .unwrap()
                     .into_iter()
-                    .filter(|e| matches!(e, Expr::Window { .. }))
+                    .filter(|e| {
+                        #[cfg(feature = "dynamic_group_by")]
+                        if matches!(e, Expr::Rolling { .. }) {
+                            return true;
+                        }
+                        matches!(e, Expr::Over { .. })
+                    })
                     .count()
                     == 1
             });
@@ -142,7 +148,7 @@ fn execute_projection_cached_window_fns(
     // u32: index,
     let mut windows: PlHashMap<String, Vec<IdAndExpression>> = PlHashMap::default();
     #[cfg(feature = "dynamic_group_by")]
-    let mut rolling: PlHashMap<&RollingGroupOptions, Vec<IdAndExpression>> = PlHashMap::default();
+    let mut rolling: PlHashMap<RollingGroupOptions, Vec<IdAndExpression>> = PlHashMap::default();
     let mut other = Vec::with_capacity(exprs.len());
 
     // first we partition the window function by the values they group over.
@@ -151,34 +157,49 @@ fn execute_projection_cached_window_fns(
         let mut is_window = false;
         if let Some(e) = phys.as_expression() {
             for e in e.into_iter() {
-                if let Expr::Window {
-                    partition_by,
-                    options,
-                    order_by,
-                    ..
-                } = e
-                {
-                    let entry = match options {
-                        WindowType::Over(g) => {
-                            let g: &str = g.into();
-                            let mut key = format!("{:?}_{}", partition_by.as_slice(), g);
-                            if let Some((e, k)) = order_by {
-                                polars_expr::prelude::window_function_format_order_by(
-                                    &mut key,
-                                    e.as_ref(),
-                                    k,
-                                )
-                            }
-                            windows.entry(key).or_insert_with(Vec::new)
-                        },
-                        #[cfg(feature = "dynamic_group_by")]
-                        WindowType::Rolling(options) => {
-                            rolling.entry(options).or_insert_with(Vec::new)
-                        },
-                    };
-                    entry.push((index, phys.clone()));
-                    is_window = true;
-                    break;
+                match e {
+                    #[cfg(feature = "dynamic_group_by")]
+                    Expr::Rolling {
+                        function: _,
+                        index_column,
+                        period,
+                        offset,
+                        closed_window,
+                    } => {
+                        if let Expr::Column(index_column) = index_column.as_ref() {
+                            let options = RollingGroupOptions {
+                                index_column: index_column.clone(),
+                                period: *period,
+                                offset: *offset,
+                                closed_window: *closed_window,
+                            };
+                            let entry = rolling.entry(options).or_default();
+                            entry.push((index, phys.clone()));
+                            is_window = true;
+                            break;
+                        }
+                    },
+                    Expr::Over {
+                        function: _,
+                        partition_by,
+                        order_by,
+                        mapping,
+                    } => {
+                        let mapping: &str = mapping.into();
+                        let mut key = format!("{:?}_{mapping}", partition_by.as_slice());
+                        if let Some((e, k)) = order_by {
+                            polars_expr::prelude::window_function_format_order_by(
+                                &mut key,
+                                e.as_ref(),
+                                k,
+                            )
+                        }
+                        let entry = windows.entry(key).or_insert_with(Vec::new);
+                        entry.push((index, phys.clone()));
+                        is_window = true;
+                        break;
+                    },
+                    _ => {},
                 }
             }
         } else {

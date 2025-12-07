@@ -128,7 +128,7 @@ pub(crate) fn datetime_range_i64(
         )?;
         polars_ensure!(
             step != 0,
-            InvalidOperation: "interval {} is too small for time unit {} and got rounded down to zero",
+            InvalidOperation: "interval {} is too small for time unit {} and was rounded down to zero",
             interval,
             time_unit,
         );

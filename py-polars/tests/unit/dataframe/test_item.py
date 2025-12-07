@@ -12,19 +12,19 @@ def test_df_item() -> None:
 
 def test_df_item_empty() -> None:
     df = pl.DataFrame()
-    with pytest.raises(ValueError, match=r".* frame has shape \(0, 0\)"):
+    with pytest.raises(ValueError, match=r".* shape=\(0, 0\)"):
         df.item()
 
 
 def test_df_item_incorrect_shape_rows() -> None:
     df = pl.DataFrame({"a": [1, 2]})
-    with pytest.raises(ValueError, match=r".* frame has shape \(2, 1\)"):
+    with pytest.raises(ValueError, match=r".* shape=\(2, 1\)"):
         df.item()
 
 
 def test_df_item_incorrect_shape_columns() -> None:
     df = pl.DataFrame({"a": [1], "b": [2]})
-    with pytest.raises(ValueError, match=r".* frame has shape \(1, 2\)"):
+    with pytest.raises(ValueError, match=r".* shape=\(1, 2\)"):
         df.item()
 
 

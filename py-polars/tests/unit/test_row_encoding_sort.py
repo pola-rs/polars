@@ -39,14 +39,14 @@ def elem_order_sign(
         assert lhs.dtype == rhs.dtype
 
         if isinstance(lhs.dtype, pl.Enum):
-            lhs = cast(Element, lhs.to_physical())
-            rhs = cast(Element, rhs.to_physical())
+            lhs = cast("Element", lhs.to_physical())
+            rhs = cast("Element", rhs.to_physical())
             assert isinstance(lhs, pl.Series)
             assert isinstance(rhs, pl.Series)
 
-        if lhs.dtype == pl.Categorical(ordering="lexical"):
-            lhs = cast(Element, lhs.cast(pl.String))
-            rhs = cast(Element, rhs.cast(pl.String))
+        if isinstance(lhs.dtype, pl.Categorical):
+            lhs = cast("Element", lhs.cast(pl.String))
+            rhs = cast("Element", rhs.cast(pl.String))
             assert isinstance(lhs, pl.Series)
             assert isinstance(rhs, pl.Series)
 
@@ -140,6 +140,7 @@ def tuple_order(
 @given(
     s=series(
         excluded_dtypes=[
+            pl.Float16,  # We cannot really deal with totalOrder
             pl.Float32,  # We cannot really deal with totalOrder
             pl.Float64,  # We cannot really deal with totalOrder
             pl.Decimal,  # Bug: see https://github.com/pola-rs/polars/issues/20308
@@ -184,6 +185,7 @@ def test_series_sort_parametric(s: pl.Series) -> None:
 @given(
     df=dataframes(
         excluded_dtypes=[
+            pl.Float16,  # We cannot really deal with totalOrder
             pl.Float32,  # We cannot really deal with totalOrder
             pl.Float64,  # We cannot really deal with totalOrder
             pl.Decimal,  # Bug: see https://github.com/pola-rs/polars/issues/20308

@@ -24,17 +24,18 @@ impl GroupedReduction for LenReduce {
 
     fn update_group(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         group_idx: IdxSize,
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         self.groups[group_idx as usize] += values.len() as u64;
         Ok(())
     }
 
     unsafe fn update_groups_while_evicting(
         &mut self,
-        _values: &Column,
+        _values: &[&Column],
         subset: &[IdxSize],
         group_idxs: &[EvictIdx],
         _seq_id: u64,

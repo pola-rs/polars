@@ -6,7 +6,7 @@ use parking_lot::Mutex;
 use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_expr::planner::{ExpressionConversionState, create_physical_expr, get_expr_depth_limit};
-use polars_plan::plans::{Context, IR, IRPlan};
+use polars_plan::plans::{IR, IRPlan};
 use polars_plan::prelude::AExpr;
 use polars_plan::prelude::expr_ir::ExprIR;
 use polars_utils::arena::{Arena, Node};
@@ -14,6 +14,7 @@ use polars_utils::relaxed_cell::RelaxedCell;
 use slotmap::{SecondaryMap, SlotMap};
 
 use crate::graph::{Graph, GraphNodeKey};
+use crate::metrics::GraphMetrics;
 use crate::physical_plan::{PhysNode, PhysNodeKey, PhysNodeKind, StreamingLowerIRContext};
 
 /// Executes the IR with the streaming engine.
@@ -56,10 +57,11 @@ pub fn visualize_physical_plan(
 
 pub struct StreamingQuery {
     top_ir: IR,
-    graph: Graph,
-    root_phys_node: PhysNodeKey,
-    phys_sm: SlotMap<PhysNodeKey, PhysNode>,
-    phys_to_graph: SecondaryMap<PhysNodeKey, GraphNodeKey>,
+    pub graph: Graph,
+    pub root_phys_node: PhysNodeKey,
+    pub phys_sm: SlotMap<PhysNodeKey, PhysNode>,
+    pub phys_to_graph: SecondaryMap<PhysNodeKey, GraphNodeKey>,
+    pub metrics: Option<Arc<Mutex<GraphMetrics>>>,
 }
 
 /// Configures if IR lowering creates the `format_str` for `InMemoryMap`.
@@ -117,12 +119,22 @@ impl StreamingQuery {
 
         let top_ir = ir_arena.get(node).clone();
 
+        let metrics = if std::env::var("POLARS_TRACK_METRICS").as_deref() == Ok("1")
+            || std::env::var("POLARS_LOG_METRICS").as_deref() == Ok("1")
+        {
+            crate::async_executor::track_task_metrics(true);
+            Some(Arc::default())
+        } else {
+            None
+        };
+
         let out = StreamingQuery {
             top_ir,
             graph,
             root_phys_node,
             phys_sm,
             phys_to_graph,
+            metrics,
         };
 
         Ok(out)
@@ -135,21 +147,17 @@ impl StreamingQuery {
             root_phys_node,
             phys_sm,
             phys_to_graph,
+            metrics,
         } = self;
-
-        let metrics = if std::env::var("POLARS_TRACK_METRICS").as_deref() == Ok("1") {
-            crate::async_executor::track_task_metrics(true);
-            Some(Arc::default())
-        } else {
-            None
-        };
 
         let query_start = Instant::now();
         let mut results = crate::execute::execute_graph(&mut graph, metrics.clone())?;
         let query_elapsed = query_start.elapsed();
 
         // Print metrics.
-        if let Some(lock) = metrics {
+        if let Some(lock) = metrics
+            && std::env::var("POLARS_LOG_METRICS").as_deref() == Ok("1")
+        {
             let mut total_query_ns = 0;
             let mut lines = Vec::new();
             let m = lock.lock();

@@ -2963,7 +2963,7 @@ def string(*, include_categorical: bool = False) -> Selector:
     ...         "z": ["a", "b", "a", "b", "b"],
     ...     },
     ... ).with_columns(
-    ...     z=pl.col("z").cast(pl.Categorical("lexical")),
+    ...     z=pl.col("z").cast(pl.Categorical()),
     ... )
 
     Group by all string columns, sum the numeric columns, then sort by the string cols:

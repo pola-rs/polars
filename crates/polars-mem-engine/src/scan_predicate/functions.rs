@@ -5,6 +5,7 @@ use polars_core::config;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::{IDX_DTYPE, IdxCa, InitHashMaps, PlHashMap, PlIndexMap, PlIndexSet};
 use polars_core::schema::Schema;
+use polars_error::polars_warn;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
 use polars_io::predicates::ScanIOPredicate;
 use polars_plan::dsl::default_values::{
@@ -15,7 +16,7 @@ use polars_plan::dsl::{FileScanIR, Operator, ScanSources, TableStatistics, Unifi
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::predicates::{aexpr_to_column_predicates, aexpr_to_skip_batch_predicate};
-use polars_plan::plans::{AExpr, Context, ExprIRDisplay, FileInfo, IR, MintermIter};
+use polars_plan::plans::{AExpr, ExprIRDisplay, FileInfo, IR, MintermIter};
 use polars_plan::utils::aexpr_to_leaf_names_iter;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
@@ -49,7 +50,7 @@ pub fn create_scan_predicate(
 
         for predicate_part in MintermIter::new(predicate.node(), expr_arena) {
             if aexpr_to_leaf_names_iter(predicate_part, expr_arena)
-                .all(|name| hive_schema.contains(&name))
+                .all(|name| hive_schema.contains(name))
             {
                 hive_predicate_parts.push(predicate_part)
             } else {
@@ -80,7 +81,6 @@ pub fn create_scan_predicate(
 
             hive_predicate = Some(create_physical_expr(
                 &ExprIR::from_node(node, expr_arena),
-                Context::Default,
                 expr_arena,
                 schema,
                 state,
@@ -105,17 +105,15 @@ pub fn create_scan_predicate(
         break;
     }
 
-    let phys_predicate =
-        create_physical_expr(&predicate, Context::Default, expr_arena, schema, state)?;
+    let phys_predicate = create_physical_expr(&predicate, expr_arena, schema, state)?;
 
     if hive_predicate_is_full_predicate {
         hive_predicate = Some(phys_predicate.clone());
     }
 
-    let live_columns = Arc::new(PlIndexSet::from_iter(aexpr_to_leaf_names_iter(
-        predicate.node(),
-        expr_arena,
-    )));
+    let live_columns = Arc::new(PlIndexSet::from_iter(
+        aexpr_to_leaf_names_iter(predicate.node(), expr_arena).cloned(),
+    ));
 
     let mut skip_batch_predicate = None;
 
@@ -143,7 +141,6 @@ pub fn create_scan_predicate(
 
             skip_batch_predicate = Some(create_physical_expr(
                 &expr,
-                Context::Default,
                 expr_arena,
                 &Arc::new(skip_batch_schema),
                 state,
@@ -179,7 +176,6 @@ pub fn create_scan_predicate(
                         (
                             create_physical_expr(
                                 &ExprIR::new(p, OutputName::Alias(PlSmallStr::EMPTY)),
-                                Context::Default,
                                 expr_arena,
                                 schema,
                                 state,
@@ -222,6 +218,8 @@ pub fn initialize_scan_predicate<'a>(
             break;
         };
 
+        let expected_mask_len: usize;
+
         let (skip_files_mask, send_predicate_to_readers) = if let Some(hive_parts) = hive_parts
             && let Some(hive_predicate) = &predicate.hive_predicate
         {
@@ -230,6 +228,8 @@ pub fn initialize_scan_predicate<'a>(
                     "initialize_scan_predicate: Source filter mask initialization via hive partitions"
                 );
             }
+
+            expected_mask_len = hive_parts.df().height();
 
             let inclusion_mask = hive_predicate
                 .evaluate_io(hive_parts.df())?
@@ -255,12 +255,27 @@ pub fn initialize_scan_predicate<'a>(
                 );
             }
 
+            expected_mask_len = table_statsitics.0.height();
+
             let exclusion_mask = skip_batch_predicate.evaluate_with_stat_df(&table_statsitics.0)?;
 
             (SkipFilesMask::Exclusion(exclusion_mask), true)
         } else {
             break;
         };
+
+        if skip_files_mask.len() != expected_mask_len {
+            polars_warn!(
+                "WARNING: \
+                initialize_scan_predicate: \
+                filter mask length mismatch (length: {}, expected: {}). Files \
+                will not be skipped. This is a bug; please open an issue with \
+                a reproducible example if possible.",
+                skip_files_mask.len(),
+                expected_mask_len
+            );
+            return Ok((None, Some(predicate)));
+        }
 
         if verbose {
             eprintln!(
@@ -361,7 +376,9 @@ pub fn apply_scan_predicate_to_scan_ir(
         let is_fully_applied = predicate_to_readers.is_none();
         *predicate_file_skip_applied = Some(is_fully_applied);
 
-        filter_scan_ir(scan_ir, skip_files_mask.non_skipped_files_idx_iter())
+        if skip_files_mask.num_skipped_files() > 0 {
+            filter_scan_ir(scan_ir, skip_files_mask.non_skipped_files_idx_iter())
+        }
     }
 
     Ok(())
@@ -467,6 +484,9 @@ where
                 dataset_object: _,
                 cached_ir,
             } => *cached_ir.lock().unwrap() = None,
+
+            #[cfg(feature = "scan_lines")]
+            FileScanIR::Lines { name: _ } => {},
 
             FileScanIR::Anonymous {
                 options: _,

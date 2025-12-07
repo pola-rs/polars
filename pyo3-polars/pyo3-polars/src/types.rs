@@ -1,8 +1,8 @@
 use std::convert::Infallible;
 
 use arrow;
+use polars::prelude::*;
 use polars_core::datatypes::{CompatLevel, DataType};
-use polars_core::prelude::*;
 use polars_core::utils::materialize_dyn_int;
 #[cfg(feature = "lazy")]
 use polars_lazy::frame::LazyFrame;
@@ -393,7 +393,8 @@ impl<'py> IntoPyObject<'py> for PyExpr {
             .map_err(|err| {
                 let msg = format!("deserialization failed: {err}");
                 PyValueError::new_err(msg)
-            })
+            })?;
+        Ok(instance)
     }
 }
 
@@ -458,6 +459,10 @@ impl<'py> IntoPyObject<'py> for PyDataType {
             },
             DataType::UInt128 => {
                 let class = pl.getattr(intern!(py, "UInt128")).unwrap();
+                class.call0()
+            },
+            DataType::Float16 => {
+                let class = pl.getattr(intern!(py, "Float16")).unwrap();
                 class.call0()
             },
             DataType::Float32 => {
@@ -603,6 +608,7 @@ impl<'py> FromPyObject<'py> for PyDataType {
                     "UInt32" => DataType::UInt32,
                     "UInt64" => DataType::UInt64,
                     "UInt128" => DataType::UInt128,
+                    "Float16" => DataType::Float16,
                     "Float32" => DataType::Float32,
                     "Float64" => DataType::Float64,
                     "Boolean" => DataType::Boolean,
@@ -652,6 +658,7 @@ impl<'py> FromPyObject<'py> for PyDataType {
             "UInt32" => DataType::UInt32,
             "UInt64" => DataType::UInt64,
             "UInt128" => DataType::UInt128,
+            "Float16" => DataType::Float16,
             "Float32" => DataType::Float32,
             "Float64" => DataType::Float64,
             "Boolean" => DataType::Boolean,

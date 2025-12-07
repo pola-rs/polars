@@ -2,8 +2,10 @@
 use std::borrow::Cow;
 
 use arrow::types::PrimitiveType;
+use num_traits::ToBytes;
 use polars_compute::cast::SerPrimitive;
 use polars_error::feature_gated;
+use polars_utils::float16::pf16;
 use polars_utils::total_ord::ToTotalOrd;
 
 use super::*;
@@ -56,6 +58,8 @@ pub enum AnyValue<'a> {
     Int64(i64),
     /// A 128-bit integer number.
     Int128(i128),
+    /// A 16-bit floating point number.
+    Float16(pf16),
     /// A 32-bit floating point number.
     Float32(f32),
     /// A 64-bit floating point number.
@@ -156,6 +160,7 @@ impl AnyValue<'static> {
             DT::Int32 => AV::Int32(numeric_to_one.into()),
             DT::Int64 => AV::Int64(numeric_to_one.into()),
             DT::Int128 => AV::Int128(numeric_to_one.into()),
+            DT::Float16 => AV::Float16(numeric_to_one.into()),
             DT::Float32 => AV::Float32(numeric_to_one.into()),
             DT::Float64 => AV::Float64(numeric_to_one.into()),
             #[cfg(feature = "dtype-decimal")]
@@ -211,6 +216,10 @@ impl AnyValue<'static> {
                     .collect(),
                 fields.clone(),
             ))),
+            #[cfg(feature = "dtype-extension")]
+            DT::Extension(_typ, storage) => {
+                AnyValue::default_value(storage, numeric_to_one, num_list_values)
+            },
             DT::Unknown(_) => unreachable!(),
         }
     }
@@ -236,6 +245,7 @@ impl<'a> AnyValue<'a> {
             UInt32(_) => DataType::UInt32,
             UInt64(_) => DataType::UInt64,
             UInt128(_) => DataType::UInt128,
+            Float16(_) => DataType::Float16,
             Float32(_) => DataType::Float32,
             Float64(_) => DataType::Float64,
             String(_) | StringOwned(_) => DataType::String,
@@ -290,6 +300,8 @@ impl<'a> AnyValue<'a> {
             UInt32(v) => NumCast::from(*v),
             UInt64(v) => NumCast::from(*v),
             UInt128(v) => NumCast::from(*v),
+            #[cfg(feature = "dtype-f16")]
+            Float16(v) => NumCast::from(*v),
             Float32(v) => NumCast::from(*v),
             Float64(v) => NumCast::from(*v),
             #[cfg(feature = "dtype-date")]
@@ -340,7 +352,10 @@ impl<'a> AnyValue<'a> {
     }
 
     pub fn is_float(&self) -> bool {
-        matches!(self, AnyValue::Float32(_) | AnyValue::Float64(_))
+        matches!(
+            self,
+            AnyValue::Float16(_) | AnyValue::Float32(_) | AnyValue::Float64(_)
+        )
     }
 
     pub fn is_integer(&self) -> bool {
@@ -371,6 +386,7 @@ impl<'a> AnyValue<'a> {
 
     pub fn is_nan(&self) -> bool {
         match self {
+            AnyValue::Float16(f) => f.is_nan(),
             AnyValue::Float32(f) => f.is_nan(),
             AnyValue::Float64(f) => f.is_nan(),
             _ => false,
@@ -393,6 +409,15 @@ impl<'a> AnyValue<'a> {
         }
     }
 
+    /// Converts AnyValue::Null to None, anything else to Some(self).
+    #[inline]
+    pub fn null_to_none(self) -> Option<Self> {
+        match self {
+            AnyValue::Null => None,
+            av => Some(av),
+        }
+    }
+
     /// Cast `AnyValue` to the provided data type and return a new `AnyValue` with type `dtype`,
     /// if possible.
     pub fn strict_cast(&self, dtype: &'a DataType) -> Option<AnyValue<'a>> {
@@ -408,6 +433,7 @@ impl<'a> AnyValue<'a> {
             (av, DataType::Int32) => AnyValue::Int32(av.extract::<i32>()?),
             (av, DataType::Int64) => AnyValue::Int64(av.extract::<i64>()?),
             (av, DataType::Int128) => AnyValue::Int128(av.extract::<i128>()?),
+            (av, DataType::Float16) => AnyValue::Float16(av.extract::<pf16>()?),
             (av, DataType::Float32) => AnyValue::Float32(av.extract::<f32>()?),
             (av, DataType::Float64) => AnyValue::Float64(av.extract::<f64>()?),
 
@@ -422,6 +448,7 @@ impl<'a> AnyValue<'a> {
             (AnyValue::Int32(v), DataType::Boolean) => AnyValue::Boolean(*v != i32::default()),
             (AnyValue::Int64(v), DataType::Boolean) => AnyValue::Boolean(*v != i64::default()),
             (AnyValue::Int128(v), DataType::Boolean) => AnyValue::Boolean(*v != i128::default()),
+            (AnyValue::Float16(v), DataType::Boolean) => AnyValue::Boolean(*v != pf16::default()),
             (AnyValue::Float32(v), DataType::Boolean) => AnyValue::Boolean(*v != f32::default()),
             (AnyValue::Float64(v), DataType::Boolean) => AnyValue::Boolean(*v != f64::default()),
 
@@ -686,6 +713,7 @@ impl<'a> AnyValue<'a> {
             | Self::Int32(_)
             | Self::Int64(_)
             | Self::Int128(_)
+            | Self::Float16(_)
             | Self::Float32(_)
             | Self::Float64(_) => self,
 
@@ -703,10 +731,16 @@ impl<'a> AnyValue<'a> {
             Self::Time(v) => Self::Int64(v),
 
             #[cfg(feature = "dtype-categorical")]
-            Self::Categorical(v, _)
-            | Self::CategoricalOwned(v, _)
-            | Self::Enum(v, _)
-            | Self::EnumOwned(v, _) => Self::UInt32(v),
+            Self::Categorical(v, &ref m)
+            | Self::CategoricalOwned(v, ref m)
+            | Self::Enum(v, &ref m)
+            | Self::EnumOwned(v, ref m) => {
+                match CategoricalPhysical::smallest_physical(m.max_categories()).unwrap() {
+                    CategoricalPhysical::U8 => Self::UInt8(v as u8),
+                    CategoricalPhysical::U16 => Self::UInt16(v as u16),
+                    CategoricalPhysical::U32 => Self::UInt32(v),
+                }
+            },
             Self::List(series) => Self::List(series.to_physical_repr().into_owned()),
 
             #[cfg(feature = "dtype-array")]
@@ -790,6 +824,7 @@ impl AnyValue<'_> {
             UInt128(v) => feature_gated!("dtype-u128", v.hash(state)),
             String(v) => v.hash(state),
             StringOwned(v) => v.hash(state),
+            Float16(v) => v.to_ne_bytes().hash(state),
             Float32(v) => v.to_ne_bytes().hash(state),
             Float64(v) => v.to_ne_bytes().hash(state),
             Binary(v) => v.hash(state),
@@ -885,15 +920,35 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-date")]
             AnyValue::Int32(v) => AnyValue::Date(*v),
             AnyValue::Null => AnyValue::Null,
-            dt => panic!("cannot create date from other type. dtype: {dt}"),
+            av => panic!("cannot create date from other type. dtype: {}", av.dtype()),
         }
     }
+
     #[cfg(feature = "dtype-datetime")]
     pub(crate) fn as_datetime(&self, tu: TimeUnit, tz: Option<&'a TimeZone>) -> AnyValue<'a> {
         match self {
             AnyValue::Int64(v) => AnyValue::Datetime(*v, tu, tz),
             AnyValue::Null => AnyValue::Null,
-            dt => panic!("cannot create date from other type. dtype: {dt}"),
+            av => panic!(
+                "cannot create datetime from other type. dtype: {}",
+                av.dtype()
+            ),
+        }
+    }
+
+    #[cfg(feature = "dtype-datetime")]
+    pub(crate) fn as_datetime_owned(
+        &self,
+        tu: TimeUnit,
+        tz: Option<Arc<TimeZone>>,
+    ) -> AnyValue<'static> {
+        match self {
+            AnyValue::Int64(v) => AnyValue::DatetimeOwned(*v, tu, tz),
+            AnyValue::Null => AnyValue::Null,
+            av => panic!(
+                "cannot create datetime from other type. dtype: {}",
+                av.dtype()
+            ),
         }
     }
 
@@ -902,7 +957,10 @@ impl<'a> AnyValue<'a> {
         match self {
             AnyValue::Int64(v) => AnyValue::Duration(*v, tu),
             AnyValue::Null => AnyValue::Null,
-            dt => panic!("cannot create date from other type. dtype: {dt}"),
+            av => panic!(
+                "cannot create duration from other type. dtype: {}",
+                av.dtype()
+            ),
         }
     }
 
@@ -911,7 +969,7 @@ impl<'a> AnyValue<'a> {
         match self {
             AnyValue::Int64(v) => AnyValue::Time(*v),
             AnyValue::Null => AnyValue::Null,
-            dt => panic!("cannot create date from other type. dtype: {dt}"),
+            av => panic!("cannot create time from other type. dtype: {}", av.dtype()),
         }
     }
 
@@ -932,6 +990,7 @@ impl<'a> AnyValue<'a> {
 
     pub(crate) fn to_f64(&self) -> Option<f64> {
         match self {
+            AnyValue::Float16(v) => Some((*v).into()),
             AnyValue::Float32(v) => Some((*v).into()),
             AnyValue::Float64(v) => Some(*v),
             _ => None,
@@ -948,6 +1007,7 @@ impl<'a> AnyValue<'a> {
             (Int64(l), Int64(r)) => Int64(l + r),
             (UInt32(l), UInt32(r)) => UInt32(l + r),
             (UInt64(l), UInt64(r)) => UInt64(l + r),
+            (Float16(l), Float16(r)) => Float16(*l + *r),
             (Float32(l), Float32(r)) => Float32(l + r),
             (Float64(l), Float64(r)) => Float64(l + r),
             #[cfg(feature = "dtype-duration")]
@@ -1007,6 +1067,7 @@ impl<'a> AnyValue<'a> {
             UInt64(v) => UInt64(v),
             UInt128(v) => UInt128(v),
             Boolean(v) => Boolean(v),
+            Float16(v) => Float16(v),
             Float32(v) => Float32(v),
             Float64(v) => Float64(v),
             #[cfg(feature = "dtype-datetime")]
@@ -1168,6 +1229,7 @@ impl AnyValue<'_> {
             (Int32(l), Int32(r)) => *l == *r,
             (Int64(l), Int64(r)) => *l == *r,
             (Int128(l), Int128(r)) => *l == *r,
+            (Float16(l), Float16(r)) => l.to_total_ord() == r.to_total_ord(),
             (Float32(l), Float32(r)) => l.to_total_ord() == r.to_total_ord(),
             (Float64(l), Float64(r)) => l.to_total_ord() == r.to_total_ord(),
             (String(l), String(r)) => l == r,
@@ -1324,6 +1386,7 @@ impl PartialOrd for AnyValue<'_> {
             (Int32(l), Int32(r)) => l.partial_cmp(r),
             (Int64(l), Int64(r)) => l.partial_cmp(r),
             (Int128(l), Int128(r)) => l.partial_cmp(r),
+            (Float16(l), Float16(r)) => Some(l.tot_cmp(r)),
             (Float32(l), Float32(r)) => Some(l.tot_cmp(r)),
             (Float64(l), Float64(r)) => Some(l.tot_cmp(r)),
             (String(l), String(r)) => l.partial_cmp(r),
@@ -1530,6 +1593,16 @@ impl GetAnyValue for ArrayRef {
                     Some(v) => AnyValue::UInt128(v),
                 }
             },
+            ArrowDataType::Float16 => {
+                let arr = self
+                    .as_any()
+                    .downcast_ref::<PrimitiveArray<pf16>>()
+                    .unwrap_unchecked();
+                match arr.get_unchecked(index) {
+                    None => AnyValue::Null,
+                    Some(v) => AnyValue::Float16(v),
+                }
+            },
             ArrowDataType::Float32 => {
                 let arr = self
                     .as_any()
@@ -1590,6 +1663,9 @@ impl<K: NumericNative> From<K> for AnyValue<'static> {
                 PrimitiveType::UInt64 => AnyValue::UInt64(NumCast::from(value).unwrap_unchecked()),
                 PrimitiveType::UInt128 => {
                     AnyValue::UInt128(NumCast::from(value).unwrap_unchecked())
+                },
+                PrimitiveType::Float16 => {
+                    AnyValue::Float16(NumCast::from(value).unwrap_unchecked())
                 },
                 PrimitiveType::Float32 => {
                     AnyValue::Float32(NumCast::from(value).unwrap_unchecked())

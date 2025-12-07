@@ -29,4 +29,12 @@ ctx = pc.ComputeContext(
     cluster_size=2
 )
 # --8<-- [end:set-compute]
+# --8<-- [start:manifest]
+ctx = pc.ComputeContext(
+    workspace="your-workspace",
+    instance_type="t2.micro",
+    cluster_size=2
+)
+ctx.register("ComputeName")
+# --8<-- [end:manifest]
 """

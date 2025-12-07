@@ -660,7 +660,7 @@ def test_extra_columns_not_ignored_22218() -> None:
 
     with pytest.raises(
         pl.exceptions.SchemaError,
-        match="extra column in file outside of expected schema: c, hint: specify .*or pass",
+        match=r"extra column in file outside of expected schema: c, hint: specify .*or pass",
     ):
         pl.scan_parquet(files, missing_columns="insert").select(pl.all()).collect()
 

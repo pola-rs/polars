@@ -38,6 +38,17 @@ impl<K: DictionaryKey, M: MutableArray + Default> MutableDictionaryArray<K, M> {
     pub fn new() -> Self {
         Self::try_empty(M::default()).unwrap()
     }
+
+    /// Creates an empty [`MutableDictionaryArray`] with the given value dtype.
+    pub fn empty_with_value_dtype(value_dtype: ArrowDataType) -> Self {
+        let keys = MutablePrimitiveArray::<K>::new();
+        let dtype = ArrowDataType::Dictionary(K::KEY_TYPE, Box::new(value_dtype), false);
+        Self {
+            dtype,
+            map: ValueMap::<K, M>::try_empty(M::default()).unwrap(),
+            keys,
+        }
+    }
 }
 
 impl<K: DictionaryKey, M: MutableArray + Default> Default for MutableDictionaryArray<K, M> {

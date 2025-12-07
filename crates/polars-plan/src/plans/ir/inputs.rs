@@ -102,19 +102,22 @@ impl IR {
             Sink { payload, .. } => match payload {
                 SinkTypeIR::Memory => Exprs::Empty,
                 SinkTypeIR::Callback(_) => Exprs::Empty,
+
                 SinkTypeIR::File(_) => Exprs::Empty,
-                SinkTypeIR::Partition(p) => {
-                    let key_iter = match &p.variant {
-                        PartitionVariantIR::Parted { key_exprs, .. }
-                        | PartitionVariantIR::ByKey { key_exprs, .. } => key_exprs.iter(),
-                        _ => [].iter(),
-                    };
-                    let sort_by_iter = match &p.per_partition_sort_by {
-                        Some(sort_by) => sort_by.iter(),
-                        _ => [].iter(),
-                    }
-                    .map(|s| &s.expr);
-                    Exprs::Boxed(Box::new(key_iter.chain(sort_by_iter)))
+
+                SinkTypeIR::Partitioned(PartitionedSinkOptionsIR {
+                    partition_strategy, ..
+                }) => match partition_strategy {
+                    PartitionStrategyIR::Keyed {
+                        keys,
+                        include_keys: _,
+                        keys_pre_grouped: _,
+                        per_partition_sort_by,
+                    } => Exprs::Boxed(Box::new(
+                        keys.iter()
+                            .chain(per_partition_sort_by.iter().map(|x| &x.expr)),
+                    ) as _),
+                    PartitionStrategyIR::FileSize => Exprs::Empty,
                 },
             },
 
@@ -175,19 +178,22 @@ impl IR {
             Sink { payload, .. } => match payload {
                 SinkTypeIR::Memory => ExprsMut::Empty,
                 SinkTypeIR::Callback(_) => ExprsMut::Empty,
+
                 SinkTypeIR::File(_) => ExprsMut::Empty,
-                SinkTypeIR::Partition(p) => {
-                    let key_iter = match &mut p.variant {
-                        PartitionVariantIR::Parted { key_exprs, .. }
-                        | PartitionVariantIR::ByKey { key_exprs, .. } => key_exprs.iter_mut(),
-                        _ => [].iter_mut(),
-                    };
-                    let sort_by_iter = match &mut p.per_partition_sort_by {
-                        Some(sort_by) => sort_by.iter_mut(),
-                        _ => [].iter_mut(),
-                    }
-                    .map(|s| &mut s.expr);
-                    ExprsMut::Boxed(Box::new(key_iter.chain(sort_by_iter)))
+
+                SinkTypeIR::Partitioned(PartitionedSinkOptionsIR {
+                    partition_strategy, ..
+                }) => match partition_strategy {
+                    PartitionStrategyIR::Keyed {
+                        keys,
+                        include_keys: _,
+                        keys_pre_grouped: _,
+                        per_partition_sort_by,
+                    } => ExprsMut::Boxed(Box::new(
+                        keys.iter_mut()
+                            .chain(per_partition_sort_by.iter_mut().map(|x| &mut x.expr)),
+                    ) as _),
+                    PartitionStrategyIR::FileSize => ExprsMut::Empty,
                 },
             },
 

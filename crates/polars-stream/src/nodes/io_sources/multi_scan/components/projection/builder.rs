@@ -264,7 +264,6 @@ impl ProjectionBuilder {
         self.projected_schema().len()
     }
 
-    #[cfg_attr(not(feature = "physical_plan_visualization"), expect(unused))]
     pub fn projected_names(&self) -> impl Iterator<Item = &PlSmallStr> {
         self.projected_schema().iter_names()
     }

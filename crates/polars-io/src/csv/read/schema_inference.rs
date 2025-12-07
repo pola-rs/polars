@@ -461,19 +461,12 @@ fn infer_file_schema_inner(
     for i in 0..headers.len() {
         let field_name = &headers[i];
 
+        // apply schema_overwrite by column name only.
+        // positional overrides are handled separately via dtype_overwrite.
         if let Some(schema_overwrite) = schema_overwrite {
             if let Some((_, name, dtype)) = schema_overwrite.get_full(field_name) {
                 fields.push(Field::new(name.clone(), dtype.clone()));
                 continue;
-            }
-
-            // column might have been renamed
-            // execute only if schema is complete
-            if schema_overwrite.len() == headers.len() {
-                if let Some((name, dtype)) = schema_overwrite.get_at_index(i) {
-                    fields.push(Field::new(name.clone(), dtype.clone()));
-                    continue;
-                }
             }
         }
 
