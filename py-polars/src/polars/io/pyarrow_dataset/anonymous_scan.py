@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from functools import partial
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Literal, overload
 
 import polars._reexport as pl
 from polars._dependencies import pyarrow as pa
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from polars import DataFrame, LazyFrame
 
 
@@ -33,34 +35,77 @@ def _scan_pyarrow_dataset(
     batch_size
         The maximum row count for scanned pyarrow record batches.
     """
-    func = partial(_scan_pyarrow_dataset_impl, ds, batch_size=batch_size)
+    # when `allow_pyarrow_filter=False`, the Rust side passes `batch_size`
+    # positionally, so we set as `user_batch_size` to avoid collision
+    batch_size_key = "batch_size" if allow_pyarrow_filter else "user_batch_size"
+    func = partial(
+        _scan_pyarrow_dataset_impl,
+        ds,
+        allow_pyarrow_filter=allow_pyarrow_filter,
+        **{batch_size_key: batch_size},
+    )
     return pl.LazyFrame._scan_python_function(
         ds.schema, func, pyarrow=allow_pyarrow_filter
     )
 
 
+@overload
 def _scan_pyarrow_dataset_impl(
     ds: pa.dataset.Dataset,
     with_columns: list[str] | None,
-    predicate: str | None,
+    predicate: str | bytes | None,
     n_rows: int | None,
-    batch_size: int | None,
-) -> DataFrame:
+    batch_size: int | None = ...,
+    *,
+    allow_pyarrow_filter: Literal[True] = ...,
+    user_batch_size: int | None = ...,
+) -> DataFrame: ...
+
+
+@overload
+def _scan_pyarrow_dataset_impl(
+    ds: pa.dataset.Dataset,
+    with_columns: list[str] | None,
+    predicate: str | bytes | None,
+    n_rows: int | None,
+    batch_size: int | None = ...,
+    *,
+    allow_pyarrow_filter: Literal[False],
+    user_batch_size: int | None = ...,
+) -> tuple[Iterator[DataFrame], bool]: ...
+
+
+def _scan_pyarrow_dataset_impl(
+    ds: pa.dataset.Dataset,
+    with_columns: list[str] | None,
+    predicate: str | bytes | None,
+    n_rows: int | None,
+    batch_size: int | None = None,
+    *,
+    allow_pyarrow_filter: bool = True,
+    user_batch_size: int | None = None,
+) -> DataFrame | tuple[Iterator[DataFrame], bool]:
     """
     Take the projected columns and materialize an arrow table.
 
     Parameters
     ----------
     ds
-        pyarrow dataset
+        pyarrow dataset.
     with_columns
-        Columns that are projected
+        Columns that are projected.
     predicate
-        pyarrow expression that can be evaluated with eval
+        pyarrow expression string (when `allow_pyarrow_filter=True`) or
+        serialized Polars predicate bytes (when `allow_pyarrow_filter=False`).
     n_rows:
-        Materialize only n rows from the arrow dataset
+        Materialize only `n` rows from the arrow dataset.
     batch_size
         The maximum row count for scanned pyarrow record batches.
+    allow_pyarrow_filter
+        If True, evaluate predicate and return DataFrame directly.
+        If False, return `(generator, False)` tuple for IOPlugin path.
+    user_batch_size
+        User-specified `batch_size` (takes precedence over Rust-provided `batch_size`).
 
     Warnings
     --------
@@ -70,13 +115,13 @@ def _scan_pyarrow_dataset_impl(
 
     Returns
     -------
-    DataFrame
+    DataFrame or tuple[Iterator[DataFrame], bool]
     """
     from polars import from_arrow
 
     _filter = None
 
-    if predicate:
+    if allow_pyarrow_filter and predicate:
         from polars._utils.convert import (
             to_py_date,
             to_py_datetime,
@@ -99,11 +144,22 @@ def _scan_pyarrow_dataset_impl(
             },
         )
 
-    common_params = {"columns": with_columns, "filter": _filter}
+    common_params: dict[str, Any] = {"columns": with_columns, "filter": _filter}
+    batch_size = user_batch_size if user_batch_size is not None else batch_size
     if batch_size is not None:
         common_params["batch_size"] = batch_size
 
-    if n_rows:
-        return from_arrow(ds.head(n_rows, **common_params))  # type: ignore[return-value]
+    if allow_pyarrow_filter:
+        if n_rows:
+            return from_arrow(ds.head(n_rows, **common_params))  # type: ignore[return-value]
+        return from_arrow(ds.to_table(**common_params))  # type: ignore[return-value]
+    else:
 
-    return from_arrow(ds.to_table(**common_params))  # type: ignore[return-value]
+        def frames() -> Iterator[DataFrame]:
+            if n_rows:
+                tbl = ds.head(n_rows, **common_params)
+            else:
+                tbl = ds.to_table(**common_params)
+            yield from_arrow(tbl)  # type: ignore[misc]
+
+        return frames(), False
