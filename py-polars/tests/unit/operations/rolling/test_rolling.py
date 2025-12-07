@@ -961,6 +961,33 @@ def test_rolling_std_nulls_min_samples_1_20076() -> None:
     assert_series_equal(result, expected)
 
 
+@pytest.mark.parametrize(
+    ("bools", "window", "expected"),
+    [
+        (
+            [[True, False, True]],
+            2,
+            [[None, 1, 1]],
+        ),
+        (
+            [[True, False, True, True, False, False, False, True, True]],
+            4,
+            [[None, None, None, 3, 2, 2, 1, 1, 2]],
+        ),
+    ],
+)
+def test_rolling_eval_boolean_list(
+    bools: list[list[bool]], window: int, expected: list[list[int]]
+) -> None:
+    for accessor, dtype in (
+        ("list", pl.List(pl.Boolean)),
+        ("arr", pl.Array(pl.Boolean, shape=len(bools[0]))),
+    ):
+        s = pl.Series(name="bools", values=bools, dtype=dtype)
+        res = getattr(s, accessor).eval(pl.element().rolling_sum(window)).to_list()
+        assert res == expected
+
+
 def test_rolling_by_date() -> None:
     df = pl.DataFrame(
         {
