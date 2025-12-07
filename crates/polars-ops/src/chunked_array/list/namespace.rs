@@ -574,7 +574,8 @@ pub trait ListNameSpaceImpl: AsList {
     fn lst_drop_nulls(&self) -> ListChunked {
         let list_ca = self.as_list();
 
-        list_ca.apply_amortized(|s| s.as_ref().drop_nulls())
+        let out = list_ca.apply_amortized(|s| s.as_ref().drop_nulls());
+        self.same_type(out)
     }
 
     #[cfg(feature = "list_sample")]
