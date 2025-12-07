@@ -1,20 +1,25 @@
 use std::borrow::Cow;
 
+use arrow::array::{BinaryViewArray, FixedSizeBinaryArray, PrimitiveArray};
+use arrow::buffer::Buffer;
+use arrow::datatypes::ArrowDataType;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::_get_rows_encoded_ca_unordered;
 use polars_core::prelude::{
-    BinaryOffsetChunked, Column, GroupsIndicator, IntoGroupsType, LargeBinaryArray,
+    BinaryOffsetChunked, Column, DataType, GroupsIndicator, IntoGroupsType, LargeBinaryArray,
 };
+use polars_core::{with_match_physical_integer_type, with_match_physical_numeric_type};
 use polars_error::PolarsResult;
 use polars_expr::hash_keys::{HashKeysVariant, hash_keys_variant_for_dtype};
 use polars_expr::state::ExecutionState;
+use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::async_primitives::wait_group::WaitToken;
 use crate::expression::StreamExpr;
 use crate::morsel::Morsel;
 use crate::nodes::io_sinks2::components::exclude_keys_projection::ExcludeKeysProjection;
-use crate::nodes::io_sinks2::components::partition_key::PartitionKey;
+use crate::nodes::io_sinks2::components::partition_key::{PartitionKey, PreComputedKeys};
 use crate::nodes::io_sinks2::components::size::RowCountAndSize;
 
 pub struct PartitionedDataFrames {
@@ -47,7 +52,7 @@ impl Partitioner {
         let input_size = RowCountAndSize::new_from_df(&df);
         let partitions_vec = match self {
             Self::FileSize => vec![Partition {
-                key: PartitionKey::new(),
+                key: PartitionKey::NULL,
                 keys_df: DataFrame::empty(),
                 df,
             }],
@@ -106,8 +111,12 @@ impl KeyedPartitioner {
             key_columns.push(e.evaluate(&df, in_memory_exec_state).await?);
         }
 
+        let mut pre_computed_keys: Option<PreComputedKeys> = None;
         let single_non_encode = match key_columns.as_slice() {
-            [c] => hash_keys_variant_for_dtype(c.dtype()) == HashKeysVariant::Single,
+            [c] => {
+                pre_computed_keys = PreComputedKeys::opt_new_non_encoded(c);
+                hash_keys_variant_for_dtype(c.dtype()) != HashKeysVariant::RowEncoded
+            },
             _ => false,
         };
 
@@ -118,7 +127,7 @@ impl KeyedPartitioner {
                 .into_owned()
         };
 
-        let keys_encoded_ca: Option<BinaryOffsetChunked> =
+        let mut keys_encoded_ca: Option<BinaryOffsetChunked> =
             (!single_non_encode).then(|| row_encode(&key_columns));
 
         let groups = if single_non_encode {
@@ -130,10 +139,15 @@ impl KeyedPartitioner {
         }
         .unwrap();
 
-        // Row-encode per row if low cardinality.
-        let keys_encoded_arr: Option<LargeBinaryArray> = keys_encoded_ca
-            .or_else(|| (groups.len() > (df.height() / 4)).then(|| row_encode(&key_columns)))
-            .map(|ca| ca.downcast_as_array().clone());
+        if pre_computed_keys.is_none() {
+            if keys_encoded_ca.is_none() && groups.len() > (df.height() / 4) {
+                keys_encoded_ca = Some(row_encode(&key_columns));
+            }
+
+            pre_computed_keys = keys_encoded_ca
+                .as_ref()
+                .map(|x| PreComputedKeys::RowEncoded(x.downcast_as_array().clone()));
+        }
 
         let gather_source_df: Cow<DataFrame> =
             if let Some(projection) = self.exclude_keys_projection.as_ref() {
@@ -179,9 +193,9 @@ impl KeyedPartitioner {
                     .map(|c| unsafe { c.take_slice_unchecked(&[first_idx]) })
                     .collect();
 
-                let key: PartitionKey = keys_encoded_arr.as_ref().map_or_else(
-                    || PartitionKey::from(row_encode(keys_df.get_columns()).get(0).unwrap()),
-                    |arr| PartitionKey::from(arr.get(usize::try_from(first_idx).unwrap()).unwrap()),
+                let key: PartitionKey = pre_computed_keys.as_ref().map_or_else(
+                    || PartitionKey::from_slice(row_encode(keys_df.get_columns()).get(0).unwrap()),
+                    |keys| keys.get_key(first_idx.try_into().unwrap()),
                 );
 
                 Partition { key, keys_df, df }

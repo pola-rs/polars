@@ -32,7 +32,6 @@ schemars = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 slotmap = { workspace = true }
-smallvec = { workspace = true }
 strum_macros = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["sync"] }
 
