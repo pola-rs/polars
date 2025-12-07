@@ -382,7 +382,6 @@ def test_invert_order_full_join_22295() -> None:
             "value": list(range(6)),
         }
     )
-
     lf.join(lf, on=["value", "value_at"], how="full", coalesce=True).collect(
         engine="streaming"
     )
@@ -394,7 +393,7 @@ def test_cross_join_with_literal_column_25544() -> None:
 
     result = df0.join(
         df1.select(pl.col("c0")).with_columns(pl.lit(1)),
-        on=True,
+        on=True,  # type: ignore[arg-type]
     ).select("c0")
 
     in_memory_result = result.collect(engine="in-memory")
