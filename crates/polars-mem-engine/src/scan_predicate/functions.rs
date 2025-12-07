@@ -222,7 +222,6 @@ pub fn initialize_scan_predicate<'a>(
 
         let (skip_files_mask, send_predicate_to_readers) = if let Some(hive_parts) = hive_parts
             && let Some(hive_predicate) = &predicate.hive_predicate
-            && hive_parts.df().height() > 0
         {
             if verbose {
                 eprintln!(

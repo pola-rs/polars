@@ -934,5 +934,8 @@ def test_hive_predicate_filtering_edge_case_25630(
     write(df.filter(pl.col.y == 1).drop("y"), tmp_path / "y=1" / f"data.{ext}")
 
     res = scan(tmp_path).filter(predicate).select("index").collect(engine="streaming")
-    expected = pl.DataFrame({"index": expected_indices}, schema={"index": pl.UInt32})
+    expected = pl.DataFrame(
+        data={"index": expected_indices},
+        schema={"index": pl.get_index_type()},
+    )
     assert_frame_equal(res, expected)
