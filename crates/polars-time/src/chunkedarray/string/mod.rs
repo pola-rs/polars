@@ -184,8 +184,7 @@ pub trait StringMethods: AsString {
 
         match (tz_aware, tz) {
             #[cfg(feature = "timezones")]
-            (false, Some(tz)) => polars_ops::prelude::replace_time_zone(
-                &ca.into_datetime(tu, None),
+            (false, Some(tz)) => ca.into_datetime(tu, None).replace_time_zone(
                 Some(tz),
                 _ambiguous,
                 NonExistent::Raise,
@@ -315,12 +314,7 @@ pub trait StringMethods: AsString {
                 .into_datetime(tu, None);
             match tz {
                 #[cfg(feature = "timezones")]
-                Some(tz) => polars_ops::prelude::replace_time_zone(
-                    &dt,
-                    Some(tz),
-                    ambiguous,
-                    NonExistent::Raise,
-                ),
+                Some(tz) => dt.replace_time_zone(Some(tz), ambiguous, NonExistent::Raise),
                 _ => Ok(dt),
             }
         }

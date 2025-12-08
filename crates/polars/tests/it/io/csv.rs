@@ -114,16 +114,19 @@ fn write_dates() {
         .finish(&mut df)
         .expect_err("invalid date/time format should err");
 
-    let with_timezone = polars_ops::chunked_array::replace_time_zone(
-        s2.slice(0, 1).datetime().unwrap(),
-        TimeZone::opt_try_new(Some("America/New_York"))
-            .unwrap()
-            .as_ref(),
-        &StringChunked::new("".into(), ["raise"]),
-        NonExistent::Raise,
-    )
-    .unwrap()
-    .into_column();
+    let with_timezone = s2
+        .slice(0, 1)
+        .datetime()
+        .unwrap()
+        .replace_time_zone(
+            TimeZone::opt_try_new(Some("America/New_York"))
+                .unwrap()
+                .as_ref(),
+            &StringChunked::new("".into(), ["raise"]),
+            NonExistent::Raise,
+        )
+        .unwrap()
+        .into_column();
     let mut with_timezone_df = DataFrame::new(vec![with_timezone]).unwrap();
     buf.clear();
     CsvWriter::new(&mut buf)

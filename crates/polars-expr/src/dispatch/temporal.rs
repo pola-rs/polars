@@ -84,7 +84,7 @@ pub fn temporal_func_to_udf(func: IRTemporalFunction) -> SpecialEq<Arc<dyn Colum
         Replace => map_as_slice!(datetime::replace),
         #[cfg(feature = "timezones")]
         ReplaceTimeZone(tz, non_existent) => {
-            map_as_slice!(misc::replace_time_zone, tz.as_ref(), non_existent)
+            map_as_slice!(datetime::replace_time_zone, tz.as_ref(), non_existent)
         },
         Combine(tu) => map_as_slice!(temporal::combine, tu),
         DatetimeFunction {
@@ -221,13 +221,15 @@ pub(super) fn combine(s: &[Column], tu: TimeUnit) -> PolarsResult<Column> {
     let result_naive = datetime + duration;
     match tz {
         #[cfg(feature = "timezones")]
-        Some(tz) => Ok(polars_ops::prelude::replace_time_zone(
-            result_naive?.datetime().unwrap(),
-            Some(tz),
-            &StringChunked::from_iter(std::iter::once("raise")),
-            NonExistent::Raise,
-        )?
-        .into_column()),
+        Some(tz) => Ok(result_naive?
+            .datetime()
+            .unwrap()
+            .replace_time_zone(
+                Some(tz),
+                &StringChunked::from_iter(std::iter::once("raise")),
+                NonExistent::Raise,
+            )?
+            .into_column()),
         _ => result_naive,
     }
 }
