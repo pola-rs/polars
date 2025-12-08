@@ -279,3 +279,42 @@ def test_pyarrow_dataset_python_scan(tmp_path: Path) -> None:
     out = lf.collect(engine="streaming")
 
     assert_frame_equal(df, out)
+
+
+@pytest.mark.write_disk
+def test_pyarrow_dataset_allow_pyarrow_filter_false(tmp_path: Path) -> None:
+    df = pl.DataFrame({"item": ["foo", "bar", "baz"], "price": [10.0, 20.0, 30.0]})
+    file_path = tmp_path / "data.parquet"
+    df.write_parquet(file_path)
+
+    dataset = ds.dataset(file_path)
+
+    # basic scan without filter
+    result = pl.scan_pyarrow_dataset(dataset, allow_pyarrow_filter=False).collect()
+    assert_frame_equal(result, df)
+
+    # with filter (predicate should be applied by Polars, not PyArrow)
+    result = (
+        pl.scan_pyarrow_dataset(dataset, allow_pyarrow_filter=False)
+        .filter(pl.col("price") > 15)
+        .collect()
+    )
+
+    expected = pl.DataFrame({"item": ["bar", "baz"], "price": [20.0, 30.0]})
+    assert_frame_equal(result, expected)
+
+    # check user-specified `batch_size` doesn't error (ref: #25316)
+    result = (
+        pl.scan_pyarrow_dataset(dataset, allow_pyarrow_filter=False, batch_size=1000)
+        .filter(pl.col("price") > 15)
+        .collect()
+    )
+    assert_frame_equal(result, expected)
+
+    # check `allow_pyarrow_filter=True` still works
+    result = (
+        pl.scan_pyarrow_dataset(dataset, allow_pyarrow_filter=True)
+        .filter(pl.col("price") > 15)
+        .collect()
+    )
+    assert_frame_equal(result, expected)

@@ -46,7 +46,7 @@ use strum_macros::IntoStaticStr;
 use crate::POOL;
 #[cfg(feature = "row_hash")]
 use crate::hashing::_df_rows_to_hashes_threaded_vertical;
-use crate::prelude::sort::{argsort_multiple_row_fmt, prepare_arg_sort};
+use crate::prelude::sort::arg_sort;
 use crate::series::IsSorted;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash, IntoStaticStr)]
@@ -2054,18 +2054,30 @@ impl DataFrame {
             POOL.install(|| {
                 if POOL.current_num_threads() > self.width() {
                     let stride = usize::max(idx.len().div_ceil(POOL.current_num_threads()), 256);
-                    self._apply_columns_par(&|c| {
-                        (0..idx.len().div_ceil(stride))
-                            .into_par_iter()
-                            .map(|i| c.take_unchecked(&idx.slice((i * stride) as i64, stride)))
-                            .reduce(
-                                || Column::new_empty(c.name().clone(), c.dtype()),
-                                |mut a, b| {
-                                    a.append_owned(b).unwrap();
-                                    a
-                                },
-                            )
-                    })
+                    if self.len() / stride >= 2 {
+                        self._apply_columns_par(&|c| {
+                            // Nested types initiate a rechunk in their take_unchecked implementation.
+                            // If we do not rechunk, it will result in rechunk storms downstream.
+                            let c = if c.dtype().is_nested() {
+                                &c.rechunk()
+                            } else {
+                                c
+                            };
+
+                            (0..idx.len().div_ceil(stride))
+                                .into_par_iter()
+                                .map(|i| c.take_unchecked(&idx.slice((i * stride) as i64, stride)))
+                                .reduce(
+                                    || Column::new_empty(c.name().clone(), c.dtype()),
+                                    |mut a, b| {
+                                        a.append_owned(b).unwrap();
+                                        a
+                                    },
+                                )
+                        })
+                    } else {
+                        self._apply_columns_par(&|c| c.take_unchecked(idx))
+                    }
                 } else {
                     self._apply_columns_par(&|c| c.take_unchecked(idx))
                 }
@@ -2089,22 +2101,34 @@ impl DataFrame {
             POOL.install(|| {
                 if POOL.current_num_threads() > self.width() {
                     let stride = usize::max(idx.len().div_ceil(POOL.current_num_threads()), 256);
-                    self._apply_columns_par(&|c| {
-                        (0..idx.len().div_ceil(stride))
-                            .into_par_iter()
-                            .map(|i| {
-                                let idx = &idx[i * stride..];
-                                let idx = &idx[..idx.len().min(stride)];
-                                c.take_slice_unchecked(idx)
-                            })
-                            .reduce(
-                                || Column::new_empty(c.name().clone(), c.dtype()),
-                                |mut a, b| {
-                                    a.append_owned(b).unwrap();
-                                    a
-                                },
-                            )
-                    })
+                    if self.len() / stride >= 2 {
+                        self._apply_columns_par(&|c| {
+                            // Nested types initiate a rechunk in their take_unchecked implementation.
+                            // If we do not rechunk, it will result in rechunk storms downstream.
+                            let c = if c.dtype().is_nested() {
+                                &c.rechunk()
+                            } else {
+                                c
+                            };
+
+                            (0..idx.len().div_ceil(stride))
+                                .into_par_iter()
+                                .map(|i| {
+                                    let idx = &idx[i * stride..];
+                                    let idx = &idx[..idx.len().min(stride)];
+                                    c.take_slice_unchecked(idx)
+                                })
+                                .reduce(
+                                    || Column::new_empty(c.name().clone(), c.dtype()),
+                                    |mut a, b| {
+                                        a.append_owned(b).unwrap();
+                                        a
+                                    },
+                                )
+                        })
+                    } else {
+                        self._apply_columns_par(&|s| s.take_slice_unchecked(idx))
+                    }
                 } else {
                     self._apply_columns_par(&|s| s.take_slice_unchecked(idx))
                 }
@@ -2196,7 +2220,7 @@ impl DataFrame {
     pub fn sort_impl(
         &self,
         by_column: Vec<Column>,
-        mut sort_options: SortMultipleOptions,
+        sort_options: SortMultipleOptions,
         slice: Option<(i64, usize)>,
     ) -> PolarsResult<Self> {
         if by_column.is_empty() {
@@ -2274,6 +2298,7 @@ impl DataFrame {
         }
 
         let has_nested = by_column.iter().any(|s| s.dtype().is_nested());
+        let allow_threads = sort_options.multithreaded;
 
         // a lot of indirection in both sorting and take
         let mut df = self.clone();
@@ -2300,24 +2325,7 @@ impl DataFrame {
                 }
                 s.arg_sort(options)
             },
-            _ => {
-                if sort_options.nulls_last.iter().all(|&x| x)
-                    || has_nested
-                    || std::env::var("POLARS_ROW_FMT_SORT").is_ok()
-                {
-                    argsort_multiple_row_fmt(
-                        &by_column,
-                        sort_options.descending,
-                        sort_options.nulls_last,
-                        sort_options.multithreaded,
-                    )?
-                } else {
-                    let (first, other) = prepare_arg_sort(by_column, &mut sort_options)?;
-                    first
-                        .as_materialized_series()
-                        .arg_sort_multiple(&other, &sort_options)?
-                }
-            },
+            _ => arg_sort(&by_column, sort_options)?,
         };
 
         if let Some((offset, len)) = slice {
@@ -2326,7 +2334,7 @@ impl DataFrame {
 
         // SAFETY:
         // the created indices are in bounds
-        let mut df = unsafe { df.take_unchecked_impl(&take, sort_options.multithreaded) };
+        let mut df = unsafe { df.take_unchecked_impl(&take, allow_threads) };
         set_sorted(&mut df);
         Ok(df)
     }
@@ -3475,6 +3483,10 @@ impl DataFrame {
         );
         self.vstack_mut_owned_unchecked(df);
         Ok(())
+    }
+
+    pub fn into_columns(self) -> Vec<Column> {
+        self.columns
     }
 }
 

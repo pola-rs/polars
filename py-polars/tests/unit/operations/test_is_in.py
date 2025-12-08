@@ -174,6 +174,56 @@ def test_is_in_9070() -> None:
     assert not pl.Series([1]).is_in(pl.Series([1.99])).item()
 
 
+def test_is_in_large_uint64_21966() -> None:
+    # https://github.com/pola-rs/polars/issues/21966
+    # Large integers beyond Float64 precision (2^53) should compare exactly,
+    # not lose precision by casting to Float64.
+
+    # Original issue: values differing only beyond float64 precision
+    s = pl.Series([58830407606777880], dtype=pl.UInt64)
+    assert not s.is_in([58830407606777883]).item()
+    assert s.is_in([58830407606777880]).item()
+
+    # Values at and beyond the float64 precision boundary (2^53)
+    boundary = 2**53
+    s = pl.Series([boundary, boundary + 1, boundary + 2], dtype=pl.UInt64)
+    assert s.is_in([boundary]).to_list() == [True, False, False]
+    assert s.is_in([boundary + 1]).to_list() == [False, True, False]
+
+    # UInt64 vs Int64: should use Int128 supertype to preserve precision
+    val = 2**53 + 1000
+    s = pl.Series([val], dtype=pl.UInt64)
+    assert s.is_in(pl.Series([val], dtype=pl.Int64)).item()
+    assert not s.is_in(pl.Series([val + 1], dtype=pl.Int64)).item()
+
+    # Int64 vs UInt64 (reverse direction)
+    s = pl.Series([val], dtype=pl.Int64)
+    assert s.is_in(pl.Series([val], dtype=pl.UInt64)).item()
+    assert not s.is_in(pl.Series([val + 1], dtype=pl.UInt64)).item()
+
+    # Negative values in signed list vs unsigned series (uses Int128 supertype)
+    s = pl.Series([100], dtype=pl.UInt64)
+    assert s.is_in(pl.Series([-1, 100, 200], dtype=pl.Int64)).item()
+    assert not s.is_in(pl.Series([-1, 99, 200], dtype=pl.Int64)).item()
+
+    # Smaller integer type combinations that have lossless supertypes
+    s = pl.Series([100, 200], dtype=pl.UInt32)
+    assert s.is_in(pl.Series([100, 300], dtype=pl.Int32)).to_list() == [True, False]
+
+    s = pl.Series([100, 200], dtype=pl.Int16)
+    assert s.is_in(pl.Series([100, 300], dtype=pl.UInt16)).to_list() == [True, False]
+
+    # UInt64 max value (no lossless supertype with Int64)
+    s = pl.Series([2**64 - 1], dtype=pl.UInt64)
+    assert s.is_in(pl.Series([2**64 - 1], dtype=pl.UInt64)).item()
+    assert not s.is_in(pl.Series([2**64 - 2], dtype=pl.UInt64)).item()
+
+    # Fallback to try_get_supertype for types without lossless supertype
+    s = pl.Series([100], dtype=pl.UInt128)
+    assert s.is_in(pl.Series([100], dtype=pl.Int64)).item()
+    assert not s.is_in(pl.Series([99], dtype=pl.Int64)).item()
+
+
 def test_is_in_float_list_10764() -> None:
     df = pl.DataFrame(
         {

@@ -1161,9 +1161,8 @@ def _pandas_has_default_index(df: pd.DataFrame) -> bool:
     else:
         # finally, is the index _equivalent_ to a default unnamed
         # integer index with frame data that was previously sorted
-        return (
-            str(df.index.dtype).startswith("int")
-            and (df.index.sort_values() == np.arange(len(df))).all()
+        return str(df.index.dtype).startswith("int") and bool(
+            (df.index.sort_values() == np.arange(len(df))).all()
         )
 
 

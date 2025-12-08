@@ -684,6 +684,7 @@ impl<'a> FieldsMapper<'a> {
         use DataType::*;
         self.map_dtype(|dtype| match dtype {
             Int8 | UInt8 | Int16 | UInt16 => Int64,
+            Boolean => IDX_DTYPE,
             dt => dt.clone(),
         })
     }

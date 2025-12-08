@@ -20,19 +20,19 @@ pub fn datatype_fn_to_aexpr(
             AExpr::Literal(LiteralValue::Scalar(Scalar::from(PlSmallStr::from_string(
                 dt.into_datatype(ctx.schema)?.to_string(),
             )))),
-            get_literal_name().clone(),
+            get_literal_name(),
         ),
         DTF::Eq(l, r) => (
             AExpr::Literal(LiteralValue::Scalar(Scalar::from(
                 l.into_datatype(ctx.schema)? == r.into_datatype(ctx.schema)?,
             ))),
-            get_literal_name().clone(),
+            get_literal_name(),
         ),
         DTF::Matches(dt, selector) => {
             let dt = dt.into_datatype(ctx.schema)?;
             (
                 AExpr::Literal(LiteralValue::Scalar(Scalar::from(selector.matches(&dt)))),
-                get_literal_name().clone(),
+                get_literal_name(),
             )
         },
         DTF::DefaultValue {
@@ -65,7 +65,7 @@ pub fn datatype_fn_to_aexpr(
                 };
             }
 
-            (expr, get_literal_name().clone())
+            (expr, get_literal_name())
         },
         DTF::Array(dt_expr, f) => {
             let (inner, width): (DataType, usize) = match dt_expr.into_datatype(ctx.schema)? {
@@ -87,14 +87,11 @@ pub fn datatype_fn_to_aexpr(
                             dims.push(width as u32);
                             inner = *new_inner;
                         }
-                        LiteralValue::Series(SpecialEq::new(Series::new(
-                            get_literal_name().clone(),
-                            dims,
-                        )))
+                        LiteralValue::Series(SpecialEq::new(Series::new(get_literal_name(), dims)))
                     },
                 };
                 let value = AExpr::Literal(value);
-                (value, get_literal_name().clone())
+                (value, get_literal_name())
             })
         },
         DTF::Struct(dt_expr, f) => {
@@ -107,7 +104,7 @@ pub fn datatype_fn_to_aexpr(
             let value = match f {
                 StructDataTypeFunction::FieldNames => {
                     LiteralValue::Series(SpecialEq::new(Series::new(
-                        get_literal_name().clone(),
+                        get_literal_name(),
                         fields
                             .iter()
                             .map(|f| f.name.as_str())
@@ -116,7 +113,7 @@ pub fn datatype_fn_to_aexpr(
                 },
             };
             let value = AExpr::Literal(value);
-            (value, get_literal_name().clone())
+            (value, get_literal_name())
         },
     })
 }

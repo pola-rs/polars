@@ -652,7 +652,7 @@ class PyDataFrame:
     def clone(self) -> PyDataFrame: ...
     def unpivot(
         self,
-        on: Sequence[str],
+        on: Sequence[str] | None,
         index: Sequence[str],
         value_name: str | None,
         variable_name: str | None,
@@ -1100,7 +1100,7 @@ class PyLazyFrame:
     ) -> PyLazyFrame: ...
     def unpivot(
         self,
-        on: PySelector,
+        on: PySelector | None,
         index: PySelector,
         value_name: str | None,
         variable_name: str | None,

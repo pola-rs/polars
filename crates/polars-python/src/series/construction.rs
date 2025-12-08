@@ -72,7 +72,7 @@ impl PySeries {
     fn new_f16(
         py: Python<'_>,
         name: &str,
-        array: &Bound<PyArray1<f32>>,
+        array: &Bound<PyArray1<pf16>>,
         nan_is_null: bool,
     ) -> PyResult<Self> {
         if nan_is_null {
@@ -81,13 +81,7 @@ impl PySeries {
             py.enter_polars_series(|| {
                 let ca: Float16Chunked = vals
                     .iter()
-                    .map(|&val| {
-                        if f32::is_nan(val) {
-                            None
-                        } else {
-                            Some(AsPrimitive::<pf16>::as_(val))
-                        }
-                    })
+                    .map(|&val| if pf16::is_nan(val) { None } else { Some(val) })
                     .collect_trusted();
                 Ok(ca.with_name(name.into()))
             })

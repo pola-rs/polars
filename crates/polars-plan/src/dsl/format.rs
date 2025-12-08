@@ -196,10 +196,11 @@ impl fmt::Debug for Expr {
                 if matches!(function, FunctionExpr::AsStruct) {
                     return write!(f, "as_struct({})", FmtArgs(input));
                 }
-                if input.len() >= 2 {
-                    write!(f, "{:?}.{function}({:?})", input[0], &input[1..])
-                } else {
-                    write!(f, "{:?}.{function}()", input[0])
+
+                match input.len() {
+                    0 => write!(f, "{function}()"),
+                    1 => write!(f, "{:?}.{function}()", input[0]),
+                    _ => write!(f, "{:?}.{function}({:?})", input[0], &input[1..]),
                 }
             },
             AnonymousFunction {
@@ -213,10 +214,10 @@ impl fmt::Debug for Expr {
                     _ => fmt_str.as_str(),
                 };
 
-                if input.len() >= 2 {
-                    write!(f, "{:?}.{}({:?})", input[0], name, &input[1..])
-                } else {
-                    write!(f, "{:?}.{}()", input[0], name)
+                match input.len() {
+                    0 => write!(f, "{name}()"),
+                    1 => write!(f, "{:?}.{name}()", input[0]),
+                    _ => write!(f, "{:?}.{name}({:?})", input[0], &input[1..]),
                 }
             },
             Eval {

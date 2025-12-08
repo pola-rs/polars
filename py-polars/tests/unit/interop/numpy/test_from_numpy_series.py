@@ -71,6 +71,7 @@ def test_from_numpy_records() -> None:
         (np.uint16, pl.UInt16),
         (np.uint32, pl.UInt32),
         (np.uint64, pl.UInt64),
+        (np.float16, pl.Float16),
         (np.float32, pl.Float32),
         (np.float64, pl.Float64),
         (np.bool_, pl.Boolean),
