@@ -203,6 +203,10 @@ def lit(
                 time_unit = dtype_name[len("timedelta64[") : -1]  # type: ignore[assignment]
                 return lit(item).cast(Duration(time_unit))
 
+        if getattr(np, "float128", None) and isinstance(value, np.float128):
+            error = f"float128 is not supported: {value}"
+            raise ValueError(error)
+
         # handle known mappable values
         dtype = DataTypeMappings.NUMPY_KIND_AND_ITEMSIZE_TO_DTYPE.get(
             (value.dtype.kind, value.dtype.itemsize)

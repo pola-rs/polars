@@ -4138,9 +4138,7 @@ class DataFrame:
 
             tbl = pa.table(data)
 
-            # do not remove this import!
-            # needed below
-            import pyarrow.parquet  # noqa: F401
+            import pyarrow.parquet
 
             if pyarrow_options is None:
                 pyarrow_options = {}
@@ -4153,13 +4151,13 @@ class DataFrame:
             pyarrow_options["data_page_size"] = data_page_size
 
             if pyarrow_options.get("partition_cols"):
-                pa.parquet.write_to_dataset(
+                pyarrow.parquet.write_to_dataset(
                     table=tbl,
                     root_path=file,
                     **(pyarrow_options or {}),
                 )
             else:
-                pa.parquet.write_table(
+                pyarrow.parquet.write_table(
                     table=tbl,
                     where=file,
                     **(pyarrow_options or {}),
