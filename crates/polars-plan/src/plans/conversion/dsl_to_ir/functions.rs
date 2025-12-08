@@ -5,6 +5,7 @@ use polars_utils::option::OptionTry;
 
 use super::expr_to_ir::ExprToIRContext;
 use super::*;
+use crate::constants::get_literal_name;
 use crate::dsl::{Expr, FunctionExpr};
 use crate::plans::conversion::dsl_to_ir::expr_to_ir::{to_expr_ir, to_expr_irs};
 use crate::plans::{AExpr, IRFunctionExpr};
@@ -51,6 +52,8 @@ pub(super) fn convert_functions(
 
         return Ok((out, struct_name));
     }
+
+    let input_is_empty = input.is_empty();
 
     // Converts inputs
     let e = to_expr_irs(input, ctx)?;
@@ -220,7 +223,23 @@ pub(super) fn convert_functions(
         F::StringExpr(string_function) => {
             use {IRStringFunction as IS, StringFunction as S};
             I::StringExpr(match string_function {
-                S::Format { format, insertions } => IS::Format { format, insertions },
+                S::Format { format, insertions } => {
+                    if input_is_empty {
+                        polars_ensure!(
+                            insertions.is_empty(),
+                            ComputeError: "StringFormat didn't get any inputs, format: \"{}\"",
+                            format
+                        );
+
+                        let out = ctx
+                            .arena
+                            .add(AExpr::Literal(LiteralValue::Scalar(Scalar::from(format))));
+
+                        return Ok((out, get_literal_name()));
+                    } else {
+                        IS::Format { format, insertions }
+                    }
+                },
                 #[cfg(feature = "concat_str")]
                 S::ConcatHorizontal {
                     delimiter,

@@ -36,7 +36,11 @@ where
         let sum = unsafe {
             RollingAggWindowNoNulls::update(&mut self.sum, start, end).unwrap_unchecked()
         };
-        Some(sum / NumCast::from(end - start).unwrap())
+        if start == end {
+            None
+        } else {
+            Some(sum / NumCast::from(end - start).unwrap())
+        }
     }
 }
 

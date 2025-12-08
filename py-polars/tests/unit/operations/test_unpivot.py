@@ -246,3 +246,38 @@ def test_unpivot_predicate_pd() -> None:
             pl.Series("value", [day_a, day_b], dtype=pl.Date),
         ],
     )
+
+
+def test_unpivot_filter_opt() -> None:
+    data = {"a": [5, 2, 8, 2], "b": [99, 33, 77, 44]}
+
+    def assert_eq_df_lf(
+        on: Any, index: Any, filter_pred: Any, expected_data: list[pl.Series]
+    ) -> None:
+        def logic(frame: Any, on: Any, index: Any) -> Any:
+            return frame.unpivot(on, index=index).filter(filter_pred)
+
+        return assert_eq_df_lf_impl(data, logic, on, index, expected_data)
+
+    assert_eq_df_lf(
+        "b",
+        "a",
+        pl.col.a == 2,
+        [
+            pl.Series("a", [2, 2], dtype=pl.Int64),
+            pl.Series("variable", ["b", "b"], dtype=pl.String),
+            pl.Series("value", [33, 44], dtype=pl.Int64),
+        ],
+    )
+
+    assert_eq_df_lf(
+        "b",
+        ["b", "a"],
+        pl.col.b != 33,
+        [
+            pl.Series("b", [99, 77, 44], dtype=pl.Int64),
+            pl.Series("a", [5, 8, 2], dtype=pl.Int64),
+            pl.Series("variable", ["b", "b", "b"], dtype=pl.String),
+            pl.Series("value", [99, 77, 44], dtype=pl.Int64),
+        ],
+    )

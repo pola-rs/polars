@@ -2,11 +2,13 @@ use std::hash::{Hash, Hasher};
 
 use polars_utils::arena::{Arena, Node};
 
-use crate::plans::ArenaExprIter;
 use crate::prelude::AExpr;
 
 impl Hash for AExpr {
     // This hashes the variant, not the whole expression
+    // IMPORTANT: This is also used for equality in some cases with blake3.
+    // Make sure that all attributes that are important for equality are hashed. Nodes don't have
+    // to be hashed.
     fn hash<H: Hasher>(&self, state: &mut H) {
         std::mem::discriminant(self).hash(state);
 
@@ -14,19 +16,33 @@ impl Hash for AExpr {
             AExpr::Column(name) => name.hash(state),
             AExpr::Literal(lv) => lv.hash(state),
             AExpr::Function {
-                options, function, ..
+                options,
+                function,
+                input: _,
             } => {
                 options.hash(state);
                 function.hash(state)
             },
-            AExpr::AnonymousFunction { options, .. } => {
+            AExpr::AnonymousFunction {
+                options,
+                fmt_str,
+                function,
+                input: _,
+            } => {
+                fmt_str.hash(state);
                 options.hash(state);
+                function.hash(state);
             },
             AExpr::Agg(agg) => agg.hash(state),
             AExpr::SortBy { sort_options, .. } => sort_options.hash(state),
             AExpr::Cast {
-                options: strict, ..
-            } => strict.hash(state),
+                options,
+                dtype,
+                expr: _,
+            } => {
+                options.hash(state);
+                dtype.hash(state);
+            },
             #[cfg(feature = "dynamic_group_by")]
             AExpr::Rolling {
                 function: _,
@@ -39,8 +55,22 @@ impl Hash for AExpr {
                 offset.hash(state);
                 closed_window.hash(state);
             },
-            AExpr::Over { mapping, .. } => mapping.hash(state),
-            AExpr::BinaryExpr { op, .. } => op.hash(state),
+            AExpr::Over {
+                mapping,
+                order_by,
+                function: _,
+                partition_by: _,
+            } => {
+                mapping.hash(state);
+                if let Some(o) = order_by {
+                    o.1.hash(state);
+                }
+            },
+            AExpr::BinaryExpr {
+                op,
+                left: _,
+                right: _,
+            } => op.hash(state),
             AExpr::Element => {},
             AExpr::Explode { expr: _, options } => options.hash(state),
             AExpr::Sort { expr: _, options } => options.hash(state),
@@ -61,6 +91,7 @@ impl Hash for AExpr {
                 function: _,
             } => {
                 fmt_str.hash(state);
+                // Invariant, fmt_str is unique. Only used in cloud.
             },
             AExpr::Eval {
                 expr: _,
@@ -82,7 +113,11 @@ pub(crate) fn traverse_and_hash_aexpr<H: Hasher>(
     expr_arena: &Arena<AExpr>,
     state: &mut H,
 ) {
-    for (_, ae) in expr_arena.iter(node) {
+    let mut scratch = vec![node];
+
+    while let Some(node) = scratch.pop() {
+        let ae = expr_arena.get(node);
         ae.hash(state);
+        ae.children_rev(&mut scratch);
     }
 }

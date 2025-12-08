@@ -334,7 +334,27 @@ impl SQLContext {
                 SQLSyntax:
                 "{} requires a valid expression or positive ordinal; found {}", clause, v,
             )),
-            _ => parse_sql_expr(e, self, schema),
+            _ => {
+                // Handle qualified cross-aliasing in ORDER BY clauses
+                // (eg: `SELECT a AS b, -b AS a ... ORDER BY self.a`)
+                let mut expr = parse_sql_expr(e, self, schema)?;
+                if matches!(e, SQLExpr::CompoundIdentifier(_)) {
+                    if let Some(schema) = schema {
+                        expr = expr.map_expr(|ex| match &ex {
+                            Expr::Column(name) => {
+                                let prefixed = format!("__POLARS_ORIG_{}", name.as_str());
+                                if schema.contains(prefixed.as_str()) {
+                                    col(prefixed)
+                                } else {
+                                    ex
+                                }
+                            },
+                            _ => ex,
+                        });
+                    }
+                }
+                Ok(expr)
+            },
         }
     }
 
@@ -480,6 +500,70 @@ impl SQLContext {
             #[allow(unreachable_patterns)]
             _ => polars_bail!(SQLInterface: "'UNION {}' is not currently supported", quantifier),
         }
+    }
+
+    /// Process UNNEST as a lateral operation when it contains column references
+    /// (handles `CROSS JOIN UNNEST(col) AS name` by exploding the referenced col).
+    fn process_unnest_lateral(
+        &self,
+        lf: LazyFrame,
+        alias: &Option<TableAlias>,
+        array_exprs: &[SQLExpr],
+        with_offset: bool,
+    ) -> PolarsResult<LazyFrame> {
+        let alias = alias
+            .as_ref()
+            .ok_or_else(|| polars_err!(SQLSyntax: "UNNEST table must have an alias"))?;
+        polars_ensure!(!with_offset, SQLInterface: "UNNEST tables do not (yet) support WITH ORDINALITY|OFFSET");
+
+        let (mut explode_cols, mut rename_from, mut rename_to) = (
+            Vec::with_capacity(array_exprs.len()),
+            Vec::with_capacity(array_exprs.len()),
+            Vec::with_capacity(array_exprs.len()),
+        );
+        let is_single_col = array_exprs.len() == 1;
+
+        for (i, arr_expr) in array_exprs.iter().enumerate() {
+            let col_name = match arr_expr {
+                SQLExpr::Identifier(ident) => PlSmallStr::from_str(&ident.value),
+                SQLExpr::CompoundIdentifier(parts) => {
+                    PlSmallStr::from_str(&parts.last().unwrap().value)
+                },
+                SQLExpr::Array(_) => polars_bail!(
+                    SQLInterface: "CROSS JOIN UNNEST with both literal arrays and column references is not supported"
+                ),
+                other => polars_bail!(
+                    SQLSyntax: "UNNEST expects column references or array literals, found {:?}", other
+                ),
+            };
+            // alias: column name from "AS t(col)", or table alias
+            if let Some(name) = alias
+                .columns
+                .get(i)
+                .map(|c| c.name.value.as_str())
+                .or_else(|| is_single_col.then_some(alias.name.value.as_str()))
+                .filter(|name| !name.is_empty() && *name != col_name.as_str())
+            {
+                rename_from.push(col_name.clone());
+                rename_to.push(PlSmallStr::from_str(name));
+            }
+            explode_cols.push(col_name);
+        }
+
+        let mut lf = lf.explode(
+            Selector::ByName {
+                names: Arc::from(explode_cols),
+                strict: true,
+            },
+            ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            },
+        );
+        if !rename_from.is_empty() {
+            lf = lf.rename(rename_from, rename_to, true);
+        }
+        Ok(lf)
     }
 
     fn process_values(&mut self, values: &[Vec<SQLExpr>]) -> PolarsResult<LazyFrame> {
@@ -679,6 +763,23 @@ impl SQLContext {
         let (l_name, mut lf) = self.get_table(&tbl_expr.relation)?;
         if !tbl_expr.joins.is_empty() {
             for join in &tbl_expr.joins {
+                // Handle "CROSS JOIN UNNEST(col)" as a lateral join op
+                if let (
+                    JoinOperator::CrossJoin,
+                    TableFactor::UNNEST {
+                        alias,
+                        array_exprs,
+                        with_offset,
+                        ..
+                    },
+                ) = (&join.join_operator, &join.relation)
+                {
+                    if array_exprs.iter().any(|e| !matches!(e, SQLExpr::Array(_))) {
+                        lf = self.process_unnest_lateral(lf, alias, array_exprs, *with_offset)?;
+                        continue;
+                    }
+                }
+
                 let (r_name, mut rf) = self.get_table(&join.relation)?;
                 if r_name.is_empty() {
                     // Require non-empty to avoid duplicate column errors from nested self-joins.
@@ -867,10 +968,8 @@ impl SQLContext {
                         other_expr => {
                             // Note: skip aggregate expressions; those are handled in the GROUP BY phase
                             if !has_expr(other_expr, |e| matches!(e, Expr::Agg(_) | Expr::Len)) {
-                                let temp_name = PlSmallStr::from(format!(
-                                    "__POLARS_UNNEST_{}",
-                                    explode_exprs.len()
-                                ));
+                                let temp_name =
+                                    format_pl_smallstr!("__POLARS_UNNEST_{}", explode_exprs.len());
                                 explode_exprs.push(other_expr.clone().alias(temp_name.as_str()));
                                 explode_lookup.insert(other_expr.clone(), temp_name.clone());
                                 explode_names.push(temp_name);
@@ -919,17 +1018,25 @@ impl SQLContext {
                 if !modifiers.is_empty() {
                     polars_bail!(SQLInterface: "GROUP BY does not support CUBE, ROLLUP, or TOTALS modifiers")
                 }
-                // translate the group expressions, allowing ordinal values
+                // Translate the group expressions, resolving ordinal values and SELECT aliases
                 group_by_keys = group_by_exprs
                     .iter()
-                    .map(|e| {
-                        self.expr_or_ordinal(
-                            e,
-                            &projections,
-                            None,
-                            Some(schema.deref()),
-                            "GROUP BY",
-                        )
+                    .map(|e| match e {
+                        SQLExpr::Identifier(ident) => {
+                            resolve_select_alias(&ident.value, &projections, &schema).map_or_else(
+                                || {
+                                    self.expr_or_ordinal(
+                                        e,
+                                        &projections,
+                                        None,
+                                        Some(&schema),
+                                        "GROUP BY",
+                                    )
+                                },
+                                Ok,
+                            )
+                        },
+                        _ => self.expr_or_ordinal(e, &projections, None, Some(&schema), "GROUP BY"),
                     })
                     .collect::<PolarsResult<_>>()?
             },
@@ -984,6 +1091,7 @@ impl SQLContext {
             let mut retained_cols = Vec::with_capacity(projections.len());
             let mut retained_names = Vec::with_capacity(projections.len());
             let have_order_by = query.order_by.is_some();
+
             // Initialize containing InheritsContext to handle empty projection case.
             let mut projection_heights = ExprSqlProjectionHeightBehavior::InheritsContext;
 
@@ -1047,14 +1155,12 @@ impl SQLContext {
                         );
                 }
             }
-
             if !select_modifiers.replace.is_empty() {
                 lf = lf.with_columns(&select_modifiers.replace);
             }
             if !select_modifiers.rename.is_empty() {
                 lf = lf.with_columns(select_modifiers.renamed_cols());
             }
-
             lf = self.process_order_by(lf, &query.order_by, Some(&retained_cols))?;
 
             // Note: If `have_order_by`, with_columns is already done above.
@@ -1066,7 +1172,6 @@ impl SQLContext {
             } else {
                 lf = lf.select(retained_cols);
             }
-
             if !select_modifiers.rename.is_empty() {
                 lf = lf.rename(
                     select_modifiers.rename.keys(),
@@ -1083,7 +1188,17 @@ impl SQLContext {
                 .transpose()?;
             lf = self.process_group_by(lf, &group_by_keys, &projections, having)?;
             lf = self.process_order_by(lf, &query.order_by, None)?;
-            lf
+
+            // Drop any extra columns (eg: added to maintain ORDER BY access to original cols)
+            let output_cols: Vec<_> = projections
+                .iter()
+                .map(|p| p.to_field(&schema))
+                .collect::<PolarsResult<Vec<_>>>()?
+                .into_iter()
+                .map(|f| col(f.name))
+                .collect();
+
+            lf.select(&output_cols)
         };
 
         // Apply optional DISTINCT clause.
@@ -1542,32 +1657,58 @@ impl SQLContext {
         let mut projection_aliases = PlHashSet::new();
         let mut group_key_aliases = PlHashSet::new();
 
-        for mut e in projections {
+        // Pre-compute group key data (stripped expression + output name) to avoid repeated work.
+        // We check both expression AND output name match to avoid cross-aliasing issues.
+        let group_key_data: Vec<_> = group_by_keys
+            .iter()
+            .map(|gk| {
+                (
+                    strip_outer_alias(gk),
+                    gk.to_field(&schema_before).ok().map(|f| f.name),
+                )
+            })
+            .collect();
+
+        let projection_matches_group_key: Vec<bool> = projections
+            .iter()
+            .map(|p| {
+                let p_stripped = strip_outer_alias(p);
+                let p_name = p.to_field(&schema_before).ok().map(|f| f.name);
+                group_key_data
+                    .iter()
+                    .any(|(gk_stripped, gk_name)| *gk_stripped == p_stripped && *gk_name == p_name)
+            })
+            .collect();
+
+        for (e, &matches_group_key) in projections.iter().zip(&projection_matches_group_key) {
             // `Len` represents COUNT(*) so we treat as an aggregation here.
-            let is_non_group_key_expr = has_expr(e, |e| {
-                match e {
-                    Expr::Agg(_) | Expr::Len | Expr::Over { .. } => true,
-                    #[cfg(feature = "dynamic_group_by")]
-                    Expr::Rolling { .. } => true,
-                    Expr::Function { function: func, .. }
-                        if !matches!(func, FunctionExpr::StructExpr(_)) =>
-                    {
-                        // If it's a function call containing a column NOT in the group by keys,
-                        // we treat it as an aggregation.
-                        has_expr(e, |e| match e {
-                            Expr::Column(name) => !group_by_keys_schema.contains(name),
-                            _ => false,
-                        })
-                    },
-                    _ => false,
-                }
-            });
+            let is_non_group_key_expr = !matches_group_key
+                && has_expr(e, |e| {
+                    match e {
+                        Expr::Agg(_) | Expr::Len | Expr::Over { .. } => true,
+                        #[cfg(feature = "dynamic_group_by")]
+                        Expr::Rolling { .. } => true,
+                        Expr::Function { function: func, .. }
+                            if !matches!(func, FunctionExpr::StructExpr(_)) =>
+                        {
+                            // If it's a function call containing a column NOT in the group by keys,
+                            // we treat it as an aggregation.
+                            has_expr(e, |e| match e {
+                                Expr::Column(name) => !group_by_keys_schema.contains(name),
+                                _ => false,
+                            })
+                        },
+                        _ => false,
+                    }
+                });
 
             // Note: if simple aliased expression we defer aliasing until after the group_by.
+            // Use `e_inner` to track the potentially unwrapped expression for field lookup.
+            let mut e_inner = e;
             if let Expr::Alias(expr, alias) = e {
                 if e.clone().meta().is_simple_projection(Some(&schema_before)) {
                     group_key_aliases.insert(alias.as_ref());
-                    e = expr
+                    e_inner = expr
                 } else if let Expr::Function {
                     function: FunctionExpr::StructExpr(StructFunction::FieldByName(name)),
                     ..
@@ -1579,7 +1720,7 @@ impl SQLContext {
                     projection_aliases.insert(alias.as_ref());
                 }
             }
-            let field = e.to_field(&schema_before)?;
+            let field = e_inner.to_field(&schema_before)?;
             if is_non_group_key_expr {
                 let mut e = e.clone();
                 if let Expr::Agg(AggExpr::Implode(expr)) = &e {
@@ -1597,15 +1738,17 @@ impl SQLContext {
                     aliased_aggregations.insert(field.name.clone(), alias_name.as_str().into());
                 }
                 aggregation_projection.push(e);
-            } else if let Expr::Column(_)
-            | Expr::Function {
-                function: FunctionExpr::StructExpr(StructFunction::FieldByName(_)),
-                ..
-            } = e
-            {
+            } else if !matches_group_key {
                 // Non-aggregated columns must be part of the GROUP BY clause
-                if !group_by_keys_schema.contains(&field.name) {
-                    polars_bail!(SQLSyntax: "'{}' should participate in the GROUP BY clause or an aggregate function", &field.name);
+                if let Expr::Column(_)
+                | Expr::Function {
+                    function: FunctionExpr::StructExpr(StructFunction::FieldByName(_)),
+                    ..
+                } = e_inner
+                {
+                    if !group_by_keys_schema.contains(&field.name) {
+                        polars_bail!(SQLSyntax: "'{}' should participate in the GROUP BY clause or an aggregate function", &field.name);
+                    }
                 }
             }
         }
@@ -1638,7 +1781,7 @@ impl SQLContext {
                     .iter()
                     .find_map(|(expr, n)| (*expr == e).then(|| n.clone()))
                     .unwrap_or_else(|| {
-                        let n = PlSmallStr::from(format!("__POLARS_HAVING_{n_having_aggs}"));
+                        let n = format_pl_smallstr!("__POLARS_HAVING_{n_having_aggs}");
                         aggregation_projection.push(e.clone().alias(n.clone()));
                         agg_to_name.push((e.clone(), n.clone()));
                         n_having_aggs += 1;
@@ -1666,12 +1809,14 @@ impl SQLContext {
         // (will also drop any temporary columns created for the HAVING post-filter).
         let final_projection = projection_schema
             .iter_names()
-            .zip(projections)
-            .map(|(name, projection_expr)| {
+            .zip(projections.iter().zip(&projection_matches_group_key))
+            .map(|(name, (projection_expr, &matches_group_key))| {
                 if let Some(expr) = projection_overrides.get(name.as_str()) {
                     expr.clone()
                 } else if let Some(aliased_name) = aliased_aggregations.get(name) {
                     col(aliased_name.clone()).alias(name.clone())
+                } else if group_by_keys_schema.get(name).is_some() && matches_group_key {
+                    col(name.clone())
                 } else if group_by_keys_schema.get(name).is_some()
                     || projection_aliases.contains(name.as_str())
                     || group_key_aliases.contains(name.as_str())
@@ -1689,7 +1834,26 @@ impl SQLContext {
             })
             .collect::<Vec<_>>();
 
-        Ok(aggregated.select(&final_projection))
+        // Include original GROUP BY columns for ORDER BY access (if aliased).
+        let mut output_projection = final_projection;
+        for key_name in group_by_keys_schema.iter_names() {
+            if !projection_schema.contains(key_name) {
+                // Original col name not in output - add for ORDER BY access
+                output_projection.push(col(key_name.clone()));
+            } else if group_by_keys.iter().any(|k| is_simple_col_ref(k, key_name)) {
+                // Original col name in output - check if cross-aliased
+                let is_cross_aliased = projections.iter().any(|p| {
+                    p.to_field(&schema_before).is_ok_and(|f| f.name == key_name)
+                        && !is_simple_col_ref(p, key_name)
+                });
+                if is_cross_aliased {
+                    // Add original name under a prefixed alias for subsequent ORDER BY resolution
+                    let internal_name = format_pl_smallstr!("__POLARS_ORIG_{}", key_name);
+                    output_projection.push(col(key_name.clone()).alias(internal_name));
+                }
+            }
+        }
+        Ok(aggregated.select(&output_projection))
     }
 
     fn process_limit_offset(
@@ -1905,6 +2069,42 @@ impl<'a> Visitor for FindTableIdentifier<'a> {
         }
         ControlFlow::Continue(())
     }
+}
+
+/// Check if an expression is a simple column reference (with optional alias) to the given name.
+fn is_simple_col_ref(expr: &Expr, col_name: &PlSmallStr) -> bool {
+    match expr {
+        Expr::Column(n) => n == col_name,
+        Expr::Alias(inner, _) => matches!(inner.as_ref(), Expr::Column(n) if n == col_name),
+        _ => false,
+    }
+}
+
+/// Strip the outer alias from an expression (if present) for expression equality comparison.
+fn strip_outer_alias(expr: &Expr) -> Expr {
+    if let Expr::Alias(inner, _) = expr {
+        inner.as_ref().clone()
+    } else {
+        expr.clone()
+    }
+}
+
+/// Resolve a SELECT alias to its underlying expression (for use in GROUP BY).
+///
+/// Returns the expression WITH alias if the name matches a projection alias and is NOT a column
+/// that exists in the schema; otherwise returns `None` to use the default/standard resolution.
+fn resolve_select_alias(name: &str, projections: &[Expr], schema: &Schema) -> Option<Expr> {
+    // Original columns take precedence over SELECT aliases
+    if schema.contains(name) {
+        return None;
+    }
+    // Find a projection with this alias and return its expression (preserving the alias)
+    projections.iter().find_map(|p| match p {
+        Expr::Alias(inner, alias) if alias.as_str() == name => {
+            Some(inner.as_ref().clone().alias(alias.clone()))
+        },
+        _ => None,
+    })
 }
 
 /// Check if all columns referred to in a Polars expression exist in the given Schema.

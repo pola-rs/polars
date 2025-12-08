@@ -39,13 +39,16 @@ impl HivePartitionsDf {
 
     /// Filter the columns to those contained in `projected_columns`.
     pub fn filter_columns(&self, projected_columns: &Schema) -> Self {
-        self.df()
+        let columns: Vec<_> = self
+            .df()
             .get_columns()
             .iter()
             .filter(|c| projected_columns.contains(c.name()))
             .cloned()
-            .collect::<DataFrame>()
-            .into()
+            .collect();
+
+        let height = self.df().height();
+        DataFrame::new_with_height(height, columns).unwrap().into()
     }
 
     pub fn take_indices(&self, row_indexes: &[IdxSize]) -> Self {

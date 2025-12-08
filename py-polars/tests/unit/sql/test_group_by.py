@@ -548,3 +548,29 @@ def test_group_by_aggregate_name_is_group_key() -> None:
         check_column_names=False,
         expected={"c0": [1, 2]},
     )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # GROUP BY referencing SELECT alias for arithmetic expression
+        "SELECT COUNT(*) AS n, value / 10 AS bucket FROM self GROUP BY bucket ORDER BY bucket",
+        # Multiple aliased expressions in GROUP BY
+        "SELECT COUNT(*) AS n, value / 10 AS tens, value % 3 AS rem FROM self GROUP BY tens, rem ORDER BY tens, rem",
+        # GROUP BY alias with additional aggregation
+        "SELECT SUM(id) AS total, value / 20 AS grp FROM self GROUP BY grp ORDER BY grp",
+        # GROUP BY ordinal position with aliased column
+        "SELECT value / 10 AS bucket, COUNT(*) AS n FROM self GROUP BY 1 ORDER BY 1",
+        # GROUP BY ordinal with multiple aliased columns
+        "SELECT id % 2 AS parity, value / 10 AS tens, SUM(id) AS total FROM self GROUP BY 1, 2 ORDER BY 1, 2",
+    ],
+)
+def test_group_by_select_alias(query: str) -> None:
+    """Test GROUP BY can reference SELECT aliases for computed expressions."""
+    df = pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4, 5],
+            "value": [10, 20, 30, 40, 50],
+        }
+    )
+    assert_sql_matches(df, query=query, compare_with="sqlite")

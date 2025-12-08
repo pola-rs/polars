@@ -256,16 +256,21 @@ fn to_graph_rec<'a>(
             let mut inputs = Vec::with_capacity(reductions.len());
 
             for e in exprs {
-                let (red, input_node) = into_reduction(e.node(), ctx.expr_arena, input_schema)?;
+                let (red, input_nodes) = into_reduction(e.node(), ctx.expr_arena, input_schema)?;
                 reductions.push(red);
 
-                let input_phys = create_stream_expr(
-                    &ExprIR::from_node(input_node, ctx.expr_arena),
-                    ctx,
-                    input_schema,
-                )?;
+                let input_phys_exprs = input_nodes
+                    .iter()
+                    .map(|node| {
+                        create_stream_expr(
+                            &ExprIR::from_node(*node, ctx.expr_arena),
+                            ctx,
+                            input_schema,
+                        )
+                    })
+                    .try_collect_vec()?;
 
-                inputs.push(input_phys)
+                inputs.push(input_phys_exprs)
             }
 
             ctx.graph.add_node(
@@ -983,13 +988,19 @@ fn to_graph_rec<'a>(
                             | IRAggExpr::LastNonNull(_)
                     )
                 );
-                let (reduction, input_node) =
+                let (reduction, input_nodes) =
                     into_reduction(agg.node(), ctx.expr_arena, input_schema)?;
-                let AExpr::Column(col) = ctx.expr_arena.get(input_node) else {
-                    unreachable!()
-                };
+                let cols = input_nodes
+                    .iter()
+                    .map(|node| {
+                        let AExpr::Column(col) = ctx.expr_arena.get(*node) else {
+                            unreachable!()
+                        };
+                        col.clone()
+                    })
+                    .collect();
                 grouped_reductions.push(reduction);
-                grouped_reduction_cols.push(col.clone());
+                grouped_reduction_cols.push(cols);
             }
 
             ctx.graph.add_node(

@@ -717,6 +717,18 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT LAST_VALUE(col1) OVER (PARTITION BY category ORDER BY id) FROM df;
     /// ```
     LastValue,
+    /// SQL 'lag' function.
+    /// Returns the value of the expression evaluated at the row n rows before the current row.
+    /// ```sql
+    /// SELECT lag(column_1, 1) OVER (PARTITION BY column_2 ORDER BY column_3) FROM df;
+    /// ```
+    Lag,
+    /// SQL 'lead' function.
+    /// Returns the value of the expression evaluated at the row n rows after the current row.
+    /// ```sql
+    /// SELECT lead(column_1, 1) OVER (PARTITION BY column_2 ORDER BY column_3) FROM df;
+    /// ```
+    Lead,
     /// SQL 'row_number' function.
     /// Returns the sequential row number within a window partition, starting from 1.
     /// ```sql
@@ -747,22 +759,6 @@ pub(crate) enum PolarsSQLFunctions {
     // Column selection
     // ----
     Columns,
-
-    // ----
-    // Window functions
-    // ----
-    // SQL 'lag' function.
-    /// Returns the value of the expression evaluated at the row n rows before the current row.
-    /// ```sql
-    /// SELECT lag(column_1, 1) OVER (PARTITION BY column_2 ORDER BY column_3) FROM df;
-    /// ```
-    Lag,
-    // SQL 'lead' function.
-    /// Returns the value of the expression evaluated at the row n rows after the current row.
-    /// ```sql
-    /// SELECT lead(column_1, 1) OVER (PARTITION BY column_2 ORDER BY column_3) FROM df;
-    /// ```
-    Lead,
 
     // ----
     // User-defined
@@ -1035,6 +1031,8 @@ impl PolarsSQLFunctions {
             "dense_rank" => Self::DenseRank,
             "first_value" => Self::FirstValue,
             "last_value" => Self::LastValue,
+            "lag" => Self::Lag,
+            "lead" => Self::Lead,
             #[cfg(feature = "rank")]
             "rank" => Self::Rank,
             "row_number" => Self::RowNumber,
@@ -1043,12 +1041,6 @@ impl PolarsSQLFunctions {
             // Column selection
             // ----
             "columns" => Self::Columns,
-
-            // ----
-            // Window functions
-            // ----
-            "lag" => Self::Lag,
-            "lead" => Self::Lead,
 
             other => {
                 if ctx.function_registry.contains(other) {
@@ -1684,6 +1676,8 @@ impl SQLFunctionVisitor<'_> {
                     ),
                 }
             },
+            Lag => self.visit_window_offset_function(1),
+            Lead => self.visit_window_offset_function(-1),
             #[cfg(feature = "rank")]
             Rank | DenseRank => {
                 let (func_name, rank_method) = match function_name {
@@ -1731,8 +1725,6 @@ impl SQLFunctionVisitor<'_> {
                 let row_num_expr = int_range(lit(0i64), len(), 1, DataType::UInt32) + lit(1u32);
                 self.apply_window_spec(row_num_expr, &self.func.over)
             },
-            Lag => self.visit_window_offset_function(1),
-            Lead => self.visit_window_offset_function(-1),
 
             // ----
             // User-defined

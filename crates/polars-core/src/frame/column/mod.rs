@@ -686,11 +686,8 @@ impl Column {
                 // 2. whether this aggregation is even defined
                 let series_aggregation = series_agg(
                     &s.as_single_value_series(),
-                    &GroupsType::Slice {
-                        // @NOTE: this group is always valid since s is non-empty.
-                        groups: vec![[0, 1]],
-                        overlapping: false,
-                    },
+                    // @NOTE: this group is always valid since s is non-empty.
+                    &GroupsType::new_slice(vec![[0, 1]], false, true),
                 );
 
                 // If the aggregation is not defined, just return all nulls.

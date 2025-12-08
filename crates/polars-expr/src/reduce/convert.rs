@@ -24,14 +24,14 @@ pub fn into_reduction(
     node: Node,
     expr_arena: &mut Arena<AExpr>,
     schema: &Schema,
-) -> PolarsResult<(Box<dyn GroupedReduction>, Node)> {
+) -> PolarsResult<(Box<dyn GroupedReduction>, Vec<Node>)> {
     let get_dt = |node| {
         expr_arena
             .get(node)
             .to_dtype(&ToFieldContext::new(expr_arena, schema))?
             .materialize_unknown(false)
     };
-    let out = match expr_arena.get(node) {
+    let (gr, in_node) = match expr_arena.get(node) {
         AExpr::Agg(agg) => match agg {
             IRAggExpr::Sum(input) => (new_sum_reduction(get_dt(*input)?)?, *input),
             IRAggExpr::Mean(input) => (new_mean_reduction(get_dt(*input)?)?, *input),
@@ -164,5 +164,5 @@ pub fn into_reduction(
         },
         _ => unreachable!(),
     };
-    Ok(out)
+    Ok((gr, vec![in_node]))
 }
