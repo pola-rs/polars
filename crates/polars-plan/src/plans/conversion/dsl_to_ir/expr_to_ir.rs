@@ -1,6 +1,6 @@
 use super::functions::convert_functions;
 use super::*;
-use crate::constants::PL_ELEMENT_NAME;
+use crate::constants::get_pl_element_name;
 use crate::plans::iterator::ArenaExprIter;
 
 pub fn to_expr_ir(expr: Expr, ctx: &mut ExprToIRContext) -> PolarsResult<ExprIR> {
@@ -128,7 +128,7 @@ pub(super) fn to_aexpr_impl(
         },
         Expr::Alias(e, name) => return Ok((recurse_arc!(e)?.0, name)),
         Expr::Literal(lv) => {
-            let output_name = lv.output_column_name().clone();
+            let output_name = lv.output_column_name();
             (AExpr::Literal(lv), output_name)
         },
         Expr::Column(name) => {
@@ -462,7 +462,7 @@ pub(super) fn to_aexpr_impl(
             }
 
             let mut evaluation_schema = ctx.schema.clone();
-            evaluation_schema.insert(PL_ELEMENT_NAME.clone(), element_dtype.clone());
+            evaluation_schema.insert(get_pl_element_name(), element_dtype.clone());
             let mut evaluation_ctx = ExprToIRContext {
                 with_fields: None,
                 schema: &evaluation_schema,
