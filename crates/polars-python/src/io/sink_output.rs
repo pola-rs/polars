@@ -4,8 +4,8 @@ use polars::prelude::{PartitionStrategy, PlPath, SinkDestination, SortColumn};
 use polars_utils::IdxSize;
 use polars_utils::python_function::PythonObject;
 use pyo3::exceptions::PyValueError;
-use pyo3::prelude::*;
 use pyo3::intern;
+use pyo3::prelude::*;
 
 use crate::PyExpr;
 use crate::prelude::Wrap;

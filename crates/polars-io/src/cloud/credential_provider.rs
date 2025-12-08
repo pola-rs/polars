@@ -792,7 +792,10 @@ mod python_impl {
                 py_object
                     .getattr(py, "_storage_update_options")
                     .map_or(Ok(vec![]), |f| {
-                        let v = f.call0(py)?.extract::<pyo3::Bound<'_, PyDict>>(py).map_err(pyo3::PyErr::from)?;
+                        let v = f
+                            .call0(py)?
+                            .extract::<pyo3::Bound<'_, PyDict>>(py)
+                            .map_err(pyo3::PyErr::from)?;
 
                         let mut out = Vec::with_capacity(v.len());
 

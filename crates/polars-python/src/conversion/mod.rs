@@ -26,7 +26,6 @@ use polars_compute::decimal::dec128_verify_prec_scale;
 use polars_core::datatypes::extension::get_extension_type_or_generic;
 use polars_core::schema::iceberg::IcebergSchema;
 use polars_core::utils::arrow::array::Array;
-use polars_core::utils::arrow::types::NativeType;
 use polars_core::utils::materialize_dyn_int;
 use polars_lazy::prelude::*;
 #[cfg(feature = "parquet")]
@@ -831,13 +830,15 @@ impl Default for ObjectValue {
 }
 
 impl<'a, 'py, T> FromPyObject<'a, 'py> for Wrap<Vec<T>>
-where 
+where
     T: FromPyObjectOwned<'py>,
 {
     type Error = PyErr;
 
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
-        let seq = ob.cast::<PySequence>().map_err(|e| <PyErr as From<pyo3::CastError>>::from(e))?;
+        let seq = ob
+            .cast::<PySequence>()
+            .map_err(<PyErr as From<pyo3::CastError>>::from)?;
         let mut v = Vec::with_capacity(seq.len().unwrap_or(0));
         for item in seq.try_iter()? {
             v.push(item?.extract::<T>().map_err(Into::into)?);

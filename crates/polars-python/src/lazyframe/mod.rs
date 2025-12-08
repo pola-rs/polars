@@ -13,8 +13,8 @@ pub use exitable::PyInProcessQuery;
 use parking_lot::RwLock;
 use polars::prelude::{Engine, LazyFrame, OptFlags};
 use pyo3::exceptions::PyValueError;
-use pyo3::pybacked::PyBackedStr;
 use pyo3::prelude::*;
+use pyo3::pybacked::PyBackedStr;
 
 use crate::prelude::Wrap;
 

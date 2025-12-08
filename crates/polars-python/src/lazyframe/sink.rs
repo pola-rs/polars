@@ -4,8 +4,8 @@ use polars::prelude::sink2::FileProviderReturn;
 use polars::prelude::sync_on_close::SyncOnCloseType;
 use polars::prelude::{PartitionTargetCallbackResult, PlPath, SpecialEq};
 use pyo3::exceptions::PyValueError;
-use pyo3::pybacked::PyBackedStr;
 use pyo3::prelude::*;
+use pyo3::pybacked::PyBackedStr;
 
 use crate::prelude::Wrap;
 

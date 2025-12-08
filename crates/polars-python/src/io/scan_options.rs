@@ -9,9 +9,9 @@ use polars::prelude::{
 use polars_io::{HiveOptions, RowIndex};
 use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
+use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
-use pyo3::intern;
 
 use crate::PyDataFrame;
 use crate::functions::parse_cloud_options;
@@ -35,9 +35,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<TableStatistics> {
         let py = ob.py();
         let attr = ob.getattr(intern!(py, "_df"))?;
         Ok(Wrap(TableStatistics(Arc::new(
-            PyDataFrame::extract(attr.as_borrowed())?
-                .df
-                .into_inner(),
+            PyDataFrame::extract(attr.as_borrowed())?.df.into_inner(),
         ))))
     }
 }
