@@ -281,3 +281,10 @@ def test_unpivot_filter_opt() -> None:
             pl.Series("value", [99, 77, 44], dtype=pl.Int64),
         ],
     )
+
+
+def unpivot_variable_value_name_25681() -> None:
+    assert_frame_equal(
+        pl.select().unpivot(variable_name="foo"),
+        pl.DataFrame([], schema={"variable": pl.String, "foo": pl.Null}),
+    )
