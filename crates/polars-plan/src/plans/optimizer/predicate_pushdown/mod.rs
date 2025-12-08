@@ -494,9 +494,7 @@ impl PredicatePushDown {
                         FunctionIR::Unpivot { args, .. } => {
                             // predicates that will be done at this level
                             let condition = |name: &PlSmallStr| {
-                                name == &args.variable_name
-                                    || name == &args.value_name
-                                    || args.index.iter().any(|s| s == name)
+                                name == &args.variable_name || name == &args.value_name
                             };
                             let local_predicates = transfer_to_local_by_name(
                                 expr_arena,
