@@ -58,15 +58,17 @@ impl IOSinkNodeConfig {
 
 pub enum IOSinkTarget {
     File(SinkTarget),
-    Partitioned {
-        base_path: PlPath,
-        file_path_provider: FileProviderType,
-        partitioner: Partitioner,
-        /// How to hstack the keys back into the dataframe (with_columns)
-        hstack_keys: Option<HStackColumns>,
-        include_keys_in_file: bool,
-        file_schema: SchemaRef,
-        file_size_limit: Option<RowCountAndSize>,
-        per_partition_sort: Option<(Arc<[StreamExpr]>, SortMultipleOptions)>,
-    },
+    Partitioned(Box<PartitionedTarget>),
+}
+
+pub struct PartitionedTarget {
+    pub base_path: PlPath,
+    pub file_path_provider: FileProviderType,
+    pub partitioner: Partitioner,
+    /// How to hstack the keys back into the dataframe (with_columns)
+    pub hstack_keys: Option<HStackColumns>,
+    pub include_keys_in_file: bool,
+    pub file_schema: SchemaRef,
+    pub file_size_limit: Option<RowCountAndSize>,
+    pub per_partition_sort: Option<(Arc<[StreamExpr]>, SortMultipleOptions)>,
 }

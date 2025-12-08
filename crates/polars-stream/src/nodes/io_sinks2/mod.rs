@@ -30,16 +30,12 @@ impl IOSinkNode {
     pub fn new(config: impl Into<Box<IOSinkNodeConfig>>) -> Self {
         let config = config.into();
 
-        let target_type = match config.target {
+        let target_type = match &config.target {
             IOSinkTarget::File(_) => "single-file",
-            IOSinkTarget::Partitioned {
-                partitioner: Partitioner::Keyed(_),
-                ..
-            } => "partition-keyed",
-            IOSinkTarget::Partitioned {
-                partitioner: Partitioner::FileSize,
-                ..
-            } => "partition-file-size",
+            IOSinkTarget::Partitioned(p) => match &p.partitioner {
+                Partitioner::Keyed(_) => "partition-keyed",
+                Partitioner::FileSize => "partition-file-size",
+            },
         };
 
         let extension = config.file_format.extension();

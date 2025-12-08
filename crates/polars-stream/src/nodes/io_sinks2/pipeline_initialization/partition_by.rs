@@ -16,7 +16,7 @@ use crate::nodes::io_sinks2::components::partition_morsel_sender::PartitionMorse
 use crate::nodes::io_sinks2::components::partition_sink_starter::PartitionSinkStarter;
 use crate::nodes::io_sinks2::components::partitioner::Partitioner;
 use crate::nodes::io_sinks2::components::partitioner_pipeline::PartitionerPipeline;
-use crate::nodes::io_sinks2::config::{IOSinkNodeConfig, IOSinkTarget};
+use crate::nodes::io_sinks2::config::{IOSinkNodeConfig, IOSinkTarget, PartitionedTarget};
 use crate::nodes::io_sinks2::writers::create_file_writer_starter;
 use crate::nodes::io_sinks2::writers::interface::FileWriterStarter;
 
@@ -32,17 +32,7 @@ pub fn start_partition_sink_pipeline(
 
     let IOSinkNodeConfig {
         file_format,
-        target:
-            IOSinkTarget::Partitioned {
-                base_path,
-                file_path_provider,
-                partitioner,
-                hstack_keys,
-                include_keys_in_file,
-                file_schema,
-                file_size_limit,
-                per_partition_sort,
-            },
+        target: IOSinkTarget::Partitioned(target),
         unified_sink_args:
             UnifiedSinkArgs {
                 mkdir: _,
@@ -56,6 +46,17 @@ pub fn start_partition_sink_pipeline(
     else {
         unreachable!()
     };
+
+    let PartitionedTarget {
+        base_path,
+        file_path_provider,
+        partitioner,
+        hstack_keys,
+        include_keys_in_file,
+        file_schema,
+        file_size_limit,
+        per_partition_sort,
+    } = *target;
 
     let node_name = node_name.clone();
     let verbose = polars_core::config::verbose();

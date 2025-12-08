@@ -432,7 +432,9 @@ fn to_graph_rec<'a>(
             use crate::nodes::io_sinks2::components::hstack_columns::HStackColumns;
             use crate::nodes::io_sinks2::components::partitioner::{KeyedPartitioner, Partitioner};
             use crate::nodes::io_sinks2::components::size::RowCountAndSize;
-            use crate::nodes::io_sinks2::config::{IOSinkNodeConfig, IOSinkTarget};
+            use crate::nodes::io_sinks2::config::{
+                IOSinkNodeConfig, IOSinkTarget, PartitionedTarget,
+            };
 
             let input_schema = ctx.phys_sm[input.node].output_schema.clone();
             let input_key = to_graph_rec(input.node, ctx)?;
@@ -572,7 +574,7 @@ fn to_graph_rec<'a>(
             let file_size_limit =
                 (file_size_limit != RowCountAndSize::MAX).then_some(file_size_limit);
 
-            let target = IOSinkTarget::Partitioned {
+            let target = IOSinkTarget::Partitioned(Box::new(PartitionedTarget {
                 base_path: base_path.clone(),
                 file_path_provider: file_path_provider.clone(),
                 partitioner,
@@ -581,7 +583,7 @@ fn to_graph_rec<'a>(
                 file_schema,
                 file_size_limit,
                 per_partition_sort,
-            };
+            }));
 
             let config = IOSinkNodeConfig {
                 file_format: file_format.clone(),
