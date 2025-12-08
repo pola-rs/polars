@@ -293,6 +293,15 @@ def test_null_handling_correlation() -> None:
     )
 
 
+# see #25407
+def test_spearman_propagate_nans_with_all_nulls_does_not_panic() -> None:
+    df = pl.select(x=None, y=None).cast(pl.Float64)
+
+    out = df.select(pl.corr("x", "y", method="spearman", propagate_nans=True))
+
+    assert str(out.item()) == "nan"
+
+
 def test_align_frames() -> None:
     import numpy as np
     import pandas as pd

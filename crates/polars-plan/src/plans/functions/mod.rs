@@ -411,12 +411,8 @@ impl Display for FunctionIR {
                 f.write_str("UNPIVOT on: ")?;
                 fmt_column_delimited(f, on, "[", "]")?;
                 fmt_column_delimited(f, index, "[", "]")?;
-                if let Some(variable_name) = variable_name {
-                    write!(f, ", variable_name: {variable_name}")?;
-                }
-                if let Some(value_name) = value_name {
-                    write!(f, ", value_name: {value_name}")?;
-                }
+                write!(f, ", variable_name: {variable_name}")?;
+                write!(f, ", value_name: {value_name}")?;
                 Ok(())
             },
             #[cfg(feature = "python")]

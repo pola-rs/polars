@@ -1,6 +1,7 @@
 use polars::lazy::dsl;
 use polars_core::with_match_physical_integer_polars_type;
 use polars_ops::series::ClosedInterval;
+use polars_plan::constants::get_literal_name;
 use pyo3::prelude::*;
 
 use crate::error::PyPolarsErr;
@@ -45,7 +46,7 @@ pub fn eager_int_range(
         let start_v: <$T as PolarsNumericType>::Native = lower.extract()?;
         let end_v: <$T as PolarsNumericType>::Native = upper.extract()?;
         let step: i64 = step.extract()?;
-        py.enter_polars_series(|| new_int_range::<$T>(start_v, end_v, step, PlSmallStr::from_static("literal")))
+        py.enter_polars_series(|| new_int_range::<$T>(start_v, end_v, step, get_literal_name()))
     })
 }
 

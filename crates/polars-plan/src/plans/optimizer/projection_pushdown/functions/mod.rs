@@ -30,12 +30,7 @@ pub(super) fn process_functions(
         },
         #[cfg(feature = "pivot")]
         Unpivot { ref args, .. } => {
-            let lp = IR::MapFunction {
-                input,
-                function: function.clone(),
-            };
-
-            process_unpivot(proj_pd, lp, args, input, ctx, lp_arena, expr_arena)
+            process_unpivot(proj_pd, args, input, ctx, lp_arena, expr_arena)
         },
         Hint(hint) => {
             let hint = hint.project(&ctx.projected_names);

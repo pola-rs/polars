@@ -264,6 +264,32 @@ pub fn lower_ir(
                     chunk_size,
                 }
             },
+
+            SinkTypeIR::File(options)
+                if match options.file_format.as_ref() {
+                    #[cfg(feature = "parquet")]
+                    polars_plan::dsl::FileType::Parquet(_) => true,
+                    _ => false,
+                } =>
+            {
+                let options = options.clone();
+                let input = lower_ir!(*input)?;
+                PhysNodeKind::FileSink2 { input, options }
+            },
+
+            SinkTypeIR::Partitioned(options)
+                if !matches!(options.file_path_provider, FileProviderType::Legacy(_))
+                    && options.finish_callback.is_none()
+                    && match options.file_format.as_ref() {
+                        #[cfg(feature = "parquet")]
+                        polars_plan::dsl::FileType::Parquet(_) => true,
+                        _ => false,
+                    } =>
+            {
+                let options = options.clone();
+                let input = lower_ir!(*input)?;
+                PhysNodeKind::PartitionedSink2 { input, options }
+            },
             SinkTypeIR::File(FileSinkOptions {
                 target,
                 file_format,
@@ -296,6 +322,7 @@ pub fn lower_ir(
                     cloud_options: cloud_options.map(Arc::unwrap_or_clone),
                 }
             },
+
             SinkTypeIR::Partitioned(PartitionedSinkOptionsIR {
                 base_path,
                 file_path_provider,
@@ -582,8 +609,7 @@ pub fn lower_ir(
                 let k_node =
                     expr_arena.add(AExpr::Literal(LiteralValue::Scalar(Scalar::from(limit))));
                 let k_selector = ExprIR::from_node(k_node, expr_arena);
-                let k_output_schema =
-                    Schema::from_iter([(get_literal_name().clone(), DataType::UInt64)]);
+                let k_output_schema = Schema::from_iter([(get_literal_name(), DataType::UInt64)]);
                 let k_node = phys_sm.insert(PhysNode::new(
                     Arc::new(k_output_schema),
                     PhysNodeKind::InputIndependentSelect {

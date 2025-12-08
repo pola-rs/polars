@@ -928,6 +928,7 @@ impl PhysicalExpr for WindowExpr {
             GroupsType::Slice {
                 groups,
                 overlapping: _,
+                monotonic: _,
             } => {
                 for [s, l] in groups.iter() {
                     let s = *s;
@@ -970,10 +971,7 @@ impl PhysicalExpr for WindowExpr {
                     *length = exploded_length;
                 }
             }
-            GroupsType::Slice {
-                groups: strategy_explode_groups,
-                overlapping: false,
-            }
+            GroupsType::new_slice(strategy_explode_groups, false, true)
         } else {
             if needs_remap_to_rows {
                 let data_l = data.list()?;
@@ -988,6 +986,7 @@ impl PhysicalExpr for WindowExpr {
                     GroupsType::Slice {
                         groups,
                         overlapping: _,
+                        monotonic: _,
                     } => groups
                         .iter()
                         .zip(&lengths)

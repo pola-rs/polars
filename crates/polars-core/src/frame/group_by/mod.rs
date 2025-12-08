@@ -86,10 +86,7 @@ impl DataFrame {
                 } else {
                     vec![[0, self.height() as IdxSize]]
                 };
-                Ok(GroupsType::Slice {
-                    groups,
-                    overlapping: false,
-                })
+                Ok(GroupsType::new_slice(groups, false, true))
             } else {
                 let rows = if multithreaded {
                     encode_rows_vertical_par_unordered(&by)
@@ -277,6 +274,7 @@ impl<'a> GroupBy<'a> {
                         GroupsType::Slice {
                             groups,
                             overlapping,
+                            monotonic: _,
                         } => {
                             if *overlapping && !groups.is_empty() {
                                 // Groups can be sliced.

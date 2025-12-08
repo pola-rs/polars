@@ -154,15 +154,15 @@ nav:
         - API Reference: https://docs.cloud.pola.rs
     - API:
       - Reference guide: https://docs.cloud.pola.rs/
-  - Polars on-premise:
-      - polars-on-premise/index.md
+  - Polars on-premises:
+      - polars-on-premises/index.md
       - Kubernetes:
-        - polars-on-premise/kubernetes/getting-started.md
+        - polars-on-premises/kubernetes/getting-started.md
       - Bare-metal:
-        - polars-on-premise/bare-metal/getting-started.md
-        - polars-on-premise/bare-metal/config-reference.md
-        - polars-on-premise/bare-metal/environment-variables.md
-        - polars-on-premise/bare-metal/python-environment.md
+        - polars-on-premises/bare-metal/getting-started.md
+        - polars-on-premises/bare-metal/config-reference.md
+        - polars-on-premises/bare-metal/environment-variables.md
+        - polars-on-premises/bare-metal/python-environment.md
 not_in_nav: |
     /_build/
 validation:
@@ -254,3 +254,11 @@ plugins:
               "user-guide/basics/reading-writing.md": "user-guide/getting-started.md"
               "user-guide/basics/expressions.md": "user-guide/getting-started.md"
               "user-guide/basics/joins.md": "user-guide/getting-started.md"
+              # rename polars-on-premise to polars-on-premises
+              "polars-on-premise/index.md": "polars-on-premises/index.md"
+              "polars-on-premise/bare-metal/getting-started.md": "polars-on-premises/bare-metal/getting-started.md"
+              "polars-on-premise/kubernetes/getting-started.md": "polars-on-premises/kubernetes/getting-started.md"
+              "polars-on-premise/bare-metal/config-reference.md": "polars-on-premises/bare-metal/config-reference.md"
+              "polars-on-premise/bare-metal/environment-variables.md": "polars-on-premises/bare-metal/environment-variables.md"
+              "polars-on-premise/bare-metal/python-environment.md": "polars-on-premises/bare-metal/python-environment.md"
+

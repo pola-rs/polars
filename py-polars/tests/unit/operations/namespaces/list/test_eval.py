@@ -209,6 +209,11 @@ def test_list_eval_in_group_by_schema(ldf: pl.LazyFrame, expr: pl.Expr) -> None:
         pl.col("a").first().list.len()
     ).collect().to_series()[0] == 0
 
+    # skip sum on struct types
+    dtype = ldf.collect_schema()["a"]
+    assert isinstance(dtype, pl.List)
+    skip = skip or ("sum" in str(expr) and isinstance(dtype.inner, pl.Struct))
+
     for q in [q_select, q_group_by, q_over]:
         if not skip:
             assert q.collect_schema() == q.collect().schema
