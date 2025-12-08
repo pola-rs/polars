@@ -23,10 +23,7 @@ impl FunctionIR {
         }
     }
 
-    pub(crate) fn schema<'a>(
-        &self,
-        input_schema: &'a SchemaRef,
-    ) -> PolarsResult<Cow<'a, SchemaRef>> {
+    pub fn schema<'a>(&self, input_schema: &'a SchemaRef) -> PolarsResult<Cow<'a, SchemaRef>> {
         use FunctionIR::*;
         match self {
             Opaque { schema, .. } => match schema {

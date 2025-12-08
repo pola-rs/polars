@@ -4,12 +4,15 @@ use polars_utils::format_pl_smallstr;
 use recursive::recursive;
 
 use super::*;
-use crate::constants::{PL_ELEMENT_NAME, POLARS_ELEMENT};
+use crate::constants::{
+    PL_ELEMENT_NAME, PL_STRUCTFIELDS_NAME, POLARS_ELEMENT, POLARS_STRUCTFIELDS,
+};
 
 fn validate_expr(node: Node, ctx: &ToFieldContext) -> PolarsResult<()> {
     ctx.arena.get(node).to_field_impl(ctx).map(|_| ())
 }
 
+#[derive(Debug)]
 pub struct ToFieldContext<'a> {
     arena: &'a Arena<AExpr>,
     schema: &'a Schema,
@@ -94,6 +97,27 @@ impl AExpr {
                 .schema
                 .get_field(name)
                 .ok_or_else(|| PolarsError::ColumnNotFound(name.to_string().into())),
+            #[cfg(feature = "dtype-struct")]
+            StructField(name) => {
+                let struct_field = ctx
+                    .schema
+                    .get_field(POLARS_STRUCTFIELDS)
+                    .ok_or_else(|| polars_err!(invalid_field_use))?;
+                let DataType::Struct(fields) = struct_field.dtype() else {
+                    return Err(polars_err!(
+                        InvalidOperation: "expected `Struct` dtype for `with_fields` Expr, got `{}`", 
+                        struct_field.dtype()));
+                };
+                // @NOTE. Linear search performance is not ideal. An alternative approach
+                // would be to map each field to a new column with a temporary name (see streaming engine),
+                // and extend the schema accordingly.
+                for f in fields {
+                    if f.name() == name {
+                        return Ok(f.clone());
+                    }
+                }
+                Err(PolarsError::StructFieldNotFound(name.to_string().into()))
+            },
             Literal(sv) => Ok(match sv {
                 LiteralValue::Series(s) => s.field().into_owned(),
                 _ => Field::new(sv.output_column_name().clone(), sv.get_datatype()),
@@ -292,6 +316,42 @@ impl AExpr {
 
                 Ok(output_field)
             },
+            #[cfg(feature = "dtype-struct")]
+            StructEval { expr, evaluation } => {
+                let struct_field = ctx.arena.get(*expr).to_field_impl(ctx)?;
+                let mut evaluation_schema = ctx.schema.clone();
+                evaluation_schema
+                    .insert(PL_STRUCTFIELDS_NAME.clone(), struct_field.dtype().clone());
+
+                let eval_fields = func_args_to_fields(
+                    evaluation,
+                    &ToFieldContext::new(ctx.arena, &evaluation_schema),
+                )?;
+
+                // Merge evaluation fields into the expr Struct
+                if let DataType::Struct(expr_fields) = struct_field.dtype() {
+                    let mut fields_map =
+                        PlIndexMap::with_capacity(expr_fields.len() + eval_fields.len());
+                    for field in expr_fields {
+                        fields_map.insert(field.name(), field.dtype());
+                    }
+                    for field in &eval_fields {
+                        fields_map.insert(field.name(), field.dtype());
+                    }
+                    let dtype = DataType::Struct(
+                        fields_map
+                            .iter()
+                            .map(|(&name, &dtype)| Field::new(name.clone(), dtype.clone()))
+                            .collect(),
+                    );
+                    let mut out = struct_field.clone();
+                    out.coerce(dtype);
+                    Ok(out)
+                } else {
+                    let dt = struct_field.dtype();
+                    polars_bail!(op = "with_fields", got = dt, expected = "Struct")
+                }
+            },
             Function {
                 function,
                 input,
@@ -383,6 +443,8 @@ impl AExpr {
                     input[0].output_name().clone()
                 }
             },
+            #[cfg(feature = "dtype-struct")]
+            StructEval { expr, .. } => expr_arena.get(*expr).to_name(expr_arena),
             Function {
                 input, function, ..
             } => match function.output_name().and_then(|v| v.into_inner()) {
@@ -391,6 +453,8 @@ impl AExpr {
                 None => input[0].output_name().clone(),
             },
             Column(name) => name.clone(),
+            #[cfg(feature = "dtype-struct")]
+            StructField(name) => name.clone(),
             Literal(lv) => lv.output_column_name().clone(),
         }
     }

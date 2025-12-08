@@ -62,6 +62,8 @@ impl AExpr {
         let is_equal = match self {
             E::Explode { expr: _, options: l_options } => matches!(other, E::Explode { expr: _, options: r_options } if l_options == r_options),
             E::Column(l_name) => matches!(other, E::Column(r_name) if l_name == r_name),
+            #[cfg(feature = "dtype-struct")]
+            E::StructField (l_name) => matches!(other, E::StructField(r_name) if l_name == r_name),
             E::Literal(l_lit) => matches!(other, E::Literal(r_lit) if l_lit == r_lit),
             E::BinaryExpr { left: _, op: l_op, right: _ } => matches!(other, E::BinaryExpr { left: _, op: r_op, right: _ } if l_op == r_op),
             E::Cast { expr: _, dtype: l_dtype, options: l_options } => matches!(other, E::Cast { expr: _, dtype: r_dtype, options: r_options } if l_dtype == r_dtype && l_options == r_options),
@@ -83,6 +85,8 @@ impl AExpr {
             E::Ternary { predicate: _, truthy: _, falsy: _ } |
             E::Slice { input: _, offset: _, length: _ } |
             E::Len => true,
+            #[cfg(feature = "dtype-struct")]
+            E::StructEval { expr: _, evaluation: _} => true
         };
 
         is_equal
