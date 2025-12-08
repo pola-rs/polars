@@ -52,7 +52,10 @@ pub fn start_partition_sink_pipeline(
             },
         input_schema: _,
         num_pipelines: _,
-    } = config;
+    } = config
+    else {
+        unreachable!()
+    };
 
     let node_name = node_name.clone();
     let verbose = polars_core::config::verbose();

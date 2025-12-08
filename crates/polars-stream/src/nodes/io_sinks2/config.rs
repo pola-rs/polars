@@ -3,7 +3,7 @@ use std::sync::Arc;
 use polars_core::prelude::SortMultipleOptions;
 use polars_core::schema::SchemaRef;
 use polars_plan::dsl::sink2::FileProviderType;
-use polars_plan::dsl::{FileType, UnifiedSinkArgs};
+use polars_plan::dsl::{FileType, SinkTarget, UnifiedSinkArgs};
 use polars_utils::plpath::PlPath;
 
 use crate::expression::StreamExpr;
@@ -57,6 +57,7 @@ impl IOSinkNodeConfig {
 }
 
 pub enum IOSinkTarget {
+    File(SinkTarget),
     Partitioned {
         base_path: PlPath,
         file_path_provider: FileProviderType,

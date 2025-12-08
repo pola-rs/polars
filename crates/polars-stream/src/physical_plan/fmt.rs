@@ -303,6 +303,18 @@ fn visualize_plan_rec(
                 _ => todo!(),
             }
         },
+        PhysNodeKind::FileSink2 { input, options } => match options.file_format.as_ref() {
+            #[cfg(feature = "parquet")]
+            FileType::Parquet(_) => ("parquet-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "ipc")]
+            FileType::Ipc(_) => ("ipc-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "csv")]
+            FileType::Csv(_) => ("csv-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "json")]
+            FileType::Json(_) => ("ndjson-sink".to_string(), from_ref(input)),
+            #[allow(unreachable_patterns)]
+            _ => todo!(),
+        },
         PhysNodeKind::PartitionedSink2 { input, options } => {
             let variant = match options.partition_strategy {
                 PartitionStrategyIR::Keyed { .. } => "partition-keyed",

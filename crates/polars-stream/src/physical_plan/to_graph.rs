@@ -13,7 +13,8 @@ use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_mem_engine::scan_predicate::create_scan_predicate;
 use polars_plan::dsl::{
-    JoinOptionsIR, PartitionStrategyIR, PartitionVariantIR, PartitionedSinkOptionsIR, ScanSources,
+    FileSinkOptions, JoinOptionsIR, PartitionStrategyIR, PartitionVariantIR,
+    PartitionedSinkOptionsIR, ScanSources,
 };
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, IR, IRAggExpr};
@@ -378,6 +379,35 @@ fn to_graph_rec<'a>(
                     panic!("activate source feature")
                 },
             }
+        },
+
+        FileSink2 {
+            input,
+            options:
+                FileSinkOptions {
+                    target,
+                    file_format,
+                    unified_sink_args,
+                },
+        } => {
+            use crate::nodes::io_sinks2::IOSinkNode;
+            use crate::nodes::io_sinks2::config::{IOSinkNodeConfig, IOSinkTarget};
+
+            let input_schema = ctx.phys_sm[input.node].output_schema.clone();
+            let input_key = to_graph_rec(input.node, ctx)?;
+
+            let target = IOSinkTarget::File(target.clone());
+
+            let config = IOSinkNodeConfig {
+                file_format: file_format.clone(),
+                target,
+                unified_sink_args: unified_sink_args.clone(),
+                input_schema,
+                num_pipelines: 0,
+            };
+
+            ctx.graph
+                .add_node(IOSinkNode::new(config), [(input_key, input.port)])
         },
 
         PartitionedSink2 {
