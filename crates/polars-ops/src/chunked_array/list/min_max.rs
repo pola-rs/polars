@@ -92,19 +92,21 @@ pub(super) fn list_min_function(ca: &ListChunked) -> PolarsResult<Series> {
                     unsafe { out.into_series().from_physical_unchecked(dt) }
                 })
             },
-            dt => ca
-                .try_apply_amortized(|s| {
+            dt => unsafe {
+                // SAFETY: `min_reduce` doesn't change the dtype
+                ca.try_apply_amortized_same_type(|s| {
                     let s = s.as_ref();
                     let sc = s.min_reduce()?;
                     Ok(sc.into_series(s.name().clone()))
                 })?
-                .explode(ExplodeOptions {
-                    empty_as_null: true,
-                    keep_nulls: true,
-                })
-                .unwrap()
-                .into_series()
-                .cast(dt),
+            }
+            .explode(ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            })
+            .unwrap()
+            .into_series()
+            .cast(dt),
         }
     }
 
@@ -208,19 +210,21 @@ pub(super) fn list_max_function(ca: &ListChunked) -> PolarsResult<Series> {
                     unsafe { out.into_series().from_physical_unchecked(dt) }
                 })
             },
-            dt => ca
-                .try_apply_amortized(|s| {
+            dt => unsafe {
+                // SAFETY: `max_reduce` doesn't change the dtype
+                ca.try_apply_amortized_same_type(|s| {
                     let s = s.as_ref();
                     let sc = s.max_reduce()?;
                     Ok(sc.into_series(s.name().clone()))
                 })?
-                .explode(ExplodeOptions {
-                    empty_as_null: true,
-                    keep_nulls: true,
-                })
-                .unwrap()
-                .into_series()
-                .cast(dt),
+            }
+            .explode(ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            })
+            .unwrap()
+            .into_series()
+            .cast(dt),
         }
     }
 
