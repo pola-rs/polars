@@ -256,17 +256,24 @@ fn pop_mergable(
         unmerged.push_front(df);
     }
 
+    // TODO: [amber] LEFT HERE
+    // I think the first next step is to move this function into the MergeJoinNode impl.
+    // Then you can either start handling nulls, or implement the different kinds of joins.
+
     // TODO: [amber] Eat all the None keys at the front
 
     loop {
         if left.is_empty() && flush {
             right.clear();
             return Ok(Err(Side::Left));
-        } else if left.is_empty() {
+        }
+        if left.is_empty() {
             return Ok(Err(Side::Left));
-        } else if right.is_empty() && flush {
+        }
+        if right.is_empty() && flush {
             return Ok(Ok((left.pop_front().unwrap(), DataFrame::empty())));
-        } else if right.is_empty() {
+        }
+        if right.is_empty() {
             return Ok(Err(Side::Right));
         }
 

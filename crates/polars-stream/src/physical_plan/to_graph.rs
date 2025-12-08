@@ -1190,7 +1190,6 @@ fn to_graph_rec<'a>(
                         (right_input_key, input_right.port),
                     ],
                 ),
-
                 _ => ctx.graph.add_node(
                     nodes::joins::equi_join::EquiJoinNode::new(
                         left_input_schema,

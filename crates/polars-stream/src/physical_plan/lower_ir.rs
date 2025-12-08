@@ -1163,92 +1163,21 @@ pub fn lower_ir(
             left_on,
             right_on,
             options,
-        } if !options.args.how.is_equi() => {
+        } => {
             let input_left = *input_left;
             let input_right = *input_right;
             let left_on = left_on.clone();
-            let right_on: Vec<ExprIR> = right_on.clone();
+            let right_on = right_on.clone();
             let args = options.args.clone();
             let options = options.options.clone();
-            let mut phys_left = lower_ir!(input_left)?;
-            let mut phys_right = lower_ir!(input_right)?;
-            let input_left_schema = &phys_sm[phys_left.node].output_schema.clone();
-            let input_right_schema = &phys_sm[phys_right.node].output_schema.clone();
-
-            let left_is_sorted = are_keys_sorted_any(
-                is_sorted(input_left, ir_arena, expr_arena).as_ref(),
-                &left_on,
-                expr_arena,
-                input_left_schema,
-            );
-            let right_is_sorted = are_keys_sorted_any(
-                is_sorted(input_right, ir_arena, expr_arena).as_ref(),
-                &right_on,
-                expr_arena,
-                input_right_schema,
-            );
-
-            dbg!(left_is_sorted, right_is_sorted);
+            let phys_left = lower_ir!(input_left)?;
+            let phys_right = lower_ir!(input_right)?;
 
             if (args.how.is_equi() || args.how.is_semi_anti()) && !args.validation.needs_checks() {
                 // When lowering the expressions for the keys we need to ensure we keep around the
                 // payload columns, otherwise the input nodes can get replaced by input-independent
                 // nodes since the lowering code does not see we access any non-literal expressions.
                 // So we add dummy expressions before lowering and remove them afterwards.
-
-                // Transform left_on into a single column
-                let left_on_dtypes = left_on
-                    .iter()
-                    .map(|key| key.dtype(&input_left_schema, expr_arena).cloned())
-                    .try_collect_vec()?;
-                let right_on_dtypes = right_on
-                    .iter()
-                    .map(|key| key.dtype(&input_right_schema, expr_arena).cloned())
-                    .try_collect_vec()?;
-                if left_on_dtypes.len() > 1 || left_on_dtypes.iter().any(DataType::is_nested) {
-                    let mut exprs = Vec::new();
-                    for key in left_on.iter() {
-                        let expr = AExprBuilder::col(key.output_name().as_str(), expr_arena);
-                        exprs.push(expr.expr_ir(key.output_name().clone()));
-                    }
-                    let rev = RowEncodingVariant::Ordered {
-                        descending: None, // TODO: [amber]
-                        nulls_last: None,
-                    };
-                    let row_encoded =
-                        AExprBuilder::row_encode(exprs, left_on_dtypes, rev, expr_arena);
-                    phys_left = build_hstack_stream(
-                        phys_left,
-                        &[row_encoded.expr_ir(unique_column_name())],
-                        expr_arena,
-                        phys_sm,
-                        expr_cache,
-                        ctx,
-                    )?;
-                }
-                if right_on_dtypes.len() > 1 || right_on_dtypes.iter().any(DataType::is_nested) {
-                    let mut exprs = Vec::new();
-                    for key in right_on.iter() {
-                        let expr = AExprBuilder::col(key.output_name().as_str(), expr_arena);
-                        exprs.push(expr.expr_ir(key.output_name().clone()));
-                    }
-                    let rev = RowEncodingVariant::Ordered {
-                        descending: None, // TODO: [amber]
-                        nulls_last: None,
-                    };
-                    let row_encoded =
-                        AExprBuilder::row_encode(exprs, right_on_dtypes, rev, expr_arena);
-                    phys_right = build_hstack_stream(
-                        phys_right,
-                        &[row_encoded.expr_ir(unique_column_name())],
-                        expr_arena,
-                        phys_sm,
-                        expr_cache,
-                        ctx,
-                    )?;
-                }
-
-                // End [amber] edits
 
                 let mut aug_left_on = left_on.clone();
                 for name in phys_sm[phys_left.node].output_schema.iter_names() {
