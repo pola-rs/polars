@@ -1090,7 +1090,7 @@ impl PyLazyFrame {
             let mut out = Vec::with_capacity(schema.len());
             if let Ok(policy) = missing_columns.extract::<Wrap<MissingColumnsPolicyOrExpr>>() {
                 out.extend(std::iter::repeat_n(policy.0, schema.len()));
-            } else if let Ok(dict) = missing_columns.downcast::<PyDict>() {
+            } else if let Ok(dict) = missing_columns.cast::<PyDict>() {
                 out.extend(std::iter::repeat_n(
                     MissingColumnsPolicyOrExpr::Raise,
                     schema.len(),
@@ -1112,7 +1112,7 @@ impl PyLazyFrame {
             let mut out = Vec::with_capacity(schema.len());
             if let Ok(policy) = missing_struct_fields.extract::<Wrap<MissingColumnsPolicy>>() {
                 out.extend(std::iter::repeat_n(policy.0, schema.len()));
-            } else if let Ok(dict) = missing_struct_fields.downcast::<PyDict>() {
+            } else if let Ok(dict) = missing_struct_fields.cast::<PyDict>() {
                 out.extend(std::iter::repeat_n(
                     MissingColumnsPolicy::Raise,
                     schema.len(),
@@ -1136,7 +1136,7 @@ impl PyLazyFrame {
             let mut out = Vec::with_capacity(schema.len());
             if let Ok(policy) = extra_struct_fields.extract::<Wrap<ExtraColumnsPolicy>>() {
                 out.extend(std::iter::repeat_n(policy.0, schema.len()));
-            } else if let Ok(dict) = extra_struct_fields.downcast::<PyDict>() {
+            } else if let Ok(dict) = extra_struct_fields.cast::<PyDict>() {
                 out.extend(std::iter::repeat_n(ExtraColumnsPolicy::Raise, schema.len()));
                 for (key, value) in dict.iter() {
                     let key = key.extract::<String>()?;
@@ -1157,7 +1157,7 @@ impl PyLazyFrame {
             let mut out = Vec::with_capacity(schema.len());
             if let Ok(policy) = cast.extract::<Wrap<UpcastOrForbid>>() {
                 out.extend(std::iter::repeat_n(policy.0, schema.len()));
-            } else if let Ok(dict) = cast.downcast::<PyDict>() {
+            } else if let Ok(dict) = cast.cast::<PyDict>() {
                 out.extend(std::iter::repeat_n(UpcastOrForbid::Forbid, schema.len()));
                 for (key, value) in dict.iter() {
                     let key = key.extract::<String>()?;
@@ -1527,8 +1527,10 @@ impl PyLazyFrame {
 }
 
 #[cfg(feature = "parquet")]
-impl<'py> FromPyObject<'py> for Wrap<polars_io::parquet::write::ParquetFieldOverwrites> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<polars_io::parquet::write::ParquetFieldOverwrites> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         use polars_io::parquet::write::ParquetFieldOverwrites;
 
         let parsed = ob.extract::<pyo3::Bound<'_, PyDict>>()?;

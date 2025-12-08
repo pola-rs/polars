@@ -4,17 +4,19 @@ use polars::prelude::{PartitionStrategy, PlPath, SinkDestination, SortColumn};
 use polars_utils::IdxSize;
 use polars_utils::python_function::PythonObject;
 use pyo3::exceptions::PyValueError;
-use pyo3::types::PyAnyMethods;
-use pyo3::{Bound, FromPyObject, Py, PyAny, PyResult, intern};
+use pyo3::prelude::*;
+use pyo3::intern;
 
 use crate::PyExpr;
 use crate::prelude::Wrap;
 
-pub struct PyFileSinkDestination<'py>(Bound<'py, pyo3::PyAny>);
+pub struct PyFileSinkDestination<'py>(Bound<'py, PyAny>);
 
-impl<'py> FromPyObject<'py> for PyFileSinkDestination<'py> {
-    fn extract_bound(ob: &Bound<'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
-        Ok(Self(ob.clone()))
+impl<'a, 'py> FromPyObject<'a, 'py> for PyFileSinkDestination<'py> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        Ok(Self(ob.to_owned()))
     }
 }
 

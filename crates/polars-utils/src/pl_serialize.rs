@@ -236,7 +236,7 @@ pub fn python_object_serialize(
                 },
             }
         }
-        .extract::<PyBackedBytes>()
+        .extract::<PyBackedBytes>().map_err(pyo3::PyErr::from)
     })?;
 
     // Write pickle metadata

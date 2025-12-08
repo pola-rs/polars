@@ -78,7 +78,7 @@ impl PyDataFrame {
             },
         };
 
-        if let Ok(first_row) = first_val.downcast::<PyTuple>() {
+        if let Ok(first_row) = first_val.cast::<PyTuple>() {
             let width = first_row.len();
             let out_df = collect_lambda_ret_with_rows_output(
                 height,
@@ -123,7 +123,7 @@ fn collect_lambda_ret_with_rows_output<'py>(
         if retval.is_none() {
             Ok(&null_row)
         } else {
-            let tuple = retval.downcast::<PyTuple>().map_err(|_| polars_err!(ComputeError: format!("expected tuple, got {}", retval.get_type().qualname().unwrap())))?;
+            let tuple = retval.cast::<PyTuple>().map_err(|_| polars_err!(ComputeError: format!("expected tuple, got {}", retval.get_type().qualname().unwrap())))?;
             row_buf.0.clear();
             for v in tuple {
                 let v = v.extract::<Wrap<AnyValue>>().unwrap().0;

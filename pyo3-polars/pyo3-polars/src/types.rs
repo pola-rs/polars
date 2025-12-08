@@ -76,8 +76,10 @@ pub struct PyTimeUnit(TimeUnit);
 #[derive(Clone)]
 pub struct PyField(Field);
 
-impl<'py> FromPyObject<'py> for PyField {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for PyField {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let py = ob.py();
         let name = ob
             .getattr(intern!(py, "name"))?
@@ -89,8 +91,10 @@ impl<'py> FromPyObject<'py> for PyField {
     }
 }
 
-impl<'py> FromPyObject<'py> for PyTimeUnit {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for PyTimeUnit {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "ns" => TimeUnit::Nanoseconds,
             "us" => TimeUnit::Microseconds,
@@ -585,8 +589,10 @@ impl<'py> IntoPyObject<'py> for PySchema {
     }
 }
 
-impl<'py> FromPyObject<'py> for PyDataType {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for PyDataType {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let py = ob.py();
         let type_name = ob.get_type().qualname()?.to_string();
 
