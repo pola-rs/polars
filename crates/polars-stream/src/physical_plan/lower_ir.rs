@@ -14,7 +14,7 @@ use polars_plan::dsl::default_values::DefaultFieldValues;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::sink2::FileProviderType;
 use polars_plan::dsl::{
-    CallbackSinkType, ExtraColumnsPolicy, FileScanIR, PartitionStrategyIR, PartitionVariantIR,
+    CallbackSinkType, FileScanIR, JoinOptionsIR, PartitionStrategyIR, PartitionVariantIR,
     PartitionedSinkOptionsIR, SinkOptions, SinkTypeIR, UnifiedSinkArgs,
 };
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
@@ -1114,6 +1114,49 @@ pub fn lower_ir(
                 are_keys_sorted,
             );
         },
+
+        IR::Join {
+            input_left,
+            input_right,
+            schema,
+            left_on,
+            right_on,
+            options,
+        } if is_merge_join(
+            *input_left,
+            *input_right,
+            left_on,
+            right_on,
+            options,
+            ir_arena,
+            expr_arena,
+            schema_cache,
+        ) =>
+        {
+            let schema = schema.clone();
+            let left_on = left_on.clone();
+            let right_on = right_on.clone();
+            let options = options.clone();
+            let input_left = *input_left;
+            let input_right = *input_right;
+            let phys_input_left = lower_ir!(input_left)?;
+            let phys_input_right = lower_ir!(input_right)?;
+
+            lower_join(
+                phys_input_left,
+                phys_input_right,
+                schema,
+                left_on,
+                right_on,
+                options,
+                ir_arena,
+                expr_arena,
+                phys_sm,
+                expr_cache,
+                ctx,
+            )?
+        },
+
         IR::Join {
             input_left,
             input_right,
@@ -1121,7 +1164,7 @@ pub fn lower_ir(
             left_on,
             right_on,
             options,
-        } => {
+        } if !options.args.how.is_equi() => {
             let input_left = *input_left;
             let input_right = *input_right;
             let left_on = left_on.clone();
@@ -1237,18 +1280,7 @@ pub fn lower_ir(
                 trans_left_on.drain(left_on.len()..);
                 trans_right_on.drain(right_on.len()..);
 
-                let node = if args.how.is_equi() && left_is_sorted && right_is_sorted {
-                    phys_sm.insert(PhysNode::new(
-                        output_schema,
-                        PhysNodeKind::MergeJoin {
-                            input_left: phys_left,
-                            input_right: phys_right,
-                            left_on: trans_left_on,
-                            right_on: trans_right_on,
-                            args: args.clone(),
-                        },
-                    ))
-                } else if args.how.is_equi() {
+                let node = if args.how.is_equi() {
                     phys_sm.insert(PhysNode::new(
                         output_schema,
                         PhysNodeKind::EquiJoin {
@@ -1303,6 +1335,7 @@ pub fn lower_ir(
             }
         },
 
+        IR::Join { .. } => todo!(),
         IR::Distinct { input, options } => {
             let options = options.clone();
             let input = *input;
@@ -1472,4 +1505,69 @@ pub fn lower_ir(
 
     let node_key = phys_sm.insert(PhysNode::new(output_schema, node_kind));
     Ok(PhysStream::first(node_key))
+}
+
+fn is_merge_join(
+    input_left: Node,
+    input_right: Node,
+    left_on: &Vec<ExprIR>,
+    right_on: &Vec<ExprIR>,
+    options: &JoinOptionsIR,
+    ir_arena: &Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+    schema_cache: &mut PlHashMap<Node, Arc<Schema>>,
+) -> bool {
+    let left_on = left_on.clone();
+    let right_on = right_on.clone();
+    let args = options.args.clone();
+    let input_left_schema = IR::schema_with_cache(input_left, ir_arena, schema_cache);
+    let input_right_schema = IR::schema_with_cache(input_right, ir_arena, schema_cache);
+    let left_is_sorted = are_keys_sorted_any(
+        is_sorted(input_left, ir_arena, expr_arena).as_ref(),
+        &left_on,
+        expr_arena,
+        &input_left_schema,
+    );
+    let right_is_sorted = are_keys_sorted_any(
+        is_sorted(input_right, ir_arena, expr_arena).as_ref(),
+        &right_on,
+        expr_arena,
+        &input_right_schema,
+    );
+
+    dbg!(
+        &args.how,
+        args.validation.needs_checks(),
+        left_is_sorted,
+        right_is_sorted
+    );
+
+    args.how.is_equi() && !args.validation.needs_checks() && left_is_sorted && right_is_sorted
+}
+
+fn lower_join(
+    input_left: PhysStream,
+    input_right: PhysStream,
+    schema: Arc<Schema>,
+    left_on: Vec<ExprIR>,
+    right_on: Vec<ExprIR>,
+    options: Arc<JoinOptionsIR>,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    expr_cache: &mut ExprCache,
+    ctx: StreamingLowerIRContext,
+) -> PolarsResult<PhysNodeKind> {
+    assert!(options.args.how.is_equi());
+
+    let left_on = left_on.clone();
+    let right_on = right_on.clone();
+    let args = options.args.clone();
+    let options = options.options.clone();
+
+    // TODO [amber] LEFT HERE
+    // First goal is do do a basic INNER or LEFT merge join with only a single
+    // key column.
+
+    todo!()
 }

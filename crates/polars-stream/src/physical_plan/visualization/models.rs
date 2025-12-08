@@ -142,6 +142,16 @@ pub enum PhysNodeProperties {
         maintain_order: MaintainOrderJoin,
         suffix: Option<PlSmallStr>,
     },
+    MergeJoin {
+        how: PlSmallStr,
+        left_on: PlSmallStr,
+        right_on: PlSmallStr,
+        nulls_equal: bool,
+        coalesce: JoinCoalesce,
+        maintain_order: MaintainOrderJoin,
+        validation: JoinValidation,
+        // suffix: Option<PlSmallStr>, // [amber] Done in lowering
+    },
     EquiJoin {
         how: PlSmallStr,
         left_on: Vec<PlSmallStr>,

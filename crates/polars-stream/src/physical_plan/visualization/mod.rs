@@ -338,6 +338,45 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     ..Default::default()
                 }
             },
+            PhysNodeKind::MergeJoin {
+                input_left,
+                input_right,
+                left_on,
+                right_on,
+                args,
+            } => {
+                phys_node_inputs.push(input_left.node);
+                phys_node_inputs.push(input_right.node);
+
+                let JoinArgs {
+                    how,
+                    validation,
+                    suffix,
+                    // Lowers to a separate node
+                    slice: _,
+                    nulls_equal,
+                    coalesce,
+                    maintain_order,
+                } = args;
+
+                let properties = PhysNodeProperties::MergeJoin {
+                    how: format_pl_smallstr!("{}", how),
+                    left_on: left_on.clone(),
+                    right_on: right_on.clone(),
+                    nulls_equal: *nulls_equal,
+                    coalesce: *coalesce,
+                    maintain_order: *maintain_order,
+                    validation: *validation,
+                    // suffix: suffix.clone(), // [amber] Done in lowering
+                };
+
+                PhysNodeInfo {
+                    title: properties.variant_name(),
+                    properties,
+                    ..Default::default()
+                }
+            },
+
             PhysNodeKind::EquiJoin {
                 input_left,
                 input_right,

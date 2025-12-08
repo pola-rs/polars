@@ -37,13 +37,8 @@ enum Side {
 
 #[derive(Default)]
 struct MergeJoinParams {
-    left_key_schema: Arc<Schema>,
-    #[allow(dead_code)]
-    right_key_schema: Arc<Schema>,
-    left_payload_select: Vec<Option<PlSmallStr>>,
-    right_payload_select: Vec<Option<PlSmallStr>>,
-    left_payload_schema: Arc<Schema>,
-    right_payload_schema: Arc<Schema>,
+    left_key: PlSmallStr,
+    right_key: PlSmallStr,
     args: JoinArgs,
     random_state: PlRandomState,
 }
@@ -67,40 +62,11 @@ enum MergeJoinState {
 }
 
 impl MergeJoinNode {
-    pub fn new(
-        left_input_schema: Arc<Schema>,
-        right_input_schema: Arc<Schema>,
-        left_key_schema: Arc<Schema>,
-        right_key_schema: Arc<Schema>,
-        unique_key_schema: Arc<Schema>,
-        left_key_selectors: Vec<StreamExpr>,
-        right_key_selectors: Vec<StreamExpr>,
-        args: JoinArgs,
-    ) -> PolarsResult<Self> {
-        let left_payload_select = compute_payload_selector(
-            &left_input_schema,
-            &right_input_schema,
-            &left_key_schema,
-            &right_key_schema,
-            true,
-            &args,
-        )?;
-        let right_payload_select = compute_payload_selector(
-            &right_input_schema,
-            &left_input_schema,
-            &right_key_schema,
-            &left_key_schema,
-            false,
-            &args,
-        )?;
+    pub fn new(left_key: PlSmallStr, right_key: PlSmallStr, args: JoinArgs) -> PolarsResult<Self> {
         let state = MergeJoinState::Running;
         let params = MergeJoinParams {
-            left_key_schema,
-            right_key_schema,
-            left_payload_select,
-            right_payload_select,
-            left_payload_schema: unique_key_schema.clone(),
-            right_payload_schema: unique_key_schema,
+            left_key,
+            right_key,
             args,
             random_state: PlRandomState::default(),
         };

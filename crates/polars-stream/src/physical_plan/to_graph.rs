@@ -39,6 +39,7 @@ use crate::nodes::io_sinks::partition::PerPartitionSortBy;
 use crate::nodes::io_sources::multi_scan::config::MultiScanConfig;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
+use crate::nodes::joins::merge_join::MergeJoinNode;
 use crate::physical_plan::lower_expr::compute_output_schema;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
@@ -1117,13 +1118,6 @@ fn to_graph_rec<'a>(
             right_on,
             args,
         }
-        | MergeJoin {
-            input_left,
-            input_right,
-            left_on,
-            right_on,
-            args,
-        }
         | SemiAntiJoin {
             input_left,
             input_right,
@@ -1196,22 +1190,7 @@ fn to_graph_rec<'a>(
                         (right_input_key, input_right.port),
                     ],
                 ),
-                MergeJoin { .. } => ctx.graph.add_node(
-                    nodes::joins::merge_join::MergeJoinNode::new(
-                        left_input_schema,
-                        right_input_schema,
-                        left_key_schema,
-                        right_key_schema,
-                        unique_key_schema,
-                        left_key_selectors,
-                        right_key_selectors,
-                        args,
-                    )?,
-                    [
-                        (left_input_key, input_left.port),
-                        (right_input_key, input_right.port),
-                    ],
-                ),
+
                 _ => ctx.graph.add_node(
                     nodes::joins::equi_join::EquiJoinNode::new(
                         left_input_schema,
@@ -1230,6 +1209,28 @@ fn to_graph_rec<'a>(
                     ],
                 ),
             }
+        },
+
+        MergeJoin {
+            input_left,
+            input_right,
+            left_on,
+            right_on,
+            args,
+        } => {
+            let args = args.clone();
+            let left_input_key = to_graph_rec(input_left.node, ctx)?;
+            let right_input_key = to_graph_rec(input_right.node, ctx)?;
+            let left_input_schema = ctx.phys_sm[input_left.node].output_schema.clone();
+            let right_input_schema = ctx.phys_sm[input_right.node].output_schema.clone();
+
+            ctx.graph.add_node(
+                MergeJoinNode::new(left_on.clone(), right_on.clone(), args)?,
+                [
+                    (left_input_key, input_left.port),
+                    (right_input_key, input_right.port),
+                ],
+            )
         },
 
         CrossJoin {
