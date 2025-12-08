@@ -53,7 +53,7 @@ impl Partitioner {
         let partitions_vec = match self {
             Self::FileSize => vec![Partition {
                 key: PartitionKey::NULL,
-                keys_df: DataFrame::empty(),
+                keys_df: DataFrame::empty_with_height(1),
                 df,
             }],
             Self::Keyed(v) => v.partition_df(df, in_memory_exec_state).await?,
