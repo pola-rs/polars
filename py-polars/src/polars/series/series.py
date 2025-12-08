@@ -2295,7 +2295,7 @@ class Series:
             Remove the first category from the variable being encoded.
         drop_nulls
             If there are `None` values in the series, a `null` column is not generated.
-            Null values in the nput are represented by zero vectors.
+            Null values in the input are represented by zero vectors.
 
         Examples
         --------
