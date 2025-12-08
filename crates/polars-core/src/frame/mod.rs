@@ -2050,26 +2050,8 @@ impl DataFrame {
     /// # Safety
     /// The indices must be in-bounds.
     pub unsafe fn take_unchecked_impl(&self, idx: &IdxCa, allow_threads: bool) -> Self {
-        let cols = if allow_threads && POOL.current_num_threads() > 1 {
-            POOL.install(|| {
-                if POOL.current_num_threads() > self.width() {
-                    let stride = usize::max(idx.len().div_ceil(POOL.current_num_threads()), 256);
-                    self._apply_columns_par(&|c| {
-                        (0..idx.len().div_ceil(stride))
-                            .into_par_iter()
-                            .map(|i| c.take_unchecked(&idx.slice((i * stride) as i64, stride)))
-                            .reduce(
-                                || Column::new_empty(c.name().clone(), c.dtype()),
-                                |mut a, b| {
-                                    a.append_owned(b).unwrap();
-                                    a
-                                },
-                            )
-                    })
-                } else {
-                    self._apply_columns_par(&|c| c.take_unchecked(idx))
-                }
-            })
+        let cols = if allow_threads {
+            POOL.install(|| self._apply_columns_par(&|c| c.take_unchecked(idx)))
         } else {
             self._apply_columns(&|s| s.take_unchecked(idx))
         };
@@ -2085,30 +2067,8 @@ impl DataFrame {
     /// # Safety
     /// The indices must be in-bounds.
     pub unsafe fn take_slice_unchecked_impl(&self, idx: &[IdxSize], allow_threads: bool) -> Self {
-        let cols = if allow_threads && POOL.current_num_threads() > 1 {
-            POOL.install(|| {
-                if POOL.current_num_threads() > self.width() {
-                    let stride = usize::max(idx.len().div_ceil(POOL.current_num_threads()), 256);
-                    self._apply_columns_par(&|c| {
-                        (0..idx.len().div_ceil(stride))
-                            .into_par_iter()
-                            .map(|i| {
-                                let idx = &idx[i * stride..];
-                                let idx = &idx[..idx.len().min(stride)];
-                                c.take_slice_unchecked(idx)
-                            })
-                            .reduce(
-                                || Column::new_empty(c.name().clone(), c.dtype()),
-                                |mut a, b| {
-                                    a.append_owned(b).unwrap();
-                                    a
-                                },
-                            )
-                    })
-                } else {
-                    self._apply_columns_par(&|s| s.take_slice_unchecked(idx))
-                }
-            })
+        let cols = if allow_threads {
+            POOL.install(|| self._apply_columns_par(&|s| s.take_slice_unchecked(idx)))
         } else {
             self._apply_columns(&|s| s.take_slice_unchecked(idx))
         };
