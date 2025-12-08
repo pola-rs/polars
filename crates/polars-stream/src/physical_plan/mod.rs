@@ -10,9 +10,9 @@ use polars_io::cloud::CloudOptions;
 use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
-    CastColumnsPolicy, JoinTypeOptionsIR, MissingColumnsPolicy, PartitionTargetCallback,
-    PartitionVariantIR, PartitionedSinkOptionsIR, ScanSources, SinkFinishCallback, SinkOptions,
-    SinkTarget, SortColumnIR, TableStatistics,
+    CastColumnsPolicy, FileSinkOptions, JoinTypeOptionsIR, MissingColumnsPolicy,
+    PartitionTargetCallback, PartitionVariantIR, PartitionedSinkOptionsIR, ScanSources,
+    SinkFinishCallback, SinkOptions, SinkTarget, SortColumnIR, TableStatistics,
 };
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::{AExpr, DataFrameUdf, IR};
@@ -208,6 +208,11 @@ pub enum PhysNodeKind {
         cloud_options: Option<CloudOptions>,
         per_partition_sort_by: Option<Vec<SortColumnIR>>,
         finish_callback: Option<SinkFinishCallback>,
+    },
+
+    FileSink2 {
+        input: PhysStream,
+        options: FileSinkOptions,
     },
 
     PartitionedSink2 {
@@ -451,6 +456,7 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::InMemorySink { input }
             | PhysNodeKind::CallbackSink { input, .. }
             | PhysNodeKind::FileSink { input, .. }
+            | PhysNodeKind::FileSink2 { input, .. }
             | PhysNodeKind::PartitionedSink { input, .. }
             | PhysNodeKind::PartitionedSink2 { input, .. }
             | PhysNodeKind::InMemoryMap { input, .. }

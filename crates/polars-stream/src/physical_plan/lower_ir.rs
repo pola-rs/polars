@@ -265,6 +265,18 @@ pub fn lower_ir(
                 }
             },
 
+            SinkTypeIR::File(options)
+                if match options.file_format.as_ref() {
+                    #[cfg(feature = "parquet")]
+                    polars_plan::dsl::FileType::Parquet(_) => true,
+                    _ => false,
+                } =>
+            {
+                let options = options.clone();
+                let input = lower_ir!(*input)?;
+                PhysNodeKind::FileSink2 { input, options }
+            },
+
             SinkTypeIR::Partitioned(options)
                 if !matches!(options.file_path_provider, FileProviderType::Legacy(_))
                     && options.finish_callback.is_none()
@@ -272,13 +284,6 @@ pub fn lower_ir(
                         #[cfg(feature = "parquet")]
                         polars_plan::dsl::FileType::Parquet(_) => true,
                         _ => false,
-                    }
-                    && match &options.partition_strategy {
-                        PartitionStrategyIR::Keyed {
-                            per_partition_sort_by,
-                            ..
-                        } => per_partition_sort_by.is_empty(),
-                        _ => true,
                     } =>
             {
                 let options = options.clone();

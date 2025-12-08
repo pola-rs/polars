@@ -79,7 +79,6 @@ impl SinkTarget {
         }
     }
 
-    #[cfg(feature = "cloud")]
     pub async fn open_into_writeable_async(
         &self,
         cloud_options: Option<&CloudOptions>,

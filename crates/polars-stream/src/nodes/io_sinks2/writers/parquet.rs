@@ -13,7 +13,7 @@ use polars_parquet::write::{
     ColumnWriteOptions, CompressedPage, Compressor, FileWriter, SchemaDescriptor, Version,
     WriteOptions, array_to_columns, to_parquet_schema,
 };
-use polars_utils::UnitVec;
+use polars_utils::{IdxSize, UnitVec};
 
 use crate::async_executor::{self, TaskPriority};
 use crate::async_primitives::connector;
@@ -31,6 +31,7 @@ pub struct ParquetWriterStarter {
     pub initialized_state: std::sync::Mutex<Option<InitializedState>>,
     pub pipeline_depth: usize,
     pub sync_on_close: SyncOnCloseType,
+    pub row_group_size: Option<IdxSize>,
 }
 
 #[derive(Clone)]
@@ -50,7 +51,14 @@ impl FileWriterStarter for ParquetWriterStarter {
     }
 
     fn ideal_morsel_size(&self) -> RowCountAndSize {
-        default_ideal_sink_morsel_size()
+        if let Some(row_group_size) = self.row_group_size {
+            RowCountAndSize {
+                num_rows: row_group_size,
+                num_bytes: u64::MAX,
+            }
+        } else {
+            default_ideal_sink_morsel_size()
+        }
     }
 
     fn start_file_writer(

@@ -13,6 +13,7 @@ use crate::nodes::TaskPriority;
 use crate::nodes::io_sinks2::components::partitioner::Partitioner;
 use crate::nodes::io_sinks2::config::{IOSinkNodeConfig, IOSinkTarget};
 use crate::nodes::io_sinks2::pipeline_initialization::partition_by::start_partition_sink_pipeline;
+use crate::nodes::io_sinks2::pipeline_initialization::single_file::start_single_file_sink_pipeline;
 use crate::pipe::PortReceiver;
 pub mod components;
 pub mod config;
@@ -29,15 +30,12 @@ impl IOSinkNode {
     pub fn new(config: impl Into<Box<IOSinkNodeConfig>>) -> Self {
         let config = config.into();
 
-        let target_type = match config.target {
-            IOSinkTarget::Partitioned {
-                partitioner: Partitioner::Keyed(_),
-                ..
-            } => "partition-keyed",
-            IOSinkTarget::Partitioned {
-                partitioner: Partitioner::FileSize,
-                ..
-            } => "partition-file-size",
+        let target_type = match &config.target {
+            IOSinkTarget::File(_) => "single-file",
+            IOSinkTarget::Partitioned(p) => match &p.partitioner {
+                Partitioner::Keyed(_) => "partition-keyed",
+                Partitioner::FileSize => "partition-file-size",
+            },
         };
 
         let extension = config.file_format.extension();
@@ -213,6 +211,10 @@ impl IOSinkNodeState {
         });
 
         let task_handle = match &config.target {
+            IOSinkTarget::File(_) => {
+                start_single_file_sink_pipeline(node_name.clone(), multi_phase_rx, *config)?
+            },
+
             IOSinkTarget::Partitioned { .. } => {
                 start_partition_sink_pipeline(node_name, multi_phase_rx, *config, execution_state)?
             },

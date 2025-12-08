@@ -4,6 +4,7 @@ pub mod exclude_keys_projection;
 pub mod file_provider;
 pub mod file_sink;
 pub mod hstack_columns;
+pub mod morsel_resize_pipeline;
 pub mod par_utils;
 pub mod partition_distributor;
 pub mod partition_key;
