@@ -250,6 +250,10 @@ impl PartitionDistributor {
             .chain((0..partitions.len()).filter(|i| !open_sinks.contains(i)));
 
         for partition_index in indices_iter {
+            if error_handle.has_errored() {
+                return Err(error_handle.join().await.unwrap_err());
+            }
+
             let partition: &mut PartitionState =
                 partitions.get_index_mut(partition_index).unwrap().1;
 
