@@ -1225,7 +1225,13 @@ fn to_graph_rec<'a>(
             let right_input_schema = ctx.phys_sm[input_right.node].output_schema.clone();
 
             ctx.graph.add_node(
-                MergeJoinNode::new(left_on.clone(), right_on.clone(), args)?,
+                MergeJoinNode::new(
+                    left_input_schema,
+                    right_input_schema,
+                    left_on.clone(),
+                    right_on.clone(),
+                    args,
+                )?,
                 [
                     (left_input_key, input_left.port),
                     (right_input_key, input_right.port),

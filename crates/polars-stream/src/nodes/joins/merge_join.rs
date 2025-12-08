@@ -1,22 +1,16 @@
 use std::collections::VecDeque;
 
-use arrow::legacy::kernels::sorted_join::left;
-use futures::SinkExt;
-use polars_compute::gather::binary;
+use arrow::array::builder::ShareStrategy;
+use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
-use polars_expr::hash_keys::HashKeys;
-use polars_expr::state::ExecutionState;
 use polars_ops::prelude::*;
-use polars_plan::dsl::Expr;
 
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
 use crate::execute::StreamingExecutionState;
-use crate::expression::StreamExpr;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::nodes::ComputeNode;
-use crate::nodes::joins::equi_join::compute_payload_selector;
-use crate::pipe::{RecvPort, SendPort};
+use crate::pipe::{PortReceiver, RecvPort, SendPort};
 
 // Do row encoding in lowering and then we will have one key column per input
 // Proably Gijs has already done something like this somewhere
@@ -37,34 +31,43 @@ enum Side {
 
 #[derive(Default)]
 struct MergeJoinParams {
+    left_input_schema: Arc<Schema>,
+    right_input_schema: Arc<Schema>,
     left_key: PlSmallStr,
     right_key: PlSmallStr,
     args: JoinArgs,
     random_state: PlRandomState,
 }
 
-type BufferChunk = (DataFrame, DataFrame); // (keys, payload)
-
 #[derive(Default)]
 pub struct MergeJoinNode {
     state: MergeJoinState,
     params: MergeJoinParams,
-    left_unmerged: VecDeque<BufferChunk>,
-    right_unmerged: VecDeque<BufferChunk>,
+    left_unmerged: VecDeque<DataFrame>,
+    right_unmerged: VecDeque<DataFrame>,
     seq: MorselSeq,
 }
 
-#[derive(Default, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq)]
 enum MergeJoinState {
     #[default]
     Running,
+    Flushing,
     Done,
 }
 
 impl MergeJoinNode {
-    pub fn new(left_key: PlSmallStr, right_key: PlSmallStr, args: JoinArgs) -> PolarsResult<Self> {
+    pub fn new(
+        left_input_schema: Arc<Schema>,
+        right_input_schema: Arc<Schema>,
+        left_key: PlSmallStr,
+        right_key: PlSmallStr,
+        args: JoinArgs,
+    ) -> PolarsResult<Self> {
         let state = MergeJoinState::Running;
         let params = MergeJoinParams {
+            left_input_schema,
+            right_input_schema,
             left_key,
             right_key,
             args,
@@ -75,6 +78,47 @@ impl MergeJoinNode {
             params,
             ..Default::default()
         })
+    }
+
+    fn compute_join(
+        &self,
+        left: &mut DataFrame,
+        right: &mut DataFrame,
+        state: &StreamingExecutionState,
+    ) -> PolarsResult<DataFrame> {
+        left.rechunk_mut();
+        right.rechunk_mut();
+
+        let mut left_build = DataFrameBuilder::new(self.params.left_input_schema.clone());
+        let mut right_build = DataFrameBuilder::new(self.params.right_input_schema.clone());
+
+        // TODO: [amber] Do a cardinality sketch to estimate the output size?
+        let left_key_col = left.column(&self.params.left_key).unwrap();
+        let right_key_col = right.column(&self.params.right_key).unwrap();
+
+        let mut left_gather_idxs = Vec::new();
+        let mut right_gather_idxs = Vec::new();
+        for (idxl, left_key) in left_key_col.phys_iter().enumerate() {
+            let mut matched = false;
+            for (idxr, right_key) in right_key_col.phys_iter().enumerate() {
+                if left_key == right_key {
+                    matched = true;
+                    left_gather_idxs.push(idxl as IdxSize);
+                    right_gather_idxs.push(idxr as IdxSize);
+                }
+            }
+            if !matched {
+                left_gather_idxs.push(idxl as IdxSize);
+                right_gather_idxs.push(IdxSize::MAX);
+            }
+        }
+
+        left_build.opt_gather_extend(left, &left_gather_idxs, ShareStrategy::Never);
+        right_build.opt_gather_extend(right, &right_gather_idxs, ShareStrategy::Never);
+        let mut df_left = left_build.freeze();
+        let df_right = right_build.freeze();
+        df_left.hstack_mut(&df_right.get_columns())?;
+        Ok(df_left)
     }
 }
 
@@ -93,12 +137,14 @@ impl ComputeNode for MergeJoinNode {
 
         if send[0] == PortState::Done {
             self.state = MergeJoinState::Done;
-        }
-
-        if recv[0] == PortState::Done
+        } else if recv[0] == PortState::Done
+            && recv[1] == PortState::Done
+            && (!self.left_unmerged.is_empty() || !self.right_unmerged.is_empty())
+        {
+            self.state = MergeJoinState::Flushing;
+        } else if recv[0] == PortState::Done
             && self.left_unmerged.is_empty()
             && recv[1] == PortState::Done
-            && self.right_unmerged.is_empty()
         {
             self.state = MergeJoinState::Done;
         }
@@ -107,6 +153,11 @@ impl ComputeNode for MergeJoinNode {
             MergeJoinState::Running => {
                 recv[0] = PortState::Ready;
                 recv[1] = PortState::Ready;
+                send[0] = PortState::Ready;
+            },
+            MergeJoinState::Flushing => {
+                recv[0] = PortState::Done;
+                recv[1] = PortState::Done;
                 send[0] = PortState::Ready;
             },
             MergeJoinState::Done => {
@@ -126,201 +177,185 @@ impl ComputeNode for MergeJoinNode {
         state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
+        use MergeJoinState::*;
+
         assert!(recv_ports.len() == 2 && send_ports.len() == 1);
 
         let mut recv_left = recv_ports[0].take().map(RecvPort::serial);
         let mut recv_right = recv_ports[1].take().map(RecvPort::serial);
         let mut send = send_ports[0].take().unwrap().serial();
 
-        join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-            loop {
-                match dbg!(pop_mergable(
-                    &mut self.left_unmerged,
-                    &mut self.right_unmerged
-                )?) {
-                    Ok(((left_payload, left_keys), (right_payload, right_keys))) => {
-                        let left_df = left_payload.hstack(left_keys.get_columns())?;
-                        let right_df = right_payload.hstack(right_keys.get_columns())?;
-                        let left_on = left_keys
-                            .get_columns()
-                            .iter()
-                            .map(|c| c.name().clone())
-                            .collect::<Vec<_>>();
-                        let right_on = right_keys
-                            .get_columns()
-                            .iter()
-                            .map(|c| c.name().clone())
-                            .collect::<Vec<_>>();
-                        dbg!(&left_on, &right_on);
-                        let joined = DataFrame::join(
-                            &left_df,
-                            &right_df,
-                            left_on,
-                            right_on,
-                            self.params.args.clone(),
-                            None,
-                        )?;
-                        dbg!(&joined);
-                        let m = Morsel::new(joined, self.seq, SourceToken::new());
-                        send.send(m).await.unwrap();
-                        self.seq = self.seq.successor();
-                    },
-                    Err(Side::Left) if recv_left.is_some() => {
-                        // Need more left data
-                        let Ok(m) = recv_left.as_mut().unwrap().recv().await else {
-                            break;
-                        };
-                        let df = m.into_df();
-                        dbg!(&df);
-                        // let keys =
-                        //     select_keys(&df, &self.params, &state.in_memory_exec_state).await?;
-                        // self.left_unmerged.push_back((df, keys));
-                    },
-                    Err(Side::Right) if recv_right.is_some() => {
-                        // Need more right data
-                        let Ok(m) = recv_right.as_mut().unwrap().recv().await else {
-                            break;
-                        };
-                        let df = m.into_df();
-                        dbg!(&df);
-                        // let keys =
-                        //     select_keys(&df, &self.params, &state.in_memory_exec_state).await?;
-                        // self.right_unmerged.push_back((df, keys));
-                    },
-                    Err(_) => {
-                        eprintln!("out of data");
-                        dbg!(&self.left_unmerged, &self.right_unmerged);
-                        self.state = MergeJoinState::Done;
-                        break;
-                    },
+        if matches!(self.state, Running | Flushing) {
+            join_handles.push(scope.spawn_task(TaskPriority::High, async move {
+                loop {
+                    match pop_mergable(
+                        &mut self.left_unmerged,
+                        &self.params.left_key,
+                        &mut self.right_unmerged,
+                        &self.params.right_key,
+                        self.state == Flushing,
+                    )? {
+                        Ok((mut left_chunk, mut right_chunk)) => {
+                            // [amber] TODO: put this into a distributor instead of computing the join serially
+                            let joined =
+                                self.compute_join(&mut left_chunk, &mut right_chunk, state)?;
+                            let source_token = SourceToken::new();
+                            let morsel = Morsel::new(joined, self.seq, source_token);
+                            send.send(morsel).await.unwrap(); // TODO [amber] Can this error be handled?
+                            self.seq = self.seq.successor();
+                        },
+                        Err(Side::Left) if self.state == Flushing => {
+                            self.right_unmerged.clear();
+                            return Ok(());
+                        },
+                        Err(Side::Left) if recv_left.is_some() => {
+                            // Need more left data
+                            let Ok(m) = recv_left.as_mut().unwrap().recv().await else {
+                                buffer_unmerged_from_pipe(
+                                    recv_right.as_mut(),
+                                    &mut self.right_unmerged,
+                                )
+                                .await;
+                                break;
+                            };
+                            let df = m.into_df();
+                            self.left_unmerged.push_back(df);
+                        },
+                        Err(Side::Right) if recv_right.is_some() => {
+                            // Need more right data
+                            let Ok(m) = recv_right.as_mut().unwrap().recv().await else {
+                                buffer_unmerged_from_pipe(
+                                    recv_left.as_mut(),
+                                    &mut self.left_unmerged,
+                                )
+                                .await;
+                                break;
+                            };
+                            let df = m.into_df();
+                            self.right_unmerged.push_back(df);
+                        },
+                        Err(_) => break,
+                    }
                 }
-            }
-            // TODO [amber] Should we now tell the other sender to stop sending,
-            // and then eat all of the remaining data in the other stream?
-
-            Ok(())
-        }));
+                Ok(())
+            }));
+        }
     }
 }
 
 fn pop_mergable(
-    left: &mut VecDeque<BufferChunk>,
-    right: &mut VecDeque<BufferChunk>,
-) -> PolarsResult<Result<(BufferChunk, BufferChunk), Side>> {
-    if left.is_empty() {
-        return Ok(Err(Side::Left));
+    left: &mut VecDeque<DataFrame>,
+    left_key: &str,
+    right: &mut VecDeque<DataFrame>,
+    right_key: &str,
+    flush: bool,
+) -> PolarsResult<Result<(DataFrame, DataFrame), Side>> {
+    fn vstack_head(unmerged: &mut VecDeque<DataFrame>) {
+        let mut df = unmerged.pop_front().unwrap();
+        df.vstack_mut_owned(unmerged.pop_front().unwrap()).unwrap();
+        unmerged.push_front(df);
     }
-    if right.is_empty() {
-        return Ok(Err(Side::Right));
-    }
+
+    // TODO: [amber] Eat all the None keys at the front
 
     loop {
-        let (mut left_df, mut left_keys) = left.pop_front().unwrap();
-        let (mut right_df, mut right_keys) = right.pop_front().unwrap();
+        if left.is_empty() && flush {
+            right.clear();
+            return Ok(Err(Side::Left));
+        } else if left.is_empty() {
+            return Ok(Err(Side::Left));
+        } else if right.is_empty() && flush {
+            return Ok(Ok((left.pop_front().unwrap(), DataFrame::empty())));
+        } else if right.is_empty() {
+            return Ok(Err(Side::Right));
+        }
 
-        let left_key_last = left_keys.tail(Some(1));
-        let right_key_last = right_keys.tail(Some(1));
-        assert!(!left_key_last.is_empty() && !right_key_last.is_empty());
-        let left_lt_last_mask = left_keys.get_columns()[0].lt(&left_key_last.get_columns()[0])?; // TODO: [amber] multiple key columns
-        let right_lt_last_mask = right_keys.get_columns()[0].lt(&right_key_last.get_columns()[0])?; // TODO: [amber] multiple key columns
+        let left_df = &left[0];
+        let right_df = &right[0];
+        if left_df.height() == 0 {
+            left.pop_front();
+            continue;
+        } else if right_df.height() == 0 {
+            right.pop_front();
+            continue;
+        }
 
-        let left_end_offset = left_lt_last_mask
-            .downcast_as_array()
-            .values()
-            .leading_ones();
-        let right_end_offset = right_lt_last_mask
-            .downcast_as_array()
-            .values()
-            .leading_ones();
+        let left_key_val = left_df.column(left_key)?;
+        let right_key_val = right_df.column(right_key)?;
+        let left_key_min = left_key_val.get(0)?;
+        let left_key_max = left_key_val.get(left_key_val.len() - 1)?;
+        let right_key_max = right_key_val.get(right_key_val.len() - 1)?;
+        let right_key_min = right_key_val.get(0)?;
+        assert!(!left_key_max.is_null(), "[amber] unimplemented");
+        assert!(!right_key_max.is_null(), "[amber] unimplemented");
 
-        dbg!(&left_keys, &right_keys);
-        dbg!(&left_end_offset, &right_end_offset);
+        if left_key_min == left_key_max && left.len() >= 2 {
+            vstack_head(left);
+            continue;
+        } else if right_key_min == right_key_max && right.len() >= 2 {
+            vstack_head(right);
+            continue;
+        } else if left_key_min == left_key_max && !flush {
+            return Ok(Err(Side::Left));
+        } else if right_key_min == right_key_max && !flush {
+            return Ok(Err(Side::Right));
+        }
 
-        let left_key_columns = left_keys.get_columns();
-        let right_key_columns = right_keys.get_columns();
-        let left_tail = left_keys.slice((left_end_offset - 1) as i64, 1);
-        let right_tail = right_keys.slice((right_end_offset - 1) as i64, 1);
-
-        let max_key = if left_tail.get_columns()[0].get(0)? <= right_tail.get_columns()[0].get(0)? {
-            left_tail.get_columns()
+        let global_max = if left_key_max < right_key_max {
+            left_key_max
         } else {
-            right_tail.get_columns()
+            right_key_max
         };
-        dbg!(&max_key);
+        let (left_cutoff, right_cutoff) = if flush {
+            (
+                find_item_offset(left_key_val, &global_max, SearchSortedSide::Right)? + 1,
+                find_item_offset(right_key_val, &global_max, SearchSortedSide::Right)? + 1,
+            )
+        } else {
+            (
+                find_item_offset(left_key_val, &global_max, SearchSortedSide::Left)?,
+                find_item_offset(right_key_val, &global_max, SearchSortedSide::Left)?,
+            )
+        };
 
-        let left_overlap_end = find_item_offset(left_key_columns, max_key)?;
-        let right_overlap_end = find_item_offset(right_key_columns, max_key)?;
-        let left_head = left_keys.head(Some(1));
-        let right_head = right_keys.head(Some(1));
-        let left_search_value = left_head.get_columns();
-        let right_search_value = right_head.get_columns();
-        let left_first_chunk_end = find_item_offset(left_key_columns, left_search_value)?;
-        let right_first_chunk_end = find_item_offset(right_key_columns, right_search_value)?;
-        debug_assert!(!(left_overlap_end == 0 && right_overlap_end == 0));
+        let left_df = left.pop_front().unwrap();
+        let right_df = right.pop_front().unwrap();
+        let (left_df, left_rest) = left_df.split_at(left_cutoff);
+        let (right_df, right_rest) = right_df.split_at(right_cutoff);
+        left.push_front(left_rest);
+        right.push_front(right_rest);
 
-        // We may need to wait until we have a complete chunk of equal keys on the "smaller" side
-        if right_overlap_end == 0 || left_end_offset == 0 {
-            let Some((left_ext_df, left_ext_keys)) = left.pop_front() else {
-                left.push_front((left_df, left_keys));
-                right.push_front((right_df, right_keys));
-                return Ok(Err(Side::Left));
-            };
-            left_df.vstack_mut(&left_ext_df)?;
-            left_keys.vstack_mut(&left_ext_keys)?;
-            left.push_front((left_df, left_keys));
-            right.push_front((right_df, right_keys));
-            continue;
-        } else if left_overlap_end == 0 || right_end_offset == 0 {
-            let Some((right_ext_df, right_ext_keys)) = right.pop_front() else {
-                left.push_front((left_df, left_keys));
-                right.push_front((right_df, right_keys));
-                return Ok(Err(Side::Right));
-            };
-            right_df.vstack_mut(&right_ext_df)?;
-            right_keys.vstack_mut(&right_ext_keys)?;
-            left.push_front((left_df, left_keys));
-            right.push_front((right_df, right_keys));
-            continue;
-        }
-
-        let left_split_offset = left_overlap_end.min(left_first_chunk_end) as i64;
-        let right_split_offset = right_overlap_end.min(right_first_chunk_end) as i64;
-        debug_assert!(0 < left_split_offset && left_split_offset < left_keys.height() as i64);
-        debug_assert!(0 < right_split_offset && right_split_offset < right_keys.height() as i64);
-        let (left_df_mergeable, left_df_remain) = left_df.split_at(left_split_offset);
-        let (left_keys_mergeable, left_keys_remain) = left_keys.split_at(left_split_offset);
-        let (right_df_mergeable, right_df_remain) = right_df.split_at(right_split_offset);
-        let (right_keys_mergeable, right_keys_remain) = right_keys.split_at(right_split_offset);
-
-        if left_keys_remain.height() > 0 {
-            left.push_front((left_df_remain, left_keys_remain));
-        }
-        if right_keys_remain.height() > 0 {
-            right.push_front((right_df_remain, right_keys_remain));
-        }
-
-        return Ok(Ok((
-            (left_df_mergeable, left_keys_mergeable),
-            (right_df_mergeable, right_keys_mergeable),
-        )));
+        debug_assert!(left_df.height() > 0 || right_df.height() > 0);
+        return Ok(Ok((left_df, right_df)));
     }
 }
 
-fn find_item_offset(columns: &[Column], search_value: &[Column]) -> PolarsResult<IdxSize> {
-    let mut descending_iter = columns.iter().map(|c| c.get_flags().is_sorted_descending());
-    assert!(columns.len() == search_value.len() && columns.len() == descending_iter.len());
+fn find_item_offset(
+    column: &Column,
+    search_value: &AnyValue,
+    side: SearchSortedSide,
+) -> PolarsResult<i64> {
+    debug_assert!(column.get_flags().is_sorted_ascending());
+    let s = column.as_materialized_series_maintain_scalar();
+    let sv = Series::from_any_values(PlSmallStr::EMPTY, &[search_value.clone()], true)?;
+    let pos = search_sorted(&s, &sv, side, false).unwrap();
+    Ok(pos.iter().next().unwrap_or(Some(0)).unwrap() as i64)
+}
 
-    let mut upper_bound = columns[0].len() as IdxSize;
-    for (idx, column) in columns.iter().enumerate() {
-        let descending = descending_iter.next().unwrap();
-        let s = column
-            .slice(0, (upper_bound) as usize)
-            .as_materialized_series_maintain_scalar();
-        let sv = &search_value[idx]
-            .as_materialized_series_maintain_scalar()
-            .slice(0, (upper_bound) as usize);
-        let ca_hi = search_sorted(&s, sv, SearchSortedSide::Right, descending).unwrap();
-        upper_bound = ca_hi.iter().next().unwrap_or(Some(0)).unwrap();
+async fn buffer_unmerged_from_pipe(
+    port: Option<&mut PortReceiver>,
+    unmerged: &mut VecDeque<DataFrame>,
+) {
+    let Some(port) = port else {
+        return;
+    };
+    let Ok(morsel) = port.recv().await else {
+        return;
+    };
+    morsel.source_token().stop();
+    unmerged.push_back(morsel.into_df());
+    while let Ok(morsel) = port.recv().await {
+        dbg!(&morsel);
+        unmerged.push_back(morsel.into_df());
     }
-    Ok(upper_bound)
 }

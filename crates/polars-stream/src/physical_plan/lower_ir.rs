@@ -4,7 +4,7 @@ use parking_lot::Mutex;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
 use polars_core::prelude::{DataType, PlHashMap, PlHashSet};
 use polars_core::scalar::Scalar;
-use polars_core::schema::Schema;
+use polars_core::schema::{Schema, SchemaRef};
 use polars_core::{SchemaExtPl, config};
 use polars_error::{PolarsResult, polars_bail};
 use polars_expr::state::ExecutionState;
@@ -1139,12 +1139,9 @@ pub fn lower_ir(
             let options = options.clone();
             let input_left = *input_left;
             let input_right = *input_right;
-            let phys_input_left = lower_ir!(input_left)?;
-            let phys_input_right = lower_ir!(input_right)?;
-
             lower_join(
-                phys_input_left,
-                phys_input_right,
+                input_left,
+                input_right,
                 schema,
                 left_on,
                 right_on,
@@ -1152,7 +1149,9 @@ pub fn lower_ir(
                 ir_arena,
                 expr_arena,
                 phys_sm,
+                schema_cache,
                 expr_cache,
+                cache_nodes,
                 ctx,
             )?
         },
@@ -1168,7 +1167,7 @@ pub fn lower_ir(
             let input_left = *input_left;
             let input_right = *input_right;
             let left_on = left_on.clone();
-            let right_on = right_on.clone();
+            let right_on: Vec<ExprIR> = right_on.clone();
             let args = options.args.clone();
             let options = options.options.clone();
             let mut phys_left = lower_ir!(input_left)?;
@@ -1546,18 +1545,23 @@ fn is_merge_join(
 }
 
 fn lower_join(
-    input_left: PhysStream,
-    input_right: PhysStream,
-    schema: Arc<Schema>,
+    input_left: Node,
+    input_right: Node,
+    _schema: SchemaRef,
     left_on: Vec<ExprIR>,
     right_on: Vec<ExprIR>,
     options: Arc<JoinOptionsIR>,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    schema_cache: &mut PlHashMap<Node, Arc<Schema>>,
     expr_cache: &mut ExprCache,
+    cache_nodes: &mut PlHashMap<UniqueId, PhysStream>,
     ctx: StreamingLowerIRContext,
 ) -> PolarsResult<PhysNodeKind> {
+    let append_suffix =
+        |name: &PlSmallStr| format_pl_smallstr!("{}{}", name.as_str(), options.args.suffix());
+
     assert!(options.args.how.is_equi());
 
     let left_on = left_on.clone();
@@ -1569,5 +1573,70 @@ fn lower_join(
     // First goal is do do a basic INNER or LEFT merge join with only a single
     // key column.
 
-    todo!()
+    assert!(left_on.len() == 1, "[amber] unimplemented");
+    assert!(right_on.len() == 1, "[amber] unimplemented");
+
+    // Rename the right dataframe columns
+    let schema_left = ir_arena.get(input_left).schema(ir_arena).into_owned();
+    let schema_right = ir_arena.get(input_right).schema(ir_arena).into_owned();
+    let schema_right_renamed = schema_right
+        .iter()
+        .map(|(name, dtype)| (append_suffix(name), dtype.clone()))
+        .collect::<Schema>();
+
+    let left_stream = lower_ir(
+        input_left,
+        ir_arena,
+        expr_arena,
+        phys_sm,
+        schema_cache,
+        expr_cache,
+        cache_nodes,
+        ctx,
+    )?;
+    let right_stream = lower_ir(
+        input_right,
+        ir_arena,
+        expr_arena,
+        phys_sm,
+        schema_cache,
+        expr_cache,
+        cache_nodes,
+        ctx,
+    )?;
+
+    let mut rename_exprs = Vec::new();
+    for old_name in schema_right.iter_names() {
+        let new_name = append_suffix(&old_name);
+        let col_expr = expr_arena.add(AExpr::Column(old_name.clone()));
+        let expr_ir = ExprIR::new(col_expr, OutputName::Alias(new_name.clone()));
+        rename_exprs.push(expr_ir);
+    }
+    let right_stream = build_select_stream(
+        right_stream,
+        &rename_exprs,
+        expr_arena,
+        phys_sm,
+        expr_cache,
+        ctx,
+    )?;
+
+    let (trans_input_left, trans_left_on) =
+        lower_exprs(left_stream, &left_on, expr_arena, phys_sm, expr_cache, ctx)?;
+    let (trans_input_right, trans_right_on) = lower_exprs(
+        right_stream,
+        &right_on,
+        expr_arena,
+        phys_sm,
+        expr_cache,
+        ctx,
+    )?;
+
+    Ok(PhysNodeKind::MergeJoin {
+        input_left: trans_input_left,
+        input_right: trans_input_right,
+        left_on: trans_left_on[0].output_name().clone(),
+        right_on: append_suffix(trans_right_on[0].output_name()),
+        args,
+    })
 }
