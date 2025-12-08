@@ -281,7 +281,7 @@ impl DatetimeChunked {
     }
 }
 
-/// #[cfg(feature = "timezones")]
+#[cfg(feature = "timezones")]
 /// If `ambiguous` is length-1 and not equal to "null", we can take a slightly faster path.
 fn impl_replace_time_zone_fast(
     datetime: &Logical<DatetimeType, Int64Type>,
