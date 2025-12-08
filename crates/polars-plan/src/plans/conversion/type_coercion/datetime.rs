@@ -75,6 +75,8 @@ pub fn coerce_temporal_dt(
 }
 
 #[cfg(all(feature = "dtype-datetime", feature = "timezones"))]
+// Replacing the time zone preserves the hour/minute/second, but alters the underlying timestamp.
+// e.g. 2025-04-01 00:00:00 CST --> 2025-04-01 00:00:00 UTC
 pub(super) fn replace_tz(
     e: &mut ExprIR,
     dtype: &DataType,
@@ -109,6 +111,8 @@ pub(super) fn replace_tz(
 }
 
 #[cfg(all(feature = "dtype-datetime", feature = "timezones"))]
+// Converting the time zone produces the simultaneous time in another time zone.
+// e.g. 2025-04-01 00:00:00 CST --> 2025-03-31 16:00:00 UTC
 pub(super) fn convert_tz(
     e: &mut ExprIR,
     dtype: &DataType,

@@ -67,14 +67,16 @@ pub(super) fn ordinal_day(s: &Column) -> PolarsResult<Column> {
 pub(super) fn time(s: &Column) -> PolarsResult<Column> {
     match s.dtype() {
         #[cfg(feature = "timezones")]
-        DataType::Datetime(_, Some(_)) => polars_ops::prelude::replace_time_zone(
-            s.datetime().unwrap(),
-            None,
-            &StringChunked::from_iter(std::iter::once("raise")),
-            NonExistent::Raise,
-        )?
-        .cast(&DataType::Time)
-        .map(Column::from),
+        DataType::Datetime(_, Some(_)) => s
+            .datetime()
+            .unwrap()
+            .replace_time_zone(
+                None,
+                &StringChunked::from_iter(std::iter::once("raise")),
+                NonExistent::Raise,
+            )?
+            .cast(&DataType::Time)
+            .map(Column::from),
         DataType::Datetime(_, _) => s
             .datetime()
             .unwrap()
@@ -89,13 +91,14 @@ pub(super) fn date(s: &Column) -> PolarsResult<Column> {
         #[cfg(feature = "timezones")]
         DataType::Datetime(_, Some(_)) => {
             let mut out = {
-                polars_ops::chunked_array::replace_time_zone(
-                    s.datetime().unwrap(),
-                    None,
-                    &StringChunked::from_iter(std::iter::once("raise")),
-                    NonExistent::Raise,
-                )?
-                .cast(&DataType::Date)?
+                s.datetime()
+                    .unwrap()
+                    .replace_time_zone(
+                        None,
+                        &StringChunked::from_iter(std::iter::once("raise")),
+                        NonExistent::Raise,
+                    )?
+                    .cast(&DataType::Date)?
             };
             // `replace_time_zone` may unset sorted flag. But, we're only taking the date
             // part of the result, so we can safely preserve the sorted flag here. We may
@@ -117,14 +120,16 @@ pub(super) fn date(s: &Column) -> PolarsResult<Column> {
 pub(super) fn datetime(s: &Column) -> PolarsResult<Column> {
     match s.dtype() {
         #[cfg(feature = "timezones")]
-        DataType::Datetime(tu, Some(_)) => polars_ops::chunked_array::replace_time_zone(
-            s.datetime().unwrap(),
-            None,
-            &StringChunked::from_iter(std::iter::once("raise")),
-            NonExistent::Raise,
-        )?
-        .cast(&DataType::Datetime(*tu, None))
-        .map(|x| x.into()),
+        DataType::Datetime(tu, Some(_)) => s
+            .datetime()
+            .unwrap()
+            .replace_time_zone(
+                None,
+                &StringChunked::from_iter(std::iter::once("raise")),
+                NonExistent::Raise,
+            )?
+            .cast(&DataType::Datetime(*tu, None))
+            .map(|x| x.into()),
         DataType::Datetime(tu, _) => s
             .datetime()
             .unwrap()
@@ -278,6 +283,18 @@ pub(super) fn convert_time_zone(s: &Column, time_zone: &TimeZone) -> PolarsResul
         },
         dtype => polars_bail!(ComputeError: "expected Datetime, got {}", dtype),
     }
+}
+#[cfg(feature = "timezones")]
+pub(super) fn replace_time_zone(
+    s: &[Column],
+    time_zone: Option<&TimeZone>,
+    non_existent: NonExistent,
+) -> PolarsResult<Column> {
+    let ambiguous = s[1].str()?;
+    let ca = s[0].datetime()?;
+
+    let out = ca.replace_time_zone(time_zone, ambiguous, non_existent)?;
+    Ok(out.into_column())
 }
 pub(super) fn with_time_unit(s: &Column, tu: TimeUnit) -> PolarsResult<Column> {
     match s.dtype() {
