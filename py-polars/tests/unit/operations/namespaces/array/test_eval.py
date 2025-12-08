@@ -264,7 +264,7 @@ def test_arr_eval_with_filter_in_agg_25384(
     ("expr", "result"),
     [
         (pl.element().sum(), pl.Series("a", [1, 8, 22])),
-        (pl.element().null_count(), pl.Series("a", [1, 1, 0], pl.UInt32)),
+        (pl.element().null_count(), pl.Series("a", [1, 1, 0], pl.get_index_type())),
     ],
 )
 def test_arr_agg_with_filter_in_agg_25384(

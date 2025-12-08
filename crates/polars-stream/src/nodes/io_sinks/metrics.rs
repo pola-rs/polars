@@ -76,10 +76,10 @@ impl WriteMetrics {
 
             if has_non_null_non_nan_values {
                 if let Some(lb) = &mut w.lower_bound {
-                    lb.update_group(c, 0, 0)?;
+                    lb.update_group(&[c], 0, 0)?;
                 }
                 if let Some(ub) = &mut w.upper_bound {
-                    ub.update_group(c, 0, 0)?;
+                    ub.update_group(&[c], 0, 0)?;
                 }
             }
         }
