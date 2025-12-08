@@ -3,8 +3,8 @@ use std::collections::VecDeque;
 use polars_core::prelude::SortMultipleOptions;
 use polars_ops::frame::{JoinArgs, JoinType};
 use polars_plan::dsl::{
-    JoinTypeOptionsIR, PartitionStrategyIR, PartitionVariantIR, PartitionedSinkOptionsIR,
-    SinkOptions, SinkTarget, SortColumnIR, UnifiedSinkArgs,
+    FileSinkOptions, JoinTypeOptionsIR, PartitionStrategyIR, PartitionVariantIR,
+    PartitionedSinkOptionsIR, SinkOptions, SinkTarget, SortColumnIR, UnifiedSinkArgs,
 };
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::prelude::AExpr;
@@ -706,6 +706,41 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     sync_on_close: *sync_on_close,
                     maintain_order: *maintain_order,
                     mkdir: *mkdir,
+                };
+
+                PhysNodeInfo {
+                    title: properties.variant_name(),
+                    properties,
+                    ..Default::default()
+                }
+            },
+            PhysNodeKind::FileSink2 {
+                input,
+                options:
+                    FileSinkOptions {
+                        target,
+                        file_format,
+                        unified_sink_args:
+                            UnifiedSinkArgs {
+                                mkdir,
+                                maintain_order,
+                                sync_on_close,
+                                cloud_options,
+                            },
+                    },
+            } => {
+                phys_node_inputs.push(input.node);
+
+                let properties = PhysNodeProperties::FileSink {
+                    target: match target {
+                        SinkTarget::Path(p) => format_pl_smallstr!("Path({})", p.to_str()),
+                        SinkTarget::Dyn(_) => PlSmallStr::from_static("DynWriteable"),
+                    },
+                    file_format: PlSmallStr::from_static(file_format.as_ref().into()),
+                    sync_on_close: *sync_on_close,
+                    maintain_order: *maintain_order,
+                    mkdir: *mkdir,
+                    cloud_options: cloud_options.is_some(),
                 };
 
                 PhysNodeInfo {

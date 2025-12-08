@@ -3,7 +3,7 @@ use std::sync::Arc;
 use polars_core::prelude::SortMultipleOptions;
 use polars_core::schema::SchemaRef;
 use polars_plan::dsl::sink2::FileProviderType;
-use polars_plan::dsl::{FileType, UnifiedSinkArgs};
+use polars_plan::dsl::{FileType, SinkTarget, UnifiedSinkArgs};
 use polars_utils::plpath::PlPath;
 
 use crate::expression::StreamExpr;
@@ -57,15 +57,18 @@ impl IOSinkNodeConfig {
 }
 
 pub enum IOSinkTarget {
-    Partitioned {
-        base_path: PlPath,
-        file_path_provider: FileProviderType,
-        partitioner: Partitioner,
-        /// How to hstack the keys back into the dataframe (with_columns)
-        hstack_keys: Option<HStackColumns>,
-        include_keys_in_file: bool,
-        file_schema: SchemaRef,
-        file_size_limit: Option<RowCountAndSize>,
-        per_partition_sort: Option<(Arc<[StreamExpr]>, SortMultipleOptions)>,
-    },
+    File(SinkTarget),
+    Partitioned(Box<PartitionedTarget>),
+}
+
+pub struct PartitionedTarget {
+    pub base_path: PlPath,
+    pub file_path_provider: FileProviderType,
+    pub partitioner: Partitioner,
+    /// How to hstack the keys back into the dataframe (with_columns)
+    pub hstack_keys: Option<HStackColumns>,
+    pub include_keys_in_file: bool,
+    pub file_schema: SchemaRef,
+    pub file_size_limit: Option<RowCountAndSize>,
+    pub per_partition_sort: Option<(Arc<[StreamExpr]>, SortMultipleOptions)>,
 }
