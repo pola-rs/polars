@@ -1,3 +1,6 @@
+import datetime
+from typing import Any
+
 import pytest
 
 import polars as pl
@@ -114,5 +117,132 @@ def test_unpivot_categorical() -> None:
 
 
 def test_unpivot_index_not_found_23165() -> None:
-    with pytest.raises(pl.exceptions.ColumnNotFoundError):
+    with pytest.raises(pl.exceptions.SchemaFieldNotFoundError):
         pl.DataFrame({"a": [1]}).unpivot(index="b")
+
+
+def assert_eq_df_lf_impl(
+    data: Any, expr: Any, on: Any, index: Any, expected_data: list[pl.Series]
+) -> None:
+    df_result = expr(pl.DataFrame(data), on, index)
+    lf_result = expr(pl.LazyFrame(data), on, index).collect()
+    expected_result = pl.DataFrame(expected_data)
+
+    assert_frame_equal(df_result, lf_result, check_row_order=False)
+    assert_frame_equal(df_result, expected_result, check_row_order=False)
+
+
+def test_unpivot_empty_on_25474() -> None:
+    data = {
+        "a": ["x", "y"],
+        "b": [1, 3],
+        "c": [2, 4],
+        "d": ["str_a", "str_b"],
+    }
+
+    def assert_eq_df_lf(on: Any, index: Any, expected_data: list[pl.Series]) -> None:
+        def logic(frame: Any, on: Any, index: Any) -> Any:
+            return frame.unpivot(on, index=index)
+
+        return assert_eq_df_lf_impl(data, logic, on, index, expected_data)
+
+    assert_eq_df_lf(
+        pl.selectors.numeric(),
+        "a",
+        [
+            pl.Series("a", ["x", "y", "x", "y"], dtype=pl.String),
+            pl.Series("variable", ["b", "b", "c", "c"], dtype=pl.String),
+            pl.Series("value", [1, 3, 2, 4], dtype=pl.Int64),
+        ],
+    )
+
+    assert_eq_df_lf(
+        pl.selectors.date(),
+        "a",
+        [
+            pl.Series("a", [], dtype=pl.String),
+            pl.Series("variable", [], dtype=pl.String),
+            pl.Series("value", [], dtype=pl.Null),
+        ],
+    )
+
+    assert_eq_df_lf(
+        pl.selectors.date(),
+        "b",
+        [
+            pl.Series("b", [], dtype=pl.Int64),
+            pl.Series("variable", [], dtype=pl.String),
+            pl.Series("value", [], dtype=pl.Null),
+        ],
+    )
+
+    assert_eq_df_lf(
+        [],
+        "a",
+        [
+            pl.Series("a", [], dtype=pl.String),
+            pl.Series("variable", [], dtype=pl.String),
+            pl.Series("value", [], dtype=pl.Null),
+        ],
+    )
+
+    assert_eq_df_lf(
+        None,
+        "a",
+        [
+            pl.Series("a", ["x", "y", "x", "y", "x", "y"], dtype=pl.String),
+            pl.Series("variable", ["b", "b", "c", "c", "d", "d"], dtype=pl.String),
+            pl.Series("value", ["1", "3", "2", "4", "str_a", "str_b"], dtype=pl.String),
+        ],
+    )
+
+    assert_eq_df_lf(
+        None,
+        ["b", "a"],
+        [
+            pl.Series("b", [1, 3, 1, 3], dtype=pl.Int64),
+            pl.Series("a", ["x", "y", "x", "y"], dtype=pl.String),
+            pl.Series("variable", ["c", "c", "d", "d"], dtype=pl.String),
+            pl.Series("value", ["2", "4", "str_a", "str_b"], dtype=pl.String),
+        ],
+    )
+
+
+def test_unpivot_predicate_pd() -> None:
+    day_a = datetime.date(2995, 4, 3)
+    day_b = datetime.date(2333, 4, 3)
+
+    data = {
+        "a": ["x", "y", "z"],
+        "b": [1, 3, 1],
+        "c": [2, 4, 7],
+        "d": [day_a, day_a, day_b],
+    }
+
+    def assert_eq_df_lf(on: Any, index: Any, expected_data: list[pl.Series]) -> None:
+        def logic(frame: Any, on: Any, index: Any) -> Any:
+            return frame.unpivot(on, index=index).filter(pl.col.b == 1)
+
+        return assert_eq_df_lf_impl(data, logic, on, index, expected_data)
+
+    assert_eq_df_lf(
+        None,
+        ["b", "a"],
+        [
+            pl.Series("b", [1, 1, 1, 1], dtype=pl.Int64),
+            pl.Series("a", ["x", "z", "x", "z"], dtype=pl.String),
+            pl.Series("variable", ["c", "c", "d", "d"], dtype=pl.String),
+            pl.Series("value", [2, 7, 374466, 132675], dtype=pl.Int64),
+        ],
+    )
+
+    assert_eq_df_lf(
+        pl.selectors.date(),
+        ["b", "a"],
+        [
+            pl.Series("b", [1, 1], dtype=pl.Int64),
+            pl.Series("a", ["x", "z"], dtype=pl.String),
+            pl.Series("variable", ["d", "d"], dtype=pl.String),
+            pl.Series("value", [day_a, day_b], dtype=pl.Date),
+        ],
+    )

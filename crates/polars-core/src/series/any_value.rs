@@ -1,6 +1,8 @@
 use std::fmt::Write;
 
 use arrow::bitmap::MutableBitmap;
+use num_traits::AsPrimitive;
+use polars_compute::cast::SerPrimitive;
 
 #[cfg(feature = "dtype-categorical")]
 use crate::chunked_array::builder::CategoricalChunkedBuilder;
@@ -118,6 +120,8 @@ impl Series {
             DataType::UInt128 => {
                 any_values_to_integer::<UInt128Type>(values, strict)?.into_series()
             },
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => any_values_to_f16(values, strict)?.into_series(),
             DataType::Float32 => any_values_to_f32(values, strict)?.into_series(),
             DataType::Float64 => any_values_to_f64(values, strict)?.into_series(),
             DataType::Boolean => any_values_to_bool(values, strict)?.into_series(),
@@ -208,6 +212,27 @@ fn any_values_to_integer<T: PolarsIntegerType>(
     }
 }
 
+#[cfg(feature = "dtype-f16")]
+fn any_values_to_f16(values: &[AnyValue], strict: bool) -> PolarsResult<Float16Chunked> {
+    fn any_values_to_f16_strict(values: &[AnyValue]) -> PolarsResult<Float16Chunked> {
+        let mut builder =
+            PrimitiveChunkedBuilder::<Float16Type>::new(PlSmallStr::EMPTY, values.len());
+        for av in values {
+            match av {
+                AnyValue::Float16(i) => builder.append_value(*i),
+                AnyValue::Null => builder.append_null(),
+                av => return Err(invalid_value_error(&DataType::Float16, av)),
+            }
+        }
+        Ok(builder.finish())
+    }
+    if strict {
+        any_values_to_f16_strict(values)
+    } else {
+        Ok(any_values_to_primitive_nonstrict::<Float16Type>(values))
+    }
+}
+
 fn any_values_to_f32(values: &[AnyValue], strict: bool) -> PolarsResult<Float32Chunked> {
     fn any_values_to_f32_strict(values: &[AnyValue]) -> PolarsResult<Float32Chunked> {
         let mut builder =
@@ -215,6 +240,7 @@ fn any_values_to_f32(values: &[AnyValue], strict: bool) -> PolarsResult<Float32C
         for av in values {
             match av {
                 AnyValue::Float32(i) => builder.append_value(*i),
+                AnyValue::Float16(i) => builder.append_value(i.as_()),
                 AnyValue::Null => builder.append_null(),
                 av => return Err(invalid_value_error(&DataType::Float32, av)),
             }
@@ -235,6 +261,7 @@ fn any_values_to_f64(values: &[AnyValue], strict: bool) -> PolarsResult<Float64C
             match av {
                 AnyValue::Float64(i) => builder.append_value(*i),
                 AnyValue::Float32(i) => builder.append_value(*i as f64),
+                AnyValue::Float16(i) => builder.append_value(i.as_()),
                 AnyValue::Null => builder.append_null(),
                 av => return Err(invalid_value_error(&DataType::Float64, av)),
             }
@@ -282,17 +309,92 @@ fn any_values_to_string(values: &[AnyValue], strict: bool) -> PolarsResult<Strin
         Ok(builder.finish())
     }
     fn any_values_to_string_nonstrict(values: &[AnyValue]) -> StringChunked {
+        fn _write_any_value(av: &AnyValue<'_>, buffer: &mut String) {
+            match av {
+                AnyValue::String(s) => buffer.push_str(s),
+                AnyValue::Float64(f) => {
+                    SerPrimitive::write(unsafe { buffer.as_mut_vec() }, *f);
+                },
+                AnyValue::Float32(f) => {
+                    SerPrimitive::write(unsafe { buffer.as_mut_vec() }, *f);
+                },
+                #[cfg(feature = "dtype-f16")]
+                AnyValue::Float16(f) => {
+                    SerPrimitive::write(unsafe { buffer.as_mut_vec() }, *f);
+                },
+                #[cfg(feature = "dtype-struct")]
+                AnyValue::StructOwned(payload) => {
+                    buffer.push('{');
+                    let mut iter = payload.0.iter().peekable();
+                    while let Some(child) = iter.next() {
+                        _write_any_value(child, buffer);
+                        if iter.peek().is_some() {
+                            buffer.push(',')
+                        }
+                    }
+                    buffer.push('}');
+                },
+                #[cfg(feature = "dtype-struct")]
+                AnyValue::Struct(_, _, flds) => {
+                    let mut vals = Vec::with_capacity(flds.len());
+                    av._materialize_struct_av(&mut vals);
+
+                    buffer.push('{');
+                    let mut iter = vals.iter().peekable();
+                    while let Some(child) = iter.next() {
+                        _write_any_value(child, buffer);
+                        if iter.peek().is_some() {
+                            buffer.push(',')
+                        }
+                    }
+                    buffer.push('}');
+                },
+                #[cfg(feature = "dtype-array")]
+                AnyValue::Array(vals, _) => {
+                    buffer.push('[');
+                    let mut iter = vals.iter().peekable();
+                    while let Some(child) = iter.next() {
+                        _write_any_value(&child, buffer);
+                        if iter.peek().is_some() {
+                            buffer.push(',');
+                        }
+                    }
+                    buffer.push(']');
+                },
+                AnyValue::List(vals) => {
+                    buffer.push('[');
+                    let mut iter = vals.iter().peekable();
+                    while let Some(child) = iter.next() {
+                        _write_any_value(&child, buffer);
+                        if iter.peek().is_some() {
+                            buffer.push(',');
+                        }
+                    }
+                    buffer.push(']');
+                },
+                av => {
+                    write!(buffer, "{av}").unwrap();
+                },
+            }
+        }
+
         let mut builder = StringChunkedBuilder::new(PlSmallStr::EMPTY, values.len());
         let mut owned = String::new(); // Amortize allocations.
         for av in values {
+            owned.clear();
+
             match av {
                 AnyValue::String(s) => builder.append_value(s),
                 AnyValue::StringOwned(s) => builder.append_value(s),
                 AnyValue::Null => builder.append_null(),
                 AnyValue::Binary(_) | AnyValue::BinaryOwned(_) => builder.append_null(),
+
+                // Explicitly convert and dump floating-point values to strings
+                // to preserve as much precision as possible.
+                // Using write!(..., "{av}") steps through Display formatting
+                // which rounds to an arbitrary precision thus losing information.
                 av => {
-                    owned.clear();
-                    write!(owned, "{av}").unwrap();
+                    _write_any_value(av, &mut owned);
                     builder.append_value(&owned);
                 },
             }
@@ -789,9 +891,26 @@ fn any_values_to_struct(
                     let av_values: Vec<_> = av._iter_struct_av().collect();
                     _any_values_to_struct(av_fields, &av_values, i, field, fields, &mut field_avs);
                 },
-                _ => {
+                AnyValue::List(s) if s.len() == fields.len() => {
+                    let av = unsafe { s.get_unchecked(i) };
+                    field_avs.push(av);
+                },
+                #[cfg(feature = "dtype-array")]
+                AnyValue::Array(s, _) if s.len() == fields.len() => {
+                    let av = unsafe { s.get_unchecked(i) };
+                    field_avs.push(av);
+                },
+                AnyValue::Null => {
                     has_outer_validity = true;
                     field_avs.push(AnyValue::Null)
+                },
+                _ => {
+                    if strict {
+                        return Err(invalid_value_error(&DataType::Struct(fields.to_vec()), av));
+                    } else {
+                        has_outer_validity = true;
+                        field_avs.push(AnyValue::Null)
+                    }
                 },
             }
         }

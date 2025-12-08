@@ -565,6 +565,12 @@ pub(super) fn coalesce(s: &mut [Column]) -> PolarsResult<Column> {
 
 pub(super) fn drop_nans(s: Column) -> PolarsResult<Column> {
     match s.dtype() {
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            let ca = s.f16()?;
+            let mask = ca.is_not_nan() | ca.is_null();
+            ca.filter(&mask).map(|ca| ca.into_column())
+        },
         DataType::Float32 => {
             let ca = s.f32()?;
             let mask = ca.is_not_nan() | ca.is_null();
@@ -704,6 +710,15 @@ pub(super) fn corr(s: &[Column], method: IRCorrelationMethod) -> PolarsResult<Co
 
         use polars_ops::chunked_array::cov::cov;
         let ret = match a.dtype() {
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => {
+                use num_traits::AsPrimitive;
+                use polars_utils::float16::pf16;
+
+                let ret =
+                    cov(a.f16().unwrap(), b.f16().unwrap(), ddof).map(AsPrimitive::<pf16>::as_);
+                return Ok(Column::new(name, &[ret]));
+            },
             DataType::Float32 => {
                 let ret = cov(a.f32().unwrap(), b.f32().unwrap(), ddof).map(|v| v as f32);
                 return Ok(Column::new(name, &[ret]));
@@ -729,6 +744,15 @@ pub(super) fn corr(s: &[Column], method: IRCorrelationMethod) -> PolarsResult<Co
 
         use polars_ops::chunked_array::cov::pearson_corr;
         let ret = match a.dtype() {
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => {
+                use num_traits::AsPrimitive;
+                use polars_utils::float16::pf16;
+
+                let ret =
+                    pearson_corr(a.f16().unwrap(), b.f16().unwrap()).map(AsPrimitive::<pf16>::as_);
+                return Ok(Column::new(name, &[ret]));
+            },
             DataType::Float32 => {
                 let ret = pearson_corr(a.f32().unwrap(), b.f32().unwrap()).map(|v| v as f32);
                 return Ok(Column::new(name, &[ret]));
@@ -759,13 +783,8 @@ pub(super) fn corr(s: &[Column], method: IRCorrelationMethod) -> PolarsResult<Co
         let name = PlSmallStr::from_static("spearman_rank_correlation");
         if propagate_nans && a.dtype().is_float() {
             for s in [&a, &b] {
-                if nan_max_s(s.as_materialized_series(), PlSmallStr::EMPTY)
-                    .get(0)
-                    .unwrap()
-                    .extract::<f64>()
-                    .unwrap()
-                    .is_nan()
-                {
+                let max = nan_max_s(s.as_materialized_series(), PlSmallStr::EMPTY);
+                if max.get(0).is_ok_and(|m| m.is_nan()) {
                     return Ok(Column::new(name, &[f64::NAN]));
                 }
             }

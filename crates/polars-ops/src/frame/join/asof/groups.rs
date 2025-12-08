@@ -444,6 +444,13 @@ fn dispatch_join_type(
                 ca, right_asof, left_by, right_by, strategy, tolerance, allow_eq,
             )
         },
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            let ca = left_asof.f16().unwrap();
+            dispatch_join_strategy_numeric(
+                ca, right_asof, left_by, right_by, strategy, tolerance, allow_eq,
+            )
+        },
         DataType::Float32 => {
             let ca = left_asof.f32().unwrap();
             dispatch_join_strategy_numeric(

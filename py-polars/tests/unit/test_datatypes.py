@@ -216,6 +216,7 @@ def test_raise_invalid_namespace() -> None:
         (pl.UInt64, 0, 18446744073709551615),
         (pl.Int128, -(2**127), 2**127 - 1),
         (pl.UInt128, 0, 2**128 - 1),
+        (pl.Float16, float("-inf"), float("inf")),
         (pl.Float32, float("-inf"), float("inf")),
         (pl.Float64, float("-inf"), float("inf")),
         (pl.Time, time(0, 0), time(23, 59, 59, 999999)),
@@ -223,6 +224,7 @@ def test_raise_invalid_namespace() -> None:
 )
 def test_max_min(
     dtype: datatypes.IntegerType
+    | datatypes.Float16
     | datatypes.Float32
     | datatypes.Float64
     | datatypes.Time,

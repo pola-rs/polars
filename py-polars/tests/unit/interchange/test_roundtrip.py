@@ -33,6 +33,7 @@ protocol_dtypes: list[PolarsDataType] = [
     pl.UInt16,
     pl.UInt32,
     pl.UInt64,
+    pl.Float16,
     pl.Float32,
     pl.Float64,
     pl.Boolean,
@@ -85,6 +86,7 @@ def test_to_dataframe_pyarrow_zero_copy_parametric(df: pl.DataFrame) -> None:
 @given(
     dataframes(
         allowed_dtypes=protocol_dtypes,
+        excluded_dtypes=[pl.Float16],  # Not yet supported by pandas
         allow_null=False,  # Bug: https://github.com/pola-rs/polars/issues/16190
     )
 )
@@ -105,6 +107,7 @@ def test_to_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
         excluded_dtypes=[
             pl.String,  # Polars String type does not match protocol spec
             pl.Categorical,
+            pl.Float16,  # Not yet supported by pandas
         ],
         allow_chunks=False,
         allow_null=False,  # Bug: https://github.com/pola-rs/polars/issues/16190
@@ -154,14 +157,13 @@ def test_from_dataframe_pyarrow_zero_copy_parametric(df: pl.DataFrame) -> None:
         allowed_dtypes=protocol_dtypes,
         excluded_dtypes=[
             pl.Categorical,  # Categoricals come back as Enums
-            pl.Float32,  # NaN values come back as nulls
-            pl.Float64,  # NaN values come back as nulls
         ],
+        allow_nan=False,  # NaN values come back as nulls
     )
 )
 def test_from_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas(use_pyarrow_extension_array=True)
-    result = from_dataframe_interchange_protocol(df_pd)
+    result = from_dataframe_interchange_protocol(df_pd)  # type: ignore[arg-type,unused-ignore]
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
@@ -172,19 +174,18 @@ def test_from_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
         excluded_dtypes=[
             pl.String,  # Polars String type does not match protocol spec
             pl.Categorical,  # Categoricals come back as Enums
-            pl.Float32,  # NaN values come back as nulls
-            pl.Float64,  # NaN values come back as nulls
             pl.Boolean,  # pandas exports boolean buffers as byte-packed
         ],
         # Empty dataframes cause an error due to a bug in pandas.
         # https://github.com/pandas-dev/pandas/issues/56700
         min_size=1,
         allow_chunks=False,
+        allow_nan=False,  # NaN values come back as nulls
     )
 )
 def test_from_dataframe_pandas_zero_copy_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas(use_pyarrow_extension_array=True)
-    result = from_dataframe_interchange_protocol(df_pd, allow_copy=False)
+    result = from_dataframe_interchange_protocol(df_pd, allow_copy=False)  # type: ignore[arg-type,unused-ignore]
     assert_frame_equal(result, df)
 
 
@@ -193,18 +194,17 @@ def test_from_dataframe_pandas_zero_copy_parametric(df: pl.DataFrame) -> None:
         allowed_dtypes=protocol_dtypes,
         excluded_dtypes=[
             pl.Categorical,  # Categoricals come back as Enums
-            pl.Float32,  # NaN values come back as nulls
-            pl.Float64,  # NaN values come back as nulls
         ],
         # Empty string columns cause an error due to a bug in pandas.
         # https://github.com/pandas-dev/pandas/issues/56703
         min_size=1,
         allow_null=False,  # Bug: https://github.com/pola-rs/polars/issues/16190
+        allow_nan=False,  # NaN values come back as nulls
     )
 )
 def test_from_dataframe_pandas_native_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas()
-    result = from_dataframe_interchange_protocol(df_pd)
+    result = from_dataframe_interchange_protocol(df_pd)  # type: ignore[arg-type,unused-ignore]
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
@@ -214,8 +214,6 @@ def test_from_dataframe_pandas_native_parametric(df: pl.DataFrame) -> None:
         excluded_dtypes=[
             pl.String,  # Polars String type does not match protocol spec
             pl.Categorical,  # Categoricals come back as Enums
-            pl.Float32,  # NaN values come back as nulls
-            pl.Float64,  # NaN values come back as nulls
             pl.Boolean,  # pandas exports boolean buffers as byte-packed
         ],
         # Empty dataframes cause an error due to a bug in pandas.
@@ -223,11 +221,12 @@ def test_from_dataframe_pandas_native_parametric(df: pl.DataFrame) -> None:
         min_size=1,
         allow_chunks=False,
         allow_null=False,  # Bug: https://github.com/pola-rs/polars/issues/16190
+        allow_nan=False,  # NaN values come back as nulls
     )
 )
 def test_from_dataframe_pandas_native_zero_copy_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas()
-    result = from_dataframe_interchange_protocol(df_pd, allow_copy=False)
+    result = from_dataframe_interchange_protocol(df_pd, allow_copy=False)  # type: ignore[arg-type,unused-ignore]
     assert_frame_equal(result, df)
 
 

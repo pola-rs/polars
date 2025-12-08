@@ -149,13 +149,19 @@ where
         // sorted path
         if self.is_sorted_ascending_flag() || self.is_sorted_descending_flag() {
             // don't have to pass `sorted` arg, GroupSlice is always sorted.
-            return Ok(GroupsType::Slice {
-                groups: self.rechunk().create_groups_from_sorted(multithreaded),
-                overlapping: false,
-            });
+            let groups = self.rechunk().create_groups_from_sorted(multithreaded);
+            return Ok(GroupsType::new_slice(groups, false, true));
         }
 
         let out = match self.dtype() {
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => {
+                // Convince the compiler that we are this type.
+                let ca: &Float16Chunked = unsafe {
+                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<Float16Type>)
+                };
+                num_groups_proxy(ca, multithreaded, sorted)
+            },
             DataType::Float32 => {
                 // Convince the compiler that we are this type.
                 let ca: &Float32Chunked = unsafe {
@@ -225,10 +231,7 @@ impl IntoGroupsType for BinaryChunked {
             let values = arr.values_iter();
             let mut out = Vec::with_capacity(values.len() / 30);
             partition_to_groups_amortized_varsize(values, arr.len() as _, 0, false, 0, &mut out);
-            return Ok(GroupsType::Slice {
-                groups: out,
-                overlapping: false,
-            });
+            return Ok(GroupsType::new_slice(out, false, true));
         }
 
         multithreaded &= POOL.current_num_threads() > 1;
@@ -259,18 +262,12 @@ impl IntoGroupsType for BinaryOffsetChunked {
             let values = arr.values_iter();
             let mut out = Vec::with_capacity(values.len() / 30);
             partition_to_groups_amortized_varsize(values, arr.len() as _, 0, false, 0, &mut out);
-            return Ok(GroupsType::Slice {
-                groups: out,
-                overlapping: false,
-            });
+            return Ok(GroupsType::new_slice(out, false, true));
         } else if self.is_sorted_any() {
             let mut groups = Vec::new();
 
             let Some(y) = self.chunks().iter().position(|k| !k.as_ref().is_empty()) else {
-                return Ok(GroupsType::Slice {
-                    groups,
-                    overlapping: false,
-                });
+                return Ok(GroupsType::new_slice(groups, false, true));
             };
 
             let mut start_idx = 0;
@@ -302,10 +299,7 @@ impl IntoGroupsType for BinaryOffsetChunked {
             }
 
             groups.push([start_idx, i - start_idx]);
-            return Ok(GroupsType::Slice {
-                groups,
-                overlapping: false,
-            });
+            return Ok(GroupsType::new_slice(groups, false, true));
         }
 
         multithreaded &= POOL.current_num_threads() > 1;

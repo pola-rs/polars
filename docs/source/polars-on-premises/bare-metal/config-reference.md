@@ -1,6 +1,6 @@
 # Config file reference
 
-This page describes the different configuration options for polars-on-premise. The config file is a
+This page describes the different configuration options for polars-on-premises. The config file is a
 standard TOML file with different sections. Any of the configuration can be overridden using
 environment variables in the following format: `PC_CUBLET__section_name__key`.
 
@@ -10,7 +10,7 @@ environment variables in the following format: `PC_CUBLET__section_name__key`.
 | -------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `cluster_id`   | string          | Logical ID for the cluster; workers and scheduler that share this ID will form a single cluster.<br>e.g. `prod-eu-1`; must be unique among all clusters.      |
 | `cublet_id`    | string          | Unique ID for this node ("cublet") within the cluster, used for addressing and leader selection.<br>e.g. `scheduler`, `worker_0`; must be unique per cluster. |
-| `license`      | path            | Absolute path to the polars-on-premise license file required to start the process.<br>e.g. `/etc/polars/license.json`.                                        |
+| `license`      | path            | Absolute path to the polars-on-premises license file required to start the process.<br>e.g. `/etc/polars/license.json`.                                       |
 | `memory_limit` | integer (bytes) | Hard memory budget for all components in this cublet; enforced via cgroups when delegated.<br>e.g. `1073741824` (1 GiB), `10737418240` (10 GiB).              |
 
 ### `[scheduler]` section
@@ -35,9 +35,10 @@ environment variables in the following format: `PC_CUBLET__section_name__key`.
 
 ### `[observatory]` section
 
-| Key       | Type | Description                                                                                                                                                                         |
-| --------- | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `enabled` | bool | Enable sending/receiving profiling data so clients can call `result.await_profile()`.<br> `true` on both scheduler and workers if you want profiles on queries; `false` to disable. |
+| Key                       | Type | Description                                                                                                                                                                                                                                                           |
+| ------------------------- | ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`                 | bool | Enable sending/receiving profiling data so clients can call `result.await_profile()`.<br> `true` on both scheduler and workers if you want profiles on queries; `false` to disable.                                                                                   |
+| `max_metrics_bytes_total` | int  | How many bytes all the worker host metrics will consume in total. If a system-wide memory limit is specified then this is added to the share that the scheduler takes. Note that the worker host metrics is not yet available, so this configuration can be set to 0. |
 
 ### `[static_leader]` section
 

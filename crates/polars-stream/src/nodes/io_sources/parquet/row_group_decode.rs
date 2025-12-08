@@ -17,6 +17,7 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{IdxSize, UnitVec};
 
 use super::row_group_data_fetch::RowGroupData;
+use crate::async_executor::TaskPriority;
 use crate::async_primitives::opt_spawned_future::parallelize_first_to_local;
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
 
@@ -184,6 +185,7 @@ impl RowGroupDecoder {
             let filter = filter.clone();
 
             parallelize_first_to_local(
+                TaskPriority::Low,
                 (0..projected_arrow_fields.len())
                     .step_by(cols_per_thread)
                     .map(move |offset| {
@@ -309,15 +311,18 @@ async fn filter_cols(
         let cols = &cols;
         let mask = &mask;
 
-        parallelize_first_to_local((0..cols.len()).step_by(cols_per_thread).map(move |offset| {
-            let cols = cols.clone();
-            let mask = mask.clone();
-            async move {
-                (offset..offset.saturating_add(cols_per_thread).min(cols.len()))
-                    .map(|i| cols[i].filter(&mask))
-                    .collect::<PolarsResult<UnitVec<_>>>()
-            }
-        }))
+        parallelize_first_to_local(
+            TaskPriority::Low,
+            (0..cols.len()).step_by(cols_per_thread).map(move |offset| {
+                let cols = cols.clone();
+                let mask = mask.clone();
+                async move {
+                    (offset..offset.saturating_add(cols_per_thread).min(cols.len()))
+                        .map(|i| cols[i].filter(&mask))
+                        .collect::<PolarsResult<UnitVec<_>>>()
+                }
+            }),
+        )
     };
 
     for fut in task_handles {
@@ -436,6 +441,7 @@ impl RowGroupDecoder {
             let row_group_data = row_group_data.clone();
 
             parallelize_first_to_local(
+                TaskPriority::Low,
                 (0..self.predicate_field_indices.len())
                     .step_by(cols_per_thread)
                     .map(move |offset| {
@@ -571,37 +577,40 @@ impl RowGroupDecoder {
             let projected_arrow_fields = self.projected_arrow_fields.clone();
             let row_group_data = row_group_data.clone();
 
-            parallelize_first_to_local((0..non_predicate_len).step_by(cols_per_thread).map(
-                move |offset| {
-                    let row_group_data = row_group_data.clone();
-                    let non_predicate_field_indices = non_predicate_field_indices.clone();
-                    let projected_arrow_fields = projected_arrow_fields.clone();
-                    let mask = mask.clone();
-                    let mask_bitmap = mask_bitmap.clone();
+            parallelize_first_to_local(
+                TaskPriority::Low,
+                (0..non_predicate_len)
+                    .step_by(cols_per_thread)
+                    .map(move |offset| {
+                        let row_group_data = row_group_data.clone();
+                        let non_predicate_field_indices = non_predicate_field_indices.clone();
+                        let projected_arrow_fields = projected_arrow_fields.clone();
+                        let mask = mask.clone();
+                        let mask_bitmap = mask_bitmap.clone();
 
-                    async move {
-                        (offset
-                            ..offset
-                                .saturating_add(cols_per_thread)
-                                .min(non_predicate_len))
-                            .map(|i| {
-                                let projection =
-                                    &projected_arrow_fields[non_predicate_field_indices[i]];
+                        async move {
+                            (offset
+                                ..offset
+                                    .saturating_add(cols_per_thread)
+                                    .min(non_predicate_len))
+                                .map(|i| {
+                                    let projection =
+                                        &projected_arrow_fields[non_predicate_field_indices[i]];
 
-                                let col = decode_column_prefiltered(
-                                    projection.arrow_field(),
-                                    row_group_data.as_ref(),
-                                    &mask,
-                                    &mask_bitmap,
-                                    expected_num_rows,
-                                )?;
+                                    let col = decode_column_prefiltered(
+                                        projection.arrow_field(),
+                                        row_group_data.as_ref(),
+                                        &mask,
+                                        &mask_bitmap,
+                                        expected_num_rows,
+                                    )?;
 
-                                projection.apply_transform(col)
-                            })
-                            .collect::<PolarsResult<UnitVec<_>>>()
-                    }
-                },
-            ))
+                                    projection.apply_transform(col)
+                                })
+                                .collect::<PolarsResult<UnitVec<_>>>()
+                        }
+                    }),
+            )
         };
 
         let live_columns = live_df_filtered.take_columns();

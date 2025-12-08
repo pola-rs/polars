@@ -14,7 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:df]
 
     // --8<-- [start:unpivot]
-    let out = df.unpivot(["A", "B"], ["C", "D"])?;
+    let out = df.unpivot(Some(["A", "B"]), ["C", "D"])?;
     println!("{}", &out);
     // --8<-- [end:unpivot]
     Ok(())

@@ -634,12 +634,8 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                     "unpivot",
                     args.index.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
                     args.on.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
-                    args.variable_name
-                        .as_ref()
-                        .map_or_else(|| Ok(py.None()), |s| s.as_str().into_py_any(py))?,
-                    args.value_name
-                        .as_ref()
-                        .map_or_else(|| Ok(py.None()), |s| s.as_str().into_py_any(py))?,
+                    args.variable_name.as_str().into_py_any(py)?,
+                    args.value_name.as_str().into_py_any(py)?,
                 )
                     .into_py_any(py)?,
                 FunctionIR::RowIndex {

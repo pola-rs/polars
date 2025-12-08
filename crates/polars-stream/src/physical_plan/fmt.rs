@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use polars_plan::dsl::PartitionVariantIR;
+use polars_plan::dsl::{PartitionStrategyIR, PartitionVariantIR};
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, EscapeLabel};
 use polars_plan::prelude::FileType;
@@ -12,6 +12,7 @@ use polars_utils::slice_enum::Slice;
 use slotmap::{Key, SecondaryMap, SlotMap};
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind};
+use crate::physical_plan::ZipBehavior;
 
 /// A style of a graph node.
 enum NodeStyle {
@@ -302,6 +303,25 @@ fn visualize_plan_rec(
                 _ => todo!(),
             }
         },
+        PhysNodeKind::PartitionedSink2 { input, options } => {
+            let variant = match options.partition_strategy {
+                PartitionStrategyIR::Keyed { .. } => "partition-keyed",
+                PartitionStrategyIR::FileSize => "partition-file-size",
+            };
+
+            match options.file_format.as_ref() {
+                #[cfg(feature = "parquet")]
+                FileType::Parquet(_) => (format!("{variant}[parquet]"), from_ref(input)),
+                #[cfg(feature = "ipc")]
+                FileType::Ipc(_) => (format!("{variant}[ipc]"), from_ref(input)),
+                #[cfg(feature = "csv")]
+                FileType::Csv(_) => (format!("{variant}[csv]"), from_ref(input)),
+                #[cfg(feature = "json")]
+                FileType::Json(_) => (format!("{variant}[ndjson]"), from_ref(input)),
+                #[allow(unreachable_patterns)]
+                _ => todo!(),
+            }
+        },
         PhysNodeKind::InMemoryMap {
             input,
             map: _,
@@ -418,12 +438,12 @@ fn visualize_plan_rec(
         PhysNodeKind::OrderedUnion { inputs } => ("ordered-union".to_string(), inputs.as_slice()),
         PhysNodeKind::Zip {
             inputs,
-            null_extend,
+            zip_behavior,
         } => {
-            let label = if *null_extend {
-                "zip-null-extend"
-            } else {
-                "zip"
+            let label = match zip_behavior {
+                ZipBehavior::NullExtend => "zip-null-extend",
+                ZipBehavior::Broadcast => "zip-broadcast",
+                ZipBehavior::Strict => "zip-strict",
             };
             (label.to_string(), inputs.as_slice())
         },

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use num_traits::AsPrimitive;
 use parking_lot::Mutex;
 use polars_core::prelude::PlRandomState;
 use polars_core::schema::Schema;
@@ -11,7 +12,7 @@ use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_mem_engine::scan_predicate::create_scan_predicate;
-use polars_plan::dsl::{JoinOptionsIR, PartitionVariantIR, ScanSources};
+use polars_plan::dsl::{JoinOptionsIR, PartitionVariantIR, PartitionedSinkOptionsIR, ScanSources};
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, IR, IRAggExpr};
 use polars_plan::prelude::{FileType, FunctionFlags};
@@ -253,16 +254,21 @@ fn to_graph_rec<'a>(
             let mut inputs = Vec::with_capacity(reductions.len());
 
             for e in exprs {
-                let (red, input_node) = into_reduction(e.node(), ctx.expr_arena, input_schema)?;
+                let (red, input_nodes) = into_reduction(e.node(), ctx.expr_arena, input_schema)?;
                 reductions.push(red);
 
-                let input_phys = create_stream_expr(
-                    &ExprIR::from_node(input_node, ctx.expr_arena),
-                    ctx,
-                    input_schema,
-                )?;
+                let input_phys_exprs = input_nodes
+                    .iter()
+                    .map(|node| {
+                        create_stream_expr(
+                            &ExprIR::from_node(*node, ctx.expr_arena),
+                            ctx,
+                            input_schema,
+                        )
+                    })
+                    .try_collect_vec()?;
 
-                inputs.push(input_phys)
+                inputs.push(input_phys_exprs)
             }
 
             ctx.graph.add_node(
@@ -370,6 +376,27 @@ fn to_graph_rec<'a>(
                     panic!("activate source feature")
                 },
             }
+        },
+
+        #[expect(unused)]
+        PartitionedSink2 {
+            input,
+            options:
+                PartitionedSinkOptionsIR {
+                    base_path,
+                    file_path_provider,
+                    partition_strategy,
+                    finish_callback: _,
+                    file_format,
+                    unified_sink_args,
+                    max_rows_per_file,
+                    approximate_bytes_per_file,
+                },
+        } => {
+            let input_schema = ctx.phys_sm[input.node].output_schema.clone();
+            let input_key = to_graph_rec(input.node, ctx)?;
+
+            todo!();
         },
 
         PartitionedSink {
@@ -659,7 +686,7 @@ fn to_graph_rec<'a>(
 
         Zip {
             inputs,
-            null_extend,
+            zip_behavior,
         } => {
             let input_schemas = inputs
                 .iter()
@@ -670,7 +697,7 @@ fn to_graph_rec<'a>(
                 .map(|i| PolarsResult::Ok((to_graph_rec(i.node, ctx)?, i.port)))
                 .try_collect_vec()?;
             ctx.graph.add_node(
-                nodes::zip::ZipNode::new(*null_extend, input_schemas),
+                nodes::zip::ZipNode::new(*zip_behavior, input_schemas),
                 input_keys,
             )
         },
@@ -795,13 +822,19 @@ fn to_graph_rec<'a>(
                             | IRAggExpr::LastNonNull(_)
                     )
                 );
-                let (reduction, input_node) =
+                let (reduction, input_nodes) =
                     into_reduction(agg.node(), ctx.expr_arena, input_schema)?;
-                let AExpr::Column(col) = ctx.expr_arena.get(input_node) else {
-                    unreachable!()
-                };
+                let cols = input_nodes
+                    .iter()
+                    .map(|node| {
+                        let AExpr::Column(col) = ctx.expr_arena.get(*node) else {
+                            unreachable!()
+                        };
+                        col.clone()
+                    })
+                    .collect();
                 grouped_reductions.push(reduction);
-                grouped_reduction_cols.push(col.clone());
+                grouped_reduction_cols.push(cols);
             }
 
             ctx.graph.add_node(
@@ -1311,7 +1344,7 @@ fn to_graph_rec<'a>(
                 EwmMean { .. } => {
                     with_match_physical_float_type!(dtype, |$T| {
                         let state: EwmMeanState<$T> = EwmMeanState::new(
-                            options.alpha as $T,
+                            AsPrimitive::<$T>::as_(options.alpha),
                             options.adjust,
                             options.min_periods,
                             options.ignore_nulls,
@@ -1322,7 +1355,7 @@ fn to_graph_rec<'a>(
                 },
                 _ => with_match_physical_float_type!(dtype, |$T| {
                     let state: EwmCovState<$T> = EwmCovState::new(
-                        options.alpha as $T,
+                        AsPrimitive::<$T>::as_(options.alpha),
                         options.adjust,
                         options.bias,
                         options.min_periods,

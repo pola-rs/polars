@@ -2,6 +2,9 @@
 use std::any::Any;
 use std::sync::OnceLock;
 
+use arrow::array::Array;
+use polars::chunked_array::object::ObjectArray;
+use polars::prelude::sink2::FileProviderReturn;
 use polars::prelude::*;
 use polars_core::chunked_array::object::builder::ObjectChunkedBuilder;
 use polars_core::chunked_array::object::registry::AnonymousObjectBuilder;
@@ -128,6 +131,10 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
             let object = Python::attach(|py| Wrap(av).into_py_any(py).unwrap());
             Box::new(object) as Box<dyn Any>
         });
+        fn object_array_getter(arr: &dyn Array, idx: usize) -> Option<AnyValue<'_>> {
+            let arr = arr.as_any().downcast_ref::<ObjectArray<ObjectValue>>().unwrap();
+            arr.get(idx).map(|v| AnyValue::Object(v))
+        }
 
         polars_utils::python_convert_registry::register_converters(PythonConvertRegistry {
             from_py: FromPythonConvertRegistry {
@@ -139,6 +146,11 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
                             )?
                             .0,
                         ) as _)
+                    })
+                }),
+                file_provider_result: Arc::new(|py_f| {
+                    Python::attach(|py| {
+                        Ok(Box::new(py_f.extract::<Wrap<FileProviderReturn>>(py)?.0) as _)
                     })
                 }),
                 series: Arc::new(|py_f| {
@@ -212,6 +224,7 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
             object_converter,
             pyobject_converter,
             physical_dtype,
+            Arc::new(object_array_getter)
         );
 
         use crate::dataset::dataset_provider_funcs;

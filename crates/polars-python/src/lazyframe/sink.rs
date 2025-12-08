@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex};
 
+use polars::prelude::sink2::FileProviderReturn;
 use polars::prelude::sync_on_close::SyncOnCloseType;
 use polars::prelude::{PartitionTargetCallbackResult, PlPath, SpecialEq};
 use pyo3::exceptions::PyValueError;
@@ -55,6 +56,26 @@ impl<'py> FromPyObject<'py> for Wrap<PartitionTargetCallbackResult> {
                     Mutex::new(Some(writer)),
                 ))),
             ))
+        }
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<FileProviderReturn> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        if let Ok(v) = ob.extract::<PyBackedStr>() {
+            Ok(Wrap(FileProviderReturn::Path(v.to_string())))
+        } else if let Ok(v) = ob.extract::<std::path::PathBuf>() {
+            Ok(Wrap(FileProviderReturn::Path(
+                v.to_str().unwrap().to_string(),
+            )))
+        } else {
+            let py = ob.py();
+
+            let writeable = crate::file::try_get_pyfile(py, ob.clone(), true)?
+                .0
+                .into_writeable();
+
+            Ok(Wrap(FileProviderReturn::Writeable(writeable)))
         }
     }
 }

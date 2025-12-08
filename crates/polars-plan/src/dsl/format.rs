@@ -2,6 +2,27 @@ use std::fmt::{self, Write};
 
 use crate::prelude::*;
 
+/// Wrapper for formatting expressions with comma-separated arguments; also
+/// streamlines column refs to their quoted names (e.g.: `col("x") -> "x").
+struct FmtArgs<'a>(&'a [Expr]);
+
+impl fmt::Display for FmtArgs<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (i, expr) in self.0.iter().enumerate() {
+            if i > 0 {
+                f.write_str(", ")?;
+            }
+            match expr {
+                // unpack column to name...
+                Expr::Column(name) => write!(f, "\"{name}\"")?,
+                // ...leaving other expressions as-is
+                other => write!(f, "{other:?}")?,
+            }
+        }
+        Ok(())
+    }
+}
+
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(self, f)
@@ -171,10 +192,15 @@ impl fmt::Debug for Expr {
                 ".when({predicate:?}).then({truthy:?}).otherwise({falsy:?})",
             ),
             Function { input, function } => {
-                if input.len() >= 2 {
-                    write!(f, "{:?}.{function}({:?})", input[0], &input[1..])
-                } else {
-                    write!(f, "{:?}.{function}()", input[0])
+                #[cfg(feature = "dtype-struct")]
+                if matches!(function, FunctionExpr::AsStruct) {
+                    return write!(f, "as_struct({})", FmtArgs(input));
+                }
+
+                match input.len() {
+                    0 => write!(f, "{function}()"),
+                    1 => write!(f, "{:?}.{function}()", input[0]),
+                    _ => write!(f, "{:?}.{function}({:?})", input[0], &input[1..]),
                 }
             },
             AnonymousFunction {
@@ -188,10 +214,10 @@ impl fmt::Debug for Expr {
                     _ => fmt_str.as_str(),
                 };
 
-                if input.len() >= 2 {
-                    write!(f, "{:?}.{}({:?})", input[0], name, &input[1..])
-                } else {
-                    write!(f, "{:?}.{}()", input[0], name)
+                match input.len() {
+                    0 => write!(f, "{name}()"),
+                    1 => write!(f, "{:?}.{name}()", input[0]),
+                    _ => write!(f, "{:?}.{name}({:?})", input[0], &input[1..]),
                 }
             },
             Eval {

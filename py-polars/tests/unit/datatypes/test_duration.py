@@ -5,7 +5,7 @@ from functools import partial
 from typing import TYPE_CHECKING, Any, Callable
 
 import pytest
-from hypothesis import given
+from hypothesis import assume, given
 
 import polars as pl
 from polars._utils.constants import I64_MAX, I64_MIN
@@ -288,6 +288,9 @@ def test_duration_float_types_series_11625(
     digit_scale: int,
     s: pl.Series,
 ) -> None:
+    # Float16 does not have enough exponent bits to represent 1_000_000
+    assume(not (s.dtype == pl.Float16 and time_unit == "ms"))
+
     # Exclude cases that could potentially overflow Int64
     s = s.clip(
         0.95 * I64_MIN / digit_scale / time_unit_scale,

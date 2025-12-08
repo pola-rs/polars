@@ -27,8 +27,8 @@ impl FixedSizeBinaryArray {
     ///
     /// # Errors
     /// This function returns an error iff:
-    /// * The `dtype`'s physical type is not [`crate::datatypes::PhysicalType::FixedSizeBinary`]
-    /// * The length of `values` is not a multiple of `size` in `dtype`
+    /// * The `dtype`'s logical type is not in [`FixedSizeBinary`, `Float16`], or
+    /// * The length of `values` is not a multiple of `size` in `dtype`, or
     /// * the validity's length is not equal to `values.len() / size`.
     pub fn try_new(
         dtype: ArrowDataType,
@@ -208,6 +208,7 @@ impl FixedSizeBinaryArray {
 impl FixedSizeBinaryArray {
     pub(crate) fn maybe_get_size(dtype: &ArrowDataType) -> PolarsResult<usize> {
         match dtype.to_logical_type() {
+            ArrowDataType::Float16 => Ok(2),
             ArrowDataType::FixedSizeBinary(size) => {
                 polars_ensure!(*size != 0, ComputeError: "FixedSizeBinaryArray expects a positive size");
                 Ok(*size)

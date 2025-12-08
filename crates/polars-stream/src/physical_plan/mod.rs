@@ -11,8 +11,8 @@ use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
     CastColumnsPolicy, JoinTypeOptionsIR, MissingColumnsPolicy, PartitionTargetCallback,
-    PartitionVariantIR, ScanSources, SinkFinishCallback, SinkOptions, SinkTarget, SortColumnIR,
-    TableStatistics,
+    PartitionVariantIR, PartitionedSinkOptionsIR, ScanSources, SinkFinishCallback, SinkOptions,
+    SinkTarget, SortColumnIR, TableStatistics,
 };
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::{AExpr, DataFrameUdf, IR};
@@ -92,6 +92,26 @@ impl PhysStream {
     pub fn first(node: PhysNodeKey) -> Self {
         Self { node, port: 0 }
     }
+}
+
+/// Behaviour when handling multiple DataFrames with different heights.
+
+#[derive(Clone, Debug, Copy)]
+#[cfg_attr(
+    feature = "physical_plan_visualization",
+    derive(serde::Serialize, serde::Deserialize)
+)]
+#[cfg_attr(
+    feature = "physical_plan_visualization_schema",
+    derive(schemars::JsonSchema)
+)]
+pub enum ZipBehavior {
+    /// Fill the shorter DataFrames with nulls to the height of the longest DataFrame.
+    NullExtend,
+    /// All inputs must be the same height, or have length 1 in which case they are broadcast.
+    Broadcast,
+    /// Raise an error if the DataFrames have different heights.
+    Strict,
 }
 
 #[derive(Clone, Debug)]
@@ -190,6 +210,11 @@ pub enum PhysNodeKind {
         finish_callback: Option<SinkFinishCallback>,
     },
 
+    PartitionedSink2 {
+        input: PhysStream,
+        options: PartitionedSinkOptionsIR,
+    },
+
     SinkMultiple {
         sinks: Vec<PhysNodeKey>,
     },
@@ -265,10 +290,7 @@ pub enum PhysNodeKind {
 
     Zip {
         inputs: Vec<PhysStream>,
-        /// If true shorter inputs are extended with nulls to the longest input,
-        /// if false all inputs must be the same length, or have length 1 in
-        /// which case they are broadcast.
-        null_extend: bool,
+        zip_behavior: ZipBehavior,
     },
 
     #[allow(unused)]
@@ -430,6 +452,7 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::CallbackSink { input, .. }
             | PhysNodeKind::FileSink { input, .. }
             | PhysNodeKind::PartitionedSink { input, .. }
+            | PhysNodeKind::PartitionedSink2 { input, .. }
             | PhysNodeKind::InMemoryMap { input, .. }
             | PhysNodeKind::SortedGroupBy { input, .. }
             | PhysNodeKind::Map { input, .. }

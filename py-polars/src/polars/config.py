@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, TypedDict, get_args
+from typing import TYPE_CHECKING, Final, Literal, TypedDict, get_args
 
 from polars._dependencies import json
 from polars._typing import EngineType
@@ -58,7 +58,7 @@ TableFormatNames: TypeAlias = Literal[
 # note: register all Config-specific environment variable names here; need to constrain
 # which 'POLARS_' environment variables are recognized, as there are other lower-level
 # and/or unstable settings that should not be saved or reset with the Config vars.
-_POLARS_CFG_ENV_VARS = {
+_POLARS_CFG_ENV_VARS: Final[set[str]] = {
     "POLARS_WARN_UNSTABLE",
     "POLARS_FMT_MAX_COLS",
     "POLARS_FMT_MAX_ROWS",
@@ -681,8 +681,9 @@ class Config(contextlib.ContextDecorator):
         the limitations of floating point representations, and of the precision of the
         data that you are looking at.
 
-        This setting only applies to Float32 and Float64 dtypes; it does not cover
-        Decimal dtype values (which are displayed at their native level of precision).
+        This setting only applies to :class:`.Float16`, :class:`.Float32`, and
+        :class:`.Float64` dtypes; it does not cover :class:`.Decimal` dtype values
+        (which are displayed at their native level of precision).
 
         Examples
         --------

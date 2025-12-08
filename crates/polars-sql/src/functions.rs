@@ -717,6 +717,18 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT LAST_VALUE(col1) OVER (PARTITION BY category ORDER BY id) FROM df;
     /// ```
     LastValue,
+    /// SQL 'lag' function.
+    /// Returns the value of the expression evaluated at the row n rows before the current row.
+    /// ```sql
+    /// SELECT lag(column_1, 1) OVER (PARTITION BY column_2 ORDER BY column_3) FROM df;
+    /// ```
+    Lag,
+    /// SQL 'lead' function.
+    /// Returns the value of the expression evaluated at the row n rows after the current row.
+    /// ```sql
+    /// SELECT lead(column_1, 1) OVER (PARTITION BY column_2 ORDER BY column_3) FROM df;
+    /// ```
+    Lead,
     /// SQL 'row_number' function.
     /// Returns the sequential row number within a window partition, starting from 1.
     /// ```sql
@@ -1019,6 +1031,8 @@ impl PolarsSQLFunctions {
             "dense_rank" => Self::DenseRank,
             "first_value" => Self::FirstValue,
             "last_value" => Self::LastValue,
+            "lag" => Self::Lag,
+            "lead" => Self::Lead,
             #[cfg(feature = "rank")]
             "rank" => Self::Rank,
             "row_number" => Self::RowNumber,
@@ -1593,7 +1607,7 @@ impl SQLFunctionVisitor<'_> {
             ArrayReverse => self.visit_unary(|e| e.list().reverse()),
             ArraySum => self.visit_unary(|e| e.list().sum()),
             ArrayToString => self.visit_arr_to_string(),
-            ArrayUnique => self.visit_unary(|e| e.list().unique()),
+            ArrayUnique => self.visit_unary(|e| e.list().unique_stable()),
             Explode => self.visit_unary(|e| {
                 e.explode(ExplodeOptions {
                     empty_as_null: true,
@@ -1662,6 +1676,8 @@ impl SQLFunctionVisitor<'_> {
                     ),
                 }
             },
+            Lag => self.visit_window_offset_function(1),
+            Lead => self.visit_window_offset_function(-1),
             #[cfg(feature = "rank")]
             Rank | DenseRank => {
                 let (func_name, rank_method) = match function_name {
@@ -1715,6 +1731,42 @@ impl SQLFunctionVisitor<'_> {
             // ----
             Udf(func_name) => self.visit_udf(&func_name),
         }
+    }
+
+    fn visit_window_offset_function(&mut self, offset_multiplier: i64) -> PolarsResult<Expr> {
+        // LAG/LEAD require an OVER clause
+        if self.func.over.is_none() {
+            polars_bail!(SQLSyntax: "{} requires an OVER clause", self.func.name);
+        }
+
+        // LAG/LEAD require ORDER BY in the OVER clause
+        let window_type = self.func.over.as_ref().unwrap();
+        let window_spec = self.resolve_window_spec(window_type)?;
+        if window_spec.order_by.is_empty() {
+            polars_bail!(SQLSyntax: "{} requires an ORDER BY in the OVER clause", self.func.name);
+        }
+
+        let args = extract_args(self.func)?;
+
+        match args.as_slice() {
+            [FunctionArgExpr::Expr(sql_expr)] => {
+                let expr = parse_sql_expr(sql_expr, self.ctx, self.active_schema)?;
+                Ok(expr.shift(offset_multiplier.into()))
+            },
+            [FunctionArgExpr::Expr(sql_expr), FunctionArgExpr::Expr(offset_expr)] => {
+                let expr = parse_sql_expr(sql_expr, self.ctx, self.active_schema)?;
+                let offset = parse_sql_expr(offset_expr, self.ctx, self.active_schema)?;
+                if let Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) = offset {
+                    if n <= 0 {
+                        polars_bail!(SQLSyntax: "offset must be positive (found {})", n)
+                    }
+                    Ok(expr.shift((offset_multiplier * n as i64).into()))
+                } else {
+                    polars_bail!(SQLSyntax: "offset must be an integer (found {:?})", offset)
+                }
+            },
+            _ => polars_bail!(SQLSyntax: "{} expects 1 or 2 arguments (found {})", self.func.name, args.len()),
+        }.and_then(|e| self.apply_window_spec(e, &self.func.over))
     }
 
     fn visit_udf(&mut self, func_name: &str) -> PolarsResult<Expr> {
@@ -1996,29 +2048,41 @@ impl SQLFunctionVisitor<'_> {
         match args.as_slice() {
             [FunctionArgExpr::Expr(sql_expr)] => {
                 let mut base = parse_sql_expr(sql_expr, self.ctx, self.active_schema)?;
-                if is_distinct {
-                    base = base.unique_stable();
-                }
-                for clause in clauses {
+                let mut order_by_clause = None;
+                let mut limit_clause = None;
+                for clause in &clauses {
                     match clause {
                         FunctionArgumentClause::OrderBy(order_exprs) => {
-                            base = self.apply_order_by(base, order_exprs.as_slice())?;
+                            order_by_clause = Some(order_exprs.as_slice());
                         },
                         FunctionArgumentClause::Limit(limit_expr) => {
-                            let limit = parse_sql_expr(&limit_expr, self.ctx, self.active_schema)?;
-                            match limit {
-                                Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n)))
-                                    if n >= 0 =>
-                                {
-                                    base = base.head(Some(n as usize))
-                                },
-                                _ => {
-                                    polars_bail!(SQLSyntax: "LIMIT in ARRAY_AGG must be a positive integer")
-                                },
-                            };
+                            limit_clause = Some(limit_expr);
                         },
                         _ => {},
                     }
+                }
+                if !is_distinct {
+                    // No DISTINCT: apply ORDER BY normally
+                    if let Some(order_by) = order_by_clause {
+                        base = self.apply_order_by(base, order_by)?;
+                    }
+                } else {
+                    // DISTINCT: apply unique, then sort the result
+                    base = base.unique_stable();
+                    if let Some(order_by) = order_by_clause {
+                        base = self.apply_order_by_to_distinct_array(base, order_by, sql_expr)?;
+                    }
+                }
+                if let Some(limit_expr) = limit_clause {
+                    let limit = parse_sql_expr(limit_expr, self.ctx, self.active_schema)?;
+                    match limit {
+                        Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) if n >= 0 => {
+                            base = base.head(Some(n as usize))
+                        },
+                        _ => {
+                            polars_bail!(SQLSyntax: "LIMIT in ARRAY_AGG must be a positive integer")
+                        },
+                    };
                 }
                 Ok(base.implode())
             },
@@ -2146,6 +2210,27 @@ impl SQLFunctionVisitor<'_> {
                 .with_nulls_last_multi(nulls_last)
                 .with_maintain_order(true),
         ))
+    }
+
+    fn apply_order_by_to_distinct_array(
+        &mut self,
+        expr: Expr,
+        order_by: &[OrderByExpr],
+        base_sql_expr: &SQLExpr,
+    ) -> PolarsResult<Expr> {
+        // If ORDER BY references the base expression, use .sort() directly
+        if order_by.len() == 1 && order_by[0].expr == *base_sql_expr {
+            let desc_order = !order_by[0].asc.unwrap_or(true);
+            let nulls_last = !order_by[0].nulls_first.unwrap_or(desc_order);
+            return Ok(expr.sort(
+                SortOptions::default()
+                    .with_order_descending(desc_order)
+                    .with_nulls_last(nulls_last)
+                    .with_maintain_order(true),
+            ));
+        }
+        // Otherwise, fall back to `sort_by` (may need to handle further edge-cases later)
+        self.apply_order_by(expr, order_by)
     }
 
     /// Parse ORDER BY (in OVER clause), validating uniform direction.

@@ -1,7 +1,5 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
-#[cfg(feature = "object")]
-use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
 use crate::utils::index_to_chunked_index;
@@ -45,6 +43,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         DataType::Int32 => downcast_and_pack!(Int32Array, Int32),
         DataType::Int64 => downcast_and_pack!(Int64Array, Int64),
         DataType::Int128 => downcast_and_pack!(Int128Array, Int128),
+        DataType::Float16 => downcast_and_pack!(Float16Array, Float16),
         DataType::Float32 => downcast_and_pack!(Float32Array, Float32),
         DataType::Float64 => downcast_and_pack!(Float64Array, Float64),
         DataType::List(dt) => {
@@ -137,10 +136,8 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         DataType::Extension(typ, storage) => arr_to_any_value(arr, idx, storage),
         #[cfg(feature = "object")]
         DataType::Object(_) => {
-            // We should almost never hit this. The only known exception is when we put objects in
-            // structs. Any other hit should be considered a bug.
-            let arr = arr.as_any().downcast_ref::<FixedSizeBinaryArray>().unwrap();
-            PolarsExtension::arr_to_av(arr, idx)
+            use crate::chunked_array::object::registry::get_object_array_getter;
+            get_object_array_getter()(arr, idx).unwrap()
         },
         DataType::Null => AnyValue::Null,
         DataType::BinaryOffset => downcast_and_pack!(LargeBinaryArray, Binary),

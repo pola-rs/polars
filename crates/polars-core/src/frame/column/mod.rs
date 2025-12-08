@@ -292,6 +292,10 @@ impl Column {
     pub fn try_u128(&self) -> Option<&UInt128Chunked> {
         self.as_materialized_series().try_u128()
     }
+    #[cfg(feature = "dtype-f16")]
+    pub fn try_f16(&self) -> Option<&Float16Chunked> {
+        self.as_materialized_series().try_f16()
+    }
     pub fn try_f32(&self) -> Option<&Float32Chunked> {
         self.as_materialized_series().try_f32()
     }
@@ -389,6 +393,10 @@ impl Column {
     #[cfg(feature = "dtype-u128")]
     pub fn u128(&self) -> PolarsResult<&UInt128Chunked> {
         self.as_materialized_series().u128()
+    }
+    #[cfg(feature = "dtype-f16")]
+    pub fn f16(&self) -> PolarsResult<&Float16Chunked> {
+        self.as_materialized_series().f16()
     }
     pub fn f32(&self) -> PolarsResult<&Float32Chunked> {
         self.as_materialized_series().f32()
@@ -678,11 +686,8 @@ impl Column {
                 // 2. whether this aggregation is even defined
                 let series_aggregation = series_agg(
                     &s.as_single_value_series(),
-                    &GroupsType::Slice {
-                        // @NOTE: this group is always valid since s is non-empty.
-                        groups: vec![[0, 1]],
-                        overlapping: false,
-                    },
+                    // @NOTE: this group is always valid since s is non-empty.
+                    &GroupsType::new_slice(vec![[0, 1]], false, true),
                 );
 
                 // If the aggregation is not defined, just return all nulls.

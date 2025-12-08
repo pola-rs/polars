@@ -6,6 +6,8 @@ use polars_ops::prelude::{JoinCoalesce, JoinValidation};
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
+use crate::physical_plan::ZipBehavior;
+
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 #[cfg_attr(
     feature = "physical_plan_visualization_schema",
@@ -267,7 +269,7 @@ pub enum PhysNodeProperties {
     },
     Zip {
         num_inputs: u64,
-        null_extend: bool,
+        zip_behavior: ZipBehavior,
     },
     //
     // Feature gated

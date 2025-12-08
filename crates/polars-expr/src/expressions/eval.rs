@@ -9,8 +9,8 @@ use polars_core::frame::DataFrame;
 #[cfg(feature = "dtype-array")]
 use polars_core::prelude::ArrayChunked;
 use polars_core::prelude::{
-    ChunkCast, ChunkExplode, Column, Field, GroupPositions, GroupsType, IdxCa, IntoColumn,
-    ListBuilderTrait, ListChunked,
+    ChunkCast, ChunkExplode, ChunkNestingUtils, Column, Field, GroupPositions, GroupsType, IdxCa,
+    IntoColumn, ListBuilderTrait, ListChunked,
 };
 use polars_core::schema::Schema;
 use polars_core::series::Series;
@@ -67,6 +67,9 @@ impl EvalExpr {
         is_agg: bool,
     ) -> PolarsResult<Column> {
         let df = DataFrame::empty();
+        let ca = ca
+            .trim_lists_to_normalized_offsets()
+            .map_or(Cow::Borrowed(ca), Cow::Owned);
 
         // Fast path: Empty or only nulls.
         if ca.null_count() == ca.len() {
@@ -102,6 +105,8 @@ impl EvalExpr {
         }
 
         let offsets = ca.offsets()?;
+        // Detect accidental inclusion of sliced-out elements from chunks after the 1st (if present).
+        assert_eq!(i64::try_from(flattened_len).unwrap(), *offsets.last());
 
         // Create groups for all valid array elements.
         let groups = if ca.has_nulls() {
@@ -119,10 +124,7 @@ impl EvalExpr {
                 .map(|(offset, length)| [offset as IdxSize, length as IdxSize])
                 .collect()
         };
-        let groups = GroupsType::Slice {
-            groups,
-            overlapping: false,
-        };
+        let groups = GroupsType::new_slice(groups, false, true);
         let groups = Cow::Owned(groups.into_sliceable());
 
         let mut state = state.clone();
@@ -196,6 +198,9 @@ impl EvalExpr {
         is_agg: bool,
     ) -> PolarsResult<Column> {
         let df = DataFrame::empty();
+        let ca = ca
+            .trim_lists_to_normalized_offsets()
+            .map_or(Cow::Borrowed(ca), Cow::Owned);
 
         // Fast path: Empty or only nulls.
         if ca.null_count() == ca.len() {
@@ -242,6 +247,8 @@ impl EvalExpr {
             });
         }
 
+        assert_eq!(flattened_len, ca.width() * ca.len());
+
         // Create groups for all valid array elements.
         let groups = if ca.has_nulls() {
             let validity = validity.as_ref().unwrap();
@@ -254,10 +261,7 @@ impl EvalExpr {
                 .map(|i| [(i * ca.width()) as IdxSize, ca.width() as IdxSize])
                 .collect()
         };
-        let groups = GroupsType::Slice {
-            groups,
-            overlapping: false,
-        };
+        let groups = GroupsType::new_slice(groups, false, true);
         let groups = Cow::Owned(groups.into_sliceable());
 
         let mut state = state.clone();
@@ -380,10 +384,7 @@ impl EvalExpr {
             out
         };
 
-        let groups = GroupsType::Slice {
-            groups,
-            overlapping: true,
-        };
+        let groups = GroupsType::new_slice(groups, true, true);
 
         let groups = groups.into_sliceable();
 

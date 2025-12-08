@@ -3,8 +3,9 @@ use std::borrow::Cow;
 use arrow::array::Array;
 use arrow::bitmap::BitmapBuilder;
 use arrow::types::NativeType;
+use num_traits::AsPrimitive;
 use numpy::{Element, PyArray1, PyArrayMethods, PyUntypedArrayMethods};
-use polars_core::prelude::*;
+use polars::prelude::*;
 use polars_core::utils::CustomIterTools;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -65,6 +66,28 @@ impl PySeries {
         let data_len = array.len();
         let vals = unsafe { core::slice::from_raw_parts(data_ptr, data_len) };
         py.enter_polars_series(|| Series::new(name.into(), vals).cast(&DataType::Boolean))
+    }
+
+    #[staticmethod]
+    fn new_f16(
+        py: Python<'_>,
+        name: &str,
+        array: &Bound<PyArray1<pf16>>,
+        nan_is_null: bool,
+    ) -> PyResult<Self> {
+        if nan_is_null {
+            let array = array.readonly();
+            let vals = array.as_slice().unwrap();
+            py.enter_polars_series(|| {
+                let ca: Float16Chunked = vals
+                    .iter()
+                    .map(|&val| if pf16::is_nan(val) { None } else { Some(val) })
+                    .collect_trusted();
+                Ok(ca.with_name(name.into()))
+            })
+        } else {
+            Ok(mmap_numpy_array(name, array))
+        }
     }
 
     #[staticmethod]
@@ -135,14 +158,15 @@ impl PySeries {
     }
 }
 
-fn new_primitive<'py, T>(
+fn new_primitive<'py, T, F>(
     name: &str,
     values: &Bound<'py, PyAny>,
     _strict: bool,
+    extract: F,
 ) -> PyResult<PySeries>
 where
     T: PolarsNumericType,
-    T::Native: FromPyObject<'py>,
+    F: Fn(Bound<'py, PyAny>) -> PyResult<T::Native>,
 {
     let len = values.len()?;
     let mut builder = PrimitiveChunkedBuilder::<T>::new(name.into(), len);
@@ -152,7 +176,7 @@ where
         if value.is_none() {
             builder.append_null()
         } else {
-            let v = value.extract::<T::Native>()?;
+            let v = extract(value)?;
             builder.append_value(v)
         }
     }
@@ -169,7 +193,7 @@ macro_rules! init_method_opt {
         impl PySeries {
             #[staticmethod]
             fn $name(name: &str, obj: &Bound<PyAny>, strict: bool) -> PyResult<Self> {
-                new_primitive::<$type>(name, obj, strict)
+                new_primitive::<$type, _>(name, obj, strict, |v| v.extract::<$native>())
             }
         }
     };
@@ -187,6 +211,16 @@ init_method_opt!(new_opt_i64, Int64Type, i64);
 init_method_opt!(new_opt_i128, Int128Type, i128);
 init_method_opt!(new_opt_f32, Float32Type, f32);
 init_method_opt!(new_opt_f64, Float64Type, f64);
+
+#[pymethods]
+impl PySeries {
+    #[staticmethod]
+    fn new_opt_f16(name: &str, values: &Bound<PyAny>, _strict: bool) -> PyResult<Self> {
+        new_primitive::<Float16Type, _>(name, values, false, |v| {
+            Ok(AsPrimitive::<pf16>::as_(v.extract::<f64>()?))
+        })
+    }
+}
 
 fn convert_to_avs(
     values: &Bound<'_, PyAny>,
