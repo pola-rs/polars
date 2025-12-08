@@ -257,8 +257,10 @@ fn pop_mergable(
     }
 
     // TODO: [amber] LEFT HERE
-    // I think the first next step is to move this function into the MergeJoinNode impl.
-    // Then you can either start handling nulls, or implement the different kinds of joins.
+    // Start handling nulls, or implement the different kinds of joins.
+    // Right join can be done by swapping left and right inputs to this function.
+    // But I would really like to do that in lowering instead of putting a bunch
+    // of bookkeeping code here.
 
     // TODO: [amber] Eat all the None keys at the front
 
