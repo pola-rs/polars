@@ -174,8 +174,10 @@ impl AsRef<Schema> for PySchema {
     }
 }
 
-impl<'a> FromPyObject<'a> for PySeries {
-    fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for PySeries {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let ob = ob.call_method0("rechunk")?;
 
         let name = ob.getattr("name")?;
@@ -205,8 +207,10 @@ impl<'a> FromPyObject<'a> for PySeries {
     }
 }
 
-impl<'a> FromPyObject<'a> for PyDataFrame {
-    fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for PyDataFrame {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let series = ob.call_method0("get_columns")?;
         let n = ob.getattr("width")?.extract::<usize>()?;
         let mut columns = Vec::with_capacity(n);
@@ -224,8 +228,10 @@ impl<'a> FromPyObject<'a> for PyDataFrame {
 }
 
 #[cfg(feature = "lazy")]
-impl<'a> FromPyObject<'a> for PyLazyFrame {
-    fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for PyLazyFrame {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let s = ob.call_method0("__getstate__")?;
         let b = s.extract::<Bound<'_, PyBytes>>()?;
         let b = b.as_bytes();
@@ -241,8 +247,10 @@ impl<'a> FromPyObject<'a> for PyLazyFrame {
 }
 
 #[cfg(feature = "lazy")]
-impl<'a> FromPyObject<'a> for PyExpr {
-    fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for PyExpr {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let s = ob.call_method0("__getstate__")?.extract::<Vec<u8>>()?;
 
         let e: Expr = pl_serialize::SerializeOptions::default()
