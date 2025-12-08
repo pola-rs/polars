@@ -22,6 +22,7 @@ pub fn create_file_writer_starter(
         FileType::Parquet(options) => {
             use polars_core::prelude::CompatLevel;
             use polars_io::schema_to_arrow_checked;
+            use polars_utils::IdxSize;
 
             use crate::nodes::io_sinks2::writers::parquet::ParquetWriterStarter;
 
@@ -37,6 +38,9 @@ pub fn create_file_writer_starter(
                 initialized_state: Default::default(),
                 pipeline_depth,
                 sync_on_close,
+                row_group_size: options
+                    .row_group_size
+                    .map(|x| IdxSize::try_from(x).unwrap()),
             }) as _
         },
         _ => unimplemented!(),
