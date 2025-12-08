@@ -101,8 +101,7 @@ pub fn start_partition_sink_pipeline(
 
     let (partitioned_dfs_tx, partitioned_dfs_rx) = tokio::sync::mpsc::channel(match &partitioner {
         Partitioner::Keyed(_) => inflight_morsel_limit,
-        // Doesn't actually do any work
-        Partitioner::FileSize => inflight_morsel_limit.min(2),
+        Partitioner::FileSize => 1,
     });
     let inflight_morsel_semaphore = Arc::new(tokio::sync::Semaphore::new(inflight_morsel_limit));
     let no_partition_keys = matches!(partitioner, Partitioner::FileSize);
