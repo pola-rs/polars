@@ -1,8 +1,8 @@
-use polars::prelude::ColumnMapping;
 #[cfg(feature = "iejoin")]
 use polars::prelude::JoinTypeOptionsIR;
 use polars::prelude::deletion::DeletionFilesList;
 use polars::prelude::python_dsl::PythonScanSource;
+use polars::prelude::{ColumnMapping, PredicateFileSkip};
 use polars_core::prelude::IdxSize;
 use polars_io::cloud::CloudOptions;
 use polars_ops::prelude::JoinType;
@@ -430,7 +430,15 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                 file_info: py.None(),
                 predicate: predicate
                     .as_ref()
-                    .filter(|_| *predicate_file_skip_applied != Some(true))
+                    .filter(|_| {
+                        !matches!(
+                            predicate_file_skip_applied,
+                            Some(PredicateFileSkip {
+                                has_residual_predicate: false,
+                                ..
+                            })
+                        )
+                    })
                     .map(|e| e.into()),
                 file_options: PyFileOptions {
                     inner: (**unified_scan_args).clone(),

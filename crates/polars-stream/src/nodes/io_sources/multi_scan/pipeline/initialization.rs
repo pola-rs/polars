@@ -5,6 +5,7 @@ use futures::StreamExt;
 use polars_core::prelude::PlHashMap;
 use polars_error::PolarsResult;
 use polars_mem_engine::scan_predicate::initialize_scan_predicate;
+use polars_plan::dsl::PredicateFileSkip;
 use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 
@@ -77,8 +78,14 @@ async fn finish_initialize_multi_scan_pipeline(
             config.table_statistics.as_ref(),
             verbose,
         )?,
-        Some(false) => (None, config.predicate.as_ref()),
-        Some(true) => (None, None),
+        Some(PredicateFileSkip {
+            has_residual_predicate: true,
+            ..
+        }) => (None, config.predicate.as_ref()),
+        Some(PredicateFileSkip {
+            has_residual_predicate: false,
+            ..
+        }) => (None, None),
     };
 
     if let Some(skip_files_mask) = &skip_files_mask {
