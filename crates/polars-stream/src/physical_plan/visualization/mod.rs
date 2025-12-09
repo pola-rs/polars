@@ -538,7 +538,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                 row_index,
                 pre_slice,
                 predicate,
-                predicate_file_skip_applied: _,
+                predicate_file_skip_applied,
                 hive_parts,
                 include_file_paths,
                 cast_columns_policy: _,
@@ -572,6 +572,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     predicate: predicate
                         .as_ref()
                         .map(|e| format_pl_smallstr!("{}", e.display(self.expr_arena))),
+                    predicate_file_skip_applied: predicate_file_skip_applied.clone(),
                     has_table_statistics: table_statistics.is_some(),
                     include_file_paths: include_file_paths.clone(),
                     deletion_files_type: deletion_files
