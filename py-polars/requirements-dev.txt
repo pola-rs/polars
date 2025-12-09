@@ -33,6 +33,7 @@ connectorx
 kuzu
 # Cloud
 azure-identity
+boto3
 cloudpickle
 fsspec
 pyiceberg>=0.7.1; python_version < '3.13'
