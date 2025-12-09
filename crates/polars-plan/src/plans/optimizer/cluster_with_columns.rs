@@ -225,7 +225,11 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
 
             // Let us just make this node invalid so we can detect when someone tries to
             // mention it later.
-            lp_arena.take(input);
+            //
+            // Deactivated: # 25699
+            // TODO!: Investigate if we should activate this again, this might not be correct in
+            // some CSE cases
+            // lp_arena.take(input);
 
             // Since we merged the current and input nodes and the input node might have
             // optimizations with their input, we loop again on this node.
