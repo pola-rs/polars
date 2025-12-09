@@ -59,7 +59,7 @@ pub fn get_upload_chunk_size() -> usize {
                     .filter(|x| *x > 0)
                     .unwrap_or_else(|| panic!("invalid value for POLARS_UPLOAD_CHUNK_SIZE: {x}"))
             })
-            .unwrap_or(32 * 1024 * 1024);
+            .unwrap_or(64 * 1024 * 1024);
 
         if polars_core::config::verbose() {
             eprintln!("async upload_chunk_size: {v}")
