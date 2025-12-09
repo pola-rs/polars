@@ -753,18 +753,20 @@ pub fn str_to_dec128(bytes: &[u8], p: usize, s: usize, decimal_comma: bool) -> O
     };
 
     // Parse parts.
-    while let Some((b'0', rest)) = int_bytes.split_first() {  // Workaround atoi_simd/issues/14.
+    // Workaround atoi_simd/issues/14.
+    while let Some((b'0', rest)) = int_bytes.split_first() {
         int_bytes = rest;
     }
+    while let Some((b'0', rest)) = frac_bytes.split_first() {
+        frac_bytes = rest;
+    }
+
     let mut pint: i128 = if int_bytes.is_empty() {
         0
     } else {
         atoi_simd::parse_pos(int_bytes).ok()?
     };
 
-    while let Some((b'0', rest)) = frac_bytes.split_first() {  // Workaround atoi_simd/issues/14.
-        frac_bytes = rest;
-    }
     let mut pfrac: i128 = if frac_bytes.is_empty() {
         0
     } else {
