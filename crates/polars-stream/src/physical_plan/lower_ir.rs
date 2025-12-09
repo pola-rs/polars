@@ -9,6 +9,7 @@ use polars_core::{SchemaExtPl, config};
 use polars_error::{PolarsResult, polars_bail};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
+use polars_ops::prelude::*;
 use polars_plan::constants::get_literal_name;
 use polars_plan::dsl::default_values::DefaultFieldValues;
 use polars_plan::dsl::deletion::DeletionFilesList;
@@ -1462,8 +1463,25 @@ fn is_merge_join(
         expr_arena,
         &input_right_schema,
     );
+    // TODO: [amber] We can do this if we buffer a bunch of stuff in the node
+    let needs_complicated_order = match options.args.how {
+        JoinType::Left => matches!(
+            options.args.maintain_order,
+            MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft
+        ),
+        JoinType::Right => matches!(
+            options.args.maintain_order,
+            MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight
+        ),
+        JoinType::Inner | JoinType::Full => false,
+        _ => unreachable!(),
+    };
 
-    args.how.is_equi() && !args.validation.needs_checks() && left_is_sorted && right_is_sorted
+    args.how.is_equi()
+        && !args.validation.needs_checks()
+        && left_is_sorted
+        && right_is_sorted
+        && !needs_complicated_order
 }
 
 fn lower_join(
