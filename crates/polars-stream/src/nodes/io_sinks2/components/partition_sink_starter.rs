@@ -11,7 +11,7 @@ use crate::nodes::io_sinks2::components::file_provider::FileProvider;
 use crate::nodes::io_sinks2::components::file_sink::{FileSinkPermit, FileSinkTaskData};
 use crate::nodes::io_sinks2::components::size::RowCountAndSize;
 use crate::nodes::io_sinks2::writers::interface::FileWriterStarter;
-use crate::utils::task_handles_ext;
+use crate::utils::tokio_handle_ext;
 
 #[derive(Clone)]
 pub struct PartitionSinkStarter {
@@ -27,7 +27,7 @@ impl PartitionSinkStarter {
         file_permit: FileSinkPermit,
     ) -> PolarsResult<FileSinkTaskData> {
         let file_provider = Arc::clone(&self.file_provider);
-        let file_open_task = task_handles_ext::AbortOnDropHandle(
+        let file_open_task = tokio_handle_ext::AbortOnDropHandle(
             pl_async::get_runtime()
                 .spawn(async move { file_provider.open_file(file_provider_args).await }),
         );

@@ -23,7 +23,7 @@ use crate::nodes::io_sinks2::components::size::RowCountAndSize;
 use crate::nodes::io_sinks2::writers::interface::{
     FileWriterStarter, default_ideal_sink_morsel_size,
 };
-use crate::utils::task_handles_ext;
+use crate::utils::tokio_handle_ext;
 
 pub struct ParquetWriterStarter {
     pub options: ParquetWriteOptions,
@@ -64,7 +64,7 @@ impl FileWriterStarter for ParquetWriterStarter {
     fn start_file_writer(
         &self,
         mut morsel_rx: connector::Receiver<SinkMorsel>,
-        file: task_handles_ext::AbortOnDropHandle<
+        file: tokio_handle_ext::AbortOnDropHandle<
             PolarsResult<polars_io::prelude::file::Writeable>,
         >,
     ) -> PolarsResult<async_executor::JoinHandle<PolarsResult<()>>> {
@@ -112,7 +112,7 @@ impl FileWriterStarter for ParquetWriterStarter {
             let schema_descriptor = schema_descriptor.clone();
             let column_options = column_options.clone();
 
-            task_handles_ext::AbortOnDropHandle(pl_async::get_runtime().spawn(async move {
+            tokio_handle_ext::AbortOnDropHandle(pl_async::get_runtime().spawn(async move {
                 let mut file = file.await.unwrap()?;
                 let mut buffered_file = file.as_buffered();
 
@@ -227,4 +227,8 @@ impl FileWriterStarter for ParquetWriterStarter {
 
         Ok(compute_handle)
     }
+}
+
+struct IoTask {
+    file: tokio_handle_ext::AbortOnDropHandle<PolarsResult<polars_io::prelude::file::Writeable>>,
 }
