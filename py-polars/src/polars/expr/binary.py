@@ -388,7 +388,7 @@ class ExprBinaryNameSpace:
         """
         offset_pyexpr = parse_into_expression(offset)
         length_pyexpr = parse_into_expression(length)
-        return wrap_expr(self._pyexpr.bin_slice(offset_pyexpr, length_pyexpr))  # type: ignore[attr-defined]
+        return wrap_expr(self._pyexpr.bin_slice(offset_pyexpr, length_pyexpr))
 
     def head(self, n: int | IntoExpr = 5) -> Expr:
         r"""
@@ -434,7 +434,7 @@ class ExprBinaryNameSpace:
         └────────┴─────────────────┴─────────────┘
         """
         n_pyexpr = parse_into_expression(n, str_as_lit=False)
-        return wrap_expr(self._pyexpr.bin_head(n_pyexpr))  # type: ignore[attr-defined]
+        return wrap_expr(self._pyexpr.bin_head(n_pyexpr))
 
     def tail(self, n: int | IntoExpr = 5) -> Expr:
         r"""
@@ -480,4 +480,4 @@ class ExprBinaryNameSpace:
         └────────┴─────────────────┴─────────────┘
         """
         n_pyexpr = parse_into_expression(n, str_as_lit=False)
-        return wrap_expr(self._pyexpr.bin_tail(n_pyexpr))  # type: ignore[attr-defined]
+        return wrap_expr(self._pyexpr.bin_tail(n_pyexpr))
