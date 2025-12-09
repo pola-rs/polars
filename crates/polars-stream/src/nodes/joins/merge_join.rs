@@ -1,5 +1,9 @@
 use std::collections::VecDeque;
+use std::mem::swap;
+use std::ops::Not;
 
+use arrow::Either;
+use arrow::Either::{Left as ELeft, Right as ERight};
 use arrow::array::builder::ShareStrategy;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
@@ -10,7 +14,6 @@ use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::nodes::ComputeNode;
-use crate::nodes::io_sources::multi_scan::reader_interface::output;
 use crate::pipe::{PortReceiver, RecvPort, SendPort};
 
 // Do row encoding in lowering and then we will have one key column per input
@@ -28,6 +31,17 @@ use crate::pipe::{PortReceiver, RecvPort, SendPort};
 enum Side {
     Left,
     Right,
+}
+
+impl Not for Side {
+    type Output = Side;
+
+    fn not(self) -> Self::Output {
+        match self {
+            Side::Left => Side::Right,
+            Side::Right => Side::Left,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -90,19 +104,18 @@ impl MergeJoinNode {
         right: &mut DataFrame,
         state: &StreamingExecutionState,
     ) -> PolarsResult<DataFrame> {
+        let is_right_join = self.params.args.how == JoinType::Right;
+
         left.rechunk_mut();
         right.rechunk_mut();
 
         // TODO: [amber] Do a cardinality sketch to estimate the output size?
-        let left_key_col = left.column(&self.params.left_key).unwrap();
-        let right_key_col = right.column(&self.params.right_key).unwrap();
+        let mut left_key_col = left.column(&self.params.left_key).unwrap();
+        let mut right_key_col = right.column(&self.params.right_key).unwrap();
 
-        let left = self.drop_non_output_columns(left)?;
-        let right = self.drop_non_output_columns(right)?;
-
-        let mut left_build = DataFrameBuilder::new(left.schema().clone());
-        let mut right_build = DataFrameBuilder::new(right.schema().clone());
-
+        if is_right_join {
+            swap(&mut left_key_col, &mut right_key_col);
+        }
         let mut left_gather_idxs = Vec::new();
         let mut right_gather_idxs = Vec::new();
         for (idxl, left_key) in left_key_col.phys_iter().enumerate() {
@@ -119,23 +132,51 @@ impl MergeJoinNode {
                 right_gather_idxs.push(IdxSize::MAX);
             }
         }
+        if is_right_join {
+            swap(&mut left_gather_idxs, &mut right_gather_idxs);
+        }
 
+        let left = self.drop_non_output_columns(left)?;
+        let right = self.drop_non_output_columns(right)?;
+        let mut left_build = DataFrameBuilder::new(left.schema().clone());
+        let mut right_build = DataFrameBuilder::new(right.schema().clone());
         left_build.opt_gather_extend(&left, &left_gather_idxs, ShareStrategy::Never);
         right_build.opt_gather_extend(&right, &right_gather_idxs, ShareStrategy::Never);
         let mut df_left = left_build.freeze();
         let df_right = right_build.freeze();
         df_left.hstack_mut(&df_right.get_columns())?;
+
+        if is_right_join {
+            // Fixup right-side key column name
+            let idx = self
+                .params
+                .right_key
+                .rfind(&self.params.args.suffix()[..])
+                .expect("no suffix on right-side column");
+            df_left.rename(&self.params.right_key, self.params.right_key[0..idx].into())?;
+        }
+
         Ok(df_left)
     }
 
     fn drop_non_output_columns(&self, df: &DataFrame) -> PolarsResult<DataFrame> {
         let mut drop_cols = PlHashSet::with_capacity(df.width());
         for col in df.get_column_names() {
-            if !self.params.output_schema.contains(&col) {
+            if !self.key_is_in_output(col) {
                 drop_cols.insert(col.clone());
             }
         }
         Ok(df.drop_many_amortized(&drop_cols))
+    }
+
+    fn key_is_in_output(&self, name: &str) -> bool {
+        if self.params.args.how == JoinType::Right {
+            (self.params.output_schema.contains(name) || name == self.params.right_key)
+                && name != self.params.left_key
+        } else {
+            (self.params.output_schema.contains(name) || name == self.params.left_key)
+                && name != self.params.right_key
+        }
     }
 }
 
@@ -214,7 +255,7 @@ impl ComputeNode for MergeJoinNode {
                         flush,
                         &self.params,
                     )? {
-                        Ok((mut left_chunk, mut right_chunk)) => {
+                        ELeft((mut left_chunk, mut right_chunk)) => {
                             // [amber] TODO: put this into a distributor instead of computing the join serially
                             let joined =
                                 self.compute_join(&mut left_chunk, &mut right_chunk, state)?;
@@ -223,11 +264,11 @@ impl ComputeNode for MergeJoinNode {
                             send.send(morsel).await.unwrap(); // TODO [amber] Can this error be handled?
                             self.seq = self.seq.successor();
                         },
-                        Err(Side::Left) if self.state == Flushing => {
+                        ERight(Side::Left) if self.state == Flushing => {
                             self.right_unmerged.clear();
                             return Ok(());
                         },
-                        Err(Side::Left) if recv_left.is_some() => {
+                        ERight(Side::Left) if recv_left.is_some() => {
                             // Need more left data
                             let Ok(m) = recv_left.as_mut().unwrap().recv().await else {
                                 buffer_unmerged_from_pipe(
@@ -240,7 +281,7 @@ impl ComputeNode for MergeJoinNode {
                             let df = m.into_df();
                             self.left_unmerged.push_back(df);
                         },
-                        Err(Side::Right) if recv_right.is_some() => {
+                        ERight(Side::Right) if recv_right.is_some() => {
                             // Need more right data
                             let Ok(m) = recv_right.as_mut().unwrap().recv().await else {
                                 buffer_unmerged_from_pipe(
@@ -253,7 +294,7 @@ impl ComputeNode for MergeJoinNode {
                             let df = m.into_df();
                             self.right_unmerged.push_back(df);
                         },
-                        Err(_) => break,
+                        ERight(_) => break,
                     }
                 }
                 Ok(())
@@ -269,7 +310,26 @@ fn pop_mergable(
     right_key: &str,
     flush: bool,
     params: &MergeJoinParams,
-) -> PolarsResult<Result<(DataFrame, DataFrame), Side>> {
+) -> PolarsResult<Either<(DataFrame, DataFrame), Side>> {
+    if params.args.how == JoinType::Right {
+        let res = pop_mergable_inner(right, right_key, left, left_key, flush, params)?;
+        return Ok(match res {
+            ELeft((right_df, left_df)) => ELeft((left_df, right_df)),
+            ERight(side) => ERight(!side),
+        });
+    } else {
+        pop_mergable_inner(left, left_key, right, right_key, flush, params)
+    }
+}
+
+fn pop_mergable_inner(
+    left: &mut VecDeque<DataFrame>,
+    left_key: &str,
+    right: &mut VecDeque<DataFrame>,
+    right_key: &str,
+    flush: bool,
+    params: &MergeJoinParams,
+) -> PolarsResult<Either<(DataFrame, DataFrame), Side>> {
     fn vstack_head(unmerged: &mut VecDeque<DataFrame>) {
         let mut df = unmerged.pop_front().unwrap();
         df.vstack_mut_owned(unmerged.pop_front().unwrap()).unwrap();
@@ -287,16 +347,16 @@ fn pop_mergable(
     loop {
         if left.is_empty() && flush {
             right.clear();
-            return Ok(Err(Side::Left));
+            return Ok(ERight(Side::Left));
         }
         if left.is_empty() {
-            return Ok(Err(Side::Left));
+            return Ok(ERight(Side::Left));
         }
         if right.is_empty() && flush {
-            return Ok(Ok((left.pop_front().unwrap(), DataFrame::empty())));
+            return Ok(ELeft((left.pop_front().unwrap(), DataFrame::empty())));
         }
         if right.is_empty() {
-            return Ok(Err(Side::Right));
+            return Ok(ERight(Side::Right));
         }
 
         let left_df = &left[0];
@@ -323,9 +383,9 @@ fn pop_mergable(
             vstack_head(right);
             continue;
         } else if left_key_min == left_key_max && !flush {
-            return Ok(Err(Side::Left));
+            return Ok(ERight(Side::Left));
         } else if right_key_min == right_key_max && !flush {
-            return Ok(Err(Side::Right));
+            return Ok(ERight(Side::Right));
         }
 
         let global_max = if left_key_max < right_key_max {
@@ -353,7 +413,7 @@ fn pop_mergable(
         right.push_front(right_rest);
 
         debug_assert!(left_df.height() > 0 || right_df.height() > 0);
-        return Ok(Ok((left_df, right_df)));
+        return Ok(ELeft((left_df, right_df)));
     }
 }
 

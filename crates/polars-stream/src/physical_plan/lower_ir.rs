@@ -1489,6 +1489,7 @@ fn lower_join(
     let left_on = left_on.clone();
     let right_on = right_on.clone();
     let args = options.args.clone();
+
     let options = options.options.clone();
 
     assert!(left_on.len() == 1, "[amber] unimplemented");
