@@ -4,7 +4,7 @@ use polars_core::prelude::SortMultipleOptions;
 use polars_core::schema::SchemaRef;
 use polars_plan::dsl::sink2::FileProviderType;
 use polars_plan::dsl::{FileType, SinkTarget, UnifiedSinkArgs};
-use polars_utils::plpath::PlPath;
+use polars_utils::plpath::{CloudScheme, PlPath};
 
 use crate::expression::StreamExpr;
 use crate::nodes::io_sinks2::components::hstack_columns::HStackColumns;
@@ -52,7 +52,11 @@ impl IOSinkNodeConfig {
             return v;
         }
 
-        128
+        if self.target.is_cloud_location() {
+            512
+        } else {
+            128
+        }
     }
 
     pub fn cloud_upload_chunk_size(&self) -> usize {
@@ -78,6 +82,16 @@ impl IOSinkNodeConfig {
 pub enum IOSinkTarget {
     File(SinkTarget),
     Partitioned(Box<PartitionedTarget>),
+}
+
+impl IOSinkTarget {
+    pub fn is_cloud_location(&self) -> bool {
+        match self {
+            Self::File(v) => v.cloud_scheme(),
+            Self::Partitioned(v) => v.base_path.cloud_scheme(),
+        }
+        .is_some_and(|x| !matches!(x, CloudScheme::File | CloudScheme::FileNoHostname))
+    }
 }
 
 pub struct PartitionedTarget {
