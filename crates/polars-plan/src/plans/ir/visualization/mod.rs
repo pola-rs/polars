@@ -510,7 +510,7 @@ impl IRVisualizationDataGenerator<'_> {
                     predicate: predicate
                         .as_ref()
                         .map(|e| format_pl_smallstr!("{}", e.display(self.expr_arena))),
-                    predicate_file_skip_applied: predicate_file_skip_applied.clone(),
+                    predicate_file_skip_applied: *predicate_file_skip_applied,
                     has_table_statistics: table_statistics.is_some(),
                     include_file_paths: include_file_paths.clone(),
                     column_mapping_type: column_mapping
