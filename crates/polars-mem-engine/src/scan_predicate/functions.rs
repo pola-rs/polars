@@ -367,7 +367,7 @@ pub fn apply_scan_predicate_to_scan_ir(
         assert_eq!(skip_files_mask.len(), sources.len());
 
         let predicate_file_skip = PredicateFileSkip {
-            files_skipped: skip_files_mask.num_skipped_files(),
+            num_files_skipped: skip_files_mask.num_skipped_files(),
             original_len: sources.len(),
             has_residual_predicate: predicate_to_readers.is_some(),
         };

@@ -306,9 +306,11 @@ pub struct UnifiedScanArgs {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct PredicateFileSkip {
-    pub files_skipped: usize,
+    /// Number of files skipped
+    pub num_files_skipped: usize,
     /// Number of files before skipping
     pub original_len: usize,
+    /// If `false` the predicate can be skipped at runtime.
     pub has_residual_predicate: bool,
 }
 
