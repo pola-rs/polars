@@ -681,22 +681,11 @@ pub fn str_to_dec128(bytes: &[u8], p: usize, s: usize, decimal_comma: bool) -> O
         .unwrap_or(num_bytes.len());
     let (mut int_bytes, mut frac_bytes) = num_bytes.split_at(sep_pos);
 
-    // Trim trailing zeroes.
-    while let Some((b'0', rest)) = frac_bytes.split_last() {
-        frac_bytes = rest;
-    }
-
-    if frac_bytes.len() <= 1 && exp_bytes.is_empty() {
-        // Only integer fast path.
+    if frac_bytes.is_empty() && exp_bytes.is_empty() {
+        // Integer-only fast path.
         let n: i128 = atoi_simd::parse_skipped(int_bytes).ok()?;
         return i128_to_dec128(n, p, s);
     }
-
-    let exp_scale: i32 = if !exp_bytes.is_empty() {
-        atoi_simd::parse_skipped(&exp_bytes[1..]).ok()?
-    } else {
-        0
-    };
 
     // Skip sign and separator to get clean integers.
     let negative = match int_bytes.first() {
@@ -710,6 +699,17 @@ pub fn str_to_dec128(bytes: &[u8], p: usize, s: usize, decimal_comma: bool) -> O
     if !frac_bytes.is_empty() {
         frac_bytes = &frac_bytes[1..];
     }
+    
+    if frac_bytes.is_empty() && int_bytes.is_empty() {
+        // No digits at all.
+        return None;
+    }
+
+    let exp_scale: i32 = if !exp_bytes.is_empty() {
+        atoi_simd::parse_skipped(&exp_bytes[1..]).ok()?
+    } else {
+        0
+    };
 
     // Round if digits extend beyond the scale.
     let comb_scale = exp_scale + s as i32;
@@ -1043,12 +1043,23 @@ mod test {
         assert_eq!(str_to_dec128_dot(b"999999999999999999999999999999999999990.e-1", 38, 0), Some(99999999999999999999999999999999999999));
         assert_eq!(str_to_dec128_dot(b"999999999999999999999999999999999999994.99999e-1", 38, 0), Some(99999999999999999999999999999999999999));
         assert_eq!(str_to_dec128_dot(b"999999999999999999999999999999999999995.00000e-1", 38, 0), None);
-        assert_eq!(str_to_dec128_dot( b"00.0000000000000000000000000000000000000000000000000000e+50", 0, 0), Some(0));
+        assert_eq!(str_to_dec128_dot( b"00.0000000000000000000000000000000000000000000000000000e+50", 5, 0), Some(0));
 
         // Decimal comma.
         assert_eq!(str_to_dec128(b"12,09", 8, 2, true), Some(1209));
         assert_eq!(str_to_dec128(b"1200,90", 8, 2, true), Some(120090));
         assert_eq!(str_to_dec128(b"143,9", 8, 2, true), Some(14390));
+
+        // Edge-cases around missing components.
+        assert_eq!(str_to_dec128_dot(b"0", 8, 2), Some(0));
+        assert_eq!(str_to_dec128_dot(b"-0", 8, 2), Some(0));
+        assert_eq!(str_to_dec128_dot(b"0.", 8, 2), Some(0));
+        assert_eq!(str_to_dec128_dot(b".0", 8, 2), Some(0));
+        assert_eq!(str_to_dec128_dot(b"-.0", 8, 2), Some(0));
+        assert_eq!(str_to_dec128_dot(b"-0.", 8, 2), Some(0));
+        assert_eq!(str_to_dec128_dot(b"-.", 8, 2), None);
+        assert_eq!(str_to_dec128_dot(b"-", 8, 2), None);
+        assert_eq!(str_to_dec128_dot(b".", 8, 2), None);
     }
 
     #[test]
