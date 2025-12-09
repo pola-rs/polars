@@ -1818,11 +1818,11 @@ def test_scan_iceberg_min_max_statistics_filter(
             print(capture)
 
             if "iceberg_table_filter: Some(<redacted>)" in capture:
-                assert (
+                if (
                     "apply_scan_predicate_to_scan_ir: PredicateFileSkip { files_skipped: 0, original_len: 0, has_residual_predicate: true }"
-                    in capture
-                    or "scan IR replaced with empty DataFrameScan" in capture
-                )
+                    not in capture
+                ):
+                    raise ValueError(capture)
 
                 # Scanning with pyiceberg can also skip the file if the predicate
                 # can be converted.
