@@ -185,7 +185,11 @@ def lit(
         return lit(value.value, dtype=dtype)
 
     if dtype:
-        value_s = pl.Series("literal", [value]).cast(dtype)
+        value_s = (
+            pl.Series("literal", [value], dtype=dtype)
+            if dtype.is_object()
+            else pl.Series("literal", [value]).cast(dtype)
+        )
         return wrap_expr(plr.lit(value_s._s, allow_object, is_scalar=True))
 
     if _check_for_numpy(value) and isinstance(value, np.generic):
