@@ -1222,11 +1222,13 @@ fn to_graph_rec<'a>(
             let right_input_key = to_graph_rec(input_right.node, ctx)?;
             let left_input_schema = ctx.phys_sm[input_left.node].output_schema.clone();
             let right_input_schema = ctx.phys_sm[input_right.node].output_schema.clone();
+            let output_schema = node.output_schema.clone();
 
             ctx.graph.add_node(
                 MergeJoinNode::new(
                     left_input_schema,
                     right_input_schema,
+                    output_schema,
                     left_on.clone(),
                     right_on.clone(),
                     args,

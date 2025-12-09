@@ -1463,20 +1463,13 @@ fn is_merge_join(
         &input_right_schema,
     );
 
-    dbg!(
-        &args.how,
-        args.validation.needs_checks(),
-        left_is_sorted,
-        right_is_sorted
-    );
-
     args.how.is_equi() && !args.validation.needs_checks() && left_is_sorted && right_is_sorted
 }
 
 fn lower_join(
     input_left: Node,
     input_right: Node,
-    _schema: SchemaRef,
+    schema: SchemaRef,
     left_on: Vec<ExprIR>,
     right_on: Vec<ExprIR>,
     options: Arc<JoinOptionsIR>,
@@ -1497,10 +1490,6 @@ fn lower_join(
     let right_on = right_on.clone();
     let args = options.args.clone();
     let options = options.options.clone();
-
-    // TODO [amber] LEFT HERE
-    // First goal is do do a basic INNER or LEFT merge join with only a single
-    // key column.
 
     assert!(left_on.len() == 1, "[amber] unimplemented");
     assert!(right_on.len() == 1, "[amber] unimplemented");
@@ -1535,10 +1524,15 @@ fn lower_join(
     )?;
 
     let mut rename_exprs = Vec::new();
-    for old_name in schema_right.iter_names() {
-        let new_name = append_suffix(&old_name);
-        let col_expr = expr_arena.add(AExpr::Column(old_name.clone()));
-        let expr_ir = ExprIR::new(col_expr, OutputName::Alias(new_name.clone()));
+    for name in schema_right.iter_names() {
+        let expr_ir = if schema_left.contains(name) {
+            let new_name = append_suffix(&name);
+            let col_expr = expr_arena.add(AExpr::Column(name.clone()));
+            ExprIR::new(col_expr, OutputName::Alias(new_name.clone()))
+        } else {
+            let col_expr = expr_arena.add(AExpr::Column(name.clone()));
+            ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone()))
+        };
         rename_exprs.push(expr_ir);
     }
     let right_stream = build_select_stream(

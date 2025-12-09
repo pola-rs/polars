@@ -10,6 +10,7 @@ use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::nodes::ComputeNode;
+use crate::nodes::io_sources::multi_scan::reader_interface::output;
 use crate::pipe::{PortReceiver, RecvPort, SendPort};
 
 // Do row encoding in lowering and then we will have one key column per input
@@ -33,6 +34,7 @@ enum Side {
 struct MergeJoinParams {
     left_input_schema: Arc<Schema>,
     right_input_schema: Arc<Schema>,
+    output_schema: Arc<Schema>,
     left_key: PlSmallStr,
     right_key: PlSmallStr,
     args: JoinArgs,
@@ -60,6 +62,7 @@ impl MergeJoinNode {
     pub fn new(
         left_input_schema: Arc<Schema>,
         right_input_schema: Arc<Schema>,
+        output_schema: Arc<Schema>,
         left_key: PlSmallStr,
         right_key: PlSmallStr,
         args: JoinArgs,
@@ -68,6 +71,7 @@ impl MergeJoinNode {
         let params = MergeJoinParams {
             left_input_schema,
             right_input_schema,
+            output_schema,
             left_key,
             right_key,
             args,
@@ -89,19 +93,22 @@ impl MergeJoinNode {
         left.rechunk_mut();
         right.rechunk_mut();
 
-        let mut left_build = DataFrameBuilder::new(self.params.left_input_schema.clone());
-        let mut right_build = DataFrameBuilder::new(self.params.right_input_schema.clone());
-
         // TODO: [amber] Do a cardinality sketch to estimate the output size?
         let left_key_col = left.column(&self.params.left_key).unwrap();
         let right_key_col = right.column(&self.params.right_key).unwrap();
+
+        let left = self.drop_non_output_columns(left)?;
+        let right = self.drop_non_output_columns(right)?;
+
+        let mut left_build = DataFrameBuilder::new(left.schema().clone());
+        let mut right_build = DataFrameBuilder::new(right.schema().clone());
 
         let mut left_gather_idxs = Vec::new();
         let mut right_gather_idxs = Vec::new();
         for (idxl, left_key) in left_key_col.phys_iter().enumerate() {
             let mut matched = false;
             for (idxr, right_key) in right_key_col.phys_iter().enumerate() {
-                if left_key == right_key {
+                if keys_equal(&left_key, &right_key, self.params.args.nulls_equal) {
                     matched = true;
                     left_gather_idxs.push(idxl as IdxSize);
                     right_gather_idxs.push(idxr as IdxSize);
@@ -113,12 +120,22 @@ impl MergeJoinNode {
             }
         }
 
-        left_build.opt_gather_extend(left, &left_gather_idxs, ShareStrategy::Never);
-        right_build.opt_gather_extend(right, &right_gather_idxs, ShareStrategy::Never);
+        left_build.opt_gather_extend(&left, &left_gather_idxs, ShareStrategy::Never);
+        right_build.opt_gather_extend(&right, &right_gather_idxs, ShareStrategy::Never);
         let mut df_left = left_build.freeze();
         let df_right = right_build.freeze();
         df_left.hstack_mut(&df_right.get_columns())?;
         Ok(df_left)
+    }
+
+    fn drop_non_output_columns(&self, df: &DataFrame) -> PolarsResult<DataFrame> {
+        let mut drop_cols = PlHashSet::with_capacity(df.width());
+        for col in df.get_column_names() {
+            if !self.params.output_schema.contains(&col) {
+                drop_cols.insert(col.clone());
+            }
+        }
+        Ok(df.drop_many_amortized(&drop_cols))
     }
 }
 
@@ -188,12 +205,14 @@ impl ComputeNode for MergeJoinNode {
         if matches!(self.state, Running | Flushing) {
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 loop {
+                    let flush = self.state == Flushing;
                     match pop_mergable(
                         &mut self.left_unmerged,
                         &self.params.left_key,
                         &mut self.right_unmerged,
                         &self.params.right_key,
-                        self.state == Flushing,
+                        flush,
+                        &self.params,
                     )? {
                         Ok((mut left_chunk, mut right_chunk)) => {
                             // [amber] TODO: put this into a distributor instead of computing the join serially
@@ -249,6 +268,7 @@ fn pop_mergable(
     right: &mut VecDeque<DataFrame>,
     right_key: &str,
     flush: bool,
+    params: &MergeJoinParams,
 ) -> PolarsResult<Result<(DataFrame, DataFrame), Side>> {
     fn vstack_head(unmerged: &mut VecDeque<DataFrame>) {
         let mut df = unmerged.pop_front().unwrap();
@@ -295,8 +315,6 @@ fn pop_mergable(
         let left_key_max = left_key_val.get(left_key_val.len() - 1)?;
         let right_key_max = right_key_val.get(right_key_val.len() - 1)?;
         let right_key_min = right_key_val.get(0)?;
-        assert!(!left_key_max.is_null(), "[amber] unimplemented");
-        assert!(!right_key_max.is_null(), "[amber] unimplemented");
 
         if left_key_min == left_key_max && left.len() >= 2 {
             vstack_head(left);
@@ -317,13 +335,13 @@ fn pop_mergable(
         };
         let (left_cutoff, right_cutoff) = if flush {
             (
-                find_item_offset(left_key_val, &global_max, SearchSortedSide::Right)? + 1,
-                find_item_offset(right_key_val, &global_max, SearchSortedSide::Right)? + 1,
+                find_item_offset(left_key_val, &global_max, SearchSortedSide::Right, false)? + 1,
+                find_item_offset(right_key_val, &global_max, SearchSortedSide::Right, false)? + 1,
             )
         } else {
             (
-                find_item_offset(left_key_val, &global_max, SearchSortedSide::Left)?,
-                find_item_offset(right_key_val, &global_max, SearchSortedSide::Left)?,
+                find_item_offset(left_key_val, &global_max, SearchSortedSide::Left, false)?,
+                find_item_offset(right_key_val, &global_max, SearchSortedSide::Left, false)?,
             )
         };
 
@@ -343,11 +361,12 @@ fn find_item_offset(
     column: &Column,
     search_value: &AnyValue,
     side: SearchSortedSide,
+    descending: bool,
 ) -> PolarsResult<i64> {
     debug_assert!(column.get_flags().is_sorted_ascending());
     let s = column.as_materialized_series_maintain_scalar();
     let sv = Series::from_any_values(PlSmallStr::EMPTY, &[search_value.clone()], true)?;
-    let pos = search_sorted(&s, &sv, side, false).unwrap();
+    let pos = search_sorted(&s, &sv, side, descending).unwrap();
     Ok(pos.iter().next().unwrap_or(Some(0)).unwrap() as i64)
 }
 
@@ -364,7 +383,14 @@ async fn buffer_unmerged_from_pipe(
     morsel.source_token().stop();
     unmerged.push_back(morsel.into_df());
     while let Ok(morsel) = port.recv().await {
-        dbg!(&morsel);
         unmerged.push_back(morsel.into_df());
+    }
+}
+
+fn keys_equal(left: &AnyValue, right: &AnyValue, nulls_equal: bool) -> bool {
+    if left.is_null() && right.is_null() {
+        nulls_equal
+    } else {
+        left == right
     }
 }
