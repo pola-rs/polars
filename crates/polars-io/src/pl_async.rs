@@ -31,23 +31,6 @@ pub(super) fn get_download_chunk_size() -> usize {
     *DOWNLOAD_CHUNK_SIZE
 }
 
-static UPLOAD_CHUNK_SIZE: LazyLock<usize> = LazyLock::new(|| {
-    let v: usize = std::env::var("POLARS_UPLOAD_CHUNK_SIZE")
-        .as_deref()
-        .map(|x| x.parse().expect("integer"))
-        .unwrap_or(64 * 1024 * 1024);
-
-    if config::verbose() {
-        eprintln!("async upload_chunk_size: {v}")
-    }
-
-    v
-});
-
-pub(super) fn get_upload_chunk_size() -> usize {
-    *UPLOAD_CHUNK_SIZE
-}
-
 pub trait GetSize {
     fn size(&self) -> u64;
 }

@@ -29,6 +29,7 @@ pub fn start_partition_sink_pipeline(
     let inflight_morsel_limit = config.inflight_morsel_limit();
     let per_sink_pipeline_depth = config.per_sink_pipeline_depth();
     let max_open_sinks = config.max_open_sinks();
+    let upload_chunk_size = config.partitioned_cloud_upload_chunk_size();
 
     let IOSinkNodeConfig {
         file_format,
@@ -66,6 +67,7 @@ pub fn start_partition_sink_pipeline(
         base_path,
         cloud_options,
         provider_type: file_path_provider,
+        upload_chunk_size,
     });
 
     let file_writer_starter: Arc<dyn FileWriterStarter> = create_file_writer_starter(
@@ -91,7 +93,8 @@ pub fn start_partition_sink_pipeline(
             inflight_morsel_limit: {}, \
             ideal_morsel_size: {:?}, \
             file_size_limit: {:?}, \
-            per_partition_sort: {}",
+            per_partition_sort: {}, \
+            upload_chunk_size: {}",
             partitioner.verbose_display(),
             file_writer_starter.writer_name(),
             &file_provider.provider_type,
@@ -100,6 +103,7 @@ pub fn start_partition_sink_pipeline(
             ideal_morsel_size,
             file_size_limit,
             per_partition_sort.is_some(),
+            upload_chunk_size
         );
     }
 

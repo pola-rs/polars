@@ -54,6 +54,25 @@ impl IOSinkNodeConfig {
 
         128
     }
+
+    pub fn cloud_upload_chunk_size(&self) -> usize {
+        polars_io::get_upload_chunk_size()
+    }
+
+    pub fn partitioned_cloud_upload_chunk_size(&self) -> usize {
+        if let Ok(v) = std::env::var("POLARS_PARTITIONED_UPLOAD_CHUNK_SIZE").map(|x| {
+            x.parse::<usize>()
+                .ok()
+                .filter(|x| *x > 0)
+                .unwrap_or_else(|| {
+                    panic!("invalid value for POLARS_PARTITIONED_UPLOAD_CHUNK_SIZE: {x}")
+                })
+        }) {
+            return v;
+        }
+
+        6 * 1024 * 1024
+    }
 }
 
 pub enum IOSinkTarget {

@@ -3,6 +3,7 @@ use std::pin::Pin;
 
 use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
+use polars_io::get_upload_chunk_size;
 use polars_io::json::BatchedWriter;
 use polars_plan::dsl::{SinkOptions, SinkTarget};
 use polars_utils::priority::Priority;
@@ -70,7 +71,11 @@ impl SinkNode for NDJsonSinkNode {
             use tokio::io::AsyncWriteExt;
 
             let mut file = target
-                .open_into_writeable_async(cloud_options.as_ref(), sink_options.mkdir)
+                .open_into_writeable_async(
+                    cloud_options.as_ref(),
+                    sink_options.mkdir,
+                    get_upload_chunk_size(),
+                )
                 .await?
                 .try_into_async_writeable()?;
 
