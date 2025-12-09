@@ -12,7 +12,7 @@ use crate::prelude::HIVE_VALUE_ENCODE_CHARSET;
 #[cfg(feature = "ipc")]
 use crate::prelude::IpcWriterOptions;
 use crate::utils::file::Writeable;
-use crate::{SerWriter, WriteDataFrameToFile};
+use crate::{SerWriter, WriteDataFrameToFile, get_upload_chunk_size};
 
 impl WriteDataFrameToFile for ParquetWriteOptions {
     fn write_df_to_file(
@@ -21,7 +21,7 @@ impl WriteDataFrameToFile for ParquetWriteOptions {
         addr: PlPathRef<'_>,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<()> {
-        let mut f = Writeable::try_new(addr, cloud_options)?;
+        let mut f = Writeable::try_new(addr, cloud_options, get_upload_chunk_size())?;
         self.to_writer(&mut *f).finish(df)?;
         Ok(())
     }
@@ -35,7 +35,7 @@ impl WriteDataFrameToFile for IpcWriterOptions {
         addr: PlPathRef<'_>,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<()> {
-        let mut f = Writeable::try_new(addr, cloud_options)?;
+        let mut f = Writeable::try_new(addr, cloud_options, get_upload_chunk_size())?;
         self.to_writer(&mut *f).finish(df)?;
         Ok(())
     }

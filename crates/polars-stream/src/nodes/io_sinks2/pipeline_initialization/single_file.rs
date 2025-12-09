@@ -22,6 +22,7 @@ pub fn start_single_file_sink_pipeline(
 ) -> PolarsResult<async_executor::AbortOnDropHandle<PolarsResult<()>>> {
     let inflight_morsel_limit = config.inflight_morsel_limit();
     let per_sink_pipeline_depth = config.per_sink_pipeline_depth();
+    let upload_chunk_size = config.cloud_upload_chunk_size();
 
     let IOSinkNodeConfig {
         file_format,
@@ -46,7 +47,7 @@ pub fn start_single_file_sink_pipeline(
     let file_open_task =
         task_handles_ext::AbortOnDropHandle(pl_async::get_runtime().spawn(async move {
             target
-                .open_into_writeable_async(cloud_options.as_deref(), mkdir)
+                .open_into_writeable_async(cloud_options.as_deref(), mkdir, upload_chunk_size)
                 .await
         }));
 
@@ -61,10 +62,12 @@ pub fn start_single_file_sink_pipeline(
     if verbose {
         eprintln!(
             "{node_name}: start_single_file_sink_pipeline: \
-            file_writer_starter: {} \
-            ideal_morsel_size: {:?}",
+            file_writer_starter: {}, \
+            ideal_morsel_size: {:?}, \
+            upload_chunk_size: {}",
             file_writer_starter.writer_name(),
             ideal_morsel_size,
+            upload_chunk_size
         )
     }
 

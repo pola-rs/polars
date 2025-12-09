@@ -14,9 +14,9 @@ use polars_core::utils::arrow::io::ipc::write::{
     EncodedData, WriteOptions, commit_encoded_arrays, encode_array,
 };
 use polars_error::PolarsResult;
-use polars_io::SerWriter;
 use polars_io::cloud::CloudOptions;
 use polars_io::ipc::{IpcWriter, IpcWriterOptions};
+use polars_io::{SerWriter, get_upload_chunk_size};
 use polars_plan::dsl::{SinkOptions, SinkTarget};
 use polars_utils::UnitVec;
 use polars_utils::priority::Priority;
@@ -146,7 +146,11 @@ impl SinkNode for IpcSinkNode {
 
         let io_task = polars_io::pl_async::get_runtime().spawn(async move {
             let mut file = target
-                .open_into_writeable_async(cloud_options.as_ref(), sink_options.mkdir)
+                .open_into_writeable_async(
+                    cloud_options.as_ref(),
+                    sink_options.mkdir,
+                    get_upload_chunk_size(),
+                )
                 .await?;
             let writer = BufWriter::new(&mut *file);
             let mut writer = IpcWriter::new(writer)
