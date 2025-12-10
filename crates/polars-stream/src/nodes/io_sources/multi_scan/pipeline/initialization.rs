@@ -345,7 +345,7 @@ async fn finish_initialize_multi_scan_pipeline(
                     })
                 }))
             })
-            .buffered(config.n_readers_pre_init().min(config.sources.len()).max(1))
+            .buffered(config.n_readers_pre_init().max(1))
     };
 
     let sources = config.sources.clone();
