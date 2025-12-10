@@ -32,7 +32,7 @@ use crate::execute::StreamingExecutionState;
 use crate::nodes::io_sinks::SendBufferedMorsel;
 use crate::nodes::io_sinks::phase::PhaseOutcome;
 use crate::nodes::{JoinHandle, TaskPriority};
-use crate::utils::task_handles_ext::AbortOnDropHandle;
+use crate::utils::tokio_handle_ext::AbortOnDropHandle;
 
 pub struct IpcSinkNode {
     target: SinkTarget,
