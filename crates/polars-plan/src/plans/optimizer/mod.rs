@@ -247,7 +247,7 @@ pub fn optimize(
 
     root = opt.optimize_loop(&mut rules, expr_arena, ir_arena, root)?;
 
-    if opt_flags.cluster_with_columns() {
+    if opt_flags.cluster_with_columns() && get_or_init_members!().with_columns_count > 0 {
         cluster_with_columns::optimize(root, ir_arena, expr_arena)
     }
 
