@@ -1817,8 +1817,9 @@ def test_scan_iceberg_min_max_statistics_filter(
             capture = capfd.readouterr().err
 
             if "iceberg_table_filter: Some(<redacted>)" in capture:
+                assert "allows skipping 0 / 0 files" in capture
                 assert (
-                    "apply_scan_predicate_to_scan_ir: PredicateFileSkip { num_files_skipped: 0, original_len: 0, has_residual_predicate: true }"
+                    "apply_scan_predicate_to_scan_ir: PredicateFileSkip { original_len: 0, has_residual_predicate: true }"
                     in capture
                 )
 
@@ -1833,8 +1834,9 @@ def test_scan_iceberg_min_max_statistics_filter(
 
                 iceberg_table_filter_seen = True
             else:
+                assert "allows skipping 1 / 1 files" in capture
                 assert (
-                    "apply_scan_predicate_to_scan_ir: PredicateFileSkip { num_files_skipped: 1, original_len: 1, has_residual_predicate: true }"
+                    "apply_scan_predicate_to_scan_ir: PredicateFileSkip { original_len: 1, has_residual_predicate: true }"
                     in capture
                 )
 
