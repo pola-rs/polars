@@ -699,7 +699,7 @@ pub fn str_to_dec128(bytes: &[u8], p: usize, s: usize, decimal_comma: bool) -> O
     if !frac_bytes.is_empty() {
         frac_bytes = &frac_bytes[1..];
     }
-    
+
     if frac_bytes.is_empty() && int_bytes.is_empty() {
         // No digits at all.
         return None;
