@@ -48,7 +48,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
         let current_ir = lp_arena.get(current);
 
         if let IR::Cache { id, .. } = current_ir {
-            if !visited_caches.insert(id.clone()) {
+            if !visited_caches.insert(*id) {
                 continue;
             }
         }
