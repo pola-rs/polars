@@ -195,6 +195,22 @@ impl AExprBuilder {
         )
     }
 
+    pub fn any_horizontal(exprs: Vec<ExprIR>, arena: &mut Arena<AExpr>) -> Self {
+        Self::function(
+            exprs,
+            IRFunctionExpr::Boolean(IRBooleanFunction::AnyHorizontal),
+            arena,
+        )
+    }
+
+    pub fn all_horizontal(exprs: Vec<ExprIR>, arena: &mut Arena<AExpr>) -> Self {
+        Self::function(
+            exprs,
+            IRFunctionExpr::Boolean(IRBooleanFunction::AllHorizontal),
+            arena,
+        )
+    }
+
     pub fn count(self, arena: &mut Arena<AExpr>) -> Self {
         Self::agg(
             IRAggExpr::Count {

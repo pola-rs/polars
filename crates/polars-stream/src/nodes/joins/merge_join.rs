@@ -51,6 +51,7 @@ struct MergeJoinParams {
     output_schema: Arc<Schema>,
     left_key: PlSmallStr,
     right_key: PlSmallStr,
+    key_is_row_encoded: bool,
     args: JoinArgs,
     random_state: PlRandomState,
 }
@@ -79,6 +80,7 @@ impl MergeJoinNode {
         output_schema: Arc<Schema>,
         left_key: PlSmallStr,
         right_key: PlSmallStr,
+        key_is_row_encoded: bool,
         args: JoinArgs,
     ) -> PolarsResult<Self> {
         let state = MergeJoinState::Running;
@@ -88,6 +90,7 @@ impl MergeJoinNode {
             output_schema,
             left_key,
             right_key,
+            key_is_row_encoded,
             args,
             random_state: PlRandomState::default(),
         };
@@ -136,8 +139,10 @@ impl MergeJoinNode {
             swap(&mut left_gather_idxs, &mut right_gather_idxs);
         }
 
+        dbg!(&left, &right);
         let left = self.drop_non_output_columns(left)?;
         let right = self.drop_non_output_columns(right)?;
+        dbg!(&left, &right);
         let mut left_build = DataFrameBuilder::new(left.schema().clone());
         let mut right_build = DataFrameBuilder::new(right.schema().clone());
         left_build.opt_gather_extend(&left, &left_gather_idxs, ShareStrategy::Never);
@@ -170,7 +175,9 @@ impl MergeJoinNode {
     }
 
     fn key_is_in_output(&self, name: &str) -> bool {
-        if self.params.args.how == JoinType::Right {
+        if self.params.key_is_row_encoded {
+            name != self.params.left_key && name != self.params.right_key
+        } else if self.params.args.how == JoinType::Right {
             (self.params.output_schema.contains(name) || name == self.params.right_key)
                 && name != self.params.left_key
         } else {
@@ -369,12 +376,19 @@ fn pop_mergable_inner(
             continue;
         }
 
-        let left_key_val = left_df.column(left_key)?;
-        let right_key_val = right_df.column(right_key)?;
-        let left_key_min = left_key_val.get(0)?;
-        let left_key_max = left_key_val.get(left_key_val.len() - 1)?;
-        let right_key_max = right_key_val.get(right_key_val.len() - 1)?;
-        let right_key_min = right_key_val.get(0)?;
+        dbg!(&left_df);
+        dbg!(&right_df);
+
+        let left_key_val = left_df
+            .column(left_key)?
+            .as_materialized_series_maintain_scalar();
+        let right_key_val = right_df
+            .column(right_key)?
+            .as_materialized_series_maintain_scalar();
+        let left_key_min = left_key_val.slice(0, 1);
+        let left_key_max = left_key_val.slice(left_key_val.len() as i64 - 1, 1);
+        let right_key_min = right_key_val.slice(0, 1);
+        let right_key_max = right_key_val.slice(right_key_val.len() as i64 - 1, 1);
 
         if left_key_min == left_key_max && left.len() >= 2 {
             vstack_head(left);
@@ -388,20 +402,20 @@ fn pop_mergable_inner(
             return Ok(ERight(Side::Right));
         }
 
-        let global_max = if left_key_max < right_key_max {
+        let global_max = if left_key_max.get(0)? < right_key_max.get(0)? {
             left_key_max
         } else {
             right_key_max
         };
         let (left_cutoff, right_cutoff) = if flush {
             (
-                find_item_offset(left_key_val, &global_max, SearchSortedSide::Right, false)? + 1,
-                find_item_offset(right_key_val, &global_max, SearchSortedSide::Right, false)? + 1,
+                find_item_offset(&left_key_val, &global_max, SearchSortedSide::Right, false)? + 1,
+                find_item_offset(&right_key_val, &global_max, SearchSortedSide::Right, false)? + 1,
             )
         } else {
             (
-                find_item_offset(left_key_val, &global_max, SearchSortedSide::Left, false)?,
-                find_item_offset(right_key_val, &global_max, SearchSortedSide::Left, false)?,
+                find_item_offset(&left_key_val, &global_max, SearchSortedSide::Left, false)?,
+                find_item_offset(&right_key_val, &global_max, SearchSortedSide::Left, false)?,
             )
         };
 
@@ -418,15 +432,13 @@ fn pop_mergable_inner(
 }
 
 fn find_item_offset(
-    column: &Column,
-    search_value: &AnyValue,
+    s: &Series,
+    search_value: &Series,
     side: SearchSortedSide,
     descending: bool,
 ) -> PolarsResult<i64> {
-    debug_assert!(column.get_flags().is_sorted_ascending());
-    let s = column.as_materialized_series_maintain_scalar();
-    let sv = Series::from_any_values(PlSmallStr::EMPTY, &[search_value.clone()], true)?;
-    let pos = search_sorted(&s, &sv, side, descending).unwrap();
+    // debug_assert!(s.get_flags().is_sorted_ascending());
+    let pos = search_sorted(&s, &search_value, side, descending).unwrap();
     Ok(pos.iter().next().unwrap_or(Some(0)).unwrap() as i64)
 }
 

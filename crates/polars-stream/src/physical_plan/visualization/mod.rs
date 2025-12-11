@@ -343,6 +343,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                 input_right,
                 left_on,
                 right_on,
+                key_is_row_encoded,
                 args,
             } => {
                 phys_node_inputs.push(input_left.node);

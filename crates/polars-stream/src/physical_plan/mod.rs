@@ -368,6 +368,7 @@ pub enum PhysNodeKind {
         input_right: PhysStream,
         left_on: PlSmallStr,
         right_on: PlSmallStr,
+        key_is_row_encoded: bool,
         args: JoinArgs,
     },
 

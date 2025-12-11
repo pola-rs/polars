@@ -1215,6 +1215,7 @@ fn to_graph_rec<'a>(
             input_right,
             left_on,
             right_on,
+            key_is_row_encoded,
             args,
         } => {
             let args = args.clone();
@@ -1231,6 +1232,7 @@ fn to_graph_rec<'a>(
                     output_schema,
                     left_on.clone(),
                     right_on.clone(),
+                    *key_is_row_encoded,
                     args,
                 )?,
                 [

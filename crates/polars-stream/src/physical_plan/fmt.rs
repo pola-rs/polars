@@ -624,6 +624,7 @@ fn visualize_plan_rec(
             input_right,
             left_on,
             right_on,
+            key_is_row_encoded,
             args,
         } => {
             let mut label = "merge-join".to_string();

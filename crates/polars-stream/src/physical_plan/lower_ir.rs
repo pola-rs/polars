@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
-use polars_core::prelude::{DataType, PlHashMap, PlHashSet};
+use polars_core::prelude::{DataType, PlHashMap, PlHashSet, expr, row_encode};
 use polars_core::scalar::Scalar;
 use polars_core::schema::{Schema, SchemaRef};
 use polars_core::{SchemaExtPl, config};
@@ -1477,6 +1477,14 @@ fn is_merge_join(
         _ => unreachable!(),
     };
 
+    dbg!(
+        &args.how,
+        args.validation.needs_checks(),
+        left_is_sorted,
+        right_is_sorted,
+        needs_complicated_order
+    );
+
     args.how.is_equi()
         && !args.validation.needs_checks()
         && left_is_sorted
@@ -1499,29 +1507,17 @@ fn lower_join(
     cache_nodes: &mut PlHashMap<UniqueId, PhysStream>,
     ctx: StreamingLowerIRContext,
 ) -> PolarsResult<PhysNodeKind> {
+    assert!(options.args.how.is_equi());
     let append_suffix =
         |name: &PlSmallStr| format_pl_smallstr!("{}{}", name.as_str(), options.args.suffix());
-
-    assert!(options.args.how.is_equi());
-
     let left_on = left_on.clone();
     let right_on = right_on.clone();
-    let args = options.args.clone();
-
-    let options = options.options.clone();
-
-    assert!(left_on.len() == 1, "[amber] unimplemented");
-    assert!(right_on.len() == 1, "[amber] unimplemented");
-
-    // Rename the right dataframe columns
     let schema_left = ir_arena.get(input_left).schema(ir_arena).into_owned();
     let schema_right = ir_arena.get(input_right).schema(ir_arena).into_owned();
-    let schema_right_renamed = schema_right
-        .iter()
-        .map(|(name, dtype)| (append_suffix(name), dtype.clone()))
-        .collect::<Schema>();
+    let args = options.args.clone();
+    let options = options.options.clone();
 
-    let left_stream = lower_ir(
+    let mut phys_left = lower_ir(
         input_left,
         ir_arena,
         expr_arena,
@@ -1531,7 +1527,7 @@ fn lower_join(
         cache_nodes,
         ctx,
     )?;
-    let right_stream = lower_ir(
+    let mut phys_right = lower_ir(
         input_right,
         ir_arena,
         expr_arena,
@@ -1542,7 +1538,85 @@ fn lower_join(
         ctx,
     )?;
 
-    let mut rename_exprs = Vec::new();
+    assert!(left_on.len() == right_on.len(), "join keys length mismatch");
+    let key_dtypes = left_on
+        .iter()
+        .map(|e| schema_left.get(e.output_name()).unwrap().clone())
+        .collect_vec();
+    let key_dtype_is_nested = key_dtypes.iter().any(DataType::is_nested);
+    let mut key_is_row_encoded = false;
+    let left_on_encoded;
+    let right_on_encoded;
+    if left_on.len() > 1 || key_dtype_is_nested {
+        key_is_row_encoded = true;
+        // Add the key column as the last column for both inputs.
+        let encoding_variant = RowEncodingVariant::Ordered {
+            descending: None,
+            nulls_last: None,
+        };
+        let is_not_null = left_on
+            .iter()
+            .map(|e| {
+                AExprBuilder::new_from_node(e.node())
+                    .is_not_null(expr_arena)
+                    .expr_ir_unnamed()
+            })
+            .collect_vec();
+        let not_null = AExprBuilder::any_horizontal(is_not_null, expr_arena);
+        let row_encode = AExprBuilder::row_encode(
+            left_on.clone(),
+            key_dtypes.clone(),
+            encoding_variant.clone(),
+            expr_arena,
+        )
+        .cast(DataType::Binary, expr_arena);
+        let null = AExprBuilder::lit(LiteralValue::untyped_null(), expr_arena);
+        left_on_encoded = AExprBuilder::when_then_otherwise(not_null, row_encode, null, expr_arena)
+            .expr_ir(unique_column_name());
+        phys_left = build_hstack_stream(
+            phys_left,
+            &[left_on_encoded.clone()],
+            expr_arena,
+            phys_sm,
+            expr_cache,
+            ctx,
+        )?;
+
+        let is_not_null = right_on
+            .iter()
+            .map(|e| {
+                AExprBuilder::new_from_node(e.node())
+                    .is_not_null(expr_arena)
+                    .expr_ir_unnamed()
+            })
+            .collect_vec();
+        let not_null = AExprBuilder::all_horizontal(is_not_null, expr_arena);
+        let row_encode = AExprBuilder::row_encode(
+            right_on.clone(),
+            key_dtypes.clone(),
+            encoding_variant.clone(),
+            expr_arena,
+        )
+        .cast(DataType::Binary, expr_arena);
+        let null = AExprBuilder::lit(LiteralValue::untyped_null(), expr_arena);
+        right_on_encoded =
+            AExprBuilder::when_then_otherwise(not_null, row_encode, null, expr_arena)
+                .expr_ir(unique_column_name());
+        phys_right = build_hstack_stream(
+            phys_right,
+            &[right_on_encoded.clone()],
+            expr_arena,
+            phys_sm,
+            expr_cache,
+            ctx,
+        )?;
+    } else {
+        left_on_encoded = left_on[0].clone();
+        right_on_encoded = right_on[0].clone();
+    };
+
+    let mut right_renamed = Vec::new();
+    let schema_right = phys_sm[phys_right.node].output_schema.clone();
     for name in schema_right.iter_names() {
         let expr_ir = if schema_left.contains(name) {
             let new_name = append_suffix(&name);
@@ -1552,33 +1626,47 @@ fn lower_join(
             let col_expr = expr_arena.add(AExpr::Column(name.clone()));
             ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone()))
         };
-        rename_exprs.push(expr_ir);
+        right_renamed.push(expr_ir);
     }
-    let right_stream = build_select_stream(
-        right_stream,
-        &rename_exprs,
+
+    phys_right = build_select_stream(
+        phys_right,
+        &right_renamed,
         expr_arena,
         phys_sm,
         expr_cache,
         ctx,
     )?;
 
-    let (trans_input_left, trans_left_on) =
-        lower_exprs(left_stream, &left_on, expr_arena, phys_sm, expr_cache, ctx)?;
-    let (trans_input_right, trans_right_on) = lower_exprs(
-        right_stream,
-        &right_on,
-        expr_arena,
-        phys_sm,
-        expr_cache,
-        ctx,
-    )?;
+    // let trans_left_on;
+    // let trans_right_on;
+
+    // (phys_left, trans_left_on) = lower_exprs(
+    //     phys_left,
+    //     &[left_on_encoded],
+    //     expr_arena,
+    //     phys_sm,
+    //     expr_cache,
+    //     ctx,
+    // )?;
+    // (phys_right, trans_right_on) = lower_exprs(
+    //     phys_right,
+    //     &[right_on_encoded],
+    //     expr_arena,
+    //     phys_sm,
+    //     expr_cache,
+    //     ctx,
+    // )?;
+
+    // dbg!(&trans_left_on);
+    // dbg!(&trans_right_on);
 
     Ok(PhysNodeKind::MergeJoin {
-        input_left: trans_input_left,
-        input_right: trans_input_right,
-        left_on: trans_left_on[0].output_name().clone(),
-        right_on: append_suffix(trans_right_on[0].output_name()),
+        input_left: phys_left,
+        input_right: phys_right,
+        left_on: left_on_encoded.output_name().clone(),
+        right_on: right_on_encoded.output_name().clone(),
+        key_is_row_encoded,
         args,
     })
 }
