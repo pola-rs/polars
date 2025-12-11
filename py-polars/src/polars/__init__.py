@@ -4,6 +4,8 @@ Polars: Blazingly fast DataFrames
 
 Polars is a fast, open-source library for data manipulation with an expressive, typed API.
 
+This is a dummy PR, do not merge.
+
 Basic usage:
 
    >>> import polars as pl
