@@ -534,30 +534,16 @@ pub trait SeriesTrait:
         polars_bail!(opq = std, self._dtype());
     }
     /// Get the quantile of the Series as a new Series of length 1.
-    /// Default implementation delegates to `quantiles_reduce` with a single element
-    /// and unwraps the resulting `List` scalar to a plain scalar where possible.
-    fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
-        let list_scalar = self.quantiles_reduce(std::slice::from_ref(&quantile), method)?;
-        match list_scalar.value() {
-            AnyValue::List(s) => {
-                // extract first element from the inner series
-                let av = s.get(0).map_or(AnyValue::Null, AnyValue::into_static);
-                Ok(Scalar::new(s.dtype().clone(), av))
-            },
-            // fallback: if quantiles_reduce returned a non-list scalar, return it as-is
-            _ => Ok(Scalar::new(
-                list_scalar.dtype().clone(),
-                list_scalar.value().clone(),
-            )),
-        }
+    fn quantile_reduce(&self, _quantile: f64, _method: QuantileMethod) -> PolarsResult<Scalar> {
+        polars_bail!(opq = quantile, self._dtype());
     }
-    /// Get multiple quantiles of the ChunkedArray as a new `List` Scalar (single value series of length 1).
+    /// Get multiple quantiles of the ChunkedArray as a new `List` Scalar
     fn quantiles_reduce(
         &self,
         _quantiles: &[f64],
         _method: QuantileMethod,
     ) -> PolarsResult<Scalar> {
-        polars_bail!(opq = quantile, self._dtype());
+        polars_bail!(opq = quantiles, self._dtype());
     }
     /// Get the bitwise AND of the Series as a new Series of length 1,
     fn and_reduce(&self) -> PolarsResult<Scalar> {

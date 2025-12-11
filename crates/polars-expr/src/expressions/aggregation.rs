@@ -510,9 +510,15 @@ impl PhysicalExpr for AggQuantileExpr {
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let input = self.input.evaluate(df, state)?;
         let quantile = self.get_quantile(df, state)?;
-        input
-            .quantiles_reduce(&quantile, self.method)
-            .map(|sc| sc.into_column(input.name().clone()))
+        if quantile.len() == 1 {
+            input
+                .quantile_reduce(quantile[0], self.method)
+                .map(|sc| sc.into_column(input.name().clone()))
+        } else {
+            input
+                .quantiles_reduce(&quantile, self.method)
+                .map(|sc| sc.into_column(input.name().clone()))
+        }
     }
 
     #[allow(clippy::ptr_arg)]
@@ -533,30 +539,33 @@ impl PhysicalExpr for AggQuantileExpr {
 
         let quantile = self.get_quantile(df, state)?;
 
+        if quantile.len() > 1 {
+            polars_bail!(
+                ComputeError: "aggregating multiple quantiles is not implemented"
+            );
+        }
+
+        let quantile = quantile[0];
+
         if let AggState::LiteralScalar(c) = &mut ac.state {
             *c = c
-                .quantiles_reduce(&quantile, self.method)?
+                .quantile_reduce(quantile, self.method)?
                 .into_column(keep_name);
             return Ok(ac);
         }
 
         // SAFETY:
         // groups are in bounds
-        if quantile.len() == 1 {
-            let mut agg = unsafe {
-                ac.flat_naive()
-                    .into_owned()
-                    .agg_quantile(ac.groups(), quantile[0], self.method)
-            };
-            agg.rename(keep_name);
-            Ok(AggregationContext::from_agg_state(
-                AggregatedScalar(agg),
-                Cow::Borrowed(groups),
-            ))
-        } else {
-            // grouped multi-quantiles not yet implemented
-            polars_bail!(ComputeError: "grouped quantiles for multiple probabilities is not supported yet");
-        }
+        let mut agg = unsafe {
+            ac.flat_naive()
+                .into_owned()
+                .agg_quantile(ac.groups(), quantile, self.method)
+        };
+        agg.rename(keep_name);
+        Ok(AggregationContext::from_agg_state(
+            AggregatedScalar(agg),
+            Cow::Borrowed(groups),
+        ))
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {

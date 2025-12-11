@@ -8,7 +8,11 @@ use super::*;
 pub trait QuantileAggSeries {
     /// Get the median of the [`ChunkedArray`] as a new [`Series`] of length 1.
     fn median_reduce(&self) -> Scalar;
+
     /// Get the quantile of the [`ChunkedArray`] as a new [`Series`] of length 1.
+    fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar>;
+
+    /// Get the quantiles of the [`ChunkedArray`] as a new [`Series`] of same length as quantiles
     fn quantiles_reduce(&self, _quantiles: &[f64], _method: QuantileMethod)
     -> PolarsResult<Scalar>;
 }

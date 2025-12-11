@@ -408,6 +408,14 @@ macro_rules! impl_dyn_series {
                 Ok(VarAggSeries::std_reduce(&self.0, ddof))
             }
 
+            fn quantile_reduce(
+                &self,
+                quantile: f64,
+                method: QuantileMethod,
+            ) -> PolarsResult<Scalar> {
+                QuantileAggSeries::quantile_reduce(&self.0, quantile, method)
+            }
+
             fn quantiles_reduce(
                 &self,
                 quantiles: &[f64],

@@ -500,16 +500,16 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         self.0.cast(&DataType::Float64)?.var_reduce(ddof)
     }
 
+    fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
+        self.0
+            .physical()
+            .quantile_reduce(quantile, method)
+            .map(|v| self.apply_scale(v))
+    }
+
     fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
         let result = self.0.physical().quantiles_reduce(quantiles, method)?;
-        if let AnyValue::Float64(f) = result.value() {
-            let scale_factor = self.scale_factor() as f64;
-            let scaled_value = f / scale_factor;
-            Ok(Scalar::new(
-                DataType::Float64,
-                AnyValue::Float64(scaled_value),
-            ))
-        } else if let AnyValue::List(float_s) = result.value() {
+        if let AnyValue::List(float_s) = result.value() {
             let scale_factor = self.scale_factor() as f64;
             let float_ca = float_s.f64().unwrap();
             let scaled_s = float_ca

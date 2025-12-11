@@ -409,15 +409,21 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
     }
 
     #[cfg(feature = "dtype-datetime")]
+    fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
+        let quantile = self.0.physical().quantile_reduce(quantile, method)?;
+        let v = quantile.value().extract::<f64>().unwrap();
+        let datetime_us_value = (v * (US_IN_DAY as f64)) as i64;
+        let av = AnyValue::Datetime(datetime_us_value, TimeUnit::Microseconds, None);
+        Ok(Scalar::new(
+            DataType::Datetime(TimeUnit::Microseconds, None),
+            av,
+        ))
+    }
+
+    #[cfg(feature = "dtype-datetime")]
     fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
         let result = self.0.physical().quantiles_reduce(quantiles, method)?;
-        if let AnyValue::Float64(f) = result.value() {
-            let int_value = (f * (US_IN_DAY as f64)) as i64;
-            let datetime_value =
-                AnyValue::from(int_value).as_datetime(TimeUnit::Microseconds, None);
-            let dtype = DataType::Datetime(TimeUnit::Microseconds, None);
-            Ok(Scalar::new(dtype, datetime_value))
-        } else if let AnyValue::List(float_s) = result.value() {
+        if let AnyValue::List(float_s) = result.value() {
             let float_ca = float_s.f64().unwrap();
             let int_s = float_ca
                 .iter()
