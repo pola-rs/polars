@@ -132,7 +132,7 @@ jobs:
         run: cargo llvm-cov clean --workspace
 
       - name: Install Polars
-        run:
+        run: |
           # Make sure we use the Polars we're about to build.
           uv pip uninstall polars-runtime-32 polars-runtime-64 polars-runtime-compat
           uv pip install --no-deps -e py-polars
