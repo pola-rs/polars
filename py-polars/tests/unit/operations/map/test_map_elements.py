@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import date, datetime, timedelta
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
 import pytest
@@ -11,6 +11,10 @@ import polars as pl
 from polars.exceptions import PolarsInefficientMapWarning
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import NUMERIC_DTYPES, TEMPORAL_DTYPES
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
+
 
 pytestmark = pytest.mark.filterwarnings(
     "ignore::polars.exceptions.PolarsInefficientMapWarning"
@@ -425,3 +429,55 @@ def test_map_elements_list_dtype_24006() -> None:
 def test_map_elements_reentrant_mutable_no_deadlock() -> None:
     s = pl.Series("a", [1, 2, 3])
     s.map_elements(lambda _: s.rechunk(in_place=True)[0])
+
+
+@pytest.mark.parametrize(
+    "dtype", NUMERIC_DTYPES + TEMPORAL_DTYPES + [pl.Decimal(None, 2)]
+)
+def test_map_elements_with_dtype_cast_numeric(dtype: PolarsDataType) -> None:
+    print(f"dtype: {dtype}")
+    result = pl.Series([1]).map_elements(lambda x: x, return_dtype=dtype)
+    expected = pl.Series([1], dtype=dtype)
+    assert_series_equal(result, expected)
+
+    # Struct
+    struct_dtype = pl.Struct({"a": dtype})
+    result = pl.Series([1]).map_elements(lambda x: {"a": x}, return_dtype=struct_dtype)
+    expected = pl.Series([{"a": 1}], dtype=struct_dtype)
+    assert_series_equal(result, expected)
+
+    # List
+    list_dtype = pl.List(dtype)
+    result = pl.Series([1]).map_elements(lambda x: [x], return_dtype=list_dtype)
+    expected = pl.Series([[1]], dtype=list_dtype)
+    assert_series_equal(result, expected)
+
+    # Array
+    arr_dtype = pl.Array(dtype, 1)
+    result = pl.Series([1]).map_elements(lambda x: [x], return_dtype=arr_dtype)
+    expected = pl.Series([[1]], dtype=arr_dtype)
+    assert_series_equal(result, expected)
+
+
+def test_map_elements_with_dtype_str() -> None:
+    # Categorical/String/Enum
+    cat_dtype = pl.Categorical()
+    result = pl.Series(["a"]).map_elements(lambda x: x, return_dtype=cat_dtype)
+    expected = pl.Series(["a"], dtype=cat_dtype)
+    assert_series_equal(result, expected)
+
+    enum_dtype = pl.Enum(["a"])
+    result = pl.Series(["a"]).map_elements(lambda x: x, return_dtype=enum_dtype)
+    expected = pl.Series(["a"], dtype=enum_dtype)
+    assert_series_equal(result, expected)
+
+    # Boolean
+    result = pl.Series([1]).map_elements(lambda x: x, return_dtype=pl.Boolean)
+    expected = pl.Series([True])
+    assert_series_equal(result, expected)
+
+
+def test_map_elements_with_dtype_obj() -> None:
+    result = pl.Series([1]).map_elements(lambda x: x, return_dtype=pl.Object)
+    assert result.dtype == pl.Object
+    assert result.item() == 1
