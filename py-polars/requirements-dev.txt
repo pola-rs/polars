@@ -15,7 +15,7 @@ pip
 # DEPENDENCIES
 # ------------
 
-polars-cloud
+# polars-cloud # TODO neither sdist nor free-thread wheel is available
 # Interop
 numpy
 numba >= 0.54; python_version < '3.14'  # Numba can lag Python releases
@@ -29,7 +29,7 @@ sqlalchemy
 adbc-driver-manager; platform_system != 'Windows'
 adbc-driver-sqlite; platform_system != 'Windows'
 aiosqlite
-connectorx
+#connectorx # TODO connectorx does not have wheels for 3.14t
 kuzu
 # Cloud
 azure-identity
@@ -58,7 +58,7 @@ matplotlib
 # Testing
 hypothesis
 # Miscellaneous
-orjson
+# orjson # TODO orjson is not supported on free-threaded python, it has a custom fork of pyo3?
 
 # -------
 # TOOLING
