@@ -585,12 +585,8 @@ fn av_decimal_strategy(
         .prop_flat_map(|precision| {
             let max_value = 10_i128.pow(precision as u32) - 1;
             let min_value = -max_value;
-            
-            (
-                min_value..=max_value,
-                Just(precision),
-                0..=precision
-            )
+
+            (min_value..=max_value, Just(precision), 0..=precision)
         })
         .prop_map(|(value, precision, scale)| AnyValue::Decimal(value, precision, scale))
 }

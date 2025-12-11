@@ -126,59 +126,58 @@ impl Scalar {
 
 #[cfg(all(test, feature = "proptest"))]
 mod tests {
-    use super::*;
-    use crate::datatypes::proptest::{
-        anyvalue_strategy,
-        dtypes_strategy,
-        AnyValueArbitraryOptions,
-        DataTypeArbitraryOptions,
-        AnyValueArbitrarySelection,
-        DataTypeArbitrarySelection,
-    };
-    use crate::scalar::Scalar;
-    use crate::chunked_array::cast::CastOptions;
-    use proptest::prelude::*;
     use std::rc::Rc;
 
+    use proptest::prelude::*;
+
+    use crate::chunked_array::cast::CastOptions;
+    use crate::datatypes::proptest::{
+        AnyValueArbitraryOptions, AnyValueArbitrarySelection, DataTypeArbitraryOptions,
+        DataTypeArbitrarySelection, anyvalue_strategy, dtypes_strategy,
+    };
+    use crate::scalar::Scalar;
+
     fn test_anyvalue_options() -> AnyValueArbitraryOptions {
-        let mut options = AnyValueArbitraryOptions::default();
-        options.allowed_dtypes = AnyValueArbitrarySelection::all()
-            & !AnyValueArbitrarySelection::CATEGORICAL
-            & !AnyValueArbitrarySelection::CATEGORICAL_OWNED
-            & !AnyValueArbitrarySelection::ENUM
-            & !AnyValueArbitrarySelection::ENUM_OWNED
-            & !AnyValueArbitrarySelection::OBJECT
-            & !AnyValueArbitrarySelection::OBJECT_OWNED
-            & !AnyValueArbitrarySelection::LIST
-            & !AnyValueArbitrarySelection::ARRAY
-            & !AnyValueArbitrarySelection::STRUCT
-            & !AnyValueArbitrarySelection::STRUCT_OWNED
-            & !AnyValueArbitrarySelection::DATETIME
-            & !AnyValueArbitrarySelection::DATETIME_OWNED
-            & !AnyValueArbitrarySelection::DATE
-            & !AnyValueArbitrarySelection::TIME
-            & !AnyValueArbitrarySelection::DURATION
-            & !AnyValueArbitrarySelection::BINARY_OWNED;
-        options.categories_range = 1..=3;
-        options
+        AnyValueArbitraryOptions {
+            allowed_dtypes: AnyValueArbitrarySelection::all()
+                & !AnyValueArbitrarySelection::CATEGORICAL
+                & !AnyValueArbitrarySelection::CATEGORICAL_OWNED
+                & !AnyValueArbitrarySelection::ENUM
+                & !AnyValueArbitrarySelection::ENUM_OWNED
+                & !AnyValueArbitrarySelection::OBJECT
+                & !AnyValueArbitrarySelection::OBJECT_OWNED
+                & !AnyValueArbitrarySelection::LIST
+                & !AnyValueArbitrarySelection::ARRAY
+                & !AnyValueArbitrarySelection::STRUCT
+                & !AnyValueArbitrarySelection::STRUCT_OWNED
+                & !AnyValueArbitrarySelection::DATETIME
+                & !AnyValueArbitrarySelection::DATETIME_OWNED
+                & !AnyValueArbitrarySelection::DATE
+                & !AnyValueArbitrarySelection::TIME
+                & !AnyValueArbitrarySelection::DURATION
+                & !AnyValueArbitrarySelection::BINARY_OWNED,
+            categories_range: 1..=3,
+            ..Default::default()
+        }
     }
 
     fn test_dtype_options() -> DataTypeArbitraryOptions {
-        let mut options = DataTypeArbitraryOptions::default();
-        options.allowed_dtypes = DataTypeArbitrarySelection::all()
-            & !DataTypeArbitrarySelection::CATEGORICAL
-            & !DataTypeArbitrarySelection::ENUM
-            & !DataTypeArbitrarySelection::OBJECT
-            & !DataTypeArbitrarySelection::LIST
-            & !DataTypeArbitrarySelection::ARRAY
-            & !DataTypeArbitrarySelection::STRUCT
-            & !DataTypeArbitrarySelection::DATETIME
-            & !DataTypeArbitrarySelection::DATE
-            & !DataTypeArbitrarySelection::TIME
-            & !DataTypeArbitrarySelection::DURATION
-            & !DataTypeArbitrarySelection::BINARY_OFFSET;
-        options.categories_range = 1..=3;
-        options
+        DataTypeArbitraryOptions {
+            allowed_dtypes: DataTypeArbitrarySelection::all()
+                & !DataTypeArbitrarySelection::CATEGORICAL
+                & !DataTypeArbitrarySelection::ENUM
+                & !DataTypeArbitrarySelection::OBJECT
+                & !DataTypeArbitrarySelection::LIST
+                & !DataTypeArbitrarySelection::ARRAY
+                & !DataTypeArbitrarySelection::STRUCT
+                & !DataTypeArbitrarySelection::DATETIME
+                & !DataTypeArbitrarySelection::DATE
+                & !DataTypeArbitrarySelection::TIME
+                & !DataTypeArbitrarySelection::DURATION
+                & !DataTypeArbitrarySelection::BINARY_OFFSET,
+            categories_range: 1..=3,
+            ..Default::default()
+        }
     }
 
     proptest! {
@@ -190,9 +189,9 @@ mod tests {
         ) {
             let source_dtype = source_value.dtype();
             let scalar = Scalar::new(source_dtype.clone(), source_value.clone());
-            
+
             let cast_result = scalar.cast_with_options(&target_dtype, CastOptions::default());
-            
+
             if let Ok(casted_scalar) = cast_result {
                 prop_assert_eq!(casted_scalar.dtype(), &target_dtype);
             }
@@ -207,9 +206,9 @@ mod tests {
         ) {
             let source_dtype = source_value.dtype();
             let scalar = Scalar::new(source_dtype.clone(), source_value);
-            
+
             let result = scalar.clone().cast_with_options(&source_dtype, CastOptions::default());
-            
+
             prop_assert!(result.is_ok());
             if let Ok(casted) = result {
                 prop_assert_eq!(casted.dtype(), scalar.dtype());
