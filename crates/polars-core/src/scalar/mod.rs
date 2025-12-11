@@ -124,7 +124,7 @@ impl Scalar {
     }
 }
 
-#[cfg(all(test, feature = "proptest"))]
+#[cfg(all(test, feature = "proptest", not(miri)))]
 mod tests {
     use std::rc::Rc;
 
