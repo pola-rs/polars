@@ -1119,47 +1119,6 @@ pub fn lower_ir(
         IR::Join {
             input_left,
             input_right,
-            schema,
-            left_on,
-            right_on,
-            options,
-        } if is_merge_join(
-            *input_left,
-            *input_right,
-            left_on,
-            right_on,
-            options,
-            ir_arena,
-            expr_arena,
-            schema_cache,
-        ) =>
-        {
-            let schema = schema.clone();
-            let left_on = left_on.clone();
-            let right_on = right_on.clone();
-            let options = options.clone();
-            let input_left = *input_left;
-            let input_right = *input_right;
-            lower_join(
-                input_left,
-                input_right,
-                schema,
-                left_on,
-                right_on,
-                options,
-                ir_arena,
-                expr_arena,
-                phys_sm,
-                schema_cache,
-                expr_cache,
-                cache_nodes,
-                ctx,
-            )?
-        },
-
-        IR::Join {
-            input_left,
-            input_right,
             schema: _,
             left_on,
             right_on,
@@ -1167,12 +1126,29 @@ pub fn lower_ir(
         } => {
             let input_left = *input_left;
             let input_right = *input_right;
+            let input_left_schema = IR::schema_with_cache(input_left, ir_arena, schema_cache);
+            let input_right_schema = IR::schema_with_cache(input_right, ir_arena, schema_cache);
             let left_on = left_on.clone();
             let right_on = right_on.clone();
+            let get_expr_name = |e: &ExprIR| e.output_name().clone();
+            let left_on_names = left_on.iter().map(get_expr_name).collect_vec();
+            let right_on_names = right_on.iter().map(get_expr_name).collect_vec();
             let args = options.args.clone();
             let options = options.options.clone();
             let phys_left = lower_ir!(input_left)?;
             let phys_right = lower_ir!(input_right)?;
+            let left_is_sorted = are_keys_sorted_any(
+                is_sorted(input_left, ir_arena, expr_arena).as_ref(),
+                &left_on,
+                expr_arena,
+                &input_left_schema,
+            );
+            let right_is_sorted = are_keys_sorted_any(
+                is_sorted(input_right, ir_arena, expr_arena).as_ref(),
+                &right_on,
+                expr_arena,
+                &input_right_schema,
+            );
 
             if (args.how.is_equi() || args.how.is_semi_anti()) && !args.validation.needs_checks() {
                 // When lowering the expressions for the keys we need to ensure we keep around the
@@ -1209,7 +1185,36 @@ pub fn lower_ir(
                 trans_left_on.drain(left_on.len()..);
                 trans_right_on.drain(right_on.len()..);
 
-                let node = if args.how.is_equi() {
+                // TODO: [amber] We can do this if we buffer a bunch of stuff in the node
+                let is_out_of_order = (args.how == JoinType::Left
+                    && matches!(
+                        args.maintain_order,
+                        MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft
+                    ))
+                    || (args.how == JoinType::Right
+                        && matches!(
+                            args.maintain_order,
+                            MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight
+                        ));
+                dbg!(&args.how, &args.maintain_order, is_out_of_order);
+                let node = if args.how.is_equi()
+                    && left_is_sorted
+                    && right_is_sorted
+                    && !is_out_of_order
+                    && args.how != JoinType::Full
+                {
+                    dbg!("using merge join");
+                    phys_sm.insert(PhysNode::new(
+                        output_schema,
+                        PhysNodeKind::MergeJoin {
+                            input_left: trans_input_left,
+                            input_right: trans_input_right,
+                            left_on: left_on_names,
+                            right_on: right_on_names,
+                            args: args.clone(),
+                        },
+                    ))
+                } else if args.how.is_equi() {
                     phys_sm.insert(PhysNode::new(
                         output_schema,
                         PhysNodeKind::EquiJoin {
@@ -1264,7 +1269,6 @@ pub fn lower_ir(
             }
         },
 
-        IR::Join { .. } => todo!(),
         IR::Distinct { input, options } => {
             let options = options.clone();
             let input = *input;
@@ -1434,239 +1438,4 @@ pub fn lower_ir(
 
     let node_key = phys_sm.insert(PhysNode::new(output_schema, node_kind));
     Ok(PhysStream::first(node_key))
-}
-
-fn is_merge_join(
-    input_left: Node,
-    input_right: Node,
-    left_on: &Vec<ExprIR>,
-    right_on: &Vec<ExprIR>,
-    options: &JoinOptionsIR,
-    ir_arena: &Arena<IR>,
-    expr_arena: &Arena<AExpr>,
-    schema_cache: &mut PlHashMap<Node, Arc<Schema>>,
-) -> bool {
-    let left_on = left_on.clone();
-    let right_on = right_on.clone();
-    let args = options.args.clone();
-    let input_left_schema = IR::schema_with_cache(input_left, ir_arena, schema_cache);
-    let input_right_schema = IR::schema_with_cache(input_right, ir_arena, schema_cache);
-    let left_is_sorted = are_keys_sorted_any(
-        is_sorted(input_left, ir_arena, expr_arena).as_ref(),
-        &left_on,
-        expr_arena,
-        &input_left_schema,
-    );
-    let right_is_sorted = are_keys_sorted_any(
-        is_sorted(input_right, ir_arena, expr_arena).as_ref(),
-        &right_on,
-        expr_arena,
-        &input_right_schema,
-    );
-    // TODO: [amber] We can do this if we buffer a bunch of stuff in the node
-    let needs_complicated_order = match options.args.how {
-        JoinType::Left => matches!(
-            options.args.maintain_order,
-            MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft
-        ),
-        JoinType::Right => matches!(
-            options.args.maintain_order,
-            MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight
-        ),
-        JoinType::Inner | JoinType::Full => false,
-        _ => unreachable!(),
-    };
-
-    dbg!(
-        &args.how,
-        args.validation.needs_checks(),
-        left_is_sorted,
-        right_is_sorted,
-        needs_complicated_order
-    );
-
-    args.how.is_equi()
-        && !args.validation.needs_checks()
-        && left_is_sorted
-        && right_is_sorted
-        && !needs_complicated_order
-}
-
-fn lower_join(
-    input_left: Node,
-    input_right: Node,
-    schema: SchemaRef,
-    left_on: Vec<ExprIR>,
-    right_on: Vec<ExprIR>,
-    options: Arc<JoinOptionsIR>,
-    ir_arena: &mut Arena<IR>,
-    expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
-    schema_cache: &mut PlHashMap<Node, Arc<Schema>>,
-    expr_cache: &mut ExprCache,
-    cache_nodes: &mut PlHashMap<UniqueId, PhysStream>,
-    ctx: StreamingLowerIRContext,
-) -> PolarsResult<PhysNodeKind> {
-    assert!(options.args.how.is_equi());
-    let append_suffix =
-        |name: &PlSmallStr| format_pl_smallstr!("{}{}", name.as_str(), options.args.suffix());
-    let left_on = left_on.clone();
-    let right_on = right_on.clone();
-    let schema_left = ir_arena.get(input_left).schema(ir_arena).into_owned();
-    let schema_right = ir_arena.get(input_right).schema(ir_arena).into_owned();
-    let args = options.args.clone();
-    let options = options.options.clone();
-
-    let mut phys_left = lower_ir(
-        input_left,
-        ir_arena,
-        expr_arena,
-        phys_sm,
-        schema_cache,
-        expr_cache,
-        cache_nodes,
-        ctx,
-    )?;
-    let mut phys_right = lower_ir(
-        input_right,
-        ir_arena,
-        expr_arena,
-        phys_sm,
-        schema_cache,
-        expr_cache,
-        cache_nodes,
-        ctx,
-    )?;
-
-    assert!(left_on.len() == right_on.len(), "join keys length mismatch");
-    let key_dtypes = left_on
-        .iter()
-        .map(|e| schema_left.get(e.output_name()).unwrap().clone())
-        .collect_vec();
-    let key_dtype_is_nested = key_dtypes.iter().any(DataType::is_nested);
-    let mut key_is_row_encoded = false;
-    let left_on_encoded;
-    let right_on_encoded;
-    if left_on.len() > 1 || key_dtype_is_nested {
-        key_is_row_encoded = true;
-        // Add the key column as the last column for both inputs.
-        let encoding_variant = RowEncodingVariant::Ordered {
-            descending: None,
-            nulls_last: None,
-        };
-        let is_not_null = left_on
-            .iter()
-            .map(|e| {
-                AExprBuilder::new_from_node(e.node())
-                    .is_not_null(expr_arena)
-                    .expr_ir_unnamed()
-            })
-            .collect_vec();
-        let not_null = AExprBuilder::any_horizontal(is_not_null, expr_arena);
-        let row_encode = AExprBuilder::row_encode(
-            left_on.clone(),
-            key_dtypes.clone(),
-            encoding_variant.clone(),
-            expr_arena,
-        )
-        .cast(DataType::Binary, expr_arena);
-        let null = AExprBuilder::lit(LiteralValue::untyped_null(), expr_arena);
-        left_on_encoded = AExprBuilder::when_then_otherwise(not_null, row_encode, null, expr_arena)
-            .expr_ir(unique_column_name());
-        phys_left = build_hstack_stream(
-            phys_left,
-            &[left_on_encoded.clone()],
-            expr_arena,
-            phys_sm,
-            expr_cache,
-            ctx,
-        )?;
-
-        let is_not_null = right_on
-            .iter()
-            .map(|e| {
-                AExprBuilder::new_from_node(e.node())
-                    .is_not_null(expr_arena)
-                    .expr_ir_unnamed()
-            })
-            .collect_vec();
-        let not_null = AExprBuilder::all_horizontal(is_not_null, expr_arena);
-        let row_encode = AExprBuilder::row_encode(
-            right_on.clone(),
-            key_dtypes.clone(),
-            encoding_variant.clone(),
-            expr_arena,
-        )
-        .cast(DataType::Binary, expr_arena);
-        let null = AExprBuilder::lit(LiteralValue::untyped_null(), expr_arena);
-        right_on_encoded =
-            AExprBuilder::when_then_otherwise(not_null, row_encode, null, expr_arena)
-                .expr_ir(unique_column_name());
-        phys_right = build_hstack_stream(
-            phys_right,
-            &[right_on_encoded.clone()],
-            expr_arena,
-            phys_sm,
-            expr_cache,
-            ctx,
-        )?;
-    } else {
-        left_on_encoded = left_on[0].clone();
-        right_on_encoded = right_on[0].clone();
-    };
-
-    let mut right_renamed = Vec::new();
-    let schema_right = phys_sm[phys_right.node].output_schema.clone();
-    for name in schema_right.iter_names() {
-        let expr_ir = if schema_left.contains(name) {
-            let new_name = append_suffix(&name);
-            let col_expr = expr_arena.add(AExpr::Column(name.clone()));
-            ExprIR::new(col_expr, OutputName::Alias(new_name.clone()))
-        } else {
-            let col_expr = expr_arena.add(AExpr::Column(name.clone()));
-            ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone()))
-        };
-        right_renamed.push(expr_ir);
-    }
-
-    phys_right = build_select_stream(
-        phys_right,
-        &right_renamed,
-        expr_arena,
-        phys_sm,
-        expr_cache,
-        ctx,
-    )?;
-
-    // let trans_left_on;
-    // let trans_right_on;
-
-    // (phys_left, trans_left_on) = lower_exprs(
-    //     phys_left,
-    //     &[left_on_encoded],
-    //     expr_arena,
-    //     phys_sm,
-    //     expr_cache,
-    //     ctx,
-    // )?;
-    // (phys_right, trans_right_on) = lower_exprs(
-    //     phys_right,
-    //     &[right_on_encoded],
-    //     expr_arena,
-    //     phys_sm,
-    //     expr_cache,
-    //     ctx,
-    // )?;
-
-    // dbg!(&trans_left_on);
-    // dbg!(&trans_right_on);
-
-    Ok(PhysNodeKind::MergeJoin {
-        input_left: phys_left,
-        input_right: phys_right,
-        left_on: left_on_encoded.output_name().clone(),
-        right_on: right_on_encoded.output_name().clone(),
-        key_is_row_encoded,
-        args,
-    })
 }

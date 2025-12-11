@@ -366,9 +366,8 @@ pub enum PhysNodeKind {
     MergeJoin {
         input_left: PhysStream,
         input_right: PhysStream,
-        left_on: PlSmallStr,
-        right_on: PlSmallStr,
-        key_is_row_encoded: bool,
+        left_on: Vec<PlSmallStr>,
+        right_on: Vec<PlSmallStr>,
         args: JoinArgs,
     },
 

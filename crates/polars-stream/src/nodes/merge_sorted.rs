@@ -36,7 +36,7 @@ impl MergeSortedNode {
 /// Find a part amongst both unmerged buffers which is mergeable.
 ///
 /// This returns `None` if there is nothing mergeable at this point.
-pub(crate) fn find_mergeable(
+fn find_mergeable(
     left_unmerged: &mut VecDeque<DataFrame>,
     right_unmerged: &mut VecDeque<DataFrame>,
 

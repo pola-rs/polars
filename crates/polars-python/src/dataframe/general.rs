@@ -603,6 +603,7 @@ impl PyDataFrame {
                     self.df.read().get_columns(),
                     descending.as_slice(),
                     nulls_last.as_slice(),
+                    false,
                 )
             }?;
 

@@ -144,8 +144,8 @@ pub enum PhysNodeProperties {
     },
     MergeJoin {
         how: PlSmallStr,
-        left_on: PlSmallStr,
-        right_on: PlSmallStr,
+        left_on: Vec<PlSmallStr>,
+        right_on: Vec<PlSmallStr>,
         nulls_equal: bool,
         coalesce: JoinCoalesce,
         maintain_order: MaintainOrderJoin,

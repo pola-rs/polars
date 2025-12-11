@@ -955,7 +955,7 @@ pub fn row_encode(
             assert_eq!(c.len(), descending.len());
             assert_eq!(c.len(), nulls_last.len());
 
-            _get_rows_encoded_ca(name, c, &descending, &nulls_last)
+            _get_rows_encoded_ca(name, c, &descending, &nulls_last, false)
         },
     }
     .map(IntoColumn::into_column)

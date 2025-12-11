@@ -709,6 +709,7 @@ impl ChunkSort<ListType> for ListChunked {
             &[self.clone().into_column()],
             &[options.descending],
             &[options.nulls_last],
+            false,
         )
         .unwrap();
         bin.arg_sort(Default::default())

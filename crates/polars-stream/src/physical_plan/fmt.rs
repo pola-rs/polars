@@ -624,13 +624,30 @@ fn visualize_plan_rec(
             input_right,
             left_on,
             right_on,
-            key_is_row_encoded,
             args,
         } => {
             let mut label = "merge-join".to_string();
             let how: &'static str = (&args.how).into();
-            write!(label, r"\nleft_on:\n{}", escape_graphviz(left_on)).unwrap();
-            write!(label, r"\nright_on:\n{}", escape_graphviz(right_on)).unwrap();
+            write!(
+                label,
+                r"\nleft_on:\n{}",
+                left_on
+                    .iter()
+                    .map(|s| escape_graphviz(&s[..]))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            )
+            .unwrap();
+            write!(
+                label,
+                r"\nright_on:\n{}",
+                right_on
+                    .iter()
+                    .map(|s| escape_graphviz(&s[..]))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            )
+            .unwrap();
             write!(label, r"\nhow: {}", escape_graphviz(how)).unwrap();
             if args.nulls_equal {
                 write!(label, r"\njoin-nulls").unwrap();

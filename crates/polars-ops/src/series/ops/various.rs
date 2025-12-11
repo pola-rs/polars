@@ -95,6 +95,7 @@ pub trait SeriesMethods: SeriesSealed {
                 &[s.clone().into()],
                 &[options.descending],
                 &[options.nulls_last],
+                false,
             )?;
             return encoded.into_series().is_sorted(options);
         }
