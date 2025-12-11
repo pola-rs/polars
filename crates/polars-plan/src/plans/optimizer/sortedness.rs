@@ -108,7 +108,7 @@ fn is_sorted_rec(
         IR::DataFrameScan { df, .. } => Some(IRSorted(
             [df.get_columns()
                 .iter()
-                .find_map(|c| match dbg!(c.is_sorted_flag()) {
+                .find_map(|c| match c.is_sorted_flag() {
                     IsSorted::Not => None,
                     IsSorted::Ascending => Some(Sorted {
                         column: c.name().clone(),

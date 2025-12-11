@@ -21,7 +21,7 @@ use crate::nodes::ComputeNode;
 use crate::pipe::{PortReceiver, RecvPort, SendPort};
 
 // Do row encoding in lowering and then we will have one key column per input
-// Proably Gijs has already done something like this somewhere
+// Probably Gijs has already done something like this somewhere
 
 // TODO: [amber] Use `_get_rows_encoded` (with `descending`) to encode the keys
 // TODO: [amber] Consider extending the HashKeys to support sorted data
@@ -214,14 +214,14 @@ impl MergeJoinNode {
     fn drop_non_output_columns(&self, df: &DataFrame) -> PolarsResult<DataFrame> {
         let mut drop_cols = PlHashSet::with_capacity(df.width());
         for col in df.get_column_names() {
-            if !self.key_is_in_outupt(col) {
+            if !self.key_is_in_output(col) {
                 drop_cols.insert(col.clone());
             }
         }
         Ok(df.drop_many_amortized(&drop_cols))
     }
 
-    fn key_is_in_outupt(&self, col_name: &PlSmallStr) -> bool {
+    fn key_is_in_output(&self, col_name: &PlSmallStr) -> bool {
         self.params.output_schema.contains(col_name)
     }
 }
@@ -293,7 +293,7 @@ impl ComputeNode for MergeJoinNode {
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 loop {
                     let flush = self.state == Flushing;
-                    match pop_mergable(
+                    match find_mergeable(
                         &mut self.left_unmerged,
                         &self.params.left_key_col,
                         &mut self.right_unmerged,
@@ -366,7 +366,7 @@ impl ComputeNode for MergeJoinNode {
     }
 }
 
-fn pop_mergable(
+fn find_mergeable(
     left: &mut VecDeque<DataFrame>,
     left_key: &str,
     right: &mut VecDeque<DataFrame>,
@@ -375,17 +375,17 @@ fn pop_mergable(
     params: &MergeJoinParams,
 ) -> PolarsResult<Either<(DataFrame, DataFrame), Side>> {
     if params.args.how == JoinType::Right {
-        let res = pop_mergable_inner(right, right_key, left, left_key, flush, params)?;
+        let res = find_mergeable_inner(right, right_key, left, left_key, flush, params)?;
         return Ok(match res {
             ELeft((right_df, left_df)) => ELeft((left_df, right_df)),
             ERight(side) => ERight(!side),
         });
     } else {
-        pop_mergable_inner(left, left_key, right, right_key, flush, params)
+        find_mergeable_inner(left, left_key, right, right_key, flush, params)
     }
 }
 
-fn pop_mergable_inner(
+fn find_mergeable_inner(
     left: &mut VecDeque<DataFrame>,
     left_key: &str,
     right: &mut VecDeque<DataFrame>,
