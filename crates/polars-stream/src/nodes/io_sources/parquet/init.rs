@@ -15,7 +15,7 @@ use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOu
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
 use crate::nodes::io_sources::parquet::statistics::calculate_row_group_pred_pushdown_skip_mask;
 use crate::nodes::{MorselSeq, TaskPriority};
-use crate::utils::task_handles_ext::{self, AbortOnDropHandle};
+use crate::utils::tokio_handle_ext::{self, AbortOnDropHandle};
 
 impl ParquetReadImpl {
     /// Constructs the task that distributes morsels across the engine pipelines.
@@ -31,7 +31,7 @@ impl ParquetReadImpl {
         if let Some((_, 0)) = self.normalized_pre_slice {
             return (
                 morsel_rx,
-                task_handles_ext::AbortOnDropHandle(io_runtime.spawn(std::future::ready(Ok(())))),
+                tokio_handle_ext::AbortOnDropHandle(io_runtime.spawn(std::future::ready(Ok(())))),
             );
         }
 

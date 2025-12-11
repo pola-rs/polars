@@ -188,7 +188,7 @@ pub enum WindowMapping {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct UnpivotArgsDSL {
-    pub on: Selector,
+    pub on: Option<Selector>,
     pub index: Selector,
     pub variable_name: Option<PlSmallStr>,
     pub value_name: Option<PlSmallStr>,

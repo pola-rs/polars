@@ -48,7 +48,7 @@ impl PyDataFrame {
         // TODO: iterate over the chunks directly instead of using random access.
         let df = if df.max_n_chunks() > 16 {
             rechunked = df.clone();
-            rechunked.as_single_chunk_par();
+            py.enter_polars_ok(|| rechunked.as_single_chunk_par())?;
             &rechunked
         } else {
             &df

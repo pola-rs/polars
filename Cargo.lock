@@ -3610,7 +3610,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-32"
-version = "1.36.0-beta.2"
+version = "1.36.1"
 dependencies = [
  "either",
  "libc",
@@ -3621,7 +3621,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-64"
-version = "1.36.0-beta.2"
+version = "1.36.1"
 dependencies = [
  "either",
  "libc",
@@ -3632,7 +3632,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-compat"
-version = "1.36.0-beta.2"
+version = "1.36.1"
 dependencies = [
  "either",
  "libc",
@@ -4859,9 +4859,9 @@ checksum = "56199f7ddabf13fe5074ce809e7d3f42b42ae711800501b5b16ea82ad029c39d"
 
 [[package]]
 name = "slab"
-version = "0.4.10"
+version = "0.4.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04dc19736151f35336d325007ac991178d504a119863a2fcb3758cdb5e52c50d"
+checksum = "7a2ae44ef20feb57a68b23d846850f861394c2e02dc425a50098ae8c90267589"
 
 [[package]]
 name = "slotmap"
@@ -4907,19 +4907,20 @@ dependencies = [
 
 [[package]]
 name = "sqlparser"
-version = "0.53.0"
+version = "0.60.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05a528114c392209b3264855ad491fcce534b94a38771b0a0b97a79379275ce8"
+checksum = "505aa16b045c4c1375bf5f125cce3813d0176325bfe9ffc4a903f423de7774ff"
 dependencies = [
  "log",
+ "recursive",
  "sqlparser_derive",
 ]
 
 [[package]]
 name = "sqlparser_derive"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da5fc6819faabb412da764b99d3b713bb55083c11e7e0c00144d386cd6a1939c"
+checksum = "028e551d5e270b31b9f3ea271778d9d827148d4287a5d96167b6bb9787f5cc38"
 dependencies = [
  "proc-macro2",
  "quote",

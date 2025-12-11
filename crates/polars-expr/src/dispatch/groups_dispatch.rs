@@ -53,6 +53,7 @@ pub fn reverse<'a>(
             GroupsType::Slice {
                 groups,
                 overlapping: _,
+                monotonic: _,
             } => groups
                 .into_par_iter()
                 .map(|[start, len]| {
@@ -111,6 +112,7 @@ pub fn null_count<'a>(
             GroupsType::Slice {
                 groups,
                 overlapping: _,
+                monotonic: _,
             } => groups
                 .into_par_iter()
                 .map(|[start, length]| {
@@ -312,13 +314,13 @@ pub fn drop_items<'a>(
     if let AggState::AggregatedScalar(c) = &mut ac.state {
         ac.state = AggState::NotAggregated(std::mem::take(c));
         ac.groups = Cow::Owned(
-            GroupsType::Slice {
-                groups: predicate
+            {
+                let groups = predicate
                     .iter()
                     .enumerate_idx()
                     .map(|(i, p)| [i, IdxSize::from(p)])
-                    .collect(),
-                overlapping: false,
+                    .collect();
+                GroupsType::new_slice(groups, false, true)
             }
             .into_sliceable(),
         );
@@ -344,6 +346,7 @@ pub fn drop_items<'a>(
             GroupsType::Slice {
                 groups,
                 overlapping: _,
+                monotonic: _,
             } => groups
                 .into_par_iter()
                 .map(|[start, length]| {
@@ -490,6 +493,7 @@ pub fn moment_agg<'a, S: Default>(
         GroupsType::Slice {
             groups,
             overlapping: _,
+            monotonic: _,
         } => groups
             .into_par_iter()
             .map(|[start, length]| finalize(new_from_slice(arr, *start as usize, *length as usize)))
@@ -600,6 +604,7 @@ pub fn unique<'a>(
             GroupsType::Slice {
                 groups,
                 overlapping: _,
+                monotonic: _,
             } => groups
                 .into_par_iter()
                 .map_with(CloneWrapper(state), |state, [start, len]| {
@@ -656,6 +661,7 @@ fn fw_bw_fill_null<'a>(
             GroupsType::Slice {
                 groups,
                 overlapping: _,
+                monotonic: _,
             } => groups
                 .into_par_iter()
                 .map(|[start, len]| {

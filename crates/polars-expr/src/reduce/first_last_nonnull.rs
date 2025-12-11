@@ -360,10 +360,11 @@ impl<P: NonNullPolicy + 'static> GroupedReduction for GenericFirstLastNonNullGro
 
     fn update_group(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         group_idx: IdxSize,
         seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         assert!(values.dtype() == &self.in_dtype);
         if !values.is_empty() {
             let seq_id = seq_id + 1; // We use 0 for 'no value'.
@@ -401,11 +402,12 @@ impl<P: NonNullPolicy + 'static> GroupedReduction for GenericFirstLastNonNullGro
 
     unsafe fn update_groups_while_evicting(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         subset: &[IdxSize],
         group_idxs: &[EvictIdx],
         seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         assert!(values.dtype() == &self.in_dtype);
         assert!(subset.len() == group_idxs.len());
         let seq_id = seq_id + 1; // We use 0 for 'no value'.

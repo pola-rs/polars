@@ -23,6 +23,9 @@ pub enum BinaryFunction {
     /// The parameters are destination type, and whether to use little endian
     /// encoding.
     Reinterpret(DataTypeExpr, bool),
+    Slice,
+    Head,
+    Tail,
 }
 
 impl Display for BinaryFunction {
@@ -43,6 +46,9 @@ impl Display for BinaryFunction {
             Size => "size_bytes",
             #[cfg(feature = "binary_encoding")]
             Reinterpret(_, _) => "reinterpret",
+            Slice => "slice",
+            Head => "head",
+            Tail => "tail",
         };
         write!(f, "bin.{s}")
     }

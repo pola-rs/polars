@@ -51,6 +51,10 @@ impl<
         self.sorted.update(start, end);
         let length = self.sorted.len();
 
+        if length == 0 {
+            return None;
+        };
+
         let idx = match self.method {
             Linear => {
                 // Maybe add a fast path for median case? They could branch depending on odd/even.

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
@@ -17,7 +17,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import time_func
 
 if TYPE_CHECKING:
-    from polars._typing import PolarsDataType
+    from polars._typing import EngineType, PolarsDataType
 
 
 def test_list_arr_get() -> None:
@@ -380,7 +380,7 @@ def test_list_shift() -> None:
     assert_frame_equal(df, expected_df)
 
 
-def test_list_drop_nulls() -> None:
+def test_list_drop_nulls_eager() -> None:
     s = pl.Series("values", [[1, None, 2, None], [None, None], [1, 2], None])
     expected = pl.Series("values", [[1, 2], [], [1, 2], None])
     assert_series_equal(s.list.drop_nulls(), expected)
@@ -389,6 +389,25 @@ def test_list_drop_nulls() -> None:
     df = df.select(pl.col("values").list.drop_nulls())
     expected_df = pl.DataFrame({"values": [[1, 2], [], [3, 4]]})
     assert_frame_equal(df, expected_df)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    "data",
+    [
+        [None, ["value"]],
+        [None, ["value", None]],
+        [None, [None, "value", None]],
+    ],
+)
+def test_list_drop_nulls_lazy(engine: EngineType, data: list[Any]) -> None:
+    res = (
+        pl.LazyFrame({"foo": data})
+        .with_columns(pl.col("foo").list.drop_nulls())
+        .collect(engine=engine)
+    )
+    expected = pl.DataFrame({"foo": [None, ["value"]]})
+    assert_frame_equal(res, expected)
 
 
 def test_list_sample() -> None:

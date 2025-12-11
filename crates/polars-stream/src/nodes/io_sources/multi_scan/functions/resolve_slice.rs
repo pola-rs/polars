@@ -117,7 +117,7 @@ async fn resolve_negative_slice(config: &MultiScanConfig) -> PolarsResult<Resolv
                 PolarsResult::Ok((scan_source_idx, reader, row_deletions))
             }))
         })
-        .buffered(config.n_readers_pre_init());
+        .buffered(config.n_readers_pre_init().max(1));
 
     let n_rows_needed: usize = offset_from_end;
 
