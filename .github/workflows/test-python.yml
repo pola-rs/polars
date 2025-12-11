@@ -92,6 +92,8 @@ jobs:
 
       - name: Install Polars
         run: |
+          # Make sure we use the Polars we're about to build.
+          uv pip uninstall polars-runtime-32 polars-runtime-64 polars-runtime-compat
           pip install --no-deps -e .
           maturin develop --manifest-path runtime/polars-runtime-32/Cargo.toml
 
