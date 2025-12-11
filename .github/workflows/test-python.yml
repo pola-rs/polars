@@ -70,7 +70,9 @@ jobs:
 
       - name: Install maturin
         if: matrix.python-version == '3.13t'
-        run: pip install maturin
+        run: |
+          pip install uv
+          uv pip install maturin
 
       - name: Install Python dependencies
         if: matrix.python-version != '3.13t'
