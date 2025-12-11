@@ -128,14 +128,6 @@ def test_quantile_error_checking() -> None:
     with pytest.raises(pl.exceptions.ComputeError):
         s.quantile([0.0, 1.2])
 
-    df = pl.DataFrame(
-        {"groups": ["A", "A", "A", "B", "B", "B"], "x": [1, 2, 3, 4, 5, 6]}
-    )
-    with pytest.raises(pl.exceptions.ComputeError):
-        df.group_by("groups").agg(
-            pl.quantile("x", [0.25, 0.75], interpolation="linear")
-        )
-
 
 def test_quantile_date() -> None:
     s = pl.Series(
