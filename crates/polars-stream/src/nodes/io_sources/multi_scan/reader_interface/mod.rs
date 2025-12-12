@@ -30,6 +30,8 @@ pub trait FileReader: Send + Sync {
     /// When reading a files list, `prepare_read()` will be called sequentially for each reader in
     /// the order in which the files are read.
     ///
+    /// This can be used e.g. to synchronize data fetches such that they happen in order.
+    ///
     /// This is not guaranteed to always to be called.
     fn prepare_read(&mut self) -> PolarsResult<()> {
         Ok(())
