@@ -374,7 +374,7 @@ impl PySeries {
     fn __setstate__(&self, py: Python<'_>, state: Py<PyAny>) -> PyResult<()> {
         // Used in pickle/pickling
         use pyo3::pybacked::PyBackedBytes;
-        match state.extract::<PyBackedBytes>(py) {
+        match state.extract::<PyBackedBytes>(py).map_err(PyErr::from) {
             Ok(bytes) => py.enter_polars(|| {
                 let mut reader = std::io::Cursor::new(&*bytes);
                 *self.series.write() = Series::deserialize_from_reader(&mut reader)?;
