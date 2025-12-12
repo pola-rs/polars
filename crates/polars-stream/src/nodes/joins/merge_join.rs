@@ -32,20 +32,9 @@ use crate::pipe::{PortReceiver, RecvPort, SendPort};
 // equi join node rather than dispatching to in-memory engine
 
 #[derive(Debug)]
-enum Side {
+enum NeedMore {
     Left,
     Right,
-}
-
-impl Not for Side {
-    type Output = Side;
-
-    fn not(self) -> Self::Output {
-        match self {
-            Side::Left => Side::Right,
-            Side::Right => Side::Left,
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -334,15 +323,14 @@ impl ComputeNode for MergeJoinNode {
                             let joined = self.compute_join(left_chunk, right_chunk, state)?;
                             let source_token = SourceToken::new();
                             let morsel = Morsel::new(joined, self.seq, source_token);
-                            dbg!(&morsel);
                             send.send(morsel).await.unwrap(); // TODO [amber] Can this error be handled?
                             self.seq = self.seq.successor();
                         },
-                        Either::Right(Side::Left) if self.state == Flushing => {
+                        Either::Right(NeedMore::Left) if self.state == Flushing => {
                             self.right_unmerged.clear();
                             return Ok(());
                         },
-                        Either::Right(Side::Left) if recv_left.is_some() => {
+                        Either::Right(NeedMore::Left) if recv_left.is_some() => {
                             // Need more left data
                             let Ok(m) = recv_left.as_mut().unwrap().recv().await else {
                                 buffer_unmerged_from_pipe(
@@ -358,7 +346,7 @@ impl ComputeNode for MergeJoinNode {
                             append_key_columns(&mut df, &self.params.left, &self.params)?;
                             self.left_unmerged.push_back(df);
                         },
-                        Either::Right(Side::Right) if recv_right.is_some() => {
+                        Either::Right(NeedMore::Right) if recv_right.is_some() => {
                             // Need more right data
                             let Ok(m) = recv_right.as_mut().unwrap().recv().await else {
                                 buffer_unmerged_from_pipe(
@@ -388,12 +376,13 @@ fn find_mergeable(
     right: &mut VecDeque<DataFrame>,
     flush: bool,
     params: &MergeJoinParams,
-) -> PolarsResult<Either<(DataFrame, DataFrame), Side>> {
+) -> PolarsResult<Either<(DataFrame, DataFrame), NeedMore>> {
     if params.args.how == JoinType::Right {
         let res = find_mergeable_inner(right, left, &params.right, &params.left, flush)?;
         return Ok(match res {
             Either::Left((right_df, left_df)) => Either::Left((left_df, right_df)),
-            Either::Right(side) => Either::Right(!side),
+            Either::Right(NeedMore::Left) => Either::Right(NeedMore::Right),
+            Either::Right(NeedMore::Right) => Either::Right(NeedMore::Left),
         });
     } else {
         find_mergeable_inner(left, right, &params.left, &params.right, flush)
@@ -406,14 +395,14 @@ fn find_mergeable_inner(
     left_params: &SideParams,
     right_params: &SideParams,
     flush: bool,
-) -> PolarsResult<Either<(DataFrame, DataFrame), Side>> {
+) -> PolarsResult<Either<(DataFrame, DataFrame), NeedMore>> {
     loop {
         if left.is_empty() && flush {
             right.clear();
-            return Ok(Either::Right(Side::Left));
+            return Ok(Either::Right(NeedMore::Left));
         }
         if left.is_empty() {
-            return Ok(Either::Right(Side::Left));
+            return Ok(Either::Right(NeedMore::Left));
         }
         if right.is_empty() && flush {
             return Ok(Either::Left((
@@ -422,7 +411,7 @@ fn find_mergeable_inner(
             )));
         }
         if right.is_empty() {
-            return Ok(Either::Right(Side::Right));
+            return Ok(Either::Right(NeedMore::Right));
         }
 
         let left_df = &left[0];
@@ -454,9 +443,9 @@ fn find_mergeable_inner(
             vstack_head(right);
             continue;
         } else if left_key_min == left_key_max && !flush {
-            return Ok(Either::Right(Side::Left));
+            return Ok(Either::Right(NeedMore::Left));
         } else if right_key_min == right_key_max && !flush {
-            return Ok(Either::Right(Side::Right));
+            return Ok(Either::Right(NeedMore::Right));
         }
 
         let global_max = if left_key_max.get(0)? < right_key_max.get(0)? {
@@ -484,8 +473,6 @@ fn find_mergeable_inner(
         right.push_front(right_rest);
 
         debug_assert!(left_df.height() > 0 || right_df.height() > 0);
-        debug_assert!(*left_df.schema() == left_params.ir_schema);
-        debug_assert!(*right_df.schema() == right_params.ir_schema);
         return Ok(Either::Left((left_df, right_df)));
     }
 }
@@ -544,6 +531,7 @@ fn append_key_columns(
     sp: &SideParams,
     params: &MergeJoinParams,
 ) -> PolarsResult<()> {
+    debug_assert!(*df.schema() == sp.input_schema);
     if sp.on.len() > 1 {
         let columns = sp
             .on
@@ -561,5 +549,6 @@ fn append_key_columns(
         .into_column();
         df.hstack_mut(&[key])?;
     }
+    debug_assert!(*df.schema() == sp.ir_schema);
     Ok(())
 }
