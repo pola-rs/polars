@@ -1188,8 +1188,8 @@ pub fn lower_ir(
                 trans_left_on.drain(left_on.len()..);
                 trans_right_on.drain(right_on.len()..);
 
-                // TODO: [amber] We can do this if we buffer a bunch of stuff in the node
-                let is_out_of_order = (args.how == JoinType::Left
+                // TODO: [amber] We can maybe do this if we buffer a bunch of stuff in the node
+                let hard_to_maintain_order = (args.how == JoinType::Left
                     && matches!(
                         args.maintain_order,
                         MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft
@@ -1199,14 +1199,30 @@ pub fn lower_ir(
                             args.maintain_order,
                             MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight
                         ));
-                dbg!(&args.how, &args.maintain_order, is_out_of_order);
+                let nulls_last_left = left_sortedness
+                    .as_ref()
+                    .unwrap()
+                    .0
+                    .iter()
+                    .any(|s| s.nulls_last.unwrap_or(false));
+                let nulls_last_right = right_sortedness
+                    .as_ref()
+                    .unwrap()
+                    .0
+                    .iter()
+                    .any(|s| s.nulls_last.unwrap_or(false));
+                // In case a key is some (int, None) tuple, the None will broadcast to the whole
+                // group, which breaks the sortedness property.
+                let nulls_sorted_violated = !args.nulls_equal
+                    && (left_on.len() > 1 || right_on.len() > 1)
+                    && (nulls_last_left || nulls_last_right);
                 let node = if args.how.is_equi()
                     && left_is_sorted
                     && right_is_sorted
-                    && !is_out_of_order
+                    && !hard_to_maintain_order
+                    && !nulls_sorted_violated
                     && args.how != JoinType::Full
                 {
-                    dbg!("using merge join");
                     phys_sm.insert(PhysNode::new(
                         output_schema,
                         PhysNodeKind::MergeJoin {

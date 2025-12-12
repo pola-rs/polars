@@ -5,7 +5,10 @@ use arrow::Either;
 // use arrow::Either::{Left as Either::Left, Right as Either::Right};
 use arrow::array::builder::ShareStrategy;
 use polars_core::frame::builder::DataFrameBuilder;
+use polars_core::prelude::search_sorted::binary_search_ca;
 use polars_core::prelude::*;
+use polars_core::series::IsSorted;
+use polars_core::utils::last_non_null;
 use polars_ops::prelude::*;
 use polars_plan::prelude::*;
 use polars_utils::format_pl_smallstr;
@@ -38,6 +41,7 @@ struct SideParams {
     on: Vec<PlSmallStr>,
     key_col: PlSmallStr,
     descending: Vec<bool>,
+    nulls_last: Vec<bool>,
 }
 
 #[derive(Debug)]
@@ -46,6 +50,7 @@ struct MergeJoinParams {
     right: SideParams,
     output_schema: SchemaRef,
     key_descending: bool,
+    key_nulls_last: bool,
     args: JoinArgs,
 }
 
@@ -117,12 +122,30 @@ impl MergeJoinNode {
         };
         let key_descending = is_descending(&left_sortedness);
         assert!(key_descending == is_descending(&right_sortedness));
+        let left_nulls_last = left_sortedness
+            .0
+            .iter()
+            .map(|s| s.nulls_last.unwrap())
+            .collect_vec();
+        let right_nulls_last = right_sortedness
+            .0
+            .iter()
+            .map(|s| s.nulls_last.unwrap())
+            .collect_vec();
+        let is_nulls_last = |s: &IRSorted| {
+            (s.0.len() == 1)
+                .then(|| s.0[0].nulls_last.unwrap())
+                .unwrap_or(false)
+        };
+        let key_nulls_last = is_nulls_last(&left_sortedness);
+        assert!(key_nulls_last == is_nulls_last(&right_sortedness));
         let left = SideParams {
             input_schema: left_input_schema,
             ir_schema: left_ir_schema,
             on: left_on,
             key_col: left_key_col,
             descending: left_descending,
+            nulls_last: left_nulls_last,
         };
         let right = SideParams {
             input_schema: right_input_schema,
@@ -130,12 +153,14 @@ impl MergeJoinNode {
             on: right_on,
             key_col: right_key_col,
             descending: right_descending,
+            nulls_last: right_nulls_last,
         };
         let params = MergeJoinParams {
             left,
             right,
             output_schema,
             key_descending,
+            key_nulls_last,
             args,
         };
         Ok(MergeJoinNode {
@@ -449,16 +474,17 @@ fn find_mergeable_inner(
         let right_key_val = right_df
             .column(&right_params.key_col)?
             .as_materialized_series_maintain_scalar();
+
         let left_span_start = left_key_val.slice(0, 1);
         let left_span_end = left_key_val.slice(left_key_val.len() as i64 - 1, 1);
         let right_span_start = right_key_val.slice(0, 1);
         let right_span_end = right_key_val.slice(right_key_val.len() as i64 - 1, 1);
 
         if left_span_start == left_span_end && left.len() >= 2 {
-            vstack_head(left);
+            vstack_head(left, &left_params, params);
             continue;
         } else if right_span_start == right_span_end && right.len() >= 2 {
-            vstack_head(right);
+            vstack_head(right, &right_params, params);
             continue;
         } else if left_span_start == left_span_end && !flush {
             return Ok(Either::Right(NeedMore::Left));
@@ -466,8 +492,12 @@ fn find_mergeable_inner(
             return Ok(Either::Right(NeedMore::Right));
         }
 
-        let spans_intersect_end =
-            match params.key_descending ^ (left_span_end.get(0)? < right_span_end.get(0)?) {
+        let left_span_end_val = left_span_start.get(0)?;
+        let right_span_end_val = right_span_start.get(0)?;
+        let spans_overlap_end =
+            match params.key_descending ^ (left_span_end_val < right_span_end_val) {
+                _ if params.key_nulls_last && right_span_end_val.is_null() => left_span_end,
+                _ if params.key_nulls_last && left_span_end_val.is_null() => right_span_end,
                 true => left_span_end,
                 false => right_span_end,
             };
@@ -475,26 +505,26 @@ fn find_mergeable_inner(
         if flush {
             left_cutoff = find_item_offset(
                 &left_key_val,
-                &spans_intersect_end,
+                &spans_overlap_end,
                 SearchSortedSide::Right,
                 params.key_descending,
             )? + 1;
             right_cutoff = find_item_offset(
                 &right_key_val,
-                &spans_intersect_end,
+                &spans_overlap_end,
                 SearchSortedSide::Right,
                 params.key_descending,
             )? + 1;
         } else {
             left_cutoff = find_item_offset(
                 &left_key_val,
-                &spans_intersect_end,
+                &spans_overlap_end,
                 SearchSortedSide::Left,
                 params.key_descending,
             )?;
             right_cutoff = find_item_offset(
                 &right_key_val,
-                &spans_intersect_end,
+                &spans_overlap_end,
                 SearchSortedSide::Left,
                 params.key_descending,
             )?;
@@ -506,10 +536,23 @@ fn find_mergeable_inner(
         let (right_df, right_rest) = right_df.split_at(right_cutoff);
         left.push_front(left_rest);
         right.push_front(right_rest);
-
         debug_assert!(left_df.height() > 0 || right_df.height() > 0);
         return Ok(Either::Left((left_df, right_df)));
     }
+}
+
+fn find_last_nonnull_index(s: &Series) -> PolarsResult<usize> {
+    let mut lo = 0;
+    let mut hi = s.len();
+    while lo < hi {
+        let mid = (lo + hi) / 2;
+        if s.get(mid)?.is_null() {
+            hi = mid;
+        } else {
+            lo = mid + 1;
+        }
+    }
+    Ok(lo)
 }
 
 fn find_item_offset(
@@ -518,14 +561,26 @@ fn find_item_offset(
     side: SearchSortedSide,
     descending: bool,
 ) -> PolarsResult<i64> {
-    // debug_assert!(s.get_flags().is_sorted_ascending());
+    match descending {
+        true => debug_assert!(s.get_flags().is_sorted_descending()),
+        false => debug_assert!(s.get_flags().is_sorted_ascending()),
+    }
     let pos = search_sorted(&s, &search_value, side, descending).unwrap();
     Ok(pos.iter().next().unwrap_or(Some(0)).unwrap() as i64)
 }
 
-fn vstack_head(unmerged: &mut VecDeque<DataFrame>) {
+fn vstack_head(unmerged: &mut VecDeque<DataFrame>, sp: &SideParams, params: &MergeJoinParams) {
+    let is_sorted = match params.key_descending {
+        false => IsSorted::Ascending,
+        true => IsSorted::Descending,
+    };
     let mut df = unmerged.pop_front().unwrap();
+    let col_idx = df.get_column_index(&sp.key_col).unwrap();
     df.vstack_mut_owned(unmerged.pop_front().unwrap()).unwrap();
+    unsafe {
+        let col = &mut df.get_columns_mut()[col_idx];
+        col.set_sorted_flag(is_sorted);
+    };
     unmerged.push_front(df);
 }
 
@@ -546,7 +601,7 @@ fn append_key_columns(
             sp.key_col.clone(),
             &columns,
             &sp.descending,
-            &vec![false; columns.len()], // TODO: [amber]
+            &sp.nulls_last,
             !params.args.nulls_equal,
         )?
         .into_column();

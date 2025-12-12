@@ -403,48 +403,54 @@ def test_cross_join_with_literal_column_25544() -> None:
     assert streaming_result.item() == 0
 
 
-@pytest.mark.parametrize("on", [("id",), ("id", "id_ext")])
+@pytest.mark.parametrize("on", [["id"], ["id", "id_ext"]])
 @pytest.mark.parametrize("how", ["inner", "left", "right"])
 @pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
 @pytest.mark.parametrize("nulls_equal", [False, True])
 @pytest.mark.parametrize(
     "maintain_order", ["none", "left", "right", "right_left", "left_right"]
 )
 def test_merge_join_dispatch(
-    on: tuple[str, str],
+    on: list[str],
     how: JoinStrategy,
     descending: bool,
+    nulls_last: bool,
     nulls_equal: bool,
     maintain_order: Literal["right_left", "left_right"],
 ) -> None:
     check_row_order = maintain_order != "none"
+
     if (how == "left" and maintain_order.startswith("right")) or (
         how == "right" and maintain_order.startswith("left")
     ):
-        pytest.skip("not implemented")
+        pytest.skip("hard to maintain order")
+
+    if len(on) > 1 and not nulls_equal and nulls_last:
+        pytest.skip("nulls can appear in unsorted order during row encoding")
 
     df_left = (
         pl.LazyFrame(
             {
-                "id": [1, 2, 3, 4, 5],
-                "id_ext": [10, 20, 30, 40, 50],
+                "id": [1, 2, None, 4, 5],
+                "id_ext": [10, 20, None, 40, 50],
                 "names": ["A", "B", "C", "D", "E"],
             }
         )
-        .sort(*on, descending=descending)
-        .set_sorted(*on, descending=descending)
+        .sort(*on, descending=descending, nulls_last=nulls_last)
+        .set_sorted(*on, descending=descending, nulls_last=nulls_last)
     )
 
     df_right = (
         pl.LazyFrame(
             {
                 "id": [3, 4, 5, 6, 7],
-                "id_ext": [30, 40, 50, 60, 70],
+                "id_ext": [30, 40, 50, 60, None],
                 "scores": [10, 20, 30, 40, 50],
             }
         )
-        .sort(*on, descending=descending)
-        .set_sorted(*on, descending=descending)
+        .sort(*on, descending=descending, nulls_last=nulls_last)
+        .set_sorted(*on, descending=descending, nulls_last=nulls_last)
     )
 
     q = df_left.join(
@@ -459,8 +465,4 @@ def test_merge_join_dispatch(
     actual = q.collect(engine="streaming")
 
     assert "merge-join" in dot, "merge-join does not appear in physical plan"
-    import sys
-
-    print(expected, file=sys.stderr)
-    print(actual, file=sys.stderr)
     assert_frame_equal(actual, expected, check_row_order=check_row_order)

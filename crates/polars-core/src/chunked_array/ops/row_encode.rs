@@ -7,6 +7,7 @@ use rayon::prelude::*;
 
 use crate::POOL;
 use crate::prelude::*;
+use crate::series::IsSorted;
 use crate::utils::_split_offsets;
 
 pub fn encode_rows_vertical_par_unordered(by: &[Column]) -> PolarsResult<BinaryOffsetChunked> {
@@ -238,7 +239,9 @@ pub fn _get_rows_encoded_ca(
         let combined = combine_validities_and_many(&validities);
         rows_arr.set_validity(combined);
     }
-    Ok(BinaryOffsetChunked::with_chunk(name, rows_arr))
+    let mut ca = BinaryOffsetChunked::with_chunk(name, rows_arr);
+    ca.set_sorted_flag(IsSorted::Ascending);
+    Ok(ca)
 }
 
 pub fn _get_rows_encoded_arr(
