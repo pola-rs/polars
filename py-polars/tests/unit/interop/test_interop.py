@@ -1191,7 +1191,7 @@ def test_pycapsule_stream_interface_all_types() -> None:
     assert_frame_equal(
         df.map_columns(
             pl.selectors.all(),
-            lambda s: pl.Series(PyCapsuleStreamHolder(s.reshape((1, 1)))).reshape((1,)),
+            lambda s: pl.Series(PyCapsuleStreamHolder(s.reshape((3, 1)))).reshape((3,)),
         ),
         df,
     )
@@ -1205,8 +1205,8 @@ def test_pycapsule_stream_interface_all_types() -> None:
         df,
     )
     assert_frame_equal(
-        pl.DataFrame(PyCapsuleStreamHolder(df.select(pl.all().reshape((1, 1))))).select(
-            pl.all().reshape((1,))
+        pl.DataFrame(PyCapsuleStreamHolder(df.select(pl.all().reshape((3, 1))))).select(
+            pl.all().reshape((3,))
         ),
         df,
     )
