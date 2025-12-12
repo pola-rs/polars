@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use arrow::io::ipc::IpcField;
+use arrow::io::ipc::{self, IpcField};
+use polars_core::prelude::CompatLevel;
 use polars_core::schema::SchemaRef;
 use polars_core::series::ToArrowConverter;
 use polars_core::utils::arrow;
@@ -17,18 +18,16 @@ use crate::nodes::io_sinks2::components::size::RowCountAndSize;
 use crate::nodes::io_sinks2::writers::interface::{
     FileWriterStarter, default_ideal_sink_morsel_size,
 };
+use crate::nodes::io_sinks2::writers::ipc::initialization::build_ipc_write_components;
 use crate::utils::tokio_handle_ext;
 
-pub mod initialization;
+mod initialization;
 mod io_writer;
 mod record_batch_encoder;
 
 pub struct IpcWriterStarter {
     pub options: IpcWriterOptions,
     pub schema: SchemaRef,
-    pub arrow_converters: Vec<ToArrowConverter>,
-    pub ipc_fields: Vec<IpcField>,
-    pub dictionary_id_offsets: Arc<[usize]>,
     pub pipeline_depth: usize,
     pub sync_on_close: SyncOnCloseType,
 }
@@ -57,42 +56,51 @@ impl FileWriterStarter for IpcWriterStarter {
             PolarsResult<polars_io::prelude::file::Writeable>,
         >,
     ) -> PolarsResult<async_executor::JoinHandle<PolarsResult<()>>> {
-        let (ipc_batch_tx, ipc_batch_rx) =
-            tokio::sync::mpsc::channel::<IpcBatch>(self.pipeline_depth);
+        let file_schema = Arc::clone(&self.schema);
+        let pipeline_depth = self.pipeline_depth;
+        let options = self.options;
+        let sync_on_close = self.sync_on_close;
+        let compression = self.options.compression.map(|x| x.into());
 
-        let io_handle = tokio_handle_ext::AbortOnDropHandle(
-            pl_async::get_runtime().spawn(
-                io_writer::IOWriter {
-                    file,
-                    ipc_batch_rx,
-                    options: self.options,
-                    schema: Arc::clone(&self.schema),
-                    ipc_fields: self.ipc_fields.clone(),
-                    sync_on_close: self.sync_on_close,
-                }
-                .run(),
-            ),
-        );
+        let handle = async_executor::spawn(TaskPriority::High, async move {
+            let (ipc_batch_tx, ipc_batch_rx) =
+                tokio::sync::mpsc::channel::<IpcBatch>(pipeline_depth);
 
-        let record_batch_encoder_handle =
-            async_executor::AbortOnDropHandle::new(async_executor::spawn(
-                TaskPriority::High,
-                record_batch_encoder::RecordBatchEncoder {
-                    morsel_rx,
-                    ipc_batch_tx,
-                    arrow_converters: Vec::clone(&self.arrow_converters),
-                    dictionary_id_offsets: Arc::clone(&self.dictionary_id_offsets),
-                    write_options: WriteOptions {
-                        compression: self.options.compression.map(|x| x.into()),
-                    },
-                }
-                .run(),
-            ));
+            let (arrow_converters, ipc_fields, dictionary_id_offsets) =
+                build_ipc_write_components(file_schema.as_ref(), options.compat_level);
 
-        Ok(async_executor::spawn(TaskPriority::Low, async move {
+            let io_handle = tokio_handle_ext::AbortOnDropHandle(
+                pl_async::get_runtime().spawn(
+                    io_writer::IOWriter {
+                        file,
+                        ipc_batch_rx,
+                        options,
+                        schema: file_schema,
+                        ipc_fields,
+                        sync_on_close,
+                    }
+                    .run(),
+                ),
+            );
+
+            let record_batch_encoder_handle =
+                async_executor::AbortOnDropHandle::new(async_executor::spawn(
+                    TaskPriority::High,
+                    record_batch_encoder::RecordBatchEncoder {
+                        morsel_rx,
+                        ipc_batch_tx,
+                        arrow_converters,
+                        dictionary_id_offsets,
+                        write_options: WriteOptions { compression },
+                    }
+                    .run(),
+                ));
+
             record_batch_encoder_handle.await?;
             io_handle.await.unwrap()?;
             Ok(())
-        }))
+        });
+
+        Ok(handle)
     }
 }

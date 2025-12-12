@@ -48,17 +48,10 @@ pub fn create_file_writer_starter(
         #[cfg(feature = "ipc")]
         FileType::Ipc(options) => {
             use crate::nodes::io_sinks2::writers::ipc::IpcWriterStarter;
-            use crate::nodes::io_sinks2::writers::ipc::initialization::build_ipc_write_components;
-
-            let (arrow_converters, ipc_fields, dictionary_id_offsets) =
-                build_ipc_write_components(file_schema, options.compat_level);
 
             Arc::new(IpcWriterStarter {
                 options: *options,
                 schema: file_schema.clone(),
-                arrow_converters,
-                ipc_fields,
-                dictionary_id_offsets,
                 pipeline_depth,
                 sync_on_close,
             }) as _
