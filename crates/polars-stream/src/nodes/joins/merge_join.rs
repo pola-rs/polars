@@ -52,6 +52,8 @@ impl Not for Side {
 struct MergeJoinParams {
     left_input_schema: Arc<Schema>,
     right_input_schema: Arc<Schema>,
+    left_ir_schema: Arc<Schema>,
+    left_is_schema: Arc<Schema>,
     output_schema: Arc<Schema>,
     left_on: Vec<PlSmallStr>,
     right_on: Vec<PlSmallStr>,
@@ -87,16 +89,31 @@ impl MergeJoinNode {
         right_on: Vec<PlSmallStr>,
         args: JoinArgs,
     ) -> PolarsResult<Self> {
+        assert!(left_on.len() == right_on.len());
+
         let state = MergeJoinState::Running;
-        let left_key_col = (left_on.len() > 1)
-            .then(|| PlSmallStr::from("__POLARS_JOIN_KEY"))
-            .unwrap_or_else(|| left_on[0].clone());
-        let right_key_col = (right_on.len() > 1)
-            .then(|| PlSmallStr::from("__POLARS_JOIN_KEY"))
-            .unwrap_or_else(|| right_on[0].clone());
+        let left_key_col;
+        let right_key_col;
+        let mut left_ir_schema = left_input_schema.clone();
+        let mut right_ir_schema = right_input_schema.clone();
+        if left_on.len() > 1 {
+            left_key_col = PlSmallStr::from("__POLARS_JOIN_KEY");
+            right_key_col = PlSmallStr::from("__POLARS_JOIN_KEY");
+            let mut ir_schema = (*left_input_schema).clone();
+            ir_schema.insert(left_key_col.clone(), DataType::BinaryOffset);
+            left_ir_schema = Arc::new(ir_schema);
+            let mut ir_schema = (*right_input_schema).clone();
+            ir_schema.insert(right_key_col.clone(), DataType::BinaryOffset);
+            right_ir_schema = Arc::new(ir_schema);
+        } else {
+            left_key_col = left_on[0].clone();
+            right_key_col = right_on[0].clone();
+        }
         let params = MergeJoinParams {
             left_input_schema,
             right_input_schema,
+            left_ir_schema,
+            left_is_schema: right_ir_schema,
             output_schema,
             left_on,
             right_on,
@@ -126,8 +143,8 @@ impl MergeJoinNode {
 
         // TODO: [amber] Remove any non-output columns earlier to reduce the
         // amount of gathering as much as possible
-
         // TODO: [amber] Do a cardinality sketch to estimate the output size?
+
         let mut left_key = left.column(&self.params.left_key_col).unwrap();
         let mut right_key = right.column(&self.params.right_key_col).unwrap();
 
@@ -205,7 +222,7 @@ impl MergeJoinNode {
         for col in right.get_column_names_owned() {
             if left_cols.contains(&col) {
                 let new_name = format_pl_smallstr!("{}{}", col, self.params.args.suffix());
-                right.rename(&col, new_name).unwrap();
+                right.rename(&col, new_name).unwrap(); // FIXME: [amber] Potential quadratic behavior
             }
         }
         Ok(())
@@ -402,7 +419,10 @@ fn find_mergeable_inner(
             return Ok(ERight(Side::Left));
         }
         if right.is_empty() && flush {
-            return Ok(ELeft((left.pop_front().unwrap(), DataFrame::empty())));
+            return Ok(ELeft((
+                left.pop_front().unwrap(),
+                DataFrame::empty_with_schema(&params.left_ir_schema),
+            )));
         }
         if right.is_empty() {
             return Ok(ERight(Side::Right));

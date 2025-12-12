@@ -401,3 +401,48 @@ def test_cross_join_with_literal_column_25544() -> None:
 
     assert_frame_equal(streaming_result, in_memory_result)
     assert streaming_result.item() == 0
+
+
+@pytest.mark.parametrize("how", ["inner", "left", "right"])
+@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize(
+    "maintain_order", ["none", "left", "right", "right_left", "left_right"]
+)
+def test_merge_join_dispatch(
+    how: JoinStrategy,
+    nulls_equal: bool,
+    maintain_order: Literal["right_left", "left_right"],
+) -> None:
+    check_row_order = maintain_order != "none"
+    if (how == "left" and maintain_order.startswith("right")) or (
+        how == "right" and maintain_order.startswith("left")
+    ):
+        pytest.skip("not implemented")
+
+    df_left = pl.LazyFrame(
+        {
+            "id": [1, 2, 3, 4, 5],
+            "names": ["A", "B", "C", "D", "E"],
+        }
+    ).set_sorted("id")
+
+    df_right = pl.LazyFrame(
+        {
+            "id": [3, 4, 5, 6, 7],
+            "scores": [10, 20, 30, 40, 50],
+        }
+    ).set_sorted("id")
+
+    q = df_left.join(
+        df_right,
+        on="id",
+        how=how,
+        nulls_equal=nulls_equal,
+        maintain_order=maintain_order,
+    )
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    expected = q.collect(engine="in-memory")
+    actual = q.collect(engine="streaming")
+
+    assert "merge-join" in dot
+    assert_frame_equal(actual, expected, check_row_order=check_row_order)
