@@ -6,6 +6,7 @@ use polars_lazy::prelude::*;
 use polars_ops::frame::JoinCoalesce;
 use polars_plan::dsl::function_expr::StructFunction;
 use polars_plan::prelude::*;
+use polars_utils::aliases::PlIndexSet;
 use polars_utils::format_pl_smallstr;
 use sqlparser::ast::{
     BinaryOperator, CreateTable, CreateTableLikeKind, Delete, Distinct, ExcludeSelectItem,
@@ -2540,6 +2541,105 @@ fn process_join_constraint(
         },
         _ => polars_bail!(SQLInterface: "unsupported SQL join constraint:\n{:?}", constraint),
     }
+}
+
+/// Visitor that collects all table identifiers referenced in a SQL query.
+#[derive(Default)]
+struct TableIdentifierCollector {
+    tables: Vec<String>,
+    include_schema: bool,
+}
+
+impl TableIdentifierCollector {
+    fn collect_from_set_expr(&mut self, set_expr: &SetExpr) {
+        // Recursively collect table identifiers from SetExpr nodes
+        match set_expr {
+            SetExpr::Table(tbl) => {
+                self.tables.extend(if self.include_schema {
+                    match (&tbl.schema_name, &tbl.table_name) {
+                        (Some(schema), Some(table)) => Some(format!("{schema}.{table}")),
+                        (None, Some(table)) => Some(table.clone()),
+                        _ => None,
+                    }
+                } else {
+                    tbl.table_name.clone()
+                });
+            },
+            SetExpr::SetOperation { left, right, .. } => {
+                self.collect_from_set_expr(left);
+                self.collect_from_set_expr(right);
+            },
+            SetExpr::Query(query) => self.collect_from_set_expr(&query.body),
+            _ => {},
+        }
+    }
+}
+
+impl SQLVisitor for TableIdentifierCollector {
+    type Break = ();
+
+    fn pre_visit_query(&mut self, query: &Query) -> ControlFlow<Self::Break> {
+        // Collect from SetExpr nodes in the query body
+        self.collect_from_set_expr(&query.body);
+        ControlFlow::Continue(())
+    }
+
+    fn pre_visit_relation(&mut self, relation: &ObjectName) -> ControlFlow<Self::Break> {
+        // Table relation (eg: appearing in FROM clause)
+        self.tables.extend(if self.include_schema {
+            let parts: Vec<_> = relation
+                .0
+                .iter()
+                .filter_map(|p| p.as_ident().map(|i| i.value.as_str()))
+                .collect();
+            (!parts.is_empty()).then(|| parts.join("."))
+        } else {
+            relation
+                .0
+                .last()
+                .and_then(|p| p.as_ident())
+                .map(|i| i.value.clone())
+        });
+        ControlFlow::Continue(())
+    }
+}
+
+/// Extract table identifiers referenced in a SQL query; uses a visitor to
+/// collect all table names that appear in FROM clauses, JOINs, TABLE refs
+/// in set operations, and subqueries.
+pub fn extract_table_identifiers(
+    query: &str,
+    include_schema: bool,
+    unique: bool,
+) -> PolarsResult<Vec<String>> {
+    let mut parser = Parser::new(&GenericDialect);
+    parser = parser.with_options(ParserOptions {
+        trailing_commas: true,
+        ..Default::default()
+    });
+    let ast = parser
+        .try_with_sql(query)
+        .map_err(to_sql_interface_err)?
+        .parse_statements()
+        .map_err(to_sql_interface_err)?;
+
+    let mut collector = TableIdentifierCollector {
+        include_schema,
+        ..Default::default()
+    };
+    for stmt in &ast {
+        let _ = stmt.visit(&mut collector);
+    }
+    Ok(if unique {
+        collector
+            .tables
+            .into_iter()
+            .collect::<PlIndexSet<_>>()
+            .into_iter()
+            .collect()
+    } else {
+        collector.tables
+    })
 }
 
 bitflags::bitflags! {
