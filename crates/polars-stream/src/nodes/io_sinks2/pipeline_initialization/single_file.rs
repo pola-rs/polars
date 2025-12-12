@@ -13,7 +13,7 @@ use crate::nodes::io_sinks2::components::morsel_resize_pipeline::MorselResizePip
 use crate::nodes::io_sinks2::config::{IOSinkNodeConfig, IOSinkTarget};
 use crate::nodes::io_sinks2::writers::create_file_writer_starter;
 use crate::nodes::io_sinks2::writers::interface::FileWriterStarter;
-use crate::utils::task_handles_ext;
+use crate::utils::tokio_handle_ext;
 
 pub fn start_single_file_sink_pipeline(
     node_name: PlSmallStr,
@@ -45,7 +45,7 @@ pub fn start_single_file_sink_pipeline(
     let verbose = polars_core::config::verbose();
 
     let file_open_task =
-        task_handles_ext::AbortOnDropHandle(pl_async::get_runtime().spawn(async move {
+        tokio_handle_ext::AbortOnDropHandle(pl_async::get_runtime().spawn(async move {
             target
                 .open_into_writeable_async(cloud_options.as_deref(), mkdir, upload_chunk_size)
                 .await

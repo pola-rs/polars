@@ -26,7 +26,7 @@ use crate::nodes::io_sources::parquet::projection::{
     ArrowFieldProjection, resolve_arrow_field_projections,
 };
 use crate::nodes::{TaskPriority, io_sources};
-use crate::utils::task_handles_ext;
+use crate::utils::tokio_handle_ext;
 
 pub mod builder;
 mod init;
@@ -317,7 +317,7 @@ impl ParquetFileReader {
 
 type AsyncTaskData = (
     FileReaderOutputRecv,
-    task_handles_ext::AbortOnDropHandle<PolarsResult<()>>,
+    tokio_handle_ext::AbortOnDropHandle<PolarsResult<()>>,
 );
 
 struct ParquetReadImpl {

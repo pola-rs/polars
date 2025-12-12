@@ -6,7 +6,7 @@ use crate::async_executor;
 use crate::async_primitives::connector;
 use crate::nodes::io_sinks2::components::sink_morsel::SinkMorsel;
 use crate::nodes::io_sinks2::components::size::RowCountAndSize;
-use crate::utils::task_handles_ext;
+use crate::utils::tokio_handle_ext;
 
 pub trait FileWriterStarter: Send + Sync + 'static {
     fn writer_name(&self) -> &str;
@@ -17,7 +17,7 @@ pub trait FileWriterStarter: Send + Sync + 'static {
     fn start_file_writer(
         &self,
         morsel_rx: connector::Receiver<SinkMorsel>,
-        file: task_handles_ext::AbortOnDropHandle<PolarsResult<Writeable>>,
+        file: tokio_handle_ext::AbortOnDropHandle<PolarsResult<Writeable>>,
     ) -> PolarsResult<async_executor::JoinHandle<PolarsResult<()>>>;
 }
 
