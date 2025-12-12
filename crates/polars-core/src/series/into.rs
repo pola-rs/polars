@@ -40,7 +40,6 @@ impl Series {
     }
 }
 
-#[derive(Clone)]
 pub struct ToArrowConverter {
     pub compat_level: CompatLevel,
     #[cfg(feature = "dtype-categorical")]
