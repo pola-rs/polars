@@ -768,7 +768,7 @@ pub fn lower_ir(
                             first_metadata: first_metadata.clone(),
                             prefetch_limit: RelaxedCell::new_usize(0),
                             prefetch_semaphore: std::sync::OnceLock::new(),
-                            shared_wait_group_slot: Default::default(),
+                            shared_prefetch_wait_group_slot: Default::default(),
                         },
                     ) as _,
 

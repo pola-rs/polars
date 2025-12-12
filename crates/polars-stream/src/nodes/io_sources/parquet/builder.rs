@@ -18,7 +18,7 @@ pub struct ParquetReaderBuilder {
     pub options: Arc<ParquetOptions>,
     pub prefetch_limit: RelaxedCell<usize>,
     pub prefetch_semaphore: std::sync::OnceLock<Arc<tokio::sync::Semaphore>>,
-    pub shared_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
+    pub shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
 }
 
 impl std::fmt::Debug for ParquetReaderBuilder {
@@ -119,7 +119,7 @@ impl FileReaderBuilder for ParquetReaderBuilder {
             row_group_prefetch_sync: RowGroupPrefetchSync {
                 prefetch_limit: self.prefetch_limit.load(),
                 prefetch_semaphore: Arc::clone(self.prefetch_semaphore.get().unwrap()),
-                shared_wait_group_slot: Arc::clone(&self.shared_wait_group_slot),
+                shared_prefetch_wait_group_slot: Arc::clone(&self.shared_prefetch_wait_group_slot),
                 prev_all_spawned: None,
                 current_all_spawned: None,
             },

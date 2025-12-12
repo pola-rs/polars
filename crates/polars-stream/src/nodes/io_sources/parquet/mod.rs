@@ -54,7 +54,7 @@ pub struct ParquetFileReader {
 struct RowGroupPrefetchSync {
     prefetch_limit: usize,
     prefetch_semaphore: Arc<tokio::sync::Semaphore>,
-    shared_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
+    shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
 
     /// Waits for the previous reader to finish spawning prefetches.
     prev_all_spawned: Option<WaitGroup>,
@@ -137,7 +137,7 @@ impl FileReader for ParquetFileReader {
 
         let prev_wait_group: Option<WaitGroup> = self
             .row_group_prefetch_sync
-            .shared_wait_group_slot
+            .shared_prefetch_wait_group_slot
             .try_lock()
             .unwrap()
             .replace(wait_group_this_reader);

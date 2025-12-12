@@ -60,7 +60,7 @@ impl DeletionFilesProvider {
                     }),
                     prefetch_limit: RelaxedCell::new_usize(0),
                     prefetch_semaphore: std::sync::OnceLock::new(),
-                    shared_wait_group_slot: Default::default(),
+                    shared_prefetch_wait_group_slot: Default::default(),
                 };
 
                 reader_builder.set_execution_state(execution_state);
