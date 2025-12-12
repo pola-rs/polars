@@ -39,7 +39,7 @@ impl NodeMetrics {
         self.max_poll_time_ns = self
             .max_poll_time_ns
             .max(task_metrics.max_poll_time_ns.load());
-        self.num_running_tasks += !task_metrics.done.load() as u32;
+        self.num_running_tasks += (!task_metrics.done.load()) as u32;
     }
 
     fn start_state_update(&mut self) {
