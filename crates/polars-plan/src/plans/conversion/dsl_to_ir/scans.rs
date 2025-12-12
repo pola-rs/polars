@@ -341,14 +341,16 @@ pub fn csv_file_info(
     use polars_io::utils::get_reader_bytes;
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-    // Holding _first_scan_source should guarantee sources is not empty.
-    debug_assert!(!sources.is_empty());
+    let (mut schema, estimated_n_rows) = if let Some(schema) = csv_options.schema.clone() {
+        (schema, usize::MAX)
+    } else {
+        // Holding _first_scan_source should guarantee sources is not empty.
+        debug_assert!(!sources.is_empty());
 
-    // TODO:
-    // * See if we can do better than scanning all files if there is a row limit
-    // * See if we can do this without downloading the entire file
+        // TODO:
+        // * See if we can do better than scanning all files if there is a row limit
+        // * See if we can do this without downloading the entire file
 
-    if csv_options.schema.is_none() {
         // prints the error message if paths is empty.
         let run_async = sources.is_cloud_url() || (sources.is_paths() && config::force_async());
 
@@ -426,12 +428,12 @@ pub fn csv_file_info(
         let si_result = merge_func(si_results.0, si_results.1)?;
 
         csv_options.update_with_inference_result(&si_result);
-    }
 
-    let mut schema = csv_options
-        .schema
-        .clone()
-        .unwrap_or_else(|| si_result.get_inferred_schema());
+        (
+            si_result.get_inferred_schema(),
+            si_result.get_estimated_n_rows(),
+        )
+    };
 
     let reader_schema = if let Some(rc) = row_index {
         let reader_schema = schema.clone();
@@ -442,8 +444,6 @@ pub fn csv_file_info(
     } else {
         schema.clone()
     };
-
-    let estimated_n_rows = si_result.get_estimated_n_rows();
 
     Ok(FileInfo::new(
         schema,
