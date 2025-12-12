@@ -21,10 +21,11 @@ if TYPE_CHECKING:
 
 @overload
 def datetime_range(
-    start: datetime | date | IntoExprColumn,
-    end: datetime | date | IntoExprColumn,
-    interval: str | timedelta = ...,
+    start: datetime | date | IntoExprColumn | None = None,
+    end: datetime | date | IntoExprColumn | None = None,
+    interval: str | timedelta | None = None,
     *,
+    num_samples: int | IntoExprColumn | None = None,
     closed: ClosedInterval = ...,
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
@@ -34,10 +35,11 @@ def datetime_range(
 
 @overload
 def datetime_range(
-    start: datetime | date | IntoExprColumn,
-    end: datetime | date | IntoExprColumn,
-    interval: str | timedelta = ...,
+    start: datetime | date | IntoExprColumn | None = None,
+    end: datetime | date | IntoExprColumn | None = None,
+    interval: str | timedelta | None = None,
     *,
+    num_samples: int | IntoExprColumn | None = None,
     closed: ClosedInterval = ...,
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
@@ -47,22 +49,24 @@ def datetime_range(
 
 @overload
 def datetime_range(
-    start: datetime | date | IntoExprColumn,
-    end: datetime | date | IntoExprColumn,
-    interval: str | timedelta = ...,
+    start: datetime | date | IntoExprColumn | None = None,
+    end: datetime | date | IntoExprColumn | None = None,
+    interval: str | timedelta | None = None,
     *,
+    num_samples: int | IntoExprColumn | None = None,
     closed: ClosedInterval = ...,
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
-    eager: bool,
+    eager: bool = False,
 ) -> Series | Expr: ...
 
 
 def datetime_range(
-    start: datetime | date | IntoExprColumn,
-    end: datetime | date | IntoExprColumn,
-    interval: str | timedelta = "1d",
+    start: datetime | date | IntoExprColumn | None = None,
+    end: datetime | date | IntoExprColumn | None = None,
+    interval: str | timedelta | None = None,
     *,
+    num_samples: int | IntoExprColumn | None = None,
     closed: ClosedInterval = "both",
     time_unit: TimeUnit | None = None,
     time_zone: str | None = None,
@@ -71,15 +75,21 @@ def datetime_range(
     """
     Generate a datetime range.
 
+    A datetime range may be defined by any three of 'start', 'end', 'interval', and
+    'num_samples'. If only two of `start`, `end`, and `num_samples` are provided, the
+    interval defaults to 1 day.
+
     Parameters
     ----------
     start
-        Lower bound of the datetime range.
+        First value of the datetime range.
     end
-        Upper bound of the datetime range.
+        Last value of the datetime range.
     interval
         Interval of the range periods, specified as a Python `timedelta` object
         or using the Polars duration string language (see "Notes" section below).
+    num_samples
+        Number of samples in the output.
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     time_unit : {None, 'ns', 'us', 'ms'}
@@ -178,6 +188,38 @@ def datetime_range(
         2022-03-01 00:00:00 EST
     ]
 
+    Using 'num_samples' to specify the number of periods:
+
+    >>> pl.datetime_range(
+    ...     start=date(1985, 1, 1),
+    ...     end=date(1985, 1, 10),
+    ...     num_samples=5,
+    ...     eager=True,
+    ... ).alias("date")
+    shape: (5,)
+    Series: 'date' [datetime[μs]]
+    [
+            1985-01-01 00:00:00
+            1985-01-03 06:00:00
+            1985-01-05 12:00:00
+            1985-01-07 18:00:00
+            1985-01-10 00:00:00
+    ]
+    >>> pl.datetime_range(
+    ...     start=date(1985, 1, 1),
+    ...     interval="3d",
+    ...     num_samples=4,
+    ...     eager=True,
+    ... ).alias("date")
+    shape: (4,)
+    Series: 'date' [datetime[μs]]
+    [
+            1985-01-01 00:00:00
+            1985-01-04 00:00:00
+            1985-01-07 00:00:00
+            1985-01-10 00:00:00
+    ]
+
     Omit `eager=True` if you want to use `datetime_range` as an expression:
 
     >>> df = pl.DataFrame(
@@ -208,15 +250,24 @@ def datetime_range(
     │ two ┆ [2024-01-01 00:00:00, 2024-01-02 00:00:00, 2024-01-03 00:00:00] │
     └─────┴─────────────────────────────────────────────────────────────────┘
     """
-    interval = parse_interval_argument(interval)
-    if time_unit is None and "ns" in interval:
+    if interval is None and (num_samples is None or start is None or end is None):
+        interval = "1d"
+    interval = None if interval is None else parse_interval_argument(interval)
+    if time_unit is None and interval is not None and "ns" in interval:
         time_unit = "ns"
+    start_expr = None if start is None else parse_into_expression(start)
+    end_expr = None if end is None else parse_into_expression(end)
+    samples_expr = None if num_samples is None else parse_into_expression(num_samples)
 
-    start_pyexpr = parse_into_expression(start)
-    end_pyexpr = parse_into_expression(end)
     result = wrap_expr(
         plr.datetime_range(
-            start_pyexpr, end_pyexpr, interval, closed, time_unit, time_zone
+            start_expr,
+            end_expr,
+            interval,
+            samples_expr,
+            closed,
+            time_unit,
+            time_zone,
         )
     )
 
@@ -228,10 +279,11 @@ def datetime_range(
 
 @overload
 def datetime_ranges(
-    start: datetime | date | IntoExprColumn,
-    end: datetime | date | IntoExprColumn,
-    interval: str | timedelta = ...,
+    start: datetime | date | IntoExprColumn | None = None,
+    end: datetime | date | IntoExprColumn | None = None,
+    interval: str | timedelta | None = None,
     *,
+    num_samples: int | IntoExprColumn | None = None,
     closed: ClosedInterval = ...,
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
@@ -241,10 +293,11 @@ def datetime_ranges(
 
 @overload
 def datetime_ranges(
-    start: datetime | date | IntoExprColumn,
-    end: datetime | date | IntoExprColumn,
-    interval: str | timedelta = ...,
+    start: datetime | date | IntoExprColumn | None = None,
+    end: datetime | date | IntoExprColumn | None = None,
+    interval: str | timedelta | None = None,
     *,
+    num_samples: int | IntoExprColumn | None = None,
     closed: ClosedInterval = ...,
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
@@ -254,22 +307,24 @@ def datetime_ranges(
 
 @overload
 def datetime_ranges(
-    start: datetime | date | IntoExprColumn,
-    end: datetime | date | IntoExprColumn,
-    interval: str | timedelta = ...,
+    start: datetime | date | IntoExprColumn | None = None,
+    end: datetime | date | IntoExprColumn | None = None,
+    interval: str | timedelta | None = None,
     *,
+    num_samples: int | IntoExprColumn | None = None,
     closed: ClosedInterval = ...,
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
-    eager: bool,
+    eager: bool = False,
 ) -> Series | Expr: ...
 
 
 def datetime_ranges(
-    start: datetime | date | IntoExprColumn,
-    end: datetime | date | IntoExprColumn,
-    interval: str | timedelta = "1d",
+    start: datetime | date | IntoExprColumn | None = None,
+    end: datetime | date | IntoExprColumn | None = None,
+    interval: str | timedelta | None = None,
     *,
+    num_samples: int | IntoExprColumn | None = None,
     closed: ClosedInterval = "both",
     time_unit: TimeUnit | None = None,
     time_zone: str | None = None,
@@ -278,15 +333,21 @@ def datetime_ranges(
     """
     Create a column of datetime ranges.
 
+    Each datetime range may be defined by any three of 'start', 'end', 'interval', and
+    'num_samples'. If only two of `start`, `end`, and `num_samples` are provided, the
+    interval defaults to 1 day.
+
     Parameters
     ----------
     start
-        Lower bound of the datetime range.
+        First value of the datetime range.
     end
-        Upper bound of the datetime range.
+        Last value of the datetime range.
     interval
         Interval of the range periods, specified as a Python `timedelta` object
         or using the Polars duration string language (see "Notes" section below).
+    num_samples
+        Number of samples in the output.
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     time_unit : {None, 'ns', 'us', 'ms'}
@@ -351,16 +412,24 @@ def datetime_ranges(
     │ [2022-01-02 00:00:00, 2022-01-03 00:00:00]                      │
     └─────────────────────────────────────────────────────────────────┘
     """
-    interval = parse_interval_argument(interval)
-    if time_unit is None and "ns" in interval:
+    if interval is None and (num_samples is None or start is None or end is None):
+        interval = "1d"
+    interval = None if interval is None else parse_interval_argument(interval)
+    if time_unit is None and interval is not None and "ns" in interval:
         time_unit = "ns"
-
-    start_pyexpr = parse_into_expression(start)
-    end_pyexpr = parse_into_expression(end)
+    start_expr = None if start is None else parse_into_expression(start)
+    end_expr = None if end is None else parse_into_expression(end)
+    samples_expr = None if num_samples is None else parse_into_expression(num_samples)
 
     result = wrap_expr(
         plr.datetime_ranges(
-            start_pyexpr, end_pyexpr, interval, closed, time_unit, time_zone
+            start_expr,
+            end_expr,
+            interval,
+            samples_expr,
+            closed,
+            time_unit,
+            time_zone,
         )
     )
 

@@ -7,17 +7,16 @@ use polars::time::date_range;
 fn test_time_units_9413() {
     let start = NaiveDate::from_ymd_opt(2022, 1, 1)
         .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
+        .and_hms_opt(0, 0, 0);
     let stop = NaiveDate::from_ymd_opt(2022, 1, 5)
         .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
+        .and_hms_opt(0, 0, 0);
     let actual = date_range(
         "date".into(),
         start,
         stop,
-        Duration::parse("1d"),
+        Some(Duration::parse("1d")),
+        None,
         ClosedWindow::Both,
         TimeUnit::Milliseconds,
         None,
@@ -38,7 +37,8 @@ Series: 'date' [datetime[ms]]
         "date".into(),
         start,
         stop,
-        Duration::parse("1d"),
+        Some(Duration::parse("1d")),
+        None,
         ClosedWindow::Both,
         TimeUnit::Microseconds,
         None,
@@ -59,7 +59,8 @@ Series: 'date' [datetime[μs]]
         "date".into(),
         start,
         stop,
-        Duration::parse("1d"),
+        Some(Duration::parse("1d")),
+        None,
         ClosedWindow::Both,
         TimeUnit::Nanoseconds,
         None,
