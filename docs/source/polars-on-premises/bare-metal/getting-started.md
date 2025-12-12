@@ -1,34 +1,45 @@
-First of all, make sure to obtain a license for Polars on-premises by
-[signing up here](https://w0lzyfh2w8o.typeform.com/to/zuoDgoMv). You will receive a link to download
-our binary named `polars-on-premises` as well as a license for running Polars on-premises.
+First of all, make sure to obtain a license for Polars on-premises by [signing up here](https://w0lzyfh2w8o.typeform.com/to/zuoDgoMv).
+You will receive a link to download our binary named `polars-on-premises` as well as a JSON-formatted license for running Polars on-premises.
+
+## Reading the license
+
+The license can be read by running the following command:
+
+```shell
+$ ./polars-on-premise service --print-eula /path/to/license.json
+```
 
 ## Running the binary
 
 The main entrypoint is as follows:
 
 ```shell
-$ polars-on-premises service --config-path /etc/polars-cloud/config.toml
+$ ./polars-on-premises service --config-path /etc/polars-cloud/config.toml
 ```
 
 However, the service requires quite some configuration to get started. Below you can find an example
 scheduler and worker config, and you can find the full configuration reference
 [here](/polars-on-premises/bare-metal/config-reference).
 
-## Example scheduler config
+## Configuration
 
-Here is a cleaned-up example you can use after the reference tables. It keeps the scheduler
-single-purpose (no worker role) and turns on observability.
+The complete configuration reference can be found [here](/polars-on-premises/bare-metal/config-reference).
+
+### Example scheduler config
+
+Here is a cleaned-up example you can use after the reference tables.
+It keeps the scheduler single-purpose (no worker role) and turns on observability.
 
 ```toml
-cluster_id = "foobarbaz"
+cluster_id = "polars-cluster"
 cublet_id = "scheduler"
 license = "/etc/polars/license.json"
 memory_limit = 1073741824 # 1 GiB
 
 [scheduler]
 enabled = true
-anonymous_result_dst = "s3://my-bucket/path/to/dir"
 allow_shared_disk = false
+anonymous_result_dst = "s3://bucket/path/to/key"
 n_workers = 4
 
 [observatory]
@@ -38,20 +49,15 @@ max_metrics_bytes_total = 0
 [static_leader]
 leader_key = "scheduler"
 public_leader_addr = "192.168.1.1"
-
-[service]
-public_address = "192.168.1.1"
-auth = "insecure"
-connection = "insecure"
 ```
 
-## Example worker config
+### Example worker config
 
-And the matching worker config. This example gives the worker a local shuffle path and enables
-observability.
+And the matching worker config.
+This example gives the worker a local shuffle path and enables observability.
 
 ```toml
-cluster_id = "foobarbaz"
+cluster_id = "polars-cluster"
 cublet_id = "worker_0"
 license = "/etc/polars/license.json"
 memory_limit = 10737418240 # 10 GiB
@@ -72,6 +78,3 @@ max_metrics_bytes_total = 0
 leader_key = "scheduler"
 public_leader_addr = "192.168.1.1"
 ```
-
-The complete configuration reference can be found
-[here](/polars-on-premises/bare-metal/config-reference).
