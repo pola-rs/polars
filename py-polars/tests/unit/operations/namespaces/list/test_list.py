@@ -262,7 +262,7 @@ def test_list_contains_invalid_datatype() -> None:
     df = pl.DataFrame({"a": [[1, 2], [3, 4]]}, schema={"a": pl.Array(pl.Int8, shape=2)})
     with pytest.raises(
         InvalidOperationError,
-        match=r"expected List data type for list operation, got: array\[i8, 2\]",
+        match=r"expected List data type for list operation, got: Array\(Int8, 2\)",
     ):
         df.select(pl.col("a").list.contains(2))
 
@@ -841,7 +841,7 @@ def test_list_to_array_wrong_dtype() -> None:
     s = pl.Series([1.0, 2.0])
     with pytest.raises(
         InvalidOperationError,
-        match="expected List data type for list operation, got: f64",
+        match="expected List data type for list operation, got: Float64",
     ):
         s.list.to_array(2)
 
