@@ -2550,10 +2550,42 @@ struct TableIdentifierCollector {
     include_schema: bool,
 }
 
+impl TableIdentifierCollector {
+    fn collect_from_set_expr(&mut self, set_expr: &SetExpr) {
+        // Recursively collect table identifiers from SetExpr nodes
+        match set_expr {
+            SetExpr::Table(tbl) => {
+                self.tables.extend(if self.include_schema {
+                    match (&tbl.schema_name, &tbl.table_name) {
+                        (Some(schema), Some(table)) => Some(format!("{schema}.{table}")),
+                        (None, Some(table)) => Some(table.clone()),
+                        _ => None,
+                    }
+                } else {
+                    tbl.table_name.clone()
+                });
+            },
+            SetExpr::SetOperation { left, right, .. } => {
+                self.collect_from_set_expr(left);
+                self.collect_from_set_expr(right);
+            },
+            SetExpr::Query(query) => self.collect_from_set_expr(&query.body),
+            _ => {},
+        }
+    }
+}
+
 impl SQLVisitor for TableIdentifierCollector {
     type Break = ();
 
+    fn pre_visit_query(&mut self, query: &Query) -> ControlFlow<Self::Break> {
+        // Collect from SetExpr nodes in the query body
+        self.collect_from_set_expr(&query.body);
+        ControlFlow::Continue(())
+    }
+
     fn pre_visit_relation(&mut self, relation: &ObjectName) -> ControlFlow<Self::Break> {
+        // Table relation (eg: appearing in FROM clause)
         self.tables.extend(if self.include_schema {
             let parts: Vec<_> = relation
                 .0
@@ -2573,7 +2605,8 @@ impl SQLVisitor for TableIdentifierCollector {
 }
 
 /// Extract table identifiers referenced in a SQL query; uses a visitor to
-/// collect all table names that appear in FROM clauses, JOINs, and subqueries.
+/// collect all table names that appear in FROM clauses, JOINs, TABLE refs
+/// in set operations, and subqueries.
 pub fn extract_table_identifiers(
     query: &str,
     include_schema: bool,
