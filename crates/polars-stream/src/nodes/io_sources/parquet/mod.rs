@@ -133,7 +133,7 @@ impl FileReader for ParquetFileReader {
 
     fn prepare_read(&mut self) -> PolarsResult<()> {
         let wait_group_this_reader = WaitGroup::default();
-        let prefetch_finish_token = wait_group_this_reader.token();
+        let prefetch_all_spawned_token = wait_group_this_reader.token();
 
         let prev_wait_group: Option<WaitGroup> = self
             .row_group_prefetch_sync
@@ -143,7 +143,7 @@ impl FileReader for ParquetFileReader {
             .replace(wait_group_this_reader);
 
         self.row_group_prefetch_sync.prev_all_spawned = prev_wait_group;
-        self.row_group_prefetch_sync.current_all_spawned = Some(prefetch_finish_token);
+        self.row_group_prefetch_sync.current_all_spawned = Some(prefetch_all_spawned_token);
 
         Ok(())
     }
