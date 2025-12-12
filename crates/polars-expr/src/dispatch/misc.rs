@@ -82,18 +82,6 @@ pub(super) fn set_sorted_flag(s: &Column, sorted: IsSorted) -> PolarsResult<Colu
     Ok(s)
 }
 
-#[cfg(feature = "timezones")]
-pub(super) fn replace_time_zone(
-    s: &[Column],
-    time_zone: Option<&TimeZone>,
-    non_existent: NonExistent,
-) -> PolarsResult<Column> {
-    let s1 = &s[0];
-    let ca = s1.datetime().unwrap();
-    let s2 = &s[1].str()?;
-    Ok(polars_ops::prelude::replace_time_zone(ca, time_zone, s2, non_existent)?.into_column())
-}
-
 #[cfg(feature = "dtype-struct")]
 pub(super) fn value_counts(
     s: &Column,

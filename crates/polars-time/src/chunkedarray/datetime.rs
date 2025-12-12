@@ -2,8 +2,6 @@ use arrow::array::{Array, PrimitiveArray};
 use arrow::compute::temporal;
 use polars_compute::cast::{CastOptionsImpl, cast};
 use polars_core::prelude::*;
-#[cfg(feature = "timezones")]
-use polars_ops::chunked_array::datetime::replace_time_zone;
 
 use super::*;
 
@@ -48,13 +46,13 @@ pub trait DatetimeMethods: AsDatetime {
         };
         let ca_local = match ca.dtype() {
             #[cfg(feature = "timezones")]
-            DataType::Datetime(_, Some(_)) => &polars_ops::chunked_array::replace_time_zone(
-                ca,
-                None,
-                &StringChunked::new("".into(), ["raise"]),
-                NonExistent::Raise,
-            )
-            .expect("Removing time zone is infallible"),
+            DataType::Datetime(_, Some(_)) => &ca
+                .replace_time_zone(
+                    None,
+                    &StringChunked::new("".into(), ["raise"]),
+                    NonExistent::Raise,
+                )
+                .expect("Removing time zone is infallible"),
             _ => ca,
         };
         ca_local.physical().apply_kernel_cast::<BooleanType>(&f)
@@ -69,13 +67,13 @@ pub trait DatetimeMethods: AsDatetime {
         };
         let ca_local = match ca.dtype() {
             #[cfg(feature = "timezones")]
-            DataType::Datetime(_, Some(_)) => &polars_ops::chunked_array::replace_time_zone(
-                ca,
-                None,
-                &StringChunked::new("".into(), ["raise"]),
-                NonExistent::Raise,
-            )
-            .expect("Removing time zone is infallible"),
+            DataType::Datetime(_, Some(_)) => &ca
+                .replace_time_zone(
+                    None,
+                    &StringChunked::new("".into(), ["raise"]),
+                    NonExistent::Raise,
+                )
+                .expect("Removing time zone is infallible"),
             _ => ca,
         };
         ca_local.physical().apply_kernel_cast::<Int32Type>(&f)
@@ -107,13 +105,13 @@ pub trait DatetimeMethods: AsDatetime {
         };
         let ca_local = match ca.dtype() {
             #[cfg(feature = "timezones")]
-            DataType::Datetime(_, Some(_)) => &polars_ops::chunked_array::replace_time_zone(
-                ca,
-                None,
-                &StringChunked::new("".into(), ["raise"]),
-                NonExistent::Raise,
-            )
-            .expect("Removing time zone is infallible"),
+            DataType::Datetime(_, Some(_)) => &ca
+                .replace_time_zone(
+                    None,
+                    &StringChunked::new("".into(), ["raise"]),
+                    NonExistent::Raise,
+                )
+                .expect("Removing time zone is infallible"),
             _ => ca,
         };
         ca_local.physical().apply_kernel_cast::<Int8Type>(&f)
@@ -176,13 +174,13 @@ pub trait DatetimeMethods: AsDatetime {
         };
         let ca_local = match ca.dtype() {
             #[cfg(feature = "timezones")]
-            DataType::Datetime(_, Some(_)) => &polars_ops::chunked_array::replace_time_zone(
-                ca,
-                None,
-                &StringChunked::new("".into(), ["raise"]),
-                NonExistent::Raise,
-            )
-            .expect("Removing time zone is infallible"),
+            DataType::Datetime(_, Some(_)) => &ca
+                .replace_time_zone(
+                    None,
+                    &StringChunked::new("".into(), ["raise"]),
+                    NonExistent::Raise,
+                )
+                .expect("Removing time zone is infallible"),
             _ => ca,
         };
         ca_local.physical().apply_kernel_cast::<Int16Type>(&f)
@@ -266,11 +264,11 @@ pub trait DatetimeMethods: AsDatetime {
 
         let ca = match time_zone {
             #[cfg(feature = "timezones")]
-            Some(_) => {
-                let mut ca = ca.into_datetime(*time_unit, None);
-                ca = replace_time_zone(&ca, time_zone.as_ref(), ambiguous, NonExistent::Raise)?;
-                ca
-            },
+            Some(_) => ca.into_datetime(*time_unit, None).replace_time_zone(
+                time_zone.as_ref(),
+                ambiguous,
+                NonExistent::Raise,
+            )?,
             _ => {
                 polars_ensure!(
                     time_zone.is_none(),
