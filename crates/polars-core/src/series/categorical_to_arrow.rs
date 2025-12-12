@@ -8,6 +8,7 @@ use polars_compute::cast::cast_unchecked;
 use crate::prelude::*;
 
 /// Categorical converter that prunes unused categories.
+#[derive(Clone)]
 pub struct CategoricalToArrowConverter {
     /// Converters keyed by the Arc address of `Arc<CategoricalMapping>`.
     ///
@@ -106,6 +107,7 @@ impl CategoricalToArrowConverter {
     }
 }
 
+#[derive(Clone)]
 pub enum CategoricalArrayToArrowConverter {
     // # Safety
     // All enum variants must hold a ref to the `Arc<CategoricalMapping>`, as this enum is inserted
@@ -260,6 +262,7 @@ impl CategoricalArrayToArrowConverter {
     }
 }
 
+#[derive(Clone)]
 pub enum CategoricalKeyRemap {
     U8(PlIndexSet<u8>),
     U16(PlIndexSet<u16>),
