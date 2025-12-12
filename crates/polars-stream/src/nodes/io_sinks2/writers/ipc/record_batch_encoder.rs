@@ -178,6 +178,8 @@ impl RecordBatchEncoder {
                                     &write_options,
                                 )?;
 
+                                // Dictionary batches can be placed anywhere in an IPC file, so we
+                                // can have each task send their encoded data as soon as it's ready.
                                 let _ = ipc_batch_tx.send(IpcBatch::Dictionary(encoded_data)).await;
 
                                 PolarsResult::Ok(())

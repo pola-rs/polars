@@ -30,8 +30,6 @@ pub fn build_ipc_write_components(
     let dictionary_id_offsets: Arc<[usize]> =
         dictionary_id_offsets_iter(&arrow_converters).collect();
 
-    // Note: `arrow_converters` must not be mutated after this point. This is to ensure that
-    // the dictionary IDs used by the encoders matches those assigned to the fields here.
     let ipc_fields: Vec<IpcField> = file_schema
         .iter_values()
         .zip(&arrow_converters)
