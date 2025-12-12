@@ -47,6 +47,6 @@ A-panic:
 A-plugin:
   - '/plugin/i'
 A-sql:
-  - '/\bsql\b/i'
+  - '/\bsql\b|sqlcontext/i'
 A-streaming:
   - '/streaming/i'
