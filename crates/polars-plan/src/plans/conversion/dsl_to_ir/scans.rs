@@ -348,82 +348,85 @@ pub fn csv_file_info(
     // * See if we can do better than scanning all files if there is a row limit
     // * See if we can do this without downloading the entire file
 
-    // prints the error message if paths is empty.
-    let run_async = sources.is_cloud_url() || (sources.is_paths() && config::force_async());
+    if csv_options.schema.is_none() {
+        // prints the error message if paths is empty.
+        let run_async = sources.is_cloud_url() || (sources.is_paths() && config::force_async());
 
-    let cache_entries = {
-        if run_async {
-            feature_gated!("cloud", {
-                Some(polars_io::file_cache::init_entries_from_uri_list(
-                    sources
-                        .as_paths()
-                        .unwrap()
-                        .iter()
-                        .map(|path| Arc::from(path.to_str())),
-                    cloud_options,
-                )?)
-            })
-        } else {
-            None
-        }
-    };
+        let cache_entries = {
+            if run_async {
+                feature_gated!("cloud", {
+                    Some(polars_io::file_cache::init_entries_from_uri_list(
+                        sources
+                            .as_paths()
+                            .unwrap()
+                            .iter()
+                            .map(|path| Arc::from(path.to_str())),
+                        cloud_options,
+                    )?)
+                })
+            } else {
+                None
+            }
+        };
 
-    let infer_schema_func = |i| {
-        let source = sources.at(i);
-        let memslice = source.to_memslice_possibly_async(run_async, cache_entries.as_ref(), i)?;
-        let owned = &mut vec![];
-        let mut reader = std::io::Cursor::new(maybe_decompress_bytes(&memslice, owned)?);
-        if reader.read(&mut [0; 4])? < 2 && csv_options.raise_if_empty {
-            polars_bail!(NoData: "empty CSV")
-        }
-        reader.rewind()?;
+        let infer_schema_func = |i| {
+            let source = sources.at(i);
+            let memslice =
+                source.to_memslice_possibly_async(run_async, cache_entries.as_ref(), i)?;
+            let owned = &mut vec![];
+            let mut reader = std::io::Cursor::new(maybe_decompress_bytes(&memslice, owned)?);
+            if reader.read(&mut [0; 4])? < 2 && csv_options.raise_if_empty {
+                polars_bail!(NoData: "empty CSV")
+            }
+            reader.rewind()?;
 
-        let reader_bytes = get_reader_bytes(&mut reader).expect("could not mmap file");
+            let reader_bytes = get_reader_bytes(&mut reader).expect("could not mmap file");
 
-        // this needs a way to estimated bytes/rows.
-        SchemaInferenceResult::try_from_reader_bytes_and_options(&reader_bytes, csv_options)
-    };
+            // this needs a way to estimated bytes/rows.
+            SchemaInferenceResult::try_from_reader_bytes_and_options(&reader_bytes, csv_options)
+        };
 
-    let merge_func = |a: PolarsResult<SchemaInferenceResult>,
-                      b: PolarsResult<SchemaInferenceResult>| {
-        match (a, b) {
-            (Err(e), _) | (_, Err(e)) => Err(e),
-            (Ok(a), Ok(b)) => {
-                let merged_schema = if csv_options.schema.is_some() {
-                    csv_options.schema.clone().unwrap()
-                } else {
-                    let schema_a = a.get_inferred_schema();
-                    let schema_b = b.get_inferred_schema();
+        let merge_func = |a: PolarsResult<SchemaInferenceResult>,
+                          b: PolarsResult<SchemaInferenceResult>| {
+            match (a, b) {
+                (Err(e), _) | (_, Err(e)) => Err(e),
+                (Ok(a), Ok(b)) => {
+                    let merged_schema = if csv_options.schema.is_some() {
+                        csv_options.schema.clone().unwrap()
+                    } else {
+                        let schema_a = a.get_inferred_schema();
+                        let schema_b = b.get_inferred_schema();
 
-                    match (schema_a.is_empty(), schema_b.is_empty()) {
-                        (true, _) => schema_b,
-                        (_, true) => schema_a,
-                        _ => {
-                            let mut s = Arc::unwrap_or_clone(schema_a);
-                            s.to_supertype(&schema_b)?;
-                            Arc::new(s)
-                        },
-                    }
-                };
+                        match (schema_a.is_empty(), schema_b.is_empty()) {
+                            (true, _) => schema_b,
+                            (_, true) => schema_a,
+                            _ => {
+                                let mut s = Arc::unwrap_or_clone(schema_a);
+                                s.to_supertype(&schema_b)?;
+                                Arc::new(s)
+                            },
+                        }
+                    };
 
-                Ok(a.with_inferred_schema(merged_schema))
+                    Ok(a.with_inferred_schema(merged_schema))
+                },
+            }
+        };
+
+        let si_results = POOL.join(
+            || infer_schema_func(0),
+            || {
+                (1..sources.len())
+                    .into_par_iter()
+                    .map(infer_schema_func)
+                    .reduce(|| Ok(Default::default()), merge_func)
             },
-        }
-    };
+        );
 
-    let si_results = POOL.join(
-        || infer_schema_func(0),
-        || {
-            (1..sources.len())
-                .into_par_iter()
-                .map(infer_schema_func)
-                .reduce(|| Ok(Default::default()), merge_func)
-        },
-    );
+        let si_result = merge_func(si_results.0, si_results.1)?;
 
-    let si_result = merge_func(si_results.0, si_results.1)?;
-
-    csv_options.update_with_inference_result(&si_result);
+        csv_options.update_with_inference_result(&si_result);
+    }
 
     let mut schema = csv_options
         .schema
