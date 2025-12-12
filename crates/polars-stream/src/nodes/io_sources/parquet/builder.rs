@@ -65,12 +65,8 @@ impl FileReaderBuilder for ParquetReaderBuilder {
                         panic!("invalid value for POLARS_ROW_GROUP_PREFETCH_SIZE: {x}")
                     })
             })
-            .unwrap_or(
-                execution_state
-                    .num_pipelines
-                    .saturating_mul(2)
-                    .clamp(1, 128),
-            );
+            .unwrap_or(execution_state.num_pipelines.saturating_mul(2))
+            .max(1);
 
         self.prefetch_limit.store(prefetch_limit);
 
