@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use arrow::legacy::kernels::sorted_join::left;
 use parking_lot::Mutex;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
 use polars_core::prelude::{DataType, PlHashMap, PlHashSet, expr, row_encode};
@@ -1138,14 +1139,16 @@ pub fn lower_ir(
             let options = options.options.clone();
             let phys_left = lower_ir!(input_left)?;
             let phys_right = lower_ir!(input_right)?;
+            let left_sortedness = is_sorted(input_left, ir_arena, expr_arena);
             let left_is_sorted = are_keys_sorted_any(
-                is_sorted(input_left, ir_arena, expr_arena).as_ref(),
+                left_sortedness.as_ref(),
                 &left_on,
                 expr_arena,
                 &input_left_schema,
             );
+            let right_sortedness = is_sorted(input_right, ir_arena, expr_arena);
             let right_is_sorted = are_keys_sorted_any(
-                is_sorted(input_right, ir_arena, expr_arena).as_ref(),
+                right_sortedness.as_ref(),
                 &right_on,
                 expr_arena,
                 &input_right_schema,
@@ -1212,6 +1215,8 @@ pub fn lower_ir(
                             input_right: trans_input_right,
                             left_on: left_on_names,
                             right_on: right_on_names,
+                            left_sortedness: left_sortedness.unwrap(),
+                            right_sortedness: right_sortedness.unwrap(),
                             args: args.clone(),
                         },
                     ))

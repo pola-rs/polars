@@ -5,13 +5,13 @@ use std::ops::Not;
 use arrow::Either;
 // use arrow::Either::{Left as Either::Left, Right as Either::Right};
 use arrow::array::builder::ShareStrategy;
-use polars_compute::rolling::nulls;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
 use polars_ops::prelude::*;
-use polars_plan::dsl::{SinkDestination, coalesce};
+use polars_plan::prelude::*;
+use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
-use polars_utils::{format_pl_smallstr, unique_column_name};
+use polars_utils::parma::raw::Key;
 
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
 use crate::execute::StreamingExecutionState;
@@ -48,21 +48,24 @@ impl Not for Side {
     }
 }
 
-#[derive(Default)]
+#[derive(Debug)]
+struct SideParams {
+    input_schema: SchemaRef,
+    ir_schema: SchemaRef,
+    on: Vec<PlSmallStr>,
+    key_col: PlSmallStr,
+    sortedness: IRSorted,
+}
+
+#[derive(Debug)]
 struct MergeJoinParams {
-    left_input_schema: Arc<Schema>,
-    right_input_schema: Arc<Schema>,
-    left_ir_schema: Arc<Schema>,
-    right_ir_schema: Arc<Schema>,
-    output_schema: Arc<Schema>,
-    left_on: Vec<PlSmallStr>,
-    right_on: Vec<PlSmallStr>,
-    left_key_col: PlSmallStr,
-    right_key_col: PlSmallStr,
+    left: SideParams,
+    right: SideParams,
+    output_schema: SchemaRef,
     args: JoinArgs,
 }
 
-#[derive(Default)]
+#[derive(Debug)]
 pub struct MergeJoinNode {
     state: MergeJoinState,
     params: MergeJoinParams,
@@ -86,11 +89,13 @@ impl MergeJoinNode {
         output_schema: Arc<Schema>,
         left_on: Vec<PlSmallStr>,
         right_on: Vec<PlSmallStr>,
+        left_sortedness: IRSorted,
+        right_sortedness: IRSorted,
         args: JoinArgs,
     ) -> PolarsResult<Self> {
         assert!(left_on.len() == right_on.len());
 
-        let state = MergeJoinState::Running;
+        let state: MergeJoinState = MergeJoinState::Running;
         let left_key_col;
         let right_key_col;
         let mut left_ir_schema = left_input_schema.clone();
@@ -108,22 +113,32 @@ impl MergeJoinNode {
             left_key_col = left_on[0].clone();
             right_key_col = right_on[0].clone();
         }
+        let left = SideParams {
+            input_schema: left_input_schema,
+            ir_schema: left_ir_schema,
+            on: left_on,
+            key_col: left_key_col,
+            sortedness: left_sortedness,
+        };
+        let right = SideParams {
+            input_schema: right_input_schema,
+            ir_schema: right_ir_schema,
+            on: right_on,
+            key_col: right_key_col,
+            sortedness: right_sortedness,
+        };
         let params = MergeJoinParams {
-            left_input_schema,
-            right_input_schema,
-            left_ir_schema,
-            right_ir_schema,
+            left,
+            right,
             output_schema,
-            left_on,
-            right_on,
-            left_key_col,
-            right_key_col,
             args,
         };
         Ok(MergeJoinNode {
             state,
             params,
-            ..Default::default()
+            left_unmerged: Default::default(),
+            right_unmerged: Default::default(),
+            seq: MorselSeq::default(),
         })
     }
 
@@ -143,8 +158,8 @@ impl MergeJoinNode {
         // amount of gathering as much as possible
         // TODO: [amber] Do a cardinality sketch to estimate the output size?
 
-        let mut left_key = left.column(&self.params.left_key_col).unwrap();
-        let mut right_key = right.column(&self.params.right_key_col).unwrap();
+        let mut left_key = left.column(&self.params.left.key_col).unwrap();
+        let mut right_key = right.column(&self.params.right.key_col).unwrap();
 
         if is_right_join {
             swap(&mut left_key, &mut right_key);
@@ -170,9 +185,9 @@ impl MergeJoinNode {
         }
 
         // Remove the added row-encoded key columns
-        if self.params.left_on.len() > 1 {
-            left = left.drop(&self.params.left_key_col).unwrap();
-            right = right.drop(&self.params.right_key_col).unwrap();
+        if self.params.left.on.len() > 1 {
+            left = left.drop(&self.params.left.key_col).unwrap();
+            right = right.drop(&self.params.right.key_col).unwrap();
         }
 
         let mut left_build = DataFrameBuilder::new(left.schema().clone());
@@ -184,11 +199,11 @@ impl MergeJoinNode {
 
         // Coalsesce the key columns (and rename them)
         if self.params.args.how == JoinType::Left {
-            for c in &self.params.left_on {
+            for c in &self.params.left.on {
                 right.drop_in_place(c.as_str())?;
             }
         } else if self.params.args.how == JoinType::Right {
-            for c in &self.params.right_on {
+            for c in &self.params.right.on {
                 left.drop_in_place(c.as_str())?;
             }
         }
@@ -310,9 +325,7 @@ impl ComputeNode for MergeJoinNode {
                     let flush = self.state == Flushing;
                     match find_mergeable(
                         &mut self.left_unmerged,
-                        &self.params.left_key_col,
                         &mut self.right_unmerged,
-                        &self.params.right_key_col,
                         flush,
                         &self.params,
                     )? {
@@ -335,20 +348,14 @@ impl ComputeNode for MergeJoinNode {
                                 buffer_unmerged_from_pipe(
                                     recv_right.as_mut(),
                                     &mut self.right_unmerged,
-                                    &self.params.right_on,
-                                    &self.params.right_key_col,
+                                    &self.params.right,
                                     &self.params,
                                 )
                                 .await;
                                 break;
                             };
                             let mut df = m.into_df();
-                            append_key_columns(
-                                &mut df,
-                                &self.params.left_on,
-                                &self.params.left_key_col,
-                                &self.params,
-                            )?;
+                            append_key_columns(&mut df, &self.params.left, &self.params)?;
                             self.left_unmerged.push_back(df);
                         },
                         Either::Right(Side::Right) if recv_right.is_some() => {
@@ -357,20 +364,14 @@ impl ComputeNode for MergeJoinNode {
                                 buffer_unmerged_from_pipe(
                                     recv_left.as_mut(),
                                     &mut self.left_unmerged,
-                                    &self.params.left_on,
-                                    &self.params.left_key_col,
+                                    &self.params.left,
                                     &self.params,
                                 )
                                 .await;
                                 break;
                             };
                             let mut df = m.into_df();
-                            append_key_columns(
-                                &mut df,
-                                &self.params.right_on,
-                                &self.params.right_key_col,
-                                &self.params,
-                            )?;
+                            append_key_columns(&mut df, &self.params.right, &self.params)?;
                             self.right_unmerged.push_back(df);
                         },
                         Either::Right(_) => break,
@@ -384,37 +385,28 @@ impl ComputeNode for MergeJoinNode {
 
 fn find_mergeable(
     left: &mut VecDeque<DataFrame>,
-    left_key: &str,
     right: &mut VecDeque<DataFrame>,
-    right_key: &str,
     flush: bool,
     params: &MergeJoinParams,
 ) -> PolarsResult<Either<(DataFrame, DataFrame), Side>> {
     if params.args.how == JoinType::Right {
-        let res = find_mergeable_inner(right, right_key, left, left_key, flush, true, params)?;
+        let res = find_mergeable_inner(right, left, &params.right, &params.left, flush)?;
         return Ok(match res {
             Either::Left((right_df, left_df)) => Either::Left((left_df, right_df)),
             Either::Right(side) => Either::Right(!side),
         });
     } else {
-        find_mergeable_inner(left, left_key, right, right_key, flush, false, params)
+        find_mergeable_inner(left, right, &params.left, &params.right, flush)
     }
 }
 
 fn find_mergeable_inner(
     left: &mut VecDeque<DataFrame>,
-    left_key: &str,
     right: &mut VecDeque<DataFrame>,
-    right_key: &str,
+    left_params: &SideParams,
+    right_params: &SideParams,
     flush: bool,
-    sides_flipped: bool,
-    params: &MergeJoinParams,
 ) -> PolarsResult<Either<(DataFrame, DataFrame), Side>> {
-    let (left_ir_schema, right_ir_schema) = match sides_flipped {
-        false => (&params.left_ir_schema, &params.right_ir_schema),
-        true => (&params.right_ir_schema, &params.left_ir_schema),
-    };
-
     loop {
         if left.is_empty() && flush {
             right.clear();
@@ -426,7 +418,7 @@ fn find_mergeable_inner(
         if right.is_empty() && flush {
             return Ok(Either::Left((
                 left.pop_front().unwrap(),
-                DataFrame::empty_with_schema(right_ir_schema),
+                DataFrame::empty_with_schema(&*right_params.ir_schema),
             )));
         }
         if right.is_empty() {
@@ -435,6 +427,7 @@ fn find_mergeable_inner(
 
         let left_df = &left[0];
         let right_df = &right[0];
+
         if left_df.height() == 0 {
             left.pop_front();
             continue;
@@ -444,10 +437,10 @@ fn find_mergeable_inner(
         }
 
         let left_key_val = left_df
-            .column(left_key)?
+            .column(&left_params.key_col)?
             .as_materialized_series_maintain_scalar();
         let right_key_val = right_df
-            .column(right_key)?
+            .column(&right_params.key_col)?
             .as_materialized_series_maintain_scalar();
         let left_key_min = left_key_val.slice(0, 1);
         let left_key_max = left_key_val.slice(left_key_val.len() as i64 - 1, 1);
@@ -491,8 +484,8 @@ fn find_mergeable_inner(
         right.push_front(right_rest);
 
         debug_assert!(left_df.height() > 0 || right_df.height() > 0);
-        debug_assert!(*left_df.schema() == *left_ir_schema);
-        debug_assert!(*right_df.schema() == *right_ir_schema);
+        debug_assert!(*left_df.schema() == left_params.ir_schema);
+        debug_assert!(*right_df.schema() == right_params.ir_schema);
         return Ok(Either::Left((left_df, right_df)));
     }
 }
@@ -525,8 +518,7 @@ fn keys_equal(left: &AnyValue, right: &AnyValue, nulls_equal: bool) -> bool {
 async fn buffer_unmerged_from_pipe(
     port: Option<&mut PortReceiver>,
     unmerged: &mut VecDeque<DataFrame>,
-    on: &[PlSmallStr],
-    key_col_name: &PlSmallStr,
+    sp: &SideParams,
     params: &MergeJoinParams,
 ) {
     let Some(port) = port else {
@@ -537,30 +529,30 @@ async fn buffer_unmerged_from_pipe(
     };
     morsel.source_token().stop();
     let mut df = morsel.into_df();
-    append_key_columns(&mut df, on, key_col_name, params).unwrap();
+    append_key_columns(&mut df, sp, params).unwrap();
     unmerged.push_back(df);
 
     while let Ok(morsel) = port.recv().await {
         let mut df = morsel.into_df();
-        append_key_columns(&mut df, on, key_col_name, params).unwrap();
+        append_key_columns(&mut df, sp, params).unwrap();
         unmerged.push_back(df);
     }
 }
 
 fn append_key_columns(
     df: &mut DataFrame,
-    on: &[PlSmallStr],
-    col_name: &PlSmallStr,
+    sp: &SideParams,
     params: &MergeJoinParams,
 ) -> PolarsResult<()> {
-    if on.len() > 1 {
-        let columns = on
+    if sp.on.len() > 1 {
+        let columns = sp
+            .on
             .iter()
             .map(|c| df.column(c).unwrap())
             .cloned()
             .collect_vec();
         let key = row_encode::_get_rows_encoded_ca(
-            col_name.clone(),
+            sp.key_col.clone(),
             &columns,
             &vec![false; columns.len()], // TODO: [amber]
             &vec![false; columns.len()], // TODO: [amber]

@@ -16,7 +16,8 @@ use polars_plan::dsl::{
 };
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::{AExpr, DataFrameUdf, IR};
-use polars_plan::prelude::expr_ir::ExprIR;
+use polars_plan::prelude::expr_ir::*;
+use polars_plan::prelude::*;
 
 mod fmt;
 mod io;
@@ -368,6 +369,8 @@ pub enum PhysNodeKind {
         input_right: PhysStream,
         left_on: Vec<PlSmallStr>,
         right_on: Vec<PlSmallStr>,
+        left_sortedness: IRSorted,
+        right_sortedness: IRSorted,
         args: JoinArgs,
     },
 
