@@ -308,8 +308,8 @@ pub struct UnifiedScanArgs {
 pub struct PredicateFileSkip {
     /// Number of files before skipping
     pub original_len: usize,
-    /// If `false` the predicate can be skipped at runtime.
-    pub has_residual_predicate: bool,
+    /// If `true` the predicate can be skipped at runtime.
+    pub no_residual_predicate: bool,
 }
 
 impl UnifiedScanArgs {

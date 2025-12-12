@@ -368,7 +368,7 @@ pub fn apply_scan_predicate_to_scan_ir(
 
         let predicate_file_skip = PredicateFileSkip {
             original_len: sources.len(),
-            has_residual_predicate: predicate_to_readers.is_some(),
+            no_residual_predicate: predicate_to_readers.is_some(),
         };
 
         if verbose {
