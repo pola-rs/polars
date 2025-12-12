@@ -15,12 +15,13 @@ use polars_plan::dsl::default_values::DefaultFieldValues;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::sink2::FileProviderType;
 use polars_plan::dsl::{
-    CallbackSinkType, FileScanIR, JoinOptionsIR, PartitionStrategyIR, PartitionVariantIR,
-    PartitionedSinkOptionsIR, SinkOptions, SinkTypeIR, UnifiedSinkArgs,
+    CallbackSinkType, ExtraColumnsPolicy, FileScanIR, FileSinkOptions, JoinOptionsIR,
+    PartitionStrategyIR, PartitionVariantIR, PartitionedSinkOptionsIR, SinkOptions, SinkTypeIR,
+    UnifiedSinkArgs,
 };
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{
-    AExpr, AExprBuilder, FunctionIR, IR, IRAggExpr, LiteralValue, are_keys_sorted_any, is_sorted,
+    AExpr, FunctionIR, IR, IRAggExpr, LiteralValue, are_keys_sorted_any, is_sorted,
     write_ir_non_recursive,
 };
 use polars_plan::prelude::*;
