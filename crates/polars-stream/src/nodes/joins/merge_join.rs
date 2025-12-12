@@ -1,6 +1,5 @@
 use std::collections::VecDeque;
 use std::mem::swap;
-use std::ops::Not;
 
 use arrow::Either;
 // use arrow::Either::{Left as Either::Left, Right as Either::Right};
@@ -11,7 +10,6 @@ use polars_ops::prelude::*;
 use polars_plan::prelude::*;
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
-use polars_utils::parma::raw::Key;
 
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
 use crate::execute::StreamingExecutionState;
@@ -20,11 +18,7 @@ use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::nodes::ComputeNode;
 use crate::pipe::{PortReceiver, RecvPort, SendPort};
 
-// Do row encoding in lowering and then we will have one key column per input
-// Probably Gijs has already done something like this somewhere
-
 // TODO: [amber] Use `_get_rows_encoded` (with `descending`) to encode the keys
-// TODO: [amber] Consider extending the HashKeys to support sorted data
 // TODO: [amber] Use a distributor to distribute the merge-join work to a pool of workers
 // BUG: [amber] Currently the join may process sub-chunks and not produce "cartesian product"
 // results when there are chunks of equal keys
@@ -43,7 +37,7 @@ struct SideParams {
     ir_schema: SchemaRef,
     on: Vec<PlSmallStr>,
     key_col: PlSmallStr,
-    sortedness: IRSorted,
+    descending: Vec<bool>,
 }
 
 #[derive(Debug)]
@@ -51,6 +45,7 @@ struct MergeJoinParams {
     left: SideParams,
     right: SideParams,
     output_schema: SchemaRef,
+    key_descending: bool,
     args: JoinArgs,
 }
 
@@ -83,6 +78,8 @@ impl MergeJoinNode {
         args: JoinArgs,
     ) -> PolarsResult<Self> {
         assert!(left_on.len() == right_on.len());
+        assert!(left_sortedness.0.len() == left_on.len());
+        assert!(right_sortedness.0.len() == right_on.len());
 
         let state: MergeJoinState = MergeJoinState::Running;
         let left_key_col;
@@ -102,24 +99,43 @@ impl MergeJoinNode {
             left_key_col = left_on[0].clone();
             right_key_col = right_on[0].clone();
         }
+        let left_descending = left_sortedness
+            .0
+            .iter()
+            .map(|s| s.descending.unwrap())
+            .collect_vec();
+        let right_descending = right_sortedness
+            .0
+            .iter()
+            .map(|s| s.descending.unwrap())
+            .collect_vec();
+        assert!(left_descending.len() == right_descending.len());
+        let is_descending = |s: &IRSorted| {
+            (s.0.len() == 1)
+                .then(|| s.0[0].descending.unwrap())
+                .unwrap_or(false)
+        };
+        let key_descending = is_descending(&left_sortedness);
+        assert!(key_descending == is_descending(&right_sortedness));
         let left = SideParams {
             input_schema: left_input_schema,
             ir_schema: left_ir_schema,
             on: left_on,
             key_col: left_key_col,
-            sortedness: left_sortedness,
+            descending: left_descending,
         };
         let right = SideParams {
             input_schema: right_input_schema,
             ir_schema: right_ir_schema,
             on: right_on,
             key_col: right_key_col,
-            sortedness: right_sortedness,
+            descending: right_descending,
         };
         let params = MergeJoinParams {
             left,
             right,
             output_schema,
+            key_descending,
             args,
         };
         Ok(MergeJoinNode {
@@ -155,6 +171,7 @@ impl MergeJoinNode {
         }
         let mut left_gather_idxs = Vec::new();
         let mut right_gather_idxs = Vec::new();
+        // TODO: [amber] This is still quadratic
         for (idxl, left_key) in left_key.as_materialized_series().iter().enumerate() {
             let mut matched = false;
             for (idxr, right_key) in right_key.as_materialized_series().iter().enumerate() {
@@ -378,14 +395,14 @@ fn find_mergeable(
     params: &MergeJoinParams,
 ) -> PolarsResult<Either<(DataFrame, DataFrame), NeedMore>> {
     if params.args.how == JoinType::Right {
-        let res = find_mergeable_inner(right, left, &params.right, &params.left, flush)?;
+        let res = find_mergeable_inner(right, left, &params.right, &params.left, params, flush)?;
         return Ok(match res {
             Either::Left((right_df, left_df)) => Either::Left((left_df, right_df)),
             Either::Right(NeedMore::Left) => Either::Right(NeedMore::Right),
             Either::Right(NeedMore::Right) => Either::Right(NeedMore::Left),
         });
     } else {
-        find_mergeable_inner(left, right, &params.left, &params.right, flush)
+        find_mergeable_inner(left, right, &params.left, &params.right, params, flush)
     }
 }
 
@@ -394,6 +411,7 @@ fn find_mergeable_inner(
     right: &mut VecDeque<DataFrame>,
     left_params: &SideParams,
     right_params: &SideParams,
+    params: &MergeJoinParams,
     flush: bool,
 ) -> PolarsResult<Either<(DataFrame, DataFrame), NeedMore>> {
     loop {
@@ -431,38 +449,55 @@ fn find_mergeable_inner(
         let right_key_val = right_df
             .column(&right_params.key_col)?
             .as_materialized_series_maintain_scalar();
-        let left_key_min = left_key_val.slice(0, 1);
-        let left_key_max = left_key_val.slice(left_key_val.len() as i64 - 1, 1);
-        let right_key_min = right_key_val.slice(0, 1);
-        let right_key_max = right_key_val.slice(right_key_val.len() as i64 - 1, 1);
+        let left_span_start = left_key_val.slice(0, 1);
+        let left_span_end = left_key_val.slice(left_key_val.len() as i64 - 1, 1);
+        let right_span_start = right_key_val.slice(0, 1);
+        let right_span_end = right_key_val.slice(right_key_val.len() as i64 - 1, 1);
 
-        if left_key_min == left_key_max && left.len() >= 2 {
+        if left_span_start == left_span_end && left.len() >= 2 {
             vstack_head(left);
             continue;
-        } else if right_key_min == right_key_max && right.len() >= 2 {
+        } else if right_span_start == right_span_end && right.len() >= 2 {
             vstack_head(right);
             continue;
-        } else if left_key_min == left_key_max && !flush {
+        } else if left_span_start == left_span_end && !flush {
             return Ok(Either::Right(NeedMore::Left));
-        } else if right_key_min == right_key_max && !flush {
+        } else if right_span_start == right_span_end && !flush {
             return Ok(Either::Right(NeedMore::Right));
         }
 
-        let global_max = if left_key_max.get(0)? < right_key_max.get(0)? {
-            left_key_max
+        let spans_intersect_end =
+            match params.key_descending ^ (left_span_end.get(0)? < right_span_end.get(0)?) {
+                true => left_span_end,
+                false => right_span_end,
+            };
+        let (left_cutoff, right_cutoff);
+        if flush {
+            left_cutoff = find_item_offset(
+                &left_key_val,
+                &spans_intersect_end,
+                SearchSortedSide::Right,
+                params.key_descending,
+            )? + 1;
+            right_cutoff = find_item_offset(
+                &right_key_val,
+                &spans_intersect_end,
+                SearchSortedSide::Right,
+                params.key_descending,
+            )? + 1;
         } else {
-            right_key_max
-        };
-        let (left_cutoff, right_cutoff) = if flush {
-            (
-                find_item_offset(&left_key_val, &global_max, SearchSortedSide::Right, false)? + 1,
-                find_item_offset(&right_key_val, &global_max, SearchSortedSide::Right, false)? + 1,
-            )
-        } else {
-            (
-                find_item_offset(&left_key_val, &global_max, SearchSortedSide::Left, false)?,
-                find_item_offset(&right_key_val, &global_max, SearchSortedSide::Left, false)?,
-            )
+            left_cutoff = find_item_offset(
+                &left_key_val,
+                &spans_intersect_end,
+                SearchSortedSide::Left,
+                params.key_descending,
+            )?;
+            right_cutoff = find_item_offset(
+                &right_key_val,
+                &spans_intersect_end,
+                SearchSortedSide::Left,
+                params.key_descending,
+            )?;
         };
 
         let left_df = left.pop_front().unwrap();
@@ -542,7 +577,7 @@ fn append_key_columns(
         let key = row_encode::_get_rows_encoded_ca(
             sp.key_col.clone(),
             &columns,
-            &vec![false; columns.len()], // TODO: [amber]
+            &sp.descending,
             &vec![false; columns.len()], // TODO: [amber]
             !params.args.nulls_equal,
         )?

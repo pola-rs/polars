@@ -1,11 +1,10 @@
 use std::sync::Arc;
 
-use arrow::legacy::kernels::sorted_join::left;
 use parking_lot::Mutex;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
-use polars_core::prelude::{DataType, PlHashMap, PlHashSet, expr, row_encode};
+use polars_core::prelude::{DataType, PlHashMap, PlHashSet};
 use polars_core::scalar::Scalar;
-use polars_core::schema::{Schema, SchemaRef};
+use polars_core::schema::Schema;
 use polars_core::{SchemaExtPl, config};
 use polars_error::{PolarsResult, polars_bail};
 use polars_expr::state::ExecutionState;

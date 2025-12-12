@@ -403,6 +403,7 @@ def test_cross_join_with_literal_column_25544() -> None:
     assert streaming_result.item() == 0
 
 
+@pytest.mark.parametrize("on", [("id",), ("id", "id_ext")])
 @pytest.mark.parametrize("how", ["inner", "left", "right"])
 @pytest.mark.parametrize("descending", [False, True])
 @pytest.mark.parametrize("nulls_equal", [False, True])
@@ -410,6 +411,7 @@ def test_cross_join_with_literal_column_25544() -> None:
     "maintain_order", ["none", "left", "right", "right_left", "left_right"]
 )
 def test_merge_join_dispatch(
+    on: tuple[str, str],
     how: JoinStrategy,
     descending: bool,
     nulls_equal: bool,
@@ -425,27 +427,29 @@ def test_merge_join_dispatch(
         pl.LazyFrame(
             {
                 "id": [1, 2, 3, 4, 5],
+                "id_ext": [10, 20, 30, 40, 50],
                 "names": ["A", "B", "C", "D", "E"],
             }
         )
-        .sort("id", descending=descending)
-        .set_sorted("id", descending=descending)
+        .sort(*on, descending=descending)
+        .set_sorted(*on, descending=descending)
     )
 
     df_right = (
         pl.LazyFrame(
             {
                 "id": [3, 4, 5, 6, 7],
+                "id_ext": [30, 40, 50, 60, 70],
                 "scores": [10, 20, 30, 40, 50],
             }
         )
-        .sort("id", descending=descending)
-        .set_sorted("id", descending=descending)
+        .sort(*on, descending=descending)
+        .set_sorted(*on, descending=descending)
     )
 
     q = df_left.join(
         df_right,
-        on="id",
+        on=on,
         how=how,
         nulls_equal=nulls_equal,
         maintain_order=maintain_order,
@@ -455,4 +459,8 @@ def test_merge_join_dispatch(
     actual = q.collect(engine="streaming")
 
     assert "merge-join" in dot, "merge-join does not appear in physical plan"
+    import sys
+
+    print(expected, file=sys.stderr)
+    print(actual, file=sys.stderr)
     assert_frame_equal(actual, expected, check_row_order=check_row_order)
