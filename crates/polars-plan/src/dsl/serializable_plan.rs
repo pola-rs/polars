@@ -148,6 +148,11 @@ pub(crate) enum SerializableDslPlanNode {
         dsl: DslPlanKey,
         version: u32,
     },
+    Repartition {
+        input: DslPlanKey,
+        partitions: u32,
+        by: Vec<PlSmallStr>,
+    },
 }
 
 #[derive(Debug, Default)]
@@ -366,6 +371,15 @@ fn convert_dsl_plan_to_serializable_plan(
         } => SP::IR {
             dsl: dsl_plan_key(dsl, arenas),
             version: *version,
+        },
+        DP::Repartition {
+            input,
+            partitions,
+            by,
+        } => SP::Repartition {
+            input: dsl_plan_key(input, arenas),
+            partitions: *partitions,
+            by: by.clone(),
         },
     }
 }
@@ -614,6 +628,15 @@ fn try_convert_serializable_plan_to_dsl_plan(
             dsl: get_dsl_plan(*dsl_key, ser_dsl_plan, arenas)?,
             version: *version,
             node: Default::default(),
+        }),
+        SP::Repartition {
+            input,
+            partitions,
+            by,
+        } => Ok(DP::Repartition {
+            input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
+            partitions: *partitions,
+            by: by.clone(),
         }),
     }
 }
