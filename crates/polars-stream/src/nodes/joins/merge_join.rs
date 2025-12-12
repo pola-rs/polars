@@ -53,14 +53,13 @@ struct MergeJoinParams {
     left_input_schema: Arc<Schema>,
     right_input_schema: Arc<Schema>,
     left_ir_schema: Arc<Schema>,
-    left_is_schema: Arc<Schema>,
+    right_ir_schema: Arc<Schema>,
     output_schema: Arc<Schema>,
     left_on: Vec<PlSmallStr>,
     right_on: Vec<PlSmallStr>,
     left_key_col: PlSmallStr,
     right_key_col: PlSmallStr,
     args: JoinArgs,
-    random_state: PlRandomState,
 }
 
 #[derive(Default)]
@@ -113,14 +112,13 @@ impl MergeJoinNode {
             left_input_schema,
             right_input_schema,
             left_ir_schema,
-            left_is_schema: right_ir_schema,
+            right_ir_schema,
             output_schema,
             left_on,
             right_on,
             left_key_col,
             right_key_col,
             args,
-            random_state: PlRandomState::default(),
         };
         Ok(MergeJoinNode {
             state,
