@@ -14,7 +14,7 @@ use polars_utils::{IdxSize, format_pl_smallstr};
 
 pub mod models;
 pub use models::{PhysNodeInfo, PhysicalPlanVisualizationData};
-use slotmap::SlotMap;
+use slotmap::{SecondaryMap, SlotMap};
 
 use crate::physical_plan::visualization::models::{Edge, PhysNodeProperties};
 use crate::physical_plan::{PhysNode, PhysNodeKey, PhysNodeKind};
@@ -29,6 +29,7 @@ pub fn generate_visualization_data(
         phys_sm,
         expr_arena,
         queue: VecDeque::from_iter(roots.iter().copied()),
+        marked_for_visit: SecondaryMap::from_iter(roots.iter().map(|r| (*r, ()))),
         nodes_list: vec![],
         edges: vec![],
     }
@@ -46,6 +47,7 @@ struct PhysicalPlanVisualizationDataGenerator<'a> {
     phys_sm: &'a SlotMap<PhysNodeKey, PhysNode>,
     expr_arena: &'a Arena<AExpr>,
     queue: VecDeque<PhysNodeKey>,
+    marked_for_visit: SecondaryMap<PhysNodeKey, ()>,
     nodes_list: Vec<PhysNodeInfo>,
     edges: Vec<Edge>,
 }
@@ -61,10 +63,13 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
             phys_node_info.id = current_node_key;
 
             for input_node in node_inputs.drain(..) {
-                let input_node_key = input_node.0.as_ffi();
+                self.edges
+                    .push(Edge::new(current_node_key, input_node.0.as_ffi()));
 
-                self.queue.push_back(input_node);
-                self.edges.push(Edge::new(current_node_key, input_node_key));
+                let not_yet_marked = self.marked_for_visit.insert(input_node, ()).is_none();
+                if not_yet_marked {
+                    self.queue.push_back(input_node);
+                }
             }
 
             self.nodes_list.push(phys_node_info);
