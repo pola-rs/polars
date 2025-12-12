@@ -12,7 +12,9 @@ use polars_plan::dsl::default_values::{
     DefaultFieldValues, IcebergIdentityTransformedPartitionFields,
 };
 use polars_plan::dsl::deletion::DeletionFilesList;
-use polars_plan::dsl::{FileScanIR, Operator, ScanSources, TableStatistics, UnifiedScanArgs};
+use polars_plan::dsl::{
+    FileScanIR, Operator, PredicateFileSkip, ScanSources, TableStatistics, UnifiedScanArgs,
+};
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::predicates::{aexpr_to_column_predicates, aexpr_to_skip_batch_predicate};
@@ -364,17 +366,16 @@ pub fn apply_scan_predicate_to_scan_ir(
     if let Some(skip_files_mask) = skip_files_mask {
         assert_eq!(skip_files_mask.len(), sources.len());
 
+        let predicate_file_skip = PredicateFileSkip {
+            original_len: sources.len(),
+            has_residual_predicate: predicate_to_readers.is_some(),
+        };
+
         if verbose {
-            let s = if sources.len() == 1 { "" } else { "s" };
-            eprintln!(
-                "apply_scan_predicate_to_scan_ir: remove {} / {} file{s}",
-                skip_files_mask.num_skipped_files(),
-                sources.len()
-            );
+            eprintln!("apply_scan_predicate_to_scan_ir: {predicate_file_skip:?}");
         }
 
-        let is_fully_applied = predicate_to_readers.is_none();
-        *predicate_file_skip_applied = Some(is_fully_applied);
+        *predicate_file_skip_applied = Some(predicate_file_skip);
 
         if skip_files_mask.num_skipped_files() > 0 {
             filter_scan_ir(scan_ir, skip_files_mask.non_skipped_files_idx_iter())
