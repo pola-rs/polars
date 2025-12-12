@@ -99,7 +99,16 @@ def _scan_pyarrow_dataset_impl(
 def try_convert_pyarrow_predicate(pyarrow_predicate: str) -> Any | None:
     with contextlib.suppress(Exception):
         expr_ast = _to_ast(pyarrow_predicate)
-        return _convert_predicate(expr_ast)
+        result = _convert_predicate(expr_ast)
+
+        # Top-level boolean values should be converted to AlwaysTrue/AlwaysFalse
+        if isinstance(result, bool):
+            if result:
+                return pyiceberg.expressions.AlwaysTrue()  # type: ignore[no-untyped-call]
+            else:
+                return pyiceberg.expressions.AlwaysFalse()  # type: ignore[no-untyped-call]
+
+        return result
 
     return None
 
