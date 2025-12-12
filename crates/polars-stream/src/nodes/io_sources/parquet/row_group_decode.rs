@@ -86,6 +86,8 @@ impl RowGroupDecoder {
         )
         .await?;
 
+        drop(row_group_data);
+
         let projection_height = slice_range.len();
 
         out_columns.extend(decoded_cols);
@@ -612,6 +614,8 @@ impl RowGroupDecoder {
                     }),
             )
         };
+
+        drop(row_group_data);
 
         let live_columns = live_df_filtered.take_columns();
 

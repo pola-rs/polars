@@ -27,6 +27,14 @@ pub trait FileReader: Send + Sync {
     /// This must be called before calling any other functions of the FileReader.
     async fn initialize(&mut self) -> PolarsResult<()>;
 
+    /// When reading a files list, `prepare_read()` will be called sequentially for each reader in
+    /// the order in which the files are read.
+    ///
+    /// This is not guaranteed to always to be called.
+    fn prepare_read(&mut self) -> PolarsResult<()> {
+        Ok(())
+    }
+
     /// Begin reading the file into morsels.
     fn begin_read(
         &mut self,
