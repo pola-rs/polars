@@ -512,12 +512,6 @@ fn find_mergeable_inner(
     }
 }
 
-fn vstack_head(unmerged: &mut VecDeque<DataFrame>) {
-    let mut df = unmerged.pop_front().unwrap();
-    df.vstack_mut_owned(unmerged.pop_front().unwrap()).unwrap();
-    unmerged.push_front(df);
-}
-
 fn find_item_offset(
     s: &Series,
     search_value: &Series,
@@ -529,36 +523,10 @@ fn find_item_offset(
     Ok(pos.iter().next().unwrap_or(Some(0)).unwrap() as i64)
 }
 
-fn keys_equal(left: &AnyValue, right: &AnyValue, nulls_equal: bool) -> bool {
-    if left.is_null() && right.is_null() {
-        nulls_equal
-    } else {
-        left == right
-    }
-}
-
-async fn buffer_unmerged_from_pipe(
-    port: Option<&mut PortReceiver>,
-    unmerged: &mut VecDeque<DataFrame>,
-    sp: &SideParams,
-    params: &MergeJoinParams,
-) {
-    let Some(port) = port else {
-        return;
-    };
-    let Ok(morsel) = port.recv().await else {
-        return;
-    };
-    morsel.source_token().stop();
-    let mut df = morsel.into_df();
-    append_key_columns(&mut df, sp, params).unwrap();
-    unmerged.push_back(df);
-
-    while let Ok(morsel) = port.recv().await {
-        let mut df = morsel.into_df();
-        append_key_columns(&mut df, sp, params).unwrap();
-        unmerged.push_back(df);
-    }
+fn vstack_head(unmerged: &mut VecDeque<DataFrame>) {
+    let mut df = unmerged.pop_front().unwrap();
+    df.vstack_mut_owned(unmerged.pop_front().unwrap()).unwrap();
+    unmerged.push_front(df);
 }
 
 fn append_key_columns(
@@ -586,4 +554,36 @@ fn append_key_columns(
     }
     debug_assert!(*df.schema() == sp.ir_schema);
     Ok(())
+}
+
+async fn buffer_unmerged_from_pipe(
+    port: Option<&mut PortReceiver>,
+    unmerged: &mut VecDeque<DataFrame>,
+    sp: &SideParams,
+    params: &MergeJoinParams,
+) {
+    let Some(port) = port else {
+        return;
+    };
+    let Ok(morsel) = port.recv().await else {
+        return;
+    };
+    morsel.source_token().stop();
+    let mut df = morsel.into_df();
+    append_key_columns(&mut df, sp, params).unwrap();
+    unmerged.push_back(df);
+
+    while let Ok(morsel) = port.recv().await {
+        let mut df = morsel.into_df();
+        append_key_columns(&mut df, sp, params).unwrap();
+        unmerged.push_back(df);
+    }
+}
+
+fn keys_equal(left: &AnyValue, right: &AnyValue, nulls_equal: bool) -> bool {
+    if left.is_null() && right.is_null() {
+        nulls_equal
+    } else {
+        left == right
+    }
 }
