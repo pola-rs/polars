@@ -850,7 +850,7 @@ def test_categorical_min_max() -> None:
     assert result_alt.to_dict(as_series=False) == result.to_dict(as_series=False)
 
 
-def test_categorical_io_roundtrip() -> None:
+def test_ipc_categorical_roundtrip() -> None:
     # Ensure dictionary IDs are offsetted correctly when there are nested columns
     # containing multiple categoricals.
     lf = pl.LazyFrame(

@@ -272,6 +272,8 @@ pub fn lower_ir(
                 if match options.file_format.as_ref() {
                     #[cfg(feature = "parquet")]
                     polars_plan::dsl::FileType::Parquet(_) => true,
+                    #[cfg(feature = "ipc")]
+                    polars_plan::dsl::FileType::Ipc(_) => true,
                     _ => false,
                 } =>
             {
@@ -286,6 +288,8 @@ pub fn lower_ir(
                     && match options.file_format.as_ref() {
                         #[cfg(feature = "parquet")]
                         polars_plan::dsl::FileType::Parquet(_) => true,
+                        #[cfg(feature = "ipc")]
+                        polars_plan::dsl::FileType::Ipc(_) => true,
                         _ => false,
                     } =>
             {
