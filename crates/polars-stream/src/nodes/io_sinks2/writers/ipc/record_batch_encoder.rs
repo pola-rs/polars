@@ -159,27 +159,33 @@ impl RecordBatchEncoder {
                     !arrow_converter.categorical_converter.converters.is_empty()
                 })
                 .flat_map(|(arrow_converter, dictionary_id_offset)| {
+                    let ipc_batch_tx = ipc_batch_tx.clone();
+
                     arrow_converter
                         .categorical_converter
                         .converters
                         .into_iter()
                         .enumerate()
-                        .map(move |(i, (_, categorical_converter))| async move {
-                            encode_dictionary_values(
-                                i64::try_from(i + dictionary_id_offset).unwrap(),
-                                categorical_converter
-                                    .build_values_array(arrow_converter.compat_level)
-                                    .as_ref(),
-                                &write_options,
-                            )
+                        .map(move |(i, (_, categorical_converter))| {
+                            let ipc_batch_tx = ipc_batch_tx.clone();
+
+                            async move {
+                                let encoded_data = encode_dictionary_values(
+                                    i64::try_from(i + dictionary_id_offset).unwrap(),
+                                    categorical_converter
+                                        .build_values_array(arrow_converter.compat_level)
+                                        .as_ref(),
+                                    &write_options,
+                                )?;
+
+                                let _ = ipc_batch_tx.send(IpcBatch::Dictionary(encoded_data));
+
+                                PolarsResult::Ok(())
+                            }
                         })
                 }),
         ) {
-            let batch = IpcBatch::Dictionary(fut.await?);
-
-            if ipc_batch_tx.send(batch).await.is_err() {
-                return Ok(());
-            }
+            fut.await?;
         }
 
         Ok(())
