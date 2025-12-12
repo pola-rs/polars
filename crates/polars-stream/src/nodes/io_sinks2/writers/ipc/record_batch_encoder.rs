@@ -178,7 +178,7 @@ impl RecordBatchEncoder {
                                     &write_options,
                                 )?;
 
-                                let _ = ipc_batch_tx.send(IpcBatch::Dictionary(encoded_data));
+                                let _ = ipc_batch_tx.send(IpcBatch::Dictionary(encoded_data)).await;
 
                                 PolarsResult::Ok(())
                             }
