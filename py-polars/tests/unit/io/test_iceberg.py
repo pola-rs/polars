@@ -1819,7 +1819,7 @@ def test_scan_iceberg_min_max_statistics_filter(
             if "iceberg_table_filter: Some(<redacted>)" in capture:
                 assert "allows skipping 0 / 0 files" in capture
                 assert (
-                    "apply_scan_predicate_to_scan_ir: PredicateFileSkip { original_len: 0, no_residual_predicate: false }"
+                    "apply_scan_predicate_to_scan_ir: PredicateFileSkip { no_residual_predicate: false, original_len: 0 }"
                     in capture
                 )
 
@@ -1836,7 +1836,7 @@ def test_scan_iceberg_min_max_statistics_filter(
             else:
                 assert "allows skipping 1 / 1 files" in capture
                 assert (
-                    "apply_scan_predicate_to_scan_ir: PredicateFileSkip { original_len: 1, no_residual_predicate: false }"
+                    "apply_scan_predicate_to_scan_ir: PredicateFileSkip { no_residual_predicate: false, original_len: 1 }"
                     in capture
                 )
 
