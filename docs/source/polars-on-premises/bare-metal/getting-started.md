@@ -1,5 +1,7 @@
-First of all, make sure to obtain a license for Polars on-premises by [signing up here](https://w0lzyfh2w8o.typeform.com/to/zuoDgoMv).
-You will receive a link to download our binary named `polars-on-premises` as well as a JSON-formatted license for running Polars on-premises.
+First of all, make sure to obtain a license for Polars on-premises by
+[signing up here](https://w0lzyfh2w8o.typeform.com/to/zuoDgoMv). You will receive a link to download
+our binary named `polars-on-premises` as well as a JSON-formatted license for running Polars
+on-premises.
 
 ## Reading the license
 
@@ -23,12 +25,13 @@ scheduler and worker config, and you can find the full configuration reference
 
 ## Configuration
 
-The complete configuration reference can be found [here](/polars-on-premises/bare-metal/config-reference).
+The complete configuration reference can be found
+[here](/polars-on-premises/bare-metal/config-reference).
 
 ### Example scheduler config
 
-Here is a cleaned-up example you can use after the reference tables.
-It keeps the scheduler single-purpose (no worker role) and turns on observability.
+Here is a cleaned-up example you can use after the reference tables. It keeps the scheduler
+single-purpose (no worker role) and turns on observability.
 
 ```toml
 cluster_id = "polars-cluster"
@@ -53,8 +56,8 @@ public_leader_addr = "192.168.1.1"
 
 ### Example worker config
 
-And the matching worker config.
-This example gives the worker a local shuffle path and enables observability.
+And the matching worker config. This example gives the worker a local shuffle path and enables
+observability.
 
 ```toml
 cluster_id = "polars-cluster"

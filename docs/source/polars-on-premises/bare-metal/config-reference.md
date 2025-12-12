@@ -1,16 +1,16 @@
 # Config file reference
 
-This page describes the different configuration options for Polars on-premises.
-The config file is a standard TOML file with different sections.
-Any of the configuration can be overridden using environment variables in the following format: `PC_CUBLET__section_name__key`.
+This page describes the different configuration options for Polars on-premises. The config file is a
+standard TOML file with different sections. Any of the configuration can be overridden using
+environment variables in the following format: `PC_CUBLET__section_name__key`.
 
 ### Top-level configuration
 
-The `polars-on-premises` binary requires a license which path is provided as a configuration option, listed below.
-The license itself has the following shape:
+The `polars-on-premises` binary requires a license which path is provided as a configuration option,
+listed below. The license itself has the following shape:
 
 ```json
-{"params":{"expiry":"2026-01-31T23:59:59Z","name":"Company"},"signature":"..."}
+{ "params": { "expiry": "2026-01-31T23:59:59Z", "name": "Company" }, "signature": "..." }
 ```
 
 | Key            | Type    | Description                                                                                                                                                         |
@@ -31,18 +31,22 @@ memory_limit = 1073741824 # 1 GiB
 
 ### `[scheduler]` section
 
-For remote Polars queries without a specific output sink, Polars on-premises can automatically add persistent sink.
-We call these sinks "anonymous results" sinks.
-Infrastructure-wise, these sinks are backed by S3-compatible storage accessible from all worker nodes and the Python client.
-The data written to this location is not automatically deleted, so you need to configure a retention policy for this data yourself.
+For remote Polars queries without a specific output sink, Polars on-premises can automatically add
+persistent sink. We call these sinks "anonymous results" sinks. Infrastructure-wise, these sinks are
+backed by S3-compatible storage accessible from all worker nodes and the Python client. The data
+written to this location is not automatically deleted, so you need to configure a retention policy
+for this data yourself.
 
-You may configure the credentials using the options listed below; the key names correspond to the [`storage_options` parameter from the `scan_parquet()` method](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_parquet.html) (_e.g._ `aws_access_key_id`, `aws_secret_access_key`, `aws_session_token`, `aws_region`).
-We currently only support the AWS keys of the `storage_options` dictionary, but note that you can use any other cloud provider that supports the S3 API, such as MinIO or DigitalOcean Spaces.
+You may configure the credentials using the options listed below; the key names correspond to the
+[`storage_options` parameter from the `scan_parquet()` method](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_parquet.html)
+(_e.g._ `aws_access_key_id`, `aws_secret_access_key`, `aws_session_token`, `aws_region`). We
+currently only support the AWS keys of the `storage_options` dictionary, but note that you can use
+any other cloud provider that supports the S3 API, such as MinIO or DigitalOcean Spaces.
 
 | Key                                             | Type    | Description                                                                                                                                                                                                                   |
 | ----------------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `enabled`                                       | boolean | Whether the scheduler component runs in this process.<br>`true` for the leader node, `false` on pure workers.                                                                                                                 |
-| `allow_shared_disk`                             | boolean | Whether workers are allowed to write to a shared/local disk visible to the scheduler.<br>`false` for fully remote/storage-only setups, `true` if you have a shared filesystem.                                                |
+| `enabled`                                       | boolean | Whether the scheduler component runs in this process.<br> `true` for the leader node, `false` on pure workers.                                                                                                                |
+| `allow_shared_disk`                             | boolean | Whether workers are allowed to write to a shared/local disk visible to the scheduler.<br> `false` for fully remote/storage-only setups, `true` if you have a shared filesystem.                                               |
 | `n_workers`                                     | integer | Expected number of workers in this cluster; scheduler waits for the latter to be online before running queries.<br>e.g. `4`.                                                                                                  |
 | `anonymous_result_dst.s3.url`                   | string  | Destination for results of queries that do not have an explicit sink. Currently only S3-compatible storages are supported. The bucket must be reachable by scheduler, workers, and client.<br>e.g. `s3://bucket/path/to/key`. |
 | `anonymous_result_dst.s3.aws_endpoint_url`      | string  | Storage option configuration, see [`scan_parquet()`](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_parquet.html).                                                                                          |
@@ -62,13 +66,16 @@ anonymous_result_dst.s3.url = "s3://bucket/path/to/key"
 
 ### `[worker]` section
 
-During distributed query execution, data may be shuffled between workers.
-A local path can be provided, but shuffles can also be configured to use S3-compatible storage (accessible from all worker nodes).
-You may configure the credentials using the options listed below; the key names correspond to the [`storage_options` parameter from the `scan_parquet()` method](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_parquet.html) (_e.g._ `aws_access_key_id`, `aws_secret_access_key`, `aws_session_token`, `aws_region`).
+During distributed query execution, data may be shuffled between workers. A local path can be
+provided, but shuffles can also be configured to use S3-compatible storage (accessible from all
+worker nodes). You may configure the credentials using the options listed below; the key names
+correspond to the
+[`storage_options` parameter from the `scan_parquet()` method](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_parquet.html)
+(_e.g._ `aws_access_key_id`, `aws_secret_access_key`, `aws_session_token`, `aws_region`).
 
 | Key                                         | Type    | Description                                                                                                                          |
 | ------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `enabled`                                   | boolean | Whether the worker component runs in this process.<br>`true` on worker nodes, `false` on the dedicated scheduler.                    |
+| `enabled`                                   | boolean | Whether the worker component runs in this process.<br> `true` on worker nodes, `false` on the dedicated scheduler.                   |
 | `worker_ip`                                 | string  | Public or routable IP address other workers/scheduler use to reach this worker.<br>e.g. `192.168.1.2`.                               |
 | `flight_port`                               | integer | Port for shuffle traffic between workers.<br>e.g. `5052`.                                                                            |
 | `service_port`                              | integer | Port on which the worker receives task instructions from the scheduler.<br>e.g. `5053`.                                              |
@@ -96,7 +103,7 @@ shuffle_location.local.path = "/mnt/storage/polars/shuffle"
 
 | Key                       | Type    | Description                                                                                                                                                                                                                                                           |
 | ------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `enabled`                 | boolean | Enable sending/receiving profiling data so clients can call `result.await_profile()`.<br>`true` on both scheduler and workers if you want profiles on queries; `false` to disable.                                                                                    |
+| `enabled`                 | boolean | Enable sending/receiving profiling data so clients can call `result.await_profile()`.<br> `true` on both scheduler and workers if you want profiles on queries; `false` to disable.                                                                                   |
 | `max_metrics_bytes_total` | integer | How many bytes all the worker host metrics will consume in total. If a system-wide memory limit is specified then this is added to the share that the scheduler takes. Note that the worker host metrics is not yet available, so this configuration can be set to 0. |
 
 Example:
