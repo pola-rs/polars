@@ -8453,7 +8453,7 @@ class DataFrame:
         """
         # TODO: Enable warning for inefficient map
         # from polars._utils.udfs import warn_on_inefficient_map
-        # warn_on_inefficient_map(function, columns=self.columns, map_target="frame)
+        # warn_on_inefficient_map(function, columns=self.columns, map_target="frame")
 
         out, is_df = self._df.map_rows(function, return_dtype, inference_size)
         if is_df:

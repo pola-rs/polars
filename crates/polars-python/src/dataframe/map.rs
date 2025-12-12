@@ -1,3 +1,5 @@
+#[cfg(feature = "object")]
+use arrow::bitmap::BitmapBuilder;
 use polars::frame::row::{Row, rows_to_schema_first_non_null};
 use polars_core::utils::CustomIterTools;
 use pyo3::IntoPyObjectExt;
@@ -5,6 +7,8 @@ use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 
 use super::*;
+#[cfg(feature = "object")]
+use crate::conversion::ObjectValue;
 use crate::error::PyPolarsErr;
 use crate::prelude::*;
 use crate::{PySeries, raise_err};
@@ -21,32 +25,83 @@ impl PyDataFrame {
     ) -> PyResult<(Py<PyAny>, bool)> {
         let df = self.df.read();
         let height = df.height();
-        let col_series: Vec<_> = df
-            .get_columns()
-            .iter()
-            .map(|s| s.as_materialized_series().clone())
-            .collect();
-        let mut iters: Vec<_> = col_series.iter().map(|c| c.iter()).collect();
+        let columns: Vec<_> = df.get_columns().to_vec();
         drop(df); // Release lock before calling lambda.
 
-        let lambda_result_iter = (0..height).map(move |_| {
-            let iter = iters.iter_mut().map(|it| Wrap(it.next().unwrap()));
-            let tpl = (PyTuple::new(py, iter).unwrap(),);
-            lambda.call1(tpl)
+        // Check for Object columns (special handling)
+        #[cfg(feature = "object")]
+        let has_object_cols = columns
+            .iter()
+            .any(|c| matches!(c.dtype(), DataType::Object(_)));
+        #[cfg(not(feature = "object"))]
+        let has_object_cols = false;
+
+        let lambda_result_iter = (0..height).map(move |idx| {
+            let tpl = if has_object_cols {
+                PyTuple::new(
+                    py,
+                    columns.iter().map(|c| {
+                        #[cfg(feature = "object")]
+                        if matches!(c.dtype(), DataType::Object(_)) {
+                            let obj: Option<&ObjectValue> = c.get_object(idx).map(|any| any.into());
+                            return obj.into_py_any(py).unwrap();
+                        }
+                        // SAFETY: `idx` is always in bounds (0..height)
+                        let av = unsafe { c.get_unchecked(idx) };
+                        Wrap(av).into_py_any(py).unwrap()
+                    }),
+                )
+                .unwrap()
+            } else {
+                PyTuple::new(
+                    py,
+                    columns.iter().map(|c| {
+                        // SAFETY: `idx` is always in bounds (0..height)
+                        let av = unsafe { c.get_unchecked(idx) };
+                        Wrap(av).into_py_any(py).unwrap()
+                    }),
+                )
+                .unwrap()
+            };
+            lambda.call1((tpl,))
         });
 
         // Simple case: return type set.
         if let Some(output_type) = &output_type {
-            let avs = lambda_result_iter
-                .map(|res| res?.extract::<Wrap<AnyValue>>().map(|w| w.0))
-                .collect::<PyResult<Vec<AnyValue>>>()?;
-            let s = Series::from_any_values_and_dtype(
-                PlSmallStr::from_static("map"),
-                &avs,
-                &output_type.0,
-                true,
-            )
-            .map_err(PyPolarsErr::from)?;
+            let s = match &output_type.0 {
+                #[cfg(feature = "object")]
+                DataType::Object(_) => {
+                    let mut values = Vec::with_capacity(height);
+                    let mut validity = BitmapBuilder::with_capacity(height);
+                    for res in lambda_result_iter {
+                        let pyres = res?;
+                        let is_valid = !pyres.is_none();
+                        values.push(ObjectValue {
+                            inner: pyres.unbind(),
+                        });
+                        // SAFETY: `validity` created with the capacity=height
+                        unsafe { validity.push_unchecked(is_valid) };
+                    }
+                    ObjectChunked::<ObjectValue>::new_from_vec_and_validity(
+                        PlSmallStr::from_static("map"),
+                        values,
+                        validity.into_opt_validity(),
+                    )
+                    .into_series()
+                },
+                _ => {
+                    let avs = lambda_result_iter
+                        .map(|res| res?.extract::<Wrap<AnyValue>>().map(|w| w.0))
+                        .collect::<PyResult<Vec<AnyValue>>>()?;
+                    Series::from_any_values_and_dtype(
+                        PlSmallStr::from_static("map"),
+                        &avs,
+                        &output_type.0,
+                        true,
+                    )
+                    .map_err(PyPolarsErr::from)?
+                },
+            };
             return Ok((PySeries::from(s).into_py_any(py)?, false));
         }
 
