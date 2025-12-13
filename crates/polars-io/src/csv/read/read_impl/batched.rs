@@ -129,8 +129,13 @@ impl<'a> CoreReader<'a> {
         let n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
 
         // Copied from [`Self::parse_csv`]
-        let n_parts_hint = n_threads * 16;
-        let chunk_size = std::cmp::min(bytes.len() / n_parts_hint, 16 * 1024 * 1024);
+        // Width-aware adjustment: For wide data, limit chunks to bound allocation overhead.
+        // Total allocation cost is O(n_chunks * n_cols), so we cap n_chunks accordingly.
+        let n_cols = self.schema.len();
+        const ALLOCATION_BUDGET: usize = 500_000;
+        let max_chunks_for_width = ALLOCATION_BUDGET / n_cols.max(1);
+        let n_parts_hint = std::cmp::min(n_threads * 16, max_chunks_for_width.max(n_threads));
+        let chunk_size = std::cmp::min(bytes.len() / n_parts_hint.max(1), 16 * 1024 * 1024);
 
         // Use a small min chunk size to catch failures in tests.
         #[cfg(debug_assertions)]
