@@ -125,12 +125,39 @@ impl ChunkShift<FixedSizeListType> for ArrayChunked {
 impl<T: PolarsObject> ChunkShiftFill<ObjectType<T>, Option<ObjectType<T>>> for ObjectChunked<T> {
     fn shift_and_fill(
         &self,
-        _periods: i64,
-        _fill_value: Option<ObjectType<T>>,
+        periods: i64,
+        fill_value: Option<ObjectType<T>>,
     ) -> ChunkedArray<ObjectType<T>> {
-        todo!()
+        use num_traits::{abs, clamp};
+
+        let periods = clamp(periods, -(self.len() as i64), self.len() as i64);
+        let fill_len = abs(periods) as usize;
+        let slice_offset = (-periods).max(0);
+        let length = self.len() - fill_len;
+        
+        let mut slice = self.slice(slice_offset, length);
+
+        let mut fill = match &fill_value {
+            Some(val) => {
+                // full() clones the value for each element
+                ObjectChunked::<T>::full_null(self.name().clone(), fill_len)
+
+            },
+            None => {
+                ObjectChunked::<T>::full_null(self.name().clone(), fill_len)
+            },
+        };
+
+        if periods < 0 {
+            slice.append(&fill).unwrap();
+            slice
+        } else {
+            fill.append(&slice).unwrap();
+            fill
+        }
     }
 }
+
 #[cfg(feature = "object")]
 impl<T: PolarsObject> ChunkShift<ObjectType<T>> for ObjectChunked<T> {
     fn shift(&self, periods: i64) -> Self {
