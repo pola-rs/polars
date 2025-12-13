@@ -128,10 +128,14 @@ impl<'a> CoreReader<'a> {
 
         let n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
 
+        // Get projection first to calculate chunk size based on projected columns
+        let projection = self.get_projection()?;
+
         // Copied from [`Self::parse_csv`]
         // Width-aware adjustment: For wide data, limit chunks to bound allocation overhead.
         // Total allocation cost is O(n_chunks * n_cols), so we cap n_chunks accordingly.
-        let n_cols = self.schema.len();
+        let n_cols = projection.len();
+        // Empirically determined to balance allocation overhead and parallelism.
         const ALLOCATION_BUDGET: usize = 500_000;
         let max_chunks_for_width = ALLOCATION_BUDGET / n_cols.max(1);
         let n_parts_hint = std::cmp::min(n_threads * 16, max_chunks_for_width.max(n_threads));
@@ -162,8 +166,6 @@ impl<'a> CoreReader<'a> {
             quote_char: self.parse_options.quote_char,
             eol_char: self.parse_options.eol_char,
         };
-
-        let projection = self.get_projection()?;
 
         Ok(BatchedCsvReader {
             reader_bytes,

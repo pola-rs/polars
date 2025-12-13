@@ -369,15 +369,15 @@ impl<'a> CoreReader<'a> {
         //   - 100 cols: up to 5000 chunks (no practical limit)
         //   - 1000 cols: up to 500 chunks
         //   - 10000 cols: up to 50 chunks
-        //   - 30000 cols: up to ~17 chunks
+        //   - 30000 cols: up to 16 chunks
         let n_cols = projection.len();
+        // Empirically determined to balance allocation overhead and parallelism.
         const ALLOCATION_BUDGET: usize = 500_000;
         let max_chunks_for_width = ALLOCATION_BUDGET / n_cols.max(1);
         let n_parts_hint = std::cmp::min(n_threads * 16, max_chunks_for_width.max(n_threads));
         let chunk_size = std::cmp::min(bytes.len() / n_parts_hint.max(1), 16 * 1024 * 1024);
 
         // Use a small min chunk size to catch failures in tests.
-
         #[cfg(debug_assertions)]
         let min_chunk_size = 64;
         #[cfg(not(debug_assertions))]
