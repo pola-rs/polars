@@ -428,15 +428,28 @@ impl<C: Clone> FetchedCredentialsCache<C> {
             }
         }
 
-        let mut inner = self.0.lock().await;
-        let (last_fetched_credentials, last_fetched_expiry, log_use_cached) = &mut *inner;
-
         let current_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
 
-        if *last_fetched_expiry <= current_time {
+        // Check if credentials need refreshing; release lock before calling Python
+        // `update_func` to avoid potential deadlock interaction with the GIL
+        {
+            let mut inner = self.0.lock().await;
+            let (last_fetched_credentials, last_fetched_expiry, log_use_cached) = &mut *inner;
+            if *last_fetched_expiry > current_time {
+                if verbose && *log_use_cached {
+                    *log_use_cached = false;
+                    eprintln!(
+                        "[FetchedCredentialsCache]: Using cached credentials: \
+                        current_time = {}, {}",
+                        current_time,
+                        expiry_msg(*last_fetched_expiry, current_time)
+                    )
+                }
+                return Ok(last_fetched_credentials.clone());
+            }
             if verbose {
                 eprintln!(
                     "[FetchedCredentialsCache]: \
@@ -445,51 +458,51 @@ impl<C: Clone> FetchedCredentialsCache<C> {
                     current_time, *last_fetched_expiry
                 )
             }
+        }
 
-            let (credentials, expiry) = update_func.await?;
+        // Call Python function to fetch new credentials *without* holding the lock
+        // (trade-off; could have some redundant fetches if concurrent refreshes)
+        let (credentials, expiry) = update_func.await?;
 
-            *last_fetched_credentials = credentials;
-            *last_fetched_expiry = expiry;
-            *log_use_cached = true;
+        // Re-acquire lock to update the cache
+        let mut inner = self.0.lock().await;
+        let (last_fetched_credentials, last_fetched_expiry, log_use_cached) = &mut *inner;
 
-            if expiry < current_time && expiry != 0 {
-                polars_bail!(
-                    ComputeError:
-                    "credential expiry time {} is older than system time {} \
-                     by {} seconds",
-                    expiry,
-                    current_time,
-                    current_time - expiry
-                )
-            }
-
-            if verbose {
-                eprintln!(
-                    "[FetchedCredentialsCache]: Finish update_func: new {}",
-                    expiry_msg(
-                        *last_fetched_expiry,
-                        SystemTime::now()
-                            .duration_since(UNIX_EPOCH)
-                            .unwrap()
-                            .as_secs()
-                    )
-                )
-            }
-        } else if verbose && *log_use_cached {
-            *log_use_cached = false;
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs();
-            eprintln!(
-                "[FetchedCredentialsCache]: Using cached credentials: \
-                current_time = {}, {}",
-                now,
-                expiry_msg(*last_fetched_expiry, now)
+        // Validate expiry before updating cache
+        if expiry < current_time && expiry != 0 {
+            polars_bail!(
+                ComputeError:
+                "credential expiry time {} is older than system time {} \
+                 by {} seconds",
+                expiry,
+                current_time,
+                current_time - expiry
             )
         }
 
-        Ok(last_fetched_credentials.clone())
+        // Another task may have refreshed while we were fetching, so
+        // use whichever credentials have the later expiry.
+        if expiry > *last_fetched_expiry {
+            *last_fetched_credentials = credentials;
+            *last_fetched_expiry = expiry;
+            *log_use_cached = true;
+            if verbose {
+                eprintln!(
+                    "[FetchedCredentialsCache]: Finish update_func: new {}",
+                    expiry_msg(expiry, current_time)
+                )
+            }
+            Ok(last_fetched_credentials.clone())
+        } else {
+            // Another task already refreshed with a later expiry
+            if verbose {
+                eprintln!(
+                    "[FetchedCredentialsCache]: Using credentials from concurrent refresh: {}",
+                    expiry_msg(*last_fetched_expiry, current_time)
+                )
+            }
+            Ok(last_fetched_credentials.clone())
+        }
     }
 }
 
