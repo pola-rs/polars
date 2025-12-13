@@ -345,7 +345,8 @@ def test_hist_all_null() -> None:
 @pytest.mark.parametrize("n_values", [3, 10, 250])
 def test_hist_rand(n_values: int, n_null: int) -> None:
     s_rand = pl.Series([None] * n_null, dtype=pl.Int64)
-    s_values = pl.Series(np.random.randint(0, 100, n_values), dtype=pl.Int64)
+    rng = np.random.default_rng()
+    s_values = pl.Series(rng.integers(0, 100, n_values), dtype=pl.Int64)
     if s_values.n_unique() == 1:
         pytest.skip("Identical values not tested.")
     s = pl.concat((s_rand, s_values))
