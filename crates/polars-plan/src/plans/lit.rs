@@ -94,33 +94,27 @@ impl DynListLiteralValue {
 
         let s = match self {
             DynListLiteralValue::Str(vs) => {
-                StringChunked::from_iter_options(PlSmallStr::from_static("literal"), vs.into_iter())
-                    .into_series()
+                StringChunked::from_iter_options(get_literal_name(), vs.into_iter()).into_series()
             },
             DynListLiteralValue::Int(vs) => {
                 #[cfg(feature = "dtype-i128")]
                 {
-                    Int128Chunked::from_iter_options(
-                        PlSmallStr::from_static("literal"),
-                        vs.into_iter(),
-                    )
-                    .into_series()
+                    Int128Chunked::from_iter_options(get_literal_name(), vs.into_iter())
+                        .into_series()
                 }
 
                 #[cfg(not(feature = "dtype-i128"))]
                 {
                     Int64Chunked::from_iter_options(
-                        PlSmallStr::from_static("literal"),
+                        get_literal_name(),
                         vs.into_iter().map(|v| v.map(|v| v as i64)),
                     )
                     .into_series()
                 }
             },
-            DynListLiteralValue::Float(vs) => Float64Chunked::from_iter_options(
-                PlSmallStr::from_static("literal"),
-                vs.into_iter(),
-            )
-            .into_series(),
+            DynListLiteralValue::Float(vs) => {
+                Float64Chunked::from_iter_options(get_literal_name(), vs.into_iter()).into_series()
+            },
             DynListLiteralValue::List(_) => todo!("nested lists"),
         };
 
@@ -216,9 +210,9 @@ impl RangeLiteralValue {
 
 impl LiteralValue {
     /// Get the output name as [`PlSmallStr`].
-    pub(crate) fn output_column_name(&self) -> &PlSmallStr {
+    pub(crate) fn output_column_name(&self) -> PlSmallStr {
         match self {
-            LiteralValue::Series(s) => s.name(),
+            LiteralValue::Series(s) => s.name().clone(),
             _ => get_literal_name(),
         }
     }

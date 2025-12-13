@@ -36,8 +36,8 @@ impl UnpivotArgsIR {
         all_column_names: Vec<PlSmallStr>,
         on: Option<Vec<PlSmallStr>>,
         index: Vec<PlSmallStr>,
-        variable_name: Option<PlSmallStr>,
         value_name: Option<PlSmallStr>,
+        variable_name: Option<PlSmallStr>,
     ) -> Self {
         let on = on.unwrap_or_else(|| {
             // If value vars is empty we take all columns that are not in id_vars.

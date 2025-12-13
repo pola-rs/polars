@@ -65,4 +65,20 @@ impl PyExpr {
     fn bin_size_bytes(&self) -> Self {
         self.inner.clone().binary().size_bytes().into()
     }
+
+    fn bin_slice(&self, offset: PyExpr, length: PyExpr) -> Self {
+        self.inner
+            .clone()
+            .binary()
+            .slice(offset.inner, length.inner)
+            .into()
+    }
+
+    fn bin_head(&self, n: PyExpr) -> Self {
+        self.inner.clone().binary().head(n.inner).into()
+    }
+
+    fn bin_tail(&self, n: PyExpr) -> Self {
+        self.inner.clone().binary().tail(n.inner).into()
+    }
 }

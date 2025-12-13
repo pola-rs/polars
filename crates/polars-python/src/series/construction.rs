@@ -49,6 +49,22 @@ fn mmap_numpy_array<T: Element + NativeType>(name: &str, array: &Bound<PyArray1<
         .into()
 }
 
+#[cfg(feature = "object")]
+pub fn series_from_objects(py: Python<'_>, name: PlSmallStr, objects: Vec<ObjectValue>) -> Series {
+    let mut validity = BitmapBuilder::with_capacity(objects.len());
+    for v in &objects {
+        let is_valid = !v.inner.is_none(py);
+        // SAFETY: we can ensure that validity has correct capacity.
+        unsafe { validity.push_unchecked(is_valid) };
+    }
+    ObjectChunked::<ObjectValue>::new_from_vec_and_validity(
+        name,
+        objects,
+        validity.into_opt_validity(),
+    )
+    .into_series()
+}
+
 #[pymethods]
 impl PySeries {
     #[staticmethod]
@@ -358,20 +374,7 @@ impl PySeries {
     pub fn new_object(py: Python<'_>, name: &str, values: Vec<ObjectValue>, _strict: bool) -> Self {
         #[cfg(feature = "object")]
         {
-            let mut validity = BitmapBuilder::with_capacity(values.len());
-            values.iter().for_each(|v| {
-                let is_valid = !v.inner.is_none(py);
-                // SAFETY: we can ensure that validity has correct capacity.
-                unsafe { validity.push_unchecked(is_valid) };
-            });
-            // Object builder must be registered. This is done on import.
-            let ca = ObjectChunked::<ObjectValue>::new_from_vec_and_validity(
-                name.into(),
-                values,
-                validity.into_opt_validity(),
-            );
-            let s = ca.into_series();
-            s.into()
+            PySeries::from(series_from_objects(py, name.into(), values))
         }
         #[cfg(not(feature = "object"))]
         panic!("activate 'object' feature")

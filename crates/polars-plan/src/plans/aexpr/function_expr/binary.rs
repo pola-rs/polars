@@ -17,6 +17,9 @@ pub enum IRBinaryFunction {
     Size,
     #[cfg(feature = "binary_encoding")]
     Reinterpret(DataType, bool),
+    Slice,
+    Head,
+    Tail,
 }
 
 impl IRBinaryFunction {
@@ -32,6 +35,7 @@ impl IRBinaryFunction {
             Size => mapper.with_dtype(DataType::UInt32),
             #[cfg(feature = "binary_encoding")]
             Reinterpret(dtype, _) => mapper.with_dtype(dtype.clone()),
+            Slice | Head | Tail => mapper.with_same_dtype(),
         }
     }
 
@@ -48,6 +52,7 @@ impl IRBinaryFunction {
             | B::Base64Decode(_)
             | B::Base64Encode
             | B::Reinterpret(_, _) => FunctionOptions::elementwise(),
+            B::Slice | B::Head | B::Tail => FunctionOptions::elementwise(),
         }
     }
 }
@@ -70,6 +75,9 @@ impl Display for IRBinaryFunction {
             Size => "size_bytes",
             #[cfg(feature = "binary_encoding")]
             Reinterpret(_, _) => "reinterpret",
+            Slice => "slice",
+            Head => "head",
+            Tail => "tail",
         };
         write!(f, "bin.{s}")
     }

@@ -15,6 +15,7 @@ pub struct FileProvider {
     pub base_path: PlPath,
     pub cloud_options: Option<Arc<CloudOptions>>,
     pub provider_type: FileProviderType,
+    pub upload_chunk_size: usize,
 }
 
 impl FileProvider {
@@ -73,7 +74,7 @@ impl FileProvider {
                 .await;
         }
 
-        Writeable::try_new(path, self.cloud_options.as_deref())
+        Writeable::try_new(path, self.cloud_options.as_deref(), self.upload_chunk_size)
     }
 }
 

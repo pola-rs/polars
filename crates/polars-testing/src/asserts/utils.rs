@@ -428,10 +428,7 @@ fn assert_series_nested_values_equal(
     categorical_as_str: bool,
 ) -> PolarsResult<()> {
     if are_both_lists(left.dtype(), right.dtype()) {
-        let left_rechunked = left.rechunk();
-        let right_rechunked = right.rechunk();
-
-        let zipped = left_rechunked.iter().zip(right_rechunked.iter());
+        let zipped = left.iter().zip(right.iter());
 
         for (s1, s2) in zipped {
             if s1.is_null() || s2.is_null() {

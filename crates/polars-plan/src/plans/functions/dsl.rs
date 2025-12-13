@@ -114,8 +114,8 @@ impl DslFunction {
                     input_schema.iter().map(|(name, _)| name.clone()).collect(),
                     on,
                     index,
-                    args.variable_name,
                     args.value_name,
+                    args.variable_name,
                 );
 
                 FunctionIR::Unpivot {

@@ -302,6 +302,16 @@ pub struct UnifiedScanArgs {
     pub row_count: Option<(u64, u64)>,
 }
 
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub struct PredicateFileSkip {
+    /// If `true` the predicate can be skipped at runtime.
+    pub no_residual_predicate: bool,
+    /// Number of files before skipping
+    pub original_len: usize,
+}
+
 impl UnifiedScanArgs {
     pub fn has_row_index_or_slice(&self) -> bool {
         self.row_index.is_some() || self.pre_slice.is_some()

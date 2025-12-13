@@ -42,7 +42,11 @@ A-io-parquet:
   - '/parquet/i'
 A-io-spreadsheet:
   - '/spreadsheet|excel|\bods\b/i'
+A-panic:
+  - '/panic/i'
 A-plugin:
   - '/plugin/i'
 A-sql:
   - '/\bsql\b/i'
+A-streaming:
+  - '/streaming/i'

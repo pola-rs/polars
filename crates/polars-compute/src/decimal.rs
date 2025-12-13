@@ -667,82 +667,139 @@ pub fn dec128_sign(x: i128, s: usize) -> i128 {
 /// Returns None if the number is not well-formed, or does not fit. The decimal
 /// separator defaults to b'.', but can be changed to b',' by setting `decimal_comma`
 /// to true.
-#[inline]
 pub fn str_to_dec128(bytes: &[u8], p: usize, s: usize, decimal_comma: bool) -> Option<i128> {
     assert!(dec128_verify_prec_scale(p, s).is_ok());
-
+    let exp_pos = bytes
+        .iter()
+        .position(|b| *b == b'e' || *b == b'E')
+        .unwrap_or(bytes.len());
+    let (num_bytes, exp_bytes) = bytes.split_at(exp_pos);
     let decimal_sep = if decimal_comma { b',' } else { b'.' };
-
-    let separator = bytes
+    let sep_pos = num_bytes
         .iter()
         .position(|b| *b == decimal_sep)
-        .unwrap_or(bytes.len());
-    let (mut int, mut frac) = bytes.split_at(separator);
+        .unwrap_or(num_bytes.len());
+    let (mut int_bytes, mut frac_bytes) = num_bytes.split_at(sep_pos);
 
-    // Trim trailing zeroes.
-    while let Some((b'0', rest)) = frac.split_last() {
-        frac = rest;
-    }
-
-    if frac.len() <= 1 {
-        // Only integer fast path.
-        let n: i128 = atoi_simd::parse(int).ok()?;
+    if frac_bytes.is_empty() && exp_bytes.is_empty() {
+        // Integer-only fast path.
+        let n: i128 = atoi_simd::parse_skipped(int_bytes).ok()?;
         return i128_to_dec128(n, p, s);
     }
 
-    // Skip period.
-    frac = &frac[1..];
-
-    // Skip sign.
-    let negative = match int.first() {
-        Some(s @ (b'+' | b'-')) => {
-            int = &int[1..];
-            *s == b'-'
+    // Skip sign and separator to get clean integers.
+    let negative = match int_bytes.first() {
+        Some(sign @ (b'+' | b'-')) => {
+            int_bytes = &int_bytes[1..];
+            *sign == b'-'
         },
         _ => false,
     };
 
+    if !frac_bytes.is_empty() {
+        frac_bytes = &frac_bytes[1..];
+    }
+
+    if frac_bytes.is_empty() && int_bytes.is_empty() {
+        // No digits at all.
+        return None;
+    }
+
+    let exp_scale: i32 = if !exp_bytes.is_empty() {
+        atoi_simd::parse_skipped(&exp_bytes[1..]).ok()?
+    } else {
+        0
+    };
+
     // Round if digits extend beyond the scale.
+    let comb_scale = exp_scale + s as i32;
     let (next_digit, all_zero_after);
-    let frac_scale = if frac.len() > s {
-        if !frac[s..].iter().all(|b| b.is_ascii_digit()) {
+    let (int_scale, frac_scale) = if comb_scale < 0 {
+        let int_part_len = int_bytes.len().saturating_sub((-comb_scale) as usize);
+        if !int_bytes[int_part_len..]
+            .iter()
+            .chain(frac_bytes)
+            .all(|b| b.is_ascii_digit())
+        {
             return None;
         }
-        next_digit = frac[s];
-        all_zero_after = frac[s + 1..].iter().all(|b| *b == b'0');
-        frac = &frac[..s];
-        0
+        if (-comb_scale) as usize > int_bytes.len() {
+            // All digits are valid (so no error), but also irrelevant.
+            return Some(0);
+        }
+
+        next_digit = int_bytes[int_part_len];
+        all_zero_after = int_bytes[int_part_len + 1..]
+            .iter()
+            .chain(frac_bytes)
+            .all(|b| *b == b'0');
+        int_bytes = &int_bytes[..int_part_len];
+        frac_bytes = &[];
+        (0, 0)
+    } else if frac_bytes.len() > comb_scale as usize {
+        let cs = comb_scale as usize;
+        if !frac_bytes[cs..].iter().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        next_digit = frac_bytes[cs];
+        all_zero_after = frac_bytes[cs + 1..].iter().all(|b| *b == b'0');
+        frac_bytes = &frac_bytes[..cs];
+        (cs, 0)
     } else {
+        let cs = comb_scale as usize;
         next_digit = b'0';
         all_zero_after = true;
-        s - frac.len()
+        (cs, cs - frac_bytes.len())
     };
 
-    // Parse and combine parts.
-    let mut pint: i128 = if int.is_empty() {
+    // Parse parts.
+    // Workaround atoi_simd/issues/14.
+    while let Some((b'0', rest)) = int_bytes.split_first() {
+        int_bytes = rest;
+    }
+    while let Some((b'0', rest)) = frac_bytes.split_first() {
+        frac_bytes = rest;
+    }
+
+    let mut pint: i128 = if int_bytes.is_empty() {
         0
     } else {
-        atoi_simd::parse_pos(int).ok()?
+        atoi_simd::parse_pos(int_bytes).ok()?
     };
 
-    let mut pfrac: i128 = if frac.is_empty() {
+    let mut pfrac: i128 = if frac_bytes.is_empty() {
         0
     } else {
-        atoi_simd::parse_pos(frac).ok()?
+        atoi_simd::parse_pos(frac_bytes).ok()?
     };
 
     // Round-to-even.
     if next_digit > b'5' || next_digit == b'5' && !all_zero_after {
         pfrac += 1;
     } else if next_digit == b'5' {
-        if s == 0 {
+        if comb_scale <= 0 {
             pint += pint % 2;
         } else {
             pfrac += pfrac % 2;
         }
     }
 
-    let ret = mul_128_pow10(pint, s)? + mul_128_pow10(pfrac, frac_scale)?;
+    // Apply scales.
+    if pint > 0 {
+        if int_scale > DEC128_MAX_PREC {
+            return None;
+        }
+        pint = mul_128_pow10(pint, int_scale)?;
+    }
+
+    if pfrac > 0 {
+        if frac_scale > DEC128_MAX_PREC {
+            return None;
+        }
+        pfrac = mul_128_pow10(pfrac, frac_scale)?;
+    }
+
+    let ret = pint + pfrac;
     if !dec128_fits(ret, p) {
         return None;
     }
@@ -886,6 +943,7 @@ mod test {
     });
 
     #[test]
+    #[rustfmt::skip]
     fn test_str_to_dec() {
         fn str_to_dec128_dot(bytes: &[u8], p: usize, s: usize) -> Option<i128> {
             str_to_dec128(bytes, p, s, false)
@@ -932,14 +990,114 @@ mod test {
         assert_eq!(str_to_dec128_dot(b"2.25", 5, 1), Some(22));
         assert_eq!(str_to_dec128_dot(b"2.26", 5, 1), Some(23));
 
+        assert_eq!(str_to_dec128_dot(b"-.6", 5, 0), Some(-1));
+        assert_eq!(str_to_dec128_dot(b"-.5", 5, 0), Some(0));
+        assert_eq!(str_to_dec128_dot(b"-.4", 5, 0), Some(0));
+        assert_eq!(str_to_dec128_dot(b"-.0", 5, 0), Some(0));
+        assert_eq!(str_to_dec128_dot(b"-0", 5, 0), Some(0));
+        assert_eq!(str_to_dec128_dot(b".4", 5, 0), Some(0));
+        assert_eq!(str_to_dec128_dot(b".5", 5, 0), Some(0));
+        assert_eq!(str_to_dec128_dot(b".6", 5, 0), Some(1));
+
+        // Rounding + scientific.
+        assert_eq!(str_to_dec128_dot(b"-6e-1", 5, 0), Some(-1));
+        assert_eq!(str_to_dec128_dot(b"-5E-0001", 5, 0), Some(0));
+        assert_eq!(str_to_dec128_dot(b"-4e-0000001", 5, 0), Some(0));
+        assert_eq!(str_to_dec128_dot(b"0E-1", 5, 0), Some(0));
+        assert_eq!(str_to_dec128_dot(b"4.e-1", 5, 0), Some(0));
+        assert_eq!(str_to_dec128_dot(b"5.E-1", 5, 0), Some(0));
+        assert_eq!(str_to_dec128_dot(b"6.e-1", 5, 0), Some(1));
+        assert_eq!(str_to_dec128_dot(b"-.6e0", 5, 0), Some(-1));
+        assert_eq!(str_to_dec128_dot(b"-.5e+0", 5, 0), Some(0));
+        assert_eq!(str_to_dec128_dot(b"-.4e-0", 5, 0), Some(0));
+        assert_eq!(str_to_dec128_dot(b"-.0e000", 5, 0), Some(0));
+        assert_eq!(str_to_dec128_dot(b"-0e000000000", 5, 0), Some(0));
+        assert_eq!(str_to_dec128_dot(b".4e0", 5, 0), Some(0));
+        assert_eq!(str_to_dec128_dot(b".5e000", 5, 0), Some(0));
+        assert_eq!(str_to_dec128_dot(b".6e0", 5, 0), Some(1));
+        assert_eq!(str_to_dec128_dot(b"-.06e+1", 5, 0), Some(-1));
+        assert_eq!(str_to_dec128_dot(b"-.05E+0001", 5, 0), Some(0));
+        assert_eq!(str_to_dec128_dot(b"-.04e1", 5, 0), Some(0));
+        assert_eq!(str_to_dec128_dot(b".0E+1", 5, 0), Some(0));
+        assert_eq!(str_to_dec128_dot(b".004e02", 5, 0), Some(0));
+        assert_eq!(str_to_dec128_dot(b".005E000002", 5, 0), Some(0));
+        assert_eq!(str_to_dec128_dot(b".006e+2", 5, 0), Some(1));
+
+        // Other scientific.
+        assert_eq!(str_to_dec128_dot(b"600e-2", 5, 0), Some(6));
+        assert_eq!(str_to_dec128_dot(b"600e-2", 5, 1), Some(60));
+        assert_eq!(str_to_dec128_dot(b"600e-2", 5, 2), Some(600));
+        assert_eq!(str_to_dec128_dot(b"600e-2", 5, 3), Some(6000));
+        assert_eq!(str_to_dec128_dot(b"600e-2", 5, 4), Some(60000));
+        assert_eq!(str_to_dec128_dot(b"1600e-3", 5, 4), Some(16000));
+        assert_eq!(str_to_dec128_dot(b"1600e-2", 5, 4), None);
+        assert_eq!(str_to_dec128_dot(b"123456000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e-125", 10, 6), Some(1234560));
+
+        assert_eq!(str_to_dec128_dot(b"99999999999999999999999999999999999999", 38, 0), Some(99999999999999999999999999999999999999));
+        assert_eq!(str_to_dec128_dot(b"99999999999999999999999999999999999999e0", 38, 0), Some(99999999999999999999999999999999999999));
+        assert_eq!(str_to_dec128_dot(b"999999999999999999999999999999999999990e-1", 38, 0), Some(99999999999999999999999999999999999999));
+        assert_eq!(str_to_dec128_dot(b"999999999999999999999999999999999999994e-1", 38, 0), Some(99999999999999999999999999999999999999));
+        assert_eq!(str_to_dec128_dot(b"999999999999999999999999999999999999995e-1", 38, 0), None);
+        assert_eq!(str_to_dec128_dot(b"99999999999999999999999999999999999999.12345", 38, 0), Some(99999999999999999999999999999999999999));
+        assert_eq!(str_to_dec128_dot(b"99999999999999999999999999999999999999.12345e0", 38, 0), Some(99999999999999999999999999999999999999));
+        assert_eq!(str_to_dec128_dot(b"999999999999999999999999999999999999990.e-1", 38, 0), Some(99999999999999999999999999999999999999));
+        assert_eq!(str_to_dec128_dot(b"999999999999999999999999999999999999994.99999e-1", 38, 0), Some(99999999999999999999999999999999999999));
+        assert_eq!(str_to_dec128_dot(b"999999999999999999999999999999999999995.00000e-1", 38, 0), None);
+        assert_eq!(str_to_dec128_dot( b"00.0000000000000000000000000000000000000000000000000000e+50", 5, 0), Some(0));
+
         // Decimal comma.
         assert_eq!(str_to_dec128(b"12,09", 8, 2, true), Some(1209));
         assert_eq!(str_to_dec128(b"1200,90", 8, 2, true), Some(120090));
         assert_eq!(str_to_dec128(b"143,9", 8, 2, true), Some(14390));
+
+        // Edge-cases around missing components.
+        assert_eq!(str_to_dec128_dot(b"0", 8, 2), Some(0));
+        assert_eq!(str_to_dec128_dot(b"-0", 8, 2), Some(0));
+        assert_eq!(str_to_dec128_dot(b"0.", 8, 2), Some(0));
+        assert_eq!(str_to_dec128_dot(b".0", 8, 2), Some(0));
+        assert_eq!(str_to_dec128_dot(b"-.0", 8, 2), Some(0));
+        assert_eq!(str_to_dec128_dot(b"-0.", 8, 2), Some(0));
+        assert_eq!(str_to_dec128_dot(b"-.", 8, 2), None);
+        assert_eq!(str_to_dec128_dot(b"-", 8, 2), None);
+        assert_eq!(str_to_dec128_dot(b".", 8, 2), None);
     }
 
     #[test]
-    fn str_dec_roundtrip() {
+    fn test_str_to_dec_against_ref() {
+        let exps = [0, 1, 3, 20, 50, 150];
+        let digits = [0, 4, 5, 6, 9];
+        let mut pos_parts = Vec::new();
+        for leading_zeroes in exps {
+            let leading = "0".repeat(leading_zeroes);
+            for trailing_zeroes in exps {
+                let trailing = "0".repeat(trailing_zeroes);
+                for a in &digits {
+                    for b in &digits {
+                        pos_parts.push(format!("{leading}{a}{trailing}{b}"));
+                    }
+                }
+            }
+        }
+
+        for scale in &INTERESTING_SCALE_PREC {
+            for int in &pos_parts {
+                for frac in &pos_parts {
+                    for exp in &exps {
+                        for exp_sign in &["+", "-"] {
+                            let s = format!("{int}.{frac}e{exp_sign}{exp}");
+                            let ours = str_to_dec128(s.as_bytes(), 38, *scale, false);
+                            let theirs = BigDecimal::parse_bytes(s.as_bytes(), 10)
+                                .and_then(|d| bigdecimal_to_dec128(&d, 38, *scale));
+                            assert_eq!(ours, theirs, "input: {s}, scale: {scale}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_str_dec_roundtrip() {
         let mut buf = DecimalFmtBuffer::new();
         for &p in &INTERESTING_SCALE_PREC {
             for &s in &INTERESTING_SCALE_PREC {

@@ -4,9 +4,9 @@ use std::pin::Pin;
 use polars_core::frame::DataFrame;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
-use polars_io::SerWriter;
 use polars_io::cloud::CloudOptions;
 use polars_io::prelude::{CsvWriter, CsvWriterOptions};
+use polars_io::{SerWriter, get_upload_chunk_size};
 use polars_plan::dsl::{SinkOptions, SinkTarget};
 use polars_utils::priority::Priority;
 
@@ -19,7 +19,7 @@ use crate::morsel::MorselSeq;
 use crate::nodes::io_sinks::parallelize_receive_task;
 use crate::nodes::io_sinks::phase::PhaseOutcome;
 use crate::nodes::{JoinHandle, TaskPriority};
-use crate::utils::task_handles_ext::AbortOnDropHandle;
+use crate::utils::tokio_handle_ext::AbortOnDropHandle;
 
 type IOSend = Linearizer<Priority<Reverse<MorselSeq>, Vec<u8>>>;
 
@@ -78,7 +78,11 @@ impl SinkNode for CsvSinkNode {
             use tokio::io::AsyncWriteExt;
 
             let mut file = target
-                .open_into_writeable_async(cloud_options.as_ref(), sink_options.mkdir)
+                .open_into_writeable_async(
+                    cloud_options.as_ref(),
+                    sink_options.mkdir,
+                    get_upload_chunk_size(),
+                )
                 .await?;
 
             // Write the header

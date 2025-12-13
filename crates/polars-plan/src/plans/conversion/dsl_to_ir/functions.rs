@@ -128,6 +128,9 @@ pub(super) fn convert_functions(
                     );
                     IB::Reinterpret(dtype, v)
                 },
+                B::Slice => IB::Slice,
+                B::Head => IB::Head,
+                B::Tail => IB::Tail,
             })
         },
         #[cfg(feature = "dtype-categorical")]
@@ -235,7 +238,7 @@ pub(super) fn convert_functions(
                             .arena
                             .add(AExpr::Literal(LiteralValue::Scalar(Scalar::from(format))));
 
-                        return Ok((out, get_literal_name().clone()));
+                        return Ok((out, get_literal_name()));
                     } else {
                         IS::Format { format, insertions }
                     }

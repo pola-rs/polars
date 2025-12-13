@@ -47,7 +47,7 @@ impl HStackColumns {
             .iter()
             .copied()
             .map(|mi| {
-                let i = mi.idx();
+                let i = mi.to_usize();
 
                 if mi.marked() {
                     let c = &cols_right[i];

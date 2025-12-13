@@ -1,6 +1,7 @@
 use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_expr::state::ExecutionState;
+use polars_io::get_upload_chunk_size;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::prelude::sink::CallbackSinkType;
 use polars_utils::unique_id::UniqueId;
@@ -301,6 +302,7 @@ fn create_physical_plan_impl(
                             let mut file = target.open_into_writeable(
                                 unified_sink_args.cloud_options.as_deref(),
                                 unified_sink_args.mkdir,
+                                get_upload_chunk_size(),
                             )?;
                             let writer = &mut *file;
 

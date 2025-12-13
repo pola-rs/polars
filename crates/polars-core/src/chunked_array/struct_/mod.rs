@@ -265,15 +265,15 @@ impl StructChunked {
                 Ok(out.into_series())
             },
             DataType::String => {
-                let ca = self.rechunk();
-                let fields = ca.fields_as_series();
+                let len = self.len();
+                let name = self.name().clone();
+                let fields = self.fields_as_series();
                 let mut iters = fields.iter().map(|s| s.iter()).collect::<Vec<_>>();
-                let cap = ca.len();
 
-                let mut builder = MutablePlString::with_capacity(cap);
+                let mut builder = MutablePlString::with_capacity(len);
                 let mut scratch = String::new();
 
-                for _ in 0..ca.len() {
+                for _ in 0..len {
                     let mut row_has_nulls = false;
 
                     write!(scratch, "{{").unwrap();
@@ -298,7 +298,7 @@ impl StructChunked {
                     scratch.clear();
                 }
                 let array = builder.freeze().boxed();
-                Series::try_from((ca.name().clone(), array))
+                Series::try_from((name, array))
             },
             _ => {
                 let fields = self

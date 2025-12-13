@@ -13,7 +13,7 @@ use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
-use crate::utils::task_handles_ext;
+use crate::utils::tokio_handle_ext;
 
 /// Represents byte-data that can be transformed into a DataFrame after some computation.
 pub(super) struct RowGroupData {
@@ -43,7 +43,7 @@ pub(super) struct RowGroupDataFetcher {
 impl RowGroupDataFetcher {
     pub(super) async fn next(
         &mut self,
-    ) -> Option<PolarsResult<task_handles_ext::AbortOnDropHandle<PolarsResult<RowGroupData>>>> {
+    ) -> Option<PolarsResult<tokio_handle_ext::AbortOnDropHandle<PolarsResult<RowGroupData>>>> {
         while !self.row_group_slice.is_empty() {
             let idx = self.row_group_slice.start;
             self.row_group_slice.start += 1;
@@ -161,7 +161,7 @@ impl RowGroupDataFetcher {
                 })
             });
 
-            let handle = task_handles_ext::AbortOnDropHandle(handle);
+            let handle = tokio_handle_ext::AbortOnDropHandle(handle);
             return Some(Ok(handle));
         }
 

@@ -40,14 +40,16 @@ impl Writeable {
     pub fn try_new(
         path: PlPathRef<'_>,
         #[cfg_attr(not(feature = "cloud"), allow(unused))] cloud_options: Option<&CloudOptions>,
+        #[cfg_attr(not(feature = "cloud"), allow(unused))] cloud_upload_chunk_size: usize,
     ) -> PolarsResult<Self> {
         match path {
             PlPathRef::Cloud(_) => {
                 feature_gated!("cloud", {
                     use crate::cloud::BlockingCloudWriter;
 
-                    let writer = crate::pl_async::get_runtime()
-                        .block_in_place_on(BlockingCloudWriter::new(path, cloud_options))?;
+                    let writer = crate::pl_async::get_runtime().block_in_place_on(
+                        BlockingCloudWriter::new(path, cloud_options, cloud_upload_chunk_size),
+                    )?;
 
                     Ok(Self::Cloud(writer))
                 })
@@ -73,7 +75,11 @@ impl Writeable {
                     );
 
                     let writer = crate::pl_async::get_runtime().block_in_place_on(
-                        BlockingCloudWriter::new(PlPathRef::new(&path), cloud_options),
+                        BlockingCloudWriter::new(
+                            PlPathRef::new(&path),
+                            cloud_options,
+                            cloud_upload_chunk_size,
+                        ),
                     )?;
 
                     Ok(Self::Cloud(writer))
@@ -254,9 +260,11 @@ mod async_writeable {
         pub async fn try_new(
             path: PlPathRef<'_>,
             cloud_options: Option<&CloudOptions>,
+            cloud_upload_chunk_size: usize,
         ) -> PolarsResult<Self> {
             // TODO: Native async impl
-            Writeable::try_new(path, cloud_options).and_then(|x| x.try_into_async_writeable())
+            Writeable::try_new(path, cloud_options, cloud_upload_chunk_size)
+                .and_then(|x| x.try_into_async_writeable())
         }
 
         pub async fn sync_all(&mut self) -> io::Result<()> {

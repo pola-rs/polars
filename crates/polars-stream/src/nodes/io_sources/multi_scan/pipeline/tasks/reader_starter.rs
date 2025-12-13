@@ -314,6 +314,8 @@ impl ReaderStarter {
                 ..Default::default()
             };
 
+            reader.prepare_read()?;
+
             let start_args_this_file = StartReaderArgsPerFile {
                 scan_source,
                 scan_source_idx,

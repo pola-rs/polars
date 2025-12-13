@@ -338,6 +338,9 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::Size => B::Size,
                 #[cfg(feature = "binary_encoding")]
                 IB::Reinterpret(data_type, v) => B::Reinterpret(data_type.into(), v),
+                IB::Slice => B::Slice,
+                IB::Head => B::Head,
+                IB::Tail => B::Tail,
             })
         },
         #[cfg(feature = "dtype-categorical")]

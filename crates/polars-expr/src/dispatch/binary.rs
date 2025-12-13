@@ -29,6 +29,15 @@ pub fn function_expr_to_udf(func: IRBinaryFunction) -> SpecialEq<Arc<dyn Columns
         Size => map!(size_bytes),
         #[cfg(feature = "binary_encoding")]
         Reinterpret(dtype, is_little_endian) => map!(reinterpret, &dtype, is_little_endian),
+        Slice => {
+            map_as_slice!(bin_slice)
+        },
+        Head => {
+            map_as_slice!(bin_head)
+        },
+        Tail => {
+            map_as_slice!(bin_tail)
+        },
     }
 }
 
@@ -99,4 +108,28 @@ pub(super) fn reinterpret(
     let ca = s.binary()?;
     ca.reinterpret(dtype, is_little_endian)
         .map(|val| val.into())
+}
+
+pub(super) fn bin_slice(s: &mut [Column]) -> PolarsResult<Column> {
+    let ca = s[0].binary()?;
+    Ok(ca
+        .bin_slice(&s[1], &s[2])?
+        .with_name(ca.name().clone())
+        .into_column())
+}
+
+pub(super) fn bin_head(s: &mut [Column]) -> PolarsResult<Column> {
+    let ca = s[0].binary()?;
+    Ok(ca
+        .bin_head(&s[1])?
+        .with_name(ca.name().clone())
+        .into_column())
+}
+
+pub(super) fn bin_tail(s: &mut [Column]) -> PolarsResult<Column> {
+    let ca = s[0].binary()?;
+    Ok(ca
+        .bin_tail(&s[1])?
+        .with_name(ca.name().clone())
+        .into_column())
 }

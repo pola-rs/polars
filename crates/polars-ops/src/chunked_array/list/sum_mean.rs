@@ -135,19 +135,21 @@ pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Polars
             out.into_series()
         },
         // slowest sum_as_series path
-        dt => ca
-            .try_apply_amortized(|s| {
+        dt => unsafe {
+            // SAFETY: `sum_reduce` doesn't change the dtype
+            ca.try_apply_amortized_same_type(|s| {
                 s.as_ref()
                     .sum_reduce()
                     .map(|sc| sc.into_series(PlSmallStr::EMPTY))
             })?
-            .explode(ExplodeOptions {
-                empty_as_null: true,
-                keep_nulls: true,
-            })
-            .unwrap()
-            .into_series()
-            .cast(dt)?,
+        }
+        .explode(ExplodeOptions {
+            empty_as_null: true,
+            keep_nulls: true,
+        })
+        .unwrap()
+        .into_series()
+        .cast(dt)?,
     };
     out.rename(ca.name().clone());
     Ok(out)

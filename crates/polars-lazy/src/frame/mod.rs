@@ -1554,7 +1554,26 @@ impl LazyFrame {
         callback: PlanCallback<(Vec<DslPlan>, Vec<SchemaRef>), DslPlan>,
     ) -> Self {
         let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().pipe_with_schema(callback).build();
+        let lp = self
+            .get_plan_builder()
+            .pipe_with_schema(vec![], callback)
+            .build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
+    pub fn pipe_with_schemas(
+        self,
+        others: Vec<LazyFrame>,
+        callback: PlanCallback<(Vec<DslPlan>, Vec<SchemaRef>), DslPlan>,
+    ) -> Self {
+        let opt_state = self.get_opt_state();
+        let lp = self
+            .get_plan_builder()
+            .pipe_with_schema(
+                others.into_iter().map(|lf| lf.logical_plan).collect(),
+                callback,
+            )
+            .build();
         Self::from_logical_plan(lp, opt_state)
     }
 

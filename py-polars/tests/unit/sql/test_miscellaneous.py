@@ -601,8 +601,6 @@ def test_count_partition_22665(query: str, result: list[Any]) -> None:
 @pytest.mark.parametrize(
     "query",
     [
-        # No support for QUALIFY (yet)
-        "SELECT x FROM df QUALIFY ROW_NUMBER() OVER (PARTITION BY y ORDER BY z) = 1",
         # ClickHouse-specific PREWHERE clause
         "SELECT x, y FROM df PREWHERE z IS NOT NULL",
         # LATERAL VIEW syntax

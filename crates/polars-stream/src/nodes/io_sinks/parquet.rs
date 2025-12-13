@@ -9,7 +9,7 @@ use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::write::BatchedWriter;
 use polars_io::prelude::{ParquetWriteOptions, get_column_write_options};
-use polars_io::schema_to_arrow_checked;
+use polars_io::{get_upload_chunk_size, schema_to_arrow_checked};
 use polars_parquet::parquet::error::ParquetResult;
 use polars_parquet::read::ParquetError;
 use polars_parquet::write::{
@@ -33,7 +33,7 @@ use crate::execute::StreamingExecutionState;
 use crate::nodes::io_sinks::SendBufferedMorsel;
 use crate::nodes::io_sinks::phase::PhaseOutcome;
 use crate::nodes::{JoinHandle, TaskPriority};
-use crate::utils::task_handles_ext::AbortOnDropHandle;
+use crate::utils::tokio_handle_ext::AbortOnDropHandle;
 
 pub struct ParquetSinkNode {
     target: SinkTarget,
@@ -127,7 +127,11 @@ impl SinkNode for ParquetSinkNode {
         let output_file_size = self.file_size.clone();
         let io_task = polars_io::pl_async::get_runtime().spawn(async move {
             let mut file = target
-                .open_into_writeable_async(cloud_options.as_ref(), sink_options.mkdir)
+                .open_into_writeable_async(
+                    cloud_options.as_ref(),
+                    sink_options.mkdir,
+                    get_upload_chunk_size(),
+                )
                 .await?;
 
             let writer = BufWriter::new(&mut *file);

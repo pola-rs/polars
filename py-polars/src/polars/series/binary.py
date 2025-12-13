@@ -252,3 +252,99 @@ class BinaryNameSpace:
         ]
 
         """
+
+    def slice(self, offset: int, length: int | None = None) -> Series:
+        r"""
+        Slice the binary values.
+
+        Parameters
+        ----------
+        offset
+            Start index. Negative indexing is supported.
+        length
+            Length of the slice. If set to ``None`` (default), the slice is taken to the
+            end of the value.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Binary`.
+
+        Examples
+        --------
+        >>> colors = pl.Series([b"\x00\x00\x00", b"\xff\xff\x00", b"\x00\x00\xff"])
+        >>> colors.bin.slice(1, 2)
+        shape: (3,)
+        Series: '' [binary]
+        [
+                b"\x00\x00"
+                b"\xff\x00"
+                b"\x00\xff"
+        ]
+        """
+
+    def head(self, n: int = 5) -> Series:
+        r"""
+        Take the first `n` bytes of the binary values.
+
+        Parameters
+        ----------
+        n
+            Length of the slice. Negative indexing is supported; see note (2) below.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Binary`.
+
+        Notes
+        -----
+        (1) A similar method exists for taking the last `n` bytes: :func:`tail`.
+        (2) If `n` is negative, it is interpreted as "until the nth byte from the end",
+            e.g., ``head(-3)`` returns all but the last three bytes.
+
+        Examples
+        --------
+        >>> colors = pl.Series([b"\x00\x00\x00", b"\xff\xff\x00", b"\x00\x00\xff"])
+        >>> colors.bin.head(2)
+        shape: (3,)
+        Series: '' [binary]
+        [
+                b"\x00\x00"
+                b"\xff\xff"
+                b"\x00\x00"
+        ]
+        """
+
+    def tail(self, n: int = 5) -> Series:
+        r"""
+        Take the last `n` bytes of the binary values.
+
+        Parameters
+        ----------
+        n
+            Length of the slice. Negative indexing is supported; see note (2) below.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Binary`.
+
+        Notes
+        -----
+        (1) A similar method exists for taking the first `n` bytes: :func:`head`.
+        (2) If `n` is negative, it is interpreted as "starting at the nth byte",
+            e.g., ``tail(-3)`` returns all but the first three bytes.
+
+        Examples
+        --------
+        >>> colors = pl.Series([b"\x00\x00\x00", b"\xff\xff\x00", b"\x00\x00\xff"])
+        >>> colors.bin.tail(2)
+        shape: (3,)
+        Series: '' [binary]
+        [
+                b"\x00\x00"
+                b"\xff\x00"
+                b"\x00\xff"
+        ]
+        """

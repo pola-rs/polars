@@ -147,13 +147,15 @@ def test_except_intersect_union_errors(op: str) -> None:
             SQLInterfaceError,
             match=f"'{op} ALL' is not supported",
         ):
-            pl.sql(f"SELECT * FROM df1 {op} ALL SELECT * FROM df2", eager=False)
+            pl.sql(
+                f"SELECT * FROM df1 {op} ALL SELECT * FROM df2", eager=False
+            ).collect()
 
     with pytest.raises(
         SQLInterfaceError,
         match=f"{op} requires equal number of columns in each table",
     ):
-        pl.sql(f"SELECT x FROM df1 {op} SELECT x, y FROM df2", eager=False)
+        pl.sql(f"SELECT x FROM df1 {op} SELECT x, y FROM df2", eager=False).collect()
 
 
 @pytest.mark.parametrize(

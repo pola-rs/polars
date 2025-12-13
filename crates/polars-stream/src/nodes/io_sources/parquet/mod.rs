@@ -21,12 +21,13 @@ use super::multi_scan::reader_interface::{
     BeginReadArgs, FileReader, FileReaderCallbacks, calc_row_position_after_slice,
 };
 use crate::async_executor::{self};
+use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::io_sources::parquet::projection::{
     ArrowFieldProjection, resolve_arrow_field_projections,
 };
 use crate::nodes::{TaskPriority, io_sources};
-use crate::utils::task_handles_ext;
+use crate::utils::tokio_handle_ext;
 
 pub mod builder;
 mod init;
@@ -43,10 +44,22 @@ pub struct ParquetFileReader {
     /// Set by the builder if we have metadata left over from DSL conversion.
     metadata: Option<Arc<FileMetadata>>,
     byte_source_builder: DynByteSourceBuilder,
+    row_group_prefetch_sync: RowGroupPrefetchSync,
     verbose: bool,
 
     /// Set during initialize()
     init_data: Option<InitializedState>,
+}
+
+struct RowGroupPrefetchSync {
+    prefetch_limit: usize,
+    prefetch_semaphore: Arc<tokio::sync::Semaphore>,
+    shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
+
+    /// Waits for the previous reader to finish spawning prefetches.
+    prev_all_spawned: Option<WaitGroup>,
+    /// Dropped once the current reader has finished spawning prefetches.
+    current_all_spawned: Option<WaitToken>,
 }
 
 #[derive(Clone)]
@@ -114,6 +127,23 @@ impl FileReader for ParquetFileReader {
             file_schema_pl: None,
             byte_source,
         });
+
+        Ok(())
+    }
+
+    fn prepare_read(&mut self) -> PolarsResult<()> {
+        let wait_group_this_reader = WaitGroup::default();
+        let prefetch_all_spawned_token = wait_group_this_reader.token();
+
+        let prev_wait_group: Option<WaitGroup> = self
+            .row_group_prefetch_sync
+            .shared_prefetch_wait_group_slot
+            .try_lock()
+            .unwrap()
+            .replace(wait_group_this_reader);
+
+        self.row_group_prefetch_sync.prev_all_spawned = prev_wait_group;
+        self.row_group_prefetch_sync.current_all_spawned = Some(prefetch_all_spawned_token);
 
         Ok(())
     }
@@ -201,7 +231,11 @@ impl FileReader for ParquetFileReader {
         // Prepare parameters for dispatch
 
         let memory_prefetch_func = get_memory_prefetch_func(verbose);
-        let row_group_prefetch_size = polars_core::config::get_rg_prefetch_size();
+        let row_group_prefetch_size = self
+            .row_group_prefetch_sync
+            .prefetch_limit
+            .min(file_metadata.row_groups.len())
+            .max(1);
 
         // This can be set to 1 to force column-per-thread parallelism, e.g. for bug reproduction.
         let target_values_per_thread =
@@ -249,6 +283,13 @@ impl FileReader for ParquetFileReader {
             verbose,
             memory_prefetch_func,
             row_index,
+            rg_prefetch_semaphore: Arc::clone(&self.row_group_prefetch_sync.prefetch_semaphore),
+            rg_prefetch_prev_all_spawned: Option::take(
+                &mut self.row_group_prefetch_sync.prev_all_spawned,
+            ),
+            rg_prefetch_current_all_spawned: Option::take(
+                &mut self.row_group_prefetch_sync.current_all_spawned,
+            ),
         }
         .run();
 
@@ -317,7 +358,7 @@ impl ParquetFileReader {
 
 type AsyncTaskData = (
     FileReaderOutputRecv,
-    task_handles_ext::AbortOnDropHandle<PolarsResult<()>>,
+    tokio_handle_ext::AbortOnDropHandle<PolarsResult<()>>,
 );
 
 struct ParquetReadImpl {
@@ -333,6 +374,10 @@ struct ParquetReadImpl {
     verbose: bool,
     memory_prefetch_func: fn(&[u8]) -> (),
     row_index: Option<RowIndex>,
+
+    rg_prefetch_semaphore: Arc<tokio::sync::Semaphore>,
+    rg_prefetch_prev_all_spawned: Option<WaitGroup>,
+    rg_prefetch_current_all_spawned: Option<WaitToken>,
 }
 
 #[derive(Debug)]

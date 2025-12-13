@@ -208,10 +208,13 @@ impl DslBuilder {
 
     pub fn pipe_with_schema(
         self,
+        others: Vec<DslPlan>,
         callback: PlanCallback<(Vec<DslPlan>, Vec<SchemaRef>), DslPlan>,
     ) -> Self {
+        let mut input = vec![self.0];
+        input.extend(others);
         DslPlan::PipeWithSchema {
-            input: Arc::new([self.0]),
+            input: Arc::from(input),
             callback,
         }
         .into()

@@ -401,57 +401,66 @@ def test_string_split_part() -> None:
 
 def test_string_substr() -> None:
     df = pl.DataFrame(
-        {"scol": ["abcdefg", "abcde", "abc", None], "n": [-2, 3, 2, None]}
+        {
+            "scol": ["abcdefg", "abcde", "abc", None],
+            "n": [-2, 3, 2, None],
+        }
     )
-    with pl.SQLContext(df=df) as ctx:
-        res = ctx.execute(
-            """
-            SELECT
-              -- note: sql is 1-indexed
-              SUBSTR(scol,1) AS s1,
-              SUBSTR(scol,2) AS s2,
-              SUBSTR(scol,3) AS s3,
-              SUBSTR(scol,1,5) AS s1_5,
-              SUBSTR(scol,2,2) AS s2_2,
-              SUBSTR(scol,3,1) AS s3_1,
-              SUBSTR(scol,-3) AS "s-3",
-              SUBSTR(scol,-3,3) AS "s-3_3",
-              SUBSTR(scol,-3,4) AS "s-3_4",
-              SUBSTR(scol,-3,5) AS "s-3_5",
-              SUBSTR(scol,-10,13) AS "s-10_13",
-              SUBSTR(scol,"n",2) AS "s-n2",
-              SUBSTR(scol,2,"n"+3) AS "s-2n3"
-            FROM df
-            """
-        ).collect()
+    # test both forms of SUBSTRING:
+    # >> SUBSTR(s, pos [, len]) and SUBSTRING(s FROM pos [FOR len])
+    for func, sep1, sep2 in (
+        ("SUBSTR", ",", ","),
+        ("SUBSTRING", " FROM ", " FOR "),
+    ):
+        with pl.SQLContext(df=df) as ctx:
+            res = ctx.execute(
+                f"""
+                SELECT
+                  -- note: sql is 1-indexed
+                  {func}(scol{sep1}1) AS s1,
+                  {func}(scol{sep1}2) AS s2,
+                  {func}(scol{sep1}3) AS s3,
+                  {func}(scol{sep1}1{sep2}5) AS s1_5,
+                  {func}(scol{sep1}2{sep2}2) AS s2_2,
+                  {func}(scol{sep1}3{sep2}1) AS s3_1,
+                  {func}(scol{sep1}-3) AS "s-3",
+                  {func}(scol{sep1}-3{sep2}3) AS "s-3_3",
+                  {func}(scol{sep1}-3{sep2}4) AS "s-3_4",
+                  {func}(scol{sep1}-3{sep2}5) AS "s-3_5",
+                  {func}(scol{sep1}-10{sep2}13) AS "s-10_13",
+                  {func}(scol{sep1}"n"{sep2}2) AS "s-n2",
+                  {func}(scol{sep1}2{sep2}"n"+3) AS "s-2n3"
+                FROM df
+                """
+            ).collect()
 
-        with pytest.raises(
-            SQLSyntaxError,
-            match=r"SUBSTR does not support negative length \(-99\)",
-        ):
-            ctx.execute("SELECT SUBSTR(scol,2,-99) FROM df")
+            with pytest.raises(
+                SQLSyntaxError,
+                match=r"SUBSTR does not support negative length \(-99\)",
+            ):
+                ctx.execute("SELECT SUBSTR(scol,2,-99) FROM df")
 
-        with pytest.raises(
-            SQLSyntaxError,
-            match=r"SUBSTR expects 2-3 arguments \(found 1\)",
-        ):
-            pl.sql_expr("SUBSTR(s)")
+            with pytest.raises(
+                SQLSyntaxError,
+                match=r"SUBSTR expects 2-3 arguments \(found 1\)",
+            ):
+                pl.sql_expr("SUBSTR(s)")
 
-    assert res.to_dict(as_series=False) == {
-        "s1": ["abcdefg", "abcde", "abc", None],
-        "s2": ["bcdefg", "bcde", "bc", None],
-        "s3": ["cdefg", "cde", "c", None],
-        "s1_5": ["abcde", "abcde", "abc", None],
-        "s2_2": ["bc", "bc", "bc", None],
-        "s3_1": ["c", "c", "c", None],
-        "s-3": ["abcdefg", "abcde", "abc", None],
-        "s-3_3": ["", "", "", None],
-        "s-3_4": ["", "", "", None],
-        "s-3_5": ["a", "a", "a", None],
-        "s-10_13": ["ab", "ab", "ab", None],
-        "s-n2": ["", "cd", "bc", None],
-        "s-2n3": ["b", "bcde", "bc", None],
-    }
+        assert res.to_dict(as_series=False) == {
+            "s1": ["abcdefg", "abcde", "abc", None],
+            "s2": ["bcdefg", "bcde", "bc", None],
+            "s3": ["cdefg", "cde", "c", None],
+            "s1_5": ["abcde", "abcde", "abc", None],
+            "s2_2": ["bc", "bc", "bc", None],
+            "s3_1": ["c", "c", "c", None],
+            "s-3": ["abcdefg", "abcde", "abc", None],
+            "s-3_3": ["", "", "", None],
+            "s-3_4": ["", "", "", None],
+            "s-3_5": ["a", "a", "a", None],
+            "s-10_13": ["ab", "ab", "ab", None],
+            "s-n2": ["", "cd", "bc", None],
+            "s-2n3": ["b", "bcde", "bc", None],
+        }
 
 
 def test_string_trim(foods_ipc_path: Path) -> None:

@@ -235,7 +235,6 @@ pub fn aexpr_to_column_predicates(
                                     return None;
                                 }
 
-                                let values = values.rechunk();
                                 let values = values.iter()
                                     .map(|av| {
                                         Scalar::new(dtype.clone(), av.into_static())

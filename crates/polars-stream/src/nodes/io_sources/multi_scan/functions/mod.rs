@@ -27,8 +27,8 @@ pub fn calc_n_readers_pre_init(
     num_pipelines
         .saturating_add(3)
         .min(max_files_with_slice)
-        .min(num_sources.max(1))
-        .min(128)
+        .min(num_sources)
+        .clamp(1, 128)
 }
 
 pub fn calc_max_concurrent_scans(num_pipelines: usize, num_sources: usize) -> usize {
@@ -41,5 +41,5 @@ pub fn calc_max_concurrent_scans(num_pipelines: usize, num_sources: usize) -> us
         return v;
     }
 
-    num_pipelines.min(num_sources.max(1)).min(128)
+    num_pipelines.min(num_sources).clamp(1, 128)
 }

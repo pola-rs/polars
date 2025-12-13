@@ -382,7 +382,22 @@ def test_invert_order_full_join_22295() -> None:
             "value": list(range(6)),
         }
     )
-
     lf.join(lf, on=["value", "value_at"], how="full", coalesce=True).collect(
         engine="streaming"
     )
+
+
+def test_cross_join_with_literal_column_25544() -> None:
+    df0 = pl.LazyFrame({"c0": [0]})
+    df1 = pl.LazyFrame({"c0": [1]})
+
+    result = df0.join(
+        df1.select(pl.col("c0")).with_columns(pl.lit(1)),
+        on=True,  # type: ignore[arg-type]
+    ).select("c0")
+
+    in_memory_result = result.collect(engine="in-memory")
+    streaming_result = result.collect(engine="streaming")
+
+    assert_frame_equal(streaming_result, in_memory_result)
+    assert streaming_result.item() == 0
