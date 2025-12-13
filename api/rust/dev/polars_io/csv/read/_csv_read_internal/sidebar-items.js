@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["NullValuesCompiled"],"fn":["cast_columns","find_starting_point","is_comment_line","prepare_csv_schema","read_chunk"],"struct":["CountLines"]};

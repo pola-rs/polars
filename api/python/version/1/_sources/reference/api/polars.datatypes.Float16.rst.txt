@@ -1,0 +1,38 @@
+﻿polars.datatypes.Float16
+========================
+
+.. currentmodule:: polars.datatypes
+
+.. autoclass:: Float16
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Float16.__init__
+      ~Float16.base_type
+      ~Float16.from_python
+      ~Float16.is_
+      ~Float16.is_decimal
+      ~Float16.is_float
+      ~Float16.is_integer
+      ~Float16.is_nested
+      ~Float16.is_numeric
+      ~Float16.is_object
+      ~Float16.is_signed_integer
+      ~Float16.is_temporal
+      ~Float16.is_unsigned_integer
+      ~Float16.max
+      ~Float16.min
+      ~Float16.to_dtype_expr
+      ~Float16.to_python
+   
+   
+
+   
+   
+   

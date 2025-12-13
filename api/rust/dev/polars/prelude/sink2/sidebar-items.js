@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["FileProviderReturn","FileProviderType","PartitionStrategy","PartitionStrategyIR","SinkDestination"],"struct":["FileProviderArgs","UnifiedSinkArgs"],"type":["FileProviderFunction"]};
