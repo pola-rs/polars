@@ -1,0 +1,90 @@
+# 北京昌平区空气质量数据分析
+
+本项目使用 [Polars](https://pola-rs.github.io/polars/py-polars/html/index.html) 对北京昌平区的空气质量数据进行分析。Polars 是一个高性能的 DataFrame 库，专为处理大型数据集而设计。
+
+## 数据集介绍
+
+数据来源于北京昌平区环境监测站，时间范围从 2013年3月1日 到 2017年2月28日，每小时记录一次。
+
+### 数据字段说明
+
+| 字段名 | 含义 | 单位 |
+|--------|------|------|
+| No | 序号 | - |
+| year | 年份 | - |
+| month | 月份 | - |
+| day | 日期 | - |
+| hour | 小时 | - |
+| PM2.5 | PM2.5 浓度 | μg/m³ |
+| PM10 | PM10 浓度 | μg/m³ |
+| SO2 | 二氧化硫浓度 | μg/m³ |
+| NO2 | 二氧化氮浓度 | μg/m³ |
+| CO | 一氧化碳浓度 | μg/m³ |
+| O3 | 臭氧浓度 | μg/m³ |
+| TEMP | 温度 | °C |
+| PRES | 气压 | hPa |
+| DEWP | 露点温度 | °C |
+| RAIN | 降水量 | mm |
+| wd | 风向 | - |
+| WSPM | 风速 | m/s |
+| station | 监测站名称 | - |
+
+## 功能特性
+
+1. **数据加载与探索**：使用 Polars 快速加载和探索大型 CSV 数据集
+2. **数据清洗**：处理缺失值和异常值
+3. **统计分析**：计算各污染物的平均值、最大值、最小值等统计指标
+4. **时间序列分析**：分析污染物浓度随时间的变化趋势
+5. **相关性分析**：研究不同污染物之间以及污染物与气象因素之间的相关性
+6. **数据可视化**：生成多种图表展示分析结果
+
+## 安装依赖
+
+```bash
+pip install polars matplotlib seaborn numpy
+```
+
+## 使用方法
+
+1. 确保数据文件 `PRSA_Data_Changping_20130301-20170228.csv` 与脚本在同一目录下
+2. 运行分析脚本：
+
+```bash
+python Changping_China_Weather_Analysis.py
+```
+
+3. 或者使用 Jupyter Notebook 版本的交互式教程：
+
+```bash
+jupyter notebook polars_changping_tutorial.ipynb
+```
+
+## Polars 特性演示
+
+本项目展示了 Polars 的以下核心功能：
+
+1. **高效的数据读取**：使用 `pl.read_csv()` 快速读取大型 CSV 文件
+2. **链式操作**：通过方法链实现复杂的数据转换
+3. **表达式API**：使用 `pl.col()` 等表达式进行灵活的数据操作
+4. **分组聚合**：使用 `group_by().agg()` 进行高效的分组统计
+5. **缺失值处理**：使用 `fill_null()` 等方法处理缺失数据
+6. **数据类型优化**：自动推断和优化数据类型以节省内存
+
+此外，Jupyter Notebook 版本还提供了交互式的学习体验，您可以逐步执行每个代码块并查看结果。
+
+## 输出结果
+
+运行脚本后将生成以下输出：
+
+1. 控制台输出详细的分析结果
+2. 保存为 `changping_air_quality_analysis.png` 的综合分析图表
+
+## 学习资源
+
+- [Polars 官方文档](https://pola-rs.github.io/polars/py-polars/html/index.html)
+- [Polars 用户指南](https://pola-rs.github.io/polars-book/user-guide/)
+- [Polars API 参考](https://pola-rs.github.io/polars/py-polars/html/reference/index.html)
+
+## 许可证
+
+本项目仅供学习交流使用。
