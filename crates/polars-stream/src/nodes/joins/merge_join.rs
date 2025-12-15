@@ -187,6 +187,8 @@ impl MergeJoinNode {
         mut right: DataFrame,
         _state: &StreamingExecutionState,
     ) -> PolarsResult<DataFrame> {
+        dbg!(&left, &right);
+
         let join_type = &self.params.args.how;
         let right_is_build = *join_type == JoinType::Right
             || (*join_type == JoinType::Inner
@@ -381,7 +383,7 @@ impl ComputeNode for MergeJoinNode {
         if matches!(self.state, Running | Flushing) {
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 loop {
-                    match dbg!(find_mergeable(
+                    match (find_mergeable(
                         &mut self.left_unmerged,
                         &mut self.right_unmerged,
                         recv_left.is_none(),
@@ -389,7 +391,6 @@ impl ComputeNode for MergeJoinNode {
                         &self.params,
                     )?) {
                         Left((left_chunk, right_chunk)) => {
-                            dbg!("MARK 1");
                             // [amber] TODO: put this into a distributor instead of computing the join serially
                             let joined = self.compute_join(left_chunk, right_chunk, state)?;
                             let source_token = SourceToken::new();
@@ -398,8 +399,6 @@ impl ComputeNode for MergeJoinNode {
                             self.seq = self.seq.successor();
                         },
                         Right(NeedMore::Left | NeedMore::Both) if recv_left.is_some() => {
-                            dbg!("MARK 2");
-                            // Need more left data
                             let Ok(m) = recv_left.as_mut().unwrap().recv().await else {
                                 buffer_unmerged_from_pipe(
                                     recv_right.as_mut(),
@@ -415,8 +414,6 @@ impl ComputeNode for MergeJoinNode {
                             self.left_unmerged.push_back(df);
                         },
                         Right(NeedMore::Right | NeedMore::Both) if recv_right.is_some() => {
-                            dbg!("MARK 3");
-                            // Need more right data
                             let Ok(m) = recv_right.as_mut().unwrap().recv().await else {
                                 buffer_unmerged_from_pipe(
                                     recv_left.as_mut(),
@@ -437,7 +434,7 @@ impl ComputeNode for MergeJoinNode {
                             break;
                         },
                         Right(other) => {
-                            panic!("Unexpected NeedMore value: {other:?}");
+                            unreachable!("unexpected NeedMore value: {other:?}");
                         },
                     }
                 }
@@ -491,40 +488,35 @@ fn find_mergeable_inner(
     right_done: bool,
 ) -> PolarsResult<Either<(DataFrame, DataFrame), NeedMore>> {
     loop {
-        dbg!(left_done);
-        dbg!(right_done);
-        dbg!(&left);
-        dbg!(&right);
-
         if left_done && left.is_empty() && right_done && right.is_empty() {
-            return dbg!(Ok(Right(NeedMore::Finished)));
+            return (Ok(Right(NeedMore::Finished)));
         } else if left_done && left.is_empty() {
             // [amber] Also done here in case of LEFT join, right?
-            return dbg!(Ok(Left((
+            return (Ok(Left((
                 DataFrame::empty_with_schema(&left_params.ir_schema),
                 right.pop_front().unwrap(),
             ))));
         } else if right_done && right.is_empty() {
-            return dbg!(Ok(Left((
+            return (Ok(Left((
                 left.pop_front().unwrap(),
                 DataFrame::empty_with_schema(&right_params.ir_schema),
             ))));
         } else if left_done && left.len() <= 1 && right_done && right.len() <= 1 {
-            return dbg!(Ok(Left((
+            return (Ok(Left((
                 left.pop_front().unwrap(),
                 right.pop_front().unwrap(),
             ))));
         } else if left.is_empty() && !left_done {
-            return dbg!(Ok(Right(NeedMore::Left)));
+            return (Ok(Right(NeedMore::Left)));
         } else if right.is_empty() && !right_done {
-            return dbg!(Ok(Right(NeedMore::Right)));
+            return (Ok(Right(NeedMore::Right)));
         }
 
         let Some(left_df) = left.front() else {
-            return dbg!(Ok(Right(NeedMore::Left)));
+            return (Ok(Right(NeedMore::Left)));
         };
         let Some(right_df) = right.front() else {
-            return dbg!(Ok(Right(NeedMore::Right)));
+            return (Ok(Right(NeedMore::Right)));
         };
 
         if left_df.is_empty() {
@@ -553,7 +545,7 @@ fn find_mergeable_inner(
             continue;
         } else if left_first_incomplete == 0 {
             debug_assert!(!left_done);
-            return dbg!(Ok(Right(NeedMore::Left)));
+            return (Ok(Right(NeedMore::Left)));
         }
 
         let right_last = right_keys.get(right_keys.len() - 1)?;
@@ -566,16 +558,11 @@ fn find_mergeable_inner(
             continue;
         } else if right_first_incomplete == 0 {
             debug_assert!(!right_done);
-            return dbg!(Ok(Right(NeedMore::Right)));
+            return (Ok(Right(NeedMore::Right)));
         }
-
-        dbg!(left_first_incomplete);
-        dbg!(right_first_incomplete);
 
         let left_last_completed_val = left_keys.get(left_first_incomplete - 1)?;
         let right_last_completed_val = right_keys.get(right_first_incomplete - 1)?;
-        dbg!(&left_last_completed_val);
-        dbg!(&right_last_completed_val);
         let left_mergable_until; // bound is *exclusive*
         let right_mergable_until;
         if keys_eq(&left_last_completed_val, &right_last_completed_val, params) {
@@ -596,9 +583,6 @@ fn find_mergeable_inner(
             unreachable!();
         }
 
-        dbg!(left_mergable_until);
-        dbg!(right_mergable_until);
-
         if left_mergable_until == 0 && left.len() > 1 {
             vstack_head(left, left_params, params);
             continue;
@@ -606,7 +590,7 @@ fn find_mergeable_inner(
             vstack_head(right, right_params, params);
             continue;
         } else if left_mergable_until == 0 && right_mergable_until == 0 {
-            return dbg!(Ok(Right(NeedMore::Both)));
+            return (Ok(Right(NeedMore::Both)));
         }
 
         let (left_df, left_rest) = left
@@ -623,7 +607,7 @@ fn find_mergeable_inner(
         if !right_rest.is_empty() {
             right.push_front(right_rest);
         }
-        return dbg!(Ok(Left((left_df, right_df))));
+        return (Ok(Left((left_df, right_df))));
     }
 }
 
@@ -660,7 +644,6 @@ fn vstack_head(unmerged: &mut VecDeque<DataFrame>, sp: &SideParams, params: &Mer
         false => IsSorted::Ascending,
         true => IsSorted::Descending,
     };
-    dbg!(&unmerged[0], &unmerged[1]);
     let mut df = unmerged.pop_front().unwrap();
     let col_idx = df.get_column_index(&sp.key_col).unwrap();
     df.vstack_mut_owned(unmerged.pop_front().unwrap()).unwrap();
