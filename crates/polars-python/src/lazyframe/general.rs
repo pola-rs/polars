@@ -947,6 +947,12 @@ impl PyLazyFrame {
         self.ldf.read().clone().with_context(contexts).into()
     }
 
+    fn repartition(&self, partitions: u32, by: Vec<PyBackedStr>) -> Self {
+        let by = strings_to_pl_smallstr(by);
+        let ldf = self.ldf.read().clone();
+        ldf.repartition(partitions, by).into()
+    }
+
     #[cfg(feature = "asof_join")]
     #[pyo3(signature = (other, left_on, right_on, left_by, right_by, allow_parallel, force_parallel, suffix, strategy, tolerance, tolerance_str, coalesce, allow_eq, check_sortedness))]
     fn join_asof(

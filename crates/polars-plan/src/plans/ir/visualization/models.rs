@@ -240,4 +240,8 @@ pub enum IRNodeProperties {
         is_pure: bool,
         validate_schema: bool,
     },
+    Repartition {
+        partitions: u32,
+        by: Vec<PlSmallStr>,
+    },
 }

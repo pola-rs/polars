@@ -8806,6 +8806,36 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         return pc.LazyFrameRemote(lf=self, context=context, plan_type=plan_type)
 
     @unstable()
+    def repartition(
+        self, partitions: int, by: str | list[str] | None = None
+    ) -> LazyFrame:
+        """
+        Repartition a distributed LazyFrame by the given number of partitions.
+
+        This is treated as a hint to the planner. It does not have to be
+        respected. In single node, this operation is a no-op and is ignored.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        partitions
+            Total number of partitions to create.
+        by:
+            Optional columns to partition by.
+
+        """
+        if isinstance(by, str):
+            by = [by]
+
+        if by is None:
+            by = []
+
+        return self._from_pyldf(self._ldf.repartition(partitions, by))
+
+    @unstable()
     def match_to_schema(
         self,
         schema: SchemaDict | Schema,

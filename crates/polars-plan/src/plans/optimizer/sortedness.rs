@@ -330,6 +330,7 @@ fn is_sorted_rec(
             },
             _ => None,
         },
+        IR::Repartition { .. } => None,
         IR::Union { .. } => None,
         IR::HConcat { .. } => None,
         IR::ExtContext { .. } => None,

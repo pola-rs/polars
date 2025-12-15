@@ -119,6 +119,11 @@ impl DslPlan {
                 scratch.push(input_left);
                 scratch.push(input_right);
             },
+            Repartition {
+                input,
+                partitions: _,
+                by: _,
+            } => scratch.push(input),
         }
     }
 }
