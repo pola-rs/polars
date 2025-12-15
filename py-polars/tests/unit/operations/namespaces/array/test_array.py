@@ -19,6 +19,7 @@ def test_arr_min_max() -> None:
     assert s_with_null.arr.max().to_list() == [2, None, 4]
     assert s_with_null.arr.min().to_list() == [2, None, 3]
 
+
 def test_arr_mean_median_var_std() -> None:
     s = pl.Series("a", [[1, 2], [4, 3]], dtype=pl.Array(pl.Int64, 2))
     assert s.arr.mean().to_list() == [1.5, 3.5]
