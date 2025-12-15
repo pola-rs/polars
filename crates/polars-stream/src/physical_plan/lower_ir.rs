@@ -1188,7 +1188,8 @@ pub fn lower_ir(
                 trans_left_on.drain(left_on.len()..);
                 trans_right_on.drain(right_on.len()..);
 
-                // TODO: [amber] We can maybe do this if we buffer a bunch of stuff in the node
+                // TODO: We can do this if we keep store of all the unmatched rows until the end
+                // of the join
                 let hard_to_maintain_order = (args.how == JoinType::Left
                     && matches!(
                         args.maintain_order,

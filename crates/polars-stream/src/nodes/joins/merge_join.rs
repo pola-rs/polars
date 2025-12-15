@@ -27,6 +27,8 @@ use crate::pipe::{PortReceiver, RecvPort, SendPort};
 // TODO: [amber] I think I want to have the inner join dispatch to another streaming
 // equi join node rather than dispatching to in-memory engine
 
+const KEY_COL_NAME: &str = "__POLARS_JOIN_KEY";
+
 #[derive(Clone, Copy, Debug)]
 enum NeedMore {
     Left,
@@ -103,8 +105,8 @@ impl MergeJoinNode {
         let mut left_ir_schema = left_input_schema.clone();
         let mut right_ir_schema = right_input_schema.clone();
         if left_on.len() > 1 {
-            left_key_col = PlSmallStr::from("__POLARS_JOIN_KEY");
-            right_key_col = PlSmallStr::from("__POLARS_JOIN_KEY");
+            left_key_col = PlSmallStr::from(KEY_COL_NAME);
+            right_key_col = PlSmallStr::from(KEY_COL_NAME);
             let mut ir_schema = (*left_input_schema).clone();
             ir_schema.insert(left_key_col.clone(), DataType::BinaryOffset);
             left_ir_schema = Arc::new(ir_schema);
@@ -295,7 +297,7 @@ impl ComputeNode for MergeJoinNode {
                                 break;
                             };
                             let mut df = m.into_df();
-                            append_key_column(&mut df, &params.left, false)?;
+                            add_key_column(&mut df, &params.left, false)?;
                             left_unmerged.push_back(df);
                         },
                         Right(NeedMore::Right | NeedMore::Both) if recv_right.is_some() => {
@@ -310,7 +312,7 @@ impl ComputeNode for MergeJoinNode {
                                 break;
                             };
                             let mut df = m.into_df();
-                            append_key_column(&mut df, &params.right, false)?;
+                            add_key_column(&mut df, &params.right, false)?;
                             right_unmerged.push_back(df);
                         },
 
@@ -550,13 +552,14 @@ fn compute_join(
                 MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft,
             ));
 
+    // Add row-encoded key columns if needed
     if params.left.on.len() > 1 && !params.args.nulls_equal {
         left.drop_in_place(&params.left.key_col)?;
-        append_key_column(&mut left, &params.left, true)?;
+        add_key_column(&mut left, &params.left, true)?;
     }
     if params.right.on.len() > 1 && !params.args.nulls_equal {
         right.drop_in_place(&params.right.key_col)?;
-        append_key_column(&mut right, &params.right, true)?;
+        add_key_column(&mut right, &params.right, true)?;
     }
 
     left.rechunk_mut();
@@ -668,11 +671,7 @@ fn key_is_in_output(col_name: &PlSmallStr, params: &MergeJoinParams) -> bool {
     params.output_schema.contains(col_name)
 }
 
-fn append_key_column(
-    df: &mut DataFrame,
-    sp: &SideParams,
-    broadcast_nulls: bool,
-) -> PolarsResult<()> {
+fn add_key_column(df: &mut DataFrame, sp: &SideParams, broadcast_nulls: bool) -> PolarsResult<()> {
     debug_assert_eq!(*df.schema(), sp.input_schema);
     if sp.on.len() > 1 {
         let columns = sp
@@ -709,12 +708,12 @@ async fn buffer_unmerged_from_pipe(
     };
     morsel.source_token().stop();
     let mut df = morsel.into_df();
-    append_key_column(&mut df, sp, false).unwrap();
+    add_key_column(&mut df, sp, false).unwrap();
     unmerged.push_back(df);
 
     while let Ok(morsel) = port.recv().await {
         let mut df = morsel.into_df();
-        append_key_column(&mut df, sp, false).unwrap();
+        add_key_column(&mut df, sp, false).unwrap();
         unmerged.push_back(df);
     }
 }

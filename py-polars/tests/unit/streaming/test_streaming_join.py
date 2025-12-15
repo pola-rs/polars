@@ -19,7 +19,7 @@ from tests.unit.conftest import NUMERIC_DTYPES, NESTED_DTYPES
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars._typing import JoinStrategy
+    from polars._typing import JoinStrategy, MaintainOrderJoin
 
 pytestmark = pytest.mark.xdist_group("streaming")
 
@@ -459,16 +459,16 @@ def test_cross_join_with_literal_column_25544() -> None:
 @given(
     df_left=dataframes(
         cols=[
-            column("key_1", dtype=pl.Int32),
-            column("key_2", dtype=pl.Int32),
-            column("x", dtype=pl.Int32),
+            column("key_1", dtype=pl.Int16),
+            column("key_2", dtype=pl.Int16),
+            column("x", dtype=pl.UInt8, allow_null=False),
         ],
     ),
     df_right=dataframes(
         cols=[
-            column("key_1", dtype=pl.Int32),
-            column("key_2", dtype=pl.Int32),
-            column("x", dtype=pl.Int32),
+            column("key_1", dtype=pl.Int16),
+            column("key_2", dtype=pl.Int16),
+            column("x", dtype=pl.UInt8, allow_null=False),
         ],
     ),
 )
@@ -480,7 +480,7 @@ def test_merge_join_dispatch(
     descending: bool,
     nulls_last: bool,
     nulls_equal: bool,
-    maintain_order: Literal["right_left", "left_right"],
+    maintain_order: MaintainOrderJoin,
 ) -> None:
     check_row_order = maintain_order != "none"
 
