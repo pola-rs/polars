@@ -1199,28 +1199,11 @@ pub fn lower_ir(
                             args.maintain_order,
                             MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight
                         ));
-                let nulls_last_left = left_sortedness
-                    .as_ref()
-                    .unwrap()
-                    .0
-                    .iter()
-                    .any(|s| s.nulls_last.unwrap_or(false));
-                let nulls_last_right = right_sortedness
-                    .as_ref()
-                    .unwrap()
-                    .0
-                    .iter()
-                    .any(|s| s.nulls_last.unwrap_or(false));
-                // In case a key is some (int, None) tuple, the None will broadcast to the whole
-                // group, which breaks the sortedness property.
-                let nulls_sorted_violated = !args.nulls_equal
-                    && (left_on.len() > 1 || right_on.len() > 1)
-                    && (nulls_last_left || nulls_last_right);
+
                 let node = if args.how.is_equi()
                     && left_is_sorted
                     && right_is_sorted
                     && !hard_to_maintain_order
-                    && !nulls_sorted_violated
                     && args.how != JoinType::Full
                 {
                     phys_sm.insert(PhysNode::new(

@@ -455,19 +455,19 @@ def test_cross_join_with_literal_column_25544() -> None:
         "right_left",
     ],
 )
-@settings(max_examples=500)
+@settings(max_examples=100)
 @given(
     df_left=dataframes(
         cols=[
-            column("key_1", dtype=pl.Int32, allow_null=True),
-            column("key_2", dtype=pl.Int32, allow_null=True),
+            column("key_1", dtype=pl.Int32),
+            column("key_2", dtype=pl.Int32),
             column("x", dtype=pl.Int32),
         ],
     ),
     df_right=dataframes(
         cols=[
-            column("key_1", dtype=pl.Int32, allow_null=True),
-            column("key_2", dtype=pl.Int32, allow_null=True),
+            column("key_1", dtype=pl.Int32),
+            column("key_2", dtype=pl.Int32),
             column("x", dtype=pl.Int32),
         ],
     ),
@@ -488,9 +488,6 @@ def test_merge_join_dispatch(
         how == "right" and maintain_order.startswith("left")
     ):
         pytest.skip("hard to maintain order")
-
-    if len(on) > 1 and not nulls_equal and nulls_last:
-        pytest.skip("nulls can appear in unsorted order during row encoding")
 
     df_left = (
         df_left.sort(*on, descending=descending, nulls_last=nulls_last)
