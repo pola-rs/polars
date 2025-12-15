@@ -1,9 +1,8 @@
 use std::collections::VecDeque;
 use std::mem::swap;
 
-use arrow::Either;
-// use arrow::Either::{Left as Either::Left, Right as Either::Right};
 use arrow::array::builder::ShareStrategy;
+use either::{Either, Left, Right};
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
@@ -26,11 +25,22 @@ use crate::pipe::{PortReceiver, RecvPort, SendPort};
 // TODO: [amber] I think I want to have the inner join dispatch to another streaming
 // equi join node rather than dispatching to in-memory engine
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 enum NeedMore {
     Left,
     Right,
     Both,
+    Finished,
+}
+
+impl NeedMore {
+    fn flip(self) -> Self {
+        match self {
+            NeedMore::Left => NeedMore::Right,
+            NeedMore::Right => NeedMore::Left,
+            other => other,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -199,7 +209,7 @@ impl MergeJoinNode {
         for (idxl, left_key) in left_key.as_materialized_series().iter().enumerate() {
             let mut matched = false;
             for (idxr, right_key) in right_key.as_materialized_series().iter().enumerate() {
-                if keys_equal(&left_key, &right_key, self.params.args.nulls_equal) {
+                if keys_eq(&left_key, &right_key, &self.params) {
                     matched = true;
                     left_gather_idxs.push(idxl as IdxSize);
                     right_gather_idxs.push(idxr as IdxSize);
@@ -349,17 +359,22 @@ impl ComputeNode for MergeJoinNode {
         let mut recv_right = recv_ports[1].take().map(RecvPort::serial);
         let mut send = send_ports[0].take().unwrap().serial();
 
+        debug_assert!(
+            (recv_left.is_none() && recv_right.is_none())
+                == (self.state == MergeJoinState::Flushing)
+        );
+
         if matches!(self.state, Running | Flushing) {
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 loop {
-                    let flush = self.state == Flushing;
                     match dbg!(find_mergeable(
                         &mut self.left_unmerged,
                         &mut self.right_unmerged,
-                        flush,
+                        recv_left.is_none(),
+                        recv_right.is_none(),
                         &self.params,
                     )?) {
-                        Either::Left((left_chunk, right_chunk)) => {
+                        Left((left_chunk, right_chunk)) => {
                             dbg!("MARK 1");
                             // [amber] TODO: put this into a distributor instead of computing the join serially
                             let joined = self.compute_join(left_chunk, right_chunk, state)?;
@@ -368,7 +383,7 @@ impl ComputeNode for MergeJoinNode {
                             send.send(morsel).await.unwrap(); // TODO [amber] Can this error be handled?
                             self.seq = self.seq.successor();
                         },
-                        Either::Right(NeedMore::Left | NeedMore::Both) if recv_left.is_some() => {
+                        Right(NeedMore::Left | NeedMore::Both) if recv_left.is_some() => {
                             dbg!("MARK 2");
                             // Need more left data
                             let Ok(m) = recv_left.as_mut().unwrap().recv().await else {
@@ -385,7 +400,7 @@ impl ComputeNode for MergeJoinNode {
                             append_key_columns(&mut df, &self.params.left, &self.params)?;
                             self.left_unmerged.push_back(df);
                         },
-                        Either::Right(NeedMore::Right | NeedMore::Both) if recv_right.is_some() => {
+                        Right(NeedMore::Right | NeedMore::Both) if recv_right.is_some() => {
                             dbg!("MARK 3");
                             // Need more right data
                             let Ok(m) = recv_right.as_mut().unwrap().recv().await else {
@@ -402,9 +417,13 @@ impl ComputeNode for MergeJoinNode {
                             append_key_columns(&mut df, &self.params.right, &self.params)?;
                             self.right_unmerged.push_back(df);
                         },
-                        Either::Right(_) => {
-                            dbg!("MARK 4");
+
+                        Right(NeedMore::Finished) => {
+                            dbg!("breaking because we are finished");
                             break;
+                        },
+                        Right(other) => {
+                            panic!("Unexpected NeedMore value: {other:?}");
                         },
                     }
                 }
@@ -417,19 +436,34 @@ impl ComputeNode for MergeJoinNode {
 fn find_mergeable(
     left: &mut VecDeque<DataFrame>,
     right: &mut VecDeque<DataFrame>,
-    flush: bool,
+    left_done: bool,
+    right_done: bool,
     params: &MergeJoinParams,
 ) -> PolarsResult<Either<(DataFrame, DataFrame), NeedMore>> {
     if params.args.how == JoinType::Right {
-        let res = find_mergeable_inner(right, left, &params.right, &params.left, params, flush)?;
+        let res = find_mergeable_inner(
+            right,
+            left,
+            &params.right,
+            &params.left,
+            params,
+            right_done,
+            left_done,
+        )?;
         return Ok(match res {
-            Either::Left((right_df, left_df)) => Either::Left((left_df, right_df)),
-            Either::Right(NeedMore::Left) => Either::Right(NeedMore::Right),
-            Either::Right(NeedMore::Right) => Either::Right(NeedMore::Left),
-            Either::Right(NeedMore::Both) => Either::Right(NeedMore::Both),
+            Left((right_df, left_df)) => Left((left_df, right_df)),
+            Right(side) => Right(side.flip()),
         });
     } else {
-        find_mergeable_inner(left, right, &params.left, &params.right, params, flush)
+        find_mergeable_inner(
+            left,
+            right,
+            &params.left,
+            &params.right,
+            params,
+            left_done,
+            right_done,
+        )
     }
 }
 
@@ -439,138 +473,158 @@ fn find_mergeable_inner(
     left_params: &SideParams,
     right_params: &SideParams,
     params: &MergeJoinParams,
-    flush: bool,
+    left_done: bool,
+    right_done: bool,
 ) -> PolarsResult<Either<(DataFrame, DataFrame), NeedMore>> {
     loop {
-        if left.is_empty() && flush {
-            right.clear();
-            return Ok(Either::Right(NeedMore::Left));
-        }
-        if left.is_empty() {
-            return Ok(Either::Right(NeedMore::Left));
-        }
-        if right.is_empty() && flush {
-            return Ok(Either::Left((
+        dbg!(left_done);
+        dbg!(right_done);
+        dbg!(&left);
+        dbg!(&right);
+
+        if left_done && left.is_empty() && right_done && right.is_empty() {
+            return dbg!(Ok(Right(NeedMore::Finished)));
+        } else if left_done && left.is_empty() {
+            // [amber] Also done here in case of LEFT join, right?
+            return dbg!(Ok(Left((
+                DataFrame::empty_with_schema(&left_params.ir_schema),
+                right.pop_front().unwrap(),
+            ))));
+        } else if right_done && right.is_empty() {
+            return dbg!(Ok(Left((
                 left.pop_front().unwrap(),
-                DataFrame::empty_with_schema(&*right_params.ir_schema),
-            )));
-        }
-        if right.is_empty() {
-            return Ok(Either::Right(NeedMore::Right));
+                DataFrame::empty_with_schema(&right_params.ir_schema),
+            ))));
+        } else if left_done && left.len() <= 1 && right_done && right.len() <= 1 {
+            return dbg!(Ok(Left((
+                left.pop_front().unwrap(),
+                right.pop_front().unwrap(),
+            ))));
+        } else if left.is_empty() && !left_done {
+            return dbg!(Ok(Right(NeedMore::Left)));
+        } else if right.is_empty() && !right_done {
+            return dbg!(Ok(Right(NeedMore::Right)));
         }
 
-        let left_df = &left[0];
-        let right_df = &right[0];
+        let Some(left_df) = left.front() else {
+            return dbg!(Ok(Right(NeedMore::Left)));
+        };
+        let Some(right_df) = right.front() else {
+            return dbg!(Ok(Right(NeedMore::Right)));
+        };
 
-        if left_df.height() == 0 {
+        if left_df.is_empty() {
             left.pop_front();
             continue;
-        } else if right_df.height() == 0 {
+        }
+        if right_df.is_empty() {
             right.pop_front();
             continue;
         }
 
-        let left_key_val = left_df
+        let left_keys = left_df
             .column(&left_params.key_col)?
-            .as_materialized_series_maintain_scalar();
-        let right_key_val = right_df
+            .as_materialized_series();
+        let right_keys = right_df
             .column(&right_params.key_col)?
-            .as_materialized_series_maintain_scalar();
+            .as_materialized_series();
 
-        let left_span_start = left_key_val.slice(0, 1);
-        let left_span_end = left_key_val.slice(left_key_val.len() as i64 - 1, 1);
-        let right_span_start = right_key_val.slice(0, 1);
-        let right_span_end = right_key_val.slice(right_key_val.len() as i64 - 1, 1);
-
-        // if left_span_start == left_span_end && left.len() >= 2 {
-        //     vstack_head(left, &left_params, params);
-        //     continue;
-        // } else if right_span_start == right_span_end && right.len() >= 2 {
-        //     vstack_head(right, &right_params, params);
-        //     continue;
-        // } else if left_span_start == left_span_end && !flush {
-        //     return Ok(Either::Right(NeedMore::Left));
-        // } else if right_span_start == right_span_end && !flush {
-        //     return Ok(Either::Right(NeedMore::Right));
-        // }
-
-        let spans_overlap_end = match keys_lt(
-            &left_span_start.get(0)?,
-            &right_span_start.get(0)?,
-            params.key_descending,
-            params.args.nulls_equal,
-            params.key_nulls_last,
-        ) {
-            true => &left_span_start,
-            false => &right_span_start,
+        let left_last = left_keys.get(left_keys.len() - 1)?;
+        let left_first_incomplete = match left_done && left.len() <= 1 {
+            false => binary_search_lower(left_keys, &left_last, params)?,
+            true => left_keys.len(),
         };
-        let left_cutoff = binary_search_lower(
-            &left_key_val,
-            &spans_overlap_end.get(0)?,
-            params.key_descending,
-            params.args.nulls_equal,
-            params.key_nulls_last,
-        )? as i64
-            - 1;
-        let right_cutoff = binary_search_lower(
-            &right_key_val,
-            &spans_overlap_end.get(0)?,
-            params.key_descending,
-            params.args.nulls_equal,
-            params.key_nulls_last,
-        )? as i64
-            - 1;
+        if left_first_incomplete == 0 && left.len() > 1 {
+            vstack_head(left, left_params, params);
+            continue;
+        } else if left_first_incomplete == 0 {
+            debug_assert!(!left_done);
+            return dbg!(Ok(Right(NeedMore::Left)));
+        }
 
-        // TODO: LEFT HERE [amber]
-        // I am really struggling with this logic.
-        //
-        // Btw. It is definitely important to keep remembering to take the *second to last*
-        // chunk every time
-        //
-        if left_cutoff <= 0 && left.len() > 1 {
-            vstack_head(left, &left_params, params);
+        let right_last = right_keys.get(right_keys.len() - 1)?;
+        let right_first_incomplete = match right_done && right.len() <= 1 {
+            false => binary_search_lower(right_keys, &right_last, params)?,
+            true => right_keys.len(),
+        };
+        if right_first_incomplete == 0 && right.len() > 1 {
+            vstack_head(right, right_params, params);
             continue;
-        } else if right_cutoff <= 0 && right.len() > 1 {
-            vstack_head(right, &right_params, params);
-            continue;
-        } else if !flush && left_cutoff <= 0 {
-            return Ok(Either::Right(NeedMore::Left));
-        } else if !flush && right_cutoff <= 0 {
-            return Ok(Either::Right(NeedMore::Right));
-        } else if flush {
-            // These are the last dataframes in the input
-            let left_df = left.pop_front().unwrap();
-            let right_df = right.pop_front().unwrap();
-            return Ok(Either::Left((left_df, right_df)));
+        } else if right_first_incomplete == 0 {
+            debug_assert!(!right_done);
+            return dbg!(Ok(Right(NeedMore::Right)));
+        }
+
+        dbg!(left_first_incomplete);
+        dbg!(right_first_incomplete);
+
+        let left_last_completed_val = left_keys.get(left_first_incomplete - 1)?;
+        let right_last_completed_val = right_keys.get(right_first_incomplete - 1)?;
+        dbg!(&left_last_completed_val);
+        dbg!(&right_last_completed_val);
+        let left_mergable_until; // bound is *exclusive*
+        let right_mergable_until;
+        if keys_eq(&left_last_completed_val, &right_last_completed_val, params) {
+            left_mergable_until = left_first_incomplete;
+            right_mergable_until = right_first_incomplete;
+        } else if keys_lt(&left_last_completed_val, &right_last_completed_val, params) {
+            left_mergable_until = left_first_incomplete;
+            right_mergable_until =
+                binary_search_upper(right_keys, &left_keys.get(left_mergable_until - 1)?, params)?;
+        } else if keys_gt(&left_last_completed_val, &right_last_completed_val, params) {
+            right_mergable_until = right_first_incomplete;
+            left_mergable_until = binary_search_upper(
+                left_keys,
+                &right_keys.get(right_mergable_until - 1)?,
+                params,
+            )?;
         } else {
-            let (left_df, left_rest) = left_df.split_at(left_cutoff);
-            let (right_df, right_rest) = right_df.split_at(right_cutoff);
+            unreachable!();
+        }
+
+        dbg!(left_mergable_until);
+        dbg!(right_mergable_until);
+
+        if left_mergable_until == 0 && left.len() > 1 {
+            vstack_head(left, left_params, params);
+            continue;
+        } else if right_mergable_until == 0 && right.len() > 1 {
+            vstack_head(right, right_params, params);
+            continue;
+        } else if left_mergable_until == 0 && right_mergable_until == 0 {
+            return dbg!(Ok(Right(NeedMore::Both)));
+        }
+
+        let (left_df, left_rest) = left
+            .pop_front()
+            .unwrap()
+            .split_at(left_mergable_until as i64);
+        if !left_rest.is_empty() {
             left.push_front(left_rest);
+        }
+        let (right_df, right_rest) = right
+            .pop_front()
+            .unwrap()
+            .split_at(right_mergable_until as i64);
+        if !right_rest.is_empty() {
             right.push_front(right_rest);
-            return Ok(Either::Left((left_df, right_df)));
         }
+        return dbg!(Ok(Left((left_df, right_df))));
     }
 }
 
-fn binary_search_lower(
+fn binary_search(
     s: &Series,
     search_value: &AnyValue,
-    descending: bool,
-    nulls_equal: bool,
-    nulls_last: bool,
+    op: fn(&AnyValue, &AnyValue, &MergeJoinParams) -> bool,
+    params: &MergeJoinParams,
 ) -> PolarsResult<usize> {
     let mut lower = 0;
     let mut upper = s.len();
     while lower < upper {
         let mid = (lower + upper) / 2;
-        let mid_value = s.get(mid)?;
-        if keys_lt(
-            search_value,
-            &mid_value,
-            descending,
-            nulls_equal,
-            nulls_last,
-        ) {
+        let mid_val = s.get(mid)?;
+        if op(search_value, &mid_val, params) {
             upper = mid;
         } else {
             lower = mid + 1;
@@ -579,31 +633,12 @@ fn binary_search_lower(
     return Ok(lower);
 }
 
-fn binary_search_upper(
-    s: &Series,
-    search_value: &AnyValue,
-    descending: bool,
-    nulls_equal: bool,
-    nulls_last: bool,
-) -> PolarsResult<usize> {
-    let mut lower = 0;
-    let mut upper = s.len();
-    while lower < upper {
-        let mid = (lower + upper) / 2;
-        let mid_value = s.get(mid)?;
-        if keys_lt(
-            search_value,
-            &mid_value,
-            descending,
-            nulls_equal,
-            nulls_last,
-        ) {
-            upper = mid;
-        } else {
-            lower = mid + 1;
-        }
-    }
-    return Ok(lower);
+fn binary_search_lower(s: &Series, sv: &AnyValue, params: &MergeJoinParams) -> PolarsResult<usize> {
+    binary_search(s, sv, keys_le, params)
+}
+
+fn binary_search_upper(s: &Series, sv: &AnyValue, params: &MergeJoinParams) -> PolarsResult<usize> {
+    binary_search(s, sv, keys_lt, params)
 }
 
 fn vstack_head(unmerged: &mut VecDeque<DataFrame>, sp: &SideParams, params: &MergeJoinParams) {
@@ -672,29 +707,23 @@ async fn buffer_unmerged_from_pipe(
     }
 }
 
-fn keys_equal(left: &AnyValue, right: &AnyValue, nulls_equal: bool) -> bool {
+fn keys_eq(left: &AnyValue, right: &AnyValue, params: &MergeJoinParams) -> bool {
     if left.is_null() && right.is_null() {
-        nulls_equal
+        params.args.nulls_equal
     } else {
         left == right
     }
 }
 
-fn keys_lt(
-    left: &AnyValue,
-    right: &AnyValue,
-    descending: bool,
-    nulls_equal: bool,
-    nulls_last: bool,
-) -> bool {
-    if left.is_null() && right.is_null() {
-        nulls_equal
-    } else if nulls_last {
+fn keys_lt(left: &AnyValue, right: &AnyValue, params: &MergeJoinParams) -> bool {
+    if keys_eq(left, right, params) {
+        false
+    } else if params.key_nulls_last {
         if left.is_null() {
             false
         } else if right.is_null() {
             true
-        } else if descending {
+        } else if params.key_descending {
             left > right
         } else {
             left < right
@@ -704,10 +733,22 @@ fn keys_lt(
             true
         } else if right.is_null() {
             false
-        } else if descending {
+        } else if params.key_descending {
             left > right
         } else {
             left < right
         }
     }
+}
+
+fn keys_le(left: &AnyValue, right: &AnyValue, params: &MergeJoinParams) -> bool {
+    keys_lt(left, right, params) || keys_eq(left, right, params)
+}
+
+fn keys_gt(left: &AnyValue, right: &AnyValue, params: &MergeJoinParams) -> bool {
+    !keys_le(left, right, params)
+}
+
+fn keys_ge(left: &AnyValue, right: &AnyValue, params: &MergeJoinParams) -> bool {
+    !keys_lt(left, right, params)
 }

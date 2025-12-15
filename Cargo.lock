@@ -3686,6 +3686,7 @@ dependencies = [
  "crossbeam-deque",
  "crossbeam-queue",
  "crossbeam-utils",
+ "either",
  "futures",
  "memchr",
  "memmap2",
