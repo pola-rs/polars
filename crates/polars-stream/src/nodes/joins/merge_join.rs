@@ -11,7 +11,9 @@ use polars_plan::prelude::*;
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
 
+use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
+use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
@@ -180,136 +182,6 @@ impl MergeJoinNode {
             seq: MorselSeq::default(),
         })
     }
-
-    fn compute_join(
-        &self,
-        mut left: DataFrame,
-        mut right: DataFrame,
-        _state: &StreamingExecutionState,
-    ) -> PolarsResult<DataFrame> {
-        dbg!(&left, &right);
-
-        let join_type = &self.params.args.how;
-        let right_is_build = *join_type == JoinType::Right
-            || (*join_type == JoinType::Inner
-                && matches!(
-                    self.params.args.maintain_order,
-                    MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft,
-                ));
-
-        if self.params.left.on.len() > 1 && !self.params.args.nulls_equal {
-            left.drop_in_place(&self.params.left.key_col)?;
-            append_key_column(&mut left, &self.params.left, true)?;
-        }
-        if self.params.right.on.len() > 1 && !self.params.args.nulls_equal {
-            right.drop_in_place(&self.params.right.key_col)?;
-            append_key_column(&mut right, &self.params.right, true)?;
-        }
-
-        left.rechunk_mut();
-        right.rechunk_mut();
-
-        // TODO: [amber] Remove any non-output columns earlier to reduce the
-        // amount of gathering as much as possible
-        // TODO: [amber] Do a cardinality sketch to estimate the output size?
-
-        let mut left_key = left.column(&self.params.left.key_col).unwrap();
-        let mut right_key = right.column(&self.params.right.key_col).unwrap();
-
-        if right_is_build {
-            swap(&mut left_key, &mut right_key);
-        }
-        let mut left_gather_idxs = Vec::new();
-        let mut right_gather_idxs = Vec::new();
-        // TODO: [amber] This is still quadratic
-        for (idxl, left_key) in left_key.as_materialized_series().iter().enumerate() {
-            let mut matched = false;
-            for (idxr, right_key) in right_key.as_materialized_series().iter().enumerate() {
-                if keys_eq(&left_key, &right_key, &self.params) {
-                    matched = true;
-                    left_gather_idxs.push(idxl as IdxSize);
-                    right_gather_idxs.push(idxr as IdxSize);
-                }
-            }
-            if !matched && matches!(self.params.args.how, JoinType::Left | JoinType::Right) {
-                left_gather_idxs.push(idxl as IdxSize);
-                right_gather_idxs.push(IdxSize::MAX);
-            }
-        }
-        if right_is_build {
-            swap(&mut left_gather_idxs, &mut right_gather_idxs);
-        }
-
-        // Remove the added row-encoded key columns
-        if self.params.left.on.len() > 1 {
-            left = left.drop(&self.params.left.key_col).unwrap();
-            right = right.drop(&self.params.right.key_col).unwrap();
-        }
-
-        let mut left_build = DataFrameBuilder::new(left.schema().clone());
-        let mut right_build = DataFrameBuilder::new(right.schema().clone());
-        left_build.opt_gather_extend(&left, &left_gather_idxs, ShareStrategy::Never);
-        right_build.opt_gather_extend(&right, &right_gather_idxs, ShareStrategy::Never);
-        left = left_build.freeze();
-        right = right_build.freeze();
-
-        // Coalsesce the key columns (and rename them)
-        if self.params.args.how == JoinType::Left {
-            for c in &self.params.left.on {
-                right.drop_in_place(c.as_str())?;
-            }
-        } else if self.params.args.how == JoinType::Right {
-            for c in &self.params.right.on {
-                left.drop_in_place(c.as_str())?;
-            }
-        }
-
-        // Rename any right columns to "{}_right"
-        self.rename_right_columns(&left, &mut right)?;
-
-        // for (left_on, right_on) in self.params.left_on.iter().zip(self.params.right_on.iter()) {
-        //     let left_col = df_left.column(left_on)?;
-        //     let right_col = df_right.column(right_on)?;
-        //     coalesce_columns(s)
-        //     df_left.replace(left_on, coalesced.into_column())?;
-        // }
-
-        // let left = self.drop_non_output_columns(left)?;
-        // let right = self.drop_non_output_columns(right)?;
-
-        left.hstack_mut(&right.get_columns())?;
-        let df = self.drop_non_output_columns(&left)?;
-        Ok(df)
-    }
-
-    fn rename_right_columns(&self, left: &DataFrame, right: &mut DataFrame) -> PolarsResult<()> {
-        let left_cols: PlHashSet<PlSmallStr> = left
-            .get_column_names()
-            .into_iter()
-            .cloned()
-            .collect::<PlHashSet<_>>();
-        for col in right.get_column_names_owned() {
-            if left_cols.contains(&col) {
-                let new_name = format_pl_smallstr!("{}{}", col, self.params.args.suffix());
-                right.rename(&col, new_name).unwrap(); // FIXME: [amber] Potential quadratic behavior
-            }
-        }
-        Ok(())
-    }
-
-    fn drop_non_output_columns(&self, df: &DataFrame) -> PolarsResult<DataFrame> {
-        let mut drop_cols = PlHashSet::with_capacity(df.width());
-        for col in df.get_column_names() {
-            if !self.key_is_in_output(col) {
-                drop_cols.insert(col.clone());
-            }
-        }
-        Ok(df.drop_many_amortized(&drop_cols))
-    }
-
-    fn key_is_in_output(&self, col_name: &PlSmallStr) -> bool {
-        self.params.output_schema.contains(col_name)
-    }
 }
 
 impl ComputeNode for MergeJoinNode {
@@ -369,64 +241,77 @@ impl ComputeNode for MergeJoinNode {
     ) {
         use MergeJoinState::*;
 
+        let params = &self.params;
+        let left_unmerged = &mut self.left_unmerged;
+        let right_unmerged = &mut self.right_unmerged;
+        let seq = &mut self.seq;
+
         assert!(recv_ports.len() == 2 && send_ports.len() == 1);
 
         let mut recv_left = recv_ports[0].take().map(RecvPort::serial);
         let mut recv_right = recv_ports[1].take().map(RecvPort::serial);
-        let mut send = send_ports[0].take().unwrap().serial();
+        let send = send_ports[0].take().unwrap().parallel();
 
         debug_assert!(
             (recv_left.is_none() && recv_right.is_none())
                 == (self.state == MergeJoinState::Flushing)
         );
 
+        let (mut distributor, dist_recv) =
+            distributor_channel(send.len(), *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
+
         if matches!(self.state, Running | Flushing) {
-            join_handles.push(scope.spawn_task(TaskPriority::High, async move {
+            join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
+                // Partitioner task; worst-case complexity O(n)
+
+                let source_token = SourceToken::new();
+
                 loop {
                     match (find_mergeable(
-                        &mut self.left_unmerged,
-                        &mut self.right_unmerged,
+                        left_unmerged,
+                        right_unmerged,
                         recv_left.is_none(),
                         recv_right.is_none(),
-                        &self.params,
+                        params,
                     )?) {
-                        Left((left_chunk, right_chunk)) => {
-                            // [amber] TODO: put this into a distributor instead of computing the join serially
-                            let joined = self.compute_join(left_chunk, right_chunk, state)?;
-                            let source_token = SourceToken::new();
-                            let morsel = Morsel::new(joined, self.seq, source_token);
-                            send.send(morsel).await.unwrap(); // TODO [amber] Can this error be handled?
-                            self.seq = self.seq.successor();
+                        Left((left_mergeable, right_mergeable)) => {
+                            let left_mergeable =
+                                Morsel::new(left_mergeable, *seq, source_token.clone());
+                            *seq = seq.successor();
+                            distributor
+                                .send((left_mergeable, right_mergeable))
+                                .await
+                                .unwrap(); // TODO [amber] Can this error be handled?
                         },
                         Right(NeedMore::Left | NeedMore::Both) if recv_left.is_some() => {
                             let Ok(m) = recv_left.as_mut().unwrap().recv().await else {
                                 buffer_unmerged_from_pipe(
                                     recv_right.as_mut(),
-                                    &mut self.right_unmerged,
-                                    &self.params.right,
-                                    &self.params,
+                                    right_unmerged,
+                                    &params.right,
+                                    &params,
                                 )
                                 .await;
                                 break;
                             };
                             let mut df = m.into_df();
-                            append_key_column(&mut df, &self.params.left, false)?;
-                            self.left_unmerged.push_back(df);
+                            append_key_column(&mut df, &params.left, false)?;
+                            left_unmerged.push_back(df);
                         },
                         Right(NeedMore::Right | NeedMore::Both) if recv_right.is_some() => {
                             let Ok(m) = recv_right.as_mut().unwrap().recv().await else {
                                 buffer_unmerged_from_pipe(
                                     recv_left.as_mut(),
-                                    &mut self.left_unmerged,
-                                    &self.params.left,
-                                    &self.params,
+                                    left_unmerged,
+                                    &params.left,
+                                    &params,
                                 )
                                 .await;
                                 break;
                             };
                             let mut df = m.into_df();
-                            append_key_column(&mut df, &self.params.right, false)?;
-                            self.right_unmerged.push_back(df);
+                            append_key_column(&mut df, &params.right, false)?;
+                            right_unmerged.push_back(df);
                         },
 
                         Right(NeedMore::Finished) => {
@@ -440,6 +325,20 @@ impl ComputeNode for MergeJoinNode {
                 }
                 Ok(())
             }));
+
+            join_handles.extend(dist_recv.into_iter().zip(send).map(|(mut recv, mut send)| {
+                scope.spawn_task(TaskPriority::High, async move {
+                    while let Ok((morsel, right)) = recv.recv().await {
+                        let (left, seq, source_token, _) = morsel.into_inner();
+                        let joined = compute_join(left, right, params)?;
+                        let morsel = Morsel::new(joined, seq, source_token);
+                        if send.send(morsel).await.is_err() {
+                            break;
+                        }
+                    }
+                    Ok(())
+                })
+            }));
         }
     }
 }
@@ -449,32 +348,16 @@ fn find_mergeable(
     right: &mut VecDeque<DataFrame>,
     left_done: bool,
     right_done: bool,
-    params: &MergeJoinParams,
+    p: &MergeJoinParams,
 ) -> PolarsResult<Either<(DataFrame, DataFrame), NeedMore>> {
-    if params.args.how == JoinType::Right {
-        let res = find_mergeable_inner(
-            right,
-            left,
-            &params.right,
-            &params.left,
-            params,
-            right_done,
-            left_done,
-        )?;
-        return Ok(match res {
+    if p.args.how == JoinType::Right {
+        let ok = find_mergeable_inner(right, left, &p.right, &p.left, p, right_done, left_done)?;
+        return Ok(match ok {
             Left((right_df, left_df)) => Left((left_df, right_df)),
             Right(side) => Right(side.flip()),
         });
     } else {
-        find_mergeable_inner(
-            left,
-            right,
-            &params.left,
-            &params.right,
-            params,
-            left_done,
-            right_done,
-        )
+        find_mergeable_inner(left, right, &p.left, &p.right, p, left_done, right_done)
     }
 }
 
@@ -654,6 +537,137 @@ fn vstack_head(unmerged: &mut VecDeque<DataFrame>, sp: &SideParams, params: &Mer
     unmerged.push_front(df);
 }
 
+fn compute_join(
+    mut left: DataFrame,
+    mut right: DataFrame,
+    params: &MergeJoinParams,
+) -> PolarsResult<DataFrame> {
+    let join_type = &params.args.how;
+    let right_is_build = *join_type == JoinType::Right
+        || (*join_type == JoinType::Inner
+            && matches!(
+                params.args.maintain_order,
+                MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft,
+            ));
+
+    if params.left.on.len() > 1 && !params.args.nulls_equal {
+        left.drop_in_place(&params.left.key_col)?;
+        append_key_column(&mut left, &params.left, true)?;
+    }
+    if params.right.on.len() > 1 && !params.args.nulls_equal {
+        right.drop_in_place(&params.right.key_col)?;
+        append_key_column(&mut right, &params.right, true)?;
+    }
+
+    left.rechunk_mut();
+    right.rechunk_mut();
+
+    // TODO: [amber] Remove any non-output columns earlier to reduce the
+    // amount of gathering as much as possible
+    // TODO: [amber] Do a cardinality sketch to estimate the output size?
+
+    let mut left_key = left.column(&params.left.key_col).unwrap();
+    let mut right_key = right.column(&params.right.key_col).unwrap();
+
+    if right_is_build {
+        swap(&mut left_key, &mut right_key);
+    }
+    let mut left_gather_idxs = Vec::new();
+    let mut right_gather_idxs = Vec::new();
+    // TODO: [amber] This is still quadratic
+    for (idxl, left_key) in left_key.as_materialized_series().iter().enumerate() {
+        let mut matched = false;
+        for (idxr, right_key) in right_key.as_materialized_series().iter().enumerate() {
+            if keys_eq(&left_key, &right_key, &params) {
+                matched = true;
+                left_gather_idxs.push(idxl as IdxSize);
+                right_gather_idxs.push(idxr as IdxSize);
+            }
+        }
+        if !matched && matches!(params.args.how, JoinType::Left | JoinType::Right) {
+            left_gather_idxs.push(idxl as IdxSize);
+            right_gather_idxs.push(IdxSize::MAX);
+        }
+    }
+    if right_is_build {
+        swap(&mut left_gather_idxs, &mut right_gather_idxs);
+    }
+
+    // Remove the added row-encoded key columns
+    if params.left.on.len() > 1 {
+        left = left.drop(&params.left.key_col).unwrap();
+        right = right.drop(&params.right.key_col).unwrap();
+    }
+
+    let mut left_build = DataFrameBuilder::new(left.schema().clone());
+    let mut right_build = DataFrameBuilder::new(right.schema().clone());
+    left_build.opt_gather_extend(&left, &left_gather_idxs, ShareStrategy::Never);
+    right_build.opt_gather_extend(&right, &right_gather_idxs, ShareStrategy::Never);
+    left = left_build.freeze();
+    right = right_build.freeze();
+
+    // Coalsesce the key columns (and rename them)
+    if params.args.how == JoinType::Left {
+        for c in &params.left.on {
+            right.drop_in_place(c.as_str())?;
+        }
+    } else if params.args.how == JoinType::Right {
+        for c in &params.right.on {
+            left.drop_in_place(c.as_str())?;
+        }
+    }
+
+    // Rename any right columns to "{}_right"
+    rename_right_columns(&left, &mut right, params)?;
+
+    // for (left_on, right_on) in params.left_on.iter().zip(params.right_on.iter()) {
+    //     let left_col = df_left.column(left_on)?;
+    //     let right_col = df_right.column(right_on)?;
+    //     coalesce_columns(s)
+    //     df_left.replace(left_on, coalesced.into_column())?;
+    // }
+
+    // let left = self.drop_non_output_columns(left)?;
+    // let right = self.drop_non_output_columns(right)?;
+
+    left.hstack_mut(&right.get_columns())?;
+    let df = drop_non_output_columns(&left, params)?;
+    Ok(df)
+}
+
+fn rename_right_columns(
+    left: &DataFrame,
+    right: &mut DataFrame,
+    params: &MergeJoinParams,
+) -> PolarsResult<()> {
+    let left_cols: PlHashSet<PlSmallStr> = left
+        .get_column_names()
+        .into_iter()
+        .cloned()
+        .collect::<PlHashSet<_>>();
+    for col in right.get_column_names_owned() {
+        if left_cols.contains(&col) {
+            let new_name = format_pl_smallstr!("{}{}", col, params.args.suffix());
+            right.rename(&col, new_name).unwrap(); // FIXME: [amber] Potential quadratic behavior
+        }
+    }
+    Ok(())
+}
+
+fn drop_non_output_columns(df: &DataFrame, params: &MergeJoinParams) -> PolarsResult<DataFrame> {
+    let mut drop_cols = PlHashSet::with_capacity(df.width());
+    for col in df.get_column_names() {
+        if !key_is_in_output(col, params) {
+            drop_cols.insert(col.clone());
+        }
+    }
+    Ok(df.drop_many_amortized(&drop_cols))
+}
+
+fn key_is_in_output(col_name: &PlSmallStr, params: &MergeJoinParams) -> bool {
+    params.output_schema.contains(col_name)
+}
+
 fn append_key_column(
     df: &mut DataFrame,
     sp: &SideParams,
@@ -745,8 +759,4 @@ fn keys_le(left: &AnyValue, right: &AnyValue, params: &MergeJoinParams) -> bool 
 
 fn keys_gt(left: &AnyValue, right: &AnyValue, params: &MergeJoinParams) -> bool {
     !keys_le(left, right, params)
-}
-
-fn keys_ge(left: &AnyValue, right: &AnyValue, params: &MergeJoinParams) -> bool {
-    !keys_lt(left, right, params)
 }
