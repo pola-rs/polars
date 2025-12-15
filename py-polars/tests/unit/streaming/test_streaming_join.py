@@ -413,7 +413,7 @@ def test_cross_join_with_literal_column_25544() -> None:
     "on",
     [
         ["key_1"],
-        # ["key_1", "key_2"],
+        ["key_1", "key_2"],
     ],
 )
 @pytest.mark.parametrize(
@@ -502,6 +502,11 @@ def test_merge_join_dispatch(
         .set_sorted(*on, descending=descending, nulls_last=nulls_last)
     )
 
+    import sys
+
+    print(f"{df_left.collect() = }", file=sys.stderr)
+    print(f"{df_right.collect() = }", file=sys.stderr)
+
     q = df_left.join(
         df_right,
         on=on,
@@ -512,8 +517,6 @@ def test_merge_join_dispatch(
     dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
     expected = q.collect(engine="in-memory")
     actual = q.collect(engine="streaming")
-
-    import sys
 
     print(f"{df_left.collect() = }", file=sys.stderr)
     print(f"{df_right.collect() = }", file=sys.stderr)

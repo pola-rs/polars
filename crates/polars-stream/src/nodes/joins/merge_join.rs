@@ -190,6 +190,15 @@ impl MergeJoinNode {
         let join_type = &self.params.args.how;
         let is_right_join = *join_type == JoinType::Right;
 
+        if self.params.left.on.len() > 1 && !self.params.args.nulls_equal {
+            left.drop_in_place(&self.params.left.key_col)?;
+            append_key_column(&mut left, &self.params.left, true)?;
+        }
+        if self.params.right.on.len() > 1 && !self.params.args.nulls_equal {
+            right.drop_in_place(&self.params.right.key_col)?;
+            append_key_column(&mut right, &self.params.right, true)?;
+        }
+
         left.rechunk_mut();
         right.rechunk_mut();
 
@@ -397,7 +406,7 @@ impl ComputeNode for MergeJoinNode {
                                 break;
                             };
                             let mut df = m.into_df();
-                            append_key_columns(&mut df, &self.params.left, &self.params)?;
+                            append_key_column(&mut df, &self.params.left, false)?;
                             self.left_unmerged.push_back(df);
                         },
                         Right(NeedMore::Right | NeedMore::Both) if recv_right.is_some() => {
@@ -414,7 +423,7 @@ impl ComputeNode for MergeJoinNode {
                                 break;
                             };
                             let mut df = m.into_df();
-                            append_key_columns(&mut df, &self.params.right, &self.params)?;
+                            append_key_column(&mut df, &self.params.right, false)?;
                             self.right_unmerged.push_back(df);
                         },
 
@@ -646,6 +655,7 @@ fn vstack_head(unmerged: &mut VecDeque<DataFrame>, sp: &SideParams, params: &Mer
         false => IsSorted::Ascending,
         true => IsSorted::Descending,
     };
+    dbg!(&unmerged[0], &unmerged[1]);
     let mut df = unmerged.pop_front().unwrap();
     let col_idx = df.get_column_index(&sp.key_col).unwrap();
     df.vstack_mut_owned(unmerged.pop_front().unwrap()).unwrap();
@@ -656,12 +666,12 @@ fn vstack_head(unmerged: &mut VecDeque<DataFrame>, sp: &SideParams, params: &Mer
     unmerged.push_front(df);
 }
 
-fn append_key_columns(
+fn append_key_column(
     df: &mut DataFrame,
     sp: &SideParams,
-    params: &MergeJoinParams,
+    broadcast_nulls: bool,
 ) -> PolarsResult<()> {
-    debug_assert!(*df.schema() == sp.input_schema);
+    debug_assert_eq!(*df.schema(), sp.input_schema);
     if sp.on.len() > 1 {
         let columns = sp
             .on
@@ -674,7 +684,7 @@ fn append_key_columns(
             &columns,
             &sp.descending,
             &sp.nulls_last,
-            !params.args.nulls_equal,
+            broadcast_nulls,
         )?
         .into_column();
         df.hstack_mut(&[key])?;
@@ -697,12 +707,12 @@ async fn buffer_unmerged_from_pipe(
     };
     morsel.source_token().stop();
     let mut df = morsel.into_df();
-    append_key_columns(&mut df, sp, params).unwrap();
+    append_key_column(&mut df, sp, false).unwrap();
     unmerged.push_back(df);
 
     while let Ok(morsel) = port.recv().await {
         let mut df = morsel.into_df();
-        append_key_columns(&mut df, sp, params).unwrap();
+        append_key_column(&mut df, sp, false).unwrap();
         unmerged.push_back(df);
     }
 }
