@@ -138,11 +138,7 @@ impl<T: PolarsObject> ChunkShiftFill<ObjectType<T>, Option<ObjectType<T>>> for O
         let mut slice = self.slice(slice_offset, length);
 
         let mut fill = match &fill_value {
-            Some(val) => {
-                // full() clones the value for each element
-                ObjectChunked::<T>::full_null(self.name().clone(), fill_len)
-
-            },
+            Some(_val) => todo!(),
             None => {
                 ObjectChunked::<T>::full_null(self.name().clone(), fill_len)
             },

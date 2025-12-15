@@ -21,7 +21,7 @@ def test_shift_object() -> None:
     a = pl.Series("a", [1, 2, 3], dtype=pl.Object)
     assert a.shift(1).to_list() == [None, 1, 2]
     assert a.shift(-1).to_list() == [2, 3, None]
-    assert a.shift(-2).to_list() == [3, None, None]
+    assert a.shift(-2, fill_value=pl.lit(0, dtype=pl.Object)).to_list() == [3, 0, 0]
     assert a.shift(1).dtype == pl.Object
 
 
