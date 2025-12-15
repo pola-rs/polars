@@ -188,7 +188,12 @@ impl MergeJoinNode {
         _state: &StreamingExecutionState,
     ) -> PolarsResult<DataFrame> {
         let join_type = &self.params.args.how;
-        let is_right_join = *join_type == JoinType::Right;
+        let right_is_build = *join_type == JoinType::Right
+            || (*join_type == JoinType::Inner
+                && matches!(
+                    self.params.args.maintain_order,
+                    MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft,
+                ));
 
         if self.params.left.on.len() > 1 && !self.params.args.nulls_equal {
             left.drop_in_place(&self.params.left.key_col)?;
@@ -209,7 +214,7 @@ impl MergeJoinNode {
         let mut left_key = left.column(&self.params.left.key_col).unwrap();
         let mut right_key = right.column(&self.params.right.key_col).unwrap();
 
-        if is_right_join {
+        if right_is_build {
             swap(&mut left_key, &mut right_key);
         }
         let mut left_gather_idxs = Vec::new();
@@ -229,7 +234,7 @@ impl MergeJoinNode {
                 right_gather_idxs.push(IdxSize::MAX);
             }
         }
-        if is_right_join {
+        if right_is_build {
             swap(&mut left_gather_idxs, &mut right_gather_idxs);
         }
 

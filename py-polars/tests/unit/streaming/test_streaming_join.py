@@ -450,9 +450,9 @@ def test_cross_join_with_literal_column_25544() -> None:
     [
         "none",
         "left",
-        # "right",
-        # "right_left",
-        # "left_right",
+        "right",
+        "left_right",
+        "right_left",
     ],
 )
 @settings(max_examples=500)
