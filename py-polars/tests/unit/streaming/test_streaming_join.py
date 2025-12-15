@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Literal
 
-from hypothesis import given
+from hypothesis import given, settings
 import hypothesis.strategies as st
 import numpy as np
 import pandas as pd
@@ -449,12 +449,13 @@ def test_cross_join_with_literal_column_25544() -> None:
     "maintain_order",
     [
         "none",
-        # "left",
+        "left",
         # "right",
         # "right_left",
         # "left_right",
     ],
 )
+@settings(max_examples=500)
 @given(
     df_left=dataframes(
         cols=[
