@@ -134,14 +134,12 @@ impl<T: PolarsObject> ChunkShiftFill<ObjectType<T>, Option<ObjectType<T>>> for O
         let fill_len = abs(periods) as usize;
         let slice_offset = (-periods).max(0);
         let length = self.len() - fill_len;
-        
+
         let mut slice = self.slice(slice_offset, length);
 
         let mut fill = match &fill_value {
             Some(_val) => todo!(),
-            None => {
-                ObjectChunked::<T>::full_null(self.name().clone(), fill_len)
-            },
+            None => ObjectChunked::<T>::full_null(self.name().clone(), fill_len),
         };
 
         if periods < 0 {
