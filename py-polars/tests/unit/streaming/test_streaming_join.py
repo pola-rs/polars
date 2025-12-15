@@ -420,7 +420,7 @@ def test_cross_join_with_literal_column_25544() -> None:
     "how",
     [
         "inner",
-        # "left",
+        "left",
         # "right",
     ],
 )
