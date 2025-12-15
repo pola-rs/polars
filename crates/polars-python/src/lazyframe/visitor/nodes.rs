@@ -434,7 +434,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                         !matches!(
                             predicate_file_skip_applied,
                             Some(PredicateFileSkip {
-                                has_residual_predicate: false,
+                                no_residual_predicate: true,
                                 ..
                             })
                         )
