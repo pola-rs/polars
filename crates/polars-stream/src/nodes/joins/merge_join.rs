@@ -5,10 +5,8 @@ use arrow::Either;
 // use arrow::Either::{Left as Either::Left, Right as Either::Right};
 use arrow::array::builder::ShareStrategy;
 use polars_core::frame::builder::DataFrameBuilder;
-use polars_core::prelude::search_sorted::binary_search_ca;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_core::utils::last_non_null;
 use polars_ops::prelude::*;
 use polars_plan::prelude::*;
 use polars_utils::format_pl_smallstr;
@@ -32,6 +30,7 @@ use crate::pipe::{PortReceiver, RecvPort, SendPort};
 enum NeedMore {
     Left,
     Right,
+    Both,
 }
 
 #[derive(Debug)]
@@ -354,13 +353,14 @@ impl ComputeNode for MergeJoinNode {
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 loop {
                     let flush = self.state == Flushing;
-                    match find_mergeable(
+                    match dbg!(find_mergeable(
                         &mut self.left_unmerged,
                         &mut self.right_unmerged,
                         flush,
                         &self.params,
-                    )? {
+                    )?) {
                         Either::Left((left_chunk, right_chunk)) => {
+                            dbg!("MARK 1");
                             // [amber] TODO: put this into a distributor instead of computing the join serially
                             let joined = self.compute_join(left_chunk, right_chunk, state)?;
                             let source_token = SourceToken::new();
@@ -368,11 +368,8 @@ impl ComputeNode for MergeJoinNode {
                             send.send(morsel).await.unwrap(); // TODO [amber] Can this error be handled?
                             self.seq = self.seq.successor();
                         },
-                        Either::Right(NeedMore::Left) if self.state == Flushing => {
-                            self.right_unmerged.clear();
-                            return Ok(());
-                        },
-                        Either::Right(NeedMore::Left) if recv_left.is_some() => {
+                        Either::Right(NeedMore::Left | NeedMore::Both) if recv_left.is_some() => {
+                            dbg!("MARK 2");
                             // Need more left data
                             let Ok(m) = recv_left.as_mut().unwrap().recv().await else {
                                 buffer_unmerged_from_pipe(
@@ -388,7 +385,8 @@ impl ComputeNode for MergeJoinNode {
                             append_key_columns(&mut df, &self.params.left, &self.params)?;
                             self.left_unmerged.push_back(df);
                         },
-                        Either::Right(NeedMore::Right) if recv_right.is_some() => {
+                        Either::Right(NeedMore::Right | NeedMore::Both) if recv_right.is_some() => {
+                            dbg!("MARK 3");
                             // Need more right data
                             let Ok(m) = recv_right.as_mut().unwrap().recv().await else {
                                 buffer_unmerged_from_pipe(
@@ -404,7 +402,10 @@ impl ComputeNode for MergeJoinNode {
                             append_key_columns(&mut df, &self.params.right, &self.params)?;
                             self.right_unmerged.push_back(df);
                         },
-                        Either::Right(_) => break,
+                        Either::Right(_) => {
+                            dbg!("MARK 4");
+                            break;
+                        },
                     }
                 }
                 Ok(())
@@ -425,6 +426,7 @@ fn find_mergeable(
             Either::Left((right_df, left_df)) => Either::Left((left_df, right_df)),
             Either::Right(NeedMore::Left) => Either::Right(NeedMore::Right),
             Either::Right(NeedMore::Right) => Either::Right(NeedMore::Left),
+            Either::Right(NeedMore::Both) => Either::Right(NeedMore::Both),
         });
     } else {
         find_mergeable_inner(left, right, &params.left, &params.right, params, flush)
@@ -480,93 +482,128 @@ fn find_mergeable_inner(
         let right_span_start = right_key_val.slice(0, 1);
         let right_span_end = right_key_val.slice(right_key_val.len() as i64 - 1, 1);
 
-        if left_span_start == left_span_end && left.len() >= 2 {
+        // if left_span_start == left_span_end && left.len() >= 2 {
+        //     vstack_head(left, &left_params, params);
+        //     continue;
+        // } else if right_span_start == right_span_end && right.len() >= 2 {
+        //     vstack_head(right, &right_params, params);
+        //     continue;
+        // } else if left_span_start == left_span_end && !flush {
+        //     return Ok(Either::Right(NeedMore::Left));
+        // } else if right_span_start == right_span_end && !flush {
+        //     return Ok(Either::Right(NeedMore::Right));
+        // }
+
+        let spans_overlap_end = match keys_lt(
+            &left_span_start.get(0)?,
+            &right_span_start.get(0)?,
+            params.key_descending,
+            params.args.nulls_equal,
+            params.key_nulls_last,
+        ) {
+            true => &left_span_start,
+            false => &right_span_start,
+        };
+        let left_cutoff = binary_search_lower(
+            &left_key_val,
+            &spans_overlap_end.get(0)?,
+            params.key_descending,
+            params.args.nulls_equal,
+            params.key_nulls_last,
+        )? as i64
+            - 1;
+        let right_cutoff = binary_search_lower(
+            &right_key_val,
+            &spans_overlap_end.get(0)?,
+            params.key_descending,
+            params.args.nulls_equal,
+            params.key_nulls_last,
+        )? as i64
+            - 1;
+
+        // TODO: LEFT HERE [amber]
+        // I am really struggling with this logic.
+        //
+        // Btw. It is definitely important to keep remembering to take the *second to last*
+        // chunk every time
+        //
+        if left_cutoff <= 0 && left.len() > 1 {
             vstack_head(left, &left_params, params);
             continue;
-        } else if right_span_start == right_span_end && right.len() >= 2 {
+        } else if right_cutoff <= 0 && right.len() > 1 {
             vstack_head(right, &right_params, params);
             continue;
-        } else if left_span_start == left_span_end && !flush {
+        } else if !flush && left_cutoff <= 0 {
             return Ok(Either::Right(NeedMore::Left));
-        } else if right_span_start == right_span_end && !flush {
+        } else if !flush && right_cutoff <= 0 {
             return Ok(Either::Right(NeedMore::Right));
-        }
-
-        let left_span_end_val = left_span_start.get(0)?;
-        let right_span_end_val = right_span_start.get(0)?;
-        let spans_overlap_end =
-            match params.key_descending ^ (left_span_end_val < right_span_end_val) {
-                _ if params.key_nulls_last && right_span_end_val.is_null() => left_span_end,
-                _ if params.key_nulls_last && left_span_end_val.is_null() => right_span_end,
-                true => left_span_end,
-                false => right_span_end,
-            };
-        let (left_cutoff, right_cutoff);
-        if flush {
-            left_cutoff = find_item_offset(
-                &left_key_val,
-                &spans_overlap_end,
-                SearchSortedSide::Right,
-                params.key_descending,
-            )? + 1;
-            right_cutoff = find_item_offset(
-                &right_key_val,
-                &spans_overlap_end,
-                SearchSortedSide::Right,
-                params.key_descending,
-            )? + 1;
+        } else if flush {
+            // These are the last dataframes in the input
+            let left_df = left.pop_front().unwrap();
+            let right_df = right.pop_front().unwrap();
+            return Ok(Either::Left((left_df, right_df)));
         } else {
-            left_cutoff = find_item_offset(
-                &left_key_val,
-                &spans_overlap_end,
-                SearchSortedSide::Left,
-                params.key_descending,
-            )?;
-            right_cutoff = find_item_offset(
-                &right_key_val,
-                &spans_overlap_end,
-                SearchSortedSide::Left,
-                params.key_descending,
-            )?;
-        };
-
-        let left_df = left.pop_front().unwrap();
-        let right_df = right.pop_front().unwrap();
-        let (left_df, left_rest) = left_df.split_at(left_cutoff);
-        let (right_df, right_rest) = right_df.split_at(right_cutoff);
-        left.push_front(left_rest);
-        right.push_front(right_rest);
-        debug_assert!(left_df.height() > 0 || right_df.height() > 0);
-        return Ok(Either::Left((left_df, right_df)));
+            let (left_df, left_rest) = left_df.split_at(left_cutoff);
+            let (right_df, right_rest) = right_df.split_at(right_cutoff);
+            left.push_front(left_rest);
+            right.push_front(right_rest);
+            return Ok(Either::Left((left_df, right_df)));
+        }
     }
 }
 
-fn find_last_nonnull_index(s: &Series) -> PolarsResult<usize> {
-    let mut lo = 0;
-    let mut hi = s.len();
-    while lo < hi {
-        let mid = (lo + hi) / 2;
-        if s.get(mid)?.is_null() {
-            hi = mid;
-        } else {
-            lo = mid + 1;
-        }
-    }
-    Ok(lo)
-}
-
-fn find_item_offset(
+fn binary_search_lower(
     s: &Series,
-    search_value: &Series,
-    side: SearchSortedSide,
+    search_value: &AnyValue,
     descending: bool,
-) -> PolarsResult<i64> {
-    match descending {
-        true => debug_assert!(s.get_flags().is_sorted_descending()),
-        false => debug_assert!(s.get_flags().is_sorted_ascending()),
+    nulls_equal: bool,
+    nulls_last: bool,
+) -> PolarsResult<usize> {
+    let mut lower = 0;
+    let mut upper = s.len();
+    while lower < upper {
+        let mid = (lower + upper) / 2;
+        let mid_value = s.get(mid)?;
+        if keys_lt(
+            search_value,
+            &mid_value,
+            descending,
+            nulls_equal,
+            nulls_last,
+        ) {
+            upper = mid;
+        } else {
+            lower = mid + 1;
+        }
     }
-    let pos = search_sorted(&s, &search_value, side, descending).unwrap();
-    Ok(pos.iter().next().unwrap_or(Some(0)).unwrap() as i64)
+    return Ok(lower);
+}
+
+fn binary_search_upper(
+    s: &Series,
+    search_value: &AnyValue,
+    descending: bool,
+    nulls_equal: bool,
+    nulls_last: bool,
+) -> PolarsResult<usize> {
+    let mut lower = 0;
+    let mut upper = s.len();
+    while lower < upper {
+        let mid = (lower + upper) / 2;
+        let mid_value = s.get(mid)?;
+        if keys_lt(
+            search_value,
+            &mid_value,
+            descending,
+            nulls_equal,
+            nulls_last,
+        ) {
+            upper = mid;
+        } else {
+            lower = mid + 1;
+        }
+    }
+    return Ok(lower);
 }
 
 fn vstack_head(unmerged: &mut VecDeque<DataFrame>, sp: &SideParams, params: &MergeJoinParams) {
@@ -640,5 +677,37 @@ fn keys_equal(left: &AnyValue, right: &AnyValue, nulls_equal: bool) -> bool {
         nulls_equal
     } else {
         left == right
+    }
+}
+
+fn keys_lt(
+    left: &AnyValue,
+    right: &AnyValue,
+    descending: bool,
+    nulls_equal: bool,
+    nulls_last: bool,
+) -> bool {
+    if left.is_null() && right.is_null() {
+        nulls_equal
+    } else if nulls_last {
+        if left.is_null() {
+            false
+        } else if right.is_null() {
+            true
+        } else if descending {
+            left > right
+        } else {
+            left < right
+        }
+    } else {
+        if left.is_null() {
+            true
+        } else if right.is_null() {
+            false
+        } else if descending {
+            left > right
+        } else {
+            left < right
+        }
     }
 }

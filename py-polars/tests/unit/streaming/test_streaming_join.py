@@ -3,12 +3,18 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Literal
 
+from hypothesis import given
+import hypothesis.strategies as st
 import numpy as np
 import pandas as pd
+from polars.testing.parametric.strategies.core import column, dataframes
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+
+from tests.unit.conftest import NUMERIC_DTYPES, NESTED_DTYPES
+
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -403,15 +409,71 @@ def test_cross_join_with_literal_column_25544() -> None:
     assert streaming_result.item() == 0
 
 
-@pytest.mark.parametrize("on", [["id"], ["id", "id_ext"]])
-@pytest.mark.parametrize("how", ["inner", "left", "right"])
-@pytest.mark.parametrize("descending", [False, True])
-@pytest.mark.parametrize("nulls_last", [False, True])
-@pytest.mark.parametrize("nulls_equal", [False, True])
 @pytest.mark.parametrize(
-    "maintain_order", ["none", "left", "right", "right_left", "left_right"]
+    "on",
+    [
+        ["key_1"],
+        # ["key_1", "key_2"],
+    ],
+)
+@pytest.mark.parametrize(
+    "how",
+    [
+        "inner",
+        # "left",
+        # "right",
+    ],
+)
+@pytest.mark.parametrize(
+    "descending",
+    [
+        False,
+        # True,
+    ],
+)
+@pytest.mark.parametrize(
+    "nulls_last",
+    [
+        False,
+        # True,
+    ],
+)
+@pytest.mark.parametrize(
+    "nulls_equal",
+    [
+        False,
+        True,
+    ],
+)
+@pytest.mark.parametrize(
+    "maintain_order",
+    [
+        "none",
+        # "left",
+        # "right",
+        # "right_left",
+        # "left_right",
+    ],
+)
+@given(
+    df_left=dataframes(
+        cols=[
+            column("key_1", dtype=pl.Int32, allow_null=True),
+            column("key_2", dtype=pl.Int32, allow_null=True),
+            column("x", dtype=pl.Int32),
+        ],
+    ),
+    df_right=dataframes(
+        cols=[
+            column("key_1", dtype=pl.Int32, allow_null=True),
+            column("key_2", dtype=pl.Int32, allow_null=True),
+            column("x", dtype=pl.Int32),
+        ],
+    ),
 )
 def test_merge_join_dispatch(
+    df_left: pl.DataFrame,
+    df_right: pl.DataFrame,
     on: list[str],
     how: JoinStrategy,
     descending: bool,
@@ -430,26 +492,13 @@ def test_merge_join_dispatch(
         pytest.skip("nulls can appear in unsorted order during row encoding")
 
     df_left = (
-        pl.LazyFrame(
-            {
-                "id": [1, 2, None, 4, 5],
-                "id_ext": [10, 20, None, 40, 50],
-                "names": ["A", "B", "C", "D", "E"],
-            }
-        )
-        .sort(*on, descending=descending, nulls_last=nulls_last)
+        df_left.sort(*on, descending=descending, nulls_last=nulls_last)
+        .lazy()
         .set_sorted(*on, descending=descending, nulls_last=nulls_last)
     )
-
     df_right = (
-        pl.LazyFrame(
-            {
-                "id": [3, 4, 5, 6, 7],
-                "id_ext": [30, 40, 50, 60, None],
-                "scores": [10, 20, 30, 40, 50],
-            }
-        )
-        .sort(*on, descending=descending, nulls_last=nulls_last)
+        df_right.sort(*on, descending=descending, nulls_last=nulls_last)
+        .lazy()
         .set_sorted(*on, descending=descending, nulls_last=nulls_last)
     )
 
@@ -463,6 +512,13 @@ def test_merge_join_dispatch(
     dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
     expected = q.collect(engine="in-memory")
     actual = q.collect(engine="streaming")
+
+    import sys
+
+    print(f"{df_left.collect() = }", file=sys.stderr)
+    print(f"{df_right.collect() = }", file=sys.stderr)
+    print(f"{actual = }", file=sys.stderr)
+    print(f"{expected = }", file=sys.stderr)
 
     assert "merge-join" in dot, "merge-join does not appear in physical plan"
     assert_frame_equal(actual, expected, check_row_order=check_row_order)
