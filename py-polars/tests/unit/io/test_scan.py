@@ -1216,4 +1216,4 @@ def test_scan_with_schema_skips_schema_inference(
     schema = {"A": pl.Int64}
 
     q = scan_func(paths, schema=schema).head(0)
-    assert_frame_equal(q.collect(), pl.DataFrame(schema=schema))
+    assert_frame_equal(q.collect(engine="streaming"), pl.DataFrame(schema=schema))
