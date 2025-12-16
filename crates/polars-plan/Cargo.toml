@@ -111,6 +111,7 @@ list_filter = ["polars-ops/list_filter"]
 list_gather = ["polars-ops/list_gather"]
 list_count = ["polars-ops/list_count"]
 array_count = ["polars-ops/array_count", "dtype-array"]
+array_gather = ["polars-ops/array_gather", "dtype-array"]
 trigonometry = []
 sign = []
 timezones = ["chrono-tz", "polars-time/timezones", "polars-core/timezones", "regex"]
@@ -225,6 +226,7 @@ ir_serde = ["serde", "polars-utils/ir_serde"]
 
 [package.metadata.docs.rs]
 features = [
+  "array_gather",
   "bitwise",
   "temporal",
   "serde",
