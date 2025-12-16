@@ -509,7 +509,13 @@ on startup."#.trim_start())
             polars_err!(ComputeError:
                 "aggregation 'item' expected a single value, got none"
             )
-        } else if $n > 1 {
+        } else if $n > 100 {
+            if $allow_empty {
+                polars_err!(ComputeError: "aggregation 'item' expected no or a single value, got 100+ values")
+            } else {
+                polars_err!(ComputeError: "aggregation 'item' expected a single value, got 100+ values")
+            }
+        } else {
             if $allow_empty {
                 polars_err!(ComputeError:
                     "aggregation 'item' expected no or a single value, got {} values", $n
@@ -519,8 +525,6 @@ on startup."#.trim_start())
                     "aggregation 'item' expected a single value, got {} values", $n
                 )
             }
-        } else {
-            unreachable!()
         }
     };
 }

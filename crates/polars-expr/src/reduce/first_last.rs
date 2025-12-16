@@ -48,8 +48,18 @@ fn new_reduction_with_policy<P: Policy + 'static>(
 }
 
 trait Policy: Copy + Send + Sync + 'static {
+    type Count: Default + Clone + Copy + Send + Sync + 'static;
+
+    fn add_count(_a: &mut Self::Count, _b: usize) {}
+    fn combine_count(_a: &mut Self::Count, _b: &Self::Count) {}
+    fn check_count(_count: Self::Count, _allow_empty: bool) -> PolarsResult<()> {
+        Ok(())
+    }
+
     fn index(self, len: usize) -> usize;
     fn should_replace(self, new: u64, old: u64) -> bool;
+
+    #[inline(always)]
     fn item_policy(self) -> Option<bool> {
         None
     }
@@ -58,6 +68,8 @@ trait Policy: Copy + Send + Sync + 'static {
 #[derive(Clone, Copy)]
 pub struct First;
 impl Policy for First {
+    type Count = ();
+
     fn index(self, _len: usize) -> usize {
         0
     }
@@ -72,6 +84,8 @@ impl Policy for First {
 #[derive(Clone, Copy)]
 pub struct Last;
 impl Policy for Last {
+    type Count = ();
+
     fn index(self, len: usize) -> usize {
         len - 1
     }
@@ -86,6 +100,12 @@ struct Item {
     allow_empty: bool,
 }
 impl Policy for Item {
+    type Count = u8;
+
+    fn combine_count(a: &mut Self::Count, b: &Self::Count) {
+        *a = a.saturating_add(*b);
+    }
+
     fn index(self, _len: usize) -> usize {
         0
     }
@@ -97,15 +117,24 @@ impl Policy for Item {
     fn item_policy(self) -> Option<bool> {
         Some(self.allow_empty)
     }
+
+    fn check_count(count: Self::Count, allow_empty: bool) -> PolarsResult<()> {
+        polars_ensure!(
+            (allow_empty && count == 0) || count == 1,
+            item_agg_count_not_one = count,
+            allow_empty = allow_empty
+        );
+        Ok(())
+    }
 }
 
-struct NumFirstLastReducer<P: Policy, T>(P, PhantomData<T>);
+struct NumFirstLastReducer<P, T>(P, PhantomData<T>);
 
 #[derive(Clone, Debug, Default)]
-struct Value<T: Clone> {
+struct Value<T, C> {
     value: Option<T>,
     seq: u64,
-    count: u64,
+    count: C,
 }
 
 impl<P: Policy, T> Clone for NumFirstLastReducer<P, T> {
@@ -120,7 +149,7 @@ where
     T: PolarsNumericType,
 {
     type Dtype = T;
-    type Value = Value<T::Native>;
+    type Value = Value<T::Native, P::Count>;
 
     fn init(&self) -> Self::Value {
         Value::default()
@@ -135,7 +164,7 @@ where
             a.value = b.value;
             a.seq = b.seq;
         }
-        a.count += b.count;
+        P::combine_count(&mut a.count, &b.count);
     }
 
     fn reduce_one(&self, a: &mut Self::Value, b: Option<T::Native>, seq_id: u64) {
@@ -143,7 +172,7 @@ where
             a.value = b;
             a.seq = seq_id;
         }
-        a.count += b.is_some() as u64;
+        P::add_count(&mut a.count, b.is_some() as usize);
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, seq_id: u64) {
@@ -152,7 +181,7 @@ where
             v.value = val;
             v.seq = seq_id;
         }
-        v.count += ca.len() as u64;
+        P::add_count(&mut v.count, ca.len());
     }
 
     fn finish(
@@ -163,7 +192,7 @@ where
     ) -> PolarsResult<Series> {
         assert!(m.is_none()); // This should only be used with VecGroupedReduction.
         if let Some(allow_empty) = self.0.item_policy() {
-            check_item_count_is_one(&v, allow_empty)?;
+            check_item_count_is_one::<_, P>(&v, allow_empty)?;
         }
         let ca: ChunkedArray<T> = v
             .into_iter()
@@ -197,7 +226,7 @@ where
     P: Policy,
 {
     type Dtype = BinaryType;
-    type Value = Value<Vec<u8>>;
+    type Value = Value<Vec<u8>, P::Count>;
 
     fn init(&self) -> Self::Value {
         Value::default()
@@ -212,7 +241,7 @@ where
             a.value.clone_from(&b.value);
             a.seq = b.seq;
         }
-        a.count += b.count;
+        P::combine_count(&mut a.count, &b.count);
     }
 
     fn reduce_one(&self, a: &mut Self::Value, b: Option<&[u8]>, seq_id: u64) {
@@ -220,7 +249,7 @@ where
             replace_opt_bytes(&mut a.value, b);
             a.seq = seq_id;
         }
-        a.count += b.is_some() as u64;
+        P::add_count(&mut a.count, b.is_some() as usize);
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, seq_id: u64) {
@@ -228,7 +257,7 @@ where
             replace_opt_bytes(&mut v.value, ca.get(self.0.index(ca.len())));
             v.seq = seq_id;
         }
-        v.count += ca.len() as u64;
+        P::add_count(&mut v.count, ca.len());
     }
 
     fn finish(
@@ -239,7 +268,7 @@ where
     ) -> PolarsResult<Series> {
         assert!(m.is_none()); // This should only be used with VecGroupedReduction.
         if let Some(allow_empty) = self.0.item_policy() {
-            check_item_count_is_one(&v, allow_empty)?;
+            check_item_count_is_one::<_, P>(&v, allow_empty)?;
         }
         let ca: BinaryChunked = v
             .into_iter()
@@ -257,7 +286,7 @@ where
     P: Policy,
 {
     type Dtype = BooleanType;
-    type Value = Value<bool>;
+    type Value = Value<bool, P::Count>;
 
     fn init(&self) -> Self::Value {
         Value::default()
@@ -268,7 +297,7 @@ where
             a.value = b.value;
             a.seq = b.seq;
         }
-        a.count += b.count;
+        P::combine_count(&mut a.count, &b.count);
     }
 
     fn reduce_one(&self, a: &mut Self::Value, b: Option<bool>, seq_id: u64) {
@@ -276,7 +305,7 @@ where
             a.value = b;
             a.seq = seq_id;
         }
-        a.count += b.is_some() as u64;
+        P::add_count(&mut a.count, b.is_some() as usize);
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, seq_id: u64) {
@@ -284,7 +313,7 @@ where
             v.value = ca.get(self.0.index(ca.len()));
             v.seq = seq_id;
         }
-        v.count += ca.len() as u64;
+        P::add_count(&mut v.count, ca.len());
     }
 
     fn finish(
@@ -295,7 +324,7 @@ where
     ) -> PolarsResult<Series> {
         assert!(m.is_none()); // This should only be used with VecGroupedReduction.
         if let Some(allow_empty) = self.0.item_policy() {
-            check_item_count_is_one(&v, allow_empty)?;
+            check_item_count_is_one::<_, P>(&v, allow_empty)?;
         }
         let ca: BooleanChunked = v
             .into_iter()
@@ -310,10 +339,10 @@ struct GenericFirstLastGroupedReduction<P: Policy> {
     policy: P,
     values: Vec<AnyValue<'static>>,
     seqs: Vec<u64>,
-    counts: Vec<u64>,
+    counts: Vec<P::Count>,
     evicted_values: Vec<AnyValue<'static>>,
     evicted_seqs: Vec<u64>,
-    evicted_counts: Vec<u64>,
+    evicted_counts: Vec<P::Count>,
 }
 
 impl<P: Policy> GenericFirstLastGroupedReduction<P> {
@@ -345,7 +374,7 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
     fn resize(&mut self, num_groups: IdxSize) {
         self.values.resize(num_groups as usize, AnyValue::Null);
         self.seqs.resize(num_groups as usize, 0);
-        self.counts.resize(num_groups as usize, 0);
+        self.counts.resize(num_groups as usize, P::Count::default());
     }
 
     fn update_group(
@@ -366,7 +395,7 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
                     values.get(self.policy.index(values.len()))?.into_static();
                 self.seqs[group_idx as usize] = seq_id;
             }
-            self.counts[group_idx as usize] += values.len() as u64;
+            P::add_count(&mut self.counts[group_idx as usize], values.len());
         }
         Ok(())
     }
@@ -390,13 +419,13 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
                 self.evicted_values
                     .push(core::mem::replace(grp_val, AnyValue::Null));
                 self.evicted_seqs.push(core::mem::replace(grp_seq, 0));
-                self.evicted_counts.push(core::mem::replace(grp_count, 0));
+                self.evicted_counts.push(core::mem::take(grp_count));
             }
             if self.policy.should_replace(seq_id, *grp_seq) {
                 *grp_val = values.get_unchecked(*i as usize).into_static();
                 *grp_seq = seq_id;
             }
-            *self.counts.get_unchecked_mut(g.idx()) += 1;
+            P::add_count(self.counts.get_unchecked_mut(g.idx()), 1);
         }
         Ok(())
     }
@@ -420,7 +449,10 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
                     other.values.get_unchecked(si).clone();
                 *self.seqs.get_unchecked_mut(*g as usize) = *other.seqs.get_unchecked(si);
             }
-            *self.counts.get_unchecked_mut(*g as usize) += *other.counts.get_unchecked(si);
+            P::combine_count(
+                self.counts.get_unchecked_mut(*g as usize),
+                other.counts.get_unchecked(si),
+            );
         }
         Ok(())
     }
@@ -442,11 +474,7 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
         self.seqs.clear();
         if let Some(allow_empty) = self.policy.item_policy() {
             for count in self.counts.iter() {
-                polars_ensure!(
-                    (allow_empty && *count == 0) || *count == 1,
-                    item_agg_count_not_one = *count,
-                    allow_empty = allow_empty
-                );
+                P::check_count(*count, allow_empty)?;
             }
         }
         let phys_type = self.in_dtype.to_physical();
@@ -464,12 +492,12 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
     }
 }
 
-fn check_item_count_is_one<T: Clone>(v: &[Value<T>], allow_empty: bool) -> PolarsResult<()> {
-    if let Some(Value { count: n, .. }) = v
-        .iter()
-        .find(|v| !(allow_empty && v.count == 0) && v.count != 1)
-    {
-        polars_bail!(item_agg_count_not_one = *n, allow_empty = allow_empty);
+fn check_item_count_is_one<T, P: Policy>(
+    values: &[Value<T, P::Count>],
+    allow_empty: bool,
+) -> PolarsResult<()> {
+    for v in values {
+        P::check_count(v.count, allow_empty)?;
     }
     Ok(())
 }
