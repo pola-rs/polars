@@ -459,12 +459,8 @@ class ConnectionExecutor:
 
         # check if connection is already started (eg: user awaited `engine.connect()`);
         # if so, use it directly without entering the context manager again
-        try:
-            if object.__getattribute__(cursor, "sync_connection") is not None:
-                result = await cursor.execute(query, **options)
-                return result
-        except AttributeError:
-            pass
+        if getattr(cursor, "sync_connection", None) is not None:
+            return await cursor.execute(query, **options)
 
         async with cursor as conn:  # type: ignore[union-attr]
             if is_session and not hasattr(conn, "execute"):
