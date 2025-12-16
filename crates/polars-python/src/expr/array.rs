@@ -96,7 +96,7 @@ impl PyExpr {
             .into()
     }
 
-    // #[cfg(feature = "arr_gather")]
+    #[cfg(feature = "array_gather")]
     fn arr_gather(&self, index: PyExpr, null_on_oob: bool) -> Self {
         self.inner
             .clone()

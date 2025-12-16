@@ -120,7 +120,7 @@ impl ArrayNameSpace {
         )
     }
     /// Get items in every subarray by multiple indexes.
-    // #[cfg(feature = "arr_gather")]
+    #[cfg(feature = "array_gather")]
     pub fn gather(self, indices: Expr, null_on_oob: bool) -> Expr {
         self.0.map_binary(
             FunctionExpr::ArrayExpr(ArrayFunction::Gather(null_on_oob)),
