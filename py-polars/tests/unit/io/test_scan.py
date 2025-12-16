@@ -1208,7 +1208,7 @@ def test_scan_empty_paths_friendly_error(
         scan_function(tmp_path, glob=False).collect()
 
 
-@pytest.mark.parametrize("paths", [[], ["non-existent"]])
+@pytest.mark.parametrize("paths", [[], ["file:///non-existent"]])
 @pytest.mark.parametrize("scan_func", [pl.scan_parquet, pl.scan_csv, pl.scan_ndjson])
 def test_scan_with_schema_skips_schema_inference(
     paths: list[str], scan_func: Any
