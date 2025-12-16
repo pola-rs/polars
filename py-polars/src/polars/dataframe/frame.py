@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import io
 import os
 import random
 from collections import defaultdict
@@ -467,7 +468,10 @@ class DataFrame:
 
     @classmethod
     def deserialize(
-        cls, source: str | Path | IOBase, *, format: SerializationFormat = "binary"
+        cls,
+        source: str | bytes | Path | IOBase,
+        *,
+        format: SerializationFormat = "binary",
     ) -> DataFrame:
         """
         Read a serialized DataFrame from a file.
@@ -514,6 +518,8 @@ class DataFrame:
             source = BytesIO(source.getvalue().encode())
         elif isinstance(source, (str, Path)):
             source = normalize_filepath(source)
+        elif isinstance(source, bytes):
+            source = io.BytesIO(source)
 
         if format == "binary":
             deserializer = PyDataFrame.deserialize_binary
