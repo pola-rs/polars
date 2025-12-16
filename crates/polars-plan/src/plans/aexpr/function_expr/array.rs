@@ -37,6 +37,8 @@ pub enum IRArrayFunction {
     Explode(ExplodeOptions),
     Concat,
     Slice(i64, i64),
+    // #[cfg(feature = "arr_gather")]
+    Gather(bool),
     #[cfg(feature = "array_to_struct")]
     ToStruct(Option<DslNameGenerator>),
 }
@@ -101,6 +103,8 @@ impl IRArrayFunction {
             Slice(offset, length) => mapper
                 .ensure_is_array()?
                 .try_map_dtype(map_to_array_fixed_length(offset, length)),
+            // #[cfg(feature = "arr_gather")]
+            Gather(_) => mapper.ensure_is_array()?.with_same_dtype(),
             #[cfg(feature = "array_to_struct")]
             ToStruct(name_generator) => mapper.ensure_is_array()?.try_map_dtype(|dtype| {
                 let DataType::Array(inner, width) = dtype else {
@@ -154,6 +158,8 @@ impl IRArrayFunction {
             A::Explode { .. } => FunctionOptions::row_separable(),
             #[cfg(feature = "array_to_struct")]
             A::ToStruct(_) => FunctionOptions::elementwise(),
+            // #[cfg(feature = "arr_gather")]
+            A::Gather(_) => FunctionOptions::elementwise(),
         }
     }
 }
@@ -219,6 +225,8 @@ impl Display for IRArrayFunction {
             CountMatches => "count_matches",
             Shift => "shift",
             Slice(_, _) => "slice",
+            // #[cfg(feature = "arr_gather")]
+            Gather(_) => "gather",
             Explode { .. } => "explode",
             #[cfg(feature = "array_to_struct")]
             ToStruct(_) => "to_struct",

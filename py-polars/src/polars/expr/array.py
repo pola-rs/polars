@@ -669,6 +669,46 @@ class ExprArrayNameSpace:
         index_pyexpr = parse_into_expression(index)
         return wrap_expr(self._pyexpr.arr_get(index_pyexpr, null_on_oob))
 
+    def gather(
+        self, indices: Expr | list[int] | list[list[int]], *, null_on_oob: bool = False
+    ) -> Expr:
+        """
+        Take sublists by multiple indices.
+
+        The indices may be defined in a single column, or by sublists in another
+        column of dtype `List`.
+
+        Parameters
+        ----------
+        indices
+            Indices to return per subarray
+        null_on_oob
+            Behavior if an index is out of bounds:
+            True -> set as null
+            False -> raise an error
+            Note that defaulting to raising an error is much cheaper
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"arr": [[1, 2, 3], [4, 5, 6], [7, 8, 9]]},
+        ...     schema={"arr": pl.Array(pl.Int32, 3)},
+        ... )
+        >>> df.with_columns(gather=pl.col("a").arr.gather([0, 2]))
+        shape: (3, 2)
+        ┌─────────────┬──────────────┐
+        │ a           ┆ gather       │
+        │ ---         ┆ ---          │
+        │ list[i64]   ┆ list[i64]    │
+        ╞═════════════╪══════════════╡
+        │ [1, 2, 3]   ┆ [1, 3]       │
+        │ [4, 5, 6]   ┆ [4, 6]       │
+        │ [7, 8, 9]   ┆ [7, 9]       │
+        └─────────────┴──────────────┘
+        """
+        indices_pyexpr = parse_into_expression(indices)
+        return wrap_expr(self._pyexpr.arr_gather(indices_pyexpr, null_on_oob))
+
     def first(self) -> Expr:
         """
         Get the first value of the sub-arrays.

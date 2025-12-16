@@ -344,6 +344,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IA::CountMatches => A::CountMatches,
                 IA::Shift => A::Shift,
                 IA::Slice(offset, length) => A::Slice(offset, length),
+                // #[cfg(feature = "arr_gather")]
+                IA::Gather(v) => A::Gather(v),
                 IA::Explode(options) => A::Explode(options),
                 #[cfg(feature = "array_to_struct")]
                 IA::ToStruct(ng) => A::ToStruct(ng),

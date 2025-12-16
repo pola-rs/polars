@@ -41,6 +41,8 @@ pub fn function_expr_to_udf(func: IRArrayFunction) -> SpecialEq<Arc<dyn ColumnsU
         Shift => map_as_slice!(shift),
         Explode(options) => map_as_slice!(explode, options),
         Slice(offset, length) => map!(slice, offset, length),
+        // #[cfg(feature = "arr_gather")]
+        Gather(null_on_oob) => map_as_slice!(gather, null_on_oob),
         #[cfg(feature = "array_to_struct")]
         ToStruct(ng) => map!(arr_to_struct, ng.clone()),
     }
@@ -198,6 +200,16 @@ pub(super) fn shift(s: &[Column]) -> PolarsResult<Column> {
 pub(super) fn slice(s: &Column, offset: i64, length: i64) -> PolarsResult<Column> {
     let ca = s.array()?;
     ca.array_slice(offset, length).map(Column::from)
+}
+
+// #[cfg(feature = "arr_gather")]
+pub(super) fn gather(args: &[Column], null_on_oob: bool) -> PolarsResult<Column> {
+    let ca = &args[0];
+    let idx = &args[1];
+    let ca = ca.array()?;
+
+    ca.arr_gather(idx.as_materialized_series(), null_on_oob)
+        .map(Column::from)
 }
 
 fn explode(c: &[Column], options: ExplodeOptions) -> PolarsResult<Column> {
