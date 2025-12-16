@@ -3,7 +3,6 @@ use std::mem::swap;
 use std::ops::BitOr;
 
 use arrow::array::builder::ShareStrategy;
-use arrow::bitmap::{Bitmap, MutableBitmap};
 use either::{Either, Left, Right};
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
@@ -352,6 +351,12 @@ impl ComputeNode for MergeJoinNode {
 
                         Right(NeedMore::Finished) => {
                             dbg!("breaking because we are finished");
+                            dbg!(
+                                left_unmerged,
+                                left_unmerged_nulls,
+                                right_unmerged,
+                                right_unmerged_nulls
+                            );
                             break;
                         },
                         Right(other) => {
@@ -388,13 +393,15 @@ fn find_mergeable(
     r_done: bool,
     p: &MergeJoinParams,
 ) -> PolarsResult<Either<(DataFrame, DataFrame), NeedMore>> {
+    dbg!(&l, &l_nulls, &r_nulls, &r, l_done, r_done);
     if p.args.how == JoinType::Right {
         let mergable = find_mergeable_inner(r, l, &p.right, &p.left, p, r_done, l_done)?;
         if let Left((df2, df1)) = mergable {
             return Ok(Left((df1, df2)));
         }
-        let mergeable_nulls =
-            (find_mergeable_nulls(r_nulls, l_nulls, &p.right, &p.left, p, r_done, l_done)?);
+        let mergeable_nulls = dbg!(find_mergeable_nulls(
+            r_nulls, l_nulls, &p.right, &p.left, p, r_done, l_done
+        )?);
         if let Left((df2, df1)) = mergeable_nulls {
             return Ok(Left((df1, df2)));
         }
@@ -406,8 +413,9 @@ fn find_mergeable(
         if mergable.is_left() {
             return Ok(mergable);
         }
-        let mergeable_nulls =
-            (find_mergeable_nulls(l_nulls, r_nulls, &p.left, &p.right, p, l_done, r_done)?);
+        let mergeable_nulls = dbg!(find_mergeable_nulls(
+            l_nulls, r_nulls, &p.left, &p.right, p, l_done, r_done
+        )?);
         if mergeable_nulls.is_left() {
             return Ok(mergeable_nulls);
         }
@@ -646,10 +654,12 @@ fn compute_join(
     params: &MergeJoinParams,
 ) -> PolarsResult<DataFrame> {
     let join_type = &params.args.how;
-    let right_is_build = *join_type == JoinType::Right;
-
-    dbg!(&left);
-    dbg!(&right);
+    let right_is_build = *join_type == JoinType::Right
+        || (*join_type == JoinType::Inner
+            && matches!(
+                params.args.maintain_order,
+                MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft,
+            ));
 
     left.rechunk_mut();
     right.rechunk_mut();
@@ -659,45 +669,29 @@ fn compute_join(
 
     let mut left_key = left.column(&params.left.key_col).unwrap();
     let mut right_key = right.column(&params.right.key_col).unwrap();
-    let mut left_params = &params.left;
-    let mut right_params = &params.right;
 
     if right_is_build {
         swap(&mut left_key, &mut right_key);
-        swap(&mut left_params, &mut right_params);
     }
     let mut left_gather_idxs = Vec::new();
     let mut right_gather_idxs = Vec::new();
-    let mut left_has_match = MutableBitmap::from_len_zeroed(left_key.len());
-    let mut right_has_match = MutableBitmap::from_len_zeroed(right_key.len());
     // TODO: [amber] This is still quadratic
     for (idxl, left_key) in left_key.as_materialized_series().iter().enumerate() {
+        let mut matched = false;
         for (idxr, right_key) in right_key.as_materialized_series().iter().enumerate() {
             if keys_eq(&left_key, &right_key, &params) {
-                left_has_match.set(idxl, true);
-                right_has_match.set(idxr, true);
+                matched = true;
                 left_gather_idxs.push(idxl as IdxSize);
                 right_gather_idxs.push(idxr as IdxSize);
             }
         }
-    }
-    if left_params.emit_unmatched {
-        for (idxl, _) in left_has_match.into_iter().enumerate().filter(|(_, m)| !*m) {
+        if !matched && matches!(params.args.how, JoinType::Left | JoinType::Right) {
             left_gather_idxs.push(idxl as IdxSize);
             right_gather_idxs.push(IdxSize::MAX);
         }
     }
-    if right_params.emit_unmatched {
-        for (idxr, _) in right_has_match.into_iter().enumerate().filter(|(_, m)| !*m) {
-            left_gather_idxs.push(IdxSize::MAX);
-            right_gather_idxs.push(idxr as IdxSize);
-        }
-    }
-    drop(left_has_match);
-    drop(right_has_match);
     if right_is_build {
         swap(&mut left_gather_idxs, &mut right_gather_idxs);
-        swap(&mut left_params, &mut right_params);
     }
 
     // Remove the added row-encoded key columns
