@@ -1,7 +1,7 @@
 use arrow::array::builder::{ShareStrategy, make_builder};
 use arrow::array::{Array, FixedSizeListArray};
 use arrow::bitmap::BitmapBuilder;
-// #[cfg(feature = "arr_gather")]
+#[cfg(feature = "array_gather")]
 use num_traits::{NumCast, Signed, ToPrimitive, Zero};
 use polars_core::prelude::arity::unary_kernel;
 use polars_core::utils::slice_offsets;
@@ -253,7 +253,7 @@ pub trait ArrayNameSpace: AsArray {
         Ok(slice_arr.into_series())
     }
 
-    // #[cfg(feature = "arr_gather")]
+    #[cfg(feature = "array_gather")]
     fn arr_gather(&self, idx: &Series, null_on_oob: bool) -> PolarsResult<Series> {
         let array_ca = self.as_array();
         let idx_ca = idx.list()?;
@@ -376,7 +376,7 @@ pub trait ArrayNameSpace: AsArray {
 
 impl ArrayNameSpace for ArrayChunked {}
 
-// #[cfg(feature = "arr_gather")]
+#[cfg(feature = "array_gather")]
 fn take_series(s: &Series, idx: Series, null_on_oob: bool) -> PolarsResult<Series> {
     let len = s.len();
     let idx = cast_index(idx, len, null_on_oob)?;
@@ -384,7 +384,7 @@ fn take_series(s: &Series, idx: Series, null_on_oob: bool) -> PolarsResult<Serie
     s.take(idx)
 }
 
-// #[cfg(feature = "arr_gather")]
+#[cfg(feature = "array_gather")]
 fn cast_signed_index_ca<T: PolarsNumericType>(idx: &ChunkedArray<T>, len: usize) -> Series
 where
     T::Native: Copy + PartialOrd + PartialEq + NumCast + Signed + Zero,
@@ -395,7 +395,7 @@ where
         .into_series()
 }
 
-// #[cfg(feature = "arr_gather")]
+#[cfg(feature = "array_gather")]
 fn cast_unsigned_index_ca<T: PolarsNumericType>(idx: &ChunkedArray<T>, len: usize) -> Series
 where
     T::Native: Copy + PartialOrd + ToPrimitive,
@@ -415,7 +415,7 @@ where
         .into_series()
 }
 
-// #[cfg(feature = "arr_gather")]
+#[cfg(feature = "array_gather")]
 fn cast_index(idx: Series, len: usize, null_on_oob: bool) -> PolarsResult<Series> {
     let idx_null_count = idx.null_count();
     use DataType::*;
