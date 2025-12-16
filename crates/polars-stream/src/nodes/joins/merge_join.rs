@@ -55,6 +55,7 @@ struct SideParams {
     key_col: PlSmallStr,
     descending: Vec<bool>,
     nulls_last: Vec<bool>,
+    emit_unmatched: bool,
 }
 
 #[derive(Debug)]
@@ -159,6 +160,7 @@ impl MergeJoinNode {
             key_col: left_key_col,
             descending: left_descending,
             nulls_last: left_nulls_last,
+            emit_unmatched: matches!(args.how, JoinType::Left | JoinType::Full),
         };
         let right = SideParams {
             input_schema: right_input_schema,
@@ -167,6 +169,7 @@ impl MergeJoinNode {
             key_col: right_key_col,
             descending: right_descending,
             nulls_last: right_nulls_last,
+            emit_unmatched: matches!(args.how, JoinType::Right | JoinType::Full),
         };
         let params = MergeJoinParams {
             left,
@@ -375,8 +378,13 @@ fn find_mergeable_inner(
     loop {
         if left_done && left.is_empty() && right_done && right.is_empty() {
             return (Ok(Right(NeedMore::Finished)));
+        } else if left_done && left.is_empty() && !right_params.emit_unmatched {
+            right.clear();
+            return (Ok(Right(NeedMore::Finished)));
+        } else if right_done && right.is_empty() && !left_params.emit_unmatched {
+            left.clear();
+            return (Ok(Right(NeedMore::Finished)));
         } else if left_done && left.is_empty() {
-            // [amber] Also done here in case of LEFT join, right?
             return (Ok(Left((
                 DataFrame::empty_with_schema(&left_params.ir_schema),
                 right.pop_front().unwrap(),
