@@ -7,6 +7,8 @@ use pyo3::types::PyTuple;
 use super::*;
 use crate::error::PyPolarsErr;
 use crate::prelude::*;
+#[cfg(feature = "object")]
+use crate::series::construction::series_from_objects;
 use crate::{PySeries, raise_err};
 
 #[pymethods]
@@ -37,6 +39,20 @@ impl PyDataFrame {
 
         // Simple case: return type set.
         if let Some(output_type) = &output_type {
+            // If the output type is Object we should not go through AnyValue.
+            #[cfg(feature = "object")]
+            if let DataType::Object(_) = output_type.0 {
+                let objects = lambda_result_iter
+                    .map(|res| {
+                        Ok(ObjectValue {
+                            inner: res?.unbind(),
+                        })
+                    })
+                    .collect::<PyResult<Vec<_>>>()?;
+                let s = series_from_objects(py, PlSmallStr::from_static("map"), objects);
+                return Ok((PySeries::from(s).into_py_any(py)?, false));
+            }
+
             let avs = lambda_result_iter
                 .map(|res| res?.extract::<Wrap<AnyValue>>().map(|w| w.0))
                 .collect::<PyResult<Vec<AnyValue>>>()?;

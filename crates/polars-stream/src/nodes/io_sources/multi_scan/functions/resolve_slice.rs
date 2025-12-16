@@ -8,11 +8,13 @@ use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 
 use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
+use crate::execute::StreamingExecutionState;
 use crate::nodes::io_sources::multi_scan::pipeline::models::ResolvedSliceInfo;
 use crate::nodes::io_sources::multi_scan::{MultiScanConfig, components};
 
 pub async fn resolve_to_positive_slice(
     config: &MultiScanConfig,
+    execution_state: &StreamingExecutionState,
 ) -> PolarsResult<ResolvedSliceInfo> {
     match config.pre_slice.clone() {
         None => Ok(ResolvedSliceInfo {
@@ -31,12 +33,15 @@ pub async fn resolve_to_positive_slice(
             row_deletions: Default::default(),
         }),
 
-        Some(_) => resolve_negative_slice(config).await,
+        Some(_) => resolve_negative_slice(config, execution_state).await,
     }
 }
 
 /// Translates a negative slice to positive slice.
-async fn resolve_negative_slice(config: &MultiScanConfig) -> PolarsResult<ResolvedSliceInfo> {
+async fn resolve_negative_slice(
+    config: &MultiScanConfig,
+    execution_state: &StreamingExecutionState,
+) -> PolarsResult<ResolvedSliceInfo> {
     let verbose = config.verbose;
 
     let pre_slice @ Slice::Negative {
@@ -68,7 +73,8 @@ async fn resolve_negative_slice(config: &MultiScanConfig) -> PolarsResult<Resolv
         });
     }
 
-    let deletion_files_provider = DeletionFilesProvider::new(config.deletion_files.clone());
+    let deletion_files_provider =
+        DeletionFilesProvider::new(config.deletion_files.clone(), execution_state);
     let num_pipelines = config.num_pipelines();
 
     let mut initialized_readers =
@@ -88,19 +94,24 @@ async fn resolve_negative_slice(config: &MultiScanConfig) -> PolarsResult<Resolv
             let file_reader_builder = config.file_reader_builder.clone();
             let deletion_files_provider = deletion_files_provider.clone();
 
+            let reader = sources
+                .get(scan_source_idx)
+                .unwrap()
+                .into_owned()
+                .and_then(|source| {
+                    let mut reader = file_reader_builder.build_file_reader(
+                        source,
+                        cloud_options.clone(),
+                        scan_source_idx,
+                    );
+
+                    reader.prepare_read()?;
+
+                    Ok(reader)
+                });
+
             AbortOnDropHandle::new(async_executor::spawn(TaskPriority::Low, async move {
-                let mut reader =
-                    sources
-                        .get(scan_source_idx)
-                        .unwrap()
-                        .into_owned()
-                        .map(|source| {
-                            file_reader_builder.build_file_reader(
-                                source,
-                                cloud_options.clone(),
-                                scan_source_idx,
-                            )
-                        })?;
+                let mut reader = reader?;
 
                 if verbose {
                     eprintln!("resolve_negative_slice(): init scan source {scan_source_idx}");

@@ -5,11 +5,13 @@ use futures::StreamExt;
 use polars_core::prelude::PlHashMap;
 use polars_error::PolarsResult;
 use polars_mem_engine::scan_predicate::initialize_scan_predicate;
+use polars_plan::dsl::PredicateFileSkip;
 use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 
 use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
 use crate::async_primitives::connector::{self};
+use crate::execute::StreamingExecutionState;
 use crate::nodes::io_sources::multi_scan::components::bridge::{BridgeRecvPort, BridgeState};
 use crate::nodes::io_sources::multi_scan::components::row_deletions::{
     DeletionFilesProvider, ExternalFilterMask, RowDeletionsInit,
@@ -27,7 +29,10 @@ use crate::nodes::io_sources::multi_scan::pipeline::tasks::reader_starter::{
 use crate::nodes::io_sources::multi_scan::reader_interface::FileReader;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
 
-pub fn initialize_multi_scan_pipeline(config: Arc<MultiScanConfig>) -> InitializedPipelineState {
+pub fn initialize_multi_scan_pipeline(
+    config: Arc<MultiScanConfig>,
+    execution_state: StreamingExecutionState,
+) -> InitializedPipelineState {
     assert!(config.num_pipelines() > 0);
 
     if config.verbose {
@@ -52,7 +57,8 @@ pub fn initialize_multi_scan_pipeline(config: Arc<MultiScanConfig>) -> Initializ
 
     let task_handle =
         AbortOnDropHandle::new(async_executor::spawn(TaskPriority::Low, async move {
-            finish_initialize_multi_scan_pipeline(config, bridge_recv_port_tx).await?;
+            finish_initialize_multi_scan_pipeline(config, bridge_recv_port_tx, execution_state)
+                .await?;
             bridge_handle.await;
             Ok(())
         }));
@@ -67,6 +73,7 @@ pub fn initialize_multi_scan_pipeline(config: Arc<MultiScanConfig>) -> Initializ
 async fn finish_initialize_multi_scan_pipeline(
     config: Arc<MultiScanConfig>,
     bridge_recv_port_tx: connector::Sender<BridgeRecvPort>,
+    execution_state: StreamingExecutionState,
 ) -> PolarsResult<()> {
     let verbose = config.verbose;
 
@@ -77,8 +84,14 @@ async fn finish_initialize_multi_scan_pipeline(
             config.table_statistics.as_ref(),
             verbose,
         )?,
-        Some(false) => (None, config.predicate.as_ref()),
-        Some(true) => (None, None),
+        Some(PredicateFileSkip {
+            no_residual_predicate: false,
+            ..
+        }) => (None, config.predicate.as_ref()),
+        Some(PredicateFileSkip {
+            no_residual_predicate: true,
+            ..
+        }) => (None, None),
     };
 
     if let Some(skip_files_mask) = &skip_files_mask {
@@ -185,7 +198,7 @@ async fn finish_initialize_multi_scan_pipeline(
                 }
             }
 
-            resolve_to_positive_slice(&config).await?
+            resolve_to_positive_slice(&config, &execution_state).await?
         },
     };
 
@@ -283,7 +296,8 @@ async fn finish_initialize_multi_scan_pipeline(
         let sources = config.sources.clone();
         let cloud_options = config.cloud_options.clone();
         let file_reader_builder = config.file_reader_builder.clone();
-        let deletion_files_provider = DeletionFilesProvider::new(config.deletion_files.clone());
+        let deletion_files_provider =
+            DeletionFilesProvider::new(config.deletion_files.clone(), &execution_state);
 
         futures::stream::iter(range)
             .map(move |scan_source_idx| {

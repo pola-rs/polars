@@ -796,16 +796,6 @@ impl<'a> FieldsMapper<'a> {
 
         Ok(self)
     }
-
-    /// Validate that the dtype is a List.
-    pub fn ensure_is_list(self) -> PolarsResult<Self> {
-        let dtype = self.fields[0].dtype();
-        polars_ensure!(
-            dtype.is_list(),
-            InvalidOperation:"expected List data type for list operation, got: {dtype}"
-        );
-        Ok(self)
-    }
 }
 
 pub(crate) fn args_to_supertype<D: AsRef<DataType>>(dtypes: &[D]) -> PolarsResult<DataType> {
