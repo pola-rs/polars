@@ -394,7 +394,7 @@ fn find_mergeable(
             return Ok(Left((df1, df2)));
         }
         let mergeable_nulls =
-            (find_mergeable_nulls(r_nulls, l_nulls, &p.right, &p.left, p, r_done, l_done)?);
+            (find_mergeable_nulls_inner(r_nulls, l_nulls, &p.right, &p.left, p, r_done, l_done)?);
         if let Left((df2, df1)) = mergeable_nulls {
             return Ok(Left((df1, df2)));
         }
@@ -407,7 +407,7 @@ fn find_mergeable(
             return Ok(mergable);
         }
         let mergeable_nulls =
-            (find_mergeable_nulls(l_nulls, r_nulls, &p.left, &p.right, p, l_done, r_done)?);
+            (find_mergeable_nulls_inner(l_nulls, r_nulls, &p.left, &p.right, p, l_done, r_done)?);
         if mergeable_nulls.is_left() {
             return Ok(mergeable_nulls);
         }
@@ -553,7 +553,7 @@ fn find_mergeable_inner(
     }
 }
 
-fn find_mergeable_nulls(
+fn find_mergeable_nulls_inner(
     l: &mut VecDeque<DataFrame>,
     r: &mut VecDeque<DataFrame>,
     l_params: &SideParams,
@@ -646,7 +646,7 @@ fn compute_join(
     params: &MergeJoinParams,
 ) -> PolarsResult<DataFrame> {
     let join_type = &params.args.how;
-    let right_is_build = *join_type == JoinType::Right;
+    let right_is_build = params.args.maintain_order == (MaintainOrderJoin::Right);
 
     dbg!(&left);
     dbg!(&right);
@@ -672,17 +672,17 @@ fn compute_join(
     let mut right_has_match = MutableBitmap::from_len_zeroed(right_key.len());
     // TODO: [amber] This is still quadratic
     for (idxl, left_key) in left_key.as_materialized_series().iter().enumerate() {
+        let mut matched = false;
         for (idxr, right_key) in right_key.as_materialized_series().iter().enumerate() {
             if keys_eq(&left_key, &right_key, &params) {
                 left_has_match.set(idxl, true);
                 right_has_match.set(idxr, true);
+                matched = true;
                 left_gather_idxs.push(idxl as IdxSize);
                 right_gather_idxs.push(idxr as IdxSize);
             }
         }
-    }
-    if left_params.emit_unmatched {
-        for (idxl, _) in left_has_match.into_iter().enumerate().filter(|(_, m)| !*m) {
+        if left_params.emit_unmatched && !matched {
             left_gather_idxs.push(idxl as IdxSize);
             right_gather_idxs.push(IdxSize::MAX);
         }
