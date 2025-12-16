@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import datetime
+import re
 from typing import Any
 
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import ComputeError, InvalidOperationError, OutOfBoundsError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -160,6 +161,81 @@ def test_arr_slice_on_series(as_array: bool) -> None:
         assert s.arr.head(-1, as_array=as_array).to_list() == [[1, 2, 3], [10, 2, 1]]
         assert s.arr.head(-2, as_array=as_array).to_list() == [[1, 2], [10, 2]]
         assert s.arr.head(-3, as_array=as_array).to_list() == [[1], [10]]
+
+
+def test_array_gather() -> None:
+    s = pl.Series("a", [[1, 2, 3], [4, 5, 6], [6, 7, 8]], dtype=pl.Array(pl.Int32, 3))
+    assert s.arr.gather([0, 1]).to_list() == [[1, 2], [4, 5], [6, 7]]
+    assert s.arr.gather([-1, 1]).to_list() == [[3, 2], [6, 5], [8, 7]]
+
+    # use another list to make sure negative indices are respected
+    gatherer = pl.Series([[-1, 1], [-1, 1], [-1, -2]])
+    assert s.arr.gather(gatherer).to_list() == [[3, 2], [6, 5], [8, 7]]
+    with pytest.raises(OutOfBoundsError, match=r"gather indices are out of bounds"):
+        s.arr.gather([1, 3])
+    s = pl.Series([["A"], ["A"], ["B"], None, ["e"]], dtype=pl.Array(pl.String, 1))
+
+    assert s.arr.gather([0, 2], null_on_oob=True).to_list() == [
+        ["A", None],
+        ["A", None],
+        ["B", None],
+        None,
+        ["e", None],
+    ]
+
+    s = pl.Series([[42, 1, 2], [5, 6, 7]], dtype=pl.Array(pl.Int32, 3))
+
+    with pytest.raises(OutOfBoundsError, match=r"gather indices are out of bounds"):
+        s.arr.gather(pl.Series([[0, 1, 2, 3], [0, 1, 2, 3]]))
+
+    assert s.arr.gather([0, 1, 2, 3], null_on_oob=True).to_list() == [
+        [42, 1, 2, None],
+        [5, 6, 7, None],
+    ]
+
+
+def test_list_gather_wrong_indices_list_type() -> None:
+    a = pl.Series("a", [[1, 2, 3], [4, 5, 6], [6, 7, 8]], dtype=pl.Array(pl.Int64, 3))
+    expected = pl.Series("a", [[1, 2], [4], [6, 8]])
+    indices_series = pl.Series("indices", [[0, 1], [0], [0, 2]])
+
+    # int8
+    result = a.arr.gather(indices=indices_series.cast(pl.List(pl.Int8)))
+    assert_series_equal(result, expected)
+
+    # int16
+    result = a.arr.gather(indices=indices_series.cast(pl.List(pl.Int16)))
+    assert_series_equal(result, expected)
+
+    # int32
+    result = a.arr.gather(indices=indices_series.cast(pl.List(pl.Int32)))
+    assert_series_equal(result, expected)
+
+    # int64
+    result = a.arr.gather(indices=indices_series.cast(pl.List(pl.Int64)))
+    assert_series_equal(result, expected)
+
+    # uint8
+    result = a.arr.gather(indices=indices_series.cast(pl.List(pl.UInt8)))
+    assert_series_equal(result, expected)
+
+    # uint16
+    result = a.arr.gather(indices=indices_series.cast(pl.List(pl.UInt16)))
+    assert_series_equal(result, expected)
+
+    # uint32
+    result = a.arr.gather(indices=indices_series.cast(pl.List(pl.UInt32)))
+    assert_series_equal(result, expected)
+
+    # uint64
+    result = a.arr.gather(indices=indices_series.cast(pl.List(pl.UInt64)))
+    assert_series_equal(result, expected)
+
+    with pytest.raises(
+        ComputeError,
+        match=re.escape("cannot use dtype `str` as an index"),
+    ):
+        a.arr.gather(pl.Series([["2"], ["2"], ["2"]]))
 
 
 def test_arr_unique() -> None:
