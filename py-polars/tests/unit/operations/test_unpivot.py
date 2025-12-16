@@ -284,10 +284,12 @@ def test_unpivot_filter_opt() -> None:
 
 
 def test_unpivot_variable_value_name_25681() -> None:
-    assert_frame_equal(
-        pl.select().unpivot(variable_name="foo"),
-        pl.DataFrame([], schema={"foo": pl.String, "value": pl.Null}),
-    )
+    schema = {"foo": pl.String, "value": pl.Null}
+
+    q = pl.LazyFrame().unpivot(variable_name="foo")
+
+    assert q.collect_schema() == schema
+    assert_frame_equal(q.collect(), pl.DataFrame(schema=schema))
 
 
 def test_unpivot_projection_pushdown_schema_25720() -> None:
