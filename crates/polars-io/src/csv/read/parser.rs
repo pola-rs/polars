@@ -2,6 +2,7 @@ use memchr::memchr2_iter;
 use polars_core::prelude::*;
 use polars_core::{POOL, config};
 use polars_error::feature_gated;
+use polars_utils::error::SanitizeErrorDetail;
 use polars_utils::mmap::MMapSemaphore;
 use polars_utils::plpath::PlPathRef;
 use polars_utils::select::select_unpredictable;
@@ -1066,6 +1067,10 @@ pub(super) fn parse_lines(
                                 .map_err(|e| {
                                     let bytes_offset = offset + field.as_ptr() as usize - start;
                                     let unparsable = String::from_utf8_lossy(field);
+                                    // Sanitize the unparsable value to prevent terminal control
+                                    // character injection (e.g., when accidentally reading binary
+                                    // files like parquet with the CSV reader).
+                                    let sanitized = SanitizeErrorDetail(&unparsable);
                                     let column_name = schema.get_at_index(idx as usize).unwrap().0;
                                     polars_err!(
                                         ComputeError:
@@ -1078,12 +1083,12 @@ pub(super) fn parse_lines(
                                         - setting `ignore_errors` to `True`,\n\
                                         - adding `{}` to the `null_values` list.\n\n\
                                         Original error: ```{}```",
-                                        &unparsable,
+                                        &sanitized,
                                         buf.dtype(),
                                         column_name,
                                         idx + 1,
                                         bytes_offset,
-                                        &unparsable,
+                                        &sanitized,
                                         e
                                     )
                                 })?;
