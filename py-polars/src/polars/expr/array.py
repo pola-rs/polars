@@ -691,20 +691,20 @@ class ExprArrayNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame(
-        ...     {"arr": [[1, 2, 3], [4, 5, 6], [7, 8, 9]]},
-        ...     schema={"arr": pl.Array(pl.Int32, 3)},
+        ...     {"a": [[1, 2, 3], [4, 5, 6], [7, 8, 9]]},
+        ...     schema={"a": pl.Array(pl.Int32, 3)},
         ... )
         >>> df.with_columns(gather=pl.col("a").arr.gather([0, 2]))
         shape: (3, 2)
-        ┌─────────────┬──────────────┐
-        │ a           ┆ gather       │
-        │ ---         ┆ ---          │
-        │ list[i64]   ┆ list[i64]    │
-        ╞═════════════╪══════════════╡
-        │ [1, 2, 3]   ┆ [1, 3]       │
-        │ [4, 5, 6]   ┆ [4, 6]       │
-        │ [7, 8, 9]   ┆ [7, 9]       │
-        └─────────────┴──────────────┘
+        ┌───────────────┬───────────┐
+        │ a             ┆ gather    │
+        │ ---           ┆ ---       │
+        │ array[i32, 3] ┆ list[i32] │
+        ╞═══════════════╪═══════════╡
+        │ [1, 2, 3]     ┆ [1, 3]    │
+        │ [4, 5, 6]     ┆ [4, 6]    │
+        │ [7, 8, 9]     ┆ [7, 9]    │
+        └───────────────┴───────────┘
         """
         indices_pyexpr = parse_into_expression(indices)
         return wrap_expr(self._pyexpr.arr_gather(indices_pyexpr, null_on_oob))
