@@ -412,45 +412,45 @@ def test_cross_join_with_literal_column_25544() -> None:
 @pytest.mark.parametrize(
     "on",
     [
-        # ["key_1"],
+        ["key_1"],
         ["key_1", "key_2"],
     ],
 )
 @pytest.mark.parametrize(
     "how",
     [
-        # "inner",
+        "inner",
         "left",
-        # "right",
-        # "full",
+        "right",
+        "full",
     ],
 )
 @pytest.mark.parametrize(
     "descending",
     [
         False,
-        # True,
+        True,
     ],
 )
 @pytest.mark.parametrize(
     "nulls_last",
     [
         False,
-        # True,
+        True,
     ],
 )
 @pytest.mark.parametrize(
     "nulls_equal",
     [
         False,
-        # True,
+        True,
     ],
 )
 @pytest.mark.parametrize(
     "maintain_order",
     [
-        # "none",
-        "left",
+        "none",
+        # "left",
         # "right",
         # "left_right",
         # "right_left",
