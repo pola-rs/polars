@@ -1205,6 +1205,7 @@ pub fn lower_ir(
                     && left_is_sorted
                     && right_is_sorted
                     && !hard_to_maintain_order
+                    && args.how != JoinType::Full
                 {
                     phys_sm.insert(PhysNode::new(
                         output_schema,

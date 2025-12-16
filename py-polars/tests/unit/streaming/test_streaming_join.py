@@ -422,7 +422,6 @@ def test_cross_join_with_literal_column_25544() -> None:
         "inner",
         "left",
         "right",
-        # "full",
     ],
 )
 @pytest.mark.parametrize(
@@ -450,10 +449,10 @@ def test_cross_join_with_literal_column_25544() -> None:
     "maintain_order",
     [
         "none",
-        # "left",
-        # "right",
-        # "left_right",
-        # "right_left",
+        "left",
+        "right",
+        "left_right",
+        "right_left",
     ],
 )
 @settings(max_examples=100)

@@ -1,6 +1,5 @@
 use std::collections::VecDeque;
 use std::mem::swap;
-use std::ops::BitOr;
 
 use arrow::array::builder::ShareStrategy;
 use either::{Either, Left, Right};
@@ -38,21 +37,6 @@ enum NeedMore {
     Finished,
 }
 
-impl BitOr for NeedMore {
-    type Output = Self;
-
-    fn bitor(self, rhs: Self) -> Self {
-        use NeedMore::*;
-        match (self, rhs) {
-            (Left, Left) => Left,
-            (Right, Right) => Right,
-            (Finished, Finished) => Finished,
-            (Finished, other) | (other, Finished) => other,
-            (Left, Right) | (Right, Left) | (Both, _) | (_, Both) => Both,
-        }
-    }
-}
-
 impl NeedMore {
     fn flip(self) -> Self {
         match self {
@@ -71,7 +55,6 @@ struct SideParams {
     key_col: PlSmallStr,
     descending: Vec<bool>,
     nulls_last: Vec<bool>,
-    emit_unmatched: bool,
 }
 
 #[derive(Debug)]
@@ -80,7 +63,7 @@ struct MergeJoinParams {
     right: SideParams,
     output_schema: SchemaRef,
     key_descending: bool,
-    key_nulls_last: bool, // Only valid when using a single-column key
+    key_nulls_last: bool,
     args: JoinArgs,
 }
 
@@ -89,9 +72,7 @@ pub struct MergeJoinNode {
     state: MergeJoinState,
     params: MergeJoinParams,
     left_unmerged: VecDeque<DataFrame>,
-    left_unmerged_nulls: VecDeque<DataFrame>,
     right_unmerged: VecDeque<DataFrame>,
-    right_unmerged_nulls: VecDeque<DataFrame>,
     seq: MorselSeq,
 }
 
@@ -178,7 +159,6 @@ impl MergeJoinNode {
             key_col: left_key_col,
             descending: left_descending,
             nulls_last: left_nulls_last,
-            emit_unmatched: matches!(args.how, JoinType::Left | JoinType::Full),
         };
         let right = SideParams {
             input_schema: right_input_schema,
@@ -187,7 +167,6 @@ impl MergeJoinNode {
             key_col: right_key_col,
             descending: right_descending,
             nulls_last: right_nulls_last,
-            emit_unmatched: matches!(args.how, JoinType::Right | JoinType::Full),
         };
         let params = MergeJoinParams {
             left,
@@ -202,8 +181,6 @@ impl MergeJoinNode {
             params,
             left_unmerged: Default::default(),
             right_unmerged: Default::default(),
-            left_unmerged_nulls: Default::default(),
-            right_unmerged_nulls: Default::default(),
             seq: MorselSeq::default(),
         })
     }
@@ -226,13 +203,13 @@ impl ComputeNode for MergeJoinNode {
             self.state = MergeJoinState::Done;
         } else if recv[0] == PortState::Done
             && recv[1] == PortState::Done
-            && (!self.left_unmerged.is_empty()
-                || !self.left_unmerged_nulls.is_empty()
-                || !self.right_unmerged.is_empty()
-                || !self.right_unmerged_nulls.is_empty())
+            && (!self.left_unmerged.is_empty() || !self.right_unmerged.is_empty())
         {
             self.state = MergeJoinState::Flushing;
-        } else if recv[0] == PortState::Done && recv[1] == PortState::Done {
+        } else if recv[0] == PortState::Done
+            && self.left_unmerged.is_empty()
+            && recv[1] == PortState::Done
+        {
             self.state = MergeJoinState::Done;
         }
 
@@ -261,16 +238,14 @@ impl ComputeNode for MergeJoinNode {
         scope: &'s TaskScope<'s, 'env>,
         recv_ports: &mut [Option<RecvPort<'_>>],
         send_ports: &mut [Option<SendPort<'_>>],
-        _state: &'s StreamingExecutionState,
+        state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         use MergeJoinState::*;
 
         let params = &self.params;
         let left_unmerged = &mut self.left_unmerged;
-        let left_unmerged_nulls = &mut self.left_unmerged_nulls;
         let right_unmerged = &mut self.right_unmerged;
-        let right_unmerged_nulls = &mut self.right_unmerged_nulls;
         let seq = &mut self.seq;
 
         assert!(recv_ports.len() == 2 && send_ports.len() == 1);
@@ -294,11 +269,9 @@ impl ComputeNode for MergeJoinNode {
                 let source_token = SourceToken::new();
 
                 loop {
-                    match dbg!(find_mergeable(
+                    match (find_mergeable(
                         left_unmerged,
-                        left_unmerged_nulls,
                         right_unmerged,
-                        right_unmerged_nulls,
                         recv_left.is_none(),
                         recv_right.is_none(),
                         params,
@@ -317,7 +290,6 @@ impl ComputeNode for MergeJoinNode {
                                 buffer_unmerged_from_pipe(
                                     recv_right.as_mut(),
                                     right_unmerged,
-                                    right_unmerged_nulls,
                                     &params.right,
                                     &params,
                                 )
@@ -325,17 +297,14 @@ impl ComputeNode for MergeJoinNode {
                                 break;
                             };
                             let mut df = m.into_df();
-                            add_key_column(&mut df, &params.left, params)?;
-                            let (non_nulls, nulls) = split_null_key_rows(df, &params.left, params);
-                            push_back_opt(left_unmerged, non_nulls);
-                            push_back_opt(left_unmerged_nulls, nulls);
+                            add_key_column(&mut df, &params.left, false)?;
+                            left_unmerged.push_back(df);
                         },
                         Right(NeedMore::Right | NeedMore::Both) if recv_right.is_some() => {
                             let Ok(m) = recv_right.as_mut().unwrap().recv().await else {
                                 buffer_unmerged_from_pipe(
                                     recv_left.as_mut(),
                                     left_unmerged,
-                                    left_unmerged_nulls,
                                     &params.left,
                                     &params,
                                 )
@@ -343,20 +312,12 @@ impl ComputeNode for MergeJoinNode {
                                 break;
                             };
                             let mut df = m.into_df();
-                            add_key_column(&mut df, &params.right, params)?;
-                            let (non_nulls, nulls) = split_null_key_rows(df, &params.left, params);
-                            push_back_opt(right_unmerged, non_nulls);
-                            push_back_opt(right_unmerged_nulls, nulls);
+                            add_key_column(&mut df, &params.right, false)?;
+                            right_unmerged.push_back(df);
                         },
 
                         Right(NeedMore::Finished) => {
                             dbg!("breaking because we are finished");
-                            dbg!(
-                                left_unmerged,
-                                left_unmerged_nulls,
-                                right_unmerged,
-                                right_unmerged_nulls
-                            );
                             break;
                         },
                         Right(other) => {
@@ -385,43 +346,20 @@ impl ComputeNode for MergeJoinNode {
 }
 
 fn find_mergeable(
-    l: &mut VecDeque<DataFrame>,
-    l_nulls: &mut VecDeque<DataFrame>,
-    r: &mut VecDeque<DataFrame>,
-    r_nulls: &mut VecDeque<DataFrame>,
-    l_done: bool,
-    r_done: bool,
+    left: &mut VecDeque<DataFrame>,
+    right: &mut VecDeque<DataFrame>,
+    left_done: bool,
+    right_done: bool,
     p: &MergeJoinParams,
 ) -> PolarsResult<Either<(DataFrame, DataFrame), NeedMore>> {
-    dbg!(&l, &l_nulls, &r_nulls, &r, l_done, r_done);
     if p.args.how == JoinType::Right {
-        let mergable = find_mergeable_inner(r, l, &p.right, &p.left, p, r_done, l_done)?;
-        if let Left((df2, df1)) = mergable {
-            return Ok(Left((df1, df2)));
-        }
-        let mergeable_nulls = dbg!(find_mergeable_nulls(
-            r_nulls, l_nulls, &p.right, &p.left, p, r_done, l_done
-        )?);
-        if let Left((df2, df1)) = mergeable_nulls {
-            return Ok(Left((df1, df2)));
-        }
-        Ok(Right(
-            mergable.unwrap_right().flip() | mergeable_nulls.unwrap_right().flip(),
-        ))
+        let ok = find_mergeable_inner(right, left, &p.right, &p.left, p, right_done, left_done)?;
+        return Ok(match ok {
+            Left((right_df, left_df)) => Left((left_df, right_df)),
+            Right(side) => Right(side.flip()),
+        });
     } else {
-        let mergable = find_mergeable_inner(l, r, &p.left, &p.right, p, l_done, r_done)?;
-        if mergable.is_left() {
-            return Ok(mergable);
-        }
-        let mergeable_nulls = dbg!(find_mergeable_nulls(
-            l_nulls, r_nulls, &p.left, &p.right, p, l_done, r_done
-        )?);
-        if mergeable_nulls.is_left() {
-            return Ok(mergeable_nulls);
-        }
-        Ok(Right(
-            mergable.unwrap_right() | mergeable_nulls.unwrap_right(),
-        ))
+        find_mergeable_inner(left, right, &p.left, &p.right, p, left_done, right_done)
     }
 }
 
@@ -474,9 +412,6 @@ fn find_mergeable_inner(
             right.pop_front();
             continue;
         }
-
-        dbg!(&left_df);
-        dbg!(&right_df);
 
         let left_keys = left_df
             .column(&left_params.key_col)?
@@ -561,50 +496,6 @@ fn find_mergeable_inner(
     }
 }
 
-fn find_mergeable_nulls(
-    l: &mut VecDeque<DataFrame>,
-    r: &mut VecDeque<DataFrame>,
-    l_params: &SideParams,
-    r_params: &SideParams,
-    params: &MergeJoinParams,
-    l_done: bool,
-    r_done: bool,
-) -> PolarsResult<Either<(DataFrame, DataFrame), NeedMore>> {
-    let need_more_left = match dbg!(find_mergeable_nulls_side(l, l_done)?) {
-        Left(df1) => {
-            let df2 = DataFrame::empty_with_schema(&r_params.ir_schema);
-            return Ok(Left((df1, df2)));
-        },
-        Right(need_more) => need_more,
-    };
-    let need_more_right = match dbg!(find_mergeable_nulls_side(r, r_done)?) {
-        Left(df2) => {
-            let df1 = DataFrame::empty_with_schema(&l_params.ir_schema);
-            return Ok(Left((df1, df2)));
-        },
-        Right(need_more) => need_more.flip(),
-    };
-    Ok(Right(need_more_left | need_more_right))
-}
-
-fn find_mergeable_nulls_side(
-    unmerged: &mut VecDeque<DataFrame>,
-    done: bool,
-) -> PolarsResult<Either<DataFrame, NeedMore>> {
-    loop {
-        if done && unmerged.is_empty() {
-            return Ok(Right(NeedMore::Finished));
-        }
-        let Some(df) = unmerged.pop_front() else {
-            return Ok(Right(NeedMore::Left));
-        };
-        if df.is_empty() {
-            continue;
-        }
-        return Ok(Left(df));
-    }
-}
-
 fn binary_search(
     s: &Series,
     search_value: &AnyValue,
@@ -661,11 +552,22 @@ fn compute_join(
                 MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft,
             ));
 
+    // Add row-encoded key columns if needed
+    if params.left.on.len() > 1 && !params.args.nulls_equal {
+        left.drop_in_place(&params.left.key_col)?;
+        add_key_column(&mut left, &params.left, true)?;
+    }
+    if params.right.on.len() > 1 && !params.args.nulls_equal {
+        right.drop_in_place(&params.right.key_col)?;
+        add_key_column(&mut right, &params.right, true)?;
+    }
+
     left.rechunk_mut();
     right.rechunk_mut();
 
     // TODO: [amber] Remove any non-output columns earlier to reduce the
     // amount of gathering as much as possible
+    // TODO: [amber] Do a cardinality sketch to estimate the output size?
 
     let mut left_key = left.column(&params.left.key_col).unwrap();
     let mut right_key = right.column(&params.right.key_col).unwrap();
@@ -721,6 +623,16 @@ fn compute_join(
     // Rename any right columns to "{}_right"
     rename_right_columns(&left, &mut right, params)?;
 
+    // for (left_on, right_on) in params.left_on.iter().zip(params.right_on.iter()) {
+    //     let left_col = df_left.column(left_on)?;
+    //     let right_col = df_right.column(right_on)?;
+    //     coalesce_columns(s)
+    //     df_left.replace(left_on, coalesced.into_column())?;
+    // }
+
+    // let left = self.drop_non_output_columns(left)?;
+    // let right = self.drop_non_output_columns(right)?;
+
     left.hstack_mut(&right.get_columns())?;
     let df = drop_non_output_columns(&left, params)?;
     Ok(df)
@@ -759,13 +671,8 @@ fn key_is_in_output(col_name: &PlSmallStr, params: &MergeJoinParams) -> bool {
     params.output_schema.contains(col_name)
 }
 
-fn add_key_column(
-    df: &mut DataFrame,
-    sp: &SideParams,
-    params: &MergeJoinParams,
-) -> PolarsResult<()> {
+fn add_key_column(df: &mut DataFrame, sp: &SideParams, broadcast_nulls: bool) -> PolarsResult<()> {
     debug_assert_eq!(*df.schema(), sp.input_schema);
-    let broadcast_nulls = !params.args.nulls_equal;
     if sp.on.len() > 1 {
         let columns = sp
             .on
@@ -787,39 +694,12 @@ fn add_key_column(
     Ok(())
 }
 
-fn split_null_key_rows(
-    df: DataFrame,
-    sp: &SideParams,
-    params: &MergeJoinParams,
-) -> (Option<DataFrame>, Option<DataFrame>) {
-    let key_column = df.column(&sp.key_col).unwrap();
-    let null_count = key_column.null_count();
-    if params.args.nulls_equal || null_count == 0 {
-        (Some(df), None)
-    } else if null_count == key_column.len() {
-        (None, Some(df))
-    } else {
-        let key = df.column(&sp.key_col).unwrap();
-        let non_nulls = df.filter(&key.is_not_null()).unwrap();
-        let nulls = df.filter(&key.is_null()).unwrap();
-        (Some(non_nulls), Some(nulls))
-    }
-}
-
 async fn buffer_unmerged_from_pipe(
     port: Option<&mut PortReceiver>,
     unmerged: &mut VecDeque<DataFrame>,
-    unmerged_nulls: &mut VecDeque<DataFrame>,
     sp: &SideParams,
     params: &MergeJoinParams,
 ) {
-    let mut buffer = move |mut df: DataFrame| {
-        add_key_column(&mut df, sp, params).unwrap();
-        let (non_nulls, nulls) = split_null_key_rows(df, sp, params);
-        push_back_opt(unmerged, non_nulls);
-        push_back_opt(unmerged_nulls, nulls);
-    };
-
     let Some(port) = port else {
         return;
     };
@@ -827,10 +707,14 @@ async fn buffer_unmerged_from_pipe(
         return;
     };
     morsel.source_token().stop();
+    let mut df = morsel.into_df();
+    add_key_column(&mut df, sp, false).unwrap();
+    unmerged.push_back(df);
 
-    buffer(morsel.into_df());
     while let Ok(morsel) = port.recv().await {
-        buffer(morsel.into_df());
+        let mut df = morsel.into_df();
+        add_key_column(&mut df, sp, false).unwrap();
+        unmerged.push_back(df);
     }
 }
 
@@ -843,9 +727,6 @@ fn keys_eq(left: &AnyValue, right: &AnyValue, params: &MergeJoinParams) -> bool 
 }
 
 fn keys_lt(left: &AnyValue, right: &AnyValue, params: &MergeJoinParams) -> bool {
-    if !params.args.nulls_equal {
-        debug_assert!(!left.is_null() && !right.is_null(), "nulls are not ordered")
-    }
     if keys_eq(left, right, params) {
         false
     } else if params.key_nulls_last {
@@ -877,10 +758,4 @@ fn keys_le(left: &AnyValue, right: &AnyValue, params: &MergeJoinParams) -> bool 
 
 fn keys_gt(left: &AnyValue, right: &AnyValue, params: &MergeJoinParams) -> bool {
     !keys_le(left, right, params)
-}
-
-fn push_back_opt<T>(vec: &mut VecDeque<T>, opt: Option<T>) {
-    if let Some(x) = opt {
-        vec.push_back(x);
-    }
 }
