@@ -286,7 +286,7 @@ def test_unpivot_filter_opt() -> None:
 def test_unpivot_variable_value_name_25681() -> None:
     assert_frame_equal(
         pl.select().unpivot(variable_name="foo"),
-        pl.DataFrame([], schema={"variable": pl.String, "foo": pl.Null}),
+        pl.DataFrame([], schema={"foo": pl.String, "value": pl.Null}),
     )
 
 
