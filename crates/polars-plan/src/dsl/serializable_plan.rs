@@ -361,7 +361,7 @@ fn convert_dsl_plan_to_serializable_plan(
         },
         DP::IR {
             dsl,
-            version,
+            version: _,
             node: _,
         } => convert_dsl_plan_to_serializable_plan(dsl.as_ref(), arenas),
     }
