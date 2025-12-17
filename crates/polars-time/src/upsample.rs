@@ -208,7 +208,7 @@ fn upsample_impl(
                             unsafe { non_group_keys_df.gather_group_unchecked(&g) };
 
                         let group_keys_df =
-                            unsafe { group_keys_df.new_from_index(first_idx as usize, g.len()) };
+                            group_keys_df.new_from_index(first_idx as usize, g.len());
 
                         if let Some(i) = upsample_index_col_idx {
                             non_group_keys_df = upsample_single_impl(
@@ -219,7 +219,6 @@ fn upsample_impl(
                         }
 
                         let mut out = non_group_keys_df;
-                        let out_height = out.height();
                         out.clear_schema();
                         let out_cols = unsafe { out.get_columns_mut() };
 
