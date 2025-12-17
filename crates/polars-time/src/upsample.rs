@@ -212,7 +212,6 @@ fn upsample_impl(
                     .iter()
                     .map(|g| {
                         let first_idx = g.first();
-                        let height = g.len();
 
                         let mut non_group_keys_df =
                             unsafe { non_group_keys_df.gather_group_unchecked(&g) };
