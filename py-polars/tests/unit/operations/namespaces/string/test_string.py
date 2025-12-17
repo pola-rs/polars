@@ -2172,6 +2172,6 @@ def test_json_decode_decimal_25789() -> None:
     assert_series_equal(result, expected)
 
     with pytest.raises(
-        ComputeError, match=r"error deserializing value.*30.127.* as Decimal(3, 2)"
+        ComputeError, match=r"error deserializing value.*30.127.* as Decimal\(3, 2\)"
     ):
         s.str.json_decode(dtype=pl.Struct({"a": pl.Decimal(3, 2)}))
