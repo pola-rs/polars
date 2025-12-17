@@ -246,15 +246,17 @@ fn upsample_impl(
 
                 let out = accumulate_dataframes_vertical_unchecked(dfs);
                 let out_height = out.height();
-                let out_schema = Arc::clone(out.schema());
-                let out = out.into_columns();
+                let out_schema = out.schema();
 
                 Ok(unsafe {
                     DataFrame::new_no_checks(
                         out_height,
                         schema
                             .iter_names()
-                            .map(|name| out[out_schema.index_of(name.as_str()).unwrap()].clone())
+                            .map(|name| {
+                                out.get_columns()[out_schema.index_of(name.as_str()).unwrap()]
+                                    .clone()
+                            })
                             .collect(),
                     )
                 })
