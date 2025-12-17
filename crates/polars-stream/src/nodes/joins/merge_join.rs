@@ -280,7 +280,8 @@ impl ComputeNode for MergeJoinNode {
             let send = send_ports[0].take().unwrap().parallel();
             let (mut distributor, dist_recv) =
                 distributor_channel(send.len(), *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
-            let (mut linearizer, dist_send) = MorselLinearizer::new(dist_recv.len(), 1);
+            let (mut unmatched_linearizer, unmatched_send) =
+                MorselLinearizer::new(dist_recv.len(), 1);
 
             join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
                 // Partitioner task; worst-case complexity O(n)
@@ -347,20 +348,20 @@ impl ComputeNode for MergeJoinNode {
                 Ok(())
             }));
 
-            join_handles.extend(dist_recv.into_iter().zip(send).zip(dist_send).map(
+            join_handles.extend(dist_recv.into_iter().zip(send).zip(unmatched_send).map(
                 |((mut recv, mut send), mut unmatched_inserter)| {
                     scope.spawn_task(TaskPriority::High, async move {
                         while let Ok((morsel, right)) = recv.recv().await {
                             let (left, seq, source_token, _) = morsel.into_inner();
-                            let (joined, joined_unmatched) = compute_join(left, right, params)?;
-                            if !joined.is_empty() {
-                                let morsel = Morsel::new(joined, seq, source_token.clone());
+                            let (matched, unmatched) = compute_join(left, right, params)?;
+                            if !matched.is_empty() {
+                                let morsel = Morsel::new(matched, seq, source_token.clone());
                                 if send.send(morsel).await.is_err() {
                                     break;
                                 }
                             }
-                            if !joined_unmatched.is_empty() {
-                                let morsel = Morsel::new(joined_unmatched, seq, source_token);
+                            if !unmatched.is_empty() {
+                                let morsel = Morsel::new(unmatched, seq, source_token.clone());
                                 if unmatched_inserter.insert(morsel).await.is_err() {
                                     break;
                                 }
@@ -372,7 +373,7 @@ impl ComputeNode for MergeJoinNode {
             ));
 
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                while let Some(morsel) = linearizer.get().await {
+                while let Some(morsel) = unmatched_linearizer.get().await {
                     let (df, seq, _st, _wt) = morsel.into_inner();
                     if let Some(append_to) = unmatched.get_mut(&seq) {
                         append_to.vstack_mut_owned(df)?;
@@ -607,6 +608,7 @@ fn compute_join(
     mut right: DataFrame,
     params: &MergeJoinParams,
 ) -> PolarsResult<(DataFrame, DataFrame)> {
+    let join_type = &params.args.how;
     let mut left_sp = &params.left;
     let mut right_sp = &params.right;
     let right_is_build = matches!(
@@ -661,7 +663,7 @@ fn compute_join(
             right_gather.push(IdxSize::MAX);
         }
     }
-    for idxr in 0..right_key.len() {
+    for (idxr, _key) in right_key.as_materialized_series().iter().enumerate() {
         if right_sp.emit_unmatched && !matched_right.get(idxr) {
             right_unmatched_gather.push(idxr as IdxSize);
         }
