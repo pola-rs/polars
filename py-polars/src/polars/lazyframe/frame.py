@@ -1727,7 +1727,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Notes
         -----
-        * The calling frame is automatically registered as a table in the SQL context
+        * The calling LazyFrame is automatically registered as a table in the SQLContext
           under the name "self". If you want access to the DataFrames and LazyFrames
           found in the current globals, use the top-level :meth:`pl.sql <polars.sql>`.
         * More control over registration and execution behaviour is available by

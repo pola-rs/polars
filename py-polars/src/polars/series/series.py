@@ -3342,6 +3342,70 @@ class Series:
         ]
         """
 
+    def sql(self, query: str, *, table_name: str = "self") -> DataFrame:
+        """
+        Execute a SQL query against the Series.
+
+        .. versionadded:: 1.37.0
+
+        .. warning::
+            This functionality is considered **unstable**, although it is close to
+            being considered stable. It may be changed at any point without it being
+            considered a breaking change.
+
+        Parameters
+        ----------
+        query
+            SQL query to execute.
+        table_name
+            Optionally provide an explicit name for the table that represents the
+            calling frame (defaults to "self").
+
+        Notes
+        -----
+        * The calling Series is automatically registered as a table in the SQLContext
+          under the name "self". If you want access to the DataFrames, LazyFrames, and
+          other Series found in the current globals, use :meth:`pl.sql <polars.sql>`.
+        * More control over registration and execution behaviour is available by
+          using the :class:`SQLContext` object.
+        * The SQL query executes in lazy mode before being collected and returned
+          as a DataFrame.
+
+        See Also
+        --------
+        SQLContext
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> s = pl.Series(
+        ...     name="dt",
+        ...     values=[date(1999, 12, 31), date(2099, 2, 14), date(2026, 3, 5)],
+        ... )
+
+        Query the Series using SQL:
+
+        >>> s.sql('''
+        ...     SELECT
+        ...       EXTRACT('year',dt) AS y,
+        ...       EXTRACT('month',dt) AS m,
+        ...       EXTRACT('day',dt) AS d,
+        ...     FROM self
+        ...     WHERE dt > '2020-01-01'
+        ...     ORDER BY dt DESC
+        ... ''')
+        shape: (2, 3)
+        ┌──────┬─────┬─────┐
+        │ y    ┆ m   ┆ d   │
+        │ ---  ┆ --- ┆ --- │
+        │ i32  ┆ i8  ┆ i8  │
+        ╞══════╪═════╪═════╡
+        │ 2099 ┆ 2   ┆ 14  │
+        │ 2026 ┆ 3   ┆ 5   │
+        └──────┴─────┴─────┘
+        """
+        return self.to_frame().sql(query, table_name=table_name)
+
     def sort(
         self,
         *,
