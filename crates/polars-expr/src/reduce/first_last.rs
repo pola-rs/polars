@@ -102,6 +102,10 @@ struct Item {
 impl Policy for Item {
     type Count = u8;
 
+    fn add_count(a: &mut Self::Count, b: usize) {
+        *a = a.saturating_add(b.min(255) as u8);
+    }
+
     fn combine_count(a: &mut Self::Count, b: &Self::Count) {
         *a = a.saturating_add(*b);
     }
