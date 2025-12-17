@@ -5,7 +5,6 @@ use polars_ops::frame::MaintainOrderJoin;
 use polars_ops::prelude::{JoinCoalesce, JoinValidation};
 use polars_plan::dsl::PredicateFileSkip;
 use polars_plan::dsl::sink2::FileProviderType;
-use polars_plan::plans::IRSorted;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 

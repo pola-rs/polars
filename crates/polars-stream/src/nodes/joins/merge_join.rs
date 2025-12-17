@@ -7,7 +7,6 @@ use either::{Either, Left, Right};
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_ops::frame::join;
 use polars_ops::prelude::*;
 use polars_plan::prelude::*;
 use polars_utils::format_pl_smallstr;
@@ -16,7 +15,6 @@ use polars_utils::itertools::Itertools;
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
 use crate::async_primitives::distributor_channel::distributor_channel;
-use crate::async_primitives::linearizer::Linearizer;
 use crate::async_primitives::morsel_linearizer::MorselLinearizer;
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
@@ -256,7 +254,7 @@ impl ComputeNode for MergeJoinNode {
         scope: &'s TaskScope<'s, 'env>,
         recv_ports: &mut [Option<RecvPort<'_>>],
         send_ports: &mut [Option<SendPort<'_>>],
-        state: &'s StreamingExecutionState,
+        _state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         use MergeJoinState::*;
@@ -284,8 +282,6 @@ impl ComputeNode for MergeJoinNode {
                 MorselLinearizer::new(dist_recv.len(), 1);
 
             join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
-                // Partitioner task; worst-case complexity O(n)
-
                 let source_token = SourceToken::new();
 
                 loop {
@@ -311,7 +307,6 @@ impl ComputeNode for MergeJoinNode {
                                     recv_right.as_mut(),
                                     right_unmerged,
                                     &params.right,
-                                    &params,
                                 )
                                 .await;
                                 break;
@@ -326,7 +321,6 @@ impl ComputeNode for MergeJoinNode {
                                     recv_left.as_mut(),
                                     left_unmerged,
                                     &params.left,
-                                    &params,
                                 )
                                 .await;
                                 break;
@@ -352,7 +346,7 @@ impl ComputeNode for MergeJoinNode {
                 |((mut recv, mut send), mut unmatched_inserter)| {
                     scope.spawn_task(TaskPriority::High, async move {
                         while let Ok((morsel, right)) = recv.recv().await {
-                            let (left, seq, source_token, _) = morsel.into_inner();
+                            let (left, seq, source_token, _wt) = morsel.into_inner();
                             let (matched, unmatched) = compute_join(left, right, params)?;
                             if !matched.is_empty() {
                                 let morsel = Morsel::new(matched, seq, source_token.clone());
@@ -374,7 +368,7 @@ impl ComputeNode for MergeJoinNode {
 
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 while let Some(morsel) = unmatched_linearizer.get().await {
-                    let (df, seq, _st, _wt) = morsel.into_inner();
+                    let (df, seq, _st, _) = morsel.into_inner();
                     if let Some(append_to) = unmatched.get_mut(&seq) {
                         append_to.vstack_mut_owned(df)?;
                     } else {
@@ -433,39 +427,41 @@ fn find_mergeable_inner(
     dbg!(&left, &right);
     loop {
         if left_done && left.is_empty() && right_done && right.is_empty() {
-            return (Ok(Right(NeedMore::Finished)));
-        // } else if left_done && left.is_empty() && !right_params.emit_unmatched {
-        //     right.clear();
-        //     return (Ok(Right(NeedMore::Finished)));
-        // } else if right_done && right.is_empty() && !left_params.emit_unmatched {
-        //     left.clear();
-        //     return (Ok(Right(NeedMore::Finished)));
+            return Ok(Right(NeedMore::Finished));
+        } else if left_done && left.is_empty() && !right_params.emit_unmatched {
+            // We will never match on the remaining right keys
+            right.clear();
+            return Ok(Right(NeedMore::Finished));
+        } else if right_done && right.is_empty() && !left_params.emit_unmatched {
+            // We will never match on the remaining left keys
+            left.clear();
+            return Ok(Right(NeedMore::Finished));
         } else if left_done && left.is_empty() {
-            return (Ok(Left((
+            return Ok(Left((
                 DataFrame::empty_with_schema(&left_params.ir_schema),
                 right.pop_front().unwrap(),
-            ))));
+            )));
         } else if right_done && right.is_empty() {
-            return (Ok(Left((
+            return Ok(Left((
                 left.pop_front().unwrap(),
                 DataFrame::empty_with_schema(&right_params.ir_schema),
-            ))));
+            )));
         } else if left_done && left.len() <= 1 && right_done && right.len() <= 1 {
-            return (Ok(Left((
+            return Ok(Left((
                 left.pop_front().unwrap(),
                 right.pop_front().unwrap(),
-            ))));
+            )));
         } else if left.is_empty() && !left_done {
-            return (Ok(Right(NeedMore::Left)));
+            return Ok(Right(NeedMore::Left));
         } else if right.is_empty() && !right_done {
-            return (Ok(Right(NeedMore::Right)));
+            return Ok(Right(NeedMore::Right));
         }
 
         let Some(left_df) = left.front() else {
-            return (Ok(Right(NeedMore::Left)));
+            return Ok(Right(NeedMore::Left));
         };
         let Some(right_df) = right.front() else {
-            return (Ok(Right(NeedMore::Right)));
+            return Ok(Right(NeedMore::Right));
         };
 
         if left_df.is_empty() {
@@ -494,7 +490,7 @@ fn find_mergeable_inner(
             continue;
         } else if left_first_incomplete == 0 {
             debug_assert!(!left_done);
-            return (Ok(Right(NeedMore::Left)));
+            return Ok(Right(NeedMore::Left));
         }
 
         let right_last = right_keys.get(right_keys.len() - 1)?;
@@ -507,7 +503,7 @@ fn find_mergeable_inner(
             continue;
         } else if right_first_incomplete == 0 {
             debug_assert!(!right_done);
-            return (Ok(Right(NeedMore::Right)));
+            return Ok(Right(NeedMore::Right));
         }
 
         let left_last_completed_val = left_keys.get(left_first_incomplete - 1)?;
@@ -539,7 +535,7 @@ fn find_mergeable_inner(
             vstack_head(right, right_params, params);
             continue;
         } else if left_mergable_until == 0 && right_mergable_until == 0 {
-            return (Ok(Right(NeedMore::Both)));
+            return Ok(Right(NeedMore::Both));
         }
 
         let (left_df, left_rest) = left
@@ -556,7 +552,7 @@ fn find_mergeable_inner(
         if !right_rest.is_empty() {
             right.push_front(right_rest);
         }
-        return (Ok(Left((left_df, right_df))));
+        return Ok(Left((left_df, right_df)));
     }
 }
 
@@ -608,7 +604,6 @@ fn compute_join(
     mut right: DataFrame,
     params: &MergeJoinParams,
 ) -> PolarsResult<(DataFrame, DataFrame)> {
-    let join_type = &params.args.how;
     let mut left_sp = &params.left;
     let mut right_sp = &params.right;
     let right_is_build = matches!(
@@ -663,11 +658,12 @@ fn compute_join(
             right_gather.push(IdxSize::MAX);
         }
     }
-    for (idxr, _key) in right_key.as_materialized_series().iter().enumerate() {
-        if right_sp.emit_unmatched && !matched_right.get(idxr) {
+    if right_sp.emit_unmatched {
+        for (idxr, _) in matched_right.iter().enumerate().filter(|(_, m)| !m) {
             right_unmatched_gather.push(idxr as IdxSize);
         }
     }
+
     let mut left_unmatched_gather = vec![IdxSize::MAX; right_unmatched_gather.len()];
     if right_is_build {
         swap(&mut left_gather, &mut right_gather);
@@ -789,7 +785,6 @@ async fn buffer_unmerged_from_pipe(
     port: Option<&mut PortReceiver>,
     unmerged: &mut VecDeque<DataFrame>,
     sp: &SideParams,
-    params: &MergeJoinParams,
 ) {
     let Some(port) = port else {
         return;

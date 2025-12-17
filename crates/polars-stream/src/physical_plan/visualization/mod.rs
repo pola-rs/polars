@@ -343,9 +343,8 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                 input_right,
                 left_on,
                 right_on,
-                left_sortedness,
-                right_sortedness,
                 args,
+                ..
             } => {
                 phys_node_inputs.push(input_left.node);
                 phys_node_inputs.push(input_right.node);
@@ -369,7 +368,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     coalesce: *coalesce,
                     maintain_order: *maintain_order,
                     validation: *validation,
-                    suffix: args.suffix.clone(),
+                    suffix: suffix.clone(),
                 };
 
                 PhysNodeInfo {
