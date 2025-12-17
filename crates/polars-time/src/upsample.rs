@@ -170,7 +170,7 @@ fn upsample_impl(
                 upsample_single_impl(source, index_column.as_materialized_series(), every)
             } else {
                 let height = source.height();
-                let schema = source.schema();
+                let source_schema = source.schema();
 
                 let group_keys_df = source.project_names(&by)?;
                 let group_keys_schema = group_keys_df.schema();
@@ -185,11 +185,11 @@ fn upsample_impl(
                 let non_group_keys_df = unsafe {
                     DataFrame::new_no_checks(
                         height,
-                        schema
+                        source_schema
                             .iter_names()
                             .filter(|name| !group_keys_schema.contains(name.as_str()))
                             .map(|name| {
-                                source.get_columns()[schema.index_of(name).unwrap()].clone()
+                                source.get_columns()[source_schema.index_of(name).unwrap()].clone()
                             })
                             .collect(),
                     )
@@ -207,9 +207,6 @@ fn upsample_impl(
                         let mut non_group_keys_df =
                             unsafe { non_group_keys_df.gather_group_unchecked(&g) };
 
-                        let group_keys_df =
-                            group_keys_df.new_from_index(first_idx as usize, g.len());
-
                         if let Some(i) = upsample_index_col_idx {
                             non_group_keys_df = upsample_single_impl(
                                 &non_group_keys_df,
@@ -219,6 +216,10 @@ fn upsample_impl(
                         }
 
                         let mut out = non_group_keys_df;
+
+                        let group_keys_df =
+                            group_keys_df.new_from_index(first_idx as usize, out.height());
+
                         out.clear_schema();
                         let out_cols = unsafe { out.get_columns_mut() };
 
@@ -229,22 +230,7 @@ fn upsample_impl(
                     })
                     .collect::<PolarsResult<_>>()?;
 
-                let out = accumulate_dataframes_vertical_unchecked(dfs);
-                let out_height = out.height();
-                let out_schema = out.schema();
-
-                Ok(unsafe {
-                    DataFrame::new_no_checks(
-                        out_height,
-                        schema
-                            .iter_names()
-                            .map(|name| {
-                                out.get_columns()[out_schema.index_of(name.as_str()).unwrap()]
-                                    .clone()
-                            })
-                            .collect(),
-                    )
-                })
+                accumulate_dataframes_vertical_unchecked(dfs).project(source_schema.clone())
             }
         },
     }
