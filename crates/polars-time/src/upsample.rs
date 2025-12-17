@@ -169,27 +169,28 @@ fn upsample_impl(
                 let index_column = source.column(index_column)?;
                 upsample_single_impl(source, index_column.as_materialized_series(), every)
             } else {
-                let gb = if stable {
-                    source.group_by_stable(by.iter().cloned())
-                } else {
-                    source.group_by(by.iter().cloned())
-                }?;
-
                 let height = source.height();
                 let schema = source.schema();
 
                 let group_keys_df = unsafe {
                     DataFrame::new_no_checks(
                         height,
-                        by.into_iter()
+                        by.iter()
                             .map(|name| {
-                                source.get_columns()[schema.index_of(&name).unwrap()].clone()
+                                source.get_columns()[schema.index_of(name).unwrap()].clone()
                             })
                             .collect(),
                     )
                 };
-
                 let group_keys_schema = group_keys_df.schema();
+
+                let groups = if stable {
+                    group_keys_df.group_by_stable(group_keys_schema.iter_names_cloned())
+                } else {
+                    group_keys_df.group_by(group_keys_schema.iter_names_cloned())
+                }?
+                .into_groups();
+
                 let non_group_keys_df = unsafe {
                     DataFrame::new_no_checks(
                         height,
@@ -207,8 +208,7 @@ fn upsample_impl(
                     non_group_keys_df.schema().index_of(index_column);
 
                 // don't parallelize this, this may SO on large data.
-                let dfs: Vec<DataFrame> = gb
-                    .into_groups()
+                let dfs: Vec<DataFrame> = groups
                     .iter()
                     .map(|g| {
                         let first_idx = g.first();
