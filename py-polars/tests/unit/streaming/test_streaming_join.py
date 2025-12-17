@@ -456,7 +456,6 @@ def test_cross_join_with_literal_column_25544() -> None:
         "right_left",
     ],
 )
-@settings(max_examples=100)
 @given(
     df_left=dataframes(
         cols=[
