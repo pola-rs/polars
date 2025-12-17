@@ -169,7 +169,7 @@ impl KeyedPartitioner {
             .iter()
             .map(|groups_indicator| {
                 let first_idx = groups_indicator.first();
-                let df = unsafe { df.gather_group_unchecked(&groups_indicator) };
+                let df = unsafe { gather_source_df.gather_group_unchecked(&groups_indicator) };
 
                 // Ensure 0-width is handled properly.
                 assert_eq!(df.height(), groups_indicator.len());

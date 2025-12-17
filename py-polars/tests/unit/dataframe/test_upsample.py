@@ -319,6 +319,7 @@ def test_upsample_with_group_by_15530() -> None:
             time_column="time",
             every="1m",
             group_by="symbol",
+            maintain_order=True,
         ),
         pl.DataFrame(
             {
