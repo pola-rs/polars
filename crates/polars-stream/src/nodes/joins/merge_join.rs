@@ -269,7 +269,6 @@ impl ComputeNode for MergeJoinNode {
         let mut recv_left = recv_ports[0].take().map(RecvPort::serial);
         let mut recv_right = recv_ports[1].take().map(RecvPort::serial);
 
-        dbg!(&self.state);
         if recv_left.is_none() && recv_right.is_none() {
             assert!(self.state >= FlushInputBuffers);
         }
@@ -331,7 +330,6 @@ impl ComputeNode for MergeJoinNode {
                         },
 
                         Right(NeedMore::Finished) => {
-                            dbg!("breaking because we are finished");
                             break;
                         },
                         Right(other) => {
@@ -424,7 +422,6 @@ fn find_mergeable_inner(
     left_done: bool,
     right_done: bool,
 ) -> PolarsResult<Either<(DataFrame, DataFrame), NeedMore>> {
-    dbg!(&left, &right);
     loop {
         if left_done && left.is_empty() && right_done && right.is_empty() {
             return Ok(Right(NeedMore::Finished));
