@@ -172,16 +172,7 @@ fn upsample_impl(
                 let height = source.height();
                 let schema = source.schema();
 
-                let group_keys_df = unsafe {
-                    DataFrame::new_no_checks(
-                        height,
-                        by.iter()
-                            .map(|name| {
-                                source.get_columns()[schema.index_of(name).unwrap()].clone()
-                            })
-                            .collect(),
-                    )
-                };
+                let group_keys_df = source.project_names(&by)?;
                 let group_keys_schema = group_keys_df.schema();
 
                 let groups = if stable {

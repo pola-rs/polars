@@ -1899,13 +1899,21 @@ impl DataFrame {
     }
 
     pub fn project(&self, to: SchemaRef) -> PolarsResult<Self> {
+        let mut df = self.project_names(to.iter_names())?;
+        df.cached_schema = to.into();
+        Ok(df)
+    }
+
+    pub fn project_names(
+        &self,
+        names: impl IntoIterator<Item = impl AsRef<str>>,
+    ) -> PolarsResult<Self> {
         let from = self.schema();
-        let columns = to
-            .iter_names()
-            .map(|name| Ok(self.columns[from.try_index_of(name.as_str())?].clone()))
+        let columns = names
+            .into_iter()
+            .map(|name| Ok(self.columns[from.try_index_of(name.as_ref())?].clone()))
             .collect::<PolarsResult<Vec<_>>>()?;
         let mut df = unsafe { Self::new_no_checks(self.height(), columns) };
-        df.cached_schema = to.into();
         Ok(df)
     }
 
