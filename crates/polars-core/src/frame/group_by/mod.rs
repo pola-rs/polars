@@ -238,12 +238,8 @@ impl<'a> GroupBy<'a> {
         &mut self.groups
     }
 
-    pub fn take_groups(self) -> GroupPositions {
+    pub fn into_groups(self) -> GroupPositions {
         self.groups
-    }
-
-    pub fn take_groups_mut(&mut self) -> GroupPositions {
-        std::mem::take(&mut self.groups)
     }
 
     pub fn keys_sliced(&self, slice: Option<(i64, usize)>) -> Vec<Column> {

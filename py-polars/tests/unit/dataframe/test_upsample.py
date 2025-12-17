@@ -298,3 +298,54 @@ def test_upsample_date() -> None:
         }
     )
     assert_frame_equal(result, expected)
+
+
+def test_upsample_with_group_by_15530() -> None:
+    df = pl.DataFrame(
+        {
+            "time": [
+                datetime(2025, 1, 1, 9, 0),
+                datetime(2025, 1, 1, 9, 0),
+                datetime(2025, 1, 1, 9, 2),
+                datetime(2025, 1, 1, 9, 2),
+            ],
+            "symbol": ["AAPL", "MSFT", "AAPL", "MSFT"],
+            "price": [100.0, 50.0, 102.0, 52.0],
+        }
+    )
+
+    assert_frame_equal(
+        df.upsample(
+            time_column="time",
+            every="1m",
+            group_by="symbol",
+        ),
+        pl.DataFrame(
+            {
+                "time": [
+                    datetime(2025, 1, 1, 9, 0),
+                    datetime(2025, 1, 1, 9, 1),
+                    datetime(2025, 1, 1, 9, 2),
+                    datetime(2025, 1, 1, 9, 0),
+                    datetime(2025, 1, 1, 9, 1),
+                    datetime(2025, 1, 1, 9, 2),
+                ],
+                "symbol": ["AAPL", "AAPL", "AAPL", "MSFT", "MSFT", "MSFT"],
+                "price": [100.0, None, 102.0, 50.0, None, 52.0],
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        df.upsample(
+            time_column="time", every="1d", group_by="time", maintain_order=True
+        ),
+        df,
+    )
+
+    assert_frame_equal(
+        df.select("time").upsample(
+            time_column="time", every="1d", group_by="time", maintain_order=True
+        ),
+        df.select("time"),
+    )

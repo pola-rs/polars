@@ -168,22 +168,8 @@ impl KeyedPartitioner {
         let partitions_vec: Vec<Partition> = groups
             .iter()
             .map(|groups_indicator| {
-                let (first_idx, df) = match groups_indicator {
-                    GroupsIndicator::Idx((first_idx, indices)) => unsafe {
-                        (
-                            first_idx,
-                            gather_source_df.take_slice_unchecked_impl(indices, false),
-                        )
-                    },
-                    GroupsIndicator::Slice([offset, len]) => (
-                        offset,
-                        gather_source_df.slice(
-                            #[allow(clippy::unnecessary_fallible_conversions)]
-                            i64::try_from(offset).unwrap(),
-                            usize::try_from(len).unwrap(),
-                        ),
-                    ),
-                };
+                let first_idx = groups_indicator.first();
+                let df = unsafe { df.gather_group_unchecked(&groups_indicator) };
 
                 // Ensure 0-width is handled properly.
                 assert_eq!(df.height(), groups_indicator.len());

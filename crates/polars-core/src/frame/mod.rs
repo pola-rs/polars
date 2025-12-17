@@ -6,6 +6,7 @@ use std::{mem, ops};
 use arrow::datatypes::ArrowSchemaRef;
 use polars_row::ArrayRef;
 use polars_schema::schema::ensure_matching_schema_names;
+use polars_utils::UnitVec;
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
@@ -1830,7 +1831,7 @@ impl DataFrame {
         I: IntoIterator<Item = S>,
         S: Into<PlSmallStr>,
     {
-        let cols = selection.into_iter().map(|s| s.into()).collect::<Vec<_>>();
+        let cols: UnitVec<PlSmallStr> = selection.into_iter().map(|s| s.into()).collect();
         self._select_with_schema_impl(&cols, schema, true)
     }
 
@@ -1845,7 +1846,7 @@ impl DataFrame {
         I: IntoIterator<Item = S>,
         S: Into<PlSmallStr>,
     {
-        let cols = selection.into_iter().map(|s| s.into()).collect::<Vec<_>>();
+        let cols: UnitVec<PlSmallStr> = selection.into_iter().map(|s| s.into()).collect();
         self._select_with_schema_impl(&cols, schema, false)
     }
 
@@ -2045,6 +2046,17 @@ impl DataFrame {
     /// The indices must be in-bounds.
     pub unsafe fn take_unchecked(&self, idx: &IdxCa) -> Self {
         self.take_unchecked_impl(idx, true)
+    }
+
+    /// # Safety
+    /// The indices must be in-bounds.
+    pub unsafe fn gather_group_unchecked(&self, group: &GroupsIndicator) -> Self {
+        match group {
+            GroupsIndicator::Idx((_, indices)) => unsafe {
+                unsafe { self.take_slice_unchecked_impl(indices.as_slice(), false) }
+            },
+            GroupsIndicator::Slice([offset, len]) => self.slice(*offset as i64, *len as usize),
+        }
     }
 
     /// # Safety
@@ -3321,7 +3333,7 @@ impl DataFrame {
     ) -> PolarsResult<Vec<DataFrame>> {
         let selected_keys = self.select_columns(cols.iter().cloned())?;
         let groups = self.group_by_with_series(selected_keys, parallel, stable)?;
-        let groups = groups.take_groups();
+        let groups = groups.into_groups();
 
         // drop key columns prior to calculation if requested
         let df = if include_key {
