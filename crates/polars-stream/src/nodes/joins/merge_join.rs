@@ -611,9 +611,6 @@ fn compute_join(
         MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft,
     );
 
-    dbg!(&left);
-    dbg!(&right);
-
     // Add row-encoded key columns if needed
     if params.left.on.len() > 1 && !params.args.nulls_equal {
         left.drop_in_place(&params.left.key_col)?;
@@ -629,28 +626,32 @@ fn compute_join(
 
     // TODO: [amber] Remove any non-output columns earlier to reduce the
     // amount of gathering as much as possible
-    // TODO: [amber] Do a cardinality sketch to estimate the output size?
 
     let mut left_key = left.column(&params.left.key_col).unwrap();
     let mut right_key = right.column(&params.right.key_col).unwrap();
-
     if right_is_build {
         swap(&mut left_key, &mut right_key);
         swap(&mut left_sp, &mut right_sp);
     }
-    let mut matched_right = MutableBitmap::from_len_zeroed(right_key.len());
+    let mut right_matched = MutableBitmap::from_len_zeroed(right_key.len());
     let mut left_gather = Vec::new();
     let mut right_gather = Vec::new();
     let mut right_unmatched_gather = Vec::new();
-    // TODO: [amber] This is still quadratic
-    for (idxl, left_key) in left_key.as_materialized_series().iter().enumerate() {
+    let mut skip_ahead = 0;
+    for (idxl, left_keyval) in left_key.as_materialized_series().iter().enumerate() {
         let mut matched = false;
-        for (idxr, right_key) in right_key.as_materialized_series().iter().enumerate() {
-            if keys_eq(&left_key, &right_key, &params) {
+        for idxr in skip_ahead..right_key.len() {
+            let right_keyval = right_key.get(idxr).unwrap();
+            let both_valid = !left_keyval.is_null() && !right_keyval.is_null();
+            if keys_eq(&left_keyval, &right_keyval, &params) {
                 matched = true;
-                matched_right.set(idxr, true);
+                right_matched.set(idxr, true);
                 left_gather.push(idxl as IdxSize);
                 right_gather.push(idxr as IdxSize);
+            } else if both_valid && keys_lt(&right_keyval, &left_keyval, params) {
+                skip_ahead = idxr;
+            } else if both_valid && keys_gt(&right_keyval, &left_keyval, params) {
+                break;
             }
         }
         if left_sp.emit_unmatched && !matched {
@@ -659,7 +660,7 @@ fn compute_join(
         }
     }
     if right_sp.emit_unmatched {
-        for (idxr, _) in matched_right.iter().enumerate().filter(|(_, m)| !m) {
+        for (idxr, _) in right_matched.iter().enumerate().filter(|(_, m)| !m) {
             right_unmatched_gather.push(idxr as IdxSize);
         }
     }
@@ -707,16 +708,6 @@ fn compute_join(
 
         // Rename any right columns to "{}_right"
         rename_right_columns(&left, &mut right, params)?;
-
-        // for (left_on, right_on) in params.left_on.iter().zip(params.right_on.iter()) {
-        //     let left_col = df_left.column(left_on)?;
-        //     let right_col = df_right.column(right_on)?;
-        //     coalesce_columns(s)
-        //     df_left.replace(left_on, coalesced.into_column())?;
-        // }
-
-        // let left = self.drop_non_output_columns(left)?;
-        // let right = self.drop_non_output_columns(right)?;
 
         left.hstack_mut(&right.get_columns())?;
         *df = drop_non_output_columns(&left, params)?;
