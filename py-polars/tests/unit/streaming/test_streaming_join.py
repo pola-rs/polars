@@ -421,7 +421,7 @@ def test_cross_join_with_literal_column_25544() -> None:
     [
         "inner",
         "left",
-        # "right",
+        "right",
         # "full",
     ],
 )
@@ -449,11 +449,11 @@ def test_cross_join_with_literal_column_25544() -> None:
 @pytest.mark.parametrize(
     "maintain_order",
     [
-        # "none",
+        "none",
         "left",
-        # "right",
-        # "left_right",
-        # "right_left",
+        "right",
+        "left_right",
+        "right_left",
     ],
 )
 @settings(max_examples=100)
@@ -485,10 +485,10 @@ def test_merge_join_dispatch(
 ) -> None:
     check_row_order = maintain_order != "none"
 
-    if (how == "left" and maintain_order.startswith("right")) or (
-        how == "right" and maintain_order.startswith("left")
-    ):
-        pytest.skip("hard to maintain order")
+    # if (how == "left" and maintain_order.startswith("right")) or (
+    #     how == "right" and maintain_order.startswith("left")
+    # ):
+    #     pytest.skip("hard to maintain order")
 
     df_left = (
         df_left.sort(*on, descending=descending, nulls_last=nulls_last)

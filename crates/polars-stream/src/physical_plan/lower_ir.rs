@@ -1190,22 +1190,10 @@ pub fn lower_ir(
 
                 // TODO: We can do this if we keep store of all the unmatched rows until the end
                 // of the join
-                let hard_to_maintain_order = (args.how == JoinType::Left
-                    && matches!(
-                        args.maintain_order,
-                        MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft
-                    ))
-                    || (args.how == JoinType::Right
-                        && matches!(
-                            args.maintain_order,
-                            MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight
-                        ));
 
-                let node = if args.how.is_equi()
-                    && left_is_sorted
-                    && right_is_sorted
-                    && !hard_to_maintain_order
-                    && args.how != JoinType::Full
+                let node = if args.how.is_equi() && left_is_sorted && right_is_sorted
+                // && !hard_to_maintain_order
+                // && args.how != JoinType::Full
                 {
                     phys_sm.insert(PhysNode::new(
                         output_schema,

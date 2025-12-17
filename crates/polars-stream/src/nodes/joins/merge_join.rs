@@ -1,11 +1,13 @@
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::mem::swap;
 
 use arrow::array::builder::ShareStrategy;
+use arrow::bitmap::MutableBitmap;
 use either::{Either, Left, Right};
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
+use polars_ops::frame::join;
 use polars_ops::prelude::*;
 use polars_plan::prelude::*;
 use polars_utils::format_pl_smallstr;
@@ -14,6 +16,8 @@ use polars_utils::itertools::Itertools;
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
 use crate::async_primitives::distributor_channel::distributor_channel;
+use crate::async_primitives::linearizer::Linearizer;
+use crate::async_primitives::morsel_linearizer::MorselLinearizer;
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
@@ -74,14 +78,16 @@ pub struct MergeJoinNode {
     params: MergeJoinParams,
     left_unmerged: VecDeque<DataFrame>,
     right_unmerged: VecDeque<DataFrame>,
+    unmatched: BTreeMap<MorselSeq, VecDeque<DataFrame>>,
     seq: MorselSeq,
 }
 
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 enum MergeJoinState {
     #[default]
     Running,
-    Flushing,
+    FlushInputBuffers,
+    EmitUnmatched,
     Done,
 }
 
@@ -184,6 +190,7 @@ impl MergeJoinNode {
             params,
             left_unmerged: Default::default(),
             right_unmerged: Default::default(),
+            unmatched: Default::default(),
             seq: MorselSeq::default(),
         })
     }
@@ -200,21 +207,29 @@ impl ComputeNode for MergeJoinNode {
         send: &mut [PortState],
         _state: &StreamingExecutionState,
     ) -> PolarsResult<()> {
-        assert!(recv.len() == 2 && send.len() == 1);
+        assert!(recv.len() == 2);
+        assert!(send.len() == 1);
 
-        if send[0] == PortState::Done {
+        let prev_state = self.state;
+        let input_channels_done = recv[0] == PortState::Done && recv[1] == PortState::Done;
+        let output_channel_done = send[0] == PortState::Done;
+        let input_buffers_empty = self.left_unmerged.is_empty() && self.right_unmerged.is_empty();
+        let unmatched_buffers_empty = self.unmatched.is_empty();
+
+        if output_channel_done {
             self.state = MergeJoinState::Done;
-        } else if recv[0] == PortState::Done
-            && recv[1] == PortState::Done
-            && (!self.left_unmerged.is_empty() || !self.right_unmerged.is_empty())
-        {
-            self.state = MergeJoinState::Flushing;
-        } else if recv[0] == PortState::Done
-            && self.left_unmerged.is_empty()
-            && recv[1] == PortState::Done
-        {
+        } else if !input_channels_done {
+            self.state = MergeJoinState::Running
+        } else if input_channels_done && !input_buffers_empty {
+            self.state = MergeJoinState::FlushInputBuffers;
+        } else if input_channels_done && input_buffers_empty && !unmatched_buffers_empty {
+            self.state = MergeJoinState::EmitUnmatched;
+        } else if input_channels_done && input_buffers_empty && unmatched_buffers_empty {
             self.state = MergeJoinState::Done;
+        } else {
+            unreachable!()
         }
+        assert!(prev_state <= self.state);
 
         match self.state {
             MergeJoinState::Running => {
@@ -222,7 +237,7 @@ impl ComputeNode for MergeJoinNode {
                 recv[1] = PortState::Ready;
                 send[0] = PortState::Ready;
             },
-            MergeJoinState::Flushing => {
+            MergeJoinState::FlushInputBuffers | MergeJoinState::EmitUnmatched => {
                 recv[0] = PortState::Done;
                 recv[1] = PortState::Done;
                 send[0] = PortState::Ready;
@@ -249,30 +264,31 @@ impl ComputeNode for MergeJoinNode {
         let params = &self.params;
         let left_unmerged = &mut self.left_unmerged;
         let right_unmerged = &mut self.right_unmerged;
+        let unmatched = &mut self.unmatched;
         let seq = &mut self.seq;
 
         assert!(recv_ports.len() == 2 && send_ports.len() == 1);
-
         let mut recv_left = recv_ports[0].take().map(RecvPort::serial);
         let mut recv_right = recv_ports[1].take().map(RecvPort::serial);
-        let send = send_ports[0].take().unwrap().parallel();
 
-        debug_assert!(
-            (recv_left.is_none() && recv_right.is_none())
-                == (self.state == MergeJoinState::Flushing)
-        );
+        dbg!(&self.state);
+        if recv_left.is_none() && recv_right.is_none() {
+            assert!(self.state >= FlushInputBuffers);
+        }
 
-        let (mut distributor, dist_recv) =
-            distributor_channel(send.len(), *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
+        if matches!(self.state, Running | FlushInputBuffers) {
+            let send = send_ports[0].take().unwrap().parallel();
+            let (mut distributor, dist_recv) =
+                distributor_channel(send.len(), *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
+            let (mut linearizer, dist_send) = MorselLinearizer::new(dist_recv.len(), 1);
 
-        if matches!(self.state, Running | Flushing) {
             join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
                 // Partitioner task; worst-case complexity O(n)
 
                 let source_token = SourceToken::new();
 
                 loop {
-                    match (find_mergeable(
+                    match dbg!(find_mergeable(
                         left_unmerged,
                         right_unmerged,
                         recv_left.is_none(),
@@ -331,18 +347,58 @@ impl ComputeNode for MergeJoinNode {
                 Ok(())
             }));
 
-            join_handles.extend(dist_recv.into_iter().zip(send).map(|(mut recv, mut send)| {
-                scope.spawn_task(TaskPriority::High, async move {
-                    while let Ok((morsel, right)) = recv.recv().await {
-                        let (left, seq, source_token, _) = morsel.into_inner();
-                        let joined = compute_join(left, right, params)?;
-                        let morsel = Morsel::new(joined, seq, source_token);
-                        if send.send(morsel).await.is_err() {
+            join_handles.extend(dist_recv.into_iter().zip(send).zip(dist_send).map(
+                |((mut recv, mut send), mut unmatched_inserter)| {
+                    scope.spawn_task(TaskPriority::High, async move {
+                        while let Ok((morsel, right)) = recv.recv().await {
+                            let (left, seq, source_token, _) = morsel.into_inner();
+                            let (joined, joined_unmatched) = compute_join(left, right, params)?;
+                            if !joined.is_empty() {
+                                let morsel = Morsel::new(joined, seq, source_token.clone());
+                                if send.send(morsel).await.is_err() {
+                                    break;
+                                }
+                            }
+                            if !joined_unmatched.is_empty() {
+                                let morsel = Morsel::new(joined_unmatched, seq, source_token);
+                                if unmatched_inserter.insert(morsel).await.is_err() {
+                                    break;
+                                }
+                            }
+                        }
+                        Ok(())
+                    })
+                },
+            ));
+
+            join_handles.push(scope.spawn_task(TaskPriority::High, async move {
+                while let Some(morsel) = linearizer.get().await {
+                    let (df, seq, _st, _wt) = morsel.into_inner();
+                    if !unmatched.contains_key(&seq) {
+                        unmatched.insert(seq, Default::default());
+                    }
+                    unmatched.get_mut(&seq).unwrap().push_back(df);
+                }
+                Ok(())
+            }));
+        } else if self.state == MergeJoinState::EmitUnmatched {
+            assert!(recv_ports[0].is_none());
+            assert!(recv_ports[1].is_none());
+            assert!(send_ports[0].is_some());
+            let mut send = send_ports[0].take().unwrap().serial();
+
+            join_handles.push(scope.spawn_task(TaskPriority::High, async move {
+                while let Some((btree_key, mut vec)) = unmatched.pop_first() {
+                    while let Some(df) = vec.pop_front() {
+                        let morsel = Morsel::new(df, *seq, SourceToken::new());
+                        if let Err(morsel) = send.send(morsel).await {
+                            vec.push_front(morsel.into_df());
+                            unmatched.insert(btree_key, vec);
                             break;
                         }
                     }
-                    Ok(())
-                })
+                }
+                Ok(())
             }));
         }
     }
@@ -375,15 +431,16 @@ fn find_mergeable_inner(
     left_done: bool,
     right_done: bool,
 ) -> PolarsResult<Either<(DataFrame, DataFrame), NeedMore>> {
+    dbg!(&left, &right);
     loop {
         if left_done && left.is_empty() && right_done && right.is_empty() {
             return (Ok(Right(NeedMore::Finished)));
-        } else if left_done && left.is_empty() && !right_params.emit_unmatched {
-            right.clear();
-            return (Ok(Right(NeedMore::Finished)));
-        } else if right_done && right.is_empty() && !left_params.emit_unmatched {
-            left.clear();
-            return (Ok(Right(NeedMore::Finished)));
+        // } else if left_done && left.is_empty() && !right_params.emit_unmatched {
+        //     right.clear();
+        //     return (Ok(Right(NeedMore::Finished)));
+        // } else if right_done && right.is_empty() && !left_params.emit_unmatched {
+        //     left.clear();
+        //     return (Ok(Right(NeedMore::Finished)));
         } else if left_done && left.is_empty() {
             return (Ok(Left((
                 DataFrame::empty_with_schema(&left_params.ir_schema),
@@ -551,14 +608,16 @@ fn compute_join(
     mut left: DataFrame,
     mut right: DataFrame,
     params: &MergeJoinParams,
-) -> PolarsResult<DataFrame> {
-    let join_type = &params.args.how;
-    let right_is_build = *join_type == JoinType::Right
-        || (*join_type == JoinType::Inner
-            && matches!(
-                params.args.maintain_order,
-                MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft,
-            ));
+) -> PolarsResult<(DataFrame, DataFrame)> {
+    let mut left_sp = &params.left;
+    let mut right_sp = &params.right;
+    let right_is_build = matches!(
+        params.args.maintain_order,
+        MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft,
+    );
+
+    dbg!(&left);
+    dbg!(&right);
 
     // Add row-encoded key columns if needed
     if params.left.on.len() > 1 && !params.args.nulls_equal {
@@ -582,26 +641,38 @@ fn compute_join(
 
     if right_is_build {
         swap(&mut left_key, &mut right_key);
+        swap(&mut left_sp, &mut right_sp);
     }
-    let mut left_gather_idxs = Vec::new();
-    let mut right_gather_idxs = Vec::new();
+    let mut matched_right = MutableBitmap::from_len_zeroed(right_key.len());
+    let mut left_gather = Vec::new();
+    let mut right_gather = Vec::new();
+    let mut right_unmatched_gather = Vec::new();
     // TODO: [amber] This is still quadratic
     for (idxl, left_key) in left_key.as_materialized_series().iter().enumerate() {
         let mut matched = false;
         for (idxr, right_key) in right_key.as_materialized_series().iter().enumerate() {
             if keys_eq(&left_key, &right_key, &params) {
                 matched = true;
-                left_gather_idxs.push(idxl as IdxSize);
-                right_gather_idxs.push(idxr as IdxSize);
+                matched_right.set(idxr, true);
+                left_gather.push(idxl as IdxSize);
+                right_gather.push(idxr as IdxSize);
             }
         }
-        if !matched && matches!(params.args.how, JoinType::Left | JoinType::Right) {
-            left_gather_idxs.push(idxl as IdxSize);
-            right_gather_idxs.push(IdxSize::MAX);
+        if left_sp.emit_unmatched && !matched {
+            left_gather.push(idxl as IdxSize);
+            right_gather.push(IdxSize::MAX);
         }
     }
+    for idxr in 0..right_key.len() {
+        if right_sp.emit_unmatched && !matched_right.get(idxr) {
+            right_unmatched_gather.push(idxr as IdxSize);
+        }
+    }
+    let mut left_unmatched_gather = vec![IdxSize::MAX; right_unmatched_gather.len()];
     if right_is_build {
-        swap(&mut left_gather_idxs, &mut right_gather_idxs);
+        swap(&mut left_gather, &mut right_gather);
+        swap(&mut left_unmatched_gather, &mut right_unmatched_gather);
+        swap(&mut left_sp, &mut right_sp);
     }
 
     // Remove the added row-encoded key columns
@@ -610,40 +681,52 @@ fn compute_join(
         right = right.drop(&params.right.key_col).unwrap();
     }
 
-    let mut left_build = DataFrameBuilder::new(left.schema().clone());
-    let mut right_build = DataFrameBuilder::new(right.schema().clone());
-    left_build.opt_gather_extend(&left, &left_gather_idxs, ShareStrategy::Never);
-    right_build.opt_gather_extend(&right, &right_gather_idxs, ShareStrategy::Never);
-    left = left_build.freeze();
-    right = right_build.freeze();
+    let mut df_main = Default::default();
+    let mut df_unmatched = Default::default();
+    for (df, lg, rg) in [
+        (&mut df_main, left_gather, right_gather),
+        (
+            &mut df_unmatched,
+            left_unmatched_gather,
+            right_unmatched_gather,
+        ),
+    ] {
+        let mut left_build = DataFrameBuilder::new(left.schema().clone());
+        let mut right_build = DataFrameBuilder::new(right.schema().clone());
+        left_build.opt_gather_extend(&left, &lg, ShareStrategy::Never);
+        right_build.opt_gather_extend(&right, &rg, ShareStrategy::Never);
+        let mut left = left_build.freeze();
+        let mut right = right_build.freeze();
 
-    // Coalsesce the key columns (and rename them)
-    if params.args.how == JoinType::Left {
-        for c in &params.left.on {
-            right.drop_in_place(c.as_str())?;
+        // Coalsesce the key columns (and rename them)
+        if params.args.how == JoinType::Left {
+            for c in &params.left.on {
+                right.drop_in_place(c.as_str())?;
+            }
+        } else if params.args.how == JoinType::Right {
+            for c in &params.right.on {
+                left.drop_in_place(c.as_str())?;
+            }
         }
-    } else if params.args.how == JoinType::Right {
-        for c in &params.right.on {
-            left.drop_in_place(c.as_str())?;
-        }
+
+        // Rename any right columns to "{}_right"
+        rename_right_columns(&left, &mut right, params)?;
+
+        // for (left_on, right_on) in params.left_on.iter().zip(params.right_on.iter()) {
+        //     let left_col = df_left.column(left_on)?;
+        //     let right_col = df_right.column(right_on)?;
+        //     coalesce_columns(s)
+        //     df_left.replace(left_on, coalesced.into_column())?;
+        // }
+
+        // let left = self.drop_non_output_columns(left)?;
+        // let right = self.drop_non_output_columns(right)?;
+
+        left.hstack_mut(&right.get_columns())?;
+        *df = drop_non_output_columns(&left, params)?;
     }
 
-    // Rename any right columns to "{}_right"
-    rename_right_columns(&left, &mut right, params)?;
-
-    // for (left_on, right_on) in params.left_on.iter().zip(params.right_on.iter()) {
-    //     let left_col = df_left.column(left_on)?;
-    //     let right_col = df_right.column(right_on)?;
-    //     coalesce_columns(s)
-    //     df_left.replace(left_on, coalesced.into_column())?;
-    // }
-
-    // let left = self.drop_non_output_columns(left)?;
-    // let right = self.drop_non_output_columns(right)?;
-
-    left.hstack_mut(&right.get_columns())?;
-    let df = drop_non_output_columns(&left, params)?;
-    Ok(df)
+    Ok(dbg!(df_main, df_unmatched))
 }
 
 fn rename_right_columns(
