@@ -8,6 +8,7 @@ use arrow::offset::{Offset, Offsets};
 use arrow::temporal_conversions;
 use arrow::types::NativeType;
 use num_traits::NumCast;
+#[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::{f64_to_dec128, i128_to_dec128, str_to_dec128};
 use polars_utils::float16::pf16;
 use simd_json::{BorrowedValue, StaticNode};
@@ -53,6 +54,7 @@ fn deserialize_primitive_into<'a, T: NativeType + NumCast, A: Borrow<BorrowedVal
     check_err_idx(rows, err_idx, "numeric")
 }
 
+#[cfg(feature = "dtype-decimal")]
 fn deserialize_decimal<'a, A: Borrow<BorrowedValue<'a>>>(
     rows: &[A],
     dtype: ArrowDataType,
@@ -451,6 +453,7 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
         ArrowDataType::Float64 => {
             fill_array_from::<_, _, PrimitiveArray<f64>>(deserialize_primitive_into, dtype, rows)
         },
+        #[cfg(feature = "dtype-decimal")]
         ArrowDataType::Decimal(_, _) => Ok(Box::new(deserialize_decimal(rows, dtype)?)),
         ArrowDataType::LargeUtf8 => {
             fill_generic_array_from::<_, _, Utf8Array<i64>>(deserialize_utf8_into, rows)
