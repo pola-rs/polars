@@ -878,8 +878,10 @@ fn to_graph_rec<'a>(
                 .iter()
                 .map(|i| PolarsResult::Ok((to_graph_rec(i.node, ctx)?, i.port)))
                 .try_collect_vec()?;
-            ctx.graph
-                .add_node(nodes::ordered_union::OrderedUnionNode::new(), input_keys)
+            ctx.graph.add_node(
+                nodes::ordered_union::OrderedUnionNode::new(node.output_schema.clone()),
+                input_keys,
+            )
         },
 
         Zip {
