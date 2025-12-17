@@ -285,13 +285,13 @@ impl ComputeNode for MergeJoinNode {
                 let source_token = SourceToken::new();
 
                 loop {
-                    match dbg!(find_mergeable(
+                    match find_mergeable(
                         left_unmerged,
                         right_unmerged,
                         recv_left.is_none(),
                         recv_right.is_none(),
                         params,
-                    )?) {
+                    )? {
                         Left((left_mergeable, right_mergeable)) => {
                             let left_mergeable =
                                 Morsel::new(left_mergeable, *seq, source_token.clone());
@@ -695,12 +695,12 @@ fn compute_join(
         let mut left = left_build.freeze();
         let mut right = right_build.freeze();
 
-        // Coalsesce the key columns (and rename them)
-        if params.args.how == JoinType::Left {
+        // Coalsesce the key columns
+        if params.args.how == JoinType::Left && params.args.should_coalesce() {
             for c in &params.left.on {
                 right.drop_in_place(c.as_str())?;
             }
-        } else if params.args.how == JoinType::Right {
+        } else if params.args.how == JoinType::Right && params.args.should_coalesce() {
             for c in &params.right.on {
                 left.drop_in_place(c.as_str())?;
             }
@@ -710,10 +710,25 @@ fn compute_join(
         rename_right_columns(&left, &mut right, params)?;
 
         left.hstack_mut(&right.get_columns())?;
+        if params.args.how == JoinType::Full && params.args.should_coalesce() {
+            for (left_keycol, right_keycol) in
+                Iterator::zip(params.left.on.iter(), params.right.on.iter())
+            {
+                let right_keycol = format_pl_smallstr!("{}{}", right_keycol, params.args.suffix());
+                let left_col = left.column(&left_keycol).unwrap();
+                let right_col = left.column(&right_keycol).unwrap();
+                let coalesced = coalesce_columns(&[left_col.clone(), right_col.clone()]).unwrap();
+                left.replace(&left_keycol, coalesced.take_materialized_series())
+                    .unwrap()
+                    .drop_in_place(&right_keycol)
+                    .unwrap();
+            }
+        }
+
         *df = drop_non_output_columns(&left, params)?;
     }
 
-    Ok(dbg!(df_main, df_unmatched))
+    Ok((df_main, df_unmatched))
 }
 
 fn rename_right_columns(

@@ -447,6 +447,14 @@ def test_cross_join_with_literal_column_25544() -> None:
     ],
 )
 @pytest.mark.parametrize(
+    "coalesce",
+    [
+        None,
+        True,
+        False,
+    ],
+)
+@pytest.mark.parametrize(
     "maintain_order",
     [
         "none",
@@ -472,7 +480,7 @@ def test_cross_join_with_literal_column_25544() -> None:
         ],
     ),
 )
-def test_merge_join_dispatch(
+def test_merge_join(
     df_left: pl.DataFrame,
     df_right: pl.DataFrame,
     on: list[str],
@@ -480,6 +488,7 @@ def test_merge_join_dispatch(
     descending: bool,
     nulls_last: bool,
     nulls_equal: bool,
+    coalesce: bool | None,
     maintain_order: MaintainOrderJoin,
 ) -> None:
     check_row_order = maintain_order in {"left_right", "right_left"}
@@ -505,6 +514,7 @@ def test_merge_join_dispatch(
         on=on,
         how=how,
         nulls_equal=nulls_equal,
+        coalesce=coalesce,
         maintain_order=maintain_order,
     )
     dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
