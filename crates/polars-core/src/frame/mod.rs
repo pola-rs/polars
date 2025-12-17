@@ -2053,7 +2053,7 @@ impl DataFrame {
     pub unsafe fn gather_group_unchecked(&self, group: &GroupsIndicator) -> Self {
         match group {
             GroupsIndicator::Idx((_, indices)) => unsafe {
-                unsafe { self.take_slice_unchecked_impl(indices.as_slice(), false) }
+                self.take_slice_unchecked_impl(indices.as_slice(), false)
             },
             GroupsIndicator::Slice([offset, len]) => self.slice(*offset as i64, *len as usize),
         }
