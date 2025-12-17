@@ -1913,7 +1913,7 @@ impl DataFrame {
             .into_iter()
             .map(|name| Ok(self.columns[from.try_index_of(name.as_ref())?].clone()))
             .collect::<PolarsResult<Vec<_>>>()?;
-        let mut df = unsafe { Self::new_no_checks(self.height(), columns) };
+        let df = unsafe { Self::new_no_checks(self.height(), columns) };
         Ok(df)
     }
 
