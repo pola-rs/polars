@@ -269,7 +269,7 @@ impl DataFrame {
         }
     }
 
-    /// Create a DataFrame from a Vector of Series.
+    /// Create a DataFrame from a Vector of Columns.
     ///
     /// Errors if a column names are not unique, or if heights are not all equal.
     ///
@@ -334,7 +334,7 @@ impl DataFrame {
 
     /// Converts a sequence of columns into a DataFrame, broadcasting length-1
     /// columns to match the other columns.
-    ///  
+    ///
     /// # Safety
     /// Does not check that the column names are unique (which they must be).
     pub unsafe fn new_with_broadcast_no_namecheck(
