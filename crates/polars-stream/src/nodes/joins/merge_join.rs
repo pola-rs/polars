@@ -78,7 +78,7 @@ pub struct MergeJoinNode {
     params: MergeJoinParams,
     left_unmerged: VecDeque<DataFrame>,
     right_unmerged: VecDeque<DataFrame>,
-    unmatched: BTreeMap<MorselSeq, VecDeque<DataFrame>>,
+    unmatched: BTreeMap<MorselSeq, DataFrame>,
     seq: MorselSeq,
 }
 
@@ -374,10 +374,11 @@ impl ComputeNode for MergeJoinNode {
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 while let Some(morsel) = linearizer.get().await {
                     let (df, seq, _st, _wt) = morsel.into_inner();
-                    if !unmatched.contains_key(&seq) {
-                        unmatched.insert(seq, Default::default());
+                    if let Some(append_to) = unmatched.get_mut(&seq) {
+                        append_to.vstack_mut_owned(df)?;
+                    } else {
+                        unmatched.insert(seq, df);
                     }
-                    unmatched.get_mut(&seq).unwrap().push_back(df);
                 }
                 Ok(())
             }));
@@ -388,14 +389,11 @@ impl ComputeNode for MergeJoinNode {
             let mut send = send_ports[0].take().unwrap().serial();
 
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                while let Some((btree_key, mut vec)) = unmatched.pop_first() {
-                    while let Some(df) = vec.pop_front() {
-                        let morsel = Morsel::new(df, *seq, SourceToken::new());
-                        if let Err(morsel) = send.send(morsel).await {
-                            vec.push_front(morsel.into_df());
-                            unmatched.insert(btree_key, vec);
-                            break;
-                        }
+                while let Some((btree_key, df)) = unmatched.pop_first() {
+                    let morsel = Morsel::new(df, *seq, SourceToken::new());
+                    if let Err(morsel) = send.send(morsel).await {
+                        unmatched.insert(btree_key, morsel.into_df());
+                        break;
                     }
                 }
                 Ok(())
