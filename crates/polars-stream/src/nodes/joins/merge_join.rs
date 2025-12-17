@@ -443,11 +443,6 @@ fn find_mergeable_inner(
                 left.pop_front().unwrap(),
                 DataFrame::empty_with_schema(&right_params.ir_schema),
             )));
-        } else if left_done && left.len() <= 1 && right_done && right.len() <= 1 {
-            return Ok(Left((
-                left.pop_front().unwrap(),
-                right.pop_front().unwrap(),
-            )));
         } else if left.is_empty() && !left_done {
             return Ok(Right(NeedMore::Left));
         } else if right.is_empty() && !right_done {
@@ -637,18 +632,20 @@ fn compute_join(
     let mut skip_ahead = 0;
     for (idxl, left_keyval) in left_key.as_materialized_series().iter().enumerate() {
         let mut matched = false;
-        for idxr in skip_ahead..right_key.len() {
-            let right_keyval = right_key.get(idxr).unwrap();
-            let both_valid = !left_keyval.is_null() && !right_keyval.is_null();
-            if keys_eq(&left_keyval, &right_keyval, &params) {
-                matched = true;
-                right_matched.set(idxr, true);
-                left_gather.push(idxl as IdxSize);
-                right_gather.push(idxr as IdxSize);
-            } else if both_valid && keys_lt(&right_keyval, &left_keyval, params) {
-                skip_ahead = idxr;
-            } else if both_valid && keys_gt(&right_keyval, &left_keyval, params) {
-                break;
+        if params.args.nulls_equal || !left_keyval.is_null() {
+            for idxr in skip_ahead..right_key.len() {
+                let right_keyval = right_key.get(idxr).unwrap();
+                let both_valid = !left_keyval.is_null() && !right_keyval.is_null();
+                if keys_eq(&left_keyval, &right_keyval, &params) {
+                    matched = true;
+                    right_matched.set(idxr, true);
+                    left_gather.push(idxl as IdxSize);
+                    right_gather.push(idxr as IdxSize);
+                } else if both_valid && keys_lt(&right_keyval, &left_keyval, params) {
+                    skip_ahead = idxr;
+                } else if both_valid && keys_gt(&right_keyval, &left_keyval, params) {
+                    break;
+                }
             }
         }
         if left_sp.emit_unmatched && !matched {
