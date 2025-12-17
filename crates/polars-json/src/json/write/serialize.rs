@@ -15,6 +15,8 @@ use arrow::temporal_conversions::{
     timestamp_to_datetime, timestamp_us_to_datetime,
 };
 use arrow::types::NativeType;
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use chrono::{Duration, NaiveDate, NaiveDateTime, NaiveTime};
 use num_traits::{Float, ToPrimitive};
 use polars_utils::float16::pf16;
@@ -195,6 +197,24 @@ fn utf8view_serializer<'a>(
     let f = |x: Option<&str>, buf: &mut Vec<u8>| {
         if let Some(x) = x {
             utf8::write_str(buf, x).unwrap();
+        } else {
+            buf.extend_from_slice(b"null")
+        }
+    };
+    materialize_serializer(f, array.iter(), offset, take)
+}
+
+fn binaryview_serializer<'a>(
+    array: &'a BinaryViewArray,
+    offset: usize,
+    take: usize,
+) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync> {
+    let f = |x: Option<&[u8]>, buf: &mut Vec<u8>| {
+        if let Some(x) = x {
+            buf.push(b'"');
+            let encoded = BASE64_STANDARD.encode(x);
+            buf.extend_from_slice(encoded.as_bytes());
+            buf.push(b'"');
         } else {
             buf.extend_from_slice(b"null")
         }
@@ -509,6 +529,9 @@ pub(crate) fn new_serializer<'a>(
         },
         ArrowDataType::Utf8View => {
             utf8view_serializer(array.as_any().downcast_ref().unwrap(), offset, take)
+        },
+        ArrowDataType::BinaryView => {
+            binaryview_serializer(array.as_any().downcast_ref().unwrap(), offset, take)
         },
         ArrowDataType::Struct(_) => {
             struct_serializer(array.as_any().downcast_ref().unwrap(), offset, take)
