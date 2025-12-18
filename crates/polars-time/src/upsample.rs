@@ -224,7 +224,9 @@ fn upsample_impl(
                     })
                     .collect::<PolarsResult<_>>()?;
 
-                accumulate_dataframes_vertical_unchecked(dfs).project(source_schema.clone())
+                unsafe {
+                    accumulate_dataframes_vertical_unchecked(dfs).project(source_schema.clone())
+                }
             }
         },
     }

@@ -1922,8 +1922,9 @@ impl DataFrame {
         Ok(unsafe { DataFrame::new_no_checks(self.height(), selected) })
     }
 
-    /// Note: Dtypes must match as the cached schema is set as `to`. This is not checked.
-    pub fn project(&self, to: SchemaRef) -> PolarsResult<Self> {
+    /// # Safety
+    /// Dtypes must match, as the provided schema becomes the cached schema of the result.
+    pub unsafe fn project(&self, to: SchemaRef) -> PolarsResult<Self> {
         let mut df = unsafe { self.project_names(to.iter_names())? };
         df.cached_schema = to.into();
         Ok(df)
