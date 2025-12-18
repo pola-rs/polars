@@ -172,7 +172,9 @@ fn upsample_impl(
                 let height = source.height();
                 let source_schema = source.schema();
 
-                let group_keys_df = source.project_names(&by)?;
+                let by: PlHashSet<PlSmallStr> = PlHashSet::from_iter(by);
+
+                let group_keys_df = unsafe { source.project_names(by.iter())? };
                 let group_keys_schema = group_keys_df.schema();
 
                 let groups = if stable {
@@ -183,16 +185,11 @@ fn upsample_impl(
                 .into_groups();
 
                 let non_group_keys_df = unsafe {
-                    DataFrame::new_no_checks(
-                        height,
+                    source.project_names(
                         source_schema
                             .iter_names()
-                            .filter(|name| !group_keys_schema.contains(name.as_str()))
-                            .map(|name| {
-                                source.get_columns()[source_schema.index_of(name).unwrap()].clone()
-                            })
-                            .collect(),
-                    )
+                            .filter(|name| !group_keys_schema.contains(name.as_str())),
+                    )?
                 };
 
                 let upsample_index_col_idx: Option<usize> =
