@@ -355,11 +355,12 @@ impl ComputeNode for MergeJoinNode {
             join_handles.extend(dist_recv.into_iter().zip(send).zip(unmatched_send).map(
                 |((mut recv, mut send), mut unmatched_inserter)| {
                     scope.spawn_task(TaskPriority::High, async move {
+                        let mut arenas = Arenas::default();
                         while let Ok((morsel, right)) = recv.recv().await {
                             let (left, seq, source_token, _wt) = morsel.into_inner();
                             let tick = std::time::Instant::now();
                             let (matched, unmatched) =
-                                compute_join(left.clone(), right.clone(), params)?;
+                                compute_join(left.clone(), right.clone(), params, &mut arenas)?;
                             let tock = std::time::Instant::now();
                             let delta = tock.duration_since(tick);
                             if delta.as_millis() > 1000 {
@@ -649,10 +650,19 @@ fn vstack_head(unmerged: &mut VecDeque<DataFrame>) {
     unmerged.push_front(df);
 }
 
+#[derive(Default)]
+struct Arenas {
+    gather_left: Vec<IdxSize>,
+    gather_right: Vec<IdxSize>,
+    gather_right_unmatched: Vec<IdxSize>,
+    bitmap_arena: MutableBitmap,
+}
+
 fn compute_join(
     mut left: DataFrame,
     mut right: DataFrame,
     params: &MergeJoinParams,
+    arenas: &mut Arenas,
 ) -> PolarsResult<(DataFrame, DataFrame)> {
     let mut left_sp = &params.left;
     let mut right_sp = &params.right;
@@ -676,10 +686,11 @@ fn compute_join(
         swap(&mut left_key, &mut right_key);
         swap(&mut left_sp, &mut right_sp);
     }
-    let mut gather_left = Vec::new();
-    let mut gather_right = Vec::new();
-    let mut gather_right_unmatched = Vec::new();
-    let mut bitmap_arena = MutableBitmap::default();
+
+    let mut gather_left = &mut arenas.gather_left;
+    let mut gather_right = &mut arenas.gather_right;
+    let mut gather_right_unmatched = &mut arenas.gather_right_unmatched;
+    let mut bitmap_arena = &mut arenas.bitmap_arena;
     compute_join_dispatch(
         left_key,
         right_key,
@@ -711,7 +722,7 @@ fn compute_join(
         (&mut df_main, gather_left, gather_right),
         (
             &mut df_unmatched,
-            gather_left_unmatched,
+            &mut gather_left_unmatched,
             gather_right_unmatched,
         ),
     ] {
