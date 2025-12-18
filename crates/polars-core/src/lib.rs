@@ -34,7 +34,6 @@ mod tests;
 
 use std::cell::{Cell, RefCell};
 use std::sync::{LazyLock, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 pub use datatypes::SchemaExtPl;
 pub use hashing::IdBuildHasher;
