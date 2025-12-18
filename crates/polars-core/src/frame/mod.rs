@@ -6,6 +6,7 @@ use std::{mem, ops};
 use arrow::datatypes::ArrowSchemaRef;
 use polars_row::ArrayRef;
 use polars_schema::schema::ensure_matching_schema_names;
+use polars_utils::UnitVec;
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
@@ -269,7 +270,7 @@ impl DataFrame {
         }
     }
 
-    /// Create a DataFrame from a Vector of Series.
+    /// Create a DataFrame from a Vector of Columns.
     ///
     /// Errors if a column names are not unique, or if heights are not all equal.
     ///
@@ -334,7 +335,7 @@ impl DataFrame {
 
     /// Converts a sequence of columns into a DataFrame, broadcasting length-1
     /// columns to match the other columns.
-    ///  
+    ///
     /// # Safety
     /// Does not check that the column names are unique (which they must be).
     pub unsafe fn new_with_broadcast_no_namecheck(
@@ -1830,7 +1831,7 @@ impl DataFrame {
         I: IntoIterator<Item = S>,
         S: Into<PlSmallStr>,
     {
-        let cols = selection.into_iter().map(|s| s.into()).collect::<Vec<_>>();
+        let cols: UnitVec<PlSmallStr> = selection.into_iter().map(|s| s.into()).collect();
         self._select_with_schema_impl(&cols, schema, true)
     }
 
@@ -1845,7 +1846,7 @@ impl DataFrame {
         I: IntoIterator<Item = S>,
         S: Into<PlSmallStr>,
     {
-        let cols = selection.into_iter().map(|s| s.into()).collect::<Vec<_>>();
+        let cols: UnitVec<PlSmallStr> = selection.into_iter().map(|s| s.into()).collect();
         self._select_with_schema_impl(&cols, schema, false)
     }
 
@@ -1898,13 +1899,21 @@ impl DataFrame {
     }
 
     pub fn project(&self, to: SchemaRef) -> PolarsResult<Self> {
-        let from = self.schema();
-        let columns = to
-            .iter_names()
-            .map(|name| Ok(self.columns[from.try_index_of(name.as_str())?].clone()))
-            .collect::<PolarsResult<Vec<_>>>()?;
-        let mut df = unsafe { Self::new_no_checks(self.height(), columns) };
+        let mut df = self.project_names(to.iter_names())?;
         df.cached_schema = to.into();
+        Ok(df)
+    }
+
+    pub fn project_names(
+        &self,
+        names: impl IntoIterator<Item = impl AsRef<str>>,
+    ) -> PolarsResult<Self> {
+        let from = self.schema();
+        let columns = names
+            .into_iter()
+            .map(|name| Ok(self.columns[from.try_index_of(name.as_ref())?].clone()))
+            .collect::<PolarsResult<Vec<_>>>()?;
+        let df = unsafe { Self::new_no_checks(self.height(), columns) };
         Ok(df)
     }
 
@@ -2045,6 +2054,17 @@ impl DataFrame {
     /// The indices must be in-bounds.
     pub unsafe fn take_unchecked(&self, idx: &IdxCa) -> Self {
         self.take_unchecked_impl(idx, true)
+    }
+
+    /// # Safety
+    /// The indices must be in-bounds.
+    pub unsafe fn gather_group_unchecked(&self, group: &GroupsIndicator) -> Self {
+        match group {
+            GroupsIndicator::Idx((_, indices)) => unsafe {
+                self.take_slice_unchecked_impl(indices.as_slice(), false)
+            },
+            GroupsIndicator::Slice([offset, len]) => self.slice(*offset as i64, *len as usize),
+        }
     }
 
     /// # Safety
@@ -2910,9 +2930,9 @@ impl DataFrame {
     /// | ---         | ---                | ---     |
     /// | i32         | f64                | str     |
     /// +=============+====================+=========+
-    /// | 108         | 0.63               | Syria   |
+    /// | 108         | 0.65               | Syria   |
     /// +-------------+--------------------+---------+
-    /// | 109         | 0.63               | Turkey  |
+    /// | 109         | 0.52               | Turkey  |
     /// +-------------+--------------------+---------+
     /// ```
     #[must_use]
@@ -3321,7 +3341,7 @@ impl DataFrame {
     ) -> PolarsResult<Vec<DataFrame>> {
         let selected_keys = self.select_columns(cols.iter().cloned())?;
         let groups = self.group_by_with_series(selected_keys, parallel, stable)?;
-        let groups = groups.take_groups();
+        let groups = groups.into_groups();
 
         // drop key columns prior to calculation if requested
         let df = if include_key {

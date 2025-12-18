@@ -86,11 +86,11 @@ async fn finish_initialize_multi_scan_pipeline(
         )?,
         Some(PredicateFileSkip {
             no_residual_predicate: false,
-            ..
+            original_len: _,
         }) => (None, config.predicate.as_ref()),
         Some(PredicateFileSkip {
             no_residual_predicate: true,
-            ..
+            original_len: _,
         }) => (None, None),
     };
 
