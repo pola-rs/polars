@@ -20,7 +20,7 @@ pub struct MorselResizePipeline {
 
 impl MorselResizePipeline {
     /// # Returns
-    /// * PolarsResult::Err(_) if number of rows overflowed `IdxSize::MAX`.
+    /// Returns an error if number of rows overflowed `IdxSize::MAX`.
     pub async fn run(self) -> PolarsResult<RowCountAndSize> {
         let MorselResizePipeline {
             empty_with_schema_df,
