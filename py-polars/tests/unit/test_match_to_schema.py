@@ -205,10 +205,11 @@ def test_match_to_schema_int_upcast() -> None:
     assert_frame_equal(expected, result)
 
 
-def test_match_to_schema_float_upcast() -> None:
+@pytest.mark.parametrize("float_dtype", [pl.Float16, pl.Float32])
+def test_match_to_schema_float_upcast(float_dtype: pl.DataType) -> None:
     df = pl.DataFrame(
         [
-            pl.Series("a", [1.0, 2.0, 3.0], pl.Float32()),
+            pl.Series("a", [1.0, 2.0, 3.0], float_dtype),
             pl.Series(
                 "b", [{"x": "A"}, {"x": "B"}, {"x": "C"}], pl.Struct({"x": pl.String()})
             ),

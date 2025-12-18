@@ -4,7 +4,7 @@ use polars_utils::format_pl_smallstr;
 use recursive::recursive;
 
 use super::*;
-use crate::constants::{PL_ELEMENT_NAME, POLARS_ELEMENT};
+use crate::constants::{POLARS_ELEMENT, get_literal_name, get_pl_element_name};
 
 fn validate_expr(node: Node, ctx: &ToFieldContext) -> PolarsResult<()> {
     ctx.arena.get(node).to_field_impl(ctx).map(|_| ())
@@ -47,11 +47,21 @@ impl AExpr {
                 .ok_or_else(|| polars_err!(invalid_element_use)),
 
             Len => Ok(Field::new(PlSmallStr::from_static(LEN), IDX_DTYPE)),
-            Window {
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling { function, .. } => {
+                let e = ctx.arena.get(*function);
+                let mut field = e.to_field_impl(ctx)?;
+                // Implicit implode
+                if !is_scalar_ae(*function, ctx.arena) {
+                    field.dtype = field.dtype.implode();
+                }
+                Ok(field)
+            },
+            Over {
                 function,
-                options,
                 partition_by,
                 order_by,
+                mapping,
             } => {
                 for node in partition_by {
                     validate_expr(*node, ctx)?;
@@ -63,15 +73,7 @@ impl AExpr {
                 let e = ctx.arena.get(*function);
                 let mut field = e.to_field_impl(ctx)?;
 
-                let mut implicit_implode = false;
-
-                implicit_implode |= matches!(options, WindowType::Over(WindowMapping::Join));
-                #[cfg(feature = "dynamic_group_by")]
-                {
-                    implicit_implode |= matches!(options, WindowType::Rolling(_));
-                }
-
-                if implicit_implode && !is_scalar_ae(*function, ctx.arena) {
+                if matches!(mapping, WindowMapping::Join) && !is_scalar_ae(*function, ctx.arena) {
                     field.dtype = field.dtype.implode();
                 }
 
@@ -94,7 +96,7 @@ impl AExpr {
                 .ok_or_else(|| PolarsError::ColumnNotFound(name.to_string().into())),
             Literal(sv) => Ok(match sv {
                 LiteralValue::Series(s) => s.field().into_owned(),
-                _ => Field::new(sv.output_column_name().clone(), sv.get_datatype()),
+                _ => Field::new(sv.output_column_name(), sv.get_datatype()),
             }),
             BinaryExpr { left, right, op } => {
                 use DataType::*;
@@ -139,11 +141,33 @@ impl AExpr {
                     Max { input: expr, .. }
                     | Min { input: expr, .. }
                     | First(expr)
+                    | FirstNonNull(expr)
                     | Last(expr)
-                    | Item { input: expr, .. } => ctx.arena.get(*expr).to_field_impl(ctx),
+                    | LastNonNull(expr) => ctx.arena.get(*expr).to_field_impl(ctx),
+                    Item { input: expr, .. } => ctx.arena.get(*expr).to_field_impl(ctx),
                     Sum(expr) => {
                         let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
                         let dt = match field.dtype() {
+                            String | Binary | BinaryOffset | List(_) => {
+                                polars_bail!(
+                                    InvalidOperation: "`sum` operation not supported for dtype `{}`",
+                                    field.dtype()
+                                )
+                            },
+                            #[cfg(feature = "dtype-array")]
+                            Array(_, _) => {
+                                polars_bail!(
+                                    InvalidOperation: "`sum` operation not supported for dtype `{}`",
+                                    field.dtype()
+                                )
+                            },
+                            #[cfg(feature = "dtype-struct")]
+                            Struct(_) => {
+                                polars_bail!(
+                                    InvalidOperation: "`sum` operation not supported for dtype `{}`",
+                                    field.dtype()
+                                )
+                            },
                             Boolean => Some(IDX_DTYPE),
                             UInt8 | Int8 | Int16 | UInt16 => Some(Int64),
                             _ => None,
@@ -154,28 +178,14 @@ impl AExpr {
                         Ok(field)
                     },
                     Median(expr) => {
-                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
-                        match field.dtype {
-                            Date => field.coerce(Datetime(TimeUnit::Microseconds, None)),
-                            _ => {
-                                let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
-                                let mapper = FieldsMapper::new(&field);
-                                return mapper.moment_dtype();
-                            },
-                        }
-                        Ok(field)
+                        let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
+                        let mapper = FieldsMapper::new(&field);
+                        mapper.moment_dtype()
                     },
                     Mean(expr) => {
-                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
-                        match field.dtype {
-                            Date => field.coerce(Datetime(TimeUnit::Microseconds, None)),
-                            _ => {
-                                let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
-                                let mapper = FieldsMapper::new(&field);
-                                return mapper.moment_dtype();
-                            },
-                        }
-                        Ok(field)
+                        let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
+                        let mapper = FieldsMapper::new(&field);
+                        mapper.moment_dtype()
                     },
                     Implode(expr) => {
                         let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
@@ -210,7 +220,7 @@ impl AExpr {
                     Quantile { expr, .. } => {
                         let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
                         let mapper = FieldsMapper::new(&field);
-                        mapper.map_numeric_to_float_dtype(true)
+                        mapper.moment_dtype()
                     },
                 }
             },
@@ -247,6 +257,18 @@ impl AExpr {
                 let out = function.get_field(ctx.schema, &fields)?;
                 Ok(out)
             },
+            AnonymousStreamingAgg {
+                input,
+                function,
+                fmt_str,
+                ..
+            } => {
+                let fields = func_args_to_fields(input, ctx)?;
+                polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", fmt_str);
+                let function = function.clone().materialize()?;
+                let out = function.get_field(ctx.schema, &fields)?;
+                Ok(out)
+            },
             Eval {
                 expr,
                 evaluation,
@@ -256,7 +278,7 @@ impl AExpr {
 
                 let element_dtype = variant.element_dtype(field.dtype())?;
                 let mut evaluation_schema = ctx.schema.clone();
-                evaluation_schema.insert(PL_ELEMENT_NAME.clone(), element_dtype.clone());
+                evaluation_schema.insert(get_pl_element_name(), element_dtype.clone());
                 let mut output_field = ctx
                     .arena
                     .get(*evaluation)
@@ -275,6 +297,18 @@ impl AExpr {
                 input,
                 options: _,
             } => {
+                #[cfg(feature = "strings")]
+                {
+                    if input.is_empty()
+                        && matches!(
+                            &function,
+                            IRFunctionExpr::StringExpr(IRStringFunction::Format { .. })
+                        )
+                    {
+                        return Ok(Field::new(get_literal_name(), DataType::String));
+                    }
+                }
+
                 let fields = func_args_to_fields(input, ctx)?;
                 polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", function);
                 let out = function.get_field(ctx.schema, &fields)?;
@@ -300,11 +334,19 @@ impl AExpr {
         match self {
             Element => PlSmallStr::EMPTY,
             Len => crate::constants::get_len_name(),
-            Window {
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling {
+                function,
+                index_column: _,
+                period: _,
+                offset: _,
+                closed_window: _,
+            } => expr_arena.get(*function).to_name(expr_arena),
+            Over {
                 function: expr,
-                options: _,
                 partition_by: _,
                 order_by: _,
+                mapping: _,
             }
             | BinaryExpr { left: expr, .. }
             | Explode { expr, .. }
@@ -319,7 +361,9 @@ impl AExpr {
             | Agg(Max { input: expr, .. })
             | Agg(Min { input: expr, .. })
             | Agg(First(expr))
+            | Agg(FirstNonNull(expr))
             | Agg(Last(expr))
+            | Agg(LastNonNull(expr))
             | Agg(Item { input: expr, .. })
             | Agg(Sum(expr))
             | Agg(Median(expr))
@@ -331,7 +375,8 @@ impl AExpr {
             | Agg(Count { input: expr, .. })
             | Agg(AggGroups(expr))
             | Agg(Quantile { expr, .. }) => expr_arena.get(*expr).to_name(expr_arena),
-            AnonymousFunction { input, fmt_str, .. } => {
+            AnonymousFunction { input, fmt_str, .. }
+            | AnonymousStreamingAgg { input, fmt_str, .. } => {
                 if input.is_empty() {
                     fmt_str.as_ref().clone()
                 } else {
@@ -346,7 +391,7 @@ impl AExpr {
                 None => input[0].output_name().clone(),
             },
             Column(name) => name.clone(),
-            Literal(lv) => lv.output_column_name().clone(),
+            Literal(lv) => lv.output_column_name(),
         }
     }
 }
@@ -606,12 +651,12 @@ fn get_arithmetic_field(
                     {
                         match (left_ae, right_ae) {
                             (AExpr::Literal(_), AExpr::Literal(_)) => {},
-                            (AExpr::Literal(_), _) => {
+                            (AExpr::Literal(_), _) if left_field.dtype.is_unknown() => {
                                 // literal will be coerced to match right type
                                 left_field.coerce(right_type);
                                 return Ok(left_field);
                             },
-                            (_, AExpr::Literal(_)) => {
+                            (_, AExpr::Literal(_)) if right_type.is_unknown() => {
                                 // literal will be coerced to match right type
                                 return Ok(left_field);
                             },
@@ -702,9 +747,25 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
             let dtype = get_truediv_dtype(list_dtype.leaf_dtype(), other_dtype.leaf_dtype())?;
             list_dtype.cast_leaf(dtype)
         },
+        #[cfg(feature = "dtype-f16")]
+        (Boolean, Float16) => Float16,
         (Boolean, Float32) => Float32,
         (Boolean, b) if b.is_numeric() => Float64,
         (Boolean, Boolean) => Float64,
+        #[cfg(all(feature = "dtype-f16", feature = "dtype-u8"))]
+        (Float16, UInt8 | Int8) => Float16,
+        #[cfg(all(feature = "dtype-f16", feature = "dtype-u16"))]
+        (Float16, UInt16 | Int16) => Float32,
+        #[cfg(feature = "dtype-f16")]
+        (Float16, Unknown(UnknownKind::Int(_))) => Float16,
+        #[cfg(feature = "dtype-f16")]
+        (Float16, other) if other.is_integer() => Float64,
+        #[cfg(feature = "dtype-f16")]
+        (Float16, Float32) => Float32,
+        #[cfg(feature = "dtype-f16")]
+        (Float16, Float64) => Float64,
+        #[cfg(feature = "dtype-f16")]
+        (Float16, _) => Float16,
         #[cfg(feature = "dtype-u8")]
         (Float32, UInt8 | Int8) => Float32,
         #[cfg(feature = "dtype-u16")]
@@ -720,6 +781,10 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
         (Decimal(_, scale_left), Decimal(_, scale_right)) => {
             Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
         },
+        #[cfg(all(feature = "dtype-u8", feature = "dtype-f16"))]
+        (UInt8 | Int8, Float16) => Float16,
+        #[cfg(all(feature = "dtype-u16", feature = "dtype-f16"))]
+        (UInt16 | Int16, Float16) => Float32,
         #[cfg(feature = "dtype-u8")]
         (UInt8 | Int8, Float32) => Float32,
         #[cfg(feature = "dtype-u16")]

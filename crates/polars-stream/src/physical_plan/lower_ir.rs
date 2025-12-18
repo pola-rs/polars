@@ -12,19 +12,26 @@ use polars_mem_engine::create_physical_plan;
 use polars_plan::constants::get_literal_name;
 use polars_plan::dsl::default_values::DefaultFieldValues;
 use polars_plan::dsl::deletion::DeletionFilesList;
+use polars_plan::dsl::sink2::FileProviderType;
 use polars_plan::dsl::{
-    CallbackSinkType, ExtraColumnsPolicy, FileScanIR, FileSinkType, PartitionSinkTypeIR,
-    PartitionVariantIR, SinkTypeIR,
+    CallbackSinkType, ExtraColumnsPolicy, FileScanIR, FileSinkOptions, PartitionStrategyIR,
+    PartitionVariantIR, PartitionedSinkOptionsIR, SinkOptions, SinkTypeIR, UnifiedSinkArgs,
 };
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
-use polars_plan::plans::{AExpr, FunctionIR, IR, IRAggExpr, LiteralValue, write_ir_non_recursive};
+use polars_plan::plans::{
+    AExpr, FunctionIR, IR, IRAggExpr, LiteralValue, are_keys_sorted_any, is_sorted,
+    write_ir_non_recursive,
+};
 use polars_plan::prelude::GroupbyOptions;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
+#[cfg(feature = "parquet")]
+use polars_utils::relaxed_cell::RelaxedCell;
+use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 use polars_utils::unique_id::UniqueId;
-use polars_utils::{IdxSize, unique_column_name};
+use polars_utils::{IdxSize, format_pl_smallstr, unique_column_name};
 use slotmap::SlotMap;
 
 use super::lower_expr::build_hstack_stream;
@@ -32,8 +39,8 @@ use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
 use crate::nodes::io_sources::multi_scan;
 use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
-use crate::nodes::io_sources::multi_scan::components::row_counter::RowCounter;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
+use crate::physical_plan::ZipBehavior;
 use crate::physical_plan::lower_expr::{ExprCache, build_select_stream, lower_exprs};
 use crate::physical_plan::lower_group_by::build_group_by_stream;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
@@ -260,16 +267,58 @@ pub fn lower_ir(
                     chunk_size,
                 }
             },
-            SinkTypeIR::File(FileSinkType {
+
+            SinkTypeIR::File(options)
+                if match options.file_format.as_ref() {
+                    #[cfg(feature = "parquet")]
+                    polars_plan::dsl::FileType::Parquet(_) => true,
+                    #[cfg(feature = "ipc")]
+                    polars_plan::dsl::FileType::Ipc(_) => true,
+                    _ => false,
+                } =>
+            {
+                let options = options.clone();
+                let input = lower_ir!(*input)?;
+                PhysNodeKind::FileSink2 { input, options }
+            },
+
+            SinkTypeIR::Partitioned(options)
+                if !matches!(options.file_path_provider, FileProviderType::Legacy(_))
+                    && options.finish_callback.is_none()
+                    && match options.file_format.as_ref() {
+                        #[cfg(feature = "parquet")]
+                        polars_plan::dsl::FileType::Parquet(_) => true,
+                        #[cfg(feature = "ipc")]
+                        polars_plan::dsl::FileType::Ipc(_) => true,
+                        _ => false,
+                    } =>
+            {
+                let options = options.clone();
+                let input = lower_ir!(*input)?;
+                PhysNodeKind::PartitionedSink2 { input, options }
+            },
+            SinkTypeIR::File(FileSinkOptions {
                 target,
-                sink_options,
-                file_type,
-                cloud_options,
+                file_format,
+                unified_sink_args,
             }) => {
+                // Convert to old parameters for now
+
                 let target = target.clone();
-                let sink_options = sink_options.clone();
-                let file_type = file_type.clone();
-                let cloud_options = cloud_options.clone();
+
+                let UnifiedSinkArgs {
+                    mkdir,
+                    maintain_order,
+                    sync_on_close,
+                    cloud_options,
+                } = unified_sink_args.clone();
+
+                let sink_options = SinkOptions {
+                    sync_on_close,
+                    maintain_order,
+                    mkdir,
+                };
+                let file_type = file_format.as_ref().clone();
 
                 let phys_input = lower_ir!(*input)?;
                 PhysNodeKind::FileSink {
@@ -277,27 +326,71 @@ pub fn lower_ir(
                     sink_options,
                     file_type,
                     input: phys_input,
-                    cloud_options,
+                    cloud_options: cloud_options.map(Arc::unwrap_or_clone),
                 }
             },
-            SinkTypeIR::Partition(PartitionSinkTypeIR {
+
+            SinkTypeIR::Partitioned(PartitionedSinkOptionsIR {
                 base_path,
-                file_path_cb,
-                sink_options,
-                variant,
-                file_type,
-                cloud_options,
-                per_partition_sort_by,
+                file_path_provider,
+                partition_strategy,
                 finish_callback,
+                file_format,
+                unified_sink_args,
+                max_rows_per_file,
+                approximate_bytes_per_file: _,
             }) => {
+                // Convert to old parameters for now
+
                 let base_path = base_path.clone();
-                let file_path_cb = file_path_cb.clone();
-                let sink_options = sink_options.clone();
-                let variant = variant.clone();
-                let file_type = file_type.clone();
-                let cloud_options = cloud_options.clone();
-                let per_partition_sort_by = per_partition_sort_by.clone();
+                let file_path_cb = match file_path_provider {
+                    FileProviderType::Legacy(callback) => Some(callback.clone()),
+                    FileProviderType::Hive { .. } => None,
+                    FileProviderType::Function(_) => None,
+                };
+                let file_type = file_format.as_ref().clone();
                 let finish_callback = finish_callback.clone();
+
+                let (variant, per_partition_sort_by) = match partition_strategy {
+                    PartitionStrategyIR::Keyed {
+                        keys,
+                        include_keys,
+                        keys_pre_grouped,
+                        per_partition_sort_by,
+                    } => {
+                        let v = if *keys_pre_grouped {
+                            PartitionVariantIR::Parted {
+                                key_exprs: keys.clone(),
+                                include_key: *include_keys,
+                            }
+                        } else {
+                            PartitionVariantIR::ByKey {
+                                key_exprs: keys.clone(),
+                                include_key: *include_keys,
+                            }
+                        };
+
+                        (v, per_partition_sort_by)
+                    },
+                    PartitionStrategyIR::FileSize => {
+                        (PartitionVariantIR::MaxSize(*max_rows_per_file), &vec![])
+                    },
+                };
+
+                let per_partition_sort_by = per_partition_sort_by.clone();
+
+                let UnifiedSinkArgs {
+                    mkdir,
+                    maintain_order,
+                    sync_on_close,
+                    cloud_options,
+                } = unified_sink_args.clone();
+
+                let sink_options = SinkOptions {
+                    sync_on_close,
+                    maintain_order,
+                    mkdir,
+                };
 
                 let mut input = lower_ir!(*input)?;
                 match &variant {
@@ -336,15 +429,16 @@ pub fn lower_ir(
                     },
                 };
 
-                PhysNodeKind::PartitionSink {
+                PhysNodeKind::PartitionedSink {
                     input,
-                    base_path,
+                    base_path: Arc::new(base_path),
                     file_path_cb,
                     sink_options,
                     variant,
                     file_type,
-                    cloud_options,
-                    per_partition_sort_by,
+                    cloud_options: cloud_options.map(Arc::unwrap_or_clone),
+                    per_partition_sort_by: (!per_partition_sort_by.is_empty())
+                        .then_some(per_partition_sort_by),
                     finish_callback,
                 }
             },
@@ -436,9 +530,22 @@ pub fn lower_ir(
 
                 function if function.is_streamable() => {
                     let map = Arc::new(move |df| function.evaluate(df));
+                    let format_str = ctx.prepare_visualization.then(|| {
+                        let mut buffer = String::new();
+                        write_ir_non_recursive(
+                            &mut buffer,
+                            ir_arena.get(node),
+                            expr_arena,
+                            phys_sm.get(phys_input.node).unwrap().output_schema.as_ref(),
+                            0,
+                        )
+                        .unwrap();
+                        buffer
+                    });
                     PhysNodeKind::Map {
                         input: phys_input,
                         map,
+                        format_str,
                     }
                 },
 
@@ -509,8 +616,7 @@ pub fn lower_ir(
                 let k_node =
                     expr_arena.add(AExpr::Literal(LiteralValue::Scalar(Scalar::from(limit))));
                 let k_selector = ExprIR::from_node(k_node, expr_arena);
-                let k_output_schema =
-                    Schema::from_iter([(get_literal_name().clone(), DataType::UInt64)]);
+                let k_output_schema = Schema::from_iter([(get_literal_name(), DataType::UInt64)]);
                 let k_node = phys_sm.insert(PhysNode::new(
                     Arc::new(k_output_schema),
                     PhysNodeKind::InputIndependentSelect {
@@ -518,9 +624,15 @@ pub fn lower_ir(
                     },
                 ));
 
-                let trans_by_column;
+                let mut trans_by_column;
                 (stream, trans_by_column) =
                     lower_exprs(stream, &by_column, expr_arena, phys_sm, expr_cache, ctx)?;
+
+                trans_by_column = trans_by_column
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, expr)| expr.with_alias(format_pl_smallstr!("__POLARS_KEYCOL_{}", i)))
+                    .collect_vec();
 
                 stream = PhysStream::first(phys_sm.insert(PhysNode {
                     output_schema: phys_sm[stream.node].output_schema.clone(),
@@ -579,8 +691,13 @@ pub fn lower_ir(
         IR::HConcat {
             inputs,
             schema: _,
-            options: _,
+            options,
         } => {
+            let zip_behavior = if options.strict {
+                ZipBehavior::Strict
+            } else {
+                ZipBehavior::NullExtend
+            };
             let inputs = inputs
                 .clone() // Needed to borrow ir_arena mutably.
                 .into_iter()
@@ -588,7 +705,7 @@ pub fn lower_ir(
                 .collect::<Result<_, _>>()?;
             PhysNodeKind::Zip {
                 inputs,
-                null_extend: true,
+                zip_behavior,
             }
         },
 
@@ -607,7 +724,8 @@ pub fn lower_ir(
                 unreachable!();
             };
 
-            if scan_sources.is_empty()
+            if (scan_sources.is_empty()
+                && !matches!(scan_type.as_ref(), FileScanIR::Anonymous { .. }))
                 || unified_scan_args
                     .pre_slice
                     .as_ref()
@@ -624,14 +742,12 @@ pub fn lower_ir(
                 }
             } else if output_schema.is_empty()
                 && let Some((physical_rows, deleted_rows)) = unified_scan_args.row_count
+                && unified_scan_args.pre_slice.is_none()
+                && predicate.is_none()
             {
                 // Fast-count for scan_iceberg will hit here.
-
-                // Note: These are currently always `None`, as projection pushdown runs before slice /
-                // predicate pushdown.
-                assert!(unified_scan_args.pre_slice.is_none() && predicate.is_none());
-
                 let row_counter = RowCounter::new(physical_rows, deleted_rows);
+                row_counter.num_rows_idxsize()?;
                 let num_rows = row_counter.num_rows()?;
 
                 if config::verbose() {
@@ -654,6 +770,9 @@ pub fn lower_ir(
                         crate::nodes::io_sources::parquet::builder::ParquetReaderBuilder {
                             options: Arc::new(options.clone()),
                             first_metadata: first_metadata.clone(),
+                            prefetch_limit: RelaxedCell::new_usize(0),
+                            prefetch_semaphore: std::sync::OnceLock::new(),
+                            shared_prefetch_wait_group_slot: Default::default(),
                         },
                     ) as _,
 
@@ -997,6 +1116,15 @@ pub fn lower_ir(
             let options = options.clone();
 
             let phys_input = lower_ir!(input)?;
+
+            let input_schema = &phys_sm[phys_input.node].output_schema;
+            let are_keys_sorted = are_keys_sorted_any(
+                is_sorted(input, ir_arena, expr_arena).as_ref(),
+                &keys,
+                expr_arena,
+                input_schema,
+            );
+
             return build_group_by_stream(
                 phys_input,
                 &keys,
@@ -1009,6 +1137,7 @@ pub fn lower_ir(
                 phys_sm,
                 expr_cache,
                 ctx,
+                are_keys_sorted,
             );
         },
         IR::Join {
@@ -1118,7 +1247,8 @@ pub fn lower_ir(
 
         IR::Distinct { input, options } => {
             let options = options.clone();
-            let phys_input = lower_ir!(*input)?;
+            let input = *input;
+            let phys_input = lower_ir!(input)?;
 
             // We don't have a dedicated distinct operator (yet), lower to group
             // by with an aggregate for each column.
@@ -1222,6 +1352,13 @@ pub fn lower_ir(
                 ));
             }
 
+            let are_keys_sorted = are_keys_sorted_any(
+                is_sorted(input, ir_arena, expr_arena).as_ref(),
+                &keys,
+                expr_arena,
+                input_schema,
+            );
+
             let mut stream = build_group_by_stream(
                 phys_input,
                 &keys,
@@ -1234,6 +1371,7 @@ pub fn lower_ir(
                 phys_sm,
                 expr_cache,
                 ctx,
+                are_keys_sorted,
             )?;
 
             if options.keep_strategy == UniqueKeepStrategy::None {

@@ -2,6 +2,9 @@
 use std::any::Any;
 use std::sync::OnceLock;
 
+use arrow::array::Array;
+use polars::chunked_array::object::ObjectArray;
+use polars::prelude::sink2::FileProviderReturn;
 use polars::prelude::*;
 use polars_core::chunked_array::object::builder::ObjectChunkedBuilder;
 use polars_core::chunked_array::object::registry::AnonymousObjectBuilder;
@@ -128,6 +131,10 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
             let object = Python::attach(|py| Wrap(av).into_py_any(py).unwrap());
             Box::new(object) as Box<dyn Any>
         });
+        fn object_array_getter(arr: &dyn Array, idx: usize) -> Option<AnyValue<'_>> {
+            let arr = arr.as_any().downcast_ref::<ObjectArray<ObjectValue>>().unwrap();
+            arr.get(idx).map(|v| AnyValue::Object(v))
+        }
 
         polars_utils::python_convert_registry::register_converters(PythonConvertRegistry {
             from_py: FromPythonConvertRegistry {
@@ -139,6 +146,11 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
                             )?
                             .0,
                         ) as _)
+                    })
+                }),
+                file_provider_result: Arc::new(|py_f| {
+                    Python::attach(|py| {
+                        Ok(Box::new(py_f.extract::<Wrap<FileProviderReturn>>(py)?.0) as _)
                     })
                 }),
                 series: Arc::new(|py_f| {
@@ -169,23 +181,37 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
             },
             to_py: polars_utils::python_convert_registry::ToPythonConvertRegistry {
                 df: Arc::new(|df| {
-                    Python::attach(|py| PyDataFrame::new(*df.downcast().unwrap()).into_py_any(py))
+                    Python::attach(|py| {
+                        PyDataFrame::new(df.downcast_ref::<DataFrame>().unwrap().clone())
+                            .into_py_any(py)
+                    })
                 }),
                 series: Arc::new(|series| {
-                    Python::attach(|py| PySeries::new(*series.downcast().unwrap()).into_py_any(py))
+                    Python::attach(|py| {
+                        PySeries::new(series.downcast_ref::<Series>().unwrap().clone())
+                            .into_py_any(py)
+                    })
                 }),
                 dsl_plan: Arc::new(|dsl_plan| {
                     Python::attach(|py| {
                         PyLazyFrame::from(LazyFrame::from(
-                            *dsl_plan.downcast::<polars_plan::dsl::DslPlan>().unwrap(),
+                            dsl_plan
+                                .downcast_ref::<polars_plan::dsl::DslPlan>()
+                                .unwrap()
+                                .clone(),
                         ))
                         .into_py_any(py)
                     })
                 }),
                 schema: Arc::new(|schema| {
                     Python::attach(|py| {
-                        Wrap(*schema.downcast::<polars_core::schema::Schema>().unwrap())
-                            .into_py_any(py)
+                        Wrap(
+                            schema
+                                .downcast_ref::<polars_core::schema::Schema>()
+                                .unwrap()
+                                .clone(),
+                        )
+                        .into_py_any(py)
                     })
                 }),
             },
@@ -198,6 +224,7 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
             object_converter,
             pyobject_converter,
             physical_dtype,
+            Arc::new(object_array_getter)
         );
 
         use crate::dataset::dataset_provider_funcs;
@@ -218,5 +245,17 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
         if catch_keyboard_interrupt {
             register_polars_keyboard_interrupt_hook();
         }
+
+        use polars_core::datatypes::extension::UnknownExtensionTypeBehavior;
+        let behavior = match std::env::var("POLARS_UNKNOWN_EXTENSION_TYPE_BEHAVIOR").as_deref() {
+            Ok("load_as_storage") => UnknownExtensionTypeBehavior::LoadAsStorage,
+            Ok("load_as_extension") => UnknownExtensionTypeBehavior::LoadAsGeneric,
+            Ok("") | Err(_) => UnknownExtensionTypeBehavior::WarnAndLoadAsStorage,
+            _ => {
+                polars_warn!("Invalid value for 'POLARS_UNKNOWN_EXTENSION_TYPE_BEHAVIOR' environment variable. Expected one of 'load_as_storage' or 'load_as_extension'.");
+                UnknownExtensionTypeBehavior::WarnAndLoadAsStorage
+            },
+        };
+        polars_core::datatypes::extension::set_unknown_extension_type_behavior(behavior);
     });
 }

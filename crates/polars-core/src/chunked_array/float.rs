@@ -1,6 +1,7 @@
 use arrow::legacy::kernels::set::set_at_nulls;
 use num_traits::Float;
-use polars_utils::total_ord::{canonical_f32, canonical_f64};
+use polars_utils::float16::pf16;
+use polars_utils::total_ord::{canonical_f16, canonical_f32, canonical_f64};
 
 use crate::prelude::arity::unary_elementwise_values;
 use crate::prelude::*;
@@ -35,6 +36,13 @@ where
 
 pub trait Canonical {
     fn canonical(self) -> Self;
+}
+
+impl Canonical for pf16 {
+    #[inline]
+    fn canonical(self) -> Self {
+        canonical_f16(self)
+    }
 }
 
 impl Canonical for f32 {

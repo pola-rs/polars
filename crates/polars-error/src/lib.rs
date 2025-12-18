@@ -512,7 +512,7 @@ on startup."#.trim_start())
         } else if $n > 1 {
             if $allow_empty {
                 polars_err!(ComputeError:
-                    "aggregation 'item' expected a no or a single value, got {} values", $n
+                    "aggregation 'item' expected no or a single value, got {} values", $n
                 )
             } else {
                 polars_err!(ComputeError:

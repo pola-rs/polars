@@ -1,6 +1,6 @@
 use super::functions::convert_functions;
 use super::*;
-use crate::constants::PL_ELEMENT_NAME;
+use crate::constants::get_pl_element_name;
 use crate::plans::iterator::ArenaExprIter;
 
 pub fn to_expr_ir(expr: Expr, ctx: &mut ExprToIRContext) -> PolarsResult<ExprIR> {
@@ -122,13 +122,13 @@ pub(super) fn to_aexpr_impl(
 
     let (v, output_name) = match expr {
         Expr::Element => (AExpr::Element, PlSmallStr::EMPTY),
-        Expr::Explode { input, skip_empty } => {
+        Expr::Explode { input, options } => {
             let (expr, output_name) = recurse_arc!(input)?;
-            (AExpr::Explode { expr, skip_empty }, output_name)
+            (AExpr::Explode { expr, options }, output_name)
         },
         Expr::Alias(e, name) => return Ok((recurse_arc!(e)?.0, name)),
         Expr::Literal(lv) => {
-            let output_name = lv.output_column_name().clone();
+            let output_name = lv.output_column_name();
             (AExpr::Literal(lv), output_name)
         },
         Expr::Column(name) => {
@@ -249,9 +249,17 @@ pub(super) fn to_aexpr_impl(
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::First(input), output_name)
                 },
+                AggExpr::FirstNonNull(input) => {
+                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
+                    (IRAggExpr::FirstNonNull(input), output_name)
+                },
                 AggExpr::Last(input) => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::Last(input), output_name)
+                },
+                AggExpr::LastNonNull(input) => {
+                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
+                    (IRAggExpr::LastNonNull(input), output_name)
                 },
                 AggExpr::Item { input, allow_empty } => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
@@ -370,11 +378,32 @@ pub(super) fn to_aexpr_impl(
         Expr::Function { input, function } => {
             return convert_functions(input, function, ctx);
         },
-        Expr::Window {
+        #[cfg(feature = "dynamic_group_by")]
+        Expr::Rolling {
+            function,
+            index_column,
+            period,
+            offset,
+            closed_window,
+        } => {
+            let (function, output_name) = recurse_arc!(function)?;
+            let (index_column, _) = to_aexpr_mat_lit_arc!(index_column)?;
+            (
+                AExpr::Rolling {
+                    function,
+                    index_column,
+                    period,
+                    offset,
+                    closed_window,
+                },
+                output_name,
+            )
+        },
+        Expr::Over {
             function,
             partition_by,
             order_by,
-            options,
+            mapping,
         } => {
             let (function, output_name) = recurse_arc!(function)?;
             let order_by = if let Some((e, options)) = order_by {
@@ -384,14 +413,14 @@ pub(super) fn to_aexpr_impl(
             };
 
             (
-                AExpr::Window {
+                AExpr::Over {
                     function,
                     partition_by: partition_by
                         .into_iter()
                         .map(|e| Ok(to_aexpr_impl_materialized_lit(e, ctx)?.0))
                         .collect::<PolarsResult<_>>()?,
                     order_by,
-                    options,
+                    mapping,
                 },
                 output_name,
             )
@@ -433,7 +462,7 @@ pub(super) fn to_aexpr_impl(
             }
 
             let mut evaluation_schema = ctx.schema.clone();
-            evaluation_schema.insert(PL_ELEMENT_NAME.clone(), element_dtype.clone());
+            evaluation_schema.insert(get_pl_element_name(), element_dtype.clone());
             let mut evaluation_ctx = ExprToIRContext {
                 with_fields: None,
                 schema: &evaluation_schema,

@@ -1,4 +1,4 @@
-use std::borrow::Borrow;
+use std::borrow::{Borrow, BorrowMut};
 use std::hash::Hash;
 #[cfg(feature = "cse")]
 use std::hash::Hasher;
@@ -9,7 +9,7 @@ use polars_utils::format_pl_smallstr;
 use serde::{Deserialize, Serialize};
 
 use super::*;
-use crate::constants::{PL_ELEMENT_NAME, get_len_name, get_literal_name};
+use crate::constants::{get_len_name, get_literal_name, get_pl_element_name};
 
 #[derive(Default, Debug, Clone, Hash, PartialEq, Eq)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
@@ -87,6 +87,12 @@ impl Borrow<Node> for ExprIR {
     }
 }
 
+impl BorrowMut<Node> for ExprIR {
+    fn borrow_mut(&mut self) -> &mut Node {
+        &mut self.node
+    }
+}
+
 impl Borrow<Node> for &ExprIR {
     fn borrow(&self) -> &Node {
         &self.node
@@ -122,7 +128,7 @@ impl ExprIR {
         for (_, ae) in arena.iter(node) {
             match ae {
                 AExpr::Element => {
-                    out.output_name = OutputName::ColumnLhs(PL_ELEMENT_NAME.clone());
+                    out.output_name = OutputName::ColumnLhs(get_pl_element_name());
                     break;
                 },
                 AExpr::Column(name) => {
@@ -133,7 +139,7 @@ impl ExprIR {
                     if let LiteralValue::Series(s) = lv {
                         out.output_name = OutputName::LiteralLhs(s.name().clone());
                     } else {
-                        out.output_name = OutputName::LiteralLhs(get_literal_name().clone());
+                        out.output_name = OutputName::LiteralLhs(get_literal_name());
                     }
                     break;
                 },

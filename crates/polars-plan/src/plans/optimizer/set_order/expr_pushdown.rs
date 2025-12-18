@@ -197,7 +197,12 @@ impl<'a> ObservableOrdersResolver<'a> {
                     O::Independent
                 }
             },
-
+            // Fow now only non-observing aggregations
+            AExpr::AnonymousStreamingAgg {
+                input: _,
+                fmt_str: _,
+                function: _,
+            } => O::None,
             AExpr::Agg(agg) => match agg {
                 // Input order agnostic aggregations.
                 IRAggExpr::Min { input: node, .. }
@@ -222,7 +227,11 @@ impl<'a> ObservableOrdersResolver<'a> {
                 },
 
                 // Input order observing aggregations.
-                IRAggExpr::Implode(node) | IRAggExpr::First(node) | IRAggExpr::Last(node) => {
+                IRAggExpr::Implode(node)
+                | IRAggExpr::First(node)
+                | IRAggExpr::FirstNonNull(node)
+                | IRAggExpr::Last(node)
+                | IRAggExpr::LastNonNull(node) => {
                     if rec!(*node).column_ordering_observable() {
                         return Err(ColumnOrderObserved);
                     }
@@ -299,11 +308,31 @@ impl<'a> ObservableOrdersResolver<'a> {
                 },
             },
 
-            AExpr::Window {
+            #[cfg(feature = "dynamic_group_by")]
+            AExpr::Rolling {
+                function,
+                index_column,
+                period: _,
+                offset: _,
+                closed_window: _,
+            } => {
+                let input = zip([*function, *index_column].into_iter().map(|e| Ok(rec!(e))))?;
+
+                // @Performance.
+                // All of the code below might be a bit pessimistic, several window function variants
+                // are length preserving and/or propagate order in specific ways.
+                if input.column_ordering_observable() {
+                    return Err(ColumnOrderObserved);
+                }
+
+                O::Independent
+            },
+
+            AExpr::Over {
                 function,
                 partition_by,
                 order_by,
-                options: _,
+                mapping: _,
             } => {
                 let input = rec!(*function);
 

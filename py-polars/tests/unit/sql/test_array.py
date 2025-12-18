@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLInterfaceError, SQLSyntaxError
+from polars.exceptions import SQLSyntaxError
 from polars.testing import assert_frame_equal
 
 
@@ -171,64 +171,3 @@ def test_array_to_string() -> None:
         match=r"ARRAY_TO_STRING expects 2-3 arguments \(found 1\)",
     ):
         pl.sql_expr("ARRAY_TO_STRING(arr)")
-
-
-@pytest.mark.parametrize(
-    "array_keyword",
-    ["ARRAY", ""],
-)
-def test_unnest_table_function(array_keyword: str) -> None:
-    with pl.SQLContext(df=None, eager=True) as ctx:
-        res = ctx.execute(
-            f"""
-            SELECT * FROM
-              UNNEST(
-                {array_keyword}[1, 2, 3, 4],
-                {array_keyword}['ww','xx','yy','zz'],
-                {array_keyword}[23.0, 24.5, 28.0, 27.5]
-              ) AS tbl (x,y,z);
-            """
-        )
-        assert_frame_equal(
-            res,
-            pl.DataFrame(
-                {
-                    "x": [1, 2, 3, 4],
-                    "y": ["ww", "xx", "yy", "zz"],
-                    "z": [23.0, 24.5, 28.0, 27.5],
-                }
-            ),
-        )
-
-
-def test_unnest_table_function_errors() -> None:
-    with pl.SQLContext(df=None, eager=True) as ctx:
-        with pytest.raises(
-            SQLSyntaxError,
-            match=r'UNNEST table alias must also declare column names, eg: "frame data" \(a,b,c\)',
-        ):
-            ctx.execute('SELECT * FROM UNNEST([1, 2, 3]) AS "frame data"')
-
-        with pytest.raises(
-            SQLSyntaxError,
-            match="UNNEST table alias requires 1 column name, found 2",
-        ):
-            ctx.execute("SELECT * FROM UNNEST([1, 2, 3]) AS tbl (a, b)")
-
-        with pytest.raises(
-            SQLSyntaxError,
-            match="UNNEST table alias requires 2 column names, found 1",
-        ):
-            ctx.execute("SELECT * FROM UNNEST([1,2,3], [3,4,5]) AS tbl (a)")
-
-        with pytest.raises(
-            SQLSyntaxError,
-            match=r"UNNEST table must have an alias",
-        ):
-            ctx.execute("SELECT * FROM UNNEST([1, 2, 3])")
-
-        with pytest.raises(
-            SQLInterfaceError,
-            match=r"UNNEST tables do not \(yet\) support WITH OFFSET|ORDINALITY",
-        ):
-            ctx.execute("SELECT * FROM UNNEST([1, 2, 3]) tbl (colx) WITH OFFSET")

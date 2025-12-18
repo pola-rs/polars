@@ -1,5 +1,6 @@
 use arrow::array::IntoBoxedArray;
 use polars_error::{PolarsError, PolarsResult, polars_bail};
+use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -10,19 +11,19 @@ use crate::series::Series;
 
 #[cfg(feature = "dsl-schema")]
 impl schemars::JsonSchema for Scalar {
-    fn is_referenceable() -> bool {
-        <SerializableScalar as schemars::JsonSchema>::is_referenceable()
+    fn inline_schema() -> bool {
+        <SerializableScalar as schemars::JsonSchema>::inline_schema()
     }
 
     fn schema_id() -> std::borrow::Cow<'static, str> {
         <SerializableScalar as schemars::JsonSchema>::schema_id()
     }
 
-    fn schema_name() -> String {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
         <SerializableScalar as schemars::JsonSchema>::schema_name()
     }
 
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         <SerializableScalar as schemars::JsonSchema>::json_schema(generator)
     }
 }
@@ -75,6 +76,8 @@ pub enum SerializableScalar {
     UInt64(u64),
     /// An unsigned 128-bit integer number.
     UInt128(u128),
+    /// A 16-bit floating point number.
+    Float16(pf16),
     /// A 32-bit floating point number.
     Float32(f32),
     /// A 64-bit floating point number.
@@ -149,6 +152,7 @@ impl TryFrom<Scalar> for SerializableScalar {
             AnyValue::UInt32(v) => Self::UInt32(v),
             AnyValue::UInt64(v) => Self::UInt64(v),
             AnyValue::UInt128(v) => Self::UInt128(v),
+            AnyValue::Float16(v) => Self::Float16(v),
             AnyValue::Float32(v) => Self::Float32(v),
             AnyValue::Float64(v) => Self::Float64(v),
             AnyValue::List(series) => Self::List(series),
@@ -280,6 +284,7 @@ impl TryFrom<SerializableScalar> for Scalar {
             S::UInt32(v) => Self::from(v),
             S::UInt64(v) => Self::from(v),
             S::UInt128(v) => Self::from(v),
+            S::Float16(v) => Self::from(v),
             S::Float32(v) => Self::from(v),
             S::Float64(v) => Self::from(v),
             S::List(v) => Self::new_list(v),

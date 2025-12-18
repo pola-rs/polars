@@ -7,9 +7,9 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
 
     match expr {
         AExpr::Element => Expr::Element,
-        AExpr::Explode { expr, skip_empty } => Expr::Explode {
+        AExpr::Explode { expr, options } => Expr::Explode {
             input: Arc::new(node_to_expr(expr, expr_arena)),
-            skip_empty,
+            options,
         },
         AExpr::Column(a) => Expr::Column(a),
         AExpr::Literal(s) => Expr::Literal(s),
@@ -118,9 +118,17 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::First(Arc::new(exp)).into()
             },
+            IRAggExpr::FirstNonNull(expr) => {
+                let exp = node_to_expr(expr, expr_arena);
+                AggExpr::FirstNonNull(Arc::new(exp)).into()
+            },
             IRAggExpr::Last(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Last(Arc::new(exp)).into()
+            },
+            IRAggExpr::LastNonNull(expr) => {
+                let exp = node_to_expr(expr, expr_arena);
+                AggExpr::LastNonNull(Arc::new(exp)).into()
             },
             IRAggExpr::Item { input, allow_empty } => {
                 let exp = node_to_expr(input, expr_arena);
@@ -219,21 +227,39 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             let input = expr_irs_to_exprs(input, expr_arena);
             ir_function_to_dsl(input, function)
         },
-        AExpr::Window {
+        #[cfg(feature = "dynamic_group_by")]
+        AExpr::Rolling {
+            function,
+            index_column,
+            period,
+            offset,
+            closed_window,
+        } => {
+            let function = Arc::new(node_to_expr(function, expr_arena));
+            let index_column = Arc::new(node_to_expr(index_column, expr_arena));
+            Expr::Rolling {
+                function,
+                index_column,
+                period,
+                offset,
+                closed_window,
+            }
+        },
+        AExpr::Over {
             function,
             partition_by,
             order_by,
-            options,
+            mapping,
         } => {
             let function = Arc::new(node_to_expr(function, expr_arena));
             let partition_by = nodes_to_exprs(&partition_by, expr_arena);
             let order_by =
                 order_by.map(|(n, options)| (Arc::new(node_to_expr(n, expr_arena)), options));
-            Expr::Window {
+            Expr::Over {
                 function,
                 partition_by,
                 order_by,
-                options,
+                mapping,
             }
         },
         AExpr::Slice {
@@ -246,6 +272,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             length: Arc::new(node_to_expr(length, expr_arena)),
         },
         AExpr::Len => Expr::Len,
+        AExpr::AnonymousStreamingAgg { .. } => unreachable!("should not be hit"),
     }
 }
 
@@ -289,7 +316,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IA::CountMatches => A::CountMatches,
                 IA::Shift => A::Shift,
                 IA::Slice(offset, length) => A::Slice(offset, length),
-                IA::Explode { skip_empty } => A::Explode { skip_empty },
+                IA::Explode(options) => A::Explode(options),
                 #[cfg(feature = "array_to_struct")]
                 IA::ToStruct(ng) => A::ToStruct(ng),
             })
@@ -311,6 +338,9 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::Size => B::Size,
                 #[cfg(feature = "binary_encoding")]
                 IB::Reinterpret(data_type, v) => B::Reinterpret(data_type.into(), v),
+                IB::Slice => B::Slice,
+                IB::Head => B::Head,
+                IB::Tail => B::Tail,
             })
         },
         #[cfg(feature = "dtype-categorical")]
@@ -328,6 +358,14 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IC::EndsWith(v) => C::EndsWith(v),
                 #[cfg(feature = "strings")]
                 IC::Slice(s, l) => C::Slice(s, l),
+            })
+        },
+        #[cfg(feature = "dtype-extension")]
+        IF::Extension(f) => {
+            use {ExtensionFunction as E, IRExtensionFunction as IE};
+            F::Extension(match f {
+                IE::To(dtype) => E::To(dtype.into()),
+                IE::Storage => E::Storage,
             })
         },
         IF::ListExpr(f) => {
@@ -480,24 +518,30 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 #[cfg(feature = "find_many")]
                 IB::ReplaceMany {
                     ascii_case_insensitive,
+                    leftmost,
                 } => B::ReplaceMany {
                     ascii_case_insensitive,
+                    leftmost,
                 },
                 #[cfg(feature = "find_many")]
                 IB::ExtractMany {
                     ascii_case_insensitive,
                     overlapping,
+                    leftmost,
                 } => B::ExtractMany {
                     ascii_case_insensitive,
                     overlapping,
+                    leftmost,
                 },
                 #[cfg(feature = "find_many")]
                 IB::FindMany {
                     ascii_case_insensitive,
                     overlapping,
+                    leftmost,
                 } => B::FindMany {
                     ascii_case_insensitive,
                     overlapping,
+                    leftmost,
                 },
                 #[cfg(feature = "regex")]
                 IB::EscapeRegex => B::EscapeRegex,
@@ -722,33 +766,53 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                     closed,
                     array_width,
                 },
-                #[cfg(feature = "dtype-date")]
-                IR::DateRange { interval, closed } => R::DateRange { interval, closed },
-                #[cfg(feature = "dtype-date")]
-                IR::DateRanges { interval, closed } => R::DateRanges { interval, closed },
-                #[cfg(feature = "dtype-datetime")]
+                #[cfg(all(feature = "range", feature = "dtype-date"))]
+                IR::DateRange {
+                    interval,
+                    closed,
+                    arg_type,
+                } => R::DateRange {
+                    interval,
+                    closed,
+                    arg_type,
+                },
+                #[cfg(all(feature = "range", feature = "dtype-date"))]
+                IR::DateRanges {
+                    interval,
+                    closed,
+                    arg_type,
+                } => R::DateRanges {
+                    interval,
+                    closed,
+                    arg_type,
+                },
+                #[cfg(all(feature = "range", feature = "dtype-datetime"))]
                 IR::DatetimeRange {
                     interval,
                     closed,
                     time_unit,
                     time_zone,
+                    arg_type,
                 } => R::DatetimeRange {
                     interval,
                     closed,
                     time_unit,
                     time_zone,
+                    arg_type,
                 },
-                #[cfg(feature = "dtype-datetime")]
+                #[cfg(all(feature = "range", feature = "dtype-datetime"))]
                 IR::DatetimeRanges {
                     interval,
                     closed,
                     time_unit,
                     time_zone,
+                    arg_type,
                 } => R::DatetimeRanges {
                     interval,
                     closed,
                     time_unit,
                     time_zone,
+                    arg_type,
                 },
                 #[cfg(feature = "dtype-time")]
                 IR::TimeRange { interval, closed } => R::TimeRange { interval, closed },
@@ -840,7 +904,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::DropNans => F::DropNans,
         IF::DropNulls => F::DropNulls,
         #[cfg(feature = "mode")]
-        IF::Mode => F::Mode,
+        IF::Mode { maintain_order } => F::Mode { maintain_order },
         #[cfg(feature = "moment")]
         IF::Skew(v) => F::Skew(v),
         #[cfg(feature = "moment")]

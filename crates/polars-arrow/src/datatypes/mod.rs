@@ -62,7 +62,7 @@ pub enum ArrowDataType {
     UInt64,
     /// An [`u128`]
     UInt128,
-    /// An 16-bit float
+    /// A 16-bit float
     Float16,
     /// A [`f32`]
     Float32,
@@ -388,6 +388,45 @@ impl ArrowDataType {
         }
     }
 
+    /// Returns a version of `self` where all Extension types have been
+    /// (recursively) replaced by their storage types.
+    pub fn to_storage_recursive(&self) -> ArrowDataType {
+        use ArrowDataType::*;
+        match self {
+            Extension(ext) => ext.inner.to_storage_recursive(),
+            List(field) => List(Box::new(Field {
+                dtype: field.dtype.to_storage_recursive(),
+                ..*field.clone()
+            })),
+            LargeList(field) => LargeList(Box::new(Field {
+                dtype: field.dtype.to_storage_recursive(),
+                ..*field.clone()
+            })),
+            FixedSizeList(field, width) => FixedSizeList(
+                Box::new(Field {
+                    dtype: field.dtype.to_storage_recursive(),
+                    ..*field.clone()
+                }),
+                *width,
+            ),
+            Struct(fields) => Struct(
+                fields
+                    .iter()
+                    .map(|field| Field {
+                        dtype: field.dtype.to_storage_recursive(),
+                        ..field.clone()
+                    })
+                    .collect(),
+            ),
+            Dictionary(keys, values, is_sorted) => {
+                Dictionary(*keys, Box::new(values.to_storage_recursive()), *is_sorted)
+            },
+            Union(_) => unimplemented!(),
+            Map(_, _) => unimplemented!(),
+            _ => self.clone(),
+        }
+    }
+
     pub fn inner_dtype(&self) -> Option<&ArrowDataType> {
         match self {
             ArrowDataType::List(inner) => Some(inner.dtype()),
@@ -431,6 +470,7 @@ impl ArrowDataType {
                 | D::UInt32
                 | D::UInt64
                 | D::UInt128
+                | D::Float16
                 | D::Float32
                 | D::Float64
                 | D::Decimal(_, _)

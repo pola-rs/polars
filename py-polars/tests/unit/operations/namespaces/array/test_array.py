@@ -20,6 +20,20 @@ def test_arr_min_max() -> None:
     assert s_with_null.arr.min().to_list() == [2, None, 3]
 
 
+def test_arr_mean_median_var_std() -> None:
+    s = pl.Series("a", [[1, 2], [4, 3]], dtype=pl.Array(pl.Int64, 2))
+    assert s.arr.mean().to_list() == [1.5, 3.5]
+    assert s.arr.median().to_list() == [1.5, 3.5]
+    assert s.arr.var().to_list() == [0.5, 0.5]
+    assert round(s.arr.std().to_list()[0], 5) == 0.70711
+
+    s_with_null = pl.Series("a", [[3, 4], None, [None, 2]], dtype=pl.Array(pl.Int64, 2))
+    assert s_with_null.arr.mean().to_list() == [3.5, None, 2.0]
+    assert s_with_null.arr.median().to_list() == [3.5, None, 2.0]
+    assert s_with_null.arr.var().to_list() == [0.5, None, None]
+    assert round(s_with_null.arr.std().to_list()[0], 5) == 0.70711
+
+
 def test_array_min_max_dtype_12123() -> None:
     df = pl.LazyFrame(
         [pl.Series("a", [[1.0, 3.0], [2.0, 5.0]]), pl.Series("b", [1.0, 2.0])],
@@ -554,7 +568,10 @@ def test_explode_19049() -> None:
     assert_frame_equal(result_df, expected_df)
 
     df = pl.DataFrame({"a": [1, 2, 3]}, schema={"a": pl.Int64})
-    with pytest.raises(InvalidOperationError, match="expected Array type, got: i64"):
+    with pytest.raises(
+        InvalidOperationError,
+        match="expected Array datatype for array operation, got: Int64",
+    ):
         df.select(pl.col.a.arr.explode())
 
 
@@ -628,3 +645,44 @@ def test_arr_contains() -> None:
         s.arr.contains(1, nulls_equal=True),
         pl.Series([True, False, None], dtype=pl.Boolean),
     )
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col("a").arr.contains("z"),
+        pl.col("a").arr.explode(),
+        pl.col("a").arr.sum(),
+        pl.col("a").arr.to_list(),
+        pl.col("a").arr.to_struct(),
+        pl.col("a").arr.unique(),
+        pl.col("a").arr.all(),
+        pl.col("a").arr.any(),
+        pl.col("a").arr.arg_max(),
+        pl.col("a").arr.arg_min(),
+        pl.col("a").arr.count_matches("z"),
+        pl.col("a").arr.first(),
+        pl.col("a").arr.get(0),
+        pl.col("a").arr.join(""),
+        pl.col("a").arr.last(),
+        pl.col("a").arr.len(),
+        pl.col("a").arr.max(),
+        pl.col("a").arr.mean(),
+        pl.col("a").arr.median(),
+        pl.col("a").arr.min(),
+        pl.col("a").arr.n_unique(),
+        pl.col("a").arr.reverse(),
+        pl.col("a").arr.shift(1),
+        pl.col("a").arr.sort(),
+        pl.col("a").arr.std(),
+        pl.col("a").arr.var(),
+    ],
+)
+def test_schema_non_array(expr: pl.Expr) -> None:
+    lf = pl.LazyFrame({"a": ["a", "b", "c"]})
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="expected Array datatype for array operation, got: String",
+    ):
+        lf.select(expr).collect_schema()

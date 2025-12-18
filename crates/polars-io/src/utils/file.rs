@@ -6,7 +6,7 @@ pub use async_writeable::AsyncWriteable;
 use polars_core::config;
 use polars_error::{PolarsError, PolarsResult, feature_gated};
 use polars_utils::create_file;
-use polars_utils::file::{ClosableFile, WriteClose};
+use polars_utils::file::close_file;
 use polars_utils::mmap::ensure_not_mapped;
 use polars_utils::plpath::PlPathRef;
 
@@ -14,28 +14,10 @@ use super::sync_on_close::SyncOnCloseType;
 use crate::cloud::CloudOptions;
 use crate::resolve_homedir;
 
-pub trait DynWriteable: io::Write + Send {
-    // Needed because trait upcasting is only stable in 1.86.
-    fn as_dyn_write(&self) -> &(dyn io::Write + Send + 'static);
-    fn as_mut_dyn_write(&mut self) -> &mut (dyn io::Write + Send + 'static);
-
-    fn close(self: Box<Self>) -> io::Result<()>;
-    fn sync_on_close(&mut self, sync_on_close: SyncOnCloseType) -> io::Result<()>;
-}
-
-impl DynWriteable for ClosableFile {
-    fn as_dyn_write(&self) -> &(dyn io::Write + Send + 'static) {
-        self as _
-    }
-    fn as_mut_dyn_write(&mut self) -> &mut (dyn io::Write + Send + 'static) {
-        self as _
-    }
-    fn close(self: Box<Self>) -> io::Result<()> {
-        ClosableFile::close(*self)
-    }
-    fn sync_on_close(&mut self, sync_on_close: SyncOnCloseType) -> io::Result<()> {
-        super::sync_on_close::sync_on_close(sync_on_close, self.as_mut())
-    }
+pub trait WriteableTrait: std::io::Write {
+    fn close(&mut self) -> std::io::Result<()>;
+    fn sync_all(&self) -> std::io::Result<()>;
+    fn sync_data(&self) -> std::io::Result<()>;
 }
 
 /// Holds a non-async writeable file, abstracted over local files or cloud files.
@@ -48,7 +30,7 @@ pub enum Writeable {
     /// An abstract implementation for writable.
     ///
     /// This is used to implement writing to in-memory and arbitrary file descriptors.
-    Dyn(Box<dyn DynWriteable>),
+    Dyn(Box<dyn WriteableTrait + Send>),
     Local(std::fs::File),
     #[cfg(feature = "cloud")]
     Cloud(crate::cloud::BlockingCloudWriter),
@@ -58,20 +40,17 @@ impl Writeable {
     pub fn try_new(
         path: PlPathRef<'_>,
         #[cfg_attr(not(feature = "cloud"), allow(unused))] cloud_options: Option<&CloudOptions>,
+        #[cfg_attr(not(feature = "cloud"), allow(unused))] cloud_upload_chunk_size: usize,
     ) -> PolarsResult<Self> {
-        let verbose = config::verbose();
-
         match path {
             PlPathRef::Cloud(_) => {
                 feature_gated!("cloud", {
                     use crate::cloud::BlockingCloudWriter;
 
-                    if verbose {
-                        eprintln!("Writeable: try_new: cloud: {}", path.to_str())
-                    }
+                    let writer = crate::pl_async::get_runtime().block_in_place_on(
+                        BlockingCloudWriter::new(path, cloud_options, cloud_upload_chunk_size),
+                    )?;
 
-                    let writer = crate::pl_async::get_runtime()
-                        .block_in_place_on(BlockingCloudWriter::new(path, cloud_options))?;
                     Ok(Self::Cloud(writer))
                 })
             },
@@ -80,10 +59,6 @@ impl Writeable {
                     use crate::cloud::BlockingCloudWriter;
 
                     let path = resolve_homedir(&path);
-
-                    if verbose {
-                        eprintln!("Writeable: try_new: forced async: {}", path.display())
-                    }
 
                     create_file(&path)?;
                     let path = std::fs::canonicalize(&path)?;
@@ -99,29 +74,20 @@ impl Writeable {
                         }
                     );
 
-                    if verbose {
-                        eprintln!("Writeable: try_new: forced async converted path: {path}")
-                    }
-
                     let writer = crate::pl_async::get_runtime().block_in_place_on(
-                        BlockingCloudWriter::new(PlPathRef::new(&path), cloud_options),
+                        BlockingCloudWriter::new(
+                            PlPathRef::new(&path),
+                            cloud_options,
+                            cloud_upload_chunk_size,
+                        ),
                     )?;
+
                     Ok(Self::Cloud(writer))
                 })
             },
             PlPathRef::Local(path) => {
                 let path = resolve_homedir(&path);
                 create_file(&path)?;
-
-                // Note: `canonicalize` does not work on some systems.
-
-                if verbose {
-                    eprintln!(
-                        "Writeable: try_new: local: {} (canonicalize: {:?})",
-                        path.display(),
-                        std::fs::canonicalize(&path)
-                    )
-                }
 
                 Ok(Self::Local(polars_utils::open_file_write(&path)?))
             },
@@ -146,21 +112,43 @@ impl Writeable {
         }
     }
 
-    pub fn sync_on_close(&mut self, sync_on_close: SyncOnCloseType) -> std::io::Result<()> {
+    pub fn as_buffered(&mut self) -> BufferedWriteable<'_> {
         match self {
-            Writeable::Dyn(d) => d.sync_on_close(sync_on_close),
-            Writeable::Local(file) => {
-                crate::utils::sync_on_close::sync_on_close(sync_on_close, file)
-            },
+            Writeable::Dyn(v) => BufferedWriteable::BufWriter(std::io::BufWriter::new(v.as_mut())),
+            Writeable::Local(v) => BufferedWriteable::BufWriter(std::io::BufWriter::new(v)),
             #[cfg(feature = "cloud")]
-            Writeable::Cloud(_) => Ok(()),
+            Writeable::Cloud(v) => BufferedWriteable::Direct(v as _),
         }
     }
 
-    pub fn close(self) -> std::io::Result<()> {
+    pub fn sync_all(&self) -> io::Result<()> {
         match self {
-            Self::Dyn(v) => v.close(),
-            Self::Local(v) => ClosableFile::from(v).close(),
+            Self::Dyn(v) => v.sync_all(),
+            Self::Local(v) => v.sync_all(),
+            #[cfg(feature = "cloud")]
+            Self::Cloud(v) => v.sync_all(),
+        }
+    }
+
+    pub fn sync_data(&self) -> io::Result<()> {
+        match self {
+            Self::Dyn(v) => v.sync_data(),
+            Self::Local(v) => v.sync_data(),
+            #[cfg(feature = "cloud")]
+            Self::Cloud(v) => v.sync_data(),
+        }
+    }
+
+    pub fn close(self, sync: SyncOnCloseType) -> std::io::Result<()> {
+        match sync {
+            SyncOnCloseType::All => self.sync_all()?,
+            SyncOnCloseType::Data => self.sync_data()?,
+            SyncOnCloseType::None => {},
+        }
+
+        match self {
+            Self::Dyn(mut v) => v.close(),
+            Self::Local(v) => close_file(v),
             #[cfg(feature = "cloud")]
             Self::Cloud(mut v) => v.close(),
         }
@@ -172,7 +160,7 @@ impl Deref for Writeable {
 
     fn deref(&self) -> &Self::Target {
         match self {
-            Self::Dyn(v) => v.as_dyn_write(),
+            Self::Dyn(v) => v,
             Self::Local(v) => v,
             #[cfg(feature = "cloud")]
             Self::Cloud(v) => v,
@@ -183,7 +171,7 @@ impl Deref for Writeable {
 impl DerefMut for Writeable {
     fn deref_mut(&mut self) -> &mut Self::Target {
         match self {
-            Self::Dyn(v) => v.as_mut_dyn_write(),
+            Self::Dyn(v) => v,
             Self::Local(v) => v,
             #[cfg(feature = "cloud")]
             Self::Cloud(v) => v,
@@ -191,21 +179,31 @@ impl DerefMut for Writeable {
     }
 }
 
-/// Note: Prefer using [`Writeable`] / [`Writeable::try_new`] where possible.
-///
-/// Open a path for writing. Supports cloud paths.
-pub fn try_get_writeable(
-    addr: PlPathRef<'_>,
-    cloud_options: Option<&CloudOptions>,
-) -> PolarsResult<Box<dyn WriteClose + Send>> {
-    Writeable::try_new(addr, cloud_options).map(|x| match x {
-        Writeable::Dyn(_) => unreachable!(),
-        Writeable::Local(v) => Box::new(ClosableFile::from(v)) as Box<dyn WriteClose + Send>,
-        #[cfg(feature = "cloud")]
-        Writeable::Cloud(v) => Box::new(v) as Box<dyn WriteClose + Send>,
-    })
+/// Avoid BufWriter wrapping on writers that already have internal buffering.
+pub enum BufferedWriteable<'a> {
+    BufWriter(std::io::BufWriter<&'a mut (dyn std::io::Write + Send)>),
+    Direct(&'a mut (dyn std::io::Write + Send)),
 }
 
+impl<'a> Deref for BufferedWriteable<'a> {
+    type Target = dyn io::Write + Send + 'a;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::BufWriter(v) => v as _,
+            Self::Direct(v) => v,
+        }
+    }
+}
+
+impl DerefMut for BufferedWriteable<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            Self::BufWriter(v) => v as _,
+            Self::Direct(v) => v,
+        }
+    }
+}
 #[cfg(feature = "cloud")]
 mod async_writeable {
     use std::io;
@@ -214,17 +212,17 @@ mod async_writeable {
     use std::task::{Context, Poll};
 
     use polars_error::{PolarsError, PolarsResult};
-    use polars_utils::file::ClosableFile;
+    use polars_utils::file::close_file;
     use polars_utils::plpath::PlPathRef;
     use tokio::io::AsyncWriteExt;
     use tokio::task;
 
-    use super::{DynWriteable, Writeable};
+    use super::{Writeable, WriteableTrait};
     use crate::cloud::CloudOptions;
     use crate::utils::sync_on_close::SyncOnCloseType;
 
     /// Turn an abstract io::Write into an abstract tokio::io::AsyncWrite.
-    pub struct AsyncDynWriteable(pub Box<dyn DynWriteable>);
+    pub struct AsyncDynWriteable(pub Box<dyn WriteableTrait + Send>);
 
     impl tokio::io::AsyncWrite for AsyncDynWriteable {
         fn poll_write(
@@ -260,27 +258,38 @@ mod async_writeable {
 
     impl AsyncWriteable {
         pub async fn try_new(
-            addr: PlPathRef<'_>,
+            path: PlPathRef<'_>,
             cloud_options: Option<&CloudOptions>,
+            cloud_upload_chunk_size: usize,
         ) -> PolarsResult<Self> {
             // TODO: Native async impl
-            Writeable::try_new(addr, cloud_options).and_then(|x| x.try_into_async_writeable())
+            Writeable::try_new(path, cloud_options, cloud_upload_chunk_size)
+                .and_then(|x| x.try_into_async_writeable())
         }
 
-        pub async fn sync_on_close(
-            &mut self,
-            sync_on_close: SyncOnCloseType,
-        ) -> std::io::Result<()> {
+        pub async fn sync_all(&mut self) -> io::Result<()> {
             match self {
-                Self::Dyn(d) => task::block_in_place(|| d.0.sync_on_close(sync_on_close)),
-                Self::Local(file) => {
-                    crate::utils::sync_on_close::tokio_sync_on_close(sync_on_close, file).await
-                },
+                Self::Dyn(v) => task::block_in_place(|| v.0.as_ref().sync_all()),
+                Self::Local(v) => v.sync_all().await,
                 Self::Cloud(_) => Ok(()),
             }
         }
 
-        pub async fn close(self) -> PolarsResult<()> {
+        pub async fn sync_data(&mut self) -> io::Result<()> {
+            match self {
+                Self::Dyn(v) => task::block_in_place(|| v.0.as_ref().sync_data()),
+                Self::Local(v) => v.sync_data().await,
+                Self::Cloud(_) => Ok(()),
+            }
+        }
+
+        pub async fn close(mut self, sync: SyncOnCloseType) -> PolarsResult<()> {
+            match sync {
+                SyncOnCloseType::All => self.sync_all().await?,
+                SyncOnCloseType::Data => self.sync_data().await?,
+                SyncOnCloseType::None => {},
+            }
+
             match self {
                 Self::Dyn(mut v) => {
                     v.shutdown().await.map_err(PolarsError::from)?;
@@ -288,7 +297,7 @@ mod async_writeable {
                 },
                 Self::Local(v) => async {
                     let f = v.into_std().await;
-                    ClosableFile::from(f).close()
+                    close_file(f)
                 }
                 .await
                 .map_err(PolarsError::from),

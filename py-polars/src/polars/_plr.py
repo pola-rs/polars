@@ -8,7 +8,7 @@ import sys
 from polars._cpu_check import check_cpu_flags
 
 # example: 1.35.0-beta.1
-PKG_VERSION = "1.35.0"
+PKG_VERSION = "1.36.1"
 
 
 def rt_compat() -> None:
@@ -16,7 +16,7 @@ def rt_compat() -> None:
 
     check_cpu_flags(BUILD_FEATURE_FLAGS)
 
-    import _polars_runtime_compat._polars_runtime_compat as plr
+    import _polars_runtime_compat._polars_runtime as plr
 
     sys.modules[__name__] = plr
 
@@ -26,7 +26,7 @@ def rt_64() -> None:
 
     check_cpu_flags(BUILD_FEATURE_FLAGS)
 
-    import _polars_runtime_64._polars_runtime_64 as plr
+    import _polars_runtime_64._polars_runtime as plr
 
     sys.modules[__name__] = plr
 
@@ -36,7 +36,7 @@ def rt_32() -> None:
 
     check_cpu_flags(BUILD_FEATURE_FLAGS)
 
-    import _polars_runtime_32._polars_runtime_32 as plr
+    import _polars_runtime_32._polars_runtime as plr
 
     sys.modules[__name__] = plr
 

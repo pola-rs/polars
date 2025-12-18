@@ -53,6 +53,7 @@ pub fn reverse<'a>(
             GroupsType::Slice {
                 groups,
                 overlapping: _,
+                monotonic: _,
             } => groups
                 .into_par_iter()
                 .map(|[start, len]| {
@@ -111,6 +112,7 @@ pub fn null_count<'a>(
             GroupsType::Slice {
                 groups,
                 overlapping: _,
+                monotonic: _,
             } => groups
                 .into_par_iter()
                 .map(|[start, length]| {
@@ -281,6 +283,11 @@ pub fn drop_items<'a>(
     if predicate.unset_bits() == 0 {
         if let AggState::AggregatedScalar(c) | AggState::LiteralScalar(c) = &mut ac.state {
             *c = c.as_list().into_column();
+            if c.len() == 1 && ac.groups.len() != 1 {
+                *c = c.new_from_index(0, ac.groups.len());
+            }
+            ac.state = AggState::AggregatedList(std::mem::take(c));
+            ac.update_groups = UpdateGroups::WithSeriesLen;
         }
         return Ok(ac);
     }
@@ -304,32 +311,20 @@ pub fn drop_items<'a>(
         return Ok(ac);
     }
 
-    if let AggState::LiteralScalar(c) = &ac.state {
-        ac.state =
-            AggState::AggregatedList(c.as_list().into_column().new_from_index(0, predicate.len()));
-        ac.groups = Cow::Owned(
-            GroupsType::Slice {
-                groups: predicate.iter().map(|p| [0, IdxSize::from(p)]).collect(),
-                overlapping: true,
-            }
-            .into_sliceable(),
-        );
-        return Ok(ac);
-    }
-
     if let AggState::AggregatedScalar(c) = &mut ac.state {
-        ac.state = AggState::AggregatedList(c.as_list().into_column());
+        ac.state = AggState::NotAggregated(std::mem::take(c));
         ac.groups = Cow::Owned(
-            GroupsType::Slice {
-                groups: predicate
+            {
+                let groups = predicate
                     .iter()
                     .enumerate_idx()
                     .map(|(i, p)| [i, IdxSize::from(p)])
-                    .collect(),
-                overlapping: false,
+                    .collect();
+                GroupsType::new_slice(groups, false, true)
             }
             .into_sliceable(),
         );
+        ac.update_groups = UpdateGroups::No;
         return Ok(ac);
     }
 
@@ -351,6 +346,7 @@ pub fn drop_items<'a>(
             GroupsType::Slice {
                 groups,
                 overlapping: _,
+                monotonic: _,
             } => groups
                 .into_par_iter()
                 .map(|[start, length]| {
@@ -405,8 +401,9 @@ pub fn drop_nans<'a>(
         values.rechunk_mut();
         values.downcast_as_array().values().clone()
     } else {
-        Bitmap::new_with_value(true, 1)
+        Bitmap::new_with_value(false, 1)
     };
+    let predicate = !&predicate;
     drop_items(ac, &predicate)
 }
 
@@ -496,6 +493,7 @@ pub fn moment_agg<'a, S: Default>(
         GroupsType::Slice {
             groups,
             overlapping: _,
+            monotonic: _,
         } => groups
             .into_par_iter()
             .map(|[start, length]| finalize(new_from_slice(arr, *start as usize, *length as usize)))
@@ -562,6 +560,11 @@ pub fn unique<'a>(
 
     if let AggState::AggregatedScalar(c) | AggState::LiteralScalar(c) = &mut ac.state {
         *c = c.as_list().into_column();
+        if c.len() == 1 && ac.groups.len() != 1 {
+            *c = c.new_from_index(0, ac.groups.len());
+        }
+        ac.state = AggState::AggregatedList(std::mem::take(c));
+        ac.update_groups = UpdateGroups::WithSeriesLen;
         return Ok(ac);
     }
 
@@ -601,6 +604,7 @@ pub fn unique<'a>(
             GroupsType::Slice {
                 groups,
                 overlapping: _,
+                monotonic: _,
             } => groups
                 .into_par_iter()
                 .map_with(CloneWrapper(state), |state, [start, len]| {
@@ -615,4 +619,168 @@ pub fn unique<'a>(
     });
 
     Ok(ac)
+}
+
+fn fw_bw_fill_null<'a>(
+    inputs: &[Arc<dyn PhysicalExpr>],
+    df: &DataFrame,
+    groups: &'a GroupPositions,
+    state: &ExecutionState,
+    f_idx: impl Fn(
+        std::iter::Copied<std::slice::Iter<'_, IdxSize>>,
+        BitMask<'_>,
+        usize,
+    ) -> UnitVec<IdxSize>
+    + Send
+    + Sync,
+    f_range: impl Fn(std::ops::Range<IdxSize>, BitMask<'_>, usize) -> UnitVec<IdxSize> + Send + Sync,
+) -> PolarsResult<AggregationContext<'a>> {
+    assert_eq!(inputs.len(), 1);
+    let mut ac = inputs[0].evaluate_on_groups(df, groups, state)?;
+    ac.groups();
+
+    if let AggState::AggregatedScalar(_) | AggState::LiteralScalar(_) = &mut ac.state {
+        return Ok(ac);
+    }
+
+    let values = ac.flat_naive();
+    let Some(validity) = values.rechunk_validity() else {
+        return Ok(ac);
+    };
+
+    let validity = BitMask::from_bitmap(&validity);
+    POOL.install(|| {
+        let positions = GroupsType::Idx(match &**ac.groups().as_ref() {
+            GroupsType::Idx(idx) => idx
+                .into_par_iter()
+                .map(|(first, idx)| {
+                    let idx = f_idx(idx.iter().copied(), validity, idx.len());
+                    (idx.first().copied().unwrap_or(first), idx)
+                })
+                .collect(),
+            GroupsType::Slice {
+                groups,
+                overlapping: _,
+                monotonic: _,
+            } => groups
+                .into_par_iter()
+                .map(|[start, len]| {
+                    let idx = f_range(*start..*start + *len, validity, *len as usize);
+                    (idx.first().copied().unwrap_or(*start), idx)
+                })
+                .collect(),
+        })
+        .into_sliceable();
+        ac.with_groups(positions);
+    });
+
+    Ok(ac)
+}
+
+pub fn forward_fill_null<'a>(
+    inputs: &[Arc<dyn PhysicalExpr>],
+    df: &DataFrame,
+    groups: &'a GroupPositions,
+    state: &ExecutionState,
+    limit: Option<IdxSize>,
+) -> PolarsResult<AggregationContext<'a>> {
+    let limit = limit.unwrap_or(IdxSize::MAX);
+    macro_rules! arg_forward_fill {
+        (
+            $iter:ident,
+            $validity:ident,
+            $length:ident
+        ) => {{
+            |$iter, $validity, $length| {
+                let Some(start) = $iter
+                    .clone()
+                    .position(|i| unsafe { $validity.get_bit_unchecked(i as usize) })
+                else {
+                    return $iter.collect();
+                };
+
+                let mut idx = UnitVec::with_capacity($length);
+                let mut iter = $iter;
+                idx.extend((&mut iter).take(start));
+
+                let mut current_limit = limit;
+                let mut value = iter.next().unwrap();
+                idx.push(value);
+
+                idx.extend(iter.map(|i| {
+                    if unsafe { $validity.get_bit_unchecked(i as usize) } {
+                        current_limit = limit;
+                        value = i;
+                        i
+                    } else if current_limit == 0 {
+                        i
+                    } else {
+                        current_limit -= 1;
+                        value
+                    }
+                }));
+                idx
+            }
+        }};
+    }
+
+    fw_bw_fill_null(
+        inputs,
+        df,
+        groups,
+        state,
+        arg_forward_fill!(iter, validity, length),
+        arg_forward_fill!(iter, validity, length),
+    )
+}
+
+pub fn backward_fill_null<'a>(
+    inputs: &[Arc<dyn PhysicalExpr>],
+    df: &DataFrame,
+    groups: &'a GroupPositions,
+    state: &ExecutionState,
+    limit: Option<IdxSize>,
+) -> PolarsResult<AggregationContext<'a>> {
+    let limit = limit.unwrap_or(IdxSize::MAX);
+    macro_rules! arg_backward_fill {
+        (
+            $iter:ident,
+            $validity:ident,
+            $length:ident
+        ) => {{
+            |$iter, $validity, $length| {
+                let Some(start) = $iter
+                    .clone()
+                    .rev()
+                    .position(|i| unsafe { $validity.get_bit_unchecked(i as usize) })
+                else {
+                    return $iter.collect();
+                };
+
+                let mut idx = UnitVec::from_iter($iter);
+                let mut current_limit = limit;
+                let mut value = idx[$length - start - 1];
+                for i in idx[..$length - start].iter_mut().rev() {
+                    if unsafe { $validity.get_bit_unchecked(*i as usize) } {
+                        current_limit = limit;
+                        value = *i;
+                    } else if current_limit != 0 {
+                        current_limit -= 1;
+                        *i = value;
+                    }
+                }
+
+                idx
+            }
+        }};
+    }
+
+    fw_bw_fill_null(
+        inputs,
+        df,
+        groups,
+        state,
+        arg_backward_fill!(iter, validity, length),
+        arg_backward_fill!(iter, validity, length),
+    )
 }

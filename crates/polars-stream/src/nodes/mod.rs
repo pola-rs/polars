@@ -1,9 +1,11 @@
 pub mod callback_sink;
 #[cfg(feature = "cum_agg")]
 pub mod cum_agg;
+#[cfg(feature = "dynamic_group_by")]
+pub mod dynamic_group_by;
 pub mod dynamic_slice;
 #[cfg(feature = "ewma")]
-pub mod ewm_mean;
+pub mod ewm;
 pub mod filter;
 pub mod gather_every;
 pub mod group_by;
@@ -12,6 +14,8 @@ pub mod in_memory_sink;
 pub mod in_memory_source;
 pub mod input_independent_select;
 pub mod io_sinks;
+#[allow(unused)]
+pub mod io_sinks2;
 pub mod io_sources;
 pub mod joins;
 pub mod map;
@@ -25,9 +29,12 @@ pub mod reduce;
 pub mod repeat;
 pub mod rle;
 pub mod rle_id;
+#[cfg(feature = "dynamic_group_by")]
+pub mod rolling_group_by;
 pub mod select;
 pub mod shift;
 pub mod simple_projection;
+pub mod sorted_group_by;
 pub mod streaming_slice;
 pub mod top_k;
 pub mod with_row_index;

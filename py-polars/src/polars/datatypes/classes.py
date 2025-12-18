@@ -406,6 +406,22 @@ class UInt128(UnsignedIntegerType):
     """
 
 
+class Float16(FloatType):
+    """16-bit floating point type.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+
+    .. warning::
+        Regular computing platforms do not natively support `Float16` operations,
+        and compute operations on `Float16` will be significantly slower as a result
+        than operation on :class:`Float32` or :class:`Float64`.
+        As such, it is recommended to cast to `Float32` before doing any compute
+        operations, and cast back to `Float16` afterward if needed.
+    """
+
+
 class Float32(FloatType):
     """32-bit floating point type."""
 
@@ -428,7 +444,7 @@ class Decimal(NumericType):
         Number of digits to the right of the decimal point in each number.
     """
 
-    precision: int | None
+    precision: int
     scale: int
 
     def __init__(
@@ -646,7 +662,7 @@ class Duration(TemporalType):
 
 class Categories:
     """
-    A named collection of categories for `Categorical`.
+    A named collection of categories for :py:class:`Categorical`.
 
     Two categories are considered equal (and will use the same physical mapping of
     categories to strings) if they have the same name, namespace and physical backing
@@ -655,6 +671,54 @@ class Categories:
     .. warning::
         This functionality is currently considered **unstable**. It may be
         changed at any point without it being considered a breaking change.
+
+    Parameters
+    ----------
+    name
+        The name of this `Categories`. If set to `None` or an empty string, this
+        refers to the global categories.
+
+    namespace
+        An optional namespace for this `Categories`. Defaults to the empty string.
+        If the name is empty or `None` indicating the global categories, the
+        namespace must also be empty.
+
+    physical : {UInt8, UInt16, UInt32}
+        The physical type used to represent the categories. Defaults to
+        :py:class:`UInt32`.
+
+    See Also
+    --------
+    Categorical
+
+    Examples
+    --------
+    A `Categories` instance can be indexed using either string or integer keys:
+
+        >>> fruit = pl.Categories("fruit")
+        >>> s = pl.Series(["apple", "banana", "orange"], dtype=pl.Categorical(fruit))
+        >>> fruit[0]
+        'apple'
+        >>> fruit["apple"]
+        0
+
+    All `Categories` objects with the same name, namespace and physical type
+    share the same mapping, even if they're created separately:
+
+        >>> fruit2 = pl.Categories("fruit")
+        >>> fruit2["banana"]
+        1
+
+    Note that the `Categories` instance is only a weak reference to the actual
+    mapping stored in Polars; if no actual data exists using this mapping (like
+    a `Series` or `DataFrame`), the mapping is cleaned up by Polars:
+
+        >>> del s
+        >>> fruit["apple"] is None
+        True
+
+    If you wish to keep a persistent mapping, simply keep alive some object which
+    uses the mapping, e.g. `keepalive = pl.Series([], dtype=pl.Categorical(fruit))`.
     """
 
     _categories: PyCategories
@@ -695,7 +759,18 @@ class Categories:
     def random(
         namespace: str = "", physical: PolarsDataType = pldt.UInt32
     ) -> Categories:
-        """Creates a new Categories with a random name."""
+        """
+        Creates a new `Categories` with a random name.
+
+        Parameters
+        ----------
+        namespace
+            An optional namespace for this `Categories`. Defaults to the empty string.
+
+        physical : {UInt8, UInt16, UInt32}
+            The physical type used to represent the categories. Defaults
+            to :py:class:`UInt32`.
+        """
         if physical == pldt.UInt32:
             internal_phys = "u32"
         elif physical == pldt.UInt16:
@@ -773,12 +848,26 @@ class Categorical(DataType):
 
     Parameters
     ----------
+    categories
+        The categories used for this type; must be a :py:class:`Categories`
+        instance, or a string which is interpreted as the name of a
+        :py:class:`Categories`. If not provided, the global categories
+        (`pl.Categories()`) are used.
+
+        For legacy reasons if the string is either `"physical"` or `"lexical"`,
+        it is ignored and a warning is issued. If you wish to use a `Categories`
+        named `"physical"` or `"lexical"`, please pass it using
+        :py:class:`Categories` explicitly.
+
     ordering : {'lexical', 'physical'}
-        Ordering by order of appearance (`'physical'`, default)
-        or string value (`'lexical'`).
+        This used to specify how this type was ordered, but now does nothing.
 
         .. deprecated:: 1.32.0
             Parameter is now ignored. Always behaves as if `'lexical'` was passed.
+
+    See Also
+    --------
+    Categories
     """
 
     ordering: CategoricalOrdering | None
@@ -786,31 +875,38 @@ class Categorical(DataType):
 
     def __init__(
         self,
-        ordering: CategoricalOrdering | Categories | None = "lexical",
-        **kwargs: Any,
+        categories: Categories | str | None = None,
+        *,
+        ordering: CategoricalOrdering | None = None,
     ) -> None:
-        # Future API will be this, already support it for backwards compat.
-        if isinstance(ordering, Categories):
-            self.ordering = "lexical"
-            self.categories = ordering
-            assert len(kwargs) == 0
-            return
+        # Because we supported the positional 'ordering' arg in the past, we
+        # need to check for this in the categories argument.
+        if isinstance(categories, str):
+            if categories == "physical" or categories == "lexical":
+                from polars._utils.deprecation import issue_deprecation_warning
 
-        if ordering == "physical":
+                msg = (
+                    "the ordering parameter on Categorical is deprecated. The ordering is now always lexical."
+                    "\n\nIf you meant to use a Categories named 'physical' or 'lexical', pass it using pl.Categories('physical') or pl.Categories('lexical')."
+                )
+                issue_deprecation_warning(msg, version="1.32.0")
+                categories = Categories()
+            else:
+                categories = Categories(name=categories)
+
+        if ordering is not None:
             from polars._utils.deprecation import issue_deprecation_warning
 
             issue_deprecation_warning(
-                "the physical Categorical ordering is deprecated. The ordering is now always lexical.",
+                "the ordering parameter on Categorical is deprecated. The ordering is now always lexical.",
                 version="1.32.0",
             )
 
         self.ordering = "lexical"
-        if kwargs.get("categories") is not None:
-            assert len(kwargs) == 1
-            self.categories = kwargs["categories"]
-        else:
-            assert len(kwargs) == 0
+        if categories is None:
             self.categories = Categories()
+        else:
+            self.categories = categories
 
     def __repr__(self) -> str:
         if self.categories.is_global():
@@ -1204,3 +1300,117 @@ class Struct(NestedType):
     def to_schema(self) -> OrderedDict[str, PolarsDataType]:
         """Return Struct dtype as a schema dict."""
         return OrderedDict(self)
+
+
+class BaseExtension(DataType):
+    """
+    Base class for extension data types.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed at any
+        point without it being considered a breaking change.
+
+    See Also
+    --------
+    Extension
+    polars.register_extension_type
+    """
+
+    def __init__(
+        self, name: str, storage: PolarsDataType, metadata: str | None = None
+    ) -> None:
+        self._name = name
+        self._storage = storage
+        self._metadata = metadata
+
+    @classmethod
+    def ext_from_params(
+        cls, name: str, storage: PolarsDataType, metadata: str | None
+    ) -> Any:
+        """Creates an Extension type instance from its parameters."""
+        slf = cls.__new__(cls)
+        slf._name = name
+        slf._storage = storage
+        slf._metadata = metadata
+        return slf
+
+    def ext_name(self) -> str:
+        """Returns the name of this extension type."""
+        return self._name
+
+    def ext_storage(self) -> PolarsDataType:
+        """Returns the storage type for this extension type."""
+        return self._storage
+
+    def ext_metadata(self) -> str | None:
+        """Returns the metadata for this extension type."""
+        return self._metadata
+
+    def _string_repr(self) -> str:
+        """
+        Return a short string representation of the extension type.
+
+        This should be lowercase and if feasible show parameters in brackets,
+        for example i64, str, datetime[ns], etc. This is used when displaying
+        dataframes in a human-readable format, so brevity is important.
+
+        This function starts with an underscore for historical reasons; it is
+        intended to be overridden by subclasses.
+        """
+        s = self.ext_name().lower()
+        if len(s) <= 12:
+            return s
+        else:
+            return s[:10] + ".."
+
+    def __repr__(self) -> str:
+        md = self.ext_metadata()
+        if md is not None:
+            return f"{self.__class__.__name__}({self.ext_name()!r}, {self.ext_storage()!r}, {md!r})"
+        else:
+            return f"{self.__class__.__name__}({self.ext_name()!r}, {self.ext_storage()!r})"
+
+    # It's not recommended to override the below methods.
+    def __hash__(self) -> int:
+        return hash((self.ext_name(), self.ext_storage(), self.ext_metadata()))
+
+    @overload  # type: ignore[override]
+    def __eq__(self, other: pl.DataTypeExpr) -> pl.Expr: ...
+
+    @overload
+    def __eq__(self, other: PolarsDataType) -> bool: ...
+
+    def __eq__(self, other: pl.DataTypeExpr | PolarsDataType) -> pl.Expr | bool:
+        if isinstance(other, pl.DataTypeExpr):
+            return self.to_dtype_expr() == other
+        else:
+            return (
+                isinstance(other, BaseExtension)
+                and self.ext_name() == other.ext_name()
+                and self.ext_storage() == other.ext_storage()
+                and self.ext_metadata() == other.ext_metadata()
+            )
+
+    def __getstate__(self) -> tuple[str, PolarsDataType, str | None]:
+        return self.ext_name(), self.ext_storage(), self.ext_metadata()
+
+    def __setstate__(self, state: tuple[str, PolarsDataType, str | None]) -> None:
+        self.__dict__ = type(self).ext_from_params(*state).__dict__
+
+
+class Extension(BaseExtension):
+    """
+    Generic extension data type.
+
+    When `UNKNOWN_EXTENSION_TYPE_BEHAVIOR` is set to `"load_as_extension"`, any
+    non-registered extension type will be loaded as this type.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed at any
+        point without it being considered a breaking change.
+
+    See Also
+    --------
+    BaseExtension
+    polars.register_extension_type
+    """

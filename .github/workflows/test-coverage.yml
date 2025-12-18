@@ -70,8 +70,10 @@ jobs:
           -p polars-time
           -p polars-utils
 
-      - name: Run integration tests
-        run: cargo test --all-features -p polars --test it
+      # Unfortunately we run out of disk space when running integration tests with coverage enabled.
+      # Skipping for now.
+      # - name: Run integration tests
+      #   run: cargo test --all-features -p polars --test it
 
       - name: Report coverage
         run: cargo llvm-cov report --lcov --output-path coverage-rust.lcov
@@ -114,7 +116,6 @@ jobs:
           # https://github.com/astral-sh/uv/issues/6028#issuecomment-2287232150
           uv pip install -U typing-extensions 
           uv pip install --compile-bytecode -r requirements-dev.txt -r requirements-ci.txt --verbose
-          uv pip install --no-deps -e .
 
       - name: Set up Rust
         run: rustup component add llvm-tools-preview
@@ -131,7 +132,11 @@ jobs:
         run: cargo llvm-cov clean --workspace
 
       - name: Install Polars
-        run: make build
+        run: |
+          # Make sure we use the Polars we're about to build.
+          uv pip uninstall polars-runtime-32 polars-runtime-64 polars-runtime-compat
+          uv pip install --no-deps -e py-polars
+          make build
 
       - name: Run Python tests
         working-directory: py-polars

@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from functools import partial
 from time import perf_counter
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Final, Literal
 
 import polars._reexport as pl
 from polars._utils.logging import eprint, verbose, verbose_print_sensitive
@@ -563,7 +563,7 @@ class _PyIcebergScanData(_ResolvedScanDataBase):
 
 def _redact_dict_values(obj: Any) -> Any:
     return (
-        {k: "REDACTED" for k in obj.keys()}  # noqa: SIM118
+        dict.fromkeys(obj.keys(), "REDACTED")
         if isinstance(obj, dict)
         else f"<{type(obj).__name__} object>"
         if obj is not None
@@ -597,7 +597,7 @@ def _convert_iceberg_to_object_store_storage_options(
 
 # https://py.iceberg.apache.org/configuration/#fileio
 # This does not contain all keys - some have no object-store equivalent.
-ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP: dict[str, str] = {
+ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP: Final[dict[str, str]] = {
     # S3
     "s3.endpoint": "aws_endpoint_url",
     "s3.access-key-id": "aws_access_key_id",

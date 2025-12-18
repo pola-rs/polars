@@ -1,6 +1,8 @@
 use arrow::array::{Array, PrimitiveArray};
 use arrow::types::NativeType;
 
+use crate::ewm::EwmStateUpdate;
+
 pub fn ewm_mean<I, T>(
     xs: I,
     alpha: T,
@@ -88,33 +90,16 @@ where
     }
 }
 
-pub enum DynEwmMeanState {
-    F32(EwmMeanState<f32>),
-    F64(EwmMeanState<f64>),
-}
+impl<T> EwmStateUpdate for EwmMeanState<T>
+where
+    T: NativeType + num_traits::Float + std::ops::MulAssign,
+{
+    fn ewm_state_update(&mut self, values: &dyn Array) -> Box<dyn Array> {
+        let values: &PrimitiveArray<T> = values.as_any().downcast_ref().unwrap();
 
-impl DynEwmMeanState {
-    pub fn update(&mut self, values: &dyn Array) -> Box<dyn Array> {
-        match self {
-            Self::F32(state) => state
-                .update(values.as_any().downcast_ref().unwrap())
-                .boxed(),
-            Self::F64(state) => state
-                .update(values.as_any().downcast_ref().unwrap())
-                .boxed(),
-        }
-    }
-}
+        let out: PrimitiveArray<T> = self.update(values);
 
-impl From<EwmMeanState<f32>> for DynEwmMeanState {
-    fn from(value: EwmMeanState<f32>) -> Self {
-        Self::F32(value)
-    }
-}
-
-impl From<EwmMeanState<f64>> for DynEwmMeanState {
-    fn from(value: EwmMeanState<f64>) -> Self {
-        Self::F64(value)
+        out.boxed()
     }
 }
 

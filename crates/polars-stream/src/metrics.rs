@@ -1,10 +1,11 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use slotmap::SecondaryMap;
+use slotmap::{SecondaryMap, SlotMap};
 
+use crate::LogicalPipe;
 use crate::async_executor::TaskMetrics;
-use crate::graph::{Graph, GraphNodeKey, LogicalPipeKey};
+use crate::graph::{GraphNodeKey, LogicalPipeKey};
 use crate::pipe::PipeMetrics;
 
 #[derive(Default, Clone)]
@@ -24,6 +25,10 @@ pub struct NodeMetrics {
     pub morsels_received: u64,
     pub rows_received: u64,
     pub largest_morsel_received: u64,
+
+    pub state_update_in_progress: bool,
+    pub num_running_tasks: u32,
+    pub done: bool,
 }
 
 impl NodeMetrics {
@@ -34,13 +39,20 @@ impl NodeMetrics {
         self.max_poll_time_ns = self
             .max_poll_time_ns
             .max(task_metrics.max_poll_time_ns.load());
+        self.num_running_tasks += (!task_metrics.done.load()) as u32;
     }
 
-    fn add_state_update(&mut self, time: Duration) {
+    fn start_state_update(&mut self) {
+        self.state_update_in_progress = true;
+    }
+
+    fn stop_state_update(&mut self, time: Duration, is_done: bool) {
         let time_ns = time.as_nanos() as u64;
         self.total_state_updates += 1;
         self.total_state_update_time_ns += time_ns;
         self.max_state_update_time_ns = self.max_state_update_time_ns.max(time_ns);
+        self.state_update_in_progress = false;
+        self.done = is_done;
     }
 
     fn add_send_metrics(&mut self, pipe_metrics: &PipeMetrics) {
@@ -60,7 +72,7 @@ impl NodeMetrics {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct GraphMetrics {
     node_metrics: SecondaryMap<GraphNodeKey, NodeMetrics>,
     in_progress_task_metrics: SecondaryMap<GraphNodeKey, Vec<Arc<TaskMetrics>>>,
@@ -84,28 +96,30 @@ impl GraphMetrics {
             .push(pipe_metrics);
     }
 
-    pub fn add_state_update(&mut self, key: GraphNodeKey, time: Duration) {
+    pub fn start_state_update(&mut self, key: GraphNodeKey) {
         self.node_metrics
             .entry(key)
             .unwrap()
             .or_default()
-            .add_state_update(time);
+            .start_state_update();
     }
 
-    pub fn flush(&mut self, graph: &Graph) {
+    pub fn stop_state_update(&mut self, key: GraphNodeKey, time: Duration, is_done: bool) {
+        self.node_metrics[key].stop_state_update(time, is_done);
+    }
+
+    pub fn flush(&mut self, pipes: &SlotMap<LogicalPipeKey, LogicalPipe>) {
         for (key, in_progress_task_metrics) in self.in_progress_task_metrics.iter_mut() {
+            let this_node_metrics = self.node_metrics.entry(key).unwrap().or_default();
+            this_node_metrics.num_running_tasks = 0;
             for task_metrics in in_progress_task_metrics.drain(..) {
-                self.node_metrics
-                    .entry(key)
-                    .unwrap()
-                    .or_default()
-                    .add_task(&task_metrics);
+                this_node_metrics.add_task(&task_metrics);
             }
         }
 
         for (key, in_progress_pipe_metrics) in self.in_progress_pipe_metrics.iter_mut() {
             for pipe_metrics in in_progress_pipe_metrics.drain(..) {
-                let pipe = &graph.pipes[key];
+                let pipe = &pipes[key];
                 self.node_metrics
                     .entry(pipe.receiver)
                     .unwrap()
@@ -122,5 +136,9 @@ impl GraphMetrics {
 
     pub fn get(&self, key: GraphNodeKey) -> Option<&NodeMetrics> {
         self.node_metrics.get(key)
+    }
+
+    pub fn iter(&self) -> slotmap::secondary::Iter<'_, GraphNodeKey, NodeMetrics> {
+        self.node_metrics.iter()
     }
 }

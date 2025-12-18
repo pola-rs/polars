@@ -12,10 +12,11 @@ use polars_error::PolarsResult;
 use polars_mem_engine::scan_predicate::skip_files_mask::SkipFilesMask;
 use polars_plan::dsl::{MissingColumnsPolicy, ScanSource};
 use polars_utils::IdxSize;
+use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 
 use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
-use crate::async_primitives::connector;
+use crate::async_primitives::oneshot_channel;
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::nodes::io_sources::multi_scan::components;
 use crate::nodes::io_sources::multi_scan::components::apply_extra_ops::ApplyExtraOps;
@@ -23,7 +24,6 @@ use crate::nodes::io_sources::multi_scan::components::errors::missing_column_err
 use crate::nodes::io_sources::multi_scan::components::physical_slice::PhysicalSlice;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::components::reader_operation_pushdown::ReaderOperationPushdown;
-use crate::nodes::io_sources::multi_scan::components::row_counter::RowCounter;
 use crate::nodes::io_sources::multi_scan::pipeline::models::{
     ExtraOperations, StartReaderArgsConstant, StartReaderArgsPerFile, StartedReaderState,
 };
@@ -303,7 +303,7 @@ impl ReaderStarter {
 
             let (row_position_on_end_tx, row_position_on_end_rx) =
                 if should_update_row_position && n_rows_in_file.is_none() {
-                    let (tx, rx) = connector::connector();
+                    let (tx, rx) = oneshot_channel::channel();
                     (Some(tx), Some(rx))
                 } else {
                     (None, None)
@@ -313,6 +313,8 @@ impl ReaderStarter {
                 row_position_on_end_tx,
                 ..Default::default()
             };
+
+            reader.prepare_read()?;
 
             let start_args_this_file = StartReaderArgsPerFile {
                 scan_source,
@@ -359,7 +361,7 @@ impl ReaderStarter {
                     };
 
                     // Note, can be None on the last scan source.
-                    let Some(mut rx) = row_position_on_end_rx else {
+                    let Some(rx) = row_position_on_end_rx else {
                         break;
                     };
 
@@ -495,7 +497,7 @@ async fn start_reader_impl(
     let file_schema_rx = if forbid_extra_columns.is_some() {
         // Upstream should not have any reason to attach this.
         assert!(callbacks.file_schema_tx.is_none());
-        let (tx, rx) = connector::connector();
+        let (tx, rx) = oneshot_channel::channel();
         callbacks.file_schema_tx = Some(tx);
         Some(rx)
     } else {

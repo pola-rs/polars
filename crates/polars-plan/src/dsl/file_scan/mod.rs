@@ -173,9 +173,9 @@ pub struct CastColumnsPolicy {
     /// Allow casting when target dtype is lossless supertype
     pub integer_upcast: bool,
 
-    /// Allow Float32 -> Float64
+    /// Allow upcasting from small floats to bigger floats
     pub float_upcast: bool,
-    /// Allow Float64 -> Float32
+    /// Allow downcasting from big floats to smaller floats
     pub float_downcast: bool,
 
     /// Allow datetime[ns] to be casted to any lower precision. Important for
@@ -297,7 +297,19 @@ pub struct UnifiedScanArgs {
     pub table_statistics: Option<TableStatistics>,
     /// Stores (physical, deleted) row counts of the table if known upfront (e.g. for Iceberg).
     /// This allows for row-count queries to succeed without scanning all files.
-    pub row_count: Option<(IdxSize, IdxSize)>,
+    ///
+    /// Note, intentionally store u64 instead of IdxSize to avoid erroring if it's unused.
+    pub row_count: Option<(u64, u64)>,
+}
+
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub struct PredicateFileSkip {
+    /// If `true` the predicate can be skipped at runtime.
+    pub no_residual_predicate: bool,
+    /// Number of files before skipping
+    pub original_len: usize,
 }
 
 impl UnifiedScanArgs {
@@ -640,7 +652,9 @@ impl CastColumnsPolicy {
 
         if target_dtype.is_float() && incoming_dtype.is_float() {
             return match (target_dtype, incoming_dtype) {
-                (DataType::Float64, DataType::Float32) => {
+                (DataType::Float64, DataType::Float32)
+                | (DataType::Float64, DataType::Float16)
+                | (DataType::Float32, DataType::Float16) => {
                     if self.float_upcast {
                         Ok(true)
                     } else {
@@ -650,7 +664,9 @@ impl CastColumnsPolicy {
                     }
                 },
 
-                (DataType::Float32, DataType::Float64) => {
+                (DataType::Float16, DataType::Float32)
+                | (DataType::Float16, DataType::Float64)
+                | (DataType::Float32, DataType::Float64) => {
                     if self.float_downcast {
                         Ok(true)
                     } else {

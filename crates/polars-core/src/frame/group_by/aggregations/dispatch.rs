@@ -1,3 +1,4 @@
+use arrow::bitmap::bitmask::BitMask;
 use polars_compute::unique::{AmortizedUnique, amortized_unique_from_dtype};
 
 use super::*;
@@ -9,9 +10,9 @@ impl Series {
         self.slice(first as i64, len as usize)
     }
 
-    fn restore_logical(&self, out: Series) -> Series {
-        if self.dtype().is_logical() {
-            out.cast(self.dtype()).unwrap()
+    unsafe fn restore_logical(&self, out: Series) -> Series {
+        if self.dtype().is_logical() && !out.dtype().is_logical() {
+            out.from_physical_unchecked(self.dtype()).unwrap()
         } else {
             out
         }
@@ -92,6 +93,63 @@ impl Series {
     }
 
     #[doc(hidden)]
+    pub unsafe fn agg_first_non_null(&self, groups: &GroupsType) -> Series {
+        if !self.has_nulls() {
+            return self.agg_first(groups);
+        }
+
+        // Prevent a rechunk for every individual group.
+        let s = if groups.len() > 1 {
+            self.rechunk()
+        } else {
+            self.clone()
+        };
+
+        let validity = s.rechunk_validity().unwrap();
+        let indices = match groups {
+            GroupsType::Idx(groups) => {
+                groups
+                    .iter()
+                    .map(|(_, idx)| {
+                        let mut this_idx = None;
+                        for &ii in idx.iter() {
+                            // SAFETY: null_values has no null values
+                            if validity.get_bit_unchecked(ii as usize) {
+                                this_idx = Some(ii);
+                                break;
+                            }
+                        }
+                        this_idx
+                    })
+                    .collect_ca(PlSmallStr::EMPTY)
+            },
+            GroupsType::Slice { groups, .. } => {
+                let mask = BitMask::from_bitmap(&validity);
+                groups
+                    .iter()
+                    .map(|&[first, len]| {
+                        // SAFETY: group slice is valid.
+                        let validity = mask.sliced_unchecked(first as usize, len as usize);
+                        let leading_zeros = validity.leading_zeros() as IdxSize;
+                        if leading_zeros == len {
+                            // All values are null, we have no first non-null.
+                            None
+                        } else {
+                            Some(first + leading_zeros)
+                        }
+                    })
+                    .collect_ca(PlSmallStr::EMPTY)
+            },
+        };
+        // SAFETY: groups are always in bounds.
+        let mut out = s.take_unchecked(&indices);
+        if groups.is_sorted_flag() {
+            out.set_sorted_flag(s.is_sorted_flag())
+        }
+        s.restore_logical(out)
+    }
+
+    #[doc(hidden)]
     pub unsafe fn agg_n_unique(&self, groups: &GroupsType) -> Series {
         let values = self.to_physical_repr();
         let dtype = values.dtype();
@@ -129,6 +187,7 @@ impl Series {
             GroupsType::Slice {
                 groups,
                 overlapping: _,
+                monotonic: _,
             } => groups
                 .into_par_iter()
                 .map_with(CloneWrapper(state), |state, [start, len]| {
@@ -273,17 +332,39 @@ impl Series {
                 .cast(&DataType::Float64)
                 .unwrap()
                 .agg_quantile(groups, quantile, method),
-            dt if dt.is_primitive_numeric() || dt.is_temporal() => {
-                let ca = s.to_physical_repr();
-                let physical_type = ca.dtype();
-                let s = apply_method_physical_integer!(ca, agg_quantile, groups, quantile, method);
-                if dt.is_logical() {
-                    // back to physical and then
-                    // back to logical type
-                    s.cast(physical_type).unwrap().cast(dt).unwrap()
-                } else {
-                    s
-                }
+            #[cfg(feature = "dtype-datetime")]
+            Datetime(tu, tz) => self
+                .to_physical_repr()
+                .agg_quantile(groups, quantile, method)
+                .cast(&Int64)
+                .unwrap()
+                .into_datetime(*tu, tz.clone()),
+            #[cfg(feature = "dtype-duration")]
+            Duration(tu) => self
+                .to_physical_repr()
+                .agg_quantile(groups, quantile, method)
+                .cast(&Int64)
+                .unwrap()
+                .into_duration(*tu),
+            #[cfg(feature = "dtype-time")]
+            Time => self
+                .to_physical_repr()
+                .agg_quantile(groups, quantile, method)
+                .cast(&Int64)
+                .unwrap()
+                .into_time(),
+            #[cfg(feature = "dtype-date")]
+            Date => (self
+                .to_physical_repr()
+                .agg_quantile(groups, quantile, method)
+                .cast(&Float64)
+                .unwrap()
+                * (US_IN_DAY as f64))
+                .cast(&DataType::Int64)
+                .unwrap()
+                .into_datetime(TimeUnit::Microseconds, None),
+            dt if dt.is_primitive_numeric() => {
+                apply_method_physical_integer!(s, agg_quantile, groups, quantile, method)
             },
             _ => Series::full_null(PlSmallStr::EMPTY, groups.len(), s.dtype()),
         }
@@ -327,6 +408,64 @@ impl Series {
                 s.take_unchecked(&indices)
             },
         };
+        s.restore_logical(out)
+    }
+
+    #[doc(hidden)]
+    pub unsafe fn agg_last_non_null(&self, groups: &GroupsType) -> Series {
+        if !self.has_nulls() {
+            return self.agg_last(groups);
+        }
+
+        // Prevent a rechunk for every individual group.
+        let s = if groups.len() > 1 {
+            self.rechunk()
+        } else {
+            self.clone()
+        };
+
+        let validity = s.rechunk_validity().unwrap();
+        let indices = match groups {
+            GroupsType::Idx(groups) => {
+                groups
+                    .iter()
+                    .map(|(_, idx)| {
+                        // We may or may not find a valid value.
+                        let mut opt_idx = None;
+                        for &ii in idx.iter().rev() {
+                            // SAFETY: index is always in range.
+                            if validity.get_bit_unchecked(ii as usize) {
+                                opt_idx = Some(ii);
+                                break;
+                            }
+                        }
+                        opt_idx
+                    })
+                    .collect_ca(PlSmallStr::EMPTY)
+            },
+            GroupsType::Slice { groups, .. } => {
+                let mask = BitMask::from_bitmap(&validity);
+                groups
+                    .iter()
+                    .map(|&[first, len]| {
+                        // SAFETY: group slice is valid.
+                        let validity = mask.sliced_unchecked(first as usize, len as usize);
+                        let trailing_zeros = validity.trailing_zeros() as IdxSize;
+                        if trailing_zeros == len {
+                            // All values are null, we have no last non-null.
+                            None
+                        } else {
+                            Some(first + len - trailing_zeros - 1)
+                        }
+                    })
+                    .collect_ca(PlSmallStr::EMPTY)
+            },
+        };
+        // SAFETY: groups are always in bounds.
+        let mut out = s.take_unchecked(&indices);
+        if groups.is_sorted_flag() {
+            out.set_sorted_flag(s.is_sorted_flag())
+        }
         s.restore_logical(out)
     }
 }

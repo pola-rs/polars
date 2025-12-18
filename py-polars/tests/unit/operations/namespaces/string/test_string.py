@@ -1178,7 +1178,7 @@ def test_replace_all() -> None:
     )
 
 
-def test_replace_all_literal_no_caputures() -> None:
+def test_replace_all_literal_no_captures() -> None:
     # When using literal = True, capture groups should be disabled
 
     # Single row code path in Rust
@@ -1206,7 +1206,7 @@ def test_replace_all_literal_no_caputures() -> None:
     assert df2.get_column("text2")[1] == "I lost $2 yesterday."
 
 
-def test_replace_literal_no_caputures() -> None:
+def test_replace_literal_no_captures() -> None:
     # When using literal = True, capture groups should be disabled
 
     # Single row code path in Rust
@@ -1255,47 +1255,72 @@ def test_replace_expressions() -> None:
 
 
 @pytest.mark.parametrize(
-    ("pattern", "replacement", "case_insensitive", "expected"),
+    ("pattern", "replacement", "case_insensitive", "leftmost", "expected"),
     [
-        (["say"], "", False, "Tell me what you want"),
-        (["me"], ["them"], False, "Tell them what you want"),
-        (["who"], ["them"], False, "Tell me what you want"),
-        (["me", "you"], "it", False, "Tell it what it want"),
-        (["Me", "you"], "it", False, "Tell me what it want"),
-        (["me", "you"], ["it"], False, "Tell it what it want"),
-        (["me", "you"], ["you", "me"], False, "Tell you what me want"),
-        (["me", "You", "them"], "it", False, "Tell it what you want"),
-        (["Me", "you"], "it", True, "Tell it what it want"),
-        (["me", "YOU"], ["you", "me"], True, "Tell you what me want"),
-        (pl.Series(["me", "YOU"]), ["you", "me"], False, "Tell you what you want"),
-        (pl.Series(["me", "YOU"]), ["you", "me"], True, "Tell you what me want"),
+        (["say"], "", False, False, "Tell me what you want"),
+        (["me"], ["them"], False, False, "Tell them what you want"),
+        (["who"], ["them"], False, False, "Tell me what you want"),
+        (["me", "you"], "it", False, False, "Tell it what it want"),
+        (["Me", "you"], "it", False, False, "Tell me what it want"),
+        (["me", "you"], ["it"], False, False, "Tell it what it want"),
+        (["me", "you"], ["you", "me"], False, False, "Tell you what me want"),
+        (["me", "You", "them"], "it", False, False, "Tell it what you want"),
+        (["Me", "you"], "it", True, False, "Tell it what it want"),
+        (["me", "YOU"], ["you", "me"], True, False, "Tell you what me want"),
+        (
+            pl.Series(["me", "YOU"]),
+            ["you", "me"],
+            False,
+            False,
+            "Tell you what you want",
+        ),
+        (pl.Series(["me", "YOU"]), ["you", "me"], True, False, "Tell you what me want"),
+        (
+            ["Tell me", "Tell"],
+            ["Don't tell", "Text"],
+            False,
+            False,
+            "Text me what you want",
+        ),
+        (
+            ["Tell me", "Tell"],
+            ["Don't tell me", "Text"],
+            False,
+            True,
+            "Don't tell me what you want",
+        ),
     ],
 )
 def test_replace_many(
     pattern: pl.Series | list[str],
     replacement: pl.Series | list[str] | str,
     case_insensitive: bool,
+    leftmost: bool,
     expected: str,
 ) -> None:
     df = pl.DataFrame({"text": ["Tell me what you want"]})
     # series
-    assert (
-        expected
-        == df["text"]
-        .str.replace_many(pattern, replacement, ascii_case_insensitive=case_insensitive)
+    val = (
+        df["text"]
+        .str.replace_many(
+            pattern,
+            replacement,
+            ascii_case_insensitive=case_insensitive,
+            leftmost=leftmost,
+        )
         .item()
     )
+    assert expected == val, val
     # expr
-    assert (
-        expected
-        == df.select(
-            pl.col("text").str.replace_many(
-                pattern,
-                replacement,
-                ascii_case_insensitive=case_insensitive,
-            )
-        ).item()
-    )
+    val = df.select(
+        pl.col("text").str.replace_many(
+            pattern,
+            replacement,
+            ascii_case_insensitive=case_insensitive,
+            leftmost=leftmost,
+        )
+    ).item()
+    assert expected == val, val
 
 
 def test_replace_many_groupby() -> None:
@@ -1924,6 +1949,28 @@ def test_replace_lit_n_char_13385(
     assert_series_equal(res, expected_s)
 
 
+def test_find_many_raises() -> None:
+    df = pl.DataFrame({"values": ["discontent", "foobar"]})
+    patterns = ["winter", "disco", "onte", "discontent"]
+    with pytest.raises(
+        ValueError, match="can not match overlapping patterns when leftmost == True"
+    ):
+        df.select(
+            pl.col("values").str.find_many(patterns, leftmost=True, overlapping=True)
+        )
+
+
+def test_extract_many_raises() -> None:
+    df = pl.DataFrame({"values": ["discontent", "foobar"]})
+    patterns = ["winter", "disco", "onte", "discontent"]
+    with pytest.raises(
+        ValueError, match="can not match overlapping patterns when leftmost == True"
+    ):
+        df.select(
+            pl.col("values").str.extract_many(patterns, leftmost=True, overlapping=True)
+        )
+
+
 def test_extract_many() -> None:
     df = pl.DataFrame({"values": ["discontent", "foobar"]})
     patterns = ["winter", "disco", "onte", "discontent"]
@@ -2103,3 +2150,11 @@ def test_str_replace_null_19601() -> None:
         df.select(result=pl.col("key").str.replace("1", pl.col("1"))),
         pl.DataFrame({"result": ["---", "2"]}),
     )
+
+
+def test_str_json_decode_25237() -> None:
+    s = pl.Series(['[{"a": 0, "b": 1}, {"b": 2}]'])
+
+    dtypes = {s.str.json_decode().dtype for _ in range(20)}
+
+    assert len(dtypes) == 1

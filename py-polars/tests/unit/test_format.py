@@ -8,6 +8,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import InvalidOperationError
+from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -510,3 +511,20 @@ def test_format_ascii_table_truncation(df: pl.DataFrame, expected: str) -> None:
 
 def test_format_21393() -> None:
     assert pl.select(pl.format("{}", pl.lit(1, pl.Int128))).item() == "1"
+
+
+def test_format_25625() -> None:
+    repr_str = repr(pl.format(""))
+    assert repr_str.startswith("<Expr ['str.format()'] at"), repr_str
+
+    assert_frame_equal(
+        pl.DataFrame({}).select(pl.format("")), pl.DataFrame({"literal": ""})
+    )
+    assert_frame_equal(
+        pl.DataFrame({}).select(pl.format("x A + ")),
+        pl.DataFrame({"literal": "x A + "}),
+    )
+    assert_frame_equal(
+        pl.DataFrame({}).select(pl.format("x A + {{and here }}")),
+        pl.DataFrame({"literal": "x A + {{and here }}"}),
+    )

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from itertools import chain
 from typing import TYPE_CHECKING, Any, Callable
 
 from polars import functions as F
 from polars._utils.convert import parse_as_duration_string
 from polars._utils.deprecation import deprecated
+from polars._utils.parse.expr import _parse_inputs_as_iterable
 
 if TYPE_CHECKING:
     import sys
@@ -20,6 +22,7 @@ if TYPE_CHECKING:
         SchemaDict,
         StartBy,
     )
+    from polars.lazyframe.group_by import LazyGroupBy
 
     if sys.version_info >= (3, 11):
         from typing import Self
@@ -40,6 +43,7 @@ class GroupBy:
         df: DataFrame,
         *by: IntoExpr | Iterable[IntoExpr],
         maintain_order: bool,
+        predicates: Iterable[Any] | None,
         **named_by: IntoExpr,
     ) -> None:
         """
@@ -57,6 +61,8 @@ class GroupBy:
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default group by.
+        predicates
+            Predicate expressions to filter groups after aggregation.
         **named_by
             Additional column(s) to group by, specified as keyword arguments.
             The columns will be named as the keyword used.
@@ -65,6 +71,15 @@ class GroupBy:
         self.by = by
         self.named_by = named_by
         self.maintain_order = maintain_order
+        self.predicates = predicates
+
+    def _lgb(self) -> LazyGroupBy:
+        group_by = self.df.lazy().group_by(
+            *self.by, **self.named_by, maintain_order=self.maintain_order
+        )
+        if self.predicates:
+            return group_by.having(self.predicates)
+        return group_by
 
     def __iter__(self) -> Self:
         """
@@ -106,7 +121,7 @@ class GroupBy:
         temp_col = "__POLARS_GB_GROUP_INDICES"
         groups_df = (
             self.df.lazy()
-            .with_row_index()
+            .with_row_index("__POLARS_GB_ROW_INDEX")
             .group_by(*self.by, **self.named_by, maintain_order=self.maintain_order)
             .agg(F.first().alias(temp_col))
             .collect(optimizations=QueryOptFlags.none())
@@ -127,6 +142,50 @@ class GroupBy:
         self._current_index += 1
 
         return group_name, group_data
+
+    def having(self, *predicates: IntoExpr | Iterable[IntoExpr]) -> GroupBy:
+        """
+        Filter groups with a list of predicates after aggregation.
+
+        Using this method is equivalent to adding the predicates to the aggregation and
+        filtering afterwards.
+
+        This method can be chained and all conditions will be combined using `&`.
+
+        Parameters
+        ----------
+        *predicates
+            Expressions that evaluate to a boolean value for each group. Typically, this
+            requires the use of an aggregation function. Multiple predicates are
+            combined using `&`.
+
+        Examples
+        --------
+        Only keep groups that contain more than one element.
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": ["a", "b", "a", "b", "c"],
+        ...     }
+        ... )
+        >>> df.group_by("a").having(pl.len() > 1).agg()  # doctest: +IGNORE_RESULT
+        shape: (2, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ str │
+        ╞═════╡
+        │ b   │
+        │ a   │
+        └─────┘
+        """
+        return GroupBy(
+            self.df,
+            *self.by,
+            maintain_order=self.maintain_order,
+            predicates=_chain_predicates(self.predicates, predicates),
+            **self.named_by,
+        )
 
     def agg(
         self,
@@ -165,9 +224,7 @@ class GroupBy:
         │ str ┆ list[i64] ┆ list[i64] │
         ╞═════╪═══════════╪═══════════╡
         │ a   ┆ [1, 1]    ┆ [5, 3]    │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ b   ┆ [2, 3]    ┆ [4, 2]    │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ c   ┆ [3]       ┆ [1]       │
         └─────┴───────────┴───────────┘
 
@@ -236,8 +293,7 @@ class GroupBy:
         from polars.lazyframe.opt_flags import QueryOptFlags
 
         return (
-            self.df.lazy()
-            .group_by(*self.by, **self.named_by, maintain_order=self.maintain_order)
+            self._lgb()
             .agg(*aggs, **named_aggs)
             .collect(optimizations=QueryOptFlags.none())
         )
@@ -303,6 +359,9 @@ class GroupBy:
         ...     pl.int_range(pl.len()).shuffle().over("color") < 2
         ... )  # doctest: +IGNORE_RESULT
         """
+        if self.predicates:
+            msg = "cannot call `map_groups` when filtering groups with `having`"
+            raise TypeError(msg)
         if self.named_by:
             msg = "cannot call `map_groups` when grouping by named expressions"
             raise TypeError(msg)
@@ -363,12 +422,7 @@ class GroupBy:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return (
-            self.df.lazy()
-            .group_by(*self.by, **self.named_by, maintain_order=self.maintain_order)
-            .head(n)
-            .collect(optimizations=QueryOptFlags._eager())
-        )
+        return self._lgb().head(n).collect(optimizations=QueryOptFlags._eager())
 
     def tail(self, n: int = 5) -> DataFrame:
         """
@@ -417,12 +471,7 @@ class GroupBy:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return (
-            self.df.lazy()
-            .group_by(*self.by, **self.named_by, maintain_order=self.maintain_order)
-            .tail(n)
-            .collect(optimizations=QueryOptFlags.none())
-        )
+        return self._lgb().tail(n).collect(optimizations=QueryOptFlags.none())
 
     def all(self) -> DataFrame:
         """
@@ -513,9 +562,16 @@ class GroupBy:
         """
         return self.agg(F.len().alias("count"))
 
-    def first(self) -> DataFrame:
+    def first(self, *, ignore_nulls: bool = False) -> DataFrame:
         """
         Aggregate the first values in the group.
+
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the first non-null value for each aggregation is returned,
+            otherwise `None` is returned if no non-null value exists.
 
         Examples
         --------
@@ -523,11 +579,22 @@ class GroupBy:
         ...     {
         ...         "a": [1, 2, 2, 3, 4, 5],
         ...         "b": [0.5, 0.5, 4, 10, 13, 14],
-        ...         "c": [True, True, True, False, False, True],
+        ...         "c": [None, True, True, False, False, True],
         ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
         ...     }
         ... )
         >>> df.group_by("d", maintain_order=True).first()
+        shape: (3, 4)
+        ┌────────┬─────┬──────┬───────┐
+        │ d      ┆ a   ┆ b    ┆ c     │
+        │ ---    ┆ --- ┆ ---  ┆ ---   │
+        │ str    ┆ i64 ┆ f64  ┆ bool  │
+        ╞════════╪═════╪══════╪═══════╡
+        │ Apple  ┆ 1   ┆ 0.5  ┆ null  │
+        │ Orange ┆ 2   ┆ 0.5  ┆ true  │
+        │ Banana ┆ 4   ┆ 13.0 ┆ false │
+        └────────┴─────┴──────┴───────┘
+        >>> df.group_by("d", maintain_order=True).first(ignore_nulls=True)
         shape: (3, 4)
         ┌────────┬─────┬──────┬───────┐
         │ d      ┆ a   ┆ b    ┆ c     │
@@ -539,35 +606,53 @@ class GroupBy:
         │ Banana ┆ 4   ┆ 13.0 ┆ false │
         └────────┴─────┴──────┴───────┘
         """
-        return self.agg(F.all().first())
+        return self.agg(F.all().first(ignore_nulls=ignore_nulls))
 
-    def last(self) -> DataFrame:
+    def last(self, *, ignore_nulls: bool = False) -> DataFrame:
         """
         Aggregate the last values in the group.
+
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the last non-null value for each column is returned,
+            otherwise `None` is returned if no non-null value exists.
 
         Examples
         --------
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, 2, 3, 4, 5],
-        ...         "b": [0.5, 0.5, 4, 10, 14, 13],
-        ...         "c": [True, True, True, False, False, True],
+        ...         "b": [0.5, 0.5, 4, 10, 14, None],
+        ...         "c": [True, True, True, None, False, True],
         ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
         ...     }
         ... )
         >>> df.group_by("d", maintain_order=True).last()
         shape: (3, 4)
-        ┌────────┬─────┬──────┬───────┐
-        │ d      ┆ a   ┆ b    ┆ c     │
-        │ ---    ┆ --- ┆ ---  ┆ ---   │
-        │ str    ┆ i64 ┆ f64  ┆ bool  │
-        ╞════════╪═════╪══════╪═══════╡
-        │ Apple  ┆ 3   ┆ 10.0 ┆ false │
-        │ Orange ┆ 2   ┆ 0.5  ┆ true  │
-        │ Banana ┆ 5   ┆ 13.0 ┆ true  │
-        └────────┴─────┴──────┴───────┘
+        ┌────────┬─────┬──────┬──────┐
+        │ d      ┆ a   ┆ b    ┆ c    │
+        │ ---    ┆ --- ┆ ---  ┆ ---  │
+        │ str    ┆ i64 ┆ f64  ┆ bool │
+        ╞════════╪═════╪══════╪══════╡
+        │ Apple  ┆ 3   ┆ 10.0 ┆ null │
+        │ Orange ┆ 2   ┆ 0.5  ┆ true │
+        │ Banana ┆ 5   ┆ null ┆ true │
+        └────────┴─────┴──────┴──────┘
+        >>> df.group_by("d", maintain_order=True).last(ignore_nulls=True)
+        shape: (3, 4)
+        ┌────────┬─────┬──────┬──────┐
+        │ d      ┆ a   ┆ b    ┆ c    │
+        │ ---    ┆ --- ┆ ---  ┆ ---  │
+        │ str    ┆ i64 ┆ f64  ┆ bool │
+        ╞════════╪═════╪══════╪══════╡
+        │ Apple  ┆ 3   ┆ 10.0 ┆ true │
+        │ Orange ┆ 2   ┆ 0.5  ┆ true │
+        │ Banana ┆ 5   ┆ 14.0 ┆ true │
+        └────────┴─────┴──────┴──────┘
         """
-        return self.agg(F.all().last())
+        return self.agg(F.all().last(ignore_nulls=ignore_nulls))
 
     def max(self) -> DataFrame:
         """
@@ -787,6 +872,7 @@ class RollingGroupBy:
         offset: str | timedelta | None,
         closed: ClosedInterval,
         group_by: IntoExpr | Iterable[IntoExpr] | None,
+        predicates: Iterable[Any] | None,
     ) -> None:
         period = parse_as_duration_string(period)
         offset = parse_as_duration_string(offset)
@@ -797,6 +883,7 @@ class RollingGroupBy:
         self.offset = offset
         self.closed = closed
         self.group_by = group_by
+        self.predicates = predicates
 
     def __iter__(self) -> Self:
         from polars.lazyframe.opt_flags import QueryOptFlags
@@ -804,7 +891,7 @@ class RollingGroupBy:
         temp_col = "__POLARS_GB_GROUP_INDICES"
         groups_df = (
             self.df.lazy()
-            .with_row_index()
+            .with_row_index("__POLARS_GB_ROW_INDEX")
             .rolling(
                 index_column=self.time_column,
                 period=self.period,
@@ -832,6 +919,32 @@ class RollingGroupBy:
 
         return group_name, group_data
 
+    def having(self, *predicates: IntoExpr | Iterable[IntoExpr]) -> RollingGroupBy:
+        """
+        Filter groups with a list of predicates after aggregation.
+
+        Using this method is equivalent to adding the predicates to the aggregation and
+        filtering afterwards.
+
+        This method can be chained and all conditions will be combined using `&`.
+
+        Parameters
+        ----------
+        *predicates
+            Expressions that evaluate to a boolean value for each group. Typically, this
+            requires the use of an aggregation function. Multiple predicates are
+            combined using `&`.
+        """
+        return RollingGroupBy(
+            self.df,
+            self.time_column,
+            period=self.period,
+            offset=self.offset,
+            closed=self.closed,
+            group_by=self.group_by,
+            predicates=_chain_predicates(self.predicates, predicates),
+        )
+
     def agg(
         self,
         *aggs: IntoExpr | Iterable[IntoExpr],
@@ -852,17 +965,18 @@ class RollingGroupBy:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return (
-            self.df.lazy()
-            .rolling(
-                index_column=self.time_column,
-                period=self.period,
-                offset=self.offset,
-                closed=self.closed,
-                group_by=self.group_by,
-            )
-            .agg(*aggs, **named_aggs)
-            .collect(optimizations=QueryOptFlags.none())
+        group_by = self.df.lazy().rolling(
+            index_column=self.time_column,
+            period=self.period,
+            offset=self.offset,
+            closed=self.closed,
+            group_by=self.group_by,
+        )
+        if self.predicates:
+            group_by = group_by.having(self.predicates)
+
+        return group_by.agg(*aggs, **named_aggs).collect(
+            optimizations=QueryOptFlags.none()
         )
 
     def map_groups(
@@ -895,6 +1009,10 @@ class RollingGroupBy:
             lead to errors. If set to None, polars assumes the schema is unchanged.
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
+
+        if self.predicates:
+            msg = "cannot call `map_groups` when filtering groups with `having`"
+            raise TypeError(msg)
 
         return (
             self.df.lazy()
@@ -931,6 +1049,7 @@ class DynamicGroupBy:
         label: Label,
         group_by: IntoExpr | Iterable[IntoExpr] | None,
         start_by: StartBy,
+        predicates: Iterable[Any] | None,
     ) -> None:
         every = parse_as_duration_string(every)
         period = parse_as_duration_string(period)
@@ -946,6 +1065,7 @@ class DynamicGroupBy:
         self.closed = closed
         self.group_by = group_by
         self.start_by = start_by
+        self.predicates = predicates
 
     def __iter__(self) -> Self:
         from polars.lazyframe.opt_flags import QueryOptFlags
@@ -953,7 +1073,7 @@ class DynamicGroupBy:
         temp_col = "__POLARS_GB_GROUP_INDICES"
         groups_df = (
             self.df.lazy()
-            .with_row_index()
+            .with_row_index("__POLARS_GB_ROW_INDEX")
             .group_by_dynamic(
                 index_column=self.time_column,
                 every=self.every,
@@ -985,6 +1105,36 @@ class DynamicGroupBy:
 
         return group_name, group_data
 
+    def having(self, *predicates: IntoExpr | Iterable[IntoExpr]) -> DynamicGroupBy:
+        """
+        Filter groups with a list of predicates after aggregation.
+
+        Using this method is equivalent to adding the predicates to the aggregation and
+        filtering afterwards.
+
+        This method can be chained and all conditions will be combined using `&`.
+
+        Parameters
+        ----------
+        *predicates
+            Expressions that evaluate to a boolean value for each group. Typically, this
+            requires the use of an aggregation function. Multiple predicates are
+            combined using `&`.
+        """
+        return DynamicGroupBy(
+            self.df,
+            self.time_column,
+            every=self.every,
+            period=self.period,
+            offset=self.offset,
+            include_boundaries=self.include_boundaries,
+            closed=self.closed,
+            label=self.label,
+            group_by=self.group_by,
+            start_by=self.start_by,
+            predicates=_chain_predicates(self.predicates, predicates),
+        )
+
     def agg(
         self,
         *aggs: IntoExpr | Iterable[IntoExpr],
@@ -1005,21 +1155,22 @@ class DynamicGroupBy:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return (
-            self.df.lazy()
-            .group_by_dynamic(
-                index_column=self.time_column,
-                every=self.every,
-                period=self.period,
-                offset=self.offset,
-                label=self.label,
-                include_boundaries=self.include_boundaries,
-                closed=self.closed,
-                group_by=self.group_by,
-                start_by=self.start_by,
-            )
-            .agg(*aggs, **named_aggs)
-            .collect(optimizations=QueryOptFlags.none())
+        group_by = self.df.lazy().group_by_dynamic(
+            index_column=self.time_column,
+            every=self.every,
+            period=self.period,
+            offset=self.offset,
+            label=self.label,
+            include_boundaries=self.include_boundaries,
+            closed=self.closed,
+            group_by=self.group_by,
+            start_by=self.start_by,
+        )
+        if self.predicates:
+            group_by = group_by.having(self.predicates)
+
+        return group_by.agg(*aggs, **named_aggs).collect(
+            optimizations=QueryOptFlags.none()
         )
 
     def map_groups(
@@ -1053,6 +1204,10 @@ class DynamicGroupBy:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
+        if self.predicates:
+            msg = "cannot call `map_groups` when filtering groups with `having`"
+            raise TypeError(msg)
+
         return (
             self.df.lazy()
             .group_by_dynamic(
@@ -1068,3 +1223,13 @@ class DynamicGroupBy:
             .map_groups(function, schema)
             .collect(optimizations=QueryOptFlags.none())
         )
+
+
+def _chain_predicates(
+    lhs: Iterable[IntoExpr] | None, rhs: tuple[IntoExpr | Iterable[IntoExpr], ...]
+) -> Iterable[Any]:
+    return (
+        chain(lhs, _parse_inputs_as_iterable(rhs))
+        if lhs is not None
+        else _parse_inputs_as_iterable(rhs)
+    )

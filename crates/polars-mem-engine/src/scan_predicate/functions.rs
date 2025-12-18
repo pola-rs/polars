@@ -12,11 +12,13 @@ use polars_plan::dsl::default_values::{
     DefaultFieldValues, IcebergIdentityTransformedPartitionFields,
 };
 use polars_plan::dsl::deletion::DeletionFilesList;
-use polars_plan::dsl::{FileScanIR, Operator, ScanSources, TableStatistics, UnifiedScanArgs};
+use polars_plan::dsl::{
+    FileScanIR, Operator, PredicateFileSkip, ScanSources, TableStatistics, UnifiedScanArgs,
+};
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::predicates::{aexpr_to_column_predicates, aexpr_to_skip_batch_predicate};
-use polars_plan::plans::{AExpr, Context, ExprIRDisplay, FileInfo, IR, MintermIter};
+use polars_plan::plans::{AExpr, ExprIRDisplay, FileInfo, IR, MintermIter};
 use polars_plan::utils::aexpr_to_leaf_names_iter;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
@@ -50,7 +52,7 @@ pub fn create_scan_predicate(
 
         for predicate_part in MintermIter::new(predicate.node(), expr_arena) {
             if aexpr_to_leaf_names_iter(predicate_part, expr_arena)
-                .all(|name| hive_schema.contains(&name))
+                .all(|name| hive_schema.contains(name))
             {
                 hive_predicate_parts.push(predicate_part)
             } else {
@@ -81,7 +83,6 @@ pub fn create_scan_predicate(
 
             hive_predicate = Some(create_physical_expr(
                 &ExprIR::from_node(node, expr_arena),
-                Context::Default,
                 expr_arena,
                 schema,
                 state,
@@ -106,17 +107,15 @@ pub fn create_scan_predicate(
         break;
     }
 
-    let phys_predicate =
-        create_physical_expr(&predicate, Context::Default, expr_arena, schema, state)?;
+    let phys_predicate = create_physical_expr(&predicate, expr_arena, schema, state)?;
 
     if hive_predicate_is_full_predicate {
         hive_predicate = Some(phys_predicate.clone());
     }
 
-    let live_columns = Arc::new(PlIndexSet::from_iter(aexpr_to_leaf_names_iter(
-        predicate.node(),
-        expr_arena,
-    )));
+    let live_columns = Arc::new(PlIndexSet::from_iter(
+        aexpr_to_leaf_names_iter(predicate.node(), expr_arena).cloned(),
+    ));
 
     let mut skip_batch_predicate = None;
 
@@ -144,7 +143,6 @@ pub fn create_scan_predicate(
 
             skip_batch_predicate = Some(create_physical_expr(
                 &expr,
-                Context::Default,
                 expr_arena,
                 &Arc::new(skip_batch_schema),
                 state,
@@ -180,7 +178,6 @@ pub fn create_scan_predicate(
                         (
                             create_physical_expr(
                                 &ExprIR::new(p, OutputName::Alias(PlSmallStr::EMPTY)),
-                                Context::Default,
                                 expr_arena,
                                 schema,
                                 state,
@@ -270,7 +267,7 @@ pub fn initialize_scan_predicate<'a>(
         };
 
         if skip_files_mask.len() != expected_mask_len {
-            let msg = format!(
+            polars_warn!(
                 "WARNING: \
                 initialize_scan_predicate: \
                 filter mask length mismatch (length: {}, expected: {}). Files \
@@ -279,7 +276,6 @@ pub fn initialize_scan_predicate<'a>(
                 skip_files_mask.len(),
                 expected_mask_len
             );
-            polars_warn!(msg);
             return Ok((None, Some(predicate)));
         }
 
@@ -370,17 +366,16 @@ pub fn apply_scan_predicate_to_scan_ir(
     if let Some(skip_files_mask) = skip_files_mask {
         assert_eq!(skip_files_mask.len(), sources.len());
 
+        let predicate_file_skip = PredicateFileSkip {
+            no_residual_predicate: predicate_to_readers.is_none(),
+            original_len: sources.len(),
+        };
+
         if verbose {
-            let s = if sources.len() == 1 { "" } else { "s" };
-            eprintln!(
-                "apply_scan_predicate_to_scan_ir: remove {} / {} file{s}",
-                skip_files_mask.num_skipped_files(),
-                sources.len()
-            );
+            eprintln!("apply_scan_predicate_to_scan_ir: {predicate_file_skip:?}");
         }
 
-        let is_fully_applied = predicate_to_readers.is_none();
-        *predicate_file_skip_applied = Some(is_fully_applied);
+        *predicate_file_skip_applied = Some(predicate_file_skip);
 
         if skip_files_mask.num_skipped_files() > 0 {
             filter_scan_ir(scan_ir, skip_files_mask.non_skipped_files_idx_iter())

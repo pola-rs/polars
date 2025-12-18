@@ -4,7 +4,21 @@ pub mod allocator;
 // Since Python Polars cannot share its version into here and we need to be able to build this
 // package correctly without `py-polars`, we need to mirror the version here.
 // example: 1.35.0-beta.1
-pub static PYPOLARS_VERSION: &str = "1.35.0";
+pub static PYPOLARS_VERSION: &str = "1.36.1";
+
+// We allow multiple features to be set simultaneously so checking with all-features
+// is possible. In the case multiple are set or none at all, we set the repr to "unknown".
+#[cfg(all(feature = "rtcompat", not(any(feature = "rt32", feature = "rt64"))))]
+pub static RUNTIME_REPR: &str = "rtcompat";
+#[cfg(all(feature = "rt32", not(any(feature = "rt64", feature = "rtcompat"))))]
+pub static RUNTIME_REPR: &str = "rt32";
+#[cfg(all(feature = "rt64", not(any(feature = "rt32", feature = "rtcompat"))))]
+pub static RUNTIME_REPR: &str = "rt64";
+#[cfg(not(any(
+    all(feature = "rtcompat", not(any(feature = "rt32", feature = "rt64"))),
+    all(feature = "rt32", not(any(feature = "rt64", feature = "rtcompat"))),
+    all(feature = "rt64", not(any(feature = "rt32", feature = "rtcompat")))
+)))]
 pub static RUNTIME_REPR: &str = "unknown";
 
 use pyo3::prelude::*;
@@ -26,12 +40,12 @@ use crate::expr::selector::PySelector;
 use crate::functions::PyStringCacheHolder;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::lazyframe::PyInProcessQuery;
-use crate::lazyframe::{PyLazyFrame, PyOptFlags, PyPartitioning};
+use crate::lazyframe::{PyLazyFrame, PyOptFlags};
 use crate::lazygroupby::PyLazyGroupBy;
 use crate::series::PySeries;
 #[cfg(feature = "sql")]
 use crate::sql::PySQLContext;
-use crate::{datatypes, exceptions, functions, testing};
+use crate::{datatypes, exceptions, extension, functions, testing};
 
 #[pymodule]
 fn _ir_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
@@ -93,7 +107,7 @@ fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
 }
 
 #[pymodule]
-pub fn _polars_runtime_64(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
+pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     // Classes
     m.add_class::<PySeries>().unwrap();
     m.add_class::<PyDataFrame>().unwrap();
@@ -105,7 +119,6 @@ pub fn _polars_runtime_64(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyExpr>().unwrap();
     m.add_class::<PyDataTypeExpr>().unwrap();
     m.add_class::<PySelector>().unwrap();
-    m.add_class::<PyPartitioning>().unwrap();
     m.add_class::<PyStringCacheHolder>().unwrap();
     #[cfg(feature = "csv")]
     m.add_class::<PyBatchedCsv>().unwrap();
@@ -326,6 +339,12 @@ pub fn _polars_runtime_64(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(datatypes::_get_dtype_min))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(datatypes::_known_timezones))
+        .unwrap();
+
+    // Extension type registry.
+    m.add_wrapped(wrap_pyfunction!(extension::_register_extension_type))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(extension::_unregister_extension_type))
         .unwrap();
 
     // Testing

@@ -2,16 +2,19 @@ use std::collections::VecDeque;
 
 use polars_core::prelude::SortMultipleOptions;
 use polars_ops::frame::{JoinArgs, JoinType};
-use polars_plan::dsl::{JoinTypeOptionsIR, PartitionVariantIR, SinkOptions, SinkTarget};
+use polars_plan::dsl::{
+    FileSinkOptions, JoinTypeOptionsIR, PartitionStrategyIR, PartitionVariantIR,
+    PartitionedSinkOptionsIR, SinkOptions, SinkTarget, SortColumnIR, UnifiedSinkArgs,
+};
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::prelude::AExpr;
 use polars_utils::arena::Arena;
-use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::{IdxSize, format_pl_smallstr};
 
 pub mod models;
 pub use models::{PhysNodeInfo, PhysicalPlanVisualizationData};
-use slotmap::SlotMap;
+use slotmap::{SecondaryMap, SlotMap};
 
 use crate::physical_plan::visualization::models::{Edge, PhysNodeProperties};
 use crate::physical_plan::{PhysNode, PhysNodeKey, PhysNodeKind};
@@ -26,6 +29,7 @@ pub fn generate_visualization_data(
         phys_sm,
         expr_arena,
         queue: VecDeque::from_iter(roots.iter().copied()),
+        marked_for_visit: SecondaryMap::from_iter(roots.iter().map(|r| (*r, ()))),
         nodes_list: vec![],
         edges: vec![],
     }
@@ -43,6 +47,7 @@ struct PhysicalPlanVisualizationDataGenerator<'a> {
     phys_sm: &'a SlotMap<PhysNodeKey, PhysNode>,
     expr_arena: &'a Arena<AExpr>,
     queue: VecDeque<PhysNodeKey>,
+    marked_for_visit: SecondaryMap<PhysNodeKey, ()>,
     nodes_list: Vec<PhysNodeInfo>,
     edges: Vec<Edge>,
 }
@@ -58,10 +63,13 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
             phys_node_info.id = current_node_key;
 
             for input_node in node_inputs.drain(..) {
-                let input_node_key = input_node.0.as_ffi();
+                self.edges
+                    .push(Edge::new(current_node_key, input_node.0.as_ffi()));
 
-                self.queue.push_back(input_node);
-                self.edges.push(Edge::new(current_node_key, input_node_key));
+                let not_yet_marked = self.marked_for_visit.insert(input_node, ()).is_none();
+                if not_yet_marked {
+                    self.queue.push_back(input_node);
+                }
             }
 
             self.nodes_list.push(phys_node_info);
@@ -124,7 +132,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     },
                 file_type,
                 input,
-                cloud_options: _,
+                cloud_options,
             } => {
                 phys_node_inputs.push(input.node);
 
@@ -133,10 +141,11 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                         SinkTarget::Path(p) => format_pl_smallstr!("Path({})", p.to_str()),
                         SinkTarget::Dyn(_) => PlSmallStr::from_static("DynWriteable"),
                     },
+                    file_format: PlSmallStr::from_static(file_type.into()),
                     sync_on_close: *sync_on_close,
                     maintain_order: *maintain_order,
                     mkdir: *mkdir,
-                    file_type: PlSmallStr::from_static(file_type.into()),
+                    cloud_options: cloud_options.is_some(),
                 };
 
                 PhysNodeInfo {
@@ -178,6 +187,95 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                 let properties = PhysNodeProperties::GroupBy {
                     keys: expr_list(key, self.expr_arena),
                     aggs: expr_list(aggs, self.expr_arena),
+                };
+
+                PhysNodeInfo {
+                    title: properties.variant_name(),
+                    properties,
+                    ..Default::default()
+                }
+            },
+            #[cfg(feature = "dynamic_group_by")]
+            PhysNodeKind::DynamicGroupBy {
+                input,
+                options,
+                aggs,
+                slice,
+            } => {
+                use polars_time::DynamicGroupOptions;
+                use polars_utils::IdxSize;
+
+                phys_node_inputs.push(input.node);
+
+                let DynamicGroupOptions {
+                    index_column,
+                    every,
+                    period,
+                    offset,
+                    label,
+                    include_boundaries,
+                    closed_window,
+                    start_by,
+                } = options;
+
+                let properties = PhysNodeProperties::DynamicGroupBy {
+                    index_column: index_column.clone(),
+                    period: format_pl_smallstr!("{period}"),
+                    every: format_pl_smallstr!("{every}"),
+                    offset: format_pl_smallstr!("{offset}"),
+                    start_by: PlSmallStr::from_static(start_by.into()),
+                    label: PlSmallStr::from_static(label.into()),
+                    include_boundaries: *include_boundaries,
+                    closed_window: PlSmallStr::from_static(closed_window.into()),
+                    aggs: expr_list(aggs, self.expr_arena),
+                    slice: slice.map(|(o, l)| (IdxSize::into(o), IdxSize::into(l))),
+                };
+
+                PhysNodeInfo {
+                    title: properties.variant_name(),
+                    properties,
+                    ..Default::default()
+                }
+            },
+            #[cfg(feature = "dynamic_group_by")]
+            PhysNodeKind::RollingGroupBy {
+                input,
+                index_column,
+                period,
+                offset,
+                closed,
+                slice,
+                aggs,
+            } => {
+                phys_node_inputs.push(input.node);
+
+                let properties = PhysNodeProperties::RollingGroupBy {
+                    index_column: index_column.clone(),
+                    period: format_pl_smallstr!("{period}"),
+                    offset: format_pl_smallstr!("{offset}"),
+                    closed_window: PlSmallStr::from_static(closed.into()),
+                    slice: slice.map(|(o, l)| (IdxSize::into(o), IdxSize::into(l))),
+                    aggs: expr_list(aggs, self.expr_arena),
+                };
+
+                PhysNodeInfo {
+                    title: properties.variant_name(),
+                    properties,
+                    ..Default::default()
+                }
+            },
+            PhysNodeKind::SortedGroupBy {
+                input,
+                key,
+                aggs,
+                slice,
+            } => {
+                phys_node_inputs.push(input.node);
+
+                let properties = PhysNodeProperties::SortedGroupBy {
+                    key: key.clone(),
+                    aggs: expr_list(aggs, self.expr_arena),
+                    slice: slice.map(|(o, l)| (IdxSize::into(o), IdxSize::into(l))),
                 };
 
                 PhysNodeInfo {
@@ -413,11 +511,21 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     ..Default::default()
                 }
             },
-            PhysNodeKind::Map { input, map } => {
+            PhysNodeKind::Map {
+                input,
+                map,
+                format_str,
+            } => {
                 phys_node_inputs.push(input.node);
 
                 let properties = PhysNodeProperties::Map {
                     display_str: map.display_str(),
+                    format_str: format_str.as_deref().map_or(
+                        PlSmallStr::from_static(
+                            "error: prepare_visualization was not set during conversion",
+                        ),
+                        PlSmallStr::from_str,
+                    ),
                 };
 
                 PhysNodeInfo {
@@ -435,7 +543,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                 row_index,
                 pre_slice,
                 predicate,
-                predicate_file_skip_applied: _,
+                predicate_file_skip_applied,
                 hive_parts,
                 include_file_paths,
                 cast_columns_policy: _,
@@ -445,6 +553,10 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                 table_statistics,
                 file_schema: _,
             } => {
+                let pre_slice = pre_slice
+                    .clone()
+                    .map(|x| <(i64, usize)>::try_from(x).unwrap());
+
                 let properties = PhysNodeProperties::MultiScan {
                     scan_type: file_reader_builder.reader_name().into(),
                     num_sources: scan_sources.len().try_into().unwrap(),
@@ -461,13 +573,11 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     row_index_name: row_index.as_ref().map(|ri| ri.name.clone()),
                     #[allow(clippy::useless_conversion)]
                     row_index_offset: row_index.as_ref().map(|ri| ri.offset.into()),
-                    pre_slice: pre_slice.clone().map(|x| {
-                        let (offset, len) = <(i128, i128)>::from(x);
-                        [offset, len]
-                    }),
+                    pre_slice: convert_opt_slice(&pre_slice),
                     predicate: predicate
                         .as_ref()
                         .map(|e| format_pl_smallstr!("{}", e.display(self.expr_arena))),
+                    predicate_file_skip_applied: *predicate_file_skip_applied,
                     has_table_statistics: table_statistics.is_some(),
                     include_file_paths: include_file_paths.clone(),
                     deletion_files_type: deletion_files
@@ -503,7 +613,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                 phys_node_inputs.push(input.node);
 
                 let properties = PhysNodeProperties::NegativeSlice {
-                    offset: (*offset).into(),
+                    offset: (*offset),
                     length: (*length).try_into().unwrap(),
                 };
 
@@ -528,7 +638,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     ..Default::default()
                 }
             },
-            PhysNodeKind::PartitionSink {
+            PhysNodeKind::PartitionedSink {
                 input,
                 base_path,
                 file_path_cb,
@@ -602,6 +712,125 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     sync_on_close: *sync_on_close,
                     maintain_order: *maintain_order,
                     mkdir: *mkdir,
+                };
+
+                PhysNodeInfo {
+                    title: properties.variant_name(),
+                    properties,
+                    ..Default::default()
+                }
+            },
+            PhysNodeKind::FileSink2 {
+                input,
+                options:
+                    FileSinkOptions {
+                        target,
+                        file_format,
+                        unified_sink_args:
+                            UnifiedSinkArgs {
+                                mkdir,
+                                maintain_order,
+                                sync_on_close,
+                                cloud_options,
+                            },
+                    },
+            } => {
+                phys_node_inputs.push(input.node);
+
+                let properties = PhysNodeProperties::FileSink {
+                    target: match target {
+                        SinkTarget::Path(p) => format_pl_smallstr!("Path({})", p.to_str()),
+                        SinkTarget::Dyn(_) => PlSmallStr::from_static("DynWriteable"),
+                    },
+                    file_format: PlSmallStr::from_static(file_format.as_ref().into()),
+                    sync_on_close: *sync_on_close,
+                    maintain_order: *maintain_order,
+                    mkdir: *mkdir,
+                    cloud_options: cloud_options.is_some(),
+                };
+
+                PhysNodeInfo {
+                    title: properties.variant_name(),
+                    properties,
+                    ..Default::default()
+                }
+            },
+            PhysNodeKind::PartitionedSink2 {
+                input,
+                options:
+                    PartitionedSinkOptionsIR {
+                        base_path,
+                        file_path_provider,
+                        partition_strategy,
+                        finish_callback: _,
+                        file_format,
+                        unified_sink_args:
+                            UnifiedSinkArgs {
+                                mkdir,
+                                maintain_order,
+                                sync_on_close,
+                                cloud_options,
+                            },
+                        max_rows_per_file,
+                        approximate_bytes_per_file,
+                    },
+            } => {
+                phys_node_inputs.push(input.node);
+
+                let mut partition_key_exprs: Option<Vec<PlSmallStr>> = None;
+                let mut include_keys_: Option<bool> = None;
+                let mut per_partition_sort_by_: Option<&[SortColumnIR]> = None;
+
+                match partition_strategy {
+                    PartitionStrategyIR::Keyed {
+                        keys,
+                        include_keys,
+                        keys_pre_grouped: _,
+                        per_partition_sort_by,
+                    } => {
+                        partition_key_exprs = Some(expr_list(keys, self.expr_arena));
+                        include_keys_ = Some(*include_keys);
+                        per_partition_sort_by_ = Some(per_partition_sort_by.as_slice());
+                    },
+                    PartitionStrategyIR::FileSize => {},
+                }
+
+                let (
+                    per_partition_sort_exprs,
+                    per_partition_sort_descending,
+                    per_partition_sort_nulls_last,
+                ) = per_partition_sort_by_
+                    .as_ref()
+                    .map_or((None, None, None), |x| {
+                        let (a, (b, c)): (Vec<_>, (Vec<_>, Vec<_>)) = x
+                            .iter()
+                            .map(|x| {
+                                (
+                                    format_pl_smallstr!("{}", x.expr.display(self.expr_arena)),
+                                    (x.descending, x.nulls_last),
+                                )
+                            })
+                            .unzip();
+
+                        (Some(a), Some(b), Some(c))
+                    });
+
+                let properties = PhysNodeProperties::PartitionSink2 {
+                    base_path: base_path.to_str().into(),
+                    file_path_provider: file_path_provider.clone(),
+                    file_format: PlSmallStr::from_static(file_format.as_ref().into()),
+                    partition_strategy: PlSmallStr::from_static(partition_strategy.into()),
+                    partition_key_exprs,
+                    include_keys: include_keys_,
+                    per_partition_sort_exprs,
+                    per_partition_sort_descending,
+                    per_partition_sort_nulls_last,
+                    mkdir: *mkdir,
+                    maintain_order: *maintain_order,
+                    sync_on_close: *sync_on_close,
+                    cloud_options: cloud_options.is_some(),
+                    max_rows_per_file: *max_rows_per_file,
+                    approximate_bytes_per_file: *approximate_bytes_per_file,
                 };
 
                 PhysNodeInfo {
@@ -833,7 +1062,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
             },
             PhysNodeKind::Zip {
                 inputs,
-                null_extend,
+                zip_behavior,
             } => {
                 for input in inputs {
                     phys_node_inputs.push(input.node);
@@ -841,7 +1070,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
 
                 let properties = PhysNodeProperties::Zip {
                     num_inputs: inputs.len().try_into().unwrap(),
-                    null_extend: *null_extend,
+                    zip_behavior: *zip_behavior,
                 };
 
                 PhysNodeInfo {
@@ -865,20 +1094,21 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                 }
             },
             #[cfg(feature = "ewma")]
-            PhysNodeKind::EwmMean {
-                input,
-                options:
-                    polars_ops::series::EWMOptions {
-                        alpha,
-                        adjust,
-                        bias,
-                        min_periods,
-                        ignore_nulls,
-                    },
-            } => {
+            PhysNodeKind::EwmMean { input, options }
+            | PhysNodeKind::EwmVar { input, options }
+            | PhysNodeKind::EwmStd { input, options } => {
                 phys_node_inputs.push(input.node);
 
-                let properties = PhysNodeProperties::EwmMean {
+                let polars_ops::series::EWMOptions {
+                    alpha,
+                    adjust,
+                    bias,
+                    min_periods,
+                    ignore_nulls,
+                } = options;
+
+                let properties = PhysNodeProperties::Ewm {
+                    variant: PlSmallStr::from_static(phys_node.kind().into()),
                     alpha: *alpha,
                     adjust: *adjust,
                     bias: *bias,
@@ -992,14 +1222,14 @@ where
         .collect()
 }
 
-fn convert_opt_slice<T, U>(slice: &Option<(T, U)>) -> Option<[i128; 2]>
+fn convert_opt_slice<T, U>(slice: &Option<(T, U)>) -> Option<(i64, u64)>
 where
-    T: Copy + TryInto<i128>,
-    U: Copy + TryInto<i128>,
-    <T as TryInto<i128>>::Error: std::fmt::Debug,
-    <U as TryInto<i128>>::Error: std::fmt::Debug,
+    T: Copy + TryInto<i64>,
+    U: Copy + TryInto<u64>,
+    <T as TryInto<i64>>::Error: std::fmt::Debug,
+    <U as TryInto<u64>>::Error: std::fmt::Debug,
 {
-    slice.map(|(offset, len)| [offset.try_into().unwrap(), len.try_into().unwrap()])
+    slice.map(|(offset, len)| (offset.try_into().unwrap(), len.try_into().unwrap()))
 }
 
 fn expr_list(exprs: &[ExprIR], expr_arena: &Arena<AExpr>) -> Vec<PlSmallStr> {

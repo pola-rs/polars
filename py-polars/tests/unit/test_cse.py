@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 def num_cse_occurrences(explanation: str) -> int:
     """The number of unique CSE columns in an explain string."""
-    return len(set(re.findall('__POLARS_CSER_0x[^"]+"', explanation)))
+    return len(set(re.findall(r'__POLARS_CSER_0x[^"]+"', explanation)))
 
 
 def create_dataframe_source(
@@ -1209,3 +1209,15 @@ def test_cpse_predicates_25030() -> None:
 
     assert_frame_equal(got, expected)
     assert q4.explain().count("CACHE") == 2
+
+
+def test_asof_join_25699() -> None:
+    df = pl.LazyFrame({"a": [10], "b": [10]})
+
+    df = df.with_columns(pl.col("a"))
+    df = df.with_columns(pl.col("b"))
+
+    assert_frame_equal(
+        df.join_asof(df, on="b").collect(),
+        pl.DataFrame({"a": [10], "b": [10], "a_right": [10]}),
+    )

@@ -206,9 +206,15 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn pipe_with_schema(self, callback: PlanCallback<(DslPlan, Schema), DslPlan>) -> Self {
+    pub fn pipe_with_schema(
+        self,
+        others: Vec<DslPlan>,
+        callback: PlanCallback<(Vec<DslPlan>, Vec<SchemaRef>), DslPlan>,
+    ) -> Self {
+        let mut input = vec![self.0];
+        input.extend(others);
         DslPlan::PipeWithSchema {
-            input: Arc::new(self.0),
+            input: Arc::from(input),
             callback,
         }
         .into()
@@ -241,9 +247,11 @@ impl DslBuilder {
         .into()
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn group_by<E: AsRef<[Expr]>>(
         self,
         keys: Vec<Expr>,
+        predicates: Vec<Expr>,
         aggs: E,
         apply: Option<(PlanCallback<DataFrame, DataFrame>, SchemaRef)>,
         maintain_order: bool,
@@ -262,6 +270,7 @@ impl DslBuilder {
         DslPlan::GroupBy {
             input: Arc::new(self.0),
             keys,
+            predicates,
             aggs,
             apply,
             maintain_order,
@@ -293,13 +302,39 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn explode(self, columns: Selector, allow_empty: bool) -> Self {
+    pub fn explode(self, columns: Selector, options: ExplodeOptions, allow_empty: bool) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
             function: DslFunction::Explode {
                 columns,
+                options,
                 allow_empty,
             },
+        }
+        .into()
+    }
+
+    #[cfg(feature = "pivot")]
+    #[expect(clippy::too_many_arguments)]
+    pub fn pivot(
+        self,
+        on: Selector,
+        on_columns: Arc<DataFrame>,
+        index: Selector,
+        values: Selector,
+        agg: Expr,
+        maintain_order: bool,
+        separator: PlSmallStr,
+    ) -> Self {
+        DslPlan::Pivot {
+            input: Arc::new(self.0),
+            on,
+            on_columns,
+            index,
+            values,
+            agg,
+            maintain_order,
+            separator,
         }
         .into()
     }

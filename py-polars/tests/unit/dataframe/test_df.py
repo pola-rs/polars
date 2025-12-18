@@ -34,7 +34,7 @@ from polars.testing import (
     assert_frame_not_equal,
     assert_series_equal,
 )
-from tests.unit.conftest import INTEGER_DTYPES
+from tests.unit.conftest import FLOAT_DTYPES, INTEGER_DTYPES
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
@@ -745,7 +745,7 @@ def test_to_dummies() -> None:
             "i": [1, 2, 3],
             "category": ["dog", "cat", "cat"],
         },
-        schema={"i": pl.Int32, "category": pl.Categorical("lexical")},
+        schema={"i": pl.Int32, "category": pl.Categorical()},
     )
     expected = pl.DataFrame(
         {
@@ -1625,13 +1625,13 @@ def test_join_bad_input_type() -> None:
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
+        match=r"expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
     ):
         left.join(right.lazy(), on="a")  # type: ignore[arg-type]
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .*to be a 'DataFrame'.* not 'Series'",
+        match=r"expected `other` .*to be a 'DataFrame'.* not 'Series'",
     ):
         left.join(pl.Series([1, 2, 3]), on="a")  # type: ignore[arg-type]
 
@@ -1701,7 +1701,7 @@ def test_join_where_bad_input_type() -> None:
     )
     with pytest.raises(
         TypeError,
-        match="expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
+        match=r"expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
     ):
         east.join_where(
             west.lazy(),  # type: ignore[arg-type]
@@ -1711,7 +1711,7 @@ def test_join_where_bad_input_type() -> None:
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .*to be a 'DataFrame'.* not 'Series'",
+        match=r"expected `other` .*to be a 'DataFrame'.* not 'Series'",
     ):
         east.join_where(
             pl.Series(west),  # type: ignore[arg-type]
@@ -1909,15 +1909,15 @@ def test_group_by_cat_list() -> None:
     assert out[0] == "a"
 
 
-def test_group_by_agg_n_unique_floats() -> None:
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_group_by_agg_n_unique_floats(dtype: pl.DataType) -> None:
     # tests proper dispatch
     df = pl.DataFrame({"a": [1, 1, 3], "b": [1.0, 2.0, 2.0]})
 
-    for dtype in [pl.Float32, pl.Float64]:
-        out = df.group_by("a", maintain_order=True).agg(
-            [pl.col("b").cast(dtype).n_unique()]
-        )
-        assert out["b"].to_list() == [2, 1]
+    out = df.group_by("a", maintain_order=True).agg(
+        [pl.col("b").cast(dtype).n_unique()]
+    )
+    assert out["b"].to_list() == [2, 1]
 
 
 def test_group_by_agg_n_unique_empty_group_idx_path() -> None:
@@ -2480,13 +2480,13 @@ def test_asof_bad_input_type() -> None:
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
+        match=r"expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
     ):
         lhs.join_asof(rhs.lazy(), on="a")  # type: ignore[arg-type]
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .*to be a 'DataFrame'.* not 'Series'",
+        match=r"expected `other` .*to be a 'DataFrame'.* not 'Series'",
     ):
         lhs.join_asof(pl.Series([1, 2, 3]), on="a")  # type: ignore[arg-type]
 

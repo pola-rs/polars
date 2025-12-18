@@ -2,7 +2,6 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
-use components::row_counter::RowCounter;
 use components::row_deletions::ExternalFilterMask;
 use polars_core::prelude::PlHashMap;
 use polars_core::schema::SchemaRef;
@@ -12,6 +11,7 @@ use polars_io::predicates::ScanIOPredicate;
 use polars_plan::dsl::{CastColumnsPolicy, MissingColumnsPolicy, ScanSource};
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 
 use crate::async_executor::AbortOnDropHandle;

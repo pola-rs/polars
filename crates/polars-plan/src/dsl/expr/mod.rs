@@ -32,9 +32,12 @@ pub enum AggExpr {
     Median(Arc<Expr>),
     NUnique(Arc<Expr>),
     First(Arc<Expr>),
+    FirstNonNull(Arc<Expr>),
     Last(Arc<Expr>),
+    LastNonNull(Arc<Expr>),
     Item {
         input: Arc<Expr>,
+        /// Give a missing value if there are no values.
         allow_empty: bool,
     },
     Mean(Arc<Expr>),
@@ -63,7 +66,9 @@ impl AsRef<Expr> for AggExpr {
             Median(e) => e,
             NUnique(e) => e,
             First(e) => e,
+            FirstNonNull(e) => e,
             Last(e) => e,
+            LastNonNull(e) => e,
             Item { input, .. } => input,
             Mean(e) => e,
             Implode(e) => e,
@@ -136,19 +141,27 @@ pub enum Expr {
     },
     Explode {
         input: Arc<Expr>,
-        skip_empty: bool,
+        options: ExplodeOptions,
     },
     Filter {
         input: Arc<Expr>,
         by: Arc<Expr>,
     },
     /// Polars flavored window functions.
-    Window {
+    Over {
         /// Also has the input. i.e. avg("foo")
         function: Arc<Expr>,
         partition_by: Vec<Expr>,
         order_by: Option<(Arc<Expr>, SortOptions)>,
-        options: WindowType,
+        mapping: WindowMapping,
+    },
+    #[cfg(feature = "dynamic_group_by")]
+    Rolling {
+        function: Arc<Expr>,
+        index_column: Arc<Expr>,
+        period: Duration,
+        offset: Duration,
+        closed_window: ClosedWindow,
     },
     Slice {
         input: Arc<Expr>,
@@ -331,20 +344,34 @@ impl Hash for Expr {
                 sort_options.hash(state);
             },
             Expr::Agg(input) => input.hash(state),
-            Expr::Explode { input, skip_empty } => {
-                skip_empty.hash(state);
+            Expr::Explode { input, options } => {
+                options.hash(state);
                 input.hash(state)
             },
-            Expr::Window {
+            #[cfg(feature = "dynamic_group_by")]
+            Expr::Rolling {
+                function,
+                index_column,
+                period,
+                offset,
+                closed_window,
+            } => {
+                function.hash(state);
+                index_column.hash(state);
+                period.hash(state);
+                offset.hash(state);
+                closed_window.hash(state);
+            },
+            Expr::Over {
                 function,
                 partition_by,
                 order_by,
-                options,
+                mapping,
             } => {
                 function.hash(state);
                 partition_by.hash(state);
                 order_by.hash(state);
-                options.hash(state);
+                mapping.hash(state);
             },
             Expr::Slice {
                 input,

@@ -85,7 +85,12 @@ impl ApplyExpr {
         ca: ListChunked,
     ) -> PolarsResult<AggregationContext<'a>> {
         let c = if self.is_scalar() {
-            let out = ca.explode(false).unwrap();
+            let out = ca
+                .explode(ExplodeOptions {
+                    empty_as_null: true,
+                    keep_nulls: true,
+                })
+                .unwrap();
             // if the explode doesn't return the same len, it wasn't scalar.
             polars_ensure!(out.len() == ca.len(), InvalidOperation: "expected scalar for expr: {}, got {}", self.expr, &out);
             ac.update_groups = UpdateGroups::No;
@@ -133,18 +138,15 @@ impl ApplyExpr {
 
         // In case of overlapping (rolling) groups, we build groups in a lazy manner to avoid
         // memory explosion.
-        // TODO: Add parallel iterator path; support Idx GroupsType.
-        if matches!(ac.agg_state(), AggState::NotAggregated(_))
-            && let GroupsType::Slice {
-                overlapping: true, ..
-            } = ac.groups.as_ref().as_ref()
-        {
-            let ca: ChunkedArray<_> = ac
-                .iter_groups_lazy(false)
-                .map(|opt| opt.map(|s| s.as_ref().clone()))
-                .map(f)
-                .collect::<PolarsResult<_>>()?;
-
+        // TODO: support Idx GroupsType.
+        if matches!(ac.agg_state(), AggState::NotAggregated(_)) && ac.groups.is_overlapping() {
+            let ca: ChunkedArray<_> = if self.allow_threading {
+                ac.par_iter_groups_lazy()
+                    .map(f)
+                    .collect::<PolarsResult<_>>()?
+            } else {
+                ac.iter_groups_lazy().map(f).collect::<PolarsResult<_>>()?
+            };
             return self.finish_apply_groups(ac, ca.with_name(name));
         }
 
@@ -170,7 +172,7 @@ impl ApplyExpr {
             let lst = agg.list().unwrap();
             let iter = lst.par_iter().map(f);
 
-            if self.output_field.dtype.is_known() && !self.output_field.dtype.is_null() {
+            if self.output_field.dtype.is_known() {
                 let dtype = self.output_field.dtype.clone();
                 let dtype = dtype.implode();
                 POOL.install(|| {
@@ -357,7 +359,7 @@ impl ApplyExpr {
         // Length of the items to iterate over.
         let len = iters[0].size_hint().0;
 
-        let ca = if len == 0 {
+        let ca = if field.dtype().is_known() {
             let mut builder = get_list_builder(&field.dtype, len * 5, len, field.name);
             for _ in 0..len {
                 container.clear();

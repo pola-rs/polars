@@ -31,4 +31,4 @@ If you want to know why this is desirable, you can read more about those Polars 
 When we scan a `Parquet` file stored in the cloud, we can also apply predicate and projection
 pushdowns. This can significantly reduce the amount of data that needs to be downloaded. For
 scanning a Parquet file in the cloud, see
-[Cloud storage](cloud-storage.md/#scanning-from-cloud-storage-with-query-optimisation).
+[Cloud storage](cloud-storage.md#scanning-from-cloud-storage-with-query-optimisation).

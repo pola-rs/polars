@@ -135,6 +135,7 @@ version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "70f13d10a41ac8d2ec79ee34178d61e6f47a29c2edfe7ef1721c7383b0359e65"
 dependencies = [
+ "half",
  "num-traits",
 ]
 
@@ -1245,6 +1246,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "crunchy"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
+
+[[package]]
 name = "crypto-bigint"
 version = "0.4.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1750,7 +1757,7 @@ dependencies = [
  "futures-sink",
  "futures-util",
  "http 0.2.12",
- "indexmap 2.12.0",
+ "indexmap",
  "slab",
  "tokio",
  "tokio-util",
@@ -1769,11 +1776,25 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "http 1.3.1",
- "indexmap 2.12.0",
+ "indexmap",
  "slab",
  "tokio",
  "tokio-util",
  "tracing",
+]
+
+[[package]]
+name = "half"
+version = "2.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ea2d84b969582b4b1864a92dc5d27cd2b77b622a8d79306834f1be5ba20d84b"
+dependencies = [
+ "bytemuck",
+ "cfg-if",
+ "crunchy",
+ "num-traits",
+ "serde",
+ "zerocopy",
 ]
 
 [[package]]
@@ -1785,12 +1806,6 @@ dependencies = [
  "hashbrown 0.16.0",
  "serde",
 ]
-
-[[package]]
-name = "hashbrown"
-version = "0.12.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
 
 [[package]]
 name = "hashbrown"
@@ -2176,17 +2191,6 @@ checksum = "3acae9609540aa318d1bc588455225fb2085b9ed0c4f6bd0d9d5bcd86f1a0344"
 dependencies = [
  "icu_normalizer",
  "icu_properties",
-]
-
-[[package]]
-name = "indexmap"
-version = "1.9.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bd070e393353796e801d209ad339e89596eb4c8d430d18ede6a1cced8fafbd99"
-dependencies = [
- "autocfg",
- "hashbrown 0.12.3",
- "serde",
 ]
 
 [[package]]
@@ -2679,6 +2683,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "51d515d32fb182ee37cda2ccdcb92950d6a3c2893aa280e540671c2cd0f3b1d9"
 
 [[package]]
+name = "num-derive"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed3955f1a9c7c0c15e092f9c887db08b1fc683305fdf6eb6684f22555355e202"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.104",
+]
+
+[[package]]
 name = "num-integer"
 version = "0.1.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2725,6 +2740,7 @@ version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b2dba356160b54f5371b550575b78130a54718b4c6e46b3f33a6da74a27e78b"
 dependencies = [
+ "half",
  "libc",
  "ndarray",
  "num-complex",
@@ -3050,7 +3066,7 @@ dependencies = [
 
 [[package]]
 name = "polars"
-version = "0.51.0"
+version = "0.52.0"
 dependencies = [
  "apache-avro",
  "avro-schema",
@@ -3081,7 +3097,7 @@ dependencies = [
 
 [[package]]
 name = "polars-arrow"
-version = "0.51.0"
+version = "0.52.0"
 dependencies = [
  "async-stream",
  "atoi_simd",
@@ -3096,6 +3112,7 @@ dependencies = [
  "futures",
  "getrandom 0.2.16",
  "getrandom 0.3.3",
+ "half",
  "hashbrown 0.16.0",
  "itoa",
  "lz4",
@@ -3131,7 +3148,7 @@ dependencies = [
 
 [[package]]
 name = "polars-compute"
-version = "0.51.0"
+version = "0.52.0"
 dependencies = [
  "atoi_simd",
  "bigdecimal",
@@ -3139,6 +3156,7 @@ dependencies = [
  "chrono",
  "either",
  "fast-float2",
+ "half",
  "hashbrown 0.16.0",
  "itoa",
  "num-bigint",
@@ -3158,7 +3176,7 @@ dependencies = [
 
 [[package]]
 name = "polars-core"
-version = "0.51.0"
+version = "0.52.0"
 dependencies = [
  "bincode",
  "bitflags",
@@ -3168,8 +3186,9 @@ dependencies = [
  "chrono-tz",
  "comfy-table",
  "either",
+ "half",
  "hashbrown 0.16.0",
- "indexmap 2.12.0",
+ "indexmap",
  "itoa",
  "ndarray",
  "num-traits",
@@ -3197,7 +3216,7 @@ dependencies = [
 
 [[package]]
 name = "polars-doc-examples"
-version = "0.51.0"
+version = "0.52.0"
 dependencies = [
  "aws-config",
  "aws-sdk-s3",
@@ -3211,7 +3230,7 @@ dependencies = [
 
 [[package]]
 name = "polars-dtype"
-version = "0.51.0"
+version = "0.52.0"
 dependencies = [
  "boxcar",
  "hashbrown 0.16.0",
@@ -3225,7 +3244,7 @@ dependencies = [
 
 [[package]]
 name = "polars-dylib"
-version = "0.51.0"
+version = "0.52.0"
 dependencies = [
  "polars",
  "polars-arrow",
@@ -3239,7 +3258,7 @@ dependencies = [
 
 [[package]]
 name = "polars-error"
-version = "0.51.0"
+version = "0.52.0"
 dependencies = [
  "avro-schema",
  "object_store",
@@ -3253,9 +3272,10 @@ dependencies = [
 
 [[package]]
 name = "polars-expr"
-version = "0.51.0"
+version = "0.52.0"
 dependencies = [
  "bitflags",
+ "chrono-tz",
  "hashbrown 0.16.0",
  "libloading",
  "num-traits",
@@ -3278,7 +3298,7 @@ dependencies = [
 
 [[package]]
 name = "polars-ffi"
-version = "0.51.0"
+version = "0.52.0"
 dependencies = [
  "polars-arrow",
  "polars-core",
@@ -3286,7 +3306,7 @@ dependencies = [
 
 [[package]]
 name = "polars-io"
-version = "0.51.0"
+version = "0.52.0"
 dependencies = [
  "async-trait",
  "atoi_simd",
@@ -3335,13 +3355,13 @@ dependencies = [
 
 [[package]]
 name = "polars-json"
-version = "0.51.0"
+version = "0.52.0"
 dependencies = [
  "chrono",
  "chrono-tz",
  "fallible-streaming-iterator",
  "hashbrown 0.16.0",
- "indexmap 2.12.0",
+ "indexmap",
  "itoa",
  "num-traits",
  "polars-arrow",
@@ -3355,7 +3375,7 @@ dependencies = [
 
 [[package]]
 name = "polars-lazy"
-version = "0.51.0"
+version = "0.52.0"
 dependencies = [
  "bitflags",
  "bytes",
@@ -3384,7 +3404,7 @@ dependencies = [
 
 [[package]]
 name = "polars-mem-engine"
-version = "0.51.0"
+version = "0.52.0"
 dependencies = [
  "futures",
  "memmap2",
@@ -3406,7 +3426,7 @@ dependencies = [
 
 [[package]]
 name = "polars-ops"
-version = "0.51.0"
+version = "0.52.0"
 dependencies = [
  "aho-corasick",
  "argminmax",
@@ -3417,7 +3437,7 @@ dependencies = [
  "either",
  "hashbrown 0.16.0",
  "hex",
- "indexmap 2.12.0",
+ "indexmap",
  "jsonpath_lib_polars_vendor",
  "libm",
  "memchr",
@@ -3445,7 +3465,7 @@ dependencies = [
 
 [[package]]
 name = "polars-parquet"
-version = "0.51.0"
+version = "0.52.0"
 dependencies = [
  "async-stream",
  "base64 0.22.1",
@@ -3467,6 +3487,7 @@ dependencies = [
  "polars-utils",
  "proptest",
  "rand 0.9.1",
+ "regex",
  "schemars",
  "serde",
  "simdutf8",
@@ -3488,9 +3509,10 @@ dependencies = [
 
 [[package]]
 name = "polars-plan"
-version = "0.51.0"
+version = "0.52.0"
 dependencies = [
  "bitflags",
+ "blake3",
  "bytemuck",
  "bytes",
  "chrono",
@@ -3528,7 +3550,7 @@ dependencies = [
 
 [[package]]
 name = "polars-python"
-version = "0.51.0"
+version = "0.52.0"
 dependencies = [
  "arboard",
  "bincode",
@@ -3574,7 +3596,7 @@ dependencies = [
 
 [[package]]
 name = "polars-row"
-version = "0.51.0"
+version = "0.52.0"
 dependencies = [
  "bitflags",
  "bytemuck",
@@ -3587,10 +3609,43 @@ dependencies = [
 ]
 
 [[package]]
-name = "polars-schema"
-version = "0.51.0"
+name = "polars-runtime-32"
+version = "1.36.1"
 dependencies = [
- "indexmap 2.12.0",
+ "either",
+ "libc",
+ "polars-python",
+ "pyo3",
+ "rustflags",
+]
+
+[[package]]
+name = "polars-runtime-64"
+version = "1.36.1"
+dependencies = [
+ "either",
+ "libc",
+ "polars-python",
+ "pyo3",
+ "rustflags",
+]
+
+[[package]]
+name = "polars-runtime-compat"
+version = "1.36.1"
+dependencies = [
+ "either",
+ "libc",
+ "polars-python",
+ "pyo3",
+ "rustflags",
+]
+
+[[package]]
+name = "polars-schema"
+version = "0.52.0"
+dependencies = [
+ "indexmap",
  "polars-error",
  "polars-utils",
  "schemars",
@@ -3600,7 +3655,7 @@ dependencies = [
 
 [[package]]
 name = "polars-sql"
-version = "0.51.0"
+version = "0.52.0"
 dependencies = [
  "bitflags",
  "hex",
@@ -3619,18 +3674,20 @@ dependencies = [
 
 [[package]]
 name = "polars-stream"
-version = "0.51.0"
+version = "0.52.0"
 dependencies = [
  "async-channel",
  "async-trait",
  "atomic-waker",
  "bitflags",
+ "chrono-tz",
  "crossbeam-channel",
  "crossbeam-deque",
  "crossbeam-queue",
  "crossbeam-utils",
  "futures",
  "memmap2",
+ "num-traits",
  "parking_lot",
  "percent-encoding",
  "pin-project-lite",
@@ -3644,6 +3701,7 @@ dependencies = [
  "polars-ops",
  "polars-parquet",
  "polars-plan",
+ "polars-time",
  "polars-utils",
  "pyo3",
  "rand 0.9.1",
@@ -3660,7 +3718,7 @@ dependencies = [
 
 [[package]]
 name = "polars-testing"
-version = "0.51.0"
+version = "0.52.0"
 dependencies = [
  "polars-core",
  "polars-ops",
@@ -3668,7 +3726,7 @@ dependencies = [
 
 [[package]]
 name = "polars-time"
-version = "0.51.0"
+version = "0.52.0"
 dependencies = [
  "atoi_simd",
  "bytemuck",
@@ -3691,8 +3749,9 @@ dependencies = [
 
 [[package]]
 name = "polars-utils"
-version = "0.51.0"
+version = "0.52.0"
 dependencies = [
+ "argminmax",
  "bincode",
  "bytemuck",
  "bytes",
@@ -3700,11 +3759,14 @@ dependencies = [
  "either",
  "flate2",
  "foldhash 0.2.0",
+ "half",
  "hashbrown 0.16.0",
- "indexmap 2.12.0",
+ "indexmap",
  "libc",
  "memmap2",
+ "num-derive",
  "num-traits",
+ "numpy",
  "polars-error",
  "proptest",
  "pyo3",
@@ -3831,18 +3893,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "py-polars"
-version = "1.35.0"
-dependencies = [
- "either",
- "libc",
- "polars",
- "polars-python",
- "pyo3",
- "rustflags",
-]
-
-[[package]]
 name = "pyo3"
 version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3908,7 +3958,7 @@ dependencies = [
 
 [[package]]
 name = "pyo3-polars"
-version = "0.24.0"
+version = "0.25.0"
 dependencies = [
  "libc",
  "once_cell",
@@ -3929,7 +3979,7 @@ dependencies = [
 
 [[package]]
 name = "pyo3-polars-derive"
-version = "0.18.0"
+version = "0.19.0"
 dependencies = [
  "polars-arrow",
  "polars-core",
@@ -4517,14 +4567,14 @@ dependencies = [
 
 [[package]]
 name = "schemars"
-version = "0.8.22"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fbf2ae1b8bc8e02df939598064d22402220cd5bbcca1c76f7d6a310974d5615"
+checksum = "4cd191f9397d57d581cddd31014772520aa448f65ef991055d7f61582c65165f"
 dependencies = [
  "dyn-clone",
  "either",
- "indexmap 1.9.3",
- "indexmap 2.12.0",
+ "indexmap",
+ "ref-cast",
  "schemars_derive",
  "serde",
  "serde_json",
@@ -4533,9 +4583,9 @@ dependencies = [
 
 [[package]]
 name = "schemars_derive"
-version = "0.8.22"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32e265784ad618884abaea0600a9adf15393368d840e0222d101a072f3f7534d"
+checksum = "5016d94c77c6d32f0b8e08b781f7dc8a90c2007d4e77472cc2807bc10a8438fe"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4684,7 +4734,7 @@ version = "1.0.140"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20068b6e96dc6c9bd23e01df8827e6c7e1f2fddd43c21810382803c136b99373"
 dependencies = [
- "indexmap 2.12.0",
+ "indexmap",
  "itoa",
  "memchr",
  "ryu",
@@ -4809,9 +4859,9 @@ checksum = "56199f7ddabf13fe5074ce809e7d3f42b42ae711800501b5b16ea82ad029c39d"
 
 [[package]]
 name = "slab"
-version = "0.4.10"
+version = "0.4.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04dc19736151f35336d325007ac991178d504a119863a2fcb3758cdb5e52c50d"
+checksum = "7a2ae44ef20feb57a68b23d846850f861394c2e02dc425a50098ae8c90267589"
 
 [[package]]
 name = "slotmap"
@@ -4857,11 +4907,24 @@ dependencies = [
 
 [[package]]
 name = "sqlparser"
-version = "0.53.0"
+version = "0.60.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05a528114c392209b3264855ad491fcce534b94a38771b0a0b97a79379275ce8"
+checksum = "505aa16b045c4c1375bf5f125cce3813d0176325bfe9ffc4a903f423de7774ff"
 dependencies = [
  "log",
+ "recursive",
+ "sqlparser_derive",
+]
+
+[[package]]
+name = "sqlparser_derive"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "028e551d5e270b31b9f3ea271778d9d827148d4287a5d96167b6bb9787f5cc38"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.104",
 ]
 
 [[package]]
@@ -5235,7 +5298,7 @@ version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed0aee96c12fa71097902e0bb061a5e1ebd766a6636bb605ba401c45c1650eac"
 dependencies = [
- "indexmap 2.12.0",
+ "indexmap",
  "serde",
  "serde_spanned",
  "toml_datetime",

@@ -260,12 +260,13 @@ impl IRVisualizationDataGenerator<'_> {
             IR::HConcat {
                 inputs,
                 schema,
-                options: HConcatOptions { parallel },
+                options: HConcatOptions { parallel, strict },
             } => {
                 let properties = IRNodeProperties::HConcat {
                     num_inputs: inputs.len().try_into().unwrap(),
                     schema_names: schema.iter_names_cloned().collect(),
                     parallel: *parallel,
+                    strict: *strict,
                 };
 
                 IRNodeInfo {
@@ -452,7 +453,7 @@ impl IRVisualizationDataGenerator<'_> {
                         row_estimation: _,
                     },
                 predicate,
-                predicate_file_skip_applied: _,
+                predicate_file_skip_applied,
                 scan_type,
                 unified_scan_args,
                 hive_parts,
@@ -490,6 +491,10 @@ impl IRVisualizationDataGenerator<'_> {
                         .collect()
                     });
 
+                let pre_slice = pre_slice
+                    .clone()
+                    .map(|x| <(i64, usize)>::try_from(x).unwrap());
+
                 let properties = IRNodeProperties::Scan {
                     scan_type: PlSmallStr::from_static(scan_type.as_ref().into()),
                     num_sources: sources.len().try_into().unwrap(),
@@ -501,13 +506,11 @@ impl IRVisualizationDataGenerator<'_> {
                         #[cfg_attr(feature = "bigidx", expect(clippy::useless_conversion))]
                         ri.offset.into()
                     }),
-                    pre_slice: pre_slice.clone().map(|x| {
-                        let (offset, len) = <(i128, i128)>::from(x);
-                        [offset, len]
-                    }),
+                    pre_slice: convert_opt_slice(&pre_slice),
                     predicate: predicate
                         .as_ref()
                         .map(|e| format_pl_smallstr!("{}", e.display(self.expr_arena))),
+                    predicate_file_skip_applied: *predicate_file_skip_applied,
                     has_table_statistics: table_statistics.is_some(),
                     include_file_paths: include_file_paths.clone(),
                     column_mapping_type: column_mapping
@@ -736,14 +739,14 @@ where
         .collect()
 }
 
-fn convert_opt_slice<T, U>(slice: &Option<(T, U)>) -> Option<[i128; 2]>
+fn convert_opt_slice<T, U>(slice: &Option<(T, U)>) -> Option<(i64, u64)>
 where
-    T: Copy + TryInto<i128>,
-    U: Copy + TryInto<i128>,
-    <T as TryInto<i128>>::Error: std::fmt::Debug,
-    <U as TryInto<i128>>::Error: std::fmt::Debug,
+    T: Copy + TryInto<i64>,
+    U: Copy + TryInto<u64>,
+    <T as TryInto<i64>>::Error: std::fmt::Debug,
+    <U as TryInto<u64>>::Error: std::fmt::Debug,
 {
-    slice.map(|(offset, len)| [offset.try_into().unwrap(), len.try_into().unwrap()])
+    slice.map(|(offset, len)| (offset.try_into().unwrap(), len.try_into().unwrap()))
 }
 
 fn expr_list(exprs: &[ExprIR], expr_arena: &Arena<AExpr>) -> Vec<PlSmallStr> {

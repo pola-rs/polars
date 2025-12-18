@@ -79,8 +79,8 @@ fn check_sortedness_slice(v: &[i64]) -> PolarsResult<()> {
     Ok(())
 }
 
-const LB_NAME: &str = "_lower_boundary";
-const UP_NAME: &str = "_upper_boundary";
+pub const LB_NAME: &str = "_lower_boundary";
+pub const UB_NAME: &str = "_upper_boundary";
 
 pub trait PolarsTemporalGroupby {
     fn rolling(
@@ -227,7 +227,7 @@ impl Wrap<&DataFrame> {
                 )?;
                 let out = out.cast(&Int64).unwrap().cast(&Int32).unwrap();
                 for k in &mut keys {
-                    if k.name().as_str() == UP_NAME || k.name().as_str() == LB_NAME {
+                    if k.name().as_str() == UB_NAME || k.name().as_str() == LB_NAME {
                         *k = k.cast(&Int64).unwrap().cast(&Int32).unwrap()
                     }
                 }
@@ -245,7 +245,7 @@ impl Wrap<&DataFrame> {
                 )?;
                 let out = out.cast(&Int64).unwrap();
                 for k in &mut keys {
-                    if k.name().as_str() == UP_NAME || k.name().as_str() == LB_NAME {
+                    if k.name().as_str() == UB_NAME || k.name().as_str() == LB_NAME {
                         *k = k.cast(&Int64).unwrap()
                     }
                 }
@@ -359,10 +359,7 @@ impl Wrap<&DataFrame> {
             });
 
             update_bounds(lower, upper);
-            PolarsResult::Ok(GroupsType::Slice {
-                groups,
-                overlapping,
-            })
+            PolarsResult::Ok(GroupsType::new_slice(groups, overlapping, true))
         } else {
             let vals = dt.physical().downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
@@ -377,10 +374,7 @@ impl Wrap<&DataFrame> {
                 options.start_by,
             )?;
             update_bounds(lower, upper);
-            PolarsResult::Ok(GroupsType::Slice {
-                groups,
-                overlapping,
-            })
+            PolarsResult::Ok(GroupsType::new_slice(groups, overlapping, true))
         }?;
         // note that if 'group_by' is none we can be sure that the index column, the lower column and the
         // upper column remain/are sorted
@@ -391,7 +385,7 @@ impl Wrap<&DataFrame> {
         let lower =
             lower_bound.map(|lower| Int64Chunked::new_vec(PlSmallStr::from_static(LB_NAME), lower));
         let upper =
-            upper_bound.map(|upper| Int64Chunked::new_vec(PlSmallStr::from_static(UP_NAME), upper));
+            upper_bound.map(|upper| Int64Chunked::new_vec(PlSmallStr::from_static(UB_NAME), upper));
 
         if options.label == Label::Left {
             let mut lower = lower.clone().unwrap();
@@ -467,10 +461,7 @@ impl Wrap<&DataFrame> {
 
             let groups = POOL.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
             let groups = POOL.install(|| flatten_par(&groups));
-            PolarsResult::Ok(GroupsType::Slice {
-                groups,
-                overlapping: true,
-            })
+            PolarsResult::Ok(GroupsType::new_slice(groups, true, true))
         } else {
             // a requirement for the index
             // so we can set this such that downstream code has this info
@@ -478,17 +469,15 @@ impl Wrap<&DataFrame> {
             let dt = dt.datetime().unwrap();
             let vals = dt.physical().downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
-            PolarsResult::Ok(GroupsType::Slice {
-                groups: group_by_values(
-                    options.period,
-                    options.offset,
-                    ts,
-                    options.closed_window,
-                    tu,
-                    tz,
-                )?,
-                overlapping: true,
-            })
+            let groups = group_by_values(
+                options.period,
+                options.offset,
+                ts,
+                options.closed_window,
+                tu,
+                tz,
+            )?;
+            PolarsResult::Ok(GroupsType::new_slice(groups, true, true))
         }?;
 
         let dt = dt.cast(time_type).unwrap();

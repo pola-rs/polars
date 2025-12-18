@@ -60,7 +60,7 @@ impl AExpr {
         // match to be exhaustive.
         #[rustfmt::skip]
         let is_equal = match self {
-            E::Explode { expr: _, skip_empty: l_skip_empty } => matches!(other, E::Explode { expr: _, skip_empty: r_skip_empty } if l_skip_empty == r_skip_empty),
+            E::Explode { expr: _, options: l_options } => matches!(other, E::Explode { expr: _, options: r_options } if l_options == r_options),
             E::Column(l_name) => matches!(other, E::Column(r_name) if l_name == r_name),
             E::Literal(l_lit) => matches!(other, E::Literal(r_lit) if l_lit == r_lit),
             E::BinaryExpr { left: _, op: l_op, right: _ } => matches!(other, E::BinaryExpr { left: _, op: r_op, right: _ } if l_op == r_op),
@@ -69,10 +69,13 @@ impl AExpr {
             E::Gather { expr: _, idx: l_idx, returns_scalar: l_returns_scalar } => matches!(other, E::Gather { expr: _, idx: r_idx, returns_scalar: r_returns_scalar } if l_idx == r_idx && l_returns_scalar == r_returns_scalar),
             E::SortBy { expr: _, by: l_by, sort_options: l_sort_options } => matches!(other, E::SortBy { expr: _, by: r_by, sort_options: r_sort_options } if l_by.len() == r_by.len() && l_sort_options == r_sort_options),
             E::Agg(l_agg) => matches!(other, E::Agg(r_agg) if l_agg.is_agg_equal_top_level(r_agg)),
+            E::AnonymousStreamingAgg { input: input_l, fmt_str: fmt_str_l, function: function_l } => matches!(other, E::AnonymousStreamingAgg { input: input_r, fmt_str: fmt_str_r, function: function_r} if input_l == input_r && function_l == function_r && fmt_str_l == fmt_str_r),
             E::AnonymousFunction { input: l_input, function: l_function, options: l_options, fmt_str: l_fmt_str } => matches!(other, E::AnonymousFunction { input: r_input, function: r_function, options: r_options, fmt_str: r_fmt_str } if l_input.len() == r_input.len() && l_function == r_function && l_options == r_options && l_fmt_str == r_fmt_str),
             E::Eval { expr: _, evaluation: _, variant: l_variant } => matches!(other, E::Eval { expr: _, evaluation: _, variant: r_variant } if l_variant == r_variant),
             E::Function { input: l_input, function: l_function, options: l_options } => matches!(other, E::Function { input: r_input, function: r_function, options: r_options } if l_input.len() == r_input.len() && l_function == r_function && l_options == r_options),
-            E::Window { function: _, partition_by: l_partition_by, order_by: l_order_by, options: l_options } => matches!(other, E::Window { function: _, partition_by: r_partition_by, order_by: r_order_by, options: r_options } if l_partition_by.len() == r_partition_by.len() && l_order_by.as_ref().map(|(_, v): &(Node, SortOptions)| v) == r_order_by.as_ref().map(|(_, v): &(Node, SortOptions)| v) && l_options == r_options),
+            #[cfg(feature = "dynamic_group_by")]
+            E::Rolling { function: _, index_column: _, period: l_period, offset: l_offset, closed_window: l_closed_window } => matches!(other, E::Rolling { function: _, index_column: _, period: r_period, offset: r_offset, closed_window: r_closed_window } if l_period == r_period && l_offset == r_offset && l_closed_window == r_closed_window),
+            E::Over { function: _, partition_by: l_partition_by, order_by: l_order_by, mapping: l_mapping } => matches!(other, E::Over { function: _, partition_by: r_partition_by, order_by: r_order_by, mapping: r_mapping } if l_partition_by.len() == r_partition_by.len() && l_order_by.as_ref().map(|(_, v): &(Node, SortOptions)| v) == r_order_by.as_ref().map(|(_, v): &(Node, SortOptions)| v) && l_mapping == r_mapping),
 
             // Discriminant check done above.
             E::Element |
@@ -111,7 +114,9 @@ impl IRAggExpr {
             A::Median(_) |
             A::NUnique(_) |
             A::First(_) |
+            A::FirstNonNull(_) |
             A::Last(_) |
+            A::LastNonNull(_) |
             A::Mean(_) |
             A::Implode(_) |
             A::Sum(_) |

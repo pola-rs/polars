@@ -48,7 +48,6 @@ jobs:
           # https://github.com/astral-sh/uv/issues/6028#issuecomment-2287232150
           uv pip install -U typing-extensions
           uv pip install --compile-bytecode -r requirements-dev.txt -r requirements-ci.txt --verbose --index-strategy=unsafe-best-match
-          uv pip install --no-deps -e .
 
       - name: Install Polars-Benchmark dependencies
         working-directory: polars-benchmark
@@ -63,7 +62,10 @@ jobs:
           RUSTFLAGS: -C embed-bitcode -D warnings
         working-directory: py-polars
         run: |
-          maturin develop --manifest-path runtime/Cargo.toml --release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
+          # Make sure we use the Polars we're about to build.
+          uv pip uninstall polars-runtime-32 polars-runtime-64 polars-runtime-compat
+          uv pip install --no-deps -e .
+          maturin develop --manifest-path runtime/polars-runtime-32/Cargo.toml --release --uv -- -C codegen-units=8 -C lto=thin -C target-cpu=native
 
       - name: Run benchmark
         working-directory: polars-benchmark

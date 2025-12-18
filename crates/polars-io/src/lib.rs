@@ -33,6 +33,8 @@ pub mod path_utils;
 pub mod pl_async;
 pub mod predicates;
 pub mod prelude;
+#[cfg(feature = "scan_lines")]
+pub mod scan_lines;
 mod shared;
 pub mod utils;
 
@@ -43,3 +45,26 @@ pub use path_utils::*;
 pub use shared::*;
 
 pub mod hive;
+
+pub fn get_upload_chunk_size() -> usize {
+    use std::sync::LazyLock;
+
+    return *UPLOAD_CHUNK_SIZE;
+
+    static UPLOAD_CHUNK_SIZE: LazyLock<usize> = LazyLock::new(|| {
+        let v = std::env::var("POLARS_UPLOAD_CHUNK_SIZE")
+            .map(|x| {
+                x.parse::<usize>()
+                    .ok()
+                    .filter(|x| *x > 0)
+                    .unwrap_or_else(|| panic!("invalid value for POLARS_UPLOAD_CHUNK_SIZE: {x}"))
+            })
+            .unwrap_or(64 * 1024 * 1024);
+
+        if polars_core::config::verbose() {
+            eprintln!("async upload_chunk_size: {v}")
+        }
+
+        v
+    });
+}

@@ -3,6 +3,7 @@ use std::pin::Pin;
 
 use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
+use polars_io::get_upload_chunk_size;
 use polars_io::json::BatchedWriter;
 use polars_plan::dsl::{SinkOptions, SinkTarget};
 use polars_utils::priority::Priority;
@@ -16,7 +17,7 @@ use crate::morsel::MorselSeq;
 use crate::nodes::io_sinks::parallelize_receive_task;
 use crate::nodes::io_sinks::phase::PhaseOutcome;
 use crate::nodes::{JoinHandle, TaskPriority};
-use crate::utils::task_handles_ext::AbortOnDropHandle;
+use crate::utils::tokio_handle_ext::AbortOnDropHandle;
 
 type IOSend = Linearizer<Priority<Reverse<MorselSeq>, Vec<u8>>>;
 
@@ -70,7 +71,11 @@ impl SinkNode for NDJsonSinkNode {
             use tokio::io::AsyncWriteExt;
 
             let mut file = target
-                .open_into_writeable_async(&sink_options, cloud_options.as_ref())
+                .open_into_writeable_async(
+                    cloud_options.as_ref(),
+                    sink_options.mkdir,
+                    get_upload_chunk_size(),
+                )
                 .await?
                 .try_into_async_writeable()?;
 
@@ -80,8 +85,7 @@ impl SinkNode for NDJsonSinkNode {
                 }
             }
 
-            file.sync_on_close(sink_options.sync_on_close).await?;
-            file.close().await?;
+            file.close(sink_options.sync_on_close).await?;
 
             PolarsResult::Ok(())
         });

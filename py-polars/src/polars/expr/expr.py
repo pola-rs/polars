@@ -7,6 +7,7 @@ import sys
 import warnings
 from collections.abc import Collection, Mapping, Sequence
 from datetime import timedelta
+from decimal import Decimal
 from functools import reduce
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -46,6 +47,9 @@ from polars._utils.various import (
 )
 from polars._utils.wrap import wrap_expr, wrap_s
 from polars.datatypes import (
+    Decimal as PolarsDecimal,
+)
+from polars.datatypes import (
     Int64,
     parse_into_datatype_expr,
 )
@@ -58,6 +62,7 @@ from polars.expr.array import ExprArrayNameSpace
 from polars.expr.binary import ExprBinaryNameSpace
 from polars.expr.categorical import ExprCatNameSpace
 from polars.expr.datetime import ExprDateTimeNameSpace
+from polars.expr.ext import ExprExtensionNameSpace
 from polars.expr.list import ExprListNameSpace
 from polars.expr.meta import ExprMetaNameSpace
 from polars.expr.name import ExprNameNameSpace
@@ -133,6 +138,7 @@ class Expr:
         "bin",
         "cat",
         "dt",
+        "ext",
         "list",
         "meta",
         "name",
@@ -895,44 +901,45 @@ class Expr:
         │ c: 3 ┆ 15   │
         │ d: 4 ┆ -20  │
         └──────┴──────┘
-
         '''
         return function(self, *args, **kwargs)
 
     def not_(self) -> Expr:
         """
-        Negate a boolean expression.
+        Method equivalent of bitwise "not" operator `~expr`.
+
+        This has the effect of negating logical boolean expressions,
+        but operates bitwise on integers.
 
         Examples
         --------
         >>> df = pl.DataFrame(
         ...     {
-        ...         "a": [True, False, False],
-        ...         "b": ["a", "b", None],
+        ...         "label": ["aa", "bb", "cc", "dd", "ee"],
+        ...         "valid": [True, False, None, False, True],
+        ...         "int_code": [1, 0, 2, None, -1],
         ...     }
         ... )
-        >>> df
-        shape: (3, 2)
-        ┌───────┬──────┐
-        │ a     ┆ b    │
-        │ ---   ┆ ---  │
-        │ bool  ┆ str  │
-        ╞═══════╪══════╡
-        │ true  ┆ a    │
-        │ false ┆ b    │
-        │ false ┆ null │
-        └───────┴──────┘
-        >>> df.select(pl.col("a").not_())
-        shape: (3, 1)
-        ┌───────┐
-        │ a     │
-        │ ---   │
-        │ bool  │
-        ╞═══════╡
-        │ false │
-        │ true  │
-        │ true  │
-        └───────┘
+
+        Apply "not" to boolean expression (negates the value) and
+        integer expression (operates bitwise):
+
+        >>> df.with_columns(
+        ...     not_valid=pl.col("valid").not_(),
+        ...     not_int_code=pl.col("int_code").not_(),
+        ... )
+        shape: (5, 5)
+        ┌───────┬───────┬──────────┬───────────┬──────────────┐
+        │ label ┆ valid ┆ int_code ┆ not_valid ┆ not_int_code │
+        │ ---   ┆ ---   ┆ ---      ┆ ---       ┆ ---          │
+        │ str   ┆ bool  ┆ i64      ┆ bool      ┆ i64          │
+        ╞═══════╪═══════╪══════════╪═══════════╪══════════════╡
+        │ aa    ┆ true  ┆ 1        ┆ false     ┆ -2           │
+        │ bb    ┆ false ┆ 0        ┆ true      ┆ -1           │
+        │ cc    ┆ null  ┆ 2        ┆ null      ┆ -3           │
+        │ dd    ┆ false ┆ null     ┆ true      ┆ null         │
+        │ ee    ┆ true  ┆ -1       ┆ false     ┆ 0            │
+        └───────┴───────┴──────────┴───────────┴──────────────┘
         """
         return wrap_expr(self._pyexpr.not_())
 
@@ -1783,11 +1790,16 @@ class Expr:
         other_pyexpr = parse_into_expression(other)
         return wrap_expr(self._pyexpr.dot(other_pyexpr))
 
-    def mode(self) -> Expr:
+    def mode(self, *, maintain_order: bool = False) -> Expr:
         """
         Compute the most occurring value(s).
 
         Can return multiple Values.
+
+        Parameters
+        ----------
+        maintain_order
+            Maintain order of data. This requires more work.
 
         Examples
         --------
@@ -1807,7 +1819,7 @@ class Expr:
         │ 1   ┆ 1   │
         └─────┴─────┘
         """
-        return wrap_expr(self._pyexpr.mode())
+        return wrap_expr(self._pyexpr.mode(maintain_order=maintain_order))
 
     def cast(
         self,
@@ -2422,7 +2434,15 @@ class Expr:
         │ 2         ┆ 1    ┆ null      │
         └───────────┴──────┴───────────┘
         """
-        element_pyexpr = parse_into_expression(element, str_as_lit=True)
+        dtype = None
+        # Decimals by default are converted with maximum precision, but that
+        # makes lossless casting hard. So for Decimals we manually specify the
+        # minimal required precision.
+        if isinstance(element, Decimal):
+            _, digits, exponent = element.as_tuple()
+            if isinstance(exponent, int):  # can also be 'n'/'N'/'F'
+                dtype = PolarsDecimal(len(digits), -exponent)
+        element_pyexpr = parse_into_expression(element, str_as_lit=True, dtype=dtype)
         return wrap_expr(self._pyexpr.index_of(element_pyexpr))
 
     def search_sorted(
@@ -3433,14 +3453,30 @@ class Expr:
             return wrap_expr(self._pyexpr.unique_stable())
         return wrap_expr(self._pyexpr.unique())
 
-    def first(self) -> Expr:
+    def first(self, *, ignore_nulls: bool = False) -> Expr:
         """
         Get the first value.
 
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the first non-null value is returned, otherwise `None` is
+            returned if no non-null value exists.
+
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 1, 2]})
+        >>> df = pl.DataFrame({"a": [None, 1, 2]})
         >>> df.select(pl.col("a").first())
+        shape: (1, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ i64  │
+        ╞══════╡
+        │ null │
+        └──────┘
+        >>> df.select(pl.col("a").first(ignore_nulls=True))
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -3450,11 +3486,18 @@ class Expr:
         │ 1   │
         └─────┘
         """
-        return wrap_expr(self._pyexpr.first())
+        return wrap_expr(self._pyexpr.first(ignore_nulls=ignore_nulls))
 
-    def last(self) -> Expr:
+    def last(self, *, ignore_nulls: bool = False) -> Expr:
         """
         Get the last value.
+
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the last non-null value is returned, otherwise `None` is
+            returned if no non-null value exists.
 
         Examples
         --------
@@ -3469,7 +3512,7 @@ class Expr:
         │ 2   │
         └─────┘
         """
-        return wrap_expr(self._pyexpr.last())
+        return wrap_expr(self._pyexpr.last(ignore_nulls=ignore_nulls))
 
     @unstable()
     def item(self, *, allow_empty: bool = False) -> Expr:
@@ -3746,7 +3789,7 @@ class Expr:
 
     def rolling(
         self,
-        index_column: str,
+        index_column: IntoExprColumn,
         *,
         period: str | timedelta,
         offset: str | timedelta | None = None,
@@ -3841,13 +3884,16 @@ class Expr:
         │ 2020-01-08 23:16:43 ┆ 1   ┆ 1     ┆ 1     ┆ 1     │
         └─────────────────────┴─────┴───────┴───────┴───────┘
         """
+        index_column_pyexpr = parse_into_expression(index_column)
         if offset is None:
             offset = negate_duration_string(parse_as_duration_string(period))
 
         period = parse_as_duration_string(period)
         offset = parse_as_duration_string(offset)
 
-        return wrap_expr(self._pyexpr.rolling(index_column, period, offset, closed))
+        return wrap_expr(
+            self._pyexpr.rolling(index_column_pyexpr, period, offset, closed)
+        )
 
     def is_unique(self) -> Expr:
         """
@@ -4920,13 +4966,20 @@ Consider using {self}.implode() instead"""
         │ b     ┆ [2, 3, 4] │
         └───────┴───────────┘
         """
-        return wrap_expr(self._pyexpr.explode())
+        return self.explode(empty_as_null=True, keep_nulls=True)
 
-    def explode(self) -> Expr:
+    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Expr:
         """
         Explode a list expression.
 
         This means that every item is expanded to a new row.
+
+        Parameters
+        ----------
+        empty_as_null
+            Explode an empty list/array into a `null`.
+        keep_nulls
+            Explode a `null` list/array into a `null`.
 
         Returns
         -------
@@ -4961,7 +5014,9 @@ Consider using {self}.implode() instead"""
         │ 4      │
         └────────┘
         """
-        return wrap_expr(self._pyexpr.explode())
+        return wrap_expr(
+            self._pyexpr.explode(empty_as_null=empty_as_null, keep_nulls=keep_nulls)
+        )
 
     def implode(self) -> Expr:
         """
@@ -5118,6 +5173,9 @@ Consider using {self}.implode() instead"""
         """
         Method equivalent of bitwise "and" operator `expr & other & ...`.
 
+        This has the effect of combining logical boolean expressions,
+        but operates bitwise on integers.
+
         Parameters
         ----------
         *others
@@ -5132,6 +5190,9 @@ Consider using {self}.implode() instead"""
         ...         "z": [-9, 2, -1, 4, 8],
         ...     }
         ... )
+
+        Combine logical "and" conditions:
+
         >>> df.select(
         ...     (pl.col("x") >= pl.col("z"))
         ...     .and_(
@@ -5154,12 +5215,31 @@ Consider using {self}.implode() instead"""
         │ false │
         │ false │
         └───────┘
+
+        Bitwise "and" operation on integer columns:
+
+        >>> df.select("x", "z", x_and_z=pl.col("x").and_(pl.col("z")))
+        shape: (5, 3)
+        ┌─────┬─────┬─────────┐
+        │ x   ┆ z   ┆ x_and_z │
+        │ --- ┆ --- ┆ ---     │
+        │ i64 ┆ i64 ┆ i64     │
+        ╞═════╪═════╪═════════╡
+        │ 5   ┆ -9  ┆ 5       │
+        │ 6   ┆ 2   ┆ 2       │
+        │ 7   ┆ -1  ┆ 7       │
+        │ 4   ┆ 4   ┆ 4       │
+        │ 8   ┆ 8   ┆ 8       │
+        └─────┴─────┴─────────┘
         """
         return reduce(operator.and_, (self, *others))
 
     def or_(self, *others: Any) -> Expr:
         """
         Method equivalent of bitwise "or" operator `expr | other | ...`.
+
+        This has the effect of combining logical boolean expressions,
+        but operates bitwise on integers.
 
         Parameters
         ----------
@@ -5175,6 +5255,9 @@ Consider using {self}.implode() instead"""
         ...         "z": [-9, 2, -1, 4, 8],
         ...     }
         ... )
+
+        Combine logical "or" conditions:
+
         >>> df.select(
         ...     (pl.col("x") == pl.col("y"))
         ...     .or_(
@@ -5196,6 +5279,22 @@ Consider using {self}.implode() instead"""
         │ true  │
         │ false │
         └───────┘
+
+        Bitwise "or" operation on integer columns:
+
+        >>> df.select("x", "z", x_or_z=pl.col("x").or_(pl.col("z")))
+        shape: (5, 3)
+        ┌─────┬─────┬────────┐
+        │ x   ┆ z   ┆ x_or_z │
+        │ --- ┆ --- ┆ ---    │
+        │ i64 ┆ i64 ┆ i64    │
+        ╞═════╪═════╪════════╡
+        │ 5   ┆ -9  ┆ -9     │
+        │ 6   ┆ 2   ┆ 6      │
+        │ 7   ┆ -1  ┆ -1     │
+        │ 4   ┆ 4   ┆ 4      │
+        │ 8   ┆ 8   ┆ 8      │
+        └─────┴─────┴────────┘
         """
         return reduce(operator.or_, (self,) + others)
 
@@ -10058,7 +10157,8 @@ Consider using {self}.implode() instead"""
         Returns
         -------
         Expr
-            Float32 if input is Float32, otherwise Float64.
+            :class:`.Float16` if input is `Float16`, class:`.Float32` if input is
+            `Float32`, otherwise class:`.Float64`.
 
         Examples
         --------
@@ -11590,6 +11690,15 @@ Consider using {self}.implode() instead"""
         └─────┘
         """
         return ExprStructNameSpace(self)
+
+    @property
+    def ext(self) -> ExprExtensionNameSpace:
+        """
+        Create an object namespace of all extension type related expressions.
+
+        See the individual method pages for full details.
+        """
+        return ExprExtensionNameSpace(self)
 
     def _skip_batch_predicate(self, schema: SchemaDict) -> Expr | None:
         result = self._pyexpr.skip_batch_predicate(schema)

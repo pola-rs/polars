@@ -34,9 +34,7 @@ def test_series_sort_idempotent(s: pl.Series) -> None:
             pl.Object,  # Unsortable type
             pl.Null,  # Bug, see: https://github.com/pola-rs/polars/issues/17007
             pl.Decimal,  # Bug, see: https://github.com/pola-rs/polars/issues/17009
-            pl.Categorical(
-                ordering="lexical"
-            ),  # Bug, see: https://github.com/pola-rs/polars/issues/20364
+            pl.Categorical(),  # Bug, see: https://github.com/pola-rs/polars/issues/20364
         ],
     )
 )
@@ -1174,7 +1172,7 @@ def test_sort_bool_nulls_last() -> None:
     "dtype",
     [
         pl.Enum(["a", "b"]),
-        pl.Categorical(ordering="lexical"),
+        pl.Categorical(),
     ],
 )
 def test_sort_cat_nulls_last(dtype: PolarsDataType) -> None:
@@ -1256,4 +1254,12 @@ def test_sort_by_dynamic_24057(expr: pl.Expr, result: list[list[int]]) -> None:
     )
     out = q.collect()
     expected = pl.DataFrame({"time": [0, 5, 10], "sorted": result})
+    assert_frame_equal(out, expected)
+
+
+def test_sort_by_empty_list_eval_25433() -> None:
+    some_list = [2, 1, 3]
+    df = pl.DataFrame({"a": [some_list, []]})
+    out = df.select(pl.col.a.list.eval(pl.element().sort_by(pl.element())))
+    expected = pl.DataFrame({"a": [sorted(some_list), []]})
     assert_frame_equal(out, expected)

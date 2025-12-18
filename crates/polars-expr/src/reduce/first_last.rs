@@ -56,7 +56,7 @@ trait Policy: Copy + Send + Sync + 'static {
 }
 
 #[derive(Clone, Copy)]
-struct First;
+pub struct First;
 impl Policy for First {
     fn index(self, _len: usize) -> usize {
         0
@@ -70,7 +70,7 @@ impl Policy for First {
 }
 
 #[derive(Clone, Copy)]
-struct Last;
+pub struct Last;
 impl Policy for Last {
     fn index(self, len: usize) -> usize {
         len - 1
@@ -182,7 +182,7 @@ impl<P: Policy> Clone for BinaryFirstLastReducer<P> {
     }
 }
 
-fn replace_opt_bytes(l: &mut Option<Vec<u8>>, r: Option<&[u8]>) {
+pub fn replace_opt_bytes(l: &mut Option<Vec<u8>>, r: Option<&[u8]>) {
     match (l, r) {
         (Some(l), Some(r)) => {
             l.clear();
@@ -350,10 +350,11 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
 
     fn update_group(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         group_idx: IdxSize,
         seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         assert!(values.dtype() == &self.in_dtype);
         if !values.is_empty() {
             let seq_id = seq_id + 1; // We use 0 for 'no value'.
@@ -372,11 +373,12 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
 
     unsafe fn update_groups_while_evicting(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         subset: &[IdxSize],
         group_idxs: &[EvictIdx],
         seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         assert!(values.dtype() == &self.in_dtype);
         assert!(subset.len() == group_idxs.len());
         let seq_id = seq_id + 1; // We use 0 for 'no value'.
@@ -447,13 +449,14 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
                 );
             }
         }
-        unsafe {
-            let mut buf = AnyValueBufferTrusted::new(&self.in_dtype, self.values.len());
-            for v in core::mem::take(&mut self.values) {
-                buf.add_unchecked_owned_physical(&v);
-            }
-            Ok(buf.into_series())
+        let phys_type = self.in_dtype.to_physical();
+        let mut buf = AnyValueBufferTrusted::new(&phys_type, self.values.len());
+        for v in core::mem::take(&mut self.values) {
+            // SAFETY: v is cast to physical.
+            unsafe { buf.add_unchecked_owned_physical(&v.to_physical()) };
         }
+        // SAFETY: dtype is valid for series.
+        unsafe { buf.into_series().from_physical_unchecked(&self.in_dtype) }
     }
 
     fn as_any(&self) -> &dyn Any {
