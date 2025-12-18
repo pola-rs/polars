@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, VecDeque};
 use std::mem::swap;
 
@@ -31,6 +32,9 @@ use crate::pipe::{PortReceiver, RecvPort, SendPort};
 // TODO: [amber] For unmatched rows: gather first and then hstack to a df of nulls
 // TODO: [amber] Remove any non-output columns earlier to reduce the
 // amount of gathering as much as possible
+// TODO: [amber] Do not linearize but accumlate in parallel and then merge all of
+// the unmatched dataframes in a state-transition, and then flush them
+// TODO: [amber] Make sure that key expressions work
 
 const KEY_COL_NAME: &str = "__POLARS_JOIN_KEY_TMP";
 
@@ -871,7 +875,7 @@ fn compute_join_kernel<'a, T: PolarsDataType>(
     right_sp: &SideParams,
     params: &MergeJoinParams,
 ) where
-    T::Physical<'a>: TotalEq + TotalOrd,
+    T::Physical<'a>: TotalOrd,
 {
     let descending = params.key_descending;
     let left_key = left_key.downcast_as_array();
@@ -887,23 +891,22 @@ fn compute_join_kernel<'a, T: PolarsDataType>(
             for idxr in skip_ahead..right_key.len() {
                 let right_keyval = right_key.get(idxr);
                 let right_keyval = right_keyval.as_ref();
-                let both_valid = left_keyval.is_some() && right_keyval.is_some();
-                let is_equal = match (&left_keyval, &right_keyval) {
-                    (None, None) => params.args.nulls_equal,
-                    (x1, x2) => TotalEq::tot_eq(x1, x2),
+                let mut ord = match (&left_keyval, &right_keyval) {
+                    (None, None) if params.args.nulls_equal => Some(Ordering::Equal),
+                    (Some(l), Some(r)) => Some(TotalOrd::tot_cmp(*l, *r)),
+                    _ => None,
                 };
-                if is_equal {
+                if descending {
+                    ord = ord.map(Ordering::reverse);
+                }
+                if ord == Some(Ordering::Equal) {
                     matched = true;
                     right_matched.set(idxr, true);
                     gather_left.push(idxl as IdxSize);
                     gather_right.push(idxr as IdxSize);
-                } else if both_valid
-                    && (TotalOrd::tot_lt(right_keyval.unwrap(), left_keyval.unwrap()) ^ descending)
-                {
+                } else if ord == Some(Ordering::Greater) {
                     skip_ahead = idxr;
-                } else if both_valid
-                    && (TotalOrd::tot_gt(right_keyval.unwrap(), left_keyval.unwrap()) ^ descending)
-                {
+                } else if ord == Some(Ordering::Less) {
                     break;
                 }
             }
