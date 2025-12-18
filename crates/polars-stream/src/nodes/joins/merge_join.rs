@@ -354,7 +354,7 @@ impl ComputeNode for MergeJoinNode {
 
             join_handles.extend(dist_recv.into_iter().zip(send).zip(unmatched_send).map(
                 |((mut recv, mut send), mut unmatched_inserter)| {
-                    scope.spawn_task(TaskPriority::High, async move {
+                    scope.spawn_task(TaskPriority::Low, async move {
                         let mut arenas = Arenas::default();
                         while let Ok((morsel, right)) = recv.recv().await {
                             let (left, seq, source_token, _wt) = morsel.into_inner();
