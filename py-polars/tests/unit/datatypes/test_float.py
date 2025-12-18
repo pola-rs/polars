@@ -311,3 +311,21 @@ def test_arrow_float16_read_empty_20946() -> None:
     df = pl.from_arrow(table)
     assert df.shape == (0, 1)
     assert df.schema == pl.Schema([("float_column", pl.Float16)])  # type: ignore[union-attr]
+
+
+def test_mixed_int_and_float_construction() -> None:
+    """Test that pl.DataFrame construction with mixed int/float data works."""
+    df_1 = pl.DataFrame({"a": [1, 2, 3, 4, 5]}, schema={"a": pl.Float64})
+    assert df_1.schema == {"a": pl.Float64}
+
+    df_2 = pl.DataFrame({"a": [1, 2.0, 3, 4, 5]}, schema={"a": pl.Float64})
+    assert df_2.schema == {"a": pl.Float64}
+
+    df_3 = pl.DataFrame({"a": [1.0, 2.0, 3, 4, 5]}, schema={"a": pl.Float64})
+    assert df_3.schema == {"a": pl.Float64}
+
+    df_4 = pl.DataFrame({"a": [1.0, 2.0, 3, 4, 5]}, infer_schema_length=1000)
+    assert df_4.schema == {"a": pl.Float64}
+
+    df_list_1 = pl.DataFrame([{"a": 1}, {"a": 2}, {"a": 3}], schema={"a": pl.Float64})
+    assert df_list_1.schema == {"a": pl.Float64}
