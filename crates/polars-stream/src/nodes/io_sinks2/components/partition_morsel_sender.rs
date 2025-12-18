@@ -18,7 +18,7 @@ use crate::nodes::io_sinks2::components::size::RowCountAndSize;
 pub struct PartitionMorselSender {
     /// Note: Must be <= `file_size_limit` if there is one.
     pub ideal_morsel_size: RowCountAndSize,
-    pub file_size_limit: Option<RowCountAndSize>,
+    pub file_size_limit: RowCountAndSize,
     pub inflight_morsel_semaphore: Arc<tokio::sync::Semaphore>,
     pub open_sinks_semaphore: Arc<tokio::sync::Semaphore>,
     pub partition_sink_starter: PartitionSinkStarter,
@@ -71,17 +71,11 @@ impl PartitionMorselSender {
                         .sinked_size
                         .checked_sub($file_sink_task_data.start_position)
                         .unwrap();
-                    available_row_capacity =
-                        self.file_size_limit
-                            .map_or(RowCountAndSize::MAX, |file_size_limit| RowCountAndSize {
-                                num_rows: file_size_limit
-                                    .num_rows
-                                    .checked_sub(used_row_capacity.num_rows)
-                                    .unwrap(),
-                                num_bytes: file_size_limit
-                                    .num_bytes
-                                    .saturating_sub(used_row_capacity.num_bytes),
-                            });
+                    available_row_capacity = if self.file_size_limit == RowCountAndSize::MAX {
+                        RowCountAndSize::MAX
+                    } else {
+                        self.file_size_limit.checked_sub(used_row_capacity).unwrap()
+                    };
                 }};
             }
 
@@ -192,10 +186,7 @@ impl PartitionMorselSender {
 
             let morsel_height: IdxSize = IdxSize::try_from(morsel.df().height()).unwrap();
 
-            debug_assert!(
-                self.ideal_morsel_size.num_rows
-                    <= self.file_size_limit.map_or(IdxSize::MAX, |x| x.num_rows)
-            );
+            debug_assert!(self.ideal_morsel_size.num_rows <= self.file_size_limit.num_rows);
             debug_assert!(morsel_height <= self.ideal_morsel_size.num_rows);
 
             assert!((1..=available_row_capacity.num_rows).contains(&morsel_height));
@@ -217,17 +208,9 @@ impl PartitionMorselSender {
                 return Err(handle.await.unwrap_err());
             }
 
-            let sinked_size_delta = RowCountAndSize {
-                num_rows: morsel_height,
-                #[allow(clippy::useless_conversion)]
-                num_bytes: u64::from(morsel_height)
-                    .saturating_mul(row_byte_size)
-                    .min(available_row_capacity.num_bytes),
-            };
-
             partition.sinked_size = partition
                 .sinked_size
-                .checked_add(sinked_size_delta)
+                .add_delta(morsel_height, partition.total_size)
                 .unwrap();
         }
     }

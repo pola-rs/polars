@@ -1,4 +1,5 @@
 use polars_core::frame::DataFrame;
+use polars_error::{PolarsResult, polars_err};
 use polars_utils::IdxSize;
 
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
@@ -48,15 +49,61 @@ impl RowCountAndSize {
         if self.num_rows == 0 {
             0
         } else {
-            #[allow(clippy::useless_conversion)]
+            #[cfg_attr(feature = "bigidx", expect(clippy::useless_conversion))]
             (self.num_bytes / u64::from(self.num_rows)).max(1)
         }
     }
 
-    pub fn checked_add(self, rhs: Self) -> Option<Self> {
+    /// Returns an error if the resulting row count exceeds `IdxSize::MAX`. `num_bytes` will use
+    /// saturating addition.
+    pub fn add(self, rhs: Self) -> PolarsResult<Self> {
+        let num_rows = self.num_rows.checked_add(rhs.num_rows).ok_or_else(|| {
+            let consider_installing_64 = if cfg!(feature = "bigidx") {
+                ""
+            } else {
+                ". Consider installing 'polars[rt64]'."
+            };
+
+            let counter = u128::saturating_add(self.num_rows.into(), rhs.num_rows.into());
+
+            polars_err!(
+                ComputeError:
+                "row count ({}) exceeded maximum supported of {}{}",
+                counter, IdxSize::MAX, consider_installing_64
+            )
+        })?;
+
+        let num_bytes = self.num_bytes.saturating_add(rhs.num_bytes);
+
+        Ok(Self {
+            num_rows,
+            num_bytes,
+        })
+    }
+
+    /// Increment this `RowCountAndSize` by `num_rows`. The increment of `self.num_bytes` will be
+    /// calculated according to `total.num_bytes - self.num_bytes`.
+    ///
+    /// Returns `None` if the incremented result would exceed `total.num_rows` or `total.num_rows`.
+    pub fn add_delta(self, num_rows: IdxSize, total: Self) -> Option<Self> {
+        let available = total.checked_sub(self)?;
+
+        if num_rows > available.num_rows {
+            return None;
+        }
+
+        let num_bytes = std::cmp::min(
+            available.row_byte_size().saturating_mul(
+                #[cfg_attr(feature = "bigidx", expect(clippy::useless_conversion))]
+                u64::from(num_rows),
+            ),
+            available.num_bytes,
+        );
+
+        // `total.checked_sub(self)` guarantees no overflow below.
         Some(Self {
-            num_rows: IdxSize::checked_add(self.num_rows, rhs.num_rows)?,
-            num_bytes: u64::checked_add(self.num_bytes, rhs.num_bytes)?,
+            num_rows: self.num_rows + num_rows,
+            num_bytes: self.num_bytes + num_bytes,
         })
     }
 

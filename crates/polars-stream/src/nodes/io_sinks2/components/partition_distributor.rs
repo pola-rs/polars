@@ -107,16 +107,10 @@ impl PartitionDistributor {
                 let num_rows = IdxSize::try_from(df.height()).unwrap();
 
                 partition_data.buffered_rows.vstack_mut_owned_unchecked(df);
-                partition_data.total_size = partition_data
-                    .total_size
-                    .checked_add(RowCountAndSize {
-                        num_rows,
-                        num_bytes: std::cmp::min(
-                            estimated_size,
-                            u64::MAX - partition_data.total_size.num_bytes,
-                        ),
-                    })
-                    .unwrap();
+                partition_data.total_size = partition_data.total_size.add(RowCountAndSize {
+                    num_rows,
+                    num_bytes: estimated_size,
+                })?;
 
                 let buffered_size = partition_data.buffered_size();
 

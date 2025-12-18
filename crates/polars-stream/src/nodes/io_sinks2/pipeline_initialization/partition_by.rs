@@ -16,6 +16,7 @@ use crate::nodes::io_sinks2::components::partition_morsel_sender::PartitionMorse
 use crate::nodes::io_sinks2::components::partition_sink_starter::PartitionSinkStarter;
 use crate::nodes::io_sinks2::components::partitioner::Partitioner;
 use crate::nodes::io_sinks2::components::partitioner_pipeline::PartitionerPipeline;
+use crate::nodes::io_sinks2::components::size::RowCountAndSize;
 use crate::nodes::io_sinks2::config::{IOSinkNodeConfig, IOSinkTarget, PartitionedTarget};
 use crate::nodes::io_sinks2::writers::create_file_writer_starter;
 use crate::nodes::io_sinks2::writers::interface::FileWriterStarter;
@@ -137,7 +138,7 @@ pub fn start_partition_sink_pipeline(
 
     let partition_morsel_sender = PartitionMorselSender {
         ideal_morsel_size,
-        file_size_limit,
+        file_size_limit: file_size_limit.unwrap_or(RowCountAndSize::MAX),
         inflight_morsel_semaphore,
         open_sinks_semaphore: open_sinks_semaphore.clone(),
         partition_sink_starter: partition_sink_starter.clone(),
