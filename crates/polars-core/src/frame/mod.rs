@@ -432,6 +432,30 @@ impl DataFrame {
         unsafe { DataFrame::new_no_checks(height, columns) }
     }
 
+    /// Ensure this DataFrame matches the given schema. Casts null columns to
+    /// the expected schema if necessary (but nothing else).
+    pub fn ensure_matches_schema(&mut self, schema: &Schema) -> PolarsResult<()> {
+        let mut any_needed_cast = false;
+        for (col, (name, dt)) in self.columns.iter_mut().zip(schema.iter()) {
+            polars_ensure!(
+                col.name() == name,
+                SchemaMismatch: "column name mismatch: expected {:?}, found {:?}",
+                name,
+                col.name()
+            );
+
+            let needs_cast = col.dtype().matches_schema_type(dt)?;
+            any_needed_cast |= needs_cast;
+            if needs_cast {
+                *col = col.cast(dt)?;
+            }
+        }
+        if any_needed_cast {
+            self.clear_schema();
+        }
+        Ok(())
+    }
+
     /// Removes the last `Series` from the `DataFrame` and returns it, or [`None`] if it is empty.
     ///
     /// # Example
