@@ -619,8 +619,14 @@ fn compute_join(
     // TODO: [amber] Remove any non-output columns earlier to reduce the
     // amount of gathering as much as possible
 
-    let mut left_key = left.column(&params.left.key_col).unwrap();
-    let mut right_key = right.column(&params.right.key_col).unwrap();
+    let mut left_key = left
+        .column(&params.left.key_col)
+        .unwrap()
+        .as_materialized_series();
+    let mut right_key = right
+        .column(&params.right.key_col)
+        .unwrap()
+        .as_materialized_series();
     if right_is_build {
         swap(&mut left_key, &mut right_key);
         swap(&mut left_sp, &mut right_sp);
@@ -630,7 +636,7 @@ fn compute_join(
     let mut right_gather = Vec::new();
     let mut right_unmatched_gather = Vec::new();
     let mut skip_ahead = 0;
-    for (idxl, left_keyval) in left_key.as_materialized_series().iter().enumerate() {
+    for (idxl, left_keyval) in left_key.iter().enumerate() {
         let mut matched = false;
         if params.args.nulls_equal || !left_keyval.is_null() {
             for idxr in skip_ahead..right_key.len() {
@@ -674,7 +680,7 @@ fn compute_join(
 
     let mut df_main = Default::default();
     let mut df_unmatched = Default::default();
-    for (df, lg, rg) in [
+    for (df, lgather, rgather) in [
         (&mut df_main, left_gather, right_gather),
         (
             &mut df_unmatched,
@@ -684,8 +690,8 @@ fn compute_join(
     ] {
         let mut left_build = DataFrameBuilder::new(left.schema().clone());
         let mut right_build = DataFrameBuilder::new(right.schema().clone());
-        left_build.opt_gather_extend(&left, &lg, ShareStrategy::Never);
-        right_build.opt_gather_extend(&right, &rg, ShareStrategy::Never);
+        left_build.opt_gather_extend(&left, &lgather, ShareStrategy::Never);
+        right_build.opt_gather_extend(&right, &rgather, ShareStrategy::Never);
         let mut left = left_build.freeze();
         let mut right = right_build.freeze();
 
