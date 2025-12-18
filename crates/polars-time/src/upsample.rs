@@ -169,7 +169,6 @@ fn upsample_impl(
                 let index_column = source.column(index_column)?;
                 upsample_single_impl(source, index_column.as_materialized_series(), every)
             } else {
-                let height = source.height();
                 let source_schema = source.schema();
 
                 let group_keys_df = source.select(by)?;
