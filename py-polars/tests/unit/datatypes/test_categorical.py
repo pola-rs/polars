@@ -1015,4 +1015,6 @@ def test_categorical_cast_from_invalid_int() -> None:
     dummy = pl.Series(["test"]).cast(pl.Categorical)
     s = pl.Series("a", [0, 1000, 2000, 3000]).cast(pl.Categorical, strict=False)
     assert s.null_count() == 3
-    assert_series_equal(s, pl.Series("a", ["test", None, None, None], dtype=pl.Categorical))
+    assert_series_equal(
+        s, pl.Series("a", ["test", None, None, None], dtype=pl.Categorical)
+    )
