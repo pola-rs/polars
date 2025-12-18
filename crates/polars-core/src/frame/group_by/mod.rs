@@ -849,13 +849,14 @@ impl<'a> GroupBy<'a> {
             height += df.height();
             dfs.push(df);
 
+            // Even if max_height is zero we need at least one df, so check
+            // after first push.
             if height >= max_height {
                 break;
             }
         }
 
         let mut df = accumulate_dataframes_vertical(dfs)?;
-        df.as_single_chunk_par();
         if let Some((offset, len)) = slice {
             df = df.slice(offset, len);
         }
