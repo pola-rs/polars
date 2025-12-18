@@ -295,10 +295,14 @@ impl ComputeNode for MergeJoinNode {
                             let left_mergeable =
                                 Morsel::new(left_mergeable, *seq, source_token.clone());
                             *seq = seq.successor();
-                            distributor
-                                .send((left_mergeable, right_mergeable))
-                                .await
-                                .unwrap(); // TODO [amber] Can this error be handled?
+                            if let Err((morsel, right)) =
+                                distributor.send((left_mergeable, right_mergeable)).await
+                            {
+                                let left = morsel.into_df();
+                                left_unmerged.push_front(left);
+                                right_unmerged.push_front(right);
+                                break;
+                            }
                         },
                         Right(NeedMore::Left | NeedMore::Both) if recv_left.is_some() => {
                             let Ok(m) = recv_left.as_mut().unwrap().recv().await else {
