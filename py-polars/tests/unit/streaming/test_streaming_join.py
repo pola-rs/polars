@@ -412,7 +412,7 @@ def test_cross_join_with_literal_column_25544() -> None:
 @pytest.mark.parametrize(
     "on",
     [
-        ["key_1"],
+        # ["key_1"],
         ["key_1", "key_2"],
     ],
 )

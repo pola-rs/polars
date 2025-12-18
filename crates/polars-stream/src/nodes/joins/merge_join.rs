@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::mem::swap;
 
+use arrow::array::Array;
 use arrow::array::builder::ShareStrategy;
 use arrow::bitmap::MutableBitmap;
 use either::{Either, Left, Right};
@@ -10,6 +11,7 @@ use polars_ops::prelude::*;
 use polars_plan::prelude::*;
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
+use polars_utils::total_ord::{TotalEq, TotalOrd};
 
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
@@ -22,6 +24,7 @@ use crate::nodes::ComputeNode;
 use crate::pipe::{PortReceiver, RecvPort, SendPort};
 
 // TODO: [amber] Optimize the compute_join implementation to not use any Series.get()
+// TODO: [amber] Compute the initial row-encoding in parallel (during lowering)
 // TODO: [amber] I think I want to have the inner join dispatch to another streaming
 // equi join node rather than dispatching to in-memory engine?
 // TODO: [amber] Use an InMemorySource node for the unmatched values
@@ -673,44 +676,26 @@ fn compute_join(
         swap(&mut left_key, &mut right_key);
         swap(&mut left_sp, &mut right_sp);
     }
-    let mut right_matched = MutableBitmap::from_len_zeroed(right_key.len());
-    let mut left_gather = Vec::new();
-    let mut right_gather = Vec::new();
-    let mut right_unmatched_gather = Vec::new();
-    let mut skip_ahead = 0;
-    for (idxl, left_keyval) in left_key.iter().enumerate() {
-        let mut matched = false;
-        if params.args.nulls_equal || !left_keyval.is_null() {
-            for idxr in skip_ahead..right_key.len() {
-                let right_keyval = right_key.get(idxr).unwrap();
-                let both_valid = !left_keyval.is_null() && !right_keyval.is_null();
-                if keys_eq(&left_keyval, &right_keyval, &params) {
-                    matched = true;
-                    right_matched.set(idxr, true);
-                    left_gather.push(idxl as IdxSize);
-                    right_gather.push(idxr as IdxSize);
-                } else if both_valid && keys_lt(&right_keyval, &left_keyval, params) {
-                    skip_ahead = idxr;
-                } else if both_valid && keys_gt(&right_keyval, &left_keyval, params) {
-                    break;
-                }
-            }
-        }
-        if left_sp.emit_unmatched && !matched {
-            left_gather.push(idxl as IdxSize);
-            right_gather.push(IdxSize::MAX);
-        }
-    }
-    if right_sp.emit_unmatched {
-        for (idxr, _) in right_matched.iter().enumerate().filter(|(_, m)| !m) {
-            right_unmatched_gather.push(idxr as IdxSize);
-        }
-    }
+    let mut gather_left = Vec::new();
+    let mut gather_right = Vec::new();
+    let mut gather_right_unmatched = Vec::new();
+    let mut bitmap_arena = MutableBitmap::default();
+    compute_join_dispatch(
+        left_key,
+        right_key,
+        &mut gather_left,
+        &mut gather_right,
+        &mut gather_right_unmatched,
+        &mut bitmap_arena,
+        left_sp,
+        right_sp,
+        params,
+    );
 
-    let mut left_unmatched_gather = vec![IdxSize::MAX; right_unmatched_gather.len()];
+    let mut gather_left_unmatched = vec![IdxSize::MAX; gather_right_unmatched.len()];
     if right_is_build {
-        swap(&mut left_gather, &mut right_gather);
-        swap(&mut left_unmatched_gather, &mut right_unmatched_gather);
+        swap(&mut gather_left, &mut gather_right);
+        swap(&mut gather_left_unmatched, &mut gather_right_unmatched);
         swap(&mut left_sp, &mut right_sp);
     }
 
@@ -723,11 +708,11 @@ fn compute_join(
     let mut df_main = Default::default();
     let mut df_unmatched = Default::default();
     for (df, lgather, rgather) in [
-        (&mut df_main, left_gather, right_gather),
+        (&mut df_main, gather_left, gather_right),
         (
             &mut df_unmatched,
-            left_unmatched_gather,
-            right_unmatched_gather,
+            gather_left_unmatched,
+            gather_right_unmatched,
         ),
     ] {
         let mut left_build = DataFrameBuilder::new(left.schema().clone());
@@ -771,6 +756,100 @@ fn compute_join(
     }
 
     Ok((df_main, df_unmatched))
+}
+
+fn compute_join_dispatch(
+    left_key: &Series,
+    right_key: &Series,
+    gather_left: &mut Vec<IdxSize>,
+    gather_right: &mut Vec<IdxSize>,
+    gather_unmatched: &mut Vec<IdxSize>,
+    bitmap_arena: &mut MutableBitmap,
+    left_sp: &SideParams,
+    right_sp: &SideParams,
+    params: &MergeJoinParams,
+) {
+    debug_assert_eq!(left_key.dtype(), right_key.dtype());
+    let mut dispatch = |l, r| {
+        compute_join_kernel(
+            l,
+            r,
+            gather_left,
+            gather_right,
+            gather_unmatched,
+            bitmap_arena,
+            left_sp,
+            right_sp,
+            params,
+        )
+    };
+    match left_key.dtype() {
+        DataType::BinaryOffset => dispatch(
+            left_key.binary_offset().unwrap(),
+            right_key.binary_offset().unwrap(),
+        ),
+        dt => unimplemented!("merge join kernel not implemented for {:?}", dt),
+    }
+}
+
+fn compute_join_kernel<'a, T: PolarsDataType>(
+    left_key: &'a ChunkedArray<T>,
+    right_key: &'a ChunkedArray<T>,
+    gather_left: &mut Vec<IdxSize>,
+    gather_right: &mut Vec<IdxSize>,
+    gather_unmatched: &mut Vec<IdxSize>,
+    right_matched: &mut MutableBitmap,
+    left_sp: &SideParams,
+    right_sp: &SideParams,
+    params: &MergeJoinParams,
+) where
+    T::Physical<'a>: TotalEq + TotalOrd,
+{
+    let descending = params.key_descending;
+    let left_key = left_key.downcast_as_array();
+    let right_key = right_key.downcast_as_array();
+
+    right_matched.resize(right_key.len(), false);
+
+    let mut skip_ahead = 0;
+    for (idxl, left_keyval) in left_key.iter().enumerate() {
+        let left_keyval = left_keyval.as_ref();
+        let mut matched = false;
+        if params.args.nulls_equal || left_keyval.is_some() {
+            for idxr in skip_ahead..right_key.len() {
+                let right_keyval = right_key.get(idxr);
+                let right_keyval = right_keyval.as_ref();
+                let both_valid = left_keyval.is_some() && right_keyval.is_some();
+                let is_equal = match (&left_keyval, &right_keyval) {
+                    (None, None) => params.args.nulls_equal,
+                    (x1, x2) => TotalEq::tot_eq(x1, x2),
+                };
+                if is_equal {
+                    matched = true;
+                    right_matched.set(idxr, true);
+                    gather_left.push(idxl as IdxSize);
+                    gather_right.push(idxr as IdxSize);
+                } else if both_valid
+                    && (TotalOrd::tot_lt(right_keyval.unwrap(), left_keyval.unwrap()) ^ descending)
+                {
+                    skip_ahead = idxr;
+                } else if both_valid
+                    && (TotalOrd::tot_gt(right_keyval.unwrap(), left_keyval.unwrap()) ^ descending)
+                {
+                    break;
+                }
+            }
+        }
+        if left_sp.emit_unmatched && !matched {
+            gather_left.push(idxl as IdxSize);
+            gather_right.push(IdxSize::MAX);
+        }
+    }
+    if right_sp.emit_unmatched {
+        for (idxr, _) in right_matched.iter().enumerate().filter(|(_, m)| !m) {
+            gather_unmatched.push(idxr as IdxSize);
+        }
+    }
 }
 
 fn rename_right_columns(
