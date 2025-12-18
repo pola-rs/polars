@@ -1009,3 +1009,10 @@ def test_categorical_serialization_prunes_unused_categories_24034() -> None:
     assert ipc_stream_size_ratio <= 0.8
     assert parquet_size_ratio <= 0.5
     assert pickle_size_ratio <= 0.8
+
+
+def test_categorical_cast_from_invalid_int() -> None:
+    dummy = pl.Series(["test"]).cast(pl.Categorical)
+    s = pl.Series("a", [0, 1000, 2000, 3000]).cast(pl.Categorical, strict=False)
+    assert s.null_count() == 3
+    assert_series_equal(s, pl.Series("a", ["test", None, None, None], dtype=pl.Categorical))
