@@ -84,7 +84,7 @@ impl RowCountAndSize {
     /// Increment this `RowCountAndSize` by `num_rows`. The increment of `self.num_bytes` will be
     /// calculated according to `total.num_bytes - self.num_bytes`.
     ///
-    /// Returns `None` if the incremented result would exceed `total.num_rows` or `total.num_rows`.
+    /// Returns `None` if the incremented result would exceed `total.num_rows`.
     pub fn add_delta(self, num_rows: IdxSize, total: Self) -> Option<Self> {
         let available = total.checked_sub(self)?;
 
