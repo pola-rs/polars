@@ -22,12 +22,14 @@ use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::nodes::ComputeNode;
 use crate::pipe::{PortReceiver, RecvPort, SendPort};
 
-// TODO: [amber] Use `_get_rows_encoded` (with `descending`) to encode the keys
-// TODO: [amber] Use a distributor to distribute the merge-join work to a pool of workers
-// BUG: [amber] Currently the join may process sub-chunks and not produce "cartesian product"
-// results when there are chunks of equal keys
+// TODO: [amber] Optimize the compute_join implementation to not use any Series.get()
+// TODO: [amber] Only row-encode once
 // TODO: [amber] I think I want to have the inner join dispatch to another streaming
-// equi join node rather than dispatching to in-memory engine
+// equi join node rather than dispatching to in-memory engine?
+// TODO: [amber] Use an InMemorySource node for the unmatched values
+// TODO: [amber] For unmatched rows: gather first and then hstack to a df of nulls
+// TODO: [amber] Remove any non-output columns earlier to reduce the
+// amount of gathering as much as possible
 
 const KEY_COL_NAME: &str = "__POLARS_JOIN_KEY";
 
@@ -280,7 +282,7 @@ impl ComputeNode for MergeJoinNode {
             let (mut unmatched_linearizer, unmatched_send) =
                 MorselLinearizer::new(dist_recv.len(), 1);
 
-            join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
+            join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 let source_token = SourceToken::new();
 
                 loop {
@@ -345,7 +347,33 @@ impl ComputeNode for MergeJoinNode {
                     scope.spawn_task(TaskPriority::High, async move {
                         while let Ok((morsel, right)) = recv.recv().await {
                             let (left, seq, source_token, _wt) = morsel.into_inner();
-                            let (matched, unmatched) = compute_join(left, right, params)?;
+                            let tick = std::time::Instant::now();
+                            let (matched, unmatched) =
+                                compute_join(left.clone(), right.clone(), params)?;
+                            let tock = std::time::Instant::now();
+                            let delta = tock.duration_since(tick);
+                            if delta.as_millis() > 1000 {
+                                dbg!(seq);
+                                dbg!(&left);
+                                dbg!(&right);
+                                dbg!(
+                                    &left
+                                        .column("key")
+                                        .unwrap()
+                                        .as_materialized_series()
+                                        .null_count()
+                                );
+                                dbg!(
+                                    &right
+                                        .column("key")
+                                        .unwrap()
+                                        .as_materialized_series()
+                                        .null_count()
+                                );
+                                dbg!(&matched.height());
+                                dbg!(&unmatched.height());
+                                dbg!(delta);
+                            }
                             if !matched.is_empty() {
                                 let morsel = Morsel::new(matched, seq, source_token.clone());
                                 if send.send(morsel).await.is_err() {
@@ -409,7 +437,12 @@ fn find_mergeable(
             Right(side) => Right(side.flip()),
         });
     } else {
-        find_mergeable_inner(left, right, &p.left, &p.right, p, left_done, right_done)
+        Ok(
+            match find_mergeable_inner(left, right, &p.left, &p.right, p, left_done, right_done)? {
+                Left((left_df, right_df)) => Left((left_df, right_df)),
+                other => other,
+            },
+        )
     }
 }
 
@@ -615,9 +648,6 @@ fn compute_join(
 
     left.rechunk_mut();
     right.rechunk_mut();
-
-    // TODO: [amber] Remove any non-output columns earlier to reduce the
-    // amount of gathering as much as possible
 
     let mut left_key = left
         .column(&params.left.key_col)
