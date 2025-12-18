@@ -759,8 +759,8 @@ fn compute_join(
 }
 
 fn compute_join_dispatch(
-    left_key: &Series,
-    right_key: &Series,
+    lk: &Series,
+    rk: &Series,
     gather_left: &mut Vec<IdxSize>,
     gather_right: &mut Vec<IdxSize>,
     gather_unmatched: &mut Vec<IdxSize>,
@@ -769,25 +769,82 @@ fn compute_join_dispatch(
     right_sp: &SideParams,
     params: &MergeJoinParams,
 ) {
-    debug_assert_eq!(left_key.dtype(), right_key.dtype());
-    let mut dispatch = |l, r| {
-        compute_join_kernel(
-            l,
-            r,
-            gather_left,
-            gather_right,
-            gather_unmatched,
-            bitmap_arena,
-            left_sp,
-            right_sp,
-            params,
-        )
-    };
-    match left_key.dtype() {
-        DataType::BinaryOffset => dispatch(
-            left_key.binary_offset().unwrap(),
-            right_key.binary_offset().unwrap(),
+    macro_rules! dispatch {
+        ($left_key:expr, $right_key:expr) => {
+            compute_join_kernel(
+                $left_key,
+                $right_key,
+                gather_left,
+                gather_right,
+                gather_unmatched,
+                bitmap_arena,
+                left_sp,
+                right_sp,
+                params,
+            )
+        };
+    }
+
+    debug_assert_eq!(lk.dtype(), rk.dtype());
+    match lk.dtype() {
+        #[cfg(feature = "dtype-i8")]
+        DataType::Int8 => dispatch!(lk.i8().unwrap(), rk.i8().unwrap()),
+        #[cfg(feature = "dtype-i16")]
+        DataType::Int16 => dispatch!(lk.i16().unwrap(), rk.i16().unwrap()),
+        DataType::Int32 => dispatch!(lk.i32().unwrap(), rk.i32().unwrap()),
+        DataType::Int64 => dispatch!(lk.i64().unwrap(), rk.i64().unwrap()),
+        #[cfg(feature = "dtype-i128")]
+        DataType::Int128 => dispatch!(lk.i128().unwrap(), rk.i128().unwrap()),
+        #[cfg(feature = "dtype-u8")]
+        DataType::UInt8 => dispatch!(lk.u8().unwrap(), rk.u8().unwrap()),
+        #[cfg(feature = "dtype-u16")]
+        DataType::UInt16 => dispatch!(lk.u16().unwrap(), rk.u16().unwrap()),
+        DataType::UInt32 => dispatch!(lk.u32().unwrap(), rk.u32().unwrap()),
+        DataType::UInt64 => dispatch!(lk.u64().unwrap(), rk.u64().unwrap()),
+        #[cfg(feature = "dtype-u128")]
+        DataType::UInt128 => dispatch!(lk.u128().unwrap(), rk.u128().unwrap()),
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => dispatch!(lk.f16().unwrap(), rk.f16().unwrap()),
+        DataType::Float32 => dispatch!(lk.f32().unwrap(), rk.f32().unwrap()),
+        DataType::Float64 => dispatch!(lk.f64().unwrap(), rk.f64().unwrap()),
+        #[cfg(feature = "dtype-date")]
+        DataType::Date => dispatch!(lk.date().unwrap().physical(), rk.date().unwrap().physical()),
+        #[cfg(feature = "dtype-time")]
+        DataType::Time => dispatch!(lk.time().unwrap().physical(), rk.time().unwrap().physical()),
+        #[cfg(feature = "dtype-datetime")]
+        DataType::Datetime(_, _) => dispatch!(
+            lk.datetime().unwrap().physical(),
+            rk.datetime().unwrap().physical()
         ),
+        #[cfg(feature = "dtype-duration")]
+        DataType::Duration(_) => dispatch!(
+            lk.duration().unwrap().physical(),
+            rk.duration().unwrap().physical()
+        ),
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(_, _) => dispatch!(
+            lk.decimal().unwrap().physical(),
+            rk.decimal().unwrap().physical()
+        ),
+        #[cfg(feature = "dtype-categorical")]
+        dt @ (DataType::Enum(_, _) | DataType::Categorical(_, _)) => {
+            match dt.cat_physical().unwrap() {
+                CategoricalPhysical::U8 => {
+                    dispatch!(lk.cat8().unwrap().physical(), rk.cat8().unwrap().physical())
+                },
+                CategoricalPhysical::U16 => dispatch!(
+                    lk.cat16().unwrap().physical(),
+                    rk.cat16().unwrap().physical()
+                ),
+                CategoricalPhysical::U32 => dispatch!(
+                    lk.cat32().unwrap().physical(),
+                    rk.cat32().unwrap().physical()
+                ),
+            }
+        },
+        DataType::BinaryOffset => {
+            dispatch!(lk.binary_offset().unwrap(), rk.binary_offset().unwrap())
+        },
         dt => unimplemented!("merge join kernel not implemented for {:?}", dt),
     }
 }
