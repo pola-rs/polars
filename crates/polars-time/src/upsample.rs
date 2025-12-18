@@ -172,9 +172,7 @@ fn upsample_impl(
                 let height = source.height();
                 let source_schema = source.schema();
 
-                let by: PlHashSet<PlSmallStr> = PlHashSet::from_iter(by);
-
-                let group_keys_df = unsafe { source.project_names(by.iter())? };
+                let group_keys_df = source.select(by)?;
                 let group_keys_schema = group_keys_df.schema();
 
                 let groups = if stable {

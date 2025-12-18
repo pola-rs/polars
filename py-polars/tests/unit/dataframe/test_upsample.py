@@ -351,12 +351,11 @@ def test_upsample_with_group_by_15530() -> None:
         df.select("time"),
     )
 
-    assert_frame_equal(
-        df.select("time").upsample(
+    with pytest.raises(
+        pl.exceptions.DuplicateError, match="'time' has more than one occurrence"
+    ):
+        df.upsample(
             time_column="time",
             every="1d",
             group_by=["time", "time"],
-            maintain_order=True,
-        ),
-        df.select("time"),
-    )
+        )
