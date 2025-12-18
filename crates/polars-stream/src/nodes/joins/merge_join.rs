@@ -67,6 +67,7 @@ struct MergeJoinParams {
     output_schema: SchemaRef,
     key_descending: bool,
     key_nulls_last: bool,
+    use_row_encoding: bool,
     args: JoinArgs,
 }
 
@@ -157,6 +158,7 @@ impl MergeJoinNode {
         };
         let key_nulls_last = is_nulls_last(&left_sortedness);
         assert!(key_nulls_last == is_nulls_last(&right_sortedness));
+        let use_row_encoding = left_on.len() > 1;
         let left = SideParams {
             input_schema: left_input_schema,
             ir_schema: left_ir_schema,
@@ -181,6 +183,7 @@ impl MergeJoinNode {
             output_schema,
             key_descending,
             key_nulls_last,
+            use_row_encoding,
             args,
         };
         Ok(MergeJoinNode {
@@ -601,9 +604,7 @@ fn series_get_bypass_validity<'a>(
     params: &MergeJoinParams,
 ) -> AnyValue<'a> {
     debug_assert!(index < s.len());
-    debug_assert!(params.left.on.len() == params.right.on.len());
-    let is_row_encoded = params.left.on.len() > 1;
-    if is_row_encoded {
+    if params.use_row_encoding {
         let arr = s.binary_offset().unwrap();
         unsafe { arr.get_any_value_bypass_validity(index) }
     } else {
@@ -714,7 +715,7 @@ fn compute_join(
     }
 
     // Remove the added row-encoded key columns
-    if params.left.on.len() > 1 {
+    if params.use_row_encoding {
         left = left.drop(&params.left.key_col).unwrap();
         right = right.drop(&params.right.key_col).unwrap();
     }
