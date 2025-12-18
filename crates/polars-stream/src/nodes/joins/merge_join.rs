@@ -6,7 +6,6 @@ use arrow::bitmap::MutableBitmap;
 use either::{Either, Left, Right};
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
-use polars_core::series::IsSorted;
 use polars_ops::prelude::*;
 use polars_plan::prelude::*;
 use polars_utils::format_pl_smallstr;
@@ -23,7 +22,6 @@ use crate::nodes::ComputeNode;
 use crate::pipe::{PortReceiver, RecvPort, SendPort};
 
 // TODO: [amber] Optimize the compute_join implementation to not use any Series.get()
-// TODO: [amber] Only row-encode once
 // TODO: [amber] I think I want to have the inner join dispatch to another streaming
 // equi join node rather than dispatching to in-memory engine?
 // TODO: [amber] Use an InMemorySource node for the unmatched values
@@ -31,7 +29,7 @@ use crate::pipe::{PortReceiver, RecvPort, SendPort};
 // TODO: [amber] Remove any non-output columns earlier to reduce the
 // amount of gathering as much as possible
 
-const KEY_COL_NAME: &str = "__POLARS_JOIN_KEY";
+const KEY_COL_NAME: &str = "__POLARS_JOIN_KEY_TMP";
 
 #[derive(Clone, Copy, Debug)]
 enum NeedMore {
@@ -308,12 +306,13 @@ impl ComputeNode for MergeJoinNode {
                                     recv_right.as_mut(),
                                     right_unmerged,
                                     &params.right,
+                                    params,
                                 )
                                 .await;
                                 break;
                             };
                             let mut df = m.into_df();
-                            add_key_column(&mut df, &params.left, false)?;
+                            add_key_column(&mut df, &params.left, params)?;
                             left_unmerged.push_back(df);
                         },
                         Right(NeedMore::Right | NeedMore::Both) if recv_right.is_some() => {
@@ -322,12 +321,13 @@ impl ComputeNode for MergeJoinNode {
                                     recv_left.as_mut(),
                                     left_unmerged,
                                     &params.left,
+                                    params,
                                 )
                                 .await;
                                 break;
                             };
                             let mut df = m.into_df();
-                            add_key_column(&mut df, &params.right, false)?;
+                            add_key_column(&mut df, &params.right, params)?;
                             right_unmerged.push_back(df);
                         },
 
@@ -432,10 +432,10 @@ fn find_mergeable(
 ) -> PolarsResult<Either<(DataFrame, DataFrame), NeedMore>> {
     if p.args.how == JoinType::Right {
         let ok = find_mergeable_inner(right, left, &p.right, &p.left, p, right_done, left_done)?;
-        return Ok(match ok {
+        Ok(match ok {
             Left((right_df, left_df)) => Left((left_df, right_df)),
             Right(side) => Right(side.flip()),
-        });
+        })
     } else {
         Ok(
             match find_mergeable_inner(left, right, &p.left, &p.right, p, left_done, right_done)? {
@@ -505,34 +505,41 @@ fn find_mergeable_inner(
             .column(&right_params.key_col)?
             .as_materialized_series();
 
-        let left_last = left_keys.get(left_keys.len() - 1)?;
+        let left_last = series_get_bypass_validity(left_keys, left_keys.len() - 1, params);
         let left_first_incomplete = match left_done && left.len() <= 1 {
             false => binary_search_lower(left_keys, &left_last, params)?,
             true => left_keys.len(),
         };
         if left_first_incomplete == 0 && left.len() > 1 {
-            vstack_head(left, left_params, params);
+            vstack_head(left);
             continue;
-        } else if left_first_incomplete == 0 {
-            debug_assert!(!left_done);
-            return Ok(Right(NeedMore::Left));
         }
 
-        let right_last = right_keys.get(right_keys.len() - 1)?;
+        let right_last = series_get_bypass_validity(right_keys, right_keys.len() - 1, params);
         let right_first_incomplete = match right_done && right.len() <= 1 {
             false => binary_search_lower(right_keys, &right_last, params)?,
             true => right_keys.len(),
         };
         if right_first_incomplete == 0 && right.len() > 1 {
-            vstack_head(right, right_params, params);
+            vstack_head(right);
             continue;
+        }
+
+        if left_first_incomplete == 0 && right_first_incomplete == 0 {
+            debug_assert!(!left_done && !right_done);
+            return Ok(Right(NeedMore::Both));
+        } else if left_first_incomplete == 0 {
+            debug_assert!(!left_done);
+            return Ok(Right(NeedMore::Left));
         } else if right_first_incomplete == 0 {
             debug_assert!(!right_done);
             return Ok(Right(NeedMore::Right));
         }
 
-        let left_last_completed_val = left_keys.get(left_first_incomplete - 1)?;
-        let right_last_completed_val = right_keys.get(right_first_incomplete - 1)?;
+        let left_last_completed_val =
+            series_get_bypass_validity(left_keys, left_first_incomplete - 1, params);
+        let right_last_completed_val =
+            series_get_bypass_validity(right_keys, right_first_incomplete - 1, params);
         let left_mergable_until; // bound is *exclusive*
         let right_mergable_until;
         if keys_eq(&left_last_completed_val, &right_last_completed_val, params) {
@@ -540,13 +547,16 @@ fn find_mergeable_inner(
             right_mergable_until = right_first_incomplete;
         } else if keys_lt(&left_last_completed_val, &right_last_completed_val, params) {
             left_mergable_until = left_first_incomplete;
-            right_mergable_until =
-                binary_search_upper(right_keys, &left_keys.get(left_mergable_until - 1)?, params)?;
+            right_mergable_until = binary_search_upper(
+                right_keys,
+                &series_get_bypass_validity(&left_keys, left_mergable_until - 1, params),
+                params,
+            )?;
         } else if keys_gt(&left_last_completed_val, &right_last_completed_val, params) {
             right_mergable_until = right_first_incomplete;
             left_mergable_until = binary_search_upper(
                 left_keys,
-                &right_keys.get(right_mergable_until - 1)?,
+                &series_get_bypass_validity(&right_keys, right_mergable_until - 1, params),
                 params,
             )?;
         } else {
@@ -554,10 +564,10 @@ fn find_mergeable_inner(
         }
 
         if left_mergable_until == 0 && left.len() > 1 {
-            vstack_head(left, left_params, params);
+            vstack_head(left);
             continue;
         } else if right_mergable_until == 0 && right.len() > 1 {
-            vstack_head(right, right_params, params);
+            vstack_head(right);
             continue;
         } else if left_mergable_until == 0 && right_mergable_until == 0 {
             return Ok(Right(NeedMore::Both));
@@ -581,6 +591,22 @@ fn find_mergeable_inner(
     }
 }
 
+fn series_get_bypass_validity<'a>(
+    s: &'a Series,
+    index: usize,
+    params: &MergeJoinParams,
+) -> AnyValue<'a> {
+    debug_assert!(index < s.len());
+    debug_assert!(params.left.on.len() == params.right.on.len());
+    let is_row_encoded = params.left.on.len() > 1;
+    if is_row_encoded {
+        let arr = s.binary_offset().unwrap();
+        unsafe { arr.get_any_value_bypass_validity(index) }
+    } else {
+        unsafe { s.get_unchecked(index) }
+    }
+}
+
 fn binary_search(
     s: &Series,
     search_value: &AnyValue,
@@ -591,14 +617,14 @@ fn binary_search(
     let mut upper = s.len();
     while lower < upper {
         let mid = (lower + upper) / 2;
-        let mid_val = s.get(mid)?;
+        let mid_val = series_get_bypass_validity(s, mid, params);
         if op(search_value, &mid_val, params) {
             upper = mid;
         } else {
             lower = mid + 1;
         }
     }
-    return Ok(lower);
+    Ok(lower)
 }
 
 fn binary_search_lower(s: &Series, sv: &AnyValue, params: &MergeJoinParams) -> PolarsResult<usize> {
@@ -609,18 +635,9 @@ fn binary_search_upper(s: &Series, sv: &AnyValue, params: &MergeJoinParams) -> P
     binary_search(s, sv, keys_lt, params)
 }
 
-fn vstack_head(unmerged: &mut VecDeque<DataFrame>, sp: &SideParams, params: &MergeJoinParams) {
-    let is_sorted = match params.key_descending {
-        false => IsSorted::Ascending,
-        true => IsSorted::Descending,
-    };
+fn vstack_head(unmerged: &mut VecDeque<DataFrame>) {
     let mut df = unmerged.pop_front().unwrap();
-    let col_idx = df.get_column_index(&sp.key_col).unwrap();
     df.vstack_mut_owned(unmerged.pop_front().unwrap()).unwrap();
-    unsafe {
-        let col = &mut df.get_columns_mut()[col_idx];
-        col.set_sorted_flag(is_sorted);
-    };
     unmerged.push_front(df);
 }
 
@@ -635,16 +652,6 @@ fn compute_join(
         params.args.maintain_order,
         MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft,
     );
-
-    // Add row-encoded key columns if needed
-    if params.left.on.len() > 1 && !params.args.nulls_equal {
-        left.drop_in_place(&params.left.key_col)?;
-        add_key_column(&mut left, &params.left, true)?;
-    }
-    if params.right.on.len() > 1 && !params.args.nulls_equal {
-        right.drop_in_place(&params.right.key_col)?;
-        add_key_column(&mut right, &params.right, true)?;
-    }
 
     left.rechunk_mut();
     right.rechunk_mut();
@@ -794,7 +801,11 @@ fn key_is_in_output(col_name: &PlSmallStr, params: &MergeJoinParams) -> bool {
     params.output_schema.contains(col_name)
 }
 
-fn add_key_column(df: &mut DataFrame, sp: &SideParams, broadcast_nulls: bool) -> PolarsResult<()> {
+fn add_key_column(
+    df: &mut DataFrame,
+    sp: &SideParams,
+    params: &MergeJoinParams,
+) -> PolarsResult<()> {
     debug_assert_eq!(*df.schema(), sp.input_schema);
     if sp.on.len() > 1 {
         let columns = sp
@@ -803,12 +814,16 @@ fn add_key_column(df: &mut DataFrame, sp: &SideParams, broadcast_nulls: bool) ->
             .map(|c| df.column(c).unwrap())
             .cloned()
             .collect_vec();
+        // HACK: _get_rows_encoded_ca row-encodes all rows, but sets the validity from broadcasted
+        // keys afterward, so the values are still valid.
+        // In find_mergeable(), we bypass the validity info to get the row-encoded values even for
+        // null rows.
         let key = row_encode::_get_rows_encoded_ca(
             sp.key_col.clone(),
             &columns,
             &sp.descending,
             &sp.nulls_last,
-            broadcast_nulls,
+            !params.args.nulls_equal,
         )?
         .into_column();
         df.hstack_mut(&[key])?;
@@ -821,6 +836,7 @@ async fn buffer_unmerged_from_pipe(
     port: Option<&mut PortReceiver>,
     unmerged: &mut VecDeque<DataFrame>,
     sp: &SideParams,
+    params: &MergeJoinParams,
 ) {
     let Some(port) = port else {
         return;
@@ -830,12 +846,12 @@ async fn buffer_unmerged_from_pipe(
     };
     morsel.source_token().stop();
     let mut df = morsel.into_df();
-    add_key_column(&mut df, sp, false).unwrap();
+    add_key_column(&mut df, sp, params).unwrap();
     unmerged.push_back(df);
 
     while let Ok(morsel) = port.recv().await {
         let mut df = morsel.into_df();
-        add_key_column(&mut df, sp, false).unwrap();
+        add_key_column(&mut df, sp, params).unwrap();
         unmerged.push_back(df);
     }
 }

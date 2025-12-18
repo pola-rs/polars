@@ -244,6 +244,19 @@ impl ChunkAnyValue for BinaryOffsetChunked {
     }
 }
 
+impl ChunkAnyValueBypassValidity for BinaryOffsetChunked {
+    #[inline]
+    unsafe fn get_any_value_bypass_validity(&self, index: usize) -> AnyValue<'_> {
+        debug_assert!(index < self.len());
+        let (chunk_idx, idx) = self.index_to_chunked_index(index);
+        debug_assert!(chunk_idx < self.chunks.len());
+        let arr = &**self.chunks.get_unchecked(chunk_idx);
+        let arr = &*(arr as *const dyn Array as *const LargeBinaryArray);
+        let v = arr.value_unchecked(idx);
+        AnyValue::Binary(v)
+    }
+}
+
 impl ChunkAnyValue for ListChunked {
     #[inline]
     unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue<'_> {
