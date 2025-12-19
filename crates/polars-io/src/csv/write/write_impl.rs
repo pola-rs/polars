@@ -171,6 +171,9 @@ impl CsvSerializer {
             buffer.extend_from_slice(options.line_terminator.as_bytes());
         }
 
+        // Clear references to `df`.
+        self.get_serializers(Arc::as_ref(&self.empty_columns.clone()))?;
+
         Ok(())
     }
 
