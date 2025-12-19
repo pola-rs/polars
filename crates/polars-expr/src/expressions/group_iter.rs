@@ -90,9 +90,8 @@ impl AggregationContext<'_> {
 
                 (0..len).map(move |idx| {
                     let g = groups.get(idx);
-                    // TODO
                     match g {
-                        GroupsIndicator::Idx(_) => todo!(),
+                        GroupsIndicator::Idx(_) => unreachable!(),
                         GroupsIndicator::Slice(s) => Some(
                             col.slice(s[0] as i64, s[1] as usize)
                                 .into_materialized_series()
@@ -101,7 +100,7 @@ impl AggregationContext<'_> {
                     }
                 })
             },
-            _ => todo!(),
+            _ => unreachable!(),
         }
     }
 
@@ -121,9 +120,8 @@ impl AggregationContext<'_> {
 
                 (0..len).into_par_iter().map(move |idx| {
                     let g = groups.get(idx);
-                    // TODO
                     match g {
-                        GroupsIndicator::Idx(_) => todo!(),
+                        GroupsIndicator::Idx(_) => unreachable!(),
                         GroupsIndicator::Slice(s) => Some(
                             col.slice(s[0] as i64, s[1] as usize)
                                 .into_materialized_series()
@@ -132,7 +130,7 @@ impl AggregationContext<'_> {
                     }
                 })
             },
-            _ => todo!(),
+            _ => unreachable!(),
         }
     }
 }
