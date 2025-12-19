@@ -32,14 +32,13 @@ impl RowCountAndSize {
     pub fn num_rows_takeable_from(self, other: Self) -> IdxSize {
         let mut max_rows = self.num_rows.min(other.num_rows);
 
-        if self.num_bytes < u64::MAX {
-            let limit_according_to_byte_size =
-                IdxSize::try_from(self.num_bytes.div_ceil(other.row_byte_size().max(1)))
-                    .unwrap_or(IdxSize::MAX);
+        let limit_according_to_byte_size =
+            IdxSize::try_from(self.num_bytes.div_ceil(other.row_byte_size().max(1)))
+                .unwrap_or(IdxSize::MAX)
+                .max(16_384);
 
-            if limit_according_to_byte_size >= 16_384 {
-                max_rows = max_rows.min(limit_according_to_byte_size)
-            }
+        if self.num_bytes < u64::MAX {
+            max_rows = max_rows.min(limit_according_to_byte_size)
         }
 
         max_rows

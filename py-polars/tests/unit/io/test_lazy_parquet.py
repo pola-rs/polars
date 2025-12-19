@@ -1206,3 +1206,24 @@ def test_scan_parquet_filter_index_panic_23849(monkeypatch: pytest.MonkeyPatch) 
         pl.scan_parquet(f, parallel=parallel).filter(  # type: ignore[arg-type]
             pl.col("col_0").ge(0) & pl.col("col_0").lt(num_rows + 1)
         ).collect()
+
+
+@pytest.mark.write_disk
+def test_sink_large_rows_25834(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("POLARS_IDEAL_SINK_MORSEL_SIZE_BYTES", "1")
+    df = pl.select(idx=pl.repeat(1, 20_000), bytes=pl.lit(b"AAAAA"))
+
+    df.write_parquet(tmp_path / "single.parquet")
+    assert_frame_equal(pl.scan_parquet(tmp_path / "single.parquet").collect(), df)
+
+    md = pq.read_metadata(tmp_path / "single.parquet")
+    assert [md.row_group(i).num_rows for i in range(md.num_row_groups)] == [
+        16_384,
+        3616,
+    ]
+
+    df.write_parquet(
+        tmp_path / "partitioned",
+        partition_by="idx",
+    )
+    assert_frame_equal(pl.scan_parquet(tmp_path / "partitioned").collect(), df)
