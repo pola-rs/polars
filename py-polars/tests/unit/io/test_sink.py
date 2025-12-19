@@ -169,3 +169,18 @@ def test_sink_boolean_panic_25806(sink: Any, scan: Any) -> None:
     sink(df.lazy(), f)
 
     assert_frame_equal(scan(f).collect(), df)
+
+
+@pytest.mark.write_disk
+def test_sink_large_rows_25834(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("POLARS_IDEAL_SINK_MORSEL_SIZE_BYTES", "1")
+    df = pl.select(idx=1, bytes=pl.lit(b"A").repeat_by(100))
+
+    df.write_parquet(tmp_path / "single.parquet")
+    assert_frame_equal(pl.scan_parquet(tmp_path / "single.parquet").collect(), df)
+
+    df.write_parquet(
+        tmp_path / "partitioned",
+        partition_by="idx",
+    )
+    assert_frame_equal(pl.scan_parquet(tmp_path / "partitioned").collect(), df)
