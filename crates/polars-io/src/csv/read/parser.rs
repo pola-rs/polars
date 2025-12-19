@@ -1,3 +1,5 @@
+use std::cmp;
+
 use memchr::memchr2_iter;
 use polars_core::prelude::*;
 use polars_core::{POOL, config};
@@ -354,7 +356,7 @@ pub(super) fn skip_line_ending(input: &[u8], eol_char: u8) -> &[u8] {
 ///
 /// This will fail when strings fields are have embedded end line characters.
 /// For instance: "This is a valid field\nI have multiples lines" is a valid string field, that contains multiple lines.
-pub(super) struct SplitLines<'a> {
+pub struct SplitLines<'a> {
     v: &'a [u8],
     quote_char: u8,
     eol_char: u8,
@@ -381,7 +383,7 @@ use polars_utils::clmul::prefix_xorsum_inclusive;
 type SimdVec = u8x64;
 
 impl<'a> SplitLines<'a> {
-    pub(super) fn new(
+    pub fn new(
         slice: &'a [u8],
         quote_char: Option<u8>,
         eol_char: u8,
@@ -620,9 +622,9 @@ pub struct CountLines {
 
 #[derive(Copy, Clone, Debug, Default)]
 pub struct LineStats {
-    newline_count: usize,
-    last_newline_offset: usize,
-    end_inside_string: bool,
+    pub newline_count: usize,
+    pub last_newline_offset: usize,
+    pub end_inside_string: bool,
 }
 
 impl CountLines {
@@ -809,6 +811,30 @@ impl CountLines {
 
             *chunk_size = chunk_size.saturating_mul(2);
         }
+    }
+
+    pub fn count_rows(&self, bytes: &[u8], is_eof: bool) -> (usize, usize) {
+        let stats = if self.comment_prefix.is_some() {
+            self.analyze_chunk_with_comment(bytes, false)
+        } else {
+            self.analyze_chunk(bytes)[0]
+        };
+
+        let mut count = stats.newline_count;
+        let mut offset = stats.last_newline_offset;
+
+        if count > 0 {
+            offset = cmp::min(offset + 1, bytes.len());
+        } else {
+            debug_assert!(offset == 0);
+        }
+
+        if is_eof {
+            count += (bytes.last().copied() != Some(self.eol_char)) as usize;
+            offset = bytes.len();
+        }
+
+        (count, offset)
     }
 
     /// Returns count and offset to split for remainder in slice.

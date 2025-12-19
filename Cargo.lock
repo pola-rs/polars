@@ -3343,6 +3343,7 @@ dependencies = [
  "reqwest",
  "ryu",
  "schemars",
+ "self_cell",
  "serde",
  "serde_json",
  "simd-json",
@@ -3687,6 +3688,7 @@ dependencies = [
  "crossbeam-queue",
  "crossbeam-utils",
  "futures",
+ "memchr",
  "memmap2",
  "num-traits",
  "parking_lot",
@@ -4659,6 +4661,12 @@ dependencies = [
  "core-foundation-sys",
  "libc",
 ]
+
+[[package]]
+name = "self_cell"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "16c2f82143577edb4921b71ede051dac62ca3c16084e918bf7b40c96ae10eb33"
 
 [[package]]
 name = "semver"
