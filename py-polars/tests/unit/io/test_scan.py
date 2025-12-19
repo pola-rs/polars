@@ -1221,7 +1221,7 @@ def test_scan_with_schema_skips_schema_inference(
 
 
 def test_scan_csv_streaming_decompression(io_files_path: Path) -> None:
-    # TODO also without schema
+    # TODO: also without schema
     schema = {"x": pl.Int64, "y": pl.Int64, "z": pl.Int64}
 
     retry_count = 3

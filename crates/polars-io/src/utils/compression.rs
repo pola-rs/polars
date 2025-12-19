@@ -1,5 +1,6 @@
 use std::cmp;
 use std::io::Read;
+use std::marker::PhantomData;
 
 use polars_core::prelude::*;
 use polars_error::{feature_gated, to_compute_err};
@@ -67,9 +68,17 @@ pub fn maybe_decompress_bytes<'a>(bytes: &'a [u8], out: &'a mut Vec<u8>) -> Pola
 }
 
 enum CompressedReaderDecoder<'a> {
-    Uncompressed { slice: MemSlice, offset: usize },
+    Uncompressed {
+        slice: MemSlice,
+        offset: usize,
+        // Used to suppress unused lifetime error.
+        marker: PhantomData<&'a ()>,
+    },
+    #[cfg(feature = "decompress")]
     Gzip(flate2::bufread::MultiGzDecoder<&'a [u8]>),
+    #[cfg(feature = "decompress")]
     Zlib(flate2::bufread::ZlibDecoder<&'a [u8]>),
+    #[cfg(feature = "decompress")]
     Zstd(zstd::Decoder<'a, &'a [u8]>),
 }
 
@@ -81,16 +90,22 @@ impl<'a> CompressedReaderDecoder<'a> {
             None => CompressedReaderDecoder::Uncompressed {
                 slice: slice.clone(),
                 offset: 0,
+                marker: PhantomData,
             },
+            #[cfg(feature = "decompress")]
             Some(SupportedCompression::GZIP) => {
                 CompressedReaderDecoder::Gzip(flate2::bufread::MultiGzDecoder::new(bytes))
             },
+            #[cfg(feature = "decompress")]
             Some(SupportedCompression::ZLIB) => {
                 CompressedReaderDecoder::Zlib(flate2::bufread::ZlibDecoder::new(bytes))
             },
+            #[cfg(feature = "decompress")]
             Some(SupportedCompression::ZSTD) => {
                 CompressedReaderDecoder::Zstd(zstd::Decoder::with_buffer(bytes)?)
             },
+            #[cfg(not(feature = "decompress"))]
+            _ => panic!("activate 'decompress' feature"),
         })
     }
 }
@@ -159,24 +174,28 @@ impl CompressedReader {
             buf.extend_from_slice(prev_leftover);
         }
 
-        let new_slice_from_read = |read_n: usize, mut buf: Vec<u8>| {
-            buf.truncate(prev_len + read_n);
-            Ok((MemSlice::from_vec(buf), read_n))
-        };
+        let new_slice_from_read =
+            |read_n: usize, mut buf: Vec<u8>| -> std::io::Result<(MemSlice, usize)> {
+                buf.truncate(prev_len + read_n);
+                Ok((MemSlice::from_vec(buf), read_n))
+            };
 
         self.decoder.with_dependent_mut(|_, decoder| match decoder {
-            CompressedReaderDecoder::Uncompressed { slice, offset } => {
+            CompressedReaderDecoder::Uncompressed { slice, offset, .. } => {
                 let read_n = cmp::min(read_size, slice.len() - *offset);
                 let new_slice = slice.slice((*offset - prev_len)..(*offset + read_n));
                 *offset += read_n;
                 Ok((new_slice, read_n))
             },
+            #[cfg(feature = "decompress")]
             CompressedReaderDecoder::Gzip(decoder) => {
                 new_slice_from_read(decoder.take(read_size as u64).read_to_end(&mut buf)?, buf)
             },
+            #[cfg(feature = "decompress")]
             CompressedReaderDecoder::Zlib(decoder) => {
                 new_slice_from_read(decoder.take(read_size as u64).read_to_end(&mut buf)?, buf)
             },
+            #[cfg(feature = "decompress")]
             CompressedReaderDecoder::Zstd(decoder) => {
                 new_slice_from_read(decoder.take(read_size as u64).read_to_end(&mut buf)?, buf)
             },
