@@ -750,8 +750,10 @@ impl<D: Decoder> PageDecoder<D> {
 
             let page_num_values = page.num_values();
 
-            let state_filter;
+            let mut state_filter;
             (state_filter, filter) = Filter::opt_split_at(&filter, page_num_values);
+
+            state_filter = state_filter.or(Some(Filter::Range(0..page_num_values)));
 
             // Skip the whole page if we don't need any rows from it
             if state_filter
