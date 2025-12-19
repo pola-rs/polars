@@ -630,11 +630,14 @@ impl<D: Decoder> PageDecoder<D> {
                     &mut page_ptm,
                     dict_mask.as_ref(),
                 )? {
-                    let num_filtered_values = page_ptm.set_bits();
                     if page_ptm.set_bits() == 0 {
                         pred_true_mask.extend_constant(page.num_values(), false);
                         return Ok(());
                     }
+
+                    let page_ptm = page_ptm.freeze().sliced(0, page.num_values());
+                    pred_true_mask.extend_from_bitmap(&page_ptm);
+                    let num_filtered_values = page_ptm.set_bits();
 
                     // If we would need to move data, just create a new chunk.
                     if p.include_values && num_filtered_values > target.remaining_capacity() {
@@ -656,9 +659,6 @@ impl<D: Decoder> PageDecoder<D> {
                             self.decoder.apply_dictionary(&mut target, dict)?;
                         }
                     }
-
-                    let page_ptm = page_ptm.freeze().sliced(0, page.num_values());
-                    pred_true_mask.extend_from_bitmap(&page_ptm);
 
                     if p.include_values {
                         if let Some(SpecializedParquetColumnExpr::Equal(needle)) = specialized_pred
