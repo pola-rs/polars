@@ -219,6 +219,8 @@ pub fn initialize_scan_predicate<'a>(
             break;
         };
 
+        let expected_mask_len: usize;
+
         let (skip_files_mask, send_predicate_to_readers) = if let Some(hive_parts) = hive_parts
             && let Some(hive_predicate) = &predicate.hive_predicate
         {
@@ -227,6 +229,8 @@ pub fn initialize_scan_predicate<'a>(
                     "initialize_scan_predicate: Source filter mask initialization via hive partitions"
                 );
             }
+
+            expected_mask_len = hive_parts.df().height();
 
             let inclusion_mask = hive_predicate
                 .evaluate_io(hive_parts.df())?
@@ -252,12 +256,16 @@ pub fn initialize_scan_predicate<'a>(
                 );
             }
 
+            expected_mask_len = table_statsitics.0.height();
+
             let exclusion_mask = skip_batch_predicate.evaluate_with_stat_df(&table_statsitics.0)?;
 
             (SkipFilesMask::Exclusion(exclusion_mask), true)
         } else {
             break;
         };
+
+        assert_eq!(skip_files_mask.len(), expected_mask_len);
 
         if verbose {
             eprintln!(
