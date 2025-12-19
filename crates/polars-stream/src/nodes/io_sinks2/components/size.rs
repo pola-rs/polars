@@ -35,7 +35,7 @@ impl RowCountAndSize {
         let limit_according_to_byte_size =
             IdxSize::try_from(self.num_bytes.div_ceil(other.row_byte_size().max(1)))
                 .unwrap_or(IdxSize::MAX)
-                .max(16_384);
+                .max(16384);
 
         if self.num_bytes < u64::MAX {
             max_rows = max_rows.min(limit_according_to_byte_size)

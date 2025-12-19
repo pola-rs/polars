@@ -1218,7 +1218,7 @@ def test_sink_large_rows_25834(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
 
     md = pq.read_metadata(tmp_path / "single.parquet")
     assert [md.row_group(i).num_rows for i in range(md.num_row_groups)] == [
-        16_384,
+        16384,
         3616,
     ]
 
