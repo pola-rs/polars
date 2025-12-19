@@ -1,7 +1,5 @@
 mod serializer;
 
-use std::io::Write;
-
 use arrow::array::NullArray;
 use arrow::legacy::time_zone::Tz;
 use polars_core::POOL;
@@ -225,8 +223,8 @@ impl CsvSerializer {
     }
 }
 
-pub(crate) fn write<W: Write>(
-    writer: &mut W,
+pub(crate) fn write(
+    mut writer: impl std::io::Write,
     df: &DataFrame,
     chunk_size: usize,
     options: Arc<SerializeOptions>,
