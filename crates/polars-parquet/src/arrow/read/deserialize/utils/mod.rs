@@ -632,7 +632,7 @@ impl<D: Decoder> PageDecoder<D> {
                 )? {
                     let num_filtered_values = page_ptm.set_bits();
                     if page_ptm.set_bits() == 0 {
-                        pred_true_mask.extend_constant(page_ptm.len(), false);
+                        pred_true_mask.extend_constant(page.num_values(), false);
                         return Ok(());
                     }
 
@@ -657,7 +657,7 @@ impl<D: Decoder> PageDecoder<D> {
                         }
                     }
 
-                    let page_ptm = page_ptm.freeze();
+                    let page_ptm = page_ptm.freeze().sliced(0, page.num_values());
                     pred_true_mask.extend_from_bitmap(&page_ptm);
 
                     if p.include_values {
