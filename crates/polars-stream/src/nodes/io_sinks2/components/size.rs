@@ -37,7 +37,7 @@ impl RowCountAndSize {
                 IdxSize::try_from(self.num_bytes.div_ceil(other.row_byte_size().max(1)))
                     .unwrap_or(IdxSize::MAX);
 
-            if limit_according_to_byte_size > 1024 {
+            if limit_according_to_byte_size >= 16_384 {
                 max_rows = max_rows.min(limit_according_to_byte_size)
             }
         }
