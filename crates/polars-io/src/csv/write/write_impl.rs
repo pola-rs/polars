@@ -12,178 +12,253 @@ use serializer::{serializer_for, string_serializer};
 
 use crate::csv::write::SerializeOptions;
 
+type ColumnSerializer<'a> =
+    dyn crate::csv::write::write_impl::serializer::Serializer<'a> + Send + 'a;
+
+/// Writes CSV from DataFrames.
+pub struct CsvSerializer {
+    /// Lifetime is not actually static but rather bound to this `CsvSerializer`.
+    /// Note, this field is also ordered first to ensure its dropped first.
+    serializers: Option<Vec<Box<ColumnSerializer<'static>>>>,
+    options: Arc<SerializeOptions>,
+    datetime_formats: Arc<[PlSmallStr]>,
+    time_zones: Arc<[Option<Tz>]>,
+    empty_columns: Arc<[Column]>,
+}
+
+impl Clone for CsvSerializer {
+    fn clone(&self) -> Self {
+        Self {
+            serializers: None,
+            options: Arc::clone(&self.options),
+            datetime_formats: Arc::clone(&self.datetime_formats),
+            time_zones: Arc::clone(&self.time_zones),
+            empty_columns: Arc::clone(&self.empty_columns),
+        }
+    }
+}
+
+impl CsvSerializer {
+    pub fn new(schema: SchemaRef, options: Arc<SerializeOptions>) -> PolarsResult<Self> {
+        for dtype in schema.iter_values() {
+            let nested = match dtype {
+                DataType::List(_) => true,
+                #[cfg(feature = "dtype-struct")]
+                DataType::Struct(_) => true,
+                #[cfg(feature = "object")]
+                DataType::Object(_) => {
+                    return Err(PolarsError::ComputeError(
+                        "csv writer does not support object dtype".into(),
+                    ));
+                },
+                _ => false,
+            };
+            polars_ensure!(
+                !nested,
+                ComputeError: "CSV format does not support nested data",
+            );
+        }
+
+        // Check that the double quote is valid UTF-8.
+        polars_ensure!(
+            std::str::from_utf8(&[options.quote_char, options.quote_char]).is_ok(),
+            ComputeError: "quote char results in invalid utf-8",
+        );
+
+        let (datetime_formats, time_zones): (Vec<PlSmallStr>, Vec<Option<Tz>>) = schema
+            .iter_values()
+            .map(|dtype| {
+                let (datetime_format_str, time_zone) = match dtype {
+                    DataType::Datetime(TimeUnit::Milliseconds, tz) => {
+                        let (format, tz_parsed) = match tz {
+                            #[cfg(feature = "timezones")]
+                            Some(tz) => (
+                                options
+                                    .datetime_format
+                                    .as_deref()
+                                    .unwrap_or("%FT%H:%M:%S.%3f%z"),
+                                tz.parse::<Tz>().ok(),
+                            ),
+                            _ => (
+                                options
+                                    .datetime_format
+                                    .as_deref()
+                                    .unwrap_or("%FT%H:%M:%S.%3f"),
+                                None,
+                            ),
+                        };
+                        (format, tz_parsed)
+                    },
+                    DataType::Datetime(TimeUnit::Microseconds, tz) => {
+                        let (format, tz_parsed) = match tz {
+                            #[cfg(feature = "timezones")]
+                            Some(tz) => (
+                                options
+                                    .datetime_format
+                                    .as_deref()
+                                    .unwrap_or("%FT%H:%M:%S.%6f%z"),
+                                tz.parse::<Tz>().ok(),
+                            ),
+                            _ => (
+                                options
+                                    .datetime_format
+                                    .as_deref()
+                                    .unwrap_or("%FT%H:%M:%S.%6f"),
+                                None,
+                            ),
+                        };
+                        (format, tz_parsed)
+                    },
+                    DataType::Datetime(TimeUnit::Nanoseconds, tz) => {
+                        let (format, tz_parsed) = match tz {
+                            #[cfg(feature = "timezones")]
+                            Some(tz) => (
+                                options
+                                    .datetime_format
+                                    .as_deref()
+                                    .unwrap_or("%FT%H:%M:%S.%9f%z"),
+                                tz.parse::<Tz>().ok(),
+                            ),
+                            _ => (
+                                options
+                                    .datetime_format
+                                    .as_deref()
+                                    .unwrap_or("%FT%H:%M:%S.%9f"),
+                                None,
+                            ),
+                        };
+                        (format, tz_parsed)
+                    },
+                    _ => ("", None),
+                };
+
+                (datetime_format_str.into(), time_zone)
+            })
+            .collect();
+
+        let empty_columns: Arc<[Column]> = Arc::from_iter(
+            schema
+                .iter()
+                .map(|(name, dtype)| Column::full_null(name.clone(), 0, dtype)),
+        );
+
+        Ok(Self {
+            serializers: None,
+            options,
+            datetime_formats: Arc::from_iter(datetime_formats),
+            time_zones: Arc::from_iter(time_zones),
+            empty_columns,
+        })
+    }
+
+    /// # Panics
+    /// Panics if a column has >1 chunk.
+    pub fn serialize_to_csv(&mut self, df: &DataFrame, buffer: &mut Vec<u8>) -> PolarsResult<()> {
+        if df.height() == 0 || df.width() == 0 {
+            return Ok(());
+        }
+
+        let options = Arc::clone(&self.options);
+        let options = options.as_ref();
+
+        let serializers = self.get_serializers(df.get_columns())?;
+
+        for _ in 0..df.height() {
+            serializers[0].serialize(buffer, options);
+            for serializer in &mut serializers[1..] {
+                buffer.push(options.separator);
+                serializer.serialize(buffer, options);
+            }
+
+            buffer.extend_from_slice(options.line_terminator.as_bytes());
+        }
+
+        Ok(())
+    }
+
+    /// # Panics
+    /// Panics if a column has >1 chunk.
+    fn get_serializers<'s, 'c>(
+        &'s mut self,
+        columns: &'c [Column],
+    ) -> PolarsResult<&'s mut [Box<ColumnSerializer<'c>>]>
+    where
+        // Column dtype lifetime must be at least that of the serializer. Otherwise there can be
+        // use-after-free for categorical/enum as those values are stored in a rev-map that is kept
+        // alive by the dtype object (ref https://github.com/pola-rs/polars/issues/23939).
+        'c: 's,
+    {
+        if self.serializers.is_none() {
+            let serializers: Vec<Box<ColumnSerializer<'s>>> = Arc::as_ref(&self.empty_columns)
+                .iter()
+                .enumerate()
+                .map(|(i, c)| {
+                    serializer_for(
+                        c.as_materialized_series().chunks()[0].as_ref(),
+                        Arc::as_ref(&self.options),
+                        c.dtype(),
+                        self.datetime_formats[i].as_str(),
+                        self.time_zones[i],
+                    )
+                })
+                .collect::<PolarsResult<_>>()?;
+
+            let serializers: Vec<Box<ColumnSerializer<'static>>> =
+                unsafe { std::mem::transmute(serializers) };
+
+            self.serializers = Some(serializers)
+        }
+
+        let serializers: &'s mut [Box<ColumnSerializer<'static>>] =
+            self.serializers.as_deref_mut().unwrap();
+        let serializers: &'s mut [Box<ColumnSerializer<'c>>] =
+            unsafe { std::mem::transmute(serializers) };
+
+        assert_eq!(serializers.len(), columns.len());
+
+        for (s, c) in serializers.iter_mut().zip(columns) {
+            assert_eq!(c.n_chunks(), 1);
+            s.update_array(c.as_materialized_series().chunks()[0].as_ref());
+        }
+
+        Ok(serializers)
+    }
+}
+
 pub(crate) fn write<W: Write>(
     writer: &mut W,
     df: &DataFrame,
     chunk_size: usize,
-    options: &SerializeOptions,
+    options: Arc<SerializeOptions>,
     n_threads: usize,
 ) -> PolarsResult<()> {
-    for s in df.get_columns() {
-        let nested = match s.dtype() {
-            DataType::List(_) => true,
-            #[cfg(feature = "dtype-struct")]
-            DataType::Struct(_) => true,
-            #[cfg(feature = "object")]
-            DataType::Object(_) => {
-                return Err(PolarsError::ComputeError(
-                    "csv writer does not support object dtype".into(),
-                ));
-            },
-            _ => false,
-        };
-        polars_ensure!(
-            !nested,
-            ComputeError: "CSV format does not support nested data",
-        );
-    }
-
-    // Check that the double quote is valid UTF-8.
-    polars_ensure!(
-        std::str::from_utf8(&[options.quote_char, options.quote_char]).is_ok(),
-        ComputeError: "quote char results in invalid utf-8",
-    );
-
-    let (datetime_formats, time_zones): (Vec<&str>, Vec<Option<Tz>>) = df
-        .get_columns()
-        .iter()
-        .map(|column| match column.dtype() {
-            DataType::Datetime(TimeUnit::Milliseconds, tz) => {
-                let (format, tz_parsed) = match tz {
-                    #[cfg(feature = "timezones")]
-                    Some(tz) => (
-                        options
-                            .datetime_format
-                            .as_deref()
-                            .unwrap_or("%FT%H:%M:%S.%3f%z"),
-                        tz.parse::<Tz>().ok(),
-                    ),
-                    _ => (
-                        options
-                            .datetime_format
-                            .as_deref()
-                            .unwrap_or("%FT%H:%M:%S.%3f"),
-                        None,
-                    ),
-                };
-                (format, tz_parsed)
-            },
-            DataType::Datetime(TimeUnit::Microseconds, tz) => {
-                let (format, tz_parsed) = match tz {
-                    #[cfg(feature = "timezones")]
-                    Some(tz) => (
-                        options
-                            .datetime_format
-                            .as_deref()
-                            .unwrap_or("%FT%H:%M:%S.%6f%z"),
-                        tz.parse::<Tz>().ok(),
-                    ),
-                    _ => (
-                        options
-                            .datetime_format
-                            .as_deref()
-                            .unwrap_or("%FT%H:%M:%S.%6f"),
-                        None,
-                    ),
-                };
-                (format, tz_parsed)
-            },
-            DataType::Datetime(TimeUnit::Nanoseconds, tz) => {
-                let (format, tz_parsed) = match tz {
-                    #[cfg(feature = "timezones")]
-                    Some(tz) => (
-                        options
-                            .datetime_format
-                            .as_deref()
-                            .unwrap_or("%FT%H:%M:%S.%9f%z"),
-                        tz.parse::<Tz>().ok(),
-                    ),
-                    _ => (
-                        options
-                            .datetime_format
-                            .as_deref()
-                            .unwrap_or("%FT%H:%M:%S.%9f"),
-                        None,
-                    ),
-                };
-                (format, tz_parsed)
-            },
-            _ => ("", None),
-        })
-        .unzip();
-
     let len = df.height();
     let total_rows_per_pool_iter = n_threads * chunk_size;
 
     let mut n_rows_finished = 0;
 
-    // To comply with the safety requirements for the buf_writer closure, we need to make sure
-    // the column dtype references have a lifetime that exceeds the scope of the serializer, i.e.
-    // the full dataframe. If not, we can run into use-after-free memory issues for types that
-    // allocate, such as Enum or Categorical dtype (see GH issue #23939).
-    let col_dtypes: Vec<_> = df.get_columns().iter().map(|c| c.dtype()).collect();
+    let csv_serializer = CsvSerializer::new(Arc::clone(df.schema()), options)?;
 
-    let mut buffers: Vec<_> = (0..n_threads).map(|_| (Vec::new(), Vec::new())).collect();
+    let mut buffers: Vec<(Vec<u8>, CsvSerializer)> = (0..n_threads)
+        .map(|_| (Vec::new(), csv_serializer.clone()))
+        .collect();
     while n_rows_finished < len {
-        let buf_writer = |thread_no, write_buffer: &mut Vec<_>, serializers_vec: &mut Vec<_>| {
-            let thread_offset = thread_no * chunk_size;
-            let total_offset = n_rows_finished + thread_offset;
-            let mut df = df.slice(total_offset as i64, chunk_size);
-            // the `series.iter` needs rechunked series.
-            // we don't do this on the whole as this probably needs much less rechunking
-            // so will be faster.
-            // and allows writing `pl.concat([df] * 100, rechunk=False).write_csv()` as the rechunk
-            // would go OOM
-            df.as_single_chunk();
-            let cols = df.get_columns();
+        let buf_writer =
+            |thread_no, write_buffer: &mut Vec<_>, csv_serializer: &mut CsvSerializer| {
+                let thread_offset = thread_no * chunk_size;
+                let total_offset = n_rows_finished + thread_offset;
+                let mut df = df.slice(total_offset as i64, chunk_size);
+                // the `series.iter` needs rechunked series.
+                // we don't do this on the whole as this probably needs much less rechunking
+                // so will be faster.
+                // and allows writing `pl.concat([df] * 100, rechunk=False).write_csv()` as the rechunk
+                // would go OOM
+                df.as_single_chunk();
 
-            // SAFETY:
-            // the bck thinks the lifetime is bounded to write_buffer_pool, but at the time we return
-            // the vectors the buffer pool, the series have already been removed from the buffers
-            // in other words, the lifetime does not leave this scope
-            let cols = unsafe { std::mem::transmute::<&[Column], &[Column]>(cols) };
+                csv_serializer.serialize_to_csv(&df, write_buffer)?;
 
-            if df.is_empty() {
-                return Ok(());
-            }
-
-            if serializers_vec.is_empty() {
-                debug_assert_eq!(cols.len(), col_dtypes.len());
-                *serializers_vec = std::iter::zip(cols, &col_dtypes)
-                    .enumerate()
-                    .map(|(i, (col, &col_dtype))| {
-                        serializer_for(
-                            &*col.as_materialized_series().chunks()[0],
-                            options,
-                            col_dtype,
-                            datetime_formats[i],
-                            time_zones[i],
-                        )
-                    })
-                    .collect::<Result<_, _>>()?;
-            } else {
-                debug_assert_eq!(serializers_vec.len(), cols.len());
-                for (col_iter, col) in std::iter::zip(serializers_vec.iter_mut(), cols) {
-                    col_iter.update_array(&*col.as_materialized_series().chunks()[0]);
-                }
-            }
-
-            let serializers = serializers_vec.as_mut_slice();
-
-            let len = std::cmp::min(cols[0].len(), chunk_size);
-
-            for _ in 0..len {
-                serializers[0].serialize(write_buffer, options);
-                for serializer in &mut serializers[1..] {
-                    write_buffer.push(options.separator);
-                    serializer.serialize(write_buffer, options);
-                }
-
-                write_buffer.extend_from_slice(options.line_terminator.as_bytes());
-            }
-
-            Ok(())
-        };
+                Ok(())
+            };
 
         if n_threads > 1 {
             POOL.install(|| {
@@ -209,7 +284,7 @@ pub(crate) fn write<W: Write>(
 }
 
 /// Writes a CSV header to `writer`.
-pub(crate) fn write_header<W: Write>(
+pub fn write_csv_header<W: Write>(
     writer: &mut W,
     names: &[&str],
     options: &SerializeOptions,
@@ -236,7 +311,7 @@ pub(crate) fn write_header<W: Write>(
 }
 
 /// Writes a UTF-8 BOM to `writer`.
-pub(crate) fn write_bom<W: Write>(writer: &mut W) -> PolarsResult<()> {
+pub fn write_bom<W: Write>(writer: &mut W) -> PolarsResult<()> {
     const BOM: [u8; 3] = [0xEF, 0xBB, 0xBF];
     writer.write_all(&BOM)?;
     Ok(())
