@@ -287,6 +287,7 @@ pub fn execute_graph(
     graph: &mut Graph,
     metrics: Option<Arc<Mutex<GraphMetrics>>>,
 ) -> PolarsResult<SparseSecondaryMap<GraphNodeKey, DataFrame>> {
+    dbg!("start execute_graph"); //kdn
     // Get the number of threads from the rayon thread-pool as that respects our config.
     let num_pipelines = POOL.current_num_threads();
     async_executor::set_num_threads(num_pipelines);

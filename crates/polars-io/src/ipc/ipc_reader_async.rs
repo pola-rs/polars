@@ -93,6 +93,7 @@ impl IpcReaderAsync {
     }
 
     pub async fn metadata(&self) -> PolarsResult<FileMetadata> {
+        dbg!("start metadata for impl IpcReaderAsync"); //kdn
         let file_size = self.file_size().await?;
 
         // TODO: Do a larger request and hope that the entire footer is contained within it to save one round-trip.
@@ -137,6 +138,7 @@ impl IpcReaderAsync {
         options: IpcReadOptions,
         verbose: bool,
     ) -> PolarsResult<DataFrame> {
+        dbg!("start data for impl IpcReaderAsync"); //kdn
         // TODO: Only download what is needed rather than the entire file by
         // making use of the projection, row limit, predicate and such.
         let file = tokio::task::block_in_place(|| self.cache_entry.try_open_check_latest())?;

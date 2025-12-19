@@ -17,6 +17,7 @@ pub(super) fn dsl_to_ir(
     cached_ir: Arc<Mutex<Option<IR>>>,
     ctxt: &mut DslConversionContext,
 ) -> PolarsResult<IR> {
+    dbg!("start dsl_to_ir"); //kdn
     // Note that the first metadata can still end up being `None` later if the files were
     // filtered from predicate pushdown.
     let mut cached_ir = cached_ir.lock().unwrap();
@@ -286,6 +287,7 @@ pub(super) fn ipc_file_info(
     row_index: Option<&RowIndex>,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<(FileInfo, arrow::io::ipc::read::FileMetadata)> {
+    dbg!("start ipc_file_info"); //kdn
     use polars_core::error::feature_gated;
     use polars_utils::plpath::PlPathRef;
 
@@ -322,6 +324,7 @@ pub(super) fn ipc_file_info(
         (None, usize::MAX),
     );
 
+    dbg!("done ipc_file_info"); //kdn
     Ok((file_info, metadata))
 }
 
