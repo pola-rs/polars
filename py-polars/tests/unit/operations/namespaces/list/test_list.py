@@ -1328,7 +1328,7 @@ def test_list_get_decimal_25830() -> None:
         }
     )
 
-    out = df.select(pl.col("data").list.get(pl.Series([0, 1])))
+    out = df.select(pl.col("data").list.get(pl.lit(pl.Series([0, 1]))))
     expected = pl.DataFrame(
         {
             "data": [
