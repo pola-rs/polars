@@ -64,6 +64,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     arrow_schema: &ArrowSchema,
     row_index: Option<RowIndex>,
 ) -> PolarsResult<DataFrame> {
+    dbg!("start finish_reader"); //kdn
     use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 
     let mut num_rows = 0;

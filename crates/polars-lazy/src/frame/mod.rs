@@ -667,6 +667,7 @@ impl LazyFrame {
 
         match engine {
             Engine::Auto | Engine::Streaming => feature_gated!("new_streaming", {
+                dbg!("has logical plan - streaming, start run_query"); //kdn
                 let result = polars_stream::run_query(
                     alp_plan.lp_top,
                     &mut alp_plan.lp_arena,
@@ -678,12 +679,18 @@ impl LazyFrame {
                 Err(polars_err!(InvalidOperation: "sink is not supported for the gpu engine"))
             },
             Engine::InMemory => {
+                dbg!("has logical plan"); //kdn
+                // dbg!(&alp_plan.lp_top);
+                // dbg!(&alp_plan.lp_arena);
+                // dbg!(&alp_plan.expr_arena);
+
                 let mut physical_plan = create_physical_plan(
                     alp_plan.lp_top,
                     &mut alp_plan.lp_arena,
                     &mut alp_plan.expr_arena,
                     BUILD_STREAMING_EXECUTOR,
                 )?;
+                dbg!("has physical plan"); //kdn
                 let mut state = ExecutionState::new();
                 physical_plan.execute(&mut state)
             },

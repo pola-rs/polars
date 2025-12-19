@@ -227,6 +227,7 @@ where
 
 impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
     fn new(reader: R) -> Self {
+        dbg!("start new for IpcReader"); //kdn
         IpcReader {
             reader,
             rechunk: true,
@@ -248,6 +249,7 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
     }
 
     fn finish(mut self) -> PolarsResult<DataFrame> {
+        dbg!("start finish for SerReader<MmapBytesReader> for IpcReader"); //kdn
         let reader_schema = if let Some(ref schema) = self.schema {
             schema.clone()
         } else {

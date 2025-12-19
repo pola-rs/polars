@@ -6,7 +6,7 @@ use super::common::*;
 use super::file::{get_message_from_block, get_record_batch};
 use super::{Dictionaries, FileMetadata, read_batch, read_file_dictionaries};
 use crate::array::Array;
-use crate::datatypes::ArrowSchema;
+use crate::datatypes::{ArrowSchema, Metadata};
 use crate::record_batch::RecordBatchT;
 
 /// An iterator of [`RecordBatchT`]s from an Arrow IPC file.
@@ -114,7 +114,7 @@ impl<R: Read + Seek> FileReader<R> {
         (self.data_scratch, self.message_scratch) = scratches;
     }
 
-    fn read_dictionaries(&mut self) -> PolarsResult<()> {
+    pub fn read_dictionaries(&mut self) -> PolarsResult<()> {
         if self.dictionaries.is_none() {
             self.dictionaries = Some(read_file_dictionaries(
                 &mut self.reader,
@@ -123,6 +123,10 @@ impl<R: Read + Seek> FileReader<R> {
             )?);
         };
         Ok(())
+    }
+
+    pub fn take_dictionaries(&mut self) -> Option<Dictionaries> {
+        std::mem::take(&mut self.dictionaries)
     }
 
     /// Skip over blocks until we have seen at most `offset` rows, returning how many rows we are
@@ -167,6 +171,7 @@ impl<R: Read + Seek> Iterator for FileReader<R> {
     type Item = PolarsResult<RecordBatchT<Box<dyn Array>>>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        dbg!("start next for impl Iterator for FileReader"); //kdn
         // get current block
         if self.current_block == self.metadata.blocks.len() {
             return None;
@@ -187,6 +192,7 @@ impl<R: Read + Seek> Iterator for FileReader<R> {
             self.projection.as_ref().map(|x| x.columns.as_ref()),
             Some(self.remaining),
             block,
+            false,
             &mut self.message_scratch,
             &mut self.data_scratch,
         );
@@ -199,5 +205,76 @@ impl<R: Read + Seek> Iterator for FileReader<R> {
             chunk
         };
         Some(chunk)
+    }
+}
+
+/// A reader that has access to exactly one IPC Block from an Arrow IPC file.
+/// The block can hold either a `RecordBatch` or a `DictionaryBatch`.
+/// The `dictionaries` field must be initialized prior to decoding a `RecordBatch`.
+///
+// kdn TODO: link terms in comments
+// kdn TODO: do we need Seek? (prob not)
+
+pub struct BlockReader<R: Read + Seek> {
+    //kdn TBD if we need Seek (and/or Send etc)
+    pub reader: R,
+    metadata: FileMetadata, //kdn TODO Arc?
+    dictionaries: Option<Dictionaries>,
+    projection: Option<ProjectionInfo>,
+    data_scratch: Vec<u8>,
+    message_scratch: Vec<u8>,
+}
+
+impl<R: Read + Seek> BlockReader<R> {
+    pub fn new(reader: R, metadata: FileMetadata, projection: Option<Vec<usize>>) -> Self {
+        let projection =
+            projection.map(|projection| prepare_projection(&metadata.schema, projection));
+        Self {
+            reader,
+            metadata,
+            dictionaries: Default::default(),
+            projection,
+            data_scratch: Default::default(),
+            message_scratch: Default::default(),
+        }
+    }
+
+    pub fn new_with_projection_info(
+        reader: R,
+        metadata: FileMetadata,
+        projection: Option<ProjectionInfo>,
+    ) -> Self {
+        Self {
+            reader,
+            metadata,
+            dictionaries: Default::default(),
+            projection,
+            data_scratch: Default::default(),
+            message_scratch: Default::default(),
+        }
+    }
+
+    pub fn new_with_dictionaries(
+        reader: R,
+        metadata: FileMetadata,
+        projection: Option<Vec<usize>>,
+        dictionaries: Option<Dictionaries>,
+    ) -> Self {
+        let projection =
+            projection.map(|projection| prepare_projection(&metadata.schema, projection));
+        Self {
+            reader,
+            metadata,
+            dictionaries,
+            projection,
+            data_scratch: Default::default(),
+            message_scratch: Default::default(),
+        }
+    }
+
+    /// Set the inner memory scratches so they can be reused.
+    /// This can be utilized to save memory allocations for performance reasons.
+    pub fn set_scratches(&mut self, scratches: (Vec<u8>, Vec<u8>)) {
+        (self.data_scratch, self.message_scratch) = scratches;
     }
 }

@@ -48,6 +48,27 @@ pub fn verbose_print_sensitive<F: Fn() -> String>(create_log_message: F) {
     do_log(&create_log_message)
 }
 
+// kdn TODO RM CHECK
+// pub fn get_file_prefetch_size() -> usize {
+//     std::env::var("POLARS_PREFETCH_SIZE")
+//         .map(|s| s.parse::<usize>().expect("integer"))
+//         .unwrap_or_else(|_| std::cmp::max(POOL.current_num_threads() * 2, 16))
+// }
+
+// pub fn get_rg_prefetch_size() -> usize {
+//     std::env::var("POLARS_ROW_GROUP_PREFETCH_SIZE")
+//         .map(|s| s.parse::<usize>().expect("integer"))
+//         // Set it to something big, but not unlimited.
+//         .unwrap_or_else(|_| std::cmp::max(get_file_prefetch_size(), 128))
+// }
+
+// pub fn get_record_batch_prefetch_size() -> usize {
+//     std::env::var("POLARS_RECORD_BATCH_PREFETCH_SIZE")
+//         .map(|s| s.parse::<usize>().expect("integer"))
+//         // Set it to something big, but not unlimited.
+//         .unwrap_or_else(|_| std::cmp::max(get_file_prefetch_size(), 128))
+// }
+
 pub fn force_async() -> bool {
     std::env::var("POLARS_FORCE_ASYNC")
         .map(|value| value == "1")

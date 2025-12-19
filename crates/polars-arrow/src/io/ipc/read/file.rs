@@ -33,7 +33,7 @@ pub struct FileMetadata {
     pub blocks: Vec<arrow_format::ipc::Block>,
 
     /// Dictionaries associated to each dict_id
-    pub(crate) dictionaries: Option<Vec<arrow_format::ipc::Block>>,
+    pub dictionaries: Option<Vec<arrow_format::ipc::Block>>,
 
     /// The total size of the file in bytes
     pub size: u64,
@@ -78,26 +78,34 @@ pub(crate) fn get_dictionary_batch<'a>(
     }
 }
 
-fn read_dictionary_block<R: Read + Seek>(
+pub fn read_dictionary_block<R: Read + Seek>(
     reader: &mut R,
     metadata: &FileMetadata,
     block: &arrow_format::ipc::Block,
+    // When true, the underlying reader bytestream is treated as a single IPC Block.
+    block_mode: bool,
     dictionaries: &mut Dictionaries,
     message_scratch: &mut Vec<u8>,
     dictionary_scratch: &mut Vec<u8>,
 ) -> PolarsResult<()> {
-    let message = get_message_from_block(reader, block, message_scratch)?;
-    let batch = get_dictionary_batch(&message)?;
-
-    let offset: u64 = block
-        .offset
-        .try_into()
-        .map_err(|_| polars_err!(oos = OutOfSpecKind::UnexpectedNegativeInteger))?;
+    //kdn TODO review and cleanup
+    let offset: u64 = if block_mode {
+        0
+    } else {
+        block
+            .offset
+            .try_into()
+            .map_err(|_| polars_err!(oos = OutOfSpecKind::UnexpectedNegativeInteger))?
+    };
 
     let length: u64 = block
         .meta_data_length
         .try_into()
         .map_err(|_| polars_err!(oos = OutOfSpecKind::UnexpectedNegativeInteger))?;
+
+    // let message = get_message_from_block(reader, block, message_scratch)?;
+    let message = get_message_from_block_offset(reader, offset, message_scratch)?;
+    let batch = get_dictionary_batch(&message)?;
 
     read_dictionary(
         batch,
@@ -132,6 +140,7 @@ pub fn read_file_dictionaries<R: Read + Seek>(
             reader,
             metadata,
             block,
+            false,
             &mut dictionaries,
             &mut message_scratch,
             scratch,
@@ -286,7 +295,6 @@ fn get_message_from_block_offset<'a, R: Read + Seek>(
     offset: u64,
     message_scratch: &'a mut Vec<u8>,
 ) -> PolarsResult<arrow_format::ipc::MessageRef<'a>> {
-    // read length
     reader.seek(SeekFrom::Start(offset))?;
     let mut meta_buf = [0; 4];
     reader.read_exact(&mut meta_buf)?;
@@ -294,6 +302,7 @@ fn get_message_from_block_offset<'a, R: Read + Seek>(
         // continuation marker encountered, read message next
         reader.read_exact(&mut meta_buf)?;
     }
+    
     let meta_len = i32::from_le_bytes(meta_buf)
         .try_into()
         .map_err(|_| polars_err!(oos = OutOfSpecKind::UnexpectedNegativeInteger))?;
@@ -337,15 +346,21 @@ pub fn read_batch<R: Read + Seek>(
     projection: Option<&[usize]>,
     limit: Option<usize>,
     index: usize,
+    // When true, the reader object is handled as an IPC Block.
+    block_mode: bool,
     message_scratch: &mut Vec<u8>,
     data_scratch: &mut Vec<u8>,
 ) -> PolarsResult<RecordBatchT<Box<dyn Array>>> {
     let block = metadata.blocks[index];
 
-    let offset: u64 = block
-        .offset
-        .try_into()
-        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
+    let offset: u64 = if block_mode {
+        0
+    } else {
+        block
+            .offset
+            .try_into()
+            .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?
+    };
 
     let length: u64 = block
         .meta_data_length
@@ -369,4 +384,37 @@ pub fn read_batch<R: Read + Seek>(
         offset + length,
         data_scratch,
     )
+}
+
+/// Reads the record batch header at position `index` from the reader and returns
+/// the record batch length (i.e., number of rows).
+pub fn record_batch_num_rows<R: Read + Seek>(
+    reader: &mut R,
+    metadata: &FileMetadata,
+    index: usize,
+    // When true, the reader object is handled as an IPC Block.
+    block_mode: bool,
+    message_scratch: &mut Vec<u8>,
+) -> PolarsResult<usize> {
+    let block = metadata.blocks[index];
+
+    let offset: u64 = if block_mode {
+        0
+    } else {
+        block
+            .offset
+            .try_into()
+            .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?
+    };
+
+    let length: u64 = block
+        .meta_data_length
+        .try_into()
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
+
+    let message = get_message_from_block_offset(reader, offset, message_scratch)?;
+    let batch = get_record_batch(message)?;
+
+    let out = batch.length().map(|l| l as usize)?; //kdn TODO safe conversion
+    Ok(out)
 }
