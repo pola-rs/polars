@@ -720,6 +720,7 @@ impl<D: Decoder> PageDecoder<D> {
     }
 
     pub fn collect_flat(mut self, mut filter: Option<Filter>) -> ParquetResult<Vec<D::Output>> {
+        filter = filter.or(Some(Filter::Range(0..self.iter.total_num_values())));
         let mut num_rows_remaining = Filter::opt_num_rows(&filter, self.iter.total_num_values());
 
         let mut target =
