@@ -131,6 +131,21 @@ impl ArgAgg for Series {
     }
 }
 
+pub fn arg_min_numeric<T>(ca: &ChunkedArray<T>) -> Option<usize>
+where
+    T: PolarsNumericType,
+    for<'b> &'b [T::Native]: ArgMinMax,
+{
+    if ca.null_count() == ca.len() {
+        None
+    } else if let Ok(vals) = ca.cont_slice() {
+        arg_min_numeric_slice(vals, ca.is_sorted_flag())
+    } else {
+        arg_min_numeric_chunked(ca)
+    }
+}
+
+
 pub fn arg_max_numeric<T>(ca: &ChunkedArray<T>) -> Option<usize>
 where
     T: PolarsNumericType,
@@ -144,20 +159,6 @@ where
         arg_max_numeric_slice(vals, ca.is_sorted_flag())
     } else {
         arg_max_numeric_chunked(ca)
-    }
-}
-
-pub fn arg_min_numeric<T>(ca: &ChunkedArray<T>) -> Option<usize>
-where
-    T: PolarsNumericType,
-    for<'b> &'b [T::Native]: ArgMinMax,
-{
-    if ca.null_count() == ca.len() {
-        None
-    } else if let Ok(vals) = ca.cont_slice() {
-        arg_min_numeric_slice(vals, ca.is_sorted_flag())
-    } else {
-        arg_min_numeric_chunked(ca)
     }
 }
 
@@ -189,12 +190,12 @@ pub fn arg_max_cat<T: PolarsCategoricalType>(ca: &CategoricalChunked<T>) -> Opti
     arg_max_opt_iter(ca.iter_str())
 }
 
-pub fn arg_max_bool(ca: &BooleanChunked) -> Option<usize> {
-    ca.first_true_idx().or_else(|| ca.first_false_idx())
-}
-
 pub fn arg_min_bool(ca: &BooleanChunked) -> Option<usize> {
     ca.first_false_idx().or_else(|| ca.first_true_idx())
+}
+
+pub fn arg_max_bool(ca: &BooleanChunked) -> Option<usize> {
+    ca.first_true_idx().or_else(|| ca.first_false_idx())
 }
 
 pub fn arg_min_str(ca: &StringChunked) -> Option<usize> {
