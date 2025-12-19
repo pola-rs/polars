@@ -437,16 +437,14 @@ pub(super) fn string_serializer<'a, Iter: Send + 'a>(
     const LF: u8 = b'\n';
     const CR: u8 = b'\r';
 
-    struct StringSerializer<F, Iter, Update> {
+    struct StringSerializer<F, Iter> {
         serialize: F,
-        update: Update,
         iter: Iter,
     }
 
-    impl<'a, F, Iter, Update> Serializer<'a> for StringSerializer<F, Iter, Update>
+    impl<'a, F, Iter> Serializer<'a> for StringSerializer<F, Iter>
     where
         F: FnMut(&mut Iter, &mut Vec<u8>, &SerializeOptions),
-        Update: FnMut(&'a dyn Array) -> Iter,
     {
         fn serialize(&mut self, buf: &mut Vec<u8>, options: &SerializeOptions) {
             (self.serialize)(&mut self.iter, buf, options);
@@ -499,11 +497,7 @@ pub(super) fn string_serializer<'a, Iter: Send + 'a>(
                     serialize_str_escaped(buf, s.as_bytes(), quote_char, true);
                     buf.push(quote_char);
                 };
-            Box::new(StringSerializer {
-                serialize,
-                update,
-                iter,
-            })
+            Box::new(StringSerializer { serialize, iter })
         },
         QuoteStyle::NonNumeric => {
             let serialize =
@@ -517,11 +511,7 @@ pub(super) fn string_serializer<'a, Iter: Send + 'a>(
                     serialize_str_escaped(buf, s.as_bytes(), quote_char, true);
                     buf.push(quote_char);
                 };
-            Box::new(StringSerializer {
-                serialize,
-                update,
-                iter,
-            })
+            Box::new(StringSerializer { serialize, iter })
         },
         QuoteStyle::Necessary => {
             let serialize =
@@ -545,11 +535,7 @@ pub(super) fn string_serializer<'a, Iter: Send + 'a>(
                         buf.push(quote_char);
                     }
                 };
-            Box::new(StringSerializer {
-                serialize,
-                update,
-                iter,
-            })
+            Box::new(StringSerializer { serialize, iter })
         },
         QuoteStyle::Never => {
             let serialize =
@@ -560,11 +546,7 @@ pub(super) fn string_serializer<'a, Iter: Send + 'a>(
                     };
                     buf.extend_from_slice(s.as_bytes());
                 };
-            Box::new(StringSerializer {
-                serialize,
-                update,
-                iter,
-            })
+            Box::new(StringSerializer { serialize, iter })
         },
     }
 }
