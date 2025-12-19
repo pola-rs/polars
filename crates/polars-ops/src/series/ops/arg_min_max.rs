@@ -1,5 +1,3 @@
-use std::cmp::Ordering;
-
 use arrow::array::Array;
 use polars_core::chunked_array::ops::float_sorted_arg_max::{
     float_arg_max_sorted_ascending, float_arg_max_sorted_descending,
@@ -7,7 +5,7 @@ use polars_core::chunked_array::ops::float_sorted_arg_max::{
 use polars_core::series::IsSorted;
 use polars_core::with_match_categorical_physical_type;
 use polars_utils::arg_min_max::ArgMinMax;
-use polars_utils::min_max::{MaxIgnoreNan, MinIgnoreNan, MinMax, MinMaxPolicy};
+use polars_utils::min_max::{MaxIgnoreNan, MinIgnoreNan, MinMaxPolicy};
 
 fn arg_min_opt_iter<T, I>(iter: I) -> Option<usize>
 where
@@ -145,7 +143,6 @@ where
     }
 }
 
-
 pub fn arg_max_numeric<T>(ca: &ChunkedArray<T>) -> Option<usize>
 where
     T: PolarsNumericType,
@@ -176,6 +173,7 @@ where
     Some(out)
 }
 
+#[cfg(feature = "dtype-categorical")]
 pub fn arg_min_cat<T: PolarsCategoricalType>(ca: &CategoricalChunked<T>) -> Option<usize> {
     if ca.null_count() == ca.len() {
         return None;
@@ -183,6 +181,7 @@ pub fn arg_min_cat<T: PolarsCategoricalType>(ca: &CategoricalChunked<T>) -> Opti
     arg_min_opt_iter(ca.iter_str())
 }
 
+#[cfg(feature = "dtype-categorical")]
 pub fn arg_max_cat<T: PolarsCategoricalType>(ca: &CategoricalChunked<T>) -> Option<usize> {
     if ca.null_count() == ca.len() {
         return None;
