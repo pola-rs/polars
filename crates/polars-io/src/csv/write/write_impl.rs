@@ -14,26 +14,11 @@ type ColumnSerializer<'a> =
     dyn crate::csv::write::write_impl::serializer::Serializer<'a> + Send + 'a;
 
 /// Writes CSV from DataFrames.
+#[derive(Clone)]
 pub struct CsvSerializer {
-    /// Lifetime is not actually static but rather bound to this `CsvSerializer`.
-    /// Note, this field is also ordered first to ensure its dropped first.
-    serializers: Option<Vec<Box<ColumnSerializer<'static>>>>,
     options: Arc<SerializeOptions>,
     datetime_formats: Arc<[PlSmallStr]>,
     time_zones: Arc<[Option<Tz>]>,
-    empty_columns: Arc<[Column]>,
-}
-
-impl Clone for CsvSerializer {
-    fn clone(&self) -> Self {
-        Self {
-            serializers: None,
-            options: Arc::clone(&self.options),
-            datetime_formats: Arc::clone(&self.datetime_formats),
-            time_zones: Arc::clone(&self.time_zones),
-            empty_columns: Arc::clone(&self.empty_columns),
-        }
-    }
 }
 
 impl CsvSerializer {
@@ -134,18 +119,10 @@ impl CsvSerializer {
             })
             .collect();
 
-        let empty_columns: Arc<[Column]> = Arc::from_iter(
-            schema
-                .iter()
-                .map(|(name, dtype)| Column::full_null(name.clone(), 0, dtype)),
-        );
-
         Ok(Self {
-            serializers: None,
             options,
             datetime_formats: Arc::from_iter(datetime_formats),
             time_zones: Arc::from_iter(time_zones),
-            empty_columns,
         })
     }
 
@@ -159,7 +136,7 @@ impl CsvSerializer {
         let options = Arc::clone(&self.options);
         let options = options.as_ref();
 
-        let serializers = self.get_serializers(df.get_columns())?;
+        let mut serializers = self.build_serializers(df.get_columns())?;
 
         for _ in 0..df.height() {
             serializers[0].serialize(buffer, options);
@@ -171,58 +148,30 @@ impl CsvSerializer {
             buffer.extend_from_slice(options.line_terminator.as_bytes());
         }
 
-        // Clear references to `df`.
-        self.get_serializers(Arc::as_ref(&self.empty_columns.clone()))?;
-
         Ok(())
     }
 
     /// # Panics
     /// Panics if a column has >1 chunk.
-    fn get_serializers<'s, 'c>(
-        &'s mut self,
-        columns: &'c [Column],
-    ) -> PolarsResult<&'s mut [Box<ColumnSerializer<'c>>]>
-    where
-        // Column dtype lifetime must be at least that of the serializer. Otherwise there can be
-        // use-after-free for categorical/enum as those values are stored in a rev-map that is kept
-        // alive by the dtype object (ref https://github.com/pola-rs/polars/issues/23939).
-        'c: 's,
-    {
-        if self.serializers.is_none() {
-            let serializers: Vec<Box<ColumnSerializer<'s>>> = Arc::as_ref(&self.empty_columns)
-                .iter()
-                .enumerate()
-                .map(|(i, c)| {
-                    serializer_for(
-                        c.as_materialized_series().chunks()[0].as_ref(),
-                        Arc::as_ref(&self.options),
-                        c.dtype(),
-                        self.datetime_formats[i].as_str(),
-                        self.time_zones[i],
-                    )
-                })
-                .collect::<PolarsResult<_>>()?;
+    fn build_serializers<'a>(
+        &'a mut self,
+        columns: &'a [Column],
+    ) -> PolarsResult<Vec<Box<ColumnSerializer<'a>>>> {
+        columns
+            .iter()
+            .enumerate()
+            .map(|(i, c)| {
+                assert_eq!(c.n_chunks(), 1);
 
-            let serializers: Vec<Box<ColumnSerializer<'static>>> =
-                unsafe { std::mem::transmute(serializers) };
-
-            self.serializers = Some(serializers)
-        }
-
-        let serializers: &'s mut [Box<ColumnSerializer<'static>>] =
-            self.serializers.as_deref_mut().unwrap();
-        let serializers: &'s mut [Box<ColumnSerializer<'c>>] =
-            unsafe { std::mem::transmute(serializers) };
-
-        assert_eq!(serializers.len(), columns.len());
-
-        for (s, c) in serializers.iter_mut().zip(columns) {
-            assert_eq!(c.n_chunks(), 1);
-            s.update_array(c.as_materialized_series().chunks()[0].as_ref());
-        }
-
-        Ok(serializers)
+                serializer_for(
+                    c.as_materialized_series().chunks()[0].as_ref(),
+                    Arc::as_ref(&self.options),
+                    c.dtype(),
+                    self.datetime_formats[i].as_str(),
+                    self.time_zones[i],
+                )
+            })
+            .collect()
     }
 }
 
