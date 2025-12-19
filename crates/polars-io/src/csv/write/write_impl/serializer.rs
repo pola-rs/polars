@@ -58,6 +58,8 @@ impl std::fmt::Write for IgnoreFmt {
 
 pub(super) trait Serializer<'a> {
     fn serialize(&mut self, buf: &mut Vec<u8>, options: &SerializeOptions);
+    // Updates the array without changing the configuration.
+    fn update_array(&mut self, array: &'a dyn Array);
 }
 
 fn make_serializer<'a, T, I: Iterator<Item = Option<T>>, const QUOTE_NON_NULL: bool>(
@@ -65,16 +67,18 @@ fn make_serializer<'a, T, I: Iterator<Item = Option<T>>, const QUOTE_NON_NULL: b
     iter: I,
     update_array: impl FnMut(&'a dyn Array) -> I,
 ) -> impl Serializer<'a> {
-    struct SerializerImpl<F, I, const QUOTE_NON_NULL: bool> {
+    struct SerializerImpl<F, I, Update, const QUOTE_NON_NULL: bool> {
         f: F,
         iter: I,
+        update_array: Update,
     }
 
-    impl<'a, T, F, I, const QUOTE_NON_NULL: bool> Serializer<'a>
-        for SerializerImpl<F, I, QUOTE_NON_NULL>
+    impl<'a, T, F, I, Update, const QUOTE_NON_NULL: bool> Serializer<'a>
+        for SerializerImpl<F, I, Update, QUOTE_NON_NULL>
     where
         F: FnMut(T, &mut Vec<u8>, &SerializeOptions),
         I: Iterator<Item = Option<T>>,
+        Update: FnMut(&'a dyn Array) -> I,
     {
         fn serialize(&mut self, buf: &mut Vec<u8>, options: &SerializeOptions) {
             let item = self.iter.next().expect(TOO_MANY_MSG);
@@ -91,9 +95,17 @@ fn make_serializer<'a, T, I: Iterator<Item = Option<T>>, const QUOTE_NON_NULL: b
                 None => buf.extend_from_slice(options.null.as_bytes()),
             }
         }
+
+        fn update_array(&mut self, array: &'a dyn Array) {
+            self.iter = (self.update_array)(array);
+        }
     }
 
-    SerializerImpl::<_, _, QUOTE_NON_NULL> { f, iter }
+    SerializerImpl::<_, _, _, QUOTE_NON_NULL> {
+        f,
+        iter,
+        update_array,
+    }
 }
 
 fn integer_serializer<I: NativeType + itoa::Integer>(
@@ -382,6 +394,7 @@ fn null_serializer(_array: &NullArray) -> impl Serializer<'_> {
         fn serialize(&mut self, buf: &mut Vec<u8>, options: &SerializeOptions) {
             buf.extend_from_slice(options.null.as_bytes());
         }
+        fn update_array(&mut self, _array: &'a dyn Array) {}
     }
     NullSerializer
 }
@@ -536,6 +549,10 @@ pub(super) fn string_serializer<'a, Iter: Send + 'a>(
         fn serialize(&mut self, buf: &mut Vec<u8>, options: &SerializeOptions) {
             (self.serialize)(&mut self.iter, buf, options);
         }
+
+        fn update_array(&mut self, array: &'a dyn Array) {
+            self.iter = (self.update)(array);
+        }
     }
 
     fn serialize_str_escaped(buf: &mut Vec<u8>, s: &[u8], quote_char: u8, quoted: bool) {
@@ -661,6 +678,10 @@ fn quote_serializer<'a>(serializer: impl Serializer<'a>) -> impl Serializer<'a> 
             buf.push(options.quote_char);
             self.0.serialize(buf, options);
             buf.push(options.quote_char);
+        }
+
+        fn update_array(&mut self, array: &'a dyn Array) {
+            self.0.update_array(array);
         }
     }
     QuoteSerializer(serializer)
