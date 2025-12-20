@@ -478,7 +478,10 @@ class LazyFrame:
 
     @classmethod
     def deserialize(
-        cls, source: str | Path | IOBase, *, format: SerializationFormat = "binary"
+        cls,
+        source: str | bytes | Path | IOBase,
+        *,
+        format: SerializationFormat = "binary",
     ) -> LazyFrame:
         """
         Read a logical plan from a file to construct a LazyFrame.
@@ -529,6 +532,8 @@ class LazyFrame:
             source = BytesIO(source.getvalue().encode())
         elif isinstance(source, (str, Path)):
             source = normalize_filepath(source)
+        elif isinstance(source, bytes):
+            source = io.BytesIO(source)
 
         if format == "binary":
             deserializer = PyLazyFrame.deserialize_binary

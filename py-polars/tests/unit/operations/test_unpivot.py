@@ -283,8 +283,38 @@ def test_unpivot_filter_opt() -> None:
     )
 
 
-def unpivot_variable_value_name_25681() -> None:
+def test_unpivot_variable_value_name_25681() -> None:
+    schema = {"foo": pl.String, "value": pl.Null}
+
+    q = pl.LazyFrame().unpivot(variable_name="foo")
+
+    assert q.collect_schema() == schema
+    assert_frame_equal(q.collect(), pl.DataFrame(schema=schema))
+
+
+def test_unpivot_projection_pushdown_schema_25720() -> None:
+    left = pl.LazyFrame({"date": ["2025-01-01"], "1": [True]})
+    right = pl.LazyFrame({"date": ["2025-01-01"], "id": ["1"], "x": [1.0]})
+
+    left_unpivot = left.unpivot(index="date", variable_name="id", value_name="mask")
+
+    q = left_unpivot.join(right, on=["date", "id"], how="left")
+
+    assert q.collect_schema() == {
+        "date": pl.String,
+        "id": pl.String,
+        "mask": pl.Boolean,
+        "x": pl.Float64,
+    }
+
     assert_frame_equal(
-        pl.select().unpivot(variable_name="foo"),
-        pl.DataFrame([], schema={"variable": pl.String, "foo": pl.Null}),
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("date", ["2025-01-01"], dtype=pl.String),
+                pl.Series("id", ["1"], dtype=pl.String),
+                pl.Series("mask", [True], dtype=pl.Boolean),
+                pl.Series("x", [1.0], dtype=pl.Float64),
+            ]
+        ),
     )

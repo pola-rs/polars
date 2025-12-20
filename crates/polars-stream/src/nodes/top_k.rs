@@ -65,7 +65,7 @@ pub struct BottomKWithPayload<P> {
     heap: BinaryHeap<Priority<P, (DfsKey, RowIdxKey)>>,
     df_subsets: SlotMap<DfsKey, DfSubset>,
     row_idxs: SlotMap<RowIdxKey, IdxSize>,
-    to_prune: Vec<DfsKey>,
+    to_prune: SecondaryMap<DfsKey, ()>,
     gather_idxs: Vec<IdxSize>,
 }
 
@@ -76,7 +76,7 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
             heap: BinaryHeap::with_capacity(k + 1),
             df_subsets: SlotMap::with_key(),
             row_idxs: SlotMap::with_key(),
-            to_prune: Vec::new(),
+            to_prune: SecondaryMap::new(),
             gather_idxs: Vec::new(),
         }
     }
@@ -131,13 +131,13 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
             let df_subset = &mut self.df_subsets[dfs_key];
             df_subset.subset_len -= 1;
             if df_subset.subset_len == self.df_subsets.len() / 2 {
-                self.to_prune.push(dfs_key);
+                self.to_prune.insert(dfs_key, ());
             }
         }
     }
 
     pub fn prune(&mut self) {
-        for dfs_key in self.to_prune.drain(..) {
+        for (dfs_key, ()) in self.to_prune.drain() {
             if self.df_subsets[dfs_key].subset_len == 0 {
                 let df_subset = self.df_subsets.remove(dfs_key).unwrap();
                 for row_idx in df_subset.rows {
