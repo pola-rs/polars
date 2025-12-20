@@ -1043,9 +1043,6 @@ impl Series {
         }
 
         size += self
-            .trim_lists_to_normalized_offsets()
-            .as_ref()
-            .unwrap_or(self)
             .chunks()
             .iter()
             .map(|arr| estimated_bytes_size(&**arr))

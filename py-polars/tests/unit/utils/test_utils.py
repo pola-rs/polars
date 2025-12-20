@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
@@ -168,6 +169,17 @@ def test_estimated_size() -> None:
 
     with pytest.raises(ValueError):
         s.estimated_size("milkshake")  # type: ignore[arg-type]
+
+
+def test_estimated_size_25068() -> None:
+    df = pl.select(pl.repeat(0, 100000).cast(pl.Int64).reshape((-1, 1)).arr.to_list())
+
+    # write-read clone of df (via parquet)
+    b = io.BytesIO()
+    df.write_parquet(b, compression="uncompressed")
+    df_clone = pl.read_parquet(b)
+
+    assert df.estimated_size() == df_clone.estimated_size()
 
 
 @pytest.mark.parametrize(
