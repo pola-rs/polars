@@ -5,6 +5,7 @@ use polars_core::config;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::{IDX_DTYPE, IdxCa, InitHashMaps, PlHashMap, PlIndexMap, PlIndexSet};
 use polars_core::schema::Schema;
+use polars_error::polars_warn;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
 use polars_io::predicates::ScanIOPredicate;
 use polars_plan::dsl::default_values::{
@@ -265,7 +266,18 @@ pub fn initialize_scan_predicate<'a>(
             break;
         };
 
-        assert_eq!(skip_files_mask.len(), expected_mask_len);
+        if skip_files_mask.len() != expected_mask_len {
+            polars_warn!(
+                "WARNING: \
+                initialize_scan_predicate: \
+                filter mask length mismatch (length: {}, expected: {}). Files \
+                will not be skipped. This is a bug; please open an issue with \
+                a reproducible example if possible.",
+                skip_files_mask.len(),
+                expected_mask_len
+            );
+            return Ok((None, Some(predicate)));
+        }
 
         if verbose {
             eprintln!(
