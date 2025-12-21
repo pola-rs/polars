@@ -5,9 +5,9 @@ use polars_utils::format_pl_smallstr;
 use recursive::recursive;
 
 use super::*;
-// kdn TODO cleanup
 use crate::constants::{
     POLARS_ELEMENT, POLARS_STRUCTFIELDS, get_literal_name, get_pl_element_name,
+    get_pl_structfields_name,
 };
 
 fn validate_expr(node: Node, ctx: &ToFieldContext) -> PolarsResult<()> {
@@ -324,8 +324,7 @@ impl AExpr {
             StructEval { expr, evaluation } => {
                 let struct_field = ctx.arena.get(*expr).to_field_impl(ctx)?;
                 let mut evaluation_schema = ctx.schema.clone();
-                evaluation_schema
-                    .insert(PL_STRUCTFIELDS_NAME.clone(), struct_field.dtype().clone());
+                evaluation_schema.insert(get_pl_structfields_name(), struct_field.dtype().clone());
 
                 let eval_fields = func_args_to_fields(
                     evaluation,

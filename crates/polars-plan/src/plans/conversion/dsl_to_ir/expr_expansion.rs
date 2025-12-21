@@ -1,7 +1,9 @@
 //! this contains code used for rewriting projections, expanding wildcards, regex selection etc.
 
 use super::*;
-use crate::constants::{get_pl_element_name, PL_STRUCTFIELDS_NAME, POLARS_ELEMENT, POLARS_STRUCTFIELDS};
+use crate::constants::{
+    POLARS_ELEMENT, POLARS_STRUCTFIELDS, get_pl_element_name, get_pl_structfields_name,
+};
 
 pub fn prepare_projection(
     exprs: Vec<Expr>,
@@ -941,7 +943,7 @@ fn expand_expression_rec(
 
                 let expr_dtype = expr.to_field(schema)?.dtype;
                 let mut evaluation_schema = schema.clone();
-                evaluation_schema.insert(PL_STRUCTFIELDS_NAME.clone(), expr_dtype.clone());
+                evaluation_schema.insert(get_pl_structfields_name(), expr_dtype.clone());
 
                 let mut eval = Vec::with_capacity(evaluation.len());
                 for e in evaluation {

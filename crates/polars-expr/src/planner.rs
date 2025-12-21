@@ -1,5 +1,5 @@
 use polars_core::prelude::*;
-use polars_plan::constants::{{get_literal_name, get_pl_element_name}, PL_STRUCTFIELDS_NAME};
+use polars_plan::constants::{get_literal_name, get_pl_element_name, get_pl_structfields_name};
 use polars_plan::prelude::expr_ir::ExprIR;
 use polars_plan::prelude::*;
 use recursive::recursive;
@@ -558,7 +558,7 @@ fn create_physical_expr_inner(
             let input = create_physical_expr_inner(*expr, expr_arena, schema, state)?;
 
             let mut eval_schema = schema.as_ref().clone();
-            eval_schema.insert(PL_STRUCTFIELDS_NAME.clone(), input_field.dtype().clone());
+            eval_schema.insert(get_pl_structfields_name(), input_field.dtype().clone());
             let eval_schema = Arc::new(eval_schema);
 
             let evaluation = evaluation

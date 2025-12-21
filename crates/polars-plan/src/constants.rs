@@ -11,12 +11,6 @@ const LITERAL_NAME: PlSmallStr = PlSmallStr::from_static("literal");
 const LEN_NAME: PlSmallStr = PlSmallStr::from_static(LEN);
 const PL_ELEMENT_NAME: PlSmallStr = PlSmallStr::from_static(POLARS_ELEMENT);
 const PL_STRUCTFIELDS_NAME: PlSmallStr = PlSmallStr::from_static(POLARS_STRUCTFIELDS);
-// kdn TODO RM
-// // Cache the often used LITERAL and LEN constants
-// static LITERAL_NAME_INIT: OnceLock<PlSmallStr> = OnceLock::new();
-// static LEN_INIT: OnceLock<PlSmallStr> = OnceLock::new();
-// pub static PL_ELEMENT_NAME: PlSmallStr = PlSmallStr::from_static(POLARS_ELEMENT);
-
 
 pub fn get_literal_name() -> PlSmallStr {
     LITERAL_NAME.clone()
@@ -28,4 +22,8 @@ pub(crate) fn get_len_name() -> PlSmallStr {
 
 pub fn get_pl_element_name() -> PlSmallStr {
     PL_ELEMENT_NAME.clone()
+}
+
+pub fn get_pl_structfields_name() -> PlSmallStr {
+    PL_STRUCTFIELDS_NAME.clone()
 }

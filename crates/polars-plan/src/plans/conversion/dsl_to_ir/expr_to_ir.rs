@@ -1,6 +1,6 @@
 use super::functions::convert_functions;
 use super::*;
-use crate::constants::{get_pl_element_name, PL_STRUCTFIELDS_NAME};
+use crate::constants::{get_pl_element_name, get_pl_structfields_name};
 use crate::plans::iterator::ArenaExprIter;
 
 pub fn to_expr_ir(expr: Expr, ctx: &mut ExprToIRContext) -> PolarsResult<ExprIR> {
@@ -71,7 +71,7 @@ impl<'a> ExprToIRContext<'a> {
     /// If the `schema` is extended with an extra Struct schema field, use it to
     /// populate `with_fields`.
     pub fn new_with_fields(arena: &'a mut Arena<AExpr>, schema: &'a Schema) -> Self {
-        let with_fields = match schema.get(&PL_STRUCTFIELDS_NAME) {
+        let with_fields = match schema.get(&get_pl_structfields_name()) {
             #[cfg(feature = "dtype-struct")]
             Some(dtype) => {
                 let DataType::Struct(fields) = &dtype else {
@@ -545,7 +545,7 @@ pub(super) fn to_aexpr_impl(
 
             let struct_schema = Schema::from_iter(fields.iter().cloned());
             let mut eval_schema = ctx.schema.clone();
-            eval_schema.insert(PL_STRUCTFIELDS_NAME.clone(), expr_dtype.clone());
+            eval_schema.insert(get_pl_structfields_name(), expr_dtype.clone());
 
             let mut eval_ir = Vec::with_capacity(evaluation.len());
 
