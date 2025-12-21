@@ -14,9 +14,7 @@ use crate::async_executor::{self, TaskPriority};
 use crate::async_primitives::connector;
 use crate::nodes::io_sinks2::components::sink_morsel::{SinkMorsel, SinkMorselPermit};
 use crate::nodes::io_sinks2::components::size::RowCountAndSize;
-use crate::nodes::io_sinks2::writers::interface::{
-    FileWriterStarter, default_ideal_sink_morsel_size,
-};
+use crate::nodes::io_sinks2::writers::interface::{FileWriterStarter, ideal_sink_morsel_size_env};
 use crate::utils::tokio_handle_ext;
 
 mod io_writer;
@@ -54,7 +52,12 @@ impl FileWriterStarter for ParquetWriterStarter {
                 num_bytes: u64::MAX,
             }
         } else {
-            default_ideal_sink_morsel_size()
+            let (num_rows, num_bytes) = ideal_sink_morsel_size_env();
+
+            RowCountAndSize {
+                num_rows: num_rows.unwrap_or(122_880),
+                num_bytes: num_bytes.unwrap_or(u64::MAX),
+            }
         }
     }
 

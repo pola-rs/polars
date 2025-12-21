@@ -7,7 +7,7 @@ use polars_utils::IdxSize;
 use crate::async_primitives::connector;
 use crate::morsel::Morsel;
 use crate::nodes::io_sinks2::components::sink_morsel::SinkMorsel;
-use crate::nodes::io_sinks2::components::size::RowCountAndSize;
+use crate::nodes::io_sinks2::components::size::{DEFAULT_BYTE_SIZE_MIN_ROWS, RowCountAndSize};
 
 /// Splits large morsels / combines small morsels.
 pub struct MorselResizePipeline {
@@ -43,7 +43,8 @@ impl MorselResizePipeline {
                 buffered_size.num_rows,
                 IdxSize::try_from(buffered_rows.height()).unwrap()
             );
-            let num_rows_to_take = ideal_morsel_size.num_rows_takeable_from(buffered_size);
+            let num_rows_to_take = ideal_morsel_size
+                .num_rows_takeable_from(buffered_size, DEFAULT_BYTE_SIZE_MIN_ROWS.get());
 
             if num_rows_to_take < buffered_size.num_rows
                 || num_rows_to_take == ideal_morsel_size.num_rows
