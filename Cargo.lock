@@ -3186,6 +3186,7 @@ dependencies = [
  "chrono-tz",
  "comfy-table",
  "either",
+ "getrandom 0.3.3",
  "half",
  "hashbrown 0.16.0",
  "indexmap",
