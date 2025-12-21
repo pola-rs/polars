@@ -12,8 +12,6 @@ pub trait FileWriterStarter: Send + Sync + 'static {
     fn writer_name(&self) -> &str;
 
     /// Hints to the sender how morsels should be sized.
-    ///
-    /// `num_rows` will be respected exactly.
     fn ideal_morsel_size(&self) -> RowCountAndSize;
 
     fn start_file_writer(
