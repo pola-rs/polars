@@ -23,6 +23,7 @@ pub trait FileWriterStarter: Send + Sync + 'static {
     ) -> PolarsResult<async_executor::JoinHandle<PolarsResult<()>>>;
 }
 
+/// Load environment configuration for ideal morsel size.
 pub(super) fn ideal_sink_morsel_size_env() -> (Option<IdxSize>, Option<u64>) {
     let num_rows = std::env::var("POLARS_IDEAL_SINK_MORSEL_SIZE_ROWS")
         .map(|x| {
