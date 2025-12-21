@@ -5,6 +5,7 @@ use arrow::legacy::time_zone::Tz;
 use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_error::polars_ensure;
+use polars_utils::reuse_vec::reuse_vec;
 use rayon::prelude::*;
 use serializer::{serializer_for, string_serializer};
 
@@ -14,11 +15,22 @@ type ColumnSerializer<'a> =
     dyn crate::csv::write::write_impl::serializer::Serializer<'a> + Send + 'a;
 
 /// Writes CSV from DataFrames.
-#[derive(Clone)]
 pub struct CsvSerializer {
+    serializers: Vec<Box<ColumnSerializer<'static>>>,
     options: Arc<SerializeOptions>,
     datetime_formats: Arc<[PlSmallStr]>,
     time_zones: Arc<[Option<Tz>]>,
+}
+
+impl Clone for CsvSerializer {
+    fn clone(&self) -> Self {
+        Self {
+            serializers: vec![],
+            options: self.options.clone(),
+            datetime_formats: self.datetime_formats.clone(),
+            time_zones: self.time_zones.clone(),
+        }
+    }
 }
 
 impl CsvSerializer {
@@ -120,6 +132,7 @@ impl CsvSerializer {
             .collect();
 
         Ok(Self {
+            serializers: vec![],
             options,
             datetime_formats: Arc::from_iter(datetime_formats),
             time_zones: Arc::from_iter(time_zones),
@@ -128,7 +141,11 @@ impl CsvSerializer {
 
     /// # Panics
     /// Panics if a column has >1 chunk.
-    pub fn serialize_to_csv(&mut self, df: &DataFrame, buffer: &mut Vec<u8>) -> PolarsResult<()> {
+    pub fn serialize_to_csv<'a>(
+        &'a mut self,
+        df: &'a DataFrame,
+        buffer: &mut Vec<u8>,
+    ) -> PolarsResult<()> {
         if df.height() == 0 || df.width() == 0 {
             return Ok(());
         }
@@ -136,7 +153,8 @@ impl CsvSerializer {
         let options = Arc::clone(&self.options);
         let options = options.as_ref();
 
-        let mut serializers = self.build_serializers(df.get_columns())?;
+        let mut serializers_vec = reuse_vec(std::mem::take(&mut self.serializers));
+        let serializers = self.build_serializers(df.get_columns(), &mut serializers_vec)?;
 
         for _ in 0..df.height() {
             serializers[0].serialize(buffer, options);
@@ -148,30 +166,34 @@ impl CsvSerializer {
             buffer.extend_from_slice(options.line_terminator.as_bytes());
         }
 
+        self.serializers = reuse_vec(serializers_vec);
+
         Ok(())
     }
 
     /// # Panics
     /// Panics if a column has >1 chunk.
-    fn build_serializers<'a>(
+    fn build_serializers<'a, 'b>(
         &'a mut self,
         columns: &'a [Column],
-    ) -> PolarsResult<Vec<Box<ColumnSerializer<'a>>>> {
-        columns
-            .iter()
-            .enumerate()
-            .map(|(i, c)| {
-                assert_eq!(c.n_chunks(), 1);
+        serializers: &'b mut Vec<Box<ColumnSerializer<'a>>>,
+    ) -> PolarsResult<&'b mut [Box<ColumnSerializer<'a>>]> {
+        serializers.clear();
+        serializers.reserve(columns.len());
 
-                serializer_for(
-                    c.as_materialized_series().chunks()[0].as_ref(),
-                    Arc::as_ref(&self.options),
-                    c.dtype(),
-                    self.datetime_formats[i].as_str(),
-                    self.time_zones[i],
-                )
-            })
-            .collect()
+        for (i, c) in columns.iter().enumerate() {
+            assert_eq!(c.n_chunks(), 1);
+
+            serializers.push(serializer_for(
+                c.as_materialized_series().chunks()[0].as_ref(),
+                Arc::as_ref(&self.options),
+                c.dtype(),
+                self.datetime_formats[i].as_str(),
+                self.time_zones[i],
+            )?)
+        }
+
+        Ok(serializers)
     }
 }
 
