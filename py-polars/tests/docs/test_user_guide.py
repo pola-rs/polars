@@ -3,10 +3,13 @@
 import os
 import runpy
 import sys
+import warnings
 from collections.abc import Iterator
 from pathlib import Path
 
-import matplotlib as mpl
+# matplotlib had some deprecated calls into pyparsing
+with warnings.simplefilter("ignore", DeprecationWarning):
+    import matplotlib as mpl
 import pytest
 
 # Do not show plots
