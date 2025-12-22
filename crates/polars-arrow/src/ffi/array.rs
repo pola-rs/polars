@@ -106,7 +106,7 @@ impl ArrowArray {
         let (offset, mut buffers, children, dictionary) =
             offset_buffers_children_dictionary(array.as_ref());
 
-        let variadic_buffer_sizes = match array.dtype() {
+        let variadic_buffer_sizes = match array.dtype().to_logical_type() {
             ArrowDataType::BinaryView => {
                 let arr = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
                 let boxed = arr.variadic_buffer_lengths().into_boxed_slice();
