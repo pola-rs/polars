@@ -54,9 +54,9 @@ from polars.io.iceberg.dataset import IcebergDataset, _NativeIcebergScanData
 from polars.testing import assert_frame_equal
 
 with warnings.catch_warnings():
-    # Upstream issue at https://github.com/apache/iceberg-python/issues/2648
+    # Upstream issue at https://github.com/apache/iceberg-python/issues/2648.
     warnings.simplefilter("ignore", pydantic.warnings.PydanticDeprecatedSince212)
-    # Upstream deprecated method in pyparsing used by pyiceberg, fixed in >= 3.3.0.
+    # Upstream issue at https://github.com/apache/iceberg-python/issues/2849.
     warnings.filterwarnings(
         "ignore", message="'enablePackrat' deprecated - use 'enable_packrat'"
     )
