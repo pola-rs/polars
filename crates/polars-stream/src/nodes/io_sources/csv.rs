@@ -171,7 +171,6 @@ impl FileReader for CsvFileReader {
         // TODO: Always compare inferred and provided schema once schema inference can handle
         // streaming decompression.
         let used_schema = if let Some(schema) = &self.options.schema
-            && reader.is_compressed()
             && !self.options.parse_options.truncate_ragged_lines
         {
             schema.clone()
