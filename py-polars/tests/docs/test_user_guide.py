@@ -7,8 +7,9 @@ import warnings
 from collections.abc import Iterator
 from pathlib import Path
 
-# matplotlib had some deprecated calls into pyparsing
-with warnings.simplefilter("ignore", DeprecationWarning):
+with warnings.catch_warnings():
+    # matplotlib had some deprecated calls into pyparsing
+    warnings.simplefilter("ignore", DeprecationWarning)
     import matplotlib as mpl
 import pytest
 

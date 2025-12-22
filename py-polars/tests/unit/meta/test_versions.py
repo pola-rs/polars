@@ -8,8 +8,9 @@ import polars as pl
 
 @pytest.mark.slow
 def test_show_versions(capsys: Any) -> None:
-    # Ignore DeprecationWarnings from dependency imports
-    with warnings.simplefilter("ignore", DeprecationWarning):
+    with warnings.catch_warnings():
+        # Ignore DeprecationWarnings from dependency imports.
+        warnings.simplefilter("ignore", DeprecationWarning)
         pl.show_versions()
 
     out, _ = capsys.readouterr()
