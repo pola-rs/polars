@@ -42,7 +42,6 @@ regex = { workspace = true }
 reqwest = { workspace = true, optional = true, features = ["json"] }
 ryu = { workspace = true, optional = true }
 schemars = { workspace = true, optional = true }
-self_cell = { workspace = true }
 serde = { workspace = true, features = ["rc"], optional = true }
 serde_json = { version = "1", optional = true }
 simd-json = { workspace = true, optional = true }
