@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import io
 import os
 import random
 from collections import defaultdict
@@ -467,7 +468,10 @@ class DataFrame:
 
     @classmethod
     def deserialize(
-        cls, source: str | Path | IOBase, *, format: SerializationFormat = "binary"
+        cls,
+        source: str | bytes | Path | IOBase,
+        *,
+        format: SerializationFormat = "binary",
     ) -> DataFrame:
         """
         Read a serialized DataFrame from a file.
@@ -514,6 +518,8 @@ class DataFrame:
             source = BytesIO(source.getvalue().encode())
         elif isinstance(source, (str, Path)):
             source = normalize_filepath(source)
+        elif isinstance(source, bytes):
+            source = io.BytesIO(source)
 
         if format == "binary":
             deserializer = PyDataFrame.deserialize_binary
@@ -8045,6 +8051,9 @@ class DataFrame:
                * - **left**
                  - Returns all rows from the left table, and the matched rows from
                    the right table.
+               * - **right**
+                 - Returns all rows from the right table, and the matched rows from
+                   the left table.
                * - **full**
                  - Returns all rows when there is a match in either left or right.
                * - **cross**
@@ -9502,7 +9511,8 @@ class DataFrame:
         ----------
         on
             Column(s) or selector(s) to use as values variables; if `on`
-            is empty all columns that are not in `index` will be used.
+            is empty no columns will be used. If set to `None` (default)
+            all columns that are not in `index` will be used.
         index
             Column(s) or selector(s) to use as identifier variables.
         variable_name
@@ -9515,6 +9525,8 @@ class DataFrame:
         If you're coming from pandas, this is similar to `pandas.DataFrame.melt`,
         but with `index` replacing `id_vars` and `on` replacing `value_vars`.
         In other frameworks, you might know this operation as `pivot_longer`.
+
+        The resulting row order is unspecified.
 
         Examples
         --------
@@ -9541,7 +9553,7 @@ class DataFrame:
         │ z   ┆ c        ┆ 6     │
         └─────┴──────────┴───────┘
         """
-        on = [] if on is None else _expand_selectors(self, on)
+        on = None if on is None else _expand_selectors(self, on)
         index = [] if index is None else _expand_selectors(self, index)
 
         return self._from_pydf(self._df.unpivot(on, index, value_name, variable_name))

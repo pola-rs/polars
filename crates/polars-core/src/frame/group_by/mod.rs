@@ -86,10 +86,7 @@ impl DataFrame {
                 } else {
                     vec![[0, self.height() as IdxSize]]
                 };
-                Ok(GroupsType::Slice {
-                    groups,
-                    overlapping: false,
-                })
+                Ok(GroupsType::new_slice(groups, false, true))
             } else {
                 let rows = if multithreaded {
                     encode_rows_vertical_par_unordered(&by)
@@ -241,12 +238,8 @@ impl<'a> GroupBy<'a> {
         &mut self.groups
     }
 
-    pub fn take_groups(self) -> GroupPositions {
+    pub fn into_groups(self) -> GroupPositions {
         self.groups
-    }
-
-    pub fn take_groups_mut(&mut self) -> GroupPositions {
-        std::mem::take(&mut self.groups)
     }
 
     pub fn keys_sliced(&self, slice: Option<(i64, usize)>) -> Vec<Column> {
@@ -277,6 +270,7 @@ impl<'a> GroupBy<'a> {
                         GroupsType::Slice {
                             groups,
                             overlapping,
+                            monotonic: _,
                         } => {
                             if *overlapping && !groups.is_empty() {
                                 // Groups can be sliced.
@@ -825,24 +819,43 @@ impl<'a> GroupBy<'a> {
     }
 
     /// Apply a closure over the groups as a new [`DataFrame`].
-    pub fn apply<F>(&self, mut f: F) -> PolarsResult<DataFrame>
+    pub fn apply<F>(&self, f: F) -> PolarsResult<DataFrame>
+    where
+        F: FnMut(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
+    {
+        self.apply_sliced(None, f)
+    }
+
+    pub fn apply_sliced<F>(&self, slice: Option<(i64, usize)>, mut f: F) -> PolarsResult<DataFrame>
     where
         F: FnMut(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
     {
         let df = self.prepare_apply()?;
-        let dfs = self
-            .get_groups()
-            .iter()
-            .map(|g| {
-                // SAFETY:
-                // groups are in bounds
-                let sub_df = unsafe { take_df(&df, g) };
-                f(sub_df)
-            })
-            .collect::<PolarsResult<Vec<_>>>()?;
+        let max_height = if let Some((offset, len)) = slice {
+            offset.try_into().unwrap_or(usize::MAX).saturating_add(len)
+        } else {
+            usize::MAX
+        };
+        let mut height = 0;
+        let mut dfs = Vec::with_capacity(self.get_groups().len());
+        for g in self.get_groups().iter() {
+            // SAFETY: groups are in bounds.
+            let sub_df = unsafe { take_df(&df, g) };
+            let df = f(sub_df)?;
+            height += df.height();
+            dfs.push(df);
+
+            // Even if max_height is zero we need at least one df, so check
+            // after first push.
+            if height >= max_height {
+                break;
+            }
+        }
 
         let mut df = accumulate_dataframes_vertical(dfs)?;
-        df.as_single_chunk_par();
+        if let Some((offset, len)) = slice {
+            df = df.slice(offset, len);
+        }
         Ok(df)
     }
 

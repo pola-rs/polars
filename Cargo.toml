@@ -55,6 +55,7 @@ fast-float2 = { version = "^0.2.2" }
 flate2 = { version = "1", default-features = false }
 foldhash = "0.2.0"
 futures = "0.3.25"
+getrandom = "0.3"
 half = { version = "2.7.1", features = ["num-traits"] }
 hashbrown = { version = "0.16.0", features = ["rayon", "serde"] }
 hex = "0.4.3"
@@ -95,7 +96,7 @@ sha2 = "0.10"
 simd-json = { version = "0.17", features = ["known-key"] }
 simdutf8 = "0.1.4"
 slotmap = "1"
-sqlparser = { version = "0.53", features = ["visitor"] }
+sqlparser = { version = "0.60", features = ["visitor"] }
 stacker = "0.1"
 streaming-iterator = "0.1.9"
 strength_reduce = "0.2"

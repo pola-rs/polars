@@ -1,16 +1,9 @@
 from __future__ import annotations
 
-import pytest
-
 import polars as pl
 from tests.unit.sql import assert_sql_matches
 
 # Note: SQLite does not support "DISTINCT ON", so only compare results against DuckDB
-try:
-    import duckdb  # noqa: F401
-
-except ImportError:
-    pytestmark = pytest.mark.ci_only
 
 
 def test_distinct_on_single_column(df_distinct: pl.DataFrame) -> None:

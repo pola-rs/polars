@@ -66,6 +66,7 @@ impl SinkTarget {
         &self,
         cloud_options: Option<&CloudOptions>,
         mkdir: bool,
+        cloud_upload_chunk_size: usize,
     ) -> PolarsResult<Writeable> {
         match self {
             SinkTarget::Path(path) => {
@@ -73,17 +74,21 @@ impl SinkTarget {
                     polars_io::utils::mkdir::mkdir_recursive(path.as_ref())?;
                 }
 
-                polars_io::utils::file::Writeable::try_new(path.as_ref(), cloud_options)
+                polars_io::utils::file::Writeable::try_new(
+                    path.as_ref(),
+                    cloud_options,
+                    cloud_upload_chunk_size,
+                )
             },
             SinkTarget::Dyn(memory_writer) => Ok(memory_writer.lock().unwrap().take().unwrap()),
         }
     }
 
-    #[cfg(feature = "cloud")]
     pub async fn open_into_writeable_async(
         &self,
         cloud_options: Option<&CloudOptions>,
         mkdir: bool,
+        cloud_upload_chunk_size: usize,
     ) -> PolarsResult<Writeable> {
         #[cfg(feature = "cloud")]
         {
@@ -93,7 +98,11 @@ impl SinkTarget {
                         polars_io::utils::mkdir::tokio_mkdir_recursive(path.as_ref()).await?;
                     }
 
-                    polars_io::utils::file::Writeable::try_new(path.as_ref(), cloud_options)
+                    polars_io::utils::file::Writeable::try_new(
+                        path.as_ref(),
+                        cloud_options,
+                        cloud_upload_chunk_size,
+                    )
                 },
                 SinkTarget::Dyn(memory_writer) => Ok(memory_writer.lock().unwrap().take().unwrap()),
             }
@@ -101,7 +110,7 @@ impl SinkTarget {
 
         #[cfg(not(feature = "cloud"))]
         {
-            self.open_into_writeable(cloud_options, mkdir)
+            self.open_into_writeable(cloud_options, mkdir, cloud_upload_chunk_size)
         }
     }
 

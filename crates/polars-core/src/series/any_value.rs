@@ -309,34 +309,25 @@ fn any_values_to_string(values: &[AnyValue], strict: bool) -> PolarsResult<Strin
         Ok(builder.finish())
     }
     fn any_values_to_string_nonstrict(values: &[AnyValue]) -> StringChunked {
-        fn _write_any_value(av: &AnyValue<'_>, buffer: &mut String, float_buf: &mut Vec<u8>) {
+        fn _write_any_value(av: &AnyValue<'_>, buffer: &mut String) {
             match av {
                 AnyValue::String(s) => buffer.push_str(s),
                 AnyValue::Float64(f) => {
-                    float_buf.clear();
-                    SerPrimitive::write(float_buf, *f);
-                    let s = std::str::from_utf8(float_buf).unwrap();
-                    buffer.push_str(s);
+                    SerPrimitive::write(unsafe { buffer.as_mut_vec() }, *f);
                 },
                 AnyValue::Float32(f) => {
-                    float_buf.clear();
-                    SerPrimitive::write(float_buf, *f as f64);
-                    let s = std::str::from_utf8(float_buf).unwrap();
-                    buffer.push_str(s);
+                    SerPrimitive::write(unsafe { buffer.as_mut_vec() }, *f);
                 },
                 #[cfg(feature = "dtype-f16")]
                 AnyValue::Float16(f) => {
-                    float_buf.clear();
-                    SerPrimitive::write(float_buf, f64::from(*f));
-                    let s = std::str::from_utf8(float_buf).unwrap();
-                    buffer.push_str(s);
+                    SerPrimitive::write(unsafe { buffer.as_mut_vec() }, *f);
                 },
                 #[cfg(feature = "dtype-struct")]
                 AnyValue::StructOwned(payload) => {
                     buffer.push('{');
                     let mut iter = payload.0.iter().peekable();
                     while let Some(child) = iter.next() {
-                        _write_any_value(child, buffer, float_buf);
+                        _write_any_value(child, buffer);
                         if iter.peek().is_some() {
                             buffer.push(',')
                         }
@@ -351,7 +342,7 @@ fn any_values_to_string(values: &[AnyValue], strict: bool) -> PolarsResult<Strin
                     buffer.push('{');
                     let mut iter = vals.iter().peekable();
                     while let Some(child) = iter.next() {
-                        _write_any_value(child, buffer, float_buf);
+                        _write_any_value(child, buffer);
                         if iter.peek().is_some() {
                             buffer.push(',')
                         }
@@ -363,7 +354,7 @@ fn any_values_to_string(values: &[AnyValue], strict: bool) -> PolarsResult<Strin
                     buffer.push('[');
                     let mut iter = vals.iter().peekable();
                     while let Some(child) = iter.next() {
-                        _write_any_value(&child, buffer, float_buf);
+                        _write_any_value(&child, buffer);
                         if iter.peek().is_some() {
                             buffer.push(',');
                         }
@@ -374,7 +365,7 @@ fn any_values_to_string(values: &[AnyValue], strict: bool) -> PolarsResult<Strin
                     buffer.push('[');
                     let mut iter = vals.iter().peekable();
                     while let Some(child) = iter.next() {
-                        _write_any_value(&child, buffer, float_buf);
+                        _write_any_value(&child, buffer);
                         if iter.peek().is_some() {
                             buffer.push(',');
                         }
@@ -389,10 +380,8 @@ fn any_values_to_string(values: &[AnyValue], strict: bool) -> PolarsResult<Strin
 
         let mut builder = StringChunkedBuilder::new(PlSmallStr::EMPTY, values.len());
         let mut owned = String::new(); // Amortize allocations.
-        let mut float_buf = vec![];
         for av in values {
             owned.clear();
-            float_buf.clear();
 
             match av {
                 AnyValue::String(s) => builder.append_value(s),
@@ -404,24 +393,8 @@ fn any_values_to_string(values: &[AnyValue], strict: bool) -> PolarsResult<Strin
                 // to preserve as much precision as possible.
                 // Using write!(..., "{av}") steps through Display formatting
                 // which rounds to an arbitrary precision thus losing information.
-                AnyValue::Float64(f) => {
-                    SerPrimitive::write(&mut float_buf, *f);
-                    let s = std::str::from_utf8(&float_buf).unwrap();
-                    builder.append_value(s);
-                },
-                AnyValue::Float32(f) => {
-                    SerPrimitive::write(&mut float_buf, *f as f64); // promote to f64 for serialization
-                    let s = std::str::from_utf8(&float_buf).unwrap();
-                    builder.append_value(s);
-                },
-                #[cfg(feature = "dtype-f16")]
-                AnyValue::Float16(f) => {
-                    SerPrimitive::write(&mut float_buf, f64::from(*f));
-                    let s = std::str::from_utf8(&float_buf).unwrap();
-                    builder.append_value(s);
-                },
                 av => {
-                    _write_any_value(av, &mut owned, &mut float_buf);
+                    _write_any_value(av, &mut owned);
                     builder.append_value(&owned);
                 },
             }

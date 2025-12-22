@@ -48,9 +48,15 @@ autolabeler:
   - label: fix
     title:
       - '/^fix/'
+  - label: performance
+    title:
+      - '/^perf/'
   - label: regression
     title:
       - '/regression/'
+  - label: release
+    title:
+      - '/^release/'
   - label: A-sql
     title:
       - '/\bsql\b/i'
@@ -111,12 +117,10 @@ autolabeler:
   - label: A-plugin
     title:
       - '/plugin/i'
-  - label: performance
+  - label: A-streaming
     title:
-      - '/^perf/'
-  - label: release
-    title:
-      - '/^release/'
+      - '/streaming/i'
+
 
 template: |
   $CHANGES

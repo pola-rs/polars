@@ -431,7 +431,7 @@ impl PhysicalExpr for WindowExpr {
 
         let create_groups = || {
             let gb = df.group_by_with_series(group_by_columns.clone(), true, sort_groups)?;
-            let mut groups = gb.take_groups();
+            let mut groups = gb.into_groups();
 
             if let Some((order_by, options)) = &self.order_by {
                 let order_by = order_by.evaluate(df, state)?;
@@ -928,6 +928,7 @@ impl PhysicalExpr for WindowExpr {
             GroupsType::Slice {
                 groups,
                 overlapping: _,
+                monotonic: _,
             } => {
                 for [s, l] in groups.iter() {
                     let s = *s;
@@ -970,10 +971,7 @@ impl PhysicalExpr for WindowExpr {
                     *length = exploded_length;
                 }
             }
-            GroupsType::Slice {
-                groups: strategy_explode_groups,
-                overlapping: false,
-            }
+            GroupsType::new_slice(strategy_explode_groups, false, true)
         } else {
             if needs_remap_to_rows {
                 let data_l = data.list()?;
@@ -988,6 +986,7 @@ impl PhysicalExpr for WindowExpr {
                     GroupsType::Slice {
                         groups,
                         overlapping: _,
+                        monotonic: _,
                     } => groups
                         .iter()
                         .zip(&lengths)

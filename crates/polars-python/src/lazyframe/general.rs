@@ -1365,13 +1365,13 @@ impl PyLazyFrame {
     #[pyo3(signature = (on, index, value_name, variable_name))]
     fn unpivot(
         &self,
-        on: PySelector,
+        on: Option<PySelector>,
         index: PySelector,
         value_name: Option<String>,
         variable_name: Option<String>,
     ) -> Self {
         let args = UnpivotArgsDSL {
-            on: on.inner,
+            on: on.map(|on| on.inner),
             index: index.inner,
             value_name: value_name.map(|s| s.into()),
             variable_name: variable_name.map(|s| s.into()),

@@ -7,6 +7,7 @@ import pytest
 import polars as pl
 from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
+from tests.unit.sql import assert_sql_matches
 
 
 def test_bit_hex_literals() -> None:
@@ -228,13 +229,133 @@ def test_select_literals_no_table() -> None:
     }
 
 
+def test_literal_only_select() -> None:
+    """Check that literal-only SELECT broadcasts to the source table's height."""
+    df = pl.DataFrame({"x": [1, 2, 3], "y": [4.0, 5.0, 6.0]})
+
+    assert_sql_matches(
+        df,
+        query="SELECT 1 AS one, 2.5 AS two FROM self",
+        expected={"one": [1, 1, 1], "two": [2.5, 2.5, 2.5]},
+        compare_with="sqlite",
+    )
+    assert_sql_matches(
+        df,
+        query="SELECT 1 + 2 AS sum, 'abc' || 'def' AS concat FROM self",
+        expected={"sum": [3, 3, 3], "concat": ["abcdef", "abcdef", "abcdef"]},
+        compare_with="sqlite",
+    )
+
+    # empty table should result in zero rows
+    df = df.clear()
+
+    assert_sql_matches(
+        df,
+        query="SELECT 42 AS the_answer, 'test' AS str FROM self",
+        expected={"the_answer": [], "str": []},
+        compare_with="sqlite",
+    )
+
+
+def test_literal_only_select_distinct() -> None:
+    """Test literal-only SELECT with DISTINCT clause."""
+    df = pl.DataFrame({"x": [1, 2, 3, 4, 5]})
+
+    # DISTINCT on broadcast literals should collapse to 1 row
+    assert_sql_matches(
+        df,
+        query="SELECT DISTINCT 42 AS val FROM self",
+        expected={"val": [42]},
+        compare_with="sqlite",
+    )
+
+
+def test_literal_only_select_order_by() -> None:
+    """Test literal-only SELECT with ORDER BY (edge case: no-op but shouldn't error)."""
+    df = pl.DataFrame({"x": [3, 1, 2]})
+
+    # ORDER BY on literal column is a no-op but should still work
+    assert_sql_matches(
+        df,
+        query="SELECT 1 AS one FROM self ORDER BY one",
+        expected={"one": [1, 1, 1]},
+        compare_with="sqlite",
+    )
+
+
+def test_literal_only_select_where() -> None:
+    """Test literal-only SELECT respects WHERE filtering."""
+    df = pl.DataFrame({"x": [1, 2, 3, 4, 5]})
+
+    # WHERE clause should filter, then literals broadcast to the filtered height
+    assert_sql_matches(
+        df,
+        query="SELECT 99 AS lit FROM self WHERE x > 3",
+        expected={"lit": [99, 99]},
+        compare_with="sqlite",
+    )
+    assert_sql_matches(
+        df,
+        query="SELECT 99 AS lit FROM self WHERE x > 100000000",
+        expected={"lit": []},
+        compare_with="sqlite",
+    )
+
+
+def test_literal_only_select_limit() -> None:
+    """Test literal-only SELECT with LIMIT clause."""
+    df = pl.DataFrame({"x": list(range(10))})
+
+    assert_sql_matches(
+        df,
+        query="SELECT 'val' AS s FROM self LIMIT 3",
+        expected={"s": ["val", "val", "val"]},
+        compare_with="sqlite",
+    )
+
+
+def test_literal_only_select_nested_expressions() -> None:
+    """Test literal-only SELECT with complex nested expressions (no column refs)."""
+    df = pl.DataFrame({"x": [1, 2]})
+
+    assert_sql_matches(
+        df,
+        query="""
+            SELECT
+                CASE WHEN 1 > 0 THEN 'yes' ELSE 'no' END AS cond,
+                COALESCE(NULL, 'fallback') AS coal,
+                ABS(-5) AS absval
+            FROM self
+        """,
+        expected={
+            "cond": ["yes", "yes"],
+            "coal": ["fallback", "fallback"],
+            "absval": [5, 5],
+        },
+        compare_with="sqlite",
+    )
+
+
+def test_mixed_literal_and_column() -> None:
+    """Test basic mixed literal/column SELECT."""
+    df = pl.DataFrame({"x": [10, 20, 30]})
+
+    # When there's at least one column reference, normal behavior applies
+    assert_sql_matches(
+        df,
+        query="SELECT x, 99 AS lit FROM self",
+        expected={"x": [10, 20, 30], "lit": [99, 99, 99]},
+        compare_with="sqlite",
+    )
+
+
 def test_select_from_table_with_reserved_names() -> None:
     select = pl.DataFrame({"select": [1, 2, 3], "from": [4, 5, 6]})
     out = pl.sql(
-        """
-        SELECT "from", "select"
-          FROM "select"
-          WHERE "from" >= 5 AND "select" % 2 != 1
+        query="""
+            SELECT "from", "select"
+            FROM "select"
+            WHERE "from" >= 5 AND "select" % 2 != 1
         """,
         eager=True,
     )

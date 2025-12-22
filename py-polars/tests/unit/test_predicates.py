@@ -1254,3 +1254,12 @@ def test_no_predicate_pushdown_on_modified_groupby_keys_21439b() -> None:
         .collect()
     )
     assert_frame_equal(eager, lazy, check_row_order=False)
+
+
+def test_no_predicate_pushdown_unpivot() -> None:
+    data = {"a": [5, 2, 8, 2], "b": [99, 33, 77, 44]}
+
+    for index, pred in [("a", pl.col.a == 2), (["b", "a"], pl.col.b != 33)]:
+        lf = pl.LazyFrame(data).unpivot(on="b", index=index).filter(pred)
+        plan = lf.explain()
+        assert plan.index("FILTER") > plan.index("UNPIVOT")

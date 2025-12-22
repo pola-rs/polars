@@ -3,6 +3,8 @@ use polars_ops::frame::{JoinCoalesce, JoinValidation, MaintainOrderJoin};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unique_id::UniqueId;
 
+use crate::dsl::PredicateFileSkip;
+
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "ir_visualization_schema", derive(schemars::JsonSchema))]
 #[derive(Debug)]
@@ -129,6 +131,7 @@ pub enum IRNodeProperties {
         row_index_offset: Option<u64>,
         pre_slice: Option<(i64, u64)>,
         predicate: Option<PlSmallStr>,
+        predicate_file_skip_applied: Option<PredicateFileSkip>,
         has_table_statistics: bool,
         include_file_paths: Option<PlSmallStr>,
         column_mapping_type: Option<PlSmallStr>,

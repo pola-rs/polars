@@ -899,3 +899,43 @@ def test_row_count_estimate_multifile(io_files_path: Path) -> None:
     src = io_files_path / "foods*.parquet"
     # test that it doesn't check only the first file
     assert "ESTIMATED ROWS: 54" in pl.scan_parquet(src).explain()
+
+
+@pytest.mark.parametrize(
+    ("scan", "write", "ext"),
+    [
+        (pl.scan_ipc, pl.DataFrame.write_ipc, "ipc"),
+        (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("predicate", "expected_indices"),
+    [
+        ((pl.col.x == 1) & True, [0]),
+        (True & (pl.col.x == 1), [0]),
+    ],
+)
+@pytest.mark.write_disk
+def test_hive_predicate_filtering_edge_case_25630(
+    tmp_path: Path,
+    scan: Callable[..., pl.LazyFrame],
+    write: Callable[[pl.DataFrame, Path], Any],
+    ext: str,
+    predicate: pl.Expr,
+    expected_indices: list[int],
+) -> None:
+    df = pl.DataFrame({"x": [1, 2, 3], "y": [0, 1, 1]}).with_row_index()
+
+    (tmp_path / "y=0").mkdir()
+    (tmp_path / "y=1").mkdir()
+
+    # previously we could panic if hive columns were all filtered out of the projection
+    write(df.filter(pl.col.y == 0).drop("y"), tmp_path / "y=0" / f"data.{ext}")
+    write(df.filter(pl.col.y == 1).drop("y"), tmp_path / "y=1" / f"data.{ext}")
+
+    res = scan(tmp_path).filter(predicate).select("index").collect(engine="streaming")
+    expected = pl.DataFrame(
+        data={"index": expected_indices},
+        schema={"index": pl.get_index_type()},
+    )
+    assert_frame_equal(res, expected)

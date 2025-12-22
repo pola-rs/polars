@@ -4,7 +4,7 @@ use polars_utils::format_pl_smallstr;
 use recursive::recursive;
 
 use super::*;
-use crate::constants::{PL_ELEMENT_NAME, POLARS_ELEMENT};
+use crate::constants::{POLARS_ELEMENT, get_literal_name, get_pl_element_name};
 
 fn validate_expr(node: Node, ctx: &ToFieldContext) -> PolarsResult<()> {
     ctx.arena.get(node).to_field_impl(ctx).map(|_| ())
@@ -96,7 +96,7 @@ impl AExpr {
                 .ok_or_else(|| PolarsError::ColumnNotFound(name.to_string().into())),
             Literal(sv) => Ok(match sv {
                 LiteralValue::Series(s) => s.field().into_owned(),
-                _ => Field::new(sv.output_column_name().clone(), sv.get_datatype()),
+                _ => Field::new(sv.output_column_name(), sv.get_datatype()),
             }),
             BinaryExpr { left, right, op } => {
                 use DataType::*;
@@ -278,7 +278,7 @@ impl AExpr {
 
                 let element_dtype = variant.element_dtype(field.dtype())?;
                 let mut evaluation_schema = ctx.schema.clone();
-                evaluation_schema.insert(PL_ELEMENT_NAME.clone(), element_dtype.clone());
+                evaluation_schema.insert(get_pl_element_name(), element_dtype.clone());
                 let mut output_field = ctx
                     .arena
                     .get(*evaluation)
@@ -297,6 +297,18 @@ impl AExpr {
                 input,
                 options: _,
             } => {
+                #[cfg(feature = "strings")]
+                {
+                    if input.is_empty()
+                        && matches!(
+                            &function,
+                            IRFunctionExpr::StringExpr(IRStringFunction::Format { .. })
+                        )
+                    {
+                        return Ok(Field::new(get_literal_name(), DataType::String));
+                    }
+                }
+
                 let fields = func_args_to_fields(input, ctx)?;
                 polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", function);
                 let out = function.get_field(ctx.schema, &fields)?;
@@ -379,7 +391,7 @@ impl AExpr {
                 None => input[0].output_name().clone(),
             },
             Column(name) => name.clone(),
-            Literal(lv) => lv.output_column_name().clone(),
+            Literal(lv) => lv.output_column_name(),
         }
     }
 }

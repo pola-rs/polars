@@ -124,10 +124,7 @@ impl EvalExpr {
                 .map(|(offset, length)| [offset as IdxSize, length as IdxSize])
                 .collect()
         };
-        let groups = GroupsType::Slice {
-            groups,
-            overlapping: false,
-        };
+        let groups = GroupsType::new_slice(groups, false, true);
         let groups = Cow::Owned(groups.into_sliceable());
 
         let mut state = state.clone();
@@ -264,10 +261,7 @@ impl EvalExpr {
                 .map(|i| [(i * ca.width()) as IdxSize, ca.width() as IdxSize])
                 .collect()
         };
-        let groups = GroupsType::Slice {
-            groups,
-            overlapping: false,
-        };
+        let groups = GroupsType::new_slice(groups, false, true);
         let groups = Cow::Owned(groups.into_sliceable());
 
         let mut state = state.clone();
@@ -390,10 +384,7 @@ impl EvalExpr {
             out
         };
 
-        let groups = GroupsType::Slice {
-            groups,
-            overlapping: true,
-        };
+        let groups = GroupsType::new_slice(groups, true, true);
 
         let groups = groups.into_sliceable();
 
@@ -463,6 +454,8 @@ impl PhysicalExpr for EvalExpr {
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut input = self.input.evaluate_on_groups(df, groups, state)?;
+        input.groups();
+
         match self.variant {
             EvalVariant::List => {
                 let input_col = input.flat_naive();
