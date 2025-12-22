@@ -2,7 +2,7 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_nan_in_group_by_agg() -> None:
@@ -315,17 +315,21 @@ def test_arrow_float16_read_empty_20946() -> None:
 
 def test_mixed_int_and_float_construction() -> None:
     """Test that pl.DataFrame construction with mixed int/float data works."""
+    df_expected = pl.DataFrame({"a": [1.0, 2.0, 3.0, 4.0, 5.0]}, schema={"a": pl.Float64})
+
     df_1 = pl.DataFrame({"a": [1, 2, 3, 4, 5]}, schema={"a": pl.Float64})
-    assert df_1.schema == {"a": pl.Float64}
+    assert_frame_equal(df_1, df_expected)
 
     df_2 = pl.DataFrame({"a": [1, 2.0, 3, 4, 5]}, schema={"a": pl.Float64})
-    assert df_2.schema == {"a": pl.Float64}
+    assert_frame_equal(df_2, df_expected)
 
     df_3 = pl.DataFrame({"a": [1.0, 2.0, 3, 4, 5]}, schema={"a": pl.Float64})
-    assert df_3.schema == {"a": pl.Float64}
+    assert_frame_equal(df_3, df_expected)
 
     df_4 = pl.DataFrame({"a": [1.0, 2.0, 3, 4, 5]}, infer_schema_length=1000)
-    assert df_4.schema == {"a": pl.Float64}
+    assert_frame_equal(df_4, df_expected)
 
-    df_list_1 = pl.DataFrame([{"a": 1}, {"a": 2}, {"a": 3}], schema={"a": pl.Float64})
-    assert df_list_1.schema == {"a": pl.Float64}
+    df_5 = pl.DataFrame(
+        [{"a": 1}, {"a": 2}, {"a": 3}, {"a": 4}, {"a": 5}], schema={"a": pl.Float64}
+    )
+    assert_frame_equal(df_5, df_expected)
