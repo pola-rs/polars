@@ -56,17 +56,22 @@ def test_to_datetime_precision() -> None:
 
     time_units: list[TimeUnit] = ["ms", "us", "ns"]
     suffixes = ["%.3f", "%.6f", "%.9f"]
-    test_data = zip(
-        time_units,
-        suffixes,
-        (
-            [789000000, 987000000],
-            [789321000, 987456000],
-            [789321456, 987456321],
-        ),
-    )
-    for time_unit, suffix, expected_values in test_data:
-        ds = s.str.to_datetime(f"%Y-%m-%d %H:%M:%S{suffix}", time_unit=time_unit)
+    input_strings = [
+        ["2022-09-12 21:54:36.789", "2022-09-13 12:34:56.987"],
+        ["2022-09-12 21:54:36.789321", "2022-09-13 12:34:56.987456"],
+        ["2022-09-12 21:54:36.789321456", "2022-09-13 12:34:56.987456321"],
+    ]
+    expected_values_list = [
+        [789000000, 987000000],
+        [789321000, 987456000],
+        [789321456, 987456321],
+    ]
+    test_data = zip(time_units, suffixes, input_strings, expected_values_list)
+    for time_unit, suffix, strings, expected_values in test_data:
+        test_series = pl.Series("date", strings)
+        ds = test_series.str.to_datetime(
+            f"%Y-%m-%d %H:%M:%S{suffix}", time_unit=time_unit
+        )
         assert getattr(ds.dtype, "time_unit", None) == time_unit
         assert ds.dt.nanosecond().to_list() == expected_values
 
@@ -670,7 +675,7 @@ def test_to_time_inferred(data: str, format: str, expected: time) -> None:
     [
         ("05:10:11.740000", "%H:%M:%S%.f", time(5, 10, 11, 740000)),
         ("13:20:12.000074", "%T%.6f", time(13, 20, 12, 74)),
-        ("21:30:13.007400", "%H:%M:%S%.3f", time(21, 30, 13, 7400)),
+        ("21:30:13.074", "%H:%M:%S%.3f", time(21, 30, 13, 74000)),
     ],
 )
 def test_to_time_subseconds(data: str, format: str, expected: time) -> None:
