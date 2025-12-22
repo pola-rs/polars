@@ -866,10 +866,12 @@ fn skip_lines_naive(
             }
         }
 
-        polars_ensure!(
-            read_n > 0,
-            ComputeError: "Specified skip_lines is larger than total number of lines."
-        );
+        if read_n == 0 {
+            // The user specified a skip_lines number larger than the total number of lines.
+            polars_warn!("Specified skip_lines is larger than total number of lines.");
+            // It's stable behavior to return an empty df in such a case.
+            return Ok(MemSlice::EMPTY);
+        }
 
         // No need to search for naive eol twice in the leftover.
         prev_leftover = MemSlice::EMPTY;
