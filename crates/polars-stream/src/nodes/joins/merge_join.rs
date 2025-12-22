@@ -8,6 +8,7 @@ use arrow::bitmap::MutableBitmap;
 use either::{Either, Left, Right};
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
+use polars_core::utils::Container;
 use polars_ops::prelude::*;
 use polars_utils::format_pl_smallstr;
 use polars_utils::total_ord::TotalOrd;
@@ -33,8 +34,6 @@ use crate::pipe::{PortReceiver, RecvPort, SendPort};
 // TODO: [amber] Do not linearize but accumlate in parallel and then merge all of
 // the unmatched dataframes in a state-transition, and then flush them
 // TODO: [amber] Make sure that key expressions work
-// TODO: [amber] On non-order maintained INNER joins, loop first over the dataframe
-// with the most nulls.
 
 pub const KEY_COL_NAME: &str = "__POLARS_JOIN_KEY_TMP";
 
@@ -590,10 +589,6 @@ fn compute_join(
 ) -> PolarsResult<(DataFrame, DataFrame)> {
     let mut left_sp = &params.left;
     let mut right_sp = &params.right;
-    let right_is_build = matches!(
-        params.args.maintain_order,
-        MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft,
-    );
 
     left.rechunk_mut();
     right.rechunk_mut();
@@ -606,6 +601,16 @@ fn compute_join(
         .column(&params.right.key_col)
         .unwrap()
         .as_materialized_series();
+
+    let right_build_bc_maintain_order = matches!(
+        params.args.maintain_order,
+        MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft,
+    );
+    let right_build_bc_opt = params.args.maintain_order == MaintainOrderJoin::None
+        && (params.args.how == JoinType::Right
+            || (params.args.how == JoinType::Inner
+                && right_key.null_count() > left_key.null_count()));
+    let right_is_build = right_build_bc_maintain_order || right_build_bc_opt;
     if right_is_build {
         swap(&mut left_key, &mut right_key);
         swap(&mut left_sp, &mut right_sp);
@@ -802,7 +807,9 @@ fn compute_join_kernel<'a, T: PolarsDataType>(
     let left_key = left_key.downcast_as_array();
     let right_key = right_key.downcast_as_array();
 
-    right_matched.resize(right_key.len(), false);
+    if right_sp.emit_unmatched {
+        right_matched.resize(right_key.len(), false);
+    }
 
     let mut skip_ahead = 0;
     for (idxl, left_keyval) in left_key.iter().enumerate() {
@@ -822,7 +829,9 @@ fn compute_join_kernel<'a, T: PolarsDataType>(
                 }
                 if ord == Some(Ordering::Equal) {
                     matched = true;
-                    right_matched.set(idxr, true);
+                    if right_sp.emit_unmatched {
+                        right_matched.set(idxr, true);
+                    }
                     gather_left.push(idxl as IdxSize);
                     gather_right.push(idxr as IdxSize);
                 } else if ord == Some(Ordering::Greater) {
