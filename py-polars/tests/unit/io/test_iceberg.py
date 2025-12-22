@@ -57,9 +57,7 @@ with warnings.catch_warnings():
     # Upstream issue at https://github.com/apache/iceberg-python/issues/2648.
     warnings.simplefilter("ignore", pydantic.warnings.PydanticDeprecatedSince212)
     # Upstream issue at https://github.com/apache/iceberg-python/issues/2849.
-    warnings.filterwarnings(
-        "ignore", message="'enablePackrat' deprecated - use 'enable_packrat'"
-    )
+    warnings.simplefilter("ignore", DeprecationWarning)
     from pyiceberg.catalog.sql import SqlCatalog
     from pyiceberg.io.pyarrow import schema_to_pyarrow
 
