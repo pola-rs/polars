@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import io
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
