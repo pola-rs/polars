@@ -172,14 +172,9 @@ def test_estimated_size() -> None:
 
 
 def test_estimated_size_25068() -> None:
-    df = pl.select(pl.repeat(0, 100000).cast(pl.Int64).reshape((-1, 1)).arr.to_list())
+    df = pl.select(pl.int_range(10000).cast(pl.List(pl.Int64)))
 
-    # write-read clone of df (via parquet)
-    b = io.BytesIO()
-    df.write_parquet(b, compression="uncompressed")
-    df_clone = pl.read_parquet(b)
-
-    assert df.estimated_size() == df_clone.estimated_size()
+    assert df.slice(5000).estimated_size() / df.estimated_size() <= 0.5
 
 
 @pytest.mark.parametrize(
