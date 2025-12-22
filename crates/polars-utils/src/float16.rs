@@ -12,9 +12,9 @@ use num_traits::{AsPrimitive, Bounded, FromBytes, One, Pow, ToBytes, Zero};
 #[cfg(feature = "python")]
 use numpy::Element;
 #[cfg(feature = "python")]
-use pyo3::types::{PyAnyMethods, PyFloat};
+use pyo3::types::PyFloat;
 #[cfg(feature = "python")]
-use pyo3::{FromPyObject, IntoPyObject, Python};
+use pyo3::{FromPyObject, IntoPyObject, PyErr, Python};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -399,8 +399,10 @@ impl<'py> IntoPyObject<'py> for pf16 {
 }
 
 #[cfg(feature = "python")]
-impl<'py> FromPyObject<'py> for pf16 {
-    fn extract_bound(ob: &pyo3::Bound<'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for pf16 {
+    type Error = PyErr;
+
+    fn extract(ob: pyo3::Borrowed<'a, 'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
         let v: f32 = ob.extract()?;
         Ok(v.as_())
     }
