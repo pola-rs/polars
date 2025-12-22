@@ -30,10 +30,5 @@ pub fn assert_dataframe_equal_py(
         categorical_as_str,
     };
 
-    let res =
-        assert_dataframe_equal(left_df, right_df, options).map_err(|e| PyPolarsErr::from(e).into());
-    if res.is_err() {
-        eprintln!("Left:\n{left_df:?}\nRight:\n{right_df:?}")
-    }
-    res
+    assert_dataframe_equal(left_df, right_df, options).map_err(|e| PyPolarsErr::from(e).into())
 }
