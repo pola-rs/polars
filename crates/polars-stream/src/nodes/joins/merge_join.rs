@@ -9,10 +9,8 @@ use either::{Either, Left, Right};
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
 use polars_ops::prelude::*;
-use polars_plan::prelude::*;
 use polars_utils::format_pl_smallstr;
-use polars_utils::itertools::Itertools;
-use polars_utils::total_ord::{TotalEq, TotalOrd};
+use polars_utils::total_ord::TotalOrd;
 
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
@@ -278,26 +276,15 @@ impl ComputeNode for MergeJoinNode {
                         },
                         Right(NeedMore::Left | NeedMore::Both) if recv_left.is_some() => {
                             let Ok(m) = recv_left.as_mut().unwrap().recv().await else {
-                                buffer_unmerged_from_pipe(
-                                    recv_right.as_mut(),
-                                    right_unmerged,
-                                    &params.right,
-                                    params,
-                                )
-                                .await;
+                                buffer_unmerged_from_pipe(recv_right.as_mut(), right_unmerged)
+                                    .await;
                                 break;
                             };
                             left_unmerged.push_back(m.into_df());
                         },
                         Right(NeedMore::Right | NeedMore::Both) if recv_right.is_some() => {
                             let Ok(m) = recv_right.as_mut().unwrap().recv().await else {
-                                buffer_unmerged_from_pipe(
-                                    recv_left.as_mut(),
-                                    left_unmerged,
-                                    &params.left,
-                                    params,
-                                )
-                                .await;
+                                buffer_unmerged_from_pipe(recv_left.as_mut(), left_unmerged).await;
                                 break;
                             };
                             right_unmerged.push_back(m.into_df());
@@ -893,8 +880,6 @@ fn key_is_in_output(col_name: &PlSmallStr, params: &MergeJoinParams) -> bool {
 async fn buffer_unmerged_from_pipe(
     port: Option<&mut PortReceiver>,
     unmerged: &mut VecDeque<DataFrame>,
-    sp: &SideParams,
-    params: &MergeJoinParams,
 ) {
     let Some(port) = port else {
         return;
@@ -903,12 +888,10 @@ async fn buffer_unmerged_from_pipe(
         return;
     };
     morsel.source_token().stop();
-    let mut df = morsel.into_df();
-    unmerged.push_back(df);
+    unmerged.push_back(morsel.into_df());
 
     while let Ok(morsel) = port.recv().await {
-        let mut df = morsel.into_df();
-        unmerged.push_back(df);
+        unmerged.push_back(morsel.into_df());
     }
 }
 
