@@ -830,7 +830,19 @@ impl CountLines {
         }
 
         if is_eof {
-            count += (bytes.last().copied() != Some(self.eol_char)) as usize;
+            if !bytes.is_empty() {
+                // We can do a simple backwards-scan to find the start of last line if it is a comment
+                // line, since comment lines can't escape new-lines.
+                if bytes.last().copied().unwrap() != self.eol_char {
+                    let last_new_line_post = memchr::memrchr(self.eol_char, bytes).unwrap_or(0);
+                    let last_line_is_comment_line = bytes
+                        .get(last_new_line_post + 1..)
+                        .map(|line| is_comment_line(line, self.comment_prefix.as_ref()))
+                        .unwrap_or(false);
+
+                    count += !last_line_is_comment_line as usize;
+                }
+            }
             offset = bytes.len();
         }
 
