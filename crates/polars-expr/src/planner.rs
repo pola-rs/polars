@@ -571,6 +571,7 @@ fn create_physical_expr_inner(
                 evaluation,
                 node_to_expr(expression, expr_arena),
                 output_field,
+                state.allow_threading,
             )))
         },
         Function {
