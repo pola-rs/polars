@@ -35,8 +35,10 @@ use crate::pipe::{PortReceiver, RecvPort, SendPort};
 // TODO: [amber] Do not linearize but accumlate in parallel and then merge all of
 // the unmatched dataframes in a state-transition, and then flush them
 // TODO: [amber] Make sure that key expressions work
+// TODO: [amber] On non-order maintained INNER joins, loop first over the dataframe
+// with the most nulls.
 
-const KEY_COL_NAME: &str = "__POLARS_JOIN_KEY_TMP";
+pub const KEY_COL_NAME: &str = "__POLARS_JOIN_KEY_TMP";
 
 #[derive(Clone, Copy, Debug)]
 enum NeedMore {
@@ -62,8 +64,6 @@ struct SideParams {
     ir_schema: SchemaRef,
     on: Vec<PlSmallStr>,
     key_col: PlSmallStr,
-    descending: Vec<bool>,
-    nulls_last: Vec<bool>,
     emit_unmatched: bool,
 }
 
@@ -104,20 +104,22 @@ impl MergeJoinNode {
         output_schema: Arc<Schema>,
         left_on: Vec<PlSmallStr>,
         right_on: Vec<PlSmallStr>,
-        left_sortedness: IRSorted,
-        right_sortedness: IRSorted,
+        descending: bool,
+        nulls_last: bool,
         args: JoinArgs,
     ) -> PolarsResult<Self> {
         assert!(left_on.len() == right_on.len());
-        assert!(left_sortedness.0.len() == left_on.len());
-        assert!(right_sortedness.0.len() == right_on.len());
+        assert!(
+            left_input_schema.contains(KEY_COL_NAME) == right_input_schema.contains(KEY_COL_NAME),
+        );
 
+        let use_row_encoding = left_input_schema.contains(KEY_COL_NAME);
         let state: MergeJoinState = MergeJoinState::Running;
         let left_key_col;
         let right_key_col;
         let mut left_ir_schema = left_input_schema.clone();
         let mut right_ir_schema = right_input_schema.clone();
-        if left_on.len() > 1 {
+        if use_row_encoding {
             left_key_col = PlSmallStr::from(KEY_COL_NAME);
             right_key_col = PlSmallStr::from(KEY_COL_NAME);
             let mut ir_schema = (*left_input_schema).clone();
@@ -130,49 +132,11 @@ impl MergeJoinNode {
             left_key_col = left_on[0].clone();
             right_key_col = right_on[0].clone();
         }
-        let left_descending = left_sortedness
-            .0
-            .iter()
-            .map(|s| s.descending.unwrap())
-            .collect_vec();
-        let right_descending = right_sortedness
-            .0
-            .iter()
-            .map(|s| s.descending.unwrap())
-            .collect_vec();
-        assert!(left_descending.len() == right_descending.len());
-        let is_descending = |s: &IRSorted| {
-            (s.0.len() == 1)
-                .then(|| s.0[0].descending.unwrap())
-                .unwrap_or(false)
-        };
-        let key_descending = is_descending(&left_sortedness);
-        assert!(key_descending == is_descending(&right_sortedness));
-        let left_nulls_last = left_sortedness
-            .0
-            .iter()
-            .map(|s| s.nulls_last.unwrap())
-            .collect_vec();
-        let right_nulls_last = right_sortedness
-            .0
-            .iter()
-            .map(|s| s.nulls_last.unwrap())
-            .collect_vec();
-        let is_nulls_last = |s: &IRSorted| {
-            (s.0.len() == 1)
-                .then(|| s.0[0].nulls_last.unwrap())
-                .unwrap_or(false)
-        };
-        let key_nulls_last = is_nulls_last(&left_sortedness);
-        assert!(key_nulls_last == is_nulls_last(&right_sortedness));
-        let use_row_encoding = left_on.len() > 1;
         let left = SideParams {
             input_schema: left_input_schema,
             ir_schema: left_ir_schema,
             on: left_on,
             key_col: left_key_col,
-            descending: left_descending,
-            nulls_last: left_nulls_last,
             emit_unmatched: matches!(args.how, JoinType::Left | JoinType::Full),
         };
         let right = SideParams {
@@ -180,16 +144,14 @@ impl MergeJoinNode {
             ir_schema: right_ir_schema,
             on: right_on,
             key_col: right_key_col,
-            descending: right_descending,
-            nulls_last: right_nulls_last,
             emit_unmatched: matches!(args.how, JoinType::Right | JoinType::Full),
         };
         let params = MergeJoinParams {
             left,
             right,
             output_schema,
-            key_descending,
-            key_nulls_last,
+            key_descending: descending,
+            key_nulls_last: nulls_last,
             use_row_encoding,
             args,
         };
@@ -734,6 +696,7 @@ fn compute_join(
         let mut right_build = DataFrameBuilder::new(right.schema().clone());
         left_build.opt_gather_extend(&left, &lgather, ShareStrategy::Never);
         right_build.opt_gather_extend(&right, &rgather, ShareStrategy::Never);
+
         let mut left = left_build.freeze();
         let mut right = right_build.freeze();
 
@@ -961,28 +924,29 @@ fn add_key_column(
     sp: &SideParams,
     params: &MergeJoinParams,
 ) -> PolarsResult<()> {
+    dbg!(&df);
     debug_assert_eq!(*df.schema(), sp.input_schema);
-    if sp.on.len() > 1 {
-        let columns = sp
-            .on
-            .iter()
-            .map(|c| df.column(c).unwrap())
-            .cloned()
-            .collect_vec();
-        // HACK: _get_rows_encoded_ca row-encodes all rows, but sets the validity from broadcasted
-        // keys afterward, so the values are still valid.
-        // In find_mergeable(), we bypass the validity info to get the row-encoded values even for
-        // null rows.
-        let key = row_encode::_get_rows_encoded_ca(
-            sp.key_col.clone(),
-            &columns,
-            &sp.descending,
-            &sp.nulls_last,
-            !params.args.nulls_equal,
-        )?
-        .into_column();
-        df.hstack_mut(&[key])?;
-    }
+    // if sp.on.len() > 1 {
+    //     let columns = sp
+    //         .on
+    //         .iter()
+    //         .map(|c| df.column(c).unwrap())
+    //         .cloned()
+    //         .collect_vec();
+    //     // HACK: _get_rows_encoded_ca row-encodes all rows, but sets the validity from broadcasted
+    //     // keys afterward, so the values are still valid.
+    //     // In find_mergeable(), we bypass the validity info to get the row-encoded values even for
+    //     // null rows.
+    //     let key = row_encode::_get_rows_encoded_ca(
+    //         sp.key_col.clone(),
+    //         &columns,
+    //         &sp.descending,
+    //         &sp.nulls_last,
+    //         !params.args.nulls_equal,
+    //     )?
+    //     .into_column();
+    //     df.hstack_mut(&[key])?;
+    // }
     debug_assert!(*df.schema() == sp.ir_schema);
     Ok(())
 }

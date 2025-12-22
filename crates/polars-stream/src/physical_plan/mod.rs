@@ -369,8 +369,8 @@ pub enum PhysNodeKind {
         input_right: PhysStream,
         left_on: Vec<PlSmallStr>,
         right_on: Vec<PlSmallStr>,
-        left_sortedness: IRSorted,
-        right_sortedness: IRSorted,
+        descending: bool,
+        nulls_last: bool,
         args: JoinArgs,
     },
 

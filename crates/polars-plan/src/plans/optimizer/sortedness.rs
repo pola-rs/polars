@@ -419,7 +419,7 @@ pub fn aexpr_sortedness(
             }
             Some(expr_sortedness)
         },
-        AExpr::Cast { .. } => None, // @TODO: More casts are allowed are allowed
+        AExpr::Cast { .. } => None, // @TODO: More casts are allowed
         AExpr::Sort { expr: _, options } => Some(AExprSorted {
             descending: Some(options.descending),
             nulls_last: Some(options.nulls_last),
