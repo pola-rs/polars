@@ -287,9 +287,7 @@ impl ComputeNode for MergeJoinNode {
                                 .await;
                                 break;
                             };
-                            let mut df = m.into_df();
-                            add_key_column(&mut df, &params.left, params)?;
-                            left_unmerged.push_back(df);
+                            left_unmerged.push_back(m.into_df());
                         },
                         Right(NeedMore::Right | NeedMore::Both) if recv_right.is_some() => {
                             let Ok(m) = recv_right.as_mut().unwrap().recv().await else {
@@ -302,9 +300,7 @@ impl ComputeNode for MergeJoinNode {
                                 .await;
                                 break;
                             };
-                            let mut df = m.into_df();
-                            add_key_column(&mut df, &params.right, params)?;
-                            right_unmerged.push_back(df);
+                            right_unmerged.push_back(m.into_df());
                         },
 
                         Right(NeedMore::Finished) => {
@@ -324,33 +320,8 @@ impl ComputeNode for MergeJoinNode {
                         let mut arenas = Arenas::default();
                         while let Ok((morsel, right)) = recv.recv().await {
                             let (left, seq, source_token, _wt) = morsel.into_inner();
-                            let tick = std::time::Instant::now();
                             let (matched, unmatched) =
                                 compute_join(left.clone(), right.clone(), params, &mut arenas)?;
-                            let tock = std::time::Instant::now();
-                            let delta = tock.duration_since(tick);
-                            if delta.as_millis() > 1000 {
-                                dbg!(seq);
-                                dbg!(&left);
-                                dbg!(&right);
-                                dbg!(
-                                    &left
-                                        .column("key")
-                                        .unwrap()
-                                        .as_materialized_series()
-                                        .null_count()
-                                );
-                                dbg!(
-                                    &right
-                                        .column("key")
-                                        .unwrap()
-                                        .as_materialized_series()
-                                        .null_count()
-                                );
-                                dbg!(&matched.height());
-                                dbg!(&unmatched.height());
-                                dbg!(delta);
-                            }
                             if !matched.is_empty() {
                                 let morsel = Morsel::new(matched, seq, source_token.clone());
                                 if send.send(morsel).await.is_err() {
@@ -919,38 +890,6 @@ fn key_is_in_output(col_name: &PlSmallStr, params: &MergeJoinParams) -> bool {
     params.output_schema.contains(col_name)
 }
 
-fn add_key_column(
-    df: &mut DataFrame,
-    sp: &SideParams,
-    params: &MergeJoinParams,
-) -> PolarsResult<()> {
-    dbg!(&df);
-    debug_assert_eq!(*df.schema(), sp.input_schema);
-    // if sp.on.len() > 1 {
-    //     let columns = sp
-    //         .on
-    //         .iter()
-    //         .map(|c| df.column(c).unwrap())
-    //         .cloned()
-    //         .collect_vec();
-    //     // HACK: _get_rows_encoded_ca row-encodes all rows, but sets the validity from broadcasted
-    //     // keys afterward, so the values are still valid.
-    //     // In find_mergeable(), we bypass the validity info to get the row-encoded values even for
-    //     // null rows.
-    //     let key = row_encode::_get_rows_encoded_ca(
-    //         sp.key_col.clone(),
-    //         &columns,
-    //         &sp.descending,
-    //         &sp.nulls_last,
-    //         !params.args.nulls_equal,
-    //     )?
-    //     .into_column();
-    //     df.hstack_mut(&[key])?;
-    // }
-    debug_assert!(*df.schema() == sp.ir_schema);
-    Ok(())
-}
-
 async fn buffer_unmerged_from_pipe(
     port: Option<&mut PortReceiver>,
     unmerged: &mut VecDeque<DataFrame>,
@@ -965,12 +904,10 @@ async fn buffer_unmerged_from_pipe(
     };
     morsel.source_token().stop();
     let mut df = morsel.into_df();
-    add_key_column(&mut df, sp, params).unwrap();
     unmerged.push_back(df);
 
     while let Ok(morsel) = port.recv().await {
         let mut df = morsel.into_df();
-        add_key_column(&mut df, sp, params).unwrap();
         unmerged.push_back(df);
     }
 }
