@@ -14,9 +14,10 @@ fn test_expand_datetimes_3042() -> PolarsResult<()> {
         .unwrap();
     let date_range = polars_time::date_range(
         "dt1".into(),
-        low,
-        high,
-        Duration::parse("1w"),
+        Some(low),
+        Some(high),
+        Some(Duration::parse("1w")),
+        None,
         ClosedWindow::Left,
         TimeUnit::Milliseconds,
         None,
