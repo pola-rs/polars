@@ -315,7 +315,9 @@ def test_arrow_float16_read_empty_20946() -> None:
 
 def test_mixed_int_and_float_construction() -> None:
     """Test that pl.DataFrame construction with mixed int/float data works."""
-    df_expected = pl.DataFrame({"a": [1.0, 2.0, 3.0, 4.0, 5.0]}, schema={"a": pl.Float64})
+    df_expected = pl.DataFrame(
+        {"a": [1.0, 2.0, 3.0, 4.0, 5.0]}, schema={"a": pl.Float64}
+    )
 
     df_1 = pl.DataFrame({"a": [1, 2, 3, 4, 5]}, schema={"a": pl.Float64})
     assert_frame_equal(df_1, df_expected)
