@@ -1,6 +1,9 @@
 use polars_core::frame::DataFrame;
 use polars_error::{PolarsResult, polars_err};
 use polars_utils::IdxSize;
+use polars_utils::index::NonZeroIdxSize;
+
+pub const DEFAULT_BYTE_SIZE_MIN_ROWS: NonZeroIdxSize = NonZeroIdxSize::new(16384).unwrap();
 
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct RowCountAndSize {
@@ -29,19 +32,25 @@ impl RowCountAndSize {
     }
 
     /// How many rows from `other` can fit into `self`.
-    pub fn num_rows_takeable_from(self, other: Self) -> IdxSize {
-        let max_rows = self.num_rows.min(other.num_rows);
+    ///
+    /// # Parameters
+    /// * `byte_size_min_rows`: Row limit calculated from byte size will be at least this value
+    pub fn num_rows_takeable_from(self, other: Self, byte_size_min_rows: IdxSize) -> IdxSize {
+        let mut max_rows = self.num_rows.min(other.num_rows);
 
-        if self.num_bytes == u64::MAX {
-            max_rows
-        } else if self.num_bytes < other.row_byte_size() {
-            0
-        } else {
-            max_rows.min(
+        let limit_according_to_byte_size =
+            byte_size_min_rows.max(if self.num_bytes < other.row_byte_size() {
+                0
+            } else {
                 IdxSize::try_from(self.num_bytes.div_ceil(other.row_byte_size().max(1)))
-                    .unwrap_or(IdxSize::MAX),
-            )
+                    .unwrap_or(IdxSize::MAX)
+            });
+
+        if self.num_bytes < u64::MAX {
+            max_rows = max_rows.min(limit_according_to_byte_size)
         }
+
+        max_rows
     }
 
     /// Byte size of a single row. If `self.num_rows > 0`, the returned size will be at least 1.
