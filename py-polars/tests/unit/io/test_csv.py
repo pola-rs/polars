@@ -2966,3 +2966,15 @@ def test_write_csv_categorical_23939(dt: pl.DataType) -> None:
     )
     expected = "b\n" + "a\n" * n_rows
     assert df.write_csv() == expected
+
+
+@pytest.mark.parametrize(
+    "read_fn",
+    ["read_csv", "scan_csv"],
+)
+@pytest.mark.parametrize(
+    "csv_str", ["A,B\n1,x\n2,y\n3,z", "A,B\n1,x\n2,y\n3,z\n", "\n\n\n\n"]
+)
+def test_csv_skip_more_lines_than_empty(read_fn: str, csv_str: str) -> None:
+    df = getattr(pl, read_fn)(io.StringIO(csv_str), skip_lines=4).lazy().collect()
+    assert_frame_equal(df, pl.DataFrame())

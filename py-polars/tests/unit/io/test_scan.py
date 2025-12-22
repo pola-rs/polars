@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 import sys
-import time
+import zlib
 from dataclasses import dataclass
 from datetime import datetime
 from functools import partial
@@ -1220,34 +1220,41 @@ def test_scan_with_schema_skips_schema_inference(
     assert_frame_equal(q.collect(engine="streaming"), pl.DataFrame(schema=schema))
 
 
-def test_scan_csv_streaming_decompression(io_files_path: Path) -> None:
+@pytest.fixture(scope="session")
+def corrupt_compressed_csv() -> bytes:
+    large_and_simple_csv = b"line_val\n" * 500_000
+    compressed_data = zlib.compress(large_and_simple_csv, level=0)
+
+    corruption_start_pos = round(len(compressed_data) * 0.9)
+    assert corruption_start_pos > 4_000_000
+    corruption_len = 500
+
+    # The idea is to corrupt the input to make sure the scan never fully
+    # decompresses the input.
+    corrupted_data = bytearray(compressed_data)
+    corrupted_data[corruption_start_pos : corruption_start_pos + corruption_len] = (
+        b"\00"
+    )
+    # ~4MB of valid zlib compressed CSV to read before the corrupted data
+    # appears.
+    return corrupted_data
+
+
+def test_scan_csv_streaming_decompression(corrupt_compressed_csv: bytes) -> None:
     # TODO: also without schema
-    schema = {"x": pl.Int64, "y": pl.Int64, "z": pl.Int64}
+    schema = {"line_val": pl.String}
 
-    retry_count = 3
-    max_time_in_ms = 500
-    for _ in range(retry_count):
-        start = time.time()
-        df = (
-            pl.scan_csv(io_files_path / "1b_rows_zip_bomb.csv.zst", schema=schema)
-            .slice(0, 5)
-            .collect(engine="streaming")
-        )
-        diff_ms = (time.time() - start) * 1000.0
-        if diff_ms < max_time_in_ms:
-            break
+    slice_count = 11
 
-        # Maybe the system is busy and noisy
-        time.sleep(10)
-    else:
-        pytest.fail("CSV decompression likely not streaming.")
+    df = (
+        pl.scan_csv(io.BytesIO(corrupt_compressed_csv), schema=schema)
+        .slice(0, slice_count)
+        .collect(engine="streaming")
+    )
 
     expected = pl.DataFrame(
         [
-            pl.Series("x", [22, 22, 22, 22, 22], dtype=pl.Int64),
-            pl.Series("y", [77, 77, 77, 77, 77], dtype=pl.Int64),
-            pl.Series("z", [33, 33, 33, 33, 33], dtype=pl.Int64),
+            pl.Series("line_val", ["line_val"] * slice_count, dtype=pl.String),
         ]
     )
-
     assert_frame_equal(df, expected)
