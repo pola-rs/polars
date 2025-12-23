@@ -216,22 +216,8 @@ pub struct BlockReader<R: Read + Seek> {
 
 impl<R: Read + Seek> BlockReader<R> {
     pub fn new(reader: R) -> Self {
-        // let projection =
-        //     projection.map(|projection| prepare_projection(&metadata.schema, projection));
         Self { reader }
     }
-
-    // pub fn new_with_projection_info(
-    //     reader: R,
-    //     metadata: &'a FileMetadata,
-    //     projection: Option<ProjectionInfo>,
-    // ) -> Self {
-    //     Self {
-    //         reader,
-    //         metadata,
-    //         projection,
-    //     }
-    // }
 
     /// Reads the record batch header and returns its length (i.e., number of rows).
     pub fn record_batch_num_rows(&mut self, message_scratch: &mut Vec<u8>) -> PolarsResult<usize> {
