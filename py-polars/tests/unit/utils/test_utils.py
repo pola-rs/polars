@@ -170,6 +170,12 @@ def test_estimated_size() -> None:
         s.estimated_size("milkshake")  # type: ignore[arg-type]
 
 
+def test_estimated_size_sliced_list_25068() -> None:
+    df = pl.select(pl.int_range(10000).cast(pl.List(pl.Int64)))
+
+    assert df.slice(5000).estimated_size() / df.estimated_size() <= 0.5
+
+
 @pytest.mark.parametrize(
     ("v1", "v2"),
     [
