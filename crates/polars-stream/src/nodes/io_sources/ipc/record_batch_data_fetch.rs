@@ -1,7 +1,7 @@
 use std::io::Cursor;
 use std::sync::Arc;
 
-use polars_core::utils::arrow::io::ipc::read::{BlockReader, FileMetadata, ProjectionInfo};
+use polars_core::utils::arrow::io::ipc::read::{BlockReader, FileMetadata};
 use polars_error::PolarsResult;
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};
 use polars_utils::mmap::MemSlice;
