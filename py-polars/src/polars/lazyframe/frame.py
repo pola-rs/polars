@@ -478,7 +478,10 @@ class LazyFrame:
 
     @classmethod
     def deserialize(
-        cls, source: str | Path | IOBase, *, format: SerializationFormat = "binary"
+        cls,
+        source: str | bytes | Path | IOBase,
+        *,
+        format: SerializationFormat = "binary",
     ) -> LazyFrame:
         """
         Read a logical plan from a file to construct a LazyFrame.
@@ -529,6 +532,8 @@ class LazyFrame:
             source = BytesIO(source.getvalue().encode())
         elif isinstance(source, (str, Path)):
             source = normalize_filepath(source)
+        elif isinstance(source, bytes):
+            source = io.BytesIO(source)
 
         if format == "binary":
             deserializer = PyLazyFrame.deserialize_binary
@@ -1722,7 +1727,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Notes
         -----
-        * The calling frame is automatically registered as a table in the SQL context
+        * The calling LazyFrame is automatically registered as a table in the SQLContext
           under the name "self". If you want access to the DataFrames and LazyFrames
           found in the current globals, use the top-level :meth:`pl.sql <polars.sql>`.
         * More control over registration and execution behaviour is available by
@@ -5672,6 +5677,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                * - **left**
                  - Returns all rows from the left table, and the matched rows from
                    the right table.
+               * - **right**
+                 - Returns all rows from the right table, and the matched rows from
+                   the left table.
                * - **full**
                  - Returns all rows when there is a match in either left or right.
                * - **cross**

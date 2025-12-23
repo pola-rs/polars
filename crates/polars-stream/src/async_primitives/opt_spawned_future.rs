@@ -61,12 +61,12 @@ where
 ///
 /// Note that dropping the iterator will call abort on all spawned futures, as this is intended to be
 /// used for compute.
-pub fn parallelize_first_to_local<I, F, O>(
+pub fn parallelize_first_to_local<'i, 'o, I, F, O>(
     task_priority: TaskPriority,
     futures_iter: I,
-) -> impl ExactSizeIterator<Item = impl Future<Output = O> + Send + 'static>
+) -> impl ExactSizeIterator<Item = impl Future<Output = O> + Send + 'static> + 'o
 where
-    I: Iterator<Item = F>,
+    I: Iterator<Item = F> + 'i,
     F: Future<Output = O> + Send + 'static,
     O: Send + 'static,
 {

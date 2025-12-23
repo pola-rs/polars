@@ -2158,3 +2158,20 @@ def test_str_json_decode_25237() -> None:
     dtypes = {s.str.json_decode().dtype for _ in range(20)}
 
     assert len(dtypes) == 1
+
+
+def test_json_decode_decimal_25789() -> None:
+    s = pl.Series(
+        ['{"a": 1.23}', '{"a": 4.56}', '{"a": null}', '{"a": "30.1271239481230948"}']
+    )
+    result = s.str.json_decode(dtype=pl.Struct({"a": pl.Decimal(4, 2)}))
+    expected = pl.Series(
+        [{"a": 1.23}, {"a": 4.56}, {"a": None}, {"a": 30.13}],
+        dtype=pl.Struct({"a": pl.Decimal(4, 2)}),
+    )
+    assert_series_equal(result, expected)
+
+    with pytest.raises(
+        ComputeError, match=r"error deserializing value.*30.127.* as Decimal\(3, 2\)"
+    ):
+        s.str.json_decode(dtype=pl.Struct({"a": pl.Decimal(3, 2)}))

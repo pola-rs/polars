@@ -6,6 +6,7 @@ use std::{mem, ops};
 use arrow::datatypes::ArrowSchemaRef;
 use polars_row::ArrayRef;
 use polars_schema::schema::ensure_matching_schema_names;
+use polars_utils::UnitVec;
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
@@ -269,7 +270,7 @@ impl DataFrame {
         }
     }
 
-    /// Create a DataFrame from a Vector of Series.
+    /// Create a DataFrame from a Vector of Columns.
     ///
     /// Errors if a column names are not unique, or if heights are not all equal.
     ///
@@ -334,7 +335,7 @@ impl DataFrame {
 
     /// Converts a sequence of columns into a DataFrame, broadcasting length-1
     /// columns to match the other columns.
-    ///  
+    ///
     /// # Safety
     /// Does not check that the column names are unique (which they must be).
     pub unsafe fn new_with_broadcast_no_namecheck(
@@ -429,6 +430,30 @@ impl DataFrame {
             .map(|f| Column::full_null(f.name.clone(), height, f.dtype()))
             .collect();
         unsafe { DataFrame::new_no_checks(height, columns) }
+    }
+
+    /// Ensure this DataFrame matches the given schema. Casts null columns to
+    /// the expected schema if necessary (but nothing else).
+    pub fn ensure_matches_schema(&mut self, schema: &Schema) -> PolarsResult<()> {
+        let mut any_needed_cast = false;
+        for (col, (name, dt)) in self.columns.iter_mut().zip(schema.iter()) {
+            polars_ensure!(
+                col.name() == name,
+                SchemaMismatch: "column name mismatch: expected {:?}, found {:?}",
+                name,
+                col.name()
+            );
+
+            let needs_cast = col.dtype().matches_schema_type(dt)?;
+            any_needed_cast |= needs_cast;
+            if needs_cast {
+                *col = col.cast(dt)?;
+            }
+        }
+        if any_needed_cast {
+            self.clear_schema();
+        }
+        Ok(())
     }
 
     /// Removes the last `Series` from the `DataFrame` and returns it, or [`None`] if it is empty.
@@ -1810,7 +1835,7 @@ impl DataFrame {
         I: IntoIterator<Item = S>,
         S: Into<PlSmallStr>,
     {
-        let cols = selection.into_iter().map(|s| s.into()).collect::<Vec<_>>();
+        let cols: UnitVec<PlSmallStr> = selection.into_iter().map(|s| s.into()).collect();
         self._select_impl(cols.as_slice())
     }
 
@@ -1830,7 +1855,7 @@ impl DataFrame {
         I: IntoIterator<Item = S>,
         S: Into<PlSmallStr>,
     {
-        let cols = selection.into_iter().map(|s| s.into()).collect::<Vec<_>>();
+        let cols: UnitVec<PlSmallStr> = selection.into_iter().map(|s| s.into()).collect();
         self._select_with_schema_impl(&cols, schema, true)
     }
 
@@ -1845,7 +1870,7 @@ impl DataFrame {
         I: IntoIterator<Item = S>,
         S: Into<PlSmallStr>,
     {
-        let cols = selection.into_iter().map(|s| s.into()).collect::<Vec<_>>();
+        let cols: UnitVec<PlSmallStr> = selection.into_iter().map(|s| s.into()).collect();
         self._select_with_schema_impl(&cols, schema, false)
     }
 
@@ -1887,7 +1912,7 @@ impl DataFrame {
         I: IntoIterator<Item = S>,
         S: Into<PlSmallStr>,
     {
-        let cols = selection.into_iter().map(|s| s.into()).collect::<Vec<_>>();
+        let cols: UnitVec<PlSmallStr> = selection.into_iter().map(|s| s.into()).collect();
         self.select_physical_impl(&cols)
     }
 
@@ -1897,14 +1922,26 @@ impl DataFrame {
         Ok(unsafe { DataFrame::new_no_checks(self.height(), selected) })
     }
 
-    pub fn project(&self, to: SchemaRef) -> PolarsResult<Self> {
-        let from = self.schema();
-        let columns = to
-            .iter_names()
-            .map(|name| Ok(self.columns[from.try_index_of(name.as_str())?].clone()))
-            .collect::<PolarsResult<Vec<_>>>()?;
-        let mut df = unsafe { Self::new_no_checks(self.height(), columns) };
+    /// # Safety
+    /// Dtypes must match, as the provided schema becomes the cached schema of the result.
+    pub unsafe fn project(&self, to: SchemaRef) -> PolarsResult<Self> {
+        let mut df = unsafe { self.project_names(to.iter_names())? };
         df.cached_schema = to.into();
+        Ok(df)
+    }
+
+    /// # Safety
+    /// This does not check for duplicates on names.
+    pub unsafe fn project_names(
+        &self,
+        names: impl IntoIterator<Item = impl AsRef<str>>,
+    ) -> PolarsResult<Self> {
+        let from = self.schema();
+        let columns = names
+            .into_iter()
+            .map(|name| Ok(self.columns[from.try_index_of(name.as_ref())?].clone()))
+            .collect::<PolarsResult<_>>()?;
+        let df = unsafe { Self::new_no_checks(self.height(), columns) };
         Ok(df)
     }
 
@@ -2049,23 +2086,46 @@ impl DataFrame {
 
     /// # Safety
     /// The indices must be in-bounds.
+    pub unsafe fn gather_group_unchecked(&self, group: &GroupsIndicator) -> Self {
+        match group {
+            GroupsIndicator::Idx((_, indices)) => unsafe {
+                self.take_slice_unchecked_impl(indices.as_slice(), false)
+            },
+            GroupsIndicator::Slice([offset, len]) => self.slice(*offset as i64, *len as usize),
+        }
+    }
+
+    /// # Safety
+    /// The indices must be in-bounds.
     pub unsafe fn take_unchecked_impl(&self, idx: &IdxCa, allow_threads: bool) -> Self {
         let cols = if allow_threads && POOL.current_num_threads() > 1 {
             POOL.install(|| {
                 if POOL.current_num_threads() > self.width() {
                     let stride = usize::max(idx.len().div_ceil(POOL.current_num_threads()), 256);
-                    self._apply_columns_par(&|c| {
-                        (0..idx.len().div_ceil(stride))
-                            .into_par_iter()
-                            .map(|i| c.take_unchecked(&idx.slice((i * stride) as i64, stride)))
-                            .reduce(
-                                || Column::new_empty(c.name().clone(), c.dtype()),
-                                |mut a, b| {
-                                    a.append_owned(b).unwrap();
-                                    a
-                                },
-                            )
-                    })
+                    if self.len() / stride >= 2 {
+                        self._apply_columns_par(&|c| {
+                            // Nested types initiate a rechunk in their take_unchecked implementation.
+                            // If we do not rechunk, it will result in rechunk storms downstream.
+                            let c = if c.dtype().is_nested() {
+                                &c.rechunk()
+                            } else {
+                                c
+                            };
+
+                            (0..idx.len().div_ceil(stride))
+                                .into_par_iter()
+                                .map(|i| c.take_unchecked(&idx.slice((i * stride) as i64, stride)))
+                                .reduce(
+                                    || Column::new_empty(c.name().clone(), c.dtype()),
+                                    |mut a, b| {
+                                        a.append_owned(b).unwrap();
+                                        a
+                                    },
+                                )
+                        })
+                    } else {
+                        self._apply_columns_par(&|c| c.take_unchecked(idx))
+                    }
                 } else {
                     self._apply_columns_par(&|c| c.take_unchecked(idx))
                 }
@@ -2089,22 +2149,34 @@ impl DataFrame {
             POOL.install(|| {
                 if POOL.current_num_threads() > self.width() {
                     let stride = usize::max(idx.len().div_ceil(POOL.current_num_threads()), 256);
-                    self._apply_columns_par(&|c| {
-                        (0..idx.len().div_ceil(stride))
-                            .into_par_iter()
-                            .map(|i| {
-                                let idx = &idx[i * stride..];
-                                let idx = &idx[..idx.len().min(stride)];
-                                c.take_slice_unchecked(idx)
-                            })
-                            .reduce(
-                                || Column::new_empty(c.name().clone(), c.dtype()),
-                                |mut a, b| {
-                                    a.append_owned(b).unwrap();
-                                    a
-                                },
-                            )
-                    })
+                    if self.len() / stride >= 2 {
+                        self._apply_columns_par(&|c| {
+                            // Nested types initiate a rechunk in their take_unchecked implementation.
+                            // If we do not rechunk, it will result in rechunk storms downstream.
+                            let c = if c.dtype().is_nested() {
+                                &c.rechunk()
+                            } else {
+                                c
+                            };
+
+                            (0..idx.len().div_ceil(stride))
+                                .into_par_iter()
+                                .map(|i| {
+                                    let idx = &idx[i * stride..];
+                                    let idx = &idx[..idx.len().min(stride)];
+                                    c.take_slice_unchecked(idx)
+                                })
+                                .reduce(
+                                    || Column::new_empty(c.name().clone(), c.dtype()),
+                                    |mut a, b| {
+                                        a.append_owned(b).unwrap();
+                                        a
+                                    },
+                                )
+                        })
+                    } else {
+                        self._apply_columns_par(&|s| s.take_slice_unchecked(idx))
+                    }
                 } else {
                     self._apply_columns_par(&|s| s.take_slice_unchecked(idx))
                 }
@@ -2759,20 +2831,20 @@ impl DataFrame {
         if length == 0 {
             return self.clear();
         }
-        let col = self
+        let cols = self
             .columns
             .iter()
             .map(|s| s.slice(offset, length))
             .collect::<Vec<_>>();
 
-        let height = if let Some(fst) = col.first() {
+        let height = if let Some(fst) = cols.first() {
             fst.len()
         } else {
             let (_, length) = slice_offsets(offset, length, self.height());
             length
         };
 
-        unsafe { DataFrame::new_no_checks(height, col) }
+        unsafe { DataFrame::new_no_checks(height, cols) }
     }
 
     /// Split [`DataFrame`] at the given `offset`.
@@ -2788,8 +2860,8 @@ impl DataFrame {
 
     #[must_use]
     pub fn clear(&self) -> Self {
-        let col = self.columns.iter().map(|s| s.clear()).collect::<Vec<_>>();
-        unsafe { DataFrame::new_no_checks(0, col) }
+        let cols = self.columns.iter().map(|s| s.clear()).collect::<Vec<_>>();
+        unsafe { DataFrame::new_no_checks(0, cols) }
     }
 
     #[must_use]
@@ -2850,7 +2922,7 @@ impl DataFrame {
     /// ```
     #[must_use]
     pub fn head(&self, length: Option<usize>) -> Self {
-        let col = self
+        let cols = self
             .columns
             .iter()
             .map(|c| c.head(length))
@@ -2858,7 +2930,7 @@ impl DataFrame {
 
         let height = length.unwrap_or(HEAD_DEFAULT_LENGTH);
         let height = usize::min(height, self.height());
-        unsafe { DataFrame::new_no_checks(height, col) }
+        unsafe { DataFrame::new_no_checks(height, cols) }
     }
 
     /// Get the tail of the [`DataFrame`].
@@ -2886,14 +2958,14 @@ impl DataFrame {
     /// | ---         | ---                | ---     |
     /// | i32         | f64                | str     |
     /// +=============+====================+=========+
-    /// | 108         | 0.63               | Syria   |
+    /// | 108         | 0.65               | Syria   |
     /// +-------------+--------------------+---------+
-    /// | 109         | 0.63               | Turkey  |
+    /// | 109         | 0.52               | Turkey  |
     /// +-------------+--------------------+---------+
     /// ```
     #[must_use]
     pub fn tail(&self, length: Option<usize>) -> Self {
-        let col = self
+        let cols = self
             .columns
             .iter()
             .map(|c| c.tail(length))
@@ -2901,7 +2973,7 @@ impl DataFrame {
 
         let height = length.unwrap_or(TAIL_DEFAULT_LENGTH);
         let height = usize::min(height, self.height());
-        unsafe { DataFrame::new_no_checks(height, col) }
+        unsafe { DataFrame::new_no_checks(height, cols) }
     }
 
     /// Iterator over the rows in this [`DataFrame`] as Arrow RecordBatches.
@@ -2969,8 +3041,8 @@ impl DataFrame {
     /// Get a [`DataFrame`] with all the columns in reversed order.
     #[must_use]
     pub fn reverse(&self) -> Self {
-        let col = self.columns.iter().map(|s| s.reverse()).collect::<Vec<_>>();
-        unsafe { DataFrame::new_no_checks(self.height(), col) }
+        let cols = self.columns.iter().map(|s| s.reverse()).collect::<Vec<_>>();
+        unsafe { DataFrame::new_no_checks(self.height(), cols) }
     }
 
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
@@ -3297,7 +3369,7 @@ impl DataFrame {
     ) -> PolarsResult<Vec<DataFrame>> {
         let selected_keys = self.select_columns(cols.iter().cloned())?;
         let groups = self.group_by_with_series(selected_keys, parallel, stable)?;
-        let groups = groups.take_groups();
+        let groups = groups.into_groups();
 
         // drop key columns prior to calculation if requested
         let df = if include_key {
@@ -3366,10 +3438,7 @@ impl DataFrame {
         I: IntoIterator<Item = S>,
         S: Into<PlSmallStr>,
     {
-        let cols = cols
-            .into_iter()
-            .map(Into::into)
-            .collect::<Vec<PlSmallStr>>();
+        let cols: UnitVec<PlSmallStr> = cols.into_iter().map(Into::into).collect();
         self._partition_by_impl(cols.as_slice(), false, include_key, true)
     }
 
@@ -3385,10 +3454,7 @@ impl DataFrame {
         I: IntoIterator<Item = S>,
         S: Into<PlSmallStr>,
     {
-        let cols = cols
-            .into_iter()
-            .map(Into::into)
-            .collect::<Vec<PlSmallStr>>();
+        let cols: UnitVec<PlSmallStr> = cols.into_iter().map(Into::into).collect();
         self._partition_by_impl(cols.as_slice(), true, include_key, true)
     }
 

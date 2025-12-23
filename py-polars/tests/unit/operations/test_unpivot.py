@@ -142,7 +142,7 @@ def test_unpivot_empty_on_25474() -> None:
 
     def assert_eq_df_lf(on: Any, index: Any, expected_data: list[pl.Series]) -> None:
         def logic(frame: Any, on: Any, index: Any) -> Any:
-            return frame.unpivot(on, index=index)
+            return frame.unpivot(on, index=index, variable_name="var", value_name="val")
 
         return assert_eq_df_lf_impl(data, logic, on, index, expected_data)
 
@@ -151,8 +151,8 @@ def test_unpivot_empty_on_25474() -> None:
         "a",
         [
             pl.Series("a", ["x", "y", "x", "y"], dtype=pl.String),
-            pl.Series("variable", ["b", "b", "c", "c"], dtype=pl.String),
-            pl.Series("value", [1, 3, 2, 4], dtype=pl.Int64),
+            pl.Series("var", ["b", "b", "c", "c"], dtype=pl.String),
+            pl.Series("val", [1, 3, 2, 4], dtype=pl.Int64),
         ],
     )
 
@@ -161,8 +161,8 @@ def test_unpivot_empty_on_25474() -> None:
         "a",
         [
             pl.Series("a", [], dtype=pl.String),
-            pl.Series("variable", [], dtype=pl.String),
-            pl.Series("value", [], dtype=pl.Null),
+            pl.Series("var", [], dtype=pl.String),
+            pl.Series("val", [], dtype=pl.Null),
         ],
     )
 
@@ -171,8 +171,8 @@ def test_unpivot_empty_on_25474() -> None:
         "b",
         [
             pl.Series("b", [], dtype=pl.Int64),
-            pl.Series("variable", [], dtype=pl.String),
-            pl.Series("value", [], dtype=pl.Null),
+            pl.Series("var", [], dtype=pl.String),
+            pl.Series("val", [], dtype=pl.Null),
         ],
     )
 
@@ -181,8 +181,8 @@ def test_unpivot_empty_on_25474() -> None:
         "a",
         [
             pl.Series("a", [], dtype=pl.String),
-            pl.Series("variable", [], dtype=pl.String),
-            pl.Series("value", [], dtype=pl.Null),
+            pl.Series("var", [], dtype=pl.String),
+            pl.Series("val", [], dtype=pl.Null),
         ],
     )
 
@@ -191,8 +191,8 @@ def test_unpivot_empty_on_25474() -> None:
         "a",
         [
             pl.Series("a", ["x", "y", "x", "y", "x", "y"], dtype=pl.String),
-            pl.Series("variable", ["b", "b", "c", "c", "d", "d"], dtype=pl.String),
-            pl.Series("value", ["1", "3", "2", "4", "str_a", "str_b"], dtype=pl.String),
+            pl.Series("var", ["b", "b", "c", "c", "d", "d"], dtype=pl.String),
+            pl.Series("val", ["1", "3", "2", "4", "str_a", "str_b"], dtype=pl.String),
         ],
     )
 
@@ -202,8 +202,8 @@ def test_unpivot_empty_on_25474() -> None:
         [
             pl.Series("b", [1, 3, 1, 3], dtype=pl.Int64),
             pl.Series("a", ["x", "y", "x", "y"], dtype=pl.String),
-            pl.Series("variable", ["c", "c", "d", "d"], dtype=pl.String),
-            pl.Series("value", ["2", "4", "str_a", "str_b"], dtype=pl.String),
+            pl.Series("var", ["c", "c", "d", "d"], dtype=pl.String),
+            pl.Series("val", ["2", "4", "str_a", "str_b"], dtype=pl.String),
         ],
     )
 
@@ -245,4 +245,76 @@ def test_unpivot_predicate_pd() -> None:
             pl.Series("variable", ["d", "d"], dtype=pl.String),
             pl.Series("value", [day_a, day_b], dtype=pl.Date),
         ],
+    )
+
+
+def test_unpivot_filter_opt() -> None:
+    data = {"a": [5, 2, 8, 2], "b": [99, 33, 77, 44]}
+
+    def assert_eq_df_lf(
+        on: Any, index: Any, filter_pred: Any, expected_data: list[pl.Series]
+    ) -> None:
+        def logic(frame: Any, on: Any, index: Any) -> Any:
+            return frame.unpivot(on, index=index).filter(filter_pred)
+
+        return assert_eq_df_lf_impl(data, logic, on, index, expected_data)
+
+    assert_eq_df_lf(
+        "b",
+        "a",
+        pl.col.a == 2,
+        [
+            pl.Series("a", [2, 2], dtype=pl.Int64),
+            pl.Series("variable", ["b", "b"], dtype=pl.String),
+            pl.Series("value", [33, 44], dtype=pl.Int64),
+        ],
+    )
+
+    assert_eq_df_lf(
+        "b",
+        ["b", "a"],
+        pl.col.b != 33,
+        [
+            pl.Series("b", [99, 77, 44], dtype=pl.Int64),
+            pl.Series("a", [5, 8, 2], dtype=pl.Int64),
+            pl.Series("variable", ["b", "b", "b"], dtype=pl.String),
+            pl.Series("value", [99, 77, 44], dtype=pl.Int64),
+        ],
+    )
+
+
+def test_unpivot_variable_value_name_25681() -> None:
+    schema = {"foo": pl.String, "value": pl.Null}
+
+    q = pl.LazyFrame().unpivot(variable_name="foo")
+
+    assert q.collect_schema() == schema
+    assert_frame_equal(q.collect(), pl.DataFrame(schema=schema))
+
+
+def test_unpivot_projection_pushdown_schema_25720() -> None:
+    left = pl.LazyFrame({"date": ["2025-01-01"], "1": [True]})
+    right = pl.LazyFrame({"date": ["2025-01-01"], "id": ["1"], "x": [1.0]})
+
+    left_unpivot = left.unpivot(index="date", variable_name="id", value_name="mask")
+
+    q = left_unpivot.join(right, on=["date", "id"], how="left")
+
+    assert q.collect_schema() == {
+        "date": pl.String,
+        "id": pl.String,
+        "mask": pl.Boolean,
+        "x": pl.Float64,
+    }
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("date", ["2025-01-01"], dtype=pl.String),
+                pl.Series("id", ["1"], dtype=pl.String),
+                pl.Series("mask", [True], dtype=pl.Boolean),
+                pl.Series("x", [1.0], dtype=pl.Float64),
+            ]
+        ),
     )

@@ -361,12 +361,9 @@ fn convert_dsl_plan_to_serializable_plan(
         },
         DP::IR {
             dsl,
-            version,
+            version: _,
             node: _,
-        } => SP::IR {
-            dsl: dsl_plan_key(dsl, arenas),
-            version: *version,
-        },
+        } => convert_dsl_plan_to_serializable_plan(dsl.as_ref(), arenas),
     }
 }
 
@@ -609,12 +606,8 @@ fn try_convert_serializable_plan_to_dsl_plan(
         }),
         SP::IR {
             dsl: dsl_key,
-            version,
-        } => Ok(DP::IR {
-            dsl: get_dsl_plan(*dsl_key, ser_dsl_plan, arenas)?,
-            version: *version,
-            node: Default::default(),
-        }),
+            version: _,
+        } => get_dsl_plan(*dsl_key, ser_dsl_plan, arenas).map(Arc::unwrap_or_clone),
     }
 }
 

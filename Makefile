@@ -74,14 +74,16 @@ export CFLAGS
 FILTER_PIP_WARNINGS=| grep -v "don't match your environment"; test $${PIPESTATUS[0]} -eq 0
 
 .venv:  ## Set up Python virtual environment and install requirements
-	python3 -m venv $(VENV)
-	$(MAKE) requirements
+	@unset CONDA_PREFIX \
+	&& python3 -m venv $(VENV) \
+	&& $(MAKE) requirements
 
 # Note: Installed separately as pyiceberg does not have wheels for 3.13, causing
 # --no-build to fail.
 .PHONY: requirements
-requirements: .venv  ## Install/refresh Python project requirements
+requirements:  ## Install/refresh Python project requirements
 	@unset CONDA_PREFIX \
+	&& $(VENV_BIN)/python -m venv $(VENV) --clear \
 	&& $(VENV_BIN)/python -m pip install --upgrade uv \
 	&& $(VENV_BIN)/uv pip install --upgrade --compile-bytecode --no-build \
 	   -r py-polars/requirements-dev.txt \
@@ -89,10 +91,11 @@ requirements: .venv  ## Install/refresh Python project requirements
 	   -r py-polars/docs/requirements-docs.txt \
 	   -r docs/source/requirements.txt \
 	&& $(VENV_BIN)/uv pip install --upgrade --compile-bytecode "pyiceberg>=0.7.1" pyiceberg-core \
-	&& $(VENV_BIN)/uv pip install --no-deps -e py-polars
+	&& $(VENV_BIN)/uv pip install --no-deps -e py-polars \
+	&& $(VENV_BIN)/uv pip uninstall polars-runtime-compat polars-runtime-64  ## Uninstall runtimes which might take precedence over polars-runtime-32
 
 .PHONY: requirements-all
-requirements-all: .venv  ## Install/refresh all Python requirements (including those needed for CI tests)
+requirements-all:  ## Install/refresh all Python requirements (including those needed for CI tests)
 	$(MAKE) requirements
 	$(VENV_BIN)/uv pip install --upgrade --compile-bytecode -r py-polars/requirements-ci.txt
 

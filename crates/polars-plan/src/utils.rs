@@ -117,7 +117,7 @@ pub fn expr_output_name(expr: &Expr) -> PolarsResult<PlSmallStr> {
             Expr::KeepName(_) => polars_bail!(nyi = "`name.keep` is not allowed here"),
             Expr::RenameAlias { expr, function } => return function.call(&expr_output_name(expr)?),
             Expr::Len => return Ok(get_len_name()),
-            Expr::Literal(val) => return Ok(val.output_column_name().clone()),
+            Expr::Literal(val) => return Ok(val.output_column_name()),
 
             #[cfg(feature = "dtype-struct")]
             Expr::Function {

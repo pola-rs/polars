@@ -5,6 +5,7 @@ import pytest
 import polars as pl
 from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
+from tests.unit.sql.asserts import assert_sql_matches
 
 # ---------------------------------------------------------------------------------
 # NOTE: 'UNNEST' is available as both a table function and a select-level function
@@ -99,13 +100,12 @@ def test_unnest_select_expressions() -> None:
     res = df.sql(query)
     assert_frame_equal(res, expected)
 
-    # from tests.unit.sql.asserts import assert_sql_matches
-    # assert_sql_matches(
-    #     df,
-    #     query=query,
-    #     compare_with="duckdb",
-    #     expected=expected,
-    # )
+    assert_sql_matches(
+        df,
+        query=query,
+        compare_with="duckdb",
+        expected=expected,
+    )
 
 
 def test_unnest_aggregates() -> None:
