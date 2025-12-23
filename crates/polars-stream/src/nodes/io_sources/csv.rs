@@ -847,7 +847,6 @@ fn skip_lines_naive(
         let mut bytes: &[u8] = &slice;
 
         'inner: loop {
-            // eprintln!("bytes: {:?}", str::from_utf8(bytes).unwrap());
             // One would think that next_line_position_naive would be the right fit here, but it
             // does extra logic that messes with chunk ends.
             let Some(mut pos) = memchr::memchr(eol_char, bytes) else {
@@ -866,12 +865,10 @@ fn skip_lines_naive(
             }
         }
 
-        if read_n == 0 {
-            // The user specified a skip_lines number larger than the total number of lines.
-            polars_warn!("Specified skip_lines is larger than total number of lines.");
-            // It's stable behavior to return an empty df in such a case.
-            return Ok(MemSlice::EMPTY);
-        }
+        polars_ensure!(
+            read_n > 0,
+            NoData: "specified skip_lines is larger than total number of lines."
+        );
 
         // No need to search for naive eol twice in the leftover.
         prev_leftover = MemSlice::EMPTY;
