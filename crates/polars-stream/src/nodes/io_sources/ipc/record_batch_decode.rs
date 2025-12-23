@@ -29,10 +29,6 @@ impl RecordBatchDecoder {
         record_batch_data: RecordBatchData,
         row_range: Range<IdxSize>,
     ) -> PolarsResult<DataFrame> {
-        dbg!("start record_batch_data_to_df"); //kdn
-        dbg!(&record_batch_data.num_rows);
-        dbg!(&row_range);
-
         let file_metadata = self.file_metadata.clone();
         let projection_info = self.projection_info.as_ref().clone();
         let bytes = record_batch_data.fetched_bytes;
@@ -41,7 +37,6 @@ impl RecordBatchDecoder {
         debug_assert_eq!(row_range.end as usize - row_range.start as usize, num_rows);
 
         let slice_range = self.slice_range.clone();
-        dbg!(&slice_range);
 
         if slice_range.start >= row_range.end as usize
             || slice_range.end <= row_range.start as usize
@@ -65,8 +60,12 @@ impl RecordBatchDecoder {
 
         let dictionaries = self.dictionaries.as_ref().as_ref().unwrap();
         let length = reader.record_batch_num_rows(&mut message_scratch)?;
-        let limit = slice_range.end as usize - row_range.start as usize;
-        dbg!(&limit);
+
+        let limit = if slice_range.end != usize::MAX {
+            Some(slice_range.end as usize - row_range.start as usize)
+        } else {
+            None
+        };
 
         // Create the DataFrame with the appropriate schema based on the data.
         let mut df = if pl_schema.is_empty() {
@@ -77,7 +76,7 @@ impl RecordBatchDecoder {
                 dictionaries,
                 &file_metadata.clone(),
                 projection_info.as_ref().map(|x| x.columns.as_ref()),
-                Some(limit),
+                limit,
                 0,
                 true,
                 &mut message_scratch,
@@ -94,11 +93,8 @@ impl RecordBatchDecoder {
             let mut df = DataFrame::empty_with_schema(&pl_schema);
             df.try_extend(Some(chunk))?;
 
-            // slice_range.start = std::cmp::max(slice_range.start as usize, row_range.start as usize);
             let slice_start = std::cmp::max(slice_range.start as usize, row_range.start as usize)
                 - row_range.start as usize;
-            dbg!(&slice_start);
-            dbg!(&slice_range.len());
             df = df.slice(i64::try_from(slice_start).unwrap(), slice_range.len());
             df
         };
