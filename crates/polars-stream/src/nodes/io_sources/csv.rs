@@ -625,7 +625,6 @@ impl ChunkReader {
 
         let height = df.height();
 
-        // count does not account for comment lines and will count all lines.
         if height != n_lines {
             // Note: in case data is malformed, height is more likely to be correct than n_lines.
             let msg = format!(
