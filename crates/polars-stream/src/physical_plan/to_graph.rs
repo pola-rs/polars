@@ -1432,7 +1432,7 @@ fn to_graph_rec<'a>(
                         let Some(mut df) = df else { return Ok(None) };
 
                         if let Some(simple_projection) = &simple_projection {
-                            df = df.project(simple_projection.clone())?;
+                            df = unsafe { df.project(simple_projection.clone())? };
                         }
 
                         if validate_schema {
