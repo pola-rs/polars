@@ -109,6 +109,27 @@ impl CompressedReader {
         !matches!(&self, CompressedReader::Uncompressed { .. })
     }
 
+    /// If possible returns the total number of bytes that will be produced by reading from the
+    /// start to finish.
+    pub fn total_len_estimate(&self) -> usize {
+        const ESTIMATED_DEFLATE_RATIO: usize = 3;
+        const ESTIMATED_ZSTD_RATIO: usize = 5;
+
+        match self {
+            CompressedReader::Uncompressed { slice, .. } => slice.len(),
+            #[cfg(feature = "decompress")]
+            CompressedReader::Gzip(reader) => {
+                reader.get_ref().total_len() * ESTIMATED_DEFLATE_RATIO
+            },
+            #[cfg(feature = "decompress")]
+            CompressedReader::Zlib(reader) => {
+                reader.get_ref().total_len() * ESTIMATED_DEFLATE_RATIO
+            },
+            #[cfg(feature = "decompress")]
+            CompressedReader::Zstd(reader) => reader.get_ref().total_len() * ESTIMATED_ZSTD_RATIO,
+        }
+    }
+
     /// Reads exactly `read_size` bytes if possible from the internal readers and creates a new
     /// [`MemSlice`] with the content `concat(prev_leftover, new_bytes)`.
     ///
@@ -133,11 +154,14 @@ impl CompressedReader {
         // sized rows.
         let prev_len = prev_leftover.len();
 
-        debug_assert!(read_size.is_power_of_two());
-
         let mut buf = Vec::new();
         if self.is_compressed() {
-            buf.reserve_exact(prev_len + read_size);
+            let reserve_size = if read_size == usize::MAX {
+                self.total_len_estimate()
+            } else {
+                prev_len.saturating_add(read_size)
+            };
+            buf.reserve_exact(reserve_size);
             buf.extend_from_slice(prev_leftover);
         }
 
