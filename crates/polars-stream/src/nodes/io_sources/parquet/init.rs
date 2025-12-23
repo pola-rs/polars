@@ -67,7 +67,6 @@ impl ParquetReadImpl {
             Option::take(&mut self.rg_prefetch_current_all_spawned);
 
         let prefetch_task = AbortOnDropHandle(io_runtime.spawn(async move {
-            dbg!("start task: prefetch_task"); //kdn
             polars_ensure!(
                 metadata.num_rows < IdxSize::MAX as usize,
                 bigidx,
@@ -170,7 +169,6 @@ impl ParquetReadImpl {
         // Decode loop (spawns decodes on the computational executor).
         let (decode_send, mut decode_recv) = tokio::sync::mpsc::channel(self.config.num_pipelines);
         let decode_task = AbortOnDropHandle(io_runtime.spawn(async move {
-            dbg!("start task: decode_task"); //kdn
             while let Some((prefetch_task, permit)) = prefetch_recv.recv().await {
                 let row_group_data = prefetch_task.await.unwrap()?;
                 let row_group_decoder = row_group_decoder.clone();
@@ -181,7 +179,6 @@ impl ParquetReadImpl {
                     break;
                 }
             }
-            dbg!("finish task: decode_task"); //kdn
             PolarsResult::Ok(())
         }));
 
@@ -189,7 +186,6 @@ impl ParquetReadImpl {
         // it is purely a dispatch loop. Run on the computational executor to reduce context switches.
         let last_morsel_min_split = self.config.num_pipelines;
         let distribute_task = async_executor::spawn(TaskPriority::High, async move {
-            dbg!("start task: distribute_task"); //kdn
             let mut morsel_seq = MorselSeq::default();
             // Note: We don't use this (it is handled by the bridge). But morsels require a source token.
             let source_token = SourceToken::new();
@@ -244,7 +240,7 @@ impl ParquetReadImpl {
                     morsel_seq = morsel_seq.successor();
                 }
             }
-            dbg!("finish task: distribute_task"); //kdn
+
             PolarsResult::Ok(())
         });
 

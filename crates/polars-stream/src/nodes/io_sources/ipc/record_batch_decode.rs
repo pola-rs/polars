@@ -62,7 +62,7 @@ impl RecordBatchDecoder {
         let length = reader.record_batch_num_rows(&mut message_scratch)?;
 
         let limit = if slice_range.end != usize::MAX {
-            Some(slice_range.end as usize - row_range.start as usize)
+            Some(slice_range.end - row_range.start as usize)
         } else {
             None
         };
@@ -93,7 +93,7 @@ impl RecordBatchDecoder {
             let mut df = DataFrame::empty_with_schema(&pl_schema);
             df.try_extend(Some(chunk))?;
 
-            let slice_start = std::cmp::max(slice_range.start as usize, row_range.start as usize)
+            let slice_start = std::cmp::max(slice_range.start, row_range.start as usize)
                 - row_range.start as usize;
             df = df.slice(i64::try_from(slice_start).unwrap(), slice_range.len());
             df

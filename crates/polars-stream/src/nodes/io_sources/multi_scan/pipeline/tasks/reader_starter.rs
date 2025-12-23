@@ -400,7 +400,6 @@ async fn start_reader_impl(
     constant_args: StartReaderArgsConstant,
     args_this_file: StartReaderArgsPerFile,
 ) -> PolarsResult<StartedReaderState> {
-    dbg!("start reader_impl"); //kdn
     let StartReaderArgsConstant {
         hive_parts,
         final_output_schema,

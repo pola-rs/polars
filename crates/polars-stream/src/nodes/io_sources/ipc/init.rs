@@ -16,14 +16,12 @@ use crate::utils::tokio_handle_ext::AbortOnDropHandle;
 
 impl IpcReadImpl {
     pub(crate) fn run(mut self) -> AsyncTaskData {
-        dbg!("start run for IpcReadImpl");
-
         let verbose = self.verbose;
 
         if verbose {
-            eprintln!("[IPCFileReader]: {:?}", &self.config);
+            eprintln!("[IpcFileReader]: {:?}", &self.config);
             eprintln!(
-                "[IPCFileReader]: record batch count: {:?}",
+                "[IpcFileReader]: record batch count: {:?}",
                 self.metadata.blocks.len()
             );
         }
@@ -69,8 +67,6 @@ impl IpcReadImpl {
 
         // Task: Prefetch.
         let prefetch_task = AbortOnDropHandle(io_runtime.spawn(async move {
-            dbg!("start task: prefetch_task"); //kdn
-
             let mut record_batch_data_fetcher = RecordBatchDataFetcher {
                 memory_prefetch_func,
                 metadata,
@@ -82,12 +78,6 @@ impl IpcReadImpl {
             // @TODO: In case of slicing, it would suffice to fetch the record batch
             // headers for any record batch that falls outside of the slice, or not
             // at all.
-            //kdn TODO RM
-            // while let Some(prefetch) = record_batch_data_fetcher.next().await {
-            //     if prefetch_send.send(prefetch?).await.is_err() {
-            //         break;
-            //     }
-            // }
 
             if let Some(rb_prefetch_prev_all_spawned) = rb_prefetch_prev_all_spawned {
                 rb_prefetch_prev_all_spawned.wait().await;
@@ -112,7 +102,6 @@ impl IpcReadImpl {
 
         // Task: Decode.
         let decode_task = AbortOnDropHandle(io_runtime.spawn(async move {
-            dbg!("start task: decode_task"); //kdn
             let mut current_row_offset: IdxSize = 0;
 
             while let Some((prefetch_task, permit)) = prefetch_recv.recv().await {
@@ -127,7 +116,6 @@ impl IpcReadImpl {
                     .ok_or(ROW_COUNT_OVERFLOW_ERR)?;
                 let row_range = current_row_offset..row_range_end;
                 current_row_offset = row_range_end;
-                dbg!(&row_range);
 
                 // Only pass to decoder if we need the data.
                 if (row_range.start as usize) < self.slice_range.end {
@@ -162,7 +150,6 @@ impl IpcReadImpl {
         // it is purely a dispatch loop. Run on the computational executor to reduce context switches.
         let last_morsel_min_split = self.config.num_pipelines;
         let distribute_task = async_executor::spawn(TaskPriority::High, async move {
-            dbg!("start task: distribute_task"); //kdn
             let mut morsel_seq = MorselSeq::default();
             // Note: We don't use this (it is handled by the bridge). But morsels require a source token.
             let source_token = SourceToken::new();
@@ -234,8 +221,6 @@ impl IpcReadImpl {
     /// Creates a `RecordBatchDecoder` that turns `RecordBatchData` into DataFrames.
     /// Dictionaries must be loaded prior to initialization.
     pub(super) fn init_record_batch_decoder(&mut self) -> RecordBatchDecoder {
-        dbg!("start init_record_batch_decoder"); //kdn
-
         debug_assert!(self.dictionaries.is_some());
 
         let file_metadata = self.metadata.clone();

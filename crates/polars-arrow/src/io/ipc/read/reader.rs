@@ -171,7 +171,6 @@ impl<R: Read + Seek> Iterator for FileReader<R> {
     type Item = PolarsResult<RecordBatchT<Box<dyn Array>>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        dbg!("start next for impl Iterator for FileReader"); //kdn
         // get current block
         if self.current_block == self.metadata.blocks.len() {
             return None;
@@ -211,7 +210,6 @@ impl<R: Read + Seek> Iterator for FileReader<R> {
 /// A reader that has access to exactly one standalone IPC Block of an Arrow IPC file.
 /// The block contains either a `RecordBatch` or a `DictionaryBatch`.
 /// The `dictionaries` field must be initialized prior to decoding a `RecordBatch`.
-
 pub struct BlockReader<R: Read + Seek> {
     pub reader: R,
 }
