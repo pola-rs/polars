@@ -62,6 +62,11 @@ impl IpcReadImpl {
         let n_rows_in_file_tx = self.n_rows_in_file_tx;
         let row_position_on_end_tx = self.row_position_on_end_tx;
 
+        let rb_prefetch_semaphore = Arc::clone(&self.rb_prefetch_semaphore);
+        let rb_prefetch_prev_all_spawned = Option::take(&mut self.rb_prefetch_prev_all_spawned);
+        let rb_prefetch_current_all_spawned =
+            Option::take(&mut self.rb_prefetch_current_all_spawned);
+
         // Task: Prefetch.
         let prefetch_task = AbortOnDropHandle(io_runtime.spawn(async move {
             dbg!("start task: prefetch_task"); //kdn
@@ -77,11 +82,30 @@ impl IpcReadImpl {
             // @TODO: In case of slicing, it would suffice to fetch the record batch
             // headers for any record batch that falls outside of the slice, or not
             // at all.
-            while let Some(prefetch) = record_batch_data_fetcher.next().await {
-                if prefetch_send.send(prefetch?).await.is_err() {
+            //kdn TODO RM
+            // while let Some(prefetch) = record_batch_data_fetcher.next().await {
+            //     if prefetch_send.send(prefetch?).await.is_err() {
+            //         break;
+            //     }
+            // }
+
+            if let Some(rb_prefetch_prev_all_spawned) = rb_prefetch_prev_all_spawned {
+                rb_prefetch_prev_all_spawned.wait().await;
+            }
+
+            loop {
+                let fetch_permit = rb_prefetch_semaphore.clone().acquire_owned().await.unwrap();
+
+                let Some(prefetch) = record_batch_data_fetcher.next().await else {
+                    break;
+                };
+
+                if prefetch_send.send((prefetch?, fetch_permit)).await.is_err() {
                     break;
                 }
             }
+
+            drop(rb_prefetch_current_all_spawned);
 
             PolarsResult::Ok(())
         }));
@@ -91,8 +115,8 @@ impl IpcReadImpl {
             dbg!("start task: decode_task"); //kdn
             let mut current_row_offset: IdxSize = 0;
 
-            while let Some(prefetch) = prefetch_recv.recv().await {
-                let record_batch_data = prefetch.await.unwrap()?;
+            while let Some((prefetch_task, permit)) = prefetch_recv.recv().await {
+                let record_batch_data = prefetch_task.await.unwrap()?;
 
                 // Fetch every record batch so we can determine total row count.
                 let rb_num_rows = record_batch_data.num_rows;
@@ -103,6 +127,7 @@ impl IpcReadImpl {
                     .ok_or(ROW_COUNT_OVERFLOW_ERR)?;
                 let row_range = current_row_offset..row_range_end;
                 current_row_offset = row_range_end;
+                dbg!(&row_range);
 
                 // Only pass to decoder if we need the data.
                 if (row_range.start as usize) < self.slice_range.end {
@@ -112,7 +137,7 @@ impl IpcReadImpl {
                             .record_batch_data_to_df(record_batch_data, row_range)
                             .await
                     });
-                    if decode_send.send(decode_fut).await.is_err() {
+                    if decode_send.send((decode_fut, permit)).await.is_err() {
                         break;
                     }
                 };
@@ -126,7 +151,7 @@ impl IpcReadImpl {
                 _ = row_position_on_end_tx.send(current_row_offset);
             }
             if let Some(n_rows_in_file_tx) = n_rows_in_file_tx {
-                _ = n_rows_in_file_tx.send(current_row_offset); //kdn
+                _ = n_rows_in_file_tx.send(current_row_offset);
             }
 
             PolarsResult::Ok(())
@@ -145,29 +170,33 @@ impl IpcReadImpl {
             // Decode first non-empty morsel.
             let mut next = None;
             loop {
-                let Some(decode_fut) = decode_recv.recv().await else {
+                let Some((decode_fut, permit)) = decode_recv.recv().await else {
                     break;
                 };
                 let df = decode_fut.await?;
                 if df.height() == 0 {
                     continue;
                 }
-                next = Some(df);
+                next = Some((df, permit));
                 break;
             }
 
-            while let Some(df) = next.take() {
+            while let Some((df, permit)) = next.take() {
                 // Try to decode the next non-empty morsel first, so we know
                 // whether the df is the last morsel.
+
+                // Important: Drop this before awaiting the next one, or could
+                // deadlock if the permit limit is 1.
+                drop(permit);
                 loop {
-                    let Some(decode_fut) = decode_recv.recv().await else {
+                    let Some((decode_fut, permit)) = decode_recv.recv().await else {
                         break;
                     };
                     let next_df = decode_fut.await?;
                     if next_df.height() == 0 {
                         continue;
                     }
-                    next = Some(next_df);
+                    next = Some((next_df, permit));
                     break;
                 }
 
@@ -215,16 +244,12 @@ impl IpcReadImpl {
         let row_index = self.row_index.clone();
         let slice_range = self.slice_range.clone();
 
-        // kdn TODO
-        // let max_morsel_size = get_max_morsel_size();
-
         RecordBatchDecoder {
             file_metadata,
             projection_info,
             dictionaries,
             row_index,
             slice_range,
-            // max_morsel_size,
         }
     }
 }

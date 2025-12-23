@@ -27,7 +27,7 @@ use super::multi_scan::reader_interface::output::FileReaderOutputRecv;
 use super::multi_scan::reader_interface::{BeginReadArgs, calc_row_position_after_slice};
 use crate::async_executor::{self, JoinHandle, TaskPriority, spawn};
 use crate::async_primitives::oneshot_channel::Sender;
-use crate::morsel::get_ideal_morsel_size;
+use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
 use crate::nodes::io_sources::multi_scan::reader_interface::{
     FileReader, FileReaderCallbacks, Projection,
@@ -50,9 +50,20 @@ struct IpcFileReader {
     cloud_options: Option<Arc<CloudOptions>>,
     metadata: Option<Arc<FileMetadata>>,
     byte_source_builder: DynByteSourceBuilder,
+    record_batch_prefetch_sync: RecordBatchPrefetchSync,
     verbose: bool,
-
     init_data: Option<InitializedState>,
+}
+
+struct RecordBatchPrefetchSync {
+    prefetch_limit: usize,
+    prefetch_semaphore: Arc<tokio::sync::Semaphore>,
+    shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
+
+    /// Waits for the previous reader to finish spawning prefetches.
+    prev_all_spawned: Option<WaitGroup>,
+    /// Dropped once the current reader has finished spawning prefetches.
+    current_all_spawned: Option<WaitToken>,
 }
 
 #[derive(Clone)]
@@ -62,19 +73,6 @@ struct InitializedState {
     dictionaries: Arc<Option<Dictionaries>>,
     // Lazily initialized - getting this involves iterating record batches.
     n_rows_in_file: Option<IdxSize>,
-}
-
-fn get_max_morsel_size() -> usize {
-    std::env::var("POLARS_STREAMING_IPC_SOURCE_MAX_MORSEL_SIZE")
-        .map_or_else(
-            |_| get_ideal_morsel_size(),
-            |v| {
-                v.parse::<usize>().expect(
-                    "POLARS_STREAMING_IPC_SOURCE_MAX_MORSEL_SIZE does not contain valid size",
-                )
-            },
-        )
-        .max(1)
 }
 
 #[async_trait]
@@ -130,16 +128,27 @@ impl FileReader for IpcFileReader {
         Ok(())
     }
 
+    fn prepare_read(&mut self) -> PolarsResult<()> {
+        let wait_group_this_reader = WaitGroup::default();
+        let prefetch_all_spawned_token = wait_group_this_reader.token();
+
+        let prev_wait_group: Option<WaitGroup> = self
+            .record_batch_prefetch_sync
+            .shared_prefetch_wait_group_slot
+            .try_lock()
+            .unwrap()
+            .replace(wait_group_this_reader);
+
+        self.record_batch_prefetch_sync.prev_all_spawned = prev_wait_group;
+        self.record_batch_prefetch_sync.current_all_spawned = Some(prefetch_all_spawned_token);
+
+        Ok(())
+    }
+
     fn begin_read(
         &mut self,
         args: BeginReadArgs,
     ) -> PolarsResult<(FileReaderOutputRecv, JoinHandle<PolarsResult<()>>)> {
-        // let kdn_select_old = false;
-        // if kdn_select_old {
-        //     return self.begin_read_old(args);
-        // }
-
-        // NEW =======
         dbg!("start begin_read"); //kdn
         let verbose = self.verbose;
 
@@ -180,7 +189,7 @@ impl FileReader for IpcFileReader {
 
         // Normalize slice.
         // @NOTE. When this is expensive (e.g., when downloading from cloud) and not strictly required,
-        // we skip this normalization and handle it later.
+        // we skip this normalization and handle it later. Negative slicing requires normalization.
         let normalized_pre_slice = if let Some(pre_slice) = pre_slice_arg.clone()
             && !(self.scan_source.is_cloud_url() && matches!(pre_slice, Slice::Positive { .. }))
         {
@@ -270,7 +279,12 @@ impl FileReader for IpcFileReader {
 
         // Prepare parameters for Prefetch
         let memory_prefetch_func = get_memory_prefetch_func(verbose);
-        let record_batch_prefetch_size = polars_core::config::get_record_batch_prefetch_size();
+
+        let record_batch_prefetch_size = self
+            .record_batch_prefetch_sync
+            .prefetch_limit
+            .min(file_metadata.blocks.len())
+            .max(1);
 
         let config = Config {
             num_pipelines,
@@ -290,6 +304,14 @@ impl FileReader for IpcFileReader {
             config,
             verbose,
             memory_prefetch_func,
+
+            rb_prefetch_semaphore: Arc::clone(&self.record_batch_prefetch_sync.prefetch_semaphore),
+            rb_prefetch_prev_all_spawned: Option::take(
+                &mut self.record_batch_prefetch_sync.prev_all_spawned,
+            ),
+            rb_prefetch_current_all_spawned: Option::take(
+                &mut self.record_batch_prefetch_sync.current_all_spawned,
+            ),
         }
         .run();
 
@@ -447,6 +469,10 @@ struct IpcReadImpl {
     config: Config,
     verbose: bool,
     memory_prefetch_func: fn(&[u8]) -> (),
+
+    rb_prefetch_semaphore: Arc<tokio::sync::Semaphore>,
+    rb_prefetch_prev_all_spawned: Option<WaitGroup>,
+    rb_prefetch_current_all_spawned: Option<WaitToken>,
 }
 
 #[derive(Debug)]
@@ -468,10 +494,7 @@ async fn read_dictionaries(
     };
 
     if verbose {
-        eprintln!(
-            "[IpcFileReader]: readingg dictionaries ({:?})",
-            blocks.len()
-        );
+        eprintln!("[IpcFileReader]: reading dictionaries ({:?})", blocks.len());
     }
 
     let mut dictionaries = Dictionaries::default();
