@@ -233,7 +233,6 @@ def test_lazy_row_index_no_push_down(foods_file_path: Path) -> None:
     )
 
 
-@pytest.mark.parametrize("newline", ["\n", "\r\n"])
 @pytest.mark.write_disk
 def test_glob_skip_rows(tmp_path: Path, newline: str) -> None:
     tmp_path.mkdir(exist_ok=True)
@@ -248,8 +247,7 @@ foo,bar,baz
 1,2,3
 4,5,6
 7,8,9
-""",
-            newline=newline,
+"""
         )
     file_path = tmp_path / "*.csv"
     assert pl.read_csv(file_path, skip_rows=2).to_dict(as_series=False) == {

@@ -2976,7 +2976,7 @@ def test_write_csv_categorical_23939(dt: pl.DataType) -> None:
 @pytest.mark.parametrize(
     "csv_str", ["A,B\n1,x\n2,y\n3,z", "A,B\n1,x\n2,y\n3,z\n", "\n\n\n\n2,u"]
 )
-def test_csv_skip_more_lines_than_empty(read_fn: str, csv_str: str) -> None:
+def test_skip_more_lines_than_empty(read_fn: str, csv_str: str) -> None:
     new_streaming = (
         os.getenv("POLARS_FORCE_NEW_STREAMING") == "1"
         or os.getenv("POLARS_AUTO_NEW_STREAMING") == "1"
@@ -2992,3 +2992,19 @@ def test_csv_skip_more_lines_than_empty(read_fn: str, csv_str: str) -> None:
     else:
         with pytest.raises(pl.exceptions.NoDataError):
             getattr(pl, read_fn)(io.StringIO(csv_str), skip_lines=5).lazy().collect()
+
+
+@pytest.mark.parametrize(
+    "read_fn",
+    ["read_csv", "scan_csv"],
+)
+def test_skip_crlf(read_fn: str) -> None:
+    csv_str = b"\r\n\r\nline before <3a>\r\nA,B\r\n1,2"
+    df = getattr(pl, read_fn)(csv_str, skip_rows=1).lazy().collect()
+    expected = pl.DataFrame(
+        [
+            pl.Series("A", [1], pl.Int64),
+            pl.Series("B", [2], pl.Int64),
+        ]
+    )
+    assert_frame_equal(df, expected)
