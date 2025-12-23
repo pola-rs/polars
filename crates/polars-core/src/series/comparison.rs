@@ -246,8 +246,8 @@ fn validate_types(left: &DataType, right: &DataType) -> PolarsResult<()> {
             polars_bail!(ComputeError: "cannot compare categorical with {}", dt)
         },
         #[cfg(feature = "dtype-duration")]
-        (Date, dt) | (dt, Date) if dt.is_duration() => {
-            polars_bail!(ComputeError: "cannot compare date with {}", dt)
+        (Date, Duration(_)) | (Duration(_), Date) => {
+            polars_bail!(ComputeError: "cannot compare date with duration")
         },
         _ => (),
     };
