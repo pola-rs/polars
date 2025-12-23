@@ -12,7 +12,7 @@ use crate::nodes::io_sources::ipc::ROW_COUNT_OVERFLOW_ERR;
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
 use crate::nodes::io_sources::parquet::init::split_to_morsels;
 use crate::nodes::{MorselSeq, TaskPriority};
-use crate::utils::task_handles_ext::AbortOnDropHandle;
+use crate::utils::tokio_handle_ext::AbortOnDropHandle;
 
 impl IpcReadImpl {
     pub(crate) fn run(mut self) -> AsyncTaskData {
@@ -20,7 +20,6 @@ impl IpcReadImpl {
 
         let verbose = self.verbose;
 
-        // kdn TODO honor config
         if verbose {
             eprintln!("[IPCFileReader]: {:?}", &self.config);
             eprintln!(
@@ -33,8 +32,6 @@ impl IpcReadImpl {
 
         // Extract parameters.
         let metadata = self.metadata.clone();
-        let projection_info = self.projection_info.clone();
-
         let record_batch_prefetch_size = self.config.record_batch_prefetch_size;
         let memory_prefetch_func = self.memory_prefetch_func;
         let ideal_morsel_size = get_ideal_morsel_size();
@@ -70,7 +67,6 @@ impl IpcReadImpl {
             dbg!("start task: prefetch_task"); //kdn
 
             let mut record_batch_data_fetcher = RecordBatchDataFetcher {
-                projection_info,
                 memory_prefetch_func,
                 metadata,
                 byte_source,
@@ -90,6 +86,7 @@ impl IpcReadImpl {
             PolarsResult::Ok(())
         }));
 
+        // Task: Decode.
         let decode_task = AbortOnDropHandle(io_runtime.spawn(async move {
             dbg!("start task: decode_task"); //kdn
             let mut current_row_offset: IdxSize = 0;
@@ -135,7 +132,7 @@ impl IpcReadImpl {
             PolarsResult::Ok(())
         }));
 
-        // Task: Distributor -- NOT FOR NOW?
+        // Task: Distributor.
         // Distributes morsels across pipelines. This does not perform any CPU or I/O bound work -
         // it is purely a dispatch loop. Run on the computational executor to reduce context switches.
         let last_morsel_min_split = self.config.num_pipelines;
@@ -194,8 +191,6 @@ impl IpcReadImpl {
         });
 
         // Orchestration.
-
-        // Await.
         let join_task = io_runtime.spawn(async move {
             prefetch_task.await.unwrap()?;
             decode_task.await.unwrap()?;
@@ -214,16 +209,22 @@ impl IpcReadImpl {
 
         debug_assert!(self.dictionaries.is_some());
 
+        let file_metadata = self.metadata.clone();
         let projection_info = self.projection_info.clone();
         let dictionaries = self.dictionaries.clone();
         let row_index = self.row_index.clone();
         let slice_range = self.slice_range.clone();
 
+        // kdn TODO
+        // let max_morsel_size = get_max_morsel_size();
+
         RecordBatchDecoder {
+            file_metadata,
             projection_info,
             dictionaries,
             row_index,
             slice_range,
+            // max_morsel_size,
         }
     }
 }
