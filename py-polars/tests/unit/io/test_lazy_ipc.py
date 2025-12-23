@@ -200,6 +200,14 @@ def test_scan_ipc_file_async(
         df.select(pl.col.calories.sum()),
     )
 
+    assert_frame_equal(
+        pl.scan_ipc(foods1, row_index_name="ri", row_index_offset=42)
+        .slice(0, 1)
+        .select(pl.col.ri)
+        .collect(),
+        df.with_row_index(name="ri", offset=42).slice(0, 1).select(pl.col.ri),
+    )
+
 
 def test_scan_ipc_file_async_dict(
     monkeypatch: Any,

@@ -44,6 +44,10 @@ impl RecordBatchDecoder {
             return Ok(DataFrame::empty());
         }
 
+        let slice_net_start =
+            std::cmp::max(slice_range.start, row_range.start as usize) - row_range.start as usize;
+        let slice_net_len = std::cmp::min(slice_range.end - slice_net_start, num_rows);
+
         let schema = projection_info.as_ref().as_ref().map_or(
             file_metadata.schema.as_ref(),
             |ProjectionInfo { schema, .. }| schema,
@@ -53,13 +57,11 @@ impl RecordBatchDecoder {
             .map(|(n, f)| (n.clone(), DataType::from_arrow_field(f)))
             .collect::<Schema>();
 
+        let mut reader = BlockReader::new(Cursor::new(bytes.as_ref()));
+        let dictionaries = self.dictionaries.as_ref().as_ref().unwrap();
+
         let mut data_scratch = Vec::new();
         let mut message_scratch = Vec::new();
-
-        let mut reader = BlockReader::new(Cursor::new(bytes.as_ref()));
-
-        let dictionaries = self.dictionaries.as_ref().as_ref().unwrap();
-        let length = reader.record_batch_num_rows(&mut message_scratch)?;
 
         let limit = if slice_range.end != usize::MAX {
             Some(slice_range.end - row_range.start as usize)
@@ -68,8 +70,9 @@ impl RecordBatchDecoder {
         };
 
         // Create the DataFrame with the appropriate schema based on the data.
+        // @NOTE: This empty schema code path is relied upon for `select(pl.len())`
         let mut df = if pl_schema.is_empty() {
-            DataFrame::empty_with_height(length)
+            DataFrame::empty_with_height(slice_net_len)
         } else {
             let chunk = read_batch(
                 &mut reader.reader,
@@ -93,10 +96,7 @@ impl RecordBatchDecoder {
             let mut df = DataFrame::empty_with_schema(&pl_schema);
             df.try_extend(Some(chunk))?;
 
-            let slice_start = std::cmp::max(slice_range.start, row_range.start as usize)
-                - row_range.start as usize;
-            df = df.slice(i64::try_from(slice_start).unwrap(), slice_range.len());
-            df
+            df.slice(i64::try_from(slice_net_start).unwrap(), slice_net_len)
         };
 
         if let Some(RowIndex { name, offset }) = &self.row_index {
