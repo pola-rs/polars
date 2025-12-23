@@ -3370,6 +3370,8 @@ class Series:
           using the :class:`SQLContext` object.
         * The SQL query executes in lazy mode before being collected and returned
           as a DataFrame.
+        * It is recommended to name your Series for use with SQL, otherwise the default
+          Series name (an empty string) is used; while `""` is valid, it is awkward.
 
         See Also
         --------
@@ -3403,6 +3405,22 @@ class Series:
         │ 2099 ┆ 2   ┆ 14  │
         │ 2026 ┆ 3   ┆ 5   │
         └──────┴─────┴─────┘
+
+        While you can refer to an unnamed Series column using the default empty
+        string, it is not recommended:
+
+        >>> s = pl.Series([1, 2, 3])
+        >>> s.sql('SELECT "" AS x, "" * 2 AS "2x" FROM self')
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ x   ┆ 2x  │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 2   │
+        │ 2   ┆ 4   │
+        │ 3   ┆ 6   │
+        └─────┴─────┘
         """
         return self.to_frame().sql(query, table_name=table_name)
 
