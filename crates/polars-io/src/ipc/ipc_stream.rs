@@ -133,7 +133,6 @@ where
     R: Read + Seek,
 {
     fn next_record_batch(&mut self) -> PolarsResult<Option<RecordBatch>> {
-        dbg!("start next_record_batch for impl ArrowReader for StreamReader"); //kdn
         self.next().map_or(Ok(None), |v| match v {
             Ok(stream_state) => match stream_state {
                 StreamState::Waiting => Ok(None),

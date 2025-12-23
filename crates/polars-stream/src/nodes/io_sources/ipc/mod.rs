@@ -1,56 +1,43 @@
-use std::cmp::Reverse;
-use std::fs::File;
 use std::io::Cursor;
 use std::ops::Range;
 use std::sync::Arc;
 
-use arrow::array::TryExtend;
 use arrow::io::ipc::read::{Dictionaries, read_dictionary_block};
 use async_trait::async_trait;
-
-use polars_core::frame::DataFrame;
-use polars_core::prelude::DataType;
 use polars_core::schema::{Schema, SchemaExt};
 use polars_core::utils::arrow::io::ipc::read::{
     BlockReader, FileMetadata, ProjectionInfo, get_row_count_from_blocks, prepare_projection,
-    read_batch, read_file_metadata,
+    read_file_metadata,
 };
 use polars_error::{ErrString, PolarsError, PolarsResult, feature_gated, polars_err};
 use polars_io::cloud::CloudOptions;
+#[cfg(feature = "cloud")]
+use polars_io::pl_async::get_runtime;
 use polars_io::utils::byte_source::{
     ByteSource, DynByteSource, DynByteSourceBuilder, MemSliceByteSource,
 };
 use polars_io::{RowIndex, pl_async};
 use polars_plan::dsl::{ScanSource, ScanSourceRef};
 use polars_utils::IdxSize;
-use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::mem::prefetch::get_memory_prefetch_func;
-use polars_utils::mmap::MemSlice;
-use polars_utils::plpath::{PlPath, PlPathRef};
-use polars_utils::priority::Priority;
+use polars_utils::plpath::PlPathRef;
 use polars_utils::slice_enum::Slice;
 
 use super::multi_scan::reader_interface::output::FileReaderOutputRecv;
 use super::multi_scan::reader_interface::{BeginReadArgs, calc_row_position_after_slice};
+use crate::async_executor::{self, JoinHandle, TaskPriority, spawn};
 use crate::async_primitives::oneshot_channel::Sender;
-use crate::async_executor::{self, AbortOnDropHandle, JoinHandle, TaskPriority, spawn}; //kdn TODO cleanup
-use crate::async_primitives::distributor_channel::distributor_channel;
-use crate::async_primitives::linearizer::Linearizer;
-use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
+use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
 use crate::nodes::io_sources::multi_scan::reader_interface::{
     FileReader, FileReaderCallbacks, Projection,
 };
 use crate::utils::task_handles_ext;
-use crate::{DEFAULT_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_LINEARIZER_BUFFER_SIZE};
 
 pub mod builder;
 mod init;
 mod record_batch_data_fetch;
 mod record_batch_decode;
-
-// kdn TODO TOGGLE
-// mod ipc_bkp;
 
 const ROW_COUNT_OVERFLOW_ERR: PolarsError = PolarsError::ComputeError(ErrString::new_static(
     "\
@@ -66,14 +53,6 @@ struct IpcFileReader {
     verbose: bool,
 
     init_data: Option<InitializedState>,
-}
-
-#[derive(Clone)]
-struct InitializedState_OLD {
-    memslice: MemSlice,
-    file_metadata: Arc<FileMetadata>,
-    // Lazily initialized - getting this involves iterating record batches.
-    n_rows_in_file: Option<IdxSize>,
 }
 
 #[derive(Clone)]
@@ -120,7 +99,6 @@ impl FileReader for IpcFileReader {
             return Ok(());
         }
 
-        // =============
         let verbose = self.verbose;
         let scan_source = self.scan_source.clone();
         let byte_source_builder = self.byte_source_builder.clone();
@@ -141,47 +119,20 @@ impl FileReader for IpcFileReader {
         let file_metadata = if let Some(v) = self.metadata.clone() {
             v
         } else {
-            dbg!("get file_metadata in initialize");
-            //kdn TODO - move to function
-            let file_metadata = match self.scan_source.as_scan_source_ref() {
-                ScanSourceRef::Path(path) => match path {
-                    PlPathRef::Cloud(_) => {
-                        feature_gated!("cloud", {
-                            pl_async::get_runtime().block_on(async {
-                                polars_io::ipc::IpcReaderAsync::from_uri(
-                                    path,
-                                    self.cloud_options.as_deref(),
-                                )
-                                .await?
-                                .metadata()
-                                .await
-                            })?
-                        })
-                    },
-                    PlPathRef::Local(path) => arrow::io::ipc::read::read_file_metadata(
-                        &mut std::io::BufReader::new(polars_utils::open_file(path)?),
-                    )?,
-                },
-                ScanSourceRef::File(file) => {
-                    arrow::io::ipc::read::read_file_metadata(&mut std::io::BufReader::new(file))?
-                },
-                ScanSourceRef::Buffer(buff) => {
-                    arrow::io::ipc::read::read_file_metadata(&mut std::io::Cursor::new(buff))?
-                },
-            };
-            Arc::new(file_metadata)
+            self.fetch_file_metadata().await?
         };
 
-        // kdn TODO review clone and async
-        let byte_source_async = byte_source.clone();
-        let metadata_async = file_metadata.clone();
-        let dictionaries = pl_async::get_runtime()
-            .spawn(
-                async move { read_dictionaries(&byte_source_async, metadata_async, verbose).await },
-            )
-            .await
-            .unwrap()?;
-        let dictionaries = Arc::new(Some(dictionaries));
+        let dictionaries = {
+            let byte_source_async = byte_source.clone();
+            let metadata_async = file_metadata.clone();
+            let dictionaries = pl_async::get_runtime()
+                .spawn(async move {
+                    read_dictionaries(&byte_source_async, metadata_async, verbose).await
+                })
+                .await
+                .unwrap()?;
+            Arc::new(Some(dictionaries))
+        };
 
         self.init_data = Some(InitializedState {
             file_metadata,
@@ -236,24 +187,25 @@ impl FileReader for IpcFileReader {
             Arc::new(Schema::from_arrow_schema(file_metadata.schema.as_ref()))
         });
 
-        //kdn TODO - this is expensive and requires mmap
-        dbg!(&pre_slice_arg);
-        // let normalized_pre_slice = if let Some(pre_slice) = pre_slice_arg.clone() {
-        //     Some(pre_slice.restrict_to_bounds(usize::try_from(self._n_rows_in_file()?).unwrap()))
-        // } else {
-        //     None
-        // };
-        let normalized_pre_slice = pre_slice_arg.clone(); //kdn SHORTCUT FOR NOW
-        dbg!(&normalized_pre_slice);
-
         // Handle callbacks that are ready now.
         if let Some(file_schema_tx) = file_schema_tx {
-            dbg!("has callback file_schema_tx"); //kdn
-            _ = file_schema_tx.send(dbg!(file_schema_pl.clone())); //kdn
+            _ = file_schema_tx.send(file_schema_pl.clone());
         }
+
+        // Normalize slice.
+        // @NOTE. When this is expensive (e.g., when downloading from cloud) and not strictly required,
+        // we skip this normalization and handle it later.
+        let normalized_pre_slice = if let Some(pre_slice) = pre_slice_arg.clone()
+            && !(self.scan_source.is_cloud_url() && matches!(pre_slice, Slice::Positive { .. }))
+        {
+            Some(pre_slice.restrict_to_bounds(usize::try_from(self._n_rows_in_file()?).unwrap()))
+        } else {
+            pre_slice_arg.clone()
+        };
 
         if normalized_pre_slice.as_ref().is_some_and(|x| x.len() == 0) {
             let (_, rx) = FileReaderOutputSend::new_serial();
+            let n_rows = self._n_rows_in_file()?;
 
             if verbose {
                 eprintln!(
@@ -262,25 +214,25 @@ impl FileReader for IpcFileReader {
                     pre_slice: {:?}, \
                     resolved_pre_slice: {:?} \
                     ",
-                    self._n_rows_in_file()?,
-                    pre_slice_arg,
-                    normalized_pre_slice
+                    n_rows, pre_slice_arg, normalized_pre_slice
                 )
+            }
+
+            // Handle callback.
+            if let Some(row_position_on_end_tx) = row_position_on_end_tx {
+                _ = row_position_on_end_tx.send(n_rows);
+            }
+            if let Some(n_rows_in_file_tx) = n_rows_in_file_tx {
+                _ = n_rows_in_file_tx.send(n_rows);
             }
 
             return Ok((rx, spawn(TaskPriority::Low, std::future::ready(Ok(())))));
         }
 
-        // Prepare parameters for tasks
-
         // Always create a slice. If no slice was given, just make the biggest slice possible.
-
         let slice_range: Range<usize> = normalized_pre_slice
             .clone()
             .map_or(0..usize::MAX, Range::<usize>::from);
-        dbg!(&slice_range);
-
-        // kdn TODO fixup slice_range vs slice
 
         // Avoid materializing projection info if we are projecting all the columns of this file.
         let projection_indices: Option<Vec<usize>> = if let Some(first_mismatch_idx) =
@@ -345,8 +297,8 @@ impl FileReader for IpcFileReader {
             target_values_per_thread,
         };
 
-        // Create IPCReadImpl and run.
-        let (output_recv, handle) = IPCReadImpl {
+        // Create IpcReadImpl and run.
+        let (output_recv, handle) = IpcReadImpl {
             byte_source,
             metadata: file_metadata,
             dictionaries,
@@ -380,6 +332,8 @@ impl FileReader for IpcFileReader {
 }
 
 impl IpcFileReader {
+    /// Total number of rows in the IPC File. This can be slow if the underlying
+    /// byte_source is an object store with a high number of Record Batches.
     fn _n_rows_in_file(&mut self) -> PolarsResult<IdxSize> {
         dbg!("start _n_rows_in_file"); //kdn
         let InitializedState {
@@ -389,24 +343,102 @@ impl IpcFileReader {
             n_rows_in_file,
         } = self.init_data.as_mut().unwrap();
 
-        //kdn TODO
-        let DynByteSource::MemSlice(MemSliceByteSource(memslice)) = &**byte_source else {
-            panic!("Unsupported DynByteSource variant")
-        };
+        match &**byte_source {
+            DynByteSource::MemSlice(MemSliceByteSource(memslice)) => {
+                if n_rows_in_file.is_none() {
+                    let n_rows: i64 = get_row_count_from_blocks(
+                        &mut std::io::Cursor::new(memslice.as_ref()),
+                        &file_metadata.blocks,
+                    )?;
 
-        if n_rows_in_file.is_none() {
-            let n_rows: i64 = get_row_count_from_blocks(
-                &mut std::io::Cursor::new(memslice.as_ref()),
-                &file_metadata.blocks,
-            )?;
+                    let n_rows = IdxSize::try_from(n_rows)
+                        .map_err(|_| polars_err!(bigidx, ctx = "ipc file", size = n_rows))?;
 
-            let n_rows = IdxSize::try_from(n_rows)
-                .map_err(|_| polars_err!(bigidx, ctx = "ipc file", size = n_rows))?;
+                    *n_rows_in_file = Some(n_rows);
+                }
 
-            *n_rows_in_file = Some(n_rows);
+                Ok(n_rows_in_file.unwrap())
+            },
+            byte_source @ DynByteSource::Cloud(_) => {
+                let io_runtime = polars_io::pl_async::get_runtime();
+                if n_rows_in_file.is_none() {
+                    let mut n_rows = 0;
+                    let mut message_scratch = Vec::new();
+                    let mut ranges: Vec<_> = file_metadata
+                        .blocks
+                        .iter()
+                        .map(|block| {
+                            block.offset as usize
+                                ..block.offset as usize
+                                    + block.meta_data_length as usize
+                                    + block.body_length as usize
+                        })
+                        .collect();
+
+                    let bytes_map = io_runtime.block_on(byte_source.get_ranges(&mut ranges))?;
+                    assert_eq!(bytes_map.len(), ranges.len());
+
+                    for bytes in bytes_map.into_values() {
+                        let mut reader = BlockReader::new(
+                            Cursor::new(bytes.as_ref()),
+                            file_metadata.as_ref(),
+                            None,
+                        );
+                        n_rows += reader.record_batch_num_rows(&mut message_scratch)?;
+                    }
+
+                    let n_rows = IdxSize::try_from(n_rows)
+                        .map_err(|_| polars_err!(bigidx, ctx = "ipc file", size = n_rows))?;
+
+                    *n_rows_in_file = Some(n_rows);
+                }
+
+                Ok(n_rows_in_file.unwrap())
+            },
+        }
+    }
+
+    /// Retrieve file metadata from the source.
+    async fn fetch_file_metadata(&self) -> PolarsResult<Arc<FileMetadata>> {
+        if self.verbose {
+            eprintln!("[IpcFileReader]: fetching file metadata");
         }
 
-        Ok(n_rows_in_file.unwrap())
+        let metadata = match self.scan_source.as_scan_source_ref() {
+            ScanSourceRef::Path(path) => match path {
+                PlPathRef::Cloud(_) => {
+                    feature_gated!("cloud", {
+                        get_runtime().block_in_place_on(async {
+                            let metadata: PolarsResult<_> = {
+                                let reader = polars_io::ipc::IpcReaderAsync::from_uri(
+                                    path,
+                                    self.cloud_options.as_deref(),
+                                )
+                                .await?;
+
+                                Ok(reader.metadata().await?)
+                            };
+                            metadata
+                        })?
+                    })
+                },
+                PlPathRef::Local(path) => {
+                    // Local file I/O is typically synchronous in Arrow-rs
+                    let mut reader = std::io::BufReader::new(polars_utils::open_file(path)?);
+                    read_file_metadata(&mut reader)?
+                },
+            },
+            ScanSourceRef::File(file) => {
+                let mut reader = std::io::BufReader::new(file);
+                read_file_metadata(&mut reader)?
+            },
+            ScanSourceRef::Buffer(buff) => {
+                let mut reader = std::io::Cursor::new(buff);
+                read_file_metadata(&mut reader)?
+            },
+        };
+
+        Ok(Arc::new(metadata))
     }
 
     fn _row_position_after_slice(&mut self, pre_slice: Option<Slice>) -> PolarsResult<IdxSize> {
@@ -422,11 +454,11 @@ type AsyncTaskData = (
     task_handles_ext::AbortOnDropHandle<PolarsResult<()>>,
 );
 
-struct IPCReadImpl {
+struct IpcReadImpl {
     // Source info
     byte_source: Arc<DynByteSource>,
     metadata: Arc<FileMetadata>,
-    // Lazily initialized.
+    // Lazily initialized. //kdn TODO NOT
     dictionaries: Arc<Option<Dictionaries>>, //kdn TODO do we need Option?
     // Query parameters
     slice_range: Range<usize>,
@@ -459,38 +491,28 @@ async fn read_dictionaries(
     file_metadata: Arc<FileMetadata>,
     verbose: bool,
 ) -> PolarsResult<Dictionaries> {
-    //kdn TODO verbose
-
     let blocks = if let Some(blocks) = &file_metadata.dictionaries {
         blocks
     } else {
         return Ok(Dictionaries::default());
     };
 
+    if verbose {
+        eprintln!("[IpcFileReader]: readingg dictionaries ({:?})", blocks.len());
+    }
+
     let mut dictionaries = Dictionaries::default();
 
+    let mut message_scratch = Vec::new();
+    let mut dictionary_scratch = Vec::new();
+
     for block in blocks {
-        // get bytes
         let range = block.offset as usize
-            ..block.offset as usize + block.meta_data_length as usize + block.body_length as usize; //kdn TODO i32?
+            ..block.offset as usize + block.meta_data_length as usize + block.body_length as usize;
         let bytes = byte_source.get_range(range).await?;
 
-        // IpcBlockReader
-        let mut reader = BlockReader::new(
-            Cursor::new(bytes.as_ref()),
-            file_metadata.as_ref().clone(),
-            None,
-        );
-
-        // kdn TODO: fix this? - we are not re-using scratches
-
-        let mut message_scratch = Vec::new();
-        let mut dictionary_scratch = Vec::new();
-
-        // reader.set_scratches((
-        //     std::mem::take(&mut data_scratch),
-        //     std::mem::take(&mut message_scratch),
-        // ));
+        let mut reader =
+            BlockReader::new(Cursor::new(bytes.as_ref()), file_metadata.as_ref(), None);
 
         read_dictionary_block(
             &mut reader.reader,
@@ -501,17 +523,6 @@ async fn read_dictionaries(
             &mut message_scratch,
             &mut dictionary_scratch,
         )?;
-
-        // let chunk = read_dictionary_batch(
-        //     &mut reader.reader,
-        //     &file_metadata.clone(),
-        //     &mut message_scratch,
-        //     &mut data_scratch,
-        // );
-
-        // read_block (see read_batch)
-
-        // get message
     }
 
     Ok(dictionaries)

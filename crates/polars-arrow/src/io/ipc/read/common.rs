@@ -360,6 +360,7 @@ pub fn apply_projection(
     chunk: RecordBatchT<Box<dyn Array>>,
     map: &PlHashMap<usize, usize>,
 ) -> RecordBatchT<Box<dyn Array>> {
+    dbg!("start apply_projection");
     let length = chunk.len();
 
     // re-order according to projection

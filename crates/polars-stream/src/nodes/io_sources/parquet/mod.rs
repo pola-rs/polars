@@ -30,7 +30,7 @@ use crate::nodes::{TaskPriority, io_sources};
 use crate::utils::tokio_handle_ext;
 
 pub mod builder;
-pub mod init; //kdn TODO no pub
+pub mod init;
 mod metadata_utils;
 mod projection;
 mod row_group_data_fetch;
