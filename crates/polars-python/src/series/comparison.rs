@@ -132,8 +132,10 @@ impl_op!(lt_eq, lt_eq_str, &str);
 
 struct PyDecimal(i128, usize, usize);
 
-impl<'source> FromPyObject<'source> for PyDecimal {
-    fn extract_bound(obj: &Bound<'source, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for PyDecimal {
+    type Error = PyErr;
+
+    fn extract(obj: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         if let Ok(val) = obj.extract() {
             return Ok(PyDecimal(val, DEC128_MAX_PREC, 0));
         }

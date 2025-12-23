@@ -17,7 +17,7 @@ use crate::nodes::io_sinks2::components::partition_morsel_sender::PartitionMorse
 use crate::nodes::io_sinks2::components::partition_sink_starter::PartitionSinkStarter;
 use crate::nodes::io_sinks2::components::partition_state::PartitionState;
 use crate::nodes::io_sinks2::components::partitioner::{self, PartitionedDataFrames};
-use crate::nodes::io_sinks2::components::size::RowCountAndSize;
+use crate::nodes::io_sinks2::components::size::{DEFAULT_BYTE_SIZE_MIN_ROWS, RowCountAndSize};
 
 pub struct PartitionDistributor {
     pub node_name: PlSmallStr,
@@ -116,7 +116,7 @@ impl PartitionDistributor {
 
                 let num_ready_to_send_rows = partition_morsel_sender
                     .ideal_morsel_size
-                    .num_rows_takeable_from(buffered_size);
+                    .num_rows_takeable_from(buffered_size, DEFAULT_BYTE_SIZE_MIN_ROWS.get());
 
                 if per_partition_sort.is_none()
                     && (num_ready_to_send_rows < buffered_size.num_rows

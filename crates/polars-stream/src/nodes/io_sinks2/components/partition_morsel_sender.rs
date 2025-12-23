@@ -13,7 +13,7 @@ use crate::nodes::io_sinks2::components::hstack_columns::HStackColumns;
 use crate::nodes::io_sinks2::components::partition_sink_starter::PartitionSinkStarter;
 use crate::nodes::io_sinks2::components::partition_state::PartitionState;
 use crate::nodes::io_sinks2::components::sink_morsel::SinkMorsel;
-use crate::nodes::io_sinks2::components::size::RowCountAndSize;
+use crate::nodes::io_sinks2::components::size::{DEFAULT_BYTE_SIZE_MIN_ROWS, RowCountAndSize};
 
 pub struct PartitionMorselSender {
     /// Note: Must be <= `file_size_limit` if there is one.
@@ -88,47 +88,54 @@ impl PartitionMorselSender {
                 };
             }
 
-            let (next_morsel, start_new_sink) = if let Some(sorted_finalize_stream) =
-                sorted_finalize_stream.as_mut()
-            {
-                let Some((morsel, start_new_sink)) = sorted_finalize_stream.next().await else {
-                    return Ok(());
-                };
+            let (next_morsel, start_new_sink) =
+                if let Some(sorted_finalize_stream) = sorted_finalize_stream.as_mut() {
+                    let Some((morsel, start_new_sink)) = sorted_finalize_stream.next().await else {
+                        return Ok(());
+                    };
 
-                (NextMorsel::Morsel(morsel), start_new_sink)
-            } else {
-                let buffered_size = partition.buffered_size();
-
-                if buffered_size.num_rows == 0 {
-                    return Ok(());
-                }
-
-                let num_rows_to_take = self.ideal_morsel_size.num_rows_takeable_from(buffered_size);
-
-                let could_buffer_more = num_rows_to_take == buffered_size.num_rows
-                    && num_rows_to_take < self.ideal_morsel_size.num_rows;
-
-                if could_buffer_more && !flush {
-                    return Ok(());
-                }
-
-                let max_takeable_rows: IdxSize =
-                    available_row_capacity.num_rows_takeable_from(buffered_size);
-
-                let start_new_sink = max_takeable_rows == 0;
-                let num_rows_to_take = if start_new_sink {
-                    num_rows_to_take
+                    (NextMorsel::Morsel(morsel), start_new_sink)
                 } else {
-                    num_rows_to_take.min(max_takeable_rows)
-                };
+                    let buffered_size = partition.buffered_size();
 
-                (
-                    NextMorsel::TakeFromBuffered {
-                        num_rows: num_rows_to_take,
-                    },
-                    start_new_sink,
-                )
-            };
+                    if buffered_size.num_rows == 0 {
+                        return Ok(());
+                    }
+
+                    let num_rows_to_take = self
+                        .ideal_morsel_size
+                        .num_rows_takeable_from(buffered_size, DEFAULT_BYTE_SIZE_MIN_ROWS.get());
+
+                    let could_buffer_more = num_rows_to_take == buffered_size.num_rows
+                        && num_rows_to_take < self.ideal_morsel_size.num_rows;
+
+                    if could_buffer_more && !flush {
+                        return Ok(());
+                    }
+
+                    let max_takeable_rows: IdxSize = available_row_capacity.num_rows_takeable_from(
+                        buffered_size,
+                        if used_row_capacity.num_rows == 0 {
+                            1
+                        } else {
+                            0
+                        },
+                    );
+
+                    let start_new_sink = max_takeable_rows == 0;
+                    let num_rows_to_take = if start_new_sink {
+                        num_rows_to_take
+                    } else {
+                        num_rows_to_take.min(max_takeable_rows)
+                    };
+
+                    (
+                        NextMorsel::TakeFromBuffered {
+                            num_rows: num_rows_to_take,
+                        },
+                        start_new_sink,
+                    )
+                };
 
             if start_new_sink {
                 assert!(used_row_capacity.num_rows > 0);
