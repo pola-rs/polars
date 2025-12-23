@@ -234,7 +234,7 @@ def test_lazy_row_index_no_push_down(foods_file_path: Path) -> None:
 
 
 @pytest.mark.write_disk
-def test_glob_skip_rows(tmp_path: Path, newline: str) -> None:
+def test_glob_skip_rows(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
     for i in range(2):
