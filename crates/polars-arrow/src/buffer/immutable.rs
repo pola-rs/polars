@@ -3,6 +3,7 @@ use std::ops::Deref;
 
 use bytemuck::{Pod, Zeroable};
 use either::Either;
+use polars_utils::mmap::MemSlice;
 
 use super::IntoIter;
 use crate::array::{ArrayAccessor, Splitable};
@@ -317,6 +318,13 @@ impl<T> From<Vec<T>> for Buffer<T> {
     #[inline]
     fn from(v: Vec<T>) -> Self {
         Self::from_storage(SharedStorage::from_vec(v))
+    }
+}
+
+impl From<MemSlice> for Buffer<u8> {
+    #[inline]
+    fn from(value: MemSlice) -> Self {
+        Self::from_storage(SharedStorage::from_mem_slice(value))
     }
 }
 
