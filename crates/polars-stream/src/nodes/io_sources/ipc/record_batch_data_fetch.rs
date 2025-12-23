@@ -62,8 +62,7 @@ impl RecordBatchDataFetcher {
                 } else {
                     // @NOTE. Performance can be optimized by grouping requests and downloading
                     // through `get_ranges()`.
-                    let bytes = current_byte_source.get_range(range).await?;
-                    bytes
+                    current_byte_source.get_range(range).await?
                 };
 
             // We extract the length (i.e., nr of rows) at the earliest possible opportunity.
@@ -80,6 +79,6 @@ impl RecordBatchDataFetcher {
         });
 
         let handle = tokio_handle_ext::AbortOnDropHandle(handle);
-        return Some(Ok(handle));
+        Some(Ok(handle))
     }
 }

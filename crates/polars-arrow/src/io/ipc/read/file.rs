@@ -270,7 +270,6 @@ pub fn deserialize_footer(footer_data: &[u8], size: u64) -> PolarsResult<FileMet
 
 /// Read the Arrow IPC file's metadata
 pub fn read_file_metadata<R: Read + Seek>(reader: &mut R) -> PolarsResult<FileMetadata> {
-    dbg!("start read_file_metadata"); //kdn
     let start = reader.stream_position()?;
     let (end, footer_len) = read_footer_len(reader)?;
     let serialized_footer = read_footer(reader, footer_len)?;

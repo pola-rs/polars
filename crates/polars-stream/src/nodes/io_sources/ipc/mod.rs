@@ -78,7 +78,6 @@ struct InitializedState {
 #[async_trait]
 impl FileReader for IpcFileReader {
     async fn initialize(&mut self) -> PolarsResult<()> {
-        dbg!("start initialize for impl FileReader for IpcFileReader"); //kdn
         if self.init_data.is_some() {
             return Ok(());
         }
@@ -124,7 +123,7 @@ impl FileReader for IpcFileReader {
             dictionaries,
             n_rows_in_file: None,
         });
-        dbg!("done initialize for impl FileReader for IpcFileReader"); //kdn
+
         Ok(())
     }
 
@@ -149,7 +148,6 @@ impl FileReader for IpcFileReader {
         &mut self,
         args: BeginReadArgs,
     ) -> PolarsResult<(FileReaderOutputRecv, JoinHandle<PolarsResult<()>>)> {
-        dbg!("start begin_read"); //kdn
         let verbose = self.verbose;
 
         // Initialize.
@@ -337,7 +335,6 @@ impl IpcFileReader {
     /// Total number of rows in the IPC File. This can be slow if the underlying
     /// byte_source is an object store with a high number of Record Batches.
     fn _n_rows_in_file(&mut self) -> PolarsResult<IdxSize> {
-        dbg!("start _n_rows_in_file"); //kdn
         let InitializedState {
             file_metadata,
             byte_source,

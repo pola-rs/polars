@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import io
-from typing import TYPE_CHECKING, Any
+import typing
+from typing import IO, TYPE_CHECKING, Any
 
 import pyarrow.ipc
 import pytest
@@ -228,6 +229,8 @@ def test_scan_ipc_file_async_multiple_record_batches(
     lf.sink_ipc(buf)
     df = lf.collect()
 
+    buffers = typing.cast("list[IO[bytes]]", [buf, buf])
+
     assert_frame_equal(
         pl.scan_ipc(buf).collect(),
         df,
@@ -249,7 +252,7 @@ def test_scan_ipc_file_async_multiple_record_batches(
     )
 
     assert_frame_equal(
-        pl.scan_ipc([buf, buf]).slice(85, 30).collect(),
+        pl.scan_ipc(buffers).slice(85, 30).collect(),
         pl.concat([df.slice(85, 15), df.slice(0, 15)]),
     )
 

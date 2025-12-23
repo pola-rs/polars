@@ -166,7 +166,6 @@ impl PyDataFrame {
         row_index: Option<(String, IdxSize)>,
         memory_map: bool,
     ) -> PyResult<Self> {
-        dbg!("start read_ipc"); //kdn
         let row_index = row_index.map(|(name, offset)| RowIndex {
             name: name.into(),
             offset,

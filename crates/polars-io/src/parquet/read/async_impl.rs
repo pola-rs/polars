@@ -99,7 +99,6 @@ pub async fn fetch_metadata(
     path: &ObjectPath,
     file_byte_length: usize,
 ) -> PolarsResult<FileMetadata> {
-    dbg!("start fetch_metadata"); //kdn
     let footer_header_bytes = store
         .get_range(
             path,

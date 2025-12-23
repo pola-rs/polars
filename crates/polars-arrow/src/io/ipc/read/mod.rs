@@ -28,7 +28,7 @@ pub use file::{
     read_dictionary_block, read_file_dictionaries, read_file_metadata,
 };
 use polars_utils::aliases::PlHashMap;
-pub use reader::{BlockReader, FileReader}; //kdn
+pub use reader::{BlockReader, FileReader};
 pub use schema::deserialize_schema;
 pub use stream::{StreamMetadata, StreamReader, StreamState, read_stream_metadata};
 
