@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import csv
 import gzip
 import io
 import os
 import sys
 import textwrap
-import csv
 import zlib
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal as D
@@ -2977,9 +2977,13 @@ def test_write_csv_categorical_23939(dt: pl.DataType) -> None:
     "csv_str", ["A,B\n1,x\n2,y\n3,z", "A,B\n1,x\n2,y\n3,z\n", "\n\n\n\n2,u"]
 )
 def test_csv_skip_more_lines_than_empty(read_fn: str, csv_str: str) -> None:
-    df = getattr(pl, read_fn)(io.StringIO(csv_str), skip_lines=5).lazy().collect()
-    # This is not the desired behavior, but it maps the current one.
-    # TODO: This should raise a NoDataError.
-    *_, last_line = csv.reader(csv_str.splitlines())
-    expected = pl.DataFrame([pl.Series(name, [], pl.String) for name in last_line])
-    assert_frame_equal(df, expected)
+    if read_fn == "read_csv":
+        df = getattr(pl, read_fn)(io.StringIO(csv_str), skip_lines=5).lazy().collect()
+        # This is not the desired behavior, but it maps the current one.
+        # TODO: This should raise a NoDataError.
+        *_, last_line = csv.reader(csv_str.splitlines())
+        expected = pl.DataFrame([pl.Series(name, [], pl.String) for name in last_line])
+        assert_frame_equal(df, expected)
+    else:
+        with pytest.raises(pl.exceptions.NoDataError):
+            getattr(pl, read_fn)(io.StringIO(csv_str), skip_lines=5).lazy().collect()

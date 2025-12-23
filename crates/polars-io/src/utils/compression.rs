@@ -1,5 +1,5 @@
 use std::cmp;
-use std::io::{BufReader, Read};
+use std::io::Read;
 
 use polars_core::prelude::*;
 use polars_error::{feature_gated, to_compute_err};
@@ -75,11 +75,11 @@ pub enum CompressedReader {
         offset: usize,
     },
     #[cfg(feature = "decompress")]
-    Gzip(flate2::bufread::MultiGzDecoder<BufReader<MemReader>>),
+    Gzip(flate2::bufread::MultiGzDecoder<MemReader>),
     #[cfg(feature = "decompress")]
-    Zlib(flate2::bufread::ZlibDecoder<BufReader<MemReader>>),
+    Zlib(flate2::bufread::ZlibDecoder<MemReader>),
     #[cfg(feature = "decompress")]
-    Zstd(zstd::Decoder<'static, BufReader<MemReader>>),
+    Zstd(zstd::Decoder<'static, MemReader>),
 }
 
 impl CompressedReader {
@@ -89,17 +89,17 @@ impl CompressedReader {
         Ok(match algo {
             None => CompressedReader::Uncompressed { slice, offset: 0 },
             #[cfg(feature = "decompress")]
-            Some(SupportedCompression::GZIP) => CompressedReader::Gzip(
-                flate2::bufread::MultiGzDecoder::new(BufReader::new(MemReader::new(slice))),
-            ),
+            Some(SupportedCompression::GZIP) => {
+                CompressedReader::Gzip(flate2::bufread::MultiGzDecoder::new(MemReader::new(slice)))
+            },
             #[cfg(feature = "decompress")]
-            Some(SupportedCompression::ZLIB) => CompressedReader::Zlib(
-                flate2::bufread::ZlibDecoder::new(BufReader::new(MemReader::new(slice))),
-            ),
+            Some(SupportedCompression::ZLIB) => {
+                CompressedReader::Zlib(flate2::bufread::ZlibDecoder::new(MemReader::new(slice)))
+            },
             #[cfg(feature = "decompress")]
-            Some(SupportedCompression::ZSTD) => CompressedReader::Zstd(zstd::Decoder::with_buffer(
-                BufReader::new(MemReader::new(slice)),
-            )?),
+            Some(SupportedCompression::ZSTD) => {
+                CompressedReader::Zstd(zstd::Decoder::with_buffer(MemReader::new(slice))?)
+            },
             #[cfg(not(feature = "decompress"))]
             _ => panic!("activate 'decompress' feature"),
         })
