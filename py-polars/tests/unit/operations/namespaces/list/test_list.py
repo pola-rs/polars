@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime
-from typing import TYPE_CHECKING
+from decimal import Decimal
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
@@ -18,7 +19,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import time_func
 
 if TYPE_CHECKING:
-    from polars._typing import PolarsDataType
+    from polars._typing import EngineType, PolarsDataType
 
 
 def test_list_arr_get() -> None:
@@ -263,7 +264,7 @@ def test_list_contains_invalid_datatype() -> None:
     df = pl.DataFrame({"a": [[1, 2], [3, 4]]}, schema={"a": pl.Array(pl.Int8, shape=2)})
     with pytest.raises(
         InvalidOperationError,
-        match=r"expected List data type for list operation, got: array\[i8, 2\]",
+        match=r"expected List data type for list operation, got: Array\(Int8, 2\)",
     ):
         df.select(pl.col("a").list.contains(2))
 
@@ -381,7 +382,7 @@ def test_list_shift() -> None:
     assert_frame_equal(df, expected_df)
 
 
-def test_list_drop_nulls() -> None:
+def test_list_drop_nulls_eager() -> None:
     s = pl.Series("values", [[1, None, 2, None], [None, None], [1, 2], None])
     expected = pl.Series("values", [[1, 2], [], [1, 2], None])
     assert_series_equal(s.list.drop_nulls(), expected)
@@ -390,6 +391,25 @@ def test_list_drop_nulls() -> None:
     df = df.select(pl.col("values").list.drop_nulls())
     expected_df = pl.DataFrame({"values": [[1, 2], [], [3, 4]]})
     assert_frame_equal(df, expected_df)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    "data",
+    [
+        [None, ["value"]],
+        [None, ["value", None]],
+        [None, [None, "value", None]],
+    ],
+)
+def test_list_drop_nulls_lazy(engine: EngineType, data: list[Any]) -> None:
+    res = (
+        pl.LazyFrame({"foo": data})
+        .with_columns(pl.col("foo").list.drop_nulls())
+        .collect(engine=engine)
+    )
+    expected = pl.DataFrame({"foo": [None, ["value"]]})
+    assert_frame_equal(res, expected)
 
 
 def test_list_sample() -> None:
@@ -823,7 +843,7 @@ def test_list_to_array_wrong_dtype() -> None:
     s = pl.Series([1.0, 2.0])
     with pytest.raises(
         InvalidOperationError,
-        match="expected List data type for list operation, got: f64",
+        match="expected List data type for list operation, got: Float64",
     ):
         s.list.to_array(2)
 
@@ -1642,3 +1662,31 @@ def test_list_slice_invalid_length_type_22025() -> None:
         TypeError, match="'length' must be an integer, string, or expression"
     ):
         df.select(pl.col.a.list.slice(0, {0, 1}))  # type: ignore[arg-type]
+
+
+def test_list_get_decimal_25830() -> None:
+    df = pl.DataFrame(
+        {
+            "data": [
+                [
+                    Decimal("3170.047636167534520980"),
+                    Decimal("3203.912032898265107424"),
+                ],
+                [
+                    Decimal("3170.047636167534520981"),
+                    Decimal("3203.912032898265107425"),
+                ],
+            ]
+        }
+    )
+
+    out = df.select(pl.col("data").list.get(pl.lit(pl.Series([0, 1]))))
+    expected = pl.DataFrame(
+        {
+            "data": [
+                Decimal("3170.047636167534520980"),
+                Decimal("3203.912032898265107425"),
+            ]
+        }
+    )
+    assert_frame_equal(out, expected)

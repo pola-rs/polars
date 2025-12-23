@@ -47,6 +47,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Free some disk space (remove unused packages)
+        uses: jlumbroso/free-disk-space@v1.3.1
+        if: ${{ matrix.os != 'windows-latest' }}
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -66,7 +70,9 @@ jobs:
 
       - name: Install maturin
         if: matrix.python-version == '3.13t'
-        run: pip install maturin
+        run: |
+          pip install uv
+          uv pip install maturin
 
       - name: Install Python dependencies
         if: matrix.python-version != '3.13t'
@@ -88,6 +94,8 @@ jobs:
 
       - name: Install Polars
         run: |
+          # Make sure we use the Polars we're about to build.
+          uv pip uninstall polars-runtime-32 polars-runtime-64 polars-runtime-compat
           pip install --no-deps -e .
           maturin develop --manifest-path runtime/polars-runtime-32/Cargo.toml
 

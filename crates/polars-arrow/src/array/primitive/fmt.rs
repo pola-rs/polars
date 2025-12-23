@@ -22,7 +22,7 @@ pub fn get_write_value<'a, T: NativeType, F: Write>(
     array: &'a PrimitiveArray<T>,
 ) -> Box<dyn Fn(&mut F, usize) -> Result + 'a> {
     use crate::datatypes::ArrowDataType::*;
-    match array.dtype().to_logical_type() {
+    match array.dtype().to_storage() {
         Int8 => Box::new(|f, index| write!(f, "{}", array.value(index))),
         Int16 => Box::new(|f, index| write!(f, "{}", array.value(index))),
         Int32 => Box::new(|f, index| write!(f, "{}", array.value(index))),

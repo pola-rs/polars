@@ -16,12 +16,11 @@ from polars._dependencies import (
 )
 from polars._dependencies import numpy as np
 from polars._utils.wrap import wrap_expr
-from polars.datatypes import BaseExtension, Date, Datetime, Duration
+from polars.datatypes import BaseExtension, Date, Datetime, Duration, Object
 from polars.datatypes.convert import DataTypeMappings
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars._plr as plr
-
 
 if TYPE_CHECKING:
     from polars import Expr
@@ -84,7 +83,11 @@ def lit(
     elif isinstance(dtype, type) and issubclass(dtype, BaseExtension):
         msg = f"dtype '{dtype}' is a BaseExtension class, it should be an instance"
         raise TypeError(msg)
-    elif isinstance(value, datetime):
+    elif dtype == Object:
+        value_s = pl.Series("literal", [value], dtype=dtype)
+        return wrap_expr(plr.lit(value_s._s, allow_object, is_scalar=True))
+
+    if isinstance(value, datetime):
         if dtype == Date:
             return wrap_expr(plr.lit(value.date(), allow_object=False, is_scalar=True))
 

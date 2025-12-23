@@ -51,7 +51,7 @@ fn test_lazy_unpivot() {
     let df = get_df();
 
     let args = UnpivotArgsDSL {
-        on: by_name(["sepal_length", "sepal_width"], true),
+        on: Some(by_name(["sepal_length", "sepal_width"], true)),
         index: by_name(["petal_width", "petal_length"], true),
         variable_name: None,
         value_name: None,

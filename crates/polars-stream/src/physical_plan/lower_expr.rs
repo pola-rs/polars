@@ -2215,7 +2215,9 @@ pub fn build_hstack_stream(
         for expr in exprs {
             output_schema.insert(
                 expr.output_name().clone(),
-                expr.dtype(input_schema, expr_arena)?.clone(),
+                expr.dtype(input_schema, expr_arena)?
+                    .clone()
+                    .materialize_unknown(true)?,
             );
         }
         let output_schema = Arc::new(output_schema);

@@ -328,10 +328,11 @@ impl GroupedReduction for BoolMinGroupedReduction {
 
     fn update_group(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         group_idx: IdxSize,
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         // TODO: we should really implement a sum-as-other-type operation instead
         // of doing this materialized cast.
         assert!(values.dtype() == &DataType::Boolean);
@@ -348,11 +349,12 @@ impl GroupedReduction for BoolMinGroupedReduction {
 
     unsafe fn update_groups_while_evicting(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         subset: &[IdxSize],
         group_idxs: &[EvictIdx],
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         assert!(values.dtype() == &DataType::Boolean);
         assert!(subset.len() == group_idxs.len());
         let values = values.as_materialized_series(); // @scalar-opt
@@ -442,10 +444,11 @@ impl GroupedReduction for BoolMaxGroupedReduction {
 
     fn update_group(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         group_idx: IdxSize,
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         // TODO: we should really implement a sum-as-other-type operation instead
         // of doing this materialized cast.
         assert!(values.dtype() == &DataType::Boolean);
@@ -462,11 +465,12 @@ impl GroupedReduction for BoolMaxGroupedReduction {
 
     unsafe fn update_groups_while_evicting(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         subset: &[IdxSize],
         group_idxs: &[EvictIdx],
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         assert!(values.dtype() == &DataType::Boolean);
         assert!(subset.len() == group_idxs.len());
         let values = values.as_materialized_series(); // @scalar-opt
@@ -684,10 +688,11 @@ impl GroupedReduction for NullGroupedReduction {
 
     fn update_group(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         _group_idx: IdxSize,
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         assert!(values.dtype() == &DataType::Null);
 
         // no-op
@@ -696,11 +701,12 @@ impl GroupedReduction for NullGroupedReduction {
 
     unsafe fn update_groups_while_evicting(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         subset: &[IdxSize],
         group_idxs: &[EvictIdx],
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         assert!(values.dtype() == &DataType::Null);
         assert!(subset.len() == group_idxs.len());
 

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use num_traits::AsPrimitive;
 use parking_lot::Mutex;
 use polars_core::prelude::PlRandomState;
-use polars_core::schema::Schema;
+use polars_core::schema::{Schema, SchemaRef};
 use polars_core::{POOL, config};
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_expr::groups::new_hash_grouper;
@@ -12,7 +12,10 @@ use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_mem_engine::scan_predicate::create_scan_predicate;
-use polars_plan::dsl::{JoinOptionsIR, PartitionVariantIR, ScanSources};
+use polars_plan::dsl::{
+    FileSinkOptions, JoinOptionsIR, PartitionStrategyIR, PartitionVariantIR,
+    PartitionedSinkOptionsIR, ScanSources,
+};
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, IR, IRAggExpr};
 use polars_plan::prelude::{FileType, FunctionFlags};
@@ -254,16 +257,21 @@ fn to_graph_rec<'a>(
             let mut inputs = Vec::with_capacity(reductions.len());
 
             for e in exprs {
-                let (red, input_node) = into_reduction(e.node(), ctx.expr_arena, input_schema)?;
+                let (red, input_nodes) = into_reduction(e.node(), ctx.expr_arena, input_schema)?;
                 reductions.push(red);
 
-                let input_phys = create_stream_expr(
-                    &ExprIR::from_node(input_node, ctx.expr_arena),
-                    ctx,
-                    input_schema,
-                )?;
+                let input_phys_exprs = input_nodes
+                    .iter()
+                    .map(|node| {
+                        create_stream_expr(
+                            &ExprIR::from_node(*node, ctx.expr_arena),
+                            ctx,
+                            input_schema,
+                        )
+                    })
+                    .try_collect_vec()?;
 
-                inputs.push(input_phys)
+                inputs.push(input_phys_exprs)
             }
 
             ctx.graph.add_node(
@@ -371,6 +379,224 @@ fn to_graph_rec<'a>(
                     panic!("activate source feature")
                 },
             }
+        },
+
+        FileSink2 {
+            input,
+            options:
+                FileSinkOptions {
+                    target,
+                    file_format,
+                    unified_sink_args,
+                },
+        } => {
+            use crate::nodes::io_sinks2::IOSinkNode;
+            use crate::nodes::io_sinks2::config::{IOSinkNodeConfig, IOSinkTarget};
+
+            let input_schema = ctx.phys_sm[input.node].output_schema.clone();
+            let input_key = to_graph_rec(input.node, ctx)?;
+
+            let target = IOSinkTarget::File(target.clone());
+
+            let config = IOSinkNodeConfig {
+                file_format: file_format.clone(),
+                target,
+                unified_sink_args: unified_sink_args.clone(),
+                input_schema,
+                num_pipelines: 0,
+            };
+
+            ctx.graph
+                .add_node(IOSinkNode::new(config), [(input_key, input.port)])
+        },
+
+        PartitionedSink2 {
+            input,
+            options:
+                PartitionedSinkOptionsIR {
+                    base_path,
+                    file_path_provider,
+                    partition_strategy,
+                    finish_callback: _,
+                    file_format,
+                    unified_sink_args,
+                    max_rows_per_file,
+                    approximate_bytes_per_file,
+                },
+        } => {
+            use polars_core::prelude::SortMultipleOptions;
+            use polars_plan::prelude::SortColumnIR;
+
+            use crate::nodes::io_sinks2::IOSinkNode;
+            use crate::nodes::io_sinks2::components::exclude_keys_projection::ExcludeKeysProjection;
+            use crate::nodes::io_sinks2::components::hstack_columns::HStackColumns;
+            use crate::nodes::io_sinks2::components::partitioner::{KeyedPartitioner, Partitioner};
+            use crate::nodes::io_sinks2::components::size::{
+                NonZeroRowCountAndSize, RowCountAndSize,
+            };
+            use crate::nodes::io_sinks2::config::{
+                IOSinkNodeConfig, IOSinkTarget, PartitionedTarget,
+            };
+
+            let input_schema = ctx.phys_sm[input.node].output_schema.clone();
+            let input_key = to_graph_rec(input.node, ctx)?;
+
+            let file_schema: SchemaRef;
+            let mut exclude_keys_from_file: Option<ExcludeKeysProjection> = None;
+            let mut hstack_keys: Option<HStackColumns> = None;
+            let mut include_keys_in_file = false;
+            let mut per_partition_sort: Option<(Arc<[StreamExpr]>, SortMultipleOptions)> = None;
+
+            let partitioner: Partitioner = match partition_strategy {
+                PartitionStrategyIR::Keyed {
+                    keys,
+                    include_keys,
+                    keys_pre_grouped: _,
+                    per_partition_sort_by,
+                } => {
+                    include_keys_in_file = *include_keys;
+
+                    let mut key_schema = Schema::with_capacity(keys.len());
+
+                    let key_exprs = keys
+                        .iter()
+                        .map(|e| {
+                            let field = e.field(input_schema.as_ref(), ctx.expr_arena)?;
+                            key_schema.extend([field]);
+
+                            create_stream_expr(e, ctx, &input_schema)
+                        })
+                        .collect::<PolarsResult<_>>()?;
+
+                    let exclude_keys_projection: Arc<[usize]> = input_schema
+                        .iter_names()
+                        .enumerate()
+                        .filter_map(|(i, name)| (!key_schema.contains(name)).then_some(i))
+                        .collect::<Arc<[_]>>();
+
+                    let exclude_keys_projection =
+                        if exclude_keys_projection.len() == input_schema.len() {
+                            ExcludeKeysProjection::Width(exclude_keys_projection.len())
+                        } else {
+                            ExcludeKeysProjection::Indices(exclude_keys_projection)
+                        };
+
+                    if !*include_keys {
+                        exclude_keys_from_file = Some(exclude_keys_projection.clone());
+                    }
+
+                    let schema_excluding_keys: Schema = exclude_keys_projection
+                        .iter_indices()
+                        .map(|i| {
+                            let (name, dtype) = input_schema.get_at_index(i).unwrap();
+                            (name.clone(), dtype.clone())
+                        })
+                        .collect();
+
+                    let mut schema_including_keys = Arc::unwrap_or_clone(input_schema.clone());
+
+                    for (name, dtype) in key_schema.iter() {
+                        schema_including_keys.with_column(name.clone(), dtype.clone());
+                    }
+
+                    let schema_including_keys = Arc::new(schema_including_keys);
+
+                    hstack_keys = Some(HStackColumns::new(
+                        &schema_including_keys,
+                        &schema_excluding_keys,
+                        &key_schema,
+                    ));
+
+                    file_schema = if *include_keys {
+                        Arc::clone(&schema_including_keys)
+                    } else {
+                        Arc::new(schema_excluding_keys)
+                    };
+
+                    let keyed = KeyedPartitioner {
+                        key_exprs,
+                        exclude_keys_projection: Some(exclude_keys_projection),
+                    };
+
+                    if !per_partition_sort_by.is_empty() {
+                        let (by_exprs, descending, nulls_last): (
+                            Vec<StreamExpr>,
+                            Vec<bool>,
+                            Vec<bool>,
+                        ) = per_partition_sort_by
+                            .iter()
+                            .map(
+                                |SortColumnIR {
+                                     expr,
+                                     descending,
+                                     nulls_last,
+                                 }| {
+                                    create_stream_expr(expr, ctx, &schema_including_keys)
+                                        .map(|e| (e, *descending, *nulls_last))
+                                },
+                            )
+                            .collect::<PolarsResult<_>>()?;
+
+                        let by_exprs: Arc<[StreamExpr]> = Arc::from_iter(by_exprs);
+
+                        let sort_options = SortMultipleOptions {
+                            descending,
+                            nulls_last,
+                            multithreaded: false,
+                            maintain_order: true,
+                            limit: None,
+                        };
+
+                        per_partition_sort = Some((by_exprs, sort_options))
+                    }
+
+                    Partitioner::Keyed(keyed)
+                },
+                PartitionStrategyIR::FileSize => {
+                    file_schema = input_schema.clone();
+                    Partitioner::FileSize
+                },
+            };
+
+            if let Some(exclude_keys_from_file) = exclude_keys_from_file.as_ref() {
+                // Should have been checked in IR.
+                assert!(exclude_keys_from_file.len() > 0);
+            }
+
+            let mut file_size_limit = RowCountAndSize::MAX;
+
+            if *max_rows_per_file > 0 {
+                file_size_limit.num_rows = *max_rows_per_file
+            }
+
+            if *approximate_bytes_per_file > 0 {
+                file_size_limit.num_bytes = *approximate_bytes_per_file
+            }
+
+            let file_size_limit = (file_size_limit != RowCountAndSize::MAX)
+                .then_some(NonZeroRowCountAndSize::new(file_size_limit).unwrap());
+
+            let target = IOSinkTarget::Partitioned(Box::new(PartitionedTarget {
+                base_path: base_path.clone(),
+                file_path_provider: file_path_provider.clone(),
+                partitioner,
+                hstack_keys,
+                include_keys_in_file,
+                file_schema,
+                file_size_limit,
+                per_partition_sort,
+            }));
+
+            let config = IOSinkNodeConfig {
+                file_format: file_format.clone(),
+                target,
+                unified_sink_args: unified_sink_args.clone(),
+                input_schema,
+                num_pipelines: 0,
+            };
+
+            ctx.graph
+                .add_node(IOSinkNode::new(config), [(input_key, input.port)])
         },
 
         PartitionedSink {
@@ -654,8 +880,10 @@ fn to_graph_rec<'a>(
                 .iter()
                 .map(|i| PolarsResult::Ok((to_graph_rec(i.node, ctx)?, i.port)))
                 .try_collect_vec()?;
-            ctx.graph
-                .add_node(nodes::ordered_union::OrderedUnionNode::new(), input_keys)
+            ctx.graph.add_node(
+                nodes::ordered_union::OrderedUnionNode::new(node.output_schema.clone()),
+                input_keys,
+            )
         },
 
         Zip {
@@ -796,13 +1024,19 @@ fn to_graph_rec<'a>(
                             | IRAggExpr::LastNonNull(_)
                     )
                 );
-                let (reduction, input_node) =
+                let (reduction, input_nodes) =
                     into_reduction(agg.node(), ctx.expr_arena, input_schema)?;
-                let AExpr::Column(col) = ctx.expr_arena.get(input_node) else {
-                    unreachable!()
-                };
+                let cols = input_nodes
+                    .iter()
+                    .map(|node| {
+                        let AExpr::Column(col) = ctx.expr_arena.get(*node) else {
+                            unreachable!()
+                        };
+                        col.clone()
+                    })
+                    .collect();
                 grouped_reductions.push(reduction);
-                grouped_reduction_cols.push(col.clone());
+                grouped_reduction_cols.push(cols);
             }
 
             ctx.graph.add_node(
@@ -1200,7 +1434,7 @@ fn to_graph_rec<'a>(
                         let Some(mut df) = df else { return Ok(None) };
 
                         if let Some(simple_projection) = &simple_projection {
-                            df = df.project(simple_projection.clone())?;
+                            df = unsafe { df.project(simple_projection.clone())? };
                         }
 
                         if validate_schema {

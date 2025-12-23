@@ -40,14 +40,16 @@ impl Writeable {
     pub fn try_new(
         path: PlPathRef<'_>,
         #[cfg_attr(not(feature = "cloud"), allow(unused))] cloud_options: Option<&CloudOptions>,
+        #[cfg_attr(not(feature = "cloud"), allow(unused))] cloud_upload_chunk_size: usize,
     ) -> PolarsResult<Self> {
         match path {
             PlPathRef::Cloud(_) => {
                 feature_gated!("cloud", {
                     use crate::cloud::BlockingCloudWriter;
 
-                    let writer = crate::pl_async::get_runtime()
-                        .block_in_place_on(BlockingCloudWriter::new(path, cloud_options))?;
+                    let writer = crate::pl_async::get_runtime().block_in_place_on(
+                        BlockingCloudWriter::new(path, cloud_options, cloud_upload_chunk_size),
+                    )?;
 
                     Ok(Self::Cloud(writer))
                 })
@@ -73,7 +75,11 @@ impl Writeable {
                     );
 
                     let writer = crate::pl_async::get_runtime().block_in_place_on(
-                        BlockingCloudWriter::new(PlPathRef::new(&path), cloud_options),
+                        BlockingCloudWriter::new(
+                            PlPathRef::new(&path),
+                            cloud_options,
+                            cloud_upload_chunk_size,
+                        ),
                     )?;
 
                     Ok(Self::Cloud(writer))
@@ -103,6 +109,15 @@ impl Writeable {
                 .try_into_inner()
                 .map(AsyncWriteable::Cloud)
                 .map_err(PolarsError::from),
+        }
+    }
+
+    pub fn as_buffered(&mut self) -> BufferedWriteable<'_> {
+        match self {
+            Writeable::Dyn(v) => BufferedWriteable::BufWriter(std::io::BufWriter::new(v.as_mut())),
+            Writeable::Local(v) => BufferedWriteable::BufWriter(std::io::BufWriter::new(v)),
+            #[cfg(feature = "cloud")]
+            Writeable::Cloud(v) => BufferedWriteable::Direct(v as _),
         }
     }
 
@@ -164,6 +179,31 @@ impl DerefMut for Writeable {
     }
 }
 
+/// Avoid BufWriter wrapping on writers that already have internal buffering.
+pub enum BufferedWriteable<'a> {
+    BufWriter(std::io::BufWriter<&'a mut (dyn std::io::Write + Send)>),
+    Direct(&'a mut (dyn std::io::Write + Send)),
+}
+
+impl<'a> Deref for BufferedWriteable<'a> {
+    type Target = dyn io::Write + Send + 'a;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::BufWriter(v) => v as _,
+            Self::Direct(v) => v,
+        }
+    }
+}
+
+impl DerefMut for BufferedWriteable<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            Self::BufWriter(v) => v as _,
+            Self::Direct(v) => v,
+        }
+    }
+}
 #[cfg(feature = "cloud")]
 mod async_writeable {
     use std::io;
@@ -220,9 +260,11 @@ mod async_writeable {
         pub async fn try_new(
             path: PlPathRef<'_>,
             cloud_options: Option<&CloudOptions>,
+            cloud_upload_chunk_size: usize,
         ) -> PolarsResult<Self> {
             // TODO: Native async impl
-            Writeable::try_new(path, cloud_options).and_then(|x| x.try_into_async_writeable())
+            Writeable::try_new(path, cloud_options, cloud_upload_chunk_size)
+                .and_then(|x| x.try_into_async_writeable())
         }
 
         pub async fn sync_all(&mut self) -> io::Result<()> {

@@ -4,7 +4,7 @@ pub mod allocator;
 // Since Python Polars cannot share its version into here and we need to be able to build this
 // package correctly without `py-polars`, we need to mirror the version here.
 // example: 1.35.0-beta.1
-pub static PYPOLARS_VERSION: &str = "1.35.1";
+pub static PYPOLARS_VERSION: &str = "1.36.1";
 
 // We allow multiple features to be set simultaneously so checking with all-features
 // is possible. In the case multiple are set or none at all, we set the repr to "unknown".
@@ -47,7 +47,7 @@ use crate::series::PySeries;
 use crate::sql::PySQLContext;
 use crate::{datatypes, exceptions, extension, functions, testing};
 
-#[pymodule]
+#[pymodule(gil_used = false)] // gil_used = false will be default in PyO3 0.28.
 fn _ir_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     use crate::lazyframe::visitor::nodes::*;
     m.add_class::<PythonScan>().unwrap();
@@ -73,7 +73,7 @@ fn _ir_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     Ok(())
 }
 
-#[pymodule]
+#[pymodule(gil_used = false)] // gil_used = false will be default in PyO3 0.28.
 fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     use crate::lazyframe::visit::PyExprIR;
     use crate::lazyframe::visitor::expr_nodes::*;
@@ -106,7 +106,7 @@ fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     Ok(())
 }
 
-#[pymodule]
+#[pymodule(gil_used = false)] // gil_used = false will be default in PyO3 0.28.
 pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     // Classes
     m.add_class::<PySeries>().unwrap();

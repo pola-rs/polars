@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any, cast
 from zoneinfo import ZoneInfo
 
@@ -526,8 +527,7 @@ def test_to_pandas(test_data: list[Any]) -> None:
     if a.dtype == pl.List:
         vals_b = [(None if x is None else x.tolist()) for x in b]
     else:
-        v = b.replace({np.nan: None}).values.tolist()
-        vals_b = cast("list[Any]", v)
+        vals_b = b.replace({np.nan: None}).values.tolist()
 
     assert vals_b == test_data
 
@@ -1360,33 +1360,58 @@ def test_temporal_comparison(
     )
 
 
-def test_to_dummies() -> None:
-    s = pl.Series("a", [1, 2, 3])
-    result = s.to_dummies()
+@pytest.mark.parametrize(
+    ("drop_nulls", "drop_first"),
+    [
+        (False, False),
+        (False, True),
+        (True, False),
+        (True, True),
+    ],
+)
+def test_to_dummies_with_nulls(drop_nulls: bool, drop_first: bool) -> None:
+    s = pl.Series("s", [None, "a", "a", None, "b", "c"])
     expected = pl.DataFrame(
-        {"a_1": [1, 0, 0], "a_2": [0, 1, 0], "a_3": [0, 0, 1]},
-        schema={"a_1": pl.UInt8, "a_2": pl.UInt8, "a_3": pl.UInt8},
-    )
+        {
+            "s_a": [0, 1, 1, 0, 0, 0],
+            "s_b": [0, 0, 0, 0, 1, 0],
+            "s_c": [0, 0, 0, 0, 0, 1],
+            "s_null": [1, 0, 0, 1, 0, 0],
+        }
+    ).cast(pl.UInt8)
+
+    if drop_nulls:
+        expected = expected.drop("s_null")
+    if drop_first:
+        expected = expected.drop("s_a")
+
+    result = s.to_dummies(drop_nulls=drop_nulls, drop_first=drop_first)
     assert_frame_equal(result, expected)
 
 
-def test_to_dummies_drop_first() -> None:
-    s = pl.Series("a", [1, 2, 3])
-    result = s.to_dummies(drop_first=True)
+@pytest.mark.parametrize(
+    ("drop_nulls", "drop_first"),
+    [
+        (False, False),
+        (False, True),
+        (True, False),
+        (True, True),
+    ],
+)
+def test_to_dummies_no_nulls(drop_nulls: bool, drop_first: bool) -> None:
+    s = pl.Series("s", ["a", "a", "b", "c"])
     expected = pl.DataFrame(
-        {"a_2": [0, 1, 0], "a_3": [0, 0, 1]},
-        schema={"a_2": pl.UInt8, "a_3": pl.UInt8},
-    )
-    assert_frame_equal(result, expected)
+        {
+            "s_a": [1, 1, 0, 0],
+            "s_b": [0, 0, 1, 0],
+            "s_c": [0, 0, 0, 1],
+        }
+    ).cast(pl.UInt8)
 
+    if drop_first:
+        expected = expected.drop("s_a")
 
-def test_to_dummies_drop_nulls() -> None:
-    s = pl.Series("a", [1, 2, None])
-    result = s.to_dummies(drop_nulls=True)
-    expected = pl.DataFrame(
-        {"a_1": [1, 0, 0], "a_2": [0, 1, 0]},
-        schema={"a_1": pl.UInt8, "a_2": pl.UInt8},
-    )
+    result = s.to_dummies(drop_nulls=drop_nulls, drop_first=drop_first)
     assert_frame_equal(result, expected)
 
 
@@ -1443,6 +1468,8 @@ def test_arg_sort() -> None:
         # Numeric
         (pl.Series([5, 3, 4, 1, 2]), 3, 0),
         (pl.Series([None, 5, 1]), 2, 1),
+        (pl.Series([float("nan"), 3.0, 5.0]), 1, 2),
+        (pl.Series([None, float("nan"), 3.0, 5.0]), 2, 3),
         # Boolean
         (pl.Series([True, False]), 1, 0),
         (pl.Series([True, True]), 0, 0),
@@ -1453,6 +1480,12 @@ def test_arg_sort() -> None:
         # String
         (pl.Series(["a", "c", "b"]), 0, 1),
         (pl.Series([None, "a", None, "b"]), 1, 3),
+        # Binary
+        (pl.Series([b"a", b"c", b"b"]), 0, 1),
+        (pl.Series([None, b"a", None, b"b"]), 1, 3),
+        # Decimal
+        (pl.Series([Decimal("1.1"), Decimal("2.2"), Decimal("0.5")]), 2, 1),
+        (pl.Series([None, Decimal("1.1"), None, Decimal("2.2")]), 1, 3),
         # Categorical
         (pl.Series(["c", "b", "a"], dtype=pl.Categorical()), 2, 0),
         (pl.Series("s", [None, "c", "b", None, "a"], pl.Categorical()), 4, 1),

@@ -13,9 +13,8 @@ pub use exitable::PyInProcessQuery;
 use parking_lot::RwLock;
 use polars::prelude::{Engine, LazyFrame, OptFlags};
 use pyo3::exceptions::PyValueError;
+use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
-use pyo3::types::PyAnyMethods;
-use pyo3::{Bound, FromPyObject, PyAny, PyResult, pyclass};
 
 use crate::prelude::Wrap;
 
@@ -69,8 +68,10 @@ impl From<OptFlags> for PyOptFlags {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<Engine> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<Engine> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let parsed = ob
             .extract::<PyBackedStr>()?
             .parse()

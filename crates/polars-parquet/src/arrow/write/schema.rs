@@ -207,7 +207,7 @@ pub fn to_parquet_type(field: &Field, options: &ColumnWriteOptions) -> PolarsRes
     // create type from field
     let (physical_type, primitive_converted_type, primitive_logical_type) = match field
         .dtype()
-        .to_logical_type()
+        .to_storage()
     {
         ArrowDataType::Null => (
             PhysicalType::Int32,
@@ -221,7 +221,11 @@ pub fn to_parquet_type(field: &Field, options: &ColumnWriteOptions) -> PolarsRes
         // no natural representation in parquet; leave it as is.
         // arrow consumers MAY use the arrow schema in the metadata to parse them.
         ArrowDataType::Date64 => (PhysicalType::Int64, None, None),
-        ArrowDataType::Float16 => (PhysicalType::FixedLenByteArray(2), None, None),
+        ArrowDataType::Float16 => (
+            PhysicalType::FixedLenByteArray(2),
+            None,
+            Some(PrimitiveLogicalType::Float16),
+        ),
         ArrowDataType::Float32 => (PhysicalType::Float, None, None),
         ArrowDataType::Float64 => (PhysicalType::Double, None, None),
         ArrowDataType::Binary | ArrowDataType::LargeBinary | ArrowDataType::BinaryView => {

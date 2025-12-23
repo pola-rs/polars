@@ -20,8 +20,8 @@ use sqlparser::ast::helpers::attached_token::AttachedToken;
 use sqlparser::ast::{
     DateTimeField, DuplicateTreatment, Expr as SQLExpr, Function as SQLFunction, FunctionArg,
     FunctionArgExpr, FunctionArgumentClause, FunctionArgumentList, FunctionArguments, Ident,
-    OrderByExpr, Value as SQLValue, WindowFrame, WindowFrameBound, WindowFrameUnits, WindowSpec,
-    WindowType,
+    OrderByExpr, Value as SQLValue, ValueWithSpan, WindowFrame, WindowFrameBound, WindowFrameUnits,
+    WindowSpec, WindowType,
 };
 use sqlparser::tokenizer::Span;
 
@@ -717,6 +717,18 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT LAST_VALUE(col1) OVER (PARTITION BY category ORDER BY id) FROM df;
     /// ```
     LastValue,
+    /// SQL 'lag' function.
+    /// Returns the value of the expression evaluated at the row n rows before the current row.
+    /// ```sql
+    /// SELECT lag(column_1, 1) OVER (PARTITION BY column_2 ORDER BY column_3) FROM df;
+    /// ```
+    Lag,
+    /// SQL 'lead' function.
+    /// Returns the value of the expression evaluated at the row n rows after the current row.
+    /// ```sql
+    /// SELECT lead(column_1, 1) OVER (PARTITION BY column_2 ORDER BY column_3) FROM df;
+    /// ```
+    Lead,
     /// SQL 'row_number' function.
     /// Returns the sequential row number within a window partition, starting from 1.
     /// ```sql
@@ -875,7 +887,7 @@ impl PolarsSQLFunctions {
 
 impl PolarsSQLFunctions {
     fn try_from_sql(function: &'_ SQLFunction, ctx: &'_ SQLContext) -> PolarsResult<Self> {
-        let function_name = function.name.0[0].value.to_lowercase();
+        let function_name = function.name.0[0].as_ident().unwrap().value.to_lowercase();
         Ok(match function_name.as_str() {
             // ----
             // Bitwise functions
@@ -1019,6 +1031,8 @@ impl PolarsSQLFunctions {
             "dense_rank" => Self::DenseRank,
             "first_value" => Self::FirstValue,
             "last_value" => Self::LastValue,
+            "lag" => Self::Lag,
+            "lead" => Self::Lead,
             #[cfg(feature = "rank")]
             "rank" => Self::Rank,
             "row_number" => Self::RowNumber,
@@ -1662,6 +1676,8 @@ impl SQLFunctionVisitor<'_> {
                     ),
                 }
             },
+            Lag => self.visit_window_offset_function(1),
+            Lead => self.visit_window_offset_function(-1),
             #[cfg(feature = "rank")]
             Rank | DenseRank => {
                 let (func_name, rank_method) = match function_name {
@@ -1715,6 +1731,42 @@ impl SQLFunctionVisitor<'_> {
             // ----
             Udf(func_name) => self.visit_udf(&func_name),
         }
+    }
+
+    fn visit_window_offset_function(&mut self, offset_multiplier: i64) -> PolarsResult<Expr> {
+        // LAG/LEAD require an OVER clause
+        if self.func.over.is_none() {
+            polars_bail!(SQLSyntax: "{} requires an OVER clause", self.func.name);
+        }
+
+        // LAG/LEAD require ORDER BY in the OVER clause
+        let window_type = self.func.over.as_ref().unwrap();
+        let window_spec = self.resolve_window_spec(window_type)?;
+        if window_spec.order_by.is_empty() {
+            polars_bail!(SQLSyntax: "{} requires an ORDER BY in the OVER clause", self.func.name);
+        }
+
+        let args = extract_args(self.func)?;
+
+        match args.as_slice() {
+            [FunctionArgExpr::Expr(sql_expr)] => {
+                let expr = parse_sql_expr(sql_expr, self.ctx, self.active_schema)?;
+                Ok(expr.shift(offset_multiplier.into()))
+            },
+            [FunctionArgExpr::Expr(sql_expr), FunctionArgExpr::Expr(offset_expr)] => {
+                let expr = parse_sql_expr(sql_expr, self.ctx, self.active_schema)?;
+                let offset = parse_sql_expr(offset_expr, self.ctx, self.active_schema)?;
+                if let Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) = offset {
+                    if n <= 0 {
+                        polars_bail!(SQLSyntax: "offset must be positive (found {})", n)
+                    }
+                    Ok(expr.shift((offset_multiplier * n as i64).into()))
+                } else {
+                    polars_bail!(SQLSyntax: "offset must be an integer (found {:?})", offset)
+                }
+            },
+            _ => polars_bail!(SQLSyntax: "{} expects 1 or 2 arguments (found {})", self.func.name, args.len()),
+        }.and_then(|e| self.apply_window_spec(e, &self.func.over))
     }
 
     fn visit_udf(&mut self, func_name: &str) -> PolarsResult<Expr> {
@@ -2146,9 +2198,9 @@ impl SQLFunctionVisitor<'_> {
         for ob in order_by {
             // Note: if not specified 'NULLS FIRST' is default for DESC, 'NULLS LAST' otherwise
             // https://www.postgresql.org/docs/current/queries-order.html
-            let desc_order = !ob.asc.unwrap_or(true);
+            let desc_order = !ob.options.asc.unwrap_or(true);
             by.push(parse_sql_expr(&ob.expr, self.ctx, self.active_schema)?);
-            nulls_last.push(!ob.nulls_first.unwrap_or(desc_order));
+            nulls_last.push(!ob.options.nulls_first.unwrap_or(desc_order));
             descending.push(desc_order);
         }
         Ok(expr.sort_by(
@@ -2168,8 +2220,8 @@ impl SQLFunctionVisitor<'_> {
     ) -> PolarsResult<Expr> {
         // If ORDER BY references the base expression, use .sort() directly
         if order_by.len() == 1 && order_by[0].expr == *base_sql_expr {
-            let desc_order = !order_by[0].asc.unwrap_or(true);
-            let nulls_last = !order_by[0].nulls_first.unwrap_or(desc_order);
+            let desc_order = !order_by[0].options.asc.unwrap_or(true);
+            let nulls_last = !order_by[0].options.nulls_first.unwrap_or(desc_order);
             return Ok(expr.sort(
                 SortOptions::default()
                     .with_order_descending(desc_order)
@@ -2190,10 +2242,10 @@ impl SQLFunctionVisitor<'_> {
             return Ok((Vec::new(), false));
         }
         // Parse expressions and validate uniform direction
-        let all_ascending = order_by[0].asc.unwrap_or(true);
+        let all_ascending = order_by[0].options.asc.unwrap_or(true);
         let mut exprs = Vec::with_capacity(order_by.len());
         for o in order_by {
-            if all_ascending != o.asc.unwrap_or(true) {
+            if all_ascending != o.options.asc.unwrap_or(true) {
                 // TODO: mixed sort directions are not currently supported; we
                 //  need to enhance `over_with_options` to take SortMultipleOptions
                 polars_bail!(
@@ -2317,7 +2369,7 @@ impl FromSQLExpr for f64 {
         Self: Sized,
     {
         match expr {
-            SQLExpr::Value(v) => match v {
+            SQLExpr::Value(ValueWithSpan { value: v, .. }) => match v {
                 SQLValue::Number(s, _) => s
                     .parse()
                     .map_err(|_| polars_err!(SQLInterface: "cannot parse literal {:?}", s)),
@@ -2334,7 +2386,7 @@ impl FromSQLExpr for bool {
         Self: Sized,
     {
         match expr {
-            SQLExpr::Value(v) => match v {
+            SQLExpr::Value(ValueWithSpan { value: v, .. }) => match v {
                 SQLValue::Boolean(v) => Ok(*v),
                 _ => polars_bail!(SQLInterface: "cannot parse boolean {:?}", v),
             },
@@ -2349,7 +2401,7 @@ impl FromSQLExpr for String {
         Self: Sized,
     {
         match expr {
-            SQLExpr::Value(v) => match v {
+            SQLExpr::Value(ValueWithSpan { value: v, .. }) => match v {
                 SQLValue::SingleQuotedString(s) => Ok(s.clone()),
                 _ => polars_bail!(SQLInterface: "cannot parse literal {:?}", v),
             },
@@ -2364,7 +2416,7 @@ impl FromSQLExpr for StrptimeOptions {
         Self: Sized,
     {
         match expr {
-            SQLExpr::Value(v) => match v {
+            SQLExpr::Value(ValueWithSpan { value: v, .. }) => match v {
                 SQLValue::SingleQuotedString(s) => Ok(StrptimeOptions {
                     format: Some(PlSmallStr::from_str(s)),
                     ..StrptimeOptions::default()

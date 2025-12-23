@@ -684,6 +684,7 @@ impl<'a> FieldsMapper<'a> {
         use DataType::*;
         self.map_dtype(|dtype| match dtype {
             Int8 | UInt8 | Int16 | UInt16 => Int64,
+            Boolean => IDX_DTYPE,
             dt => dt.clone(),
         })
     }
@@ -793,16 +794,6 @@ impl<'a> FieldsMapper<'a> {
             );
         }
 
-        Ok(self)
-    }
-
-    /// Validate that the dtype is a List.
-    pub fn ensure_is_list(self) -> PolarsResult<Self> {
-        let dtype = self.fields[0].dtype();
-        polars_ensure!(
-            dtype.is_list(),
-            InvalidOperation:"expected List data type for list operation, got: {dtype}"
-        );
         Ok(self)
     }
 }

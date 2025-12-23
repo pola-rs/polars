@@ -12,7 +12,7 @@ use polars_utils::unique_id::UniqueId;
 use super::convert_utils::SplitPredicates;
 use super::stack_opt::ConversionOptimizer;
 use super::*;
-use crate::constants::PL_ELEMENT_NAME;
+use crate::constants::get_pl_element_name;
 use crate::dsl::PartitionedSinkOptions;
 use crate::dsl::sink2::FileProviderType;
 
@@ -473,7 +473,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             // this function.
             if !predicates.is_empty() {
                 let predicate_names = (0..predicates.len())
-                    .map(|i| PlSmallStr::from_string(format!("__POLARS_HAVING_{i}")))
+                    .map(|i| format_pl_smallstr!("__POLARS_HAVING_{i}"))
                     .collect::<Arc<[_]>>();
                 let predicates = predicates
                     .into_iter()
@@ -779,7 +779,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             for value in values.iter() {
                 out.clear();
                 let value_dtype = input_schema.try_get(value)?;
-                expr_schema.insert(PL_ELEMENT_NAME.clone(), value_dtype.clone());
+                expr_schema.insert(get_pl_element_name(), value_dtype.clone());
                 expand_expression(
                     &agg,
                     &Default::default(),
