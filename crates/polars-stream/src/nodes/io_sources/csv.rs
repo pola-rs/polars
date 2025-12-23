@@ -711,7 +711,7 @@ pub fn read_until_starting_point(
             let done = loop {
                 match &mut state {
                     State::SkipEmpty => {
-                        if line.is_empty() {
+                        if line.is_empty() || line == &[b'\r'] {
                             break false;
                         }
 
