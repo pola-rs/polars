@@ -1,35 +1,33 @@
-use std::io::Cursor;
 use std::sync::Arc;
 
-use arrow::io::ipc::read::{Dictionaries, record_batch_num_rows};
-use polars_core::utils::arrow::io::ipc::read::FileReader;
-use polars_error::{PolarsResult, polars_ensure};
-use polars_ops::frame::join;
+use polars_error::PolarsResult;
 use polars_utils::IdxSize;
 
 use super::record_batch_data_fetch::RecordBatchDataFetcher;
 use super::record_batch_decode::RecordBatchDecoder;
-use super::{AsyncTaskData, IPCReadImpl};
+use super::{AsyncTaskData, IpcReadImpl};
 use crate::async_executor;
 use crate::morsel::{Morsel, SourceToken, get_ideal_morsel_size};
 use crate::nodes::io_sources::ipc::ROW_COUNT_OVERFLOW_ERR;
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
-use crate::nodes::io_sources::parquet::init::split_to_morsels; //kdn TODO move to utility?
+use crate::nodes::io_sources::parquet::init::split_to_morsels;
 use crate::nodes::{MorselSeq, TaskPriority};
-use crate::utils::task_handles_ext::AbortOnDropHandle; //kdn TODO AbortOnDropHandle multiple times
+use crate::utils::task_handles_ext::AbortOnDropHandle;
 
-impl IPCReadImpl {
+impl IpcReadImpl {
     pub(crate) fn run(mut self) -> AsyncTaskData {
-        dbg!("start run for IPCReadImpl");
+        dbg!("start run for IpcReadImpl");
 
         let verbose = self.verbose;
 
+        // kdn TODO honor config
         if verbose {
-            // eprintln!("[IPCFileReader]: {:?}", &self.config); //kdn TODO
+            eprintln!("[IPCFileReader]: {:?}", &self.config);
+            eprintln!(
+                "[IPCFileReader]: record batch count: {:?}",
+                self.metadata.blocks.len()
+            );
         }
-
-        // kdn TODO: early return if slice len is 0
-        // kdn TODO: fixup slice (offset, len) vs slice_range
 
         let io_runtime = polars_io::pl_async::get_runtime();
 
@@ -56,25 +54,33 @@ impl IPCReadImpl {
         let (decode_send, mut decode_recv) = tokio::sync::mpsc::channel(self.config.num_pipelines);
         let (mut morsel_send, morsel_recv) = FileReaderOutputSend::new_serial();
 
+        // Fast-path for empty slice
+        if self.slice_range.is_empty() {
+            return (
+                morsel_recv,
+                AbortOnDropHandle(io_runtime.spawn(std::future::ready(Ok(())))),
+            );
+        }
+
         let n_rows_in_file_tx = self.n_rows_in_file_tx;
         let row_position_on_end_tx = self.row_position_on_end_tx;
 
         // Task: Prefetch.
         let prefetch_task = AbortOnDropHandle(io_runtime.spawn(async move {
-            // kdn TODO - should num_rows be in metadata?
-
             dbg!("start task: prefetch_task"); //kdn
 
             let mut record_batch_data_fetcher = RecordBatchDataFetcher {
                 projection_info,
-                slice_range: None, //kdn TODO
                 memory_prefetch_func,
                 metadata,
                 byte_source,
                 record_batch_idx: 0,
-                row_idx: 0,
             };
 
+            // We fetch all record batches so that we know the total number of rows.
+            // @TODO: In case of slicing, it would suffice to fetch the record batch
+            // headers for any record batch that falls outside of the slice, or not
+            // at all.
             while let Some(prefetch) = record_batch_data_fetcher.next().await {
                 if prefetch_send.send(prefetch?).await.is_err() {
                     break;
@@ -87,11 +93,11 @@ impl IPCReadImpl {
         let decode_task = AbortOnDropHandle(io_runtime.spawn(async move {
             dbg!("start task: decode_task"); //kdn
             let mut current_row_offset: IdxSize = 0;
+
             while let Some(prefetch) = prefetch_recv.recv().await {
                 let record_batch_data = prefetch.await.unwrap()?;
 
-                // kdn TODO: integrate slice
-                // kdn TODO IdxSize vs u64 on range
+                // Fetch every record batch so we can determine total row count.
                 let rb_num_rows = record_batch_data.num_rows;
                 let rb_num_rows =
                     IdxSize::try_from(rb_num_rows).map_err(|_| ROW_COUNT_OVERFLOW_ERR)?;
@@ -101,29 +107,29 @@ impl IPCReadImpl {
                 let row_range = current_row_offset..row_range_end;
                 current_row_offset = row_range_end;
 
-                let record_batch_decoder = record_batch_decoder.clone();
-                let decode_fut = async_executor::spawn(TaskPriority::High, async move {
-                    record_batch_decoder
-                        .record_batch_data_to_df(record_batch_data, row_range)
-                        .await
-                });
-                if decode_send.send(decode_fut).await.is_err() {
-                    break;
-                }
+                // Only pass to decoder if we need the data.
+                if (row_range.start as usize) < self.slice_range.end {
+                    let record_batch_decoder = record_batch_decoder.clone();
+                    let decode_fut = async_executor::spawn(TaskPriority::High, async move {
+                        record_batch_decoder
+                            .record_batch_data_to_df(record_batch_data, row_range)
+                            .await
+                    });
+                    if decode_send.send(decode_fut).await.is_err() {
+                        break;
+                    }
+                };
             }
 
             let current_row_offset =
                 IdxSize::try_from(current_row_offset).map_err(|_| ROW_COUNT_OVERFLOW_ERR)?;
 
-            // Handle callbacks.
-            if let Some(n_rows_in_file_tx) = n_rows_in_file_tx {
-                dbg!("has callback rows_in_file_tx"); //kdn
-                _ = n_rows_in_file_tx.send(dbg!(current_row_offset)); //kdn
-            }
-
+            // Handle callback.
             if let Some(row_position_on_end_tx) = row_position_on_end_tx {
-                dbg!("has callback row_position_on_end_tx"); //kdn
-                _ = row_position_on_end_tx.send(dbg!(current_row_offset)); //kdn
+                _ = row_position_on_end_tx.send(current_row_offset);
+            }
+            if let Some(n_rows_in_file_tx) = n_rows_in_file_tx {
+                _ = n_rows_in_file_tx.send(current_row_offset); //kdn
             }
 
             PolarsResult::Ok(())
@@ -202,15 +208,14 @@ impl IPCReadImpl {
     }
 
     /// Creates a `RecordBatchDecoder` that turns `RecordBatchData` into DataFrames.
-    /// Dictionries must be loaded prior to initialization.
+    /// Dictionaries must be loaded prior to initialization.
     pub(super) fn init_record_batch_decoder(&mut self) -> RecordBatchDecoder {
         dbg!("start init_record_batch_decoder"); //kdn
 
-        // Load dictionaries, if any.
-        // let dictionaries = self.get_dictionaries()?;
+        debug_assert!(self.dictionaries.is_some());
 
         let projection_info = self.projection_info.clone();
-        let dictionaries = self.dictionaries.clone(); //kdn TODO not clone
+        let dictionaries = self.dictionaries.clone();
         let row_index = self.row_index.clone();
         let slice_range = self.slice_range.clone();
 

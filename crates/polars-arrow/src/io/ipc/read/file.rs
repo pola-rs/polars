@@ -82,13 +82,13 @@ pub fn read_dictionary_block<R: Read + Seek>(
     reader: &mut R,
     metadata: &FileMetadata,
     block: &arrow_format::ipc::Block,
-    // When true, the underlying reader bytestream is treated as a single IPC Block.
+    // When true, the underlying reader bytestream represents a standalone IPC Block
+    // rather than a complete IPC File.
     block_mode: bool,
     dictionaries: &mut Dictionaries,
     message_scratch: &mut Vec<u8>,
     dictionary_scratch: &mut Vec<u8>,
 ) -> PolarsResult<()> {
-    //kdn TODO review and cleanup
     let offset: u64 = if block_mode {
         0
     } else {
@@ -103,7 +103,6 @@ pub fn read_dictionary_block<R: Read + Seek>(
         .try_into()
         .map_err(|_| polars_err!(oos = OutOfSpecKind::UnexpectedNegativeInteger))?;
 
-    // let message = get_message_from_block(reader, block, message_scratch)?;
     let message = get_message_from_block_offset(reader, offset, message_scratch)?;
     let batch = get_dictionary_batch(&message)?;
 
@@ -271,6 +270,7 @@ pub fn deserialize_footer(footer_data: &[u8], size: u64) -> PolarsResult<FileMet
 
 /// Read the Arrow IPC file's metadata
 pub fn read_file_metadata<R: Read + Seek>(reader: &mut R) -> PolarsResult<FileMetadata> {
+    dbg!("start read_file_metadata"); //kdn
     let start = reader.stream_position()?;
     let (end, footer_len) = read_footer_len(reader)?;
     let serialized_footer = read_footer(reader, footer_len)?;
@@ -290,7 +290,7 @@ pub(crate) fn get_record_batch(
     }
 }
 
-fn get_message_from_block_offset<'a, R: Read + Seek>(
+pub fn get_message_from_block_offset<'a, R: Read + Seek>(
     reader: &mut R,
     offset: u64,
     message_scratch: &'a mut Vec<u8>,
@@ -302,7 +302,7 @@ fn get_message_from_block_offset<'a, R: Read + Seek>(
         // continuation marker encountered, read message next
         reader.read_exact(&mut meta_buf)?;
     }
-    
+
     let meta_len = i32::from_le_bytes(meta_buf)
         .try_into()
         .map_err(|_| polars_err!(oos = OutOfSpecKind::UnexpectedNegativeInteger))?;
@@ -384,37 +384,4 @@ pub fn read_batch<R: Read + Seek>(
         offset + length,
         data_scratch,
     )
-}
-
-/// Reads the record batch header at position `index` from the reader and returns
-/// the record batch length (i.e., number of rows).
-pub fn record_batch_num_rows<R: Read + Seek>(
-    reader: &mut R,
-    metadata: &FileMetadata,
-    index: usize,
-    // When true, the reader object is handled as an IPC Block.
-    block_mode: bool,
-    message_scratch: &mut Vec<u8>,
-) -> PolarsResult<usize> {
-    let block = metadata.blocks[index];
-
-    let offset: u64 = if block_mode {
-        0
-    } else {
-        block
-            .offset
-            .try_into()
-            .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?
-    };
-
-    let length: u64 = block
-        .meta_data_length
-        .try_into()
-        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
-
-    let message = get_message_from_block_offset(reader, offset, message_scratch)?;
-    let batch = get_record_batch(message)?;
-
-    let out = batch.length().map(|l| l as usize)?; //kdn TODO safe conversion
-    Ok(out)
 }

@@ -16,6 +16,7 @@ impl<R: MmapBytesReader> IpcReader<R> {
         &mut self,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
     ) -> PolarsResult<DataFrame> {
+        dbg!("start finish_memmapped"); //kdn
         match self.reader.to_file() {
             Some(file) => {
                 let semaphore = MMapSemaphore::new_from_file(file)?;
@@ -83,7 +84,6 @@ impl<'a> MMapChunkIter<'a> {
 
 impl ArrowReader for MMapChunkIter<'_> {
     fn next_record_batch(&mut self) -> PolarsResult<Option<RecordBatch>> {
-        dbg!("start next_record_batch for impl ArrowReader for MMapChunkIter"); //kdn
         if self.idx < self.end {
             let chunk = unsafe {
                 mmap_unchecked(
