@@ -171,7 +171,7 @@ impl<R: Read + Seek> Iterator for FileReader<R> {
     type Item = PolarsResult<RecordBatchT<Box<dyn Array>>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        dbg!("start next for impl Iterator for FileReader");//kdn
+        dbg!("start next for impl Iterator for FileReader"); //kdn
         // get current block
         if self.current_block == self.metadata.blocks.len() {
             return None;
@@ -212,35 +212,28 @@ impl<R: Read + Seek> Iterator for FileReader<R> {
 /// The block contains either a `RecordBatch` or a `DictionaryBatch`.
 /// The `dictionaries` field must be initialized prior to decoding a `RecordBatch`.
 
-// kdn TODO update fields
-pub struct BlockReader<'a, R: Read + Seek> {
+pub struct BlockReader<R: Read + Seek> {
     pub reader: R,
-    metadata: &'a FileMetadata,
-    projection: Option<ProjectionInfo>,
 }
 
-impl<'a, R: Read + Seek> BlockReader<'a, R> {
-    pub fn new(reader: R, metadata: &'a FileMetadata, projection: Option<Vec<usize>>) -> Self {
-        let projection =
-            projection.map(|projection| prepare_projection(&metadata.schema, projection));
-        Self {
-            reader,
-            metadata,
-            projection,
-        }
+impl<R: Read + Seek> BlockReader<R> {
+    pub fn new(reader: R) -> Self {
+        // let projection =
+        //     projection.map(|projection| prepare_projection(&metadata.schema, projection));
+        Self { reader }
     }
 
-    pub fn new_with_projection_info(
-        reader: R,
-        metadata: &'a FileMetadata,
-        projection: Option<ProjectionInfo>,
-    ) -> Self {
-        Self {
-            reader,
-            metadata,
-            projection,
-        }
-    }
+    // pub fn new_with_projection_info(
+    //     reader: R,
+    //     metadata: &'a FileMetadata,
+    //     projection: Option<ProjectionInfo>,
+    // ) -> Self {
+    //     Self {
+    //         reader,
+    //         metadata,
+    //         projection,
+    //     }
+    // }
 
     /// Reads the record batch header and returns its length (i.e., number of rows).
     pub fn record_batch_num_rows(&mut self, message_scratch: &mut Vec<u8>) -> PolarsResult<usize> {

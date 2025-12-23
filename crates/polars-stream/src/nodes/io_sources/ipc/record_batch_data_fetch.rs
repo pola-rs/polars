@@ -6,25 +6,15 @@ use polars_error::PolarsResult;
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};
 use polars_utils::mmap::MemSlice;
 
-use crate::utils::task_handles_ext;
+use crate::utils::tokio_handle_ext;
 
 /// Represents byte-data that can be transformed into a DataFrame after some computation.
-// kdn TODO clean up fields
 pub(super) struct RecordBatchData {
     pub(super) fetched_bytes: MemSlice,
-    // pub(super) row_offset: usize,
-    // pub(super) slice: Option<(usize, usize)>,
-    // pub(super) row_group_metadata: RowGroupMetadata,
-    pub(super) file_metadata: Arc<FileMetadata>,
-    // pub(super) sorting_map: Vec<(usize, IsSorted)>,
     pub(super) num_rows: usize,
 }
 
-// kdn TODO clean up fields
 pub(super) struct RecordBatchDataFetcher {
-    pub(super) projection_info: Arc<Option<ProjectionInfo>>,
-    // pub(super) projection: Arc<[ArrowFieldProjection]>,
-    // pub(super) is_full_projection: bool,
     pub(super) memory_prefetch_func: fn(&[u8]) -> (),
     pub(super) metadata: Arc<FileMetadata>,
     pub(super) byte_source: Arc<DynByteSource>,
@@ -34,7 +24,7 @@ pub(super) struct RecordBatchDataFetcher {
 impl RecordBatchDataFetcher {
     pub(super) async fn next(
         &mut self,
-    ) -> Option<PolarsResult<task_handles_ext::AbortOnDropHandle<PolarsResult<RecordBatchData>>>>
+    ) -> Option<PolarsResult<tokio_handle_ext::AbortOnDropHandle<PolarsResult<RecordBatchData>>>>
     {
         let idx = self.record_batch_idx;
         self.record_batch_idx += 1;
@@ -76,25 +66,20 @@ impl RecordBatchDataFetcher {
                     bytes
                 };
 
-            // We extract the length (i.e., nr of rows) at the earliest possible time.
+            // We extract the length (i.e., nr of rows) at the earliest possible opportunity.
             let num_rows = {
-                let mut reader = BlockReader::new(
-                    Cursor::new(fetched_bytes.as_ref()),
-                    file_metadata.as_ref(),
-                    None,
-                );
+                let mut reader = BlockReader::new(Cursor::new(fetched_bytes.as_ref()));
                 let mut message_scratch = Vec::new();
                 reader.record_batch_num_rows(&mut message_scratch)?
             };
 
             PolarsResult::Ok(RecordBatchData {
                 fetched_bytes,
-                file_metadata,
                 num_rows,
             })
         });
 
-        let handle = task_handles_ext::AbortOnDropHandle(handle);
+        let handle = tokio_handle_ext::AbortOnDropHandle(handle);
         return Some(Ok(handle));
     }
 }

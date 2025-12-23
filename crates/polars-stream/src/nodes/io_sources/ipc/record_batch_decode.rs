@@ -3,20 +3,21 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use arrow::array::TryExtend;
+use polars_core::utils::arrow::io::ipc::read::{FileMetadata};
 use arrow::io::ipc::read::{Dictionaries, ProjectionInfo};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::DataType;
 use polars_core::schema::Schema;
-use polars_core::utils::arrow::io::ipc::read::{BlockReader, read_batch};
 use polars_core::utils::arrow::io::ipc::read::common::apply_projection;
+use polars_core::utils::arrow::io::ipc::read::{BlockReader, read_batch};
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_utils::IdxSize;
 
 use super::record_batch_data_fetch::RecordBatchData;
-// use crate::nodes::io_sources::multi_scan::reader_interface::FileReader;
 
 pub(super) struct RecordBatchDecoder {
+    pub(super) file_metadata: Arc<FileMetadata>,
     pub(super) projection_info: Arc<Option<ProjectionInfo>>,
     pub(super) dictionaries: Arc<Option<Dictionaries>>,
     pub(super) row_index: Option<RowIndex>,
@@ -29,7 +30,7 @@ impl RecordBatchDecoder {
         record_batch_data: RecordBatchData,
         row_range: Range<IdxSize>,
     ) -> PolarsResult<DataFrame> {
-        let file_metadata = record_batch_data.file_metadata;
+        let file_metadata = self.file_metadata.clone();
         let projection_info = self.projection_info.as_ref().clone();
         let bytes = record_batch_data.fetched_bytes;
 
@@ -56,17 +57,10 @@ impl RecordBatchDecoder {
         let mut data_scratch = Vec::new();
         let mut message_scratch = Vec::new();
 
-        // BlockReader
-        let mut reader = BlockReader::new_with_projection_info(
-            Cursor::new(bytes.as_ref()),
-            file_metadata.as_ref(),
-            projection_info.clone(),
-        );
+        let mut reader = BlockReader::new(Cursor::new(bytes.as_ref()));
 
         let dictionaries = self.dictionaries.as_ref().as_ref().unwrap();
-
         let length = reader.record_batch_num_rows(&mut message_scratch)?;
-
         let limit = slice_range.end as usize - row_range.start as usize; //kdn CHECK
 
         // Create the DataFrame with the appropriate schema based on the data.
@@ -104,6 +98,21 @@ impl RecordBatchDecoder {
             let offset = slice_range.start as IdxSize + *offset;
             df = df.with_row_index(name.clone(), Some(offset))?;
         };
+
+        // kdn TODO
+        // // If the block is very large, we want to split the block amongst the
+        // // pipelines. That will at least allow some parallelism.
+        // for i in 0..df.height().div_ceil(max_morsel_size) {
+        //     let morsel_df = df.slice((i * max_morsel_size) as i64, max_morsel_size);
+        //     let seq = MorselSeq::new(morsel_seq_base + i as u64);
+        //     if send
+        //         .insert(Priority(Reverse(seq), morsel_df))
+        //         .await
+        //         .is_err()
+        //     {
+        //         break;
+        //     }
+        // }
 
         Ok(df)
     }

@@ -32,7 +32,7 @@ use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOu
 use crate::nodes::io_sources::multi_scan::reader_interface::{
     FileReader, FileReaderCallbacks, Projection,
 };
-use crate::utils::task_handles_ext;
+use crate::utils::tokio_handle_ext;
 
 pub mod builder;
 mod init;
@@ -62,20 +62,6 @@ struct InitializedState {
     dictionaries: Arc<Option<Dictionaries>>,
     // Lazily initialized - getting this involves iterating record batches.
     n_rows_in_file: Option<IdxSize>,
-}
-
-/// Move `slice` forward by `n` and return the slice until then.
-fn slice_take(slice: &mut Range<usize>, n: usize) -> Range<usize> {
-    let offset = slice.start;
-    let length = slice.len();
-
-    assert!(offset <= n);
-
-    let chunk_length = (n - offset).min(length);
-    let rng = offset..offset + chunk_length;
-    *slice = 0..length - chunk_length;
-
-    rng
 }
 
 fn get_max_morsel_size() -> usize {
@@ -286,15 +272,9 @@ impl FileReader for IpcFileReader {
         let memory_prefetch_func = get_memory_prefetch_func(verbose);
         let record_batch_prefetch_size = polars_core::config::get_record_batch_prefetch_size();
 
-        // This can be set to 1 to force column-per-thread parallelism, e.g. for bug reproduction.
-        let target_values_per_thread = std::env::var("POLARS_IPC_DECODE_TARGET_VALUES_PER_THREAD")
-            .map(|x| x.parse::<usize>().expect("integer").max(1))
-            .unwrap_or(16_777_216);
-
         let config = Config {
             num_pipelines,
             record_batch_prefetch_size,
-            target_values_per_thread,
         };
 
         // Create IpcReadImpl and run.
@@ -379,11 +359,7 @@ impl IpcFileReader {
                     assert_eq!(bytes_map.len(), ranges.len());
 
                     for bytes in bytes_map.into_values() {
-                        let mut reader = BlockReader::new(
-                            Cursor::new(bytes.as_ref()),
-                            file_metadata.as_ref(),
-                            None,
-                        );
+                        let mut reader = BlockReader::new(Cursor::new(bytes.as_ref()));
                         n_rows += reader.record_batch_num_rows(&mut message_scratch)?;
                     }
 
@@ -451,26 +427,23 @@ impl IpcFileReader {
 
 type AsyncTaskData = (
     FileReaderOutputRecv,
-    task_handles_ext::AbortOnDropHandle<PolarsResult<()>>,
+    tokio_handle_ext::AbortOnDropHandle<PolarsResult<()>>,
 );
 
 struct IpcReadImpl {
     // Source info
     byte_source: Arc<DynByteSource>,
     metadata: Arc<FileMetadata>,
-    // Lazily initialized. //kdn TODO NOT
-    dictionaries: Arc<Option<Dictionaries>>, //kdn TODO do we need Option?
-    // Query parameters
+    // Lazily initialized.
+    dictionaries: Arc<Option<Dictionaries>>,
+    // Query parameters.
     slice_range: Range<usize>,
     projection_info: Arc<Option<ProjectionInfo>>,
     row_index: Option<RowIndex>,
-    // ? is_full_projection: bool,
-    // ? predicate: Option<ScanIOPredicate>,
-    // ? options: ParquetOptions,
-    // Call-backs
+    // Call-backs.
     n_rows_in_file_tx: Option<Sender<IdxSize>>,
     row_position_on_end_tx: Option<Sender<IdxSize>>,
-    // Run-time vars
+    // Run-time vars.
     config: Config,
     verbose: bool,
     memory_prefetch_func: fn(&[u8]) -> (),
@@ -481,9 +454,6 @@ struct Config {
     num_pipelines: usize,
     /// Number of record batches to prefetch concurrently, this can be across files
     record_batch_prefetch_size: usize,
-    /// Minimum number of values for a parallel spawned task to process to amortize
-    /// parallelism overhead.
-    target_values_per_thread: usize,
 }
 
 async fn read_dictionaries(
@@ -498,7 +468,10 @@ async fn read_dictionaries(
     };
 
     if verbose {
-        eprintln!("[IpcFileReader]: readingg dictionaries ({:?})", blocks.len());
+        eprintln!(
+            "[IpcFileReader]: readingg dictionaries ({:?})",
+            blocks.len()
+        );
     }
 
     let mut dictionaries = Dictionaries::default();
@@ -511,8 +484,7 @@ async fn read_dictionaries(
             ..block.offset as usize + block.meta_data_length as usize + block.body_length as usize;
         let bytes = byte_source.get_range(range).await?;
 
-        let mut reader =
-            BlockReader::new(Cursor::new(bytes.as_ref()), file_metadata.as_ref(), None);
+        let mut reader = BlockReader::new(Cursor::new(bytes.as_ref()));
 
         read_dictionary_block(
             &mut reader.reader,

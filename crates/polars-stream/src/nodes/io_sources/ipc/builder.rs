@@ -31,7 +31,7 @@ impl FileReaderBuilder for IpcReaderBuilder {
         &self,
         source: ScanSource,
         cloud_options: Option<Arc<CloudOptions>>,
-        #[expect(unused)] scan_source_idx: usize,
+        scan_source_idx: usize,
     ) -> Box<dyn FileReader> {
         let scan_source = source;
         let verbose = config::verbose();

@@ -171,8 +171,8 @@ impl ParquetReadImpl {
         let (decode_send, mut decode_recv) = tokio::sync::mpsc::channel(self.config.num_pipelines);
         let decode_task = AbortOnDropHandle(io_runtime.spawn(async move {
             dbg!("start task: decode_task"); //kdn
-            while let Some(prefetch) = prefetch_recv.recv().await {
-                let row_group_data = prefetch.await.unwrap()?;
+            while let Some((prefetch_task, permit)) = prefetch_recv.recv().await {
+                let row_group_data = prefetch_task.await.unwrap()?;
                 let row_group_decoder = row_group_decoder.clone();
                 let decode_fut = async_executor::spawn(TaskPriority::High, async move {
                     row_group_decoder.row_group_data_to_df(row_group_data).await
