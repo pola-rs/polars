@@ -5,6 +5,7 @@ use polars_core::frame::DataFrame;
 use polars_error::PolarsResult;
 use polars_plan::dsl::sink2::FileProviderArgs;
 use polars_utils::IdxSize;
+use polars_utils::index::NonZeroIdxSize;
 
 use crate::async_executor::{self, TaskPriority};
 use crate::nodes::io_sinks2::components::error_capture::ErrorCapture;
@@ -13,12 +14,14 @@ use crate::nodes::io_sinks2::components::hstack_columns::HStackColumns;
 use crate::nodes::io_sinks2::components::partition_sink_starter::PartitionSinkStarter;
 use crate::nodes::io_sinks2::components::partition_state::PartitionState;
 use crate::nodes::io_sinks2::components::sink_morsel::SinkMorsel;
-use crate::nodes::io_sinks2::components::size::{DEFAULT_BYTE_SIZE_MIN_ROWS, RowCountAndSize};
+use crate::nodes::io_sinks2::components::size::{
+    NonZeroRowCountAndSize, RowCountAndSize, TakeableRowsProvider,
+};
 
 pub struct PartitionMorselSender {
     /// Note: Must be <= `file_size_limit` if there is one.
-    pub ideal_morsel_size: RowCountAndSize,
-    pub file_size_limit: RowCountAndSize,
+    pub takeable_rows_provider: TakeableRowsProvider,
+    pub file_size_limit: NonZeroRowCountAndSize,
     pub inflight_morsel_semaphore: Arc<tokio::sync::Semaphore>,
     pub open_sinks_semaphore: Arc<tokio::sync::Semaphore>,
     pub partition_sink_starter: PartitionSinkStarter,
@@ -71,10 +74,13 @@ impl PartitionMorselSender {
                         .sinked_size
                         .checked_sub($file_sink_task_data.start_position)
                         .unwrap();
-                    available_row_capacity = if self.file_size_limit == RowCountAndSize::MAX {
+                    available_row_capacity = if self.file_size_limit.get() == RowCountAndSize::MAX {
                         RowCountAndSize::MAX
                     } else {
-                        self.file_size_limit.checked_sub(used_row_capacity).unwrap()
+                        self.file_size_limit
+                            .get()
+                            .checked_sub(used_row_capacity)
+                            .unwrap()
                     };
                 }};
             }
@@ -88,54 +94,50 @@ impl PartitionMorselSender {
                 };
             }
 
-            let (next_morsel, start_new_sink) =
-                if let Some(sorted_finalize_stream) = sorted_finalize_stream.as_mut() {
-                    let Some((morsel, start_new_sink)) = sorted_finalize_stream.next().await else {
-                        return Ok(());
-                    };
-
-                    (NextMorsel::Morsel(morsel), start_new_sink)
-                } else {
-                    let buffered_size = partition.buffered_size();
-
-                    if buffered_size.num_rows == 0 {
-                        return Ok(());
-                    }
-
-                    let num_rows_to_take = self
-                        .ideal_morsel_size
-                        .num_rows_takeable_from(buffered_size, DEFAULT_BYTE_SIZE_MIN_ROWS.get());
-
-                    let could_buffer_more = num_rows_to_take == buffered_size.num_rows
-                        && num_rows_to_take < self.ideal_morsel_size.num_rows;
-
-                    if could_buffer_more && !flush {
-                        return Ok(());
-                    }
-
-                    let max_takeable_rows: IdxSize = available_row_capacity.num_rows_takeable_from(
-                        buffered_size,
-                        if used_row_capacity.num_rows == 0 {
-                            1
-                        } else {
-                            0
-                        },
-                    );
-
-                    let start_new_sink = max_takeable_rows == 0;
-                    let num_rows_to_take = if start_new_sink {
-                        num_rows_to_take
-                    } else {
-                        num_rows_to_take.min(max_takeable_rows)
-                    };
-
-                    (
-                        NextMorsel::TakeFromBuffered {
-                            num_rows: num_rows_to_take,
-                        },
-                        start_new_sink,
-                    )
+            let (next_morsel, start_new_sink) = if let Some(sorted_finalize_stream) =
+                sorted_finalize_stream.as_mut()
+            {
+                let Some((morsel, start_new_sink)) = sorted_finalize_stream.next().await else {
+                    return Ok(());
                 };
+
+                (NextMorsel::Morsel(morsel), start_new_sink)
+            } else {
+                let buffered_size = partition.buffered_size();
+
+                if buffered_size.num_rows == 0 {
+                    return Ok(());
+                }
+
+                let Some(num_rows_to_take) = self
+                    .takeable_rows_provider
+                    .num_rows_takeable_from(buffered_size, flush)
+                else {
+                    return Ok(());
+                };
+
+                let file_min_available_rows_for_byte_size =
+                    NonZeroRowCountAndSize::get(self.takeable_rows_provider.max_size)
+                        .num_rows
+                        .saturating_sub(used_row_capacity.num_rows);
+
+                let max_takeable_rows: IdxSize = available_row_capacity
+                    .num_rows_takeable_from(buffered_size, file_min_available_rows_for_byte_size);
+
+                let start_new_sink = max_takeable_rows == 0;
+                let num_rows_to_take = if start_new_sink {
+                    num_rows_to_take
+                } else {
+                    num_rows_to_take.min(max_takeable_rows)
+                };
+
+                (
+                    NextMorsel::TakeFromBuffered {
+                        num_rows: num_rows_to_take,
+                    },
+                    start_new_sink,
+                )
+            };
 
             if start_new_sink {
                 assert!(used_row_capacity.num_rows > 0);
@@ -193,8 +195,11 @@ impl PartitionMorselSender {
 
             let morsel_height: IdxSize = IdxSize::try_from(morsel.df().height()).unwrap();
 
-            debug_assert!(self.ideal_morsel_size.num_rows <= self.file_size_limit.num_rows);
-            debug_assert!(morsel_height <= self.ideal_morsel_size.num_rows);
+            debug_assert!(
+                self.takeable_rows_provider.max_size.get().num_rows
+                    <= self.file_size_limit.get().num_rows
+            );
+            debug_assert!(morsel_height <= self.takeable_rows_provider.max_size.get().num_rows);
 
             assert!((1..=available_row_capacity.num_rows).contains(&morsel_height));
 
