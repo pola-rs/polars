@@ -17,7 +17,6 @@ use polars_utils::total_ord::TotalOrd;
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
 use crate::async_primitives::distributor_channel::distributor_channel;
-use crate::async_primitives::morsel_linearizer::{MorselInserter, MorselLinearizer};
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
@@ -80,7 +79,7 @@ pub struct MergeJoinNode {
     params: MergeJoinParams,
     left_unmerged: VecDeque<DataFrame>,
     right_unmerged: VecDeque<DataFrame>,
-    unmatched: BTreeMap<MorselSeq, DataFrame>,
+    unmatched: BTreeMap<MorselSeq, VecDeque<DataFrame>>,
     seq: MorselSeq,
 }
 
@@ -321,10 +320,14 @@ impl ComputeNode for MergeJoinNode {
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 while let Some(morsel) = unmatched_recv.recv().await {
                     let (df, seq, _st, _) = morsel.into_inner();
-                    if let Some(append_to) = unmatched.get_mut(&seq) {
-                        append_to.vstack_mut_owned(df)?;
+                    if let Some(vec) = unmatched.get_mut(&seq) {
+                        if vec.back_mut().unwrap().len() > get_ideal_morsel_size() {
+                            vec.push_back(df);
+                        } else {
+                            vec.back_mut().unwrap().vstack_mut_owned(df)?;
+                        }
                     } else {
-                        unmatched.insert(seq, df);
+                        unmatched.insert(seq, VecDeque::from_iter([df]));
                     }
                 }
                 Ok(())
@@ -336,11 +339,14 @@ impl ComputeNode for MergeJoinNode {
             let mut send = send_ports[0].take().unwrap().serial();
 
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                while let Some((btree_key, df)) = unmatched.pop_first() {
-                    let morsel = Morsel::new(df, *seq, SourceToken::new());
-                    if let Err(morsel) = send.send(morsel).await {
-                        unmatched.insert(btree_key, morsel.into_df());
-                        break;
+                while let Some((btree_key, mut vec)) = unmatched.pop_first() {
+                    while let Some(df) = vec.pop_front() {
+                        let morsel = Morsel::new(df, *seq, SourceToken::new());
+                        if let Err(morsel) = send.send(morsel).await {
+                            vec.push_front(morsel.into_df());
+                            unmatched.insert(btree_key, vec);
+                            break;
+                        }
                     }
                 }
                 Ok(())
@@ -888,11 +894,11 @@ where
     let left_key = left_key.downcast_as_array();
     let right_key = right_key.downcast_as_array();
 
-    let mut skip_ahead_right = 0;
     let mut iterator = left_key.iter().skip(*current_offset).peekable();
     if iterator.peek().is_none() {
         return true;
     }
+    let mut skip_ahead_right = 0;
     for (idxl, left_keyval) in iterator.enumerate() {
         if gather_left.len() >= get_ideal_morsel_size() {
             return false;
