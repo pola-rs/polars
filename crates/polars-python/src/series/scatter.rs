@@ -132,10 +132,8 @@ fn scatter_impl(
             let values = values.str()?;
             ca.scatter(idx, values)
         },
-        _ => {
-            return Err(PolarsError::ComputeError(
-                format!("not yet implemented for dtype: {logical_dtype}").into(),
-            ));
-        },
+        _ => Err(PolarsError::ComputeError(
+            format!("not yet implemented for dtype: {logical_dtype}").into(),
+        )),
     }
 }
