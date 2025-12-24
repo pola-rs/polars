@@ -3687,6 +3687,7 @@ dependencies = [
  "crossbeam-queue",
  "crossbeam-utils",
  "futures",
+ "memchr",
  "memmap2",
  "num-traits",
  "parking_lot",
