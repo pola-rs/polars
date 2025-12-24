@@ -206,7 +206,7 @@ impl<T: PolarsOpsNumericType> ChunkedSet<T::Native> for &mut ChunkedArray<T> {
     }
 }
 
-impl<'a, 'b> ChunkedSet<&'a [u8]> for &'b mut BinaryChunked {
+impl<'a> ChunkedSet<&'a [u8]> for &mut BinaryChunked {
     fn scatter<V>(self, idx: &[IdxSize], values: V) -> PolarsResult<Series>
     where
         V: IntoIterator<Item = Option<&'a [u8]>>,
@@ -227,7 +227,7 @@ impl<'a, 'b> ChunkedSet<&'a [u8]> for &'b mut BinaryChunked {
     }
 }
 
-impl<'a, 'b> ChunkedSet<&'a str> for &'b mut StringChunked {
+impl<'a> ChunkedSet<&'a str> for &mut StringChunked {
     fn scatter<V>(self, idx: &[IdxSize], values: V) -> PolarsResult<Series>
     where
         V: IntoIterator<Item = Option<&'a str>>,
