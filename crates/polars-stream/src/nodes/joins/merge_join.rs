@@ -571,9 +571,10 @@ fn vstack_head(unmerged: &mut VecDeque<DataFrame>) {
 
 #[derive(Default)]
 struct Arenas {
-    gather1: Vec<IdxSize>,
-    gather2: Vec<IdxSize>,
-    bitmap: MutableBitmap,
+    gather_left: Vec<IdxSize>,
+    gather_right: Vec<IdxSize>,
+    matched_probeside: MutableBitmap,
+    df_builders: Option<(DataFrameBuilder, DataFrameBuilder)>,
 }
 
 async fn compute_join(
@@ -610,29 +611,25 @@ async fn compute_join(
                 && right_key.null_count() > left_key.null_count());
     let right_is_build = right_build_maintain_order || right_build_optimization;
 
-    let mut gather_left = &mut arenas.gather1;
-    let mut gather_right = &mut arenas.gather2;
-    let mut matched_probeside = &mut arenas.bitmap;
-
-    matched_probeside.clear();
+    arenas.matched_probeside.clear();
     if right_is_build {
-        matched_probeside.resize(left_key.len(), false);
+        arenas.matched_probeside.resize(left_key.len(), false);
     } else {
-        matched_probeside.resize(right_key.len(), false);
+        arenas.matched_probeside.resize(right_key.len(), false);
     }
 
     let mut current_offset = 0;
     let mut done = false;
     while !done {
-        gather_left.clear();
-        gather_right.clear();
+        arenas.gather_left.clear();
+        arenas.gather_right.clear();
         if right_is_build {
             done = compute_join_dispatch(
                 right_key,
                 left_key,
-                &mut gather_right,
-                &mut gather_left,
-                &mut matched_probeside,
+                &mut arenas.gather_right,
+                &mut arenas.gather_left,
+                &mut arenas.matched_probeside,
                 right_sp,
                 left_sp,
                 params,
@@ -642,9 +639,9 @@ async fn compute_join(
             done = compute_join_dispatch(
                 left_key,
                 right_key,
-                &mut gather_left,
-                &mut gather_right,
-                &mut matched_probeside,
+                &mut arenas.gather_left,
+                &mut arenas.gather_right,
+                &mut arenas.matched_probeside,
                 left_sp,
                 right_sp,
                 params,
@@ -657,33 +654,39 @@ async fn compute_join(
             &mut df,
             &left,
             &right,
-            &mut gather_left,
-            &mut gather_right,
+            &mut arenas.gather_left,
+            &mut arenas.gather_right,
+            &mut arenas.df_builders,
             params,
         )?;
 
         if !df.is_empty() {
             let morsel = Morsel::new(df, seq, source_token.clone());
-            if send.send((morsel)).await.is_err() {
+            if send.send(morsel).await.is_err() {
                 panic!("broken pipe");
             };
         }
     }
 
-    gather_left.clear();
-    gather_right.clear();
+    arenas.gather_left.clear();
+    arenas.gather_right.clear();
     if right_is_build {
-        swap(&mut gather_left, &mut gather_right);
+        swap(&mut arenas.gather_left, &mut arenas.gather_right);
         swap(&mut left_sp, &mut right_sp);
     }
     if right_sp.emit_unmatched {
-        for (idx, _) in matched_probeside.iter().enumerate_idx().filter(|(_, m)| !m) {
-            gather_left.push(IdxSize::MAX);
-            gather_right.push(idx);
+        for (idx, _) in arenas
+            .matched_probeside
+            .iter()
+            .enumerate_idx()
+            .filter(|(_, m)| !m)
+        {
+            arenas.gather_left.push(IdxSize::MAX);
+            arenas.gather_right.push(idx);
         }
     }
     if right_is_build {
-        swap(&mut gather_left, &mut gather_right);
+        swap(&mut arenas.gather_left, &mut arenas.gather_right);
         swap(&mut left_sp, &mut right_sp);
     }
 
@@ -692,8 +695,9 @@ async fn compute_join(
         &mut df_unmatched,
         &left,
         &right,
-        &mut gather_left,
-        &mut gather_right,
+        &mut arenas.gather_left,
+        &mut arenas.gather_right,
+        &mut arenas.df_builders,
         params,
     )?;
     if !df_unmatched.is_empty() {
@@ -711,6 +715,7 @@ fn gather_and_postprocess(
     right: &DataFrame,
     left_gather: &mut Vec<IdxSize>,
     right_gather: &mut Vec<IdxSize>,
+    df_builders: &mut Option<(DataFrameBuilder, DataFrameBuilder)>,
     params: &MergeJoinParams,
 ) -> PolarsResult<()> {
     // Remove the added row-encoded key columns
@@ -721,13 +726,19 @@ fn gather_and_postprocess(
         right = right.drop(&params.right.key_col).unwrap();
     }
 
-    let mut left_build = DataFrameBuilder::new(left.schema().clone());
-    let mut right_build = DataFrameBuilder::new(right.schema().clone());
+    if df_builders.is_none() {
+        *df_builders = Some((
+            DataFrameBuilder::new(left.schema().clone()),
+            DataFrameBuilder::new(right.schema().clone()),
+        ));
+    }
+
+    let (left_build, right_build) = df_builders.as_mut().unwrap();
     left_build.opt_gather_extend(&left, &left_gather, ShareStrategy::Never);
     right_build.opt_gather_extend(&right, &right_gather, ShareStrategy::Never);
 
-    let mut left = left_build.freeze();
-    let mut right = right_build.freeze();
+    let mut left = left_build.freeze_reset();
+    let mut right = right_build.freeze_reset();
 
     // Coalsesce the key columns
     if params.args.how == JoinType::Left && params.args.should_coalesce() {
