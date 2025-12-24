@@ -315,7 +315,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
             total_buffer_len,
         )
     }
-    
+
     /// Apply a function to the views as a mutable slice.
     ///
     /// # Safety

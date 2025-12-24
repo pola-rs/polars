@@ -138,9 +138,13 @@ impl View {
             }
         }
     }
-    
+
     #[inline]
-    pub fn new_with_buffers(bytes: &[u8], buffer_idx_offset: u32, buffers: &mut Vec<Vec<u8>>) -> Self {
+    pub fn new_with_buffers(
+        bytes: &[u8],
+        buffer_idx_offset: u32,
+        buffers: &mut Vec<Vec<u8>>,
+    ) -> Self {
         unsafe {
             if bytes.len() <= Self::MAX_INLINE_SIZE as usize {
                 Self::new_inline_unchecked(bytes)
@@ -160,12 +164,16 @@ impl View {
             }
         }
     }
-    
+
     /// # Safety
     ///
     /// It needs to hold that `bytes.len() > View::MAX_INLINE_SIZE`.
     #[cold]
-    unsafe fn new_with_buffers_slow(bytes: &[u8], buffer_idx_offset: u32, buffers: &mut Vec<Vec<u8>>) -> Self {
+    unsafe fn new_with_buffers_slow(
+        bytes: &[u8],
+        buffer_idx_offset: u32,
+        buffers: &mut Vec<Vec<u8>>,
+    ) -> Self {
         // Resize last buffer instead of making new buffer.
         const RESIZE_LIMIT: usize = 8192;
 
@@ -173,7 +181,7 @@ impl View {
             buffers.push(bytes.to_vec());
             return View::new_noninline_unchecked(bytes, buffer_idx_offset, 0);
         }
-        
+
         let num_buffers = buffers.len();
         let old_cap = buffers.last().unwrap().capacity();
         let new_cap = (old_cap + old_cap).clamp(bytes.len(), u32::MAX as usize);
@@ -183,13 +191,13 @@ impl View {
             let offset = buf.len() as u32;
             buf.reserve(new_cap - buf.len());
             buf.extend_from_slice(bytes);
-            return View::new_noninline_unchecked(bytes, buffer_idx, offset);
+            View::new_noninline_unchecked(bytes, buffer_idx, offset)
         } else {
             let buffer_idx = buffer_idx_offset + num_buffers as u32;
             let mut buf = Vec::with_capacity(new_cap);
             buf.extend_from_slice(bytes);
             buffers.push(buf);
-            return View::new_noninline_unchecked(bytes, buffer_idx, 0)
+            View::new_noninline_unchecked(bytes, buffer_idx, 0)
         }
     }
 

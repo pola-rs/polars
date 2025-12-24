@@ -82,11 +82,8 @@ unsafe fn scatter_primitive_impl<V, T: NativeType>(
     }
 }
 
-unsafe fn scatter_bool_impl<V>(
-    set_values: V,
-    arr: &mut BooleanArray,
-    idx: &[IdxSize],
-) where
+unsafe fn scatter_bool_impl<V>(set_values: V, arr: &mut BooleanArray, idx: &[IdxSize])
+where
     V: IntoIterator<Item = Option<bool>>,
 {
     let mut values_iter = set_values.into_iter();
@@ -130,7 +127,6 @@ unsafe fn scatter_bool_impl<V>(
     }
 }
 
-
 unsafe fn scatter_binview_impl<'a, V, T: ViewType + ?Sized>(
     set_values: V,
     arr: &mut BinaryViewArrayGeneric<T>,
@@ -141,13 +137,14 @@ unsafe fn scatter_binview_impl<'a, V, T: ViewType + ?Sized>(
     let mut values_iter = set_values.into_iter();
     let buffer_offset = arr.data_buffers().len() as u32;
     let mut new_buffers = Vec::new();
-    
+
     if let Some(validity) = arr.take_validity() {
         let mut mut_validity = validity.make_mut();
         arr.with_views_mut(|views| {
             for (idx, val) in idx.iter().zip(&mut values_iter) {
                 if let Some(v) = val {
-                    let view = View::new_with_buffers(v.to_bytes(), buffer_offset, &mut new_buffers);
+                    let view =
+                        View::new_with_buffers(v.to_bytes(), buffer_offset, &mut new_buffers);
                     *views.get_unchecked_mut(*idx as usize) = view;
                     mut_validity.set_unchecked(*idx as usize, true);
                 } else {
@@ -161,7 +158,8 @@ unsafe fn scatter_binview_impl<'a, V, T: ViewType + ?Sized>(
         arr.with_views_mut(|views| {
             for (idx, val) in idx.iter().zip(values_iter) {
                 if let Some(v) = val {
-                    let view = View::new_with_buffers(v.to_bytes(), buffer_offset, &mut new_buffers);
+                    let view =
+                        View::new_with_buffers(v.to_bytes(), buffer_offset, &mut new_buffers);
                     *views.get_unchecked_mut(*idx as usize) = view;
                 } else {
                     null_idx.push(*idx);
@@ -179,7 +177,7 @@ unsafe fn scatter_binview_impl<'a, V, T: ViewType + ?Sized>(
             arr.set_validity(Some(validity.into()))
         }
     }
-    
+
     let mut buffers = Buffer::make_mut(core::mem::take(arr.data_buffers_mut()));
     buffers.extend(new_buffers.into_iter().map(Buffer::from));
     *arr.data_buffers_mut() = Buffer::from(buffers);
