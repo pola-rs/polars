@@ -18,11 +18,6 @@ pub trait AnonymousScan: Send + Sync {
     /// Creates a DataFrame from the supplied function & scan options.
     fn scan(&self, scan_opts: AnonymousScanArgs) -> PolarsResult<DataFrame>;
 
-    #[deprecated(note = "has no effect")]
-    fn next_batch(&self, scan_opts: AnonymousScanArgs) -> PolarsResult<Option<DataFrame>> {
-        self.scan(scan_opts).map(Some)
-    }
-
     /// function to supply the schema.
     /// Allows for an optional infer schema argument for data sources with dynamic schemas
     fn schema(&self, _infer_schema_length: Option<usize>) -> PolarsResult<SchemaRef> {
@@ -38,10 +33,6 @@ pub trait AnonymousScan: Send + Sync {
     ///
     /// Defaults to `false`
     fn allows_projection_pushdown(&self) -> bool {
-        false
-    }
-    #[deprecated(note = "has no effect")]
-    fn allows_slice_pushdown(&self) -> bool {
         false
     }
 }
