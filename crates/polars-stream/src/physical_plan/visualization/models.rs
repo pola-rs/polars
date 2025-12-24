@@ -3,6 +3,7 @@ use std::num::NonZeroUsize;
 use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_ops::frame::MaintainOrderJoin;
 use polars_ops::prelude::{JoinCoalesce, JoinValidation};
+use polars_plan::dsl::PredicateFileSkip;
 use polars_plan::dsl::sink2::FileProviderType;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
@@ -197,6 +198,7 @@ pub enum PhysNodeProperties {
         row_index_offset: Option<u64>,
         pre_slice: Option<(i64, u64)>,
         predicate: Option<PlSmallStr>,
+        predicate_file_skip_applied: Option<PredicateFileSkip>,
         has_table_statistics: bool,
         include_file_paths: Option<PlSmallStr>,
         deletion_files_type: Option<PlSmallStr>,

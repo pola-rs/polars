@@ -4,12 +4,15 @@ use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_plan::dsl::FileType;
+use polars_utils::IdxSize;
 
 use crate::nodes::io_sinks2::writers::interface::FileWriterStarter;
 
 pub mod interface;
+#[cfg(feature = "ipc")]
+mod ipc;
 #[cfg(feature = "parquet")]
-pub mod parquet;
+mod parquet;
 
 pub fn create_file_writer_starter(
     file_format: &Arc<FileType>,
@@ -22,7 +25,6 @@ pub fn create_file_writer_starter(
         FileType::Parquet(options) => {
             use polars_core::prelude::CompatLevel;
             use polars_io::schema_to_arrow_checked;
-            use polars_utils::IdxSize;
 
             use crate::nodes::io_sinks2::writers::parquet::ParquetWriterStarter;
 
@@ -41,6 +43,17 @@ pub fn create_file_writer_starter(
                 row_group_size: options
                     .row_group_size
                     .map(|x| IdxSize::try_from(x).unwrap()),
+            }) as _
+        },
+        #[cfg(feature = "ipc")]
+        FileType::Ipc(options) => {
+            use crate::nodes::io_sinks2::writers::ipc::IpcWriterStarter;
+
+            Arc::new(IpcWriterStarter {
+                options: *options,
+                schema: file_schema.clone(),
+                pipeline_depth,
+                sync_on_close,
             }) as _
         },
         _ => unimplemented!(),

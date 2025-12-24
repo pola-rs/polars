@@ -55,6 +55,7 @@ fast-float2 = { version = "^0.2.2" }
 flate2 = { version = "1", default-features = false }
 foldhash = "0.2.0"
 futures = "0.3.25"
+getrandom = "0.3"
 half = { version = "2.7.1", features = ["num-traits"] }
 hashbrown = { version = "0.16.0", features = ["rayon", "serde"] }
 hex = "0.4.3"
@@ -69,13 +70,13 @@ ndarray = { version = "0.16", default-features = false }
 num-bigint = "0.4.6"
 num-derive = "0.4.2"
 num-traits = "0.2"
-numpy = "0.26"
+numpy = "0.27"
 object_store = { version = "0.12", default-features = false, features = ["fs"] }
 parking_lot = "0.12"
 percent-encoding = "2.3"
 pin-project-lite = "0.2"
 proptest = { version = "1.6", default-features = false, features = ["std"] }
-pyo3 = "0.26"
+pyo3 = "0.27"
 rand = "0.9"
 rand_distr = "0.5"
 raw-cpuid = "11"

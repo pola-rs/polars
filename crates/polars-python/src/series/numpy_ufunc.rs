@@ -46,7 +46,7 @@ unsafe fn aligned_array<T: Element + NativeType>(
     );
     (
         Bound::from_owned_ptr(py, ptr)
-            .downcast_into_exact::<PyArray1<T>>()
+            .cast_into_exact::<PyArray1<T>>()
             .unwrap(),
         buf,
     )
@@ -89,7 +89,8 @@ macro_rules! impl_ufuncs {
                         return series_factory
                             .call((self.name(), result), None)?
                             .getattr("_s")?
-                            .extract::<PySeries>();
+                            .extract::<PySeries>()
+                            .map_err(PyErr::from);
                     }
 
                     let size = self.len();

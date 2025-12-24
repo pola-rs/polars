@@ -51,7 +51,7 @@ pub fn create_list(
 ) -> Box<dyn Array> {
     let (length, mut offsets, validity) = nested.pop().unwrap();
     let validity = validity.and_then(freeze_validity);
-    match dtype.to_logical_type() {
+    match dtype.to_storage() {
         ArrowDataType::List(_) => {
             offsets.push(values.len() as i64);
 
@@ -92,7 +92,7 @@ pub fn create_map(
     values: Box<dyn Array>,
 ) -> Box<dyn Array> {
     let (_, mut offsets, validity) = nested.pop().unwrap();
-    match dtype.to_logical_type() {
+    match dtype.to_storage() {
         ArrowDataType::Map(_, _) => {
             offsets.push(values.len() as i64);
             let offsets = offsets.iter().map(|x| *x as i32).collect::<Vec<_>>();
@@ -158,7 +158,7 @@ pub fn n_columns(dtype: &ArrowDataType) -> usize {
         Null | Boolean | Primitive(_) | Binary | FixedSizeBinary | LargeBinary | Utf8
         | Dictionary(_) | LargeUtf8 | BinaryView | Utf8View => 1,
         List | FixedSizeList | LargeList => {
-            let a = dtype.to_logical_type();
+            let a = dtype.to_storage();
             if let ArrowDataType::List(inner) = a {
                 n_columns(&inner.dtype)
             } else if let ArrowDataType::LargeList(inner) = a {
@@ -170,7 +170,7 @@ pub fn n_columns(dtype: &ArrowDataType) -> usize {
             }
         },
         Map => {
-            let a = dtype.to_logical_type();
+            let a = dtype.to_storage();
             if let ArrowDataType::Map(inner, _) = a {
                 n_columns(&inner.dtype)
             } else {
@@ -178,7 +178,7 @@ pub fn n_columns(dtype: &ArrowDataType) -> usize {
             }
         },
         Struct => {
-            if let ArrowDataType::Struct(fields) = dtype.to_logical_type() {
+            if let ArrowDataType::Struct(fields) = dtype.to_storage() {
                 fields.iter().map(|inner| n_columns(&inner.dtype)).sum()
             } else {
                 unreachable!()
