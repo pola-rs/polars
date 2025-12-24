@@ -14,7 +14,6 @@ mod view;
 use std::any::Any;
 use std::fmt::Debug;
 use std::marker::PhantomData;
-use std::sync::Arc;
 
 use polars_error::*;
 use polars_utils::relaxed_cell::RelaxedCell;
@@ -132,7 +131,7 @@ impl ViewType for [u8] {
 pub struct BinaryViewArrayGeneric<T: ViewType + ?Sized> {
     dtype: ArrowDataType,
     views: Buffer<View>,
-    buffers: Arc<[Buffer<u8>]>,
+    buffers: Buffer<Buffer<u8>>,
     validity: Option<Bitmap>,
     phantom: PhantomData<T>,
     /// Total bytes length if we would concatenate them all.
@@ -174,7 +173,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     pub unsafe fn new_unchecked(
         dtype: ArrowDataType,
         views: Buffer<View>,
-        buffers: Arc<[Buffer<u8>]>,
+        buffers: Buffer<Buffer<u8>>,
         validity: Option<Bitmap>,
         total_bytes_len: usize,
         total_buffer_len: usize,
@@ -235,7 +234,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     pub unsafe fn new_unchecked_unknown_md(
         dtype: ArrowDataType,
         views: Buffer<View>,
-        buffers: Arc<[Buffer<u8>]>,
+        buffers: Buffer<Buffer<u8>>,
         validity: Option<Bitmap>,
         total_buffer_len: Option<usize>,
     ) -> Self {
@@ -252,7 +251,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         )
     }
 
-    pub fn data_buffers(&self) -> &Arc<[Buffer<u8>]> {
+    pub fn data_buffers(&self) -> &Buffer<Buffer<u8>> {
         &self.buffers
     }
 
@@ -272,7 +271,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         self,
     ) -> (
         Buffer<View>,
-        Arc<[Buffer<u8>]>,
+        Buffer<Buffer<u8>>,
         Option<Bitmap>,
         usize,
         usize,
@@ -316,7 +315,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     pub fn try_new(
         dtype: ArrowDataType,
         views: Buffer<View>,
-        buffers: Arc<[Buffer<u8>]>,
+        buffers: Buffer<Buffer<u8>>,
         validity: Option<Bitmap>,
     ) -> PolarsResult<Self> {
         if T::IS_UTF8 {
@@ -339,14 +338,14 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     /// Creates an empty [`BinaryViewArrayGeneric`], i.e. whose `.len` is zero.
     #[inline]
     pub fn new_empty(dtype: ArrowDataType) -> Self {
-        unsafe { Self::new_unchecked(dtype, Buffer::new(), Arc::from([]), None, 0, 0) }
+        unsafe { Self::new_unchecked(dtype, Buffer::new(), Buffer::new(), None, 0, 0) }
     }
 
     /// Returns a new null [`BinaryViewArrayGeneric`] of `length`.
     #[inline]
     pub fn new_null(dtype: ArrowDataType, length: usize) -> Self {
         let validity = Some(Bitmap::new_zeroed(length));
-        unsafe { Self::new_unchecked(dtype, Buffer::zeroed(length), Arc::from([]), validity, 0, 0) }
+        unsafe { Self::new_unchecked(dtype, Buffer::zeroed(length), Buffer::new(), validity, 0, 0) }
     }
 
     /// Returns the element at index `i`
@@ -491,7 +490,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     }
 
     pub fn deshare(&self) -> Self {
-        if Arc::strong_count(&self.buffers) == 1
+        if self.buffers.storage_refcount() == 1
             && self.buffers.iter().all(|b| b.storage_refcount() == 1)
         {
             return self.clone();
@@ -510,7 +509,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
             return self;
         }
 
-        if Arc::strong_count(&self.buffers) != 1 {
+        if self.buffers.storage_refcount() != 1 {
             // There are multiple holders of this `buffers`.
             // If we allow gc in this case,
             // it may end up copying the same content multiple times.

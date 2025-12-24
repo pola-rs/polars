@@ -1,7 +1,6 @@
 use std::any::Any;
 use std::fmt::{Debug, Formatter};
 use std::ops::Deref;
-use std::sync::Arc;
 
 use hashbrown::hash_map::Entry;
 use polars_error::PolarsResult;
@@ -73,7 +72,7 @@ impl<T: ViewType + ?Sized> From<MutableBinaryViewArray<T>> for BinaryViewArrayGe
             Self::new_unchecked(
                 T::DATA_TYPE,
                 value.views.into(),
-                Arc::from(value.completed_buffers),
+                Buffer::from(value.completed_buffers),
                 value.validity.map(|b| b.into()),
                 value.total_bytes_len,
                 value.total_buffer_len,
