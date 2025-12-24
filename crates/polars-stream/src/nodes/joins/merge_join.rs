@@ -11,17 +11,18 @@ use polars_core::prelude::*;
 use polars_core::utils::Container;
 use polars_ops::prelude::*;
 use polars_utils::format_pl_smallstr;
+use polars_utils::itertools::Itertools;
 use polars_utils::total_ord::TotalOrd;
 
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
 use crate::async_primitives::distributor_channel::distributor_channel;
-use crate::async_primitives::morsel_linearizer::MorselLinearizer;
+use crate::async_primitives::morsel_linearizer::{MorselInserter, MorselLinearizer};
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
-use crate::morsel::{Morsel, MorselSeq, SourceToken};
+use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
 use crate::nodes::ComputeNode;
-use crate::pipe::{PortReceiver, RecvPort, SendPort};
+use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 
 // TODO: [amber] Optimize the compute_join implementation to not use any Series.get()
 // TODO: [amber] Compute the initial row-encoding in parallel (during lowering)
@@ -304,22 +305,17 @@ impl ComputeNode for MergeJoinNode {
                 |((mut recv, mut send), mut unmatched_inserter)| {
                     scope.spawn_task(TaskPriority::Low, async move {
                         let mut arenas = Arenas::default();
+
                         while let Ok((morsel, right)) = recv.recv().await {
-                            let (left, seq, source_token, _wt) = morsel.into_inner();
-                            let (matched, unmatched) =
-                                compute_join(left.clone(), right.clone(), params, &mut arenas)?;
-                            if !matched.is_empty() {
-                                let morsel = Morsel::new(matched, seq, source_token.clone());
-                                if send.send(morsel).await.is_err() {
-                                    break;
-                                }
-                            }
-                            if !unmatched.is_empty() {
-                                let morsel = Morsel::new(unmatched, seq, source_token.clone());
-                                if unmatched_inserter.insert(morsel).await.is_err() {
-                                    break;
-                                }
-                            }
+                            compute_join(
+                                morsel.clone(),
+                                right.clone(),
+                                params,
+                                // &mut arenas,
+                                &mut send,
+                                &mut unmatched_inserter,
+                            )
+                            .await?;
                         }
                         Ok(())
                     })
@@ -581,12 +577,15 @@ struct Arenas {
     bitmap_arena: MutableBitmap,
 }
 
-fn compute_join(
-    mut left: DataFrame,
+async fn compute_join(
+    morsel: Morsel,
     mut right: DataFrame,
     params: &MergeJoinParams,
-    arenas: &mut Arenas,
-) -> PolarsResult<(DataFrame, DataFrame)> {
+    // arenas: &mut Arenas,
+    send: &mut PortSender,
+    unmatched_inserter: &mut MorselInserter,
+) -> PolarsResult<()> {
+    let (mut left, seq, source_token, _wt) = morsel.into_inner();
     let mut left_sp = &params.left;
     let mut right_sp = &params.right;
 
@@ -602,101 +601,171 @@ fn compute_join(
         .unwrap()
         .as_materialized_series();
 
-    let right_build_bc_maintain_order = matches!(
+    let right_build_maintain_order = matches!(
         params.args.maintain_order,
         MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft,
     );
-    let right_build_bc_opt = params.args.maintain_order == MaintainOrderJoin::None
-        && (params.args.how == JoinType::Right
-            || (params.args.how == JoinType::Inner
-                && right_key.null_count() > left_key.null_count()));
-    let right_is_build = right_build_bc_maintain_order || right_build_bc_opt;
-    if right_is_build {
-        swap(&mut left_key, &mut right_key);
-        swap(&mut left_sp, &mut right_sp);
+    let right_build_optimization = params.args.maintain_order == MaintainOrderJoin::None
+        && (params.args.how == JoinType::Inner && right_key.null_count() > left_key.null_count());
+    let right_is_build = right_build_maintain_order;
+
+    let mut gather_left = Vec::new();
+    let mut gather_right = Vec::new();
+
+    let mut matched_probeside = match right_is_build {
+        false => MutableBitmap::from_len_zeroed(right_key.len()),
+        true => MutableBitmap::from_len_zeroed(left_key.len()),
+    };
+    dbg!(right_is_build);
+    dbg!(&matched_probeside);
+    dbg!(left_key);
+    dbg!(right_key);
+
+    let mut current_offset = 0;
+    let mut done = false;
+    while !done {
+        gather_left.clear();
+        gather_right.clear();
+        if right_is_build {
+            done = compute_join_dispatch(
+                right_key,
+                left_key,
+                &mut gather_right,
+                &mut gather_left,
+                &mut matched_probeside,
+                right_sp,
+                left_sp,
+                params,
+                &mut current_offset,
+            );
+        } else {
+            done = compute_join_dispatch(
+                left_key,
+                right_key,
+                &mut gather_left,
+                &mut gather_right,
+                &mut matched_probeside,
+                left_sp,
+                right_sp,
+                params,
+                &mut current_offset,
+            );
+        }
+
+        let mut df = Default::default();
+        gather_and_postprocess(
+            &mut df,
+            &left,
+            &right,
+            &mut gather_left,
+            &mut gather_right,
+            params,
+        )?;
+
+        if !df.is_empty() {
+            let morsel = Morsel::new(df, seq, source_token.clone());
+            if send.send((morsel)).await.is_err() {
+                panic!("broken pipe");
+            };
+        }
     }
 
-    let mut gather_left = &mut arenas.gather_left;
-    let mut gather_right = &mut arenas.gather_right;
-    let mut gather_right_unmatched = &mut arenas.gather_right_unmatched;
-    let mut bitmap_arena = &mut arenas.bitmap_arena;
-    compute_join_dispatch(
-        left_key,
-        right_key,
-        &mut gather_left,
-        &mut gather_right,
+    let mut gather_left_unmatched = Vec::new();
+    let mut gather_right_unmatched = Vec::new();
+    if right_is_build {
+        if (left_sp.emit_unmatched) {
+            for (idx, _) in matched_probeside
+                .iter()
+                .enumerate_idx()
+                .filter(|(_, m)| !(*m))
+            {
+                gather_left_unmatched.push(idx);
+            }
+            gather_right_unmatched = vec![IdxSize::MAX; gather_left_unmatched.len()];
+        }
+    } else {
+        if (right_sp.emit_unmatched) {
+            for (idx, _) in matched_probeside.iter().enumerate_idx().filter(|(_, m)| !m) {
+                gather_right_unmatched.push(idx);
+            }
+            gather_left_unmatched = vec![IdxSize::MAX; gather_right_unmatched.len()];
+        }
+    }
+    let mut df_unmatched = Default::default();
+    gather_and_postprocess(
+        &mut df_unmatched,
+        &left,
+        &right,
+        &mut gather_left_unmatched,
         &mut gather_right_unmatched,
-        &mut bitmap_arena,
-        left_sp,
-        right_sp,
         params,
-    );
-
-    let mut gather_left_unmatched = vec![IdxSize::MAX; gather_right_unmatched.len()];
-    if right_is_build {
-        swap(&mut gather_left, &mut gather_right);
-        swap(&mut gather_left_unmatched, &mut gather_right_unmatched);
-        swap(&mut left_sp, &mut right_sp);
+    )?;
+    dbg!(&df_unmatched);
+    if !df_unmatched.is_empty() {
+        let morsel = Morsel::new(df_unmatched, seq, source_token.clone());
+        if unmatched_inserter.insert(dbg!(morsel)).await.is_err() {
+            panic!("broken pipe");
+        }
     }
+    Ok(())
+}
 
+fn gather_and_postprocess(
+    df: &mut DataFrame,
+    left: &DataFrame,
+    right: &DataFrame,
+    left_gather: &mut Vec<IdxSize>,
+    right_gather: &mut Vec<IdxSize>,
+    params: &MergeJoinParams,
+) -> PolarsResult<()> {
     // Remove the added row-encoded key columns
+    let mut left = left.clone();
+    let mut right = right.clone();
     if params.use_row_encoding {
         left = left.drop(&params.left.key_col).unwrap();
         right = right.drop(&params.right.key_col).unwrap();
     }
 
-    let mut df_main = Default::default();
-    let mut df_unmatched = Default::default();
-    for (df, lgather, rgather) in [
-        (&mut df_main, gather_left, gather_right),
-        (
-            &mut df_unmatched,
-            &mut gather_left_unmatched,
-            gather_right_unmatched,
-        ),
-    ] {
-        let mut left_build = DataFrameBuilder::new(left.schema().clone());
-        let mut right_build = DataFrameBuilder::new(right.schema().clone());
-        left_build.opt_gather_extend(&left, &lgather, ShareStrategy::Never);
-        right_build.opt_gather_extend(&right, &rgather, ShareStrategy::Never);
+    let mut left_build = DataFrameBuilder::new(left.schema().clone());
+    let mut right_build = DataFrameBuilder::new(right.schema().clone());
+    left_build.opt_gather_extend(&left, &left_gather, ShareStrategy::Never);
+    right_build.opt_gather_extend(&right, &right_gather, ShareStrategy::Never);
 
-        let mut left = left_build.freeze();
-        let mut right = right_build.freeze();
+    let mut left = left_build.freeze();
+    let mut right = right_build.freeze();
 
-        // Coalsesce the key columns
-        if params.args.how == JoinType::Left && params.args.should_coalesce() {
-            for c in &params.left.on {
-                right.drop_in_place(c.as_str())?;
-            }
-        } else if params.args.how == JoinType::Right && params.args.should_coalesce() {
-            for c in &params.right.on {
-                left.drop_in_place(c.as_str())?;
-            }
+    // Coalsesce the key columns
+    if params.args.how == JoinType::Left && params.args.should_coalesce() {
+        for c in &params.left.on {
+            right.drop_in_place(c.as_str())?;
         }
-
-        // Rename any right columns to "{}_right"
-        rename_right_columns(&left, &mut right, params)?;
-
-        left.hstack_mut(&right.get_columns())?;
-        if params.args.how == JoinType::Full && params.args.should_coalesce() {
-            for (left_keycol, right_keycol) in
-                Iterator::zip(params.left.on.iter(), params.right.on.iter())
-            {
-                let right_keycol = format_pl_smallstr!("{}{}", right_keycol, params.args.suffix());
-                let left_col = left.column(&left_keycol).unwrap();
-                let right_col = left.column(&right_keycol).unwrap();
-                let coalesced = coalesce_columns(&[left_col.clone(), right_col.clone()]).unwrap();
-                left.replace(&left_keycol, coalesced.take_materialized_series())
-                    .unwrap()
-                    .drop_in_place(&right_keycol)
-                    .unwrap();
-            }
+    } else if params.args.how == JoinType::Right && params.args.should_coalesce() {
+        for c in &params.right.on {
+            left.drop_in_place(c.as_str())?;
         }
-
-        *df = drop_non_output_columns(&left, params)?;
     }
 
-    Ok((df_main, df_unmatched))
+    // Rename any right columns to "{}_right"
+    rename_right_columns(&left, &mut right, params)?;
+
+    left.hstack_mut(&right.get_columns())?;
+    if params.args.how == JoinType::Full && params.args.should_coalesce() {
+        for (left_keycol, right_keycol) in
+            Iterator::zip(params.left.on.iter(), params.right.on.iter())
+        {
+            let right_keycol = format_pl_smallstr!("{}{}", right_keycol, params.args.suffix());
+            let left_col = left.column(&left_keycol).unwrap();
+            let right_col = left.column(&right_keycol).unwrap();
+            let coalesced = coalesce_columns(&[left_col.clone(), right_col.clone()]).unwrap();
+            left.replace(&left_keycol, coalesced.take_materialized_series())
+                .unwrap()
+                .drop_in_place(&right_keycol)
+                .unwrap();
+        }
+    }
+
+    *df = drop_non_output_columns(&left, params)?;
+    Ok(())
 }
 
 fn compute_join_dispatch(
@@ -704,12 +773,12 @@ fn compute_join_dispatch(
     rk: &Series,
     gather_left: &mut Vec<IdxSize>,
     gather_right: &mut Vec<IdxSize>,
-    gather_unmatched: &mut Vec<IdxSize>,
-    bitmap_arena: &mut MutableBitmap,
+    matched_right: &mut MutableBitmap,
     left_sp: &SideParams,
     right_sp: &SideParams,
     params: &MergeJoinParams,
-) {
+    current_offset: &mut usize,
+) -> bool {
     macro_rules! dispatch {
         ($left_key:expr, $right_key:expr) => {
             compute_join_kernel(
@@ -717,11 +786,11 @@ fn compute_join_dispatch(
                 $right_key,
                 gather_left,
                 gather_right,
-                gather_unmatched,
-                bitmap_arena,
+                matched_right,
                 left_sp,
                 right_sp,
                 params,
+                current_offset,
             )
         };
     }
@@ -795,28 +864,38 @@ fn compute_join_kernel<'a, T: PolarsDataType>(
     right_key: &'a ChunkedArray<T>,
     gather_left: &mut Vec<IdxSize>,
     gather_right: &mut Vec<IdxSize>,
-    gather_unmatched: &mut Vec<IdxSize>,
-    right_matched: &mut MutableBitmap,
+    matched_right: &mut MutableBitmap,
     left_sp: &SideParams,
     right_sp: &SideParams,
     params: &MergeJoinParams,
-) where
+    current_offset: &mut usize,
+) -> bool
+where
     T::Physical<'a>: TotalOrd,
 {
+    debug_assert!(gather_left.is_empty());
+    debug_assert!(gather_right.is_empty());
+    dbg!(right_sp.emit_unmatched);
+    dbg!(matched_right.len());
+    dbg!(right_key.len());
+    if right_sp.emit_unmatched {
+        debug_assert!(matched_right.len() == right_key.len());
+    }
+
     let descending = params.key_descending;
     let left_key = left_key.downcast_as_array();
     let right_key = right_key.downcast_as_array();
 
-    if right_sp.emit_unmatched {
-        right_matched.resize(right_key.len(), false);
+    let mut skip_ahead_right = 0;
+    let mut iterator = left_key.iter().skip(*current_offset).peekable();
+    if iterator.peek().is_none() {
+        return true;
     }
-
-    let mut skip_ahead = 0;
-    for (idxl, left_keyval) in left_key.iter().enumerate() {
+    for (idxl, left_keyval) in iterator.enumerate() {
         let left_keyval = left_keyval.as_ref();
         let mut matched = false;
         if params.args.nulls_equal || left_keyval.is_some() {
-            for idxr in skip_ahead..right_key.len() {
+            for idxr in skip_ahead_right..right_key.len() {
                 let right_keyval = right_key.get(idxr);
                 let right_keyval = right_keyval.as_ref();
                 let mut ord = match (&left_keyval, &right_keyval) {
@@ -830,27 +909,24 @@ fn compute_join_kernel<'a, T: PolarsDataType>(
                 if ord == Some(Ordering::Equal) {
                     matched = true;
                     if right_sp.emit_unmatched {
-                        right_matched.set(idxr, true);
+                        matched_right.set(idxr, true);
                     }
                     gather_left.push(idxl as IdxSize);
                     gather_right.push(idxr as IdxSize);
                 } else if ord == Some(Ordering::Greater) {
-                    skip_ahead = idxr;
+                    skip_ahead_right = idxr;
                 } else if ord == Some(Ordering::Less) {
                     break;
                 }
             }
         }
-        if left_sp.emit_unmatched && !matched {
+        if (left_sp.emit_unmatched) && !(matched) {
             gather_left.push(idxl as IdxSize);
             gather_right.push(IdxSize::MAX);
         }
+        *current_offset += 1;
     }
-    if right_sp.emit_unmatched {
-        for (idxr, _) in right_matched.iter().enumerate().filter(|(_, m)| !m) {
-            gather_unmatched.push(idxr as IdxSize);
-        }
-    }
+    false
 }
 
 fn rename_right_columns(

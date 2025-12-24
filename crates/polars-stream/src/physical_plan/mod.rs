@@ -17,7 +17,6 @@ use polars_plan::dsl::{
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::{AExpr, DataFrameUdf, IR};
 use polars_plan::prelude::expr_ir::*;
-use polars_plan::prelude::*;
 
 mod fmt;
 mod io;
