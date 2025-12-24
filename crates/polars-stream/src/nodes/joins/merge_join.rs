@@ -898,6 +898,9 @@ where
         return true;
     }
     for (idxl, left_keyval) in iterator.enumerate() {
+        if gather_left.len() >= get_ideal_morsel_size() {
+            return false;
+        }
         let left_keyval = left_keyval.as_ref();
         let mut matched = false;
         if params.args.nulls_equal || left_keyval.is_some() {
@@ -932,7 +935,7 @@ where
         }
         *current_offset += 1;
     }
-    false
+    true
 }
 
 fn rename_right_columns(
