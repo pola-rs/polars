@@ -78,6 +78,13 @@ impl LazyCsvReader {
         self
     }
 
+    /// Sets the number of threads used for CSV parsing.
+    #[must_use]
+    pub fn with_n_threads(mut self, n_threads: Option<usize>) -> Self {
+        self.read_options.n_threads = n_threads;
+        self
+    }
+
     /// Set the number of rows to use when inferring the csv schema.
     /// The default is 100 rows.
     /// Setting to [None] will do a full table scan, which is very slow.

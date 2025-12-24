@@ -1,5 +1,4 @@
 use std::io::{Read, Seek};
-use std::sync::Arc;
 
 use polars_error::polars_err;
 
@@ -62,7 +61,7 @@ pub fn read_binview<T: ViewType + ?Sized, R: Read + Seek>(
         })
         .collect::<PolarsResult<Vec<Buffer<u8>>>>()?;
 
-    BinaryViewArrayGeneric::<T>::try_new(dtype, views, Arc::from(variadic_buffers), validity)
+    BinaryViewArrayGeneric::<T>::try_new(dtype, views, Buffer::from(variadic_buffers), validity)
         .map(|arr| arr.boxed())
 }
 

@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 def test_df_serde_roundtrip_binary(df: pl.DataFrame) -> None:
     serialized = df.serialize()
-    result = pl.DataFrame.deserialize(io.BytesIO(serialized), format="binary")
+    result = pl.DataFrame.deserialize(serialized, format="binary")
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
@@ -46,7 +46,7 @@ def test_df_serde_roundtrip_json(df: pl.DataFrame) -> None:
 def test_df_serde(df: pl.DataFrame) -> None:
     serialized = df.serialize()
     assert isinstance(serialized, bytes)
-    result = pl.DataFrame.deserialize(io.BytesIO(serialized))
+    result = pl.DataFrame.deserialize(serialized)
     assert_frame_equal(result, df)
 
 

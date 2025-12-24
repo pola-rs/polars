@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use arrow::array::*;
 use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
@@ -204,7 +202,7 @@ pub fn fixed_size_binary_to_binview(from: &FixedSizeBinaryArray) -> BinaryViewAr
             from.size() as u8,
         );
         let views = Buffer::from(views);
-        return BinaryViewArray::try_new(datatype, views, Arc::default(), from.validity().cloned())
+        return BinaryViewArray::try_new(datatype, views, Buffer::new(), from.validity().cloned())
             .unwrap();
     }
 

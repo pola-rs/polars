@@ -83,12 +83,7 @@ impl GroupByRollingExec {
 
         if let Some(f) = &self.apply {
             let gb = GroupBy::new(&df, vec![], groups, None);
-            let out = gb.apply(move |df| f.call(df))?;
-            return Ok(if let Some((offset, len)) = self.slice {
-                out.slice(offset, len)
-            } else {
-                out
-            });
+            return gb.apply_sliced(self.slice, move |df| f.call(df));
         }
 
         let mut groups = &groups;

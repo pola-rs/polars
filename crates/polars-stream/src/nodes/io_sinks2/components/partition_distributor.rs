@@ -107,28 +107,18 @@ impl PartitionDistributor {
                 let num_rows = IdxSize::try_from(df.height()).unwrap();
 
                 partition_data.buffered_rows.vstack_mut_owned_unchecked(df);
-                partition_data.total_size = partition_data
-                    .total_size
-                    .checked_add(RowCountAndSize {
-                        num_rows,
-                        num_bytes: std::cmp::min(
-                            estimated_size,
-                            u64::MAX - partition_data.total_size.num_bytes,
-                        ),
-                    })
-                    .unwrap();
+                partition_data.total_size = partition_data.total_size.add(RowCountAndSize {
+                    num_rows,
+                    num_bytes: estimated_size,
+                })?;
 
                 let buffered_size = partition_data.buffered_size();
 
                 let num_ready_to_send_rows = partition_morsel_sender
-                    .ideal_morsel_size
-                    .num_rows_takeable_from(buffered_size);
+                    .takeable_rows_provider
+                    .num_rows_takeable_from(buffered_size, false);
 
-                if per_partition_sort.is_none()
-                    && (num_ready_to_send_rows < buffered_size.num_rows
-                        || num_ready_to_send_rows
-                            == partition_morsel_sender.ideal_morsel_size.num_rows)
-                {
+                if per_partition_sort.is_none() && num_ready_to_send_rows.is_some() {
                     if partition_data.file_sink_task_data.is_none()
                         && let Ok(file_permit) = open_sinks_semaphore.clone().try_acquire_owned()
                     {

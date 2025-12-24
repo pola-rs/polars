@@ -85,7 +85,7 @@ impl<'py> ApplyLambdaGeneric<'py> for BooleanChunked {
 impl<'py, T> ApplyLambdaGeneric<'py> for ChunkedArray<T>
 where
     T: PyPolarsNumericType,
-    T::Native: IntoPyObject<'py> + FromPyObject<'py>,
+    T::Native: IntoPyObject<'py> + for<'a> FromPyObject<'a, 'py>,
 {
     fn apply_generic(
         &self,

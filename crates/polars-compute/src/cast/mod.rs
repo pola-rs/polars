@@ -336,14 +336,13 @@ fn cast_list_uint8_to_binary<O: Offset>(list: &ListArray<O>) -> PolarsResult<Bin
         cloned_buffers.clear();
     }
 
-    let result_buffers = cloned_buffers.into_boxed_slice().into();
     let result = if cfg!(debug_assertions) {
         // A safer wrapper around new_unchecked_unknown_md; it shouldn't ever
         // fail in practice.
         BinaryViewArrayGeneric::try_new(
             ArrowDataType::BinaryView,
             views.into(),
-            result_buffers,
+            cloned_buffers.into(),
             result_validity.into(),
         )?
     } else {
@@ -351,7 +350,7 @@ fn cast_list_uint8_to_binary<O: Offset>(list: &ListArray<O>) -> PolarsResult<Bin
             BinaryViewArrayGeneric::new_unchecked_unknown_md(
                 ArrowDataType::BinaryView,
                 views.into(),
-                result_buffers,
+                cloned_buffers.into(),
                 result_validity.into(),
                 // We could compute this ourselves, but we want to make this code
                 // match debug_assertions path as much as possible.
@@ -1071,7 +1070,7 @@ fn cast_to_dictionary<K: DictionaryKey>(
 ) -> PolarsResult<Box<dyn Array>> {
     let array = cast(array, dict_value_type, options)?;
     let array = array.as_ref();
-    match dict_value_type.to_logical_type() {
+    match dict_value_type.to_storage() {
         ArrowDataType::Int8 => primitive_to_dictionary_dyn::<i8, K>(array),
         ArrowDataType::Int16 => primitive_to_dictionary_dyn::<i16, K>(array),
         ArrowDataType::Int32 => primitive_to_dictionary_dyn::<i32, K>(array),

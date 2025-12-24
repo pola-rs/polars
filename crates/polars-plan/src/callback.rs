@@ -224,7 +224,7 @@ mod _python {
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<Self> {
             use pyo3::prelude::*;
-            let tuple = pyany.downcast_bound::<PyTuple>(py)?;
+            let tuple = pyany.cast_bound::<PyTuple>(py)?;
             Ok((
                 T::from_pyany(tuple.get_item(0)?.unbind(), py)?,
                 U::from_pyany(tuple.get_item(1)?.unbind(), py)?,

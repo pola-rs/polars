@@ -500,7 +500,7 @@ pub fn new_serializer<'a>(array: &'a dyn Array, schema: &AvroSchema) -> BoxSeria
 /// Whether [`new_serializer`] supports `dtype`.
 pub fn can_serialize(dtype: &ArrowDataType) -> bool {
     use ArrowDataType::*;
-    match dtype.to_logical_type() {
+    match dtype.to_storage() {
         List(inner) => return can_serialize(&inner.dtype),
         LargeList(inner) => return can_serialize(&inner.dtype),
         Struct(inner) => return inner.iter().all(|inner| can_serialize(&inner.dtype)),

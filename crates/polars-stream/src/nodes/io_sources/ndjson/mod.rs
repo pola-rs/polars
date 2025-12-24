@@ -1,6 +1,7 @@
 pub mod builder;
 
 use std::cmp::Reverse;
+use std::num::NonZeroUsize;
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -169,8 +170,12 @@ impl FileReader for NDJsonFileReader {
             let chunk_size = chunk_size.clamp(min_chunk_size, max_chunk_size);
 
             std::env::var("POLARS_FORCE_NDJSON_CHUNK_SIZE").map_or(chunk_size, |x| {
-                x.parse::<usize>()
-                    .expect("expected `POLARS_FORCE_NDJSON_CHUNK_SIZE` to be an integer")
+                x.parse::<NonZeroUsize>()
+                    .ok()
+                    .unwrap_or_else(|| {
+                        panic!("invalid value for POLARS_FORCE_NDJSON_CHUNK_SIZE: {x}")
+                    })
+                    .get()
             })
         };
 

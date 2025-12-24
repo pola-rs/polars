@@ -93,7 +93,7 @@ pl.scan_parquet(
 pl.scan_parquet(
     "abfss://...@.../...",
     credential_provider=pl.CredentialProviderAzure(
-        credentials=DefaultAzureCredential(exclude_managed_identity_credential=True)
+        credential=DefaultAzureCredential(exclude_managed_identity_credential=True)
     ),
 )
 

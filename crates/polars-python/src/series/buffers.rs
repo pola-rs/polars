@@ -43,8 +43,10 @@ impl<'py> IntoPyObject<'py> for BufferInfo {
         (self.pointer, self.offset, self.length).into_pyobject(py)
     }
 }
-impl<'py> FromPyObject<'py> for BufferInfo {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for BufferInfo {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let (pointer, offset, length) = ob.extract()?;
         Ok(Self {
             pointer,

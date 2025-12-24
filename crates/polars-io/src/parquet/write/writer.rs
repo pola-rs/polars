@@ -210,7 +210,7 @@ fn to_column_write_options_rec(
                 _ => unreachable!(),
             });
 
-            let a = field.dtype().to_logical_type();
+            let a = field.dtype().to_storage();
             let child = if let ArrowDataType::List(inner) = a {
                 to_column_write_options_rec(inner, child_overwrites)
             } else if let ArrowDataType::LargeList(inner) = a {
@@ -225,7 +225,7 @@ fn to_column_write_options_rec(
                 ChildWriteOptions::ListLike(Box::new(ListLikeFieldWriteOptions { child }));
         },
         Struct => {
-            if let ArrowDataType::Struct(fields) = field.dtype().to_logical_type() {
+            if let ArrowDataType::Struct(fields) = field.dtype().to_storage() {
                 if fields.is_empty() {
                     // Allow empty structs by mapping to boolean array.
                     column_options.children = ChildWriteOptions::Leaf(FieldWriteOptions {

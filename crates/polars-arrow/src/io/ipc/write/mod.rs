@@ -22,7 +22,7 @@ use crate::datatypes::{ArrowDataType, Field};
 
 fn default_ipc_field(dtype: &ArrowDataType, current_id: &mut i64) -> IpcField {
     use crate::datatypes::ArrowDataType::*;
-    match dtype.to_logical_type() {
+    match dtype.to_storage() {
         // single child => recurse
         Map(inner, ..) | FixedSizeList(inner, _) | LargeList(inner) | List(inner) => IpcField {
             fields: vec![default_ipc_field(inner.dtype(), current_id)],
@@ -66,6 +66,6 @@ fn default_ipc_field(dtype: &ArrowDataType, current_id: &mut i64) -> IpcField {
 pub fn default_ipc_fields<'a>(fields: impl ExactSizeIterator<Item = &'a Field>) -> Vec<IpcField> {
     let mut dictionary_id = 0i64;
     fields
-        .map(|field| default_ipc_field(field.dtype().to_logical_type(), &mut dictionary_id))
+        .map(|field| default_ipc_field(field.dtype().to_storage(), &mut dictionary_id))
         .collect()
 }

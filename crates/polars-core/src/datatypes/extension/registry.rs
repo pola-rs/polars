@@ -3,11 +3,11 @@ use std::sync::{Arc, LazyLock, RwLock};
 
 use hashbrown::hash_map::Entry;
 use polars_error::{PolarsResult, polars_bail, polars_err, polars_warn};
-use polars_utils::aliases::PlHashMap;
+use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::{ExtensionTypeFactory, ExtensionTypeInstance};
-use crate::prelude::DataType;
+use crate::prelude::{DataType, POLARS_OBJECT_EXTENSION_NAME};
 
 #[repr(u8)]
 pub enum UnknownExtensionTypeBehavior {
@@ -86,7 +86,11 @@ pub fn get_extension_type_or_generic(
 
 #[allow(clippy::type_complexity)]
 static REGISTRY: LazyLock<RwLock<PlHashMap<PlSmallStr, Option<Arc<dyn ExtensionTypeFactory>>>>> =
-    LazyLock::new(RwLock::default);
+    LazyLock::new(|| {
+        let mut m = PlHashMap::new();
+        m.insert(PlSmallStr::from_static(POLARS_OBJECT_EXTENSION_NAME), None);
+        RwLock::new(m)
+    });
 
 pub fn register_extension_type(
     name: &str,

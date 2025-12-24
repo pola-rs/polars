@@ -1,7 +1,9 @@
+use std::cmp;
 use std::io::Read;
 
 use polars_core::prelude::*;
 use polars_error::{feature_gated, to_compute_err};
+use polars_utils::mmap::{MemReader, MemSlice};
 
 /// Represents the compression algorithms that we have decoders for
 pub enum SupportedCompression {
@@ -38,27 +40,132 @@ impl SupportedCompression {
 pub fn maybe_decompress_bytes<'a>(bytes: &'a [u8], out: &'a mut Vec<u8>) -> PolarsResult<&'a [u8]> {
     assert!(out.is_empty());
 
-    if let Some(algo) = SupportedCompression::check(bytes) {
-        feature_gated!("decompress", {
-            match algo {
-                SupportedCompression::GZIP => {
-                    flate2::read::MultiGzDecoder::new(bytes)
-                        .read_to_end(out)
-                        .map_err(to_compute_err)?;
-                },
-                SupportedCompression::ZLIB => {
-                    flate2::read::ZlibDecoder::new(bytes)
-                        .read_to_end(out)
-                        .map_err(to_compute_err)?;
-                },
-                SupportedCompression::ZSTD => {
-                    zstd::Decoder::with_buffer(bytes)?.read_to_end(out)?;
-                },
-            }
+    let Some(algo) = SupportedCompression::check(bytes) else {
+        return Ok(bytes);
+    };
 
-            Ok(out)
+    feature_gated!("decompress", {
+        match algo {
+            SupportedCompression::GZIP => {
+                flate2::read::MultiGzDecoder::new(bytes)
+                    .read_to_end(out)
+                    .map_err(to_compute_err)?;
+            },
+            SupportedCompression::ZLIB => {
+                flate2::read::ZlibDecoder::new(bytes)
+                    .read_to_end(out)
+                    .map_err(to_compute_err)?;
+            },
+            SupportedCompression::ZSTD => {
+                zstd::Decoder::with_buffer(bytes)?.read_to_end(out)?;
+            },
+        }
+
+        Ok(out)
+    })
+}
+
+/// Reader that implements a streaming read trait for uncompressed, gzip, zlib and zstd
+/// compression.
+///
+/// This allows handling decompression transparently in a streaming fashion.
+pub enum CompressedReader {
+    Uncompressed {
+        slice: MemSlice,
+        offset: usize,
+    },
+    #[cfg(feature = "decompress")]
+    Gzip(flate2::bufread::MultiGzDecoder<MemReader>),
+    #[cfg(feature = "decompress")]
+    Zlib(flate2::bufread::ZlibDecoder<MemReader>),
+    #[cfg(feature = "decompress")]
+    Zstd(zstd::Decoder<'static, MemReader>),
+}
+
+impl CompressedReader {
+    pub fn try_new(slice: MemSlice) -> PolarsResult<Self> {
+        let algo = SupportedCompression::check(&slice);
+
+        Ok(match algo {
+            None => CompressedReader::Uncompressed { slice, offset: 0 },
+            #[cfg(feature = "decompress")]
+            Some(SupportedCompression::GZIP) => {
+                CompressedReader::Gzip(flate2::bufread::MultiGzDecoder::new(MemReader::new(slice)))
+            },
+            #[cfg(feature = "decompress")]
+            Some(SupportedCompression::ZLIB) => {
+                CompressedReader::Zlib(flate2::bufread::ZlibDecoder::new(MemReader::new(slice)))
+            },
+            #[cfg(feature = "decompress")]
+            Some(SupportedCompression::ZSTD) => {
+                CompressedReader::Zstd(zstd::Decoder::with_buffer(MemReader::new(slice))?)
+            },
+            #[cfg(not(feature = "decompress"))]
+            _ => panic!("activate 'decompress' feature"),
         })
-    } else {
-        Ok(bytes)
+    }
+
+    pub fn is_compressed(&self) -> bool {
+        !matches!(&self, CompressedReader::Uncompressed { .. })
+    }
+
+    /// Reads exactly `read_size` bytes if possible from the internal readers and creates a new
+    /// [`MemSlice`] with the content `concat(prev_leftover, new_bytes)`.
+    ///
+    /// Returns the new slice and the number of bytes read, which will be 0 when eof is reached and
+    /// this function is called again.
+    ///
+    /// If the underlying reader is uncompressed the operation is a cheap zero-copy
+    /// [`MemSlice::slice`] operation.
+    ///
+    /// By handling slice concatenation at this level we can implement zero-copy reading *and* make
+    /// the interface easier to use.
+    ///
+    /// It's a logic bug if `prev_leftover` is neither empty nor the last slice returned by this
+    /// function.
+    pub fn read_next_slice(
+        &mut self,
+        prev_leftover: &MemSlice,
+        read_size: usize,
+    ) -> std::io::Result<(MemSlice, usize)> {
+        // Assuming that callers of this function correctly handle re-trying, by continuously growing
+        // prev_leftover if it doesn't contain a single row, this abstraction supports arbitrarily
+        // sized rows.
+        let prev_len = prev_leftover.len();
+
+        debug_assert!(read_size.is_power_of_two());
+
+        let mut buf = Vec::new();
+        if self.is_compressed() {
+            buf.reserve_exact(prev_len + read_size);
+            buf.extend_from_slice(prev_leftover);
+        }
+
+        let new_slice_from_read =
+            |read_n: usize, mut buf: Vec<u8>| -> std::io::Result<(MemSlice, usize)> {
+                buf.truncate(prev_len + read_n);
+                Ok((MemSlice::from_vec(buf), read_n))
+            };
+
+        match self {
+            CompressedReader::Uncompressed { slice, offset, .. } => {
+                let read_n = cmp::min(read_size, slice.len() - *offset);
+                let new_slice = slice.slice((*offset - prev_len)..(*offset + read_n));
+                *offset += read_n;
+                Ok((new_slice, read_n))
+            },
+            #[cfg(feature = "decompress")]
+            CompressedReader::Gzip(decoder) => {
+                new_slice_from_read(decoder.take(read_size as u64).read_to_end(&mut buf)?, buf)
+            },
+            #[cfg(feature = "decompress")]
+            CompressedReader::Zlib(decoder) => {
+                new_slice_from_read(decoder.take(read_size as u64).read_to_end(&mut buf)?, buf)
+            },
+            #[cfg(feature = "decompress")]
+            CompressedReader::Zstd(decoder) => {
+                new_slice_from_read(decoder.take(read_size as u64).read_to_end(&mut buf)?, buf)
+            },
+        }
     }
 }

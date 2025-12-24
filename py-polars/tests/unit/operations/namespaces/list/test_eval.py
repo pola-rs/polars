@@ -651,3 +651,10 @@ def test_list_agg_after_slice() -> None:
         has_no_duplicates=~pl.col("list").list.agg(pl.element().is_duplicated().any())
     )
     assert all(grouped_result.to_series().to_list())
+
+
+def test_list_eval_groupby_sample_25796() -> None:
+    df = pl.DataFrame({"g": [10, 10], "x": [[1, 1], [1, 1]]})
+    out = df.group_by("g").agg(pl.col("x").sample(n=2).list.eval(pl.element()))
+    expected = pl.DataFrame({"g": [10], "x": [[[1, 1], [1, 1]]]})
+    assert_frame_equal(out, expected)

@@ -57,16 +57,16 @@ pub fn start_single_file_sink_pipeline(
         per_sink_pipeline_depth,
         sync_on_close,
     )?;
-    let ideal_morsel_size = file_writer_starter.ideal_morsel_size();
+    let takeable_rows_provider = file_writer_starter.takeable_rows_provider();
 
     if verbose {
         eprintln!(
             "{node_name}: start_single_file_sink_pipeline: \
             file_writer_starter: {}, \
-            ideal_morsel_size: {:?}, \
+            takeable_rows_provider: {:?}, \
             upload_chunk_size: {}",
             file_writer_starter.writer_name(),
-            ideal_morsel_size,
+            takeable_rows_provider,
             upload_chunk_size
         )
     }
@@ -79,7 +79,7 @@ pub fn start_single_file_sink_pipeline(
 
     let resize_pipeline = MorselResizePipeline {
         empty_with_schema_df,
-        ideal_morsel_size,
+        takeable_rows_provider,
         inflight_morsel_semaphore,
         morsel_rx,
         morsel_tx: writer_tx,
@@ -94,8 +94,7 @@ pub fn start_single_file_sink_pipeline(
         TaskPriority::High,
         async move {
             writer_handle.await?;
-            // Writer handle completing with Ok(()) should guarantee this is Ok(()).
-            let sent_size = resize_pipeline_handle.await.unwrap();
+            let sent_size = resize_pipeline_handle.await?;
 
             if verbose {
                 eprintln!("{node_name}: Statistics: total_size: {sent_size:?}");

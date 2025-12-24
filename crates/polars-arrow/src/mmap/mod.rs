@@ -183,7 +183,7 @@ pub(crate) unsafe fn mmap_dictionary_from_batch<T: AsRef<[u8]>>(
         .ok_or_else(|| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::MissingData))?;
 
     let value_type = if let ArrowDataType::Dictionary(_, value_type, _) =
-        first_field.dtype.to_logical_type()
+        first_field.dtype.to_storage()
     {
         value_type.as_ref()
     } else {

@@ -32,7 +32,8 @@ pub(crate) type Extension = Option<(PlSmallStr, Option<PlSmallStr>)>;
 /// Each variant has a corresponding [`PhysicalType`], obtained via [`ArrowDataType::to_physical_type`],
 /// which declares the in-memory representation of data.
 /// The [`ArrowDataType::Extension`] is special in that it augments a [`ArrowDataType`] with metadata to support custom types.
-/// Use `to_logical_type` to desugar such type and return its corresponding logical type.
+/// Use `to_storage` to desugar such type and return its corresponding logical type, or `to_storage_recursive` to do
+/// this for Extension types inside nested types as well.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -380,10 +381,10 @@ impl ArrowDataType {
     /// Returns `&self` for all but [`ArrowDataType::Extension`]. For [`ArrowDataType::Extension`],
     /// (recursively) returns the inner [`ArrowDataType`].
     /// Never returns the variant [`ArrowDataType::Extension`].
-    pub fn to_logical_type(&self) -> &ArrowDataType {
+    pub fn to_storage(&self) -> &ArrowDataType {
         use ArrowDataType::*;
         match self {
-            Extension(ext) => ext.inner.to_logical_type(),
+            Extension(ext) => ext.inner.to_storage(),
             _ => self,
         }
     }

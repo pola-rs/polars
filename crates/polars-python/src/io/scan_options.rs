@@ -9,30 +9,33 @@ use polars::prelude::{
 use polars_io::{HiveOptions, RowIndex};
 use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
+use pyo3::intern;
+use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
-use pyo3::types::PyAnyMethods;
-use pyo3::{Bound, FromPyObject, Py, PyAny, PyResult, intern};
 
 use crate::PyDataFrame;
 use crate::functions::parse_cloud_options;
 use crate::prelude::Wrap;
 
 /// Interface to `class ScanOptions` on the Python side
-pub struct PyScanOptions<'py>(Bound<'py, pyo3::PyAny>);
+pub struct PyScanOptions<'py>(Bound<'py, PyAny>);
 
-impl<'py> FromPyObject<'py> for PyScanOptions<'py> {
-    fn extract_bound(ob: &Bound<'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
-        Ok(Self(ob.clone()))
+impl<'a, 'py> FromPyObject<'a, 'py> for PyScanOptions<'py> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        Ok(Self(ob.to_owned()))
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<TableStatistics> {
-    fn extract_bound(ob: &Bound<'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<TableStatistics> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let py = ob.py();
+        let attr = ob.getattr(intern!(py, "_df"))?;
         Ok(Wrap(TableStatistics(Arc::new(
-            PyDataFrame::extract_bound(&ob.getattr(intern!(py, "_df"))?)?
-                .df
-                .into_inner(),
+            PyDataFrame::extract(attr.as_borrowed())?.df.into_inner(),
         ))))
     }
 }

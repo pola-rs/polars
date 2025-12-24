@@ -5,6 +5,31 @@ use polars_core::chunked_array::ops::float_sorted_arg_max::{
 use polars_core::series::IsSorted;
 use polars_core::with_match_categorical_physical_type;
 use polars_utils::arg_min_max::ArgMinMax;
+use polars_utils::min_max::{MaxIgnoreNan, MinIgnoreNan, MinMaxPolicy};
+
+fn arg_min_opt_iter<T, I>(iter: I) -> Option<usize>
+where
+    I: IntoIterator<Item = Option<T>>,
+    T: Ord,
+{
+    iter.into_iter()
+        .enumerate()
+        .flat_map(|(idx, val)| Some((idx, val?)))
+        .min_by(|x, y| Ord::cmp(&x.1, &y.1))
+        .map(|x| x.0)
+}
+
+fn arg_max_opt_iter<T, I>(iter: I) -> Option<usize>
+where
+    I: IntoIterator<Item = Option<T>>,
+    T: Ord,
+{
+    iter.into_iter()
+        .enumerate()
+        .flat_map(|(idx, val)| Some((idx, val?)))
+        .max_by(|x, y| Ord::cmp(&x.1, &y.1))
+        .map(|x| x.0)
+}
 
 use super::*;
 
@@ -54,32 +79,21 @@ impl ArgAgg for Series {
             #[cfg(feature = "dtype-categorical")]
             Categorical(cats, _) => {
                 with_match_categorical_physical_type!(cats.physical(), |$C| {
-                    let ca = self.cat::<$C>().unwrap();
-                    if ca.null_count() == ca.len() {
-                        return None;
-                    }
-                    ca.iter_str()
-                        .enumerate()
-                        .flat_map(|(idx, val)| val.map(|val| (idx, val)))
-                        .reduce(|acc, (idx, val)| if acc.1 > val { (idx, val) } else { acc })
-                        .map(|tpl| tpl.0)
+                    arg_min_cat(self.cat::<$C>().unwrap())
                 })
             },
             #[cfg(feature = "dtype-categorical")]
             Enum(_, _) => phys_s.arg_min(),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, _) => phys_s.arg_min(),
             Date | Datetime(_, _) | Duration(_) | Time => phys_s.arg_min(),
-            String => {
-                let ca = self.str().unwrap();
-                arg_min_str(ca)
-            },
-            Boolean => {
-                let ca = self.bool().unwrap();
-                arg_min_bool(ca)
-            },
+            String => arg_min_str(self.str().unwrap()),
+            Binary => arg_min_binary(self.binary().unwrap()),
+            Boolean => arg_min_bool(self.bool().unwrap()),
             dt if dt.is_primitive_numeric() => {
                 with_match_physical_numeric_polars_type!(phys_s.dtype(), |$T| {
                     let ca: &ChunkedArray<$T> = phys_s.as_ref().as_ref().as_ref();
-                    arg_min_numeric_dispatch(ca)
+                    arg_min_numeric(ca)
                 })
             },
             _ => None,
@@ -93,37 +107,21 @@ impl ArgAgg for Series {
             #[cfg(feature = "dtype-categorical")]
             Categorical(cats, _) => {
                 with_match_categorical_physical_type!(cats.physical(), |$C| {
-                    let ca = self.cat::<$C>().unwrap();
-                    if ca.null_count() == ca.len() {
-                        return None;
-                    }
-                    ca.iter_str()
-                        .enumerate()
-                        .flat_map(|(idx, val)| val.map(|val| (idx, val)))
-                        .reduce(|acc, (idx, val)| if acc.1 < val { (idx, val) } else { acc })
-                        .map(|tpl| tpl.0)
+                    arg_max_cat(self.cat::<$C>().unwrap())
                 })
             },
             #[cfg(feature = "dtype-categorical")]
             Enum(_, _) => phys_s.arg_max(),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, _) => phys_s.arg_max(),
             Date | Datetime(_, _) | Duration(_) | Time => phys_s.arg_max(),
-            String => {
-                let ca = self.str().unwrap();
-                arg_max_str(ca)
-            },
-            Boolean => {
-                let ca = self.bool().unwrap();
-                arg_max_bool(ca)
-            },
-            #[cfg(feature = "dtype-f16")]
-            Float16 => {
-                // TODO: Dispatch to ArgMinMax directly
-                phys_s.cast(&DataType::Float32).unwrap().arg_max()
-            },
+            String => arg_max_str(self.str().unwrap()),
+            Binary => arg_max_binary(self.binary().unwrap()),
+            Boolean => arg_max_bool(self.bool().unwrap()),
             dt if dt.is_primitive_numeric() => {
                 with_match_physical_numeric_polars_type!(phys_s.dtype(), |$T| {
                     let ca: &ChunkedArray<$T> = phys_s.as_ref().as_ref().as_ref();
-                    arg_max_numeric_dispatch(ca)
+                    arg_max_numeric(ca)
                 })
             },
             _ => None,
@@ -131,7 +129,21 @@ impl ArgAgg for Series {
     }
 }
 
-fn arg_max_numeric_dispatch<T>(ca: &ChunkedArray<T>) -> Option<usize>
+pub fn arg_min_numeric<T>(ca: &ChunkedArray<T>) -> Option<usize>
+where
+    T: PolarsNumericType,
+    for<'b> &'b [T::Native]: ArgMinMax,
+{
+    if ca.null_count() == ca.len() {
+        None
+    } else if let Ok(vals) = ca.cont_slice() {
+        arg_min_numeric_slice(vals, ca.is_sorted_flag())
+    } else {
+        arg_min_numeric_chunked(ca)
+    }
+}
+
+pub fn arg_max_numeric<T>(ca: &ChunkedArray<T>) -> Option<usize>
 where
     T: PolarsNumericType,
     for<'b> &'b [T::Native]: ArgMinMax,
@@ -143,26 +155,8 @@ where
     } else if let Ok(vals) = ca.cont_slice() {
         arg_max_numeric_slice(vals, ca.is_sorted_flag())
     } else {
-        arg_max_numeric(ca)
+        arg_max_numeric_chunked(ca)
     }
-}
-
-fn arg_min_numeric_dispatch<T>(ca: &ChunkedArray<T>) -> Option<usize>
-where
-    T: PolarsNumericType,
-    for<'b> &'b [T::Native]: ArgMinMax,
-{
-    if ca.null_count() == ca.len() {
-        None
-    } else if let Ok(vals) = ca.cont_slice() {
-        arg_min_numeric_slice(vals, ca.is_sorted_flag())
-    } else {
-        arg_min_numeric(ca)
-    }
-}
-
-fn arg_max_bool(ca: &BooleanChunked) -> Option<usize> {
-    ca.first_true_idx().or_else(|| ca.first_false_idx())
 }
 
 /// # Safety
@@ -179,42 +173,77 @@ where
     Some(out)
 }
 
-fn arg_min_bool(ca: &BooleanChunked) -> Option<usize> {
+#[cfg(feature = "dtype-categorical")]
+pub fn arg_min_cat<T: PolarsCategoricalType>(ca: &CategoricalChunked<T>) -> Option<usize> {
+    if ca.null_count() == ca.len() {
+        return None;
+    }
+    arg_min_opt_iter(ca.iter_str())
+}
+
+#[cfg(feature = "dtype-categorical")]
+pub fn arg_max_cat<T: PolarsCategoricalType>(ca: &CategoricalChunked<T>) -> Option<usize> {
+    if ca.null_count() == ca.len() {
+        return None;
+    }
+    arg_max_opt_iter(ca.iter_str())
+}
+
+pub fn arg_min_bool(ca: &BooleanChunked) -> Option<usize> {
     ca.first_false_idx().or_else(|| ca.first_true_idx())
 }
 
-fn arg_min_str(ca: &StringChunked) -> Option<usize> {
+pub fn arg_max_bool(ca: &BooleanChunked) -> Option<usize> {
+    ca.first_true_idx().or_else(|| ca.first_false_idx())
+}
+
+pub fn arg_min_str(ca: &StringChunked) -> Option<usize> {
+    arg_min_physical_generic(ca)
+}
+
+pub fn arg_max_str(ca: &StringChunked) -> Option<usize> {
+    arg_max_physical_generic(ca)
+}
+
+pub fn arg_min_binary(ca: &BinaryChunked) -> Option<usize> {
+    arg_min_physical_generic(ca)
+}
+
+pub fn arg_max_binary(ca: &BinaryChunked) -> Option<usize> {
+    arg_max_physical_generic(ca)
+}
+
+fn arg_min_physical_generic<T>(ca: &ChunkedArray<T>) -> Option<usize>
+where
+    T: PolarsDataType,
+    for<'a> T::Physical<'a>: Ord,
+{
     if ca.null_count() == ca.len() {
         return None;
     }
     match ca.is_sorted_flag() {
         IsSorted::Ascending => ca.first_non_null(),
         IsSorted::Descending => ca.last_non_null(),
-        IsSorted::Not => ca
-            .iter()
-            .enumerate()
-            .flat_map(|(idx, val)| val.map(|val| (idx, val)))
-            .reduce(|acc, (idx, val)| if acc.1 > val { (idx, val) } else { acc })
-            .map(|tpl| tpl.0),
+        IsSorted::Not => arg_min_opt_iter(ca.iter()),
     }
 }
 
-fn arg_max_str(ca: &StringChunked) -> Option<usize> {
+fn arg_max_physical_generic<T>(ca: &ChunkedArray<T>) -> Option<usize>
+where
+    T: PolarsDataType,
+    for<'a> T::Physical<'a>: Ord,
+{
     if ca.null_count() == ca.len() {
         return None;
     }
     match ca.is_sorted_flag() {
         IsSorted::Ascending => ca.last_non_null(),
         IsSorted::Descending => ca.first_non_null(),
-        IsSorted::Not => ca
-            .iter()
-            .enumerate()
-            .reduce(|acc, (idx, val)| if acc.1 < val { (idx, val) } else { acc })
-            .map(|tpl| tpl.0),
+        IsSorted::Not => arg_max_opt_iter(ca.iter()),
     }
 }
 
-fn arg_min_numeric<'a, T>(ca: &'a ChunkedArray<T>) -> Option<usize>
+fn arg_min_numeric_chunked<'a, T>(ca: &'a ChunkedArray<T>) -> Option<usize>
 where
     T: PolarsNumericType,
     for<'b> &'b [T::Native]: ArgMinMax,
@@ -223,43 +252,48 @@ where
         IsSorted::Ascending => ca.first_non_null(),
         IsSorted::Descending => ca.last_non_null(),
         IsSorted::Not => {
-            ca.downcast_iter()
-                .fold((None, None, 0), |acc, arr| {
-                    if arr.len() == 0 {
-                        return acc;
-                    }
-                    let chunk_min: Option<(usize, T::Native)> = if arr.null_count() > 0 {
-                        arr.into_iter()
-                            .enumerate()
-                            .flat_map(|(idx, val)| val.map(|val| (idx, *val)))
-                            .reduce(|acc, (idx, val)| if acc.1 > val { (idx, val) } else { acc })
-                    } else {
-                        // When no nulls & array not empty => we can use fast argminmax
-                        let min_idx: usize = arr.values().as_slice().argmin();
-                        Some((min_idx, arr.value(min_idx)))
-                    };
+            let mut chunk_start_offset = 0;
+            let mut min_idx: Option<usize> = None;
+            let mut min_val: Option<T::Native> = None;
+            for arr in ca.downcast_iter() {
+                if arr.len() == arr.null_count() {
+                    chunk_start_offset += arr.len();
+                    continue;
+                }
 
-                    let new_offset: usize = acc.2 + arr.len();
-                    match acc {
-                        (Some(_), Some(acc_v), offset) => match chunk_min {
-                            Some((idx, val)) if val < acc_v => {
-                                (Some(idx + offset), Some(val), new_offset)
-                            },
-                            _ => (acc.0, acc.1, new_offset),
-                        },
-                        (None, None, offset) => match chunk_min {
-                            Some((idx, val)) => (Some(idx + offset), Some(val), new_offset),
-                            None => (None, None, new_offset),
-                        },
-                        _ => unreachable!(),
+                let chunk_min: Option<(usize, T::Native)> = if arr.null_count() > 0 {
+                    arr.into_iter()
+                        .enumerate()
+                        .flat_map(|(idx, val)| Some((idx, *(val?))))
+                        .reduce(|acc, (idx, val)| {
+                            if MinIgnoreNan::is_better(&val, &acc.1) {
+                                (idx, val)
+                            } else {
+                                acc
+                            }
+                        })
+                } else {
+                    // When no nulls & array not empty => we can use fast argmin.
+                    let min_idx: usize = arr.values().as_slice().argmin();
+                    Some((min_idx, arr.value(min_idx)))
+                };
+
+                if let Some((chunk_min_idx, chunk_min_val)) = chunk_min {
+                    if min_val.is_none()
+                        || MinIgnoreNan::is_better(&chunk_min_val, &min_val.unwrap())
+                    {
+                        min_val = Some(chunk_min_val);
+                        min_idx = Some(chunk_start_offset + chunk_min_idx);
                     }
-                })
-                .0
+                }
+                chunk_start_offset += arr.len();
+            }
+            min_idx
         },
     }
 }
 
-fn arg_max_numeric<'a, T>(ca: &'a ChunkedArray<T>) -> Option<usize>
+fn arg_max_numeric_chunked<'a, T>(ca: &'a ChunkedArray<T>) -> Option<usize>
 where
     T: PolarsNumericType,
     for<'b> &'b [T::Native]: ArgMinMax,
@@ -268,39 +302,43 @@ where
         IsSorted::Ascending => ca.last_non_null(),
         IsSorted::Descending => ca.first_non_null(),
         IsSorted::Not => {
-            ca.downcast_iter()
-                .fold((None, None, 0), |acc, arr| {
-                    if arr.len() == 0 {
-                        return acc;
-                    }
-                    let chunk_max: Option<(usize, T::Native)> = if arr.null_count() > 0 {
-                        // When there are nulls, we should compare Option<T::Native>
-                        arr.into_iter()
-                            .enumerate()
-                            .flat_map(|(idx, val)| val.map(|val| (idx, *val)))
-                            .reduce(|acc, (idx, val)| if acc.1 < val { (idx, val) } else { acc })
-                    } else {
-                        // When no nulls & array not empty => we can use fast argminmax
-                        let max_idx: usize = arr.values().as_slice().argmax();
-                        Some((max_idx, arr.value(max_idx)))
-                    };
+            let mut chunk_start_offset = 0;
+            let mut max_idx: Option<usize> = None;
+            let mut max_val: Option<T::Native> = None;
+            for arr in ca.downcast_iter() {
+                if arr.len() == arr.null_count() {
+                    chunk_start_offset += arr.len();
+                    continue;
+                }
 
-                    let new_offset: usize = acc.2 + arr.len();
-                    match acc {
-                        (Some(_), Some(acc_v), offset) => match chunk_max {
-                            Some((idx, val)) if acc_v < val => {
-                                (Some(idx + offset), Some(val), new_offset)
-                            },
-                            _ => (acc.0, acc.1, new_offset),
-                        },
-                        (None, None, offset) => match chunk_max {
-                            Some((idx, val)) => (Some(idx + offset), Some(val), new_offset),
-                            None => (None, None, new_offset),
-                        },
-                        _ => unreachable!(),
+                let chunk_max: Option<(usize, T::Native)> = if arr.null_count() > 0 {
+                    arr.into_iter()
+                        .enumerate()
+                        .flat_map(|(idx, val)| Some((idx, *(val?))))
+                        .reduce(|acc, (idx, val)| {
+                            if MaxIgnoreNan::is_better(&val, &acc.1) {
+                                (idx, val)
+                            } else {
+                                acc
+                            }
+                        })
+                } else {
+                    // When no nulls & array not empty => we can use fast argmax.
+                    let max_idx: usize = arr.values().as_slice().argmax();
+                    Some((max_idx, arr.value(max_idx)))
+                };
+
+                if let Some((chunk_max_idx, chunk_max_val)) = chunk_max {
+                    if max_val.is_none()
+                        || MaxIgnoreNan::is_better(&chunk_max_val, &max_val.unwrap())
+                    {
+                        max_val = Some(chunk_max_val);
+                        max_idx = Some(chunk_start_offset + chunk_max_idx);
                     }
-                })
-                .0
+                }
+                chunk_start_offset += arr.len();
+            }
+            max_idx
         },
     }
 }

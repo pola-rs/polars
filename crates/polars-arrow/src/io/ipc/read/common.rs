@@ -190,7 +190,7 @@ fn find_first_dict_field_d<'a>(
     ipc_field: &'a IpcField,
 ) -> Option<(&'a Field, &'a IpcField)> {
     use ArrowDataType::*;
-    match dtype.to_logical_type() {
+    match dtype.to_storage() {
         Dictionary(_, inner, _) => find_first_dict_field_d(id, inner.as_ref(), ipc_field),
         List(field) | LargeList(field) | FixedSizeList(field, ..) | Map(field, ..) => {
             find_first_dict_field(id, field.as_ref(), &ipc_field.fields[0])
@@ -274,7 +274,7 @@ pub fn read_dictionary<R: Read + Seek>(
         .ok_or_else(|| polars_err!(oos = OutOfSpecKind::MissingData))?;
 
     let value_type =
-        if let ArrowDataType::Dictionary(_, value_type, _) = first_field.dtype.to_logical_type() {
+        if let ArrowDataType::Dictionary(_, value_type, _) = first_field.dtype.to_storage() {
             value_type.as_ref()
         } else {
             polars_bail!(oos = OutOfSpecKind::InvalidIdDataType { requested_id: id })

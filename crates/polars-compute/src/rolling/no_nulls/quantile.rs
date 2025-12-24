@@ -74,10 +74,11 @@ impl<
             },
             Midpoint => {
                 let length_f = length as f64;
-                let idx = (length_f * self.prob) as usize;
-                let idx = std::cmp::min(idx, length - 1);
 
+                let idx = ((length_f - 1.0) * self.prob).floor() as usize;
+                let idx = std::cmp::min(idx, length - 1);
                 let top_idx = ((length_f - 1.0) * self.prob).ceil() as usize;
+
                 return if top_idx == idx {
                     Some(self.sorted.get(idx))
                 } else {

@@ -54,9 +54,11 @@ impl<'py> IntoPyObject<'py> for &Wrap<AnyValue<'_>> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<AnyValue<'static>> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
-        py_object_to_any_value(ob, true, true).map(Wrap)
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<AnyValue<'static>> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        py_object_to_any_value(&ob.to_owned(), true, true).map(Wrap)
     }
 }
 
@@ -261,13 +263,13 @@ pub(crate) fn py_object_to_any_value(
             .ok()
             .and_then(|tz| (!tz.is_none()).then_some(tz))
         {
-            let tzinfo = PyTzInfo::timezone(py, tz.downcast_into::<PyString>()?)?;
+            let tzinfo = PyTzInfo::timezone(py, tz.cast_into::<PyString>()?)?;
             (
                 &ob.call_method(intern!(py, "astimezone"), (&tzinfo,), None)?,
                 tzinfo,
             )
         } else {
-            (ob, tzinfo.downcast_into()?)
+            (ob, tzinfo.cast_into()?)
         };
 
         let (timestamp, tz) = if tzinfo.hasattr(intern!(py, "key"))? {
@@ -377,7 +379,7 @@ pub(crate) fn py_object_to_any_value(
                 &DataType::Null,
             )))
         } else if ob.is_instance_of::<PyList>() | ob.is_instance_of::<PyTuple>() {
-            let list = ob.downcast::<PySequence>()?;
+            let list = ob.cast::<PySequence>()?;
 
             // Try to find first non-null.
             let length = list.len()?;
@@ -436,13 +438,13 @@ pub(crate) fn py_object_to_any_value(
     }
 
     fn get_mapping(ob: &Bound<'_, PyAny>, strict: bool) -> PyResult<AnyValue<'static>> {
-        let mapping = ob.downcast::<PyMapping>()?;
+        let mapping = ob.cast::<PyMapping>()?;
         let len = mapping.len()?;
         let mut keys = Vec::with_capacity(len);
         let mut vals = Vec::with_capacity(len);
 
         for item in mapping.items()?.try_iter()? {
-            let item = item?.downcast_into::<PyTuple>()?;
+            let item = item?.cast_into::<PyTuple>()?;
             let (key_py, val_py) = (item.get_item(0)?, item.get_item(1)?);
 
             let key: Cow<str> = key_py.extract()?;
@@ -455,7 +457,7 @@ pub(crate) fn py_object_to_any_value(
     }
 
     fn get_struct(ob: &Bound<'_, PyAny>, strict: bool) -> PyResult<AnyValue<'static>> {
-        let dict = ob.downcast::<PyDict>().unwrap();
+        let dict = ob.cast::<PyDict>().unwrap();
         let len = dict.len();
         let mut keys = Vec::with_capacity(len);
         let mut vals = Vec::with_capacity(len);
@@ -470,11 +472,11 @@ pub(crate) fn py_object_to_any_value(
     }
 
     fn get_namedtuple(ob: &Bound<'_, PyAny>, strict: bool) -> PyResult<AnyValue<'static>> {
-        let tuple = ob.downcast::<PyTuple>().unwrap();
+        let tuple = ob.cast::<PyTuple>().unwrap();
         let len = tuple.len();
         let fields = ob
             .getattr(intern!(ob.py(), "_fields"))?
-            .downcast_into::<PyTuple>()?;
+            .cast_into::<PyTuple>()?;
         let mut keys = Vec::with_capacity(len);
         let mut vals = Vec::with_capacity(len);
         for (k, v) in fields.into_iter().zip(tuple.into_iter()) {

@@ -72,9 +72,11 @@ pub fn lst_get(ca: &ListChunked, index: &Int64Chunked, null_on_oob: bool) -> Pol
                     .collect::<Result<IdxCa, _>>()?
             };
             let s = Series::try_from((ca.name().clone(), arr.values().clone())).unwrap();
-            unsafe { s.take_unchecked(&take_by) }
-                .cast(ca.inner_dtype())
-                .map(Column::from)
+            unsafe {
+                s.take_unchecked(&take_by)
+                    .from_physical_unchecked(ca.inner_dtype())
+                    .map(Column::from)
+            }
         },
         _ if ca.len() == 1 => {
             if ca.null_count() > 0 {
@@ -113,9 +115,11 @@ pub fn lst_get(ca: &ListChunked, index: &Int64Chunked, null_on_oob: bool) -> Pol
                 .collect::<Result<IdxCa, _>>()?;
 
             let s = Series::try_from((ca.name().clone(), arr.values().clone())).unwrap();
-            unsafe { s.take_unchecked(&take_by) }
-                .cast(ca.inner_dtype())
-                .map(Column::from)
+            unsafe {
+                s.take_unchecked(&take_by)
+                    .from_physical_unchecked(ca.inner_dtype())
+                    .map(Column::from)
+            }
         },
         len => polars_bail!(
             ComputeError:

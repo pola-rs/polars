@@ -40,7 +40,7 @@ pub fn page_iter_to_array(
     let is_pl_empty_struct = field.is_pl_pq_empty_struct();
     let dtype = field.dtype;
 
-    Ok(match (physical_type, dtype.to_logical_type()) {
+    Ok(match (physical_type, dtype.to_storage()) {
         (_, Null) => PageDecoder::new(&field.name, pages, dtype, null::NullDecoder, init_nested)?
             .collect_boxed(filter)?,
 

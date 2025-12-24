@@ -96,7 +96,7 @@ pub fn write_partitioned_dataset(
     };
 
     let base_path = addr;
-    let groups = df.group_by(partition_by)?.take_groups();
+    let groups = df.group_by(partition_by)?.into_groups();
 
     let init_part_base_dir = |part_df: &DataFrame| {
         let path_part = get_hive_path_part(part_df);

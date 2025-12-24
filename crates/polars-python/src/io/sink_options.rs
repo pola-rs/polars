@@ -2,18 +2,19 @@ use std::sync::Arc;
 
 use polars::prelude::sync_on_close::SyncOnCloseType;
 use polars::prelude::{CloudScheme, UnifiedSinkArgs};
-use pyo3::types::PyAnyMethods;
-use pyo3::{Bound, FromPyObject, Py, PyAny, PyResult};
+use pyo3::prelude::*;
 
 use crate::functions::parse_cloud_options;
 use crate::prelude::Wrap;
 
 /// Interface to `class SinkOptions` on the Python side
-pub struct PySinkOptions<'py>(Bound<'py, pyo3::PyAny>);
+pub struct PySinkOptions<'py>(Bound<'py, PyAny>);
 
-impl<'py> FromPyObject<'py> for PySinkOptions<'py> {
-    fn extract_bound(ob: &Bound<'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
-        Ok(Self(ob.clone()))
+impl<'a, 'py> FromPyObject<'a, 'py> for PySinkOptions<'py> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        Ok(Self(ob.to_owned()))
     }
 }
 

@@ -41,11 +41,10 @@ impl TotalEqKernel for FixedSizeListArray {
         // make any sense.
 
         assert_eq!(self.len(), other.len());
-        let ArrowDataType::FixedSizeList(self_type, self_width) = self.dtype().to_logical_type()
-        else {
+        let ArrowDataType::FixedSizeList(self_type, self_width) = self.dtype().to_storage() else {
             panic!("array comparison called with non-array type");
         };
-        let ArrowDataType::FixedSizeList(other_type, other_width) = other.dtype().to_logical_type()
+        let ArrowDataType::FixedSizeList(other_type, other_width) = other.dtype().to_storage()
         else {
             panic!("array comparison called with non-array type");
         };
@@ -68,11 +67,10 @@ impl TotalEqKernel for FixedSizeListArray {
 
     fn tot_ne_kernel(&self, other: &Self) -> Bitmap {
         assert_eq!(self.len(), other.len());
-        let ArrowDataType::FixedSizeList(self_type, self_width) = self.dtype().to_logical_type()
-        else {
+        let ArrowDataType::FixedSizeList(self_type, self_width) = self.dtype().to_storage() else {
             panic!("array comparison called with non-array type");
         };
-        let ArrowDataType::FixedSizeList(other_type, other_width) = other.dtype().to_logical_type()
+        let ArrowDataType::FixedSizeList(other_type, other_width) = other.dtype().to_storage()
         else {
             panic!("array comparison called with non-array type");
         };
@@ -94,10 +92,10 @@ impl TotalEqKernel for FixedSizeListArray {
     }
 
     fn tot_eq_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
-        let ArrowDataType::FixedSizeList(self_type, width) = self.dtype().to_logical_type() else {
+        let ArrowDataType::FixedSizeList(self_type, width) = self.dtype().to_storage() else {
             panic!("array comparison called with non-array type");
         };
-        assert_eq!(self_type.dtype(), other.dtype().to_logical_type());
+        assert_eq!(self_type.dtype(), other.dtype().to_storage());
 
         let width = *width;
 
@@ -115,10 +113,10 @@ impl TotalEqKernel for FixedSizeListArray {
     }
 
     fn tot_ne_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
-        let ArrowDataType::FixedSizeList(self_type, width) = self.dtype().to_logical_type() else {
+        let ArrowDataType::FixedSizeList(self_type, width) = self.dtype().to_storage() else {
             panic!("array comparison called with non-array type");
         };
-        assert_eq!(self_type.dtype(), other.dtype().to_logical_type());
+        assert_eq!(self_type.dtype(), other.dtype().to_storage());
 
         let width = *width;
 

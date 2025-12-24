@@ -645,7 +645,7 @@ where
                 self.inner.get(idx + null_count)
             },
             Midpoint => {
-                let idx = (valid_length_f * self.quantile) as usize;
+                let idx = ((valid_length_f - 1.0) * self.quantile).floor() as usize;
                 let idx = std::cmp::min(idx, valid_length - 1);
 
                 let top_idx = ((valid_length_f - 1.0) * self.quantile).ceil() as usize;

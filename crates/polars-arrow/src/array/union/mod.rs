@@ -195,7 +195,7 @@ impl UnionArray {
 
     /// Creates a new empty [`UnionArray`].
     pub fn new_empty(dtype: ArrowDataType) -> Self {
-        if let ArrowDataType::Union(u) = dtype.to_logical_type() {
+        if let ArrowDataType::Union(u) = dtype.to_storage() {
             let fields = u
                 .fields
                 .iter()
@@ -352,7 +352,7 @@ impl Array for UnionArray {
 
 impl UnionArray {
     fn try_get_all(dtype: &ArrowDataType) -> PolarsResult<UnionComponents<'_>> {
-        match dtype.to_logical_type() {
+        match dtype.to_storage() {
             ArrowDataType::Union(u) => Ok((&u.fields, u.ids.as_ref().map(|x| x.as_ref()), u.mode)),
             _ => polars_bail!(ComputeError:
                 "The UnionArray requires a logical type of DataType::Union",

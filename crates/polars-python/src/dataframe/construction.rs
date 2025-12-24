@@ -164,7 +164,7 @@ fn dicts_to_rows(
         if d.is_none() {
             rows.push(null_row.clone())
         } else {
-            let d = d.downcast::<PyDict>()?;
+            let d = d.cast::<PyDict>()?;
             let mut row = Vec::with_capacity(names.len());
             for k in &py_keys {
                 let val = match d.get_item(k)? {
@@ -196,7 +196,7 @@ fn mappings_to_rows(
         if d.is_none() {
             rows.push(null_row.clone())
         } else {
-            let d = d.downcast::<PyMapping>()?;
+            let d = d.cast::<PyMapping>()?;
             let mut row = Vec::with_capacity(names.len());
             for k in &py_keys {
                 let py_val = d.get_item(k)?;
@@ -248,7 +248,7 @@ fn infer_schema_names_from_dict_data(
     for d in data.try_iter()?.take(infer_schema_length) {
         let d = d?;
         if !d.is_none() {
-            let d = d.downcast::<PyDict>()?;
+            let d = d.cast::<PyDict>()?;
             let keys = d.keys().iter();
             for name in keys {
                 let name = name.extract::<String>()?;
@@ -271,7 +271,7 @@ fn infer_schema_names_from_mapping_data(
     for d in data.try_iter()?.take(infer_schema_length) {
         let d = d?;
         if !d.is_none() {
-            let d = d.downcast::<PyMapping>()?;
+            let d = d.cast::<PyMapping>()?;
             let keys = d.keys()?;
             for name in keys {
                 let name = name.extract::<String>()?;

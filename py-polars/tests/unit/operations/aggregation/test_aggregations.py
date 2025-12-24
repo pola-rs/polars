@@ -1276,3 +1276,9 @@ def test_struct_enum_agg_streaming_24936() -> None:
 
     q = df.lazy().select(pl.all(ignore_nulls=False).first())
     assert_frame_equal(q.collect(), df)
+
+
+def test_sum_inf_not_nan_25849() -> None:
+    data = [10.0, None, 10.0, 10.0, 10.0, 10.0, float("inf"), 10.0, 10.0]
+    df = pl.DataFrame({"x": data, "g": ["X"] * len(data)})
+    assert df.group_by("g").agg(pl.col("x").sum())["x"].item() == float("inf")

@@ -456,6 +456,16 @@ class ConnectionExecutor:
         """Execute a query using an async SQLAlchemy connection."""
         is_session = self._is_alchemy_session(self.cursor)
         cursor = self.cursor.begin() if is_session else self.cursor  # type: ignore[attr-defined]
+
+        # check if connection is already started (eg: user awaited `engine.connect()`);
+        # if so, use it directly without entering the context manager again
+        try:
+            if object.__getattribute__(cursor, "sync_connection") is not None:
+                result = await cursor.execute(query, **options)
+                return result
+        except AttributeError:
+            pass
+
         async with cursor as conn:  # type: ignore[union-attr]
             if is_session and not hasattr(conn, "execute"):
                 conn = conn.session

@@ -159,3 +159,13 @@ def test_sink_empty(sink: Any, scan: Any) -> None:
     f.truncate()
     f.seek(0)
     assert_frame_equal(scan(f, **kwargs), expected.lazy())
+
+
+@pytest.mark.parametrize(("scan", "sink"), SINKS)
+def test_sink_boolean_panic_25806(sink: Any, scan: Any) -> None:
+    df = pl.select(bool=pl.repeat(True, 300_000))
+
+    f = io.BytesIO()
+    sink(df.lazy(), f)
+
+    assert_frame_equal(scan(f).collect(), df)

@@ -1,11 +1,10 @@
-use std::sync::Arc;
-
 use polars_error::PolarsResult;
 
 use super::BinaryViewArrayGeneric;
 use crate::array::binview::{View, ViewType};
 use crate::array::{FromFfi, ToFfi};
 use crate::bitmap::align;
+use crate::buffer::Buffer;
 use crate::ffi;
 
 unsafe impl<T: ViewType + ?Sized> ToFfi for BinaryViewArrayGeneric<T> {
@@ -67,7 +66,7 @@ impl<T: ViewType + ?Sized, A: ffi::ArrowArrayRef> FromFfi<A> for BinaryViewArray
             return Ok(Self::new_unchecked_unknown_md(
                 dtype,
                 views,
-                Arc::from([]),
+                Buffer::new(),
                 validity,
                 None,
             ));
@@ -91,7 +90,7 @@ impl<T: ViewType + ?Sized, A: ffi::ArrowArrayRef> FromFfi<A> for BinaryViewArray
         Ok(Self::new_unchecked_unknown_md(
             dtype,
             views,
-            Arc::from(variadic_buffers),
+            Buffer::from(variadic_buffers),
             validity,
             None,
         ))

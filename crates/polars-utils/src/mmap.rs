@@ -238,6 +238,21 @@ impl io::Read for MemReader {
     }
 }
 
+/// Native implementation is more efficient than wrapping it in [`io::BufReader`]. The memory is
+/// already available as slice, duplicating the memory into a local buffer only adds an additional
+/// copy step. The number of total page-faults if the memory is backed by mmap will still be the
+/// same.
+impl io::BufRead for MemReader {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
+        Ok(&self.data[self.position..])
+    }
+
+    fn consume(&mut self, amount: usize) {
+        assert!(amount <= self.remaining_len());
+        self.position += amount;
+    }
+}
+
 impl io::Seek for MemReader {
     fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
         let position = match pos {

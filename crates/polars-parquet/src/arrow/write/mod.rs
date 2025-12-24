@@ -358,7 +358,7 @@ pub fn array_to_pages(
     field_options: &FieldWriteOptions,
 ) -> PolarsResult<DynIter<'static, PolarsResult<Page>>> {
     let mut encoding = field_options.encoding;
-    if let ArrowDataType::Dictionary(key_type, _, _) = primitive_array.dtype().to_logical_type() {
+    if let ArrowDataType::Dictionary(key_type, _, _) = primitive_array.dtype().to_storage() {
         return match_integer_type!(key_type, |$T| {
             dictionary::array_to_pages::<$T>(
                 primitive_array.as_any().downcast_ref().unwrap(),
@@ -903,7 +903,7 @@ fn array_to_page_nested(
     }
 
     use ArrowDataType::*;
-    match array.dtype().to_logical_type() {
+    match array.dtype().to_storage() {
         Null => {
             let array = Int32Array::new_null(ArrowDataType::Int32, array.len());
             primitive::nested_array_to_page::<i32, i32>(&array, options, type_, nested)
@@ -1199,7 +1199,7 @@ fn transverse_recursive<T, F: Fn(&ArrowDataType) -> T + Clone>(
         Null | Boolean | Primitive(_) | Binary | FixedSizeBinary | LargeBinary | Utf8
         | Dictionary(_) | LargeUtf8 | BinaryView | Utf8View => encodings.push(map(dtype)),
         List | FixedSizeList | LargeList => {
-            let a = dtype.to_logical_type();
+            let a = dtype.to_storage();
             if let ArrowDataType::List(inner) = a {
                 transverse_recursive(&inner.dtype, map, encodings)
             } else if let ArrowDataType::LargeList(inner) = a {
@@ -1211,7 +1211,7 @@ fn transverse_recursive<T, F: Fn(&ArrowDataType) -> T + Clone>(
             }
         },
         Struct => {
-            if let ArrowDataType::Struct(fields) = dtype.to_logical_type() {
+            if let ArrowDataType::Struct(fields) = dtype.to_storage() {
                 for field in fields {
                     transverse_recursive(&field.dtype, map.clone(), encodings)
                 }
@@ -1220,8 +1220,8 @@ fn transverse_recursive<T, F: Fn(&ArrowDataType) -> T + Clone>(
             }
         },
         Map => {
-            if let ArrowDataType::Map(field, _) = dtype.to_logical_type() {
-                if let ArrowDataType::Struct(fields) = field.dtype.to_logical_type() {
+            if let ArrowDataType::Map(field, _) = dtype.to_storage() {
+                if let ArrowDataType::Struct(fields) = field.dtype.to_storage() {
                     for field in fields {
                         transverse_recursive(&field.dtype, map.clone(), encodings)
                     }

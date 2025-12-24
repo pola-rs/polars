@@ -169,3 +169,22 @@ def test_lf_serde_chunked_bytes(
     b = lf.serialize()
 
     assert_frame_equal(pl.LazyFrame.deserialize(io.BytesIO(b)).collect(), lf.collect())
+
+
+def test_lf_collect_schema_does_not_change_serialize_25719() -> None:
+    df = pl.DataFrame({"x": [1, 2, 3]})
+
+    lf = df.lazy()
+    lf.collect_schema()
+
+    assert lf.serialize() == df.lazy().serialize()
+    lf_sum = lf.sum()
+    lf_sum.collect_schema()
+    assert lf_sum.serialize() == df.lazy().sum().serialize()
+
+    q = pl.concat([lf_sum, lf_sum])
+
+    assert_frame_equal(
+        pl.LazyFrame.deserialize(q.serialize()).collect(),
+        pl.DataFrame({"x": [6, 6]}),
+    )

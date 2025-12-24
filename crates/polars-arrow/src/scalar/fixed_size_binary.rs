@@ -23,10 +23,7 @@ impl FixedSizeBinaryScalar {
         Self {
             value: value.map(|x| {
                 let x: Vec<u8> = x.into();
-                assert_eq!(
-                    dtype.to_logical_type(),
-                    &ArrowDataType::FixedSizeBinary(x.len())
-                );
+                assert_eq!(dtype.to_storage(), &ArrowDataType::FixedSizeBinary(x.len()));
                 x.into_boxed_slice()
             }),
             dtype,

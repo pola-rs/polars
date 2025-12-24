@@ -431,7 +431,7 @@ impl PhysicalExpr for WindowExpr {
 
         let create_groups = || {
             let gb = df.group_by_with_series(group_by_columns.clone(), true, sort_groups)?;
-            let mut groups = gb.take_groups();
+            let mut groups = gb.into_groups();
 
             if let Some((order_by, options)) = &self.order_by {
                 let order_by = order_by.evaluate(df, state)?;
