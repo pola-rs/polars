@@ -18,8 +18,7 @@ pub trait AnonymousScan: Send + Sync {
     /// Creates a DataFrame from the supplied function & scan options.
     fn scan(&self, scan_opts: AnonymousScanArgs) -> PolarsResult<DataFrame>;
 
-    /// Produce the next batch Polars can consume. Implement this method to get proper
-    /// streaming support.
+    #[deprecated(note = "has no effect")]
     fn next_batch(&self, scan_opts: AnonymousScanArgs) -> PolarsResult<Option<DataFrame>> {
         self.scan(scan_opts).map(Some)
     }
@@ -41,9 +40,7 @@ pub trait AnonymousScan: Send + Sync {
     fn allows_projection_pushdown(&self) -> bool {
         false
     }
-    /// Specify if the scan provider should allow slice pushdowns.
-    ///
-    /// Defaults to `false`
+    #[deprecated(note = "has no effect")]
     fn allows_slice_pushdown(&self) -> bool {
         false
     }
