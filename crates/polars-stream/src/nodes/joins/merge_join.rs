@@ -592,11 +592,11 @@ async fn compute_join(
     left.rechunk_mut();
     right.rechunk_mut();
 
-    let mut left_key = left
+    let left_key = left
         .column(&params.left.key_col)
         .unwrap()
         .as_materialized_series();
-    let mut right_key = right
+    let right_key = right
         .column(&params.right.key_col)
         .unwrap()
         .as_materialized_series();
@@ -606,8 +606,10 @@ async fn compute_join(
         MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft,
     );
     let right_build_optimization = params.args.maintain_order == MaintainOrderJoin::None
-        && (params.args.how == JoinType::Inner && right_key.null_count() > left_key.null_count());
-    let right_is_build = right_build_maintain_order;
+        && (params.args.how == JoinType::Right
+            || params.args.how == JoinType::Inner
+                && right_key.null_count() > left_key.null_count());
+    let right_is_build = right_build_maintain_order || right_build_optimization;
 
     let mut gather_left = Vec::new();
     let mut gather_right = Vec::new();
@@ -616,10 +618,6 @@ async fn compute_join(
         false => MutableBitmap::from_len_zeroed(right_key.len()),
         true => MutableBitmap::from_len_zeroed(left_key.len()),
     };
-    dbg!(right_is_build);
-    dbg!(&matched_probeside);
-    dbg!(left_key);
-    dbg!(right_key);
 
     let mut current_offset = 0;
     let mut done = false;
@@ -670,40 +668,35 @@ async fn compute_join(
         }
     }
 
-    let mut gather_left_unmatched = Vec::new();
-    let mut gather_right_unmatched = Vec::new();
+    gather_left.clear();
+    gather_right.clear();
     if right_is_build {
-        if (left_sp.emit_unmatched) {
-            for (idx, _) in matched_probeside
-                .iter()
-                .enumerate_idx()
-                .filter(|(_, m)| !(*m))
-            {
-                gather_left_unmatched.push(idx);
-            }
-            gather_right_unmatched = vec![IdxSize::MAX; gather_left_unmatched.len()];
-        }
-    } else {
-        if (right_sp.emit_unmatched) {
-            for (idx, _) in matched_probeside.iter().enumerate_idx().filter(|(_, m)| !m) {
-                gather_right_unmatched.push(idx);
-            }
-            gather_left_unmatched = vec![IdxSize::MAX; gather_right_unmatched.len()];
-        }
+        swap(&mut gather_left, &mut gather_right);
+        swap(&mut left_sp, &mut right_sp);
     }
+    if right_sp.emit_unmatched {
+        for (idx, _) in matched_probeside.iter().enumerate_idx().filter(|(_, m)| !m) {
+            gather_right.push(idx);
+        }
+        gather_left = vec![IdxSize::MAX; gather_right.len()];
+    }
+    if right_is_build {
+        swap(&mut gather_left, &mut gather_right);
+        swap(&mut left_sp, &mut right_sp);
+    }
+
     let mut df_unmatched = Default::default();
     gather_and_postprocess(
         &mut df_unmatched,
         &left,
         &right,
-        &mut gather_left_unmatched,
-        &mut gather_right_unmatched,
+        &mut gather_left,
+        &mut gather_right,
         params,
     )?;
-    dbg!(&df_unmatched);
     if !df_unmatched.is_empty() {
         let morsel = Morsel::new(df_unmatched, seq, source_token.clone());
-        if unmatched_inserter.insert(dbg!(morsel)).await.is_err() {
+        if unmatched_inserter.insert(morsel).await.is_err() {
             panic!("broken pipe");
         }
     }
