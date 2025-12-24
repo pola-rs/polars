@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use arrow::array::*;
 use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
