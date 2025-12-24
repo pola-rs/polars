@@ -579,18 +579,15 @@ struct Arenas {
 
 async fn compute_join(
     morsel: Morsel,
-    mut right: DataFrame,
+    right: DataFrame,
     params: &MergeJoinParams,
     arenas: &mut Arenas,
     send: &mut PortSender,
     unmatched_inserter: &mut MorselInserter,
 ) -> PolarsResult<()> {
-    let (mut left, seq, source_token, _wt) = morsel.into_inner();
+    let (left, seq, source_token, _wt) = morsel.into_inner();
     let mut left_sp = &params.left;
     let mut right_sp = &params.right;
-
-    left.rechunk_mut();
-    right.rechunk_mut();
 
     let left_key = left
         .column(&params.left.key_col)
