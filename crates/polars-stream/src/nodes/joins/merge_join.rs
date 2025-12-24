@@ -311,7 +311,7 @@ impl ComputeNode for MergeJoinNode {
                                 morsel.clone(),
                                 right.clone(),
                                 params,
-                                // &mut arenas,
+                                &mut arenas,
                                 &mut send,
                                 &mut unmatched_inserter,
                             )
@@ -571,17 +571,16 @@ fn vstack_head(unmerged: &mut VecDeque<DataFrame>) {
 
 #[derive(Default)]
 struct Arenas {
-    gather_left: Vec<IdxSize>,
-    gather_right: Vec<IdxSize>,
-    gather_right_unmatched: Vec<IdxSize>,
-    bitmap_arena: MutableBitmap,
+    gather1: Vec<IdxSize>,
+    gather2: Vec<IdxSize>,
+    bitmap: MutableBitmap,
 }
 
 async fn compute_join(
     morsel: Morsel,
     mut right: DataFrame,
     params: &MergeJoinParams,
-    // arenas: &mut Arenas,
+    arenas: &mut Arenas,
     send: &mut PortSender,
     unmatched_inserter: &mut MorselInserter,
 ) -> PolarsResult<()> {
@@ -611,13 +610,16 @@ async fn compute_join(
                 && right_key.null_count() > left_key.null_count());
     let right_is_build = right_build_maintain_order || right_build_optimization;
 
-    let mut gather_left = Vec::new();
-    let mut gather_right = Vec::new();
+    let mut gather_left = &mut arenas.gather1;
+    let mut gather_right = &mut arenas.gather2;
+    let mut matched_probeside = &mut arenas.bitmap;
 
-    let mut matched_probeside = match right_is_build {
-        false => MutableBitmap::from_len_zeroed(right_key.len()),
-        true => MutableBitmap::from_len_zeroed(left_key.len()),
-    };
+    matched_probeside.clear();
+    if right_is_build {
+        matched_probeside.resize(left_key.len(), false);
+    } else {
+        matched_probeside.resize(right_key.len(), false);
+    }
 
     let mut current_offset = 0;
     let mut done = false;
@@ -676,9 +678,9 @@ async fn compute_join(
     }
     if right_sp.emit_unmatched {
         for (idx, _) in matched_probeside.iter().enumerate_idx().filter(|(_, m)| !m) {
+            gather_left.push(IdxSize::MAX);
             gather_right.push(idx);
         }
-        gather_left = vec![IdxSize::MAX; gather_right.len()];
     }
     if right_is_build {
         swap(&mut gather_left, &mut gather_right);
