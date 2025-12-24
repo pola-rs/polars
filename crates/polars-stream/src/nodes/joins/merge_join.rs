@@ -24,8 +24,6 @@ use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
 use crate::nodes::ComputeNode;
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 
-// TODO: [amber] Optimize the compute_join implementation to not use any Series.get()
-// TODO: [amber] Compute the initial row-encoding in parallel (during lowering)
 // TODO: [amber] I think I want to have the inner join dispatch to another streaming
 // equi join node rather than dispatching to in-memory engine?
 // TODO: [amber] Use an InMemorySource node for the unmatched values
@@ -247,8 +245,7 @@ impl ComputeNode for MergeJoinNode {
             let send = send_ports[0].take().unwrap().parallel();
             let (mut distributor, dist_recv) =
                 distributor_channel(send.len(), *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
-            let (mut unmatched_linearizer, unmatched_send) =
-                MorselLinearizer::new(dist_recv.len(), 1);
+            let (unmatched_send, mut unmatched_recv) = tokio::sync::mpsc::channel(send.len());
 
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 let source_token = SourceToken::new();
@@ -301,29 +298,28 @@ impl ComputeNode for MergeJoinNode {
                 Ok(())
             }));
 
-            join_handles.extend(dist_recv.into_iter().zip(send).zip(unmatched_send).map(
-                |((mut recv, mut send), mut unmatched_inserter)| {
-                    scope.spawn_task(TaskPriority::Low, async move {
-                        let mut arenas = Arenas::default();
+            join_handles.extend(dist_recv.into_iter().zip(send).map(|(mut recv, mut send)| {
+                let unmatched_send = unmatched_send.clone();
+                scope.spawn_task(TaskPriority::Low, async move {
+                    let mut arenas = Arenas::default();
 
-                        while let Ok((morsel, right)) = recv.recv().await {
-                            compute_join(
-                                morsel.clone(),
-                                right.clone(),
-                                params,
-                                &mut arenas,
-                                &mut send,
-                                &mut unmatched_inserter,
-                            )
-                            .await?;
-                        }
-                        Ok(())
-                    })
-                },
-            ));
+                    while let Ok((morsel, right)) = recv.recv().await {
+                        compute_join(
+                            morsel.clone(),
+                            right.clone(),
+                            params,
+                            &mut arenas,
+                            &mut send,
+                            unmatched_send.clone(),
+                        )
+                        .await?;
+                    }
+                    Ok(())
+                })
+            }));
 
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                while let Some(morsel) = unmatched_linearizer.get().await {
+                while let Some(morsel) = unmatched_recv.recv().await {
                     let (df, seq, _st, _) = morsel.into_inner();
                     if let Some(append_to) = unmatched.get_mut(&seq) {
                         append_to.vstack_mut_owned(df)?;
@@ -582,8 +578,8 @@ async fn compute_join(
     mut right: DataFrame,
     params: &MergeJoinParams,
     arenas: &mut Arenas,
-    send: &mut PortSender,
-    unmatched_inserter: &mut MorselInserter,
+    matched_send: &mut PortSender,
+    unmatched_send: tokio::sync::mpsc::Sender<Morsel>,
 ) -> PolarsResult<()> {
     let (mut left, seq, source_token, _wt) = morsel.into_inner();
     let mut left_sp = &params.left;
@@ -662,7 +658,7 @@ async fn compute_join(
 
         if !df.is_empty() {
             let morsel = Morsel::new(df, seq, source_token.clone());
-            if send.send(morsel).await.is_err() {
+            if matched_send.send(morsel).await.is_err() {
                 panic!("broken pipe");
             };
         }
@@ -702,7 +698,7 @@ async fn compute_join(
     )?;
     if !df_unmatched.is_empty() {
         let morsel = Morsel::new(df_unmatched, seq, source_token.clone());
-        if unmatched_inserter.insert(morsel).await.is_err() {
+        if unmatched_send.send(morsel).await.is_err() {
             panic!("broken pipe");
         }
     }
