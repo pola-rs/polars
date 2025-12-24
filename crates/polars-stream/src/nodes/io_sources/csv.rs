@@ -473,14 +473,14 @@ impl LineBatchSource {
         let mut read_size = 512 * 1024; // L2 sized chunks performed the best in testing.
 
         loop {
-            let (mem_slice, read_n) = reader.read_next_slice(&prev_leftover, read_size)?;
+            let (mem_slice, bytes_read) = reader.read_next_slice(&prev_leftover, read_size)?;
             if mem_slice.is_empty() {
                 break;
             }
 
             mem_slice.prefetch();
 
-            let is_eof = read_n == 0;
+            let is_eof = bytes_read == 0;
             let (n_lines, unconsumed_offset) = line_counter.count_rows(&mem_slice, is_eof);
 
             let batch_slice = mem_slice.slice(0..unconsumed_offset);
@@ -538,7 +538,7 @@ impl LineBatchSource {
                 break;
             }
 
-            if read_n == 0 {
+            if is_eof {
                 break;
             }
         }
@@ -658,7 +658,7 @@ impl ChunkReader {
 /// Returns the leftover bytes not yet consumed, which may be empty.
 ///
 /// The reading is done in an iterative streaming fashion
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub fn read_until_starting_point(
     quote_char: Option<u8>,
     eol_char: u8,
@@ -774,7 +774,7 @@ pub fn for_each_line_from_reader(
     let mut read_size = 128 * 1024;
 
     loop {
-        let (mut slice, read_n) = reader.read_next_slice(&prev_leftover, read_size)?;
+        let (mut slice, bytes_read) = reader.read_next_slice(&prev_leftover, read_size)?;
         if slice.is_empty() {
             return Ok(MemSlice::EMPTY);
         }
@@ -808,7 +808,7 @@ pub fn for_each_line_from_reader(
 
         // EOF file reached, the last line will have no continuation on the next call to
         // `read_next_slice`.
-        if read_n == 0 {
+        if bytes_read == 0 {
             if !line_fn(prev_line)? {
                 // The `line_fn` wants to consume more lines, but there aren't any.
                 // Make sure to report to the caller that there is no leftover.
@@ -842,12 +842,10 @@ fn skip_lines_naive(
     let mut read_size = 128 * 1024;
 
     loop {
-        let (slice, read_n) = reader.read_next_slice(&prev_leftover, read_size)?;
+        let (slice, bytes_read) = reader.read_next_slice(&prev_leftover, read_size)?;
         let mut bytes: &[u8] = &slice;
 
         'inner: loop {
-            // One would think that next_line_position_naive would be the right fit here, but it
-            // does extra logic that messes with chunk ends.
             let Some(mut pos) = memchr::memchr(eol_char, bytes) else {
                 read_size *= 2;
                 break 'inner;
@@ -865,7 +863,7 @@ fn skip_lines_naive(
         }
 
         polars_ensure!(
-            read_n > 0,
+            bytes_read > 0,
             NoData: "specified skip_lines is larger than total number of lines."
         );
 
