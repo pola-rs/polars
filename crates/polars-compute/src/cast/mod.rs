@@ -336,14 +336,13 @@ fn cast_list_uint8_to_binary<O: Offset>(list: &ListArray<O>) -> PolarsResult<Bin
         cloned_buffers.clear();
     }
 
-    let result_buffers = cloned_buffers.into_boxed_slice().into();
     let result = if cfg!(debug_assertions) {
         // A safer wrapper around new_unchecked_unknown_md; it shouldn't ever
         // fail in practice.
         BinaryViewArrayGeneric::try_new(
             ArrowDataType::BinaryView,
             views.into(),
-            result_buffers,
+            cloned_buffers.into(),
             result_validity.into(),
         )?
     } else {
@@ -351,7 +350,7 @@ fn cast_list_uint8_to_binary<O: Offset>(list: &ListArray<O>) -> PolarsResult<Bin
             BinaryViewArrayGeneric::new_unchecked_unknown_md(
                 ArrowDataType::BinaryView,
                 views.into(),
-                result_buffers,
+                cloned_buffers.into(),
                 result_validity.into(),
                 // We could compute this ourselves, but we want to make this code
                 // match debug_assertions path as much as possible.

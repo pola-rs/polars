@@ -277,6 +277,11 @@ impl<T> Buffer<T> {
     pub fn storage_refcount(&self) -> u64 {
         self.storage.refcount()
     }
+
+    /// Whether these two buffers share the exact same data.
+    pub fn is_same_buffer(&self, other: &Self) -> bool {
+        self.ptr == other.ptr && self.length == other.length
+    }
 }
 
 impl<T: Pod> Buffer<T> {
