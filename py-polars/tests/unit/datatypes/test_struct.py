@@ -1598,6 +1598,14 @@ def test_struct_with_fields_non_deterministic_24568() -> None:
             pl.DataFrame({"g": [10, 20], "s": [[{"x": 1}, {"x": 2}], [{"x": 5}]]}),
         ),
         (
+            pl.field("x") + pl.lit(1),
+            pl.DataFrame({"g": [10, 20], "s": [[{"x": 11}, {"x": 21}], [{"x": 31}]]}),
+        ),
+        (
+            pl.field("x") + pl.col("a") + pl.lit(1),
+            pl.DataFrame({"g": [10, 20], "s": [[{"x": 12}, {"x": 23}], [{"x": 36}]]}),
+        ),
+        (
             pl.field("x") + pl.col("a").cum_sum(),
             pl.DataFrame({"g": [10, 20], "s": [[{"x": 11}, {"x": 23}], [{"x": 35}]]}),
         ),
@@ -1616,6 +1624,10 @@ def test_struct_with_fields_non_deterministic_24568() -> None:
         (
             pl.field("x") + pl.col("a").last(),
             pl.DataFrame({"g": [10, 20], "s": [[{"x": 12}, {"x": 22}], [{"x": 35}]]}),
+        ),
+        (
+            pl.field("x").last() + pl.col("a"),
+            pl.DataFrame({"g": [10, 20], "s": [[{"x": 21}, {"x": 22}], [{"x": 35}]]}),
         ),
         (
             pl.field("x").first() + pl.col("a").last(),
