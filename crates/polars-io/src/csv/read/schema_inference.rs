@@ -212,19 +212,34 @@ fn infer_file_schema_inner(
         parse_options.quote_char,
         parse_options.eol_char,
         parse_options.comment_prefix.as_ref(),
-    )
-    .skip(skip_rows);
+    );
+
+    // Store the original skip_rows for later use in !has_header case
+    let original_skip_rows = skip_rows;
+
+    // Skip 'skip_rows' non-comment lines before header
+    let mut skipped = 0;
+    while skipped < skip_rows {
+        match lines.next() {
+            Some(line) => {
+                // Only count non-comment lines towards skip_rows
+                if !is_comment_line(line, parse_options.comment_prefix.as_ref()) {
+                    skipped += 1;
+                }
+            },
+            None => break,
+        }
+    }
 
     // get or create header names
     // when has_header is false, creates default column names with column_ prefix
 
-    // skip lines that are comments
+    // skip lines that are comments to find the header
     let mut first_line = None;
 
-    for (i, line) in (&mut lines).enumerate() {
+    for line in &mut lines {
         if !is_comment_line(line, parse_options.comment_prefix.as_ref()) {
             first_line = Some(line);
-            skip_rows += i;
             break;
         }
     }
@@ -308,13 +323,24 @@ fn infer_file_schema_inner(
     };
     if !has_header {
         // re-init lines so that the header is included in type inference.
+        // We need to skip 'original_skip_rows' non-comment lines (same logic as above)
         lines = SplitLines::new(
             bytes,
             parse_options.quote_char,
             parse_options.eol_char,
             parse_options.comment_prefix.as_ref(),
-        )
-        .skip(skip_rows);
+        );
+        let mut reinit_skipped = 0;
+        while reinit_skipped < original_skip_rows {
+            match lines.next() {
+                Some(line) => {
+                    if !is_comment_line(line, parse_options.comment_prefix.as_ref()) {
+                        reinit_skipped += 1;
+                    }
+                },
+                None => break,
+            }
+        }
     }
 
     // keep track of inferred field types

@@ -2575,6 +2575,15 @@ def test_csv_invalid_quoted_comment_line() -> None:
     ).to_dict(as_series=False) == {"ColA": [1], "ColB": [2]}
 
 
+@pytest.mark.parametrize("read_fn", ["read_csv", "scan_csv"])
+def test_csv_skip_rows_with_interleaved_comments_25840(read_fn: str) -> None:
+    # skip_rows should only count non-comment lines
+    csv_data = b"// Comment line\na,b,c\n// Comment line\nRowA,RowB,RowC\nx,y,z"
+    result = getattr(pl, read_fn)(csv_data, comment_prefix="//", skip_rows=1).lazy().collect()
+    expected = pl.DataFrame({"RowA": ["x"], "RowB": ["y"], "RowC": ["z"]})
+    assert_frame_equal(result, expected)
+
+
 @pytest.mark.may_fail_auto_streaming  # missing_columns parameter for CSV
 def test_csv_compressed_new_columns_19916() -> None:
     n_rows = 100

@@ -633,15 +633,20 @@ pub fn find_starting_point(
         bytes
     };
 
-    // skip 'n' leading rows
+    // skip 'n' leading rows (comment lines are not counted)
     if skip_rows_before_header > 0 {
         let mut split_lines = SplitLines::new(bytes, quote_char, eol_char, comment_prefix);
         let mut current_line = &bytes[..0];
+        let mut skipped = 0;
 
-        for _ in 0..skip_rows_before_header {
+        while skipped < skip_rows_before_header {
             current_line = split_lines
                 .next()
                 .ok_or_else(|| polars_err!(NoData: "not enough lines to skip"))?;
+            // Only count non-comment lines
+            if !is_comment_line(current_line, comment_prefix) {
+                skipped += 1;
+            }
         }
 
         current_line = split_lines
