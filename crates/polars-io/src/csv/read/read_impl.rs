@@ -659,6 +659,12 @@ pub fn find_starting_point(
     if has_header {
         bytes = skip_this_line(bytes, quote_char, eol_char);
     }
+
+    // skip comment lines after header
+    while is_comment_line(bytes, comment_prefix) {
+        bytes = skip_this_line_naive(bytes, eol_char);
+    }
+
     // skip 'n' rows following the header
     if skip_rows_after_header > 0 {
         let mut split_lines = SplitLines::new(bytes, quote_char, eol_char, comment_prefix);

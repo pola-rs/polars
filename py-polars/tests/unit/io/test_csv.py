@@ -2575,6 +2575,21 @@ def test_csv_invalid_quoted_comment_line() -> None:
     ).to_dict(as_series=False) == {"ColA": [1], "ColB": [2]}
 
 
+@pytest.mark.parametrize("read_fn", ["read_csv", "scan_csv"])
+def test_csv_comment_after_header_25841(read_fn: str) -> None:
+    # Test that comment lines after header are properly skipped
+    csv_data = b"RowA,RowB,RowC\n// Comment line\na,b,c"
+    result = getattr(pl, read_fn)(csv_data, comment_prefix="//").lazy().collect()
+    expected = pl.DataFrame({"RowA": ["a"], "RowB": ["b"], "RowC": ["c"]})
+    assert_frame_equal(result, expected)
+
+    # Test with multiple comments after header
+    csv_data2 = b"A,B\n# Comment 1\n# Comment 2\n1,2\n3,4"
+    result2 = getattr(pl, read_fn)(csv_data2, comment_prefix="#").lazy().collect()
+    expected2 = pl.DataFrame({"A": [1, 3], "B": [2, 4]})
+    assert_frame_equal(result2, expected2)
+
+
 @pytest.mark.may_fail_auto_streaming  # missing_columns parameter for CSV
 def test_csv_compressed_new_columns_19916() -> None:
     n_rows = 100
