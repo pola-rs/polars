@@ -2977,21 +2977,27 @@ def test_write_csv_categorical_23939(dt: pl.DataType) -> None:
     "csv_str", ["A,B\n1,x\n2,y\n3,z", "A,B\n1,x\n2,y\n3,z\n", "\n\n\n\n2,u"]
 )
 def test_skip_more_lines_than_empty(read_fn: str, csv_str: str) -> None:
-    new_streaming = (
-        os.getenv("POLARS_FORCE_NEW_STREAMING") == "1"
-        or os.getenv("POLARS_AUTO_NEW_STREAMING") == "1"
-    )
+    with pytest.raises(pl.exceptions.NoDataError):
+        getattr(pl, read_fn)(io.StringIO(csv_str), skip_lines=5).lazy().collect()
 
-    if read_fn == "read_csv" and not new_streaming:
-        df = getattr(pl, read_fn)(io.StringIO(csv_str), skip_lines=5).lazy().collect()
-        # This is not the desired behavior, but it maps the current one.
-        # TODO: This should raise a NoDataError.
-        *_, last_line = csv.reader(csv_str.splitlines())
-        expected = pl.DataFrame([pl.Series(name, [], pl.String) for name in last_line])
-        assert_frame_equal(df, expected)
-    else:
-        with pytest.raises(pl.exceptions.NoDataError):
-            getattr(pl, read_fn)(io.StringIO(csv_str), skip_lines=5).lazy().collect()
+
+@pytest.mark.parametrize(
+    "read_fn",
+    ["read_csv", "scan_csv"],
+)
+def test_skip_lines_more_than_total_with_raise_if_empty_false(read_fn: str) -> None:
+    # When skip_lines exceeds total lines and raise_if_empty=False,
+    # should return empty DataFrame with provided schema
+    csv_str = "A,B\n1,x\n2,y"
+    result = getattr(pl, read_fn)(
+        io.StringIO(csv_str),
+        skip_lines=100,
+        schema={"col1": pl.String, "col2": pl.String},
+        has_header=False,
+        raise_if_empty=False,
+    ).lazy().collect()
+    expected = pl.DataFrame(schema={"col1": pl.String, "col2": pl.String})
+    assert_frame_equal(result, expected)
 
 
 @pytest.mark.parametrize(

@@ -195,7 +195,9 @@ pub(super) fn skip_lines_naive(mut input: &[u8], eol_char: u8, skip: usize) -> &
         if let Some(pos) = next_line_position_naive(input, eol_char) {
             input = &input[pos..];
         } else {
-            return input;
+            // Could not skip the requested number of lines.
+            // Return empty slice so raise_if_empty check can handle it.
+            return &[];
         }
     }
     input

@@ -464,6 +464,7 @@ impl LineBatchSource {
             options.skip_rows_after_header,
             options.parse_options.comment_prefix.as_ref(),
             options.has_header,
+            options.raise_if_empty,
             &mut reader,
         )?;
 
@@ -668,6 +669,7 @@ pub fn read_until_starting_point(
     skip_rows_after_header: usize,
     comment_prefix: Option<&CommentPrefix>,
     has_header: bool,
+    raise_if_empty: bool,
     reader: &mut CompressedReader,
 ) -> PolarsResult<MemSlice> {
     #[derive(Copy, Clone)]
@@ -687,7 +689,7 @@ pub fn read_until_starting_point(
 
     // We have to treat skip_lines differently since the lines it skips may not follow regular CSV
     // quote escape rules.
-    let prev_leftover = skip_lines_naive(eol_char, skip_lines, reader)?;
+    let prev_leftover = skip_lines_naive(eol_char, skip_lines, raise_if_empty, reader)?;
 
     let mut state = if schema_len > 1 || has_header {
         State::SkipEmpty
@@ -829,6 +831,7 @@ pub fn for_each_line_from_reader(
 fn skip_lines_naive(
     eol_char: u8,
     skip_lines: usize,
+    raise_if_empty: bool,
     reader: &mut CompressedReader,
 ) -> PolarsResult<MemSlice> {
     let mut prev_leftover = MemSlice::EMPTY;
@@ -862,10 +865,13 @@ fn skip_lines_naive(
             }
         }
 
-        polars_ensure!(
-            bytes_read > 0,
-            NoData: "specified skip_lines is larger than total number of lines."
-        );
+        if bytes_read == 0 {
+            if raise_if_empty {
+                polars_bail!(NoData: "specified skip_lines is larger than total number of lines.");
+            }
+            // Return empty slice to signal no data remaining
+            return Ok(MemSlice::EMPTY);
+        }
 
         // No need to search for naive eol twice in the leftover.
         prev_leftover = MemSlice::EMPTY;
