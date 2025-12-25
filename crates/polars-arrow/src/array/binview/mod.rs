@@ -255,6 +255,10 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         &self.buffers
     }
 
+    pub fn data_buffers_mut(&mut self) -> &mut Buffer<Buffer<u8>> {
+        &mut self.buffers
+    }
+
     pub fn variadic_buffer_lengths(&self) -> Vec<i64> {
         self.buffers.iter().map(|buf| buf.len() as i64).collect()
     }
@@ -310,6 +314,20 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
             total_bytes_len,
             total_buffer_len,
         )
+    }
+
+    /// Apply a function to the views as a mutable slice.
+    ///
+    /// # Safety
+    /// All invariants of the views must be maintained.
+    pub unsafe fn with_views_mut<F: FnOnce(&mut [View])>(&mut self, f: F) {
+        if let Some(views) = self.views.get_mut_slice() {
+            f(views)
+        } else {
+            let mut views = self.views.to_vec();
+            f(&mut views);
+            self.views = Buffer::from(views);
+        }
     }
 
     pub fn try_new(
