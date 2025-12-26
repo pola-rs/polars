@@ -2988,13 +2988,17 @@ def test_skip_lines_more_than_total_with_raise_if_empty_false(read_fn: str) -> N
     # When skip_lines exceeds total lines and raise_if_empty=False,
     # should return empty DataFrame with provided schema
     csv_str = "A,B\n1,x\n2,y"
-    result = getattr(pl, read_fn)(
-        io.StringIO(csv_str),
-        skip_lines=100,
-        schema={"col1": pl.String, "col2": pl.String},
-        has_header=False,
-        raise_if_empty=False,
-    ).lazy().collect()
+    result = (
+        getattr(pl, read_fn)(
+            io.StringIO(csv_str),
+            skip_lines=100,
+            schema={"col1": pl.String, "col2": pl.String},
+            has_header=False,
+            raise_if_empty=False,
+        )
+        .lazy()
+        .collect()
+    )
     expected = pl.DataFrame(schema={"col1": pl.String, "col2": pl.String})
     assert_frame_equal(result, expected)
 
