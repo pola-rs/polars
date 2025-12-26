@@ -2579,7 +2579,11 @@ def test_csv_invalid_quoted_comment_line() -> None:
 def test_csv_skip_rows_with_interleaved_comments_25840(read_fn: str) -> None:
     # skip_rows should only count non-comment lines
     csv_data = b"// Comment line\na,b,c\n// Comment line\nRowA,RowB,RowC\nx,y,z"
-    result = getattr(pl, read_fn)(csv_data, comment_prefix="//", skip_rows=1).lazy().collect()
+    result = (
+        getattr(pl, read_fn)(csv_data, comment_prefix="//", skip_rows=1)
+        .lazy()
+        .collect()
+    )
     expected = pl.DataFrame({"RowA": ["x"], "RowB": ["y"], "RowC": ["z"]})
     assert_frame_equal(result, expected)
 

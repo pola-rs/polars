@@ -189,9 +189,7 @@ fn infer_file_schema_inner(
     max_read_rows: Option<usize>,
     has_header: bool,
     schema_overwrite: Option<&Schema>,
-    // we take &mut because we maybe need to skip more rows dependent
-    // on the schema inference
-    mut skip_rows: usize,
+    skip_rows: usize,
     skip_rows_after_header: usize,
     recursion_count: u8,
     raise_if_empty: bool,
