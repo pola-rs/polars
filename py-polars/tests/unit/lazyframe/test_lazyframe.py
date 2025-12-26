@@ -1698,3 +1698,23 @@ def test_cache_hit_child_removal() -> None:
     assert_frame_equal(df1.tail(3), df, check_row_order=False)
     assert_frame_equal(df2.head(3), df, check_row_order=False)
     assert_frame_equal(df2.tail(3), df, check_row_order=False)
+
+
+# https://github.com/pola-rs/polars/issues/25727
+def test_concat_with_empty_dataframes_streaming() -> None:
+    df = pl.LazyFrame({"a": [1, 2], "b": ["x", "y"]})
+    result = pl.concat([df, df.select([])], how="horizontal", strict=False).collect(
+        engine="streaming"
+    )
+    expected = pl.DataFrame({"a": [1, 2], "b": ["x", "y"]})
+    assert_frame_equal(result, expected)
+
+    empty_df = pl.LazyFrame(schema={"c": pl.Int64})
+    result = pl.concat([empty_df, df], how="horizontal", strict=False).collect(
+        engine="streaming"
+    )
+    expected = pl.DataFrame(
+        {"c": [None, None], "a": [1, 2], "b": ["x", "y"]},
+        schema={"c": pl.Int64, "a": pl.Int64, "b": pl.String},
+    )
+    assert_frame_equal(result, expected)
