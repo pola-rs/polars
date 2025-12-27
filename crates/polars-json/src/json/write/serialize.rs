@@ -28,8 +28,8 @@ fn write_integer<I: itoa::Integer>(buf: &mut Vec<u8>, val: I) {
     buf.extend_from_slice(value.as_bytes())
 }
 
-fn write_float<I: ryu::Float>(f: &mut Vec<u8>, val: I) {
-    let mut buffer = ryu::Buffer::new();
+fn write_float<I: zmij::Float>(f: &mut Vec<u8>, val: I) {
+    let mut buffer = zmij::Buffer::new();
     let value = buffer.format(val);
     f.extend_from_slice(value.as_bytes())
 }
@@ -99,7 +99,7 @@ fn float_serializer<'a, T>(
     take: usize,
 ) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync>
 where
-    T: num_traits::Float + NativeType + ryu::Float,
+    T: num_traits::Float + NativeType + zmij::Float,
 {
     let f = |x: Option<&T>, buf: &mut Vec<u8>| {
         if let Some(x) = x {
