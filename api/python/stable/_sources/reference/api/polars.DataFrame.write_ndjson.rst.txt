@@ -1,0 +1,6 @@
+﻿polars.DataFrame.write\_ndjson
+==============================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.write_ndjson

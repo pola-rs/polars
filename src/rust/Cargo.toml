@@ -1,0 +1,157 @@
+[package]
+name = "polars-doc-examples"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+description = "Code examples included in the Polars documentation website"
+
+[dependencies]
+aws-config = { version = "1" }
+aws-sdk-s3 = { version = "1" }
+aws-smithy-checksums = { version = "0.60.10" }
+chrono = { workspace = true }
+rand = { workspace = true }
+reqwest = { workspace = true, features = ["blocking", "default-tls"] }
+tokio = { workspace = true }
+
+[dependencies.polars]
+workspace = true
+
+[[bin]]
+name = "home"
+path = "home/example.rs"
+required-features = ["polars/lazy", "polars/csv"]
+
+[[bin]]
+name = "getting-started"
+path = "user-guide/getting-started.rs"
+required-features = ["polars/lazy", "polars/temporal", "polars/round_series", "polars/strings", "polars/is_between"]
+
+[[bin]]
+name = "concepts-data-types-and-structures"
+path = "user-guide/concepts/data-types-and-structures.rs"
+required-features = ["polars/lazy", "polars/temporal"]
+
+[[bin]]
+name = "concepts-expressions"
+path = "user-guide/concepts/expressions.rs"
+required-features = ["polars/lazy", "polars/temporal", "polars/is_between"]
+[[bin]]
+name = "concepts-lazy-vs-eager"
+path = "user-guide/concepts/lazy-vs-eager.rs"
+required-features = ["polars/lazy", "polars/csv"]
+[[bin]]
+name = "concepts-streaming"
+path = "user-guide/concepts/streaming.rs"
+required-features = ["polars/lazy", "polars/csv", "polars/new_streaming"]
+
+[[bin]]
+name = "expressions-aggregation"
+path = "user-guide/expressions/aggregation.rs"
+required-features = ["polars/lazy", "polars/csv", "polars/temporal", "polars/dtype-categorical"]
+[[bin]]
+name = "expressions-casting"
+path = "user-guide/expressions/casting.rs"
+required-features = ["polars/lazy", "polars/temporal", "polars/strings", "polars/dtype-u8"]
+[[bin]]
+name = "expressions-column-selections"
+path = "user-guide/expressions/column-selections.rs"
+required-features = ["polars/lazy", "polars/temporal", "polars/regex"]
+[[bin]]
+name = "expressions-folds"
+path = "user-guide/expressions/folds.rs"
+required-features = ["polars/lazy", "polars/strings", "polars/concat_str", "polars/temporal"]
+[[bin]]
+name = "expressions-expression-expansion"
+path = "user-guide/expressions/expression-expansion.rs"
+required-features = ["polars/lazy", "polars/round_series", "polars/regex"]
+[[bin]]
+name = "expressions-lists"
+path = "user-guide/expressions/lists.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "expressions-missing-data"
+path = "user-guide/expressions/missing-data.rs"
+required-features = ["polars/lazy", "polars/interpolate"]
+[[bin]]
+name = "expressions-operations"
+path = "user-guide/expressions/operations.rs"
+required-features = ["polars/lazy", "polars/approx_unique", "polars/dtype-struct", "polars/unique_counts"]
+[[bin]]
+name = "expressions-strings"
+path = "user-guide/expressions/strings.rs"
+required-features = ["polars/lazy", "polars/strings", "polars/regex"]
+[[bin]]
+name = "expressions-structs"
+path = "user-guide/expressions/structs.rs"
+required-features = ["polars/lazy", "polars/dtype-struct", "polars/rank", "polars/strings", "polars/temporal"]
+[[bin]]
+name = "expressions-window"
+path = "user-guide/expressions/window.rs"
+required-features = ["polars/lazy", "polars/csv", "polars/rank"]
+
+[[bin]]
+name = "io-cloud-storage"
+path = "user-guide/io/cloud-storage.rs"
+required-features = ["polars/csv"]
+[[bin]]
+name = "io-csv"
+path = "user-guide/io/csv.rs"
+required-features = ["polars/lazy", "polars/csv"]
+[[bin]]
+name = "io-json"
+path = "user-guide/io/json.rs"
+required-features = ["polars/lazy", "polars/json"]
+[[bin]]
+name = "io-parquet"
+path = "user-guide/io/parquet.rs"
+required-features = ["polars/lazy", "polars/parquet"]
+
+[[bin]]
+name = "transformations-concatenation"
+path = "user-guide/transformations/concatenation.rs"
+required-features = ["polars/lazy", "polars/diagonal_concat"]
+[[bin]]
+name = "transformations-joins"
+path = "user-guide/transformations/joins.rs"
+required-features = [
+  "polars/lazy",
+  "polars/strings",
+  "polars/semi_anti_join",
+  "polars/iejoin",
+  "polars/cross_join",
+  "polars/temporal",
+  "polars/asof_join",
+]
+[[bin]]
+name = "transformations-unpivot"
+path = "user-guide/transformations/unpivot.rs"
+required-features = ["polars/pivot"]
+[[bin]]
+name = "transformations-pivot"
+path = "user-guide/transformations/pivot.rs"
+required-features = ["polars/lazy", "polars/pivot"]
+
+[[bin]]
+name = "transformations-time-series-filter"
+path = "user-guide/transformations/time-series/filter.rs"
+required-features = ["polars/lazy", "polars/strings", "polars/temporal"]
+[[bin]]
+name = "transformations-time-series-parsing"
+path = "user-guide/transformations/time-series/parsing.rs"
+required-features = ["polars/lazy", "polars/strings", "polars/temporal", "polars/timezones"]
+[[bin]]
+name = "transformations-time-series-resampling"
+path = "user-guide/transformations/time-series/resampling.rs"
+required-features = ["polars/lazy", "polars/temporal", "polars/interpolate"]
+[[bin]]
+name = "transformations-time-series-rolling"
+path = "user-guide/transformations/time-series/rolling.rs"
+required-features = ["polars/lazy", "polars/temporal", "polars/dynamic_group_by", "polars/cum_agg"]
+[[bin]]
+name = "transformations-time-series-timezones"
+path = "user-guide/transformations/time-series/timezones.rs"
+required-features = ["polars/lazy", "polars/temporal", "polars/timezones", "polars/strings"]

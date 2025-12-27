@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["arg_max_binary","arg_max_bool","arg_max_numeric","arg_max_str","arg_min_binary","arg_min_bool","arg_min_numeric","arg_min_str"],"trait":["ArgAgg"]};
