@@ -106,7 +106,25 @@ fn ord_binary(a: Vec<u8>, b: Vec<u8>, max: bool) -> Vec<u8> {
             _ => {},
         }
     }
-    a
+
+    // Handle equal prefix
+    match a.len().cmp(&b.len()) {
+        std::cmp::Ordering::Greater => {
+            if max {
+                a
+            } else {
+                b
+            }
+        },
+        std::cmp::Ordering::Less => {
+            if max {
+                b
+            } else {
+                a
+            }
+        },
+        std::cmp::Ordering::Equal => a,
+    }
 }
 
 fn reduce_boolean<'a, I: Iterator<Item = &'a BooleanStatistics>>(
