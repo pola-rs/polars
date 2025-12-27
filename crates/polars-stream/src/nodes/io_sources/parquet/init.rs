@@ -240,6 +240,7 @@ impl ParquetReadImpl {
                     morsel_seq = morsel_seq.successor();
                 }
             }
+
             PolarsResult::Ok(())
         });
 
@@ -345,7 +346,7 @@ fn filtered_range(exclude: &[usize], len: usize) -> impl Iterator<Item = usize> 
     })
 }
 
-fn split_to_morsels(
+pub(crate) fn split_to_morsels(
     df: &DataFrame,
     ideal_morsel_size: usize,
     last_morsel: bool,
