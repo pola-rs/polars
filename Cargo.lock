@@ -3166,12 +3166,12 @@ dependencies = [
  "polars-utils",
  "proptest",
  "rand 0.9.1",
- "ryu",
  "schemars",
  "serde",
  "strength_reduce",
  "strum_macros 0.27.1",
  "version_check",
+ "zmij",
 ]
 
 [[package]]
@@ -3341,7 +3341,6 @@ dependencies = [
  "rayon",
  "regex",
  "reqwest",
- "ryu",
  "schemars",
  "serde",
  "serde_json",
@@ -3351,6 +3350,7 @@ dependencies = [
  "strum_macros 0.27.1",
  "tempfile",
  "tokio",
+ "zmij",
  "zstd",
 ]
 
@@ -3369,9 +3369,9 @@ dependencies = [
  "polars-compute",
  "polars-error",
  "polars-utils",
- "ryu",
  "simd-json",
  "streaming-iterator",
+ "zmij",
 ]
 
 [[package]]
@@ -6258,6 +6258,12 @@ name = "zlib-rs"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "626bd9fa9734751fc50d6060752170984d7053f5a39061f524cda68023d4db8a"
+
+[[package]]
+name = "zmij"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6d6085d62852e35540689d1f97ad663e3971fc19cf5eceab364d62c646ea167"
 
 [[package]]
 name = "zstd"

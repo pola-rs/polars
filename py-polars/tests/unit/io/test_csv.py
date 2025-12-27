@@ -2862,7 +2862,7 @@ def test_write_csv_large_number_autoformat_decimal_comma() -> None:
         include_header=False,
     )
     buf.seek(0)
-    expected = b'"1,2345678901234567e19","1e24"\n'  # note, excessive quoting when fractional is all-zero, ok to relax
+    expected = b'"1,2345678901234567e+19","1e+24"\n'  # note, excessive quoting when fractional is all-zero, ok to relax
     assert buf.read() == expected
 
 
