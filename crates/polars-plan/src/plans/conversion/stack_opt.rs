@@ -2,7 +2,7 @@ use std::borrow::Borrow;
 
 use self::type_check::TypeCheckRule;
 use super::*;
-use crate::constants::get_pl_element_name;
+use crate::constants::{get_pl_element_name, get_pl_structfields_name};
 
 /// Applies expression simplification and type coercion during conversion to IR.
 pub struct ConversionOptimizer {
@@ -65,7 +65,8 @@ impl ConversionOptimizer {
         self.scratch.push((expr, 0));
         // traverse all subexpressions and add to the stack
         let expr = unsafe { expr_arena.get_unchecked(expr) };
-        expr.inputs_rev(&mut ExtendVec {
+
+        expr.inputs_rev_strict(&mut ExtendVec {
             out: &mut self.scratch,
             schema_idx: 0,
         });
@@ -128,7 +129,7 @@ impl ConversionOptimizer {
             }
 
             // Evaluation expressions still need to do rules on the evaluation expression but the
-            // schema is not the same and it is not concluded in the inputs. Therefore, we handl
+            // schema is not the same and it is not concluded in the inputs.
             if let AExpr::Eval {
                 expr,
                 evaluation,
@@ -149,6 +150,27 @@ impl ConversionOptimizer {
                 schema.insert(get_pl_element_name(), element_dtype.clone());
                 self.schemas.push(schema);
                 self.scratch.push((*evaluation, self.schemas.len()));
+            }
+
+            // Similar for StructEval
+            // Effectively, we are mimicking in-order processing traversal logic (left > parent > right).
+            #[cfg(feature = "dtype-struct")]
+            if let AExpr::StructEval { expr, evaluation } = expr {
+                let schema = if schema_idx == 0 {
+                    &schema
+                } else {
+                    &self.schemas[schema_idx - 1]
+                };
+                let struct_dtype = expr_arena
+                    .get(*expr)
+                    .to_dtype(&ToFieldContext::new(expr_arena, schema))?;
+
+                let mut schema = schema.clone();
+                schema.insert(get_pl_structfields_name(), struct_dtype);
+                self.schemas.push(schema);
+                for e in evaluation {
+                    self.scratch.push((e.node(), self.schemas.len()))
+                }
             }
 
             let schema = if schema_idx == 0 {
@@ -174,7 +196,7 @@ impl ConversionOptimizer {
 
             let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
             // traverse subexpressions and add to the stack
-            expr.inputs_rev(&mut ExtendVec {
+            expr.inputs_rev_strict(&mut ExtendVec {
                 out: &mut self.scratch,
                 schema_idx,
             });

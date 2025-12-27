@@ -84,7 +84,9 @@ impl StructNameSpace {
     }
 
     pub fn with_fields(self, fields: Vec<Expr>) -> Expr {
-        self.0
-            .map_n_ary(FunctionExpr::StructExpr(StructFunction::WithFields), fields)
+        Expr::StructEval {
+            expr: Arc::new(self.0),
+            evaluation: fields,
+        }
     }
 }
