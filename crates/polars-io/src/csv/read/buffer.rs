@@ -11,6 +11,7 @@ use polars_time::chunkedarray::string::Pattern;
 use polars_time::prelude::string::infer::{
     DatetimeInfer, StrpTimeParser, TryFromWithUnit, infer_pattern_single,
 };
+use polars_utils::error::SanitizeErrorDetail;
 #[cfg(feature = "dtype-f16")]
 use polars_utils::float16::pf16;
 use polars_utils::vec::PushUnchecked;
@@ -357,9 +358,10 @@ impl ParsedBuffer for BooleanChunkedBuilder {
         } else if ignore_errors || bytes.is_empty() {
             self.append_null();
         } else {
+            let lossy = String::from_utf8_lossy(bytes);
             polars_bail!(
                 ComputeError: "error while parsing value {} as boolean",
-                String::from_utf8_lossy(bytes),
+                SanitizeErrorDetail(&lossy),
             );
         }
         Ok(())
