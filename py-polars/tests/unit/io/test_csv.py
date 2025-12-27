@@ -1553,75 +1553,79 @@ def test_csv_categorical_categorical_merge() -> None:
 
 @pytest.mark.write_disk
 def test_batched_csv_reader(foods_file_path: Path) -> None:
-    reader = pl.read_csv_batched(foods_file_path, batch_size=4)
-    assert isinstance(reader, BatchedCsvReader)
+    with pytest.deprecated_call():
+        reader = pl.read_csv_batched(foods_file_path, batch_size=4)
+        assert isinstance(reader, BatchedCsvReader)
 
-    batches = reader.next_batches(5)
-    assert batches is not None
-    out = pl.concat(batches)
-    assert_frame_equal(out, pl.read_csv(foods_file_path).head(out.height))
-
-    # the final batch of the low-memory variant is different
-    reader = pl.read_csv_batched(foods_file_path, batch_size=4, low_memory=True)
-    batches = reader.next_batches(10)
-    assert batches is not None
-
-    assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))
-
-    reader = pl.read_csv_batched(foods_file_path, batch_size=4, low_memory=True)
-    batches = reader.next_batches(10)
-    assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))  # type: ignore[arg-type]
-
-    # ragged lines
-    with NamedTemporaryFile() as tmp:
-        data = b"A\nB,ragged\nC"
-        tmp.write(data)
-        tmp.seek(0)
-
-        expected = pl.DataFrame({"A": ["B", "C"]})
-        batches = pl.read_csv_batched(
-            tmp.name,
-            has_header=True,
-            truncate_ragged_lines=True,
-        ).next_batches(1)
-
+        batches = reader.next_batches(5)
         assert batches is not None
-        assert_frame_equal(pl.concat(batches), expected)
+        out = pl.concat(batches)
+        assert_frame_equal(out, pl.read_csv(foods_file_path).head(out.height))
+
+        # the final batch of the low-memory variant is different
+        reader = pl.read_csv_batched(foods_file_path, batch_size=4, low_memory=True)
+        batches = reader.next_batches(10)
+        assert batches is not None
+
+        assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))
+
+        reader = pl.read_csv_batched(foods_file_path, batch_size=4, low_memory=True)
+        batches = reader.next_batches(10)
+        assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))  # type: ignore[arg-type]
+
+        # ragged lines
+        with NamedTemporaryFile() as tmp:
+            data = b"A\nB,ragged\nC"
+            tmp.write(data)
+            tmp.seek(0)
+
+            expected = pl.DataFrame({"A": ["B", "C"]})
+            batches = pl.read_csv_batched(
+                tmp.name,
+                has_header=True,
+                truncate_ragged_lines=True,
+            ).next_batches(1)
+
+            assert batches is not None
+            assert_frame_equal(pl.concat(batches), expected)
 
 
 def test_batched_csv_reader_empty(io_files_path: Path) -> None:
-    empty_csv = io_files_path / "empty.csv"
-    with pytest.raises(NoDataError, match="empty CSV"):
-        pl.read_csv_batched(source=empty_csv)
+    with pytest.deprecated_call():
+        empty_csv = io_files_path / "empty.csv"
+        with pytest.raises(NoDataError, match="empty CSV"):
+            pl.read_csv_batched(source=empty_csv)
 
-    reader = pl.read_csv_batched(source=empty_csv, raise_if_empty=False)
-    assert reader.next_batches(1) is None
+        reader = pl.read_csv_batched(source=empty_csv, raise_if_empty=False)
+        assert reader.next_batches(1) is None
 
 
 def test_batched_csv_reader_all_batches(foods_file_path: Path) -> None:
-    for new_columns in [None, ["Category", "Calories", "Fats_g", "Sugars_g"]]:
-        out = pl.read_csv(foods_file_path, new_columns=new_columns)
-        reader = pl.read_csv_batched(
-            foods_file_path, new_columns=new_columns, batch_size=4
-        )
-        batches = reader.next_batches(5)
-        batched_dfs = []
-
-        while batches:
-            batched_dfs.extend(batches)
+    with pytest.deprecated_call():
+        for new_columns in [None, ["Category", "Calories", "Fats_g", "Sugars_g"]]:
+            out = pl.read_csv(foods_file_path, new_columns=new_columns)
+            reader = pl.read_csv_batched(
+                foods_file_path, new_columns=new_columns, batch_size=4
+            )
             batches = reader.next_batches(5)
+            batched_dfs = []
 
-        assert all(x.height > 0 for x in batched_dfs)
+            while batches:
+                batched_dfs.extend(batches)
+                batches = reader.next_batches(5)
 
-        batched_concat_df = pl.concat(batched_dfs, rechunk=True)
-        assert_frame_equal(out, batched_concat_df)
+            assert all(x.height > 0 for x in batched_dfs)
+
+            batched_concat_df = pl.concat(batched_dfs, rechunk=True)
+            assert_frame_equal(out, batched_concat_df)
 
 
 def test_batched_csv_reader_no_batches(foods_file_path: Path) -> None:
-    reader = pl.read_csv_batched(foods_file_path, batch_size=4)
-    batches = reader.next_batches(0)
+    with pytest.deprecated_call():
+        reader = pl.read_csv_batched(foods_file_path, batch_size=4)
+        batches = reader.next_batches(0)
 
-    assert batches is None
+        assert batches is None
 
 
 def test_read_csv_batched_invalid_source() -> None:
@@ -2507,13 +2511,14 @@ time
 
 
 def test_batched_csv_schema_overrides(io_files_path: Path) -> None:
-    foods = io_files_path / "foods1.csv"
-    batched = pl.read_csv_batched(foods, schema_overrides={"calories": pl.String})
-    res = batched.next_batches(1)
-    assert res is not None
-    b = res[0]
-    assert b["calories"].dtype == pl.String
-    assert b.width == 4
+    with pytest.deprecated_call():
+        foods = io_files_path / "foods1.csv"
+        batched = pl.read_csv_batched(foods, schema_overrides={"calories": pl.String})
+        res = batched.next_batches(1)
+        assert res is not None
+        b = res[0]
+        assert b["calories"].dtype == pl.String
+        assert b.width == 4
 
 
 def test_csv_ragged_lines_20062() -> None:
