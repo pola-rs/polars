@@ -24,8 +24,6 @@ pub static RUNTIME_REPR: &str = "unknown";
 use pyo3::prelude::*;
 use pyo3::{wrap_pyfunction, wrap_pymodule};
 
-#[cfg(feature = "csv")]
-use crate::batched_csv::PyBatchedCsv;
 #[cfg(feature = "catalog")]
 use crate::catalog::unity::PyCatalogClient;
 #[cfg(feature = "polars_cloud_client")]
@@ -120,8 +118,6 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyDataTypeExpr>().unwrap();
     m.add_class::<PySelector>().unwrap();
     m.add_class::<PyStringCacheHolder>().unwrap();
-    #[cfg(feature = "csv")]
-    m.add_class::<PyBatchedCsv>().unwrap();
     #[cfg(feature = "sql")]
     m.add_class::<PySQLContext>().unwrap();
     m.add_class::<PyCategories>().unwrap();
