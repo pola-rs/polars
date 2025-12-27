@@ -40,7 +40,6 @@ pyo3 = { workspace = true, optional = true }
 rayon = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true, optional = true, features = ["json"] }
-zmij = { workspace = true, optional = true }
 schemars = { workspace = true, optional = true }
 serde = { workspace = true, features = ["rc"], optional = true }
 serde_json = { version = "1", optional = true }
@@ -49,6 +48,7 @@ simdutf8 = { workspace = true, optional = true }
 strum = { workspace = true, optional = true }
 strum_macros = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["fs", "net", "rt-multi-thread", "time", "sync"], optional = true }
+zmij = { workspace = true, optional = true }
 zstd = { workspace = true, optional = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
