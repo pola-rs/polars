@@ -27,7 +27,6 @@ mod utils;
 
 pub use options::{CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues};
 pub use parser::{SplitLines, count_rows, count_rows_from_slice_par};
-pub use read_impl::batched::{BatchedCsvReader, OwnedBatchedCsvReader};
 pub use reader::CsvReader;
 pub use schema_inference::infer_file_schema;
 
