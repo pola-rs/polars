@@ -283,7 +283,7 @@ def read_excel(
         `sheet_name` are specified). Can also take a sequence of sheet numbers.
     sheet_name
         Sheet name(s) to convert. Can be a string, a list/tuple of strings, or a
-        functionthat takes a sheet name and returns a boolean. Cannot be used in
+        function that takes a sheet name and returns a boolean. Cannot be used in
         conjunction with `sheet_id`. If more than one sheet is returned, a
         `{sheetname:frame,}` dict is returned.
     table_name
