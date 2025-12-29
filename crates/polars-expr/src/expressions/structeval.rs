@@ -188,11 +188,6 @@ impl StructEvalExpr {
         mut ac: AggregationContext<'a>,
         ca: ListChunked,
     ) -> PolarsResult<AggregationContext<'a>> {
-        //kdn TODO RM
-        // let col = if matches!(
-        //     ac.agg_state(),
-        //     AggState::AggregatedScalar(_) | AggState::LiteralScalar(_)
-        // ) {
         let col = if self.is_scalar() {
             let out = ca
                 .explode(ExplodeOptions {
