@@ -1027,23 +1027,23 @@ def test_list_to_primitive_arithmetic() -> None:
 
 
 def test_list_boolean_arithmetic_23146() -> None:
-    """Test that boolean arithmetic in lists works and returns UInt32."""
+    """Test that boolean arithmetic in lists works and returns UInt8."""
     # Boolean list + Boolean list with single value
     result = pl.select(pl.lit([True]) + [True])
-    expected = pl.DataFrame({"literal": [[2]]}, schema={"literal": pl.List(pl.UInt32)})
+    expected = pl.DataFrame({"literal": [[2]]}, schema={"literal": pl.List(pl.UInt8)})
     assert_frame_equal(result, expected)
 
     # Boolean list + Boolean list with multiple values
     result = pl.select(pl.lit([True, False]) + [True, True])
     expected = pl.DataFrame(
-        {"literal": [[2, 1]]}, schema={"literal": pl.List(pl.UInt32)}
+        {"literal": [[2, 1]]}, schema={"literal": pl.List(pl.UInt8)}
     )
     assert_frame_equal(result, expected)
 
     # Boolean list + Scalar
     result = pl.select(pl.lit([True, False]) + 1)
     expected = pl.DataFrame(
-        {"literal": [[2, 1]]}, schema={"literal": pl.List(pl.UInt32)}
+        {"literal": [[2, 1]]}, schema={"literal": pl.List(pl.UInt8)}
     )
     assert_frame_equal(result, expected)
 
