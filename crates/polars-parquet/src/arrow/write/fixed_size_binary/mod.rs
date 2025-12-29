@@ -40,21 +40,15 @@ pub(super) fn build_statistics(
         max_value: options
             .max_value
             .then(|| {
-                array
-                    .iter()
-                    .filter_map(|x| Some(x?))
-                    .max()
-                    .map(|x| x.to_vec())
+                #[expect(clippy::filter_map_identity)]
+                array.iter().filter_map(|x| x).max().map(|x| x.to_vec())
             })
             .flatten(),
         min_value: options
             .min_value
             .then(|| {
-                array
-                    .iter()
-                    .filter_map(|x| Some(x?))
-                    .min()
-                    .map(|x| x.to_vec())
+                #[expect(clippy::filter_map_identity)]
+                array.iter().filter_map(|x| x).min().map(|x| x.to_vec())
             })
             .flatten(),
     }
