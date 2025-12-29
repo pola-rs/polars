@@ -52,7 +52,11 @@
   "Either_PythonObject_or_Schema_for_DataType": "6232a29ef51626d332177544fe80084dbc5451e45087aacafae633c93526ee6e",
   "EvalVariant": "6f3f2249f963d4b89339a93beace83e0be41310b4779af62ace5d4240013d7d8",
   "ExplodeOptions": "46ef78ccb0ca3a84a96dc69c4bba22790e9adc50a2862a68fa8c58c793c660bf",
+<<<<<<< HEAD
   "Expr": "b3f3099aad2600c031ddd0b20950d6eddc0a059c1a2f17d89dc50e3fa43e79af",
+=======
+  "Expr": "86714ff9d19823977466c3cd3813388cbcf6b2ffecaaa80bcb66db5efd912947",
+>>>>>>> b5f52b34c8 (fix dsl-schema)
   "ExtensionFunction": "71c0d75cd439c60a5c304faba11dacceb7aeb02d146c6b9f0b34fe9aa1558391",
   "ExtraColumnsPolicy": "eb81efadce58eb148e658db4f2b5c1f38155d617431b81121043e9f9c21acd30",
   "Field": "dd95c2b6d7aa44004b900ef31fcf18e70f862d97488ef46c67b7c64c226b50d8",
@@ -168,7 +172,7 @@
   "StrptimeOptions": "97914d9800aba403db3baf30fad1d2305e50de143f35ab31e9a707e5c68ddd9a",
   "StructDataTypeExpr": "277e125b4b5bdd305ab0201d0d422db9d77a32b89bcb6cfd249a8c26d37c57a1",
   "StructDataTypeFunction": "c381723477ae3cb090869764e8e20a68efadd534c9aa214aa8a84ca8241b0e58",
-  "StructFunction": "2289425eff1a01e75ccf991e63aacbc4073a63c4b1ff19add900b8a11c486083",
+  "StructFunction": "11a055f4a16da5c8050808c1a8bceb4f1665e0f5b7b4f9d4c5c9a74ebe5d0aef",
   "SyncOnCloseType": "209fd0378378f0e47d63478a743dfb5f5be048511ca4dfb1baef0b528eba8a05",
   "TableStatistics": "c313fa58d1913c088f08825b25aea70e0ba6240d08640e3d3826ec236314959b",
   "TemporalFunction": "208112c255ccabf7e7c15d2969c53f12556fbf3bedff09ea6b527764736476c3",
