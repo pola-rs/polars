@@ -335,7 +335,7 @@ jobs:
             --profile dist-release
             --manifest-path py-polars/runtime/${{ matrix.package }}/Cargo.toml
             --out dist
-          manylinux: ${{ endsWith(matrix.target, '-musl') && 'musllinux_1_2' || (runner.os == 'Linux' && matrix.architecture == 'aarch64' && '2_24' || 'auto') }}
+          manylinux: ${{ endsWith(matrix.target, '-musl') && 'musllinux_1_2' || ((runner.os == 'Linux' && matrix.architecture == 'aarch64') && '2_24' || 'auto') }}
           maturin-version: 1.8.3
 
       - name: Test wheel
