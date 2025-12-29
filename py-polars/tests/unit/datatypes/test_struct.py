@@ -1540,8 +1540,6 @@ def test_struct_with_fields_non_elementwise(
     )
 
     out = df.select(pl.col.s.struct.with_fields(eval))
-    print(out)
-    print(expected)
     assert out["s"].has_nulls()
 
     out = out.select(pl.col.s.struct.unnest())
