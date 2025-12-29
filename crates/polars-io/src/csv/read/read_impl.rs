@@ -1,5 +1,3 @@
-pub(super) mod batched;
-
 use std::fmt;
 use std::sync::Mutex;
 
@@ -116,7 +114,6 @@ pub(crate) struct CoreReader<'a> {
     n_rows: Option<usize>,
     n_threads: Option<usize>,
     has_header: bool,
-    chunk_size: usize,
     null_values: Option<NullValuesCompiled>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     to_cast: Vec<Field>,
@@ -150,7 +147,6 @@ impl<'a> CoreReader<'a> {
         n_threads: Option<usize>,
         schema_overwrite: Option<SchemaRef>,
         dtype_overwrite: Option<Arc<Vec<DataType>>>,
-        chunk_size: usize,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         mut to_cast: Vec<Field>,
         skip_rows_after_header: usize,
@@ -245,7 +241,6 @@ impl<'a> CoreReader<'a> {
             n_rows,
             n_threads,
             has_header,
-            chunk_size,
             null_values,
             predicate,
             to_cast,

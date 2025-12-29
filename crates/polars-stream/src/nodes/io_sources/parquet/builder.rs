@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use polars_core::config;
@@ -31,7 +32,6 @@ impl std::fmt::Debug for ParquetReaderBuilder {
     }
 }
 
-#[cfg(feature = "parquet")]
 impl FileReaderBuilder for ParquetReaderBuilder {
     fn reader_name(&self) -> &str {
         "parquet"
@@ -58,12 +58,12 @@ impl FileReaderBuilder for ParquetReaderBuilder {
     fn set_execution_state(&self, execution_state: &crate::execute::StreamingExecutionState) {
         let prefetch_limit = std::env::var("POLARS_ROW_GROUP_PREFETCH_SIZE")
             .map(|x| {
-                x.parse::<usize>()
+                x.parse::<NonZeroUsize>()
                     .ok()
-                    .filter(|x| *x > 0)
                     .unwrap_or_else(|| {
                         panic!("invalid value for POLARS_ROW_GROUP_PREFETCH_SIZE: {x}")
                     })
+                    .get()
             })
             .unwrap_or(execution_state.num_pipelines.saturating_mul(2))
             .max(1);

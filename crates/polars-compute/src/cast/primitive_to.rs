@@ -66,7 +66,7 @@ impl SerPrimitive for f32 {
     where
         Self: Sized,
     {
-        let mut buffer = ryu::Buffer::new();
+        let mut buffer = zmij::Buffer::new();
         let value = buffer.format(val);
         f.extend_from_slice(value.as_bytes());
         value.len()
@@ -78,7 +78,7 @@ impl SerPrimitive for f64 {
     where
         Self: Sized,
     {
-        let mut buffer = ryu::Buffer::new();
+        let mut buffer = zmij::Buffer::new();
         let value = buffer.format(val);
         f.extend_from_slice(value.as_bytes());
         value.len()

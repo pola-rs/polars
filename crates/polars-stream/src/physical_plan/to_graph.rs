@@ -431,7 +431,9 @@ fn to_graph_rec<'a>(
             use crate::nodes::io_sinks2::components::exclude_keys_projection::ExcludeKeysProjection;
             use crate::nodes::io_sinks2::components::hstack_columns::HStackColumns;
             use crate::nodes::io_sinks2::components::partitioner::{KeyedPartitioner, Partitioner};
-            use crate::nodes::io_sinks2::components::size::RowCountAndSize;
+            use crate::nodes::io_sinks2::components::size::{
+                NonZeroRowCountAndSize, RowCountAndSize,
+            };
             use crate::nodes::io_sinks2::config::{
                 IOSinkNodeConfig, IOSinkTarget, PartitionedTarget,
             };
@@ -571,8 +573,8 @@ fn to_graph_rec<'a>(
                 file_size_limit.num_bytes = *approximate_bytes_per_file
             }
 
-            let file_size_limit =
-                (file_size_limit != RowCountAndSize::MAX).then_some(file_size_limit);
+            let file_size_limit = (file_size_limit != RowCountAndSize::MAX)
+                .then_some(NonZeroRowCountAndSize::new(file_size_limit).unwrap());
 
             let target = IOSinkTarget::Partitioned(Box::new(PartitionedTarget {
                 base_path: base_path.clone(),
@@ -1432,7 +1434,7 @@ fn to_graph_rec<'a>(
                         let Some(mut df) = df else { return Ok(None) };
 
                         if let Some(simple_projection) = &simple_projection {
-                            df = df.project(simple_projection.clone())?;
+                            df = unsafe { df.project(simple_projection.clone())? };
                         }
 
                         if validate_schema {
