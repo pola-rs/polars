@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::sync::Arc;
 
 use polars_core::POOL;
@@ -272,27 +271,9 @@ impl PhysicalExpr for StructEvalExpr {
         ac.groups();
         ac.set_groups_for_undefined_agg_states();
 
-        // Set ExecutionState.
+        // Snap the AC into the ExecutionState for re-use when Field is evaluated.
         let mut state = state.clone();
-        let ac_snap = {
-            // We keep Cow::Borrowed(groups) as Cow::Borrowed(groups) to enable cheap pointer-based
-            // group equality checks for fast-path implementation dispatch downstream on the
-            // evaluation expressions as well as with_fields.
-            let groups = ac.groups.clone();
-
-            // SAFETY: the Aggregation Context does not outlive the lifetime of the underlying groups.
-            let groups = unsafe {
-                std::mem::transmute::<Cow<'a, GroupPositions>, Cow<'static, GroupPositions>>(groups)
-            };
-            AggregationContext {
-                state: ac.state.clone(),
-                groups,
-                update_groups: ac.update_groups,
-                original_len: ac.original_len,
-            }
-        };
-
-        state.with_fields_ac = Arc::new(Some(ac_snap));
+        state.with_fields_ac = Arc::new(Some(ac.into_static()));
 
         // Collect evaluation fields.
         let mut acs = Vec::with_capacity(self.evaluation.len() + 1);
@@ -341,8 +322,7 @@ impl PhysicalExpr for StructEvalExpr {
                 AggState::NotAggregated(_) => {
                     has_not_agg = true;
                     if let Some(p) = previous {
-                        not_agg_groups_may_diverge |=
-                            !std::ptr::eq(p.groups.as_ref(), ac.groups.as_ref());
+                        not_agg_groups_may_diverge |= !p.groups.is_same(&ac.groups)
                     }
                     previous = Some(ac);
                     if ac.groups.is_overlapping() {
