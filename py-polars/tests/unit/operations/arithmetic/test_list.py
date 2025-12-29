@@ -1024,3 +1024,38 @@ def test_list_to_primitive_arithmetic() -> None:
         out = pl.select(r=rhs).select(pl.col("r") - lhs).to_series().alias("")  # noqa: PIE794
 
         assert_series_equal(out, expect)
+
+
+def test_list_boolean_arithmetic_23146() -> None:
+    """Test that boolean arithmetic in lists works and returns UInt32."""
+    # Boolean list + Boolean list with single value
+    result = pl.select(pl.lit([True]) + [True])
+    expected = pl.DataFrame({"literal": [[2]]}, schema={"literal": pl.List(pl.UInt32)})
+    assert_frame_equal(result, expected)
+
+    # Boolean list + Boolean list with multiple values
+    result = pl.select(pl.lit([True, False]) + [True, True])
+    expected = pl.DataFrame(
+        {"literal": [[2, 1]]}, schema={"literal": pl.List(pl.UInt32)}
+    )
+    assert_frame_equal(result, expected)
+
+    # Boolean list + Scalar
+    result = pl.select(pl.lit([True, False]) + 1)
+    expected = pl.DataFrame(
+        {"literal": [[2, 1]]}, schema={"literal": pl.List(pl.UInt32)}
+    )
+    assert_frame_equal(result, expected)
+
+    # Boolean list arithmetic on DataFrame columns
+    df = pl.DataFrame(
+        {"a": [[True, False]], "b": [[1, 2]]},
+        schema={"a": pl.List(pl.Boolean), "b": pl.List(pl.Int64)},
+    )
+    result = df.select(pl.col("a") + pl.col("b"))
+    expected = pl.DataFrame({"a": [[2, 2]]}, schema={"a": pl.List(pl.Int64)})
+    assert_frame_equal(result, expected)
+
+    df = pl.DataFrame({"a": [[True, False]], "b": [[128, 128]]})
+    result = df.select(pl.col("a") / pl.col("b"))
+    assert result.schema == {"a": pl.List(pl.Float64)}
