@@ -340,7 +340,7 @@ jobs:
 
       - name: Test wheel
         # Testing on entire matrix except musl targets, which are missing on all ubuntu-x images.
-        if: !endsWith(matrix.target, '-musl')
+        if: endsWith(matrix.target, '-musl') == false
         run: |
           pip install --force-reinstall --verbose dist/*.whl
           python -c 'import polars; polars.show_versions()'
