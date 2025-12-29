@@ -38,7 +38,7 @@ impl FileReaderBuilder for IpcReaderBuilder {
     fn reader_capabilities(&self) -> ReaderCapabilities {
         use ReaderCapabilities as RC;
 
-        RC::NEEDS_FILE_CACHE_INIT | RC::ROW_INDEX | RC::PRE_SLICE | RC::NEGATIVE_PRE_SLICE
+        RC::ROW_INDEX | RC::PRE_SLICE | RC::NEGATIVE_PRE_SLICE
     }
 
     fn set_execution_state(&self, execution_state: &crate::execute::StreamingExecutionState) {

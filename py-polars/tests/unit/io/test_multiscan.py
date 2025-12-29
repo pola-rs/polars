@@ -487,7 +487,6 @@ def test_multiscan_slice_middle(
         scan(fs).slice(offset, 17).collect(engine="streaming"),
         pl.DataFrame(expected_series),
     )
-    print(offset)  # kdn
     assert_frame_equal(
         scan(fs, row_index_name="ri").slice(offset, 17).collect(engine="streaming"),
         pl.DataFrame(ri_expected_series),

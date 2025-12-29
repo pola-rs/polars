@@ -76,8 +76,7 @@ impl IpcReadImpl {
 
             // We fetch all record batches so that we know the total number of rows.
             // @TODO: In case of slicing, it would suffice to fetch the record batch
-            // headers for any record batch that falls outside of the slice, or not
-            // at all.
+            // headers for any record batch that falls outside of the slice.
 
             if let Some(rb_prefetch_prev_all_spawned) = rb_prefetch_prev_all_spawned {
                 rb_prefetch_prev_all_spawned.wait().await;

@@ -342,9 +342,9 @@ impl IpcFileReader {
             n_rows_in_file,
         } = self.init_data.as_mut().unwrap();
 
-        match &**byte_source {
-            DynByteSource::MemSlice(MemSliceByteSource(memslice)) => {
-                if n_rows_in_file.is_none() {
+        if n_rows_in_file.is_none() {
+            match &**byte_source {
+                DynByteSource::MemSlice(MemSliceByteSource(memslice)) => {
                     let n_rows: i64 = get_row_count_from_blocks(
                         &mut std::io::Cursor::new(memslice.as_ref()),
                         &file_metadata.blocks,
@@ -354,13 +354,10 @@ impl IpcFileReader {
                         .map_err(|_| polars_err!(bigidx, ctx = "ipc file", size = n_rows))?;
 
                     *n_rows_in_file = Some(n_rows);
-                }
+                },
+                byte_source @ DynByteSource::Cloud(_) => {
+                    let io_runtime = polars_io::pl_async::get_runtime();
 
-                Ok(n_rows_in_file.unwrap())
-            },
-            byte_source @ DynByteSource::Cloud(_) => {
-                let io_runtime = polars_io::pl_async::get_runtime();
-                if n_rows_in_file.is_none() {
                     let mut n_rows = 0;
                     let mut message_scratch = Vec::new();
                     let mut ranges: Vec<_> = file_metadata
@@ -386,11 +383,11 @@ impl IpcFileReader {
                         .map_err(|_| polars_err!(bigidx, ctx = "ipc file", size = n_rows))?;
 
                     *n_rows_in_file = Some(n_rows);
-                }
-
-                Ok(n_rows_in_file.unwrap())
-            },
+                },
+            }
         }
+        
+        Ok(n_rows_in_file.unwrap())
     }
 
     /// Retrieve file metadata from the source.

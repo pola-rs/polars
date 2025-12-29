@@ -125,10 +125,6 @@ impl<R: Read + Seek> FileReader<R> {
         Ok(())
     }
 
-    pub fn take_dictionaries(&mut self) -> Option<Dictionaries> {
-        std::mem::take(&mut self.dictionaries)
-    }
-
     /// Skip over blocks until we have seen at most `offset` rows, returning how many rows we are
     /// still too see.  
     ///

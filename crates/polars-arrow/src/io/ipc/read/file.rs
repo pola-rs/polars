@@ -84,12 +84,12 @@ pub fn read_dictionary_block<R: Read + Seek>(
     block: &arrow_format::ipc::Block,
     // When true, the underlying reader bytestream represents a standalone IPC Block
     // rather than a complete IPC File.
-    block_mode: bool,
+    force_zero_offset: bool,
     dictionaries: &mut Dictionaries,
     message_scratch: &mut Vec<u8>,
     dictionary_scratch: &mut Vec<u8>,
 ) -> PolarsResult<()> {
-    let offset: u64 = if block_mode {
+    let offset: u64 = if force_zero_offset {
         0
     } else {
         block
