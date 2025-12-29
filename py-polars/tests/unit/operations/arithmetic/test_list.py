@@ -1043,7 +1043,7 @@ def test_list_boolean_arithmetic_23146() -> None:
     # Boolean list + Scalar
     result = pl.select(pl.lit([True, False]) + 1)
     expected = pl.DataFrame(
-        {"literal": [[2, 1]]}, schema={"literal": pl.List(pl.UInt32)}
+        {"literal": [[2, 1]]}, schema={"literal": pl.List(pl.Int32)}
     )
     assert_frame_equal(result, expected)
 
