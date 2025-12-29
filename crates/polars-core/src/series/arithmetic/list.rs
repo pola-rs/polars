@@ -180,13 +180,13 @@ mod inner {
             let prim_dtype_rhs = dtype_rhs.leaf_dtype();
 
             let prim_dtype_lhs = if prim_dtype_lhs == &DataType::Boolean {
-                &DataType::UInt32
+                &DataType::UInt8
             } else {
                 prim_dtype_lhs
             };
 
             let prim_dtype_rhs = if prim_dtype_rhs == &DataType::Boolean {
-                &DataType::UInt32
+                &DataType::UInt8
             } else {
                 prim_dtype_rhs
             };
