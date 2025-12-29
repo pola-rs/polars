@@ -588,6 +588,7 @@ def test_scan_csv_empty_with_header_25892() -> None:
         pl.DataFrame(schema=schema),
     )
 
+    # No header line and `raise_if_empty=True`
     with pytest.raises(pl.exceptions.NoDataError):  # TODO: Currently does not raise
         assert_frame_equal(
             pl.scan_csv(b"", schema=schema, has_header=True).collect(),
