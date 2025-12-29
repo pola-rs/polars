@@ -538,3 +538,47 @@ def test_csv_io_object_utf8_23629() -> None:
         f_str.seek(0)
         df_str = pl.read_csv(f_str)
         assert_frame_equal(df, df_str)
+
+
+def test_scan_csv_empty_with_no_header_25864() -> None:
+    schema = {"a": pl.Int64}
+
+    # Succeed with empty df if `has_header=False` and schema is provided
+    assert_frame_equal(
+        pl.scan_csv(b"", schema=schema, has_header=False).collect(),
+        pl.DataFrame(schema=schema),
+    )
+
+    with pytest.raises(pl.exceptions.NoDataError):
+        pl.scan_csv(b"", has_header=False).collect()
+
+    with pytest.raises(pl.exceptions.NoDataError):
+        pl.scan_csv(b"", schema=schema, has_header=True).collect()
+
+    # Error when `raise_if_empty` explicitly set to `True`
+    with pytest.raises(pl.exceptions.NoDataError):
+        pl.scan_csv(b"", schema=schema, has_header=False, raise_if_empty=True).collect()
+
+
+def test_scan_csv_empty_with_header_25892() -> None:
+    schema = {"a": pl.Int64}
+
+    # `raise_if_empty=False`
+    assert_frame_equal(
+        pl.scan_csv(
+            b"", schema=schema, has_header=True, raise_if_empty=False
+        ).collect(),
+        pl.DataFrame(schema=schema),
+    )
+
+    # Has header line
+    assert_frame_equal(
+        pl.scan_csv(b"a\n", schema=schema, has_header=True).collect(),
+        pl.DataFrame(schema=schema),
+    )
+
+    with pytest.raises(pl.exceptions.NoDataError):
+        assert_frame_equal(
+            pl.scan_csv(b"", schema=schema, has_header=True).collect(),
+            pl.DataFrame(schema=schema),
+        )
