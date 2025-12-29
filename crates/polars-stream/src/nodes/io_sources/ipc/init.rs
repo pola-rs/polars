@@ -72,6 +72,8 @@ impl IpcReadImpl {
                 metadata,
                 byte_source,
                 record_batch_idx: 0,
+                prefetch_send,
+                rb_prefetch_semaphore,
             };
 
             // We fetch all record batches so that we know the total number of rows.
@@ -82,17 +84,7 @@ impl IpcReadImpl {
                 rb_prefetch_prev_all_spawned.wait().await;
             }
 
-            loop {
-                let fetch_permit = rb_prefetch_semaphore.clone().acquire_owned().await.unwrap();
-
-                let Some(prefetch) = record_batch_data_fetcher.next().await else {
-                    break;
-                };
-
-                if prefetch_send.send((prefetch?, fetch_permit)).await.is_err() {
-                    break;
-                }
-            }
+            record_batch_data_fetcher.run().await?;
 
             drop(rb_prefetch_current_all_spawned);
 
@@ -127,7 +119,10 @@ impl IpcReadImpl {
                     if decode_send.send((decode_fut, permit)).await.is_err() {
                         break;
                     }
-                };
+                } else {
+                    drop(record_batch_data);
+                    drop(permit);
+                }
             }
 
             let current_row_offset =

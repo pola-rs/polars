@@ -386,7 +386,7 @@ impl IpcFileReader {
                 },
             }
         }
-        
+
         Ok(n_rows_in_file.unwrap())
     }
 
