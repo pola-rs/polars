@@ -306,7 +306,6 @@ mod tests {
 
     #[test]
     fn test_reduce_vec8_equal_prefix_min_max() -> ParquetResult<()> {
-        // Directly exercise ord_binary on equal-prefix inputs.
         let a = vec![1, 2];
         let b = vec![1, 2, 0];
 
