@@ -365,9 +365,7 @@ impl IpcFileReader {
                         .iter()
                         .map(|block| {
                             block.offset as usize
-                                ..block.offset as usize
-                                    + block.meta_data_length as usize
-                                    + block.body_length as usize
+                                ..block.offset as usize + block.meta_data_length as usize
                         })
                         .collect();
 
