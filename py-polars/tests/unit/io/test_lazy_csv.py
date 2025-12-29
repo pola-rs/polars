@@ -549,6 +549,11 @@ def test_scan_csv_empty_with_no_header_25864() -> None:
         pl.DataFrame(schema=schema),
     )
 
+    assert_frame_equal(
+        pl.scan_csv(b"", schema={}, has_header=False).collect(),
+        pl.DataFrame(),
+    )
+
     with pytest.raises(pl.exceptions.NoDataError):
         pl.scan_csv(b"", has_header=False).collect()
 
@@ -561,9 +566,15 @@ def test_scan_csv_empty_with_no_header_25864() -> None:
 
 
 def test_scan_csv_empty_with_header_25892() -> None:
+    # `raise_if_empty=False`
+    assert_frame_equal(
+        pl.scan_csv(b"", has_header=True, raise_if_empty=False).collect(),
+        pl.DataFrame(),
+    )
+
     schema = {"a": pl.Int64}
 
-    # `raise_if_empty=False`
+    # `raise_if_empty=False` with schema
     assert_frame_equal(
         pl.scan_csv(
             b"", schema=schema, has_header=True, raise_if_empty=False
