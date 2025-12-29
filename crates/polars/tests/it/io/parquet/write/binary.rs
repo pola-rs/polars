@@ -54,8 +54,8 @@ pub fn array_to_page_v1(
             primitive_type: descriptor.primitive_type.clone(),
             null_count: Some((array.len() - array.iter().flatten().count()) as i64),
             distinct_count: None,
-            max_value: array.iter().flatten().max().cloned(),
-            min_value: array.iter().flatten().min().cloned(),
+            max_value: array.iter().filter_map(Option::as_ref).max().cloned(),
+            min_value: array.iter().filter_map(Option::as_ref).min().cloned(),
         };
         Some(statistics.serialize())
     } else {
