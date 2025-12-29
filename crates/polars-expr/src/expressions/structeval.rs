@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use polars_core::POOL;
@@ -20,6 +21,7 @@ pub struct StructEvalExpr {
     evaluation: Vec<Arc<dyn PhysicalExpr>>,
     expr: Expr,
     output_field: Field,
+    operates_on_scalar: bool,
     allow_threading: bool,
 }
 
@@ -29,6 +31,7 @@ impl StructEvalExpr {
         evaluation: Vec<Arc<dyn PhysicalExpr>>,
         expr: Expr,
         output_field: Field,
+        operates_on_scalar: bool,
         allow_threading: bool,
     ) -> Self {
         Self {
@@ -36,8 +39,179 @@ impl StructEvalExpr {
             evaluation,
             expr,
             output_field,
+            operates_on_scalar,
             allow_threading,
         }
+    }
+}
+
+impl StructEvalExpr {
+    fn apply_all_literal_elementwise<'a>(
+        &self,
+        mut acs: Vec<AggregationContext<'a>>,
+    ) -> PolarsResult<AggregationContext<'a>> {
+        let cols = acs
+            .iter()
+            .map(|ac| ac.get_values().clone())
+            .collect::<Vec<_>>();
+        let out = with_fields(&cols)?;
+        polars_ensure!(
+            out.len() == 1,
+            ComputeError: "elementwise expression {:?} must return exactly 1 value on literals, got {}",
+                &self.expr, out.len()
+        );
+        let mut ac = acs.pop().unwrap();
+        ac.with_literal(out);
+        Ok(ac)
+    }
+
+    fn apply_elementwise<'a>(
+        &self,
+        mut acs: Vec<AggregationContext<'a>>,
+        must_aggregate: bool,
+    ) -> PolarsResult<AggregationContext<'a>> {
+        // At this stage, we either have (with or without LiteralScalars):
+        // - one or more AggregatedList or NotAggregated ACs
+        // - one or more AggregatedScalar ACs
+
+        let mut previous = None;
+        for ac in acs.iter_mut() {
+            // TBD: If we want to be strict, we would check all groups
+            if matches!(
+                ac.state,
+                AggState::LiteralScalar(_) | AggState::AggregatedScalar(_)
+            ) {
+                continue;
+            }
+
+            if must_aggregate {
+                ac.aggregated();
+            }
+
+            if matches!(ac.state, AggState::AggregatedList(_)) {
+                if let Some(p) = previous {
+                    ac.groups().check_lengths(p)?;
+                }
+                previous = Some(ac.groups());
+            }
+        }
+
+        // At this stage, we do not have both AggregatedList and NotAggregated ACs
+
+        // The first AC represents the `input` and will be used as the base AC.
+        let base_ac_idx = 0;
+
+        match acs[base_ac_idx].agg_state() {
+            AggState::AggregatedList(s) => {
+                let aggregated = acs.iter().any(|ac| ac.is_aggregated());
+                let ca = s.list().unwrap();
+                let input_len = s.len();
+
+                let out = ca.apply_to_inner(&|_| {
+                    let cols = acs
+                        .iter()
+                        .map(|ac| ac.flat_naive().into_owned())
+                        .collect::<Vec<_>>();
+                    Ok(with_fields(&cols)?.as_materialized_series().clone())
+                })?;
+
+                let out = out.into_column();
+                debug_assert!(input_len == out.len());
+
+                let mut ac = acs.swap_remove(base_ac_idx);
+                ac.with_values_and_args(
+                    out,
+                    aggregated,
+                    Some(&self.expr),
+                    false,
+                    self.is_scalar(),
+                )?;
+                Ok(ac)
+            },
+            _ => {
+                let aggregated = acs.iter().any(|ac| ac.is_aggregated());
+                debug_assert!(aggregated == self.is_scalar());
+
+                let cols = acs
+                    .iter()
+                    .map(|ac| ac.flat_naive().into_owned())
+                    .collect::<Vec<_>>();
+
+                let input_len = cols[base_ac_idx].len();
+                let out = with_fields(&cols)?;
+                debug_assert!(input_len == out.len());
+
+                let mut ac = acs.swap_remove(base_ac_idx);
+                ac.with_values_and_args(
+                    out,
+                    aggregated,
+                    Some(&self.expr),
+                    false,
+                    self.is_scalar(),
+                )?;
+                Ok(ac)
+            },
+        }
+    }
+
+    fn apply_group_aware<'a>(
+        &self,
+        mut acs: Vec<AggregationContext<'a>>,
+    ) -> PolarsResult<AggregationContext<'a>> {
+        let mut iters = acs
+            .iter_mut()
+            .map(|ac| ac.iter_groups(true))
+            .collect::<Vec<_>>();
+        let len = iters[0].size_hint().0;
+        let ca = (0..len)
+            .map(|_| {
+                let mut cols = Vec::with_capacity(iters.len());
+                for i in &mut iters {
+                    match i.next().unwrap() {
+                        None => return Ok(None),
+                        Some(s) => cols.push(s.as_ref().clone().into_column()),
+                    }
+                }
+                let out = with_fields(&cols)?;
+                Ok(Some(out))
+            })
+            .collect::<PolarsResult<ListChunked>>()?;
+        drop(iters);
+
+        // Finish apply groups; see also ApplyExpr for the reference solution.
+        let ac = acs.swap_remove(0);
+        self.finish_apply_groups(ac, ca)
+    }
+
+    fn finish_apply_groups<'a>(
+        &self,
+        mut ac: AggregationContext<'a>,
+        ca: ListChunked,
+    ) -> PolarsResult<AggregationContext<'a>> {
+        //kdn TODO RM
+        // let col = if matches!(
+        //     ac.agg_state(),
+        //     AggState::AggregatedScalar(_) | AggState::LiteralScalar(_)
+        // ) {
+        let col = if self.is_scalar() {
+            let out = ca
+                .explode(ExplodeOptions {
+                    empty_as_null: true,
+                    keep_nulls: true,
+                })
+                .unwrap();
+            // if the explode doesn't return the same len, it wasn't scalar.
+            polars_ensure!(out.len() == ca.len(), InvalidOperation: "expected scalar for expr: {}, got {}", self.expr, &out);
+            ac.update_groups = UpdateGroups::No;
+            out.into_column()
+        } else {
+            ac.with_update_groups(UpdateGroups::WithSeriesLen);
+            ca.into_series().into()
+        };
+
+        ac.with_values_and_args(col, true, self.as_expression(), false, self.is_scalar())?;
+
+        Ok(ac)
     }
 }
 
@@ -94,13 +268,36 @@ impl PhysicalExpr for StructEvalExpr {
         groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
+        // The evaluation is similar to a regular Function, with the modification that the input
+        // is evaluated first, and retained for future use in the ExecutionState.
+
         // Evaluate input.
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
+
+        ac.groups();
         ac.set_groups_for_undefined_agg_states();
 
         // Set ExecutionState.
         let mut state = state.clone();
-        state.with_fields_ac = Arc::new(Some(ac.into_static()));
+        let ac_snap = {
+            // We keep Cow::Borrowed(groups) as Cow::Borrowed(groups) to enable cheap pointer-based
+            // group equality checks for fast-path implementation dispatch downstream on the
+            // evaluation expressions as well as with_fields.
+            let groups = ac.groups.clone();
+
+            // SAFETY: the Aggregation Context does not outlive the lifetime of the underlying groups.
+            let groups = unsafe {
+                std::mem::transmute::<Cow<'a, GroupPositions>, Cow<'static, GroupPositions>>(groups)
+            };
+            AggregationContext {
+                state: ac.state.clone(),
+                groups,
+                update_groups: ac.update_groups,
+                original_len: ac.original_len,
+            }
+        };
+
+        state.with_fields_ac = Arc::new(Some(ac_snap));
 
         // Collect evaluation fields.
         let mut acs = Vec::with_capacity(self.evaluation.len() + 1);
@@ -124,48 +321,83 @@ impl PhysicalExpr for StructEvalExpr {
             acs.push(ac)
         }
 
-        // Apply with_fields. We default to group_aware as groups may have diverged.
-        // @TODO. Performance can be optimized: elementwise, re-use PlIndexMap, parallel evaluation, etc.
-        let mut iters = acs
-            .iter_mut()
-            .map(|ac| ac.iter_groups(true))
-            .collect::<Vec<_>>();
-        let len = iters[0].size_hint().0;
-        let ca = (0..len)
-            .map(|_| {
-                let mut cols = Vec::with_capacity(iters.len());
-                for i in &mut iters {
-                    match i.next().unwrap() {
-                        None => return Ok(None),
-                        Some(s) => cols.push(s.as_ref().clone().into_column()),
+        // Revert ExecutionState.
+        state.with_fields_ac = Arc::new(None);
+
+        // Merge the `evaluation` back into the `input` struct.
+        // @NOTE. From this point on, we are dealing with a regular Function `with_fields`, which is
+        // elementwise top-level and not fallible. We leverage the reference dispatch for ApplyExpr,
+        // but simplified.
+
+        // Collect statistics on input aggstates
+        let mut has_agg_list = false;
+        let mut has_agg_scalar = false;
+        let mut has_not_agg = false;
+        let mut has_not_agg_with_overlapping_groups = false;
+        let mut not_agg_groups_may_diverge = false;
+
+        let mut previous: Option<&AggregationContext<'_>> = None;
+        for ac in &acs {
+            match ac.state {
+                AggState::AggregatedList(_) => {
+                    has_agg_list = true;
+                },
+                AggState::AggregatedScalar(_) => has_agg_scalar = true,
+                AggState::NotAggregated(_) => {
+                    has_not_agg = true;
+                    if let Some(p) = previous {
+                        not_agg_groups_may_diverge |=
+                            !std::ptr::eq(p.groups.as_ref(), ac.groups.as_ref());
                     }
-                }
-                let out = with_fields(&cols)?;
-                Ok(Some(out))
-            })
-            .collect::<PolarsResult<ListChunked>>()?;
+                    previous = Some(ac);
+                    if ac.groups.is_overlapping() {
+                        has_not_agg_with_overlapping_groups = true;
+                    }
+                },
+                _ => {},
+            }
+        }
 
-        drop(iters);
+        let all_literal = !(has_agg_list || has_agg_scalar || has_not_agg);
+        let elementwise_must_aggregate =
+            has_not_agg && (has_agg_list || not_agg_groups_may_diverge);
 
-        // Update AC, same logic as ApplyExpr.
-        let mut ac = acs.swap_remove(0);
-        let col = if matches!(
-            ac.agg_state(),
-            AggState::AggregatedScalar(_) | AggState::LiteralScalar(_)
-        ) {
-            let out = ca.explode(ExplodeOptions {
-                empty_as_null: true,
-                keep_nulls: true,
-            })?;
-            ac.update_groups = UpdateGroups::No;
-            out.into_column()
+        if all_literal {
+            // Fast path
+            self.apply_all_literal_elementwise(acs)
+        } else if has_agg_scalar && (has_agg_list || has_not_agg) {
+            // Not compatible
+            self.apply_group_aware(acs)
+        } else if elementwise_must_aggregate && has_not_agg_with_overlapping_groups {
+            // Compatible but calling aggregated() is too expensive
+            self.apply_group_aware(acs)
         } else {
-            ac.with_update_groups(UpdateGroups::WithSeriesLen);
-            ca.into_series().into()
-        };
-
-        ac.with_values_and_args(col, true, self.as_expression(), false, self.is_scalar())?;
-        Ok(ac)
+            // Broadcast in NotAgg or AggList requires group_aware
+            acs.iter_mut().filter(|ac| !ac.is_literal()).for_each(|ac| {
+                ac.groups();
+            });
+            let has_broadcast =
+                if let Some(base_ac_idx) = acs.iter().position(|ac| !ac.is_literal()) {
+                    acs.iter()
+                        .enumerate()
+                        .filter(|(i, ac)| *i != base_ac_idx && !ac.is_literal())
+                        .any(|(_, ac)| {
+                            acs[base_ac_idx]
+                                .groups
+                                .iter()
+                                .zip(ac.groups.iter())
+                                .any(|(l, r)| l.len() != r.len() && (l.len() == 1 || r.len() == 1))
+                        })
+                } else {
+                    false
+                };
+            if has_broadcast {
+                //  Broadcast fall-back.
+                self.apply_group_aware(acs)
+            } else {
+                self.apply_elementwise(acs, elementwise_must_aggregate)
+            }
+        }
     }
 
     fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
@@ -173,6 +405,6 @@ impl PhysicalExpr for StructEvalExpr {
     }
 
     fn is_scalar(&self) -> bool {
-        false
+        self.operates_on_scalar
     }
 }

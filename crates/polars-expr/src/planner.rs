@@ -548,6 +548,7 @@ fn create_physical_expr_inner(
         },
         #[cfg(feature = "dtype-struct")]
         StructEval { expr, evaluation } => {
+            let is_scalar = is_scalar_ae(expression, expr_arena);
             let output_field = expr_arena
                 .get(expression)
                 .to_field(&ToFieldContext::new(expr_arena, schema))?;
@@ -571,6 +572,7 @@ fn create_physical_expr_inner(
                 evaluation,
                 node_to_expr(expression, expr_arena),
                 output_field,
+                is_scalar,
                 state.allow_threading,
             )))
         },

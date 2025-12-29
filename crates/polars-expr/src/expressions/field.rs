@@ -57,7 +57,18 @@ impl PhysicalExpr for FieldExpr {
         let ca = col.struct_()?;
         let out = ca.field_by_name(self.name.as_str()).map(Column::from)?;
 
-        Ok(AggregationContext::new(out, ac.groups.clone(), false))
+        // Ok(AggregationContext::new(out, ac.groups.clone(), false))
+        Ok(AggregationContext {
+            state: match ac.agg_state() {
+                AggState::AggregatedList(_) => AggState::AggregatedList(out),
+                AggState::NotAggregated(_) => AggState::NotAggregated(out),
+                AggState::AggregatedScalar(_) => AggState::AggregatedScalar(out),
+                AggState::LiteralScalar(_) => AggState::LiteralScalar(out),
+            },
+            groups: ac.groups.clone(),
+            update_groups: ac.update_groups,
+            original_len: ac.original_len,
+        })
     }
 
     fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {

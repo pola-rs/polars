@@ -1688,16 +1688,24 @@ def test_struct_with_fields_group_by_scalar(
 
 def test_struct_with_fields_group_by_literal() -> None:
     df = pl.DataFrame({"g": [10, 10, 20]})
+    lit_x42 = pl.lit({"x": 42}, dtype=pl.Struct({"x": pl.Int64}))
+
     q = (
         df.lazy()
         .group_by(pl.col("g"))
         .agg(
-            pl.lit({"x": 10}, dtype=pl.Struct({"x": pl.Int64}))
-            .alias("s")
-            .struct.with_fields(pl.field("x"))
+            lit_x42.alias("s").struct.with_fields(pl.lit(43).cast(pl.Int64).alias("x"))
         )
     )
-    expected = pl.DataFrame({"g": [10, 20], "s": [{"x": 10}, {"x": 10}]})
+    expected = pl.DataFrame({"g": [10, 20], "s": [{"x": 43}, {"x": 43}]})
+    assert_frame_equal(q.collect(), expected, check_row_order=False)
+
+    q = (
+        df.lazy()
+        .group_by(pl.col("g"))
+        .agg(lit_x42.alias("s").struct.with_fields(pl.field("x")))
+    )
+    expected = pl.DataFrame({"g": [10, 20], "s": [{"x": 42}, {"x": 42}]})
     assert_frame_equal(q.collect(), expected, check_row_order=False)
 
 
