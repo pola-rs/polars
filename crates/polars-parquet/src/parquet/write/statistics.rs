@@ -15,11 +15,13 @@ fn reduce_single<T, F: Fn(T, T) -> T>(lhs: Option<T>, rhs: Option<T>, op: F) -> 
 
 #[inline]
 fn reduce_vec8(lhs: Option<Vec<u8>>, rhs: &Option<Vec<u8>>, max: bool) -> Option<Vec<u8>> {
+    let take_min = !max;
+
     match (lhs, rhs) {
         (None, None) => None,
         (Some(x), None) => Some(x),
         (None, Some(x)) => Some(x.clone()),
-        (Some(x), Some(y)) => Some(ord_binary(x, y.clone(), max)),
+        (Some(x), Some(y)) => Some(if (&x <= y) == take_min { x } else { y.clone() }),
     }
 }
 
@@ -84,47 +86,6 @@ fn reduce_fix_len_binary<'a, I: Iterator<Item = &'a FixedLenStatistics>>(
         acc.distinct_count = None;
         acc
     })
-}
-
-fn ord_binary(a: Vec<u8>, b: Vec<u8>, max: bool) -> Vec<u8> {
-    for (v1, v2) in a.iter().zip(b.iter()) {
-        match v1.cmp(v2) {
-            std::cmp::Ordering::Greater => {
-                if max {
-                    return a;
-                } else {
-                    return b;
-                }
-            },
-            std::cmp::Ordering::Less => {
-                if max {
-                    return b;
-                } else {
-                    return a;
-                }
-            },
-            _ => {},
-        }
-    }
-
-    // Handle equal prefix
-    match a.len().cmp(&b.len()) {
-        std::cmp::Ordering::Greater => {
-            if max {
-                a
-            } else {
-                b
-            }
-        },
-        std::cmp::Ordering::Less => {
-            if max {
-                b
-            } else {
-                a
-            }
-        },
-        std::cmp::Ordering::Equal => a,
-    }
 }
 
 fn reduce_boolean<'a, I: Iterator<Item = &'a BooleanStatistics>>(
@@ -344,17 +305,17 @@ mod tests {
     }
 
     #[test]
-    fn ord_binary_equal_prefix_min_max() -> ParquetResult<()> {
+    fn test_reduce_vec8_equal_prefix_min_max() -> ParquetResult<()> {
         // Directly exercise ord_binary on equal-prefix inputs.
         let a = vec![1, 2];
         let b = vec![1, 2, 0];
 
         // For max=true, we expect the longer (lexicographically larger) value.
-        let max_val = ord_binary(a.clone(), b.clone(), true);
+        let max_val = reduce_vec8(Some(a.clone()), &Some(b.clone()), true).unwrap();
         assert_eq!(max_val, b);
 
         // For max=false, we expect the shorter (lexicographically smaller) value.
-        let min_val = ord_binary(a.clone(), b.clone(), false);
+        let min_val = reduce_vec8(Some(a.clone()), &Some(b), false).unwrap();
         assert_eq!(min_val, a);
 
         Ok(())

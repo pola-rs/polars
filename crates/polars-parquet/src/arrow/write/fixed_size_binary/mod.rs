@@ -7,7 +7,6 @@ pub use basic::array_to_page;
 pub use nested::array_to_page as nested_array_to_page;
 use polars_compute::min_max::MinMaxKernel;
 
-use super::binary::ord_binary;
 use super::{EncodeNullability, StatisticsOptions};
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::FixedLenStatistics;
@@ -40,23 +39,11 @@ pub(super) fn build_statistics(
         distinct_count: None,
         max_value: options
             .max_value
-            .then(|| {
-                array
-                    .iter()
-                    .flatten()
-                    .max_by(|x, y| ord_binary(x, y))
-                    .map(|x| x.to_vec())
-            })
+            .then(|| array.iter().filter_map(|x| x).max().map(|x| x.to_vec()))
             .flatten(),
         min_value: options
             .min_value
-            .then(|| {
-                array
-                    .iter()
-                    .flatten()
-                    .min_by(|x, y| ord_binary(x, y))
-                    .map(|x| x.to_vec())
-            })
+            .then(|| array.iter().filter_map(|x| x).min().map(|x| x.to_vec()))
             .flatten(),
     }
 }
