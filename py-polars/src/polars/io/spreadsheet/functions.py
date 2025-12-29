@@ -644,7 +644,7 @@ def _read_spreadsheet(
     source: str | IO[bytes] | bytes,
     *,
     sheet_id: int | Sequence[int] | None,
-    sheet_name: str | Sequence[str] | Callable[[str], bool]  | None,
+    sheet_name: str | Sequence[str] | Callable[[str], bool] | None,
     table_name: str | None,
     engine: ExcelSpreadsheetEngine,
     engine_options: dict[str, Any] | None = None,
