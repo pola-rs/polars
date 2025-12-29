@@ -644,7 +644,7 @@ def _read_spreadsheet(
     source: str | IO[bytes] | bytes,
     *,
     sheet_id: int | Sequence[int] | None,
-    sheet_name: str | Sequence[str] | None,
+    sheet_name: str | Sequence[str] | Callable[[str], bool]  | None,
     table_name: str | None,
     engine: ExcelSpreadsheetEngine,
     engine_options: dict[str, Any] | None = None,
@@ -783,7 +783,7 @@ def _get_sheet_names(
     if sheet_id is not None and sheet_name is not None:
         msg = f"cannot specify both `sheet_name` ({sheet_name!r}) and `sheet_id` ({sheet_id!r})"
         raise ValueError(msg)
-    if isinstance(sheet_name, Callable):  # rewrite sheet_name to a list of names
+    if callable(sheet_name):  # rewrite sheet_name to a list of names
         sheet_name = [ws["name"] for ws in worksheets if sheet_name(ws["name"])]
     sheet_names = []
     if sheet_id is None and sheet_name is None:
