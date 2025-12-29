@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use polars_core::prelude::SortMultipleOptions;
@@ -9,7 +10,7 @@ use polars_utils::plpath::{CloudScheme, PlPath};
 use crate::expression::StreamExpr;
 use crate::nodes::io_sinks2::components::hstack_columns::HStackColumns;
 use crate::nodes::io_sinks2::components::partitioner::Partitioner;
-use crate::nodes::io_sinks2::components::size::RowCountAndSize;
+use crate::nodes::io_sinks2::components::size::NonZeroRowCountAndSize;
 
 pub struct IOSinkNodeConfig {
     pub file_format: Arc<FileType>,
@@ -26,12 +27,12 @@ impl IOSinkNodeConfig {
 
     pub fn inflight_morsel_limit(&self) -> usize {
         if let Ok(v) = std::env::var("POLARS_INFLIGHT_SINK_MORSEL_LIMIT").map(|x| {
-            x.parse::<usize>()
+            x.parse::<NonZeroUsize>()
                 .ok()
-                .filter(|x| *x > 0)
                 .unwrap_or_else(|| {
                     panic!("invalid value for POLARS_INFLIGHT_SINK_MORSEL_LIMIT: {x}")
                 })
+                .get()
         }) {
             return v;
         };
@@ -44,10 +45,10 @@ impl IOSinkNodeConfig {
 
     pub fn max_open_sinks(&self) -> usize {
         if let Ok(v) = std::env::var("POLARS_MAX_OPEN_SINKS").map(|x| {
-            x.parse::<usize>()
+            x.parse::<NonZeroUsize>()
                 .ok()
-                .filter(|x| *x > 0)
                 .unwrap_or_else(|| panic!("invalid value for POLARS_MAX_OPEN_SINKS: {x}"))
+                .get()
         }) {
             return v;
         }
@@ -65,12 +66,12 @@ impl IOSinkNodeConfig {
 
     pub fn partitioned_cloud_upload_chunk_size(&self) -> usize {
         if let Ok(v) = std::env::var("POLARS_PARTITIONED_UPLOAD_CHUNK_SIZE").map(|x| {
-            x.parse::<usize>()
+            x.parse::<NonZeroUsize>()
                 .ok()
-                .filter(|x| *x > 0)
                 .unwrap_or_else(|| {
                     panic!("invalid value for POLARS_PARTITIONED_UPLOAD_CHUNK_SIZE: {x}")
                 })
+                .get()
         }) {
             return v;
         }
@@ -102,6 +103,6 @@ pub struct PartitionedTarget {
     pub hstack_keys: Option<HStackColumns>,
     pub include_keys_in_file: bool,
     pub file_schema: SchemaRef,
-    pub file_size_limit: Option<RowCountAndSize>,
+    pub file_size_limit: Option<NonZeroRowCountAndSize>,
     pub per_partition_sort: Option<(Arc<[StreamExpr]>, SortMultipleOptions)>,
 }

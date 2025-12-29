@@ -1,6 +1,9 @@
+use std::num::NonZeroU64;
+
 use polars_core::frame::DataFrame;
 use polars_error::{PolarsResult, polars_err};
 use polars_utils::IdxSize;
+use polars_utils::index::NonZeroIdxSize;
 
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct RowCountAndSize {
@@ -29,19 +32,25 @@ impl RowCountAndSize {
     }
 
     /// How many rows from `other` can fit into `self`.
-    pub fn num_rows_takeable_from(self, other: Self) -> IdxSize {
-        let max_rows = self.num_rows.min(other.num_rows);
+    ///
+    /// # Parameters
+    /// * `byte_size_min_rows`: Row limit calculated from byte size will be at least this value
+    pub fn num_rows_takeable_from(self, other: Self, byte_size_min_rows: IdxSize) -> IdxSize {
+        let mut max_rows = self.num_rows.min(other.num_rows);
 
-        if self.num_bytes == u64::MAX {
-            max_rows
-        } else if self.num_bytes < other.row_byte_size() {
-            0
-        } else {
-            max_rows.min(
+        let limit_according_to_byte_size =
+            byte_size_min_rows.max(if self.num_bytes < other.row_byte_size() {
+                0
+            } else {
                 IdxSize::try_from(self.num_bytes.div_ceil(other.row_byte_size().max(1)))
-                    .unwrap_or(IdxSize::MAX),
-            )
+                    .unwrap_or(IdxSize::MAX)
+            });
+
+        if self.num_bytes < u64::MAX {
+            max_rows = max_rows.min(limit_according_to_byte_size)
         }
+
+        max_rows
     }
 
     /// Byte size of a single row. If `self.num_rows > 0`, the returned size will be at least 1.
@@ -119,5 +128,68 @@ impl RowCountAndSize {
             num_rows: IdxSize::saturating_add(self.num_rows, rhs.num_rows),
             num_bytes: u64::saturating_add(self.num_bytes, rhs.num_bytes),
         }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct NonZeroRowCountAndSize {
+    num_rows: NonZeroIdxSize,
+    num_bytes: NonZeroU64,
+}
+
+impl NonZeroRowCountAndSize {
+    pub const MAX: NonZeroRowCountAndSize = NonZeroRowCountAndSize {
+        num_rows: NonZeroIdxSize::MAX,
+        num_bytes: NonZeroU64::MAX,
+    };
+
+    pub fn new(size: RowCountAndSize) -> Option<Self> {
+        Some(Self {
+            num_rows: NonZeroIdxSize::new(size.num_rows)?,
+            num_bytes: NonZeroU64::new(size.num_bytes)?,
+        })
+    }
+
+    pub fn min(self, other: Self) -> Self {
+        Self {
+            num_rows: self.num_rows.min(other.num_rows),
+            num_bytes: self.num_bytes.min(other.num_bytes),
+        }
+    }
+
+    #[inline]
+    pub fn get(self) -> RowCountAndSize {
+        RowCountAndSize {
+            num_rows: self.num_rows.get(),
+            num_bytes: self.num_bytes.get(),
+        }
+    }
+}
+
+/// Calculates how many rows can be sent in a morsel to a writer.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct TakeableRowsProvider {
+    pub max_size: NonZeroRowCountAndSize,
+    pub byte_size_min_rows: NonZeroIdxSize,
+    /// If `true`, allows sending buffered rows if there are at least `self.byte_size_min_rows` number
+    /// of them. Effectively disables strict morsel combining to `self.max_size` while retaining
+    /// splitting of morsels larger than `self.max_size`.
+    pub allow_non_max_size: bool,
+}
+
+impl TakeableRowsProvider {
+    pub fn num_rows_takeable_from(self, from: RowCountAndSize, flush: bool) -> Option<IdxSize> {
+        let num_rows = self
+            .max_size
+            .get()
+            .num_rows_takeable_from(from, self.byte_size_min_rows.get());
+
+        let have_full_chunk = num_rows < from.num_rows || num_rows == self.max_size.get().num_rows;
+
+        (num_rows > 0
+            && (flush
+                || have_full_chunk
+                || (self.allow_non_max_size && num_rows >= self.byte_size_min_rows.get())))
+        .then_some(num_rows)
     }
 }

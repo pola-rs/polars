@@ -207,7 +207,7 @@ pub fn to_parquet_type(field: &Field, options: &ColumnWriteOptions) -> PolarsRes
     // create type from field
     let (physical_type, primitive_converted_type, primitive_logical_type) = match field
         .dtype()
-        .to_logical_type()
+        .to_storage()
     {
         ArrowDataType::Null => (
             PhysicalType::Int32,

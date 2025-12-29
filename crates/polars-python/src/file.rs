@@ -75,11 +75,11 @@ impl PyFileLikeObject {
                 .call_method(py, "read", (), None)
                 .expect("no read method found");
 
-            if let Ok(b) = bytes.downcast_bound::<PyBytes>(py) {
+            if let Ok(b) = bytes.cast_bound::<PyBytes>(py) {
                 return MemSlice::from_arc(b.as_bytes(), Arc::new(bytes.clone_ref(py)));
             }
 
-            if let Ok(b) = bytes.downcast_bound::<PyString>(py) {
+            if let Ok(b) = bytes.cast_bound::<PyString>(py) {
                 return match b.to_cow().expect("PyString is not valid UTF-8") {
                     Cow::Borrowed(v) => {
                         MemSlice::from_arc(v.as_bytes(), Arc::new(bytes.clone_ref(py)))
@@ -158,13 +158,13 @@ impl Read for PyFileLikeObject {
                 .call_method(py, "read", (buf.len(),), None)
                 .map_err(pyerr_to_io_err)?;
 
-            let opt_bytes = bytes.downcast_bound::<PyBytes>(py);
+            let opt_bytes = bytes.cast_bound::<PyBytes>(py);
 
             if let Ok(bytes) = opt_bytes {
                 buf.write_all(bytes.as_bytes())?;
 
                 bytes.len().map_err(pyerr_to_io_err)
-            } else if let Ok(s) = bytes.downcast_bound::<PyString>(py) {
+            } else if let Ok(s) = bytes.cast_bound::<PyString>(py) {
                 let s = s.to_cow().map_err(pyerr_to_io_err)?;
                 buf.write_all(s.as_bytes())?;
                 Ok(s.len())
@@ -411,7 +411,7 @@ pub(crate) fn get_python_scan_source_input(
         let py_f = read_if_bytesio(py_f);
 
         // If the pyobject is a `bytes` class
-        if let Ok(b) = py_f.downcast::<PyBytes>() {
+        if let Ok(b) = py_f.cast::<PyBytes>() {
             return Ok(PythonScanSourceInput::Buffer(MemSlice::from_arc(
                 b.as_bytes(),
                 // We want to specifically keep alive the PyBytes object.
@@ -490,7 +490,7 @@ pub(crate) fn get_mmap_bytes_reader_and_path(
     let py_f = read_if_bytesio(py_f.clone());
 
     // bytes object
-    if let Ok(bytes) = py_f.downcast::<PyBytes>() {
+    if let Ok(bytes) = py_f.cast::<PyBytes>() {
         Ok((
             Box::new(Cursor::new(MemSlice::from_arc(
                 bytes.as_bytes(),

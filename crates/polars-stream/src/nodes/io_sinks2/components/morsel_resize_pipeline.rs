@@ -7,12 +7,12 @@ use polars_utils::IdxSize;
 use crate::async_primitives::connector;
 use crate::morsel::Morsel;
 use crate::nodes::io_sinks2::components::sink_morsel::SinkMorsel;
-use crate::nodes::io_sinks2::components::size::RowCountAndSize;
+use crate::nodes::io_sinks2::components::size::{RowCountAndSize, TakeableRowsProvider};
 
 /// Splits large morsels / combines small morsels.
 pub struct MorselResizePipeline {
     pub empty_with_schema_df: DataFrame,
-    pub ideal_morsel_size: RowCountAndSize,
+    pub takeable_rows_provider: TakeableRowsProvider,
     pub inflight_morsel_semaphore: Arc<tokio::sync::Semaphore>,
     pub morsel_rx: connector::Receiver<Morsel>,
     pub morsel_tx: connector::Sender<SinkMorsel>,
@@ -24,7 +24,7 @@ impl MorselResizePipeline {
     pub async fn run(self) -> PolarsResult<RowCountAndSize> {
         let MorselResizePipeline {
             empty_with_schema_df,
-            ideal_morsel_size,
+            takeable_rows_provider,
             inflight_morsel_semaphore,
             mut morsel_rx,
             mut morsel_tx,
@@ -43,11 +43,9 @@ impl MorselResizePipeline {
                 buffered_size.num_rows,
                 IdxSize::try_from(buffered_rows.height()).unwrap()
             );
-            let num_rows_to_take = ideal_morsel_size.num_rows_takeable_from(buffered_size);
 
-            if num_rows_to_take < buffered_size.num_rows
-                || num_rows_to_take == ideal_morsel_size.num_rows
-                || (num_rows_to_take > 0 && flush)
+            if let Some(num_rows_to_take) =
+                takeable_rows_provider.num_rows_takeable_from(buffered_size, flush)
             {
                 let morsel_permit = inflight_morsel_semaphore
                     .clone()

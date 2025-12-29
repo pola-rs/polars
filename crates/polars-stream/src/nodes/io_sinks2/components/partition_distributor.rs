@@ -115,14 +115,10 @@ impl PartitionDistributor {
                 let buffered_size = partition_data.buffered_size();
 
                 let num_ready_to_send_rows = partition_morsel_sender
-                    .ideal_morsel_size
-                    .num_rows_takeable_from(buffered_size);
+                    .takeable_rows_provider
+                    .num_rows_takeable_from(buffered_size, false);
 
-                if per_partition_sort.is_none()
-                    && (num_ready_to_send_rows < buffered_size.num_rows
-                        || num_ready_to_send_rows
-                            == partition_morsel_sender.ideal_morsel_size.num_rows)
-                {
+                if per_partition_sort.is_none() && num_ready_to_send_rows.is_some() {
                     if partition_data.file_sink_task_data.is_none()
                         && let Ok(file_permit) = open_sinks_semaphore.clone().try_acquire_owned()
                     {

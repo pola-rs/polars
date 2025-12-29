@@ -1835,7 +1835,7 @@ impl DataFrame {
         I: IntoIterator<Item = S>,
         S: Into<PlSmallStr>,
     {
-        let cols = selection.into_iter().map(|s| s.into()).collect::<Vec<_>>();
+        let cols: UnitVec<PlSmallStr> = selection.into_iter().map(|s| s.into()).collect();
         self._select_impl(cols.as_slice())
     }
 
@@ -1912,7 +1912,7 @@ impl DataFrame {
         I: IntoIterator<Item = S>,
         S: Into<PlSmallStr>,
     {
-        let cols = selection.into_iter().map(|s| s.into()).collect::<Vec<_>>();
+        let cols: UnitVec<PlSmallStr> = selection.into_iter().map(|s| s.into()).collect();
         self.select_physical_impl(&cols)
     }
 
@@ -1922,13 +1922,17 @@ impl DataFrame {
         Ok(unsafe { DataFrame::new_no_checks(self.height(), selected) })
     }
 
-    pub fn project(&self, to: SchemaRef) -> PolarsResult<Self> {
-        let mut df = self.project_names(to.iter_names())?;
+    /// # Safety
+    /// Dtypes must match, as the provided schema becomes the cached schema of the result.
+    pub unsafe fn project(&self, to: SchemaRef) -> PolarsResult<Self> {
+        let mut df = unsafe { self.project_names(to.iter_names())? };
         df.cached_schema = to.into();
         Ok(df)
     }
 
-    pub fn project_names(
+    /// # Safety
+    /// This does not check for duplicates on names.
+    pub unsafe fn project_names(
         &self,
         names: impl IntoIterator<Item = impl AsRef<str>>,
     ) -> PolarsResult<Self> {
@@ -1936,7 +1940,7 @@ impl DataFrame {
         let columns = names
             .into_iter()
             .map(|name| Ok(self.columns[from.try_index_of(name.as_ref())?].clone()))
-            .collect::<PolarsResult<Vec<_>>>()?;
+            .collect::<PolarsResult<_>>()?;
         let df = unsafe { Self::new_no_checks(self.height(), columns) };
         Ok(df)
     }
@@ -2827,20 +2831,20 @@ impl DataFrame {
         if length == 0 {
             return self.clear();
         }
-        let col = self
+        let cols = self
             .columns
             .iter()
             .map(|s| s.slice(offset, length))
             .collect::<Vec<_>>();
 
-        let height = if let Some(fst) = col.first() {
+        let height = if let Some(fst) = cols.first() {
             fst.len()
         } else {
             let (_, length) = slice_offsets(offset, length, self.height());
             length
         };
 
-        unsafe { DataFrame::new_no_checks(height, col) }
+        unsafe { DataFrame::new_no_checks(height, cols) }
     }
 
     /// Split [`DataFrame`] at the given `offset`.
@@ -2856,8 +2860,8 @@ impl DataFrame {
 
     #[must_use]
     pub fn clear(&self) -> Self {
-        let col = self.columns.iter().map(|s| s.clear()).collect::<Vec<_>>();
-        unsafe { DataFrame::new_no_checks(0, col) }
+        let cols = self.columns.iter().map(|s| s.clear()).collect::<Vec<_>>();
+        unsafe { DataFrame::new_no_checks(0, cols) }
     }
 
     #[must_use]
@@ -2918,7 +2922,7 @@ impl DataFrame {
     /// ```
     #[must_use]
     pub fn head(&self, length: Option<usize>) -> Self {
-        let col = self
+        let cols = self
             .columns
             .iter()
             .map(|c| c.head(length))
@@ -2926,7 +2930,7 @@ impl DataFrame {
 
         let height = length.unwrap_or(HEAD_DEFAULT_LENGTH);
         let height = usize::min(height, self.height());
-        unsafe { DataFrame::new_no_checks(height, col) }
+        unsafe { DataFrame::new_no_checks(height, cols) }
     }
 
     /// Get the tail of the [`DataFrame`].
@@ -2961,7 +2965,7 @@ impl DataFrame {
     /// ```
     #[must_use]
     pub fn tail(&self, length: Option<usize>) -> Self {
-        let col = self
+        let cols = self
             .columns
             .iter()
             .map(|c| c.tail(length))
@@ -2969,7 +2973,7 @@ impl DataFrame {
 
         let height = length.unwrap_or(TAIL_DEFAULT_LENGTH);
         let height = usize::min(height, self.height());
-        unsafe { DataFrame::new_no_checks(height, col) }
+        unsafe { DataFrame::new_no_checks(height, cols) }
     }
 
     /// Iterator over the rows in this [`DataFrame`] as Arrow RecordBatches.
@@ -3037,8 +3041,8 @@ impl DataFrame {
     /// Get a [`DataFrame`] with all the columns in reversed order.
     #[must_use]
     pub fn reverse(&self) -> Self {
-        let col = self.columns.iter().map(|s| s.reverse()).collect::<Vec<_>>();
-        unsafe { DataFrame::new_no_checks(self.height(), col) }
+        let cols = self.columns.iter().map(|s| s.reverse()).collect::<Vec<_>>();
+        unsafe { DataFrame::new_no_checks(self.height(), cols) }
     }
 
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
@@ -3434,10 +3438,7 @@ impl DataFrame {
         I: IntoIterator<Item = S>,
         S: Into<PlSmallStr>,
     {
-        let cols = cols
-            .into_iter()
-            .map(Into::into)
-            .collect::<Vec<PlSmallStr>>();
+        let cols: UnitVec<PlSmallStr> = cols.into_iter().map(Into::into).collect();
         self._partition_by_impl(cols.as_slice(), false, include_key, true)
     }
 
@@ -3453,10 +3454,7 @@ impl DataFrame {
         I: IntoIterator<Item = S>,
         S: Into<PlSmallStr>,
     {
-        let cols = cols
-            .into_iter()
-            .map(Into::into)
-            .collect::<Vec<PlSmallStr>>();
+        let cols: UnitVec<PlSmallStr> = cols.into_iter().map(Into::into).collect();
         self._partition_by_impl(cols.as_slice(), true, include_key, true)
     }
 
