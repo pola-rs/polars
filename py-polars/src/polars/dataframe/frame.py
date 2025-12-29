@@ -4372,7 +4372,7 @@ class DataFrame:
                 else:
                     adbc_module_name = "Unknown"
 
-                if adbc_module_name != "Unknown":
+                if adbc_module_name.split("_")[-1] in ["bigquery","flightsql","netezza","postgresql","snowflake","sqlite"]:
                     adbc_driver = _import_optional_adbc_driver(
                         adbc_module_name, dbapi_submodule=False
                     )
