@@ -552,11 +552,11 @@ def test_scan_csv_empty_with_no_header_25864() -> None:
     with pytest.raises(pl.exceptions.NoDataError):
         pl.scan_csv(b"", has_header=False).collect()
 
-    with pytest.raises(pl.exceptions.NoDataError):
+    with pytest.raises(pl.exceptions.NoDataError):  # TODO: Currently does not raise
         pl.scan_csv(b"", schema=schema, has_header=True).collect()
 
     # Error when `raise_if_empty` explicitly set to `True`
-    with pytest.raises(pl.exceptions.NoDataError):
+    with pytest.raises(pl.exceptions.NoDataError):  # TODO: Currently does not raise
         pl.scan_csv(b"", schema=schema, has_header=False, raise_if_empty=True).collect()
 
 
@@ -577,7 +577,7 @@ def test_scan_csv_empty_with_header_25892() -> None:
         pl.DataFrame(schema=schema),
     )
 
-    with pytest.raises(pl.exceptions.NoDataError):
+    with pytest.raises(pl.exceptions.NoDataError):  # TODO: Currently does not raise
         assert_frame_equal(
             pl.scan_csv(b"", schema=schema, has_header=True).collect(),
             pl.DataFrame(schema=schema),
