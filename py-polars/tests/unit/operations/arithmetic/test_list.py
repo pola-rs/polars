@@ -1056,6 +1056,7 @@ def test_list_boolean_arithmetic_23146() -> None:
     expected = pl.DataFrame({"a": [[2, 2]]}, schema={"a": pl.List(pl.Int64)})
     assert_frame_equal(result, expected)
 
+    # Division test
     df = pl.DataFrame({"a": [[True, False]], "b": [[128, 128]]})
     result = df.select(pl.col("a") / pl.col("b"))
     assert result.schema == {"a": pl.List(pl.Float64)}
