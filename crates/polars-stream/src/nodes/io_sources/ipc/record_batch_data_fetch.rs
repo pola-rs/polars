@@ -1,13 +1,20 @@
 use std::io::Cursor;
 use std::sync::Arc;
 
-use polars_core::utils::arrow::io::ipc::read::{BlockReader, FileMetadata};
-use polars_error::PolarsResult;
-use polars_io::utils::byte_source::{ByteSource, DynByteSource};
+use polars_core::utils::arrow::io::ipc::read::{
+    BlockReader, FileMetadata, get_row_count_from_blocks,
+};
+use polars_error::{PolarsResult, polars_err};
+use polars_io::utils::byte_source::{ByteSource, DynByteSource, MemSliceByteSource};
+use polars_utils::IdxSize;
 use polars_utils::mmap::MemSlice;
+use polars_utils::relaxed_cell::RelaxedCell;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
+use crate::async_primitives::oneshot_channel;
+use crate::async_primitives::wait_group::WaitGroup;
+use crate::nodes::io_sources::ipc::ROW_COUNT_OVERFLOW_ERR;
 use crate::utils::tokio_handle_ext;
 
 /// Represents byte-data that can be transformed into a DataFrame after some computation.
@@ -21,6 +28,9 @@ pub(super) struct RecordBatchDataFetcher {
     pub(super) metadata: Arc<FileMetadata>,
     pub(super) byte_source: Arc<DynByteSource>,
     pub(super) record_batch_idx: usize,
+    pub(super) fetch_metadata_only: bool,
+    pub(super) n_rows_in_file_tx: Option<oneshot_channel::Sender<IdxSize>>,
+    pub(super) row_position_on_end_tx: Option<oneshot_channel::Sender<IdxSize>>,
     pub(super) prefetch_send: Sender<(
         tokio_handle_ext::AbortOnDropHandle<PolarsResult<RecordBatchData>>,
         OwnedSemaphorePermit,
@@ -30,72 +40,148 @@ pub(super) struct RecordBatchDataFetcher {
 
 impl RecordBatchDataFetcher {
     pub(super) async fn run(&mut self) -> PolarsResult<()> {
-        while self.record_batch_idx < self.metadata.blocks.len() {
-            let fetch_permit = self
-                .rb_prefetch_semaphore
-                .clone()
-                .acquire_owned()
-                .await
-                .unwrap();
+        let current_row_offset: Arc<RelaxedCell<u64>> = Arc::new(RelaxedCell::new_u64(0));
+        let wait_group: Arc<WaitGroup> = Arc::new(WaitGroup::default());
 
-            let idx = self.record_batch_idx;
-            let file_metadata = self.metadata.clone();
-            let current_byte_source = self.byte_source.clone();
-            let memory_prefetch_func = self.memory_prefetch_func;
-            let io_runtime = polars_io::pl_async::get_runtime();
+        if !self.fetch_metadata_only {
+            // Fetch all record batch data
 
-            // Create future and get handle
-            let handle = io_runtime.spawn(async move {
-                let block = file_metadata.blocks.get(idx).unwrap();
-                let range = block.offset as usize
-                    ..block.offset as usize
-                        + block.meta_data_length as usize
-                        + block.body_length as usize;
+            while self.record_batch_idx < self.metadata.blocks.len() {
+                let fetch_permit = self
+                    .rb_prefetch_semaphore
+                    .clone()
+                    .acquire_owned()
+                    .await
+                    .unwrap();
 
-                let fetched_bytes =
-                    if let DynByteSource::MemSlice(mem_slice) = current_byte_source.as_ref() {
-                        let slice = mem_slice.0.as_ref();
+                let idx = self.record_batch_idx;
+                let file_metadata = self.metadata.clone();
+                let current_byte_source = self.byte_source.clone();
+                let memory_prefetch_func = self.memory_prefetch_func;
+                let io_runtime = polars_io::pl_async::get_runtime();
 
-                        if memory_prefetch_func as usize
-                            != polars_utils::mem::prefetch::no_prefetch as usize
-                        {
-                            debug_assert!(range.end <= slice.len());
-                            memory_prefetch_func(unsafe { slice.get_unchecked(range.clone()) })
-                        }
+                let current_row_offset = current_row_offset.clone();
+                let wait_token = wait_group.token();
 
-                        mem_slice.0.slice(range)
-                    } else {
-                        // @NOTE. Performance can be optimized by grouping requests and downloading
-                        // through `get_ranges()`.
-                        current_byte_source.get_range(range).await?
+                let handle = io_runtime.spawn(async move {
+                    let block = file_metadata.blocks.get(idx).unwrap();
+                    let range = block.offset as usize
+                        ..block.offset as usize
+                            + block.meta_data_length as usize
+                            + block.body_length as usize;
+
+                    let fetched_bytes =
+                        if let DynByteSource::MemSlice(mem_slice) = current_byte_source.as_ref() {
+                            let slice = mem_slice.0.as_ref();
+
+                            if memory_prefetch_func as usize
+                                != polars_utils::mem::prefetch::no_prefetch as usize
+                            {
+                                debug_assert!(range.end <= slice.len());
+                                memory_prefetch_func(unsafe { slice.get_unchecked(range.clone()) })
+                            }
+
+                            mem_slice.0.slice(range)
+                        } else {
+                            // @NOTE. Performance can be optimized by grouping requests and downloading
+                            // through `get_ranges()`.
+                            current_byte_source.get_range(range).await?
+                        };
+
+                    // We extract the length (i.e., nr of rows) at the earliest possible opportunity.
+                    let num_rows = {
+                        let mut reader = BlockReader::new(Cursor::new(fetched_bytes.as_ref()));
+                        let mut message_scratch = Vec::new();
+                        reader.record_batch_num_rows(&mut message_scratch)?
                     };
 
-                // We extract the length (i.e., nr of rows) at the earliest possible opportunity.
-                let num_rows = {
-                    let mut reader = BlockReader::new(Cursor::new(fetched_bytes.as_ref()));
-                    let mut message_scratch = Vec::new();
-                    reader.record_batch_num_rows(&mut message_scratch)?
-                };
+                    current_row_offset.fetch_add(num_rows as u64);
+                    drop(wait_token);
 
-                PolarsResult::Ok(RecordBatchData {
-                    fetched_bytes,
-                    num_rows,
-                })
-            });
+                    PolarsResult::Ok(RecordBatchData {
+                        fetched_bytes,
+                        num_rows,
+                    })
+                });
 
-            let handle = tokio_handle_ext::AbortOnDropHandle(handle);
-            if self
-                .prefetch_send
-                .send((handle, fetch_permit))
-                .await
-                .is_err()
-            {
-                break;
+                let handle = tokio_handle_ext::AbortOnDropHandle(handle);
+                if self
+                    .prefetch_send
+                    .send((handle, fetch_permit))
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
+
+                self.record_batch_idx += 1;
             }
+        };
 
-            self.record_batch_idx += 1;
+        // Handle callback for rows fetched until the 'end', i.e. when the requested
+        // slice request has been fulfilled, or higher.
+        if let Some(row_position_on_end_tx) = self.row_position_on_end_tx.take() {
+            wait_group.wait().await;
+            let current_row_offset = IdxSize::try_from(current_row_offset.as_ref().load())
+                .map_err(|_| ROW_COUNT_OVERFLOW_ERR)?;
+            _ = row_position_on_end_tx.send(current_row_offset);
+        }
+
+        // Handle callback for total rows in file.
+        // Fetch record batch metadata only.
+        if let Some(n_rows_in_file_tx) = self.n_rows_in_file_tx.take() {
+            let n_rows = self.fetch_n_rows_in_file().await?;
+            _ = n_rows_in_file_tx.send(n_rows);
         }
 
         Ok(())
+    }
+
+    async fn fetch_n_rows_in_file(&mut self) -> PolarsResult<IdxSize> {
+        let file_metadata = self.metadata.clone();
+        let byte_source = self.byte_source.clone();
+
+        let n_rows = match &*byte_source {
+            DynByteSource::MemSlice(MemSliceByteSource(memslice)) => {
+                let n_rows: i64 = get_row_count_from_blocks(
+                    &mut std::io::Cursor::new(memslice.as_ref()),
+                    &file_metadata.blocks,
+                )?;
+
+                IdxSize::try_from(n_rows)
+                    .map_err(|_| polars_err!(bigidx, ctx = "ipc file", size = n_rows))?
+            },
+            DynByteSource::Cloud(_) => {
+                let io_runtime = polars_io::pl_async::get_runtime();
+
+                let mut n_rows = 0;
+                let mut message_scratch = Vec::new();
+                let mut ranges: Vec<_> = file_metadata
+                    .blocks
+                    .iter()
+                    .map(|block| {
+                        block.offset as usize
+                            ..block.offset as usize + block.meta_data_length as usize
+                    })
+                    .collect();
+                let ranges_len = ranges.len();
+
+                let bytes_map = io_runtime
+                    .spawn(async move { byte_source.get_ranges(&mut ranges).await })
+                    .await
+                    .unwrap()?;
+                assert_eq!(bytes_map.len(), ranges_len);
+
+                for bytes in bytes_map.into_values() {
+                    let mut reader = BlockReader::new(Cursor::new(bytes.as_ref()));
+                    n_rows += reader.record_batch_num_rows(&mut message_scratch)?;
+                }
+
+                IdxSize::try_from(n_rows)
+                    .map_err(|_| polars_err!(bigidx, ctx = "ipc file", size = n_rows))?
+            },
+        };
+
+        Ok(n_rows)
     }
 }

@@ -6,17 +6,14 @@ use arrow::io::ipc::read::{Dictionaries, read_dictionary_block};
 use async_trait::async_trait;
 use polars_core::schema::{Schema, SchemaExt};
 use polars_core::utils::arrow::io::ipc::read::{
-    BlockReader, FileMetadata, ProjectionInfo, get_row_count_from_blocks, prepare_projection,
-    read_file_metadata,
+    BlockReader, FileMetadata, ProjectionInfo, prepare_projection, read_file_metadata,
 };
-use polars_error::{ErrString, PolarsError, PolarsResult, feature_gated, polars_err};
+use polars_error::{ErrString, PolarsError, PolarsResult, feature_gated};
 use polars_io::cloud::CloudOptions;
 use polars_io::pl_async;
 #[cfg(feature = "cloud")]
 use polars_io::pl_async::get_runtime;
-use polars_io::utils::byte_source::{
-    ByteSource, DynByteSource, DynByteSourceBuilder, MemSliceByteSource,
-};
+use polars_io::utils::byte_source::{ByteSource, DynByteSource, DynByteSourceBuilder};
 use polars_plan::dsl::{ScanSource, ScanSourceRef};
 use polars_utils::IdxSize;
 use polars_utils::mem::prefetch::get_memory_prefetch_func;
@@ -27,7 +24,7 @@ use record_batch_decode::RecordBatchDecoder;
 
 use super::multi_scan::reader_interface::BeginReadArgs;
 use super::multi_scan::reader_interface::output::FileReaderOutputRecv;
-use crate::async_executor::{self, JoinHandle, TaskPriority, spawn};
+use crate::async_executor::{self, JoinHandle, TaskPriority};
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
@@ -73,8 +70,6 @@ struct InitializedState {
     file_metadata: Arc<FileMetadata>,
     byte_source: Arc<DynByteSource>,
     dictionaries: Arc<Option<Dictionaries>>,
-    // Lazily initialized - getting this involves iterating over all record batch headers.
-    n_rows_in_file: Option<IdxSize>,
 }
 
 #[async_trait]
@@ -123,7 +118,6 @@ impl FileReader for IpcFileReader {
             file_metadata,
             byte_source,
             dictionaries,
-            n_rows_in_file: None,
         });
 
         Ok(())
@@ -157,7 +151,6 @@ impl FileReader for IpcFileReader {
             file_metadata,
             byte_source,
             dictionaries,
-            n_rows_in_file: _,
         } = self.init_data.clone().unwrap();
 
         let BeginReadArgs {
@@ -189,33 +182,10 @@ impl FileReader for IpcFileReader {
             _ = file_schema_tx.send(file_schema_pl.clone());
         }
 
-        // The following early return path is relied upon for lazy initialization of total row count.
-        // @NOTE. Negative slicing takes a 2-pass approach: the first pass gets the total row count
-        // using the early return path, which is then used to convert the negative slice into a
-        // positive slice; the second pass uses the positive slice to fetch and slice the data.
-        if pre_slice_arg.as_ref().is_some_and(|x| x.len() == 0) {
-            let (_, rx) = FileReaderOutputSend::new_serial();
-            let n_rows = self.fetch_n_rows_in_file()?;
-
-            if verbose {
-                eprintln!(
-                    "[IpcFileReader]: early return: \
-                    n_rows_in_file: {} \
-                    ",
-                    n_rows
-                )
-            }
-
-            // Handle callback.
-            if let Some(row_position_on_end_tx) = row_position_on_end_tx {
-                _ = row_position_on_end_tx.send(n_rows);
-            }
-            if let Some(n_rows_in_file_tx) = n_rows_in_file_tx {
-                _ = n_rows_in_file_tx.send(n_rows);
-            }
-
-            return Ok((rx, spawn(TaskPriority::Low, std::future::ready(Ok(())))));
-        }
+        // @NOTE. Negative slicing takes a 2-pass approach. The first pass gets the total row count
+        // by setting slice.len to 0, and uses this to convert the negative slice into a positive slice.
+        // The second pass uses the positive slice to fetch and slice the data.
+        let fetch_metadata_only = pre_slice_arg.as_ref().is_some_and(|x| x.len() == 0);
 
         // Always create a slice. If no slice was given, just make the biggest slice possible.
         let slice_range: Range<usize> = pre_slice_arg
@@ -319,6 +289,9 @@ impl FileReader for IpcFileReader {
                 metadata,
                 byte_source,
                 record_batch_idx: 0,
+                fetch_metadata_only,
+                n_rows_in_file_tx,
+                row_position_on_end_tx,
                 prefetch_send,
                 rb_prefetch_semaphore,
             };
@@ -370,17 +343,6 @@ impl FileReader for IpcFileReader {
                     drop(record_batch_data);
                     drop(permit);
                 }
-            }
-
-            let current_row_offset =
-                IdxSize::try_from(current_row_offset).map_err(|_| ROW_COUNT_OVERFLOW_ERR)?;
-
-            // Handle callback.
-            if let Some(row_position_on_end_tx) = row_position_on_end_tx {
-                _ = row_position_on_end_tx.send(current_row_offset);
-            }
-            if let Some(n_rows_in_file_tx) = n_rows_in_file_tx {
-                _ = n_rows_in_file_tx.send(current_row_offset);
             }
 
             PolarsResult::Ok(())
@@ -465,63 +427,6 @@ impl FileReader for IpcFileReader {
 }
 
 impl IpcFileReader {
-    /// Total number of rows in the IPC File. This can be slow if the underlying
-    /// byte_source is an object store with a high number of Record Batches.
-    fn fetch_n_rows_in_file(&mut self) -> PolarsResult<IdxSize> {
-        let InitializedState {
-            file_metadata,
-            byte_source,
-            dictionaries: _,
-            n_rows_in_file,
-        } = self.init_data.as_mut().unwrap();
-
-        if n_rows_in_file.is_none() {
-            match &**byte_source {
-                DynByteSource::MemSlice(MemSliceByteSource(memslice)) => {
-                    let n_rows: i64 = get_row_count_from_blocks(
-                        &mut std::io::Cursor::new(memslice.as_ref()),
-                        &file_metadata.blocks,
-                    )?;
-
-                    let n_rows = IdxSize::try_from(n_rows)
-                        .map_err(|_| polars_err!(bigidx, ctx = "ipc file", size = n_rows))?;
-
-                    *n_rows_in_file = Some(n_rows);
-                },
-                byte_source @ DynByteSource::Cloud(_) => {
-                    let io_runtime = polars_io::pl_async::get_runtime();
-
-                    let mut n_rows = 0;
-                    let mut message_scratch = Vec::new();
-                    let mut ranges: Vec<_> = file_metadata
-                        .blocks
-                        .iter()
-                        .map(|block| {
-                            block.offset as usize
-                                ..block.offset as usize + block.meta_data_length as usize
-                        })
-                        .collect();
-
-                    // @TODO: move to async
-                    let bytes_map = io_runtime.block_on(byte_source.get_ranges(&mut ranges))?;
-                    assert_eq!(bytes_map.len(), ranges.len());
-
-                    for bytes in bytes_map.into_values() {
-                        let mut reader = BlockReader::new(Cursor::new(bytes.as_ref()));
-                        n_rows += reader.record_batch_num_rows(&mut message_scratch)?;
-                    }
-
-                    let n_rows = IdxSize::try_from(n_rows)
-                        .map_err(|_| polars_err!(bigidx, ctx = "ipc file", size = n_rows))?;
-
-                    *n_rows_in_file = Some(n_rows);
-                },
-            }
-        }
-
-        Ok(n_rows_in_file.unwrap())
-    }
-
     /// Retrieve file metadata from the source.
     async fn fetch_file_metadata(&self) -> PolarsResult<Arc<FileMetadata>> {
         if self.verbose {
