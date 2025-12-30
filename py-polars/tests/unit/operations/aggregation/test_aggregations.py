@@ -1284,7 +1284,9 @@ def test_sum_inf_not_nan_25849() -> None:
     assert df.group_by("g").agg(pl.col("x").sum())["x"].item() == float("inf")
 
 
-COLS = ['flt', 'dec', 'int', 'str', 'cat', 'enum', 'date', 'dt']
+COLS = ["flt", "dec", "int", "str", "cat", "enum", "date", "dt"]
+
+
 @pytest.mark.parametrize(
     "agg_funcs", [(pl.Expr.min_by, pl.Expr.min), (pl.Expr.max_by, pl.Expr.max)]
 )
@@ -1318,7 +1320,7 @@ def test_min_max_by(agg_funcs: Any, by_col: str) -> None:
             "g": [1, 1, 1, 2, 2, 2],
         },
         schema_overrides={
-            "dec": pl.Decimal(scale = 5),
+            "dec": pl.Decimal(scale=5),
             "cat": pl.Categorical,
             "enum": pl.Enum(["a", "b", "c", "d", "e", "f"]),
         },
