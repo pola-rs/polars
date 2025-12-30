@@ -2172,6 +2172,7 @@ class Series:
         >>> s.min_by(pl.col.a.abs())
         1.0
         """
+        return self.to_frame().select_seq(F.col(self.name).min_by(by)).item()
 
     def max(self) -> PythonLiteral | None:
         """
@@ -2201,6 +2202,7 @@ class Series:
         >>> s.max_by(pl.col.a.abs())
         -2.0
         """
+        return self.to_frame().select_seq(F.col(self.name).max_by(by)).item()
 
     def nan_max(self) -> int | float | date | datetime | timedelta | str:
         """
