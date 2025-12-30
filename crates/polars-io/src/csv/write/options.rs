@@ -60,7 +60,7 @@ impl Default for SerializeOptions {
     fn default() -> Self {
         Self {
             date_format: None,
-            time_format: None, // 9f: all nanoseconds
+            time_format: None,
             datetime_format: None,
             float_scientific: None,
             float_precision: None,
