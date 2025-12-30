@@ -790,7 +790,5 @@ def test_ndjson_large_u64_infer_25894() -> None:
     df = pl.read_ndjson(data)
     assert_frame_equal(
         df,
-        pl.DataFrame(
-            {"id": pl.Series("id", [14933243513335727983], dtype=pl.Int128)}
-        ),
+        pl.DataFrame({"id": pl.Series("id", [14933243513335727983], dtype=pl.Int128)}),
     )
