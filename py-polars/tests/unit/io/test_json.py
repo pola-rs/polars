@@ -783,3 +783,14 @@ def test_ndjson_no_cast_int_to_float_19138() -> None:
         ),
         pl.DataFrame({"a": [2.7, 1]}),
     )
+
+
+def test_ndjson_large_u64_infer_25894() -> None:
+    data = b"""{"id":14933243513335727983}"""
+    df = pl.read_ndjson(data)
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {"id": pl.Series("id", [14933243513335727983], dtype=pl.Int128)}
+        ),
+    )
