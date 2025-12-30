@@ -44,9 +44,12 @@ impl RecordBatchDecoder {
             return Ok(DataFrame::empty());
         }
 
+        // Relative to start of Record Batch
         let slice_net_start =
             std::cmp::max(slice_range.start, row_range.start as usize) - row_range.start as usize;
-        let slice_net_len = std::cmp::min(slice_range.end - slice_net_start, num_rows);
+        let slice_net_end =
+            std::cmp::min(slice_range.end, row_range.end as usize) - row_range.start as usize;
+        let slice_net_len = slice_net_end - slice_net_start;
 
         let schema = projection_info.as_ref().as_ref().map_or(
             file_metadata.schema.as_ref(),
@@ -100,7 +103,7 @@ impl RecordBatchDecoder {
         };
 
         if let Some(RowIndex { name, offset }) = &self.row_index {
-            let offset = slice_range.start as IdxSize + *offset;
+            let offset = row_range.start as IdxSize + slice_net_start as IdxSize + *offset;
             df = df.with_row_index(name.clone(), Some(offset))?;
         };
 

@@ -11,31 +11,33 @@ use polars_core::utils::arrow::io::ipc::read::{
 };
 use polars_error::{ErrString, PolarsError, PolarsResult, feature_gated, polars_err};
 use polars_io::cloud::CloudOptions;
+use polars_io::pl_async;
 #[cfg(feature = "cloud")]
 use polars_io::pl_async::get_runtime;
 use polars_io::utils::byte_source::{
     ByteSource, DynByteSource, DynByteSourceBuilder, MemSliceByteSource,
 };
-use polars_io::{RowIndex, pl_async};
 use polars_plan::dsl::{ScanSource, ScanSourceRef};
 use polars_utils::IdxSize;
 use polars_utils::mem::prefetch::get_memory_prefetch_func;
 use polars_utils::plpath::PlPathRef;
 use polars_utils::slice_enum::Slice;
+use record_batch_data_fetch::RecordBatchDataFetcher;
+use record_batch_decode::RecordBatchDecoder;
 
 use super::multi_scan::reader_interface::output::FileReaderOutputRecv;
 use super::multi_scan::reader_interface::{BeginReadArgs, calc_row_position_after_slice};
 use crate::async_executor::{self, JoinHandle, TaskPriority, spawn};
-use crate::async_primitives::oneshot_channel::Sender;
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
+use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
 use crate::nodes::io_sources::multi_scan::reader_interface::{
     FileReader, FileReaderCallbacks, Projection,
 };
-use crate::utils::tokio_handle_ext;
+use crate::nodes::io_sources::parquet::init::split_to_morsels;
+use crate::utils::tokio_handle_ext::AbortOnDropHandle;
 
 pub mod builder;
-mod init;
 mod record_batch_data_fetch;
 mod record_batch_decode;
 
@@ -284,37 +286,188 @@ impl FileReader for IpcFileReader {
             .min(file_metadata.blocks.len())
             .max(1);
 
-        let config = Config {
-            num_pipelines,
-            record_batch_prefetch_size,
-        };
+        let io_runtime = polars_io::pl_async::get_runtime();
+        let ideal_morsel_size = get_ideal_morsel_size();
 
-        // Create IpcReadImpl and run.
-        let (output_recv, handle) = IpcReadImpl {
-            byte_source,
-            metadata: file_metadata,
-            dictionaries,
-            slice_range,
-            projection_info,
-            row_index,
-            n_rows_in_file_tx,
-            row_position_on_end_tx,
-            config,
-            verbose,
-            memory_prefetch_func,
-
-            rb_prefetch_semaphore: Arc::clone(&self.record_batch_prefetch_sync.prefetch_semaphore),
-            rb_prefetch_prev_all_spawned: Option::take(
-                &mut self.record_batch_prefetch_sync.prev_all_spawned,
-            ),
-            rb_prefetch_current_all_spawned: Option::take(
-                &mut self.record_batch_prefetch_sync.current_all_spawned,
-            ),
+        if verbose {
+            eprintln!(
+                "[IpcFileReader]: num_pipelines: {num_pipelines}, record_batch_prefetch_size: {record_batch_prefetch_size}, ideal_morsel_size: {ideal_morsel_size}"
+            );
+            eprintln!(
+                "[IpcFileReader]: record batch count: {:?}",
+                file_metadata.blocks.len()
+            );
         }
-        .run();
+
+        let record_batch_decoder = Arc::new(RecordBatchDecoder {
+            file_metadata: file_metadata.clone(),
+            projection_info,
+            dictionaries: dictionaries.clone(),
+            row_index,
+            slice_range: slice_range.clone(),
+        });
+
+        // Set up channels.
+        let (prefetch_send, mut prefetch_recv) =
+            tokio::sync::mpsc::channel(record_batch_prefetch_size);
+        let (decode_send, mut decode_recv) = tokio::sync::mpsc::channel(num_pipelines);
+        let (mut morsel_send, morsel_recv) = FileReaderOutputSend::new_serial();
+
+        let rb_prefetch_semaphore = Arc::clone(&self.record_batch_prefetch_sync.prefetch_semaphore);
+        let rb_prefetch_prev_all_spawned =
+            Option::take(&mut self.record_batch_prefetch_sync.prev_all_spawned);
+        let rb_prefetch_current_all_spawned =
+            Option::take(&mut self.record_batch_prefetch_sync.current_all_spawned);
+
+        // Task: Prefetch.
+        let byte_source = byte_source.clone();
+        let metadata = file_metadata.clone();
+        let prefetch_task = AbortOnDropHandle(io_runtime.spawn(async move {
+            let mut record_batch_data_fetcher = RecordBatchDataFetcher {
+                memory_prefetch_func,
+                metadata,
+                byte_source,
+                record_batch_idx: 0,
+                prefetch_send,
+                rb_prefetch_semaphore,
+            };
+
+            // We fetch all record batches so that we know the total number of rows.
+            // @TODO: In case of slicing, it would suffice to fetch the record batch
+            // headers for any record batch that falls outside of the slice.
+
+            if let Some(rb_prefetch_prev_all_spawned) = rb_prefetch_prev_all_spawned {
+                rb_prefetch_prev_all_spawned.wait().await;
+            }
+
+            record_batch_data_fetcher.run().await?;
+
+            drop(rb_prefetch_current_all_spawned);
+
+            PolarsResult::Ok(())
+        }));
+
+        // Task: Decode.
+        let decode_task = AbortOnDropHandle(io_runtime.spawn(async move {
+            let mut current_row_offset: IdxSize = 0;
+
+            while let Some((prefetch_task, permit)) = prefetch_recv.recv().await {
+                let record_batch_data = prefetch_task.await.unwrap()?;
+
+                // Fetch every record batch so we can determine total row count.
+                let rb_num_rows = record_batch_data.num_rows;
+                let rb_num_rows =
+                    IdxSize::try_from(rb_num_rows).map_err(|_| ROW_COUNT_OVERFLOW_ERR)?;
+                let row_range_end = current_row_offset
+                    .checked_add(rb_num_rows)
+                    .ok_or(ROW_COUNT_OVERFLOW_ERR)?;
+                let row_range = current_row_offset..row_range_end;
+                current_row_offset = row_range_end;
+
+                // Only pass to decoder if we need the data.
+                if (row_range.start as usize) < slice_range.end {
+                    let record_batch_decoder = record_batch_decoder.clone();
+                    let decode_fut = async_executor::spawn(TaskPriority::High, async move {
+                        record_batch_decoder
+                            .record_batch_data_to_df(record_batch_data, row_range)
+                            .await
+                    });
+                    if decode_send.send((decode_fut, permit)).await.is_err() {
+                        break;
+                    }
+                } else {
+                    drop(record_batch_data);
+                    drop(permit);
+                }
+            }
+
+            let current_row_offset =
+                IdxSize::try_from(current_row_offset).map_err(|_| ROW_COUNT_OVERFLOW_ERR)?;
+
+            // Handle callback.
+            if let Some(row_position_on_end_tx) = row_position_on_end_tx {
+                _ = row_position_on_end_tx.send(current_row_offset);
+            }
+            if let Some(n_rows_in_file_tx) = n_rows_in_file_tx {
+                _ = n_rows_in_file_tx.send(current_row_offset);
+            }
+
+            PolarsResult::Ok(())
+        }));
+
+        // Task: Distributor.
+        // Distributes morsels across pipelines. This does not perform any CPU or I/O bound work -
+        // it is purely a dispatch loop. Run on the computational executor to reduce context switches.
+        let last_morsel_min_split = num_pipelines;
+        let distribute_task = async_executor::spawn(TaskPriority::High, async move {
+            let mut morsel_seq = MorselSeq::default();
+            // Note: We don't use this (it is handled by the bridge). But morsels require a source token.
+            let source_token = SourceToken::new();
+
+            // Decode first non-empty morsel.
+            let mut next = None;
+            loop {
+                let Some((decode_fut, permit)) = decode_recv.recv().await else {
+                    break;
+                };
+                let df = decode_fut.await?;
+                if df.height() == 0 {
+                    continue;
+                }
+                next = Some((df, permit));
+                break;
+            }
+
+            while let Some((df, permit)) = next.take() {
+                // Try to decode the next non-empty morsel first, so we know
+                // whether the df is the last morsel.
+
+                // Important: Drop this before awaiting the next one, or could
+                // deadlock if the permit limit is 1.
+                drop(permit);
+                loop {
+                    let Some((decode_fut, permit)) = decode_recv.recv().await else {
+                        break;
+                    };
+                    let next_df = decode_fut.await?;
+                    if next_df.height() == 0 {
+                        continue;
+                    }
+                    next = Some((next_df, permit));
+                    break;
+                }
+
+                for df in split_to_morsels(
+                    &df,
+                    ideal_morsel_size,
+                    next.is_none(),
+                    last_morsel_min_split,
+                ) {
+                    if morsel_send
+                        .send_morsel(Morsel::new(df, morsel_seq, source_token.clone()))
+                        .await
+                        .is_err()
+                    {
+                        return Ok(());
+                    }
+                    morsel_seq = morsel_seq.successor();
+                }
+            }
+            PolarsResult::Ok(())
+        });
+
+        // Orchestration.
+        let join_task = io_runtime.spawn(async move {
+            prefetch_task.await.unwrap()?;
+            decode_task.await.unwrap()?;
+            distribute_task.await?;
+            Ok(())
+        });
+
+        let handle = AbortOnDropHandle(join_task);
 
         Ok((
-            output_recv,
+            morsel_recv,
             async_executor::spawn(TaskPriority::Low, async move { handle.await.unwrap() }),
         ))
     }
@@ -437,41 +590,6 @@ impl IpcFileReader {
             pre_slice,
         ))
     }
-}
-
-type AsyncTaskData = (
-    FileReaderOutputRecv,
-    tokio_handle_ext::AbortOnDropHandle<PolarsResult<()>>,
-);
-
-struct IpcReadImpl {
-    // Source info
-    byte_source: Arc<DynByteSource>,
-    metadata: Arc<FileMetadata>,
-    // Lazily initialized.
-    dictionaries: Arc<Option<Dictionaries>>,
-    // Query parameters.
-    slice_range: Range<usize>,
-    projection_info: Arc<Option<ProjectionInfo>>,
-    row_index: Option<RowIndex>,
-    // Call-backs.
-    n_rows_in_file_tx: Option<Sender<IdxSize>>,
-    row_position_on_end_tx: Option<Sender<IdxSize>>,
-    // Run-time vars.
-    config: Config,
-    verbose: bool,
-    memory_prefetch_func: fn(&[u8]) -> (),
-
-    rb_prefetch_semaphore: Arc<tokio::sync::Semaphore>,
-    rb_prefetch_prev_all_spawned: Option<WaitGroup>,
-    rb_prefetch_current_all_spawned: Option<WaitToken>,
-}
-
-#[derive(Debug)]
-struct Config {
-    num_pipelines: usize,
-    /// Number of record batches to prefetch concurrently, this can be across files
-    record_batch_prefetch_size: usize,
 }
 
 async fn read_dictionaries(

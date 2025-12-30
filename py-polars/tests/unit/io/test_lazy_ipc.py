@@ -268,3 +268,8 @@ def test_scan_ipc_file_async_multiple_record_batches(
         pl.scan_ipc(buf).select(pl.col.a.sum()).collect(),
         df.select(pl.col.a.sum()),
     )
+
+    assert_frame_equal(
+        pl.scan_ipc(buffers, row_index_name="ri").tail(15).select(pl.col.ri).collect(),
+        pl.concat([df, df]).with_row_index("ri").tail(15).select(pl.col.ri),
+    )
