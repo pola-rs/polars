@@ -151,10 +151,6 @@ pub fn get_supertype_with_options(
     fn inner(l: &DataType, r: &DataType, options: SuperTypeOptions) -> Option<DataType> {
         use DataType::*;
 
-        if matches!((l, r), (Boolean, Boolean)) {
-            return Some(DataType::IDX_DTYPE);
-        }
-
         if l == r {
             return Some(l.clone());
         }
