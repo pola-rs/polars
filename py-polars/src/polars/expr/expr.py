@@ -3115,9 +3115,14 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.max())
 
+    @unstable()
     def max_by(self, by: IntoExpr) -> Expr:
         """
         Get maximum value, ordered by another expression.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -3160,9 +3165,14 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.min())
 
+    @unstable()
     def min_by(self, by: IntoExpr) -> Expr:
         """
         Get minimum value, ordered by another expression.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------

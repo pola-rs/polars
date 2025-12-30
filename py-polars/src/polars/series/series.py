@@ -2156,9 +2156,14 @@ class Series:
         """
         return self._s.min()
 
+    @unstable()
     def min_by(self, by: IntoExpr) -> Expr:
         """
         Get the minimum value in this Series, ordered by an expression.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -2186,9 +2191,14 @@ class Series:
         """
         return self._s.max()
 
+    @unstable()
     def max_by(self, by: IntoExpr) -> Expr:
         """
         Get the maximum value in this Series, ordered by an expression.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
