@@ -53,13 +53,15 @@ impl CsvWriterStarter {
             let serialized_row_size_estimate = u64::saturating_mul(self.schema.len() as _, 25);
 
             let base_allocation_size: usize = u64::min(
-                ideal_morsel_size.num_bytes.div_ceil(2).saturating_mul(5),
-                u64::saturating_mul(
-                    serialized_row_size_estimate,
-                    ideal_morsel_size.num_rows as _,
+                64 * 1024 * 1024,
+                u64::min(
+                    ideal_morsel_size.num_bytes.div_ceil(2).saturating_mul(5),
+                    u64::saturating_mul(
+                        serialized_row_size_estimate,
+                        ideal_morsel_size.num_rows as _,
+                    ),
                 ),
-            )
-            .min(64 * 1024 * 1024) as _;
+            ) as _;
 
             if config::verbose() {
                 eprintln!("[CsvWriterStarter]: base_allocation_size: {base_allocation_size}")
