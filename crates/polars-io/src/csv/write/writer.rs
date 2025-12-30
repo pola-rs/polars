@@ -30,7 +30,6 @@ where
     W: Write,
 {
     fn new(buffer: W) -> Self {
-        // 9f: all nanoseconds
         let options = SerializeOptions::default();
 
         CsvWriter {
