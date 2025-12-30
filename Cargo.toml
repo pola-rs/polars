@@ -92,7 +92,7 @@ serde = { version = "1.0.188", features = ["derive", "rc"] }
 serde_json = "1"
 serde_stacker = "0.1.12"
 sha2 = "0.10"
-simd-json = { version = "0.17", features = ["known-key"] }
+simd-json = { version = "0.17", features = ["known-key", "128bit"] }
 simdutf8 = "0.1.4"
 slotmap = "1"
 sqlparser = { version = "0.60", features = ["visitor"] }

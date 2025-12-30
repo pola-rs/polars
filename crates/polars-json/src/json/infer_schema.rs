@@ -17,6 +17,7 @@ pub fn infer(json: &BorrowedValue) -> PolarsResult<ArrowDataType> {
     Ok(match json {
         BorrowedValue::Static(StaticNode::Bool(_)) => ArrowDataType::Boolean,
         BorrowedValue::Static(StaticNode::U64(_) | StaticNode::I64(_)) => ArrowDataType::Int64,
+        BorrowedValue::Static(StaticNode::U128(_) | StaticNode::I128(_)) => ArrowDataType::Int128,
         BorrowedValue::Static(StaticNode::F64(_)) => ArrowDataType::Float64,
         BorrowedValue::Static(StaticNode::Null) => ArrowDataType::Null,
         BorrowedValue::Array(array) => infer_array(array)?,

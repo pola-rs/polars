@@ -711,10 +711,18 @@ def test_ndjson_22229() -> None:
 
 
 def test_json_encode_enum_23826() -> None:
-    s = pl.Series("a", ["b"], dtype=pl.Enum(["b"]))
+    s = pl.Series("a", ["foo", "bar"], dtype=pl.Enum(["bar", "foo"]))
     assert_series_equal(
         s.to_frame().select(c=pl.struct("a").struct.json_encode()).to_series(),
-        pl.Series("c", ['{"a":"0"}'], pl.String),
+        pl.Series("c", ['{"a":"foo"}', '{"a":"bar"}'], pl.String),
+    )
+
+
+def test_json_encode_categorical() -> None:
+    s = pl.Series("a", ["foo", "bar"], dtype=pl.Categorical)
+    assert_series_equal(
+        s.to_frame().select(c=pl.struct("a").struct.json_encode()).to_series(),
+        pl.Series("c", ['{"a":"foo"}', '{"a":"bar"}'], pl.String),
     )
 
 
