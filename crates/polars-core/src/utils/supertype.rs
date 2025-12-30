@@ -150,12 +150,16 @@ pub fn get_supertype_with_options(
 ) -> Option<DataType> {
     fn inner(l: &DataType, r: &DataType, options: SuperTypeOptions) -> Option<DataType> {
         use DataType::*;
+            
+        if matches!((l, r), (Boolean, Boolean)) {
+            return Some(DataType::IDX_DTYPE);
+        }
+
         if l == r {
             return Some(l.clone());
         }
-        match (l, r) {
-            (Boolean, Boolean) => Some(IDX_DTYPE),
 
+        match (l, r) {
             #[cfg(feature = "dtype-i8")]
             (Int8, Boolean) => Some(Int8),
             //(Int8, Int8) => Some(Int8),
