@@ -1332,7 +1332,8 @@ def test_min_max_by(agg_funcs: Any, by_col: str) -> None:
 
     # TODO: remove after https://github.com/pola-rs/polars/issues/25906.
     df = df.drop("cat")
+    cols = [c for c in COLS if c != "cat"]
 
-    result = df.group_by("g").agg([agg_by(pl.col(c), pl.col(by_col)) for c in COLS])
-    expected = df.group_by("g").agg([agg(pl.col(c)) for c in COLS])
+    result = df.group_by("g").agg([agg_by(pl.col(c), pl.col(by_col)) for c in cols])
+    expected = df.group_by("g").agg([agg(pl.col(c)) for c in cols])
     assert_frame_equal(result, expected, check_row_order=False)
