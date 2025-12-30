@@ -31,10 +31,7 @@ where
 {
     fn new(buffer: W) -> Self {
         // 9f: all nanoseconds
-        let options = SerializeOptions {
-            time_format: Some("%T%.9f".to_string()),
-            ..Default::default()
-        };
+        let options = SerializeOptions::default();
 
         CsvWriter {
             buffer,

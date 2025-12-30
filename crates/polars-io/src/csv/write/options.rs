@@ -60,7 +60,7 @@ impl Default for SerializeOptions {
     fn default() -> Self {
         Self {
             date_format: None,
-            time_format: None,
+            time_format: Some("%T%.9f".to_string()),
             datetime_format: None,
             float_scientific: None,
             float_precision: None,
