@@ -291,12 +291,23 @@ impl<T: NativeType> PrimitiveArray<T> {
 
     /// Applies a function `f` to the validity of this array.
     ///
-    /// This is an API to leverage clone-on-write
     /// # Panics
     /// This function panics if the function `f` modifies the length of the [`Bitmap`].
     pub fn apply_validity<F: FnOnce(Bitmap) -> Bitmap>(&mut self, f: F) {
         if let Some(validity) = std::mem::take(&mut self.validity) {
             self.set_validity(Some(f(validity)))
+        }
+    }
+
+    /// Applies a function `f` to the values of this array, ignoring validity,
+    /// in-place if possible.
+    pub fn with_values_mut<F: FnOnce(&mut [T])>(&mut self, f: F) {
+        if let Some(slice) = self.values.get_mut_slice() {
+            f(slice)
+        } else {
+            let mut values = self.values.to_vec();
+            f(&mut values);
+            self.values = Buffer::from(values);
         }
     }
 

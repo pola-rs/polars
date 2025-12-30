@@ -442,7 +442,7 @@ pub fn array_to_pages<K: DictionaryKey>(
             let (dict_page, mut statistics): (_, Option<ParquetStatistics>) = match array
                 .values()
                 .dtype()
-                .to_logical_type()
+                .to_storage()
             {
                 ArrowDataType::Int8 => dyn_prim!(i8, i32, array, options, type_),
                 ArrowDataType::Int16 => dyn_prim!(i16, i32, array, options, type_),

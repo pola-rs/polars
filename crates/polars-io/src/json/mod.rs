@@ -70,6 +70,7 @@ use std::ops::Deref;
 
 use arrow::array::LIST_VALUES_NAME;
 use arrow::legacy::conversion::chunk_to_struct;
+use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_error::{PolarsResult, polars_bail};
@@ -288,66 +289,91 @@ where
 
                 let allow_extra_fields_in_struct = self.schema.is_some();
 
-                // struct type
-                let dtype = if let Some(mut schema) = self.schema {
-                    if let Some(overwrite) = self.schema_overwrite {
-                        let mut_schema = Arc::make_mut(&mut schema);
-                        overwrite_schema(mut_schema, overwrite)?;
-                    }
-
-                    DataType::Struct(schema.iter_fields().collect()).to_arrow(CompatLevel::newest())
+                let mut schema = if let Some(schema) = self.schema {
+                    Arc::unwrap_or_clone(schema)
                 } else {
-                    // infer
+                    // Infer.
                     let inner_dtype = if let BorrowedValue::Array(values) = &json_value {
                         infer::json_values_to_supertype(
                             values,
                             self.infer_schema_len
                                 .unwrap_or(NonZeroUsize::new(usize::MAX).unwrap()),
                         )?
-                        .to_arrow(CompatLevel::newest())
                     } else {
-                        polars_json::json::infer(&json_value)?
+                        DataType::from_arrow_dtype(&polars_json::json::infer(&json_value)?)
                     };
 
-                    if let Some(overwrite) = self.schema_overwrite {
-                        let ArrowDataType::Struct(fields) = inner_dtype else {
-                            polars_bail!(ComputeError: "can only deserialize json objects")
-                        };
+                    let DataType::Struct(fields) = inner_dtype else {
+                        polars_bail!(ComputeError: "can only deserialize json objects")
+                    };
 
-                        let mut schema = Schema::from_iter(fields.iter().map(Into::<Field>::into));
-                        overwrite_schema(&mut schema, overwrite)?;
-
-                        DataType::Struct(
-                            schema
-                                .into_iter()
-                                .map(|(name, dt)| Field::new(name, dt))
-                                .collect(),
-                        )
-                        .to_arrow(CompatLevel::newest())
-                    } else {
-                        inner_dtype
-                    }
+                    Schema::from_iter(fields)
                 };
 
-                let dtype = if let BorrowedValue::Array(_) = &json_value {
+                if let Some(overwrite) = self.schema_overwrite {
+                    overwrite_schema(&mut schema, overwrite)?;
+                }
+
+                let mut needs_cast = false;
+                let deserialize_schema = schema
+                    .iter()
+                    .map(|(name, dt)| {
+                        Field::new(
+                            name.clone(),
+                            dt.clone().map_leaves(&mut |leaf_dt| {
+                                // Deserialize enums and categoricals as strings first.
+                                match leaf_dt {
+                                    #[cfg(feature = "dtype-categorical")]
+                                    DataType::Enum(..) | DataType::Categorical(..) => {
+                                        needs_cast = true;
+                                        DataType::String
+                                    },
+                                    leaf_dt => leaf_dt,
+                                }
+                            }),
+                        )
+                    })
+                    .collect();
+
+                let arrow_dtype =
+                    DataType::Struct(deserialize_schema).to_arrow(CompatLevel::newest());
+
+                let arrow_dtype = if let BorrowedValue::Array(_) = &json_value {
                     ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
                         LIST_VALUES_NAME,
-                        dtype,
+                        arrow_dtype,
                         true,
                     )))
                 } else {
-                    dtype
+                    arrow_dtype
                 };
 
                 let arr = polars_json::json::deserialize(
                     &json_value,
-                    dtype,
+                    arrow_dtype,
                     allow_extra_fields_in_struct,
                 )?;
                 let arr = arr.as_any().downcast_ref::<StructArray>().ok_or_else(
                     || polars_err!(ComputeError: "can only deserialize json objects"),
                 )?;
-                DataFrame::try_from(arr.clone())
+
+                let mut df = DataFrame::try_from(arr.clone())?;
+                if needs_cast {
+                    unsafe {
+                        for (col, dt) in df.get_columns_mut().iter_mut().zip(schema.iter_values()) {
+                            *col = col.cast_with_options(
+                                dt,
+                                if self.ignore_errors {
+                                    CastOptions::NonStrict
+                                } else {
+                                    CastOptions::Strict
+                                },
+                            )?;
+                        }
+                        df.clear_schema();
+                    }
+                }
+                PolarsResult::Ok(df)
             },
             JsonFormat::JsonLines => {
                 let mut json_reader = CoreJsonReader::new(

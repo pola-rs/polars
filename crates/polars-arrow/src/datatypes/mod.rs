@@ -32,7 +32,8 @@ pub(crate) type Extension = Option<(PlSmallStr, Option<PlSmallStr>)>;
 /// Each variant has a corresponding [`PhysicalType`], obtained via [`ArrowDataType::to_physical_type`],
 /// which declares the in-memory representation of data.
 /// The [`ArrowDataType::Extension`] is special in that it augments a [`ArrowDataType`] with metadata to support custom types.
-/// Use `to_logical_type` to desugar such type and return its corresponding logical type.
+/// Use `to_storage` to desugar such type and return its corresponding logical type, or `to_storage_recursive` to do
+/// this for Extension types inside nested types as well.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -334,6 +335,10 @@ impl ArrowDataType {
     pub fn underlying_physical_type(&self) -> ArrowDataType {
         use ArrowDataType::*;
         match self {
+            Null | Boolean | Int8 | Int16 | Int32 | Int64 | Int128 | UInt8 | UInt16 | UInt32
+            | UInt64 | UInt128 | Float16 | Float32 | Float64 | Binary | LargeBinary | Utf8
+            | LargeUtf8 | BinaryView | Utf8View | FixedSizeBinary(_) | Unknown => self.clone(),
+
             Decimal32(_, _) | Date32 | Time32(_) | Interval(IntervalUnit::YearMonth) => Int32,
             Decimal64(_, _)
             | Date64
@@ -341,49 +346,39 @@ impl ArrowDataType {
             | Time64(_)
             | Duration(_)
             | Interval(IntervalUnit::DayTime) => Int64,
-            Interval(IntervalUnit::MonthDayNano) => unimplemented!(),
-            Binary => Binary,
+            Interval(IntervalUnit::MonthDayNano | IntervalUnit::MonthDayMillis) => unimplemented!(),
             Decimal(_, _) => Int128,
             Decimal256(_, _) => unimplemented!(),
-            List(field) => List(Box::new(Field {
-                dtype: field.dtype.underlying_physical_type(),
-                ..*field.clone()
-            })),
-            LargeList(field) => LargeList(Box::new(Field {
-                dtype: field.dtype.underlying_physical_type(),
-                ..*field.clone()
-            })),
+            List(field) => List(Box::new(
+                field.with_dtype(field.dtype.underlying_physical_type()),
+            )),
+            LargeList(field) => LargeList(Box::new(
+                field.with_dtype(field.dtype.underlying_physical_type()),
+            )),
             FixedSizeList(field, width) => FixedSizeList(
-                Box::new(Field {
-                    dtype: field.dtype.underlying_physical_type(),
-                    ..*field.clone()
-                }),
+                Box::new(field.with_dtype(field.dtype.underlying_physical_type())),
                 *width,
             ),
             Struct(fields) => Struct(
                 fields
                     .iter()
-                    .map(|field| Field {
-                        dtype: field.dtype.underlying_physical_type(),
-                        ..field.clone()
-                    })
+                    .map(|field| field.with_dtype(field.dtype.underlying_physical_type()))
                     .collect(),
             ),
             Dictionary(keys, _, _) => (*keys).into(),
             Union(_) => unimplemented!(),
             Map(_, _) => unimplemented!(),
             Extension(ext) => ext.inner.underlying_physical_type(),
-            _ => self.clone(),
         }
     }
 
     /// Returns `&self` for all but [`ArrowDataType::Extension`]. For [`ArrowDataType::Extension`],
     /// (recursively) returns the inner [`ArrowDataType`].
     /// Never returns the variant [`ArrowDataType::Extension`].
-    pub fn to_logical_type(&self) -> &ArrowDataType {
+    pub fn to_storage(&self) -> &ArrowDataType {
         use ArrowDataType::*;
         match self {
-            Extension(ext) => ext.inner.to_logical_type(),
+            Extension(ext) => ext.inner.to_storage(),
             _ => self,
         }
     }

@@ -101,7 +101,7 @@ pub(crate) fn serialize_field(field: &Field, ipc_field: &IpcField) -> arrow_form
     let children = serialize_children(field.dtype(), ipc_field);
 
     let dictionary = if let ArrowDataType::Dictionary(index_type, inner, is_ordered) =
-        field.dtype().to_logical_type()
+        field.dtype().to_storage()
     {
         if let ArrowDataType::Extension(ext) = inner.as_ref() {
             write_extension(
