@@ -25,8 +25,8 @@ use polars_utils::slice_enum::Slice;
 use record_batch_data_fetch::RecordBatchDataFetcher;
 use record_batch_decode::RecordBatchDecoder;
 
+use super::multi_scan::reader_interface::BeginReadArgs;
 use super::multi_scan::reader_interface::output::FileReaderOutputRecv;
-use super::multi_scan::reader_interface::{BeginReadArgs, calc_row_position_after_slice};
 use crate::async_executor::{self, JoinHandle, TaskPriority, spawn};
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
@@ -73,7 +73,7 @@ struct InitializedState {
     file_metadata: Arc<FileMetadata>,
     byte_source: Arc<DynByteSource>,
     dictionaries: Arc<Option<Dictionaries>>,
-    // Lazily initialized - getting this involves iterating record batches.
+    // Lazily initialized - getting this involves iterating over all record batch headers.
     n_rows_in_file: Option<IdxSize>,
 }
 
@@ -178,6 +178,8 @@ impl FileReader for IpcFileReader {
             panic!("unsupported args: {:?}", &args)
         };
 
+        debug_assert!(!matches!(pre_slice_arg, Some(Slice::Negative { .. })));
+
         let file_schema_pl = std::cell::LazyCell::new(|| {
             Arc::new(Schema::from_arrow_schema(file_metadata.schema.as_ref()))
         });
@@ -187,29 +189,20 @@ impl FileReader for IpcFileReader {
             _ = file_schema_tx.send(file_schema_pl.clone());
         }
 
-        // Normalize slice.
-        // @NOTE. When this is expensive (e.g., when downloading from cloud) and not strictly required,
-        // we skip this normalization and handle it later. Negative slicing requires normalization.
-        let normalized_pre_slice = if let Some(pre_slice) = pre_slice_arg.clone()
-            && !(self.scan_source.is_cloud_url() && matches!(pre_slice, Slice::Positive { .. }))
-        {
-            Some(pre_slice.restrict_to_bounds(usize::try_from(self._n_rows_in_file()?).unwrap()))
-        } else {
-            pre_slice_arg.clone()
-        };
-
-        if normalized_pre_slice.as_ref().is_some_and(|x| x.len() == 0) {
+        // The following early return path is relied upon for lazy initialization of total row count.
+        // @NOTE. Negative slicing takes a 2-pass approach: the first pass gets the total row count
+        // using the early return path, which is then used to convert the negative slice into a
+        // positive slice; the second pass uses the positive slice to fetch and slice the data.
+        if pre_slice_arg.as_ref().is_some_and(|x| x.len() == 0) {
             let (_, rx) = FileReaderOutputSend::new_serial();
-            let n_rows = self._n_rows_in_file()?;
+            let n_rows = self.fetch_n_rows_in_file()?;
 
             if verbose {
                 eprintln!(
                     "[IpcFileReader]: early return: \
-                    n_rows_in_file: {}, \
-                    pre_slice: {:?}, \
-                    resolved_pre_slice: {:?} \
+                    n_rows_in_file: {} \
                     ",
-                    n_rows, pre_slice_arg, normalized_pre_slice
+                    n_rows
                 )
             }
 
@@ -225,7 +218,7 @@ impl FileReader for IpcFileReader {
         }
 
         // Always create a slice. If no slice was given, just make the biggest slice possible.
-        let slice_range: Range<usize> = normalized_pre_slice
+        let slice_range: Range<usize> = pre_slice_arg
             .clone()
             .map_or(0..usize::MAX, Range::<usize>::from);
 
@@ -261,15 +254,13 @@ impl FileReader for IpcFileReader {
             eprintln!(
                 "[IpcFileReader]: \
                 project: {} / {}, \
-                pre_slice: {:?}, \
-                resolved_pre_slice: {:?} \
+                pre_slice: {:?} \
                 ",
                 projection_indices
                     .as_ref()
                     .map_or(file_metadata.schema.len(), |x| x.len()),
                 file_metadata.schema.len(),
                 pre_slice_arg,
-                normalized_pre_slice
             )
         }
 
@@ -471,23 +462,12 @@ impl FileReader for IpcFileReader {
             async_executor::spawn(TaskPriority::Low, async move { handle.await.unwrap() }),
         ))
     }
-
-    async fn n_rows_in_file(&mut self) -> PolarsResult<IdxSize> {
-        self._n_rows_in_file()
-    }
-
-    async fn row_position_after_slice(
-        &mut self,
-        pre_slice: Option<Slice>,
-    ) -> PolarsResult<IdxSize> {
-        self._row_position_after_slice(pre_slice)
-    }
 }
 
 impl IpcFileReader {
     /// Total number of rows in the IPC File. This can be slow if the underlying
     /// byte_source is an object store with a high number of Record Batches.
-    fn _n_rows_in_file(&mut self) -> PolarsResult<IdxSize> {
+    fn fetch_n_rows_in_file(&mut self) -> PolarsResult<IdxSize> {
         let InitializedState {
             file_metadata,
             byte_source,
@@ -522,6 +502,7 @@ impl IpcFileReader {
                         })
                         .collect();
 
+                    // @TODO: move to async
                     let bytes_map = io_runtime.block_on(byte_source.get_ranges(&mut ranges))?;
                     assert_eq!(bytes_map.len(), ranges.len());
 
@@ -582,13 +563,6 @@ impl IpcFileReader {
         };
 
         Ok(Arc::new(metadata))
-    }
-
-    fn _row_position_after_slice(&mut self, pre_slice: Option<Slice>) -> PolarsResult<IdxSize> {
-        Ok(calc_row_position_after_slice(
-            self._n_rows_in_file()?,
-            pre_slice,
-        ))
     }
 }
 
