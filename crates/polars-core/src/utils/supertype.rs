@@ -154,7 +154,7 @@ pub fn get_supertype_with_options(
             return Some(l.clone());
         }
         match (l, r) {
-            (Boolean, Boolean) => Some(DataType::IDX_DTYPE),
+            (Boolean, Boolean) => Some(IDX_DTYPE),
 
             #[cfg(feature = "dtype-i8")]
             (Int8, Boolean) => Some(Int8),
