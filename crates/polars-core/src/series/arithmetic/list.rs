@@ -181,6 +181,11 @@ mod inner {
 
             let output_primitive_dtype =
                 op.0.try_get_leaf_supertype(prim_dtype_lhs, prim_dtype_rhs)?;
+            
+            // Temp debug line
+            if prim_dtype_lhs == &DataType::Boolean && prim_dtype_rhs == &DataType::Boolean {
+                panic!("DEBUG: Boolean+Boolean supertype = {:?}", output_primitive_dtype);
+            }
 
             fn is_list_type_at_all_levels(dtype: &DataType) -> bool {
                 match dtype {
