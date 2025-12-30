@@ -212,7 +212,7 @@ pub(super) fn get_client_options() -> ClientOptions {
                         })
                         .get()
                 })
-                .unwrap_or(10 * 60),
+                .unwrap_or(30 * 60),
         ))
         // Concurrency can increase connection latency, so also set high.
         .with_connect_timeout(std::time::Duration::from_secs(
@@ -225,7 +225,7 @@ pub(super) fn get_client_options() -> ClientOptions {
                         })
                         .get()
                 })
-                .unwrap_or(10 * 60),
+                .unwrap_or(30 * 60),
         ))
         .with_user_agent(HeaderValue::from_static(USER_AGENT))
         .with_allow_http(true)
