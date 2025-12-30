@@ -789,10 +789,7 @@ pub(super) fn serializer_for<'a>(
         )?,
         #[cfg(feature = "dtype-time")]
         DataType::Time => date_and_time_serializer(
-            Some(options.time_format.as_deref().unwrap_or({
-                static DEFAULT: &str = "%T%.9f"; // 9f: all nanoseconds
-                DEFAULT
-            })),
+            Some(options.time_format.as_deref().unwrap_or("%T%.9f")),
             "NaiveTime",
             array,
             chrono::NaiveTime::MIN,
