@@ -402,12 +402,12 @@ def test_concat_with_empty_dataframes() -> None:
 def test_concat_with_empty_dataframes_nonstrict_25727() -> None:
     df = pl.LazyFrame({"a": [1, 2], "b": ["x", "y"]})
     result = pl.concat([df, df.select([])], how="horizontal", strict=False)
-    expected = pl.DataFrame({"a": [1, 2], "b": ["x", "y"]})
+    expected = pl.LazyFrame({"a": [1, 2], "b": ["x", "y"]})
     assert_frame_equal(result, expected)
 
     empty_df = pl.LazyFrame(schema={"c": pl.Int64})
     result = pl.concat([empty_df, df], how="horizontal", strict=False)
-    expected = pl.DataFrame(
+    expected = pl.LazyFrame(
         {"c": [None, None], "a": [1, 2], "b": ["x", "y"]},
         schema={"c": pl.Int64, "a": pl.Int64, "b": pl.String},
     )
