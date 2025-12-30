@@ -150,7 +150,7 @@ pub fn get_supertype_with_options(
 ) -> Option<DataType> {
     fn inner(l: &DataType, r: &DataType, options: SuperTypeOptions) -> Option<DataType> {
         use DataType::*;
-            
+
         if matches!((l, r), (Boolean, Boolean)) {
             return Some(DataType::IDX_DTYPE);
         }
