@@ -42,6 +42,8 @@ fn deserialize_primitive_into<'a, T: NativeType + NumCast, A: Borrow<BorrowedVal
     let iter = rows.iter().enumerate().map(|(i, row)| match row.borrow() {
         BorrowedValue::Static(StaticNode::I64(v)) => T::from(*v),
         BorrowedValue::Static(StaticNode::U64(v)) => T::from(*v),
+        BorrowedValue::Static(StaticNode::I128(v)) => T::from(*v),
+        BorrowedValue::Static(StaticNode::U128(v)) => T::from(*v),
         BorrowedValue::Static(StaticNode::F64(v)) => T::from(*v),
         BorrowedValue::Static(StaticNode::Bool(v)) => T::from(*v as u8),
         BorrowedValue::Static(StaticNode::Null) => None,
@@ -67,6 +69,10 @@ fn deserialize_decimal<'a, A: Borrow<BorrowedValue<'a>>>(
         let decode = match row.borrow() {
             BorrowedValue::Static(StaticNode::I64(v)) => i128_to_dec128(*v as i128, prec, scale),
             BorrowedValue::Static(StaticNode::U64(v)) => i128_to_dec128(*v as i128, prec, scale),
+            BorrowedValue::Static(StaticNode::I128(v)) => i128_to_dec128(*v, prec, scale),
+            BorrowedValue::Static(StaticNode::U128(v)) => i128::try_from(*v)
+                .ok()
+                .and_then(|v| i128_to_dec128(v, prec, scale)),
             BorrowedValue::Static(StaticNode::F64(v)) => f64_to_dec128(*v, prec, scale),
             BorrowedValue::String(s) => str_to_dec128(s.as_bytes(), prec, scale, false),
             BorrowedValue::Static(StaticNode::Null) => return None,
@@ -409,6 +415,9 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
         | ArrowDataType::Duration(_) => {
             fill_array_from::<_, _, PrimitiveArray<i64>>(deserialize_primitive_into, dtype, rows)
         },
+        ArrowDataType::Int128 => {
+            fill_array_from::<_, _, PrimitiveArray<i128>>(deserialize_primitive_into, dtype, rows)
+        },
         ArrowDataType::Timestamp(tu, tz) => {
             let mut err_idx = rows.len();
             let iter = rows.iter().enumerate().map(|(i, row)| match row.borrow() {
@@ -443,6 +452,9 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
         },
         ArrowDataType::UInt64 => {
             fill_array_from::<_, _, PrimitiveArray<u64>>(deserialize_primitive_into, dtype, rows)
+        },
+        ArrowDataType::UInt128 => {
+            fill_array_from::<_, _, PrimitiveArray<u128>>(deserialize_primitive_into, dtype, rows)
         },
         ArrowDataType::Float16 => {
             fill_array_from::<_, _, PrimitiveArray<pf16>>(deserialize_primitive_into, dtype, rows)

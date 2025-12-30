@@ -28,8 +28,8 @@ fn write_integer<I: itoa::Integer>(buf: &mut Vec<u8>, val: I) {
     buf.extend_from_slice(value.as_bytes())
 }
 
-fn write_float<I: ryu::Float>(f: &mut Vec<u8>, val: I) {
-    let mut buffer = ryu::Buffer::new();
+fn write_float<I: zmij::Float>(f: &mut Vec<u8>, val: I) {
+    let mut buffer = zmij::Buffer::new();
     let value = buffer.format(val);
     f.extend_from_slice(value.as_bytes())
 }
@@ -99,7 +99,7 @@ fn float_serializer<'a, T>(
     take: usize,
 ) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync>
 where
-    T: num_traits::Float + NativeType + ryu::Float,
+    T: num_traits::Float + NativeType + zmij::Float,
 {
     let f = |x: Option<&T>, buf: &mut Vec<u8>| {
         if let Some(x) = x {
@@ -479,6 +479,9 @@ pub(crate) fn new_serializer<'a>(
         ArrowDataType::Int64 => {
             primitive_serializer::<i64>(array.as_any().downcast_ref().unwrap(), offset, take)
         },
+        ArrowDataType::Int128 => {
+            primitive_serializer::<i128>(array.as_any().downcast_ref().unwrap(), offset, take)
+        },
         ArrowDataType::UInt8 => {
             primitive_serializer::<u8>(array.as_any().downcast_ref().unwrap(), offset, take)
         },
@@ -490,6 +493,9 @@ pub(crate) fn new_serializer<'a>(
         },
         ArrowDataType::UInt64 => {
             primitive_serializer::<u64>(array.as_any().downcast_ref().unwrap(), offset, take)
+        },
+        ArrowDataType::UInt128 => {
+            primitive_serializer::<u128>(array.as_any().downcast_ref().unwrap(), offset, take)
         },
         ArrowDataType::Float16 => {
             float16_serializer(array.as_any().downcast_ref().unwrap(), offset, take)

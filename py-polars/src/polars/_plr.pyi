@@ -2349,40 +2349,6 @@ class PyCategories:
     def cat_to_str(self, cat: int) -> str | None: ...
     def is_global(self) -> bool: ...
 
-class PyBatchedCsv:
-    @staticmethod
-    def new(
-        infer_schema_length: int | None,
-        chunk_size: int,
-        has_header: bool,
-        ignore_errors: bool,
-        n_rows: int | None,
-        skip_rows: int,
-        skip_lines: int,
-        projection: Sequence[int] | None,
-        separator: str,
-        rechunk: bool,
-        columns: Sequence[str] | None,
-        encoding: CsvEncoding,
-        n_threads: int | None,
-        path: Any,
-        schema_overrides: Sequence[tuple[str, DataType]] | None,
-        overwrite_dtype_slice: Sequence[DataType] | None,
-        low_memory: bool,
-        comment_prefix: str | None,
-        quote_char: str | None,
-        null_values: NullValues | None,
-        missing_utf8_is_empty_string: bool,
-        try_parse_dates: bool,
-        skip_rows_after_header: int,
-        row_index: tuple[str, int] | None,
-        eol_char: str,
-        raise_if_empty: bool,
-        truncate_ragged_lines: bool,
-        decimal_comma: bool,
-    ) -> PyBatchedCsv: ...
-    def next_batches(self, n: int) -> list[PyDataFrame] | None: ...
-
 # catalog
 class PyCatalogClient:
     @staticmethod
