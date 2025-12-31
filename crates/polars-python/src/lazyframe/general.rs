@@ -628,6 +628,7 @@ impl PyLazyFrame {
         })
     }
 
+    #[cfg(feature = "async")]
     #[pyo3(signature = (engine, lambda))]
     fn collect_with_callback(
         &self,
@@ -661,6 +662,7 @@ impl PyLazyFrame {
         })
     }
 
+    #[cfg(feature = "async")]
     fn collect_batches(
         &self,
         py: Python<'_>,
