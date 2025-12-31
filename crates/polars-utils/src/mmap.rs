@@ -7,6 +7,7 @@ use std::sync::LazyLock;
 pub use memmap::Mmap;
 
 mod private {
+    use std::cmp;
     use std::fs::File;
     use std::ops::Deref;
     use std::sync::Arc;
@@ -23,7 +24,7 @@ mod private {
     ///
     /// This still owns the all the original memory and therefore should probably not be a long-lasting
     /// structure.
-    #[derive(Clone, Debug)]
+    #[derive(Clone)]
     pub struct MemSlice {
         // Store the `&[u8]` to make the `Deref` free.
         // `slice` is not 'static - it is backed by `inner`. This is safe as long as `slice` is not
@@ -35,7 +36,7 @@ mod private {
     }
 
     /// Keeps the underlying buffer alive. This should be cheaply cloneable.
-    #[derive(Clone, Debug)]
+    #[derive(Clone)]
     #[allow(unused)]
     enum MemSliceInner {
         Bytes(bytes::Bytes), // Separate because it does atomic refcounting internally
@@ -148,6 +149,40 @@ mod private {
     impl From<bytes::Bytes> for MemSlice {
         fn from(value: bytes::Bytes) -> Self {
             Self::from_bytes(value)
+        }
+    }
+
+    impl std::fmt::Debug for MemSlice {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            const MAX_PRINT_BYTES: usize = 100;
+
+            write!(f, "MemSlice{{slice: ")?;
+
+            let end = cmp::min(self.slice.len(), MAX_PRINT_BYTES);
+            let truncated_slice = &self.slice[..end];
+
+            if let Ok(slice_as_str) = str::from_utf8(truncated_slice) {
+                write!(f, "{slice_as_str:?}")?;
+            } else {
+                write!(f, "{truncated_slice:?}(non-utf8)")?;
+            }
+
+            if self.slice.len() > MAX_PRINT_BYTES {
+                write!(f, " ... truncated ({MAX_PRINT_BYTES}/{})", self.slice.len())?;
+            }
+
+            write!(f, ", inner: ")?;
+
+            match &self.inner {
+                MemSliceInner::Arc(x) => {
+                    write!(f, "Arc(refcount: {})", Arc::strong_count(x))?;
+                },
+                MemSliceInner::Bytes(x) => {
+                    write!(f, "Bytes(unique: {})", x.is_unique())?;
+                },
+            }
+
+            write!(f, "}}")
         }
     }
 }
