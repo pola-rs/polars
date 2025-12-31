@@ -169,6 +169,10 @@ class Expr:
         else:
             return "only during sphinx"
 
+    def __hash__(self) -> int:
+        msg = f"unhashable type: 'Expr'\n\nConsider hashing '{self}.meta'."
+        raise TypeError(msg)
+
     def __bool__(self) -> NoReturn:
         msg = (
             "the truth value of an Expr is ambiguous"
