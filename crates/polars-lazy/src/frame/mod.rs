@@ -828,6 +828,7 @@ impl LazyFrame {
     ///
     /// If lazy is true the query will not start until the first poll (or until
     /// start is called on CollectBatches).
+    #[cfg(feature = "async")]
     pub fn collect_batches(
         self,
         engine: Engine,
