@@ -212,8 +212,9 @@ fn create_physical_plan_impl(
     use IR::*;
 
     let get_streaming_executor_builder = || {
-        build_streaming_executor
-            .expect("get_streaming_executor_builder failed (hint: missing feature new-streaming?)")
+        build_streaming_executor.expect(
+            "get_streaming_executor_builder() failed (hint: missing feature new-streaming?)",
+        )
     };
 
     macro_rules! recurse {
