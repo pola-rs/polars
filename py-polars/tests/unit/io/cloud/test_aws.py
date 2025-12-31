@@ -27,7 +27,7 @@ def monkeypatch_module() -> Any:
         yield mp
 
 
-def run_moto_server(host: str, port: int):
+def run_moto_server(host: str, port: int) -> None:
     server = ThreadedMotoServer(host, port)
     server._server_entry()
 
