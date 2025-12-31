@@ -27,6 +27,11 @@ def monkeypatch_module() -> Any:
         yield mp
 
 
+def run_moto_server(host: str, port: int):
+    server = ThreadedMotoServer(host, port)
+    server._server_entry()
+
+
 @pytest.fixture(scope="module")
 def s3_base(monkeypatch_module: Any) -> Iterator[str]:
     monkeypatch_module.setenv("AWS_ACCESS_KEY_ID", "accesskey")
@@ -35,10 +40,13 @@ def s3_base(monkeypatch_module: Any) -> Iterator[str]:
 
     host = "127.0.0.1"
     port = 5000
-    moto_server = ThreadedMotoServer(host, port)
     # Start in a separate process to avoid deadlocks
     mp = multiprocessing.get_context("spawn")
-    p = mp.Process(target=moto_server._server_entry, daemon=True)
+    p = mp.Process(
+        target=run_moto_server,
+        args=(host, port),
+        daemon=True,
+    )
     p.start()
     print("server up")
     yield f"http://{host}:{port}"
