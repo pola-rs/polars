@@ -10,9 +10,9 @@ use crate::nodes::io_sinks2::writers::interface::FileWriterStarter;
 
 pub mod interface;
 #[cfg(feature = "ipc")]
-pub mod ipc;
+mod ipc;
 #[cfg(feature = "parquet")]
-pub mod parquet;
+mod parquet;
 
 pub fn create_file_writer_starter(
     file_format: &Arc<FileType>,

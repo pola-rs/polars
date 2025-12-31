@@ -84,15 +84,14 @@ impl AggregationContext<'_> {
                 let len = groups.len();
                 let groups = Arc::new(groups.clone());
 
-                let c = self.get_values().rechunk(); //TODO - investigate
+                let c = self.get_values().rechunk();
 
                 let col = Arc::new(c);
 
                 (0..len).map(move |idx| {
                     let g = groups.get(idx);
-                    // TODO
                     match g {
-                        GroupsIndicator::Idx(_) => todo!(), //kdn TODO
+                        GroupsIndicator::Idx(_) => unreachable!(),
                         GroupsIndicator::Slice(s) => Some(
                             col.slice(s[0] as i64, s[1] as usize)
                                 .into_materialized_series()
@@ -101,7 +100,7 @@ impl AggregationContext<'_> {
                     }
                 })
             },
-            _ => todo!(),
+            _ => unreachable!(),
         }
     }
 
@@ -115,15 +114,14 @@ impl AggregationContext<'_> {
                 let len = groups.len();
                 let groups = Arc::new(groups.clone());
 
-                let c = self.get_values().rechunk(); //TODO - do we require rechunk? rechunk_mut?
+                let c = self.get_values().rechunk();
 
                 let col = Arc::new(c);
 
                 (0..len).into_par_iter().map(move |idx| {
                     let g = groups.get(idx);
-                    // TODO
                     match g {
-                        GroupsIndicator::Idx(_) => todo!(), //kdn TODO
+                        GroupsIndicator::Idx(_) => unreachable!(),
                         GroupsIndicator::Slice(s) => Some(
                             col.slice(s[0] as i64, s[1] as usize)
                                 .into_materialized_series()
@@ -132,7 +130,7 @@ impl AggregationContext<'_> {
                     }
                 })
             },
-            _ => todo!(),
+            _ => unreachable!(),
         }
     }
 }

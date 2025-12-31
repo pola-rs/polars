@@ -2158,3 +2158,57 @@ def test_str_json_decode_25237() -> None:
     dtypes = {s.str.json_decode().dtype for _ in range(20)}
 
     assert len(dtypes) == 1
+
+
+def test_json_decode_decimal_25789() -> None:
+    s = pl.Series(
+        ['{"a": 1.23}', '{"a": 4.56}', '{"a": null}', '{"a": "30.1271239481230948"}']
+    )
+    result = s.str.json_decode(dtype=pl.Struct({"a": pl.Decimal(4, 2)}))
+    expected = pl.Series(
+        [{"a": 1.23}, {"a": 4.56}, {"a": None}, {"a": 30.13}],
+        dtype=pl.Struct({"a": pl.Decimal(4, 2)}),
+    )
+    assert_series_equal(result, expected)
+
+    with pytest.raises(
+        ComputeError, match=r"error deserializing value.*30.127.* as Decimal\(3, 2\)"
+    ):
+        s.str.json_decode(dtype=pl.Struct({"a": pl.Decimal(3, 2)}))
+
+
+def test_json_decode_i128() -> None:
+    s = pl.Series(
+        [
+            '{"a":170141183460469231731687303715884105723}',
+            '{"a":null}',
+            '{"a":-170141183460469231731687303715759193239}',
+        ]
+    )
+    result = s.str.json_decode(dtype=pl.Struct({"a": pl.Int128}))
+    expected = pl.Series(
+        [{"a": 2**127 - 5}, {"a": None}, {"a": -(2**127) + 124912489}],
+        dtype=pl.Struct({"a": pl.Int128}),
+    )
+    assert_series_equal(result, expected)
+
+
+def test_json_decode_u128() -> None:
+    s = pl.Series(['{"a":340282366920938463463374607431768211451}', '{"a":null}'])
+    result = s.str.json_decode(dtype=pl.Struct({"a": pl.UInt128}))
+    expected = pl.Series(
+        [{"a": 2**128 - 5}, {"a": None}],
+        dtype=pl.Struct({"a": pl.UInt128}),
+    )
+    assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize("dtype", [pl.Enum(["bar", "foo"]), pl.Categorical])
+def test_json_decode_categorical_enum(dtype: pl.DataType) -> None:
+    s = pl.Series(['{"a":"foo"}', '{"a":"bar"}', '{"a":null}', '{"a":"foo"}'])
+    result = s.str.json_decode(dtype=pl.Struct({"a": dtype}))
+    expected = pl.Series(
+        [{"a": "foo"}, {"a": "bar"}, {"a": None}, {"a": "foo"}],
+        dtype=pl.Struct({"a": dtype}),
+    )
+    assert_series_equal(result, expected)

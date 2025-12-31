@@ -711,10 +711,18 @@ def test_ndjson_22229() -> None:
 
 
 def test_json_encode_enum_23826() -> None:
-    s = pl.Series("a", ["b"], dtype=pl.Enum(["b"]))
+    s = pl.Series("a", ["foo", "bar"], dtype=pl.Enum(["bar", "foo"]))
     assert_series_equal(
         s.to_frame().select(c=pl.struct("a").struct.json_encode()).to_series(),
-        pl.Series("c", ['{"a":"0"}'], pl.String),
+        pl.Series("c", ['{"a":"foo"}', '{"a":"bar"}'], pl.String),
+    )
+
+
+def test_json_encode_categorical() -> None:
+    s = pl.Series("a", ["foo", "bar"], dtype=pl.Categorical)
+    assert_series_equal(
+        s.to_frame().select(c=pl.struct("a").struct.json_encode()).to_series(),
+        pl.Series("c", ['{"a":"foo"}', '{"a":"bar"}'], pl.String),
     )
 
 
@@ -774,4 +782,13 @@ def test_ndjson_no_cast_int_to_float_19138() -> None:
             ignore_errors=False,
         ),
         pl.DataFrame({"a": [2.7, 1]}),
+    )
+
+
+def test_ndjson_large_u64_infer_25894() -> None:
+    data = b"""{"id":14933243513335727983}"""
+    df = pl.read_ndjson(data)
+    assert_frame_equal(
+        df,
+        pl.DataFrame({"id": pl.Series("id", [14933243513335727983], dtype=pl.Int128)}),
     )

@@ -1,5 +1,3 @@
-pub(super) mod batched;
-
 use std::fmt;
 use std::sync::Mutex;
 
@@ -116,7 +114,6 @@ pub(crate) struct CoreReader<'a> {
     n_rows: Option<usize>,
     n_threads: Option<usize>,
     has_header: bool,
-    chunk_size: usize,
     null_values: Option<NullValuesCompiled>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     to_cast: Vec<Field>,
@@ -150,7 +147,6 @@ impl<'a> CoreReader<'a> {
         n_threads: Option<usize>,
         schema_overwrite: Option<SchemaRef>,
         dtype_overwrite: Option<Arc<Vec<DataType>>>,
-        chunk_size: usize,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         mut to_cast: Vec<Field>,
         skip_rows_after_header: usize,
@@ -245,7 +241,6 @@ impl<'a> CoreReader<'a> {
             n_rows,
             n_threads,
             has_header,
-            chunk_size,
             null_values,
             predicate,
             to_cast,
@@ -358,10 +353,24 @@ impl<'a> CoreReader<'a> {
 
         // This is chosen by benchmarking on ny city trip csv dataset.
         // We want small enough chunks such that threads start working as soon as possible
-        // But we also want them large enough, so that we have less chunks related overhead, but
+        // But we also want them large enough, so that we have less chunks related overhead.
         // We minimize chunks to 16 MB to still fit L3 cache.
-        let n_parts_hint = n_threads * 16;
-        let chunk_size = std::cmp::min(bytes.len() / n_parts_hint, 16 * 1024 * 1024);
+        //
+        // Width-aware adjustment: For wide data (many columns), per-chunk overhead
+        // (allocating column buffers) becomes significant. Each chunk must allocate
+        // O(n_cols) buffers, so total allocation overhead is O(n_chunks * n_cols).
+        // To keep this bounded, we limit n_chunks such that n_chunks * n_cols <= threshold.
+        // With threshold ~500K, this gives:
+        //   - 100 cols: up to 5000 chunks (no practical limit)
+        //   - 1000 cols: up to 500 chunks
+        //   - 10000 cols: up to 50 chunks
+        //   - 30000 cols: up to 16 chunks
+        let n_cols = projection.len();
+        // Empirically determined to balance allocation overhead and parallelism.
+        const ALLOCATION_BUDGET: usize = 500_000;
+        let max_chunks_for_width = ALLOCATION_BUDGET / n_cols.max(1);
+        let n_parts_hint = std::cmp::min(n_threads * 16, max_chunks_for_width.max(n_threads));
+        let chunk_size = std::cmp::min(bytes.len() / n_parts_hint.max(1), 16 * 1024 * 1024);
 
         // Use a small min chunk size to catch failures in tests.
         #[cfg(debug_assertions)]

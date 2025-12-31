@@ -2,7 +2,6 @@ use std::io::Cursor;
 use std::num::NonZeroUsize;
 
 use polars::io::RowIndex;
-use polars_core::utils::concat_df;
 
 use super::*;
 
@@ -1383,27 +1382,6 @@ fn test_leading_whitespace_with_quote() -> PolarsResult<()> {
     assert_eq!(col_1.get(0)?, AnyValue::Float64(24.5));
     assert_eq!(col_2.get(0)?, AnyValue::String("  4.1"));
     Ok(())
-}
-
-#[test]
-fn test_read_io_reader() {
-    let path = "../../examples/datasets/foods1.csv";
-    let file = std::fs::File::open(path).unwrap();
-    let mut reader = CsvReadOptions::default()
-        .with_chunk_size(5)
-        .try_into_reader_with_file_path(Some(path.into()))
-        .unwrap();
-
-    let mut reader = reader.batched_borrowed().unwrap();
-    let batches = reader.next_batches(5).unwrap().unwrap();
-    assert_eq!(batches.len(), 5);
-    let df = concat_df(&batches).unwrap();
-    assert!(df.height() > 0);
-    let expected = CsvReader::new(file)
-        .finish()
-        .unwrap()
-        .head(Some(df.height()));
-    assert_eq!(&df, &expected);
 }
 
 #[test]

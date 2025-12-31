@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use polars_error::PolarsResult;
 use polars_plan::dsl::UnifiedSinkArgs;
+use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::async_executor::{self, TaskPriority};
@@ -16,6 +17,7 @@ use crate::nodes::io_sinks2::components::partition_morsel_sender::PartitionMorse
 use crate::nodes::io_sinks2::components::partition_sink_starter::PartitionSinkStarter;
 use crate::nodes::io_sinks2::components::partitioner::Partitioner;
 use crate::nodes::io_sinks2::components::partitioner_pipeline::PartitionerPipeline;
+use crate::nodes::io_sinks2::components::size::{NonZeroRowCountAndSize, RowCountAndSize};
 use crate::nodes::io_sinks2::config::{IOSinkNodeConfig, IOSinkTarget, PartitionedTarget};
 use crate::nodes::io_sinks2::writers::create_file_writer_starter;
 use crate::nodes::io_sinks2::writers::interface::FileWriterStarter;
@@ -77,10 +79,10 @@ pub fn start_partition_sink_pipeline(
         sync_on_close,
     )?;
 
-    let mut ideal_morsel_size = file_writer_starter.ideal_morsel_size();
+    let mut takeable_rows_provider = file_writer_starter.takeable_rows_provider();
 
     if let Some(file_size_limit) = file_size_limit {
-        ideal_morsel_size = ideal_morsel_size.min(file_size_limit)
+        takeable_rows_provider.max_size = takeable_rows_provider.max_size.min(file_size_limit)
     }
 
     if verbose {
@@ -91,7 +93,7 @@ pub fn start_partition_sink_pipeline(
             file_provider: {:?}, \
             max_open_sinks: {}, \
             inflight_morsel_limit: {}, \
-            ideal_morsel_size: {:?}, \
+            takeable_rows_provider: {:?}, \
             file_size_limit: {:?}, \
             per_partition_sort: {}, \
             upload_chunk_size: {}",
@@ -100,7 +102,7 @@ pub fn start_partition_sink_pipeline(
             &file_provider.provider_type,
             max_open_sinks,
             inflight_morsel_limit,
-            ideal_morsel_size,
+            takeable_rows_provider,
             file_size_limit,
             per_partition_sort.is_some(),
             upload_chunk_size
@@ -136,8 +138,8 @@ pub fn start_partition_sink_pipeline(
     };
 
     let partition_morsel_sender = PartitionMorselSender {
-        ideal_morsel_size,
-        file_size_limit,
+        takeable_rows_provider,
+        file_size_limit: file_size_limit.unwrap_or(NonZeroRowCountAndSize::MAX),
         inflight_morsel_semaphore,
         open_sinks_semaphore: open_sinks_semaphore.clone(),
         partition_sink_starter: partition_sink_starter.clone(),

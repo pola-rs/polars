@@ -319,7 +319,7 @@ replace = ["polars-expr/replace", "polars-stream?/replace"]
 binary_encoding = ["polars-expr/binary_encoding"]
 string_encoding = ["polars-expr/string_encoding"]
 
-bigidx = ["polars-plan/bigidx", "polars-utils/bigidx"]
+bigidx = ["polars-plan/bigidx", "polars-stream/bigidx", "polars-utils/bigidx"]
 polars_cloud_client = ["polars-plan/polars_cloud_client"]
 polars_cloud_server = ["polars-plan/polars_cloud_server"]
 allow_unused = [
