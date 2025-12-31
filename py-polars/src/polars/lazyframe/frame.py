@@ -110,7 +110,6 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
     from collections.abc import Awaitable, Iterator, Sequence
-    from concurrent.futures import Future
     from io import IOBase
     from typing import IO, Literal
 
@@ -3806,101 +3805,26 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> for df in lf.collect_batches():
         ...     print(df)  # doctest: +SKIP
         """
-        from queue import Queue
 
-        class BatchCollector:
-            def __init__(
-                self,
-                *,
-                lf: pl.LazyFrame,
-                chunk_size: int | None,
-                maintain_order: bool,
-                lazy: bool,
-                engine: EngineType,
-                optimizations: QueryOptFlags,
-            ) -> None:
-                class SharedState:
-                    def __init__(self) -> None:
-                        self.queue: Queue[pl.DataFrame | None] = Queue(maxsize=1)
-                        self.stopped = False
+        class CollectBatches:
+            def __init__(self, inner: Any) -> None:
+                self._inner = inner
 
-                self._lf = lf
-                self._chunk_size = chunk_size
-                self._maintain_order = maintain_order
-                self._engine = engine
-                self._optimizations = optimizations
-                self._shared = SharedState()
-                self._fut: Future[None] | None = None
-
-                if not lazy:
-                    self._start()
-
-            def _start(self) -> None:
-                if self._fut is not None:
-                    return
-
-                # Make sure we don't capture self which would cause __del__
-                # to not get called.
-                shared = self._shared
-                chunk_size = self._chunk_size
-                maintain_order = self._maintain_order
-                engine = self._engine
-                optimizations = self._optimizations
-                lf = self._lf
-
-                def task() -> None:
-                    def put_batch_in_queue(df: DataFrame) -> bool | None:
-                        if shared.stopped:
-                            return True
-                        shared.queue.put(df)
-                        return shared.stopped
-
-                    try:
-                        lf.sink_batches(
-                            put_batch_in_queue,
-                            chunk_size=chunk_size,
-                            maintain_order=maintain_order,
-                            engine=engine,
-                            optimizations=optimizations,
-                            lazy=False,
-                        )
-                    finally:
-                        shared.queue.put(None)  # Signal the end of batches.
-
-                self._fut = _COLLECT_BATCHES_POOL.submit(task)
-
-            def __iter__(self) -> BatchCollector:
+            def __iter__(self) -> CollectBatches:
                 return self
 
             def __next__(self) -> DataFrame:
-                if self._shared.stopped:
-                    raise StopIteration
+                pydf = next(self._inner)
+                return pl.DataFrame._from_pydf(pydf)
 
-                self._start()
-                df = self._shared.queue.get()
-                if df is None:
-                    self._shared.stopped = True
-                    raise StopIteration
-
-                return df
-
-            def __del__(self) -> None:
-                if not self._shared.stopped:
-                    # Signal to stop and unblock sink_batches task.
-                    self._shared.stopped = True
-                    while self._shared.queue.get() is not None:
-                        pass
-                if self._fut is not None:
-                    self._fut.result()
-
-        return BatchCollector(
-            lf=self,
-            chunk_size=chunk_size,
-            maintain_order=maintain_order,
-            lazy=lazy,
+        ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
+        inner = ldf.collect_batches(
             engine=engine,
-            optimizations=optimizations,
+            maintain_order=maintain_order,
+            chunk_size=chunk_size,
+            lazy=lazy,
         )
+        return CollectBatches(inner)
 
     @deprecated(
         "`LazyFrame.fetch` is deprecated; use `LazyFrame.collect` "
