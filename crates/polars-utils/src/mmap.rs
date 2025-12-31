@@ -104,8 +104,13 @@ mod private {
             }
         }
 
+        /// Construct a `MemSlice` from a temporary slice being kept alive by
+        /// the arc.
+        ///
+        /// # Safety
+        /// The slice must stay alive while the Arc does.
         #[inline]
-        pub fn from_arc<T>(slice: &[u8], arc: Arc<T>) -> Self
+        pub unsafe fn from_arc<T>(slice: &[u8], arc: Arc<T>) -> Self
         where
             T: std::fmt::Debug + Send + Sync + 'static,
         {
