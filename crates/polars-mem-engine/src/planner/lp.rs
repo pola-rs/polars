@@ -550,8 +550,7 @@ fn create_physical_plan_impl(
                         false
                     }
                 });
-                let builder =
-                    build_streaming_executor.expect("invalid build. Missing feature new-streaming");
+                let builder = get_streaming_executor_builder();
 
                 let input = recurse!(input, state)?;
                 let executor = Box::new(GroupByStreamingExec::new(
