@@ -7,7 +7,7 @@ use polars_core::with_match_categorical_physical_type;
 use polars_utils::arg_min_max::ArgMinMax;
 use polars_utils::min_max::{MaxIgnoreNan, MinIgnoreNan, MinMaxPolicy};
 
-fn arg_min_opt_iter<T, I>(iter: I) -> Option<usize>
+pub fn arg_min_opt_iter<T, I>(iter: I) -> Option<usize>
 where
     I: IntoIterator<Item = Option<T>>,
     T: Ord,
@@ -19,7 +19,7 @@ where
         .map(|x| x.0)
 }
 
-fn arg_max_opt_iter<T, I>(iter: I) -> Option<usize>
+pub fn arg_max_opt_iter<T, I>(iter: I) -> Option<usize>
 where
     I: IntoIterator<Item = Option<T>>,
     T: Ord,

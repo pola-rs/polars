@@ -149,7 +149,7 @@ pub fn create_multiple_physical_plans(
 #[allow(clippy::type_complexity)]
 pub fn python_scan_predicate(
     options: &mut PythonOptions,
-    expr_arena: &Arena<AExpr>,
+    expr_arena: &mut Arena<AExpr>,
     state: &mut ExpressionConversionState,
 ) -> PolarsResult<(
     Option<Arc<dyn polars_expr::prelude::PhysicalExpr>>,

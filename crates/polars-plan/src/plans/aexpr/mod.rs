@@ -45,6 +45,14 @@ pub enum IRAggExpr {
         input: Node,
         propagate_nans: bool,
     },
+    MinBy {
+        input: Node,
+        by: Node,
+    },
+    MaxBy {
+        input: Node,
+        by: Node,
+    },
     Median(Node),
     NUnique(Node),
     Item {
@@ -167,7 +175,9 @@ impl From<IRAggExpr> for GroupByMethod {
             Std(_, ddof) => GroupByMethod::Std(ddof),
             Var(_, ddof) => GroupByMethod::Var(ddof),
             AggGroups(_) => GroupByMethod::Groups,
-            Quantile { .. } => unreachable!(),
+
+            // Multi-input aggregations.
+            Quantile { .. } | MinBy { .. } | MaxBy { .. } => unreachable!(),
         }
     }
 }

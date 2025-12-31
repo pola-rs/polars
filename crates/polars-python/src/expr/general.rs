@@ -114,9 +114,19 @@ impl PyExpr {
     fn min(&self) -> Self {
         self.inner.clone().min().into()
     }
+
     fn max(&self) -> Self {
         self.inner.clone().max().into()
     }
+
+    fn min_by(&self, by: Self) -> Self {
+        self.inner.clone().min_by(by.inner).into()
+    }
+
+    fn max_by(&self, by: Self) -> Self {
+        self.inner.clone().max_by(by.inner).into()
+    }
+
     #[cfg(feature = "propagate_nans")]
     fn nan_max(&self) -> Self {
         self.inner.clone().nan_max().into()

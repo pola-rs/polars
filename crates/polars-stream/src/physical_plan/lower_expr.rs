@@ -538,10 +538,10 @@ fn simplify_input_streams(
     Ok(input_streams)
 }
 
-// Assuming that agg_node is a single-input reduction, lowers its input recursively
-// and returns a Reduce node as well a node corresponding to the column to select
+// Assuming that agg_node is a reduction, lowers its input recursively and
+// returns a Reduce node as well a node corresponding to the column to select
 // from the Reduce node for the aggregate.
-fn lower_unary_reduce_node(
+fn lower_reduce_node(
     input: PhysStream,
     agg_node: Node,
     ctx: &mut LowerExprContext,
@@ -549,7 +549,7 @@ fn lower_unary_reduce_node(
     let agg_aexpr = ctx.expr_arena.get(agg_node).clone();
     let mut agg_input = Vec::with_capacity(1);
     agg_aexpr.inputs_rev(&mut agg_input);
-    assert!(agg_input.len() == 1);
+    agg_input.reverse();
 
     let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &agg_input, ctx)?;
     let trans_agg_node = ctx.expr_arena.add(agg_aexpr.replace_inputs(&trans_exprs));
@@ -1702,7 +1702,7 @@ fn lower_exprs_with_ctx(
                 fmt_str: _,
                 function: _,
             } => {
-                let (trans_stream, trans_expr) = lower_unary_reduce_node(input, expr, ctx)?;
+                let (trans_stream, trans_expr) = lower_reduce_node(input, expr, ctx)?;
                 input_streams.insert(trans_stream);
                 transformed_exprs.push(trans_expr);
             },
@@ -1711,6 +1711,8 @@ fn lower_exprs_with_ctx(
                 // Change agg mutably so we can share the codepath for all of these.
                 IRAggExpr::Min { .. }
                 | IRAggExpr::Max { .. }
+                | IRAggExpr::MinBy { .. }
+                | IRAggExpr::MaxBy { .. }
                 | IRAggExpr::First(_)
                 | IRAggExpr::FirstNonNull(_)
                 | IRAggExpr::Last(_)
@@ -1721,7 +1723,7 @@ fn lower_exprs_with_ctx(
                 | IRAggExpr::Var { .. }
                 | IRAggExpr::Std { .. }
                 | IRAggExpr::Count { .. } => {
-                    let (trans_stream, trans_expr) = lower_unary_reduce_node(input, expr, ctx)?;
+                    let (trans_stream, trans_expr) = lower_reduce_node(input, expr, ctx)?;
                     input_streams.insert(trans_stream);
                     transformed_exprs.push(trans_expr);
                 },
@@ -1786,7 +1788,7 @@ fn lower_exprs_with_ctx(
                     ),
                 ..
             } => {
-                let (trans_stream, trans_expr) = lower_unary_reduce_node(input, expr, ctx)?;
+                let (trans_stream, trans_expr) = lower_reduce_node(input, expr, ctx)?;
                 input_streams.insert(trans_stream);
                 transformed_exprs.push(trans_expr);
             },
@@ -1796,7 +1798,7 @@ fn lower_exprs_with_ctx(
                 function: IRFunctionExpr::ApproxNUnique,
                 ..
             } => {
-                let (trans_stream, trans_expr) = lower_unary_reduce_node(input, expr, ctx)?;
+                let (trans_stream, trans_expr) = lower_reduce_node(input, expr, ctx)?;
                 input_streams.insert(trans_stream);
                 transformed_exprs.push(trans_expr);
             },
@@ -1809,7 +1811,7 @@ fn lower_exprs_with_ctx(
                     | IRFunctionExpr::NullCount,
                 ..
             } => {
-                let (trans_stream, trans_expr) = lower_unary_reduce_node(input, expr, ctx)?;
+                let (trans_stream, trans_expr) = lower_reduce_node(input, expr, ctx)?;
                 input_streams.insert(trans_stream);
                 transformed_exprs.push(trans_expr);
             },

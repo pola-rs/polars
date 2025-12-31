@@ -3115,6 +3115,37 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.max())
 
+    @unstable()
+    def max_by(self, by: IntoExpr) -> Expr:
+        """
+        Get maximum value, ordered by another expression.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        by
+            Column used to determine the largest element.
+            Accepts expression input. Strings are parsed as column names.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [-1.0, float("nan"), 1.0], "b": ["x", "y", "z"]})
+        >>> df.select(pl.col("b").max_by("a"))
+        shape: (1, 1)
+        ┌─────┐
+        │ b   │
+        │ --- │
+        │ str │
+        ╞═════╡
+        │ z   │
+        └─────┘
+        """
+        by_pyexpr = parse_into_expression(by)
+        return wrap_expr(self._pyexpr.max_by(by_pyexpr))
+
     def min(self) -> Expr:
         """
         Get minimum value.
@@ -3133,6 +3164,37 @@ class Expr:
         └──────┘
         """
         return wrap_expr(self._pyexpr.min())
+
+    @unstable()
+    def min_by(self, by: IntoExpr) -> Expr:
+        """
+        Get minimum value, ordered by another expression.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        by
+            Column used to determine the smallest element.
+            Accepts expression input. Strings are parsed as column names.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [-1.0, float("nan"), 1.0], "b": ["x", "y", "z"]})
+        >>> df.select(pl.col("b").min_by("a"))
+        shape: (1, 1)
+        ┌─────┐
+        │ b   │
+        │ --- │
+        │ str │
+        ╞═════╡
+        │ x   │
+        └─────┘
+        """
+        by_pyexpr = parse_into_expression(by)
+        return wrap_expr(self._pyexpr.min_by(by_pyexpr))
 
     def nan_max(self) -> Expr:
         """
