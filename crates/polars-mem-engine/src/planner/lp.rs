@@ -259,42 +259,38 @@ fn create_physical_plan_impl(
                 predicate_serialized,
             }))
         },
-        Sink { input, payload } => {
-            let input = recurse!(input, state)?;
-            match payload {
-                SinkTypeIR::Memory => Ok(Box::new(SinkExecutor {
-                    input,
-                    name: PlSmallStr::from_static("mem"),
-                    f: Box::new(move |df, _state| Ok(Some(df))),
-                })),
-                SinkTypeIR::Callback(CallbackSinkType {
-                    function,
-                    maintain_order: _,
-                    chunk_size,
-                }) => {
-                    let chunk_size = chunk_size.map_or(usize::MAX, Into::into);
+        Sink { input, payload } => match payload {
+            SinkTypeIR::Memory => Ok(Box::new(SinkExecutor {
+                input: recurse!(input, state)?,
+                name: PlSmallStr::from_static("mem"),
+                f: Box::new(move |df, _state| Ok(Some(df))),
+            })),
+            SinkTypeIR::Callback(CallbackSinkType {
+                function,
+                maintain_order: _,
+                chunk_size,
+            }) => {
+                let chunk_size = chunk_size.map_or(usize::MAX, Into::into);
 
-                    Ok(Box::new(SinkExecutor {
-                        input,
-                        name: PlSmallStr::from_static("batches"),
-                        f: Box::new(move |mut buffer, _state| {
-                            while !buffer.is_empty() {
-                                let df;
-                                (df, buffer) =
-                                    buffer.split_at(buffer.height().min(chunk_size) as i64);
-                                let should_stop = function.call(df)?;
-                                if should_stop {
-                                    break;
-                                }
+                Ok(Box::new(SinkExecutor {
+                    input: recurse!(input, state)?,
+                    name: PlSmallStr::from_static("batches"),
+                    f: Box::new(move |mut buffer, _state| {
+                        while !buffer.is_empty() {
+                            let df;
+                            (df, buffer) = buffer.split_at(buffer.height().min(chunk_size) as i64);
+                            let should_stop = function.call(df)?;
+                            if should_stop {
+                                break;
                             }
-                            Ok(Some(DataFrame::empty()))
-                        }),
-                    }))
-                },
-                SinkTypeIR::File(_) | SinkTypeIR::Partitioned { .. } => {
-                    get_streaming_executor_builder()(root, lp_arena, expr_arena)
-                },
-            }
+                        }
+                        Ok(Some(DataFrame::empty()))
+                    }),
+                }))
+            },
+            SinkTypeIR::File(_) | SinkTypeIR::Partitioned { .. } => {
+                get_streaming_executor_builder()(root, lp_arena, expr_arena)
+            },
         },
         SinkMultiple { .. } => {
             unreachable!("should be handled with create_multiple_physical_plans")
