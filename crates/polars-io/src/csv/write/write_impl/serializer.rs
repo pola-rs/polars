@@ -365,7 +365,7 @@ type ChronoFormatIter<'a, 'b> = std::slice::Iter<'a, chrono::format::Item<'b>>;
 
 #[cfg(any(feature = "dtype-date", feature = "dtype-time"))]
 fn date_and_time_serializer<'a, Underlying: NativeType, T: std::fmt::Display>(
-    format_str: &'a Option<String>,
+    format_str: Option<&'a str>,
     description: &str,
     array: &'a dyn Array,
     sample_value: T,
@@ -779,7 +779,7 @@ pub(super) fn serializer_for<'a>(
         },
         #[cfg(feature = "dtype-date")]
         DataType::Date => date_and_time_serializer(
-            &options.date_format,
+            options.date_format.as_deref(),
             "NaiveDate",
             array,
             chrono::NaiveDate::MAX,
@@ -789,7 +789,7 @@ pub(super) fn serializer_for<'a>(
         )?,
         #[cfg(feature = "dtype-time")]
         DataType::Time => date_and_time_serializer(
-            &options.time_format,
+            Some(options.time_format.as_deref().unwrap_or("%T%.9f")),
             "NaiveTime",
             array,
             chrono::NaiveTime::MIN,
