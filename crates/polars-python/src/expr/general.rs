@@ -1,3 +1,4 @@
+use std::hash::{BuildHasher, Hash, Hasher};
 use std::ops::Neg;
 
 use polars::lazy::dsl;
@@ -29,6 +30,12 @@ impl PyExpr {
             CompareOp::Ge => self.gt_eq(other),
             CompareOp::Le => self.lt_eq(other),
         }
+    }
+
+    fn __hash__(&self) -> isize {
+        let mut state = PlFixedStateQuality::with_seed(0).build_hasher();
+        Hash::hash(&self.inner, &mut state);
+        state.finish() as _
     }
 
     fn __add__(&self, rhs: Self) -> PyResult<Self> {
