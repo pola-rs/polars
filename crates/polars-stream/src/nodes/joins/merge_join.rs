@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::BTreeMap;
 use std::mem::swap;
 
 use arrow::array::Array;
@@ -258,9 +258,8 @@ impl ComputeNode for MergeJoinNode {
                         params,
                     )? {
                         Left((left_mergeable, right_mergeable)) => {
-                            let source_token = SourceToken::new();
                             if let Err((_left, _right, _, _)) = distributor
-                                .send((left_mergeable, right_mergeable, *seq, source_token))
+                                .send((left_mergeable, right_mergeable, *seq, source_token.clone()))
                                 .await
                             {
                                 panic!();
@@ -380,6 +379,7 @@ struct DataFrameBuffer {
     buf: BTreeMap<usize, DataFrame>,
     total_rows: usize,
     skip_rows: usize,
+    adjust_offsets: usize, // TODO: [amber] This is just equal to the offset of the first dataframe in the buffer
     frozen: bool,
 }
 
@@ -390,6 +390,7 @@ impl DataFrameBuffer {
             buf: BTreeMap::new(),
             total_rows: 0,
             skip_rows: 0,
+            adjust_offsets: 0,
             frozen: false,
         }
     }
@@ -401,24 +402,23 @@ impl DataFrameBuffer {
     fn get_bypass_validity(
         &self,
         column: &str,
-        mut index: usize,
+        row_index: usize,
         params: &MergeJoinParams,
     ) -> AnyValue<'_> {
-        debug_assert!(index < self.total_rows);
-        index += self.skip_rows;
-        let (offset, df) = self.buf.range(..=index).next_back().unwrap();
-        index -= offset;
+        debug_assert!(row_index < self.total_rows);
+        let buf_index = self.skip_rows + self.adjust_offsets + row_index;
+        let (df_offset, df) = self.buf.range(..=buf_index).next_back().unwrap();
+        let series_index = buf_index - df_offset;
         let series = df.column(column).unwrap().as_materialized_series();
-        series_get_bypass_validity(series, index, params)
+        series_get_bypass_validity(series, series_index, params)
     }
 
     fn push_df(&mut self, df: DataFrame) {
         assert!(!self.frozen);
         let added_rows = df.height();
-        let offset = if let Some((last_key, last_df)) = self.buf.last_key_value() {
-            last_key + last_df.height()
-        } else {
-            0
+        let offset = match self.buf.last_key_value() {
+            Some((last_key, last_df)) => last_key + last_df.height(),
+            None => self.adjust_offsets,
         };
         self.buf.insert(offset, df);
         self.total_rows += added_rows;
@@ -433,6 +433,7 @@ impl DataFrameBuffer {
         left.integrity_check();
         self.skip_rows += at;
         self.total_rows -= at;
+        self.gc();
         self.integrity_check();
         left
     }
@@ -447,7 +448,16 @@ impl DataFrameBuffer {
     }
 
     fn gc(&mut self) {
-        todo!()
+        while !self.buf.is_empty() {
+            let (_, df) = self.buf.first_key_value().unwrap();
+            if self.skip_rows > df.height() {
+                let (_, df) = self.buf.pop_first().unwrap();
+                self.skip_rows -= df.height();
+                self.adjust_offsets += df.height();
+            } else {
+                break;
+            }
+        }
     }
 
     fn is_empty(&self) -> bool {
@@ -469,6 +479,13 @@ impl DataFrameBuffer {
                     == self.total_rows
         );
         debug_assert!(self.buf.values().all(|df| &**df.schema() == &self.schema));
+        let mut last: Option<(usize, DataFrame)> = None;
+        for (key, df) in self.buf.iter() {
+            if let Some((last_key, last_df)) = last {
+                debug_assert!(last_key + last_df.height() == *key);
+            }
+            last = Some((*key, df.clone()));
+        }
     }
 }
 
@@ -571,33 +588,13 @@ fn find_mergeable_inner(
 
         let tick = std::time::Instant::now();
 
-        // TODO: [amber] These split_ats seem to be annoyingly slow
-        // Ask Orson if there is anything we can do about that?
-        // The only solution I see at the moment is to wrap the dataframes with
-        // the number of rows that have already been consumed.
-        // We cannot vstack anymore, because then we would just build up two
-        // really large dataframes, without ever pruning old data.
-        // So we would have to transmit the "source" dataframes as some kind of
-        // "dataframe views" to the compute_join processors. (Basically send over
-        // a group of dataframes at a time with a start offset.) And then at some
-        // point we are able to prune the dataframes that fall outside of the
-        // current mergable view.
-        // We can still vstack up to the morsel size limit, but I am not sure
-        // if that is even worth it. We may rather just keep track of how many
-        // dataframes in the VecDeque are "considered" for merging at the moment.
-        // (Or maybe just look at all of them actually!)
-        // Note that for binary searcher we will need to have some kind of index
-        // to map index ranges to individual dataframes.
         let left_split = left.split_at(left_mergable_until);
         let right_split = right.split_at(right_mergable_until);
 
         let elapsed = tick.elapsed();
         dbg!(elapsed);
-        dbg!(left_mergable_until);
-        dbg!(right_mergable_until);
         dbg!(left_split.len());
         dbg!(right_split.len());
-
         return Ok(Left((left_split, right_split)));
     }
 }
