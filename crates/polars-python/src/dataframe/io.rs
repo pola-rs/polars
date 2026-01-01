@@ -234,6 +234,26 @@ impl PyDataFrame {
         })
     }
 
+    #[staticmethod]
+    #[cfg(feature = "pcap")]
+    #[pyo3(signature = (py_f, n_rows, rechunk))]
+    pub fn read_pcap(
+        py: Python<'_>,
+        py_f: Py<PyAny>,
+        n_rows: Option<usize>,
+        rechunk: bool,
+    ) -> PyResult<Self> {
+        use polars::io::pcap::PcapReader;
+
+        let file = get_file_like(py_f, false)?;
+        py.enter_polars_df(move || {
+            PcapReader::new(file)
+                .with_n_rows(n_rows)
+                .set_rechunk(rechunk)
+                .finish()
+        })
+    }
+
     #[cfg(feature = "json")]
     pub fn write_json(&self, py: Python<'_>, py_f: Py<PyAny>) -> PyResult<()> {
         let file = BufWriter::new(get_file_like(py_f, true)?);
@@ -259,6 +279,16 @@ impl PyDataFrame {
             IpcStreamWriter::new(&mut buf)
                 .with_compression(compression.0)
                 .with_compat_level(compat_level.0)
+                .finish(&mut self.df.write())
+        })
+    }
+
+    #[cfg(feature = "pcap")]
+    pub fn write_pcap(&self, py: Python<'_>, py_f: Py<PyAny>) -> PyResult<()> {
+        use polars::io::pcap::PcapWriter;
+        let mut buf = get_file_like(py_f, true)?;
+        py.enter_polars(|| {
+            PcapWriter::new(&mut buf)
                 .finish(&mut self.df.write())
         })
     }

@@ -139,6 +139,7 @@ c_api = []
 
 # Features below are only there to enable building a slim binary during development.
 avro = ["polars/avro"]
+pcap = ["polars/pcap"]
 catalog = ["polars-lazy/catalog"]
 parquet = ["polars/parquet", "polars-parquet", "polars-mem-engine/parquet"]
 ipc = ["polars/ipc", "polars-mem-engine/ipc"]
@@ -262,6 +263,7 @@ io = [
   "scan_lines",
   "cloud",
   "clipboard",
+  "pcap",
 ]
 
 optimizations = [
