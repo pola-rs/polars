@@ -8,6 +8,8 @@ use polars_utils::IdxSize;
 
 use crate::nodes::io_sinks2::writers::interface::FileWriterStarter;
 
+#[cfg(feature = "csv")]
+mod csv;
 pub mod interface;
 #[cfg(feature = "ipc")]
 mod ipc;
@@ -54,6 +56,25 @@ pub fn create_file_writer_starter(
                 schema: file_schema.clone(),
                 pipeline_depth,
                 sync_on_close,
+            }) as _
+        },
+        #[cfg(feature = "csv")]
+        FileType::Csv(options) => {
+            use polars_io::prelude::CsvSerializer;
+
+            use crate::nodes::io_sinks2::writers::csv::CsvWriterStarter;
+
+            Arc::new(CsvWriterStarter {
+                options: options.clone().into(),
+                base_serializer: CsvSerializer::new(
+                    file_schema.clone(),
+                    Arc::new(options.serialize_options.clone()),
+                )?
+                .into(),
+                schema: file_schema.clone(),
+                pipeline_depth,
+                sync_on_close,
+                initialized_state: Default::default(),
             }) as _
         },
         _ => unimplemented!(),

@@ -155,7 +155,7 @@ pub fn top_k(s: &[Column], descending: bool) -> PolarsResult<Column> {
             ComputeError: "`k` must be a single value for `top_k`."
         );
 
-        let Some(k) = k_s.cast(&IDX_DTYPE)?.idx()?.get(0) else {
+        let Some(k) = k_s.strict_cast(&IDX_DTYPE)?.idx()?.get(0) else {
             polars_bail!(ComputeError: "`k` must be set for `top_k`")
         };
 
@@ -231,7 +231,7 @@ pub fn top_k_by(s: &[Column], descending: Vec<bool>) -> PolarsResult<Column> {
             ComputeError: "`k` must be a single value for `top_k`."
         );
 
-        let Some(k) = k_s.cast(&IDX_DTYPE)?.idx()?.get(0) else {
+        let Some(k) = k_s.strict_cast(&IDX_DTYPE)?.idx()?.get(0) else {
             polars_bail!(ComputeError: "`k` must be set for `top_k`")
         };
 
