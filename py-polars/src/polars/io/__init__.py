@@ -23,6 +23,7 @@ from polars.io.partition import (
     PartitionMaxSize,
     PartitionParted,
 )
+from polars.io.pcap import read_pcap
 from polars.io.plugins import _defer as defer
 from polars.io.pyarrow_dataset import scan_pyarrow_dataset
 from polars.io.scan_options import ScanCastOptions
@@ -53,6 +54,7 @@ __all__ = [
     "read_parquet",
     "read_parquet_metadata",
     "read_parquet_schema",
+    "read_pcap",
     "scan_csv",
     "scan_delta",
     "scan_iceberg",

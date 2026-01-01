@@ -3151,6 +3151,39 @@ class DataFrame:
         result: str = self.write_csv(file=None, separator=separator, **kwargs)
         _write_clipboard_string(result)
 
+    def write_pcap(
+        self,
+        file: str | Path | IO[bytes],
+    ) -> None:
+        """
+        Write to PCAP file.
+
+        Parameters
+        ----------
+        file
+            File path or writable file-like object to which the data will be written.
+
+        Examples
+        --------
+        >>> import pathlib
+        >>>
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "time_s": [1000, 2000],
+        ...         "time_ns": [100, 200],
+        ...         "incl_len": [4, 4],
+        ...         "orig_len": [4, 4],
+        ...         "data": [b"abcd", b"efgh"],
+        ...     }
+        ... )
+        >>> path: pathlib.Path = dirpath / "output.pcap"
+        >>> df.write_pcap(path)
+        """
+        if isinstance(file, (str, Path)):
+            file = normalize_filepath(file)
+
+        self._df.write_pcap(file)
+
     def write_avro(
         self,
         file: str | Path | IO[bytes],
