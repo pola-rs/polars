@@ -287,10 +287,7 @@ impl PyDataFrame {
     pub fn write_pcap(&self, py: Python<'_>, py_f: Py<PyAny>) -> PyResult<()> {
         use polars::io::pcap::PcapWriter;
         let mut buf = get_file_like(py_f, true)?;
-        py.enter_polars(|| {
-            PcapWriter::new(&mut buf)
-                .finish(&mut self.df.write())
-        })
+        py.enter_polars(|| PcapWriter::new(&mut buf).finish(&mut self.df.write()))
     }
 
     #[cfg(feature = "avro")]
