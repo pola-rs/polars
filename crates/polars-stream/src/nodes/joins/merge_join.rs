@@ -379,7 +379,6 @@ struct DataFrameBuffer {
     buf: BTreeMap<usize, DataFrame>,
     total_rows: usize,
     skip_rows: usize,
-    adjust_offsets: usize, // TODO: [amber] This is just equal to the offset of the first dataframe in the buffer
     frozen: bool,
 }
 
@@ -390,7 +389,6 @@ impl DataFrameBuffer {
             buf: BTreeMap::new(),
             total_rows: 0,
             skip_rows: 0,
-            adjust_offsets: 0,
             frozen: false,
         }
     }
@@ -406,7 +404,11 @@ impl DataFrameBuffer {
         params: &MergeJoinParams,
     ) -> AnyValue<'_> {
         debug_assert!(row_index < self.total_rows);
-        let buf_index = self.skip_rows + self.adjust_offsets + row_index;
+        let first_offset = match self.buf.first_key_value() {
+            Some((offset, _)) => *offset,
+            None => 0,
+        };
+        let buf_index = self.skip_rows + first_offset + row_index;
         let (df_offset, df) = self.buf.range(..=buf_index).next_back().unwrap();
         let series_index = buf_index - df_offset;
         let series = df.column(column).unwrap().as_materialized_series();
@@ -418,7 +420,7 @@ impl DataFrameBuffer {
         let added_rows = df.height();
         let offset = match self.buf.last_key_value() {
             Some((last_key, last_df)) => last_key + last_df.height(),
-            None => self.adjust_offsets,
+            None => 0,
         };
         self.buf.insert(offset, df);
         self.total_rows += added_rows;
@@ -453,7 +455,6 @@ impl DataFrameBuffer {
             if self.skip_rows > df.height() {
                 let (_, df) = self.buf.pop_first().unwrap();
                 self.skip_rows -= df.height();
-                self.adjust_offsets += df.height();
             } else {
                 break;
             }
