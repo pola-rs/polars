@@ -77,9 +77,9 @@ struct MergeJoinParams {
 pub struct MergeJoinNode {
     state: MergeJoinState,
     params: MergeJoinParams,
-    left_unmerged: VecDeque<DataFrame>,
-    right_unmerged: VecDeque<DataFrame>,
-    unmatched: BTreeMap<MorselSeq, VecDeque<DataFrame>>,
+    left_unmerged: DataFrameBuffer,
+    right_unmerged: DataFrameBuffer,
+    unmatched: BTreeMap<MorselSeq, DataFrameBuffer>,
     seq: MorselSeq,
 }
 
@@ -129,14 +129,14 @@ impl MergeJoinNode {
         }
         let left = SideParams {
             input_schema: left_input_schema,
-            ir_schema: left_ir_schema,
+            ir_schema: left_ir_schema.clone(),
             on: left_on,
             key_col: left_key_col,
             emit_unmatched: matches!(args.how, JoinType::Left | JoinType::Full),
         };
         let right = SideParams {
             input_schema: right_input_schema,
-            ir_schema: right_ir_schema,
+            ir_schema: right_ir_schema.clone(),
             on: right_on,
             key_col: right_key_col,
             emit_unmatched: matches!(args.how, JoinType::Right | JoinType::Full),
@@ -153,8 +153,8 @@ impl MergeJoinNode {
         Ok(MergeJoinNode {
             state,
             params,
-            left_unmerged: Default::default(),
-            right_unmerged: Default::default(),
+            left_unmerged: DataFrameBuffer::empty_with_schema(&left_ir_schema),
+            right_unmerged: DataFrameBuffer::empty_with_schema(&right_ir_schema),
             unmatched: Default::default(),
             seq: MorselSeq::default(),
         })
@@ -258,17 +258,14 @@ impl ComputeNode for MergeJoinNode {
                         params,
                     )? {
                         Left((left_mergeable, right_mergeable)) => {
-                            let left_mergeable =
-                                Morsel::new(left_mergeable, *seq, source_token.clone());
-                            *seq = seq.successor();
-                            if let Err((morsel, right)) =
-                                distributor.send((left_mergeable, right_mergeable)).await
+                            let source_token = SourceToken::new();
+                            if let Err((_left, _right, _, _)) = distributor
+                                .send((left_mergeable, right_mergeable, *seq, source_token))
+                                .await
                             {
-                                let left = morsel.into_df();
-                                left_unmerged.push_front(left);
-                                right_unmerged.push_front(right);
-                                break;
+                                panic!();
                             }
+                            *seq = seq.successor();
                         },
                         Right(NeedMore::Left | NeedMore::Both) if recv_left.is_some() => {
                             let Ok(m) = recv_left.as_mut().unwrap().recv().await else {
@@ -276,14 +273,14 @@ impl ComputeNode for MergeJoinNode {
                                     .await;
                                 break;
                             };
-                            left_unmerged.push_back(m.into_df());
+                            left_unmerged.push_df(m.into_df());
                         },
                         Right(NeedMore::Right | NeedMore::Both) if recv_right.is_some() => {
                             let Ok(m) = recv_right.as_mut().unwrap().recv().await else {
                                 buffer_unmerged_from_pipe(recv_left.as_mut(), left_unmerged).await;
                                 break;
                             };
-                            right_unmerged.push_back(m.into_df());
+                            right_unmerged.push_df(m.into_df());
                         },
 
                         Right(NeedMore::Finished) => {
@@ -302,10 +299,12 @@ impl ComputeNode for MergeJoinNode {
                 scope.spawn_task(TaskPriority::Low, async move {
                     let mut arenas = Arenas::default();
 
-                    while let Ok((morsel, right)) = recv.recv().await {
+                    while let Ok((left, right, seq, source_token)) = recv.recv().await {
                         compute_join(
-                            morsel.clone(),
+                            left.clone(),
                             right.clone(),
+                            seq,
+                            source_token,
                             params,
                             &mut arenas,
                             &mut send,
@@ -320,14 +319,12 @@ impl ComputeNode for MergeJoinNode {
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 while let Some(morsel) = unmatched_recv.recv().await {
                     let (df, seq, _st, _) = morsel.into_inner();
-                    if let Some(vec) = unmatched.get_mut(&seq) {
-                        if vec.back_mut().unwrap().len() > get_ideal_morsel_size() {
-                            vec.push_back(df);
-                        } else {
-                            vec.back_mut().unwrap().vstack_mut_owned(df)?;
-                        }
+                    if let Some(buf) = unmatched.get_mut(&seq) {
+                        buf.push_df(df);
                     } else {
-                        unmatched.insert(seq, VecDeque::from_iter([df]));
+                        let mut buf = DataFrameBuffer::empty_with_schema(df.schema());
+                        buf.push_df(df);
+                        unmatched.insert(seq, buf);
                     }
                 }
                 Ok(())
@@ -339,13 +336,12 @@ impl ComputeNode for MergeJoinNode {
             let mut send = send_ports[0].take().unwrap().serial();
 
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                while let Some((btree_key, mut vec)) = unmatched.pop_first() {
-                    while let Some(df) = vec.pop_front() {
+                while let Some((_, mut buf)) = unmatched.pop_first() {
+                    while !buf.is_empty() {
+                        let df = buf.split_at(get_ideal_morsel_size()).into_df();
                         let morsel = Morsel::new(df, *seq, SourceToken::new());
-                        if let Err(morsel) = send.send(morsel).await {
-                            vec.push_front(morsel.into_df());
-                            unmatched.insert(btree_key, vec);
-                            break;
+                        if let Err(_morsel) = send.send(morsel).await {
+                            panic!();
                         }
                     }
                 }
@@ -356,12 +352,12 @@ impl ComputeNode for MergeJoinNode {
 }
 
 fn find_mergeable(
-    left: &mut VecDeque<DataFrame>,
-    right: &mut VecDeque<DataFrame>,
+    left: &mut DataFrameBuffer,
+    right: &mut DataFrameBuffer,
     left_done: bool,
     right_done: bool,
     p: &MergeJoinParams,
-) -> PolarsResult<Either<(DataFrame, DataFrame), NeedMore>> {
+) -> PolarsResult<Either<(DataFrameBuffer, DataFrameBuffer), NeedMore>> {
     if p.args.how == JoinType::Right {
         let ok = find_mergeable_inner(right, left, &p.right, &p.left, p, right_done, left_done)?;
         Ok(match ok {
@@ -378,15 +374,114 @@ fn find_mergeable(
     }
 }
 
+#[derive(Clone, Debug)]
+struct DataFrameBuffer {
+    schema: Schema,
+    buf: BTreeMap<usize, DataFrame>,
+    total_rows: usize,
+    skip_rows: usize,
+    frozen: bool,
+}
+
+impl DataFrameBuffer {
+    fn empty_with_schema(schema: &Schema) -> Self {
+        DataFrameBuffer {
+            schema: schema.clone(),
+            buf: BTreeMap::new(),
+            total_rows: 0,
+            skip_rows: 0,
+            frozen: false,
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.total_rows
+    }
+
+    fn get_bypass_validity(
+        &self,
+        column: &str,
+        mut index: usize,
+        params: &MergeJoinParams,
+    ) -> AnyValue<'_> {
+        debug_assert!(index < self.total_rows);
+        index += self.skip_rows;
+        let (offset, df) = self.buf.range(..=index).next_back().unwrap();
+        dbg!(index, offset);
+        index -= offset;
+        let series = df.column(column).unwrap().as_materialized_series();
+        series_get_bypass_validity(series, index, params)
+    }
+
+    fn push_df(&mut self, df: DataFrame) {
+        self.integrity_check();
+        assert!(!self.frozen);
+        let added_rows = df.height();
+        self.buf.insert(self.total_rows, df);
+        self.total_rows += added_rows;
+        self.integrity_check();
+    }
+
+    fn split_at(&mut self, mut at: usize) -> Self {
+        self.integrity_check();
+        dbg!(self.total_rows);
+        at = at.clamp(0, self.total_rows);
+        let mut left = self.clone();
+        left.total_rows = at;
+        left.frozen = true;
+        left.integrity_check();
+        self.skip_rows += at;
+        self.total_rows -= at;
+        // TODO: [amber] GC dataframes
+        self.integrity_check();
+        left
+    }
+
+    fn into_df(self) -> DataFrame {
+        self.integrity_check();
+        let mut acc = DataFrame::empty_with_schema(&self.schema);
+        for df in self.buf.into_values() {
+            acc.vstack_mut_owned(df).unwrap();
+        }
+        acc.slice(self.skip_rows as i64, self.total_rows)
+    }
+
+    fn gc(&mut self) {
+        todo!()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.total_rows == 0
+    }
+
+    fn clear(&mut self) {
+        self.integrity_check();
+        assert!(!self.frozen);
+        self.buf.clear();
+        self.total_rows = 0;
+        self.skip_rows = 0;
+    }
+
+    fn integrity_check(&self) {
+        dbg!(self);
+        debug_assert!(
+            self.frozen
+                || self.buf.values().map(|df| df.height()).sum::<usize>() - self.skip_rows
+                    == self.total_rows
+        );
+        debug_assert!(self.buf.values().all(|df| &**df.schema() == &self.schema));
+    }
+}
+
 fn find_mergeable_inner(
-    left: &mut VecDeque<DataFrame>,
-    right: &mut VecDeque<DataFrame>,
+    left: &mut DataFrameBuffer,
+    right: &mut DataFrameBuffer,
     left_params: &SideParams,
     right_params: &SideParams,
     params: &MergeJoinParams,
     left_done: bool,
     right_done: bool,
-) -> PolarsResult<Either<(DataFrame, DataFrame), NeedMore>> {
+) -> PolarsResult<Either<(DataFrameBuffer, DataFrameBuffer), NeedMore>> {
     loop {
         if left_done && left.is_empty() && right_done && right.is_empty() {
             return Ok(Right(NeedMore::Finished));
@@ -399,14 +494,16 @@ fn find_mergeable_inner(
             left.clear();
             return Ok(Right(NeedMore::Finished));
         } else if left_done && left.is_empty() {
+            let right_split = right.split_at(get_ideal_morsel_size());
             return Ok(Left((
-                DataFrame::empty_with_schema(&left_params.ir_schema),
-                right.pop_front().unwrap(),
+                DataFrameBuffer::empty_with_schema(&left_params.ir_schema),
+                right_split,
             )));
         } else if right_done && right.is_empty() {
+            let left_split = left.split_at(get_ideal_morsel_size());
             return Ok(Left((
-                left.pop_front().unwrap(),
-                DataFrame::empty_with_schema(&right_params.ir_schema),
+                left_split,
+                DataFrameBuffer::empty_with_schema(&right_params.ir_schema),
             )));
         } else if left.is_empty() && !left_done {
             return Ok(Right(NeedMore::Left));
@@ -414,48 +511,20 @@ fn find_mergeable_inner(
             return Ok(Right(NeedMore::Right));
         }
 
-        let Some(left_df) = left.front() else {
-            return Ok(Right(NeedMore::Left));
-        };
-        let Some(right_df) = right.front() else {
-            return Ok(Right(NeedMore::Right));
+        dbg!(&left);
+        let left_last = left.get_bypass_validity(&left_params.key_col, left.total_rows - 1, params);
+        let right_last =
+            right.get_bypass_validity(&right_params.key_col, right.total_rows - 1, params);
+
+        let left_first_incomplete = match left_done {
+            false => binary_search_lower(left, &left_last, params, &left_params)?,
+            true => left.len(),
         };
 
-        if left_df.is_empty() {
-            left.pop_front();
-            continue;
-        }
-        if right_df.is_empty() {
-            right.pop_front();
-            continue;
-        }
-
-        let left_keys = left_df
-            .column(&left_params.key_col)?
-            .as_materialized_series();
-        let right_keys = right_df
-            .column(&right_params.key_col)?
-            .as_materialized_series();
-
-        let left_last = series_get_bypass_validity(left_keys, left_keys.len() - 1, params);
-        let left_first_incomplete = match left_done && left.len() <= 1 {
-            false => binary_search_lower(left_keys, &left_last, params)?,
-            true => left_keys.len(),
+        let right_first_incomplete = match right_done {
+            false => binary_search_lower(right, &right_last, params, &right_params)?,
+            true => right.len(),
         };
-        if left_first_incomplete == 0 && left.len() > 1 {
-            vstack_head(left);
-            continue;
-        }
-
-        let right_last = series_get_bypass_validity(right_keys, right_keys.len() - 1, params);
-        let right_first_incomplete = match right_done && right.len() <= 1 {
-            false => binary_search_lower(right_keys, &right_last, params)?,
-            true => right_keys.len(),
-        };
-        if right_first_incomplete == 0 && right.len() > 1 {
-            vstack_head(right);
-            continue;
-        }
 
         if left_first_incomplete == 0 && right_first_incomplete == 0 {
             debug_assert!(!left_done && !right_done);
@@ -469,9 +538,10 @@ fn find_mergeable_inner(
         }
 
         let left_last_completed_val =
-            series_get_bypass_validity(left_keys, left_first_incomplete - 1, params);
+            left.get_bypass_validity(&left_params.key_col, left_first_incomplete - 1, params);
         let right_last_completed_val =
-            series_get_bypass_validity(right_keys, right_first_incomplete - 1, params);
+            right.get_bypass_validity(&right_params.key_col, right_first_incomplete - 1, params);
+
         let left_mergable_until; // bound is *exclusive*
         let right_mergable_until;
         if keys_eq(&left_last_completed_val, &right_last_completed_val, params) {
@@ -480,46 +550,57 @@ fn find_mergeable_inner(
         } else if keys_lt(&left_last_completed_val, &right_last_completed_val, params) {
             left_mergable_until = left_first_incomplete;
             right_mergable_until = binary_search_upper(
-                right_keys,
-                &series_get_bypass_validity(&left_keys, left_mergable_until - 1, params),
+                right,
+                &left.get_bypass_validity(&left_params.key_col, left_mergable_until - 1, params),
                 params,
+                right_params,
             )?;
         } else if keys_gt(&left_last_completed_val, &right_last_completed_val, params) {
             right_mergable_until = right_first_incomplete;
             left_mergable_until = binary_search_upper(
-                left_keys,
-                &series_get_bypass_validity(&right_keys, right_mergable_until - 1, params),
+                left,
+                &right.get_bypass_validity(&right_params.key_col, right_mergable_until - 1, params),
                 params,
+                left_params,
             )?;
         } else {
             unreachable!();
         }
 
-        if left_mergable_until == 0 && left.len() > 1 {
-            vstack_head(left);
-            continue;
-        } else if right_mergable_until == 0 && right.len() > 1 {
-            vstack_head(right);
-            continue;
-        } else if left_mergable_until == 0 && right_mergable_until == 0 {
+        if left_mergable_until == 0 && right_mergable_until == 0 {
             return Ok(Right(NeedMore::Both));
         }
 
-        let (left_df, left_rest) = left
-            .pop_front()
-            .unwrap()
-            .split_at(left_mergable_until as i64);
-        if !left_rest.is_empty() {
-            left.push_front(left_rest);
-        }
-        let (right_df, right_rest) = right
-            .pop_front()
-            .unwrap()
-            .split_at(right_mergable_until as i64);
-        if !right_rest.is_empty() {
-            right.push_front(right_rest);
-        }
-        return Ok(Left((left_df, right_df)));
+        let tick = std::time::Instant::now();
+
+        // TODO: [amber] These split_ats seem to be annoyingly slow
+        // Ask Orson if there is anything we can do about that?
+        // The only solution I see at the moment is to wrap the dataframes with
+        // the number of rows that have already been consumed.
+        // We cannot vstack anymore, because then we would just build up two
+        // really large dataframes, without ever pruning old data.
+        // So we would have to transmit the "source" dataframes as some kind of
+        // "dataframe views" to the compute_join processors. (Basically send over
+        // a group of dataframes at a time with a start offset.) And then at some
+        // point we are able to prune the dataframes that fall outside of the
+        // current mergable view.
+        // We can still vstack up to the morsel size limit, but I am not sure
+        // if that is even worth it. We may rather just keep track of how many
+        // dataframes in the VecDeque are "considered" for merging at the moment.
+        // (Or maybe just look at all of them actually!)
+        // Note that for binary searcher we will need to have some kind of index
+        // to map index ranges to individual dataframes.
+        let left_split = left.split_at(left_mergable_until);
+        let right_split = right.split_at(right_mergable_until);
+
+        let elapsed = tick.elapsed();
+        dbg!(elapsed);
+        dbg!(left_mergable_until);
+        dbg!(right_mergable_until);
+        dbg!(left_split.len());
+        dbg!(right_split.len());
+
+        return Ok(Left((left_split, right_split)));
     }
 }
 
@@ -528,6 +609,7 @@ fn series_get_bypass_validity<'a>(
     index: usize,
     params: &MergeJoinParams,
 ) -> AnyValue<'a> {
+    dbg!(index, s.len());
     debug_assert!(index < s.len());
     if params.use_row_encoding {
         let arr = s.binary_offset().unwrap();
@@ -538,16 +620,17 @@ fn series_get_bypass_validity<'a>(
 }
 
 fn binary_search(
-    s: &Series,
+    vec: &DataFrameBuffer,
     search_value: &AnyValue,
     op: fn(&AnyValue, &AnyValue, &MergeJoinParams) -> bool,
     params: &MergeJoinParams,
+    sp: &SideParams,
 ) -> PolarsResult<usize> {
     let mut lower = 0;
-    let mut upper = s.len();
+    let mut upper = vec.len();
     while lower < upper {
         let mid = (lower + upper) / 2;
-        let mid_val = series_get_bypass_validity(s, mid, params);
+        let mid_val = vec.get_bypass_validity(&sp.key_col, mid, params);
         if op(search_value, &mid_val, params) {
             upper = mid;
         } else {
@@ -557,18 +640,22 @@ fn binary_search(
     Ok(lower)
 }
 
-fn binary_search_lower(s: &Series, sv: &AnyValue, params: &MergeJoinParams) -> PolarsResult<usize> {
-    binary_search(s, sv, keys_le, params)
+fn binary_search_lower(
+    vec: &DataFrameBuffer,
+    sv: &AnyValue,
+    params: &MergeJoinParams,
+    sp: &SideParams,
+) -> PolarsResult<usize> {
+    binary_search(vec, sv, keys_le, params, sp)
 }
 
-fn binary_search_upper(s: &Series, sv: &AnyValue, params: &MergeJoinParams) -> PolarsResult<usize> {
-    binary_search(s, sv, keys_lt, params)
-}
-
-fn vstack_head(unmerged: &mut VecDeque<DataFrame>) {
-    let mut df = unmerged.pop_front().unwrap();
-    df.vstack_mut_owned(unmerged.pop_front().unwrap()).unwrap();
-    unmerged.push_front(df);
+fn binary_search_upper(
+    vec: &DataFrameBuffer,
+    sv: &AnyValue,
+    params: &MergeJoinParams,
+    sp: &SideParams,
+) -> PolarsResult<usize> {
+    binary_search(vec, sv, keys_lt, params, sp)
 }
 
 #[derive(Default)]
@@ -580,16 +667,19 @@ struct Arenas {
 }
 
 async fn compute_join(
-    morsel: Morsel,
-    mut right: DataFrame,
+    left: DataFrameBuffer,
+    right: DataFrameBuffer,
+    seq: MorselSeq,
+    source_token: SourceToken,
     params: &MergeJoinParams,
     arenas: &mut Arenas,
     matched_send: &mut PortSender,
     unmatched_send: tokio::sync::mpsc::Sender<Morsel>,
 ) -> PolarsResult<()> {
-    let (mut left, seq, source_token, _wt) = morsel.into_inner();
     let mut left_sp = &params.left;
     let mut right_sp = &params.right;
+    let mut left = left.into_df();
+    let mut right = right.into_df();
 
     left.rechunk_mut();
     right.rechunk_mut();
@@ -883,9 +973,6 @@ where
 {
     debug_assert!(gather_left.is_empty());
     debug_assert!(gather_right.is_empty());
-    dbg!(right_sp.emit_unmatched);
-    dbg!(matched_right.len());
-    dbg!(right_key.len());
     if right_sp.emit_unmatched {
         debug_assert!(matched_right.len() == right_key.len());
     }
@@ -975,7 +1062,7 @@ fn key_is_in_output(col_name: &PlSmallStr, params: &MergeJoinParams) -> bool {
 
 async fn buffer_unmerged_from_pipe(
     port: Option<&mut PortReceiver>,
-    unmerged: &mut VecDeque<DataFrame>,
+    unmerged: &mut DataFrameBuffer,
 ) {
     let Some(port) = port else {
         return;
@@ -984,10 +1071,10 @@ async fn buffer_unmerged_from_pipe(
         return;
     };
     morsel.source_token().stop();
-    unmerged.push_back(morsel.into_df());
+    unmerged.push_df(morsel.into_df());
 
     while let Ok(morsel) = port.recv().await {
-        unmerged.push_back(morsel.into_df());
+        unmerged.push_df(morsel.into_df());
     }
 }
 
