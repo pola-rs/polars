@@ -1,9 +1,11 @@
+use std::fs::File;
+use std::io::Cursor;
+use std::path::Path;
+
+use polars_core::prelude::*;
+
 use crate::pcap::{PcapReader, PcapWriter};
 use crate::shared::SerReader;
-use std::fs::File;
-use polars_core::prelude::*;
-use std::path::Path;
-use std::io::Cursor;
 
 #[test]
 fn test_pcap_roundtrip() -> PolarsResult<()> {
@@ -24,7 +26,10 @@ fn test_pcap_roundtrip() -> PolarsResult<()> {
 
     assert_eq!(df_read.height(), 2);
     assert_eq!(df_read.column("time_s")?.i64()?.get(0), Some(1000));
-    assert_eq!(df_read.column("data")?.binary()?.get(0), Some(b"abcd".as_slice()));
+    assert_eq!(
+        df_read.column("data")?.binary()?.get(0),
+        Some(b"abcd".as_slice())
+    );
 
     Ok(())
 }
@@ -37,7 +42,7 @@ fn test_pcap_read_foods1() -> PolarsResult<()> {
         // If not found at relative path, try absolute from root
         let root_path = Path::new("examples/datasets/foods1.pcap");
         if !root_path.exists() {
-             return Ok(());
+            return Ok(());
         }
         let file = File::open(root_path)?;
         let reader = PcapReader::new(file);
@@ -52,7 +57,10 @@ fn test_pcap_read_foods1() -> PolarsResult<()> {
 
     assert_eq!(df.height(), 27);
     assert_eq!(df.column("time_s")?.i64()?.get(0), Some(1678900000));
-    assert_eq!(df.column("data")?.binary()?.get(0), Some(b"vegetables".as_slice()));
+    assert_eq!(
+        df.column("data")?.binary()?.get(0),
+        Some(b"vegetables".as_slice())
+    );
 
     Ok(())
 }
@@ -63,7 +71,7 @@ fn test_pcap_read_with_n_rows() -> PolarsResult<()> {
     if !path.exists() {
         let root_path = Path::new("examples/datasets/foods1.pcap");
         if !root_path.exists() {
-             return Ok(());
+            return Ok(());
         }
         let file = File::open(root_path)?;
         let df = PcapReader::new(file).with_n_rows(Some(5)).finish()?;
@@ -72,9 +80,7 @@ fn test_pcap_read_with_n_rows() -> PolarsResult<()> {
     }
 
     let file = File::open(path)?;
-    let df = PcapReader::new(file)
-        .with_n_rows(Some(5))
-        .finish()?;
+    let df = PcapReader::new(file).with_n_rows(Some(5)).finish()?;
 
     assert_eq!(df.height(), 5);
     Ok(())

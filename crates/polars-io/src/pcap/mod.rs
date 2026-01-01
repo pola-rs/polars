@@ -1,7 +1,7 @@
 mod read;
-mod write;
 #[cfg(test)]
 mod tests;
+mod write;
 
 pub use read::*;
 pub use write::*;
