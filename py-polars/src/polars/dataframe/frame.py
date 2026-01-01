@@ -3174,7 +3174,14 @@ class DataFrame:
         ...         "incl_len": [4, 4],
         ...         "orig_len": [4, 4],
         ...         "data": [b"abcd", b"efgh"],
-        ...     }
+        ...     },
+        ...     schema={
+        ...         "time_s": pl.Int64,
+        ...         "time_ns": pl.UInt32,
+        ...         "incl_len": pl.UInt32,
+        ...         "orig_len": pl.UInt32,
+        ...         "data": pl.Binary,
+        ...     },
         ... )
         >>> path: pathlib.Path = dirpath / "output.pcap"
         >>> df.write_pcap(path)
