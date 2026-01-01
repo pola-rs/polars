@@ -179,12 +179,12 @@ mod inner {
             let prim_dtype_lhs = dtype_lhs.leaf_dtype();
             let prim_dtype_rhs = dtype_rhs.leaf_dtype();
 
-            let (prim_dtype_lhs, prim_dtype_rhs) = if prim_dtype_lhs == &DataType::Boolean 
-                && prim_dtype_rhs == &DataType::Boolean {
-                (&DataType::IDX_DTYPE, &DataType::IDX_DTYPE)
-            } else {
-                (prim_dtype_lhs, prim_dtype_rhs)
-            };
+            let (prim_dtype_lhs, prim_dtype_rhs) =
+                if prim_dtype_lhs == &DataType::Boolean && prim_dtype_rhs == &DataType::Boolean {
+                    (&DataType::IDX_DTYPE, &DataType::IDX_DTYPE)
+                } else {
+                    (prim_dtype_lhs, prim_dtype_rhs)
+                };
 
             let output_primitive_dtype =
                 op.0.try_get_leaf_supertype(prim_dtype_lhs, prim_dtype_rhs)?;
