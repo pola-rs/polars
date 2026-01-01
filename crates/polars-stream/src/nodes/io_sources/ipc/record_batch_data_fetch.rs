@@ -29,6 +29,7 @@ pub(super) struct RecordBatchDataFetcher {
     pub(super) byte_source: Arc<DynByteSource>,
     pub(super) record_batch_idx: usize,
     pub(super) fetch_metadata_only: bool,
+    pub(super) n_rows_limit: Option<usize>,
     pub(super) n_rows_in_file_tx: Option<oneshot_channel::Sender<IdxSize>>,
     pub(super) row_position_on_end_tx: Option<oneshot_channel::Sender<IdxSize>>,
     pub(super) prefetch_send: Sender<(
@@ -40,13 +41,19 @@ pub(super) struct RecordBatchDataFetcher {
 
 impl RecordBatchDataFetcher {
     pub(super) async fn run(&mut self) -> PolarsResult<()> {
-        let current_row_offset: Arc<RelaxedCell<u64>> = Arc::new(RelaxedCell::new_u64(0));
+        let current_row_offset: Arc<RelaxedCell<usize>> = Arc::new(RelaxedCell::new_usize(0));
         let wait_group: Arc<WaitGroup> = Arc::new(WaitGroup::default());
 
         if !self.fetch_metadata_only {
             // Fetch all record batch data
 
             while self.record_batch_idx < self.metadata.blocks.len() {
+                if let Some(n_rows_limit) = self.n_rows_limit {
+                    if current_row_offset.as_ref().load() > n_rows_limit {
+                        break;
+                    }
+                }
+
                 let fetch_permit = self
                     .rb_prefetch_semaphore
                     .clone()
@@ -95,7 +102,7 @@ impl RecordBatchDataFetcher {
                         reader.record_batch_num_rows(&mut message_scratch)?
                     };
 
-                    current_row_offset.fetch_add(num_rows as u64);
+                    current_row_offset.fetch_add(num_rows);
                     drop(wait_token);
 
                     PolarsResult::Ok(RecordBatchData {
@@ -119,9 +126,10 @@ impl RecordBatchDataFetcher {
         };
 
         // Handle callback for rows fetched until the 'end', i.e. when the requested
-        // slice request has been fulfilled, or higher.
+        // slice request has been fulfilled, or somewhat higher due to latency.
         if let Some(row_position_on_end_tx) = self.row_position_on_end_tx.take() {
             wait_group.wait().await;
+
             let current_row_offset = IdxSize::try_from(current_row_offset.as_ref().load())
                 .map_err(|_| ROW_COUNT_OVERFLOW_ERR)?;
             _ = row_position_on_end_tx.send(current_row_offset);
@@ -130,22 +138,36 @@ impl RecordBatchDataFetcher {
         // Handle callback for total rows in file.
         // Fetch record batch metadata only.
         if let Some(n_rows_in_file_tx) = self.n_rows_in_file_tx.take() {
-            let n_rows = self.fetch_n_rows_in_file().await?;
+            wait_group.wait().await;
+
+            let current_row_offset = IdxSize::try_from(current_row_offset.as_ref().load())
+                .map_err(|_| ROW_COUNT_OVERFLOW_ERR)?;
+            let remaining_rows = self
+                .fetch_row_count(Some(self.record_batch_idx))
+                .await?;
+            let n_rows = current_row_offset
+                .checked_add(remaining_rows)
+                .ok_or(ROW_COUNT_OVERFLOW_ERR)?;
             _ = n_rows_in_file_tx.send(n_rows);
         }
 
         Ok(())
     }
 
-    async fn fetch_n_rows_in_file(&mut self) -> PolarsResult<IdxSize> {
+    async fn fetch_row_count(
+        &mut self,
+        skip_n_blocks: Option<usize>,
+    ) -> PolarsResult<IdxSize> {
         let file_metadata = self.metadata.clone();
         let byte_source = self.byte_source.clone();
+
+        let skip_n_blocks = skip_n_blocks.unwrap_or_default();
 
         let n_rows = match &*byte_source {
             DynByteSource::MemSlice(MemSliceByteSource(memslice)) => {
                 let n_rows: i64 = get_row_count_from_blocks(
                     &mut std::io::Cursor::new(memslice.as_ref()),
-                    &file_metadata.blocks,
+                    &file_metadata.blocks[skip_n_blocks..],
                 )?;
 
                 IdxSize::try_from(n_rows)
@@ -156,8 +178,7 @@ impl RecordBatchDataFetcher {
 
                 let mut n_rows = 0;
                 let mut message_scratch = Vec::new();
-                let mut ranges: Vec<_> = file_metadata
-                    .blocks
+                let mut ranges: Vec<_> = file_metadata.blocks[skip_n_blocks..]
                     .iter()
                     .map(|block| {
                         block.offset as usize

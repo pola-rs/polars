@@ -191,6 +191,11 @@ impl FileReader for IpcFileReader {
         let slice_range: Range<usize> = pre_slice_arg
             .clone()
             .map_or(0..usize::MAX, Range::<usize>::from);
+        let n_rows_limit = if pre_slice_arg.is_some() {
+            Some(slice_range.end)
+        } else {
+            None
+        };
 
         // Avoid materializing projection info if we are projecting all the columns of this file.
         let projection_indices: Option<Vec<usize>> = if let Some(first_mismatch_idx) =
@@ -290,6 +295,7 @@ impl FileReader for IpcFileReader {
                 byte_source,
                 record_batch_idx: 0,
                 fetch_metadata_only,
+                n_rows_limit,
                 n_rows_in_file_tx,
                 row_position_on_end_tx,
                 prefetch_send,
