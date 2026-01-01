@@ -831,7 +831,10 @@ class Series:
             f = None
         if f is None:
             other_dtype = getattr(other, "dtype", type(other))
-            if (self.dtype.is_temporal() and not getattr(other_dtype, "is_temporal", lambda: False)()):
+            if (
+                self.dtype.is_temporal()
+                and not getattr(other_dtype, "is_temporal", lambda: False)()
+            ):
                 msg = (
                     "Invalid comparison between temporal dtype "
                     f"{self.dtype!r} and non-temporal value of dtype {other_dtype!r}. "
