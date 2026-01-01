@@ -33,7 +33,7 @@ impl<R: Read + Seek> SerReader<R> for PcapReader<R> {
         let mut ts_nsecs = Vec::new();
         let mut incl_lens = Vec::new();
         let mut orig_lens = Vec::new();
-        let mut datas = Vec::new();
+        let mut packet_data = Vec::new();
 
         let mut count = 0;
         while let Some(packet) = pcap_reader.next_packet() {
@@ -43,7 +43,7 @@ impl<R: Read + Seek> SerReader<R> for PcapReader<R> {
             ts_nsecs.push(packet.timestamp.subsec_nanos());
             incl_lens.push(packet.data.len() as u32);
             orig_lens.push(packet.orig_len);
-            datas.push(packet.data.to_vec());
+            packet_data.push(packet.data.to_vec());
 
             count += 1;
             if let Some(n) = self.n_rows {
@@ -57,7 +57,7 @@ impl<R: Read + Seek> SerReader<R> for PcapReader<R> {
         let ts_ns_series = Series::new("time_ns".into(), ts_nsecs);
         let incl_len_series = Series::new("incl_len".into(), incl_lens);
         let orig_len_series = Series::new("orig_len".into(), orig_lens);
-        let data_series = Series::new("data".into(), datas);
+        let data_series = Series::new("data".into(), packet_data);
 
         let mut df = DataFrame::new(vec![
             ts_series.into(),
