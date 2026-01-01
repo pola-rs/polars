@@ -407,24 +407,25 @@ impl DataFrameBuffer {
         debug_assert!(index < self.total_rows);
         index += self.skip_rows;
         let (offset, df) = self.buf.range(..=index).next_back().unwrap();
-        dbg!(index, offset);
         index -= offset;
         let series = df.column(column).unwrap().as_materialized_series();
         series_get_bypass_validity(series, index, params)
     }
 
     fn push_df(&mut self, df: DataFrame) {
-        self.integrity_check();
         assert!(!self.frozen);
         let added_rows = df.height();
-        self.buf.insert(self.total_rows, df);
+        let offset = if let Some((last_key, last_df)) = self.buf.last_key_value() {
+            last_key + last_df.height()
+        } else {
+            0
+        };
+        self.buf.insert(offset, df);
         self.total_rows += added_rows;
         self.integrity_check();
     }
 
     fn split_at(&mut self, mut at: usize) -> Self {
-        self.integrity_check();
-        dbg!(self.total_rows);
         at = at.clamp(0, self.total_rows);
         let mut left = self.clone();
         left.total_rows = at;
@@ -432,7 +433,6 @@ impl DataFrameBuffer {
         left.integrity_check();
         self.skip_rows += at;
         self.total_rows -= at;
-        // TODO: [amber] GC dataframes
         self.integrity_check();
         left
     }
@@ -463,7 +463,6 @@ impl DataFrameBuffer {
     }
 
     fn integrity_check(&self) {
-        dbg!(self);
         debug_assert!(
             self.frozen
                 || self.buf.values().map(|df| df.height()).sum::<usize>() - self.skip_rows
@@ -511,7 +510,6 @@ fn find_mergeable_inner(
             return Ok(Right(NeedMore::Right));
         }
 
-        dbg!(&left);
         let left_last = left.get_bypass_validity(&left_params.key_col, left.total_rows - 1, params);
         let right_last =
             right.get_bypass_validity(&right_params.key_col, right.total_rows - 1, params);
@@ -609,7 +607,6 @@ fn series_get_bypass_validity<'a>(
     index: usize,
     params: &MergeJoinParams,
 ) -> AnyValue<'a> {
-    dbg!(index, s.len());
     debug_assert!(index < s.len());
     if params.use_row_encoding {
         let arr = s.binary_offset().unwrap();
