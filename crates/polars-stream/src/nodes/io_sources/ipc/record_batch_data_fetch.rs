@@ -142,9 +142,7 @@ impl RecordBatchDataFetcher {
 
             let current_row_offset = IdxSize::try_from(current_row_offset.as_ref().load())
                 .map_err(|_| ROW_COUNT_OVERFLOW_ERR)?;
-            let remaining_rows = self
-                .fetch_row_count(Some(self.record_batch_idx))
-                .await?;
+            let remaining_rows = self.fetch_row_count(Some(self.record_batch_idx)).await?;
             let n_rows = current_row_offset
                 .checked_add(remaining_rows)
                 .ok_or(ROW_COUNT_OVERFLOW_ERR)?;
@@ -154,10 +152,7 @@ impl RecordBatchDataFetcher {
         Ok(())
     }
 
-    async fn fetch_row_count(
-        &mut self,
-        skip_n_blocks: Option<usize>,
-    ) -> PolarsResult<IdxSize> {
+    async fn fetch_row_count(&mut self, skip_n_blocks: Option<usize>) -> PolarsResult<IdxSize> {
         let file_metadata = self.metadata.clone();
         let byte_source = self.byte_source.clone();
 
