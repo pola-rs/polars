@@ -121,6 +121,9 @@ ipc_streaming = ["polars-io", "polars-io/ipc_streaming", "polars-lazy?/ipc"]
 # support for apache avro file parsing
 avro = ["polars-io", "polars-io/avro"]
 
+# support for pcap file parsing
+pcap = ["polars-io", "polars-io/pcap"]
+
 # support for arrows csv file parsing
 csv = ["polars-io", "polars-io/csv", "polars-lazy?/csv", "polars-sql?/csv", "new_streaming"]
 

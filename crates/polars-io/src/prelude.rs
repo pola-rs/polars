@@ -13,5 +13,7 @@ pub use crate::parquet::{metadata::*, read::*, write::*};
 #[cfg(feature = "parquet")]
 pub use crate::partition::write_partitioned_dataset;
 pub use crate::path_utils::*;
+#[cfg(feature = "pcap")]
+pub use crate::pcap::*;
 pub use crate::shared::{SerReader, SerWriter};
 pub use crate::utils::*;

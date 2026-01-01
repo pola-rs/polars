@@ -29,6 +29,8 @@ pub mod parquet;
 #[cfg(feature = "parquet")]
 pub mod partition;
 pub mod path_utils;
+#[cfg(feature = "pcap")]
+pub mod pcap;
 #[cfg(feature = "async")]
 pub mod pl_async;
 pub mod predicates;
