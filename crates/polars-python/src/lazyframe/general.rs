@@ -747,32 +747,34 @@ impl PyLazyFrame {
         include_bom: bool,
         include_header: bool,
         separator: u8,
-        line_terminator: String,
+        line_terminator: Wrap<PlSmallStr>,
         quote_char: u8,
         batch_size: NonZeroUsize,
-        datetime_format: Option<String>,
-        date_format: Option<String>,
-        time_format: Option<String>,
+        datetime_format: Option<Wrap<PlSmallStr>>,
+        date_format: Option<Wrap<PlSmallStr>>,
+        time_format: Option<Wrap<PlSmallStr>>,
         float_scientific: Option<bool>,
         float_precision: Option<usize>,
         decimal_comma: bool,
-        null_value: Option<String>,
+        null_value: Option<Wrap<PlSmallStr>>,
         quote_style: Option<Wrap<QuoteStyle>>,
     ) -> PyResult<PyLazyFrame> {
         let quote_style = quote_style.map_or(QuoteStyle::default(), |wrap| wrap.0);
-        let null_value = null_value.unwrap_or(SerializeOptions::default().null);
+        let null_value = null_value
+            .map(|x| x.0)
+            .unwrap_or(SerializeOptions::default().null);
 
         let serialize_options = SerializeOptions {
-            date_format,
-            time_format,
-            datetime_format,
+            date_format: date_format.map(|x| x.0),
+            time_format: time_format.map(|x| x.0),
+            datetime_format: datetime_format.map(|x| x.0),
             float_scientific,
             float_precision,
             decimal_comma,
             separator,
             quote_char,
             null: null_value,
-            line_terminator,
+            line_terminator: line_terminator.0,
             quote_style,
         };
 

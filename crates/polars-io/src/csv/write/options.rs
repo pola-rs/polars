@@ -1,5 +1,6 @@
 use std::num::NonZeroUsize;
 
+use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -33,11 +34,11 @@ impl Default for CsvWriterOptions {
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct SerializeOptions {
     /// Used for [`DataType::Date`](polars_core::datatypes::DataType::Date).
-    pub date_format: Option<String>,
+    pub date_format: Option<PlSmallStr>,
     /// Used for [`DataType::Time`](polars_core::datatypes::DataType::Time).
-    pub time_format: Option<String>,
+    pub time_format: Option<PlSmallStr>,
     /// Used for [`DataType::Datetime`](polars_core::datatypes::DataType::Datetime).
-    pub datetime_format: Option<String>,
+    pub datetime_format: Option<PlSmallStr>,
     /// Used for [`DataType::Float64`](polars_core::datatypes::DataType::Float64)
     /// and [`DataType::Float32`](polars_core::datatypes::DataType::Float32).
     pub float_scientific: Option<bool>,
@@ -49,9 +50,9 @@ pub struct SerializeOptions {
     /// Quoting character.
     pub quote_char: u8,
     /// Null value representation.
-    pub null: String,
+    pub null: PlSmallStr,
     /// String appended after every row.
-    pub line_terminator: String,
+    pub line_terminator: PlSmallStr,
     /// When to insert quotes.
     pub quote_style: QuoteStyle,
 }
@@ -67,7 +68,7 @@ impl Default for SerializeOptions {
             decimal_comma: false,
             separator: b',',
             quote_char: b'"',
-            null: String::new(),
+            null: PlSmallStr::EMPTY,
             line_terminator: "\n".into(),
             quote_style: Default::default(),
         }
