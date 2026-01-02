@@ -246,6 +246,14 @@ def test_list_arithmetic_values(
     # Type upcasting for Boolean and Null
 
     # Check boolean upcasting
+    dtypes = [pl.Boolean, pl.Boolean, pl.get_index_type()]
+    l, r, o = materialize_series(True, True, 2)  # noqa: E741
+    assert_series_equal(exec_op(l, r, op.add), o)
+
+    dtypes = [pl.Boolean, pl.Boolean, pl.Float64]
+    l, r, o = materialize_series(True, True, 1.0)  # noqa: E741
+    assert_series_equal(exec_op(l, r, op.truediv), o)
+
     dtypes = [pl.Boolean, pl.UInt8, pl.UInt8]
 
     l, r, o = materialize_series(True, 3, 4)  # noqa: E741
