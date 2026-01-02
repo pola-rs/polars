@@ -118,6 +118,8 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyDataTypeExpr>().unwrap();
     m.add_class::<PySelector>().unwrap();
     m.add_class::<PyStringCacheHolder>().unwrap();
+    #[cfg(feature = "pcap")]
+    m.add_class::<crate::io::pcap::PyPcapReader>().unwrap();
     #[cfg(feature = "sql")]
     m.add_class::<PySQLContext>().unwrap();
     m.add_class::<PyCategories>().unwrap();

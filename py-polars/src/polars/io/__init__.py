@@ -23,7 +23,7 @@ from polars.io.partition import (
     PartitionMaxSize,
     PartitionParted,
 )
-from polars.io.pcap import read_pcap
+from polars.io.pcap import read_pcap, scan_pcap
 from polars.io.plugins import _defer as defer
 from polars.io.pyarrow_dataset import scan_pyarrow_dataset
 from polars.io.scan_options import ScanCastOptions
@@ -61,6 +61,7 @@ __all__ = [
     "scan_ipc",
     "scan_ndjson",
     "scan_parquet",
+    "scan_pcap",
     "scan_pyarrow_dataset",
     "ScanCastOptions",
 ]

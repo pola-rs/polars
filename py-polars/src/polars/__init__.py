@@ -243,6 +243,7 @@ from polars.io import (
     scan_ipc,
     scan_ndjson,
     scan_parquet,
+    scan_pcap,
     scan_pyarrow_dataset,
 )
 from polars.io.cloud import (
@@ -364,6 +365,7 @@ __all__ = [
     "scan_ipc",
     "scan_ndjson",
     "scan_parquet",
+    "scan_pcap",
     "scan_pyarrow_dataset",
     "Catalog",
     # polars.io.cloud
