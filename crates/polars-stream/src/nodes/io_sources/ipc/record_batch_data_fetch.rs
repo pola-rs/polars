@@ -21,6 +21,8 @@ use crate::utils::tokio_handle_ext;
 pub(super) struct RecordBatchData {
     pub(super) fetched_bytes: MemSlice,
     pub(super) num_rows: usize,
+    // Lazily updated.
+    pub(super) row_offset: Option<IdxSize>,
 }
 
 pub(super) struct RecordBatchDataFetcher {
@@ -110,6 +112,7 @@ impl RecordBatchDataFetcher {
                     PolarsResult::Ok(RecordBatchData {
                         fetched_bytes,
                         num_rows,
+                        row_offset: None,
                     })
                 });
 

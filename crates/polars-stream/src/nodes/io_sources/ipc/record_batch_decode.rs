@@ -1,5 +1,4 @@
 use std::io::Cursor;
-use std::ops::Range;
 use std::sync::Arc;
 
 use arrow::array::TryExtend;
@@ -20,31 +19,20 @@ pub(super) struct RecordBatchDecoder {
     pub(super) projection_info: Arc<Option<ProjectionInfo>>,
     pub(super) dictionaries: Arc<Option<Dictionaries>>,
     pub(super) row_index: Option<RowIndex>,
-    pub(super) slice_range: Range<usize>,
 }
 
 impl RecordBatchDecoder {
     pub(super) async fn record_batch_data_to_df(
         &self,
         record_batch_data: RecordBatchData,
-        row_range: Range<IdxSize>,
+        // Rows as requested, relative to the start of the Record Batch.
+        slice_offset: usize,
+        slice_len: usize,
     ) -> PolarsResult<DataFrame> {
         let file_metadata = self.file_metadata.clone();
         let pl_schema = self.pl_schema.clone();
         let projection_info = self.projection_info.as_ref().clone();
         let bytes = record_batch_data.fetched_bytes;
-
-        let num_rows = record_batch_data.num_rows;
-        debug_assert_eq!(row_range.end as usize - row_range.start as usize, num_rows);
-
-        let slice_range = self.slice_range.clone();
-
-        // Relative to start of Record Batch.
-        let slice_net_start =
-            std::cmp::max(slice_range.start, row_range.start as usize) - row_range.start as usize;
-        let slice_net_end =
-            std::cmp::min(slice_range.end, row_range.end as usize) - row_range.start as usize;
-        let slice_net_len = slice_net_end - slice_net_start;
 
         let mut reader = BlockReader::new(Cursor::new(bytes.as_ref()));
         let dictionaries = self.dictionaries.as_ref().as_ref().unwrap();
@@ -52,16 +40,12 @@ impl RecordBatchDecoder {
         let mut data_scratch = Vec::new();
         let mut message_scratch = Vec::new();
 
-        let limit = if slice_range.end != usize::MAX {
-            Some(slice_range.end - row_range.start as usize)
-        } else {
-            None
-        };
+        let limit = Some(slice_offset + slice_len);
 
         // Create the DataFrame with the appropriate schema based on the data.
         // @NOTE: This empty schema code path is relied upon for `select(pl.len())`
         let mut df = if pl_schema.is_empty() {
-            DataFrame::empty_with_height(slice_net_len)
+            DataFrame::empty_with_height(slice_len)
         } else {
             let chunk = read_batch(
                 &mut reader.reader,
@@ -85,11 +69,14 @@ impl RecordBatchDecoder {
             let mut df = DataFrame::empty_with_arc_schema(self.pl_schema.clone());
             df.try_extend(Some(chunk))?;
 
-            df.slice(i64::try_from(slice_net_start).unwrap(), slice_net_len)
+            df.slice(i64::try_from(slice_offset).unwrap(), slice_len)
         };
 
         if let Some(RowIndex { name, offset }) = &self.row_index {
-            let offset = row_range.start as IdxSize + slice_net_start as IdxSize + *offset;
+            let current_row_offset = record_batch_data
+                .row_offset
+                .expect("row_index expects row_offset to be provided");
+            let offset = current_row_offset + slice_offset as IdxSize + *offset;
             df = df.with_row_index(name.clone(), Some(offset))?;
         };
 

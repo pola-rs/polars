@@ -284,7 +284,6 @@ impl FileReader for IpcFileReader {
             projection_info,
             dictionaries: dictionaries.clone(),
             row_index,
-            slice_range: slice_range.clone(),
         });
 
         // Set up channels.
@@ -331,32 +330,32 @@ impl FileReader for IpcFileReader {
             let mut current_row_offset: IdxSize = 0;
 
             while let Some((prefetch_task, permit)) = prefetch_recv.recv().await {
-                let record_batch_data = prefetch_task.await.unwrap()?;
+                let mut record_batch_data = prefetch_task.await.unwrap()?;
+                record_batch_data.row_offset = Some(current_row_offset);
 
-                // Fetch every record batch so we can determine total row count.
+                // Fetch every record batch so we can track the total row count.
                 let rb_num_rows = record_batch_data.num_rows;
                 let rb_num_rows =
                     IdxSize::try_from(rb_num_rows).map_err(|_| ROW_COUNT_OVERFLOW_ERR)?;
-                let row_range_end = current_row_offset
-                    .checked_add(rb_num_rows)
-                    .ok_or(ROW_COUNT_OVERFLOW_ERR)?;
-                let row_range = current_row_offset..row_range_end;
-                current_row_offset = row_range_end;
 
                 // Only pass to decoder if we need the data.
                 let record_batch_position = SplitSlicePosition::split_slice_at_file(
-                    row_range.start as usize,
-                    (row_range.end - row_range.start) as usize,
+                    current_row_offset as usize,
+                    rb_num_rows as usize,
                     slice_range.clone(),
                 );
 
+                current_row_offset = current_row_offset
+                    .checked_add(rb_num_rows)
+                    .ok_or(ROW_COUNT_OVERFLOW_ERR)?;
+
                 match record_batch_position {
                     SplitSlicePosition::Before => continue,
-                    SplitSlicePosition::Overlapping(_, _) => {
+                    SplitSlicePosition::Overlapping(rows_offset, rows_len) => {
                         let record_batch_decoder = record_batch_decoder.clone();
                         let decode_fut = async_executor::spawn(TaskPriority::High, async move {
                             record_batch_decoder
-                                .record_batch_data_to_df(record_batch_data, row_range)
+                                .record_batch_data_to_df(record_batch_data, rows_offset, rows_len)
                                 .await
                         });
                         if decode_send.send((decode_fut, permit)).await.is_err() {
