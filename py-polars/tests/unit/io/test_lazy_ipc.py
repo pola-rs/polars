@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import io
-from typing import TYPE_CHECKING, Any
+import typing
+from typing import IO, TYPE_CHECKING, Any
 
 import pyarrow.ipc
 import pytest
@@ -143,3 +144,132 @@ def test_scan_file_info_cache(
 
     captured = capfd.readouterr().err
     assert "FILE_INFO CACHE HIT" in captured
+
+
+def test_scan_ipc_file_async(
+    monkeypatch: Any,
+    io_files_path: Path,
+) -> None:
+    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    foods1 = io_files_path / "foods1.ipc"
+
+    df = pl.scan_ipc(foods1).collect()
+
+    assert_frame_equal(
+        pl.scan_ipc(foods1).select(pl.len()).collect(), df.select(pl.len())
+    )
+
+    assert_frame_equal(
+        pl.scan_ipc(foods1).head(1).collect(),
+        df.head(1),
+    )
+
+    assert_frame_equal(
+        pl.scan_ipc(foods1).tail(1).collect(),
+        df.tail(1),
+    )
+
+    assert_frame_equal(
+        pl.scan_ipc(foods1).slice(-1, 1).collect(),
+        df.slice(-1, 1),
+    )
+
+    assert_frame_equal(
+        pl.scan_ipc(foods1).slice(7, 10).collect(),
+        df.slice(7, 10),
+    )
+
+    assert_frame_equal(
+        pl.scan_ipc(foods1).select(pl.col.calories).collect(),
+        df.select(pl.col.calories),
+    )
+
+    assert_frame_equal(
+        pl.scan_ipc(foods1).select([pl.col.calories, pl.col.category]).collect(),
+        df.select([pl.col.calories, pl.col.category]),
+    )
+
+    assert_frame_equal(
+        pl.scan_ipc([foods1, foods1]).collect(),
+        pl.concat([df, df]),
+    )
+
+    assert_frame_equal(
+        pl.scan_ipc(foods1).select(pl.col.calories.sum()).collect(),
+        df.select(pl.col.calories.sum()),
+    )
+
+    assert_frame_equal(
+        pl.scan_ipc(foods1, row_index_name="ri", row_index_offset=42)
+        .slice(0, 1)
+        .select(pl.col.ri)
+        .collect(),
+        df.with_row_index(name="ri", offset=42).slice(0, 1).select(pl.col.ri),
+    )
+
+
+def test_scan_ipc_file_async_dict(
+    monkeypatch: Any,
+) -> None:
+    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    buf = io.BytesIO()
+    lf = pl.LazyFrame(
+        {"cat": ["A", "B", "C", "A", "C", "B"]}, schema={"cat": pl.Categorical}
+    ).with_row_index()
+    lf.sink_ipc(buf)
+
+    out = pl.scan_ipc(buf).collect()
+    expected = lf.collect()
+    assert_frame_equal(out, expected)
+
+
+# TODO: create multiple record batches through API instead of env variable
+def test_scan_ipc_file_async_multiple_record_batches(
+    monkeypatch: Any,
+) -> None:
+    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    monkeypatch.setenv("POLARS_IDEAL_SINK_MORSEL_SIZE_ROWS", "10")
+
+    buf = io.BytesIO()
+    lf = pl.LazyFrame({"a": list(range(100))})
+    lf.sink_ipc(buf)
+    df = lf.collect()
+
+    buffers = typing.cast("list[IO[bytes]]", [buf, buf])
+
+    assert_frame_equal(
+        pl.scan_ipc(buf).collect(),
+        df,
+    )
+
+    assert_frame_equal(
+        pl.scan_ipc(buf).head(15).collect(),
+        df.head(15),
+    )
+
+    assert_frame_equal(
+        pl.scan_ipc(buf).tail(15).collect(),
+        df.tail(15),
+    )
+
+    assert_frame_equal(
+        pl.scan_ipc(buf).slice(45, 20).collect(),
+        df.slice(45, 20),
+    )
+
+    assert_frame_equal(
+        pl.scan_ipc(buffers).slice(85, 30).collect(),
+        pl.concat([df.slice(85, 15), df.slice(0, 15)]),
+    )
+
+    assert_frame_equal(
+        pl.scan_ipc(buf).select(pl.col.a.sum()).collect(),
+        df.select(pl.col.a.sum()),
+    )
+
+    assert_frame_equal(
+        pl.scan_ipc(buffers, row_index_name="ri").tail(15).select(pl.col.ri).collect(),
+        pl.concat([df, df]).with_row_index("ri").tail(15).select(pl.col.ri),
+    )
