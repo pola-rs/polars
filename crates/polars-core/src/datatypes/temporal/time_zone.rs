@@ -154,7 +154,7 @@ polars_utils::regex_cache::cached_regex! {
 }
 
 // Implementation from: https://github.com/wooorm/levenshtein-rs/blob/9c4730b1973d4e61e187f8fe6d5f299ad5c991fc/src/lib.rs
-// (MIT licensed. Copyright (c) 2016 Titus Wormer)
+// (MIT licensed. Copyright (c) 2016 Titus Wormer) <tituswormer@gmail.com>
 fn _levenshtein(a: &str, b: &str) -> usize {
     let mut result = 0;
 
