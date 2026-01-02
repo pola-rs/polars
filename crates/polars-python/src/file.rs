@@ -76,13 +76,19 @@ impl PyFileLikeObject {
                 .expect("no read method found");
 
             if let Ok(b) = bytes.cast_bound::<PyBytes>(py) {
-                return MemSlice::from_arc(b.as_bytes(), Arc::new(bytes.clone_ref(py)));
+                // SAFETY: we keep the underlying python object alive.
+                let slice = b.as_bytes();
+                let arc = Arc::new(bytes.clone_ref(py));
+                return unsafe { MemSlice::from_arc(slice, arc) };
             }
 
             if let Ok(b) = bytes.cast_bound::<PyString>(py) {
                 return match b.to_cow().expect("PyString is not valid UTF-8") {
                     Cow::Borrowed(v) => {
-                        MemSlice::from_arc(v.as_bytes(), Arc::new(bytes.clone_ref(py)))
+                        // SAFETY: we keep the underlying python object alive.
+                        let slice = v.as_bytes();
+                        let arc = Arc::new(bytes.clone_ref(py));
+                        unsafe { MemSlice::from_arc(slice, arc) }
                     },
                     Cow::Owned(v) => MemSlice::from_vec(v.into_bytes()),
                 };
@@ -412,11 +418,11 @@ pub(crate) fn get_python_scan_source_input(
 
         // If the pyobject is a `bytes` class
         if let Ok(b) = py_f.cast::<PyBytes>() {
-            return Ok(PythonScanSourceInput::Buffer(MemSlice::from_arc(
-                b.as_bytes(),
-                // We want to specifically keep alive the PyBytes object.
-                Arc::new(b.clone().unbind()),
-            )));
+            // SAFETY: we keep the underlying python object alive.
+            let slice = b.as_bytes();
+            let arc = Arc::new(b.clone().unbind());
+            let memslice = unsafe { MemSlice::from_arc(slice, arc) };
+            return Ok(PythonScanSourceInput::Buffer(memslice));
         }
 
         if let Ok(s) = py_f.extract::<Cow<str>>() {
@@ -491,13 +497,11 @@ pub(crate) fn get_mmap_bytes_reader_and_path(
 
     // bytes object
     if let Ok(bytes) = py_f.cast::<PyBytes>() {
-        Ok((
-            Box::new(Cursor::new(MemSlice::from_arc(
-                bytes.as_bytes(),
-                Arc::new(py_f.clone().unbind()),
-            ))),
-            None,
-        ))
+        // SAFETY: we keep the underlying python object alive.
+        let slice = bytes.as_bytes();
+        let arc = Arc::new(bytes.clone().unbind());
+        let memslice = unsafe { MemSlice::from_arc(slice, arc) };
+        Ok((Box::new(Cursor::new(memslice)), None))
     }
     // string so read file
     else {
