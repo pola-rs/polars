@@ -755,8 +755,8 @@ endpoint_url = http://127.0.0.1:54321
         "endpoint_url": "http://127.0.0.1:54321"
     }
 
-    with pytest.raises((DeltaError, OSError), match="http://127.0.0.1:54321"):
+    with pytest.raises((DeltaError, OSError), match=r"http://127.0.0.1:54321"):
         pl.scan_delta("s3://.../...")
 
-    with pytest.raises((DeltaError, OSError), match="http://127.0.0.1:54321"):
+    with pytest.raises((DeltaError, OSError), match=r"http://127.0.0.1:54321"):
         pl.DataFrame({"x": 1}).write_delta("s3://.../...", mode="append")
