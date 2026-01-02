@@ -194,7 +194,7 @@ def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
     assert tbl.version() == 1
     assert partitioned_tbl.version() == 0
 
-    uri = partitioned_tbl.table_uri.replace("file://", "")
+    uri = partitioned_tbl.table_uri.removeprefix("file://")
     if os.name == "nt" and uri.startswith("/"):
         uri = uri[1:]
 
