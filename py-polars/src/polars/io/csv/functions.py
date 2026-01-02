@@ -172,8 +172,10 @@ def read_csv(
         specified in `schema` or `schema_overrides`.
     infer_schema_length
         The maximum number of rows to scan for schema inference.
-        If set to `None`, the full data may be scanned *(this is slow)*.
-        Set `infer_schema=False` to read all columns as `pl.String`.
+        If set to `None`, the full data will be scanned into memory
+        **(this is slow)**.
+        Alternatively set `infer_schema=False` to read all columns as
+        `pl.String`.
     batch_size
         Number of lines to read into the buffer at once.
         Modify this to change performance.
@@ -1183,8 +1185,10 @@ def scan_csv(
         specified in `schema` or `schema_overrides`.
     infer_schema_length
         The maximum number of rows to scan for schema inference.
-        If set to `None`, the full data may be scanned *(this is slow)*.
-        Set `infer_schema=False` to read all columns as `pl.String`.
+        If set to `None`, the full data will be scanned into memory
+        **(this is slow)**.
+        Alternatively set `infer_schema=False` to read all columns as
+        `pl.String`.
     n_rows
         Stop reading from CSV file after reading `n_rows`.
     encoding : {'utf8', 'utf8-lossy'}

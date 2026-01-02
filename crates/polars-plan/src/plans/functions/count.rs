@@ -98,7 +98,7 @@ fn count_all_rows_csv(
                 let memslice = source.to_memslice()?;
 
                 polars_io::csv::read::count_rows_from_slice_par(
-                    &memslice[..],
+                    memslice,
                     parse_options.quote_char,
                     parse_options.comment_prefix.as_ref(),
                     parse_options.eol_char,

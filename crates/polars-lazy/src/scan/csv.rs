@@ -3,11 +3,11 @@ use arrow::buffer::Buffer;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::csv::read::{
-    CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues, infer_file_schema,
+    CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues,
+    read_until_start_and_infer_schema,
 };
 use polars_io::path_utils::expand_paths;
-use polars_io::utils::compression::maybe_decompress_bytes;
-use polars_io::utils::get_reader_bytes;
+use polars_io::utils::compression::CompressedReader;
 use polars_io::{HiveOptions, RowIndex};
 use polars_utils::mmap::MemSlice;
 use polars_utils::plpath::PlPath;
@@ -256,28 +256,12 @@ impl LazyCsvReader {
         let n_threads = self.read_options.n_threads;
 
         let infer_schema = |bytes: MemSlice| {
-            let skip_rows = self.read_options.skip_rows;
-            let skip_lines = self.read_options.skip_lines;
-            let parse_options = self.read_options.get_parse_options();
+            let mut reader = CompressedReader::try_new(bytes)?;
 
-            let mut owned = vec![];
-            let bytes = maybe_decompress_bytes(bytes.as_ref(), &mut owned)?;
+            let (inferred_schema, _) =
+                read_until_start_and_infer_schema(&self.read_options, None, None, &mut reader)?;
 
-            PolarsResult::Ok(
-                infer_file_schema(
-                    &get_reader_bytes(&mut std::io::Cursor::new(bytes))?,
-                    &parse_options,
-                    self.read_options.infer_schema_length,
-                    self.read_options.has_header,
-                    // we set it to None and modify them after the schema is updated
-                    None,
-                    skip_rows,
-                    skip_lines,
-                    self.read_options.skip_rows_after_header,
-                    self.read_options.raise_if_empty,
-                )?
-                .0,
-            )
+            PolarsResult::Ok(inferred_schema)
         };
 
         let schema = match self.sources.clone() {
