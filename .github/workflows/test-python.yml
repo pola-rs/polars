@@ -88,6 +88,8 @@ jobs:
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}-${{ matrix.python-version }}
 
       - name: Set up sccache
         uses: mozilla/sccache-action@v0.0.6

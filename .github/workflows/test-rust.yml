@@ -40,6 +40,8 @@ jobs:
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}
 
       - name: Set up sccache
         uses: mozilla/sccache-action@v0.0.6
@@ -92,6 +94,8 @@ jobs:
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}
 
       - name: Set up sccache
         uses: mozilla/sccache-action@v0.0.6
