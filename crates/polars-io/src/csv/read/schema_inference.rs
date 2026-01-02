@@ -16,7 +16,7 @@ use crate::utils::{BOOLEAN_RE, FLOAT_RE, FLOAT_RE_DECIMAL, INTEGER_RE};
 ///
 /// Use `read_until_start_and_infer_schema` instead.
 #[allow(clippy::too_many_arguments)]
-pub fn infer_file_schema_impl(
+pub(super) fn infer_file_schema_impl(
     header_line: &Option<MemSlice>,
     content_lines: &[MemSlice],
     infer_all_as_str: bool,

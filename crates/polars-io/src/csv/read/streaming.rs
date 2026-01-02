@@ -165,7 +165,7 @@ pub fn read_until_start_and_infer_schema(
     Ok((inferred_schema, leftover))
 }
 
-pub enum LineUse {
+enum LineUse {
     ConsumeDiscard,
     ConsumeKeep,
     Done,
@@ -175,7 +175,7 @@ pub enum LineUse {
 ///
 /// Returning `ConsumeDiscard` after `ConsumeKeep` is a logic error, since a segmented `MemSlice`
 /// can't be constructed.
-pub fn for_each_line_from_reader(
+fn for_each_line_from_reader(
     parse_options: &CsvParseOptions,
     is_file_start: bool,
     mut prev_leftover: MemSlice,
