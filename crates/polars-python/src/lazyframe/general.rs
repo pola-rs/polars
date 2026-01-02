@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::num::NonZeroUsize;
 
 use either::Either;
+use parking_lot::Mutex;
 use polars::io::RowIndex;
 use polars::time::*;
 use polars_core::prelude::*;
@@ -627,6 +628,7 @@ impl PyLazyFrame {
         })
     }
 
+    #[cfg(feature = "async")]
     #[pyo3(signature = (engine, lambda))]
     fn collect_with_callback(
         &self,
@@ -637,7 +639,9 @@ impl PyLazyFrame {
         py.enter_polars_ok(|| {
             let ldf = self.ldf.read().clone();
 
-            polars_core::POOL.spawn(move || {
+            // We use a tokio spawn_blocking here as it has a high blocking
+            // thread pool limit.
+            polars_io::pl_async::get_runtime().spawn_blocking(move || {
                 let result = ldf
                     .collect_with_engine(engine.0)
                     .map(PyDataFrame::new)
@@ -655,6 +659,27 @@ impl PyLazyFrame {
                     },
                 });
             });
+        })
+    }
+
+    #[cfg(feature = "async")]
+    fn collect_batches(
+        &self,
+        py: Python<'_>,
+        engine: Wrap<Engine>,
+        maintain_order: bool,
+        chunk_size: Option<NonZeroUsize>,
+        lazy: bool,
+    ) -> PyResult<PyCollectBatches> {
+        py.enter_polars(|| {
+            let ldf = self.ldf.read().clone();
+            let collect_batches = ldf
+                .collect_batches(engine.0, maintain_order, chunk_size, lazy)
+                .map_err(PyPolarsErr::from)?;
+
+            PyResult::Ok(PyCollectBatches {
+                inner: Mutex::new(collect_batches),
+            })
         })
     }
 
@@ -747,32 +772,34 @@ impl PyLazyFrame {
         include_bom: bool,
         include_header: bool,
         separator: u8,
-        line_terminator: String,
+        line_terminator: Wrap<PlSmallStr>,
         quote_char: u8,
         batch_size: NonZeroUsize,
-        datetime_format: Option<String>,
-        date_format: Option<String>,
-        time_format: Option<String>,
+        datetime_format: Option<Wrap<PlSmallStr>>,
+        date_format: Option<Wrap<PlSmallStr>>,
+        time_format: Option<Wrap<PlSmallStr>>,
         float_scientific: Option<bool>,
         float_precision: Option<usize>,
         decimal_comma: bool,
-        null_value: Option<String>,
+        null_value: Option<Wrap<PlSmallStr>>,
         quote_style: Option<Wrap<QuoteStyle>>,
     ) -> PyResult<PyLazyFrame> {
         let quote_style = quote_style.map_or(QuoteStyle::default(), |wrap| wrap.0);
-        let null_value = null_value.unwrap_or(SerializeOptions::default().null);
+        let null_value = null_value
+            .map(|x| x.0)
+            .unwrap_or(SerializeOptions::default().null);
 
         let serialize_options = SerializeOptions {
-            date_format,
-            time_format,
-            datetime_format,
+            date_format: date_format.map(|x| x.0),
+            time_format: time_format.map(|x| x.0),
+            datetime_format: datetime_format.map(|x| x.0),
             float_scientific,
             float_precision,
             decimal_comma,
             separator,
             quote_char,
             null: null_value,
-            line_terminator,
+            line_terminator: line_terminator.0,
             quote_style,
         };
 
@@ -1580,5 +1607,28 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<polars_io::parquet::write::ParquetF
             metadata,
             required,
         }))
+    }
+}
+
+#[pyclass(frozen)]
+struct PyCollectBatches {
+    inner: Mutex<CollectBatches>,
+}
+
+#[pymethods]
+impl PyCollectBatches {
+    fn start(&self) {
+        self.inner.lock().start();
+    }
+
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    fn __next__(slf: PyRef<'_, Self>) -> Option<PyResult<PyDataFrame>> {
+        slf.inner.lock().next().map(|rdf| {
+            rdf.map(PyDataFrame::new)
+                .map_err(|e| PyErr::from(PyPolarsErr::from(e)))
+        })
     }
 }
