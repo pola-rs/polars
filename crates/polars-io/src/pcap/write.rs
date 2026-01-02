@@ -1,8 +1,8 @@
 use std::io::Write;
 use std::time::Duration;
 
-use pcap_file::DataLink;
 use pcap_file::pcap::{PcapHeader, PcapPacket, PcapWriter as LegacyPcapWriter};
+use pcap_file::{DataLink, TsResolution};
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 
@@ -22,6 +22,7 @@ impl<W: Write> PcapWriter<W> {
         let data = df.column("data")?.binary()?;
 
         let header = PcapHeader {
+            ts_resolution: TsResolution::NanoSecond,
             datalink: DataLink::ETHERNET,
             ..Default::default()
         };

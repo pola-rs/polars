@@ -31,6 +31,7 @@ trigonometry = ["polars-python/trigonometry"]
 parquet = ["polars-python/parquet"]
 ipc = ["polars-python/ipc"]
 catalog = ["polars-python/catalog"]
+pcap = ["polars-python/pcap"]
 
 # Features passed through to the polars-python crate
 avro = ["polars-python/avro"]
