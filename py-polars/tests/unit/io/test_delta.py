@@ -193,7 +193,12 @@ def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
 
     assert tbl.version() == 1
     assert partitioned_tbl.version() == 0
-    assert Path(partitioned_tbl.table_uri) == partitioned_tbl_uri
+
+    uri = partitioned_tbl.table_uri.removeprefix("file://")
+    if os.name == "nt" and uri.startswith("/"):
+        uri = uri[1:]
+
+    assert Path(uri) == partitioned_tbl_uri
     assert partitioned_tbl.metadata().partition_columns == ["strings"]
 
     assert_frame_equal(v0, pl_df_0, check_row_order=False)
@@ -732,7 +737,7 @@ def test_scan_delta_loads_aws_profile_endpoint_url(
 [profile endpoint_333]
 aws_access_key_id=A
 aws_secret_access_key=A
-endpoint_url = http://localhost:333
+endpoint_url = http://127.0.0.1:54321
 """)
 
     monkeypatch.setenv("AWS_CONFIG_FILE", str(cfg_file_path))
@@ -752,11 +757,11 @@ endpoint_url = http://localhost:333
     assert provider._can_use_as_provider()
 
     assert provider._storage_update_options() == {
-        "endpoint_url": "http://localhost:333"
+        "endpoint_url": "http://127.0.0.1:54321"
     }
 
-    with pytest.raises(DeltaError, match="http://localhost:333"):
+    with pytest.raises((DeltaError, OSError), match=r"http://127.0.0.1:54321"):
         pl.scan_delta("s3://.../...")
 
-    with pytest.raises(DeltaError, match="http://localhost:333"):
+    with pytest.raises((DeltaError, OSError), match=r"http://127.0.0.1:54321"):
         pl.DataFrame({"x": 1}).write_delta("s3://.../...", mode="append")
