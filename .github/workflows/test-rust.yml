@@ -38,10 +38,18 @@ jobs:
       - name: Set up Rust
         run: rustup show
 
+      - name: Install sccache
+        uses: taiki-e/install-action@v2
+        with:
+          tool: sccache
+
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref_name == 'main' }}
+
+      - name: Set up sccache
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
 
       - name: Compile tests
         run: >
@@ -89,10 +97,18 @@ jobs:
       - name: Set up Rust
         run: rustup show
 
+      - name: Install sccache
+        uses: taiki-e/install-action@v2
+        with:
+          tool: sccache
+
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref_name == 'main' }}
+
+      - name: Set up sccache
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
 
       - name: Compile integration tests
         run: cargo test --all-features -p polars --test it --no-run
@@ -109,10 +125,18 @@ jobs:
       - name: Set up Rust
         run: rustup show
 
+      - name: Install sccache
+        uses: taiki-e/install-action@v2
+        with:
+          tool: sccache
+
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref_name == 'main' }}
+
+      - name: Set up sccache
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
 
       - name: Install cargo hack
         uses: taiki-e/install-action@v2
@@ -132,10 +156,18 @@ jobs:
           rustup target add wasm32-unknown-unknown
           rustup show
 
+      - name: Install sccache
+        uses: taiki-e/install-action@v2
+        with:
+          tool: sccache
+
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref_name == 'main' }}
+
+      - name: Set up sccache
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
 
       - name: Install cargo hack
         uses: taiki-e/install-action@v2
@@ -154,10 +186,18 @@ jobs:
       - name: Set up Rust
         run: rustup show
 
+      - name: Install sccache
+        uses: taiki-e/install-action@v2
+        with:
+          tool: sccache
+
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref_name == 'main' }}
+
+      - name: Set up sccache
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
 
       - name: Build DSL schema check
         run: cargo build --all-features

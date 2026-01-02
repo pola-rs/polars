@@ -86,11 +86,18 @@ jobs:
       - name: Set up Rust
         run: rustup show
 
+      - name: Install sccache
+        uses: taiki-e/install-action@v2
+        with:
+          tool: sccache
+
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: py-polars
-          save-if: ${{ github.ref_name == 'main' }}
+
+      - name: Set up sccache
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
 
       - name: Install Polars
         run: |

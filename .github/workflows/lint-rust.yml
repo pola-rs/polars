@@ -42,10 +42,18 @@ jobs:
       - name: Set up Rust
         run: rustup component add clippy
 
+      - name: Install sccache
+        uses: taiki-e/install-action@v2
+        with:
+          tool: sccache
+
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref_name == 'main' }}
+
+      - name: Set up sccache
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
 
       - name: Run cargo clippy with all features enabled
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings -D clippy::dbg_macro
@@ -62,10 +70,18 @@ jobs:
       - name: Install clippy
         run: rustup component add clippy
 
+      - name: Install sccache
+        uses: taiki-e/install-action@v2
+        with:
+          tool: sccache
+
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref_name == 'main' }}
+
+      - name: Set up sccache
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
 
       - name: Run cargo clippy
         run: cargo clippy --all-targets --locked -- -D warnings -D clippy::dbg_macro
