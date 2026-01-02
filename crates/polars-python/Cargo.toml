@@ -139,6 +139,7 @@ c_api = []
 
 # Features below are only there to enable building a slim binary during development.
 avro = ["polars/avro"]
+async = ["polars-lazy/async", "polars-io/async"]
 catalog = ["polars-lazy/catalog"]
 parquet = ["polars/parquet", "polars-parquet", "polars-mem-engine/parquet"]
 ipc = ["polars/ipc", "polars-mem-engine/ipc"]
@@ -279,6 +280,7 @@ pymethods = []
 allow_unused = []
 
 full = [
+  "async",
   "pymethods",
   "optimizations",
   "io",

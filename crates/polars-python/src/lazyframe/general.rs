@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::num::NonZeroUsize;
 
 use either::Either;
+use parking_lot::Mutex;
 use polars::io::RowIndex;
 use polars::time::*;
 use polars_core::prelude::*;
@@ -627,6 +628,7 @@ impl PyLazyFrame {
         })
     }
 
+    #[cfg(feature = "async")]
     #[pyo3(signature = (engine, lambda))]
     fn collect_with_callback(
         &self,
@@ -637,7 +639,9 @@ impl PyLazyFrame {
         py.enter_polars_ok(|| {
             let ldf = self.ldf.read().clone();
 
-            polars_core::POOL.spawn(move || {
+            // We use a tokio spawn_blocking here as it has a high blocking
+            // thread pool limit.
+            polars_io::pl_async::get_runtime().spawn_blocking(move || {
                 let result = ldf
                     .collect_with_engine(engine.0)
                     .map(PyDataFrame::new)
@@ -655,6 +659,27 @@ impl PyLazyFrame {
                     },
                 });
             });
+        })
+    }
+
+    #[cfg(feature = "async")]
+    fn collect_batches(
+        &self,
+        py: Python<'_>,
+        engine: Wrap<Engine>,
+        maintain_order: bool,
+        chunk_size: Option<NonZeroUsize>,
+        lazy: bool,
+    ) -> PyResult<PyCollectBatches> {
+        py.enter_polars(|| {
+            let ldf = self.ldf.read().clone();
+            let collect_batches = ldf
+                .collect_batches(engine.0, maintain_order, chunk_size, lazy)
+                .map_err(PyPolarsErr::from)?;
+
+            PyResult::Ok(PyCollectBatches {
+                inner: Mutex::new(collect_batches),
+            })
         })
     }
 
@@ -1582,5 +1607,28 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<polars_io::parquet::write::ParquetF
             metadata,
             required,
         }))
+    }
+}
+
+#[pyclass(frozen)]
+struct PyCollectBatches {
+    inner: Mutex<CollectBatches>,
+}
+
+#[pymethods]
+impl PyCollectBatches {
+    fn start(&self) {
+        self.inner.lock().start();
+    }
+
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    fn __next__(slf: PyRef<'_, Self>) -> Option<PyResult<PyDataFrame>> {
+        slf.inner.lock().next().map(|rdf| {
+            rdf.map(PyDataFrame::new)
+                .map_err(|e| PyErr::from(PyPolarsErr::from(e)))
+        })
     }
 }
