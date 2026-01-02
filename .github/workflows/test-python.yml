@@ -93,11 +93,16 @@ jobs:
         uses: mozilla/sccache-action@v0.0.6
 
       - name: Install Polars
+        env:
+          MATURIN_SETUP_ARGS: --jobs 1
         run: |
           # Make sure we use the Polars we're about to build.
           uv pip uninstall polars-runtime-32 polars-runtime-64 polars-runtime-compat
           pip install --no-deps -e .
           maturin develop --manifest-path runtime/polars-runtime-32/Cargo.toml
+          # Debug: show installed packages and location of _polars_runtime
+          pip list
+          find .venv -name "*polars_runtime*"
 
       - name: Run doctests
         if: github.ref_name != 'main' && matrix.python-version == '3.13' && matrix.os == 'ubuntu-latest'
