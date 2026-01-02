@@ -92,12 +92,12 @@ def test_scan_s3(s3: str, function: Callable[..., Any], extension: str) -> None:
 
 
 def test_lazy_count_s3(s3: str) -> None:
-    lf = pl.scan_parquet(
-        "s3://bucket/foods*.parquet", storage_options={"endpoint_url": s3}
+    lf = pl.scan_csv(
+        "s3://bucket/foods*.csv", storage_options={"endpoint_url": s3}
     ).select(pl.len())
 
-    assert "FAST_COUNT" in lf.explain()
-    expected = pl.DataFrame({"len": [54]}, schema={"len": pl.UInt32})
+    assert "FAST COUNT" in lf.explain()
+    expected = pl.DataFrame({"len": [54]}, schema={"len": pl.UInt64})
     assert_frame_equal(lf.collect(), expected)
 
 
