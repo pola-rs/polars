@@ -524,6 +524,7 @@ fn test_empty_bytes_to_dataframe() {
     let file = Cursor::new(vec![]);
 
     let result = CsvReadOptions::default()
+        .with_raise_if_empty(false)
         .with_has_header(false)
         .with_columns(Some(schema.iter_names_cloned().collect()))
         .with_schema(Some(Arc::new(schema)))
