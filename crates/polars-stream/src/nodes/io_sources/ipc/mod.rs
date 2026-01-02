@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use arrow::io::ipc::read::{Dictionaries, read_dictionary_block};
 use async_trait::async_trait;
+use polars_core::prelude::DataType;
 use polars_core::schema::{Schema, SchemaExt};
 use polars_core::utils::arrow::io::ipc::read::{
     BlockReader, FileMetadata, ProjectionInfo, prepare_projection, read_file_metadata,
@@ -14,6 +15,7 @@ use polars_io::pl_async;
 #[cfg(feature = "cloud")]
 use polars_io::pl_async::get_runtime;
 use polars_io::utils::byte_source::{ByteSource, DynByteSource, DynByteSourceBuilder};
+use polars_io::utils::slice::SplitSlicePosition;
 use polars_plan::dsl::{ScanSource, ScanSourceRef};
 use polars_utils::IdxSize;
 use polars_utils::mem::prefetch::get_memory_prefetch_func;
@@ -243,6 +245,17 @@ impl FileReader for IpcFileReader {
             projection_indices.map(|indices| prepare_projection(&file_metadata.schema, indices));
         let projection_info = Arc::new(projection_info);
 
+        let schema = projection_info.as_ref().as_ref().map_or(
+            file_metadata.schema.as_ref(),
+            |ProjectionInfo { schema, .. }| schema,
+        );
+        let pl_schema = Arc::new(
+            schema
+                .iter()
+                .map(|(n, f)| (n.clone(), DataType::from_arrow_field(f)))
+                .collect::<Schema>(),
+        );
+
         // Prepare parameters for Prefetch
         let memory_prefetch_func = get_memory_prefetch_func(verbose);
 
@@ -267,6 +280,7 @@ impl FileReader for IpcFileReader {
 
         let record_batch_decoder = Arc::new(RecordBatchDecoder {
             file_metadata: file_metadata.clone(),
+            pl_schema,
             projection_info,
             dictionaries: dictionaries.clone(),
             row_index,
@@ -300,19 +314,14 @@ impl FileReader for IpcFileReader {
                 row_position_on_end_tx,
                 prefetch_send,
                 rb_prefetch_semaphore,
+                rb_prefetch_current_all_spawned,
             };
-
-            // We fetch all record batches so that we know the total number of rows.
-            // @TODO: In case of slicing, it would suffice to fetch the record batch
-            // headers for any record batch that falls outside of the slice.
 
             if let Some(rb_prefetch_prev_all_spawned) = rb_prefetch_prev_all_spawned {
                 rb_prefetch_prev_all_spawned.wait().await;
             }
 
             record_batch_data_fetcher.run().await?;
-
-            drop(rb_prefetch_current_all_spawned);
 
             PolarsResult::Ok(())
         }));
@@ -335,20 +344,27 @@ impl FileReader for IpcFileReader {
                 current_row_offset = row_range_end;
 
                 // Only pass to decoder if we need the data.
-                if (row_range.start as usize) < slice_range.end {
-                    let record_batch_decoder = record_batch_decoder.clone();
-                    let decode_fut = async_executor::spawn(TaskPriority::High, async move {
-                        record_batch_decoder
-                            .record_batch_data_to_df(record_batch_data, row_range)
-                            .await
-                    });
-                    if decode_send.send((decode_fut, permit)).await.is_err() {
-                        break;
-                    }
-                } else {
-                    drop(record_batch_data);
-                    drop(permit);
-                }
+                let record_batch_position = SplitSlicePosition::split_slice_at_file(
+                    row_range.start as usize,
+                    (row_range.end - row_range.start) as usize,
+                    slice_range.clone(),
+                );
+
+                match record_batch_position {
+                    SplitSlicePosition::Before => continue,
+                    SplitSlicePosition::Overlapping(_, _) => {
+                        let record_batch_decoder = record_batch_decoder.clone();
+                        let decode_fut = async_executor::spawn(TaskPriority::High, async move {
+                            record_batch_decoder
+                                .record_batch_data_to_df(record_batch_data, row_range)
+                                .await
+                        });
+                        if decode_send.send((decode_fut, permit)).await.is_err() {
+                            break;
+                        }
+                    },
+                    SplitSlicePosition::After => break,
+                };
             }
 
             PolarsResult::Ok(())

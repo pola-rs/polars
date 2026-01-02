@@ -13,7 +13,7 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::async_primitives::oneshot_channel;
-use crate::async_primitives::wait_group::WaitGroup;
+use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::nodes::io_sources::ipc::ROW_COUNT_OVERFLOW_ERR;
 use crate::utils::tokio_handle_ext;
 
@@ -37,19 +37,21 @@ pub(super) struct RecordBatchDataFetcher {
         OwnedSemaphorePermit,
     )>,
     pub(super) rb_prefetch_semaphore: Arc<Semaphore>,
+    pub(super) rb_prefetch_current_all_spawned: Option<WaitToken>,
 }
 
 impl RecordBatchDataFetcher {
     pub(super) async fn run(&mut self) -> PolarsResult<()> {
-        let current_row_offset: Arc<RelaxedCell<usize>> = Arc::new(RelaxedCell::new_usize(0));
-        let wait_group: Arc<WaitGroup> = Arc::new(WaitGroup::default());
+        let current_row_offset: Arc<RelaxedCell<u64>> = Arc::new(RelaxedCell::new_u64(0));
+        let row_count_updated: WaitGroup = WaitGroup::default();
+        let n_record_batches = self.metadata.blocks.len();
 
         if !self.fetch_metadata_only {
-            // Fetch all record batch data
+            // Fetch all record batch data until n_rows_limit.
 
-            while self.record_batch_idx < self.metadata.blocks.len() {
+            while self.record_batch_idx < n_record_batches {
                 if let Some(n_rows_limit) = self.n_rows_limit {
-                    if current_row_offset.as_ref().load() > n_rows_limit {
+                    if current_row_offset.as_ref().load() > n_rows_limit as u64 {
                         break;
                     }
                 }
@@ -68,7 +70,7 @@ impl RecordBatchDataFetcher {
                 let io_runtime = polars_io::pl_async::get_runtime();
 
                 let current_row_offset = current_row_offset.clone();
-                let wait_token = wait_group.token();
+                let wait_token = row_count_updated.token();
 
                 let handle = io_runtime.spawn(async move {
                     let block = file_metadata.blocks.get(idx).unwrap();
@@ -102,7 +104,7 @@ impl RecordBatchDataFetcher {
                         reader.record_batch_num_rows(&mut message_scratch)?
                     };
 
-                    current_row_offset.fetch_add(num_rows);
+                    current_row_offset.fetch_add(num_rows as u64);
                     drop(wait_token);
 
                     PolarsResult::Ok(RecordBatchData {
@@ -125,10 +127,31 @@ impl RecordBatchDataFetcher {
             }
         };
 
+        // Remaining row count task.
+        let rb_prefetch_current_all_spawned = self.rb_prefetch_current_all_spawned.take();
+        let remaining_rows_fetch_task =
+            if self.n_rows_in_file_tx.is_some() && self.record_batch_idx < n_record_batches {
+                let io_runtime = polars_io::pl_async::get_runtime();
+
+                let byte_source = self.byte_source.clone();
+                let file_metadata = self.metadata.clone();
+                let current_idx = self.record_batch_idx;
+
+                Some(io_runtime.spawn(async move {
+                    let out =
+                        Self::fetch_row_count(byte_source, file_metadata, Some(current_idx)).await;
+                    drop(rb_prefetch_current_all_spawned);
+                    out
+                }))
+            } else {
+                drop(rb_prefetch_current_all_spawned);
+                None
+            };
+
         // Handle callback for rows fetched until the 'end', i.e. when the requested
         // slice request has been fulfilled, or somewhat higher due to latency.
         if let Some(row_position_on_end_tx) = self.row_position_on_end_tx.take() {
-            wait_group.wait().await;
+            row_count_updated.wait().await;
 
             let current_row_offset = IdxSize::try_from(current_row_offset.as_ref().load())
                 .map_err(|_| ROW_COUNT_OVERFLOW_ERR)?;
@@ -138,11 +161,16 @@ impl RecordBatchDataFetcher {
         // Handle callback for total rows in file.
         // Fetch record batch metadata only.
         if let Some(n_rows_in_file_tx) = self.n_rows_in_file_tx.take() {
-            wait_group.wait().await;
+            row_count_updated.wait().await;
 
             let current_row_offset = IdxSize::try_from(current_row_offset.as_ref().load())
                 .map_err(|_| ROW_COUNT_OVERFLOW_ERR)?;
-            let remaining_rows = self.fetch_row_count(Some(self.record_batch_idx)).await?;
+
+            let remaining_rows = if let Some(handle) = remaining_rows_fetch_task {
+                handle.await.unwrap()?
+            } else {
+                0
+            };
             let n_rows = current_row_offset
                 .checked_add(remaining_rows)
                 .ok_or(ROW_COUNT_OVERFLOW_ERR)?;
@@ -152,17 +180,19 @@ impl RecordBatchDataFetcher {
         Ok(())
     }
 
-    async fn fetch_row_count(&mut self, skip_n_blocks: Option<usize>) -> PolarsResult<IdxSize> {
-        let file_metadata = self.metadata.clone();
-        let byte_source = self.byte_source.clone();
-
-        let skip_n_blocks = skip_n_blocks.unwrap_or_default();
+    /// Total row count for all record batches starting at `start_offset`
+    async fn fetch_row_count(
+        byte_source: Arc<DynByteSource>,
+        file_metadata: Arc<FileMetadata>,
+        start_offset: Option<usize>,
+    ) -> PolarsResult<IdxSize> {
+        let start_offset = start_offset.unwrap_or_default();
 
         let n_rows = match &*byte_source {
             DynByteSource::MemSlice(MemSliceByteSource(memslice)) => {
                 let n_rows: i64 = get_row_count_from_blocks(
                     &mut std::io::Cursor::new(memslice.as_ref()),
-                    &file_metadata.blocks[skip_n_blocks..],
+                    &file_metadata.blocks[start_offset..],
                 )?;
 
                 IdxSize::try_from(n_rows)
@@ -173,7 +203,7 @@ impl RecordBatchDataFetcher {
 
                 let mut n_rows = 0;
                 let mut message_scratch = Vec::new();
-                let mut ranges: Vec<_> = file_metadata.blocks[skip_n_blocks..]
+                let mut ranges: Vec<_> = file_metadata.blocks[start_offset..]
                     .iter()
                     .map(|block| {
                         block.offset as usize
