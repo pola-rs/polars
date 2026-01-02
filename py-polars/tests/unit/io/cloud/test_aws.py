@@ -48,7 +48,13 @@ def s3(s3_base: str, io_files_path: Path) -> str:
     client = boto3.client("s3", region_name=region, endpoint_url=s3_base)
     client.create_bucket(Bucket="bucket")
 
-    files = ["foods1.csv", "foods1.ipc", "foods1.parquet", "foods2.parquet"]
+    files = [
+        "foods1.csv",
+        "foods2.csv",
+        "foods1.ipc",
+        "foods1.parquet",
+        "foods2.parquet",
+    ]
     for file in files:
         client.upload_file(io_files_path / file, Bucket="bucket", Key=file)
     return s3_base
