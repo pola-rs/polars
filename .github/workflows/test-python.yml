@@ -99,7 +99,7 @@ jobs:
           # Make sure we use the Polars we're about to build.
           uv pip uninstall polars-runtime-32 polars-runtime-64 polars-runtime-compat
           uv pip install --no-deps -e .
-          maturin build --uv --manifest-path runtime/polars-runtime-32/Cargo.toml --out dist
+          maturin build --interpreter python --manifest-path runtime/polars-runtime-32/Cargo.toml --out dist
           uv pip install dist/*.whl
           # Debug: show installed packages and location of _polars_runtime
           pwd
