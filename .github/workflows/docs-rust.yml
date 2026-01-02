@@ -24,18 +24,11 @@ jobs:
       - name: Set up Rust
         run: rustup component add rust-docs
 
-      - name: Install sccache
-        uses: taiki-e/install-action@v2
-        with:
-          tool: sccache
-
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
 
       - name: Set up sccache
-        run: |
-          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
-          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+        uses: mozilla/sccache-action@v0.0.6
 
       - name: Build Rust documentation
         env:
