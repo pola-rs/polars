@@ -14,7 +14,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    import polars._reexport as pl
+    import polars as pl
     from polars import DataFrame, LazyFrame
 
 
