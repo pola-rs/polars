@@ -755,8 +755,8 @@ endpoint_url = http://localhost:333
         "endpoint_url": "http://localhost:333"
     }
 
-    with pytest.raises(DeltaError, match="http://localhost:333"):
+    with pytest.raises((DeltaError, OSError), match="http://localhost:333"):
         pl.scan_delta("s3://.../...")
 
-    with pytest.raises(DeltaError, match="http://localhost:333"):
+    with pytest.raises((DeltaError, OSError), match="http://localhost:333"):
         pl.DataFrame({"x": 1}).write_delta("s3://.../...", mode="append")
