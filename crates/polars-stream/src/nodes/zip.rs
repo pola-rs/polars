@@ -95,6 +95,8 @@ impl InputHead {
                 *self.morsels[0].df_mut() = tail;
                 head
             }
+        } else if self.schema.is_empty() {
+            DataFrame::empty_with_height(len)
         } else {
             self.schema
                 .iter()

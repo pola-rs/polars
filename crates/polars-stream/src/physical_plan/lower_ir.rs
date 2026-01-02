@@ -274,6 +274,8 @@ pub fn lower_ir(
                     polars_plan::dsl::FileType::Parquet(_) => true,
                     #[cfg(feature = "ipc")]
                     polars_plan::dsl::FileType::Ipc(_) => true,
+                    #[cfg(feature = "csv")]
+                    polars_plan::dsl::FileType::Csv(_) => true,
                     _ => false,
                 } =>
             {
@@ -290,6 +292,8 @@ pub fn lower_ir(
                         polars_plan::dsl::FileType::Parquet(_) => true,
                         #[cfg(feature = "ipc")]
                         polars_plan::dsl::FileType::Ipc(_) => true,
+                        #[cfg(feature = "csv")]
+                        polars_plan::dsl::FileType::Csv(_) => true,
                         _ => false,
                     } =>
             {

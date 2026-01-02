@@ -16,6 +16,7 @@ use crate::reduce::first_last_nonnull::{new_first_nonnull_reduction, new_last_no
 use crate::reduce::len::LenReduce;
 use crate::reduce::mean::new_mean_reduction;
 use crate::reduce::min_max::{new_max_reduction, new_min_reduction};
+use crate::reduce::min_max_by::{new_max_by_reduction, new_min_by_reduction};
 use crate::reduce::sum::new_sum_reduction;
 use crate::reduce::var_std::new_var_std_reduction;
 
@@ -65,6 +66,14 @@ pub fn into_reduction(
             } => {
                 let count = Box::new(CountReduce::new(*include_nulls)) as Box<_>;
                 (count, *input)
+            },
+            IRAggExpr::MinBy { input, by } => {
+                let gr = new_min_by_reduction(get_dt(*input)?, get_dt(*by)?)?;
+                return Ok((gr, vec![*input, *by]));
+            },
+            IRAggExpr::MaxBy { input, by } => {
+                let gr = new_max_by_reduction(get_dt(*input)?, get_dt(*by)?)?;
+                return Ok((gr, vec![*input, *by]));
             },
             IRAggExpr::Quantile { .. } => todo!(),
             IRAggExpr::Median(_) => todo!(),

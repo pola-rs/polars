@@ -81,18 +81,15 @@ pub(super) fn suffix_fields(s: &Column, suffix: &str) -> PolarsResult<Column> {
 }
 
 #[cfg(feature = "json")]
-pub(super) fn to_json(s: &Column) -> PolarsResult<Column> {
+pub(super) fn to_json(col: &Column) -> PolarsResult<Column> {
     use polars_core::prelude::CompatLevel;
 
-    let ca = s.struct_()?;
-    let dtype = ca.dtype().to_arrow(CompatLevel::newest());
-
-    let iter = ca.chunks().iter().map(|arr| {
-        let arr = polars_compute::cast::cast_unchecked(arr.as_ref(), &dtype).unwrap();
-        polars_json::json::write::serialize_to_utf8(arr.as_ref())
+    let s = col.as_materialized_series();
+    let iter = (0..s.n_chunks()).map(|i| {
+        polars_json::json::write::serialize_to_utf8(&*s.to_arrow(i, CompatLevel::newest()))
     });
 
-    Ok(StringChunked::from_chunk_iter(ca.name().clone(), iter).into_column())
+    Ok(StringChunked::from_chunk_iter(s.name().clone(), iter).into_column())
 }
 
 pub(super) fn with_fields(args: &[Column]) -> PolarsResult<Column> {
