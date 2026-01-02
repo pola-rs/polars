@@ -98,14 +98,18 @@ jobs:
         run: |
           # Make sure we use the Polars we're about to build.
           uv pip uninstall polars-runtime-32 polars-runtime-64 polars-runtime-compat
-          pip install --no-deps -e .
-          maturin develop --manifest-path runtime/polars-runtime-32/Cargo.toml
+          uv pip install --no-deps -e .
+          maturin build --uv --manifest-path runtime/polars-runtime-32/Cargo.toml --out dist
+          uv pip install dist/*.whl
           # Debug: show installed packages and location of _polars_runtime
+          pwd
           pip list
           find .venv -name "*polars_runtime*"
 
       - name: Run doctests
         if: github.ref_name != 'main' && matrix.python-version == '3.13' && matrix.os == 'ubuntu-latest'
+        env:
+          POLARS_FORCE_PKG: "32"
         run: |
           python tests/docs/run_doctest.py
           pytest tests/docs/test_user_guide.py -m docs
@@ -114,6 +118,7 @@ jobs:
         if: github.ref_name != 'main' && matrix.python-version != '3.13t'
         env:
           POLARS_TIMEOUT_MS: 60000
+          POLARS_FORCE_PKG: "32"
         run: pytest -n auto -m "not release and not benchmark and not docs"
 
       - name: Run tests with new streaming engine
@@ -121,6 +126,7 @@ jobs:
         env:
           POLARS_AUTO_NEW_STREAMING: 1
           POLARS_TIMEOUT_MS: 60000
+          POLARS_FORCE_PKG: "32"
         run: pytest -n auto -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only"
 
       - name: Run tests async reader tests
@@ -128,6 +134,7 @@ jobs:
         env:
           POLARS_FORCE_ASYNC: 1
           POLARS_TIMEOUT_MS: 60000
+          POLARS_FORCE_PKG: "32"
         run: pytest -n auto -m "not release and not benchmark and not docs" tests/unit/io/
 
       - name: Run tests multiscan force empty capabilities
