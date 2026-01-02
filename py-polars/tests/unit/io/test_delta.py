@@ -193,7 +193,9 @@ def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
 
     assert tbl.version() == 1
     assert partitioned_tbl.version() == 0
-    assert Path(partitioned_tbl.table_uri) == partitioned_tbl_uri
+    assert (
+        Path(partitioned_tbl.table_uri.removeprefix("file://")) == partitioned_tbl_uri
+    )
     assert partitioned_tbl.metadata().partition_columns == ["strings"]
 
     assert_frame_equal(v0, pl_df_0, check_row_order=False)
@@ -740,7 +742,7 @@ endpoint_url = http://localhost:333
 
     assert (
         builder := _init_credential_provider_builder(
-            "auto", "s3://.../...", storage_options=None, caller_name="test"
+            "auto", "s3://bucket/file", storage_options=None, caller_name="test"
         )
     ) is not None
 
@@ -755,8 +757,8 @@ endpoint_url = http://localhost:333
         "endpoint_url": "http://localhost:333"
     }
 
-    with pytest.raises(DeltaError, match="http://localhost:333"):
-        pl.scan_delta("s3://.../...")
+    with pytest.raises(OSError, match="http://localhost:333"):
+        pl.scan_delta("s3://bucket/file")
 
-    with pytest.raises(DeltaError, match="http://localhost:333"):
-        pl.DataFrame({"x": 1}).write_delta("s3://.../...", mode="append")
+    with pytest.raises(OSError, match="http://localhost:333"):
+        pl.DataFrame({"x": 1}).write_delta("s3://bucket/file", mode="append")
