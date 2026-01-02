@@ -97,7 +97,7 @@ def test_lazy_count_s3(s3: str) -> None:
     ).select(pl.len())
 
     assert "FAST COUNT" in lf.explain()
-    expected = pl.DataFrame({"len": [54]}, schema={"len": pl.UInt64})
+    expected = pl.DataFrame({"len": [54]}, schema={"len": pl.UInt32})
     assert_frame_equal(lf.collect(), expected)
 
 
