@@ -2460,7 +2460,6 @@ def test_csv_ragged_lines_20062() -> None:
 ,"B",,,,,,,,,A,,,,,,,,
 a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,0.0,1.0,2.0,3.0
 """)
-    # print(pl.read_csv(buf, truncate_ragged_lines=True)
 
     assert pl.read_csv(buf, truncate_ragged_lines=True).to_dict(as_series=False) == {
         "A": [None, "a"],
