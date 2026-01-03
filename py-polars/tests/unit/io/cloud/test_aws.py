@@ -18,6 +18,11 @@ pytestmark = [
     pytest.mark.slow(),
 ]
 
+if sys.version_info[:2] == (3, 9):
+    pytestmark.append(
+        pytest.mark.filterwarnings("ignore::boto3.exceptions.PythonDeprecationWarning")
+    )
+
 
 @pytest.fixture(scope="module")
 def monkeypatch_module() -> Any:
