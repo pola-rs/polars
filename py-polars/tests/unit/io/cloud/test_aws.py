@@ -35,7 +35,7 @@ def s3_base(monkeypatch_module: Any) -> Iterator[str]:
     monkeypatch_module.setenv("AWS_SECRET_ACCESS_KEY", "secretkey")
     monkeypatch_module.setenv("AWS_DEFAULT_REGION", "us-east-1")
     monkeypatch_module.setenv("AWS_ENDPOINT_URL", endpoint_uri)
-    
+
     moto_server = ThreadedMotoServer(host, port)
     moto_server.start()
     print("server up")
