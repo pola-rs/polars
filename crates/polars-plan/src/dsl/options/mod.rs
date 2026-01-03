@@ -149,7 +149,7 @@ pub struct JoinOptions {
 
 impl Default for JoinOptions {
     fn default() -> Self {
-        JoinOptions {
+        Self {
             allow_parallel: true,
             force_parallel: false,
             // Todo!: make default
