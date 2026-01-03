@@ -16,22 +16,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Get ruff version from requirements file
-        id: version
-        run: |
-          VERSION=$(grep -m 1 -oP 'ruff==\K(.*)' py-polars/requirements-lint.txt)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-      - uses: chartboost/ruff-action@v1
+      - name: Run ruff check
+        uses: astral-sh/ruff-action@v3
         with:
           src: py-polars/
-          version: ${{ steps.version.outputs.version }}
+          version-file: py-polars/requirements-lint.txt
           args: check --no-fix
 
-      - uses: chartboost/ruff-action@v1
+      - name: Run ruff format
+        uses: astral-sh/ruff-action@v3
         with:
           src: py-polars/
-          version: ${{ steps.version.outputs.version }}
+          version-file: py-polars/requirements-lint.txt
           args: format --diff
 
   mypy:
