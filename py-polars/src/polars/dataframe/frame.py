@@ -4365,6 +4365,10 @@ class DataFrame:
                 # Ref: https://github.com/apache/arrow-adbc/issues/2828
                 if isinstance(connection, str):
                     adbc_module_name = _get_adbc_module_name_from_uri(connection)
+                    adbc_driver = _import_optional_adbc_driver(
+                        adbc_module_name, dbapi_submodule=False
+                    )
+                    adbc_driver_str_version = getattr(adbc_driver, "__version__", "0.0")
 
                 elif _PYARROW_AVAILABLE:
                 # We know that if the we are able to instrospect 
@@ -4375,24 +4379,25 @@ class DataFrame:
                     adbc_module_name = (
                         f"adbc_driver_{adbc_connection_info['vendor_name'].lower()}"
                     )
-                    adbc_driver = adbc_module_name
-                    adbc_driver_str_version = adbc_connection_info['driver_version']
-                else:
-                    adbc_module_name = "Unknown"
 
-                # Only consider connection strings
-                if adbc_module_name != "Unknown" and isinstance(connection, str):
-                    adbc_driver = _import_optional_adbc_driver(
-                        adbc_module_name, dbapi_submodule=False
-                    )
-                    adbc_driver_str_version = getattr(adbc_driver, "__version__", "0.0")
+                    try:
+                        adbc_driver = _import_optional_adbc_driver(
+                            adbc_module_name, dbapi_submodule=False
+                        )
+                        adbc_driver_str_version = getattr(adbc_driver, "__version__", "0.0")
+                    except ModuleNotFoundError:
+                        adbc_driver = adbc_module_name
+                        adbc_driver_str_version = adbc_connection_info['driver_version']
 
                 else:
-                    adbc_driver = "Unknown"
                     # If we can't introspect the driver, guess that it has the same
                     # version as the driver manager. This is what happens by default
                     # when installed
+                    adbc_module_name = "Unknown"
+                    adbc_driver = "Unknown"
                     adbc_driver_str_version = driver_manager_str_version
+
+
 
                 adbc_driver_version = parse_version(adbc_driver_str_version)
 
