@@ -4370,7 +4370,7 @@ class DataFrame:
                 # We know that if the we are able to instrospect 
                 # adbc instantiated connections, then it must already has a driver
                 # either as a python package or a compiled library loaded.
-                # o.w, the connection could not be established.
+                # o.w, the connection could not be established through dbapi.connect()
                     adbc_connection_info = conn.adbc_get_info()
                     adbc_module_name = (
                         f"adbc_driver_{adbc_connection_info['vendor_name'].lower()}"
@@ -4380,6 +4380,7 @@ class DataFrame:
                 else:
                     adbc_module_name = "Unknown"
 
+                # Only consider connection strings
                 if adbc_module_name != "Unknown" and isinstance(connection, str):
                     adbc_driver = _import_optional_adbc_driver(
                         adbc_module_name, dbapi_submodule=False
