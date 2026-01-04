@@ -4372,11 +4372,19 @@ class DataFrame:
                 else:
                     adbc_module_name = "Unknown"
 
-                if adbc_module_name.split("_")[-1] in ["bigquery","flightsql","netezza","postgresql","snowflake","sqlite"]:
-                    adbc_driver = _import_optional_adbc_driver(
-                        adbc_module_name, dbapi_submodule=False
-                    )
-                    adbc_driver_str_version = getattr(adbc_driver, "__version__", "0.0")
+                if adbc_module_name != "Unknown":
+                    try:
+                        adbc_driver = _import_optional_adbc_driver(
+                            adbc_module_name, dbapi_submodule=False
+                        )
+                        adbc_driver_str_version = getattr(adbc_driver, "__version__", "0.0")
+                    except ModuleNotFoundError as e:
+                        if _PYARROW_AVAILABLE:
+                            adbc_driver_metadata = connection.adbc_get_info()
+                            adbc_driver = adbc_driver_metadata['vendor_name']
+                            adbc_driver_str_version = adbc_driver_metadata['driver_version']
+                        else:
+                            raise ModuleNotFoundError(str(e)+"; or if using drivers that is not a python package, import pyarrow first.")
                 else:
                     adbc_driver = "Unknown"
                     # If we can't introspect the driver, guess that it has the same
