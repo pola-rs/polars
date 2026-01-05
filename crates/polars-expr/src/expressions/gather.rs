@@ -22,9 +22,39 @@ impl PhysicalExpr for GatherExpr {
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let series = self.phys_expr.evaluate(df, state)?;
-        let idx = self.idx.evaluate(df, state)?;
-        let idx = convert_to_unsigned_index(idx.as_materialized_series(), series.len())?;
-        series.take(&idx)
+        let idx_col = self.idx.evaluate(df, state)?;
+        let idx_series = idx_col.as_materialized_series();
+
+        let len = series.len() as i64;
+
+        // Normalize all integer dtypes to Int64, like the list implementation does.
+        let casted = idx_series.cast(&DataType::Int64)?;
+        let idx_i64 = casted.i64().unwrap();
+
+        // Build an IdxCa<Option<IdxSize>>:
+        // - None      → null index or out-of-bounds → result null
+        // - Some(pos) → in-bounds position
+        let idx_ca: IdxCa = idx_i64
+            .into_iter()
+            .map(|opt_v| {
+                opt_v.and_then(|v| {
+                    // Python-style negative indexing: v >= 0 from front, v < 0 from back.
+                    let j = if v >= 0 { v } else { len + v };
+
+                    // Out-of-bounds? Then return None (=> null in result).
+                    if j < 0 || j >= len {
+                        None
+                    } else {
+                        Some(j as IdxSize)
+                    }
+                })
+            })
+            .collect();
+
+        // Safe because for all Some(j), we enforced 0 <= j < len above.
+        let out_series = unsafe { series.take_unchecked(&idx_ca) };
+
+        Ok(out_series.into_column())
     }
 
     #[allow(clippy::ptr_arg)]
