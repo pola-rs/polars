@@ -278,6 +278,7 @@ pub fn lower_ir(
                     polars_plan::dsl::FileType::Csv(_) => true,
                     #[cfg(feature = "json")]
                     polars_plan::dsl::FileType::Json(_) => true,
+                    #[expect(unreachable_patterns)]
                     _ => false,
                 } =>
             {
@@ -298,6 +299,7 @@ pub fn lower_ir(
                         polars_plan::dsl::FileType::Csv(_) => true,
                         #[cfg(feature = "json")]
                         polars_plan::dsl::FileType::Json(_) => true,
+                        #[expect(unreachable_patterns)]
                         _ => false,
                     } =>
             {
