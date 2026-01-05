@@ -117,12 +117,10 @@ impl fmt::Debug for Expr {
                     } else {
                         write!(f, "{expr:?}.get({idx:?})")
                     }
+                } else if *null_on_oob {
+                    write!(f, "{expr:?}.gather({idx:?}, null_on_oob=true)")
                 } else {
-                    if *null_on_oob {
-                        write!(f, "{expr:?}.gather({idx:?}, null_on_oob=true)")
-                    } else {
-                        write!(f, "{expr:?}.gather({idx:?})")
-                    }
+                    write!(f, "{expr:?}.gather({idx:?})")
                 }
             },
             SubPlan(lf, _) => {
