@@ -9,12 +9,10 @@ use either::{Either, Left, Right};
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
 use polars_core::utils::Container;
-use polars_expr::hash_keys::HashKeys;
 use polars_ops::prelude::*;
-use polars_utils::cardinality_sketch::CardinalitySketch;
+use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
 use polars_utils::total_ord::TotalOrd;
-use polars_utils::{cardinality_sketch, format_pl_smallstr};
 
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
@@ -306,16 +304,6 @@ impl ComputeNode for MergeJoinNode {
                         left_df.rechunk_mut();
                         right_df.rechunk_mut();
 
-                        let left_key = left_df
-                            .column(&params.left.key_col)
-                            .unwrap()
-                            .as_materialized_series();
-                        let right_key = right_df
-                            .column(&params.right.key_col)
-                            .unwrap()
-                            .as_materialized_series();
-
-                        let tick = std::time::Instant::now();
                         compute_join(
                             left.clone(),
                             right.clone(),
@@ -327,44 +315,6 @@ impl ComputeNode for MergeJoinNode {
                             unmatched_send.clone(),
                         )
                         .await?;
-                        let compute_join = tick.elapsed();
-                        if compute_join > std::time::Duration::from_millis(1500) {
-                            dbg!(left_key.approx_n_unique()?);
-                            dbg!(right_key.approx_n_unique()?);
-                            dbg!(&left);
-                            dbg!(&right);
-                        }
-                        dbg!(compute_join);
-                        let left_multiplicity_approx =
-                            left_key.len() / (left_key.approx_n_unique()? as usize + 1);
-
-                        let right_multiplicity_approx =
-                            right_key.len() / (right_key.approx_n_unique()? as usize + 1);
-
-                        dbg!(left_multiplicity_approx);
-                        dbg!(right_multiplicity_approx);
-                        let mut loop_iterations_estimate =
-                            left_multiplicity_approx * right_multiplicity_approx / 2;
-                        if params.args.how == JoinType::Left {
-                            loop_iterations_estimate += left_key.len();
-                        } else if params.args.how == JoinType::Right {
-                            loop_iterations_estimate += right_key.len();
-                        } else if params.args.how == JoinType::Full {
-                            loop_iterations_estimate += left_key.len() + right_key.len();
-                        }
-                        dbg!(loop_iterations_estimate);
-                        dbg!(loop_iterations_estimate / get_ideal_morsel_size());
-                        // TODO [amber] LEFT HERE
-                        // When the cardinality of the data is low, we need to partition the data
-                        // before we pass it into compute_join.
-                        // We definitely need to add another (parallel) stage for this.
-                        // We will probably have to allocate a bunch of new sequence numbers, because
-                        // we still need to make sure that we keep track of the ordering of the
-                        // partitioned dataframes.
-                        // I think we should just keep a RelaxedCell<u64> for this and make seq tokens
-                        // using MorselSeq::new()
-                        // First get it working, and then change it so that the estimation uses a
-                        // cardinality sketch (intead of approx_n_unique())
                     }
                     Ok(())
                 })
@@ -422,7 +372,7 @@ fn find_mergeable(
         Right(NeedMore::Right | NeedMore::Both) if *search_limit < right.len() => true,
         _ => false,
     } {
-        // "Exponential increase"
+        // Exponential increase
         *search_limit *= SEARCH_LIMIT_BUMP_FACTOR;
         mergeable = find_mergeable_flip(left, right, left_done, right_done, *search_limit, p)?;
     }
@@ -434,8 +384,6 @@ fn find_mergeable(
     }
 
     if let Left(m) = &mergeable {
-        dbg!(m.0.len());
-        dbg!(m.1.len());
         assert!(!m.0.is_empty() || !m.1.is_empty(), "search result is empty");
     }
     Ok(mergeable)
@@ -533,6 +481,29 @@ fn find_mergeable_search(
             return Ok(Right(NeedMore::Right));
         }
 
+        let left_first = left.get_bypass_validity(&left_params.key_col, 0, params);
+        let right_first = right.get_bypass_validity(&right_params.key_col, 0, params);
+
+        // First return chunks of nulls if there are any
+        if !params.args.nulls_equal && !params.key_nulls_last && left_first == AnyValue::Null {
+            let left_first_nonnull_idx =
+                binary_search_upper(&left, &AnyValue::Null, params, left_params)?;
+            let left_split = left.split_at(left_first_nonnull_idx);
+            return Ok(Left((
+                left_split,
+                DataFrameBuffer::empty_with_schema(&right_params.ir_schema),
+            )));
+        }
+        if !params.args.nulls_equal && !params.key_nulls_last && right_first == AnyValue::Null {
+            let right_first_nonnull_idx =
+                binary_search_upper(&right, &AnyValue::Null, params, right_params)?;
+            let right_split = right.split_at(right_first_nonnull_idx);
+            return Ok(Left((
+                DataFrameBuffer::empty_with_schema(&left_params.ir_schema),
+                right_split,
+            )));
+        }
+
         let left_last_idx = usize::min(left.len(), limit);
         let left_last = left.get_bypass_validity(&left_params.key_col, left_last_idx - 1, params);
         let right_last_idx = usize::min(right.len(), limit);
@@ -594,15 +565,8 @@ fn find_mergeable_search(
             return Ok(Right(NeedMore::Both));
         }
 
-        // let tick = std::time::Instant::now();
-
         let left_split = left.split_at(left_mergable_until);
         let right_split = right.split_at(right_mergable_until);
-
-        // let split_at = tick.elapsed();
-        // dbg!(split_at);
-        // dbg!(left_split.len());
-        // dbg!(right_split.len());
         return Ok(Left((left_split, right_split)));
     }
 }
@@ -700,9 +664,7 @@ async fn compute_join(
         MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft,
     );
     let right_build_optimization = params.args.maintain_order == MaintainOrderJoin::None
-        && (params.args.how == JoinType::Right
-            || params.args.how == JoinType::Inner
-                && right_key.null_count() > left_key.null_count());
+        && right_key.null_count() > left_key.null_count();
     let right_is_build = right_build_maintain_order || right_build_optimization;
 
     arenas.matched_probeside.clear();
@@ -712,7 +674,6 @@ async fn compute_join(
         arenas.matched_probeside.resize(right_key.len(), false);
     }
 
-    let mut howmany_emitted = 0;
     let mut current_offset = 0;
     let mut done = false;
     while !done {
@@ -756,7 +717,6 @@ async fn compute_join(
         )?;
 
         if !df.is_empty() {
-            howmany_emitted += df.height();
             let morsel = Morsel::new(df, seq, source_token.clone());
             if matched_send.send(morsel).await.is_err() {
                 panic!("broken pipe");
@@ -797,14 +757,11 @@ async fn compute_join(
         params,
     )?;
     if !df_unmatched.is_empty() {
-        howmany_emitted += df_unmatched.height();
         let morsel = Morsel::new(df_unmatched, seq, source_token.clone());
         if unmatched_send.send(morsel).await.is_err() {
             panic!("broken pipe");
         }
     }
-
-    dbg!(howmany_emitted);
 
     Ok(())
 }
@@ -1086,12 +1043,8 @@ async fn buffer_unmerged_from_pipe(
     }
 }
 
-fn keys_eq(left: &AnyValue, right: &AnyValue, params: &MergeJoinParams) -> bool {
-    if left.is_null() && right.is_null() {
-        params.args.nulls_equal
-    } else {
-        left == right
-    }
+fn keys_eq(left: &AnyValue, right: &AnyValue, _params: &MergeJoinParams) -> bool {
+    left == right
 }
 
 fn keys_lt(left: &AnyValue, right: &AnyValue, params: &MergeJoinParams) -> bool {
@@ -1128,13 +1081,19 @@ fn keys_gt(left: &AnyValue, right: &AnyValue, params: &MergeJoinParams) -> bool 
     !keys_le(left, right, params)
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 struct DataFrameBuffer {
     schema: Schema,
     buf: BTreeMap<usize, DataFrame>,
     total_rows: usize,
     skip_rows: usize,
     frozen: bool,
+}
+
+impl std::fmt::Debug for DataFrameBuffer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.clone().into_df().fmt(f)
+    }
 }
 
 impl DataFrameBuffer {

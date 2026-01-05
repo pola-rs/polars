@@ -240,7 +240,9 @@ pub fn _get_rows_encoded_ca(
         rows_arr.set_validity(combined);
     }
     let mut ca = BinaryOffsetChunked::with_chunk(name, rows_arr);
-    ca.set_sorted_flag(IsSorted::Ascending);
+    if ca.null_count() == 0 {
+        ca.set_sorted_flag(IsSorted::Ascending);
+    }
     Ok(ca)
 }
 
