@@ -298,6 +298,7 @@ impl ComputeNode for MergeJoinNode {
                     let mut arenas = Arenas::default();
 
                     while let Ok((left, right, seq, source_token)) = recv.recv().await {
+                        let tick = std::time::Instant::now();
                         compute_join(
                             left.clone(),
                             right.clone(),
@@ -309,6 +310,8 @@ impl ComputeNode for MergeJoinNode {
                             unmatched_send.clone(),
                         )
                         .await?;
+                        let compute_join = tick.elapsed();
+                        dbg!(compute_join);
                     }
                     Ok(())
                 })
@@ -357,8 +360,6 @@ fn find_mergeable(
     search_limit: &mut usize,
     p: &MergeJoinParams,
 ) -> PolarsResult<Either<(DataFrameBuffer, DataFrameBuffer), NeedMore>> {
-    let left_orig_len = left.len();
-    let right_orig_len = right.len();
     const SEARCH_LIMIT_BUMP_FACTOR: usize = 2;
     let morsel_size = get_ideal_morsel_size();
     debug_assert!(*search_limit >= morsel_size);
@@ -380,6 +381,8 @@ fn find_mergeable(
     }
 
     if let Left(m) = &mergeable {
+        dbg!(m.0.len());
+        dbg!(m.1.len());
         assert!(!m.0.is_empty() || !m.1.is_empty(), "search result is empty");
     }
     Ok(mergeable)
