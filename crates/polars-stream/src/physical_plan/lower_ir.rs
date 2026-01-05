@@ -772,7 +772,7 @@ pub fn lower_ir(
                         metadata: first_metadata,
                     } => Arc::new(
                         crate::nodes::io_sources::parquet::builder::ParquetReaderBuilder {
-                            options: Arc::new(options.clone()),
+                            options: Arc::clone(options),
                             first_metadata: first_metadata.clone(),
                             prefetch_limit: RelaxedCell::new_usize(0),
                             prefetch_semaphore: std::sync::OnceLock::new(),
@@ -782,20 +782,24 @@ pub fn lower_ir(
 
                     #[cfg(feature = "ipc")]
                     FileScanIR::Ipc {
-                        options: polars_io::ipc::IpcScanOptions {},
+                        options,
                         metadata: first_metadata,
-                    } => Arc::new(crate::nodes::io_sources::ipc::builder::IpcReaderBuilder {
-                        first_metadata: first_metadata.clone(),
-                        prefetch_limit: RelaxedCell::new_usize(0),
-                        prefetch_semaphore: std::sync::OnceLock::new(),
-                        shared_prefetch_wait_group_slot: Default::default(),
-                    }) as _,
+                    } => {
+                        let polars_io::ipc::IpcScanOptions {} = options.as_ref();
+
+                        Arc::new(crate::nodes::io_sources::ipc::builder::IpcReaderBuilder {
+                            first_metadata: first_metadata.clone(),
+                            prefetch_limit: RelaxedCell::new_usize(0),
+                            prefetch_semaphore: std::sync::OnceLock::new(),
+                            shared_prefetch_wait_group_slot: Default::default(),
+                        }) as _
+                    },
 
                     #[cfg(feature = "csv")]
-                    FileScanIR::Csv { options } => Arc::new(Arc::new(options.clone())) as _,
+                    FileScanIR::Csv { options } => Arc::new(Arc::clone(options)) as _,
 
                     #[cfg(feature = "json")]
-                    FileScanIR::NDJson { options } => Arc::new(Arc::new(options.clone())) as _,
+                    FileScanIR::NDJson { options } => Arc::new(Arc::clone(options)) as _,
 
                     #[cfg(feature = "python")]
                     FileScanIR::PythonDataset {

@@ -353,16 +353,9 @@ fn create_physical_plan_impl(
             let mut create_skip_batch_predicate = unified_scan_args.table_statistics.is_some();
             #[cfg(feature = "parquet")]
             {
-                create_skip_batch_predicate |= matches!(
-                    &*scan_type,
-                    FileScanIR::Parquet {
-                        options: polars_io::prelude::ParquetOptions {
-                            use_statistics: true,
-                            ..
-                        },
-                        ..
-                    }
-                );
+                if let FileScanIR::Parquet { options, .. } = scan_type.as_ref() {
+                    create_skip_batch_predicate |= options.use_statistics;
+                }
             }
 
             let predicate = predicate

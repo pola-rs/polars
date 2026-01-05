@@ -54,13 +54,15 @@ impl DslBuilder {
     #[cfg(feature = "parquet")]
     pub fn scan_parquet(
         sources: ScanSources,
-        options: ParquetOptions,
+        options: impl Into<Arc<ParquetOptions>>,
         unified_scan_args: UnifiedScanArgs,
     ) -> PolarsResult<Self> {
         Ok(DslPlan::Scan {
             sources,
             unified_scan_args: Box::new(unified_scan_args),
-            scan_type: Box::new(FileScanDsl::Parquet { options }),
+            scan_type: Box::new(FileScanDsl::Parquet {
+                options: options.into(),
+            }),
             cached_ir: Default::default(),
         }
         .into())
@@ -69,13 +71,15 @@ impl DslBuilder {
     #[cfg(feature = "ipc")]
     pub fn scan_ipc(
         sources: ScanSources,
-        options: IpcScanOptions,
+        options: impl Into<Arc<IpcScanOptions>>,
         unified_scan_args: UnifiedScanArgs,
     ) -> PolarsResult<Self> {
         Ok(DslPlan::Scan {
             sources,
             unified_scan_args: Box::new(unified_scan_args),
-            scan_type: Box::new(FileScanDsl::Ipc { options }),
+            scan_type: Box::new(FileScanDsl::Ipc {
+                options: options.into(),
+            }),
             cached_ir: Default::default(),
         }
         .into())
@@ -100,13 +104,15 @@ impl DslBuilder {
     #[cfg(feature = "csv")]
     pub fn scan_csv(
         sources: ScanSources,
-        options: CsvReadOptions,
+        options: impl Into<Arc<CsvReadOptions>>,
         unified_scan_args: UnifiedScanArgs,
     ) -> PolarsResult<Self> {
         Ok(DslPlan::Scan {
             sources,
             unified_scan_args: Box::new(unified_scan_args),
-            scan_type: Box::new(FileScanDsl::Csv { options }),
+            scan_type: Box::new(FileScanDsl::Csv {
+                options: options.into(),
+            }),
             cached_ir: Default::default(),
         }
         .into())
