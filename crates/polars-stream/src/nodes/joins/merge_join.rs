@@ -9,12 +9,12 @@ use either::{Either, Left, Right};
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
 use polars_core::utils::Container;
+use polars_io::partition;
 use polars_ops::prelude::*;
-use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
 use polars_utils::total_ord::TotalOrd;
+use polars_utils::{UnitVec, format_pl_smallstr};
 
-use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::execute::StreamingExecutionState;
@@ -22,6 +22,7 @@ use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
 use crate::nodes::ComputeNode;
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
+use crate::{DEFAULT_DISTRIBUTOR_BUFFER_SIZE, morsel};
 
 // TODO: [amber] For unmatched rows: gather first and then hstack to a df of nulls
 // TODO: [amber] Remove any non-output columns earlier to reduce the
@@ -256,14 +257,24 @@ impl ComputeNode for MergeJoinNode {
                         &mut search_limit,
                         params,
                     )? {
-                        Left((left_mergeable, right_mergeable)) => {
-                            if let Err((_left, _right, _, _)) = distributor
-                                .send((left_mergeable, right_mergeable, *seq, source_token.clone()))
-                                .await
-                            {
-                                panic!();
+                        Left(partitions) => {
+                            // if partitions.len() > 1 {
+                            //     dbg!(&partitions.len());
+                            // }
+                            for (left_mergeable, right_mergeable) in partitions.into_iter() {
+                                if let Err((_left, _right, _, _)) = distributor
+                                    .send((
+                                        left_mergeable,
+                                        right_mergeable,
+                                        *seq,
+                                        source_token.clone(),
+                                    ))
+                                    .await
+                                {
+                                    panic!();
+                                }
+                                *seq = seq.successor();
                             }
-                            *seq = seq.successor();
                         },
                         Right(NeedMore::Left | NeedMore::Both) if recv_left.is_some() => {
                             let Ok(m) = recv_left.as_mut().unwrap().recv().await else {
@@ -294,7 +305,7 @@ impl ComputeNode for MergeJoinNode {
 
             join_handles.extend(dist_recv.into_iter().zip(send).map(|(mut recv, mut send)| {
                 let unmatched_send = unmatched_send.clone();
-                scope.spawn_task(TaskPriority::Low, async move {
+                scope.spawn_task(TaskPriority::High, async move {
                     let mut arenas = Arenas::default();
 
                     while let Ok((left, right, seq, source_token)) = recv.recv().await {
@@ -362,7 +373,7 @@ fn find_mergeable(
     right_done: bool,
     search_limit: &mut usize,
     p: &MergeJoinParams,
-) -> PolarsResult<Either<(DataFrameBuffer, DataFrameBuffer), NeedMore>> {
+) -> PolarsResult<Either<UnitVec<(DataFrameBuffer, DataFrameBuffer)>, NeedMore>> {
     const SEARCH_LIMIT_BUMP_FACTOR: usize = 2;
     let morsel_size = get_ideal_morsel_size();
     debug_assert!(*search_limit >= morsel_size);
@@ -383,9 +394,6 @@ fn find_mergeable(
         }
     }
 
-    if let Left(m) = &mergeable {
-        assert!(!m.0.is_empty() || !m.1.is_empty(), "search result is empty");
-    }
     Ok(mergeable)
 }
 
@@ -396,11 +404,11 @@ fn find_mergeable_flip(
     right_done: bool,
     search_limit: usize,
     p: &MergeJoinParams,
-) -> PolarsResult<Either<(DataFrameBuffer, DataFrameBuffer), NeedMore>> {
+) -> PolarsResult<Either<UnitVec<(DataFrameBuffer, DataFrameBuffer)>, NeedMore>> {
     if p.args.how == JoinType::Right {
         // dbg!(left.len() as f32 / 100000.0, right.len() as f32 / 100000.0);
         // let tick = std::time::Instant::now();
-        let ok = find_mergeable_search(
+        let ok = find_mergeable_partition(
             right,
             left,
             right_done,
@@ -413,13 +421,18 @@ fn find_mergeable_flip(
         // let find_mergeable = tick.elapsed();
         // dbg!(find_mergeable);
         Ok(match ok {
-            Left((right_df, left_df)) => Left((left_df, right_df)),
+            Left(mut partitions) => {
+                partitions
+                    .iter_mut()
+                    .for_each(|(x1, x2)| std::mem::swap(x1, x2));
+                Left(partitions)
+            },
             Right(side) => Right(side.flip()),
         })
     } else {
         // dbg!(left.len() as f32 / 100000.0, right.len() as f32 / 100000.0);
         // let tick = std::time::Instant::now();
-        let ok = find_mergeable_search(
+        let ok = find_mergeable_partition(
             left,
             right,
             left_done,
@@ -432,10 +445,59 @@ fn find_mergeable_flip(
         // let find_mergeable = tick.elapsed();
         // dbg!(find_mergeable);
         Ok(match ok {
-            Left((left_df, right_df)) => Left((left_df, right_df)),
+            Left(partitions) => Left(partitions),
             other => other,
         })
     }
+}
+
+fn find_mergeable_partition(
+    left: &mut DataFrameBuffer,
+    right: &mut DataFrameBuffer,
+    left_done: bool,
+    right_done: bool,
+    limit: usize,
+    left_params: &SideParams,
+    right_params: &SideParams,
+    params: &MergeJoinParams,
+) -> PolarsResult<Either<UnitVec<(DataFrameBuffer, DataFrameBuffer)>, NeedMore>> {
+    let morsel_size = get_ideal_morsel_size();
+    let mergeable = find_mergeable_search(
+        left,
+        right,
+        left_done,
+        right_done,
+        limit,
+        left_params,
+        right_params,
+        params,
+    )?;
+    let (left, right) = match mergeable {
+        Left((left, right)) => (left, right),
+        Right(need_more) => return Ok(Right(need_more)),
+    };
+    assert!(
+        !left.is_empty() || !right.is_empty(),
+        "search result is empty"
+    );
+    let chunks_count = usize::max(
+        left.len().div_ceil(morsel_size),
+        right.len().div_ceil(morsel_size),
+    );
+    if chunks_count <= 1 {
+        return Ok(Left(UnitVec::from([(left, right)])));
+    }
+    let chunk_size = left.len().div_ceil(chunks_count);
+    let mut offset = 0;
+    let mut partitioned = UnitVec::with_capacity(chunks_count);
+    while offset < left.len() - offset {
+        let left_chunk = left.clone().slice(offset, chunk_size);
+        partitioned.push((left_chunk, right.clone()));
+        offset += chunk_size;
+    }
+    let left_chunk = left.slice(offset, chunk_size);
+    partitioned.push((left_chunk, right));
+    Ok(Left(partitioned))
 }
 
 fn find_mergeable_search(
@@ -642,6 +704,11 @@ async fn compute_join(
     matched_send: &mut PortSender,
     unmatched_send: tokio::sync::mpsc::Sender<Morsel>,
 ) -> PolarsResult<()> {
+    // TODO [amber] LEFT HERE
+    // There are still a couple of unexplained gaps in the profile.
+    // I think it is still relevant to see where they might come from.
+    // Next step is to remove the non-payload colunms before gathering.
+
     let mut left_sp = &params.left;
     let mut right_sp = &params.right;
     let mut left = left.into_df();
@@ -1152,6 +1219,13 @@ impl DataFrameBuffer {
         self.gc();
         self.integrity_check();
         left
+    }
+
+    fn slice(mut self, offset: usize, len: usize) -> Self {
+        self.skip_rows += offset;
+        self.total_rows -= offset;
+        self.total_rows = usize::min(self.total_rows, len);
+        self
     }
 
     fn into_df(self) -> DataFrame {
