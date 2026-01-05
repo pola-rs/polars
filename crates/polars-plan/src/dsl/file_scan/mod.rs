@@ -36,6 +36,10 @@ bitflags::bitflags! {
     }
 }
 
+const _: () = {
+    assert!(std::mem::size_of::<FileScanDsl>() <= 100);
+};
+
 #[derive(Clone, Debug, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -45,13 +49,13 @@ pub enum FileScanDsl {
     Csv { options: Arc<CsvReadOptions> },
 
     #[cfg(feature = "json")]
-    NDJson { options: Arc<NDJsonReadOptions> },
+    NDJson { options: NDJsonReadOptions },
 
     #[cfg(feature = "parquet")]
-    Parquet { options: Arc<ParquetOptions> },
+    Parquet { options: ParquetOptions },
 
     #[cfg(feature = "ipc")]
-    Ipc { options: Arc<IpcScanOptions> },
+    Ipc { options: IpcScanOptions },
 
     #[cfg(feature = "python")]
     PythonDataset {
@@ -69,6 +73,10 @@ pub enum FileScanDsl {
     },
 }
 
+const _: () = {
+    assert!(std::mem::size_of::<FileScanIR>() <= 100);
+};
+
 #[derive(Clone, Debug, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -78,18 +86,18 @@ pub enum FileScanIR {
     Csv { options: Arc<CsvReadOptions> },
 
     #[cfg(feature = "json")]
-    NDJson { options: Arc<NDJsonReadOptions> },
+    NDJson { options: NDJsonReadOptions },
 
     #[cfg(feature = "parquet")]
     Parquet {
-        options: Arc<ParquetOptions>,
+        options: ParquetOptions,
         #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
         metadata: Option<FileMetadataRef>,
     },
 
     #[cfg(feature = "ipc")]
     Ipc {
-        options: Arc<IpcScanOptions>,
+        options: IpcScanOptions,
         #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
         metadata: Option<Arc<arrow::io::ipc::read::FileMetadata>>,
     },
