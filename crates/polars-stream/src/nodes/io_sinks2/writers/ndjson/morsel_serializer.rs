@@ -93,7 +93,7 @@ impl MorselSerializer {
             .unzip();
 
         let array = StructArray::new(ArrowDataType::Struct(fields), height, arrays, None);
-        let mut serializer = polars_json::json::write::new_serializer(&array, 0, usize::MAX);
+        let serializer = polars_json::json::write::new_serializer(&array, 0, usize::MAX);
 
         serializer.serialize_json_lines_to_vec(serialized_data, height);
 

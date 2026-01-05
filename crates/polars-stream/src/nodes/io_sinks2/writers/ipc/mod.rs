@@ -1,10 +1,6 @@
 use std::sync::Arc;
 
-use arrow::io::ipc::{self, IpcField};
-use polars_core::prelude::CompatLevel;
 use polars_core::schema::SchemaRef;
-use polars_core::series::ToArrowConverter;
-use polars_core::utils::arrow;
 use polars_core::utils::arrow::io::ipc::write::{EncodedData, WriteOptions};
 use polars_error::PolarsResult;
 use polars_io::ipc::IpcWriterOptions;

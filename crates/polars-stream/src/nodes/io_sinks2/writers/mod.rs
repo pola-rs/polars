@@ -90,6 +90,12 @@ pub fn create_file_writer_starter(
                 initialized_state: Default::default(),
             }) as _
         },
-        _ => unimplemented!(),
+        #[cfg(not(any(
+            feature = "parquet",
+            feature = "ipc",
+            feature = "csv",
+            feature = "json"
+        )))]
+        _ => panic!("no enum variants on FileType (hint: missing feature flags?)"),
     })
 }

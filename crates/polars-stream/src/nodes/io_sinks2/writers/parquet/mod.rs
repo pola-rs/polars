@@ -76,7 +76,7 @@ impl FileWriterStarter for ParquetWriterStarter {
 
     fn start_file_writer(
         &self,
-        mut morsel_rx: connector::Receiver<SinkMorsel>,
+        morsel_rx: connector::Receiver<SinkMorsel>,
         file: tokio_handle_ext::AbortOnDropHandle<
             PolarsResult<polars_io::prelude::file::Writeable>,
         >,

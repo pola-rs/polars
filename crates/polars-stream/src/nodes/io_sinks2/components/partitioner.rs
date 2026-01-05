@@ -1,18 +1,11 @@
 use std::borrow::Cow;
 
-use arrow::array::{BinaryViewArray, FixedSizeBinaryArray, PrimitiveArray};
-use arrow::buffer::Buffer;
-use arrow::datatypes::ArrowDataType;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::_get_rows_encoded_ca_unordered;
-use polars_core::prelude::{
-    BinaryOffsetChunked, Column, DataType, GroupsIndicator, IntoGroupsType, LargeBinaryArray,
-};
-use polars_core::{with_match_physical_integer_type, with_match_physical_numeric_type};
+use polars_core::prelude::{BinaryOffsetChunked, Column, IntoGroupsType};
 use polars_error::PolarsResult;
 use polars_expr::hash_keys::{HashKeysVariant, hash_keys_variant_for_dtype};
 use polars_expr::state::ExecutionState;
-use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::async_primitives::wait_group::WaitToken;
