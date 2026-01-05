@@ -5,7 +5,6 @@ use polars_core::frame::DataFrame;
 use polars_error::PolarsResult;
 use polars_plan::dsl::sink2::FileProviderArgs;
 use polars_utils::IdxSize;
-use polars_utils::index::NonZeroIdxSize;
 
 use crate::async_executor::{self, TaskPriority};
 use crate::nodes::io_sinks2::components::error_capture::ErrorCapture;
@@ -48,17 +47,18 @@ impl PartitionMorselSender {
         // Sorted finalize
         morsel_stream: Option<(futures::stream::BoxStream<'static, (SinkMorsel, bool)>, u64)>,
     ) -> PolarsResult<()> {
+        #[expect(unused)]
         let row_byte_size: u64;
 
-        let mut sorted_finalize_stream = if let Some((stream, row_byte_size_)) = morsel_stream {
-            row_byte_size = row_byte_size_;
+        let mut sorted_finalize_stream = if let Some((stream, _)) = morsel_stream {
+            // row_byte_size = row_byte_size_;
 
             assert_eq!(partition.sinked_size, RowCountAndSize::default());
             assert_eq!(partition.buffered_rows.height(), 0);
 
             Some(stream)
         } else {
-            row_byte_size = partition.buffered_size().row_byte_size();
+            // row_byte_size = partition.buffered_size().row_byte_size();
             None
         };
 

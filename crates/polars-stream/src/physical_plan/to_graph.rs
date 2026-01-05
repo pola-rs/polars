@@ -18,7 +18,7 @@ use polars_plan::dsl::{
 };
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, IR, IRAggExpr};
-use polars_plan::prelude::{FileType, FunctionFlags};
+use polars_plan::prelude::FunctionFlags;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
@@ -315,73 +315,6 @@ fn to_graph_rec<'a>(
         },
 
         FileSink {
-            target,
-            sink_options,
-            file_type,
-            input,
-            cloud_options,
-        } => {
-            let sink_options = sink_options.clone();
-            let input_schema = ctx.phys_sm[input.node].output_schema.clone();
-            let input_key = to_graph_rec(input.node, ctx)?;
-
-            match file_type {
-                #[cfg(feature = "ipc")]
-                FileType::Ipc(ipc_writer_options) => ctx.graph.add_node(
-                    SinkComputeNode::from(nodes::io_sinks::ipc::IpcSinkNode::new(
-                        input_schema,
-                        target.clone(),
-                        sink_options,
-                        *ipc_writer_options,
-                        cloud_options.clone(),
-                    )),
-                    [(input_key, input.port)],
-                ),
-                #[cfg(feature = "json")]
-                FileType::Json(_) => ctx.graph.add_node(
-                    SinkComputeNode::from(nodes::io_sinks::json::NDJsonSinkNode::new(
-                        target.clone(),
-                        sink_options,
-                        cloud_options.clone(),
-                    )),
-                    [(input_key, input.port)],
-                ),
-                #[cfg(feature = "parquet")]
-                FileType::Parquet(parquet_writer_options) => ctx.graph.add_node(
-                    SinkComputeNode::from(nodes::io_sinks::parquet::ParquetSinkNode::new(
-                        input_schema,
-                        target.clone(),
-                        sink_options,
-                        parquet_writer_options,
-                        cloud_options.clone(),
-                        false,
-                    )?),
-                    [(input_key, input.port)],
-                ),
-                #[cfg(feature = "csv")]
-                FileType::Csv(csv_writer_options) => ctx.graph.add_node(
-                    SinkComputeNode::from(nodes::io_sinks::csv::CsvSinkNode::new(
-                        target.clone(),
-                        input_schema,
-                        sink_options,
-                        csv_writer_options.clone(),
-                        cloud_options.clone(),
-                    )),
-                    [(input_key, input.port)],
-                ),
-                #[cfg(not(any(
-                    feature = "csv",
-                    feature = "parquet",
-                    feature = "json",
-                    feature = "ipc"
-                )))]
-                _ => {
-                    panic!("activate source feature")
-                },
-            }
-        },
-
-        FileSink2 {
             input,
             options:
                 FileSinkOptions {

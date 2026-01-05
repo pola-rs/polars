@@ -122,38 +122,6 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     ..Default::default()
                 }
             },
-            PhysNodeKind::FileSink {
-                target,
-                sink_options:
-                    SinkOptions {
-                        sync_on_close,
-                        maintain_order,
-                        mkdir,
-                    },
-                file_type,
-                input,
-                cloud_options,
-            } => {
-                phys_node_inputs.push(input.node);
-
-                let properties = PhysNodeProperties::FileSink {
-                    target: match target {
-                        SinkTarget::Path(p) => format_pl_smallstr!("Path({})", p.to_str()),
-                        SinkTarget::Dyn(_) => PlSmallStr::from_static("DynWriteable"),
-                    },
-                    file_format: PlSmallStr::from_static(file_type.into()),
-                    sync_on_close: *sync_on_close,
-                    maintain_order: *maintain_order,
-                    mkdir: *mkdir,
-                    cloud_options: cloud_options.is_some(),
-                };
-
-                PhysNodeInfo {
-                    title: properties.variant_name(),
-                    properties,
-                    ..Default::default()
-                }
-            },
             PhysNodeKind::Filter { input, predicate } => {
                 phys_node_inputs.push(input.node);
 
@@ -720,7 +688,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     ..Default::default()
                 }
             },
-            PhysNodeKind::FileSink2 {
+            PhysNodeKind::FileSink {
                 input,
                 options:
                     FileSinkOptions {

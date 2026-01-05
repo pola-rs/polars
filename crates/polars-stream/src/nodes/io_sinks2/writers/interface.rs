@@ -37,7 +37,7 @@ pub(super) fn ideal_sink_morsel_size_env() -> (Option<IdxSize>, Option<u64>) {
         })
         .ok();
 
-    let mut num_bytes = std::env::var("POLARS_IDEAL_SINK_MORSEL_SIZE_BYTES")
+    let num_bytes = std::env::var("POLARS_IDEAL_SINK_MORSEL_SIZE_BYTES")
         .map(|x| {
             x.parse::<NonZeroU64>()
                 .ok()
