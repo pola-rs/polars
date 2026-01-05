@@ -9,10 +9,12 @@ use either::{Either, Left, Right};
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
 use polars_core::utils::Container;
+use polars_expr::hash_keys::HashKeys;
 use polars_ops::prelude::*;
-use polars_utils::format_pl_smallstr;
+use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::itertools::Itertools;
 use polars_utils::total_ord::TotalOrd;
+use polars_utils::{cardinality_sketch, format_pl_smallstr};
 
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
@@ -298,6 +300,21 @@ impl ComputeNode for MergeJoinNode {
                     let mut arenas = Arenas::default();
 
                     while let Ok((left, right, seq, source_token)) = recv.recv().await {
+                        let mut left_df = left.clone().into_df();
+                        let mut right_df = right.clone().into_df();
+
+                        left_df.rechunk_mut();
+                        right_df.rechunk_mut();
+
+                        let left_key = left_df
+                            .column(&params.left.key_col)
+                            .unwrap()
+                            .as_materialized_series();
+                        let right_key = right_df
+                            .column(&params.right.key_col)
+                            .unwrap()
+                            .as_materialized_series();
+
                         let tick = std::time::Instant::now();
                         compute_join(
                             left.clone(),
@@ -311,7 +328,43 @@ impl ComputeNode for MergeJoinNode {
                         )
                         .await?;
                         let compute_join = tick.elapsed();
+                        if compute_join > std::time::Duration::from_millis(1500) {
+                            dbg!(left_key.approx_n_unique()?);
+                            dbg!(right_key.approx_n_unique()?);
+                            dbg!(&left);
+                            dbg!(&right);
+                        }
                         dbg!(compute_join);
+                        let left_multiplicity_approx =
+                            left_key.len() / (left_key.approx_n_unique()? as usize + 1);
+
+                        let right_multiplicity_approx =
+                            right_key.len() / (right_key.approx_n_unique()? as usize + 1);
+
+                        dbg!(left_multiplicity_approx);
+                        dbg!(right_multiplicity_approx);
+                        let mut loop_iterations_estimate =
+                            left_multiplicity_approx * right_multiplicity_approx / 2;
+                        if params.args.how == JoinType::Left {
+                            loop_iterations_estimate += left_key.len();
+                        } else if params.args.how == JoinType::Right {
+                            loop_iterations_estimate += right_key.len();
+                        } else if params.args.how == JoinType::Full {
+                            loop_iterations_estimate += left_key.len() + right_key.len();
+                        }
+                        dbg!(loop_iterations_estimate);
+                        dbg!(loop_iterations_estimate / get_ideal_morsel_size());
+                        // TODO [amber] LEFT HERE
+                        // When the cardinality of the data is low, we need to partition the data
+                        // before we pass it into compute_join.
+                        // We definitely need to add another (parallel) stage for this.
+                        // We will probably have to allocate a bunch of new sequence numbers, because
+                        // we still need to make sure that we keep track of the ordering of the
+                        // partitioned dataframes.
+                        // I think we should just keep a RelaxedCell<u64> for this and make seq tokens
+                        // using MorselSeq::new()
+                        // First get it working, and then change it so that the estimation uses a
+                        // cardinality sketch (intead of approx_n_unique())
                     }
                     Ok(())
                 })
@@ -659,6 +712,7 @@ async fn compute_join(
         arenas.matched_probeside.resize(right_key.len(), false);
     }
 
+    let mut howmany_emitted = 0;
     let mut current_offset = 0;
     let mut done = false;
     while !done {
@@ -702,6 +756,7 @@ async fn compute_join(
         )?;
 
         if !df.is_empty() {
+            howmany_emitted += df.height();
             let morsel = Morsel::new(df, seq, source_token.clone());
             if matched_send.send(morsel).await.is_err() {
                 panic!("broken pipe");
@@ -742,11 +797,15 @@ async fn compute_join(
         params,
     )?;
     if !df_unmatched.is_empty() {
+        howmany_emitted += df_unmatched.height();
         let morsel = Morsel::new(df_unmatched, seq, source_token.clone());
         if unmatched_send.send(morsel).await.is_err() {
             panic!("broken pipe");
         }
     }
+
+    dbg!(howmany_emitted);
+
     Ok(())
 }
 
