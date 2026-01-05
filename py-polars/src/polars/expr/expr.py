@@ -9126,6 +9126,11 @@ Consider using {self}.implode() instead"""
         seed
             If `method="random"`, use this as seed.
 
+        Notes
+        -----
+        If you're coming from SQL, you may be expecting null values to be ranked last.
+        Polars, however, only ranks non-null values and preserves the null ones.
+
         Examples
         --------
         The 'average' method:
