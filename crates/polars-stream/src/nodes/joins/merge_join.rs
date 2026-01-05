@@ -248,6 +248,7 @@ impl ComputeNode for MergeJoinNode {
 
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 let source_token = SourceToken::new();
+                let mut search_limit = get_ideal_morsel_size();
 
                 loop {
                     match find_mergeable(
@@ -255,6 +256,7 @@ impl ComputeNode for MergeJoinNode {
                         right_unmerged,
                         recv_left.is_none(),
                         recv_right.is_none(),
+                        &mut search_limit,
                         params,
                     )? {
                         Left((left_mergeable, right_mergeable)) => {
@@ -355,149 +357,89 @@ fn find_mergeable(
     right: &mut DataFrameBuffer,
     left_done: bool,
     right_done: bool,
+    search_limit: &mut usize,
+    p: &MergeJoinParams,
+) -> PolarsResult<Either<(DataFrameBuffer, DataFrameBuffer), NeedMore>> {
+    let morsel_size = get_ideal_morsel_size();
+    debug_assert!(*search_limit >= morsel_size);
+    let mut mergeable = find_mergeable_flip(left, right, left_done, right_done, *search_limit, p)?;
+    while match mergeable {
+        Right(NeedMore::Left | NeedMore::Both) if *search_limit < left.len() => true,
+        Right(NeedMore::Right | NeedMore::Both) if *search_limit < right.len() => true,
+        _ => false,
+    } {
+        // "Exponential increase"
+        *search_limit *= 2;
+        mergeable = find_mergeable_flip(left, right, left_done, right_done, *search_limit, p)?;
+    }
+    if mergeable.is_left() {
+        *search_limit /= 2;
+        if *search_limit < morsel_size {
+            *search_limit = morsel_size;
+        }
+    }
+    // dbg!(search_limit);
+    Ok(mergeable)
+}
+
+fn find_mergeable_flip(
+    left: &mut DataFrameBuffer,
+    right: &mut DataFrameBuffer,
+    left_done: bool,
+    right_done: bool,
+    search_limit: usize,
     p: &MergeJoinParams,
 ) -> PolarsResult<Either<(DataFrameBuffer, DataFrameBuffer), NeedMore>> {
     if p.args.how == JoinType::Right {
-        let ok = find_mergeable_inner(right, left, &p.right, &p.left, p, right_done, left_done)?;
+        // dbg!(left.len() as f32 / 100000.0, right.len() as f32 / 100000.0);
+        // let tick = std::time::Instant::now();
+        let ok = find_mergeable_search(
+            right,
+            left,
+            right_done,
+            left_done,
+            search_limit,
+            &p.right,
+            &p.left,
+            p,
+        )?;
+        // let find_mergeable = tick.elapsed();
+        // dbg!(find_mergeable);
         Ok(match ok {
             Left((right_df, left_df)) => Left((left_df, right_df)),
             Right(side) => Right(side.flip()),
         })
     } else {
-        Ok(
-            match find_mergeable_inner(left, right, &p.left, &p.right, p, left_done, right_done)? {
-                Left((left_df, right_df)) => Left((left_df, right_df)),
-                other => other,
-            },
-        )
+        // dbg!(left.len() as f32 / 100000.0, right.len() as f32 / 100000.0);
+        // let tick = std::time::Instant::now();
+        let ok = find_mergeable_search(
+            left,
+            right,
+            left_done,
+            right_done,
+            search_limit,
+            &p.left,
+            &p.right,
+            p,
+        )?;
+        // let find_mergeable = tick.elapsed();
+        // dbg!(find_mergeable);
+        Ok(match ok {
+            Left((left_df, right_df)) => Left((left_df, right_df)),
+            other => other,
+        })
     }
 }
 
-#[derive(Clone, Debug)]
-struct DataFrameBuffer {
-    schema: Schema,
-    buf: BTreeMap<usize, DataFrame>,
-    total_rows: usize,
-    skip_rows: usize,
-    frozen: bool,
-}
-
-impl DataFrameBuffer {
-    fn empty_with_schema(schema: &Schema) -> Self {
-        DataFrameBuffer {
-            schema: schema.clone(),
-            buf: BTreeMap::new(),
-            total_rows: 0,
-            skip_rows: 0,
-            frozen: false,
-        }
-    }
-
-    fn len(&self) -> usize {
-        self.total_rows
-    }
-
-    fn get_bypass_validity(
-        &self,
-        column: &str,
-        row_index: usize,
-        params: &MergeJoinParams,
-    ) -> AnyValue<'_> {
-        debug_assert!(row_index < self.total_rows);
-        let first_offset = match self.buf.first_key_value() {
-            Some((offset, _)) => *offset,
-            None => 0,
-        };
-        let buf_index = self.skip_rows + first_offset + row_index;
-        let (df_offset, df) = self.buf.range(..=buf_index).next_back().unwrap();
-        let series_index = buf_index - df_offset;
-        let series = df.column(column).unwrap().as_materialized_series();
-        series_get_bypass_validity(series, series_index, params)
-    }
-
-    fn push_df(&mut self, df: DataFrame) {
-        assert!(!self.frozen);
-        let added_rows = df.height();
-        let offset = match self.buf.last_key_value() {
-            Some((last_key, last_df)) => last_key + last_df.height(),
-            None => 0,
-        };
-        self.buf.insert(offset, df);
-        self.total_rows += added_rows;
-        self.integrity_check();
-    }
-
-    fn split_at(&mut self, mut at: usize) -> Self {
-        at = at.clamp(0, self.total_rows);
-        let mut left = self.clone();
-        left.total_rows = at;
-        left.frozen = true;
-        left.integrity_check();
-        self.skip_rows += at;
-        self.total_rows -= at;
-        self.gc();
-        self.integrity_check();
-        left
-    }
-
-    fn into_df(self) -> DataFrame {
-        self.integrity_check();
-        let mut acc = DataFrame::empty_with_schema(&self.schema);
-        for df in self.buf.into_values() {
-            acc.vstack_mut_owned(df).unwrap();
-        }
-        acc.slice(self.skip_rows as i64, self.total_rows)
-    }
-
-    fn gc(&mut self) {
-        while !self.buf.is_empty() {
-            let (_, df) = self.buf.first_key_value().unwrap();
-            if self.skip_rows > df.height() {
-                let (_, df) = self.buf.pop_first().unwrap();
-                self.skip_rows -= df.height();
-            } else {
-                break;
-            }
-        }
-    }
-
-    fn is_empty(&self) -> bool {
-        self.total_rows == 0
-    }
-
-    fn clear(&mut self) {
-        self.integrity_check();
-        assert!(!self.frozen);
-        self.buf.clear();
-        self.total_rows = 0;
-        self.skip_rows = 0;
-    }
-
-    fn integrity_check(&self) {
-        debug_assert!(
-            self.frozen
-                || self.buf.values().map(|df| df.height()).sum::<usize>() - self.skip_rows
-                    == self.total_rows
-        );
-        debug_assert!(self.buf.values().all(|df| &**df.schema() == &self.schema));
-        let mut last: Option<(usize, DataFrame)> = None;
-        for (key, df) in self.buf.iter() {
-            if let Some((last_key, last_df)) = last {
-                debug_assert!(last_key + last_df.height() == *key);
-            }
-            last = Some((*key, df.clone()));
-        }
-    }
-}
-
-fn find_mergeable_inner(
+fn find_mergeable_search(
     left: &mut DataFrameBuffer,
     right: &mut DataFrameBuffer,
+    left_done: bool,
+    right_done: bool,
+    limit: usize,
     left_params: &SideParams,
     right_params: &SideParams,
     params: &MergeJoinParams,
-    left_done: bool,
-    right_done: bool,
 ) -> PolarsResult<Either<(DataFrameBuffer, DataFrameBuffer), NeedMore>> {
     loop {
         if left_done && left.is_empty() && right_done && right.is_empty() {
@@ -528,9 +470,11 @@ fn find_mergeable_inner(
             return Ok(Right(NeedMore::Right));
         }
 
-        let left_last = left.get_bypass_validity(&left_params.key_col, left.total_rows - 1, params);
+        let left_last_idx = usize::min(left.len(), limit);
+        let left_last = left.get_bypass_validity(&left_params.key_col, left_last_idx - 1, params);
+        let right_last_idx = usize::min(right.len(), limit);
         let right_last =
-            right.get_bypass_validity(&right_params.key_col, right.total_rows - 1, params);
+            right.get_bypass_validity(&right_params.key_col, right_last_idx - 1, params);
 
         let left_first_incomplete = match left_done {
             false => binary_search_lower(left, &left_last, params, &left_params)?,
@@ -587,15 +531,15 @@ fn find_mergeable_inner(
             return Ok(Right(NeedMore::Both));
         }
 
-        let tick = std::time::Instant::now();
+        // let tick = std::time::Instant::now();
 
         let left_split = left.split_at(left_mergable_until);
         let right_split = right.split_at(right_mergable_until);
 
-        let elapsed = tick.elapsed();
-        dbg!(elapsed);
-        dbg!(left_split.len());
-        dbg!(right_split.len());
+        // let split_at = tick.elapsed();
+        // dbg!(split_at);
+        // dbg!(left_split.len());
+        // dbg!(right_split.len());
         return Ok(Left((left_split, right_split)));
     }
 }
@@ -1113,4 +1057,121 @@ fn keys_le(left: &AnyValue, right: &AnyValue, params: &MergeJoinParams) -> bool 
 
 fn keys_gt(left: &AnyValue, right: &AnyValue, params: &MergeJoinParams) -> bool {
     !keys_le(left, right, params)
+}
+
+#[derive(Clone, Debug)]
+struct DataFrameBuffer {
+    schema: Schema,
+    buf: BTreeMap<usize, DataFrame>,
+    total_rows: usize,
+    skip_rows: usize,
+    frozen: bool,
+}
+
+impl DataFrameBuffer {
+    fn empty_with_schema(schema: &Schema) -> Self {
+        DataFrameBuffer {
+            schema: schema.clone(),
+            buf: BTreeMap::new(),
+            total_rows: 0,
+            skip_rows: 0,
+            frozen: false,
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.total_rows
+    }
+
+    fn get_bypass_validity(
+        &self,
+        column: &str,
+        row_index: usize,
+        params: &MergeJoinParams,
+    ) -> AnyValue<'_> {
+        debug_assert!(row_index < self.total_rows);
+        let first_offset = match self.buf.first_key_value() {
+            Some((offset, _)) => *offset,
+            None => 0,
+        };
+        let buf_index = self.skip_rows + first_offset + row_index;
+        let (df_offset, df) = self.buf.range(..=buf_index).next_back().unwrap();
+        let series_index = buf_index - df_offset;
+        let series = df.column(column).unwrap().as_materialized_series();
+        series_get_bypass_validity(series, series_index, params)
+    }
+
+    fn push_df(&mut self, df: DataFrame) {
+        assert!(!self.frozen);
+        let added_rows = df.height();
+        let offset = match self.buf.last_key_value() {
+            Some((last_key, last_df)) => last_key + last_df.height(),
+            None => 0,
+        };
+        self.buf.insert(offset, df);
+        self.total_rows += added_rows;
+        self.integrity_check();
+    }
+
+    fn split_at(&mut self, mut at: usize) -> Self {
+        at = at.clamp(0, self.total_rows);
+        let mut left = self.clone();
+        left.total_rows = at;
+        left.frozen = true;
+        left.integrity_check();
+        self.skip_rows += at;
+        self.total_rows -= at;
+        self.gc();
+        self.integrity_check();
+        left
+    }
+
+    fn into_df(self) -> DataFrame {
+        self.integrity_check();
+        let mut acc = DataFrame::empty_with_schema(&self.schema);
+        for df in self.buf.into_values() {
+            acc.vstack_mut_owned(df).unwrap();
+        }
+        acc.slice(self.skip_rows as i64, self.total_rows)
+    }
+
+    fn gc(&mut self) {
+        while !self.buf.is_empty() {
+            let (_, df) = self.buf.first_key_value().unwrap();
+            if self.skip_rows > df.height() {
+                let (_, df) = self.buf.pop_first().unwrap();
+                self.skip_rows -= df.height();
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.total_rows == 0
+    }
+
+    fn clear(&mut self) {
+        self.integrity_check();
+        assert!(!self.frozen);
+        self.buf.clear();
+        self.total_rows = 0;
+        self.skip_rows = 0;
+    }
+
+    fn integrity_check(&self) {
+        debug_assert!(
+            self.frozen
+                || self.buf.values().map(|df| df.height()).sum::<usize>() - self.skip_rows
+                    == self.total_rows
+        );
+        debug_assert!(self.buf.values().all(|df| &**df.schema() == &self.schema));
+        let mut last: Option<(usize, DataFrame)> = None;
+        for (key, df) in self.buf.iter() {
+            if let Some((last_key, last_df)) = last {
+                debug_assert!(last_key + last_df.height() == *key);
+            }
+            last = Some((*key, df.clone()));
+        }
+    }
 }
