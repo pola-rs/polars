@@ -23,9 +23,6 @@ use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
 use crate::nodes::ComputeNode;
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 
-// TODO: [amber] I think I want to have the inner join dispatch to another streaming
-// equi join node rather than dispatching to in-memory engine?
-// TODO: [amber] Use an InMemorySource node for the unmatched values
 // TODO: [amber] For unmatched rows: gather first and then hstack to a df of nulls
 // TODO: [amber] Remove any non-output columns earlier to reduce the
 // amount of gathering as much as possible
@@ -360,6 +357,9 @@ fn find_mergeable(
     search_limit: &mut usize,
     p: &MergeJoinParams,
 ) -> PolarsResult<Either<(DataFrameBuffer, DataFrameBuffer), NeedMore>> {
+    let left_orig_len = left.len();
+    let right_orig_len = right.len();
+    const SEARCH_LIMIT_BUMP_FACTOR: usize = 2;
     let morsel_size = get_ideal_morsel_size();
     debug_assert!(*search_limit >= morsel_size);
     let mut mergeable = find_mergeable_flip(left, right, left_done, right_done, *search_limit, p)?;
@@ -369,16 +369,19 @@ fn find_mergeable(
         _ => false,
     } {
         // "Exponential increase"
-        *search_limit *= 2;
+        *search_limit *= SEARCH_LIMIT_BUMP_FACTOR;
         mergeable = find_mergeable_flip(left, right, left_done, right_done, *search_limit, p)?;
     }
     if mergeable.is_left() {
-        *search_limit /= 2;
+        *search_limit /= SEARCH_LIMIT_BUMP_FACTOR;
         if *search_limit < morsel_size {
             *search_limit = morsel_size;
         }
     }
-    // dbg!(search_limit);
+
+    if let Left(m) = &mergeable {
+        assert!(!m.0.is_empty() || !m.1.is_empty(), "search result is empty");
+    }
     Ok(mergeable)
 }
 
@@ -444,6 +447,10 @@ fn find_mergeable_search(
     loop {
         if left_done && left.is_empty() && right_done && right.is_empty() {
             return Ok(Right(NeedMore::Finished));
+        } else if left_done && left.is_empty() && !right_done && right.is_empty() {
+            return Ok(Right(NeedMore::Right));
+        } else if right_done && right.is_empty() && !left_done && left.is_empty() {
+            return Ok(Right(NeedMore::Left));
         } else if left_done && left.is_empty() && !right_params.emit_unmatched {
             // We will never match on the remaining right keys
             right.clear();

@@ -526,3 +526,37 @@ def test_merge_join(
 
     assert "merge-join" in dot, "merge-join does not appear in physical plan"
     assert_frame_equal(actual, expected, check_row_order=check_row_order)
+
+
+@given(
+    df_left=dataframes(
+        cols=[
+            column("key_1", dtype=pl.Int16),
+            column("key_2", dtype=pl.Int16),
+            column("x", dtype=pl.UInt16, allow_null=False, unique=True),
+        ],
+    ),
+    df_right=dataframes(
+        cols=[
+            column("key_1", dtype=pl.Int16),
+            column("key_2", dtype=pl.Int16),
+            column("x", dtype=pl.UInt16, allow_null=False, unique=True),
+        ],
+    ),
+)
+def test_merge_join_key_expression(
+    df_left: pl.DataFrame, df_right: pl.DataFrame
+) -> None:
+    df_left = df_left.sort("key_1").lazy().set_sorted("key_1")
+    df_right = df_right.sort("key_1").lazy().set_sorted("key_1")
+    q = df_left.join(
+        df_right,
+        on=pl.col("key_1") + 1,
+        how="inner",
+        maintain_order="left_right",
+    )
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    expected = q.collect(engine="in-memory")
+    actual = q.collect(engine="streaming")
+    assert "merge-join" in dot, "merge-join does not appear in physical plan"
+    assert_frame_equal(actual, expected, check_row_order=True)
