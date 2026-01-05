@@ -705,9 +705,11 @@ async fn compute_join(
     unmatched_send: tokio::sync::mpsc::Sender<Morsel>,
 ) -> PolarsResult<()> {
     // TODO [amber] LEFT HERE
-    // There are still a couple of unexplained gaps in the profile.
-    // I think it is still relevant to see where they might come from.
-    // Next step is to remove the non-payload colunms before gathering.
+    // The main gap in the profile is due to the state transition from Running
+    // to FlushInputBuffers.  I don't know if we can do anything about that.
+    // I think the next step is to remove the non-payload colunms before gathering.
+    //
+    // Good luck! <3
 
     let mut left_sp = &params.left;
     let mut right_sp = &params.right;
