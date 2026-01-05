@@ -529,7 +529,7 @@ fn test_union_and_agg_projections() -> PolarsResult<()> {
 
     let lf2: LazyFrame = DslBuilder::scan_ipc(
         ScanSources::Paths(FromIterator::from_iter([PlPath::new(GLOB_IPC)])),
-        IpcScanOptions::default(),
+        IpcScanOptions {},
         UnifiedScanArgs {
             extra_columns_policy: ExtraColumnsPolicy::Ignore,
             ..Default::default()
