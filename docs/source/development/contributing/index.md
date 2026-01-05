@@ -226,9 +226,7 @@ in the Polars repository. Please adhere to the following guidelines:
     - Clearly state in your pull request's description which parts of the code were AI-generated.
     - Explicitly state that you yourself have reviewed *all* changes in your pull request, and believe
       that they are relevant and correct. Not understanding your own proposed changes is unacceptable.
-  If you fail either requirement the maintainer may simply close your pull request. If you lie about your usage of AI,
-  or about having reviewed the code (e.g. your PR clearly contains nonsensical or irrelevant code changes), you may be
-  barred from contributing altogether.
+  If you fail either requirement the maintainer may simply close your pull request.
 <!-- dprint-ignore-end -->
 
 After you have opened your pull request, a maintainer will review it and possibly leave some
