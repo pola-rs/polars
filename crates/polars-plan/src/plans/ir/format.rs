@@ -422,6 +422,7 @@ impl Display for ExprIRDisplay<'_> {
                 expr,
                 idx,
                 returns_scalar,
+                null_on_oob,
             } => {
                 let expr = self.with_root(expr);
                 let idx = self.with_root(idx);

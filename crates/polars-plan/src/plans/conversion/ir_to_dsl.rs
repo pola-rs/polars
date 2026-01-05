@@ -45,6 +45,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             expr,
             idx,
             returns_scalar,
+            null_on_oob,
         } => {
             let expr = node_to_expr(expr, expr_arena);
             let idx = node_to_expr(idx, expr_arena);
@@ -52,6 +53,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 expr: Arc::new(expr),
                 idx: Arc::new(idx),
                 returns_scalar,
+                null_on_oob,
             }
         },
         AExpr::SortBy {

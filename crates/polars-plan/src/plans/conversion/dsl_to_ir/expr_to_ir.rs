@@ -168,6 +168,7 @@ pub(super) fn to_aexpr_impl(
             expr,
             idx,
             returns_scalar,
+            null_on_oob,
         } => {
             let (expr, output_name) = recurse_arc!(expr)?;
             let (idx, _) = to_aexpr_mat_lit_arc!(idx)?;
@@ -176,6 +177,7 @@ pub(super) fn to_aexpr_impl(
                     expr,
                     idx,
                     returns_scalar,
+                    null_on_oob,
                 },
                 output_name,
             )

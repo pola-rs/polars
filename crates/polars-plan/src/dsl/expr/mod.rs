@@ -127,6 +127,7 @@ pub enum Expr {
         expr: Arc<Expr>,
         idx: Arc<Expr>,
         returns_scalar: bool,
+        null_on_oob: bool,
     },
     SortBy {
         expr: Arc<Expr>,
@@ -335,10 +336,12 @@ impl Hash for Expr {
                 expr,
                 idx,
                 returns_scalar,
+                null_on_oob,
             } => {
                 expr.hash(state);
                 idx.hash(state);
                 returns_scalar.hash(state);
+                null_on_oob.hash(state);
             },
             // already hashed by discriminant
             Expr::Element | Expr::Len => {},

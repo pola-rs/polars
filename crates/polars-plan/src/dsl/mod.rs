@@ -358,15 +358,17 @@ impl Expr {
             expr: Arc::new(self),
             idx: Arc::new(idx.into()),
             returns_scalar: false,
+            null_on_oob: false,
         }
     }
 
     /// Take the values by a single index.
-    pub fn get<E: Into<Expr>>(self, idx: E) -> Self {
+    pub fn get<E: Into<Expr>>(self, idx: E, null_on_oob: bool) -> Self {
         Expr::Gather {
             expr: Arc::new(self),
             idx: Arc::new(idx.into()),
             returns_scalar: true,
+            null_on_oob,
         }
     }
 

@@ -160,6 +160,7 @@ pub fn is_input_independent_rec(
             expr,
             idx,
             returns_scalar: _,
+            null_on_oob: _,
         } => {
             is_input_independent_rec(*expr, arena, cache)
                 && is_input_independent_rec(*idx, arena, cache)

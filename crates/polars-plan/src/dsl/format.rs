@@ -109,11 +109,20 @@ impl fmt::Debug for Expr {
                 expr,
                 idx,
                 returns_scalar,
+                null_on_oob,
             } => {
                 if *returns_scalar {
-                    write!(f, "{expr:?}.get({idx:?})")
+                    if *null_on_oob {
+                        write!(f, "{expr:?}.get({idx:?}, null_on_oob=true)")
+                    } else {
+                        write!(f, "{expr:?}.get({idx:?})")
+                    }
                 } else {
-                    write!(f, "{expr:?}.gather({idx:?})")
+                    if *null_on_oob {
+                        write!(f, "{expr:?}.gather({idx:?}, null_on_oob=true)")
+                    } else {
+                        write!(f, "{expr:?}.gather({idx:?})")
+                    }
                 }
             },
             SubPlan(lf, _) => {

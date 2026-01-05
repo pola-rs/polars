@@ -13,6 +13,7 @@ pub struct GatherExpr {
     pub(crate) idx: Arc<dyn PhysicalExpr>,
     pub(crate) expr: Expr,
     pub(crate) returns_scalar: bool,
+    pub(crate) null_on_oob: bool,
 }
 
 impl PhysicalExpr for GatherExpr {
@@ -27,13 +28,23 @@ impl PhysicalExpr for GatherExpr {
 
         let len = series.len() as i64;
 
-        // Normalize all integer dtypes to Int64, like the list implementation does.
         let casted = idx_series.cast(&DataType::Int64)?;
         let idx_i64 = casted.i64().unwrap();
 
-        // Build an IdxCa<Option<IdxSize>>:
-        // - None      → null index or out-of-bounds → result null
-        // - Some(pos) → in-bounds position
+        // Pre-scan for OOB when null_on_oob == false, like lst_get.
+        if !self.null_on_oob {
+            if idx_i64.into_iter().any(|opt_v| {
+                if let Some(v) = opt_v {
+                    let j = if v >= 0 { v } else { len + v };
+                    j < 0 || j >= len
+                } else {
+                    false
+                }
+            }) {
+                polars_bail!(ComputeError: "gather/get index is out of bounds");
+            }
+        }
+
         let idx_ca: IdxCa = idx_i64
             .into_iter()
             .map(|opt_v| {
@@ -51,9 +62,7 @@ impl PhysicalExpr for GatherExpr {
             })
             .collect();
 
-        // Safe because for all Some(j), we enforced 0 <= j < len above.
         let out_series = unsafe { series.take_unchecked(&idx_ca) };
-
         Ok(out_series.into_column())
     }
 

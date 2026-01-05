@@ -622,6 +622,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
             expr,
             idx,
             returns_scalar,
+            null_on_oob,
         } => Gather {
             expr: expr.0,
             idx: idx.0,
