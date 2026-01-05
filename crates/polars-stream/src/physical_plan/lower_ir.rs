@@ -792,7 +792,7 @@ pub fn lower_ir(
                     }) as _,
 
                     #[cfg(feature = "csv")]
-                    FileScanIR::Csv { options } => Arc::new(Arc::new(options.clone())) as _,
+                    FileScanIR::Csv { options } => Arc::new(Arc::clone(options)) as _,
 
                     #[cfg(feature = "json")]
                     FileScanIR::NDJson { options } => Arc::new(Arc::new(options.clone())) as _,
