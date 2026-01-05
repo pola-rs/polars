@@ -39,6 +39,7 @@ bitflags::bitflags! {
 #[derive(Clone, Debug, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+/// Note: This is cheaply cloneable.
 pub enum FileScanDsl {
     #[cfg(feature = "csv")]
     Csv { options: Arc<CsvReadOptions> },
@@ -71,6 +72,7 @@ pub enum FileScanDsl {
 #[derive(Clone, Debug, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+/// Note: This is cheaply cloneable.
 pub enum FileScanIR {
     #[cfg(feature = "csv")]
     Csv { options: Arc<CsvReadOptions> },
