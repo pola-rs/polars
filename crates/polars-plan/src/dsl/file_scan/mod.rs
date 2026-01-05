@@ -74,7 +74,7 @@ pub enum FileScanDsl {
 }
 
 const _: () = {
-    assert!(std::mem::size_of::<FileScanIR>() <= 100);
+    assert!(std::mem::size_of::<FileScanIR>() <= 80);
 };
 
 #[derive(Clone, Debug, IntoStaticStr)]
