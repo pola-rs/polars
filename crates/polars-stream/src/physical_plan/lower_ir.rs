@@ -276,6 +276,8 @@ pub fn lower_ir(
                     polars_plan::dsl::FileType::Ipc(_) => true,
                     #[cfg(feature = "csv")]
                     polars_plan::dsl::FileType::Csv(_) => true,
+                    #[cfg(feature = "json")]
+                    polars_plan::dsl::FileType::Json(_) => true,
                     _ => false,
                 } =>
             {
@@ -294,6 +296,8 @@ pub fn lower_ir(
                         polars_plan::dsl::FileType::Ipc(_) => true,
                         #[cfg(feature = "csv")]
                         polars_plan::dsl::FileType::Csv(_) => true,
+                        #[cfg(feature = "json")]
+                        polars_plan::dsl::FileType::Json(_) => true,
                         _ => false,
                     } =>
             {
