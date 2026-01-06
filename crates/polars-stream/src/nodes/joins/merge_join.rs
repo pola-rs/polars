@@ -912,6 +912,7 @@ fn compute_join_dispatch(
 
     debug_assert_eq!(lk.dtype(), rk.dtype());
     match lk.dtype() {
+        DataType::Boolean => dispatch!(lk.bool().unwrap(), rk.bool().unwrap()),
         #[cfg(feature = "dtype-i8")]
         DataType::Int8 => dispatch!(lk.i8().unwrap(), rk.i8().unwrap()),
         #[cfg(feature = "dtype-i16")]
@@ -932,6 +933,11 @@ fn compute_join_dispatch(
         DataType::Float16 => dispatch!(lk.f16().unwrap(), rk.f16().unwrap()),
         DataType::Float32 => dispatch!(lk.f32().unwrap(), rk.f32().unwrap()),
         DataType::Float64 => dispatch!(lk.f64().unwrap(), rk.f64().unwrap()),
+        DataType::String => dispatch!(lk.str().unwrap(), rk.str().unwrap()),
+        DataType::Binary => dispatch!(lk.binary().unwrap(), rk.binary().unwrap()),
+        DataType::BinaryOffset => {
+            dispatch!(lk.binary_offset().unwrap(), rk.binary_offset().unwrap())
+        },
         #[cfg(feature = "dtype-date")]
         DataType::Date => dispatch!(lk.date().unwrap().physical(), rk.date().unwrap().physical()),
         #[cfg(feature = "dtype-time")]
@@ -966,9 +972,6 @@ fn compute_join_dispatch(
                     rk.cat32().unwrap().physical()
                 ),
             }
-        },
-        DataType::BinaryOffset => {
-            dispatch!(lk.binary_offset().unwrap(), rk.binary_offset().unwrap())
         },
         dt => unimplemented!("merge join kernel not implemented for {:?}", dt),
     }
