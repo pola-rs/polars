@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -309,15 +310,9 @@ impl ComputeNode for MergeJoinNode {
                     let mut arenas = Arenas::default();
 
                     while let Ok((left, right, seq, source_token)) = recv.recv().await {
-                        let mut left_df = left.clone().into_df();
-                        let mut right_df = right.clone().into_df();
-
-                        left_df.rechunk_mut();
-                        right_df.rechunk_mut();
-
                         compute_join(
-                            left.clone(),
-                            right.clone(),
+                            left,
+                            right,
                             seq,
                             source_token,
                             params,
@@ -770,11 +765,9 @@ async fn compute_join(
             );
         }
 
-        let mut df = Default::default();
-        gather_and_postprocess(
-            &mut df,
-            &left,
-            &right,
+        let df = gather_and_postprocess(
+            left.clone(),
+            right.clone(),
             &mut arenas.gather_left,
             &mut arenas.gather_right,
             &mut arenas.df_builders,
@@ -811,11 +804,9 @@ async fn compute_join(
         swap(&mut left_sp, &mut right_sp);
     }
 
-    let mut df_unmatched = Default::default();
-    gather_and_postprocess(
-        &mut df_unmatched,
-        &left,
-        &right,
+    let df_unmatched = gather_and_postprocess(
+        left,
+        right,
         &mut arenas.gather_left,
         &mut arenas.gather_right,
         &mut arenas.df_builders,
@@ -832,20 +823,45 @@ async fn compute_join(
 }
 
 fn gather_and_postprocess(
-    df: &mut DataFrame,
-    left: &DataFrame,
-    right: &DataFrame,
+    mut left: DataFrame,
+    mut right: DataFrame,
     left_gather: &mut Vec<IdxSize>,
     right_gather: &mut Vec<IdxSize>,
     df_builders: &mut Option<(DataFrameBuilder, DataFrameBuilder)>,
     params: &MergeJoinParams,
-) -> PolarsResult<()> {
-    // Remove the added row-encoded key columns
-    let mut left = left.clone();
-    let mut right = right.clone();
-    if params.use_row_encoding {
-        left = left.drop(&params.left.key_col).unwrap();
-        right = right.drop(&params.right.key_col).unwrap();
+) -> PolarsResult<DataFrame> {
+    let should_coalesce = params.args.should_coalesce();
+
+    // Remove non-payload columns
+    for col in left
+        .column_iter()
+        .map(Column::name)
+        .cloned()
+        .collect::<Vec<_>>()
+    {
+        if params.left.on.contains(&col) && should_coalesce {
+            continue;
+        }
+        if !params.output_schema.contains(&col) {
+            left.drop_in_place(&col).unwrap();
+        }
+    }
+    for col in right
+        .column_iter()
+        .map(Column::name)
+        .cloned()
+        .collect::<Vec<_>>()
+    {
+        if params.left.on.contains(&col) && should_coalesce {
+            continue;
+        }
+        let renamed_col = match left.schema().contains(&col) {
+            true => Cow::Owned(format_pl_smallstr!("{}{}", col, params.args.suffix())),
+            false => Cow::Borrowed(&col),
+        };
+        if !params.output_schema.contains(&renamed_col) {
+            right.drop_in_place(&col).unwrap();
+        }
     }
 
     if df_builders.is_none() {
@@ -863,21 +879,34 @@ fn gather_and_postprocess(
     let mut right = right_build.freeze_reset();
 
     // Coalsesce the key columns
-    if params.args.how == JoinType::Left && params.args.should_coalesce() {
+    if params.args.how == JoinType::Left && should_coalesce {
         for c in &params.left.on {
             right.drop_in_place(c.as_str())?;
         }
-    } else if params.args.how == JoinType::Right && params.args.should_coalesce() {
+    } else if params.args.how == JoinType::Right && should_coalesce {
         for c in &params.right.on {
             left.drop_in_place(c.as_str())?;
         }
     }
 
     // Rename any right columns to "{}_right"
-    rename_right_columns(&left, &mut right, params)?;
+    let left_cols: PlHashSet<PlSmallStr> = left
+        .column_iter()
+        .map(Column::name)
+        .cloned()
+        .collect::<PlHashSet<_>>();
+    let right_cols_vec = right.get_column_names_owned();
+    let renames = right_cols_vec
+        .iter()
+        .filter(|c| left_cols.contains(*c))
+        .map(|c| {
+            let renamed = format_pl_smallstr!("{}{}", c, params.args.suffix());
+            (c.as_str(), renamed)
+        });
+    right.rename_many(renames).unwrap();
 
     left.hstack_mut(&right.get_columns())?;
-    if params.args.how == JoinType::Full && params.args.should_coalesce() {
+    if params.args.how == JoinType::Full && should_coalesce {
         for (left_keycol, right_keycol) in
             Iterator::zip(params.left.on.iter(), params.right.on.iter())
         {
@@ -892,8 +921,16 @@ fn gather_and_postprocess(
         }
     }
 
-    *df = drop_non_output_columns(&left, params)?;
-    Ok(())
+    if should_coalesce {
+        for col in &params.right.on {
+            let renamed = format_pl_smallstr!("{}{}", col, params.args.suffix());
+            if left.schema().contains(&renamed) && !params.output_schema.contains(&renamed) {
+                left.drop_in_place(&renamed).unwrap();
+            }
+        }
+    }
+
+    Ok(left)
 }
 
 fn compute_join_dispatch(
@@ -1026,7 +1063,7 @@ where
             for idxr in skip_ahead_right..right_key.len() {
                 let right_keyval = right_key.get(idxr);
                 let right_keyval = right_keyval.as_ref();
-                let mut ord = match (&left_keyval, &right_keyval) {
+                let mut ord: Option<Ordering> = match (&left_keyval, &right_keyval) {
                     (None, None) if params.args.nulls_equal => Some(Ordering::Equal),
                     (Some(l), Some(r)) => Some(TotalOrd::tot_cmp(*l, *r)),
                     _ => None,
@@ -1055,39 +1092,6 @@ where
         *current_offset += 1;
     }
     true
-}
-
-fn rename_right_columns(
-    left: &DataFrame,
-    right: &mut DataFrame,
-    params: &MergeJoinParams,
-) -> PolarsResult<()> {
-    let left_cols: PlHashSet<PlSmallStr> = left
-        .get_column_names()
-        .into_iter()
-        .cloned()
-        .collect::<PlHashSet<_>>();
-    for col in right.get_column_names_owned() {
-        if left_cols.contains(&col) {
-            let new_name = format_pl_smallstr!("{}{}", col, params.args.suffix());
-            right.rename(&col, new_name).unwrap(); // FIXME: [amber] Potential quadratic behavior
-        }
-    }
-    Ok(())
-}
-
-fn drop_non_output_columns(df: &DataFrame, params: &MergeJoinParams) -> PolarsResult<DataFrame> {
-    let mut drop_cols = PlHashSet::with_capacity(df.width());
-    for col in df.get_column_names() {
-        if !key_is_in_output(col, params) {
-            drop_cols.insert(col.clone());
-        }
-    }
-    Ok(df.drop_many_amortized(&drop_cols))
-}
-
-fn key_is_in_output(col_name: &PlSmallStr, params: &MergeJoinParams) -> bool {
-    params.output_schema.contains(col_name)
 }
 
 async fn buffer_unmerged_from_pipe(
@@ -1260,7 +1264,6 @@ impl DataFrameBuffer {
         self.debug_check_stats_correct();
     }
 
-    #[cfg(debug_assertions)]
     fn debug_check_stats_correct(&self) {
         debug_assert!(
             self.frozen
