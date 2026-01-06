@@ -586,10 +586,11 @@ fn find_mergeable_search(
 
         let left_mergable_until; // bound is *exclusive*
         let right_mergable_until;
-        if keys_eq(&left_last_completed_val, &right_last_completed_val, params) {
+        let ord = keys_cmp(&left_last_completed_val, &right_last_completed_val, params);
+        if ord.is_eq() {
             left_mergable_until = left_first_incomplete;
             right_mergable_until = right_first_incomplete;
-        } else if keys_lt(&left_last_completed_val, &right_last_completed_val, params) {
+        } else if ord.is_lt() {
             left_mergable_until = left_first_incomplete;
             right_mergable_until = binary_search_upper(
                 right,
@@ -597,7 +598,7 @@ fn find_mergeable_search(
                 params,
                 right_params,
             )?;
-        } else if keys_gt(&left_last_completed_val, &right_last_completed_val, params) {
+        } else if ord.is_gt() {
             right_mergable_until = right_first_incomplete;
             left_mergable_until = binary_search_upper(
                 left,
@@ -660,7 +661,10 @@ fn binary_search_lower(
     params: &MergeJoinParams,
     sp: &SideParams,
 ) -> PolarsResult<usize> {
-    binary_search(vec, sv, keys_le, params, sp)
+    fn is_le(x1: &AnyValue<'_>, x2: &AnyValue, p: &MergeJoinParams) -> bool {
+        keys_cmp(x1, x2, p).is_le()
+    }
+    binary_search(vec, sv, is_le, params, sp)
 }
 
 fn binary_search_upper(
@@ -669,7 +673,10 @@ fn binary_search_upper(
     params: &MergeJoinParams,
     sp: &SideParams,
 ) -> PolarsResult<usize> {
-    binary_search(vec, sv, keys_lt, params, sp)
+    fn is_lt(x1: &AnyValue<'_>, x2: &AnyValue, p: &MergeJoinParams) -> bool {
+        keys_cmp(x1, x2, p).is_lt()
+    }
+    binary_search(vec, sv, is_lt, params, sp)
 }
 
 #[derive(Default)]
@@ -1034,6 +1041,8 @@ fn compute_join_kernel<'a, T: PolarsDataType>(
 where
     T::Physical<'a>: TotalOrd,
 {
+    let morsel_size = get_ideal_morsel_size();
+
     debug_assert!(gather_left.is_empty());
     debug_assert!(gather_right.is_empty());
     if right_sp.emit_unmatched {
@@ -1050,14 +1059,14 @@ where
     }
     let mut skip_ahead_right = 0;
     for (idxl, left_keyval) in iterator.enumerate() {
-        if gather_left.len() >= get_ideal_morsel_size() {
+        if gather_left.len() >= morsel_size {
             return false;
         }
         let left_keyval = left_keyval.as_ref();
         let mut matched = false;
         if params.args.nulls_equal || left_keyval.is_some() {
             for idxr in skip_ahead_right..right_key.len() {
-                let right_keyval = right_key.get(idxr);
+                let right_keyval = unsafe { right_key.get_unchecked(idxr) };
                 let right_keyval = right_keyval.as_ref();
                 let mut ord: Option<Ordering> = match (&left_keyval, &right_keyval) {
                     (None, None) if params.args.nulls_equal => Some(Ordering::Equal),
@@ -1081,7 +1090,7 @@ where
                 }
             }
         }
-        if (left_sp.emit_unmatched) && !(matched) {
+        if left_sp.emit_unmatched && !matched {
             gather_left.push(idxl as IdxSize);
             gather_right.push(IdxSize::MAX);
         }
@@ -1108,42 +1117,20 @@ async fn buffer_unmerged_from_pipe(
     }
 }
 
-fn keys_eq(left: &AnyValue, right: &AnyValue, _params: &MergeJoinParams) -> bool {
-    left == right
-}
-
-fn keys_lt(left: &AnyValue, right: &AnyValue, params: &MergeJoinParams) -> bool {
-    if keys_eq(left, right, params) {
-        false
-    } else if params.key_nulls_last {
-        if left.is_null() {
-            false
-        } else if right.is_null() {
-            true
-        } else if params.key_descending {
-            left > right
-        } else {
-            left < right
-        }
-    } else {
-        if left.is_null() {
-            true
-        } else if right.is_null() {
-            false
-        } else if params.key_descending {
-            left > right
-        } else {
-            left < right
-        }
+fn keys_cmp(left: &AnyValue, right: &AnyValue, params: &MergeJoinParams) -> Ordering {
+    use Ordering::*;
+    match AnyValue::partial_cmp(left, right) {
+        Some(Ordering::Equal) => Ordering::Equal,
+        _ if left.is_null() && params.key_nulls_last => Ordering::Greater,
+        _ if right.is_null() && params.key_nulls_last => Ordering::Less,
+        _ if left.is_null() => Ordering::Less,
+        _ if right.is_null() => Ordering::Greater,
+        Some(Ordering::Greater) if params.key_descending => Ordering::Less,
+        Some(Ordering::Less) if params.key_descending => Ordering::Greater,
+        Some(Ordering::Greater) => Ordering::Greater,
+        Some(Ordering::Less) => Ordering::Less,
+        None => unreachable!(),
     }
-}
-
-fn keys_le(left: &AnyValue, right: &AnyValue, params: &MergeJoinParams) -> bool {
-    keys_lt(left, right, params) || keys_eq(left, right, params)
-}
-
-fn keys_gt(left: &AnyValue, right: &AnyValue, params: &MergeJoinParams) -> bool {
-    !keys_le(left, right, params)
 }
 
 #[derive(Clone)]
