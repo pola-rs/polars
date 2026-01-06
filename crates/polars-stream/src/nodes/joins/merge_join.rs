@@ -828,11 +828,15 @@ fn gather_and_postprocess(
     // Coalsesce the key columns
     if params.args.how == JoinType::Left && should_coalesce {
         for c in &params.left.on {
-            right.drop_in_place(c.as_str())?;
+            if right.schema().contains(c) {
+                right.drop_in_place(c.as_str())?;
+            }
         }
     } else if params.args.how == JoinType::Right && should_coalesce {
         for c in &params.right.on {
-            left.drop_in_place(c.as_str())?;
+            if left.schema().contains(c) {
+                left.drop_in_place(c.as_str())?;
+            }
         }
     }
 
