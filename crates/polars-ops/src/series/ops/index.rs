@@ -27,7 +27,7 @@ fn handle_oob(idx: IdxCa, len: usize, null_on_oob: bool) -> PolarsResult<IdxCa> 
             .any(|opt_v| opt_v.is_some_and(|v| v >= len_idx));
         polars_ensure!(
             !oob,
-            OutOfBounds: "gather index is out of bounds"
+            OutOfBounds: "gather indices are out of bounds"
         );
         Ok(idx)
     } else {
