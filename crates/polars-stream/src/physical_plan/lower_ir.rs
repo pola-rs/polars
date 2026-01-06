@@ -1252,7 +1252,7 @@ pub fn lower_ir(
                                 .into(),
                             ));
                             *trans_input = build_hstack_stream(
-                                phys, &trans_on, expr_arena, phys_sm, expr_cache, ctx,
+                                phys, trans_on, expr_arena, phys_sm, expr_cache, ctx,
                             )?;
                         }
                     }

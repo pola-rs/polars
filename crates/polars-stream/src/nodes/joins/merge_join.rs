@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -86,6 +87,7 @@ enum MergeJoinState {
 }
 
 impl MergeJoinNode {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         left_input_schema: Arc<Schema>,
         right_input_schema: Arc<Schema>,
@@ -233,21 +235,19 @@ impl ComputeNode for MergeJoinNode {
 
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 let source_token = SourceToken::new();
-                let mut search_limit = get_ideal_morsel_size();
+                let search_limit = RefCell::new(get_ideal_morsel_size());
 
                 loop {
-                    match find_mergeable(
-                        left_unmerged,
-                        right_unmerged,
-                        recv_left.is_none(),
-                        recv_right.is_none(),
-                        &mut search_limit,
+                    let fmp = FindMergeableParams {
+                        left_done: recv_left.is_none(),
+                        right_done: recv_right.is_none(),
+                        search_limit: search_limit.clone(),
+                        left_params: &params.left,
+                        right_params: &params.right,
                         params,
-                    )? {
+                    };
+                    match find_mergeable(left_unmerged, right_unmerged, fmp)? {
                         Left(partitions) => {
-                            // if partitions.len() > 1 {
-                            //     dbg!(&partitions.len());
-                            // }
                             for (left_mergeable, right_mergeable) in partitions.into_iter() {
                                 if let Err((_left, _right, _, _)) = distributor
                                     .send((
@@ -347,60 +347,59 @@ impl ComputeNode for MergeJoinNode {
     }
 }
 
+#[derive(Clone, Debug)]
+struct FindMergeableParams<'sp, 'p> {
+    left_done: bool,
+    right_done: bool,
+    search_limit: RefCell<usize>,
+    left_params: &'sp SideParams,
+    right_params: &'sp SideParams,
+    params: &'p MergeJoinParams,
+}
+
+impl FindMergeableParams<'_, '_> {
+    fn flip(mut self) -> Self {
+        swap(&mut self.left_done, &mut self.right_done);
+        swap(&mut self.left_params, &mut self.right_params);
+        self
+    }
+}
+
 fn find_mergeable(
     left: &mut DataFrameBuffer,
     right: &mut DataFrameBuffer,
-    left_done: bool,
-    right_done: bool,
-    search_limit: &mut usize,
-    p: &MergeJoinParams,
+    fmp: FindMergeableParams,
 ) -> PolarsResult<Either<UnitVec<(DataFrameBuffer, DataFrameBuffer)>, NeedMore>> {
     const SEARCH_LIMIT_BUMP_FACTOR: usize = 2;
     let morsel_size = get_ideal_morsel_size();
-    debug_assert!(*search_limit >= morsel_size);
-    let mut mergeable = find_mergeable_flip(left, right, left_done, right_done, *search_limit, p)?;
+    debug_assert!(*fmp.search_limit.borrow() >= morsel_size);
+    let mut mergeable = find_mergeable_flip(left, right, fmp.clone())?;
     while match mergeable {
-        Right(NeedMore::Left | NeedMore::Both) if *search_limit < left.len() => true,
-        Right(NeedMore::Right | NeedMore::Both) if *search_limit < right.len() => true,
+        Right(NeedMore::Left | NeedMore::Both) if *fmp.search_limit.borrow() < left.len() => true,
+        Right(NeedMore::Right | NeedMore::Both) if *fmp.search_limit.borrow() < right.len() => true,
         _ => false,
     } {
         // Exponential increase
-        *search_limit *= SEARCH_LIMIT_BUMP_FACTOR;
-        mergeable = find_mergeable_flip(left, right, left_done, right_done, *search_limit, p)?;
+        *fmp.search_limit.borrow_mut() *= SEARCH_LIMIT_BUMP_FACTOR;
+        mergeable = find_mergeable_flip(left, right, fmp.clone())?;
     }
     if mergeable.is_left() {
-        *search_limit /= SEARCH_LIMIT_BUMP_FACTOR;
-        if *search_limit < morsel_size {
-            *search_limit = morsel_size;
+        let mut search_limit_mut = fmp.search_limit.borrow_mut();
+        *search_limit_mut /= SEARCH_LIMIT_BUMP_FACTOR;
+        if *search_limit_mut < morsel_size {
+            *search_limit_mut = morsel_size;
         }
     }
-
     Ok(mergeable)
 }
 
 fn find_mergeable_flip(
     left: &mut DataFrameBuffer,
     right: &mut DataFrameBuffer,
-    left_done: bool,
-    right_done: bool,
-    search_limit: usize,
-    p: &MergeJoinParams,
+    fmp: FindMergeableParams,
 ) -> PolarsResult<Either<UnitVec<(DataFrameBuffer, DataFrameBuffer)>, NeedMore>> {
-    if p.args.how == JoinType::Right {
-        // dbg!(left.len() as f32 / 100000.0, right.len() as f32 / 100000.0);
-        // let tick = std::time::Instant::now();
-        let ok = find_mergeable_partition(
-            right,
-            left,
-            right_done,
-            left_done,
-            search_limit,
-            &p.right,
-            &p.left,
-            p,
-        )?;
-        // let find_mergeable = tick.elapsed();
-        // dbg!(find_mergeable);
+    if fmp.params.args.how == JoinType::Right {
+        let ok = find_mergeable_partition(right, left, fmp.flip())?;
         Ok(match ok {
             Left(mut partitions) => {
                 partitions.iter_mut().for_each(|(x1, x2)| swap(x1, x2));
@@ -409,20 +408,7 @@ fn find_mergeable_flip(
             Right(side) => Right(side.flip()),
         })
     } else {
-        // dbg!(left.len() as f32 / 100000.0, right.len() as f32 / 100000.0);
-        // let tick = std::time::Instant::now();
-        let ok = find_mergeable_partition(
-            left,
-            right,
-            left_done,
-            right_done,
-            search_limit,
-            &p.left,
-            &p.right,
-            p,
-        )?;
-        // let find_mergeable = tick.elapsed();
-        // dbg!(find_mergeable);
+        let ok = find_mergeable_partition(left, right, fmp)?;
         Ok(match ok {
             Left(partitions) => Left(partitions),
             other => other,
@@ -433,24 +419,10 @@ fn find_mergeable_flip(
 fn find_mergeable_partition(
     left: &mut DataFrameBuffer,
     right: &mut DataFrameBuffer,
-    left_done: bool,
-    right_done: bool,
-    limit: usize,
-    left_params: &SideParams,
-    right_params: &SideParams,
-    params: &MergeJoinParams,
+    fmp: FindMergeableParams,
 ) -> PolarsResult<Either<UnitVec<(DataFrameBuffer, DataFrameBuffer)>, NeedMore>> {
     let morsel_size = get_ideal_morsel_size();
-    let mergeable = find_mergeable_search(
-        left,
-        right,
-        left_done,
-        right_done,
-        limit,
-        left_params,
-        right_params,
-        params,
-    )?;
+    let mergeable = find_mergeable_search(left, right, fmp)?;
     let (left, right) = match mergeable {
         Left((left, right)) => (left, right),
         Right(need_more) => return Ok(Right(need_more)),
@@ -480,139 +452,137 @@ fn find_mergeable_partition(
 fn find_mergeable_search(
     left: &mut DataFrameBuffer,
     right: &mut DataFrameBuffer,
-    left_done: bool,
-    right_done: bool,
-    limit: usize,
-    left_params: &SideParams,
-    right_params: &SideParams,
-    params: &MergeJoinParams,
+    fmp: FindMergeableParams,
 ) -> PolarsResult<Either<(DataFrameBuffer, DataFrameBuffer), NeedMore>> {
-    loop {
-        if left_done && left.is_empty() && right_done && right.is_empty() {
-            return Ok(Right(NeedMore::Finished));
-        } else if left_done && left.is_empty() && !right_done && right.is_empty() {
-            return Ok(Right(NeedMore::Right));
-        } else if right_done && right.is_empty() && !left_done && left.is_empty() {
-            return Ok(Right(NeedMore::Left));
-        } else if left_done && left.is_empty() && !right_params.emit_unmatched {
-            // We will never match on the remaining right keys
-            right.clear();
-            return Ok(Right(NeedMore::Finished));
-        } else if right_done && right.is_empty() && !left_params.emit_unmatched {
-            // We will never match on the remaining left keys
-            left.clear();
-            return Ok(Right(NeedMore::Finished));
-        } else if left_done && left.is_empty() {
-            let right_split = right.split_at(get_ideal_morsel_size());
-            return Ok(Left((
-                DataFrameBuffer::empty_with_schema(&left_params.input_schema),
-                right_split,
-            )));
-        } else if right_done && right.is_empty() {
-            let left_split = left.split_at(get_ideal_morsel_size());
-            return Ok(Left((
-                left_split,
-                DataFrameBuffer::empty_with_schema(&right_params.input_schema),
-            )));
-        } else if left.is_empty() && !left_done {
-            return Ok(Right(NeedMore::Left));
-        } else if right.is_empty() && !right_done {
-            return Ok(Right(NeedMore::Right));
-        }
+    let FindMergeableParams {
+        left_done,
+        right_done,
+        search_limit,
+        left_params,
+        right_params,
+        params,
+    } = fmp;
+    let search_limit = search_limit.borrow();
 
-        let left_first = left.get_bypass_validity(&left_params.key_col, 0, params);
-        let right_first = right.get_bypass_validity(&right_params.key_col, 0, params);
-
-        // First return chunks of nulls if there are any
-        if !params.args.nulls_equal && !params.key_nulls_last && left_first == AnyValue::Null {
-            let left_first_nonnull_idx =
-                binary_search_upper(&left, &AnyValue::Null, params, left_params)?;
-            let left_split = left.split_at(left_first_nonnull_idx);
-            return Ok(Left((
-                left_split,
-                DataFrameBuffer::empty_with_schema(&right_params.input_schema),
-            )));
-        }
-        if !params.args.nulls_equal && !params.key_nulls_last && right_first == AnyValue::Null {
-            let right_first_nonnull_idx =
-                binary_search_upper(&right, &AnyValue::Null, params, right_params)?;
-            let right_split = right.split_at(right_first_nonnull_idx);
-            return Ok(Left((
-                DataFrameBuffer::empty_with_schema(&left_params.input_schema),
-                right_split,
-            )));
-        }
-
-        let left_last_idx = usize::min(left.len(), limit);
-        let left_last = left.get_bypass_validity(&left_params.key_col, left_last_idx - 1, params);
-        let right_last_idx = usize::min(right.len(), limit);
-        let right_last =
-            right.get_bypass_validity(&right_params.key_col, right_last_idx - 1, params);
-
-        let left_first_incomplete = match left_done {
-            false => binary_search_lower(left, &left_last, params, &left_params)?,
-            true => left.len(),
-        };
-
-        let right_first_incomplete = match right_done {
-            false => binary_search_lower(right, &right_last, params, &right_params)?,
-            true => right.len(),
-        };
-
-        if left_first_incomplete == 0 && right_first_incomplete == 0 {
-            debug_assert!(!left_done && !right_done);
-            return Ok(Right(NeedMore::Both));
-        } else if left_first_incomplete == 0 {
-            debug_assert!(!left_done);
-            return Ok(Right(NeedMore::Left));
-        } else if right_first_incomplete == 0 {
-            debug_assert!(!right_done);
-            return Ok(Right(NeedMore::Right));
-        }
-
-        let left_last_completed_val =
-            left.get_bypass_validity(&left_params.key_col, left_first_incomplete - 1, params);
-        let right_last_completed_val =
-            right.get_bypass_validity(&right_params.key_col, right_first_incomplete - 1, params);
-
-        let left_mergeable_until; // bound is *exclusive*
-        let right_mergeable_until;
-        let ord = keys_cmp(&left_last_completed_val, &right_last_completed_val, params);
-        if ord.is_eq() {
-            left_mergeable_until = left_first_incomplete;
-            right_mergeable_until = right_first_incomplete;
-        } else if ord.is_lt() {
-            left_mergeable_until = left_first_incomplete;
-            right_mergeable_until = binary_search_upper(
-                right,
-                &left.get_bypass_validity(&left_params.key_col, left_mergeable_until - 1, params),
-                params,
-                right_params,
-            )?;
-        } else if ord.is_gt() {
-            right_mergeable_until = right_first_incomplete;
-            left_mergeable_until = binary_search_upper(
-                left,
-                &right.get_bypass_validity(
-                    &right_params.key_col,
-                    right_mergeable_until - 1,
-                    params,
-                ),
-                params,
-                left_params,
-            )?;
-        } else {
-            unreachable!();
-        }
-
-        if left_mergeable_until == 0 && right_mergeable_until == 0 {
-            return Ok(Right(NeedMore::Both));
-        }
-
-        let left_split = left.split_at(left_mergeable_until);
-        let right_split = right.split_at(right_mergeable_until);
-        return Ok(Left((left_split, right_split)));
+    if left_done && left.is_empty() && right_done && right.is_empty() {
+        return Ok(Right(NeedMore::Finished));
+    } else if left_done && left.is_empty() && !right_done && right.is_empty() {
+        return Ok(Right(NeedMore::Right));
+    } else if right_done && right.is_empty() && !left_done && left.is_empty() {
+        return Ok(Right(NeedMore::Left));
+    } else if left_done && left.is_empty() && !right_params.emit_unmatched {
+        // We will never match on the remaining right keys
+        right.clear();
+        return Ok(Right(NeedMore::Finished));
+    } else if right_done && right.is_empty() && !left_params.emit_unmatched {
+        // We will never match on the remaining left keys
+        left.clear();
+        return Ok(Right(NeedMore::Finished));
+    } else if left_done && left.is_empty() {
+        let right_split = right.split_at(get_ideal_morsel_size());
+        return Ok(Left((
+            DataFrameBuffer::empty_with_schema(&left_params.input_schema),
+            right_split,
+        )));
+    } else if right_done && right.is_empty() {
+        let left_split = left.split_at(get_ideal_morsel_size());
+        return Ok(Left((
+            left_split,
+            DataFrameBuffer::empty_with_schema(&right_params.input_schema),
+        )));
+    } else if left.is_empty() && !left_done {
+        return Ok(Right(NeedMore::Left));
+    } else if right.is_empty() && !right_done {
+        return Ok(Right(NeedMore::Right));
     }
+
+    let left_first = left.get_bypass_validity(&left_params.key_col, 0, params);
+    let right_first = right.get_bypass_validity(&right_params.key_col, 0, params);
+
+    // First return chunks of nulls if there are any
+    if !params.args.nulls_equal && !params.key_nulls_last && left_first == AnyValue::Null {
+        let left_first_nonnull_idx =
+            binary_search_upper(left, &AnyValue::Null, params, left_params)?;
+        let left_split = left.split_at(left_first_nonnull_idx);
+        return Ok(Left((
+            left_split,
+            DataFrameBuffer::empty_with_schema(&right_params.input_schema),
+        )));
+    }
+    if !params.args.nulls_equal && !params.key_nulls_last && right_first == AnyValue::Null {
+        let right_first_nonnull_idx =
+            binary_search_upper(right, &AnyValue::Null, params, right_params)?;
+        let right_split = right.split_at(right_first_nonnull_idx);
+        return Ok(Left((
+            DataFrameBuffer::empty_with_schema(&left_params.input_schema),
+            right_split,
+        )));
+    }
+
+    let left_last_idx = usize::min(left.len(), *search_limit);
+    let left_last = left.get_bypass_validity(&left_params.key_col, left_last_idx - 1, params);
+    let right_last_idx = usize::min(right.len(), *search_limit);
+    let right_last = right.get_bypass_validity(&right_params.key_col, right_last_idx - 1, params);
+
+    let left_first_incomplete = match left_done {
+        false => binary_search_lower(left, &left_last, params, left_params)?,
+        true => left.len(),
+    };
+
+    let right_first_incomplete = match right_done {
+        false => binary_search_lower(right, &right_last, params, right_params)?,
+        true => right.len(),
+    };
+
+    if left_first_incomplete == 0 && right_first_incomplete == 0 {
+        debug_assert!(!left_done && !right_done);
+        return Ok(Right(NeedMore::Both));
+    } else if left_first_incomplete == 0 {
+        debug_assert!(!left_done);
+        return Ok(Right(NeedMore::Left));
+    } else if right_first_incomplete == 0 {
+        debug_assert!(!right_done);
+        return Ok(Right(NeedMore::Right));
+    }
+
+    let left_last_completed_val =
+        left.get_bypass_validity(&left_params.key_col, left_first_incomplete - 1, params);
+    let right_last_completed_val =
+        right.get_bypass_validity(&right_params.key_col, right_first_incomplete - 1, params);
+
+    let left_mergeable_until; // bound is *exclusive*
+    let right_mergeable_until;
+    let ord = keys_cmp(&left_last_completed_val, &right_last_completed_val, params);
+    if ord.is_eq() {
+        left_mergeable_until = left_first_incomplete;
+        right_mergeable_until = right_first_incomplete;
+    } else if ord.is_lt() {
+        left_mergeable_until = left_first_incomplete;
+        right_mergeable_until = binary_search_upper(
+            right,
+            &left.get_bypass_validity(&left_params.key_col, left_mergeable_until - 1, params),
+            params,
+            right_params,
+        )?;
+    } else if ord.is_gt() {
+        right_mergeable_until = right_first_incomplete;
+        left_mergeable_until = binary_search_upper(
+            left,
+            &right.get_bypass_validity(&right_params.key_col, right_mergeable_until - 1, params),
+            params,
+            left_params,
+        )?;
+    } else {
+        unreachable!();
+    }
+
+    if left_mergeable_until == 0 && right_mergeable_until == 0 {
+        return Ok(Right(NeedMore::Both));
+    }
+
+    let left_split = left.split_at(left_mergeable_until);
+    let right_split = right.split_at(right_mergeable_until);
+    Ok(Left((left_split, right_split)))
 }
 
 fn series_get_bypass_validity<'a>(
@@ -682,6 +652,7 @@ struct Arenas {
     df_builders: Option<(DataFrameBuilder, DataFrameBuilder)>,
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn compute_join(
     left: DataFrameBuffer,
     right: DataFrameBuffer,
@@ -736,10 +707,10 @@ async fn compute_join(
                 &mut arenas.gather_right,
                 &mut arenas.gather_left,
                 &mut arenas.matched_probeside,
+                &mut current_offset,
                 right_sp,
                 left_sp,
                 params,
-                &mut current_offset,
             );
         } else {
             done = compute_join_dispatch(
@@ -748,10 +719,10 @@ async fn compute_join(
                 &mut arenas.gather_left,
                 &mut arenas.gather_right,
                 &mut arenas.matched_probeside,
+                &mut current_offset,
                 left_sp,
                 right_sp,
                 params,
-                &mut current_offset,
             );
         }
 
@@ -815,8 +786,8 @@ async fn compute_join(
 fn gather_and_postprocess(
     mut left: DataFrame,
     mut right: DataFrame,
-    left_gather: &mut Vec<IdxSize>,
-    right_gather: &mut Vec<IdxSize>,
+    left_gather: &mut [IdxSize],
+    right_gather: &mut [IdxSize],
     df_builders: &mut Option<(DataFrameBuilder, DataFrameBuilder)>,
     params: &MergeJoinParams,
 ) -> PolarsResult<DataFrame> {
@@ -863,14 +834,14 @@ fn gather_and_postprocess(
 
     let (left_build, right_build) = df_builders.as_mut().unwrap();
     if params.right.emit_unmatched {
-        left_build.opt_gather_extend(&left, &left_gather, ShareStrategy::Never);
+        left_build.opt_gather_extend(&left, left_gather, ShareStrategy::Never);
     } else {
-        unsafe { left_build.gather_extend(&left, &left_gather, ShareStrategy::Never) };
+        unsafe { left_build.gather_extend(&left, left_gather, ShareStrategy::Never) };
     }
     if params.left.emit_unmatched {
-        right_build.opt_gather_extend(&right, &right_gather, ShareStrategy::Never);
+        right_build.opt_gather_extend(&right, right_gather, ShareStrategy::Never);
     } else {
-        unsafe { right_build.gather_extend(&right, &right_gather, ShareStrategy::Never) };
+        unsafe { right_build.gather_extend(&right, right_gather, ShareStrategy::Never) };
     }
 
     let mut left = left_build.freeze_reset();
@@ -903,16 +874,16 @@ fn gather_and_postprocess(
         });
     right.rename_many(renames).unwrap();
 
-    left.hstack_mut(&right.get_columns())?;
+    left.hstack_mut(right.get_columns())?;
     if params.args.how == JoinType::Full && should_coalesce {
         for (left_keycol, right_keycol) in
             Iterator::zip(params.left.on.iter(), params.right.on.iter())
         {
             let right_keycol = format_pl_smallstr!("{}{}", right_keycol, params.args.suffix());
-            let left_col = left.column(&left_keycol).unwrap();
+            let left_col = left.column(left_keycol).unwrap();
             let right_col = left.column(&right_keycol).unwrap();
             let coalesced = coalesce_columns(&[left_col.clone(), right_col.clone()]).unwrap();
-            left.replace(&left_keycol, coalesced.take_materialized_series())
+            left.replace(left_keycol, coalesced.take_materialized_series())
                 .unwrap()
                 .drop_in_place(&right_keycol)
                 .unwrap();
@@ -931,16 +902,17 @@ fn gather_and_postprocess(
     Ok(left)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn compute_join_dispatch(
     lk: &Series,
     rk: &Series,
     gather_left: &mut Vec<IdxSize>,
     gather_right: &mut Vec<IdxSize>,
     matched_right: &mut MutableBitmap,
+    current_offset: &mut usize,
     left_sp: &SideParams,
     right_sp: &SideParams,
     params: &MergeJoinParams,
-    current_offset: &mut usize,
 ) -> bool {
     macro_rules! dispatch {
         ($left_key:expr, $right_key:expr) => {
@@ -950,10 +922,10 @@ fn compute_join_dispatch(
                 gather_left,
                 gather_right,
                 matched_right,
+                current_offset,
                 left_sp,
                 right_sp,
                 params,
-                current_offset,
             )
         };
     }
@@ -1022,16 +994,17 @@ fn compute_join_dispatch(
     }
 }
 
+#[allow(clippy::mut_range_bound, clippy::too_many_arguments)]
 fn compute_join_kernel<'a, T: PolarsDataType>(
     left_key: &'a ChunkedArray<T>,
     right_key: &'a ChunkedArray<T>,
     gather_left: &mut Vec<IdxSize>,
     gather_right: &mut Vec<IdxSize>,
     matched_right: &mut MutableBitmap,
+    current_offset: &mut usize,
     left_sp: &SideParams,
     right_sp: &SideParams,
     params: &MergeJoinParams,
-    current_offset: &mut usize,
 ) -> bool
 where
     T::Physical<'a>: TotalOrd,
@@ -1247,7 +1220,7 @@ impl DataFrameBuffer {
                 || self.buf.values().map(|df| df.height()).sum::<usize>() - self.skip_rows
                     == self.total_rows
         );
-        debug_assert!(self.buf.values().all(|df| &**df.schema() == &self.schema));
+        debug_assert!(self.buf.values().all(|df| **df.schema() == self.schema));
         let mut last: Option<(usize, DataFrame)> = None;
         for (key, df) in self.buf.iter() {
             if let Some((last_key, last_df)) = last {

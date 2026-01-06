@@ -3,16 +3,14 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Literal
 
-import hypothesis.strategies as st
 import numpy as np
 import pandas as pd
 import pytest
-from hypothesis import given, settings
+from hypothesis import given
 
 import polars as pl
+import polars.testing.parametric.strategies as st
 from polars.testing import assert_frame_equal, assert_series_equal
-from polars.testing.parametric.strategies.core import column, dataframes
-from tests.unit.conftest import NESTED_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -408,7 +406,7 @@ def test_cross_join_with_literal_column_25544() -> None:
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("on", [["key_1"], ["key_1", "key_2"]])
+@pytest.mark.parametrize("on", [["key"], ["key", "key_ext"]])
 @pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
 @pytest.mark.parametrize("descending", [False, True])
 @pytest.mark.parametrize("nulls_last", [False, True])
@@ -416,19 +414,19 @@ def test_cross_join_with_literal_column_25544() -> None:
 @pytest.mark.parametrize("coalesce", [None, True, False])
 @pytest.mark.parametrize("maintain_order", ["none", "left_right", "right_left"])
 @given(
-    df_left=dataframes(
+    df_left=st.dataframes(
         cols=[
-            column("key_1", dtype=pl.Int16),
-            column("key_2", dtype=pl.Int16),
-            column("x", dtype=pl.UInt16, allow_null=False, unique=True),
-        ],
+            st.column("key", dtype=pl.Int16),
+            st.column("key_ext", dtype=pl.Int16),
+            st.column("x", dtype=pl.UInt16, allow_null=False, unique=True),
+        ]
     ),
-    df_right=dataframes(
+    df_right=st.dataframes(
         cols=[
-            column("key_1", dtype=pl.Int16),
-            column("key_2", dtype=pl.Int16),
-            column("x", dtype=pl.UInt16, allow_null=False, unique=True),
-        ],
+            st.column("key", dtype=pl.Int16),
+            st.column("key_ext", dtype=pl.Int16),
+            st.column("x", dtype=pl.UInt16, allow_null=False, unique=True),
+        ]
     ),
 )
 def test_merge_join(
@@ -455,11 +453,6 @@ def test_merge_join(
         .set_sorted(*on, descending=descending, nulls_last=nulls_last)
     )
 
-    import sys
-
-    print(f"{df_left.collect() = }", file=sys.stderr)
-    print(f"{df_right.collect() = }", file=sys.stderr)
-
     q = df_left.join(
         df_right,
         on=on,
@@ -471,11 +464,6 @@ def test_merge_join(
     dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
     expected = q.collect(engine="in-memory")
     actual = q.collect(engine="streaming")
-
-    print(f"{df_left.collect() = }", file=sys.stderr)
-    print(f"{df_right.collect() = }", file=sys.stderr)
-    print(f"{actual = }", file=sys.stderr)
-    print(f"{expected = }", file=sys.stderr)
 
     assert "merge-join" in dot, "merge-join does not appear in physical plan"
     assert_frame_equal(actual, expected, check_row_order=check_row_order)
