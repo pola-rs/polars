@@ -400,10 +400,7 @@ fn find_mergeable_flip(
             Right(side) => Right(side.flip()),
         }
     } else {
-        match find_mergeable_partition(left, right, search_limit, fmp)? {
-            Left(partitions) => Left(partitions),
-            other => other,
-        }
+        find_mergeable_partition(left, right, search_limit, fmp)?
     };
     Ok(mergeable)
 }

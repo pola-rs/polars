@@ -14,9 +14,8 @@ use polars_plan::dsl::default_values::DefaultFieldValues;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::sink2::FileProviderType;
 use polars_plan::dsl::{
-    CallbackSinkType, ExtraColumnsPolicy, FileScanIR, FileSinkOptions, JoinOptionsIR,
-    PartitionStrategyIR, PartitionVariantIR, PartitionedSinkOptionsIR, SinkOptions, SinkTypeIR,
-    UnifiedSinkArgs,
+    CallbackSinkType, ExtraColumnsPolicy, FileScanIR, PartitionStrategyIR, PartitionVariantIR,
+    PartitionedSinkOptionsIR, SinkOptions, SinkTypeIR, UnifiedSinkArgs,
 };
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{

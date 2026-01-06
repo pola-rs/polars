@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import typing
 from datetime import datetime
 from typing import TYPE_CHECKING, Literal
 
@@ -442,19 +443,19 @@ def test_merge_join(
 ) -> None:
     check_row_order = maintain_order in {"left_right", "right_left"}
 
-    df_left = (
+    df_left_sorted = (
         df_left.sort(*on, descending=descending, nulls_last=nulls_last)
         .lazy()
         .set_sorted(*on, descending=descending, nulls_last=nulls_last)
     )
-    df_right = (
+    df_right_sorted = (
         df_right.sort(*on, descending=descending, nulls_last=nulls_last)
         .lazy()
         .set_sorted(*on, descending=descending, nulls_last=nulls_last)
     )
 
-    q = df_left.join(
-        df_right,
+    q = df_left_sorted.join(
+        df_right_sorted,
         on=on,
         how=how,
         nulls_equal=nulls_equal,
@@ -465,5 +466,5 @@ def test_merge_join(
     expected = q.collect(engine="in-memory")
     actual = q.collect(engine="streaming")
 
-    assert "merge-join" in dot, "merge-join does not appear in physical plan"
+    assert "merge-join" in typing.cast("str", dot)
     assert_frame_equal(actual, expected, check_row_order=check_row_order)
