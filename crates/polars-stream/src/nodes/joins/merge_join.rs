@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
+use std::fmt;
 use std::mem::swap;
 
 use arrow::array::Array;
@@ -9,12 +10,12 @@ use either::{Either, Left, Right};
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
 use polars_core::utils::Container;
-use polars_io::partition;
 use polars_ops::prelude::*;
 use polars_utils::itertools::Itertools;
 use polars_utils::total_ord::TotalOrd;
 use polars_utils::{UnitVec, format_pl_smallstr};
 
+use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::execute::StreamingExecutionState;
@@ -22,7 +23,6 @@ use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
 use crate::nodes::ComputeNode;
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
-use crate::{DEFAULT_DISTRIBUTOR_BUFFER_SIZE, morsel};
 
 // TODO: [amber] For unmatched rows: gather first and then hstack to a df of nulls
 // TODO: [amber] Remove any non-output columns earlier to reduce the
@@ -422,9 +422,7 @@ fn find_mergeable_flip(
         // dbg!(find_mergeable);
         Ok(match ok {
             Left(mut partitions) => {
-                partitions
-                    .iter_mut()
-                    .for_each(|(x1, x2)| std::mem::swap(x1, x2));
+                partitions.iter_mut().for_each(|(x1, x2)| swap(x1, x2));
                 Left(partitions)
             },
             Right(side) => Right(side.flip()),
@@ -1159,8 +1157,8 @@ struct DataFrameBuffer {
     frozen: bool,
 }
 
-impl std::fmt::Debug for DataFrameBuffer {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for DataFrameBuffer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.clone().into_df().fmt(f)
     }
 }
@@ -1207,7 +1205,7 @@ impl DataFrameBuffer {
         };
         self.buf.insert(offset, df);
         self.total_rows += added_rows;
-        self.integrity_check();
+        self.debug_check_stats_correct();
     }
 
     fn split_at(&mut self, mut at: usize) -> Self {
@@ -1215,11 +1213,11 @@ impl DataFrameBuffer {
         let mut left = self.clone();
         left.total_rows = at;
         left.frozen = true;
-        left.integrity_check();
+        left.debug_check_stats_correct();
         self.skip_rows += at;
         self.total_rows -= at;
         self.gc();
-        self.integrity_check();
+        self.debug_check_stats_correct();
         left
     }
 
@@ -1227,11 +1225,13 @@ impl DataFrameBuffer {
         self.skip_rows += offset;
         self.total_rows -= offset;
         self.total_rows = usize::min(self.total_rows, len);
+        self.frozen = true;
+        self.debug_check_stats_correct();
         self
     }
 
     fn into_df(self) -> DataFrame {
-        self.integrity_check();
+        self.debug_check_stats_correct();
         let mut acc = DataFrame::empty_with_schema(&self.schema);
         for df in self.buf.into_values() {
             acc.vstack_mut_owned(df).unwrap();
@@ -1240,8 +1240,7 @@ impl DataFrameBuffer {
     }
 
     fn gc(&mut self) {
-        while !self.buf.is_empty() {
-            let (_, df) = self.buf.first_key_value().unwrap();
+        while let Some((_, df)) = self.buf.first_key_value() {
             if self.skip_rows > df.height() {
                 let (_, df) = self.buf.pop_first().unwrap();
                 self.skip_rows -= df.height();
@@ -1256,14 +1255,15 @@ impl DataFrameBuffer {
     }
 
     fn clear(&mut self) {
-        self.integrity_check();
         assert!(!self.frozen);
         self.buf.clear();
         self.total_rows = 0;
         self.skip_rows = 0;
+        self.debug_check_stats_correct();
     }
 
-    fn integrity_check(&self) {
+    #[cfg(debug_assertions)]
+    fn debug_check_stats_correct(&self) {
         debug_assert!(
             self.frozen
                 || self.buf.values().map(|df| df.height()).sum::<usize>() - self.skip_rows
