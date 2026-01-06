@@ -40,7 +40,7 @@ impl PhysicalExpr for GatherExpr {
                     false
                 }
             }) {
-                polars_bail!(ComputeError: "gather/get index is out of bounds");
+                polars_bail!(OutOfBounds: "gather/get index is out of bounds");
             }
         }
 
