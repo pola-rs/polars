@@ -3776,6 +3776,7 @@ class DataFrame:
         *,
         compression: IpcCompression = "uncompressed",
         compat_level: CompatLevel | None = None,
+        record_batch_size: int | None = None,
         storage_options: dict[str, Any] | None = None,
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
@@ -3790,6 +3791,7 @@ class DataFrame:
         *,
         compression: IpcCompression = "uncompressed",
         compat_level: CompatLevel | None = None,
+        record_batch_size: int | None = None,
         storage_options: dict[str, Any] | None = None,
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
@@ -3804,6 +3806,7 @@ class DataFrame:
         *,
         compression: IpcCompression = "uncompressed",
         compat_level: CompatLevel | None = None,
+        record_batch_size: int | None = None,
         storage_options: dict[str, Any] | None = None,
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
@@ -3828,6 +3831,12 @@ class DataFrame:
         compat_level
             Use a specific compatibility level
             when exporting Polars' internal data structures.
+        record_batch_size
+            Size of the record batches in number of rows.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
         storage_options
             Options that indicate how to connect to a cloud provider.
 
@@ -3881,6 +3890,7 @@ class DataFrame:
                 target,
                 compression=compression,
                 compat_level=compat_level,
+                record_batch_size=record_batch_size,
                 storage_options=storage_options,
                 credential_provider=credential_provider,
                 retries=retries,
