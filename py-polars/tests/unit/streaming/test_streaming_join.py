@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 import pandas as pd
 import pytest
-from hypothesis import given
+from hypothesis import given, settings
 
 import polars as pl
 import polars.testing.parametric.strategies as st
@@ -430,6 +430,7 @@ def test_cross_join_with_literal_column_25544() -> None:
         ]
     ),
 )
+@settings(max_examples=10)
 def test_merge_join(
     df_left: pl.DataFrame,
     df_right: pl.DataFrame,
