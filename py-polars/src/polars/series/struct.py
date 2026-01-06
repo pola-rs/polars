@@ -81,7 +81,7 @@ class StructNameSpace:
         ]
         """
 
-    def rename_fields(self, names: Sequence[str]) -> Series:
+    def rename_fields(self, names: Sequence[str], *, strict: bool = False) -> Series:
         """
         Rename the fields of the struct.
 
@@ -89,6 +89,13 @@ class StructNameSpace:
         ----------
         names
             New names in the order of the struct's fields.
+        strict
+            If True, raise an error if the length of `names` does not match the
+            number of fields in the struct. If False (default), allow mismatched
+            lengths (extra names are ignored, missing names leave fields unchanged).
+
+            .. warning::
+                This parameter will default to ``True`` in version 2.0.
 
         Examples
         --------

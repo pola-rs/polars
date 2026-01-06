@@ -6,7 +6,10 @@ use super::*;
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum IRStructFunction {
     FieldByName(PlSmallStr),
-    RenameFields(Arc<[PlSmallStr]>),
+    RenameFields {
+        names: Arc<[PlSmallStr]>,
+        strict: bool,
+    },
     PrefixFields(PlSmallStr),
     SuffixFields(PlSmallStr),
     #[cfg(feature = "json")]
@@ -31,7 +34,7 @@ impl IRStructFunction {
                     polars_bail!(StructFieldNotFound: "{}", name);
                 }
             }),
-            RenameFields(names) => mapper.map_dtype(|dt| match dt {
+            RenameFields { names, .. } => mapper.map_dtype(|dt| match dt {
                 DataType::Struct(fields) => {
                     let fields = fields
                         .iter()
@@ -40,7 +43,7 @@ impl IRStructFunction {
                         .collect();
                     DataType::Struct(fields)
                 },
-                // The types will be incorrect, but its better than nothing
+                // The types will be incorrect, but it's better than nothing
                 // we can get an incorrect type with python lambdas, because we only know return type when running
                 // the query
                 dt => DataType::Struct(
@@ -128,7 +131,7 @@ impl IRStructFunction {
             S::FieldByName(_) => {
                 FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
             },
-            S::RenameFields(_) | S::PrefixFields(_) | S::SuffixFields(_) => {
+            S::RenameFields { .. } | S::PrefixFields(_) | S::SuffixFields(_) => {
                 FunctionOptions::elementwise()
             },
             #[cfg(feature = "json")]
@@ -146,7 +149,7 @@ impl Display for IRStructFunction {
         use IRStructFunction::*;
         match self {
             FieldByName(name) => write!(f, "struct.field_by_name({name})"),
-            RenameFields(names) => write!(f, "struct.rename_fields({names:?})"),
+            RenameFields { names, .. } => write!(f, "struct.rename_fields({names:?})"),
             PrefixFields(_) => write!(f, "name.prefix_fields"),
             SuffixFields(_) => write!(f, "name.suffixFields"),
             #[cfg(feature = "json")]

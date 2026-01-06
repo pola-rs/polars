@@ -62,19 +62,20 @@ impl StructNameSpace {
     }
 
     /// Rename the fields of the [`StructChunked`].
-    pub fn rename_fields<I, S>(self, names: I) -> Expr
+    pub fn rename_fields<I, S>(self, names: I, strict: bool) -> Expr
     where
         I: IntoIterator<Item = S>,
         S: Into<PlSmallStr>,
     {
-        self._rename_fields_impl(names.into_iter().map(|x| x.into()).collect())
+        self._rename_fields_impl(names.into_iter().map(|x| x.into()).collect(), strict)
     }
 
-    pub fn _rename_fields_impl(self, names: Arc<[PlSmallStr]>) -> Expr {
+    pub fn _rename_fields_impl(self, names: Arc<[PlSmallStr]>, strict: bool) -> Expr {
         self.0
-            .map_unary(FunctionExpr::StructExpr(StructFunction::RenameFields(
+            .map_unary(FunctionExpr::StructExpr(StructFunction::RenameFields {
                 names,
-            )))
+                strict,
+            }))
     }
 
     #[cfg(feature = "json")]

@@ -375,7 +375,7 @@ pub(super) fn convert_functions(
             use {IRStructFunction as IS, StructFunction as S};
             I::StructExpr(match struct_function {
                 S::FieldByName(pl_small_str) => IS::FieldByName(pl_small_str),
-                S::RenameFields(pl_small_strs) => IS::RenameFields(pl_small_strs),
+                S::RenameFields { names, strict } => IS::RenameFields { names, strict },
                 S::PrefixFields(pl_small_str) => IS::PrefixFields(pl_small_str),
                 S::SuffixFields(pl_small_str) => IS::SuffixFields(pl_small_str),
                 S::SelectFields(_) => unreachable!("handled by expression expansion"),

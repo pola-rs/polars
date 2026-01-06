@@ -965,8 +965,8 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     IRStructFunction::FieldByName(name) => {
                         (PyStructFunction::FieldByName, name.as_str()).into_py_any(py)
                     },
-                    IRStructFunction::RenameFields(names) => {
-                        (PyStructFunction::RenameFields, names[0].as_str()).into_py_any(py)
+                    IRStructFunction::RenameFields { names, strict } => {
+                        (PyStructFunction::RenameFields, names[0].as_str(), strict).into_py_any(py)
                     },
                     IRStructFunction::PrefixFields(prefix) => {
                         (PyStructFunction::PrefixFields, prefix.as_str()).into_py_any(py)

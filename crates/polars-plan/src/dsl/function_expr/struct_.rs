@@ -5,7 +5,10 @@ use super::*;
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum StructFunction {
     FieldByName(PlSmallStr),
-    RenameFields(Arc<[PlSmallStr]>),
+    RenameFields {
+        names: Arc<[PlSmallStr]>,
+        strict: bool,
+    },
     PrefixFields(PlSmallStr),
     SuffixFields(PlSmallStr),
     #[cfg(feature = "json")]
@@ -20,7 +23,7 @@ impl Display for StructFunction {
         use StructFunction::*;
         match self {
             FieldByName(name) => write!(f, "struct.field_by_name({name})"),
-            RenameFields(names) => write!(f, "struct.rename_fields({names:?})"),
+            RenameFields { names, .. } => write!(f, "struct.rename_fields({names:?})"),
             PrefixFields(_) => write!(f, "name.prefix_fields"),
             SuffixFields(_) => write!(f, "name.suffixFields"),
             #[cfg(feature = "json")]

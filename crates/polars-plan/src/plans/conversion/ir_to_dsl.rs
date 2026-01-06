@@ -573,7 +573,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             use {IRStructFunction as IB, StructFunction as B};
             F::StructExpr(match f {
                 IB::FieldByName(pl_small_str) => B::FieldByName(pl_small_str),
-                IB::RenameFields(pl_small_strs) => B::RenameFields(pl_small_strs),
+                IB::RenameFields { names, strict } => B::RenameFields { names, strict },
                 IB::PrefixFields(pl_small_str) => B::PrefixFields(pl_small_str),
                 IB::SuffixFields(pl_small_str) => B::SuffixFields(pl_small_str),
                 #[cfg(feature = "json")]

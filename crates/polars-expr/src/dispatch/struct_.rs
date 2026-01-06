@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_core::error::{PolarsResult, polars_err};
+use polars_core::error::{PolarsResult, polars_bail, polars_err};
 use polars_core::prelude::{
     Column, InitHashMaps, IntoColumn, PlIndexMap, StringChunked, StructChunked,
 };
@@ -14,7 +14,7 @@ pub fn function_expr_to_udf(func: IRStructFunction) -> SpecialEq<Arc<dyn Columns
     use IRStructFunction::*;
     match func {
         FieldByName(name) => map!(get_by_name, &name),
-        RenameFields(names) => map!(rename_fields, names.clone()),
+        RenameFields { names, strict } => map!(rename_fields, names.clone(), strict),
         PrefixFields(prefix) => map!(prefix_fields, prefix.as_str()),
         SuffixFields(suffix) => map!(suffix_fields, suffix.as_str()),
         #[cfg(feature = "json")]
@@ -29,10 +29,24 @@ pub(super) fn get_by_name(s: &Column, name: &str) -> PolarsResult<Column> {
     ca.field_by_name(name).map(Column::from)
 }
 
-pub(super) fn rename_fields(s: &Column, names: Arc<[PlSmallStr]>) -> PolarsResult<Column> {
+pub(super) fn rename_fields(
+    s: &Column,
+    names: Arc<[PlSmallStr]>,
+    strict: bool,
+) -> PolarsResult<Column> {
     let ca = s.struct_()?;
-    let fields = ca
-        .fields_as_series()
+    let fields = ca.fields_as_series();
+
+    if strict && names.len() != fields.len() {
+        polars_bail!(
+            ShapeMismatch:
+            "length of `names` ({}) does not match number of struct fields ({})",
+            names.len(),
+            fields.len()
+        );
+    }
+
+    let fields = fields
         .iter()
         .zip(names.as_ref())
         .map(|(s, name)| {

@@ -17,8 +17,12 @@ impl PyExpr {
         self.inner.clone().struct_().field_by_names(&names).into()
     }
 
-    fn struct_rename_fields(&self, names: Vec<String>) -> Self {
-        self.inner.clone().struct_().rename_fields(names).into()
+    fn struct_rename_fields(&self, names: Vec<String>, strict: bool) -> Self {
+        self.inner
+            .clone()
+            .struct_()
+            .rename_fields(names, strict)
+            .into()
     }
 
     #[cfg(feature = "json")]
