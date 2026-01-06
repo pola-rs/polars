@@ -2752,7 +2752,7 @@ class Expr:
         └───────┴───────┘
         """
         index_lit_pyexpr = parse_into_expression(index)
-        return wrap_expr(self._pyexpr.get(index_lit_pyexpr, null_on_oob))
+        return wrap_expr(self._pyexpr.get(index_lit_pyexpr, null_on_oob=null_on_oob))
 
     def shift(
         self, n: int | IntoExprColumn = 1, *, fill_value: IntoExpr | None = None
