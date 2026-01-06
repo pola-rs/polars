@@ -87,10 +87,9 @@ pub fn convert_to_unsigned_index(
         InvalidOperation: "expected integers as index"
     );
 
-    // Ensure the logical length fits in IdxSize at all.
-    polars_ensure!(
+    assert!(
         (target_len as u128) <= (IdxSize::MAX as u128),
-        OutOfBounds: "gather indices are out of bounds"
+        "internal error: target_len does not fit in IdxSize"
     );
 
     let in_nulls = s.null_count();
