@@ -977,7 +977,7 @@ fn compute_join_dispatch(
                 ),
             }
         },
-        dt => unimplemented!("merge join kernel not implemented for {:?}", dt),
+        dt => unimplemented!("merge-join kernel not implemented for {:?}", dt),
     }
 }
 
