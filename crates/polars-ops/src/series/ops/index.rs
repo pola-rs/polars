@@ -1,8 +1,6 @@
 use num_traits::ToPrimitive;
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
-use polars_core::prelude::{
-    ChunkedArray, DataType, IDX_DTYPE, IdxCa, IdxSize, PolarsIntegerType, Series,
-};
+use polars_core::prelude::{ChunkedArray, DataType, IdxCa, IdxSize, PolarsIntegerType, Series};
 
 /// Generic conversion of an integer ChunkedArray<T> into IdxCa.
 ///
