@@ -24,7 +24,11 @@ impl PhysicalExpr for GatherExpr {
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let series = self.phys_expr.evaluate(df, state)?;
         let idx = self.idx.evaluate(df, state)?;
-        let idx = convert_to_unsigned_index(idx.as_materialized_series(), series.len(), self.null_on_oob)?;
+        let idx = convert_to_unsigned_index(
+            idx.as_materialized_series(),
+            series.len(),
+            self.null_on_oob,
+        )?;
         series.take(&idx)
     }
 
