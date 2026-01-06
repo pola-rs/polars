@@ -25,11 +25,6 @@ use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
 use crate::nodes::ComputeNode;
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 
-// TODO: [amber] For unmatched rows: gather first and then hstack to a df of nulls
-// TODO: [amber] Remove any non-output columns earlier to reduce the
-// amount of gathering as much as possible
-// TODO: [amber] Do not linearize but accumlate in parallel and then merge all of
-// the unmatched dataframes in a state-transition, and then flush them
 // TODO: [amber] Make sure that key expressions work
 
 pub const KEY_COL_NAME: &str = "__POLARS_JOIN_KEY_TMP";
@@ -695,13 +690,6 @@ async fn compute_join(
     matched_send: &mut PortSender,
     unmatched_send: tokio::sync::mpsc::Sender<Morsel>,
 ) -> PolarsResult<()> {
-    // TODO [amber] LEFT HERE
-    // The main gap in the profile is due to the state transition from Running
-    // to FlushInputBuffers.  I don't know if we can do anything about that.
-    // I think the next step is to remove the non-payload colunms before gathering.
-    //
-    // Good luck! <3
-
     let mut left_sp = &params.left;
     let mut right_sp = &params.right;
     let mut left = left.into_df();
@@ -872,8 +860,16 @@ fn gather_and_postprocess(
     }
 
     let (left_build, right_build) = df_builders.as_mut().unwrap();
-    left_build.opt_gather_extend(&left, &left_gather, ShareStrategy::Never);
-    right_build.opt_gather_extend(&right, &right_gather, ShareStrategy::Never);
+    if params.right.emit_unmatched {
+        left_build.opt_gather_extend(&left, &left_gather, ShareStrategy::Never);
+    } else {
+        unsafe { left_build.gather_extend(&left, &left_gather, ShareStrategy::Never) };
+    }
+    if params.left.emit_unmatched {
+        right_build.opt_gather_extend(&right, &right_gather, ShareStrategy::Never);
+    } else {
+        unsafe { right_build.gather_extend(&right, &right_gather, ShareStrategy::Never) };
+    }
 
     let mut left = left_build.freeze_reset();
     let mut right = right_build.freeze_reset();
