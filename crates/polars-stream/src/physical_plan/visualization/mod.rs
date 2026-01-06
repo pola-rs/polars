@@ -149,12 +149,26 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     ..Default::default()
                 }
             },
-            PhysNodeKind::GroupBy { input, key, aggs } => {
-                phys_node_inputs.push(input.node);
+            PhysNodeKind::GroupBy {
+                inputs,
+                key_per_input,
+                aggs_per_input,
+            } => {
+                for input in inputs {
+                    phys_node_inputs.push(input.node);
+                }
 
+                let key_per_input: Vec<_> = key_per_input
+                    .iter()
+                    .map(|key| expr_list(key, self.expr_arena))
+                    .collect();
+                let aggs_per_input: Vec<_> = aggs_per_input
+                    .iter()
+                    .map(|aggs| expr_list(aggs, self.expr_arena))
+                    .collect();
                 let properties = PhysNodeProperties::GroupBy {
-                    keys: expr_list(key, self.expr_arena),
-                    aggs: expr_list(aggs, self.expr_arena),
+                    key_per_input,
+                    aggs_per_input,
                 };
 
                 PhysNodeInfo {
