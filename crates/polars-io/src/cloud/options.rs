@@ -199,7 +199,9 @@ pub(super) fn get_client_options() -> ClientOptions {
     use reqwest::header::HeaderValue;
 
     ClientOptions::new()
+        // Disables the time limit for downloading the response body.
         .with_timeout_disabled()
+        // Set the time limit for establishing the connection.
         .with_connect_timeout(std::time::Duration::from_secs(
             std::env::var("POLARS_HTTP_CONNECT_TIMEOUT_SECONDS")
                 .map(|x| {
