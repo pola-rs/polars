@@ -50,7 +50,6 @@ impl NeedMore {
 #[derive(Debug)]
 struct SideParams {
     input_schema: SchemaRef,
-    ir_schema: SchemaRef,
     on: Vec<PlSmallStr>,
     key_col: PlSmallStr,
     emit_unmatched: bool,
@@ -98,39 +97,31 @@ impl MergeJoinNode {
         args: JoinArgs,
     ) -> PolarsResult<Self> {
         assert!(left_on.len() == right_on.len());
-        assert!(
-            left_input_schema.contains(KEY_COL_NAME) == right_input_schema.contains(KEY_COL_NAME),
-        );
-
         let use_row_encoding = left_input_schema.contains(KEY_COL_NAME);
+        if use_row_encoding {
+            assert!(left_input_schema.contains(KEY_COL_NAME));
+            assert!(right_input_schema.contains(KEY_COL_NAME));
+        }
         let state: MergeJoinState = MergeJoinState::Running;
         let left_key_col;
         let right_key_col;
-        let mut left_ir_schema = left_input_schema.clone();
-        let mut right_ir_schema = right_input_schema.clone();
         if use_row_encoding {
             left_key_col = PlSmallStr::from(KEY_COL_NAME);
             right_key_col = PlSmallStr::from(KEY_COL_NAME);
-            let mut ir_schema = (*left_input_schema).clone();
-            ir_schema.insert(left_key_col.clone(), DataType::BinaryOffset);
-            left_ir_schema = Arc::new(ir_schema);
-            let mut ir_schema = (*right_input_schema).clone();
-            ir_schema.insert(right_key_col.clone(), DataType::BinaryOffset);
-            right_ir_schema = Arc::new(ir_schema);
         } else {
             left_key_col = left_on[0].clone();
             right_key_col = right_on[0].clone();
         }
+        let left_unmerged = DataFrameBuffer::empty_with_schema(&left_input_schema);
+        let right_unmerged = DataFrameBuffer::empty_with_schema(&right_input_schema);
         let left = SideParams {
             input_schema: left_input_schema,
-            ir_schema: left_ir_schema.clone(),
             on: left_on,
             key_col: left_key_col,
             emit_unmatched: matches!(args.how, JoinType::Left | JoinType::Full),
         };
         let right = SideParams {
-            input_schema: right_input_schema,
-            ir_schema: right_ir_schema.clone(),
+            input_schema: right_input_schema.clone(),
             on: right_on,
             key_col: right_key_col,
             emit_unmatched: matches!(args.how, JoinType::Right | JoinType::Full),
@@ -147,8 +138,8 @@ impl MergeJoinNode {
         Ok(MergeJoinNode {
             state,
             params,
-            left_unmerged: DataFrameBuffer::empty_with_schema(&left_ir_schema),
-            right_unmerged: DataFrameBuffer::empty_with_schema(&right_ir_schema),
+            left_unmerged,
+            right_unmerged,
             unmatched: Default::default(),
             seq: MorselSeq::default(),
         })
@@ -514,14 +505,14 @@ fn find_mergeable_search(
         } else if left_done && left.is_empty() {
             let right_split = right.split_at(get_ideal_morsel_size());
             return Ok(Left((
-                DataFrameBuffer::empty_with_schema(&left_params.ir_schema),
+                DataFrameBuffer::empty_with_schema(&left_params.input_schema),
                 right_split,
             )));
         } else if right_done && right.is_empty() {
             let left_split = left.split_at(get_ideal_morsel_size());
             return Ok(Left((
                 left_split,
-                DataFrameBuffer::empty_with_schema(&right_params.ir_schema),
+                DataFrameBuffer::empty_with_schema(&right_params.input_schema),
             )));
         } else if left.is_empty() && !left_done {
             return Ok(Right(NeedMore::Left));
@@ -539,7 +530,7 @@ fn find_mergeable_search(
             let left_split = left.split_at(left_first_nonnull_idx);
             return Ok(Left((
                 left_split,
-                DataFrameBuffer::empty_with_schema(&right_params.ir_schema),
+                DataFrameBuffer::empty_with_schema(&right_params.input_schema),
             )));
         }
         if !params.args.nulls_equal && !params.key_nulls_last && right_first == AnyValue::Null {
@@ -547,7 +538,7 @@ fn find_mergeable_search(
                 binary_search_upper(&right, &AnyValue::Null, params, right_params)?;
             let right_split = right.split_at(right_first_nonnull_idx);
             return Ok(Left((
-                DataFrameBuffer::empty_with_schema(&left_params.ir_schema),
+                DataFrameBuffer::empty_with_schema(&left_params.input_schema),
                 right_split,
             )));
         }
@@ -584,25 +575,29 @@ fn find_mergeable_search(
         let right_last_completed_val =
             right.get_bypass_validity(&right_params.key_col, right_first_incomplete - 1, params);
 
-        let left_mergable_until; // bound is *exclusive*
-        let right_mergable_until;
+        let left_mergeable_until; // bound is *exclusive*
+        let right_mergeable_until;
         let ord = keys_cmp(&left_last_completed_val, &right_last_completed_val, params);
         if ord.is_eq() {
-            left_mergable_until = left_first_incomplete;
-            right_mergable_until = right_first_incomplete;
+            left_mergeable_until = left_first_incomplete;
+            right_mergeable_until = right_first_incomplete;
         } else if ord.is_lt() {
-            left_mergable_until = left_first_incomplete;
-            right_mergable_until = binary_search_upper(
+            left_mergeable_until = left_first_incomplete;
+            right_mergeable_until = binary_search_upper(
                 right,
-                &left.get_bypass_validity(&left_params.key_col, left_mergable_until - 1, params),
+                &left.get_bypass_validity(&left_params.key_col, left_mergeable_until - 1, params),
                 params,
                 right_params,
             )?;
         } else if ord.is_gt() {
-            right_mergable_until = right_first_incomplete;
-            left_mergable_until = binary_search_upper(
+            right_mergeable_until = right_first_incomplete;
+            left_mergeable_until = binary_search_upper(
                 left,
-                &right.get_bypass_validity(&right_params.key_col, right_mergable_until - 1, params),
+                &right.get_bypass_validity(
+                    &right_params.key_col,
+                    right_mergeable_until - 1,
+                    params,
+                ),
                 params,
                 left_params,
             )?;
@@ -610,12 +605,12 @@ fn find_mergeable_search(
             unreachable!();
         }
 
-        if left_mergable_until == 0 && right_mergable_until == 0 {
+        if left_mergeable_until == 0 && right_mergeable_until == 0 {
             return Ok(Right(NeedMore::Both));
         }
 
-        let left_split = left.split_at(left_mergable_until);
-        let right_split = right.split_at(right_mergable_until);
+        let left_split = left.split_at(left_mergeable_until);
+        let right_split = right.split_at(right_mergeable_until);
         return Ok(Left((left_split, right_split)));
     }
 }
@@ -1118,7 +1113,6 @@ async fn buffer_unmerged_from_pipe(
 }
 
 fn keys_cmp(left: &AnyValue, right: &AnyValue, params: &MergeJoinParams) -> Ordering {
-    use Ordering::*;
     match AnyValue::partial_cmp(left, right) {
         Some(Ordering::Equal) => Ordering::Equal,
         _ if left.is_null() && params.key_nulls_last => Ordering::Greater,

@@ -3,18 +3,16 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Literal
 
-from hypothesis import given, settings
 import hypothesis.strategies as st
 import numpy as np
 import pandas as pd
-from polars.testing.parametric.strategies.core import column, dataframes
 import pytest
+from hypothesis import given, settings
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
-
-from tests.unit.conftest import NUMERIC_DTYPES, NESTED_DTYPES
-
+from polars.testing.parametric.strategies.core import column, dataframes
+from tests.unit.conftest import NESTED_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -409,59 +407,14 @@ def test_cross_join_with_literal_column_25544() -> None:
     assert streaming_result.item() == 0
 
 
-@pytest.mark.parametrize(
-    "on",
-    [
-        ["key_1"],
-        ["key_1", "key_2"],
-    ],
-)
-@pytest.mark.parametrize(
-    "how",
-    [
-        "inner",
-        "left",
-        "right",
-        "full",
-    ],
-)
-@pytest.mark.parametrize(
-    "descending",
-    [
-        False,
-        True,
-    ],
-)
-@pytest.mark.parametrize(
-    "nulls_last",
-    [
-        False,
-        True,
-    ],
-)
-@pytest.mark.parametrize(
-    "nulls_equal",
-    [
-        False,
-        True,
-    ],
-)
-@pytest.mark.parametrize(
-    "coalesce",
-    [
-        None,
-        True,
-        False,
-    ],
-)
-@pytest.mark.parametrize(
-    "maintain_order",
-    [
-        "none",
-        "left_right",
-        "right_left",
-    ],
-)
+@pytest.mark.slow
+@pytest.mark.parametrize("on", [["key_1"], ["key_1", "key_2"]])
+@pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize("coalesce", [None, True, False])
+@pytest.mark.parametrize("maintain_order", ["none", "left_right", "right_left"])
 @given(
     df_left=dataframes(
         cols=[
@@ -526,37 +479,3 @@ def test_merge_join(
 
     assert "merge-join" in dot, "merge-join does not appear in physical plan"
     assert_frame_equal(actual, expected, check_row_order=check_row_order)
-
-
-# @given(
-#     df_left=dataframes(
-#         cols=[
-#             column("key_1", dtype=pl.Int16),
-#             column("key_2", dtype=pl.Int16),
-#             column("x", dtype=pl.UInt16, allow_null=False, unique=True),
-#         ],
-#     ),
-#     df_right=dataframes(
-#         cols=[
-#             column("key_1", dtype=pl.Int16),
-#             column("key_2", dtype=pl.Int16),
-#             column("x", dtype=pl.UInt16, allow_null=False, unique=True),
-#         ],
-#     ),
-# )
-# def test_merge_join_key_expression(
-#     df_left: pl.DataFrame, df_right: pl.DataFrame
-# ) -> None:
-#     df_left = df_left.sort("key_1").lazy().set_sorted("key_1")
-#     df_right = df_right.sort("key_1").lazy().set_sorted("key_1")
-#     q = df_left.join(
-#         df_right,
-#         on=pl.col("key_1") + 1,
-#         how="inner",
-#         maintain_order="left_right",
-#     )
-#     dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
-#     expected = q.collect(engine="in-memory")
-#     actual = q.collect(engine="streaming")
-#     assert "merge-join" in dot, "merge-join does not appear in physical plan"
-#     assert_frame_equal(actual, expected, check_row_order=True)
