@@ -259,7 +259,7 @@ impl<'a> ObservableOrdersResolver<'a> {
                 expr,
                 idx,
                 returns_scalar,
-                null_on_oob,
+                null_on_oob: _,
             } => {
                 let expr = rec!(*expr);
                 let idx = rec!(*idx);

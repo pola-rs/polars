@@ -2,7 +2,6 @@ use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::arity::unary_elementwise_values;
 use polars_core::prelude::*;
 use polars_ops::prelude::lst_get;
-use polars_ops::series::convert_to_unsigned_index;
 use polars_utils::index::ToIdx;
 
 use super::*;
