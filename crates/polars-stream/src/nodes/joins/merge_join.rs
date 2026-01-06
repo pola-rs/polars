@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -99,11 +98,10 @@ impl MergeJoinNode {
         args: JoinArgs,
     ) -> PolarsResult<Self> {
         assert!(left_on.len() == right_on.len());
+        assert!(
+            left_input_schema.contains(KEY_COL_NAME) == right_input_schema.contains(KEY_COL_NAME)
+        );
         let use_row_encoding = left_input_schema.contains(KEY_COL_NAME);
-        if use_row_encoding {
-            assert!(left_input_schema.contains(KEY_COL_NAME));
-            assert!(right_input_schema.contains(KEY_COL_NAME));
-        }
         let state: MergeJoinState = MergeJoinState::Running;
         let left_key_col;
         let right_key_col;
@@ -114,8 +112,8 @@ impl MergeJoinNode {
             left_key_col = left_on[0].clone();
             right_key_col = right_on[0].clone();
         }
-        let left_unmerged = DataFrameBuffer::empty_with_schema(&left_input_schema);
-        let right_unmerged = DataFrameBuffer::empty_with_schema(&right_input_schema);
+        let left_unmerged = DataFrameBuffer::empty_with_schema(left_input_schema.clone());
+        let right_unmerged = DataFrameBuffer::empty_with_schema(right_input_schema.clone());
         let left = SideParams {
             input_schema: left_input_schema,
             on: left_on,
@@ -213,21 +211,21 @@ impl ComputeNode for MergeJoinNode {
     ) {
         use MergeJoinState::*;
 
+        assert!(recv_ports.len() == 2);
+        assert!(send_ports.len() == 1);
+
         let params = &self.params;
         let left_unmerged = &mut self.left_unmerged;
         let right_unmerged = &mut self.right_unmerged;
         let unmatched = &mut self.unmatched;
         let seq = &mut self.seq;
 
-        assert!(recv_ports.len() == 2 && send_ports.len() == 1);
         let mut recv_left = recv_ports[0].take().map(RecvPort::serial);
         let mut recv_right = recv_ports[1].take().map(RecvPort::serial);
 
-        if recv_left.is_none() && recv_right.is_none() {
-            assert!(self.state >= FlushInputBuffers);
-        }
-
         if matches!(self.state, Running | FlushInputBuffers) {
+            assert!(send_ports[0].is_some());
+
             let send = send_ports[0].take().unwrap().parallel();
             let (mut distributor, dist_recv) =
                 distributor_channel(send.len(), *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
@@ -235,21 +233,20 @@ impl ComputeNode for MergeJoinNode {
 
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 let source_token = SourceToken::new();
-                let search_limit = RefCell::new(get_ideal_morsel_size());
+                let mut search_limit = get_ideal_morsel_size();
 
                 loop {
                     let fmp = FindMergeableParams {
                         left_done: recv_left.is_none(),
                         right_done: recv_right.is_none(),
-                        search_limit: search_limit.clone(),
                         left_params: &params.left,
                         right_params: &params.right,
                         params,
                     };
-                    match find_mergeable(left_unmerged, right_unmerged, fmp)? {
+                    match find_mergeable(left_unmerged, right_unmerged, &mut search_limit, fmp)? {
                         Left(partitions) => {
                             for (left_mergeable, right_mergeable) in partitions.into_iter() {
-                                if let Err((_left, _right, _, _)) = distributor
+                                if let Err((_, _, _, _)) = distributor
                                     .send((
                                         left_mergeable,
                                         right_mergeable,
@@ -318,7 +315,7 @@ impl ComputeNode for MergeJoinNode {
                     if let Some(buf) = unmatched.get_mut(&seq) {
                         buf.push_df(df);
                     } else {
-                        let mut buf = DataFrameBuffer::empty_with_schema(df.schema());
+                        let mut buf = DataFrameBuffer::empty_with_schema(df.schema().clone());
                         buf.push_df(df);
                         unmatched.insert(seq, buf);
                     }
@@ -351,7 +348,6 @@ impl ComputeNode for MergeJoinNode {
 struct FindMergeableParams<'sp, 'p> {
     left_done: bool,
     right_done: bool,
-    search_limit: RefCell<usize>,
     left_params: &'sp SideParams,
     right_params: &'sp SideParams,
     params: &'p MergeJoinParams,
@@ -368,27 +364,25 @@ impl FindMergeableParams<'_, '_> {
 fn find_mergeable(
     left: &mut DataFrameBuffer,
     right: &mut DataFrameBuffer,
+    search_limit: &mut usize,
     fmp: FindMergeableParams,
 ) -> PolarsResult<Either<UnitVec<(DataFrameBuffer, DataFrameBuffer)>, NeedMore>> {
     const SEARCH_LIMIT_BUMP_FACTOR: usize = 2;
     let morsel_size = get_ideal_morsel_size();
-    debug_assert!(*fmp.search_limit.borrow() >= morsel_size);
-    let mut mergeable = find_mergeable_flip(left, right, fmp.clone())?;
+    debug_assert!(*search_limit >= morsel_size);
+    let mut mergeable = find_mergeable_flip(left, right, *search_limit, fmp.clone())?;
     while match mergeable {
-        Right(NeedMore::Left | NeedMore::Both) if *fmp.search_limit.borrow() < left.len() => true,
-        Right(NeedMore::Right | NeedMore::Both) if *fmp.search_limit.borrow() < right.len() => true,
+        Right(NeedMore::Left | NeedMore::Both) if *search_limit < left.len() => true,
+        Right(NeedMore::Right | NeedMore::Both) if *search_limit < right.len() => true,
         _ => false,
     } {
         // Exponential increase
-        *fmp.search_limit.borrow_mut() *= SEARCH_LIMIT_BUMP_FACTOR;
-        mergeable = find_mergeable_flip(left, right, fmp.clone())?;
+        *search_limit *= SEARCH_LIMIT_BUMP_FACTOR;
+        mergeable = find_mergeable_flip(left, right, *search_limit, fmp.clone())?;
     }
     if mergeable.is_left() {
-        let mut search_limit_mut = fmp.search_limit.borrow_mut();
-        *search_limit_mut /= SEARCH_LIMIT_BUMP_FACTOR;
-        if *search_limit_mut < morsel_size {
-            *search_limit_mut = morsel_size;
-        }
+        *search_limit /= SEARCH_LIMIT_BUMP_FACTOR;
+        *search_limit = usize::max(*search_limit, morsel_size);
     }
     Ok(mergeable)
 }
@@ -396,33 +390,34 @@ fn find_mergeable(
 fn find_mergeable_flip(
     left: &mut DataFrameBuffer,
     right: &mut DataFrameBuffer,
+    search_limit: usize,
     fmp: FindMergeableParams,
 ) -> PolarsResult<Either<UnitVec<(DataFrameBuffer, DataFrameBuffer)>, NeedMore>> {
-    if fmp.params.args.how == JoinType::Right {
-        let ok = find_mergeable_partition(right, left, fmp.flip())?;
-        Ok(match ok {
+    let mergeable = if fmp.params.args.how == JoinType::Right {
+        match find_mergeable_partition(right, left, search_limit, fmp.flip())? {
             Left(mut partitions) => {
                 partitions.iter_mut().for_each(|(x1, x2)| swap(x1, x2));
                 Left(partitions)
             },
             Right(side) => Right(side.flip()),
-        })
+        }
     } else {
-        let ok = find_mergeable_partition(left, right, fmp)?;
-        Ok(match ok {
+        match find_mergeable_partition(left, right, search_limit, fmp)? {
             Left(partitions) => Left(partitions),
             other => other,
-        })
-    }
+        }
+    };
+    Ok(mergeable)
 }
 
 fn find_mergeable_partition(
     left: &mut DataFrameBuffer,
     right: &mut DataFrameBuffer,
+    search_limit: usize,
     fmp: FindMergeableParams,
 ) -> PolarsResult<Either<UnitVec<(DataFrameBuffer, DataFrameBuffer)>, NeedMore>> {
     let morsel_size = get_ideal_morsel_size();
-    let mergeable = find_mergeable_search(left, right, fmp)?;
+    let mergeable = find_mergeable_search(left, right, search_limit, fmp)?;
     let (left, right) = match mergeable {
         Left((left, right)) => (left, right),
         Right(need_more) => return Ok(Right(need_more)),
@@ -452,17 +447,20 @@ fn find_mergeable_partition(
 fn find_mergeable_search(
     left: &mut DataFrameBuffer,
     right: &mut DataFrameBuffer,
+    search_limit: usize,
     fmp: FindMergeableParams,
 ) -> PolarsResult<Either<(DataFrameBuffer, DataFrameBuffer), NeedMore>> {
     let FindMergeableParams {
         left_done,
         right_done,
-        search_limit,
         left_params,
         right_params,
         params,
     } = fmp;
-    let search_limit = search_limit.borrow();
+    let left_empty_buf = || DataFrameBuffer::empty_with_schema(left_params.input_schema.clone());
+    let right_empty_buf = || DataFrameBuffer::empty_with_schema(right_params.input_schema.clone());
+    let left_get = |idx| unsafe { left.get_bypass_validity(&left_params.key_col, idx, params) };
+    let right_get = |idx| unsafe { right.get_bypass_validity(&right_params.key_col, idx, params) };
 
     if left_done && left.is_empty() && right_done && right.is_empty() {
         return Ok(Right(NeedMore::Finished));
@@ -480,55 +478,42 @@ fn find_mergeable_search(
         return Ok(Right(NeedMore::Finished));
     } else if left_done && left.is_empty() {
         let right_split = right.split_at(get_ideal_morsel_size());
-        return Ok(Left((
-            DataFrameBuffer::empty_with_schema(&left_params.input_schema),
-            right_split,
-        )));
+        return Ok(Left((left_empty_buf(), right_split)));
     } else if right_done && right.is_empty() {
         let left_split = left.split_at(get_ideal_morsel_size());
-        return Ok(Left((
-            left_split,
-            DataFrameBuffer::empty_with_schema(&right_params.input_schema),
-        )));
+        return Ok(Left((left_split, right_empty_buf())));
     } else if left.is_empty() && !left_done {
         return Ok(Right(NeedMore::Left));
     } else if right.is_empty() && !right_done {
         return Ok(Right(NeedMore::Right));
     }
 
-    let left_first = left.get_bypass_validity(&left_params.key_col, 0, params);
-    let right_first = right.get_bypass_validity(&right_params.key_col, 0, params);
+    let left_first = left_get(0);
+    let right_first = right_get(0);
 
     // First return chunks of nulls if there are any
     if !params.args.nulls_equal && !params.key_nulls_last && left_first == AnyValue::Null {
         let left_first_nonnull_idx =
             binary_search_upper(left, &AnyValue::Null, params, left_params)?;
         let left_split = left.split_at(left_first_nonnull_idx);
-        return Ok(Left((
-            left_split,
-            DataFrameBuffer::empty_with_schema(&right_params.input_schema),
-        )));
+        return Ok(Left((left_split, right_empty_buf())));
     }
     if !params.args.nulls_equal && !params.key_nulls_last && right_first == AnyValue::Null {
         let right_first_nonnull_idx =
             binary_search_upper(right, &AnyValue::Null, params, right_params)?;
         let right_split = right.split_at(right_first_nonnull_idx);
-        return Ok(Left((
-            DataFrameBuffer::empty_with_schema(&left_params.input_schema),
-            right_split,
-        )));
+        return Ok(Left((left_empty_buf(), right_split)));
     }
 
-    let left_last_idx = usize::min(left.len(), *search_limit);
-    let left_last = left.get_bypass_validity(&left_params.key_col, left_last_idx - 1, params);
-    let right_last_idx = usize::min(right.len(), *search_limit);
-    let right_last = right.get_bypass_validity(&right_params.key_col, right_last_idx - 1, params);
-
+    let left_last_idx = usize::min(left.len(), search_limit);
+    let left_last = left_get(left_last_idx - 1);
     let left_first_incomplete = match left_done {
         false => binary_search_lower(left, &left_last, params, left_params)?,
         true => left.len(),
     };
 
+    let right_last_idx = usize::min(right.len(), search_limit);
+    let right_last = right_get(right_last_idx - 1);
     let right_first_incomplete = match right_done {
         false => binary_search_lower(right, &right_last, params, right_params)?,
         true => right.len(),
@@ -545,10 +530,8 @@ fn find_mergeable_search(
         return Ok(Right(NeedMore::Right));
     }
 
-    let left_last_completed_val =
-        left.get_bypass_validity(&left_params.key_col, left_first_incomplete - 1, params);
-    let right_last_completed_val =
-        right.get_bypass_validity(&right_params.key_col, right_first_incomplete - 1, params);
+    let left_last_completed_val = left_get(left_first_incomplete - 1);
+    let right_last_completed_val = right_get(right_first_incomplete - 1);
 
     let left_mergeable_until; // bound is *exclusive*
     let right_mergeable_until;
@@ -560,7 +543,7 @@ fn find_mergeable_search(
         left_mergeable_until = left_first_incomplete;
         right_mergeable_until = binary_search_upper(
             right,
-            &left.get_bypass_validity(&left_params.key_col, left_mergeable_until - 1, params),
+            &left_get(left_mergeable_until - 1),
             params,
             right_params,
         )?;
@@ -568,7 +551,7 @@ fn find_mergeable_search(
         right_mergeable_until = right_first_incomplete;
         left_mergeable_until = binary_search_upper(
             left,
-            &right.get_bypass_validity(&right_params.key_col, right_mergeable_until - 1, params),
+            &right_get(right_mergeable_until - 1),
             params,
             left_params,
         )?;
@@ -585,7 +568,7 @@ fn find_mergeable_search(
     Ok(Left((left_split, right_split)))
 }
 
-fn series_get_bypass_validity<'a>(
+unsafe fn series_get_bypass_validity<'a>(
     s: &'a Series,
     index: usize,
     params: &MergeJoinParams,
@@ -610,7 +593,7 @@ fn binary_search(
     let mut upper = vec.len();
     while lower < upper {
         let mid = (lower + upper) / 2;
-        let mid_val = vec.get_bypass_validity(&sp.key_col, mid, params);
+        let mid_val = unsafe { vec.get_bypass_validity(&sp.key_col, mid, params) };
         if op(search_value, &mid_val, params) {
             upper = mid;
         } else {
@@ -875,7 +858,9 @@ fn gather_and_postprocess(
     right.rename_many(renames).unwrap();
 
     left.hstack_mut(right.get_columns())?;
+
     if params.args.how == JoinType::Full && should_coalesce {
+        // Coalesce key columns
         for (left_keycol, right_keycol) in
             Iterator::zip(params.left.on.iter(), params.right.on.iter())
         {
@@ -1102,7 +1087,7 @@ fn keys_cmp(left: &AnyValue, right: &AnyValue, params: &MergeJoinParams) -> Orde
 
 #[derive(Clone)]
 struct DataFrameBuffer {
-    schema: Schema,
+    schema: Arc<Schema>,
     buf: BTreeMap<usize, DataFrame>,
     total_rows: usize,
     skip_rows: usize,
@@ -1116,9 +1101,9 @@ impl fmt::Debug for DataFrameBuffer {
 }
 
 impl DataFrameBuffer {
-    fn empty_with_schema(schema: &Schema) -> Self {
+    fn empty_with_schema(schema: Arc<Schema>) -> Self {
         DataFrameBuffer {
-            schema: schema.clone(),
+            schema,
             buf: BTreeMap::new(),
             total_rows: 0,
             skip_rows: 0,
@@ -1130,7 +1115,7 @@ impl DataFrameBuffer {
         self.total_rows
     }
 
-    fn get_bypass_validity(
+    unsafe fn get_bypass_validity(
         &self,
         column: &str,
         row_index: usize,
@@ -1145,7 +1130,7 @@ impl DataFrameBuffer {
         let (df_offset, df) = self.buf.range(..=buf_index).next_back().unwrap();
         let series_index = buf_index - df_offset;
         let series = df.column(column).unwrap().as_materialized_series();
-        series_get_bypass_validity(series, series_index, params)
+        unsafe { series_get_bypass_validity(series, series_index, params) }
     }
 
     fn push_df(&mut self, df: DataFrame) {
@@ -1157,7 +1142,6 @@ impl DataFrameBuffer {
         };
         self.buf.insert(offset, df);
         self.total_rows += added_rows;
-        self.debug_check_stats_correct();
     }
 
     fn split_at(&mut self, mut at: usize) -> Self {
@@ -1165,11 +1149,9 @@ impl DataFrameBuffer {
         let mut left = self.clone();
         left.total_rows = at;
         left.frozen = true;
-        left.debug_check_stats_correct();
         self.skip_rows += at;
         self.total_rows -= at;
         self.gc();
-        self.debug_check_stats_correct();
         left
     }
 
@@ -1178,12 +1160,10 @@ impl DataFrameBuffer {
         self.total_rows -= offset;
         self.total_rows = usize::min(self.total_rows, len);
         self.frozen = true;
-        self.debug_check_stats_correct();
         self
     }
 
     fn into_df(self) -> DataFrame {
-        self.debug_check_stats_correct();
         let mut acc = DataFrame::empty_with_schema(&self.schema);
         for df in self.buf.into_values() {
             acc.vstack_mut_owned(df).unwrap();
@@ -1211,22 +1191,5 @@ impl DataFrameBuffer {
         self.buf.clear();
         self.total_rows = 0;
         self.skip_rows = 0;
-        self.debug_check_stats_correct();
-    }
-
-    fn debug_check_stats_correct(&self) {
-        debug_assert!(
-            self.frozen
-                || self.buf.values().map(|df| df.height()).sum::<usize>() - self.skip_rows
-                    == self.total_rows
-        );
-        debug_assert!(self.buf.values().all(|df| **df.schema() == self.schema));
-        let mut last: Option<(usize, DataFrame)> = None;
-        for (key, df) in self.buf.iter() {
-            if let Some((last_key, last_df)) = last {
-                debug_assert!(last_key + last_df.height() == *key);
-            }
-            last = Some((*key, df.clone()));
-        }
     }
 }
