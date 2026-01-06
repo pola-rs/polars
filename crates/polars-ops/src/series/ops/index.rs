@@ -114,6 +114,11 @@ pub fn convert_to_unsigned_index(
             let ca = s.i8().unwrap();
             convert(ca, target_len)?
         },
+        #[cfg(feature = "dtype-i128")]
+        DataType::Int128 => {
+            let ca = s.i128().unwrap();
+            convert(ca, target_len)?
+        },
 
         DataType::UInt64 => {
             let ca = s.u64().unwrap();
@@ -131,6 +136,11 @@ pub fn convert_to_unsigned_index(
         #[cfg(feature = "dtype-u8")]
         DataType::UInt8 => {
             let ca = s.u8().unwrap();
+            convert(ca, target_len)?
+        },
+        #[cfg(feature = "dtype-u128")]
+        DataType::UInt128 => {
+            let ca = s.u128().unwrap();
             convert(ca, target_len)?
         },
 
