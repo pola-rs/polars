@@ -478,10 +478,8 @@ fn find_mergeable_partition(
         !left.is_empty() || !right.is_empty(),
         "search result is empty"
     );
-    let chunks_count = usize::max(
-        left.len().div_ceil(morsel_size),
-        right.len().div_ceil(morsel_size),
-    );
+    let chunks_count =
+        (left.len() * right.len() + left.len() + right.len()).div_ceil(morsel_size.pow(2));
     if chunks_count <= 1 {
         return Ok(Left(UnitVec::from([(left, right)])));
     }
