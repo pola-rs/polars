@@ -2714,6 +2714,7 @@ class Expr:
         index
             An expression that leads to a UInt32 index.
             Negative indexing is supported.
+
         null_on_oob
             Behavior if an index is out of bounds:
 
