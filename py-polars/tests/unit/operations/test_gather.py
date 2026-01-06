@@ -33,11 +33,11 @@ def test_gather_agg_schema() -> None:
         }
     )
     assert (
-            df.lazy()
-            .group_by("group", maintain_order=True)
-            .agg(pl.col("value").get(1))
-            .collect_schema()["value"]
-            == pl.Int64
+        df.lazy()
+        .group_by("group", maintain_order=True)
+        .agg(pl.col("value").get(1))
+        .collect_schema()["value"]
+        == pl.Int64
     )
 
 
@@ -166,10 +166,10 @@ def test_gather_list_19243() -> None:
     assert df.with_columns(pl.lit([0]).alias("c")).with_columns(
         gather=pl.col("a").list.gather(pl.col("c"), null_on_oob=True)
     ).to_dict(as_series=False) == {
-               "a": [[0.1, 0.2, 0.3]],
-               "c": [[0]],
-               "gather": [[0.1]],
-           }
+        "a": [[0.1, 0.2, 0.3]],
+        "c": [[0]],
+        "gather": [[0.1]],
+    }
 
 
 def test_gather_array_list_null_19302() -> None:
@@ -499,10 +499,7 @@ def test_get_window_with_filtered_empty_groups() -> None:
             .over("group")
         ),
         first_value=(
-            pl.col("value")
-            .filter(pl.col("filter_condition"))
-            .first()
-            .over("group")
+            pl.col("value").filter(pl.col("filter_condition")).first().over("group")
         ),
     )
 
@@ -531,9 +528,7 @@ def test_get_typed_index_null_on_oob_true(idx_dtype: pl.DataType) -> None:
     # OOB typed index with null_on_oob=True -> null, for multiple integer dtypes.
     df = pl.DataFrame({"value": [1, 2, 10]})
 
-    out = df.select(
-        v=pl.col("value").get(pl.lit(5, dtype=idx_dtype), null_on_oob=True)
-    )
+    out = df.select(v=pl.col("value").get(pl.lit(5, dtype=idx_dtype), null_on_oob=True))
 
     assert out["v"].to_list() == [None]
 
@@ -544,9 +539,7 @@ def test_get_typed_index_null_on_oob_false_raises(idx_dtype: pl.DataType) -> Non
     df = pl.DataFrame({"value": [10, 11]})
 
     with pytest.raises(OutOfBoundsError, match="gather indices are out of bounds"):
-        df.select(
-            pl.col("value").get(pl.lit(5, dtype=idx_dtype), null_on_oob=False)
-        )
+        df.select(pl.col("value").get(pl.lit(5, dtype=idx_dtype), null_on_oob=False))
 
 
 @pytest.mark.parametrize("idx_dtype", [pl.Int64, pl.Int128])
@@ -579,6 +572,4 @@ def test_get_typed_index_default_raises_out_of_bounds(idx_dtype: pl.DataType) ->
     df = pl.DataFrame({"value": [10, 11]})
 
     with pytest.raises(OutOfBoundsError, match="gather indices are out of bounds"):
-        df.select(
-            pl.col("value").get(pl.lit(5, dtype=idx_dtype))
-        )
+        df.select(pl.col("value").get(pl.lit(5, dtype=idx_dtype)))
