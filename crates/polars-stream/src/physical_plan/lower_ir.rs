@@ -1117,7 +1117,6 @@ pub fn lower_ir(
                 are_keys_sorted,
             );
         },
-
         IR::Join {
             input_left,
             input_right,

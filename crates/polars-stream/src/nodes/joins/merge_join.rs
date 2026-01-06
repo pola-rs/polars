@@ -25,8 +25,6 @@ use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
 use crate::nodes::ComputeNode;
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 
-// TODO: [amber] Make sure that key expressions work
-
 pub const KEY_COL_NAME: &str = "__POLARS_JOIN_KEY_TMP";
 
 #[derive(Clone, Copy, Debug)]

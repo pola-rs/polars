@@ -177,7 +177,6 @@ debug = false
 [profile.debug-release]
 inherits = "release"
 debug = true
-lto = false
 
 [profile.dist-release]
 inherits = "release"
