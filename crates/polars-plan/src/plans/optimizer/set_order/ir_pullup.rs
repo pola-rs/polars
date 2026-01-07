@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use polars_core::frame::UniqueKeepStrategy;
 use polars_core::prelude::PlHashMap;
+#[cfg(feature = "asof_join")]
+use polars_ops::frame::JoinType;
 use polars_ops::frame::MaintainOrderJoin;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::idx_vec::UnitVec;
@@ -97,6 +99,12 @@ pub(super) fn pullup_orders(
                         }) => unified_sink_args.maintain_order = false,
                         SinkTypeIR::Callback(s) => s.maintain_order = false,
                     }
+                }
+            },
+            #[cfg(feature = "asof_join")]
+            IR::Join { options, .. } if matches!(options.args.how, JoinType::AsOf(_)) => {
+                if !inputs_ordered[0] {
+                    set_unordered_output!();
                 }
             },
             IR::Join { options, .. } => {
