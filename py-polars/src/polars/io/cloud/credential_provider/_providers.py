@@ -557,7 +557,7 @@ class CredentialProviderGCP(CachingCredentialProvider):
         creds, _project_id = self._init_creds()
         creds.refresh(google.auth.transport.requests.Request())  # type: ignore[no-untyped-call, unused-ignore]
 
-        return {"bearer_token": creds.token}, (
+        return {"bearer_token": creds.token}, (  # type: ignore[dict-item]
             int(
                 (
                     expiry.replace(tzinfo=zoneinfo.ZoneInfo("UTC"))
