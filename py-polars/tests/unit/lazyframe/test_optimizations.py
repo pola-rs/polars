@@ -465,11 +465,17 @@ def test_slice_pushdown_expr_25473() -> None:
 def test_lazy_groupby_maintain_order_after_asof_join_25973() -> None:
     # Build the time frames
     targettime = (
-        pl.DataFrame({
-            "targettime": pl.time_range(
-                dt.time(0, 0), dt.time(23, 59), interval="10m", closed="both", eager=True
-            )
-        })
+        pl.DataFrame(
+            {
+                "targettime": pl.time_range(
+                    dt.time(0, 0),
+                    dt.time(23, 59),
+                    interval="10m",
+                    closed="both",
+                    eager=True,
+                )
+            }
+        )
         .with_columns(
             targettime=pl.lit(dt.date(2026, 1, 1)).dt.combine(pl.col("targettime")),
             grp=pl.lit(1),
@@ -478,11 +484,17 @@ def test_lazy_groupby_maintain_order_after_asof_join_25973() -> None:
     )
 
     df = (
-        pl.DataFrame({
-            "time": pl.time_range(
-                dt.time(0, 0), dt.time(23, 59), interval="1s", closed="both", eager=True
-            )
-        })
+        pl.DataFrame(
+            {
+                "time": pl.time_range(
+                    dt.time(0, 0),
+                    dt.time(23, 59),
+                    interval="1s",
+                    closed="both",
+                    eager=True,
+                )
+            }
+        )
         .with_row_index("value")
         .with_columns(
             time=pl.lit(dt.date(2026, 1, 1)).dt.combine(pl.col("time")),
