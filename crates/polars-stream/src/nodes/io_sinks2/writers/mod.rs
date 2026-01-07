@@ -13,6 +13,8 @@ mod csv;
 pub mod interface;
 #[cfg(feature = "ipc")]
 mod ipc;
+#[cfg(feature = "json")]
+mod ndjson;
 #[cfg(feature = "parquet")]
 mod parquet;
 
@@ -56,6 +58,9 @@ pub fn create_file_writer_starter(
                 schema: file_schema.clone(),
                 pipeline_depth,
                 sync_on_close,
+                record_batch_size: options
+                    .record_batch_size
+                    .map(|x| IdxSize::try_from(x).unwrap()),
             }) as _
         },
         #[cfg(feature = "csv")]
@@ -77,6 +82,23 @@ pub fn create_file_writer_starter(
                 initialized_state: Default::default(),
             }) as _
         },
-        _ => unimplemented!(),
+        #[cfg(feature = "json")]
+        FileType::Json(polars_io::json::JsonWriterOptions {}) => {
+            use crate::nodes::io_sinks2::writers::ndjson::NDJsonWriterStarter;
+
+            Arc::new(NDJsonWriterStarter {
+                schema: file_schema.clone(),
+                pipeline_depth,
+                sync_on_close,
+                initialized_state: Default::default(),
+            }) as _
+        },
+        #[cfg(not(any(
+            feature = "parquet",
+            feature = "ipc",
+            feature = "csv",
+            feature = "json"
+        )))]
+        _ => panic!("no enum variants on FileType (hint: missing feature flags?)"),
     })
 }

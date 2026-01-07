@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from functools import partial
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from hypothesis import assume, given
@@ -15,6 +15,8 @@ from polars.testing.parametric import series
 from tests.unit.conftest import FLOAT_DTYPES
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import TimeUnit
 
 

@@ -3,9 +3,7 @@ from __future__ import annotations
 import contextlib
 from typing import (
     TYPE_CHECKING,
-    Callable,
     Generic,
-    Union,
     overload,
 )
 
@@ -28,29 +26,24 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Collection, Mapping
+    from collections.abc import Callable, Collection, Mapping
     from types import TracebackType
-    from typing import Any, Final, Literal
-
-    if sys.version_info >= (3, 10):
-        from typing import TypeAlias
-    else:
-        from typing_extensions import TypeAlias
+    from typing import Any, Final, Literal, TypeAlias
 
     if sys.version_info >= (3, 11):
         from typing import Self
     else:
         from typing_extensions import Self
 
-    CompatibleFrameType: TypeAlias = Union[
-        DataFrame,
-        LazyFrame,
-        Series,
-        pd.DataFrame,
-        pd.Series[Any],
-        pa.Table,
-        pa.RecordBatch,
-    ]
+    CompatibleFrameType: TypeAlias = (
+        DataFrame
+        | LazyFrame
+        | Series
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pa.Table
+        | pa.RecordBatch
+    )
 
 __all__ = ["SQLContext"]
 

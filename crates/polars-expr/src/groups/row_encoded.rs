@@ -58,7 +58,7 @@ impl RowEncodedHashGrouper {
                     .into_column()
             })
             .collect();
-        unsafe { DataFrame::new_no_checks_height_from_first(cols) }
+        unsafe { DataFrame::new_unchecked_infer_height(cols) }
     }
 }
 

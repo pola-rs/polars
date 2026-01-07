@@ -220,18 +220,9 @@ pub(crate) fn py_object_to_any_value(
     }
 
     fn get_str(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
-        // Ideally we'd be returning an AnyValue::String(&str) instead, as was
-        // the case in previous versions of this function. However, if compiling
-        // with abi3 for versions older than Python 3.10, the APIs that purport
-        // to return &str actually just encode to UTF-8 as a newly allocated
-        // PyBytes object, and then return reference to that. So what we're
-        // doing here isn't any different fundamentally, and the APIs to for
-        // converting to &str are deprecated in PyO3 0.21.
-        //
-        // Once Python 3.10 is the minimum supported version, converting to &str
-        // will be cheaper, and we should do that. Python 3.9 security updates
-        // end-of-life is Oct 31, 2025.
-        Ok(AnyValue::StringOwned(ob.extract::<String>()?.into()))
+        Ok(AnyValue::StringOwned(PlSmallStr::from(
+            ob.extract::<&str>()?,
+        )))
     }
 
     fn get_bytes(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {

@@ -8,7 +8,7 @@ from datetime import datetime
 from functools import partial
 from math import ceil
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -16,6 +16,8 @@ import polars as pl
 from polars.testing.asserts.frame import assert_frame_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import SchemaDict
 
 
@@ -478,7 +480,7 @@ def test_scan_directory(
         tmp_path / "dir/data.bin",
     ]
 
-    for df, path in zip(dfs, paths):
+    for df, path in zip(dfs, paths, strict=True):
         path.parent.mkdir(exist_ok=True)
         write_func(df, path)
 

@@ -18,7 +18,7 @@ use polars_plan::dsl::{
 };
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, IR, IRAggExpr};
-use polars_plan::prelude::{FileType, FunctionFlags};
+use polars_plan::prelude::FunctionFlags;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
@@ -315,73 +315,6 @@ fn to_graph_rec<'a>(
         },
 
         FileSink {
-            target,
-            sink_options,
-            file_type,
-            input,
-            cloud_options,
-        } => {
-            let sink_options = sink_options.clone();
-            let input_schema = ctx.phys_sm[input.node].output_schema.clone();
-            let input_key = to_graph_rec(input.node, ctx)?;
-
-            match file_type {
-                #[cfg(feature = "ipc")]
-                FileType::Ipc(ipc_writer_options) => ctx.graph.add_node(
-                    SinkComputeNode::from(nodes::io_sinks::ipc::IpcSinkNode::new(
-                        input_schema,
-                        target.clone(),
-                        sink_options,
-                        *ipc_writer_options,
-                        cloud_options.clone(),
-                    )),
-                    [(input_key, input.port)],
-                ),
-                #[cfg(feature = "json")]
-                FileType::Json(_) => ctx.graph.add_node(
-                    SinkComputeNode::from(nodes::io_sinks::json::NDJsonSinkNode::new(
-                        target.clone(),
-                        sink_options,
-                        cloud_options.clone(),
-                    )),
-                    [(input_key, input.port)],
-                ),
-                #[cfg(feature = "parquet")]
-                FileType::Parquet(parquet_writer_options) => ctx.graph.add_node(
-                    SinkComputeNode::from(nodes::io_sinks::parquet::ParquetSinkNode::new(
-                        input_schema,
-                        target.clone(),
-                        sink_options,
-                        parquet_writer_options,
-                        cloud_options.clone(),
-                        false,
-                    )?),
-                    [(input_key, input.port)],
-                ),
-                #[cfg(feature = "csv")]
-                FileType::Csv(csv_writer_options) => ctx.graph.add_node(
-                    SinkComputeNode::from(nodes::io_sinks::csv::CsvSinkNode::new(
-                        target.clone(),
-                        input_schema,
-                        sink_options,
-                        csv_writer_options.clone(),
-                        cloud_options.clone(),
-                    )),
-                    [(input_key, input.port)],
-                ),
-                #[cfg(not(any(
-                    feature = "csv",
-                    feature = "parquet",
-                    feature = "json",
-                    feature = "ipc"
-                )))]
-                _ => {
-                    panic!("activate source feature")
-                },
-            }
-        },
-
-        FileSink2 {
             input,
             options:
                 FileSinkOptions {
@@ -999,50 +932,71 @@ fn to_graph_rec<'a>(
             )
         },
 
-        GroupBy { input, key, aggs } => {
-            let input_key = to_graph_rec(input.node, ctx)?;
-
-            let input_schema = &ctx.phys_sm[input.node].output_schema;
-            let key_schema = compute_output_schema(input_schema, key, ctx.expr_arena)?;
-            let grouper = new_hash_grouper(key_schema.clone());
-
-            let key_selectors = key
-                .iter()
-                .map(|e| create_stream_expr(e, ctx, input_schema))
-                .try_collect_vec()?;
-
+        GroupBy {
+            inputs,
+            key_per_input,
+            aggs_per_input,
+        } => {
+            let mut key_ports = Vec::new();
+            let mut key_schema_per_input = Vec::new();
+            let mut key_selectors_per_input = Vec::new();
+            let mut reductions_per_input = Vec::new();
             let mut grouped_reductions = Vec::new();
             let mut grouped_reduction_cols = Vec::new();
             let mut has_order_sensitive_agg = false;
-            for agg in aggs {
-                has_order_sensitive_agg |= matches!(
-                    ctx.expr_arena.get(agg.node()),
-                    AExpr::Agg(
-                        IRAggExpr::First(_)
-                            | IRAggExpr::FirstNonNull(_)
-                            | IRAggExpr::Last(_)
-                            | IRAggExpr::LastNonNull(_)
-                    )
-                );
-                let (reduction, input_nodes) =
-                    into_reduction(agg.node(), ctx.expr_arena, input_schema)?;
-                let cols = input_nodes
+            for ((input, key), aggs) in inputs.iter().zip(key_per_input).zip(aggs_per_input) {
+                let input_key = to_graph_rec(input.node, ctx)?;
+                key_ports.push((input_key, input.port));
+
+                let input_schema = &ctx.phys_sm[input.node].output_schema;
+                let key_schema = compute_output_schema(input_schema, key, ctx.expr_arena)?;
+                key_schema_per_input.push(key_schema);
+
+                let key_selectors = key
                     .iter()
-                    .map(|node| {
-                        let AExpr::Column(col) = ctx.expr_arena.get(*node) else {
-                            unreachable!()
-                        };
-                        col.clone()
-                    })
-                    .collect();
-                grouped_reductions.push(reduction);
-                grouped_reduction_cols.push(cols);
+                    .map(|e| create_stream_expr(e, ctx, input_schema))
+                    .try_collect_vec()?;
+                key_selectors_per_input.push(key_selectors);
+
+                let mut reductions_for_this_input = Vec::new();
+                for agg in aggs {
+                    has_order_sensitive_agg |= matches!(
+                        ctx.expr_arena.get(agg.node()),
+                        AExpr::Agg(
+                            IRAggExpr::First(_)
+                                | IRAggExpr::FirstNonNull(_)
+                                | IRAggExpr::Last(_)
+                                | IRAggExpr::LastNonNull(_)
+                        )
+                    );
+                    let (reduction, input_nodes) =
+                        into_reduction(agg.node(), ctx.expr_arena, input_schema)?;
+                    let cols = input_nodes
+                        .iter()
+                        .map(|node| {
+                            let AExpr::Column(col) = ctx.expr_arena.get(*node) else {
+                                unreachable!()
+                            };
+                            col.clone()
+                        })
+                        .collect();
+                    reductions_for_this_input.push(grouped_reductions.len());
+                    grouped_reductions.push(reduction);
+                    grouped_reduction_cols.push(cols);
+                }
+
+                reductions_per_input.push(reductions_for_this_input);
             }
 
+            let key_schema = key_schema_per_input.swap_remove(0);
+            assert!(key_schema_per_input.iter().all(|s| **s == *key_schema));
+
+            let grouper = new_hash_grouper(key_schema.clone());
             ctx.graph.add_node(
                 nodes::group_by::GroupByNode::new(
                     key_schema,
-                    key_selectors,
+                    key_selectors_per_input,
+                    reductions_per_input,
                     grouper,
                     grouped_reduction_cols,
                     grouped_reductions,
@@ -1051,7 +1005,7 @@ fn to_graph_rec<'a>(
                     ctx.num_pipelines,
                     has_order_sensitive_agg,
                 ),
-                [(input_key, input.port)],
+                key_ports,
             )
         },
 
@@ -1434,7 +1388,10 @@ fn to_graph_rec<'a>(
                         let Some(mut df) = df else { return Ok(None) };
 
                         if let Some(simple_projection) = &simple_projection {
-                            df = unsafe { df.project(simple_projection.clone())? };
+                            df = unsafe {
+                                df.select_unchecked(simple_projection.iter_names())?
+                                    .with_schema(simple_projection.clone())
+                            };
                         }
 
                         if validate_schema {

@@ -15,14 +15,14 @@ impl HivePartitionsDf {
     pub fn filter_columns(&self, projected_columns: &Schema) -> Self {
         let columns: Vec<_> = self
             .df()
-            .get_columns()
+            .columns()
             .iter()
             .filter(|c| projected_columns.contains(c.name()))
             .cloned()
             .collect();
 
         let height = self.df().height();
-        DataFrame::new_with_height(height, columns).unwrap().into()
+        unsafe { DataFrame::new_unchecked(height, columns) }.into()
     }
 
     pub fn df(&self) -> &DataFrame {
@@ -201,7 +201,7 @@ pub fn hive_partitions_from_paths(
         .collect::<PolarsResult<Vec<_>>>()?;
     buffers.sort_by_key(|s| reader_schema.index_of(s.name()).unwrap_or(usize::MAX));
 
-    Ok(Some(HivePartitionsDf(DataFrame::new_with_height(
+    Ok(Some(HivePartitionsDf(DataFrame::new(
         paths.len(),
         buffers,
     )?)))

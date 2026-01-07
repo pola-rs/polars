@@ -22,7 +22,7 @@ from polars.testing.parametric.strategies.dtype import _time_units
 from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES, TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
-    from typing import Callable
+    from collections.abc import Callable
 
     from hypothesis.strategies import SearchStrategy
 

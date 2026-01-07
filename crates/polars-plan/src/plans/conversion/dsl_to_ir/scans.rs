@@ -653,7 +653,7 @@ this scan to succeed with an empty DataFrame.",
                             sources,
                             first_scan_source,
                             unified_scan_args.row_index.as_ref(),
-                            &mut options,
+                            Arc::make_mut(&mut options),
                             cloud_options,
                         )?
                     };

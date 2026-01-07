@@ -276,7 +276,7 @@ fn create_physical_plan_impl(
                     input: recurse!(input, state)?,
                     name: PlSmallStr::from_static("batches"),
                     f: Box::new(move |mut buffer, _state| {
-                        while !buffer.is_empty() {
+                        while buffer.height() > 0 {
                             let df;
                             (df, buffer) = buffer.split_at(buffer.height().min(chunk_size) as i64);
                             let should_stop = function.call(df)?;
@@ -353,16 +353,9 @@ fn create_physical_plan_impl(
             let mut create_skip_batch_predicate = unified_scan_args.table_statistics.is_some();
             #[cfg(feature = "parquet")]
             {
-                create_skip_batch_predicate |= matches!(
-                    &*scan_type,
-                    FileScanIR::Parquet {
-                        options: polars_io::prelude::ParquetOptions {
-                            use_statistics: true,
-                            ..
-                        },
-                        ..
-                    }
-                );
+                if let FileScanIR::Parquet { options, .. } = scan_type.as_ref() {
+                    create_skip_batch_predicate |= options.use_statistics;
+                }
             }
 
             let predicate = predicate
@@ -637,7 +630,7 @@ fn create_physical_plan_impl(
                             let mask = phys_expr.evaluate(&df, &execution_state)?;
                             let mask = mask.as_materialized_series();
                             let mask = mask.bool()?;
-                            df._filter_seq(mask)
+                            df.filter_seq(mask)
                         }))
                     })
                 })

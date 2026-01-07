@@ -47,7 +47,7 @@ impl DataFrameBuilder {
 
         // SAFETY: we checked the lengths and the names are unique because they
         // come from Schema.
-        unsafe { DataFrame::new_no_checks(self.height, columns) }
+        unsafe { DataFrame::new_unchecked(self.height, columns) }
     }
 
     pub fn freeze_reset(&mut self) -> DataFrame {
@@ -64,7 +64,7 @@ impl DataFrameBuilder {
 
         // SAFETY: we checked the lengths and the names are unique because they
         // come from Schema.
-        let out = unsafe { DataFrame::new_no_checks(self.height, columns) };
+        let out = unsafe { DataFrame::new_unchecked(self.height, columns) };
         self.height = 0;
         out
     }
@@ -93,7 +93,7 @@ impl DataFrameBuilder {
         length: usize,
         share: ShareStrategy,
     ) {
-        let columns = other.get_columns();
+        let columns = other.columns();
         assert!(self.builders.len() == columns.len());
         for (builder, column) in self.builders.iter_mut().zip(columns) {
             match column {
@@ -121,7 +121,7 @@ impl DataFrameBuilder {
         repeats: usize,
         share: ShareStrategy,
     ) {
-        let columns = other.get_columns();
+        let columns = other.columns();
         assert!(self.builders.len() == columns.len());
         for (builder, column) in self.builders.iter_mut().zip(columns) {
             match column {
@@ -150,7 +150,7 @@ impl DataFrameBuilder {
         repeats: usize,
         share: ShareStrategy,
     ) {
-        let columns = other.get_columns();
+        let columns = other.columns();
         assert!(self.builders.len() == columns.len());
         for (builder, column) in self.builders.iter_mut().zip(columns) {
             match column {
@@ -181,7 +181,7 @@ impl DataFrameBuilder {
         idxs: &[IdxSize],
         share: ShareStrategy,
     ) {
-        let columns = other.get_columns();
+        let columns = other.columns();
         assert!(self.builders.len() == columns.len());
         for (builder, column) in self.builders.iter_mut().zip(columns) {
             match column {
@@ -205,7 +205,7 @@ impl DataFrameBuilder {
     /// other dataframe is not rechunked.
     pub fn opt_gather_extend(&mut self, other: &DataFrame, idxs: &[IdxSize], share: ShareStrategy) {
         let mut trans_idxs = Vec::new();
-        let columns = other.get_columns();
+        let columns = other.columns();
         assert!(self.builders.len() == columns.len());
         for (builder, column) in self.builders.iter_mut().zip(columns) {
             match column {

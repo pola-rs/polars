@@ -11,7 +11,6 @@ from decimal import Decimal as PyDecimal
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     ClassVar,
     Literal,
     NoReturn,
@@ -115,6 +114,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import PyDataFrame, PySeries
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     with contextlib.suppress(ImportError):  # Module not available when building docs
         import polars._plr as plr
 
@@ -494,7 +495,7 @@ class Series:
         keys = ("values", "validity", "offsets")
         return {  # type: ignore[return-value]
             k: self._from_pyseries(b) if b is not None else b
-            for k, b in zip(keys, buffers)
+            for k, b in zip(keys, buffers, strict=True)
         }
 
     @classmethod
@@ -8156,6 +8157,11 @@ class Series:
             Rank in descending order.
         seed
             If `method="random"`, use this as seed.
+
+        Notes
+        -----
+        If you're coming from SQL, you may be expecting null values to be ranked last.
+        Polars, however, only ranks non-null values and preserves the null ones.
 
         Examples
         --------

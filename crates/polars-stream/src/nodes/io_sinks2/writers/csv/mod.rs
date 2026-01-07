@@ -1,13 +1,11 @@
 use std::sync::Arc;
 
 use polars_core::config;
-use polars_core::prelude::DataType;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::pl_async;
 use polars_io::prelude::{CsvSerializer, CsvWriterOptions};
 use polars_io::utils::sync_on_close::SyncOnCloseType;
-use polars_utils::IdxSize;
 use polars_utils::index::NonZeroIdxSize;
 
 use crate::async_executor::{self, TaskPriority};

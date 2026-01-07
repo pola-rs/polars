@@ -322,6 +322,7 @@ fn create_physical_expr_inner(
             expr,
             idx,
             returns_scalar,
+            null_on_oob,
         } => {
             let phys_expr = create_physical_expr_inner(expr, expr_arena, schema, state)?;
             let phys_idx = create_physical_expr_inner(idx, expr_arena, schema, state)?;
@@ -330,6 +331,7 @@ fn create_physical_expr_inner(
                 idx: phys_idx,
                 expr: node_to_expr(expression, expr_arena),
                 returns_scalar,
+                null_on_oob,
             }))
         },
         SortBy {
@@ -386,6 +388,7 @@ fn create_physical_expr_inner(
                         expr: input,
                         idx: arg_min,
                         returns_scalar: true,
+                        null_on_oob: false,
                     };
                     let gather = expr_arena.add(gather_aexpr);
 
@@ -403,6 +406,7 @@ fn create_physical_expr_inner(
                         expr: input,
                         idx: arg_min,
                         returns_scalar: true,
+                        null_on_oob: false,
                     };
                     let gather = expr_arena.add(gather_aexpr);
 

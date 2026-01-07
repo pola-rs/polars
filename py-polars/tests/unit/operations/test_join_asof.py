@@ -1381,6 +1381,7 @@ def test_join_asof_no_exact_matches_parametric(
     for l_val, r_val in zip(
         out["col0"],
         out["col0_right"],
+        strict=False,
     ):
         assert l_val != r_val or r_val is None
 

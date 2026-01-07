@@ -450,7 +450,7 @@ impl StructChunked {
             .collect::<Vec<_>>();
 
         // SAFETY: invariants for struct are the same
-        unsafe { DataFrame::new_no_checks(self.len(), columns) }
+        unsafe { DataFrame::new_unchecked(self.len(), columns) }
     }
 
     /// Get access to one of this [`StructChunked`]'s fields

@@ -53,7 +53,7 @@ impl ComputeNode for CallbackSinkNode {
             recv[0] = PortState::Done;
 
             // Flush the last buffer
-            if !self.buffer.is_empty() && !self.is_done {
+            if self.buffer.height() > 0 && !self.is_done {
                 let function = self.function.clone();
                 let df = std::mem::take(&mut self.buffer);
 
@@ -98,9 +98,9 @@ impl ComputeNode for CallbackSinkNode {
                 let (df, _, _, consume_token) = m.into_inner();
 
                 // @NOTE: This also performs schema validation.
-                self.buffer.vstack_mut(&df)?;
+                self.buffer.vstack_mut_owned(df)?;
 
-                while !self.buffer.is_empty()
+                while self.buffer.height() > 0
                     && self
                         .chunk_size
                         .is_none_or(|chunk_size| self.buffer.height() >= chunk_size.into())

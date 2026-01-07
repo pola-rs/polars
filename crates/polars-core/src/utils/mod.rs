@@ -147,7 +147,7 @@ impl Container for DataFrame {
 
     fn chunk_lengths(&self) -> impl Iterator<Item = usize> {
         // @scalar-correctness?
-        self.columns[0].as_materialized_series().chunk_lengths()
+        self.columns()[0].as_materialized_series().chunk_lengths()
     }
 }
 
@@ -322,7 +322,7 @@ pub fn split_df_as_ref(df: &DataFrame, target: usize, strict: bool) -> Vec<DataF
 /// Split a [`DataFrame`] into `n` parts. We take a `&mut` to be able to repartition/align chunks.
 /// `strict` in that it respects `n` even if the chunks are suboptimal.
 pub fn split_df(df: &mut DataFrame, target: usize, strict: bool) -> Vec<DataFrame> {
-    if target == 0 || df.is_empty() {
+    if target == 0 || df.height() == 0 {
         return vec![df.clone()];
     }
     // make sure that chunks are aligned.
@@ -794,7 +794,7 @@ macro_rules! apply_method_physical_numeric {
 #[macro_export]
 macro_rules! df {
     ($($col_name:expr => $slice:expr), + $(,)?) => {
-        $crate::prelude::DataFrame::new(vec![
+        $crate::prelude::DataFrame::new_infer_height(vec![
             $($crate::prelude::Column::from(<$crate::prelude::Series as $crate::prelude::NamedFrom::<_, _>>::new($col_name.into(), $slice)),)+
         ])
     }
@@ -936,7 +936,7 @@ pub fn accumulate_dataframes_horizontal(dfs: Vec<DataFrame>) -> PolarsResult<Dat
     let mut iter = dfs.into_iter();
     let mut acc_df = iter.next().unwrap();
     for df in iter {
-        acc_df.hstack_mut(df.get_columns())?;
+        acc_df.hstack_mut(df.columns())?;
     }
     Ok(acc_df)
 }

@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PYTHON_VERSION: '3.9'
+  PYTHON_VERSION: '3.10'
   PYTHON_VERSION_WIN_ARM64: '3.11' # ARM64 Windows doesn't have older versions
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10

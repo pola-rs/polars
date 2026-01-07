@@ -22,7 +22,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes, series
 
 if TYPE_CHECKING:
-    from typing import Callable
+    from collections.abc import Callable
 
     from polars._typing import PolarsDataType, TimeUnit
 

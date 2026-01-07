@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     ClassVar,
     NoReturn,
     TypeVar,
@@ -109,9 +108,9 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Awaitable, Iterator, Sequence
+    from collections.abc import Awaitable, Callable, Iterator, Sequence
     from io import IOBase
-    from typing import IO, Literal
+    from typing import IO, Concatenate, Literal, ParamSpec
 
     from polars.io.partition import _SinkDirectory
     from polars.lazyframe.opt_flags import QueryOptFlags
@@ -158,11 +157,6 @@ if TYPE_CHECKING:
     from polars.config import TableFormatNames
     from polars.io.cloud import CredentialProviderFunction
     from polars.io.parquet import ParquetFieldOverwrites
-
-    if sys.version_info >= (3, 10):
-        from typing import Concatenate, ParamSpec
-    else:
-        from typing_extensions import Concatenate, ParamSpec
 
     if sys.version_info >= (3, 11):
         from typing import Self
@@ -1220,7 +1214,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             df_metrics.row(0)[(n * n_metrics) : (n + 1) * n_metrics]
             for n in range(schema.len())
         ]
-        summary = dict(zip(schema, column_metrics))
+        summary = dict(zip(schema, column_metrics, strict=True))
 
         # cast by column type (numeric/bool -> float), (other -> string)
         for c in schema:
@@ -2936,6 +2930,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         compression: IpcCompression | None = "uncompressed",
         compat_level: CompatLevel | None = None,
+        record_batch_size: int | None = None,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
         credential_provider: CredentialProviderFunction
@@ -2956,6 +2951,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         compression: IpcCompression | None = "uncompressed",
         compat_level: CompatLevel | None = None,
+        record_batch_size: int | None = None,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
         credential_provider: CredentialProviderFunction
@@ -2975,6 +2971,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         compression: IpcCompression | None = "uncompressed",
         compat_level: CompatLevel | None = None,
+        record_batch_size: int | None = None,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
         credential_provider: CredentialProviderFunction
@@ -3002,6 +2999,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         compat_level
             Use a specific compatibility level
             when exporting Polars' internal data structures.
+        record_batch_size
+            Size of the record batches in number of rows.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
         maintain_order
             Maintain the order in which data is processed.
             Setting this to `False` will be slightly faster.
@@ -3144,6 +3147,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             sink_options=sink_options,
             compression=compression,
             compat_level=compat_level_py,
+            record_batch_size=record_batch_size,
         )
 
         if not lazy:

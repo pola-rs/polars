@@ -24,13 +24,6 @@ impl RowCountAndSize {
         }
     }
 
-    pub fn min(self, other: Self) -> Self {
-        Self {
-            num_rows: self.num_rows.min(other.num_rows),
-            num_bytes: self.num_bytes.min(other.num_bytes),
-        }
-    }
-
     /// How many rows from `other` can fit into `self`.
     ///
     /// # Parameters

@@ -214,6 +214,7 @@ pub enum AExpr {
         expr: Node,
         idx: Node,
         returns_scalar: bool,
+        null_on_oob: bool,
     },
     SortBy {
         expr: Node,
@@ -409,6 +410,7 @@ impl AExpr {
                 expr: _,
                 idx,
                 returns_scalar,
+                null_on_oob: _,
             } => !returns_scalar && is_length_preserving_ae(*idx, arena),
             AExpr::SortBy { expr, by, .. } => broadcasting_input_length_preserving(
                 std::iter::once(*expr).chain(by.iter().copied()),

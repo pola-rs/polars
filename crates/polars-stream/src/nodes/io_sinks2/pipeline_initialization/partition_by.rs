@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use polars_error::PolarsResult;
 use polars_plan::dsl::UnifiedSinkArgs;
-use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::async_executor::{self, TaskPriority};
@@ -17,7 +16,7 @@ use crate::nodes::io_sinks2::components::partition_morsel_sender::PartitionMorse
 use crate::nodes::io_sinks2::components::partition_sink_starter::PartitionSinkStarter;
 use crate::nodes::io_sinks2::components::partitioner::Partitioner;
 use crate::nodes::io_sinks2::components::partitioner_pipeline::PartitionerPipeline;
-use crate::nodes::io_sinks2::components::size::{NonZeroRowCountAndSize, RowCountAndSize};
+use crate::nodes::io_sinks2::components::size::NonZeroRowCountAndSize;
 use crate::nodes::io_sinks2::config::{IOSinkNodeConfig, IOSinkTarget, PartitionedTarget};
 use crate::nodes::io_sinks2::writers::create_file_writer_starter;
 use crate::nodes::io_sinks2::writers::interface::FileWriterStarter;
@@ -166,7 +165,6 @@ pub fn start_partition_sink_pipeline(
                 open_sinks_semaphore,
                 partition_sink_starter,
                 per_partition_sort,
-                inflight_morsel_limit,
                 no_partition_keys,
                 verbose,
             }

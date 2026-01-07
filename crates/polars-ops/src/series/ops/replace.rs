@@ -323,7 +323,7 @@ fn create_replacer(mut old: Series, mut new: Series, add_mask: bool) -> PolarsRe
     } else {
         vec![old.into(), new.into()]
     };
-    let out = unsafe { DataFrame::new_no_checks(len, cols) };
+    let out = unsafe { DataFrame::new_unchecked(len, cols) };
     Ok(out)
 }
 

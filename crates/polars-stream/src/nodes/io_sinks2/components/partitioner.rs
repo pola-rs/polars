@@ -1,18 +1,11 @@
 use std::borrow::Cow;
 
-use arrow::array::{BinaryViewArray, FixedSizeBinaryArray, PrimitiveArray};
-use arrow::buffer::Buffer;
-use arrow::datatypes::ArrowDataType;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::_get_rows_encoded_ca_unordered;
-use polars_core::prelude::{
-    BinaryOffsetChunked, Column, DataType, GroupsIndicator, IntoGroupsType, LargeBinaryArray,
-};
-use polars_core::{with_match_physical_integer_type, with_match_physical_numeric_type};
+use polars_core::prelude::{BinaryOffsetChunked, Column, IntoGroupsType};
 use polars_error::PolarsResult;
 use polars_expr::hash_keys::{HashKeysVariant, hash_keys_variant_for_dtype};
 use polars_expr::state::ExecutionState;
-use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::async_primitives::wait_group::WaitToken;
@@ -151,15 +144,16 @@ impl KeyedPartitioner {
 
         let gather_source_df: Cow<DataFrame> =
             if let Some(projection) = self.exclude_keys_projection.as_ref() {
-                let columns = df.get_columns();
+                let columns = df.columns();
 
-                Cow::Owned(if projection.len() == 0 {
-                    DataFrame::empty_with_height(df.height())
-                } else {
-                    projection
-                        .iter_indices()
-                        .map(|i| columns[i].clone())
-                        .collect()
+                Cow::Owned(unsafe {
+                    DataFrame::new_unchecked(
+                        df.height(),
+                        projection
+                            .iter_indices()
+                            .map(|i| columns[i].clone())
+                            .collect(),
+                    )
                 })
             } else {
                 Cow::Borrowed(&df)
@@ -174,13 +168,18 @@ impl KeyedPartitioner {
                 // Ensure 0-width is handled properly.
                 assert_eq!(df.height(), groups_indicator.len());
 
-                let keys_df: DataFrame = key_columns
-                    .iter()
-                    .map(|c| unsafe { c.take_slice_unchecked(&[first_idx]) })
-                    .collect();
+                let keys_df: DataFrame = unsafe {
+                    DataFrame::new_unchecked(
+                        1,
+                        key_columns
+                            .iter()
+                            .map(|c| c.take_slice_unchecked(&[first_idx]))
+                            .collect(),
+                    )
+                };
 
                 let key: PartitionKey = pre_computed_keys.as_ref().map_or_else(
-                    || PartitionKey::from_slice(row_encode(keys_df.get_columns()).get(0).unwrap()),
+                    || PartitionKey::from_slice(row_encode(keys_df.columns()).get(0).unwrap()),
                     |keys| keys.get_key(first_idx.try_into().unwrap()),
                 );
 

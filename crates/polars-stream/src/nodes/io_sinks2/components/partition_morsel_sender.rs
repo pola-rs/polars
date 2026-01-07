@@ -5,7 +5,6 @@ use polars_core::frame::DataFrame;
 use polars_error::PolarsResult;
 use polars_plan::dsl::sink2::FileProviderArgs;
 use polars_utils::IdxSize;
-use polars_utils::index::NonZeroIdxSize;
 
 use crate::async_executor::{self, TaskPriority};
 use crate::nodes::io_sinks2::components::error_capture::ErrorCapture;
@@ -48,17 +47,18 @@ impl PartitionMorselSender {
         // Sorted finalize
         morsel_stream: Option<(futures::stream::BoxStream<'static, (SinkMorsel, bool)>, u64)>,
     ) -> PolarsResult<()> {
+        #[expect(unused)]
         let row_byte_size: u64;
 
-        let mut sorted_finalize_stream = if let Some((stream, row_byte_size_)) = morsel_stream {
-            row_byte_size = row_byte_size_;
+        let mut sorted_finalize_stream = if let Some((stream, _)) = morsel_stream {
+            // row_byte_size = row_byte_size_;
 
             assert_eq!(partition.sinked_size, RowCountAndSize::default());
             assert_eq!(partition.buffered_rows.height(), 0);
 
             Some(stream)
         } else {
-            row_byte_size = partition.buffered_size().row_byte_size();
+            // row_byte_size = partition.buffered_size().row_byte_size();
             None
         };
 
@@ -204,15 +204,15 @@ impl PartitionMorselSender {
             assert!((1..=available_row_capacity.num_rows).contains(&morsel_height));
 
             if let Some(hstack_keys) = self.hstack_keys.as_ref() {
-                let columns = morsel.df().get_columns();
+                let columns = morsel.df().columns();
                 let height = morsel.df().height();
                 let new_columns = hstack_keys.hstack_columns_broadcast(
                     height,
                     columns,
-                    partition.keys_df.get_columns(),
+                    partition.keys_df.columns(),
                 );
 
-                *morsel.df_mut() = unsafe { DataFrame::new_no_checks(height, new_columns) };
+                *morsel.df_mut() = unsafe { DataFrame::new_unchecked(height, new_columns) };
             };
 
             if file_sink_task_data.morsel_tx.send(morsel).await.is_err() {
