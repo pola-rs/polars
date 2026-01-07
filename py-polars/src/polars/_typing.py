@@ -298,7 +298,7 @@ PlanStage: TypeAlias = Literal["ir", "physical"]
 
 FileSource: TypeAlias = str | Path | IO[bytes] | bytes | list[str] | list[Path] | list[IO[bytes]] | list[bytes]
 
-JSONEncoder = Union[Callable[[Any], bytes], Callable[[Any], str]]
+JSONEncoder = Callable[[Any], bytes] | Callable[[Any], str]
 
 DeprecationType: TypeAlias = Literal[
     "function",

@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 
 if TYPE_CHECKING:
     from polars import DataFrame, LazyFrame, Series
 
-    FrameOrSeries = Union["DataFrame", "Series"]
+    FrameOrSeries = DataFrame | Series
 
 
 class PolarsSlice:

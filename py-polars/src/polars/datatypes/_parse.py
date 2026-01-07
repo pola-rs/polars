@@ -7,7 +7,7 @@ from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
 from inspect import isclass
 from types import NoneType, UnionType
-from typing import TYPE_CHECKING, Any, Final, ForwardRef, NoReturn, Union, get_args
+from typing import TYPE_CHECKING, Any, Final, ForwardRef, NoReturn, get_args
 
 import polars._reexport as pl
 from polars.datatypes.classes import (
@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from polars._typing import PolarsDataType, PythonDataType, SchemaDict
 
 
-UnionTypeOld = type(Union[int, str])
+UnionTypeOld = type(int | str)
 
 
 def parse_into_datatype_expr(input: Any) -> pl.DataTypeExpr:
