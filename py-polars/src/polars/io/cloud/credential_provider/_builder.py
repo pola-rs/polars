@@ -48,7 +48,9 @@ OBJECT_STORE_CLIENT_OPTIONS: Final[frozenset[str]] = frozenset(
     ]
 )
 
-CredentialProviderBuilderReturn: TypeAlias = CredentialProvider | CredentialProviderFunction | None
+CredentialProviderBuilderReturn: TypeAlias = (
+    CredentialProvider | CredentialProviderFunction | None
+)
 
 
 class CredentialProviderBuilder:

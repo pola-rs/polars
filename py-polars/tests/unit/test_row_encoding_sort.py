@@ -14,7 +14,20 @@ import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes, series
 
-Element = None | bool | int | float | str | decimal.Decimal | datetime.date | datetime.datetime | datetime.time | datetime.timedelta | list[Any] | dict[Any, Any]
+Element = (
+    None
+    | bool
+    | int
+    | float
+    | str
+    | decimal.Decimal
+    | datetime.date
+    | datetime.datetime
+    | datetime.time
+    | datetime.timedelta
+    | list[Any]
+    | dict[Any, Any]
+)
 OrderSign = Literal[-1, 0, 1]
 
 

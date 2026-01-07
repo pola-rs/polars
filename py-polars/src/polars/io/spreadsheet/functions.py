@@ -1164,7 +1164,9 @@ def _read_spreadsheet_calamine(
     if type_checks:
         apply_cast = df.select(d[0].all(ignore_nulls=True) for d in type_checks).row(0)
         if downcast := [
-            cast for apply, (_, cast) in zip(apply_cast, type_checks, strict=True) if apply
+            cast
+            for apply, (_, cast) in zip(apply_cast, type_checks, strict=True)
+            if apply
         ]:
             df = df.with_columns(*downcast)
 

@@ -35,7 +35,15 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import Self
 
-    CompatibleFrameType: TypeAlias = DataFrame | LazyFrame | Series | pd.DataFrame | pd.Series[Any] | pa.Table | pa.RecordBatch
+    CompatibleFrameType: TypeAlias = (
+        DataFrame
+        | LazyFrame
+        | Series
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pa.Table
+        | pa.RecordBatch
+    )
 
 __all__ = ["SQLContext"]
 

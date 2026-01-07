@@ -341,8 +341,6 @@ def get_sources(
     if not isinstance(source, Sequence) or isinstance(source, (str, bytes)):
         out: list[bytes | str | IO[bytes] | IO[str]] = [source]
 
-        return cast(
-            "list[bytes] | list[str] | list[IO[bytes]] | list[IO[str]]", out
-        )
+        return cast("list[bytes] | list[str] | list[IO[bytes]] | list[IO[str]]", out)
 
     return source

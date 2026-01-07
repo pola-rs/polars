@@ -57,9 +57,27 @@ PolarsDataType: TypeAlias = Union["DataTypeClass", "DataType"]
 PolarsTemporalType: TypeAlias = Union[type["TemporalType"], "TemporalType"]
 PolarsIntegerType: TypeAlias = Union[type["IntegerType"], "IntegerType"]
 OneOrMoreDataTypes: TypeAlias = PolarsDataType | Iterable[PolarsDataType]
-PythonDataType: TypeAlias = type[int] | type[float] | type[bool] | type[str] | type["date"] | type["time"] | type["datetime"] | type["timedelta"] | type[list[Any]] | type[tuple[Any, ...]] | type[bytes] | type[object] | type["Decimal"] | type[None]
+PythonDataType: TypeAlias = (
+    type[int]
+    | type[float]
+    | type[bool]
+    | type[str]
+    | type["date"]
+    | type["time"]
+    | type["datetime"]
+    | type["timedelta"]
+    | type[list[Any]]
+    | type[tuple[Any, ...]]
+    | type[bytes]
+    | type[object]
+    | type["Decimal"]
+    | type[None]
+)
 
-SchemaDefinition: TypeAlias = Mapping[str, PolarsDataType | PythonDataType | None] | Sequence[str | tuple[str, PolarsDataType | PythonDataType | None]]
+SchemaDefinition: TypeAlias = (
+    Mapping[str, PolarsDataType | PythonDataType | None]
+    | Sequence[str | tuple[str, PolarsDataType | PythonDataType | None]]
+)
 SchemaDict: TypeAlias = Mapping[str, PolarsDataType]
 
 NumericLiteral: TypeAlias = Union[int, float, "Decimal"]
@@ -215,9 +233,17 @@ ConditionalFormatDict: TypeAlias = Mapping[
     ColumnNameOrSelector | Collection[str],
     str | Mapping[str, Any] | Sequence[str | Mapping[str, Any]],
 ]
-ColumnTotalsDefinition: TypeAlias = Mapping[ColumnNameOrSelector | tuple[ColumnNameOrSelector], str] | Sequence[str] | bool
-ColumnWidthsDefinition: TypeAlias = Mapping[ColumnNameOrSelector, tuple[str, ...] | int] | int
-RowTotalsDefinition: TypeAlias = Mapping[str, str | Collection[str]] | Collection[str] | bool
+ColumnTotalsDefinition: TypeAlias = (
+    Mapping[ColumnNameOrSelector | tuple[ColumnNameOrSelector], str]
+    | Sequence[str]
+    | bool
+)
+ColumnWidthsDefinition: TypeAlias = (
+    Mapping[ColumnNameOrSelector, tuple[str, ...] | int] | int
+)
+RowTotalsDefinition: TypeAlias = (
+    Mapping[str, str | Collection[str]] | Collection[str] | bool
+)
 
 # standard/named hypothesis profiles used for parametric testing
 ParametricProfileNames: TypeAlias = Literal["fast", "balanced", "expensive"]
@@ -263,7 +289,9 @@ AlchemyConnection: TypeAlias = Union["Connection", "Engine", "Session"]
 AlchemyAsyncConnection: TypeAlias = Union[
     "AsyncConnection", "AsyncEngine", "AsyncSession"
 ]
-ConnectionOrCursor: TypeAlias = BasicConnection | BasicCursor | Cursor | AlchemyConnection | AlchemyAsyncConnection
+ConnectionOrCursor: TypeAlias = (
+    BasicConnection | BasicCursor | Cursor | AlchemyConnection | AlchemyAsyncConnection
+)
 
 # Annotations for `__getitem__` methods
 SingleIndexSelector: TypeAlias = int
@@ -296,7 +324,16 @@ EngineType: TypeAlias = Union[
 
 PlanStage: TypeAlias = Literal["ir", "physical"]
 
-FileSource: TypeAlias = str | Path | IO[bytes] | bytes | list[str] | list[Path] | list[IO[bytes]] | list[bytes]
+FileSource: TypeAlias = (
+    str
+    | Path
+    | IO[bytes]
+    | bytes
+    | list[str]
+    | list[Path]
+    | list[IO[bytes]]
+    | list[bytes]
+)
 
 JSONEncoder = Callable[[Any], bytes] | Callable[[Any], str]
 

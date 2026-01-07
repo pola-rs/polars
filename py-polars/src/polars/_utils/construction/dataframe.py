@@ -130,7 +130,8 @@ def dict_to_pydf(
                                     else t[1]
                                 ),
                                 list(data.items()),
-                            ), strict=True,
+                            ),
+                            strict=True,
                         )
                     )
             except FileNotFoundError:

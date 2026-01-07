@@ -870,7 +870,9 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
     no_dtypes = all(d is None for d in dtypes)
 
     # transpose rows into columns, detect/omit truncated columns
-    coldata = list(zip(*(row for row in body if not all((e == "…") for e in row)), strict=True))
+    coldata = list(
+        zip(*(row for row in body if not all((e == "…") for e in row)), strict=True)
+    )
     for el in ("…", "..."):
         if el in headers:
             idx = headers.index(el)
@@ -908,7 +910,10 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
             for col, dtype in zip(row, schema.values(), strict=True)
         ):
             pad = pl.Series(
-                ["" if x == "" or y == "" else " " for x, y in zip(out_rows[-1], row, strict=True)],
+                [
+                    "" if x == "" or y == "" else " "
+                    for x, y in zip(out_rows[-1], row, strict=True)
+                ],
                 dtype=String,
             )
             out_rows[-1] = out_rows[-1] + pad + row

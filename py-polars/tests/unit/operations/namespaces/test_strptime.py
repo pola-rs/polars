@@ -63,7 +63,8 @@ def test_to_datetime_precision() -> None:
             [789000000, 987000000],
             [789321000, 987456000],
             [789321456, 987456321],
-        ), strict=False,
+        ),
+        strict=False,
     )
     for time_unit, suffix, expected_values in test_data:
         ds = s.str.to_datetime(f"%Y-%m-%d %H:%M:%S{suffix}", time_unit=time_unit)

@@ -329,7 +329,9 @@ def test_struct_aggstates_in_apply_expr_24168(
         data = df.to_dict(as_series=False)
 
         result: dict[int, Any] = {}
-        for gg, ll, rr in zip(data["g"][:n_rows], lhs[2][:n_rows], rhs[2][:n_rows], strict=True):
+        for gg, ll, rr in zip(
+            data["g"][:n_rows], lhs[2][:n_rows], rhs[2][:n_rows], strict=True
+        ):
             result.setdefault(gg, []).append({"lhs": ll, "rhs": rr})
 
         if lhs[1] and rhs[1]:

@@ -220,7 +220,9 @@ pub(crate) fn py_object_to_any_value(
     }
 
     fn get_str(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
-        Ok(AnyValue::StringOwned(PlSmallStr::from(ob.extract::<&str>()?)))
+        Ok(AnyValue::StringOwned(PlSmallStr::from(
+            ob.extract::<&str>()?,
+        )))
     }
 
     fn get_bytes(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {

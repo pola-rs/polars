@@ -222,7 +222,9 @@ def test_init_structured_objects() -> None:
     columns = ["timestamp", "ticker", "price", "size"]
 
     for TradeClass in (TradeDC, TradeNT, TradePD):
-        trades = [TradeClass(**dict(zip(columns, values, strict=True))) for values in raw_data]  # type: ignore[arg-type]
+        trades = [
+            TradeClass(**dict(zip(columns, values, strict=True))) for values in raw_data
+        ]  # type: ignore[arg-type]
 
         for DF in (pl.DataFrame, pl.from_records):
             df = DF(data=trades)

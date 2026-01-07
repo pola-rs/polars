@@ -115,6 +115,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
     with contextlib.suppress(ImportError):  # Module not available when building docs
         import polars._plr as plr
 
