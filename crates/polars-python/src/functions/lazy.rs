@@ -141,6 +141,25 @@ pub fn collect_all(
 }
 
 #[pyfunction]
+pub fn collect_all_lazy(lfs: Vec<PyLazyFrame>, optflags: PyOptFlags) -> PyResult<PyLazyFrame> {
+    let plans = lfs_to_plans(lfs);
+
+    for plan in &plans {
+        if !matches!(plan, DslPlan::Sink { .. }) {
+            return Err(PyValueError::new_err(
+                "all LazyFrames must sink to disk to use 'collect_all(lazy=True)'",
+            ));
+        }
+    }
+
+    Ok(LazyFrame::from_logical_plan(
+        DslPlan::SinkMultiple { inputs: plans },
+        optflags.inner.into_inner(),
+    )
+    .into())
+}
+
+#[pyfunction]
 pub fn explain_all(lfs: Vec<PyLazyFrame>, optflags: PyOptFlags, py: Python) -> PyResult<String> {
     let plans = lfs_to_plans(lfs);
     let explained =
