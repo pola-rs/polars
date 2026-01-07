@@ -96,8 +96,8 @@ pub enum PhysNodeProperties {
         offset: u64,
     },
     GroupBy {
-        keys: Vec<PlSmallStr>,
-        aggs: Vec<PlSmallStr>,
+        key_per_input: Vec<Vec<PlSmallStr>>,
+        aggs_per_input: Vec<Vec<PlSmallStr>>,
     },
     #[cfg(feature = "dynamic_group_by")]
     DynamicGroupBy {

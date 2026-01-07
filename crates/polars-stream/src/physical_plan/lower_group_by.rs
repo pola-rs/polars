@@ -491,9 +491,9 @@ fn try_build_streaming_group_by(
     let agg_node = phys_sm.insert(PhysNode::new(
         group_by_output_schema.clone(),
         PhysNodeKind::GroupBy {
-            input: pre_select,
-            key: trans_keys,
-            aggs: trans_agg_exprs,
+            inputs: vec![pre_select],
+            key_per_input: vec![trans_keys],
+            aggs_per_input: vec![trans_agg_exprs],
         },
     ));
 

@@ -330,10 +330,11 @@ pub enum PhysNodeKind {
     },
 
     GroupBy {
-        input: PhysStream,
-        key: Vec<ExprIR>,
+        inputs: Vec<PhysStream>,
+        // Must have the same schema when applied for each input.
+        key_per_input: Vec<Vec<ExprIR>>,
         // Must be a 'simple' expression, a singular column feeding into a single aggregate, or Len.
-        aggs: Vec<ExprIR>,
+        aggs_per_input: Vec<Vec<ExprIR>>,
     },
 
     #[cfg(feature = "dynamic_group_by")]
@@ -458,8 +459,7 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::GatherEvery { input, .. }
             | PhysNodeKind::Rle(input)
             | PhysNodeKind::RleId(input)
-            | PhysNodeKind::PeakMinMax { input, .. }
-            | PhysNodeKind::GroupBy { input, .. } => {
+            | PhysNodeKind::PeakMinMax { input, .. } => {
                 rec!(input.node);
                 visit(input);
             },
@@ -563,7 +563,9 @@ fn visit_node_inputs_mut(
                 visit(repeats);
             },
 
-            PhysNodeKind::OrderedUnion { inputs } | PhysNodeKind::Zip { inputs, .. } => {
+            PhysNodeKind::GroupBy { inputs, .. }
+            | PhysNodeKind::OrderedUnion { inputs }
+            | PhysNodeKind::Zip { inputs, .. } => {
                 for input in inputs {
                     rec!(input.node);
                     visit(input);
