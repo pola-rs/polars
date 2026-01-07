@@ -719,7 +719,11 @@ impl PyLazyFrame {
             self.ldf
                 .read()
                 .clone()
-                .sink(target, FileType::Parquet(options), unified_sink_args)
+                .sink(
+                    target,
+                    FileWriteFormat::Parquet(Arc::new(options)),
+                    unified_sink_args,
+                )
                 .into()
         })
         .map(Into::into)
@@ -753,7 +757,7 @@ impl PyLazyFrame {
             self.ldf
                 .read()
                 .clone()
-                .sink(target, FileType::Ipc(options), unified_sink_args)
+                .sink(target, FileWriteFormat::Ipc(options), unified_sink_args)
                 .into()
         })
         .map(Into::into)
@@ -809,7 +813,7 @@ impl PyLazyFrame {
             include_bom,
             include_header,
             batch_size,
-            serialize_options,
+            serialize_options: serialize_options.into(),
         };
 
         let target = target.extract_file_sink_destination()?;
@@ -819,7 +823,7 @@ impl PyLazyFrame {
             self.ldf
                 .read()
                 .clone()
-                .sink(target, FileType::Csv(options), unified_sink_args)
+                .sink(target, FileWriteFormat::Csv(options), unified_sink_args)
                 .into()
         })
         .map(Into::into)
@@ -844,7 +848,7 @@ impl PyLazyFrame {
             self.ldf
                 .read()
                 .clone()
-                .sink(target, FileType::Json(options), unified_sink_args)
+                .sink(target, FileWriteFormat::NDJson(options), unified_sink_args)
                 .into()
         })
         .map(Into::into)
