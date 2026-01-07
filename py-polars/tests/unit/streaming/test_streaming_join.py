@@ -414,6 +414,7 @@ def test_cross_join_with_literal_column_25544() -> None:
 @pytest.mark.parametrize("nulls_equal", [False, True])
 @pytest.mark.parametrize("coalesce", [None, True, False])
 @pytest.mark.parametrize("maintain_order", ["none", "left_right", "right_left"])
+@pytest.mark.parametrize("ideal_morsel_size", [1, 100])
 @given(
     df_left=st.dataframes(
         cols=[
@@ -430,7 +431,7 @@ def test_cross_join_with_literal_column_25544() -> None:
         ]
     ),
 )
-@settings(max_examples=10)
+@settings(max_examples=100)
 def test_merge_join(
     df_left: pl.DataFrame,
     df_right: pl.DataFrame,
@@ -441,31 +442,37 @@ def test_merge_join(
     nulls_equal: bool,
     coalesce: bool | None,
     maintain_order: MaintainOrderJoin,
+    ideal_morsel_size: int,
 ) -> None:
-    check_row_order = maintain_order in {"left_right", "right_left"}
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", str(ideal_morsel_size))
+        check_row_order = maintain_order in {"left_right", "right_left"}
 
-    df_left_sorted = (
-        df_left.sort(*on, descending=descending, nulls_last=nulls_last)
-        .lazy()
-        .set_sorted(*on, descending=descending, nulls_last=nulls_last)
-    )
-    df_right_sorted = (
-        df_right.sort(*on, descending=descending, nulls_last=nulls_last)
-        .lazy()
-        .set_sorted(*on, descending=descending, nulls_last=nulls_last)
-    )
+        df_left_sorted = (
+            df_left.sort(*on, descending=descending, nulls_last=nulls_last)
+            .lazy()
+            .set_sorted(*on, descending=descending, nulls_last=nulls_last)
+        )
+        df_right_sorted = (
+            df_right.sort(*on, descending=descending, nulls_last=nulls_last)
+            .lazy()
+            .set_sorted(*on, descending=descending, nulls_last=nulls_last)
+        )
 
-    q = df_left_sorted.join(
-        df_right_sorted,
-        on=on,
-        how=how,
-        nulls_equal=nulls_equal,
-        coalesce=coalesce,
-        maintain_order=maintain_order,
-    )
-    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
-    expected = q.collect(engine="in-memory")
-    actual = q.collect(engine="streaming")
+        q = df_left_sorted.join(
+            df_right_sorted,
+            on=on,
+            how=how,
+            nulls_equal=nulls_equal,
+            coalesce=coalesce,
+            maintain_order=maintain_order,
+        )
+        dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+        expected = q.collect(engine="in-memory")
+        actual = q.collect(engine="streaming")
 
-    assert "merge-join" in typing.cast("str", dot)
-    assert_frame_equal(actual, expected, check_row_order=check_row_order)
+        print(f"{actual = }")
+        print(f"{expected = }")
+
+        assert "merge-join" in typing.cast("str", dot)
+        assert_frame_equal(actual, expected, check_row_order=check_row_order)
