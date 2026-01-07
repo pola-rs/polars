@@ -21,7 +21,7 @@ pub fn _finish_join(
 ) -> PolarsResult<DataFrame> {
     let mut left_names = PlHashSet::with_capacity(df_left.width());
 
-    df_left.get_columns().iter().for_each(|series| {
+    df_left.columns().iter().for_each(|series| {
         left_names.insert(series.name());
     });
 
@@ -45,7 +45,7 @@ pub fn _finish_join(
 
     drop(left_names);
     // Safety: IR resolving should guarantee this passes
-    unsafe { df_left.hstack_mut_unchecked(df_right.get_columns()) };
+    unsafe { df_left.hstack_mut_unchecked(df_right.columns()) };
     Ok(df_left)
 }
 
@@ -68,8 +68,7 @@ pub fn _coalesce_full_join(
     let schema = df.schema().clone();
     let mut to_remove = Vec::with_capacity(keys_right.len());
 
-    // SAFETY: we maintain invariants.
-    let columns = unsafe { df.get_columns_mut() };
+    let columns = unsafe { df.columns_mut() };
     let suffix = get_suffix(suffix);
     for (l, r) in keys_left.iter().zip(keys_right.iter()) {
         let pos_l = schema.get_full(l.as_str()).unwrap().0;
@@ -92,7 +91,7 @@ pub fn _coalesce_full_join(
     for pos in to_remove {
         let _ = columns.remove(pos);
     }
-    df.clear_schema();
+
     df
 }
 

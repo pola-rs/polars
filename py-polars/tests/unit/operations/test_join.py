@@ -3,7 +3,7 @@ from __future__ import annotations
 import typing
 import warnings
 from datetime import date, datetime
-from typing import TYPE_CHECKING, Any, Callable, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 import pandas as pd
@@ -21,6 +21,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import time_func
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import JoinStrategy, PolarsDataType
 
 
@@ -1145,6 +1147,7 @@ def test_join_empty_literal_17027() -> None:
     zip(
         [pl.col("a"), pl.col("a").sort(), [pl.col("a"), pl.col("b")]],
         [pl.col("a").slice(0, 2) * 2, pl.col("b"), [pl.col("a"), pl.col("b").head()]],
+        strict=False,
     ),
 )
 def test_join_non_elementwise_keys_raises(left_on: pl.Expr, right_on: pl.Expr) -> None:

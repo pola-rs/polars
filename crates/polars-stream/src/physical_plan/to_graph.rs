@@ -1388,7 +1388,10 @@ fn to_graph_rec<'a>(
                         let Some(mut df) = df else { return Ok(None) };
 
                         if let Some(simple_projection) = &simple_projection {
-                            df = unsafe { df.project(simple_projection.clone())? };
+                            df = unsafe {
+                                df.select_unchecked(simple_projection.iter_names())?
+                                    .with_schema(simple_projection.clone())
+                            };
                         }
 
                         if validate_schema {

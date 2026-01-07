@@ -50,6 +50,12 @@ slotmap::new_key_type! {
     pub struct PhysNodeKey;
 }
 
+impl PhysNodeKey {
+    pub fn as_ffi(&self) -> u64 {
+        self.0.as_ffi()
+    }
+}
+
 /// A node in the physical plan.
 ///
 /// A physical plan is created when the `IR` is translated to a directed

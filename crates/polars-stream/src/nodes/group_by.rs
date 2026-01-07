@@ -144,7 +144,9 @@ impl GroupBySinkState {
                         let s = selector.evaluate(&df, &state.in_memory_exec_state).await?;
                         key_columns.push(s.into_column());
                     }
-                    let keys = DataFrame::new_with_broadcast_len(key_columns, df.height())?;
+                    let keys = unsafe {
+                        DataFrame::new_unchecked_with_broadcast(df.height(), key_columns)?
+                    };
                     let hash_keys = HashKeys::from_df(&keys, random_state.clone(), true, false);
 
                     hot_idxs.clear();
@@ -162,7 +164,8 @@ impl GroupBySinkState {
                     let uniq_grouped_reduction_cols =
                         &uniq_grouped_reduction_cols_per_input[input_idx];
                     if uniq_grouped_reduction_cols.len() < df.width() {
-                        df = df._select_impl(uniq_grouped_reduction_cols).unwrap();
+                        df = unsafe { df.select_unchecked(uniq_grouped_reduction_cols.as_slice()) }
+                            .unwrap();
                     }
                     df.rechunk_mut(); // For gathers.
 
@@ -459,7 +462,7 @@ impl GroupByPartition {
         let out_names = output_schema.iter_names().skip(out.width());
         for (mut r, name) in self.grouped_reductions.into_iter().zip(out_names) {
             unsafe {
-                out.with_column_unchecked(r.finalize()?.with_name(name.clone()).into_column());
+                out.push_column_unchecked(r.finalize()?.with_name(name.clone()).into_column());
             }
         }
         Ok(out)

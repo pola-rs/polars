@@ -1,7 +1,6 @@
 use std::io::{Read, Write};
 use std::sync::Arc;
 
-use arrow::array::new_empty_array;
 use arrow::record_batch::RecordBatch;
 use polars_core::prelude::*;
 use polars_utils::plpath::PlPathRef;
@@ -105,15 +104,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
 
     let mut df = {
         if parsed_dfs.is_empty() {
-            // Create an empty dataframe with the correct data types
-            let empty_cols = arrow_schema
-                .iter_values()
-                .map(|fld| {
-                    Series::try_from((fld.name.clone(), new_empty_array(fld.dtype.clone())))
-                        .map(Column::from)
-                })
-                .collect::<PolarsResult<_>>()?;
-            DataFrame::new(empty_cols)?
+            DataFrame::empty_with_schema(&Schema::from_arrow_schema(arrow_schema))
         } else {
             // If there are any rows, accumulate them into a df
             accumulate_dataframes_vertical_unchecked(parsed_dfs)
@@ -121,7 +112,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     };
 
     if rechunk {
-        df.as_single_chunk_par();
+        df.rechunk_mut_par();
     }
     Ok(df)
 }

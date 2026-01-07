@@ -73,7 +73,7 @@ impl MorselSerializer {
     pub async fn serialize_morsel(mut self, mut df: DataFrame) -> PolarsResult<Self> {
         let MorselSerializer { serialized_data } = &mut self;
 
-        rechunk_par(unsafe { df.get_columns_mut() }).await;
+        rechunk_par(unsafe { df.columns_mut_retain_schema() }).await;
 
         serialized_data.clear();
 

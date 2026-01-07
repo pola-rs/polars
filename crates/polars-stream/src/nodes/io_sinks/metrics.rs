@@ -60,7 +60,7 @@ impl WriteMetrics {
     pub fn append(&mut self, df: &DataFrame) -> PolarsResult<()> {
         assert_eq!(self.columns.len(), df.width());
         self.num_rows += df.height() as u64;
-        for (w, c) in self.columns.iter_mut().zip(df.get_columns()) {
+        for (w, c) in self.columns.iter_mut().zip(df.columns()) {
             let null_count = c.null_count();
             w.null_count += c.null_count() as u64;
 
@@ -206,7 +206,7 @@ impl WriteMetrics {
             df_columns.push(struct_ca.into_column());
         }
 
-        DataFrame::new_with_height(num_metrics, df_columns).unwrap()
+        DataFrame::new(num_metrics, df_columns).unwrap()
     }
 }
 

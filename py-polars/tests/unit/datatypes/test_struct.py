@@ -4,7 +4,7 @@ import io
 import operator
 from dataclasses import dataclass
 from datetime import datetime, time
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 import pyarrow as pa
@@ -16,6 +16,8 @@ from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import PolarsDataType, SerializationFormat
 
 
