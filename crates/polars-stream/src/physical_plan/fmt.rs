@@ -264,20 +264,6 @@ fn visualize_plan_rec(
         ),
         PhysNodeKind::InMemorySink { input } => ("in-memory-sink".to_string(), from_ref(input)),
         PhysNodeKind::CallbackSink { input, .. } => ("callback-sink".to_string(), from_ref(input)),
-        PhysNodeKind::FileSink {
-            input, file_type, ..
-        } => match file_type {
-            #[cfg(feature = "parquet")]
-            FileType::Parquet(_) => ("parquet-sink".to_string(), from_ref(input)),
-            #[cfg(feature = "ipc")]
-            FileType::Ipc(_) => ("ipc-sink".to_string(), from_ref(input)),
-            #[cfg(feature = "csv")]
-            FileType::Csv(_) => ("csv-sink".to_string(), from_ref(input)),
-            #[cfg(feature = "json")]
-            FileType::Json(_) => ("ndjson-sink".to_string(), from_ref(input)),
-            #[allow(unreachable_patterns)]
-            _ => todo!(),
-        },
         PhysNodeKind::PartitionedSink {
             input,
             file_type,
@@ -303,7 +289,7 @@ fn visualize_plan_rec(
                 _ => todo!(),
             }
         },
-        PhysNodeKind::FileSink2 { input, options } => match options.file_format.as_ref() {
+        PhysNodeKind::FileSink { input, options } => match options.file_format.as_ref() {
             #[cfg(feature = "parquet")]
             FileType::Parquet(_) => ("parquet-sink".to_string(), from_ref(input)),
             #[cfg(feature = "ipc")]
@@ -537,14 +523,27 @@ fn visualize_plan_rec(
 
             (out, &[][..])
         },
-        PhysNodeKind::GroupBy { input, key, aggs } => (
-            format!(
-                "group-by\\nkey:\\n{}\\naggs:\\n{}",
-                fmt_exprs_to_label(key, expr_arena, FormatExprStyle::Select),
-                fmt_exprs_to_label(aggs, expr_arena, FormatExprStyle::Select)
-            ),
-            from_ref(input),
-        ),
+        PhysNodeKind::GroupBy {
+            inputs,
+            key_per_input,
+            aggs_per_input,
+        } => {
+            let mut out = String::new();
+            for (key, aggs) in key_per_input.iter().zip(aggs_per_input) {
+                if !out.is_empty() {
+                    out.push('\n');
+                }
+
+                write!(
+                    &mut out,
+                    "group-by\\nkey:\\n{}\\naggs:\\n{}",
+                    fmt_exprs_to_label(key, expr_arena, FormatExprStyle::Select),
+                    fmt_exprs_to_label(aggs, expr_arena, FormatExprStyle::Select)
+                )
+                .ok();
+            }
+            (out, inputs.as_slice())
+        },
         #[cfg(feature = "dynamic_group_by")]
         PhysNodeKind::DynamicGroupBy {
             input,

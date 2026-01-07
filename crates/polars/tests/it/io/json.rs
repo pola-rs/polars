@@ -25,8 +25,8 @@ fn read_json() {
         .with_batch_size(NonZeroUsize::new(3).unwrap())
         .finish()
         .unwrap();
-    assert_eq!("a", df.get_columns()[0].name().as_str());
-    assert_eq!("d", df.get_columns()[3].name().as_str());
+    assert_eq!("a", df.columns()[0].name().as_str());
+    assert_eq!("d", df.columns()[3].name().as_str());
     assert_eq!((12, 4), df.shape());
 }
 #[test]
@@ -53,8 +53,8 @@ fn read_json_with_whitespace() {
         .with_batch_size(NonZeroUsize::new(3).unwrap())
         .finish()
         .unwrap();
-    assert_eq!("a", df.get_columns()[0].name().as_str());
-    assert_eq!("d", df.get_columns()[3].name().as_str());
+    assert_eq!("a", df.columns()[0].name().as_str());
+    assert_eq!("d", df.columns()[3].name().as_str());
     assert_eq!((12, 4), df.shape());
 }
 #[test]
@@ -76,12 +76,12 @@ fn read_json_with_escapes() {
         .infer_schema_len(NonZeroUsize::new(6))
         .finish()
         .unwrap();
-    assert_eq!("id", df.get_columns()[0].name().as_str());
+    assert_eq!("id", df.columns()[0].name().as_str());
     assert_eq!(
         AnyValue::String("\""),
         df.column("text").unwrap().get(0).unwrap()
     );
-    assert_eq!("text", df.get_columns()[1].name().as_str());
+    assert_eq!("text", df.columns()[1].name().as_str());
     assert_eq!((10, 3), df.shape());
 }
 
@@ -107,8 +107,8 @@ fn read_unordered_json() {
         .with_batch_size(NonZeroUsize::new(3).unwrap())
         .finish()
         .unwrap();
-    assert_eq!("a", df.get_columns()[0].name().as_str());
-    assert_eq!("d", df.get_columns()[3].name().as_str());
+    assert_eq!("a", df.columns()[0].name().as_str());
+    assert_eq!("d", df.columns()[3].name().as_str());
     assert_eq!((12, 4), df.shape());
 }
 

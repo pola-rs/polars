@@ -113,8 +113,11 @@ impl Field {
     }
 
     pub fn with_dtype(&self, dtype: ArrowDataType) -> Self {
-        let mut field = self.clone();
-        field.dtype = dtype;
-        field
+        Self {
+            name: self.name.clone(),
+            dtype,
+            is_nullable: self.is_nullable,
+            metadata: self.metadata.clone(),
+        }
     }
 }

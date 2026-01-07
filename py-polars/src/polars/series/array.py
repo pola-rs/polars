@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 from polars import functions as F
 from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     from polars import Series
     from polars._plr import PySeries
@@ -73,6 +73,22 @@ class ArrayNameSpace:
         [
             3
             7
+        ]
+        """
+
+    def mean(self) -> Series:
+        """
+        Compute the mean of the values of the sub-arrays.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 2], [4, 3]], dtype=pl.Array(pl.Int64, 2))
+        >>> s.arr.mean()
+        shape: (2,)
+        Series: 'a' [f64]
+        [
+            1.5
+            3.5
         ]
         """
 

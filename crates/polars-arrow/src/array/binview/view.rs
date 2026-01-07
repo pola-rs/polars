@@ -127,7 +127,7 @@ impl View {
 
     #[inline]
     pub fn new_from_bytes(bytes: &[u8], buffer_idx: u32, offset: u32) -> Self {
-        debug_assert!(bytes.len() <= u32::MAX as usize);
+        assert!(bytes.len() <= u32::MAX as usize);
 
         // SAFETY: We verify the invariant with the outer if statement
         unsafe {
@@ -136,6 +136,68 @@ impl View {
             } else {
                 Self::new_noninline_unchecked(bytes, buffer_idx, offset)
             }
+        }
+    }
+
+    #[inline]
+    pub fn new_with_buffers(
+        bytes: &[u8],
+        buffer_idx_offset: u32,
+        buffers: &mut Vec<Vec<u8>>,
+    ) -> Self {
+        unsafe {
+            if bytes.len() <= Self::MAX_INLINE_SIZE as usize {
+                Self::new_inline_unchecked(bytes)
+            } else {
+                assert!(bytes.len() <= u32::MAX as usize);
+                let num_buffers = buffers.len();
+                if let Some(buf) = buffers.last_mut() {
+                    if buf.len() + bytes.len() <= buf.capacity() {
+                        let buf_idx = buffer_idx_offset + num_buffers as u32 - 1;
+                        let offset = buf.len() as u32;
+                        buf.extend_from_slice(bytes);
+                        return Self::new_noninline_unchecked(bytes, buf_idx, offset);
+                    }
+                }
+
+                Self::new_with_buffers_slow(bytes, buffer_idx_offset, buffers)
+            }
+        }
+    }
+
+    /// # Safety
+    ///
+    /// It needs to hold that `bytes.len() > View::MAX_INLINE_SIZE`.
+    #[cold]
+    unsafe fn new_with_buffers_slow(
+        bytes: &[u8],
+        buffer_idx_offset: u32,
+        buffers: &mut Vec<Vec<u8>>,
+    ) -> Self {
+        // Resize last buffer instead of making new buffer.
+        const RESIZE_LIMIT: usize = 8192;
+
+        if buffers.is_empty() {
+            buffers.push(bytes.to_vec());
+            return View::new_noninline_unchecked(bytes, buffer_idx_offset, 0);
+        }
+
+        let num_buffers = buffers.len();
+        let old_cap = buffers.last().unwrap().capacity();
+        let new_cap = (old_cap + old_cap).clamp(bytes.len(), u32::MAX as usize);
+        if new_cap <= RESIZE_LIMIT {
+            let buffer_idx = buffer_idx_offset + num_buffers as u32 - 1;
+            let buf = buffers.last_mut().unwrap();
+            let offset = buf.len() as u32;
+            buf.reserve(new_cap - buf.len());
+            buf.extend_from_slice(bytes);
+            View::new_noninline_unchecked(bytes, buffer_idx, offset)
+        } else {
+            let buffer_idx = buffer_idx_offset + num_buffers as u32;
+            let mut buf = Vec::with_capacity(new_cap);
+            buf.extend_from_slice(bytes);
+            buffers.push(buf);
+            View::new_noninline_unchecked(bytes, buffer_idx, 0)
         }
     }
 

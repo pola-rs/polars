@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 [dependencies]
 libc = { workspace = true }
 polars-python = { workspace = true, features = ["allocator", "c_api", "pymethods", "iejoin", "rt64"] }
-pyo3 = { workspace = true, features = ["abi3-py39", "chrono", "extension-module", "multiple-pymethods"] }
+pyo3 = { workspace = true, features = ["abi3-py310", "chrono", "extension-module", "multiple-pymethods"] }
 
 either = { workspace = true }
 
@@ -79,7 +79,6 @@ dtype-i8 = ["polars-python/dtype-i8"]
 dtype-i16 = ["polars-python/dtype-i16"]
 dtype-u8 = ["polars-python/dtype-u8"]
 dtype-u16 = ["polars-python/dtype-u16"]
-dtype-f16 = ["polars-python/dtype-f16"]
 dtype-array = ["polars-python/dtype-array"]
 
 dtypes = ["polars-python/dtypes"]

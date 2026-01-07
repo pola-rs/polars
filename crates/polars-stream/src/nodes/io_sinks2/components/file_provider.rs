@@ -29,7 +29,7 @@ impl FileProvider {
 
                 let mut partition_parts = String::new();
 
-                let partition_keys: &[Column] = partition_keys.get_columns();
+                let partition_keys: &[Column] = partition_keys.columns();
 
                 write!(
                     &mut partition_parts,

@@ -545,7 +545,7 @@ async fn start_reader_impl(
         if let Some(hp) = &hive_parts {
             external_predicate_cols.extend(
                 hp.df()
-                    .get_columns()
+                    .columns()
                     .iter()
                     .filter(|c| predicate.live_columns.contains(c.name()))
                     .map(|c| {

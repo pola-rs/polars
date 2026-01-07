@@ -20,6 +20,20 @@ def test_arr_min_max() -> None:
     assert s_with_null.arr.min().to_list() == [2, None, 3]
 
 
+def test_arr_mean_median_var_std() -> None:
+    s = pl.Series("a", [[1, 2], [4, 3]], dtype=pl.Array(pl.Int64, 2))
+    assert s.arr.mean().to_list() == [1.5, 3.5]
+    assert s.arr.median().to_list() == [1.5, 3.5]
+    assert s.arr.var().to_list() == [0.5, 0.5]
+    assert round(s.arr.std().to_list()[0], 5) == 0.70711
+
+    s_with_null = pl.Series("a", [[3, 4], None, [None, 2]], dtype=pl.Array(pl.Int64, 2))
+    assert s_with_null.arr.mean().to_list() == [3.5, None, 2.0]
+    assert s_with_null.arr.median().to_list() == [3.5, None, 2.0]
+    assert s_with_null.arr.var().to_list() == [0.5, None, None]
+    assert round(s_with_null.arr.std().to_list()[0], 5) == 0.70711
+
+
 def test_array_min_max_dtype_12123() -> None:
     df = pl.LazyFrame(
         [pl.Series("a", [[1.0, 3.0], [2.0, 5.0]]), pl.Series("b", [1.0, 2.0])],

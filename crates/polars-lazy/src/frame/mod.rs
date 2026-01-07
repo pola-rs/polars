@@ -8,6 +8,7 @@ mod err;
 mod exitable;
 
 use std::num::NonZeroUsize;
+use std::sync::mpsc::{Receiver, sync_channel};
 use std::sync::{Arc, Mutex};
 
 pub use anonymous_scan::*;
@@ -821,6 +822,49 @@ impl LazyFrame {
     /// ```
     pub fn collect(self) -> PolarsResult<DataFrame> {
         self.collect_with_engine(Engine::InMemory)
+    }
+
+    /// Collect the query in batches.
+    ///
+    /// If lazy is true the query will not start until the first poll (or until
+    /// start is called on CollectBatches).
+    #[cfg(feature = "async")]
+    pub fn collect_batches(
+        self,
+        engine: Engine,
+        maintain_order: bool,
+        chunk_size: Option<NonZeroUsize>,
+        lazy: bool,
+    ) -> PolarsResult<CollectBatches> {
+        let (send, recv) = sync_channel(1);
+        let runner_send = send.clone();
+        let ldf = self.sink_batches(
+            PlanCallback::new(move |df| {
+                // Stop if receiver has closed.
+                let send_result = send.send(Ok(df));
+                Ok(send_result.is_err())
+            }),
+            maintain_order,
+            chunk_size,
+        )?;
+        let runner = move || {
+            // We use a tokio spawn_blocking here as it has a high blocking
+            // thread pool limit.
+            polars_io::pl_async::get_runtime().spawn_blocking(move || {
+                if let Err(e) = ldf.collect_with_engine(engine) {
+                    runner_send.send(Err(e)).ok();
+                }
+            });
+        };
+
+        let mut collect_batches = CollectBatches {
+            recv,
+            runner: Some(Box::new(runner)),
+        };
+        if !lazy {
+            collect_batches.start();
+        }
+        Ok(collect_batches)
     }
 
     // post_opt: A function that is called after optimization. This can be used to modify the IR jit.
@@ -2412,3 +2456,26 @@ pub const BUILD_STREAMING_EXECUTOR: Option<polars_mem_engine::StreamingExecutorB
         Some(polars_stream::build_streaming_query_executor)
     }
 };
+
+pub struct CollectBatches {
+    recv: Receiver<PolarsResult<DataFrame>>,
+    runner: Option<Box<dyn FnOnce() + Send + 'static>>,
+}
+
+impl CollectBatches {
+    /// Start running the query, if not already.
+    pub fn start(&mut self) {
+        if let Some(runner) = self.runner.take() {
+            runner()
+        }
+    }
+}
+
+impl Iterator for CollectBatches {
+    type Item = PolarsResult<DataFrame>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.start();
+        self.recv.recv().ok()
+    }
+}

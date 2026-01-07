@@ -55,7 +55,7 @@ impl ComputeNode for FilterNode {
                         })?;
 
                         // We already parallelize, call the sequential filter.
-                        df._filter_seq(mask)
+                        df.filter_seq(mask)
                     }).await?;
 
                     if morsel.df().height() == 0 {

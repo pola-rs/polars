@@ -380,7 +380,7 @@ impl PhysicalExpr for WindowExpr {
 
         // 4. select the final column and return
 
-        if df.is_empty() {
+        if df.height() == 0 {
             let field = self.phys_function.to_field(df.schema())?;
             match self.mapping {
                 WindowMapping::Join => {
@@ -431,7 +431,7 @@ impl PhysicalExpr for WindowExpr {
 
         let create_groups = || {
             let gb = df.group_by_with_series(group_by_columns.clone(), true, sort_groups)?;
-            let mut groups = gb.take_groups();
+            let mut groups = gb.into_groups();
 
             if let Some((order_by, options)) = &self.order_by {
                 let order_by = order_by.evaluate(df, state)?;
@@ -600,9 +600,9 @@ impl PhysicalExpr for WindowExpr {
                                 ))
                             } else {
                                 let df_right =
-                                    unsafe { DataFrame::new_no_checks_height_from_first(keys) };
+                                    unsafe { DataFrame::new_unchecked_infer_height(keys) };
                                 let df_left = unsafe {
-                                    DataFrame::new_no_checks_height_from_first(group_by_columns)
+                                    DataFrame::new_unchecked_infer_height(group_by_columns)
                                 };
                                 Ok(Arc::new(
                                     private_left_join_multiple_keys(&df_left, &df_right, true)?.1,

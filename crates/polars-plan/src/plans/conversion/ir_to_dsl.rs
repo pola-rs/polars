@@ -45,6 +45,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             expr,
             idx,
             returns_scalar,
+            null_on_oob,
         } => {
             let expr = node_to_expr(expr, expr_arena);
             let idx = node_to_expr(idx, expr_arena);
@@ -52,6 +53,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 expr: Arc::new(expr),
                 idx: Arc::new(idx),
                 returns_scalar,
+                null_on_oob,
             }
         },
         AExpr::SortBy {
@@ -98,6 +100,25 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 AggExpr::Max {
                     input: Arc::new(exp),
                     propagate_nans,
+                }
+                .into()
+            },
+            IRAggExpr::MinBy { input, by } => {
+                let input_exp = node_to_expr(input, expr_arena);
+                let by_exp = node_to_expr(by, expr_arena);
+                AggExpr::MinBy {
+                    input: Arc::new(input_exp),
+                    by: Arc::new(by_exp),
+                }
+                .into()
+            },
+
+            IRAggExpr::MaxBy { input, by } => {
+                let input_exp = node_to_expr(input, expr_arena);
+                let by_exp = node_to_expr(by, expr_arena);
+                AggExpr::MaxBy {
+                    input: Arc::new(input_exp),
+                    by: Arc::new(by_exp),
                 }
                 .into()
             },

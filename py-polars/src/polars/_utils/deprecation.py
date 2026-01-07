@@ -7,9 +7,12 @@ from collections import defaultdict
 from collections.abc import Sequence
 from functools import wraps
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, TypeVar, get_args
+from typing import TYPE_CHECKING, Any, TypeVar, get_args
 
 from polars._typing import DeprecationType
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 if sys.version_info >= (3, 13):
     from warnings import deprecated
@@ -28,11 +31,8 @@ from polars._utils.various import issue_warning
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+    from typing import ParamSpec
 
-    if sys.version_info >= (3, 10):
-        from typing import ParamSpec
-    else:
-        from typing_extensions import ParamSpec
     from polars._typing import Ambiguous
 
     P = ParamSpec("P")

@@ -241,7 +241,7 @@ impl FunctionIR {
                 alias,
             } => count::count_rows(sources, scan_type, cloud_options.as_ref(), alias.clone()),
             Rechunk => {
-                df.as_single_chunk_par();
+                df.rechunk_mut_par();
                 Ok(df)
             },
             Unnest { columns, separator } => {
@@ -266,7 +266,7 @@ impl FunctionIR {
                     && let Some(s) = s.first()
                 {
                     let idx = df.try_get_column_index(&s.column)?;
-                    let col = &mut unsafe { df.get_columns_mut() }[idx];
+                    let col = &mut unsafe { df.columns_mut_retain_schema() }[idx];
                     if let Some(d) = s.descending {
                         let flag = if d {
                             IsSorted::Descending

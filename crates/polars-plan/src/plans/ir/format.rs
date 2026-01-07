@@ -422,6 +422,7 @@ impl Display for ExprIRDisplay<'_> {
                 expr,
                 idx,
                 returns_scalar,
+                null_on_oob: _,
             } => {
                 let expr = self.with_root(expr);
                 let idx = self.with_root(idx);
@@ -457,6 +458,16 @@ impl Display for ExprIRDisplay<'_> {
                         } else {
                             write!(f, ".max()")
                         }
+                    },
+                    MinBy { input, by } => {
+                        let input = self.with_root(input);
+                        let by = self.with_root(by);
+                        write!(f, "{input}.min_by({by})",)
+                    },
+                    MaxBy { input, by } => {
+                        let input = self.with_root(input);
+                        let by = self.with_root(by);
+                        write!(f, "{input}.max_by({by})",)
                     },
                     Median(expr) => write!(f, "{}.median()", self.with_root(expr)),
                     Mean(expr) => write!(f, "{}.mean()", self.with_root(expr)),

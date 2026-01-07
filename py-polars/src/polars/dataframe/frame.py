@@ -20,7 +20,6 @@ from typing import (
     IO,
     TYPE_CHECKING,
     Any,
-    Callable,
     ClassVar,
     NoReturn,
     TypeVar,
@@ -123,10 +122,15 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Collection, Iterator, Mapping
+    from collections.abc import (
+        Callable,
+        Collection,
+        Iterator,
+        Mapping,
+    )
     from datetime import timedelta
     from io import IOBase
-    from typing import Literal
+    from typing import Concatenate, Literal, ParamSpec
 
     import deltalake
     import jax
@@ -190,11 +194,6 @@ if TYPE_CHECKING:
     from polars.io.cloud import CredentialProviderFunction
     from polars.io.partition import _SinkDirectory
     from polars.ml.torch import PolarsDataset
-
-    if sys.version_info >= (3, 10):
-        from typing import Concatenate, ParamSpec
-    else:
-        from typing_extensions import Concatenate, ParamSpec
 
     if sys.version_info >= (3, 13):
         from warnings import deprecated
@@ -966,7 +965,7 @@ class DataFrame:
         >>> df.schema
         Schema({'foo': Int64, 'bar': Float64, 'ham': String})
         """
-        return Schema(zip(self.columns, self.dtypes), check_dtypes=False)
+        return Schema(zip(self.columns, self.dtypes, strict=True), check_dtypes=False)
 
     def __array__(
         self,
@@ -3776,6 +3775,7 @@ class DataFrame:
         *,
         compression: IpcCompression = "uncompressed",
         compat_level: CompatLevel | None = None,
+        record_batch_size: int | None = None,
         storage_options: dict[str, Any] | None = None,
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
@@ -3790,6 +3790,7 @@ class DataFrame:
         *,
         compression: IpcCompression = "uncompressed",
         compat_level: CompatLevel | None = None,
+        record_batch_size: int | None = None,
         storage_options: dict[str, Any] | None = None,
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
@@ -3804,6 +3805,7 @@ class DataFrame:
         *,
         compression: IpcCompression = "uncompressed",
         compat_level: CompatLevel | None = None,
+        record_batch_size: int | None = None,
         storage_options: dict[str, Any] | None = None,
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
@@ -3828,6 +3830,12 @@ class DataFrame:
         compat_level
             Use a specific compatibility level
             when exporting Polars' internal data structures.
+        record_batch_size
+            Size of the record batches in number of rows.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
         storage_options
             Options that indicate how to connect to a cloud provider.
 
@@ -3881,6 +3889,7 @@ class DataFrame:
                 target,
                 compression=compression,
                 compat_level=compat_level,
+                record_batch_size=record_batch_size,
                 storage_options=storage_options,
                 credential_provider=credential_provider,
                 retries=retries,
@@ -5974,7 +5983,7 @@ class DataFrame:
 
         Notes
         -----
-        * The calling frame is automatically registered as a table in the SQL context
+        * The calling DataFrame is automatically registered as a table in the SQLContext
           under the name "self". If you want access to the DataFrames and LazyFrames
           found in the current globals, use the top-level :meth:`pl.sql <polars.sql>`.
         * More control over registration and execution behaviour is available by
@@ -9667,7 +9676,7 @@ class DataFrame:
 
             df = df.select(
                 s.extend_constant(next_fill, n_fill)
-                for s, next_fill in zip(df, fill_values)
+                for s, next_fill in zip(df, fill_values, strict=True)
             )
 
         if how == "horizontal":
@@ -9872,7 +9881,7 @@ class DataFrame:
                     raise ValueError(msg)
                 names = self.select(by_parsed).unique(maintain_order=True).rows()
 
-            return dict(zip(names, partitions))
+            return dict(zip(names, partitions, strict=True))
 
         return partitions
 
@@ -11479,7 +11488,7 @@ class DataFrame:
         if index is not None:
             row = self._df.row_tuple(index)
             if named:
-                return dict(zip(self.columns, row))
+                return dict(zip(self.columns, row, strict=True))
             else:
                 return row
 
@@ -11498,7 +11507,7 @@ class DataFrame:
 
             row = rows[0]
             if named:
-                return dict(zip(self.columns, row))
+                return dict(zip(self.columns, row, strict=True))
             else:
                 return row
         else:
@@ -11731,7 +11740,7 @@ class DataFrame:
             data_cols = [k for k in self.schema if k not in key]
             values = self.select(data_cols)
 
-        zipped = zip(keys, values.iter_rows(named=named))  # type: ignore[call-overload]
+        zipped = zip(keys, values.iter_rows(named=named), strict=True)  # type: ignore[call-overload]
 
         # if unique, we expect to write just one entry per key; otherwise, we're
         # returning a list of rows for each key, so append into a defaultdict.

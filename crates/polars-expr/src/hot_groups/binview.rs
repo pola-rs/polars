@@ -34,7 +34,7 @@ impl BinviewHashHotGrouper {
         hash: u64,
         view: View,
         force_hot: bool,
-        buffers: &Arc<[Buffer<u8>]>,
+        buffers: &Buffer<Buffer<u8>>,
     ) -> Option<EvictIdx> {
         unsafe {
             let mut evict = |ev_h: &u64, ev_view: &View, ev_buffer: &Vec<u8>| {

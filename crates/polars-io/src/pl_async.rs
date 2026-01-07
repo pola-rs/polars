@@ -262,12 +262,17 @@ impl RuntimeManager {
             .map(|x| x.parse::<usize>().expect("integer"))
             .unwrap_or(POOL.current_num_threads().clamp(1, 4));
 
+        let max_blocking = std::env::var("POLARS_MAX_BLOCKING_THREAD_COUNT")
+            .map(|x| x.parse::<usize>().expect("integer"))
+            .unwrap_or(512);
+
         if polars_core::config::verbose() {
             eprintln!("async thread count: {n_threads}");
         }
 
         let rt = Builder::new_multi_thread()
             .worker_threads(n_threads)
+            .max_blocking_threads(max_blocking)
             .enable_io()
             .enable_time()
             .build()

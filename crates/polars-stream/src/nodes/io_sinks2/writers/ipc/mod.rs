@@ -1,23 +1,21 @@
 use std::sync::Arc;
 
-use arrow::io::ipc::{self, IpcField};
-use polars_core::prelude::CompatLevel;
 use polars_core::schema::SchemaRef;
-use polars_core::series::ToArrowConverter;
-use polars_core::utils::arrow;
 use polars_core::utils::arrow::io::ipc::write::{EncodedData, WriteOptions};
 use polars_error::PolarsResult;
 use polars_io::ipc::IpcWriterOptions;
 use polars_io::pl_async;
 use polars_io::utils::sync_on_close::SyncOnCloseType;
+use polars_utils::IdxSize;
+use polars_utils::index::NonZeroIdxSize;
 
 use crate::async_executor::{self, TaskPriority};
 use crate::async_primitives::connector;
 use crate::nodes::io_sinks2::components::sink_morsel::{SinkMorsel, SinkMorselPermit};
-use crate::nodes::io_sinks2::components::size::RowCountAndSize;
-use crate::nodes::io_sinks2::writers::interface::{
-    FileWriterStarter, default_ideal_sink_morsel_size,
+use crate::nodes::io_sinks2::components::size::{
+    NonZeroRowCountAndSize, RowCountAndSize, TakeableRowsProvider,
 };
+use crate::nodes::io_sinks2::writers::interface::{FileWriterStarter, ideal_sink_morsel_size_env};
 use crate::nodes::io_sinks2::writers::ipc::initialization::build_ipc_write_components;
 use crate::utils::tokio_handle_ext;
 
@@ -30,6 +28,7 @@ pub struct IpcWriterStarter {
     pub schema: SchemaRef,
     pub pipeline_depth: usize,
     pub sync_on_close: SyncOnCloseType,
+    pub record_batch_size: Option<IdxSize>,
 }
 
 enum IpcBatch {
@@ -45,8 +44,30 @@ impl FileWriterStarter for IpcWriterStarter {
         "ipc"
     }
 
-    fn ideal_morsel_size(&self) -> RowCountAndSize {
-        default_ideal_sink_morsel_size()
+    fn takeable_rows_provider(&self) -> TakeableRowsProvider {
+        let max_size = if let Some(record_batch_size) = self.record_batch_size
+            && record_batch_size > 0
+        {
+            NonZeroRowCountAndSize::new(RowCountAndSize {
+                num_rows: record_batch_size,
+                num_bytes: u64::MAX,
+            })
+            .unwrap()
+        } else {
+            let (num_rows, num_bytes) = ideal_sink_morsel_size_env();
+
+            NonZeroRowCountAndSize::new(RowCountAndSize {
+                num_rows: num_rows.unwrap_or(122_880),
+                num_bytes: num_bytes.unwrap_or(u64::MAX),
+            })
+            .unwrap()
+        };
+
+        TakeableRowsProvider {
+            max_size,
+            byte_size_min_rows: NonZeroIdxSize::new(16384).unwrap(),
+            allow_non_max_size: false,
+        }
     }
 
     fn start_file_writer(

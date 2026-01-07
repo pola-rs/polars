@@ -194,15 +194,26 @@ pub static USER_AGENT: &str = concat!("polars", "/", env!("CARGO_PKG_VERSION"),)
 
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
 pub(super) fn get_client_options() -> ClientOptions {
+    use std::num::NonZeroU64;
+
     use reqwest::header::HeaderValue;
 
     ClientOptions::new()
-        // We set request timeout super high as the timeout isn't reset at ACK,
-        // but starts from the moment we start downloading a body.
-        // https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html#method.timeout
+        // Disables the time limit for downloading the response body.
         .with_timeout_disabled()
-        // Concurrency can increase connection latency, so set to None, similar to default.
-        .with_connect_timeout_disabled()
+        // Set the time limit for establishing the connection.
+        .with_connect_timeout(std::time::Duration::from_secs(
+            std::env::var("POLARS_HTTP_CONNECT_TIMEOUT_SECONDS")
+                .map(|x| {
+                    x.parse::<NonZeroU64>()
+                        .ok()
+                        .unwrap_or_else(|| {
+                            panic!("invalid value for POLARS_HTTP_CONNECT_TIMEOUT_SECONDS: {x}")
+                        })
+                        .get()
+                })
+                .unwrap_or(5 * 60),
+        ))
         .with_user_agent(HeaderValue::from_static(USER_AGENT))
         .with_allow_http(true)
 }

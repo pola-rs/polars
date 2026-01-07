@@ -380,7 +380,7 @@ def test_file_list_schema_mismatch(
 
     paths = [f"{tmp_path}/{i}.csv" for i in range(len(dfs))]
 
-    for df, path in zip(dfs, paths):
+    for df, path in zip(dfs, paths, strict=True):
         df.write_csv(path)
 
     lf = pl.scan_csv(paths)
@@ -419,7 +419,7 @@ c
 
     paths = [f"{tmp_path}/{i}.csv" for i in range(len(data_lst))]
 
-    for data, path in zip(data_lst, paths):
+    for data, path in zip(data_lst, paths, strict=True):
         with Path(path).open("w") as f:
             f.write(data)
 
@@ -449,7 +449,7 @@ c
 
     paths = [f"{tmp_path}/{i}.csv" for i in range(len(data_lst))]
 
-    for data, path in zip(data_lst, paths):
+    for data, path in zip(data_lst, paths, strict=True):
         with Path(path).open("w") as f:
             f.write(data)
 

@@ -74,14 +74,16 @@ export CFLAGS
 FILTER_PIP_WARNINGS=| grep -v "don't match your environment"; test $${PIPESTATUS[0]} -eq 0
 
 .venv:  ## Set up Python virtual environment and install requirements
-	$(MAKE) requirements
+	@unset CONDA_PREFIX \
+	&& python3 -m venv $(VENV) \
+	&& $(MAKE) requirements
 
 # Note: Installed separately as pyiceberg does not have wheels for 3.13, causing
 # --no-build to fail.
 .PHONY: requirements
 requirements:  ## Install/refresh Python project requirements
 	@unset CONDA_PREFIX \
-	&& python3 -m venv $(VENV) --clear \
+	&& $(VENV_BIN)/python -m venv $(VENV) --clear \
 	&& $(VENV_BIN)/python -m pip install --upgrade uv \
 	&& $(VENV_BIN)/uv pip install --upgrade --compile-bytecode --no-build \
 	   -r py-polars/requirements-dev.txt \
@@ -159,12 +161,16 @@ fix:
 	@# Good chance the fixing introduced formatting issues, best to just do a quick format.
 	cargo fmt --all
 
+.PHONY: py-lint
+py-lint: .venv  ## Run python lint checks (only)
+	@$(MAKE) -s -C py-polars lint $(ARGS)
+
 .PHONY: update-dsl-schema-hashes
 update-dsl-schema-hashes:  ## Update the DSL schema hashes file
 	cargo run --all-features --bin dsl-schema update-hashes
 
 .PHONY: pre-commit
-pre-commit: fmt clippy clippy-default  ## Run all code quality checks
+pre-commit: fmt py-lint clippy clippy-default  ## Run all code quality checks
 
 .PHONY: clean
 clean:  ## Clean up caches, build artifacts, and the venv

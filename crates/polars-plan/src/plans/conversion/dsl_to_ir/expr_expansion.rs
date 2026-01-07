@@ -347,6 +347,7 @@ fn expand_expression_rec(
             expr,
             idx,
             returns_scalar,
+            null_on_oob,
         } => {
             _ = expand_expression_by_combination(
                 &[expr.as_ref().clone(), idx.as_ref().clone()],
@@ -358,6 +359,7 @@ fn expand_expression_rec(
                     expr: Arc::new(e[0].clone()),
                     idx: Arc::new(e[1].clone()),
                     returns_scalar: *returns_scalar,
+                    null_on_oob: *null_on_oob,
                 },
             )?
         },
@@ -433,6 +435,32 @@ fn expand_expression_rec(
                         Expr::Agg(AggExpr::Max {
                             input: Arc::new(e),
                             propagate_nans: *propagate_nans,
+                        })
+                    },
+                )?,
+                AggExpr::MinBy { input, by } => expand_expression_by_combination(
+                    &[input.as_ref().clone(), by.as_ref().clone()],
+                    ignored_selector_columns,
+                    schema,
+                    out,
+                    opt_flags,
+                    |e| {
+                        Expr::Agg(AggExpr::MinBy {
+                            input: Arc::new(e[0].clone()),
+                            by: Arc::new(e[1].clone()),
+                        })
+                    },
+                )?,
+                AggExpr::MaxBy { input, by } => expand_expression_by_combination(
+                    &[input.as_ref().clone(), by.as_ref().clone()],
+                    ignored_selector_columns,
+                    schema,
+                    out,
+                    opt_flags,
+                    |e| {
+                        Expr::Agg(AggExpr::MaxBy {
+                            input: Arc::new(e[0].clone()),
+                            by: Arc::new(e[1].clone()),
                         })
                     },
                 )?,
