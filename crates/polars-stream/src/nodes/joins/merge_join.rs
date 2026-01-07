@@ -411,6 +411,7 @@ fn find_mergeable_partition(
     fmp: FindMergeableParams,
 ) -> PolarsResult<Either<UnitVec<(DataFrameBuffer, DataFrameBuffer)>, NeedMore>> {
     let morsel_size = get_ideal_morsel_size();
+    let is_full_join = fmp.params.args.how == JoinType::Full;
     let mergeable = find_mergeable_search(left, right, search_limit, fmp)?;
     let (left, right) = match mergeable {
         Left((left, right)) => (left, right),
@@ -422,19 +423,19 @@ fn find_mergeable_partition(
     );
     let chunks_count =
         (left.len() * right.len() + left.len() + right.len()).div_ceil(morsel_size.pow(2));
-    if chunks_count <= 1 {
+    if chunks_count <= 1 || is_full_join {
+        // TODO: In the case of a FULL join, the join cores would emit duplicate rows for unmatched
+        // rows on the right side. We should fix this and enable partitioning for FULL joins too
         return Ok(Left(UnitVec::from([(left, right)])));
     }
     let chunk_size = left.len().div_ceil(chunks_count);
     let mut offset = 0;
     let mut partitioned = UnitVec::with_capacity(chunks_count);
-    while offset < left.len() - offset {
+    while offset < left.len() {
         let left_chunk = left.clone().slice(offset, chunk_size);
         partitioned.push((left_chunk, right.clone()));
         offset += chunk_size;
     }
-    let left_chunk = left.slice(offset, chunk_size);
-    partitioned.push((left_chunk, right));
     Ok(Left(partitioned))
 }
 
