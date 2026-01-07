@@ -35,8 +35,8 @@ def test_struct_various() -> None:
 
 def test_rename_fields() -> None:
     df = pl.DataFrame({"int": [1, 2], "str": ["a", "b"], "bool": [True, None]})
-    s = df.to_struct("my_struct").struct.rename_fields(["a", "b"])
-    assert s.struct.fields == ["a", "b"]
+    s = df.to_struct("my_struct").struct.rename_fields(["a", "b", "c"])
+    assert s.struct.fields == ["a", "b", "c"]
 
 
 def test_struct_json_encode() -> None:

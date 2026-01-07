@@ -1145,9 +1145,16 @@ def test_zfs_struct_fns() -> None:
 
     assert a.struct.fields == []
 
-    # @TODO: This should really throw an error as per #19132
+    # strict=False (default): allows mismatch on zero-field struct
     assert a.struct.rename_fields(["a"]).struct.unnest().shape == (1, 0)
     assert a.struct.rename_fields([]).struct.unnest().shape == (1, 0)
+
+    # strict=True: raises on mismatch
+    with pytest.raises(pl.exceptions.ShapeError):
+        a.struct.rename_fields(["a"], strict=True)
+
+    # strict=True: works when lengths match (0 == 0)
+    assert a.struct.rename_fields([], strict=True).struct.unnest().shape == (1, 0)
 
     assert_series_equal(a.struct.json_encode(), pl.Series("a", ["{}"], pl.String))
 
@@ -1417,3 +1424,25 @@ def test_struct_equal_missing_null_25360() -> None:
             ne_missing=False,
         ),
     )
+
+
+def test_rename_fields_strict() -> None:
+    df = pl.DataFrame({"int": [1, 2], "str": ["a", "b"], "bool": [True, None]})
+    s = df.to_struct("my_struct")
+
+    # strict=False (default)
+    result = s.struct.rename_fields(["a", "b"])  # zip truncates to 2 fields
+    assert result.struct.fields == ["a", "b"]
+
+    result = s.struct.rename_fields(["a", "b", "c", "d", "e"])  # use first 3
+    assert result.struct.fields == ["a", "b", "c"]
+
+    # strict=True
+    result = s.struct.rename_fields(["a", "b", "c"], strict=True)
+    assert result.struct.fields == ["a", "b", "c"]
+
+    with pytest.raises(pl.exceptions.ShapeError):
+        s.struct.rename_fields(["a", "b"], strict=True)
+
+    with pytest.raises(pl.exceptions.ShapeError):
+        s.struct.rename_fields(["a", "b", "c", "d"], strict=True)
