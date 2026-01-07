@@ -14,6 +14,10 @@ from polars.testing.asserts.frame import assert_frame_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from polars._typing import IpcCompression
+
+COMPRESSIONS = ["uncompressed", "lz4", "zstd"]
+
 
 @pytest.fixture
 def foods_ipc_path(io_files_path: Path) -> Path:
@@ -273,3 +277,53 @@ def test_scan_ipc_file_async_multiple_record_batches(
         pl.scan_ipc(buffers, row_index_name="ri").tail(15).select(pl.col.ri).collect(),
         pl.concat([df, df]).with_row_index("ri").tail(15).select(pl.col.ri),
     )
+
+
+@pytest.mark.parametrize("n_a", [1, 999])
+@pytest.mark.parametrize("n_b", [1, 12, 13, 999])  # problem starts 13
+@pytest.mark.parametrize("compression", COMPRESSIONS)
+def test_scan_ipc_varying_block_metadata_len_c4812(
+    n_a: int, n_b: int, compression: IpcCompression, monkeypatch: Any
+) -> None:
+    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    monkeypatch.setenv("POLARS_IDEAL_SINK_MORSEL_SIZE_ROWS", "1")
+
+    buf = io.BytesIO()
+    lf = pl.DataFrame({"a": [n_a * "A", n_b * "B"]}).lazy()
+    lf.sink_ipc(buf, compression=compression)
+    df = lf.collect()
+
+    assert_frame_equal(
+        pl.scan_ipc(buf).collect(),
+        df,
+    )
+
+
+@pytest.mark.parametrize(
+    "record_batch_size", [1, 2, 5, 7, 50, 99, 100, 101, 299, 300, 100_000]
+)
+@pytest.mark.parametrize("n_chunks", [1, 2, 3])
+def test_sink_ipc_record_batch_size(record_batch_size: int, n_chunks: int) -> None:
+    n_rows = 100
+    buf = io.BytesIO()
+
+    df0 = pl.DataFrame({"a": list(range(n_rows))})
+    df = df0
+    while n_chunks > 1:
+        df = pl.concat([df, df0])
+        n_chunks -= 1
+
+    df.lazy().sink_ipc(buf, record_batch_size=record_batch_size)
+
+    buf.seek(0)
+    out = pl.scan_ipc(buf).collect()
+    assert_frame_equal(out, df)
+
+    buf.seek(0)
+    reader = pyarrow.ipc.open_file(buf)
+    n_batches = reader.num_record_batches
+    for i in range(n_batches):
+        n_rows = reader.get_batch(i).num_rows
+        assert n_rows == record_batch_size or (
+            i + 1 == n_batches and n_rows <= record_batch_size
+        )

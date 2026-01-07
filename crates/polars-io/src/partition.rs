@@ -51,7 +51,7 @@ pub fn write_partitioned_dataset(
     chunk_size: usize,
 ) -> PolarsResult<()> {
     // Ensure we have a single chunk as the gather will otherwise rechunk per group.
-    df.as_single_chunk_par();
+    df.rechunk_mut_par();
 
     // Note: When adding support for formats other than Parquet, avoid writing the partitioned
     // columns into the file. We write them for parquet because they are encoded efficiently with
@@ -70,7 +70,7 @@ pub fn write_partitioned_dataset(
             .collect::<PolarsResult<Vec<_>>>()?;
 
         move |df: &DataFrame| {
-            let cols = df.get_columns();
+            let cols = df.columns();
 
             partition_by_col_idx
                 .iter()

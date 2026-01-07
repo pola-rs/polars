@@ -161,12 +161,16 @@ fix:
 	@# Good chance the fixing introduced formatting issues, best to just do a quick format.
 	cargo fmt --all
 
+.PHONY: py-lint
+py-lint: .venv  ## Run python lint checks (only)
+	@$(MAKE) -s -C py-polars lint $(ARGS)
+
 .PHONY: update-dsl-schema-hashes
 update-dsl-schema-hashes:  ## Update the DSL schema hashes file
 	cargo run --all-features --bin dsl-schema update-hashes
 
 .PHONY: pre-commit
-pre-commit: fmt clippy clippy-default  ## Run all code quality checks
+pre-commit: fmt py-lint clippy clippy-default  ## Run all code quality checks
 
 .PHONY: clean
 clean:  ## Clean up caches, build artifacts, and the venv

@@ -643,7 +643,7 @@ impl SQLContext {
                     .collect::<Series>()
                     .with_name(PlSmallStr::from_static("Logical Plan"))
                     .into_column();
-                let df = DataFrame::new(vec![plan])?;
+                let df = DataFrame::new_infer_height(vec![plan])?;
                 Ok(df.lazy())
             },
             _ => polars_bail!(SQLInterface: "unexpected statement type; expected EXPLAIN"),
@@ -653,7 +653,7 @@ impl SQLContext {
     // SHOW TABLES
     fn execute_show_tables(&mut self, _: &Statement) -> PolarsResult<LazyFrame> {
         let tables = Column::new("name".into(), self.get_tables());
-        let df = DataFrame::new(vec![tables])?;
+        let df = DataFrame::new_infer_height(vec![tables])?;
         Ok(df.lazy())
     }
 
@@ -1671,7 +1671,7 @@ impl SQLContext {
                         .map(Column::from)
                         .collect();
 
-                    let lf = DataFrame::new(column_series)?.lazy();
+                    let lf = DataFrame::new_infer_height(column_series)?.lazy();
 
                     if *with_offset {
                         // TODO: support 'WITH ORDINALITY|OFFSET' modifier.

@@ -347,6 +347,7 @@ fn expand_expression_rec(
             expr,
             idx,
             returns_scalar,
+            null_on_oob,
         } => {
             _ = expand_expression_by_combination(
                 &[expr.as_ref().clone(), idx.as_ref().clone()],
@@ -358,6 +359,7 @@ fn expand_expression_rec(
                     expr: Arc::new(e[0].clone()),
                     idx: Arc::new(e[1].clone()),
                     returns_scalar: *returns_scalar,
+                    null_on_oob: *null_on_oob,
                 },
             )?
         },

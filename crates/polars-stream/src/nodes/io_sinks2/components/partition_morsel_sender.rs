@@ -204,15 +204,15 @@ impl PartitionMorselSender {
             assert!((1..=available_row_capacity.num_rows).contains(&morsel_height));
 
             if let Some(hstack_keys) = self.hstack_keys.as_ref() {
-                let columns = morsel.df().get_columns();
+                let columns = morsel.df().columns();
                 let height = morsel.df().height();
                 let new_columns = hstack_keys.hstack_columns_broadcast(
                     height,
                     columns,
-                    partition.keys_df.get_columns(),
+                    partition.keys_df.columns(),
                 );
 
-                *morsel.df_mut() = unsafe { DataFrame::new_no_checks(height, new_columns) };
+                *morsel.df_mut() = unsafe { DataFrame::new_unchecked(height, new_columns) };
             };
 
             if file_sink_task_data.morsel_tx.send(morsel).await.is_err() {

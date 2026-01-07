@@ -2,15 +2,14 @@ from __future__ import annotations
 
 import os
 import sys
-from collections.abc import Iterator
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable, Iterator
+from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 from polars._utils.unstable import unstable
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
-    from typing import Callable
+    from collections.abc import Callable, Iterator
 
     from polars import DataFrame, Expr, LazyFrame
     from polars._typing import SchemaDict

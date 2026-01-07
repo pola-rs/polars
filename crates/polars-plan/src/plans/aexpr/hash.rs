@@ -78,6 +78,7 @@ impl Hash for AExpr {
                 expr: _,
                 idx: _,
                 returns_scalar,
+                null_on_oob: _,
             } => returns_scalar.hash(state),
             AExpr::Filter { input: _, by: _ } => {},
             AExpr::Ternary {

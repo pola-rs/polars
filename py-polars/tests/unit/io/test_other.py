@@ -3,12 +3,15 @@ from __future__ import annotations
 import copy
 import sys
 from pathlib import Path
-from typing import Any, Callable, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 @pytest.mark.parametrize(

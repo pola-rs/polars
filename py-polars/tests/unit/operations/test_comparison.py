@@ -29,7 +29,7 @@ def test_comparison_order_null_broadcasting() -> None:
         pl.col("null") >= pl.col("v"),
     ]
 
-    kwargs = {f"out{i}": e for i, e in zip(range(len(exprs)), exprs)}
+    kwargs = {f"out{i}": e for i, e in zip(range(len(exprs)), exprs, strict=True)}
 
     # single value, hits broadcasting branch
     df = pl.DataFrame({"v": [42], "null": [None]})

@@ -106,7 +106,10 @@ def columns(
         raise InvalidArgument(msg)
 
     # init list of named/typed columns
-    return [column(name=nm, dtype=tp, unique=unique) for nm, tp in zip(names, dtypes)]
+    return [
+        column(name=nm, dtype=tp, unique=unique)
+        for nm, tp in zip(names, dtypes, strict=True)
+    ]
 
 
 @deprecated("`create_list_strategy` is deprecated; use `lists` instead.")
