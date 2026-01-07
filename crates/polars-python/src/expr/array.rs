@@ -1,8 +1,12 @@
 use polars::prelude::*;
+#[cfg(feature = "array_sets")]
+use polars_ops::chunked_array::list::SetOperation;
 use polars_utils::python_function::PythonObject;
 use pyo3::prelude::*;
 use pyo3::pymethods;
 
+#[cfg(feature = "array_sets")]
+use crate::Wrap;
 use crate::error::PyPolarsErr;
 use crate::expr::PyExpr;
 
@@ -169,5 +173,17 @@ impl PyExpr {
 
     fn arr_agg(&self, expr: PyExpr) -> Self {
         self.inner.clone().arr().agg(expr.inner).into()
+    }
+
+    #[cfg(feature = "array_sets")]
+    fn arr_set_operation(&self, other: PyExpr, operation: Wrap<SetOperation>) -> Self {
+        let e = self.inner.clone().arr();
+        match operation.0 {
+            SetOperation::Intersection => e.set_intersection(other.inner),
+            SetOperation::Difference => e.set_difference(other.inner),
+            SetOperation::Union => e.set_union(other.inner),
+            SetOperation::SymmetricDifference => e.set_symmetric_difference(other.inner),
+        }
+        .into()
     }
 }

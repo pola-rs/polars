@@ -6,12 +6,16 @@ mod get;
 mod join;
 mod min_max;
 mod namespace;
+#[cfg(feature = "array_sets")]
+mod sets;
 mod sum_mean;
 #[cfg(feature = "array_to_struct")]
 mod to_struct;
 
 pub use namespace::ArrayNameSpace;
 use polars_core::prelude::*;
+#[cfg(feature = "array_sets")]
+pub use sets::*;
 #[cfg(feature = "array_to_struct")]
 pub use to_struct::*;
 

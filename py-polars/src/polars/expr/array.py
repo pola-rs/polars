@@ -1051,3 +1051,149 @@ class ExprArrayNameSpace:
         polars.Expr.list.agg: Same for the List datatype.
         """
         return wrap_expr(self._pyexpr.arr_agg(expr._pyexpr))
+
+    def set_union(self, other: IntoExpr) -> Expr:
+        """
+        Compute the set union of the array with another array.
+
+        Returns a list of all unique elements found in either array.
+
+        Parameters
+        ----------
+        other
+            Right hand side of the set operation.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`List`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"a": [[1, 2], [3, 4]], "b": [[2, 3], [4, 5]]},
+        ...     schema={"a": pl.Array(pl.Int64, 3), "b": pl.Array(pl.Int64, 3)},
+        ... )
+        >>> df.select(pl.col("a").arr.set_union("b"))
+        shape: (2, 1)
+        ┌───────────────┐
+        │ a             │
+        │ ---           │
+        │ list[i64]     │
+        ╞═══════════════╡
+        │ [1, 2, 3]     │
+        │ [3, 4, 5]     │
+        └───────────────┘
+        """
+        other_pyexpr = parse_into_expression(other)
+        return wrap_expr(self._pyexpr.arr_set_operation(other_pyexpr, "union"))
+
+    def set_intersection(self, other: IntoExpr) -> Expr:
+        """
+        Compute the set intersection of the array with another array.
+
+        Returns a list of unique elements present in both arrays.
+
+        Parameters
+        ----------
+        other
+            Right hand side of the set operation.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`List`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"a": [[1, 2, 3], [4, 5, 6]], "b": [[2, 3, 4], [5, 6, 7]]},
+        ...     schema={"a": pl.Array(pl.Int64, 3), "b": pl.Array(pl.Int64, 3)},
+        ... )
+        >>> df.select(pl.col("a").arr.set_intersection("b"))
+        shape: (2, 1)
+        ┌───────────┐
+        │ a         │
+        │ ---       │
+        │ list[i64] │
+        ╞═══════════╡
+        │ [2, 3]    │
+        │ [5, 6]    │
+        └───────────┘
+        """
+        other_pyexpr = parse_into_expression(other)
+        return wrap_expr(self._pyexpr.arr_set_operation(other_pyexpr, "intersection"))
+
+    def set_difference(self, other: IntoExpr) -> Expr:
+        """
+        Compute the set difference of the array with another array.
+
+        Returns a list of unique elements in the first array that are not in the second.
+
+        Parameters
+        ----------
+        other
+            Right hand side of the set operation.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`List`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"a": [[1, 2, 3], [4, 5, 6]], "b": [[2, 3, 4], [5, 6, 7]]},
+        ...     schema={"a": pl.Array(pl.Int64, 3), "b": pl.Array(pl.Int64, 3)},
+        ... )
+        >>> df.select(pl.col("a").arr.set_difference("b"))
+        shape: (2, 1)
+        ┌───────────┐
+        │ a         │
+        │ ---       │
+        │ list[i64] │
+        ╞═══════════╡
+        │ [1]       │
+        │ [4]       │
+        └───────────┘
+        """
+        other_pyexpr = parse_into_expression(other)
+        return wrap_expr(self._pyexpr.arr_set_operation(other_pyexpr, "difference"))
+
+    def set_symmetric_difference(self, other: IntoExpr) -> Expr:
+        """
+        Compute the set symmetric difference of the array with another array.
+
+        Returns a list of unique elements in either array but not in both.
+
+        Parameters
+        ----------
+        other
+            Right hand side of the set operation.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`List`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"a": [[1, 2, 3], [4, 5, 6]], "b": [[2, 3, 4], [5, 6, 7]]},
+        ...     schema={"a": pl.Array(pl.Int64, 3), "b": pl.Array(pl.Int64, 3)},
+        ... )
+        >>> df.select(pl.col("a").arr.set_symmetric_difference("b"))
+        shape: (2, 1)
+        ┌───────────┐
+        │ a         │
+        │ ---       │
+        │ list[i64] │
+        ╞═══════════╡
+        │ [1, 4]    │
+        │ [4, 7]    │
+        └───────────┘
+        """
+        other_pyexpr = parse_into_expression(other)
+        return wrap_expr(
+            self._pyexpr.arr_set_operation(other_pyexpr, "symmetric_difference")
+        )

@@ -177,6 +177,7 @@ list_count = ["polars/list_count"]
 array_count = ["polars/array_count", "polars/dtype-array"]
 binary_encoding = ["polars/binary_encoding"]
 list_sets = ["polars-lazy/list_sets"]
+array_sets = ["polars-lazy/array_sets", "polars/array_sets"]
 list_any_all = ["polars/list_any_all"]
 array_any_all = ["polars/array_any_all", "polars/dtype-array"]
 list_drop_nulls = ["polars/list_drop_nulls"]
@@ -220,6 +221,7 @@ operations = [
   "approx_unique",
   "array_any_all",
   "array_count",
+  "array_sets",
   "bitwise",
   "is_in",
   "repeat_by",

@@ -686,3 +686,50 @@ def test_schema_non_array(expr: pl.Expr) -> None:
         match="expected Array datatype for array operation, got: String",
     ):
         lf.select(expr).collect_schema()
+
+
+@pytest.mark.parametrize(
+    ("set_op", "expected"),
+    [
+        ("set_union", [[1, 2, 3, 4], [4, 5, 6, 7]]),
+        ("set_intersection", [[2, 3], [5, 6]]),
+        ("set_difference", [[1], [4]]),
+        ("set_symmetric_difference", [[1, 4], [4, 7]]),
+    ],
+)
+def test_array_set_operations(set_op: str, expected: list[list[int]]) -> None:
+    df = pl.DataFrame(
+        {"a": [[1, 2, 3], [4, 5, 6]], "b": [[2, 3, 4], [5, 6, 7]]},
+        schema={"a": pl.Array(pl.Int64, 3), "b": pl.Array(pl.Int64, 3)},
+    )
+    result = df.select(getattr(pl.col("a").arr, set_op)("b"))
+    expected_df = pl.DataFrame({"a": expected})
+    assert_frame_equal(result, expected_df)
+
+
+def test_array_set_operations_with_nulls() -> None:
+    df = pl.DataFrame(
+        {"a": [[1, 2, None], None], "b": [[2, 3, None], [1, 2, 3]]},
+        schema={"a": pl.Array(pl.Int64, 3), "b": pl.Array(pl.Int64, 3)},
+    )
+    result = df.select(pl.col("a").arr.set_union("b"))
+    assert result.to_series().to_list()[0] is not None
+    assert result.to_series().to_list()[1] is None
+
+
+def test_array_set_operations_with_duplicates() -> None:
+    df = pl.DataFrame(
+        {"a": [[1, 1, 2]], "b": [[2, 2, 3]]},
+        schema={"a": pl.Array(pl.Int64, 3), "b": pl.Array(pl.Int64, 3)},
+    )
+    result = df.select(pl.col("a").arr.set_union("b"))
+    assert sorted(result.to_series().to_list()) == [[1, 2, 3]]
+
+
+def test_array_set_operations_different_widths() -> None:
+    df = pl.DataFrame(
+        {"a": [[1, 2]], "b": [[2, 3, 4]]},
+        schema={"a": pl.Array(pl.Int64, 2), "b": pl.Array(pl.Int64, 3)},
+    )
+    result = df.select(pl.col("a").arr.set_intersection("b"))
+    assert result.to_series().to_list() == [[2]]

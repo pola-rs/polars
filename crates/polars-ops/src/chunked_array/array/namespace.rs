@@ -9,7 +9,11 @@ use super::*;
 #[cfg(feature = "array_count")]
 use crate::chunked_array::array::count::array_count_matches;
 use crate::chunked_array::array::count::count_boolean_bits;
+#[cfg(feature = "array_sets")]
+use crate::chunked_array::array::sets::array_set_operation;
 use crate::chunked_array::array::sum_mean::sum_with_nulls;
+#[cfg(feature = "array_sets")]
+use crate::chunked_array::list::SetOperation;
 #[cfg(feature = "array_any_all")]
 use crate::prelude::array::any_all::{array_all, array_any};
 use crate::prelude::array::get::array_get;
@@ -249,6 +253,16 @@ pub trait ArrayNameSpace: AsArray {
             },
         );
         Ok(slice_arr.into_series())
+    }
+
+    #[cfg(feature = "array_sets")]
+    fn array_set_operation(
+        &self,
+        other: &ArrayChunked,
+        set_op: SetOperation,
+    ) -> PolarsResult<ListChunked> {
+        let ca = self.as_array();
+        array_set_operation(ca, other, set_op)
     }
 }
 

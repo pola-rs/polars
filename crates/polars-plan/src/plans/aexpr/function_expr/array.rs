@@ -1,5 +1,7 @@
 use polars_core::utils::slice_offsets;
 use polars_ops::chunked_array::array::*;
+#[cfg(feature = "array_sets")]
+use polars_ops::chunked_array::list::SetOperation;
 
 use super::*;
 
@@ -39,6 +41,8 @@ pub enum IRArrayFunction {
     Slice(i64, i64),
     #[cfg(feature = "array_to_struct")]
     ToStruct(Option<DslNameGenerator>),
+    #[cfg(feature = "array_sets")]
+    SetOperation(SetOperation),
 }
 
 impl<'a> FieldsMapper<'a> {
@@ -118,6 +122,10 @@ impl IRArrayFunction {
                     .collect::<PolarsResult<Vec<Field>>>()
                     .map(DataType::Struct)
             }),
+            #[cfg(feature = "array_sets")]
+            SetOperation(_) => mapper
+                .ensure_is_array()?
+                .try_map_dtype(map_array_dtype_to_list_dtype),
         }
     }
 
@@ -154,6 +162,8 @@ impl IRArrayFunction {
             A::Explode { .. } => FunctionOptions::row_separable(),
             #[cfg(feature = "array_to_struct")]
             A::ToStruct(_) => FunctionOptions::elementwise(),
+            #[cfg(feature = "array_sets")]
+            A::SetOperation(_) => FunctionOptions::elementwise(),
         }
     }
 }
@@ -222,6 +232,8 @@ impl Display for IRArrayFunction {
             Explode { .. } => "explode",
             #[cfg(feature = "array_to_struct")]
             ToStruct(_) => "to_struct",
+            #[cfg(feature = "array_sets")]
+            SetOperation(op) => return write!(f, "arr.{op}"),
         };
         write!(f, "arr.{name}")
     }

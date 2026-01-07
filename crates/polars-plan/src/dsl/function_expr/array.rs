@@ -1,6 +1,8 @@
 use std::fmt;
 
 use polars_core::prelude::{ExplodeOptions, SortOptions};
+#[cfg(feature = "array_sets")]
+use polars_ops::chunked_array::list::SetOperation;
 
 use super::FunctionExpr;
 
@@ -41,6 +43,8 @@ pub enum ArrayFunction {
     Concat,
     #[cfg(feature = "array_to_struct")]
     ToStruct(Option<super::DslNameGenerator>),
+    #[cfg(feature = "array_sets")]
+    SetOperation(SetOperation),
 }
 
 impl fmt::Display for ArrayFunction {
@@ -78,6 +82,8 @@ impl fmt::Display for ArrayFunction {
             Explode { .. } => "explode",
             #[cfg(feature = "array_to_struct")]
             ToStruct(_) => "to_struct",
+            #[cfg(feature = "array_sets")]
+            SetOperation(op) => return write!(f, "arr.{op}"),
         };
         write!(f, "arr.{name}")
     }

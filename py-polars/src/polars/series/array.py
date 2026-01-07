@@ -856,3 +856,119 @@ class ArrayNameSpace:
             []
         ]
         """
+
+    def set_union(self, other: IntoExpr) -> Series:
+        """
+        Compute the set union of the array with another array.
+
+        Returns a list of all unique elements found in either array.
+
+        Parameters
+        ----------
+        other
+            Right hand side of the set operation.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`List`.
+
+        Examples
+        --------
+        >>> a = pl.Series("a", [[1, 2, 3], [4, 5, 6]], dtype=pl.Array(pl.Int64, 3))
+        >>> b = pl.Series("b", [[2, 3, 4], [5, 6, 7]], dtype=pl.Array(pl.Int64, 3))
+        >>> a.arr.set_union(b)
+        shape: (2,)
+        Series: 'a' [list[i64]]
+        [
+            [1, 2, 3, 4]
+            [4, 5, 6, 7]
+        ]
+        """
+
+    def set_intersection(self, other: IntoExpr) -> Series:
+        """
+        Compute the set intersection of the array with another array.
+
+        Returns a list of unique elements present in both arrays.
+
+        Parameters
+        ----------
+        other
+            Right hand side of the set operation.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`List`.
+
+        Examples
+        --------
+        >>> a = pl.Series("a", [[1, 2, 3], [4, 5, 6]], dtype=pl.Array(pl.Int64, 3))
+        >>> b = pl.Series("b", [[2, 3, 4], [5, 6, 7]], dtype=pl.Array(pl.Int64, 3))
+        >>> a.arr.set_intersection(b)
+        shape: (2,)
+        Series: 'a' [list[i64]]
+        [
+            [2, 3]
+            [5, 6]
+        ]
+        """
+
+    def set_difference(self, other: IntoExpr) -> Series:
+        """
+        Compute the set difference of the array with another array.
+
+        Returns a list of unique elements in the first array that are not in the second.
+
+        Parameters
+        ----------
+        other
+            Right hand side of the set operation.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`List`.
+
+        Examples
+        --------
+        >>> a = pl.Series("a", [[1, 2, 3], [4, 5, 6]], dtype=pl.Array(pl.Int64, 3))
+        >>> b = pl.Series("b", [[2, 3, 4], [5, 6, 7]], dtype=pl.Array(pl.Int64, 3))
+        >>> a.arr.set_difference(b)
+        shape: (2,)
+        Series: 'a' [list[i64]]
+        [
+            [1]
+            [4]
+        ]
+        """
+
+    def set_symmetric_difference(self, other: IntoExpr) -> Series:
+        """
+        Compute the set symmetric difference of the array with another array.
+
+        Returns a list of unique elements in either array but not in both.
+
+        Parameters
+        ----------
+        other
+            Right hand side of the set operation.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`List`.
+
+        Examples
+        --------
+        >>> a = pl.Series("a", [[1, 2, 3], [4, 5, 6]], dtype=pl.Array(pl.Int64, 3))
+        >>> b = pl.Series("b", [[2, 3, 4], [5, 6, 7]], dtype=pl.Array(pl.Int64, 3))
+        >>> a.arr.set_symmetric_difference(b)
+        shape: (2,)
+        Series: 'a' [list[i64]]
+        [
+            [1, 4]
+            [4, 7]
+        ]
+        """

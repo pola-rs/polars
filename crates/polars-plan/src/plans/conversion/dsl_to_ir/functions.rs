@@ -96,6 +96,8 @@ pub(super) fn convert_functions(
                 A::Slice(offset, length) => IA::Slice(offset, length),
                 #[cfg(feature = "array_to_struct")]
                 A::ToStruct(ng) => IA::ToStruct(ng),
+                #[cfg(feature = "array_sets")]
+                A::SetOperation(op) => IA::SetOperation(op),
             })
         },
         F::BinaryExpr(binary_function) => {

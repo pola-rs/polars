@@ -1,4 +1,6 @@
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure, polars_err};
+#[cfg(feature = "array_sets")]
+use polars_core::prelude::IntoSeries;
 use polars_core::prelude::{Column, DataType, ExplodeOptions, IntoColumn, SortOptions};
 use polars_ops::prelude::array::ArrayNameSpace;
 #[cfg(feature = "array_to_struct")]
@@ -43,6 +45,8 @@ pub fn function_expr_to_udf(func: IRArrayFunction) -> SpecialEq<Arc<dyn ColumnsU
         Slice(offset, length) => map!(slice, offset, length),
         #[cfg(feature = "array_to_struct")]
         ToStruct(ng) => map!(arr_to_struct, ng.clone()),
+        #[cfg(feature = "array_sets")]
+        SetOperation(op) => map_as_slice!(set_operation, op),
     }
 }
 
@@ -258,4 +262,16 @@ fn arr_to_struct(s: &Column, name_generator: Option<DslNameGenerator>) -> Polars
     s.array()?
         .to_struct(name_generator)
         .map(IntoColumn::into_column)
+}
+
+#[cfg(feature = "array_sets")]
+fn set_operation(
+    s: &[Column],
+    op: polars_ops::chunked_array::list::SetOperation,
+) -> PolarsResult<Column> {
+    let ca_left = s[0].array()?;
+    let ca_right = s[1].array()?;
+    ca_left
+        .array_set_operation(ca_right, op)
+        .map(|ca| ca.into_series().into())
 }

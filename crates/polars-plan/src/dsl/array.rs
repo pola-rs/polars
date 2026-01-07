@@ -1,4 +1,6 @@
 use polars_core::prelude::*;
+#[cfg(feature = "array_sets")]
+use polars_ops::chunked_array::list::SetOperation;
 
 use crate::dsl::function_expr::ArrayFunction;
 use crate::prelude::*;
@@ -210,5 +212,43 @@ impl ArrayNameSpace {
             evaluation: Arc::new(other.into()),
             variant: EvalVariant::ArrayAgg,
         }
+    }
+
+    #[cfg(feature = "array_sets")]
+    /// Return the set union of two arrays.
+    pub fn set_union(self, other: Expr) -> Expr {
+        self.0.map_binary(
+            FunctionExpr::ArrayExpr(ArrayFunction::SetOperation(SetOperation::Union)),
+            other,
+        )
+    }
+
+    #[cfg(feature = "array_sets")]
+    /// Return the set intersection of two arrays.
+    pub fn set_intersection(self, other: Expr) -> Expr {
+        self.0.map_binary(
+            FunctionExpr::ArrayExpr(ArrayFunction::SetOperation(SetOperation::Intersection)),
+            other,
+        )
+    }
+
+    #[cfg(feature = "array_sets")]
+    /// Return the set difference of two arrays (elements in self but not in other).
+    pub fn set_difference(self, other: Expr) -> Expr {
+        self.0.map_binary(
+            FunctionExpr::ArrayExpr(ArrayFunction::SetOperation(SetOperation::Difference)),
+            other,
+        )
+    }
+
+    #[cfg(feature = "array_sets")]
+    /// Return the set symmetric difference of two arrays (elements in either but not both).
+    pub fn set_symmetric_difference(self, other: Expr) -> Expr {
+        self.0.map_binary(
+            FunctionExpr::ArrayExpr(ArrayFunction::SetOperation(
+                SetOperation::SymmetricDifference,
+            )),
+            other,
+        )
     }
 }
