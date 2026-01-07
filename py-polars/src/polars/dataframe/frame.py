@@ -126,7 +126,7 @@ if TYPE_CHECKING:
     from collections.abc import Collection, Iterator, Mapping
     from datetime import timedelta
     from io import IOBase
-    from typing import Literal
+    from typing import Concatenate, Literal, ParamSpec
 
     import deltalake
     import jax
@@ -190,11 +190,6 @@ if TYPE_CHECKING:
     from polars.io.cloud import CredentialProviderFunction
     from polars.io.partition import _SinkDirectory
     from polars.ml.torch import PolarsDataset
-
-    if sys.version_info >= (3, 10):
-        from typing import Concatenate, ParamSpec
-    else:
-        from typing_extensions import Concatenate, ParamSpec
 
     if sys.version_info >= (3, 13):
         from warnings import deprecated

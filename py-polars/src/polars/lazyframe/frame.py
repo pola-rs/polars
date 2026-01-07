@@ -111,7 +111,7 @@ if TYPE_CHECKING:
     import sys
     from collections.abc import Awaitable, Iterator, Sequence
     from io import IOBase
-    from typing import IO, Literal
+    from typing import IO, Concatenate, Literal, ParamSpec
 
     from polars.io.partition import _SinkDirectory
     from polars.lazyframe.opt_flags import QueryOptFlags
@@ -158,11 +158,6 @@ if TYPE_CHECKING:
     from polars.config import TableFormatNames
     from polars.io.cloud import CredentialProviderFunction
     from polars.io.parquet import ParquetFieldOverwrites
-
-    if sys.version_info >= (3, 10):
-        from typing import Concatenate, ParamSpec
-    else:
-        from typing_extensions import Concatenate, ParamSpec
 
     if sys.version_info >= (3, 11):
         from typing import Self

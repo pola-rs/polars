@@ -11,14 +11,11 @@ from polars._utils.wrap import wrap_s
 from polars.datatypes import dtype_to_ffiname
 
 if TYPE_CHECKING:
+    from typing import ParamSpec
+
     from polars import Series
     from polars._plr import PySeries
     from polars._typing import PolarsDataType
-
-    if sys.version_info >= (3, 10):
-        from typing import ParamSpec
-    else:
-        from typing_extensions import ParamSpec
 
     T = TypeVar("T")
     P = ParamSpec("P")

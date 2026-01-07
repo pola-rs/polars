@@ -32,13 +32,9 @@ if TYPE_CHECKING:
     from collections.abc import Iterator, MutableMapping
     from collections.abc import Set as AbstractSet
     from dis import Instruction
+    from typing import TypeAlias
 
     from polars._utils.various import NoDefault
-
-    if sys.version_info >= (3, 10):
-        from typing import TypeAlias
-    else:
-        from typing_extensions import TypeAlias
 
 
 class StackValue(NamedTuple):

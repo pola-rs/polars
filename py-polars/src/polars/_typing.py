@@ -15,9 +15,9 @@ from typing import (
 )
 
 if TYPE_CHECKING:
-    import sys
     from datetime import date, datetime, time, timedelta
     from decimal import Decimal
+    from typing import TypeAlias
 
     from sqlalchemy.engine import Connection, Engine
     from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession
@@ -31,11 +31,6 @@ if TYPE_CHECKING:
     from polars.datatypes import DataType, DataTypeClass, IntegerType, TemporalType
     from polars.lazyframe.engine_config import GPUEngine
     from polars.selectors import Selector
-
-    if sys.version_info >= (3, 10):
-        from typing import TypeAlias
-    else:
-        from typing_extensions import TypeAlias
 
 
 class ArrowArrayExportable(Protocol):

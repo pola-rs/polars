@@ -22,32 +22,18 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+    from typing import TypeAlias
 
     import pyarrow as pa
 
     from polars import DataFrame, LazyFrame
     from polars._typing import ArrowSchemaExportable
-
-    if sys.version_info >= (3, 10):
-        from typing import TypeAlias
-    else:
-        from typing_extensions import TypeAlias
 else:
     from polars._dependencies import pyarrow as pa
 
 
-if sys.version_info >= (3, 10):
-
-    def _required_init_args(tp: DataTypeClass) -> bool:
-        # note: this check is ~20% faster than the check for a
-        # custom "__init__", below, but is not available on py39
-        return bool(tp.__annotations__)
-else:
-
-    def _required_init_args(tp: DataTypeClass) -> bool:
-        # indicates override of the default __init__
-        # (eg: this type requires specific args)
-        return "__init__" in tp.__dict__
+def _required_init_args(tp: DataTypeClass) -> bool:
+    return bool(tp.__annotations__)
 
 
 BaseSchema = OrderedDict[str, DataType]

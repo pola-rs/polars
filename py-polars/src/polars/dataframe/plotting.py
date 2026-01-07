@@ -7,6 +7,7 @@ from polars._dependencies import altair as alt
 
 if TYPE_CHECKING:
     import sys
+    from typing import TypeAlias
 
     from altair.typing import ChannelColor as Color
     from altair.typing import ChannelOrder as Order
@@ -18,10 +19,6 @@ if TYPE_CHECKING:
 
     from polars import DataFrame
 
-    if sys.version_info >= (3, 10):
-        from typing import TypeAlias
-    else:
-        from typing_extensions import TypeAlias
     if sys.version_info >= (3, 11):
         from typing import Unpack
     else:

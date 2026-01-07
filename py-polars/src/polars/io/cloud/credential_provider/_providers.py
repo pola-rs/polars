@@ -23,12 +23,9 @@ from polars._utils.logging import eprint, verbose
 from polars.io.cloud._utils import NoPickleOption
 
 if TYPE_CHECKING:
-    from polars._dependencies import boto3
+    from typing import TypeAlias
 
-    if sys.version_info >= (3, 10):
-        from typing import TypeAlias
-    else:
-        from typing_extensions import TypeAlias
+    from polars._dependencies import boto3
 
 from polars._utils.unstable import issue_unstable_warning
 

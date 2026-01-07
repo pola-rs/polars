@@ -498,8 +498,7 @@ class PartitionParted(_SinkDirectory):
         )
 
 
-# TODO: Add `kw_only=True` after 3.9 support dropped
-@dataclass
+@dataclass(kw_only=True)
 class _SinkDirectoryInner:
     """
     Holds parsed directory sink options.

@@ -30,12 +30,7 @@ if TYPE_CHECKING:
     import sys
     from collections.abc import Collection, Mapping
     from types import TracebackType
-    from typing import Any, Final, Literal
-
-    if sys.version_info >= (3, 10):
-        from typing import TypeAlias
-    else:
-        from typing_extensions import TypeAlias
+    from typing import Any, Final, Literal, TypeAlias
 
     if sys.version_info >= (3, 11):
         from typing import Self
