@@ -12,6 +12,8 @@ use polars_utils::arena::Arena;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{IdxSize, format_pl_smallstr};
 
+use crate::physical_plan::visualization::models::SortColumn;
+
 pub mod models;
 pub use models::{PhysNodeInfo, PhysicalPlanVisualizationData};
 use slotmap::{SecondaryMap, SlotMap};
@@ -967,10 +969,17 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                 phys_node_inputs.push(input.node);
 
                 let properties = PhysNodeProperties::Sort {
-                    by_exprs: expr_list(by_column, self.expr_arena),
+                    sort_columns: by_column
+                        .iter()
+                        .zip(descending.iter())
+                        .zip(nulls_last.iter())
+                        .map(|((expr, &descending), &nulls_last)| SortColumn {
+                            expr: format_pl_smallstr!("{}", expr.display(self.expr_arena)),
+                            descending,
+                            nulls_last,
+                        })
+                        .collect(),
                     slice: convert_opt_slice(slice),
-                    descending: descending.clone(),
-                    nulls_last: nulls_last.clone(),
                     multithreaded: *multithreaded,
                     maintain_order: *maintain_order,
                     #[allow(clippy::useless_conversion)]

@@ -10,7 +10,9 @@ use polars_utils::unique_id::UniqueId;
 use crate::dsl::{
     GroupbyOptions, HConcatOptions, JoinOptionsIR, JoinTypeOptionsIR, UnifiedScanArgs, UnionOptions,
 };
-use crate::plans::visualization::models::{Edge, IRNodeProperties, IntoWithArena, expr_list};
+use crate::plans::visualization::models::{
+    Edge, IRNodeProperties, IntoWithArena, SortColumn, expr_list,
+};
 use crate::plans::{AExpr, ExprIR, FileInfo, IR};
 use crate::prelude::{DistinctOptionsIR, ProjectionOptions};
 
@@ -622,10 +624,17 @@ impl IRVisualizationDataGenerator<'_> {
                     },
             } => {
                 let properties = IRNodeProperties::Sort {
-                    by_exprs: expr_list(by_column, self.expr_arena),
+                    sort_columns: by_column
+                        .iter()
+                        .zip(descending.iter())
+                        .zip(nulls_last.iter())
+                        .map(|((expr, &descending), &nulls_last)| SortColumn {
+                            expr: format_pl_smallstr!("{}", expr.display(self.expr_arena)),
+                            descending,
+                            nulls_last,
+                        })
+                        .collect(),
                     slice: convert_opt_slice(slice),
-                    descending: descending.clone(),
-                    nulls_last: nulls_last.clone(),
                     multithreaded: *multithreaded,
                     maintain_order: *maintain_order,
                     #[cfg_attr(feature = "bigidx", expect(clippy::useless_conversion))]
