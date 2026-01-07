@@ -407,7 +407,7 @@ pub fn resolve_join(
             })
         };
     }
-    
+
     let ir = IR::Join {
         input_left,
         input_right,
