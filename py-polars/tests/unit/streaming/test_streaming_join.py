@@ -407,7 +407,7 @@ def test_cross_join_with_literal_column_25544() -> None:
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("on", [["key"], ["key", "key_ext"]])
+@pytest.mark.parametrize("on", [["key"], ["key", "key_ext"], ["key_ext", "key"]])
 @pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
 @pytest.mark.parametrize("descending", [False, True])
 @pytest.mark.parametrize("nulls_last", [False, True])
@@ -448,15 +448,11 @@ def test_merge_join(
         monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", str(ideal_morsel_size))
         check_row_order = maintain_order in {"left_right", "right_left"}
 
-        df_left_sorted = (
-            df_left.sort(*on, descending=descending, nulls_last=nulls_last)
-            .lazy()
-            .set_sorted(*on, descending=descending, nulls_last=nulls_last)
+        df_left_sorted = df_left.lazy().sort(
+            *on, descending=descending, nulls_last=nulls_last
         )
-        df_right_sorted = (
-            df_right.sort(*on, descending=descending, nulls_last=nulls_last)
-            .lazy()
-            .set_sorted(*on, descending=descending, nulls_last=nulls_last)
+        df_right_sorted = df_right.lazy().sort(
+            *on, descending=descending, nulls_last=nulls_last
         )
 
         q = df_left_sorted.join(
@@ -474,5 +470,5 @@ def test_merge_join(
         print(f"{actual = }")
         print(f"{expected = }")
 
-        assert "merge-join" in typing.cast("str", dot)
+        assert "merge-join" in typing.cast("str", dot), "merge-join not used in plan"
         assert_frame_equal(actual, expected, check_row_order=check_row_order)

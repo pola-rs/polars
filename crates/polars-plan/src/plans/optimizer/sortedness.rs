@@ -5,6 +5,7 @@ use polars_core::prelude::{FillNullStrategy, PlHashMap, PlHashSet};
 use polars_core::schema::Schema;
 use polars_core::series::IsSorted;
 use polars_utils::arena::{Arena, Node};
+use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unique_id::UniqueId;
 
@@ -105,10 +106,11 @@ fn is_sorted_rec(
             predicate: _,
         } => rec!(*input),
         IR::Scan { .. } => None,
-        IR::DataFrameScan { df, .. } => Some(IRSorted(
-            [df.get_columns()
+        IR::DataFrameScan { df, .. } => {
+            let sorted_cols = df
+                .get_columns()
                 .iter()
-                .find_map(|c| match c.is_sorted_flag() {
+                .filter_map(|c| match c.is_sorted_flag() {
                     IsSorted::Not => None,
                     IsSorted::Ascending => Some(Sorted {
                         column: c.name().clone(),
@@ -120,9 +122,13 @@ fn is_sorted_rec(
                         descending: Some(true),
                         nulls_last: Some(c.get(0).is_ok_and(|v| !v.is_null())),
                     }),
-                })?]
-            .into(),
-        )),
+                })
+                .collect_vec();
+            match sorted_cols.is_empty() {
+                false => Some(IRSorted(sorted_cols.into())),
+                true => None,
+            }
+        },
         IR::SimpleProjection { input, columns } => {
             let (input, columns) = (*input, columns.clone());
             match rec!(input) {

@@ -1210,20 +1210,37 @@ pub fn lower_ir(
                                 &mut right_sortedness,
                             ),
                         ] {
-                            let descending = sortedness
-                                .as_ref()
-                                .unwrap()
-                                .0
+                            let descending = on
                                 .iter()
-                                .map(|s| s.descending.unwrap())
+                                .map(|e| {
+                                    let name = e.output_name();
+                                    sortedness
+                                        .as_ref()
+                                        .unwrap()
+                                        .0
+                                        .iter()
+                                        .find(|s| s.column == *name)
+                                        .unwrap()
+                                        .descending
+                                        .unwrap()
+                                })
                                 .collect_vec();
-                            let nulls_last = sortedness
-                                .as_ref()
-                                .unwrap()
-                                .0
+                            let nulls_last = on
                                 .iter()
-                                .map(|s| s.nulls_last.unwrap())
+                                .map(|e| {
+                                    let name = e.output_name();
+                                    sortedness
+                                        .as_ref()
+                                        .unwrap()
+                                        .0
+                                        .iter()
+                                        .find(|s| s.column == *name)
+                                        .unwrap()
+                                        .nulls_last
+                                        .unwrap()
+                                })
                                 .collect_vec();
+
                             let nulls_last_encoded = nulls_last[0];
                             let row_encode_col_expr = AExprBuilder::row_encode(
                                 on.clone(),
