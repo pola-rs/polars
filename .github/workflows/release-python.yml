@@ -332,7 +332,7 @@ jobs:
           command: build
           target: ${{ matrix.target }}
           args: >
-            --profile dist-release
+            --profile ${{ inputs.dry-run == true && 'mindebug-dev' || 'dist-release' }}
             --manifest-path py-polars/runtime/${{ matrix.package }}/Cargo.toml
             --out dist
           manylinux: ${{ endsWith(matrix.target, '-musl') && 'musllinux_1_2' || ((runner.os == 'Linux' && matrix.architecture == 'aarch64') && '2_24' || 'auto') }}
