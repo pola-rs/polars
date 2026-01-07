@@ -1653,7 +1653,7 @@ impl PyCollectBatches {
     }
 
     #[allow(unused_variables)]
-    #[pyo3(signature = (requested_schema))]
+    #[pyo3(signature = (requested_schema=None))]
     fn __arrow_c_stream__<'py>(
         &self,
         py: Python<'py>,
