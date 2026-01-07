@@ -481,7 +481,7 @@ def test_get_int128_uint128_negative_index_oob(dtype: pl.DataType) -> None:
     assert out["v"].to_list() == [None]
 
 
-def test_get_window_with_filtered_empty_groups() -> None:
+def test_get_window_with_filtered_empty_groups_23029() -> None:
     # https://github.com/pola-rs/polars/issues/23029
     df = pl.DataFrame(
         {
