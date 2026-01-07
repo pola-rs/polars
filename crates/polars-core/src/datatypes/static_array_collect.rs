@@ -26,16 +26,8 @@ impl<'a, T: PolarsObject> ArrayFromIter<Option<&'a T>> for ObjectArray<T> {
         let mut values: Vec<T> = Vec::with_capacity(size);
 
         for val in iter {
-            match val {
-                Some(value) => {
-                    null_mask_builder.push(true);
-                    values.push(value.clone());
-                },
-                None => {
-                    null_mask_builder.push(false);
-                    values.push(T::default());
-                },
-            }
+            null_mask_builder.push(val.is_some());
+            values.push(val.cloned().unwrap_or_default());
         }
 
         ObjectArray::from(values).with_validity(null_mask_builder.into_opt_validity())
@@ -51,16 +43,9 @@ impl<'a, T: PolarsObject> ArrayFromIter<Option<&'a T>> for ObjectArray<T> {
         let mut values: Vec<T> = Vec::with_capacity(size);
 
         for val in iter {
-            match val? {
-                Some(value) => {
-                    null_mask_builder.push(true);
-                    values.push(value.clone());
-                },
-                None => {
-                    null_mask_builder.push(false);
-                    values.push(T::default());
-                },
-            }
+            let val = val?;
+            null_mask_builder.push(val.is_some());
+            values.push(val.cloned().unwrap_or_default());
         }
 
         Ok(ObjectArray::from(values).with_validity(null_mask_builder.into_opt_validity()))
