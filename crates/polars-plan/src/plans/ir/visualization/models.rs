@@ -167,10 +167,8 @@ pub enum IRNodeProperties {
         len: u64,
     },
     Sort {
-        by_exprs: Vec<PlSmallStr>,
+        sort_columns: Vec<SortColumn>,
         slice: Option<(i64, u64)>,
-        descending: Vec<bool>,
-        nulls_last: Vec<bool>,
         multithreaded: bool,
         maintain_order: bool,
         limit: Option<u64>,

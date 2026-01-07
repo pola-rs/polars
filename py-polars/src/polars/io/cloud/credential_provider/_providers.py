@@ -7,13 +7,12 @@ import os
 import subprocess
 import sys
 import zoneinfo
+from collections.abc import Callable
 from datetime import datetime
 from functools import partial
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
-    Optional,
     TypedDict,
     Union,
 )
@@ -23,18 +22,15 @@ from polars._utils.logging import eprint, verbose
 from polars.io.cloud._utils import NoPickleOption
 
 if TYPE_CHECKING:
-    from polars._dependencies import boto3
+    from typing import TypeAlias
 
-    if sys.version_info >= (3, 10):
-        from typing import TypeAlias
-    else:
-        from typing_extensions import TypeAlias
+    from polars._dependencies import boto3
 
 from polars._utils.unstable import issue_unstable_warning
 
 # These typedefs are here to avoid circular import issues, as
 # `CredentialProviderFunction` specifies "CredentialProvider"
-CredentialProviderFunctionReturn: TypeAlias = tuple[dict[str, str], Optional[int]]
+CredentialProviderFunctionReturn: TypeAlias = tuple[dict[str, str], int | None]
 
 CredentialProviderFunction: TypeAlias = Union[
     Callable[[], CredentialProviderFunctionReturn], "CredentialProvider"

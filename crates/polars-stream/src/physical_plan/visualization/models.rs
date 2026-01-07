@@ -96,8 +96,8 @@ pub enum PhysNodeProperties {
         offset: u64,
     },
     GroupBy {
-        keys: Vec<PlSmallStr>,
-        aggs: Vec<PlSmallStr>,
+        key_per_input: Vec<Vec<PlSmallStr>>,
+        aggs_per_input: Vec<Vec<PlSmallStr>>,
     },
     #[cfg(feature = "dynamic_group_by")]
     DynamicGroupBy {
@@ -277,10 +277,8 @@ pub enum PhysNodeProperties {
         num_sinks: u64,
     },
     Sort {
-        by_exprs: Vec<PlSmallStr>,
+        sort_columns: Vec<SortColumn>,
         slice: Option<(i64, u64)>,
-        descending: Vec<bool>,
-        nulls_last: Vec<bool>,
         multithreaded: bool,
         maintain_order: bool,
         limit: Option<u64>,
@@ -337,4 +335,15 @@ pub enum PhysNodeProperties {
         is_pure: bool,
         validate_schema: bool,
     },
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "physical_plan_visualization_schema",
+    derive(schemars::JsonSchema)
+)]
+pub struct SortColumn {
+    pub expr: PlSmallStr,
+    pub descending: bool,
+    pub nulls_last: bool,
 }

@@ -299,7 +299,7 @@ pub(super) fn check_expand_literals(
     df: &DataFrame,
     phys_expr: &[Arc<dyn PhysicalExpr>],
     mut selected_columns: Vec<Column>,
-    zero_length: bool,
+    is_empty: bool,
     options: ProjectionOptions,
 ) -> PolarsResult<DataFrame> {
     let Some(first_len) = selected_columns.first().map(|s| s.len()) else {
@@ -309,8 +309,8 @@ pub(super) fn check_expand_literals(
     let should_broadcast = options.should_broadcast;
 
     // When we have CSE we cannot verify scalars yet.
-    let verify_scalar = if !df.get_columns().is_empty() {
-        !df.get_columns()[df.width() - 1]
+    let verify_scalar = if !df.columns().is_empty() {
+        !df.columns()[df.width() - 1]
             .name()
             .starts_with(CSE_REPLACED)
     } else {
@@ -393,12 +393,12 @@ pub(super) fn check_expand_literals(
     // @scalar-opt
     let selected_columns = selected_columns.into_iter().collect::<Vec<_>>();
 
-    let df = unsafe { DataFrame::new_no_checks_height_from_first(selected_columns) };
+    let df = unsafe { DataFrame::new_unchecked_infer_height(selected_columns) };
 
     // a literal could be projected to a zero length dataframe.
     // This prevents a panic.
-    let df = if zero_length {
-        let min = df.get_columns().iter().map(|s| s.len()).min();
+    let df = if is_empty {
+        let min = df.columns().iter().map(|s| s.len()).min();
         if min.is_some() { df.head(min) } else { df }
     } else {
         df

@@ -523,14 +523,27 @@ fn visualize_plan_rec(
 
             (out, &[][..])
         },
-        PhysNodeKind::GroupBy { input, key, aggs } => (
-            format!(
-                "group-by\\nkey:\\n{}\\naggs:\\n{}",
-                fmt_exprs_to_label(key, expr_arena, FormatExprStyle::Select),
-                fmt_exprs_to_label(aggs, expr_arena, FormatExprStyle::Select)
-            ),
-            from_ref(input),
-        ),
+        PhysNodeKind::GroupBy {
+            inputs,
+            key_per_input,
+            aggs_per_input,
+        } => {
+            let mut out = String::new();
+            for (key, aggs) in key_per_input.iter().zip(aggs_per_input) {
+                if !out.is_empty() {
+                    out.push('\n');
+                }
+
+                write!(
+                    &mut out,
+                    "group-by\\nkey:\\n{}\\naggs:\\n{}",
+                    fmt_exprs_to_label(key, expr_arena, FormatExprStyle::Select),
+                    fmt_exprs_to_label(aggs, expr_arena, FormatExprStyle::Select)
+                )
+                .ok();
+            }
+            (out, inputs.as_slice())
+        },
         #[cfg(feature = "dynamic_group_by")]
         PhysNodeKind::DynamicGroupBy {
             input,

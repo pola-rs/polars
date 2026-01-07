@@ -15,16 +15,12 @@ from polars.lazyframe.engine_config import GPUEngine
 if TYPE_CHECKING:
     import sys
     from types import TracebackType
+    from typing import TypeAlias
 
     from polars._typing import FloatFmt
     from polars.io.cloud.credential_provider._providers import (
         CredentialProviderFunction,
     )
-
-    if sys.version_info >= (3, 10):
-        from typing import TypeAlias
-    else:
-        from typing_extensions import TypeAlias
 
     if sys.version_info >= (3, 11):
         from typing import Self, Unpack

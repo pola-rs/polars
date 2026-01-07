@@ -6,6 +6,7 @@ pub mod function_registry;
 mod functions;
 pub mod keywords;
 mod sql_expr;
+mod sql_visitors;
 mod table_functions;
 mod types;
 

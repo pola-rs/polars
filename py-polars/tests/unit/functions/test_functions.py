@@ -235,7 +235,7 @@ def test_cov() -> None:
     )
 
     # expect same result from both approaches
-    for idx, (r1, r2) in enumerate(zip(res1, res2)):
+    for idx, (r1, r2) in enumerate(zip(res1, res2, strict=True)):
         expected_value = -645.8333333333 if idx == 0 else -1291.6666666666
         assert pytest.approx(expected_value) == r1.item()
         assert_series_equal(r1, r2)
@@ -259,7 +259,7 @@ def test_corr() -> None:
     )
 
     # expect same result from both approaches
-    for idx, (r1, r2) in enumerate(zip(res1, res2)):
+    for idx, (r1, r2) in enumerate(zip(res1, res2, strict=True)):
         assert pytest.approx(-0.412199756 if idx == 0 else -0.5) == r1.item()
         assert_series_equal(r1, r2)
 

@@ -713,7 +713,7 @@ async fn compute_join(
             &mut arenas.df_builders,
             params,
         )?;
-        if !df.is_empty() {
+        if df.height() > 0 {
             let morsel = Morsel::new(df, seq, source_token.clone());
             if matched_send.send(morsel).await.is_err() {
                 panic!("broken pipe");
@@ -751,7 +751,7 @@ async fn compute_join(
         &mut arenas.df_builders,
         params,
     )?;
-    if !df_unmatched.is_empty() {
+    if df_unmatched.height() > 0 {
         let morsel = Morsel::new(df_unmatched, seq, source_token.clone());
         if unmatched_send.send(morsel).await.is_err() {
             panic!("broken pipe");
@@ -773,10 +773,11 @@ fn gather_and_postprocess(
 
     // Remove non-payload columns
     for col in left
-        .column_iter()
+        .columns()
+        .iter()
         .map(Column::name)
         .cloned()
-        .collect::<Vec<_>>()
+        .collect_vec()
     {
         if params.left.on.contains(&col) && should_coalesce {
             continue;
@@ -786,10 +787,11 @@ fn gather_and_postprocess(
         }
     }
     for col in right
-        .column_iter()
+        .columns()
+        .iter()
         .map(Column::name)
         .cloned()
-        .collect::<Vec<_>>()
+        .collect_vec()
     {
         if params.left.on.contains(&col) && should_coalesce {
             continue;
@@ -841,7 +843,7 @@ fn gather_and_postprocess(
     }
 
     // Rename any right columns to "{}_right"
-    let left_cols: PlHashSet<_> = left.column_iter().map(Column::name).cloned().collect();
+    let left_cols: PlHashSet<_> = left.columns().iter().map(Column::name).cloned().collect();
     let right_cols_vec = right.get_column_names_owned();
     let renames = right_cols_vec
         .iter()
@@ -852,7 +854,7 @@ fn gather_and_postprocess(
         });
     right.rename_many(renames).unwrap();
 
-    left.hstack_mut(right.get_columns())?;
+    left.hstack_mut(right.columns())?;
 
     if params.args.how == JoinType::Full && should_coalesce {
         // Coalesce key columns
@@ -863,7 +865,7 @@ fn gather_and_postprocess(
             let left_col = left.column(left_keycol).unwrap();
             let right_col = left.column(&right_keycol).unwrap();
             let coalesced = coalesce_columns(&[left_col.clone(), right_col.clone()]).unwrap();
-            left.replace(left_keycol, coalesced.take_materialized_series())
+            left.replace(left_keycol, coalesced)
                 .unwrap()
                 .drop_in_place(&right_keycol)
                 .unwrap();

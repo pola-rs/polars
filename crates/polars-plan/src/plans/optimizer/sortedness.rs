@@ -108,7 +108,7 @@ fn is_sorted_rec(
         IR::Scan { .. } => None,
         IR::DataFrameScan { df, .. } => {
             let sorted_cols = df
-                .get_columns()
+                .columns()
                 .iter()
                 .filter_map(|c| match c.is_sorted_flag() {
                     IsSorted::Not => None,

@@ -358,10 +358,10 @@ impl PyExpr {
         self.inner.clone().gather(idx.inner).into()
     }
 
-    fn get(&self, idx: Self) -> Self {
-        self.inner.clone().get(idx.inner).into()
+    #[pyo3(signature = (idx, null_on_oob=false))]
+    fn get(&self, idx: Self, null_on_oob: bool) -> Self {
+        self.inner.clone().get(idx.inner, null_on_oob).into()
     }
-
     fn sort_by(
         &self,
         by: Vec<Self>,

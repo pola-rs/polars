@@ -119,3 +119,18 @@ def test_join_right_different_multikey() -> None:
     expected = pl.DataFrame({"c": [1, 2], "d": [1, 2]})
     assert_frame_equal(result.collect(), expected, check_row_order=False)
     assert result.collect_schema() == expected.schema
+
+
+def test_join_right_partial_rechunk_25971() -> None:
+    lhs = pl.DataFrame({"x": [0, 0]})
+    rhs = pl.concat([pl.select(x=pl.int_range(2000))] * 2)
+    rhs = rhs.with_columns(y=pl.when(pl.row_index() == 1).then(pl.lit(0, pl.Int64)))
+    rhs = rhs.group_by("x").min()
+    out = lhs.join(rhs, left_on="x", right_on="y", how="right")
+    ret = pl.DataFrame(
+        {
+            "x": [0, 1, 1] + list(range(2, 2000)),
+            "y": [None, 0, 0] + [None for _ in range(1998)],
+        }
+    )
+    assert_frame_equal(out, ret, check_row_order=False)

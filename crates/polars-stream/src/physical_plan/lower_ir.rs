@@ -790,15 +790,7 @@ pub fn lower_ir(
                 };
 
                 {
-                    let cloud_options = &unified_scan_args.cloud_options;
-                    let output_schema =
-                        if std::env::var("POLARS_FORCE_EMPTY_PROJECT").as_deref() == Ok("1") {
-                            Default::default()
-                        } else {
-                            output_schema
-                        };
-
-                    let cloud_options = cloud_options.clone().map(Arc::new);
+                    let cloud_options = unified_scan_args.cloud_options.clone().map(Arc::new);
                     let file_schema = file_info.schema;
 
                     let (projected_schema, file_schema) =

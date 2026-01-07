@@ -768,10 +768,10 @@ fn scan_anonymous_fn_count() -> PolarsResult<()> {
         .collect()
         .unwrap();
 
-    assert_eq!(df.get_columns().len(), 1);
-    assert_eq!(df.get_columns()[0].len(), 1);
+    assert_eq!(df.columns().len(), 1);
+    assert_eq!(df.columns()[0].len(), 1);
     assert_eq!(
-        df.get_columns()[0]
+        df.columns()[0]
             .cast(&DataType::UInt32)
             .unwrap()
             .as_materialized_series()

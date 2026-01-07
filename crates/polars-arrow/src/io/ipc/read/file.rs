@@ -346,13 +346,13 @@ pub fn read_batch<R: Read + Seek>(
     limit: Option<usize>,
     index: usize,
     // When true, the reader object is handled as an IPC Block.
-    block_mode: bool,
+    force_zero_offset: bool,
     message_scratch: &mut Vec<u8>,
     data_scratch: &mut Vec<u8>,
 ) -> PolarsResult<RecordBatchT<Box<dyn Array>>> {
     let block = metadata.blocks[index];
 
-    let offset: u64 = if block_mode {
+    let offset: u64 = if force_zero_offset {
         0
     } else {
         block
