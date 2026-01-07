@@ -1526,7 +1526,7 @@ class Series:
                 self._s = self.scatter(np.argwhere(key)[:, 0], value)._s
             else:
                 s = self._from_pyseries(
-                    PySeries.new_u32("", np.array(key, np.uint32), _strict=True)
+                    PySeries.new_u32("", np.array(key, np.uint32), _strict=True)  # type: ignore[arg-type]
                 )
                 self.__setitem__(s, value)
         elif isinstance(key, (list, tuple)):
