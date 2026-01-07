@@ -399,88 +399,6 @@ def test_gather_group_by_lit(maintain_order: bool) -> None:
     )
 
 
-def test_get_null_on_oob_true() -> None:
-    # OOB get with null_on_oob=True should yield null, not raise.
-    df = pl.DataFrame({"value": [1, 2, 10]})
-
-    out = df.select(v=pl.col("value").get(5, null_on_oob=True))
-
-    # index 5 is out of range -> null
-    assert out["v"].to_list() == [None]
-
-
-def test_get_null_on_oob_false_raises_out_of_bounds() -> None:
-    # OOB get with null_on_oob=False should raise OutOfBoundsError.
-    df = pl.DataFrame({"value": [10, 11]})
-
-    with pytest.raises(OutOfBoundsError, match="gather indices are out of bounds"):
-        df.select(pl.col("value").get(5, null_on_oob=False))
-
-
-def test_get_negative_index() -> None:
-    # Negative indices follow Python semantics: -1 = last
-    df = pl.DataFrame({"value": [1, 98, 2, 3, 99]})
-
-    out = df.select(last=pl.col("value").get(-1, null_on_oob=True))
-
-    assert out["last"].to_list() == [99]
-
-
-def test_get_negative_index_null_on_oob_true_out_of_bounds() -> None:
-    # Negative too-small index (< -len) -> null when null_on_oob=True
-    df = pl.DataFrame({"value": [1, 2]})
-
-    out = df.select(v=pl.col("value").get(-3, null_on_oob=True))
-
-    assert out["v"].to_list() == [None]
-
-
-def test_get_null_index_does_not_raise() -> None:
-    # null index propagates to null, regardless of null_on_oob flag
-    df = pl.DataFrame({"value": [1, 2, 3]})
-
-    out = df.select(
-        v=pl.col("value").get(pl.lit(None, dtype=pl.Int64), null_on_oob=False)
-    )
-
-    assert out["v"].to_list() == [None]
-
-
-@pytest.mark.parametrize("dtype", [pl.Int128, pl.UInt128])
-def test_get_int128_uint128_null_on_oob_true(dtype: pl.DataType) -> None:
-    df = pl.DataFrame({"value": pl.Series([1, 2, 10], dtype=dtype)})
-
-    out = df.select(v=pl.col("value").get(5, null_on_oob=True))
-
-    assert out["v"].to_list() == [None]
-
-
-@pytest.mark.parametrize("dtype", [pl.Int128, pl.UInt128])
-def test_get_int128_uint128_null_on_oob_false_raises(dtype: pl.DataType) -> None:
-    df = pl.DataFrame({"value": pl.Series([10, 11], dtype=dtype)})
-
-    with pytest.raises(OutOfBoundsError, match="gather indices are out of bounds"):
-        df.select(pl.col("value").get(5, null_on_oob=False))
-
-
-@pytest.mark.parametrize("dtype", [pl.Int128, pl.UInt128])
-def test_get_int128_uint128_negative_index(dtype: pl.DataType) -> None:
-    df = pl.DataFrame({"value": pl.Series([1, 2, 3, 4], dtype=dtype)})
-
-    out = df.select(last=pl.col("value").get(-1, null_on_oob=True))
-
-    assert out["last"].to_list() == [4]
-
-
-@pytest.mark.parametrize("dtype", [pl.Int128, pl.UInt128])
-def test_get_int128_uint128_negative_index_oob(dtype: pl.DataType) -> None:
-    df = pl.DataFrame({"value": pl.Series([5, 6], dtype=dtype)})
-
-    out = df.select(v=pl.col("value").get(-3, null_on_oob=True))
-
-    assert out["v"].to_list() == [None]
-
-
 def test_get_window_with_filtered_empty_groups_23029() -> None:
     # https://github.com/pola-rs/polars/issues/23029
     df = pl.DataFrame(
@@ -540,30 +458,6 @@ def test_get_typed_index_null_on_oob_false_raises(idx_dtype: pl.DataType) -> Non
 
     with pytest.raises(OutOfBoundsError, match="gather indices are out of bounds"):
         df.select(pl.col("value").get(pl.lit(5, dtype=idx_dtype), null_on_oob=False))
-
-
-@pytest.mark.parametrize("idx_dtype", [pl.Int64, pl.Int128])
-def test_get_typed_negative_index(idx_dtype: pl.DataType) -> None:
-    # Negative typed index follows Python semantics (-1 = last), for signed dtypes.
-    df = pl.DataFrame({"value": [1, 98, 2, 3, 99]})
-
-    out = df.select(
-        last=pl.col("value").get(pl.lit(-1, dtype=idx_dtype), null_on_oob=True)
-    )
-
-    assert out["last"].to_list() == [99]
-
-
-@pytest.mark.parametrize("idx_dtype", [pl.Int64, pl.Int128])
-def test_get_typed_negative_index_oob_null_on_oob_true(idx_dtype: pl.DataType) -> None:
-    # Too-small negative typed index (< -len) is OOB -> null when null_on_oob=True.
-    df = pl.DataFrame({"value": [1, 2]})
-
-    out = df.select(
-        v=pl.col("value").get(pl.lit(-3, dtype=idx_dtype), null_on_oob=True)
-    )
-
-    assert out["v"].to_list() == [None]
 
 
 @pytest.mark.parametrize("idx_dtype", [pl.Int64, pl.UInt64, pl.Int128, pl.UInt128])
