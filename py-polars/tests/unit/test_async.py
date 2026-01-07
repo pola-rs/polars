@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 import sys
 import time
+from collections.abc import Callable
 from functools import partial
-from typing import Any, Callable
+from typing import Any
 
 import pytest
 

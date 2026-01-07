@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import io
+from collections.abc import Callable
 from datetime import datetime
-from typing import IO, Any, Callable
+from typing import IO, Any
 from zoneinfo import ZoneInfo
 
 import pytest

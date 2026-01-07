@@ -5,7 +5,7 @@ import math
 import operator
 import sys
 import warnings
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from datetime import timedelta
 from decimal import Decimal
 from functools import reduce
@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     ClassVar,
     NoReturn,
     TypeVar,
@@ -111,7 +110,9 @@ if TYPE_CHECKING:
     if sys.version_info >= (3, 11):
         from typing import Concatenate, ParamSpec
     else:
-        from typing_extensions import Concatenate, ParamSpec
+        from typing import Concatenate
+
+        from typing_extensions import ParamSpec
 
     if sys.version_info >= (3, 13):
         from warnings import deprecated

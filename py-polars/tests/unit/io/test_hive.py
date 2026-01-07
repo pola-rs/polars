@@ -4,10 +4,11 @@ import sys
 import urllib.parse
 import warnings
 from collections import OrderedDict
+from collections.abc import Callable
 from datetime import date, datetime
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import pyarrow.parquet as pq
 import pytest

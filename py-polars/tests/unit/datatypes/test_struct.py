@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import io
 import operator
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, time
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 import pyarrow as pa

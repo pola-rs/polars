@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import contextlib
-import sys
 from collections import OrderedDict
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Literal, Union, overload
+from typing import TYPE_CHECKING, Literal, overload
 
 from polars._typing import PythonDataType
 from polars._utils.unstable import unstable
@@ -37,7 +36,7 @@ def _required_init_args(tp: DataTypeClass) -> bool:
 
 
 BaseSchema = OrderedDict[str, DataType]
-SchemaInitDataType: TypeAlias = Union[DataType, DataTypeClass, PythonDataType]
+SchemaInitDataType: TypeAlias = DataType | DataTypeClass | PythonDataType
 
 __all__ = ["Schema"]
 

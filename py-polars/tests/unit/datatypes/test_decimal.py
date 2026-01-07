@@ -3,11 +3,12 @@ from __future__ import annotations
 import io
 import itertools
 import operator
+from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal as D
 from math import ceil, floor
 from random import choice, randrange, seed
-from typing import Any, Callable, NamedTuple
+from typing import Any, NamedTuple
 
 import pyarrow as pa
 import pytest

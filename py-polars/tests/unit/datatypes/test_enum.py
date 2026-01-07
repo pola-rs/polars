@@ -6,9 +6,10 @@ import io
 import operator
 import re
 import sys
+from collections.abc import Callable
 from datetime import date
 from textwrap import dedent
-from typing import Any, Callable
+from typing import Any
 
 import pytest
 

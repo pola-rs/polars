@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import inspect
 import sys
+from collections.abc import Callable
 from functools import wraps
-from typing import TYPE_CHECKING, Any, Callable, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 import polars._reexport as pl
 from polars import functions as F

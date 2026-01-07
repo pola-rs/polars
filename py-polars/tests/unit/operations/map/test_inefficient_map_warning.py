@@ -4,10 +4,11 @@ import datetime as dt
 import json
 import math
 import re
+from collections.abc import Callable
 from datetime import date, datetime
 from functools import partial
 from math import cosh
-from typing import Any, Callable, Literal
+from typing import Any, Literal
 
 import numpy as np
 import pytest

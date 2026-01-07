@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date, datetime, time
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 import pyarrow.dataset as ds
 import pytest

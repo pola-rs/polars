@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 import sys
 import time
+from collections.abc import Callable
 from functools import lru_cache, partial
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import polars as pl
 from polars._plr import _ir_nodes

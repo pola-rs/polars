@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import inspect
-from typing import TYPE_CHECKING, Callable, Union
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from polars._dependencies import altair as alt
 
@@ -24,7 +25,7 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import Unpack
 
-    Encoding: TypeAlias = Union[X, Y, Color, Order, Size, Tooltip]
+    Encoding: TypeAlias = X | Y | Color | Order | Size | Tooltip
     Encodings: TypeAlias = dict[str, Encoding]
 
 

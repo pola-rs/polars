@@ -4,10 +4,11 @@ import decimal
 import functools
 import io
 import warnings
+from collections.abc import Callable
 from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from itertools import chain
-from typing import TYPE_CHECKING, Any, Callable, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 from zoneinfo import ZoneInfo
 
 import fsspec

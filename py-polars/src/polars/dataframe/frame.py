@@ -8,6 +8,7 @@ import os
 import random
 from collections import defaultdict
 from collections.abc import (
+    Callable,
     Generator,
     Iterable,
     Mapping,
@@ -20,7 +21,6 @@ from typing import (
     IO,
     TYPE_CHECKING,
     Any,
-    Callable,
     ClassVar,
     NoReturn,
     TypeVar,

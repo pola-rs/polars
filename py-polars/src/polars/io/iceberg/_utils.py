@@ -19,9 +19,10 @@ from ast import (
     Name,
     UnaryOp,
 )
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cache, singledispatch
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
 from polars._utils.convert import to_py_date, to_py_datetime

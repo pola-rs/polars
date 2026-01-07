@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import operator
 from collections import OrderedDict
+from collections.abc import Callable
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest

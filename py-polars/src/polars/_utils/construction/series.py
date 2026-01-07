@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Generator, Iterator, Mapping
+from collections.abc import Callable, Generator, Iterator, Mapping
 from datetime import date, datetime, time, timedelta
 from enum import Enum as PyEnum
 from itertools import islice
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
 )
 
 import polars._reexport as pl

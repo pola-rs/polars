@@ -7,13 +7,12 @@ import os
 import subprocess
 import sys
 import zoneinfo
+from collections.abc import Callable
 from datetime import datetime
 from functools import partial
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
-    Optional,
     TypedDict,
     Union,
 )
@@ -31,7 +30,7 @@ from polars._utils.unstable import issue_unstable_warning
 
 # These typedefs are here to avoid circular import issues, as
 # `CredentialProviderFunction` specifies "CredentialProvider"
-CredentialProviderFunctionReturn: TypeAlias = tuple[dict[str, str], Optional[int]]
+CredentialProviderFunctionReturn: TypeAlias = tuple[dict[str, str], int | None]
 
 CredentialProviderFunction: TypeAlias = Union[
     Callable[[], CredentialProviderFunctionReturn], "CredentialProvider"

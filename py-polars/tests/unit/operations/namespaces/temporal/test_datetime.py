@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from collections.abc import Callable
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 import pytest

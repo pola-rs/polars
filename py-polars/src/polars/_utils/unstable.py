@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import inspect
 import os
+from collections.abc import Callable
 from functools import wraps
-from typing import TYPE_CHECKING, Callable, TypeVar
+from typing import TYPE_CHECKING, TypeVar
 
 from polars._utils.various import issue_warning
 from polars.exceptions import UnstableWarning

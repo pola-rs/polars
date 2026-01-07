@@ -3,8 +3,9 @@ from __future__ import annotations
 import io
 import re
 import sys
+from collections.abc import Callable
 from functools import partial
-from typing import IO, TYPE_CHECKING, Any, Callable
+from typing import IO, TYPE_CHECKING, Any
 
 import pyarrow.parquet as pq
 import pytest

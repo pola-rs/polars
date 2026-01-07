@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, Callable, Final, get_type_hints
+from typing import TYPE_CHECKING, Any, Final, get_type_hints
 
 from polars._dependencies import _check_for_pydantic, pydantic
 

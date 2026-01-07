@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import contextlib
 import os
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, Callable, Literal
+from typing import IO, TYPE_CHECKING, Any, Literal
 
 import polars._reexport as pl
 import polars.functions as F

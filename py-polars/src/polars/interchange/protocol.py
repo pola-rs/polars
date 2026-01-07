@@ -13,7 +13,6 @@ from typing import (
 from polars._utils.unstable import issue_unstable_warning
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Iterable, Sequence
     from typing import TypeAlias
 

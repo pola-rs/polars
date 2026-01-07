@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from itertools import chain
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from polars import functions as F
 from polars._utils.convert import parse_as_duration_string

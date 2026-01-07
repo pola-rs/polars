@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import operator
 import pickle
-from typing import Callable
+from collections.abc import Callable
 
 import pyarrow as pa
 import pyarrow.parquet as pq

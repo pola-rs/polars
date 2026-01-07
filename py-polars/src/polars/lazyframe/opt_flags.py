@@ -8,8 +8,9 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import PyOptFlags
 
 import inspect
+from collections.abc import Callable
 from functools import wraps
-from typing import TYPE_CHECKING, Callable, TypeVar
+from typing import TYPE_CHECKING, TypeVar
 
 if TYPE_CHECKING:
     from typing import ParamSpec

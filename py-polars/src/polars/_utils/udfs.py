@@ -10,6 +10,7 @@ import sys
 import warnings
 from bisect import bisect_left
 from collections import defaultdict
+from collections.abc import Callable
 from dis import get_instructions
 from inspect import signature
 from itertools import count, zip_longest
@@ -17,12 +18,10 @@ from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     ClassVar,
     Final,
     Literal,
     NamedTuple,
-    Union,
 )
 
 from polars._utils.cache import LRUCache
@@ -46,7 +45,7 @@ class StackValue(NamedTuple):
 
 
 MapTarget: TypeAlias = Literal["expr", "frame", "series"]
-StackEntry: TypeAlias = Union[str, StackValue]
+StackEntry: TypeAlias = str | StackValue
 
 _MIN_PY311: Final = sys.version_info >= (3, 11)
 _MIN_PY312: Final = _MIN_PY311 and sys.version_info >= (3, 12)

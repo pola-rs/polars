@@ -4,12 +4,12 @@ import os
 import re
 import warnings
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import time
 from glob import glob
 from io import BufferedReader, BytesIO, StringIO, TextIOWrapper
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, Callable, NoReturn, overload
+from typing import IO, TYPE_CHECKING, Any, NoReturn, overload
 
 import polars._reexport as pl
 from polars import from_arrow

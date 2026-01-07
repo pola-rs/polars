@@ -3,7 +3,8 @@ from __future__ import annotations
 import abc
 import os
 import threading
-from typing import TYPE_CHECKING, Any, Callable, Final, Literal, Union
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Final, Literal
 
 import polars._utils.logging
 from polars._utils.cache import LRUCache
@@ -47,9 +48,7 @@ OBJECT_STORE_CLIENT_OPTIONS: Final[frozenset[str]] = frozenset(
     ]
 )
 
-CredentialProviderBuilderReturn: TypeAlias = Union[
-    CredentialProvider, CredentialProviderFunction, None
-]
+CredentialProviderBuilderReturn: TypeAlias = CredentialProvider | CredentialProviderFunction | None
 
 
 class CredentialProviderBuilder:

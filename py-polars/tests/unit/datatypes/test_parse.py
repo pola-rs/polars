@@ -135,7 +135,7 @@ def test_parse_union_type_into_dtype(input: Any, expected: PolarsDataType) -> No
     "input",
     [
         Union[int, float],
-        Optional[Union[int, str]],
+        Optional[int | str],
     ],
 )
 def test_parse_union_type_into_dtype_invalid(input: Any) -> None:

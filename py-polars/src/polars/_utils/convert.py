@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, time, timedelta, timezone
 from decimal import Context
 from functools import lru_cache
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     NoReturn,
     overload,
 )

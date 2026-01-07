@@ -3,12 +3,13 @@ from __future__ import annotations
 import io
 import sys
 import zlib
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from functools import partial
 from math import ceil
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import pytest
 

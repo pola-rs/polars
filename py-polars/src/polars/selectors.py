@@ -3,7 +3,6 @@ from __future__ import annotations
 import builtins
 import contextlib
 import datetime as pydatetime
-import sys
 from collections.abc import Collection, Mapping, Sequence
 from decimal import Decimal as PyDecimal
 from functools import reduce

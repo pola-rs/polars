@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import io
+from collections.abc import Callable
 from pathlib import PosixPath
-from typing import Any, Callable, TypeVar, cast
+from typing import Any, TypeVar, cast
 
 import pytest
 

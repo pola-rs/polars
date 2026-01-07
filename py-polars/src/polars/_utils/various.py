@@ -7,6 +7,7 @@ import sys
 import warnings
 from collections import Counter
 from collections.abc import (
+    Callable,
     Collection,
     Generator,
     Iterable,
@@ -20,7 +21,6 @@ from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     Literal,
     TypeVar,
     overload,

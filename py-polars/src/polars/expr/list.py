@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import copy
-from collections.abc import Collection, Sequence
-from typing import TYPE_CHECKING, Any, Callable
+from collections.abc import Callable, Collection, Sequence
+from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
 from polars import exceptions
