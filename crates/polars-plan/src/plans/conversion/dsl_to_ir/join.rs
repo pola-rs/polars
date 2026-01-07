@@ -408,6 +408,17 @@ pub fn resolve_join(
         };
     }
 
+    #[cfg(feature = "asof_join")]
+    {
+        use polars_ops::frame::MaintainOrderJoin as MOJ;
+
+        if matches!(options.args.how, JoinType::AsOf(_))
+            && matches!(options.args.maintain_order, MOJ::None)
+        {
+            options.args.maintain_order = MOJ::Left;
+        }
+    }
+
     let ir = IR::Join {
         input_left,
         input_right,
