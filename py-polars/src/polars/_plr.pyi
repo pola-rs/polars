@@ -2505,3 +2505,6 @@ class NodeTraverser:
 
 class PyCollectBatches:
     def start(self) -> None: ...
+
+    # Export
+    def __arrow_c_stream__(self, requested_schema: Any | None) -> Any: ...

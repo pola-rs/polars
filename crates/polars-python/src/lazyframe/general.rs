@@ -1,6 +1,8 @@
 use std::collections::HashMap;
+use std::ffi::CString;
 use std::num::NonZeroUsize;
 
+use arrow::ffi::{export_array_to_c, export_iterator};
 use either::Either;
 use parking_lot::Mutex;
 use polars::io::RowIndex;
@@ -15,7 +17,7 @@ use polars_utils::python_function::PythonObject;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
-use pyo3::types::{PyDict, PyDictMethods, PyList};
+use pyo3::types::{PyCapsule, PyDict, PyDictMethods, PyList};
 
 use super::{PyLazyFrame, PyOptFlags};
 use crate::error::PyPolarsErr;
@@ -672,13 +674,19 @@ impl PyLazyFrame {
         lazy: bool,
     ) -> PyResult<PyCollectBatches> {
         py.enter_polars(|| {
-            let ldf = self.ldf.read().clone();
+            let mut ldf = self.ldf.read().clone();
+            // let schema = ldf.collect_schema()?;
+            let schema = ldf
+                .collect_schema()
+                .map_err(PyPolarsErr::from)?
+                .to_arrow(CompatLevel::newest());
             let collect_batches = ldf
                 .collect_batches(engine.0, maintain_order, chunk_size, lazy)
                 .map_err(PyPolarsErr::from)?;
 
             PyResult::Ok(PyCollectBatches {
-                inner: Mutex::new(collect_batches),
+                inner: Arc::new(Mutex::new(collect_batches)),
+                schema,
             })
         })
     }
@@ -1623,7 +1631,8 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<polars_io::parquet::write::ParquetF
 
 #[pyclass(frozen)]
 struct PyCollectBatches {
-    inner: Mutex<CollectBatches>,
+    inner: Arc<Mutex<CollectBatches>>,
+    schema: ArrowSchema,
 }
 
 #[pymethods]
@@ -1641,5 +1650,69 @@ impl PyCollectBatches {
             rdf.map(PyDataFrame::new)
                 .map_err(|e| PyErr::from(PyPolarsErr::from(e)))
         })
+    }
+
+    #[allow(unused_variables)]
+    #[pyo3(signature = (requested_schema))]
+    fn __arrow_c_stream__<'py>(
+        &self,
+        py: Python<'py>,
+        requested_schema: Option<Py<PyAny>>,
+    ) -> PyResult<Bound<'py, PyCapsule>> {
+        let schema = ArrowDataType::Struct(self.schema.clone().into_iter_values().collect());
+
+        let iter = Box::new(LazyFrameStreamIterator::new(self.inner.clone(), schema));
+        let field = iter.field();
+        let stream = export_iterator(iter, field);
+        let stream_capsule_name = CString::new("arrow_array_stream").unwrap();
+        PyCapsule::new(py, stream, Some(stream_capsule_name))
+    }
+}
+
+pub struct LazyFrameStreamIterator {
+    inner: Arc<Mutex<CollectBatches>>,
+    dtype: ArrowDataType,
+}
+
+impl LazyFrameStreamIterator {
+    fn new(inner: Arc<Mutex<CollectBatches>>, schema: ArrowDataType) -> Self {
+        Self {
+            inner,
+            dtype: schema,
+        }
+    }
+
+    fn field(&self) -> ArrowField {
+        ArrowField::new(PlSmallStr::EMPTY, self.dtype.clone(), false)
+    }
+}
+
+impl Iterator for LazyFrameStreamIterator {
+    type Item = PolarsResult<ArrayRef>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.inner.lock().next() {
+            None => None,
+            Some(df) => {
+                let mut df = df.unwrap();
+                df.rechunk_mut();
+                let batch_cols = df
+                    .columns()
+                    .iter()
+                    .map(|v| v.as_materialized_series().clone())
+                    .collect::<Vec<Series>>()
+                    .iter()
+                    .map(|s| s.to_arrow(0, CompatLevel::newest()))
+                    .collect::<Vec<_>>();
+
+                let array = arrow::array::StructArray::new(
+                    self.dtype.clone(),
+                    batch_cols[0].len(),
+                    batch_cols,
+                    None,
+                );
+                Some(Ok(Box::new(array)))
+            },
+        }
     }
 }
