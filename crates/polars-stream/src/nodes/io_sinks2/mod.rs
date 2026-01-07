@@ -187,17 +187,13 @@ impl IOSinkNodeState {
         let (phase_channel_tx, mut phase_channel_rx) = connector::connector::<PortReceiver>();
         let (mut multi_phase_tx, multi_phase_rx) = connector::connector();
 
-        let first_morsel = Morsel::new(
+        let _ = multi_phase_tx.try_send(Morsel::new(
             DataFrame::empty_with_arc_schema(config.input_schema.clone()),
             MorselSeq::new(0),
             SourceToken::default(),
-        );
+        ));
 
         async_executor::spawn(TaskPriority::High, async move {
-            if multi_phase_tx.send(first_morsel).await.is_err() {
-                return;
-            }
-
             let mut morsel_seq: u64 = 1;
 
             while let Ok(mut phase_rx) = phase_channel_rx.recv().await {
