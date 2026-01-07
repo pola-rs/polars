@@ -8750,6 +8750,7 @@ class DataFrame:
                 ColumnNameOrSelector | PolarsDataType, PolarsDataType | PythonDataType
             ]
             | PolarsDataType
+            | Schema
         ),
         *,
         strict: bool = True,
