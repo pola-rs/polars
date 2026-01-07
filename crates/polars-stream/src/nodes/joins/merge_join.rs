@@ -273,7 +273,6 @@ impl ComputeNode for MergeJoinNode {
                             };
                             right_unmerged.push_df(m.into_df());
                         },
-
                         Right(NeedMore::Finished) => {
                             break;
                         },
