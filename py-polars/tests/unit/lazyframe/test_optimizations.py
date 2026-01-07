@@ -1,8 +1,8 @@
+import datetime as dt
 import itertools
 from io import BytesIO
 
 import pytest
-import datetime as dt
 
 import polars as pl
 from polars.testing import assert_frame_equal
@@ -462,7 +462,7 @@ def test_slice_pushdown_expr_25473() -> None:
         q.collect()
 
 
-def test_lazy_groupby_maintain_order_after_asof_join_25973():
+def test_lazy_groupby_maintain_order_after_asof_join_25973() -> None:
     # Build the time frames
     targettime = (
         pl.DataFrame({
@@ -491,7 +491,8 @@ def test_lazy_groupby_maintain_order_after_asof_join_25973():
         .lazy()
     )
 
-    # This used to produce out-of-order results due to optimizer clearing maintain_order.
+    # This used to produce out-of-order results.
+    # The optimizer previously cleared maintain_order.
     result = (
         df.join_asof(
             targettime,
