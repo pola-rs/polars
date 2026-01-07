@@ -144,15 +144,16 @@ impl KeyedPartitioner {
 
         let gather_source_df: Cow<DataFrame> =
             if let Some(projection) = self.exclude_keys_projection.as_ref() {
-                let columns = df.get_columns();
+                let columns = df.columns();
 
-                Cow::Owned(if projection.len() == 0 {
-                    DataFrame::empty_with_height(df.height())
-                } else {
-                    projection
-                        .iter_indices()
-                        .map(|i| columns[i].clone())
-                        .collect()
+                Cow::Owned(unsafe {
+                    DataFrame::new_unchecked(
+                        df.height(),
+                        projection
+                            .iter_indices()
+                            .map(|i| columns[i].clone())
+                            .collect(),
+                    )
                 })
             } else {
                 Cow::Borrowed(&df)
@@ -167,13 +168,18 @@ impl KeyedPartitioner {
                 // Ensure 0-width is handled properly.
                 assert_eq!(df.height(), groups_indicator.len());
 
-                let keys_df: DataFrame = key_columns
-                    .iter()
-                    .map(|c| unsafe { c.take_slice_unchecked(&[first_idx]) })
-                    .collect();
+                let keys_df: DataFrame = unsafe {
+                    DataFrame::new_unchecked(
+                        1,
+                        key_columns
+                            .iter()
+                            .map(|c| c.take_slice_unchecked(&[first_idx]))
+                            .collect(),
+                    )
+                };
 
                 let key: PartitionKey = pre_computed_keys.as_ref().map_or_else(
-                    || PartitionKey::from_slice(row_encode(keys_df.get_columns()).get(0).unwrap()),
+                    || PartitionKey::from_slice(row_encode(keys_df.columns()).get(0).unwrap()),
                     |keys| keys.get_key(first_idx.try_into().unwrap()),
                 );
 

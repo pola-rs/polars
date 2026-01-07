@@ -310,11 +310,11 @@ impl ExternalFilterMask {
                 if !mask.is_empty() {
                     *df = if mask.len() < df.height() {
                         accumulate_dataframes_vertical_unchecked([
-                            df.slice(0, mask.len())._filter_seq(mask)?,
+                            df.slice(0, mask.len()).filter_seq(mask)?,
                             df.slice(i64::try_from(mask.len()).unwrap(), df.height() - mask.len()),
                         ])
                     } else {
-                        df._filter_seq(mask)?
+                        df.filter_seq(mask)?
                     }
                 }
             },

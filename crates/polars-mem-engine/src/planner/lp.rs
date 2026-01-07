@@ -276,7 +276,7 @@ fn create_physical_plan_impl(
                     input: recurse!(input, state)?,
                     name: PlSmallStr::from_static("batches"),
                     f: Box::new(move |mut buffer, _state| {
-                        while !buffer.is_empty() {
+                        while buffer.height() > 0 {
                             let df;
                             (df, buffer) = buffer.split_at(buffer.height().min(chunk_size) as i64);
                             let should_stop = function.call(df)?;
@@ -630,7 +630,7 @@ fn create_physical_plan_impl(
                             let mask = phys_expr.evaluate(&df, &execution_state)?;
                             let mask = mask.as_materialized_series();
                             let mask = mask.bool()?;
-                            df._filter_seq(mask)
+                            df.filter_seq(mask)
                         }))
                     })
                 })

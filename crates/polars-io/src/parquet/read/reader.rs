@@ -220,12 +220,12 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
         )?;
 
         if self.rechunk {
-            df.as_single_chunk_par();
+            df.rechunk_mut_par();
         };
 
         if let Some((col, value)) = &self.include_file_path {
             unsafe {
-                df.with_column_unchecked(Column::new_scalar(
+                df.push_column_unchecked(Column::new_scalar(
                     col.clone(),
                     Scalar::new(
                         DataType::String,

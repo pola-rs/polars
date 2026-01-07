@@ -1,8 +1,7 @@
 from collections.abc import Callable, Sequence
-from typing import Any, Literal, overload
+from typing import Any, Literal, TypeAlias, overload
 
 from numpy.typing import NDArray
-from typing_extensions import TypeAlias
 
 from polars.io.scan_options._options import ScanOptions
 
@@ -958,6 +957,7 @@ class PyLazyFrame:
         sink_options: Any,
         compression: IpcCompression | None,
         compat_level: CompatLevel,
+        record_batch_size: int | None,
     ) -> PyLazyFrame: ...
     def sink_csv(
         self,
@@ -1248,7 +1248,12 @@ class PyExpr:
     def index_of(self, element: PyExpr) -> PyExpr: ...
     def search_sorted(self, element: PyExpr, side: Any, descending: bool) -> PyExpr: ...
     def gather(self, idx: PyExpr) -> PyExpr: ...
-    def get(self, idx: PyExpr) -> PyExpr: ...
+    def get(
+        self,
+        idx: PyExpr,
+        *,
+        null_on_oob: bool = False,
+    ) -> PyExpr: ...
     def sort_by(
         self,
         by: Sequence[PyExpr],

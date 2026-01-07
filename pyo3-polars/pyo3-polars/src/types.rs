@@ -219,11 +219,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for PyDataFrame {
             let s = pyseries.extract::<PySeries>()?.0;
             columns.push(s.into_column());
         }
-        unsafe {
-            Ok(PyDataFrame(DataFrame::new_no_checks_height_from_first(
-                columns,
-            )))
-        }
+        unsafe { Ok(PyDataFrame(DataFrame::new_unchecked_infer_height(columns))) }
     }
 }
 
@@ -352,7 +348,7 @@ impl<'py> IntoPyObject<'py> for PyDataFrame {
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         let pyseries = self
             .0
-            .get_columns()
+            .columns()
             .iter()
             .map(|s| PySeries(s.as_materialized_series().clone()).into_pyobject(py))
             .collect::<PyResult<Vec<_>>>()?;

@@ -158,7 +158,7 @@ def test_init_dict() -> None:
             schema=coldefs,
         )
         assert df.schema == {"dt": pl.Date, "dtm": pl.Datetime("us")}
-        assert df.rows() == list(zip(py_dates, py_datetimes))
+        assert df.rows() == list(zip(py_dates, py_datetimes, strict=True))
 
     # Overriding dict column names/types
     df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}, schema=["c", "d"])
@@ -222,7 +222,10 @@ def test_init_structured_objects() -> None:
     columns = ["timestamp", "ticker", "price", "size"]
 
     for TradeClass in (TradeDC, TradeNT, TradePD):
-        trades = [TradeClass(**dict(zip(columns, values))) for values in raw_data]  # type: ignore[arg-type]
+        trades = [
+            TradeClass(**dict(zip(columns, values, strict=True)))  # type: ignore[arg-type]
+            for values in raw_data
+        ]
 
         for DF in (pl.DataFrame, pl.from_records):
             df = DF(data=trades)

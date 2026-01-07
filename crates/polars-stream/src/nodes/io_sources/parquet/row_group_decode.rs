@@ -92,14 +92,14 @@ impl RowGroupDecoder {
 
         out_columns.extend(decoded_cols);
 
-        let df = unsafe { DataFrame::new_no_checks(projection_height, out_columns) };
+        let df = unsafe { DataFrame::new_unchecked(projection_height, out_columns) };
 
         let df = if let Some(predicate) = self.predicate.as_ref() {
             let mask = predicate.predicate.evaluate_io(&df)?;
             let mask = mask.bool().unwrap();
 
             let filtered =
-                filter_cols(df.take_columns(), mask, self.target_values_per_thread).await?;
+                filter_cols(df.into_columns(), mask, self.target_values_per_thread).await?;
 
             let height = if let Some(fst) = filtered.first() {
                 fst.len()
@@ -107,7 +107,7 @@ impl RowGroupDecoder {
                 mask.num_trues()
             };
 
-            unsafe { DataFrame::new_no_checks(height, filtered) }
+            unsafe { DataFrame::new_unchecked(height, filtered) }
         } else {
             df
         };
@@ -495,10 +495,10 @@ impl RowGroupDecoder {
 
         let (live_df_filtered, mut mask) = if use_column_predicates {
             assert!(scan_predicate.column_predicates.is_sumwise_complete);
-            if masks.len() == 1 {
+            if let [mask] = masks.as_slice() {
                 (
-                    DataFrame::new(live_columns).unwrap(),
-                    BooleanChunked::from_bitmap(PlSmallStr::EMPTY, masks[0].clone()),
+                    unsafe { DataFrame::new_unchecked_infer_height(live_columns) },
+                    BooleanChunked::from_bitmap(PlSmallStr::EMPTY, mask.clone()),
                 )
             } else {
                 let mut mask = MutableBitmap::new();
@@ -520,24 +520,27 @@ impl RowGroupDecoder {
                     })
                     .collect();
 
-                (DataFrame::new(live_columns).unwrap(), mask)
+                (
+                    unsafe { DataFrame::new_unchecked_infer_height(live_columns) },
+                    mask,
+                )
             }
         } else {
             let mut live_df = unsafe {
-                DataFrame::new_no_checks(row_group_data.row_group_metadata.num_rows(), live_columns)
+                DataFrame::new_unchecked(row_group_data.row_group_metadata.num_rows(), live_columns)
             };
 
             let mask = scan_predicate.predicate.evaluate_io(&live_df)?;
             let mask = mask.bool().unwrap();
 
             unsafe {
-                live_df.get_columns_mut().truncate(
+                live_df.columns_mut().truncate(
                     self.row_index.is_some() as usize + self.predicate_field_indices.len(),
                 )
             }
 
             let filtered =
-                filter_cols(live_df.take_columns(), mask, self.target_values_per_thread).await?;
+                filter_cols(live_df.into_columns(), mask, self.target_values_per_thread).await?;
 
             let filtered_height = if let Some(fst) = filtered.first() {
                 fst.len()
@@ -546,7 +549,7 @@ impl RowGroupDecoder {
             };
 
             (
-                unsafe { DataFrame::new_no_checks(filtered_height, filtered) },
+                unsafe { DataFrame::new_unchecked(filtered_height, filtered) },
                 mask.clone(),
             )
         };
@@ -617,7 +620,7 @@ impl RowGroupDecoder {
 
         drop(row_group_data);
 
-        let live_columns = live_df_filtered.take_columns();
+        let live_columns = live_df_filtered.into_columns();
 
         let mut dead_cols = Vec::with_capacity(self.non_predicate_field_indices.len());
         for fut in task_handles {
@@ -626,7 +629,7 @@ impl RowGroupDecoder {
 
         let mut merged = live_columns;
         merged.extend(dead_cols);
-        let df = unsafe { DataFrame::new_no_checks(expected_num_rows, merged) };
+        let df = unsafe { DataFrame::new_unchecked(expected_num_rows, merged) };
         Ok(df)
     }
 }

@@ -80,7 +80,7 @@ impl ColumnExpr {
     ) -> PolarsResult<Column> {
         match schema.get_full(&self.name) {
             None => self.process_by_linear_search(df, state, true),
-            Some((idx, _, _)) => match df.get_columns().get(idx) {
+            Some((idx, _, _)) => match df.columns().get(idx) {
                 Some(out) => self.process_by_idx(out, state, schema, df, false),
                 None => self.process_by_linear_search(df, state, true),
             },
@@ -90,7 +90,7 @@ impl ColumnExpr {
     fn process_cse(&self, df: &DataFrame, schema: &Schema) -> PolarsResult<Column> {
         // The CSE columns are added on the rhs.
         let offset = schema.len();
-        let columns = &df.get_columns()[offset..];
+        let columns = &df.columns()[offset..];
         // Linear search will be relatively cheap as we only search the CSE columns.
         Ok(columns
             .iter()
@@ -110,7 +110,7 @@ impl PhysicalExpr for ColumnExpr {
             Some((idx, _, _)) => {
                 // check if the schema was correct
                 // if not do O(n) search
-                match df.get_columns().get(idx) {
+                match df.columns().get(idx) {
                     Some(out) => self.process_by_idx(out, state, &self.schema, df, true),
                     None => {
                         // partitioned group_by special case

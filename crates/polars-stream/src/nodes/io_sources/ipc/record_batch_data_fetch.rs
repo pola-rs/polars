@@ -20,6 +20,7 @@ use crate::utils::tokio_handle_ext;
 /// Represents byte-data that can be transformed into a DataFrame after some computation.
 pub(super) struct RecordBatchData {
     pub(super) fetched_bytes: MemSlice,
+    pub(super) block_index: usize,
     pub(super) num_rows: usize,
     // Lazily updated.
     pub(super) row_offset: Option<IdxSize>,
@@ -65,7 +66,7 @@ impl RecordBatchDataFetcher {
                     .await
                     .unwrap();
 
-                let idx = self.record_batch_idx;
+                let block_index = self.record_batch_idx;
                 let file_metadata = self.metadata.clone();
                 let current_byte_source = self.byte_source.clone();
                 let memory_prefetch_func = self.memory_prefetch_func;
@@ -75,7 +76,7 @@ impl RecordBatchDataFetcher {
                 let wait_token = row_count_updated.token();
 
                 let handle = io_runtime.spawn(async move {
-                    let block = file_metadata.blocks.get(idx).unwrap();
+                    let block = file_metadata.blocks.get(block_index).unwrap();
                     let range = block.offset as usize
                         ..block.offset as usize
                             + block.meta_data_length as usize
@@ -111,6 +112,7 @@ impl RecordBatchDataFetcher {
 
                     PolarsResult::Ok(RecordBatchData {
                         fetched_bytes,
+                        block_index,
                         num_rows,
                         row_offset: None,
                     })

@@ -58,6 +58,9 @@ pub fn create_file_writer_starter(
                 schema: file_schema.clone(),
                 pipeline_depth,
                 sync_on_close,
+                record_batch_size: options
+                    .record_batch_size
+                    .map(|x| IdxSize::try_from(x).unwrap()),
             }) as _
         },
         #[cfg(feature = "csv")]

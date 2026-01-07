@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 import pyarrow.dataset as ds
 import pytest
@@ -10,6 +10,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
 
@@ -93,7 +94,9 @@ def test_pyarrow_dataset_source(df: pl.DataFrame, tmp_path: Path) -> None:
         check_predicate_pushdown=True,
     )
 
-    for closed, n_expected in zip(["both", "left", "right", "none"], [3, 2, 2, 1]):
+    for closed, n_expected in zip(
+        ["both", "left", "right", "none"], [3, 2, 2, 1], strict=True
+    ):
         helper_dataset_test(
             file_path,
             lambda lf, closed=closed: lf.filter(  # type: ignore[misc]

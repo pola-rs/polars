@@ -27,7 +27,7 @@ def test_categories_eq_hash() -> None:
     left = CATS
     right = [pl.Categories(c.name(), c.namespace(), c.physical()) for c in CATS]
 
-    for lc, rc in zip(left, right):
+    for lc, rc in zip(left, right, strict=True):
         assert hash(lc) == hash(rc)
         assert lc == rc
 

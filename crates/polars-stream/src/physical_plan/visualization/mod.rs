@@ -12,6 +12,8 @@ use polars_utils::arena::Arena;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{IdxSize, format_pl_smallstr};
 
+use crate::physical_plan::visualization::models::SortColumn;
+
 pub mod models;
 pub use models::{PhysNodeInfo, PhysicalPlanVisualizationData};
 use slotmap::{SecondaryMap, SlotMap};
@@ -149,12 +151,26 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     ..Default::default()
                 }
             },
-            PhysNodeKind::GroupBy { input, key, aggs } => {
-                phys_node_inputs.push(input.node);
+            PhysNodeKind::GroupBy {
+                inputs,
+                key_per_input,
+                aggs_per_input,
+            } => {
+                for input in inputs {
+                    phys_node_inputs.push(input.node);
+                }
 
+                let key_per_input: Vec<_> = key_per_input
+                    .iter()
+                    .map(|key| expr_list(key, self.expr_arena))
+                    .collect();
+                let aggs_per_input: Vec<_> = aggs_per_input
+                    .iter()
+                    .map(|aggs| expr_list(aggs, self.expr_arena))
+                    .collect();
                 let properties = PhysNodeProperties::GroupBy {
-                    keys: expr_list(key, self.expr_arena),
-                    aggs: expr_list(aggs, self.expr_arena),
+                    key_per_input,
+                    aggs_per_input,
                 };
 
                 PhysNodeInfo {
@@ -953,10 +969,17 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                 phys_node_inputs.push(input.node);
 
                 let properties = PhysNodeProperties::Sort {
-                    by_exprs: expr_list(by_column, self.expr_arena),
+                    sort_columns: by_column
+                        .iter()
+                        .zip(descending.iter())
+                        .zip(nulls_last.iter())
+                        .map(|((expr, &descending), &nulls_last)| SortColumn {
+                            expr: format_pl_smallstr!("{}", expr.display(self.expr_arena)),
+                            descending,
+                            nulls_last,
+                        })
+                        .collect(),
                     slice: convert_opt_slice(slice),
-                    descending: descending.clone(),
-                    nulls_last: nulls_last.clone(),
                     multithreaded: *multithreaded,
                     maintain_order: *maintain_order,
                     #[allow(clippy::useless_conversion)]

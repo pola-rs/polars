@@ -728,7 +728,7 @@ impl PyLazyFrame {
 
     #[cfg(feature = "ipc")]
     #[pyo3(signature = (
-        target, sink_options, compression, compat_level
+        target, sink_options, compression, compat_level, record_batch_size
     ))]
     fn sink_ipc(
         &self,
@@ -737,10 +737,12 @@ impl PyLazyFrame {
         sink_options: PySinkOptions,
         compression: Wrap<Option<IpcCompression>>,
         compat_level: PyCompatLevel,
+        record_batch_size: Option<usize>,
     ) -> PyResult<PyLazyFrame> {
         let options = IpcWriterOptions {
             compression: compression.0,
             compat_level: compat_level.0,
+            record_batch_size,
             ..Default::default()
         };
 

@@ -7,7 +7,7 @@ import warnings
 from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from itertools import chain
-from typing import TYPE_CHECKING, Any, Callable, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 from zoneinfo import ZoneInfo
 
 import fsspec
@@ -27,6 +27,7 @@ from polars.testing.parametric import column, dataframes
 from polars.testing.parametric.strategies.core import series
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
     from polars._typing import (
@@ -2006,7 +2007,7 @@ def test_allow_missing_columns(
     dfs = [pl.DataFrame({"a": 1, "b": 1}), pl.DataFrame({"a": 2})]
     paths = [tmp_path / "1", tmp_path / "2"]
 
-    for df, path in zip(dfs, paths):
+    for df, path in zip(dfs, paths, strict=True):
         df.write_parquet(path)
 
     expected_full = pl.DataFrame({"a": [1, 2], "b": [1, None]})
