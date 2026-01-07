@@ -212,7 +212,7 @@ pub(super) fn get_client_options() -> ClientOptions {
                         })
                         .get()
                 })
-                .unwrap_or(3 * 60),
+                .unwrap_or(5 * 60),
         ))
         .with_user_agent(HeaderValue::from_static(USER_AGENT))
         .with_allow_http(true)
