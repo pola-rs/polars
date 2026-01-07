@@ -1008,12 +1008,12 @@ where
     let left_key = left_key.downcast_as_array();
     let right_key = right_key.downcast_as_array();
 
-    let mut iterator = left_key.iter().skip(*current_offset).peekable();
+    let mut iterator = left_key.iter().enumerate().skip(*current_offset).peekable();
     if iterator.peek().is_none() {
         return true;
     }
     let mut skip_ahead_right = 0;
-    for (idxl, left_keyval) in iterator.enumerate() {
+    for (idxl, left_keyval) in iterator {
         if gather_left.len() >= morsel_size {
             return false;
         }
