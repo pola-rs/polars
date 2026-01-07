@@ -18,10 +18,8 @@ where
         .into_iter()
         .map(|opt_v| {
             opt_v.and_then(|v| {
-                let v_u64 = match v.to_u64() {
-                    Some(x) => x,
-                    None => return None, // cannot represent → treat as OOB
-                };
+                // cannot represent as u64 → None (treated as OOB)
+                let v_u64 = v.to_u64()?;
 
                 if v_u64 < len_u64 {
                     Some(v_u64 as IdxSize)
@@ -53,10 +51,8 @@ where
         .into_iter()
         .map(|opt_v| {
             opt_v.and_then(|v| {
-                let v_i64 = match v.to_i64() {
-                    Some(x) => x,
-                    None => return None, // cannot represent → treat as OOB
-                };
+                // cannot represent as i64 → None (treated as OOB)
+                let v_i64 = v.to_i64()?;
 
                 if v_i64 >= 0 {
                     // 0 <= v < len
