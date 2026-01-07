@@ -6,7 +6,7 @@
 use std::ops::ControlFlow;
 
 use polars_core::prelude::*;
-use sqlparser::ast::{Expr as SQLExpr, Visit, Visitor as SQLVisitor};
+use sqlparser::ast::{Expr as SQLExpr, ObjectName, Query, SetExpr, Visit, Visitor as SQLVisitor};
 use sqlparser::keywords::ALL_KEYWORDS;
 
 // ---------------------------------------------------------------------------
@@ -171,6 +171,71 @@ pub(crate) fn check_for_ambiguous_column_refs(
     }) {
         ControlFlow::Break(err) => Err(err),
         ControlFlow::Continue(()) => Ok(()),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// TableIdentifierCollector
+// ---------------------------------------------------------------------------
+
+/// Visitor that collects all table identifiers referenced in a SQL query.
+#[derive(Default)]
+pub(crate) struct TableIdentifierCollector {
+    pub(crate) tables: Vec<String>,
+    pub(crate) include_schema: bool,
+}
+
+impl TableIdentifierCollector {
+    pub(crate) fn collect_from_set_expr(&mut self, set_expr: &SetExpr) {
+        // Recursively collect table identifiers from SetExpr nodes
+        match set_expr {
+            SetExpr::Table(tbl) => {
+                self.tables.extend(if self.include_schema {
+                    match (&tbl.schema_name, &tbl.table_name) {
+                        (Some(schema), Some(table)) => Some(format!("{schema}.{table}")),
+                        (None, Some(table)) => Some(table.clone()),
+                        _ => None,
+                    }
+                } else {
+                    tbl.table_name.clone()
+                });
+            },
+            SetExpr::SetOperation { left, right, .. } => {
+                self.collect_from_set_expr(left);
+                self.collect_from_set_expr(right);
+            },
+            SetExpr::Query(query) => self.collect_from_set_expr(&query.body),
+            _ => {},
+        }
+    }
+}
+
+impl SQLVisitor for TableIdentifierCollector {
+    type Break = ();
+
+    fn pre_visit_query(&mut self, query: &Query) -> ControlFlow<Self::Break> {
+        // Collect from SetExpr nodes in the query body
+        self.collect_from_set_expr(&query.body);
+        ControlFlow::Continue(())
+    }
+
+    fn pre_visit_relation(&mut self, relation: &ObjectName) -> ControlFlow<Self::Break> {
+        // Table relation (eg: appearing in FROM clause)
+        self.tables.extend(if self.include_schema {
+            let parts: Vec<_> = relation
+                .0
+                .iter()
+                .filter_map(|p| p.as_ident().map(|i| i.value.as_str()))
+                .collect();
+            (!parts.is_empty()).then(|| parts.join("."))
+        } else {
+            relation
+                .0
+                .last()
+                .and_then(|p| p.as_ident())
+                .map(|i| i.value.clone())
+        });
+        ControlFlow::Continue(())
     }
 }
 

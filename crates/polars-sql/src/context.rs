@@ -15,7 +15,7 @@ use sqlparser::ast::{
     OrderBy, OrderByKind, Query, RenameSelectItem, Select, SelectItem,
     SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, Statement, TableAlias,
     TableFactor, TableWithJoins, Truncate, UnaryOperator, Value as SQLValue, ValueWithSpan, Values,
-    WildcardAdditionalOptions, WindowSpec,
+    Visit, WildcardAdditionalOptions, WindowSpec,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -25,8 +25,8 @@ use crate::sql_expr::{
     parse_sql_array, parse_sql_expr, resolve_compound_identifier, to_sql_interface_err,
 };
 use crate::sql_visitors::{
-    QualifyExpression, check_for_ambiguous_column_refs, expr_has_window_functions,
-    expr_refers_to_table,
+    QualifyExpression, TableIdentifierCollector, check_for_ambiguous_column_refs,
+    expr_has_window_functions, expr_refers_to_table,
 };
 use crate::table_functions::PolarsTableFunctions;
 use crate::types::map_sql_dtype_to_polars;
@@ -2536,67 +2536,6 @@ fn process_join_constraint(
             Ok((on.clone(), on))
         },
         _ => polars_bail!(SQLInterface: "unsupported SQL join constraint:\n{:?}", constraint),
-    }
-}
-
-/// Visitor that collects all table identifiers referenced in a SQL query.
-#[derive(Default)]
-struct TableIdentifierCollector {
-    tables: Vec<String>,
-    include_schema: bool,
-}
-
-impl TableIdentifierCollector {
-    fn collect_from_set_expr(&mut self, set_expr: &SetExpr) {
-        // Recursively collect table identifiers from SetExpr nodes
-        match set_expr {
-            SetExpr::Table(tbl) => {
-                self.tables.extend(if self.include_schema {
-                    match (&tbl.schema_name, &tbl.table_name) {
-                        (Some(schema), Some(table)) => Some(format!("{schema}.{table}")),
-                        (None, Some(table)) => Some(table.clone()),
-                        _ => None,
-                    }
-                } else {
-                    tbl.table_name.clone()
-                });
-            },
-            SetExpr::SetOperation { left, right, .. } => {
-                self.collect_from_set_expr(left);
-                self.collect_from_set_expr(right);
-            },
-            SetExpr::Query(query) => self.collect_from_set_expr(&query.body),
-            _ => {},
-        }
-    }
-}
-
-impl SQLVisitor for TableIdentifierCollector {
-    type Break = ();
-
-    fn pre_visit_query(&mut self, query: &Query) -> ControlFlow<Self::Break> {
-        // Collect from SetExpr nodes in the query body
-        self.collect_from_set_expr(&query.body);
-        ControlFlow::Continue(())
-    }
-
-    fn pre_visit_relation(&mut self, relation: &ObjectName) -> ControlFlow<Self::Break> {
-        // Table relation (eg: appearing in FROM clause)
-        self.tables.extend(if self.include_schema {
-            let parts: Vec<_> = relation
-                .0
-                .iter()
-                .filter_map(|p| p.as_ident().map(|i| i.value.as_str()))
-                .collect();
-            (!parts.is_empty()).then(|| parts.join("."))
-        } else {
-            relation
-                .0
-                .last()
-                .and_then(|p| p.as_ident())
-                .map(|i| i.value.clone())
-        });
-        ControlFlow::Continue(())
     }
 }
 
