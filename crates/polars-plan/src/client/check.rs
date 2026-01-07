@@ -57,9 +57,6 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan, allow_local_scans: bool) -> P
                     },
                 }
             },
-            DslPlan::SinkMultiple { .. } => {
-                // return ineligible_error("contains sink multiple");
-            },
             _ => (),
         }
     }
