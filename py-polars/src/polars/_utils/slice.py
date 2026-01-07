@@ -5,9 +5,11 @@ from typing import TYPE_CHECKING
 import polars._reexport as pl
 
 if TYPE_CHECKING:
+    from typing import TypeAlias
+
     from polars import DataFrame, LazyFrame, Series
 
-    FrameOrSeries = DataFrame | Series
+    FrameOrSeries: TypeAlias = DataFrame | Series
 
 
 class PolarsSlice:
