@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::ffi::CString;
 use std::num::NonZeroUsize;
 
-use arrow::ffi::{export_array_to_c, export_iterator};
+use arrow::ffi::export_iterator;
 use either::Either;
 use parking_lot::Mutex;
 use polars::io::RowIndex;
