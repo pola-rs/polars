@@ -194,7 +194,7 @@ impl IOSinkNodeState {
         );
 
         async_executor::spawn(TaskPriority::High, async move {
-            multi_phase_tx.send(first_morsel).await.unwrap();
+            let _ = multi_phase_tx.send(first_morsel).await;
 
             let mut morsel_seq: u64 = 1;
 
