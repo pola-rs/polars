@@ -344,7 +344,7 @@ jobs:
             --profile ${{ inputs.dry-run == true && 'mindebug-dev' || 'dist-release' }}
             --manifest-path py-polars/runtime/${{ matrix.package }}/Cargo.toml
             --out dist
-          manylinux: ${{ endsWith(matrix.target, '-musl') && 'musllinux_1_2' || ((runner.os == 'Linux' && matrix.architecture == 'aarch64') && '2_24' || 'auto') }}
+          manylinux: auto
           maturin-version: 1.8.3
 
       - name: Test wheel
@@ -357,12 +357,7 @@ jobs:
       - name: Upload wheel
         uses: actions/upload-artifact@v4
         with:
-          name: >-
-            wheel-${{ matrix.package }}-${{ 
-              endsWith(matrix.target, '-musl') && 'musllinux_1_2' || 
-              (runner.os == 'Linux' && format('ubuntu-latest-{0}', matrix.architecture) || 
-              format('{0}-{1}', matrix.os, matrix.architecture)) 
-            }}
+          name: wheel-${{ matrix.package }}-${{ matrix.job_config }}
           path: dist/*.whl
 
   publish-to-pypi:
