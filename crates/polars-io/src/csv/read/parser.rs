@@ -102,7 +102,6 @@ pub fn count_rows_from_slice_par(
         let eof_unterminated_row;
 
         if comment_prefix.is_none() {
-            let mut id = 0usize;
             let mut last_slice = MemSlice::EMPTY;
             let mut err = None;
 
@@ -121,20 +120,19 @@ pub fn count_rows_from_slice_par(
                     return None;
                 }
 
-                let slice_id = id;
-                id += 1;
                 last_slice = slice.clone();
 
-                Some((slice.clone(), slice_id))
+                Some(slice.clone())
             });
 
             states = streaming_iter
+                .enumerate()
                 .par_bridge()
-                .map(|(slice, id)| (count.analyze_chunk(&slice), id))
+                .map(|(id, slice)| (count.analyze_chunk(&slice), id))
                 .collect::<Vec<_>>();
 
             if let Some(e) = err {
-                Err(e)?;
+                return Err(e.into());
             }
 
             // par_bridge does not guarantee order, but is mostly sorted so `slice::sort` is a
