@@ -16,6 +16,58 @@ pub enum ClosedInterval {
     None,
 }
 
+// The enumeration for a moving window is identical to ClosedInterval.
+pub type ClosedWindow = ClosedInterval;
+
+// Primarily used for date/datetime logical types.
+pub fn new_linear_space_i64(
+    start: i64,
+    end: i64,
+    n: i64,
+    closed: ClosedInterval,
+    name: PlSmallStr,
+) -> Int64Chunked {
+    let values = if n == 0 {
+        Vec::<i64>::new()
+    } else {
+        // The bin width depends on the interval closure.
+        let divisor = match closed {
+            ClosedInterval::None => n + 1,
+            ClosedInterval::Left => n,
+            ClosedInterval::Right => n,
+            ClosedInterval::Both => n - 1,
+        };
+        let bin_width = (end - start) as f64 / (divisor as f64);
+
+        // For left-open intervals, increase the left by one interval.
+        let start = if closed == ClosedInterval::None || closed == ClosedInterval::Right {
+            start as f64 + bin_width
+        } else {
+            start as f64
+        };
+
+        let right_closed = closed == ClosedInterval::Right || closed == ClosedInterval::Both;
+        let n = if right_closed { n - 1 } else { n };
+        let values = (0..n).map(move |x| (x as f64 * bin_width + start) as i64);
+
+        // For right-closed and fully-closed interval, ensure the last point is exact.
+        if right_closed {
+            // ensures floating point accuracy of final value
+            values.chain(std::iter::once(end)).collect()
+        } else {
+            values.collect()
+        }
+    };
+    let mut ca = Int64Chunked::new_vec(name, values);
+    let is_sorted = if end < start {
+        IsSorted::Descending
+    } else {
+        IsSorted::Ascending
+    };
+    ca.set_sorted_flag(is_sorted);
+    ca
+}
+
 pub fn new_linear_space_f32(
     start: f32,
     end: f32,

@@ -1,6 +1,8 @@
 use arrow::temporal_conversions::MICROSECONDS_IN_DAY;
 use polars_core::prelude::*;
-use polars_ops::series::{ClosedInterval, new_linear_space_f32, new_linear_space_f64};
+use polars_ops::series::{
+    ClosedInterval, new_linear_space_f32, new_linear_space_f64, new_linear_space_i64,
+};
 
 use super::utils::{build_nulls, ensure_items_contain_exactly_one_value};
 
@@ -46,8 +48,12 @@ pub(super) fn linear_space(s: &[Column], closed: ClosedInterval) -> PolarsResult
                 end *= MICROSECONDS_IN_DAY;
                 dt = DataType::Datetime(TimeUnit::Microseconds, None);
             }
-            new_linear_space_f64(start as f64, end as f64, num_samples, closed, name.clone())
-                .map(|s| s.cast(&dt).unwrap().into_column())
+            Ok(
+                new_linear_space_i64(start, end, num_samples as i64, closed, name.clone())
+                    .cast(&dt)
+                    .unwrap()
+                    .into_column(),
+            )
         },
         (dt1, dt2) if !dt1.is_primitive_numeric() || !dt2.is_primitive_numeric() => {
             Err(PolarsError::ComputeError(

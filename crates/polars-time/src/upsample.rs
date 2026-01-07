@@ -255,7 +255,7 @@ fn upsample_single_impl(
                         Some(tz) => Some(parse_time_zone(tz)?),
                         _ => None,
                     };
-                    let range = datetime_range_impl(
+                    let range = datetime_range_impl_start_end_interval(
                         index_col_name.clone(),
                         first,
                         last,

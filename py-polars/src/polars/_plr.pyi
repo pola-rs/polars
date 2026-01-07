@@ -2253,26 +2253,36 @@ def int_ranges(
     start: PyExpr, end: PyExpr, step: PyExpr, dtype: PyDataTypeExpr
 ) -> PyExpr: ...
 def date_range(
-    start: PyExpr, end: PyExpr, interval: str, closed: ClosedWindow
+    start: PyExpr | None = None,
+    end: PyExpr | None = None,
+    interval: str | None = None,
+    num_samples: PyExpr | None = None,
+    closed: ClosedWindow = "both",
 ) -> PyExpr: ...
 def date_ranges(
-    start: PyExpr, end: PyExpr, interval: str, closed: ClosedWindow
+    start: PyExpr | None = None,
+    end: PyExpr | None = None,
+    interval: str | None = None,
+    num_samples: PyExpr | None = None,
+    closed: ClosedWindow = "both",
 ) -> PyExpr: ...
 def datetime_range(
-    start: PyExpr,
-    end: PyExpr,
-    every: str,
-    closed: ClosedWindow,
-    time_unit: TimeUnit | None,
-    time_zone: TimeZone | None,
+    start: PyExpr | None = None,
+    end: PyExpr | None = None,
+    interval: str | None = None,
+    num_samples: PyExpr | None = None,
+    closed: ClosedWindow = "both",
+    time_unit: TimeUnit | None = None,
+    time_zone: TimeZone | None = None,
 ) -> PyExpr: ...
 def datetime_ranges(
-    start: PyExpr,
-    end: PyExpr,
-    every: str,
-    closed: ClosedWindow,
-    time_unit: TimeUnit | None,
-    time_zone: TimeZone | None,
+    start: PyExpr | None = None,
+    end: PyExpr | None = None,
+    interval: str | None = None,
+    num_samples: PyExpr | None = None,
+    closed: ClosedWindow = "both",
+    time_unit: TimeUnit | None = None,
+    time_zone: TimeZone | None = None,
 ) -> PyExpr: ...
 def time_range(
     start: PyExpr, end: PyExpr, every: str, closed: ClosedWindow
