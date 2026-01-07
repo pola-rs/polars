@@ -1,8 +1,7 @@
 from collections.abc import Callable, Sequence
-from typing import Any, Literal, overload
+from typing import Any, Literal, TypeAlias, overload
 
 from numpy.typing import NDArray
-from typing_extensions import TypeAlias
 
 from polars.io.scan_options._options import ScanOptions
 
