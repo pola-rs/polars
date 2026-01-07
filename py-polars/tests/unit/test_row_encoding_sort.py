@@ -83,7 +83,7 @@ def elem_order_sign(
         lhs_b: bytes = lhs
         rhs_b: bytes = rhs
 
-        for lh, rh in zip(lhs_b, rhs_b, strict=True):
+        for lh, rh in zip(lhs_b, rhs_b, strict=False):
             o = elem_order_sign(lh, rh, descending=descending, nulls_last=nulls_last)
             if o != 0:
                 return o
@@ -95,7 +95,7 @@ def elem_order_sign(
     elif isinstance(lhs, str) and isinstance(rhs, str):
         return -1 if (lhs < rhs) ^ descending else 1
     elif isinstance(lhs, list) and isinstance(rhs, list):
-        for lh, rh in zip(lhs, rhs, strict=True):
+        for lh, rh in zip(lhs, rhs, strict=False):
             # Nulls lasts is set to descending for nested values. See #22557.
             o = elem_order_sign(lh, rh, descending=descending, nulls_last=descending)
             if o != 0:
