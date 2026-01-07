@@ -128,6 +128,9 @@ def test_join_right_partial_rechunk_25971() -> None:
     rhs = rhs.group_by("x").min()
     out = lhs.join(rhs, left_on="x", right_on="y", how="right")
     ret = pl.DataFrame(
-        {"x": [0, 1, 1] + list(range(2, 2000)), "y": [None, 0, 0] + [None for _ in range(1998)]}
+        {
+            "x": [0, 1, 1] + list(range(2, 2000)),
+            "y": [None, 0, 0] + [None for _ in range(1998)],
+        }
     )
     assert_frame_equal(out, ret, check_row_order=False)
