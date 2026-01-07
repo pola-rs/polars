@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 import typing
 from collections import OrderedDict
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Iterator, Mapping
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
@@ -37,7 +37,7 @@ from polars.testing import (
 from tests.unit.conftest import FLOAT_DTYPES, INTEGER_DTYPES
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Sequence
+    from collections.abc import Callable, Iterator, Sequence
 
     from polars import Expr
     from polars._typing import JoinStrategy, UniqueKeepStrategy

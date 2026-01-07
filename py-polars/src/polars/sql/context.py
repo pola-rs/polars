@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Callable
 from typing import (
     TYPE_CHECKING,
     Generic,
@@ -27,7 +26,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Collection, Mapping
+    from collections.abc import Callable, Collection, Mapping
     from types import TracebackType
     from typing import Any, Final, Literal, TypeAlias
 

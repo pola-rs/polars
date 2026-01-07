@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Final, get_type_hints
 
 from polars._dependencies import _check_for_pydantic, pydantic
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     import pandas as pd
 
 PANDAS_SIMPLE_NUMPY_DTYPES: Final[set[str]] = {

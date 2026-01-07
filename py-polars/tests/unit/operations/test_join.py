@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import typing
 import warnings
-from collections.abc import Callable
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -22,6 +21,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import time_func
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import JoinStrategy, PolarsDataType
 
 

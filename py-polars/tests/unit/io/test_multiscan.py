@@ -3,7 +3,6 @@ from __future__ import annotations
 import io
 import re
 import sys
-from collections.abc import Callable
 from functools import partial
 from typing import IO, TYPE_CHECKING, Any
 
@@ -17,6 +16,7 @@ from polars.meta.index_type import get_index_type
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
 SCAN_AND_WRITE_FUNCS = [

@@ -4,12 +4,15 @@ import ast
 import inspect
 import sys
 from collections import defaultdict
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from functools import wraps
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar, get_args
 
 from polars._typing import DeprecationType
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 if sys.version_info >= (3, 13):
     from warnings import deprecated

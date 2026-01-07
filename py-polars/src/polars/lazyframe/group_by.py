@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from polars import functions as F
@@ -10,7 +9,7 @@ from polars._utils.wrap import wrap_df, wrap_ldf
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
 
     from polars import DataFrame, LazyFrame
     from polars._plr import PyLazyGroupBy

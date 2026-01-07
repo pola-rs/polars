@@ -19,7 +19,6 @@ from ast import (
     Name,
     UnaryOp,
 )
-from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cache, singledispatch
 from typing import TYPE_CHECKING, Any
@@ -31,7 +30,7 @@ from polars._utils.wrap import wrap_s
 from polars.exceptions import ComputeError
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
     from datetime import date, datetime
 
     import pyiceberg

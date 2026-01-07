@@ -10,7 +10,6 @@ import sys
 import warnings
 from bisect import bisect_left
 from collections import defaultdict
-from collections.abc import Callable
 from dis import get_instructions
 from inspect import signature
 from itertools import count, zip_longest
@@ -28,7 +27,7 @@ from polars._utils.cache import LRUCache
 from polars._utils.various import no_default, re_escape
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, MutableMapping
+    from collections.abc import Callable, Iterator, MutableMapping
     from collections.abc import Set as AbstractSet
     from dis import Instruction
     from typing import TypeAlias

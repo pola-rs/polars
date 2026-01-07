@@ -4,7 +4,7 @@ import contextlib
 import io
 import os
 import warnings
-from collections.abc import Callable, Collection, Iterable, Iterator, Mapping
+from collections.abc import Collection, Iterable, Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time, timedelta
 from functools import lru_cache, partial, reduce
@@ -108,7 +108,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Awaitable, Iterator, Sequence
+    from collections.abc import Awaitable, Callable, Iterator, Sequence
     from io import IOBase
     from typing import IO, Concatenate, Literal, ParamSpec
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from itertools import chain
 from typing import TYPE_CHECKING, Any
 
@@ -11,7 +10,7 @@ from polars._utils.parse.expr import _parse_inputs_as_iterable
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
     from datetime import timedelta
 
     from polars import DataFrame

@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import io
-from collections.abc import Callable
 from pathlib import PosixPath
-from typing import Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 import pytest
 
 import polars as pl
 from polars.io.partition import _SinkDirectory
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:

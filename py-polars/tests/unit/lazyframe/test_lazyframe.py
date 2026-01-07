@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
 from datetime import date, datetime
 from functools import reduce
 from inspect import signature
@@ -24,6 +23,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import FLOAT_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from _pytest.capture import CaptureFixture
 
     from polars._typing import MapElementsStrategy, PolarsDataType

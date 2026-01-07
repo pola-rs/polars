@@ -4,7 +4,7 @@ import os
 import re
 import warnings
 from collections import defaultdict
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from datetime import time
 from glob import glob
 from io import BufferedReader, BytesIO, StringIO, TextIOWrapper
@@ -43,6 +43,7 @@ from polars.io._utils import looks_like_url, process_file_url
 from polars.io.csv.functions import read_csv
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from typing import Literal
 
     from polars._typing import ExcelSpreadsheetEngine, FileSource, SchemaDict

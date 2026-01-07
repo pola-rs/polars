@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import enum
 from collections import OrderedDict
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from datetime import tzinfo
 from inspect import isclass
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, overload
@@ -20,7 +20,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 import polars.datatypes.classes as pldt
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator, Sequence
+    from collections.abc import Callable, Iterable, Iterator, Sequence
 
     from polars import Series
     from polars._typing import (

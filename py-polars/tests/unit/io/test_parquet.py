@@ -4,7 +4,6 @@ import decimal
 import functools
 import io
 import warnings
-from collections.abc import Callable
 from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from itertools import chain
@@ -28,6 +27,7 @@ from polars.testing.parametric import column, dataframes
 from polars.testing.parametric.strategies.core import series
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
     from polars._typing import (

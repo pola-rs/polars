@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Callable, Generator, Iterator, Mapping
+from collections.abc import Generator, Iterator, Mapping
 from datetime import date, datetime, time, timedelta
 from enum import Enum as PyEnum
 from itertools import islice
@@ -66,7 +66,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import PySeries
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Callable, Iterable, Sequence
 
     from polars import DataFrame, Series
     from polars._dependencies import pandas as pd

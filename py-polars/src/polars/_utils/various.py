@@ -7,7 +7,6 @@ import sys
 import warnings
 from collections import Counter
 from collections.abc import (
-    Callable,
     Collection,
     Generator,
     Iterable,
@@ -43,7 +42,12 @@ from polars.datatypes import (
 from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, MutableMapping, Reversible
+    from collections.abc import (
+        Callable,
+        Iterator,
+        MutableMapping,
+        Reversible,
+    )
     from typing import ParamSpec, TypeGuard
 
     from polars import DataFrame, Expr

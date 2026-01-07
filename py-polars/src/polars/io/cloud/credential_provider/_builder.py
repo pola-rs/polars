@@ -3,7 +3,6 @@ from __future__ import annotations
 import abc
 import os
 import threading
-from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Final, Literal
 
 import polars._utils.logging
@@ -23,6 +22,7 @@ from polars.io.cloud.credential_provider._providers import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from typing import TypeAlias
 
 # https://docs.rs/object_store/latest/object_store/enum.ClientConfigKey.html

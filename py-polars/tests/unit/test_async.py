@@ -3,15 +3,17 @@ from __future__ import annotations
 import asyncio
 import sys
 import time
-from collections.abc import Callable
 from functools import partial
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 from polars._dependencies import gevent
 from polars.exceptions import ColumnNotFoundError
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 pytestmark = pytest.mark.slow()
 

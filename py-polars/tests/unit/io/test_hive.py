@@ -4,11 +4,10 @@ import sys
 import urllib.parse
 import warnings
 from collections import OrderedDict
-from collections.abc import Callable
 from datetime import date, datetime
 from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pyarrow.parquet as pq
 import pytest
@@ -16,6 +15,9 @@ import pytest
 import polars as pl
 from polars.exceptions import ComputeError, SchemaFieldNotFoundError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def impl_test_hive_partitioned_predicate_pushdown(

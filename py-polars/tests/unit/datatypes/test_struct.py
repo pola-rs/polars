@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import io
 import operator
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, time
 from typing import TYPE_CHECKING, Any
@@ -17,6 +16,8 @@ from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import PolarsDataType, SerializationFormat
 
 

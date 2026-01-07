@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -12,6 +11,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import dataframes, series
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import PolarsDataType
 
 

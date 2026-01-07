@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import inspect
 import sys
-from collections.abc import Callable
 from functools import wraps
 from typing import TYPE_CHECKING, Any, TypeVar
 
@@ -12,6 +11,7 @@ from polars._utils.wrap import wrap_s
 from polars.datatypes import dtype_to_ffiname
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from typing import ParamSpec
 
     from polars import Series

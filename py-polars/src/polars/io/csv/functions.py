@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import os
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from io import BytesIO, StringIO
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Literal
@@ -35,7 +35,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import PyDataFrame, PyLazyFrame
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping
 
     from polars import DataFrame, LazyFrame
     from polars._typing import CsvEncoding, PolarsDataType, SchemaDict

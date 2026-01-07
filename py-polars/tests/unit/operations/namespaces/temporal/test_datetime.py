@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from collections.abc import Callable
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
@@ -16,6 +15,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import PolarsDataType, TemporalLiteral, TimeUnit
 
 

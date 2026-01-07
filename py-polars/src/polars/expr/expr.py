@@ -5,7 +5,7 @@ import math
 import operator
 import sys
 import warnings
-from collections.abc import Callable, Collection, Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from datetime import timedelta
 from decimal import Decimal
 from functools import reduce
@@ -82,7 +82,7 @@ if TYPE_CHECKING:
     with contextlib.suppress(ImportError):  # Module not available when building docs
         import polars._plr as plr
 
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
     from io import IOBase
 
     from polars import DataFrame, LazyFrame, Series

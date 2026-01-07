@@ -8,7 +8,6 @@ import os
 import random
 from collections import defaultdict
 from collections.abc import (
-    Callable,
     Generator,
     Iterable,
     Mapping,
@@ -123,7 +122,12 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Collection, Iterator, Mapping
+    from collections.abc import (
+        Callable,
+        Collection,
+        Iterator,
+        Mapping,
+    )
     from datetime import timedelta
     from io import IOBase
     from typing import Concatenate, Literal, ParamSpec

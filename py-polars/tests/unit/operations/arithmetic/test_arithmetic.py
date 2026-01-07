@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import operator
 from collections import OrderedDict
-from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -27,6 +26,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES, UNSIGNED_INTEGER_DTYPES
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import PolarsIntegerType
 
 
