@@ -62,12 +62,12 @@ pub fn materialize_left_join_from_series(
     let mut right = Cow::Borrowed(right_);
     let mut s_right = s_right.clone();
     if left.should_rechunk() || requires_ordering || left.n_chunks() != s_left.n_chunks() {
-        left.as_single_chunk_par();
+        left.rechunk_mut_par();
         s_left = s_left.rechunk();
     }
     if right.should_rechunk() || requires_ordering || right.n_chunks() != s_right.n_chunks() {
         let mut other = right_.clone();
-        other.as_single_chunk_par();
+        other.rechunk_mut_par();
         right = Cow::Owned(other);
         s_right = s_right.rechunk();
     }
@@ -147,7 +147,12 @@ fn maintain_order_idx(
         // SAFETY: left_idx and right_idx are continuous memory that outlive the memory mapped slices
         let left = unsafe { IdxCa::mmap_slice("a".into(), left_idx) };
         let right = unsafe { IdxCa::mmap_slice("b".into(), bytemuck::cast_slice(right_idx)) };
-        DataFrame::new(vec![left.into_series().into(), right.into_series().into()]).unwrap()
+        unsafe {
+            DataFrame::new_unchecked(
+                left_idx.len(),
+                vec![left.into_series().into(), right.into_series().into()],
+            )
+        }
     };
 
     let options = SortMultipleOptions::new()

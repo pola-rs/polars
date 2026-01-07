@@ -14,7 +14,7 @@
 //!
 //! let s0 = Column::new("days".into(), &[0, 1, 2, 3, 4]);
 //! let s1 = Column::new("temp".into(), &[22.1, 19.9, 7., 2., 3.]);
-//! let mut df = DataFrame::new(vec![s0, s1]).unwrap();
+//! let mut df = DataFrame::new_infer_height(vec![s0, s1]).unwrap();
 //!
 //! // Create an in memory file handler.
 //! // Vec<u8>: Read + Write
@@ -311,7 +311,7 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
 
         if let Some((col, value)) = include_file_path {
             unsafe {
-                df.with_column_unchecked(Column::new_scalar(
+                df.push_column_unchecked(Column::new_scalar(
                     col,
                     Scalar::new(
                         DataType::String,

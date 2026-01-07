@@ -135,7 +135,8 @@ fn compute_payload_selector(
 fn postprocess_join(df: DataFrame, params: &EquiJoinParams) -> DataFrame {
     if params.args.how == JoinType::Full && params.args.should_coalesce() {
         // TODO: don't do string-based column lookups for each dataframe, pre-compute coalesce indices.
-        df.get_columns()
+        let new_cols = df
+            .columns()
             .iter()
             .filter_map(|c| {
                 if let Some(key_idx) = params.left_key_schema.index_of(c.name()) {
@@ -151,7 +152,9 @@ fn postprocess_join(df: DataFrame, params: &EquiJoinParams) -> DataFrame {
 
                 Some(c.clone())
             })
-            .collect()
+            .collect();
+
+        unsafe { DataFrame::new_unchecked(df.height(), new_cols) }
     } else {
         df
     }
@@ -175,7 +178,7 @@ async fn select_keys(
     for selector in key_selectors {
         key_columns.push(selector.evaluate(df, state).await?.into_column());
     }
-    let keys = DataFrame::new_with_broadcast_len(key_columns, df.height())?;
+    let keys = unsafe { DataFrame::new_unchecked_with_broadcast(df.height(), key_columns)? };
     Ok(HashKeys::from_df(
         &keys,
         params.random_state.clone(),
@@ -185,16 +188,15 @@ async fn select_keys(
 }
 
 fn select_payload(df: DataFrame, selector: &[Option<PlSmallStr>]) -> DataFrame {
-    // Maintain height of zero-width dataframes.
-    if df.width() == 0 {
-        return df;
-    }
-
-    df.take_columns()
+    let height = df.height();
+    let new_cols = df
+        .into_columns()
         .into_iter()
         .zip(selector)
         .filter_map(|(c, name)| Some(c.with_name(name.clone()?)))
-        .collect()
+        .collect();
+
+    unsafe { DataFrame::new_unchecked(height, new_cols) }
 }
 
 fn estimate_cardinality(
@@ -805,10 +807,10 @@ impl ProbeState {
                         let mut build_df = build.freeze_reset();
                         let mut probe_df = probe.freeze_reset();
                         let out_df = if params.left_is_build.unwrap() {
-                            build_df.hstack_mut_unchecked(probe_df.get_columns());
+                            build_df.hstack_mut_unchecked(probe_df.columns());
                             build_df
                         } else {
-                            probe_df.hstack_mut_unchecked(build_df.get_columns());
+                            probe_df.hstack_mut_unchecked(build_df.columns());
                             probe_df
                         };
                         let out_df = postprocess_join(out_df, params);
@@ -1050,12 +1052,12 @@ impl ProbeState {
             let out_df = if params.left_is_build.unwrap() {
                 let probe_df =
                     DataFrame::full_null(&params.right_payload_schema, build_df.height());
-                build_df.hstack_mut_unchecked(probe_df.get_columns());
+                build_df.hstack_mut_unchecked(probe_df.columns());
                 build_df
             } else {
                 let mut probe_df =
                     DataFrame::full_null(&params.left_payload_schema, build_df.height());
-                probe_df.hstack_mut_unchecked(build_df.get_columns());
+                probe_df.hstack_mut_unchecked(build_df.columns());
                 probe_df
             };
             postprocess_join(out_df, params)
@@ -1116,11 +1118,11 @@ impl EmitUnmatchedState {
                     let len = build_df.height();
                     if params.left_is_build.unwrap() {
                         let probe_df = DataFrame::full_null(&params.right_payload_schema, len);
-                        build_df.hstack_mut_unchecked(probe_df.get_columns());
+                        build_df.hstack_mut_unchecked(probe_df.columns());
                         build_df
                     } else {
                         let mut probe_df = DataFrame::full_null(&params.left_payload_schema, len);
-                        probe_df.hstack_mut_unchecked(build_df.get_columns());
+                        probe_df.hstack_mut_unchecked(build_df.columns());
                         probe_df
                     }
                 };

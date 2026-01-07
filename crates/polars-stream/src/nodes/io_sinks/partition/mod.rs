@@ -291,7 +291,9 @@ async fn open_new_sink(
                     limit: None,
                 },
             )?;
-            df = df.select_by_range(0..df.width() - num_selectors)?;
+
+            let truncate_len = df.width() - num_selectors;
+            unsafe { df.columns_mut() }.truncate(truncate_len);
 
             _ = old_sender
                 .send(Morsel::new(df, MorselSeq::default(), SourceToken::new()))

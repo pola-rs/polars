@@ -182,7 +182,7 @@ fn upsample_impl(
                 .into_groups();
 
                 let non_group_keys_df = unsafe {
-                    source.project_names(
+                    source.select_unchecked(
                         source_schema
                             .iter_names()
                             .filter(|name| !group_keys_schema.contains(name.as_str())),
@@ -204,7 +204,7 @@ fn upsample_impl(
                         if let Some(i) = upsample_index_col_idx {
                             non_group_keys_df = upsample_single_impl(
                                 &non_group_keys_df,
-                                non_group_keys_df.get_columns()[i].as_materialized_series(),
+                                non_group_keys_df.columns()[i].as_materialized_series(),
                                 every,
                             )?
                         }
@@ -214,8 +214,7 @@ fn upsample_impl(
                         let group_keys_df =
                             group_keys_df.new_from_index(first_idx as usize, out.height());
 
-                        out.clear_schema();
-                        let out_cols = unsafe { out.get_columns_mut() };
+                        let out_cols = unsafe { out.columns_mut() };
 
                         out_cols.reserve(group_keys_df.width());
                         out_cols.extend(group_keys_df.into_columns());
@@ -224,9 +223,11 @@ fn upsample_impl(
                     })
                     .collect::<PolarsResult<_>>()?;
 
-                unsafe {
-                    accumulate_dataframes_vertical_unchecked(dfs).project(source_schema.clone())
-                }
+                Ok(unsafe {
+                    accumulate_dataframes_vertical_unchecked(dfs)
+                        .select_unchecked(source_schema.iter_names())?
+                        .with_schema(source_schema.clone())
+                })
             }
         },
     }

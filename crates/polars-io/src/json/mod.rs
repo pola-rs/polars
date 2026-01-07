@@ -144,7 +144,7 @@ where
 
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
         df.align_chunks_par();
-        let fields = df
+        let fields = df.columns()
             .iter()
             .map(|s| {
                 #[cfg(feature = "object")]
@@ -189,7 +189,7 @@ where
     /// # Panics
     /// The caller must ensure the chunks in the given [`DataFrame`] are aligned.
     pub fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
-        let fields = df
+        let fields = df.columns()
             .iter()
             .map(|s| {
                 #[cfg(feature = "object")]
@@ -353,27 +353,35 @@ where
                     arrow_dtype,
                     allow_extra_fields_in_struct,
                 )?;
+
                 let arr = arr.as_any().downcast_ref::<StructArray>().ok_or_else(
                     || polars_err!(ComputeError: "can only deserialize json objects"),
                 )?;
 
                 let mut df = DataFrame::try_from(arr.clone())?;
+
+                if df.width() == 0 && df.height() <= 1 {
+                    // read_json("{}")
+                    unsafe { df.set_height(0) };
+                }
+
                 if needs_cast {
-                    unsafe {
-                        for (col, dt) in df.get_columns_mut().iter_mut().zip(schema.iter_values()) {
-                            *col = col.cast_with_options(
-                                dt,
-                                if self.ignore_errors {
-                                    CastOptions::NonStrict
-                                } else {
-                                    CastOptions::Strict
-                                },
-                            )?;
-                        }
-                        df.clear_schema();
+                    for (col, dt) in unsafe { df.columns_mut() }
+                        .iter_mut()
+                        .zip(schema.iter_values())
+                    {
+                        *col = col.cast_with_options(
+                            dt,
+                            if self.ignore_errors {
+                                CastOptions::NonStrict
+                            } else {
+                                CastOptions::Strict
+                            },
+                        )?;
                     }
                 }
-                PolarsResult::Ok(df)
+
+                df
             },
             JsonFormat::JsonLines => {
                 let mut json_reader = CoreJsonReader::new(
@@ -393,11 +401,12 @@ where
                 )?;
                 let mut df: DataFrame = json_reader.as_df()?;
                 if self.rechunk {
-                    df.as_single_chunk_par();
+                    df.rechunk_mut_par();
                 }
-                Ok(df)
+
+                df
             },
-        }?;
+        };
 
         // TODO! Ensure we don't materialize the columns we don't need
         if let Some(proj) = self.projection.as_deref() {

@@ -461,7 +461,8 @@ fn build_fallback_node_with_ctx(
             .iter()
             .map(|phys_expr| phys_expr.evaluate(&df, &exec_state))
             .try_collect()?;
-        DataFrame::new_with_broadcast(columns)
+
+        DataFrame::new_infer_broadcast(columns)
     };
 
     let format_str = ctx.prepare_visualization.then(|| {

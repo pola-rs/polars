@@ -61,7 +61,7 @@ fn write_dates() {
             None,
         ],
     );
-    let mut df = DataFrame::new(vec![s0, s1, s2.clone()]).unwrap();
+    let mut df = DataFrame::new_infer_height(vec![s0, s1, s2.clone()]).unwrap();
 
     let mut buf: Vec<u8> = Vec::new();
     CsvWriter::new(&mut buf)
@@ -124,7 +124,7 @@ fn write_dates() {
     )
     .unwrap()
     .into_column();
-    let mut with_timezone_df = DataFrame::new(vec![with_timezone]).unwrap();
+    let mut with_timezone_df = DataFrame::new_infer_height(vec![with_timezone]).unwrap();
     buf.clear();
     CsvWriter::new(&mut buf)
         .include_header(false)
@@ -221,7 +221,7 @@ fn test_parser() -> PolarsResult<()> {
     assert_eq!(col.get(0)?, AnyValue::String("Setosa"));
     assert_eq!(col.get(2)?, AnyValue::String("Setosa"));
 
-    assert_eq!("sepal_length", df.get_columns()[0].name().as_str());
+    assert_eq!("sepal_length", df.columns()[0].name().as_str());
     assert_eq!(df.height(), 7);
 
     // test windows line endings
@@ -235,7 +235,7 @@ fn test_parser() -> PolarsResult<()> {
         .finish()
         .unwrap();
 
-    assert_eq!("head_1", df.get_columns()[0].name().as_str());
+    assert_eq!("head_1", df.columns()[0].name().as_str());
     assert_eq!(df.shape(), (3, 2));
 
     // test windows line ending with 1 byte char column and no line endings for last line.
@@ -249,7 +249,7 @@ fn test_parser() -> PolarsResult<()> {
         .finish()
         .unwrap();
 
-    assert_eq!("head_1", df.get_columns()[0].name().as_str());
+    assert_eq!("head_1", df.columns()[0].name().as_str());
     assert_eq!(df.shape(), (3, 1));
     Ok(())
 }
@@ -746,7 +746,7 @@ null-value,b,bar
         })
         .into_reader_with_file_handle(file)
         .finish()?;
-    assert!(df.get_columns()[0].null_count() > 0);
+    assert!(df.columns()[0].null_count() > 0);
     Ok(())
 }
 
