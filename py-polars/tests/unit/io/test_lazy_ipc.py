@@ -14,6 +14,10 @@ from polars.testing.asserts.frame import assert_frame_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from polars._typing import IpcCompression
+
+COMPRESSIONS = ["uncompressed", "lz4", "zstd"]
+
 
 @pytest.fixture
 def foods_ipc_path(io_files_path: Path) -> Path:
@@ -272,4 +276,24 @@ def test_scan_ipc_file_async_multiple_record_batches(
     assert_frame_equal(
         pl.scan_ipc(buffers, row_index_name="ri").tail(15).select(pl.col.ri).collect(),
         pl.concat([df, df]).with_row_index("ri").tail(15).select(pl.col.ri),
+    )
+
+
+@pytest.mark.parametrize("n_a", [1, 999])
+@pytest.mark.parametrize("n_b", [1, 12, 13, 999])  # problem starts 13
+@pytest.mark.parametrize("compression", COMPRESSIONS)
+def test_scan_ipc_varying_block_metadata_len_c4812(
+    n_a: int, n_b: int, compression: IpcCompression, monkeypatch: Any
+) -> None:
+    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    monkeypatch.setenv("POLARS_IDEAL_SINK_MORSEL_SIZE_ROWS", "1")
+
+    buf = io.BytesIO()
+    lf = pl.DataFrame({"a": [n_a * "A", n_b * "B"]}).lazy()
+    lf.sink_ipc(buf, compression=compression)
+    df = lf.collect()
+
+    assert_frame_equal(
+        pl.scan_ipc(buf).collect(),
+        df,
     )
