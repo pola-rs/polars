@@ -2,6 +2,7 @@ import itertools
 from io import BytesIO
 
 import pytest
+import datetime as dt
 
 import polars as pl
 from polars.testing import assert_frame_equal
@@ -340,14 +341,14 @@ def test_order_observe_sort_before_unique_22485() -> None:
     q = lf.sort("order").unique(["id"], keep="last").sort("order")
 
     plan = q.explain()
-    assert "SORT BY" in plan[plan.index("UNIQUE") :]
+    assert "SORT BY" in plan[plan.index("UNIQUE"):]
 
     assert_frame_equal(q.collect(), expect)
 
     q = lf.sort("order").unique(["id"], keep="last", maintain_order=True)
 
     plan = q.explain()
-    assert "SORT BY" in plan[plan.index("UNIQUE") :]
+    assert "SORT BY" in plan[plan.index("UNIQUE"):]
 
     assert_frame_equal(q.collect(), expect)
 
@@ -459,3 +460,51 @@ def test_slice_pushdown_expr_25473() -> None:
 
     with pytest.raises(pl.exceptions.ShapeError, match=r"lengths.*5 != 2"):
         q.collect()
+
+
+def test_lazy_groupby_maintain_order_after_asof_join_25973():
+    # Build the time frames
+    targettime = (
+        pl.DataFrame({
+            "targettime": pl.time_range(
+                dt.time(0, 0), dt.time(23, 59), interval="10m", closed="both", eager=True
+            )
+        })
+        .with_columns(
+            targettime=pl.lit(dt.date(2026, 1, 1)).dt.combine(pl.col("targettime")),
+            grp=pl.lit(1),
+        )
+        .lazy()
+    )
+
+    df = (
+        pl.DataFrame({
+            "time": pl.time_range(
+                dt.time(0, 0), dt.time(23, 59), interval="1s", closed="both", eager=True
+            )
+        })
+        .with_row_index("value")
+        .with_columns(
+            time=pl.lit(dt.date(2026, 1, 1)).dt.combine(pl.col("time")),
+            grp=pl.lit(1),
+        )
+        .lazy()
+    )
+
+    # This used to produce out-of-order results due to optimizer clearing maintain_order.
+    result = (
+        df.join_asof(
+            targettime,
+            left_on="time",
+            right_on="targettime",
+            strategy="forward",
+        )
+        .drop_nulls("targettime")
+        .group_by("targettime", maintain_order=True)
+        .agg(pl.col("value").last())
+        .collect()
+    )
+
+    # Now should maintain order; just check monotonicity of the targettime key
+    times = result["targettime"].to_list()
+    assert times == sorted(times)
