@@ -297,3 +297,33 @@ def test_scan_ipc_varying_block_metadata_len_c4812(
         pl.scan_ipc(buf).collect(),
         df,
     )
+
+
+@pytest.mark.parametrize(
+    "record_batch_size", [1, 2, 5, 7, 50, 99, 100, 101, 299, 300, 100_000]
+)
+@pytest.mark.parametrize("n_chunks", [1, 2, 3])
+def test_sink_ipc_record_batch_size(record_batch_size: int, n_chunks: int) -> None:
+    n_rows = 100
+    buf = io.BytesIO()
+
+    df0 = pl.DataFrame({"a": list(range(n_rows))})
+    df = df0
+    while n_chunks > 1:
+        df = pl.concat([df, df0])
+        n_chunks -= 1
+
+    df.lazy().sink_ipc(buf, record_batch_size=record_batch_size)
+
+    buf.seek(0)
+    out = pl.scan_ipc(buf).collect()
+    assert_frame_equal(out, df)
+
+    buf.seek(0)
+    reader = pyarrow.ipc.open_file(buf)
+    n_batches = reader.num_record_batches
+    for i in range(n_batches):
+        n_rows = reader.get_batch(i).num_rows
+        assert n_rows == record_batch_size or (
+            i + 1 == n_batches and n_rows <= record_batch_size
+        )

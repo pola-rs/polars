@@ -6,6 +6,7 @@ use polars_error::PolarsResult;
 use polars_io::ipc::IpcWriterOptions;
 use polars_io::pl_async;
 use polars_io::utils::sync_on_close::SyncOnCloseType;
+use polars_utils::IdxSize;
 use polars_utils::index::NonZeroIdxSize;
 
 use crate::async_executor::{self, TaskPriority};
@@ -27,6 +28,7 @@ pub struct IpcWriterStarter {
     pub schema: SchemaRef,
     pub pipeline_depth: usize,
     pub sync_on_close: SyncOnCloseType,
+    pub record_batch_size: Option<IdxSize>,
 }
 
 enum IpcBatch {
@@ -43,14 +45,26 @@ impl FileWriterStarter for IpcWriterStarter {
     }
 
     fn takeable_rows_provider(&self) -> TakeableRowsProvider {
-        let (num_rows, num_bytes) = ideal_sink_morsel_size_env();
+        let max_size = if let Some(record_batch_size) = self.record_batch_size
+            && record_batch_size > 0
+        {
+            NonZeroRowCountAndSize::new(RowCountAndSize {
+                num_rows: record_batch_size,
+                num_bytes: u64::MAX,
+            })
+            .unwrap()
+        } else {
+            let (num_rows, num_bytes) = ideal_sink_morsel_size_env();
 
-        TakeableRowsProvider {
-            max_size: NonZeroRowCountAndSize::new(RowCountAndSize {
+            NonZeroRowCountAndSize::new(RowCountAndSize {
                 num_rows: num_rows.unwrap_or(122_880),
                 num_bytes: num_bytes.unwrap_or(u64::MAX),
             })
-            .unwrap(),
+            .unwrap()
+        };
+
+        TakeableRowsProvider {
+            max_size,
             byte_size_min_rows: NonZeroIdxSize::new(16384).unwrap(),
             allow_non_max_size: false,
         }

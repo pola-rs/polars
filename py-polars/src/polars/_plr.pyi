@@ -958,6 +958,7 @@ class PyLazyFrame:
         sink_options: Any,
         compression: IpcCompression | None,
         compat_level: CompatLevel,
+        record_batch_size: int | None,
     ) -> PyLazyFrame: ...
     def sink_csv(
         self,

@@ -2936,6 +2936,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         compression: IpcCompression | None = "uncompressed",
         compat_level: CompatLevel | None = None,
+        record_batch_size: int | None = None,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
         credential_provider: CredentialProviderFunction
@@ -2956,6 +2957,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         compression: IpcCompression | None = "uncompressed",
         compat_level: CompatLevel | None = None,
+        record_batch_size: int | None = None,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
         credential_provider: CredentialProviderFunction
@@ -2975,6 +2977,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         compression: IpcCompression | None = "uncompressed",
         compat_level: CompatLevel | None = None,
+        record_batch_size: int | None = None,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
         credential_provider: CredentialProviderFunction
@@ -3002,6 +3005,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         compat_level
             Use a specific compatibility level
             when exporting Polars' internal data structures.
+        record_batch_size
+            Size of the record batches in number of rows.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
         maintain_order
             Maintain the order in which data is processed.
             Setting this to `False` will be slightly faster.
@@ -3144,6 +3153,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             sink_options=sink_options,
             compression=compression,
             compat_level=compat_level_py,
+            record_batch_size=record_batch_size,
         )
 
         if not lazy:

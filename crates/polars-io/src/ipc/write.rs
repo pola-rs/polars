@@ -18,6 +18,8 @@ pub struct IpcWriterOptions {
     pub compression: Option<IpcCompression>,
     /// Compatibility level
     pub compat_level: CompatLevel,
+    /// Number of rows per record batch
+    pub record_batch_size: Option<usize>,
     /// Size of each written chunk.
     pub chunk_size: IdxSize,
 }
@@ -27,6 +29,7 @@ impl Default for IpcWriterOptions {
         Self {
             compression: None,
             compat_level: CompatLevel::newest(),
+            record_batch_size: None,
             chunk_size: 1 << 18,
         }
     }
@@ -34,7 +37,9 @@ impl Default for IpcWriterOptions {
 
 impl IpcWriterOptions {
     pub fn to_writer<W: Write>(&self, writer: W) -> IpcWriter<W> {
-        IpcWriter::new(writer).with_compression(self.compression)
+        IpcWriter::new(writer)
+            .with_compression(self.compression)
+            .with_record_batch_size(self.record_batch_size)
     }
 }
 
@@ -70,6 +75,7 @@ pub struct IpcWriter<W> {
     pub(super) compression: Option<IpcCompression>,
     /// Polars' flavor of arrow. This might be temporary.
     pub(super) compat_level: CompatLevel,
+    pub(super) record_batch_size: Option<usize>,
     pub(super) parallel: bool,
     pub(super) custom_schema_metadata: Option<Arc<Metadata>>,
 }
@@ -83,6 +89,11 @@ impl<W: Write> IpcWriter<W> {
 
     pub fn with_compat_level(mut self, compat_level: CompatLevel) -> Self {
         self.compat_level = compat_level;
+        self
+    }
+
+    pub fn with_record_batch_size(mut self, record_batch_size: Option<usize>) -> Self {
+        self.record_batch_size = record_batch_size;
         self
     }
 
@@ -128,6 +139,7 @@ where
             writer,
             compression: None,
             compat_level: CompatLevel::newest(),
+            record_batch_size: None,
             parallel: true,
             custom_schema_metadata: None,
         }
