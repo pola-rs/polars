@@ -8,9 +8,6 @@ use polars_utils::binary_search::{find_first_ge_index, find_first_gt_index};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "timezones")]
-use crate::prelude::replace_time_zone;
-
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -175,8 +172,7 @@ pub fn add_business_days(
         },
         #[cfg(feature = "timezones")]
         DataType::Datetime(time_unit, Some(time_zone)) => {
-            let start_naive = replace_time_zone(
-                start.datetime().unwrap(),
+            let start_naive = start.datetime().unwrap().replace_time_zone(
                 None,
                 &StringChunked::from_iter(std::iter::once("raise")),
                 NonExistent::Raise,
@@ -195,8 +191,7 @@ pub fn add_business_days(
                 result_date.cast(&DataType::Datetime(*time_unit, None))?,
                 start_time,
             )?;
-            let result_tz_aware = replace_time_zone(
-                result_naive.datetime().unwrap(),
+            let result_tz_aware = result_naive.datetime().unwrap().replace_time_zone(
                 Some(time_zone),
                 &StringChunked::from_iter(std::iter::once("raise")),
                 NonExistent::Raise,
@@ -361,8 +356,7 @@ pub fn is_business_day(
         },
         #[cfg(feature = "timezones")]
         DataType::Datetime(_, Some(_)) => {
-            let dates_local = replace_time_zone(
-                dates.datetime().unwrap(),
+            let dates_local = dates.datetime().unwrap().replace_time_zone(
                 None,
                 &StringChunked::from_iter(std::iter::once("raise")),
                 NonExistent::Raise,

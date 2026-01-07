@@ -505,12 +505,7 @@ pub fn to_datetime(
                     ca.set_time_unit(tu);
                     match tz {
                         #[cfg(feature = "timezones")]
-                        Some(tz) => polars_ops::prelude::replace_time_zone(
-                            &ca,
-                            Some(tz),
-                            _ambiguous,
-                            NonExistent::Raise,
-                        ),
+                        Some(tz) => ca.replace_time_zone(Some(tz), _ambiguous, NonExistent::Raise),
                         _ => Ok(ca),
                     }
                 })?,
