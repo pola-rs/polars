@@ -574,7 +574,7 @@ fn test_anonymous_function_returns_scalar_all_null_20679() {
     let a = Column::new("a".into(), &[0, 0, 1]);
     let dtype = DataType::Null;
     let b = Column::new_scalar("b".into(), Scalar::new(dtype, AnyValue::Null), 3);
-    let df = DataFrame::new(vec![a, b]).unwrap();
+    let df = DataFrame::new_infer_height(vec![a, b]).unwrap();
 
     let f = move |c: &mut [Column]| reduction_function(std::mem::take(&mut c[0]));
     let dt = |_: &Schema, fs: &[Field]| Ok(fs[0].clone());
@@ -595,5 +595,5 @@ fn test_anonymous_function_returns_scalar_all_null_20679() {
         .collect()
         .unwrap();
 
-    assert_eq!(grouped_df.get_columns()[1].dtype(), &DataType::Null);
+    assert_eq!(grouped_df.columns()[1].dtype(), &DataType::Null);
 }

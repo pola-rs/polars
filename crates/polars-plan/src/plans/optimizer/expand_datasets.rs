@@ -246,9 +246,7 @@ pub(super) fn expand_datasets(
                                     .contains(&format_pl_smallstr!("{}_nc", row_index_name))
                             );
 
-                            statistics_df.clear_schema();
-
-                            unsafe { statistics_df.get_columns_mut() }.extend([
+                            unsafe { statistics_df.columns_mut() }.extend([
                                 IdxCa::from_vec(
                                     format_pl_smallstr!("{}_nc", row_index_name),
                                     vec![0],

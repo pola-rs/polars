@@ -488,7 +488,7 @@ pub fn _df_rows_to_hashes_threaded_vertical(
             .map(|df| {
                 let hb = build_hasher.clone();
                 let mut hashes = vec![];
-                columns_to_hashes(df.get_columns(), Some(hb), &mut hashes)?;
+                columns_to_hashes(df.columns(), Some(hb), &mut hashes)?;
                 Ok(UInt64Chunked::from_vec(PlSmallStr::EMPTY, hashes))
             })
             .collect::<PolarsResult<Vec<_>>>()
