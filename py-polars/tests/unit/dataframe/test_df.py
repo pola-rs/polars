@@ -1329,7 +1329,7 @@ def test_from_generator_or_iterable() -> None:
     ):
         d = iterable_to_pydf(schema=cols, **params)  # type: ignore[arg-type]
         assert expected_data == d.row_tuples()
-        assert expected_schema == list(zip(d.columns(), d.dtypes()))
+        assert expected_schema == list(zip(d.columns(), d.dtypes(), strict=True))
 
     # ref: issue #6489 (initial chunk_size cannot be smaller than 'infer_schema_length')
     df = pl.DataFrame(
@@ -2993,8 +2993,8 @@ def test_floordiv_truediv(divop: Callable[..., Any]) -> None:
         }
     )
     df_div = divop(df1, df2).rows()
-    for i, (row1, row2) in enumerate(zip(df1.rows(), df2.rows())):
-        for j, (elem1, elem2) in enumerate(zip(row1, row2)):
+    for i, (row1, row2) in enumerate(zip(df1.rows(), df2.rows(), strict=True)):
+        for j, (elem1, elem2) in enumerate(zip(row1, row2, strict=True)):
             assert divop(elem1, elem2) == df_div[i][j]
 
 

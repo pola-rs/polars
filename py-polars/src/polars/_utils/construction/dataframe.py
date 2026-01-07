@@ -130,7 +130,7 @@ def dict_to_pydf(
                                     else t[1]
                                 ),
                                 list(data.items()),
-                            ),
+                            ), strict=True,
                         )
                     )
             except FileNotFoundError:
@@ -951,7 +951,7 @@ def _establish_dataclass_or_model_schema(
             )
 
     if model_fields and len(model_fields) == len(overrides):
-        overrides = dict(zip(model_fields, overrides.values()))
+        overrides = dict(zip(model_fields, overrides.values(), strict=True))
 
     return unpack_nested, column_names, schema_overrides, overrides
 
@@ -1291,7 +1291,7 @@ def numpy_to_pydf(
                 strict=strict,
                 nan_to_null=nan_to_null,
             )._s
-            for series_name, record_name in zip(column_names, record_names)
+            for series_name, record_name in zip(column_names, record_names, strict=True)
         ]
     elif shape == (0,) and n_columns == 0:
         data_series = []

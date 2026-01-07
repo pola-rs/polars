@@ -392,7 +392,7 @@ def read_csv(
         # Map list of dtypes when used together with selected columns as a dtypes dict
         # so the dtypes are applied to the correct column instead of the first x
         # columns.
-        schema_overrides = dict(zip(columns, schema_overrides))
+        schema_overrides = dict(zip(columns, schema_overrides, strict=False))
 
     if new_columns and schema_overrides and isinstance(schema_overrides, dict):
         current_columns = None
@@ -450,7 +450,7 @@ def read_csv(
                     schema_overrides = dtype_list
 
         if current_columns and isinstance(schema_overrides, dict):
-            new_to_current = dict(zip(new_columns, current_columns))
+            new_to_current = dict(zip(new_columns, current_columns, strict=False))
             # Change new column names to current column names in dtype.
             schema_overrides = {
                 new_to_current.get(column_name, column_name): column_dtype
@@ -967,7 +967,7 @@ def read_csv_batched(
         # Map list of dtypes when used together with selected columns as a dtypes dict
         # so the dtypes are applied to the correct column instead of the first x
         # columns.
-        schema_overrides = dict(zip(columns, schema_overrides))
+        schema_overrides = dict(zip(columns, schema_overrides, strict=False))
 
     if new_columns and schema_overrides and isinstance(schema_overrides, dict):
         current_columns = None
@@ -1019,7 +1019,7 @@ def read_csv_batched(
                     schema_overrides = dtype_list
 
         if current_columns and isinstance(schema_overrides, dict):
-            new_to_current = dict(zip(new_columns, current_columns))
+            new_to_current = dict(zip(new_columns, current_columns, strict=False))
             # Change new column names to current column names in dtype.
             schema_overrides = {
                 new_to_current.get(column_name, column_name): column_dtype
@@ -1337,7 +1337,7 @@ def scan_csv(
             msg = "cannot set both `with_column_names` and `new_columns`; mutually exclusive"
             raise ValueError(msg)
         if schema_overrides and isinstance(schema_overrides, Sequence):
-            schema_overrides = dict(zip(new_columns, schema_overrides))
+            schema_overrides = dict(zip(new_columns, schema_overrides, strict=False))
 
         # wrap new column names as a callable
         def with_column_names(cols: list[str]) -> list[str]:

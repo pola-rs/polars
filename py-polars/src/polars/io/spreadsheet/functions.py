@@ -1163,7 +1163,7 @@ def _read_spreadsheet_calamine(
     if type_checks:
         apply_cast = df.select(d[0].all(ignore_nulls=True) for d in type_checks).row(0)
         if downcast := [
-            cast for apply, (_, cast) in zip(apply_cast, type_checks) if apply
+            cast for apply, (_, cast) in zip(apply_cast, type_checks, strict=True) if apply
         ]:
             df = df.with_columns(*downcast)
 
@@ -1239,7 +1239,7 @@ def _read_spreadsheet_openpyxl(
 
     dtype = String if no_inference else None
     series_data = []
-    for name, column_data in zip(header, zip(*rows_iter)):
+    for name, column_data in zip(header, zip(*rows_iter, strict=False), strict=False):
         if name or not drop_empty_cols:
             values = [cell.value for cell in column_data]
             if no_inference or (dtype := schema_overrides.get(name)) == String:  # type: ignore[assignment,arg-type]
@@ -1267,7 +1267,7 @@ def _read_spreadsheet_openpyxl(
 
     names = deduplicate_names(s.name for s in series_data)
     df = pl.DataFrame(
-        dict(zip(names, series_data)),
+        dict(zip(names, series_data, strict=True)),
         schema_overrides=schema_overrides,
         infer_schema_length=infer_schema_length,
         strict=False,

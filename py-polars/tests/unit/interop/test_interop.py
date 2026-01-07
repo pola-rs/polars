@@ -29,7 +29,7 @@ def test_arrow_list_roundtrip() -> None:
 
     assert arw.shape == tbl.shape
     assert arw.schema.names == tbl.schema.names
-    for c1, c2 in zip(arw.columns, tbl.columns):
+    for c1, c2 in zip(arw.columns, tbl.columns, strict=True):
         assert c1.to_pylist() == c2.to_pylist()
 
 
@@ -44,7 +44,7 @@ def test_arrow_null_roundtrip() -> None:
 
     assert arw.shape == tbl.shape
     assert arw.schema.names == tbl.schema.names
-    for c1, c2 in zip(arw.columns, tbl.columns):
+    for c1, c2 in zip(arw.columns, tbl.columns, strict=True):
         assert c1.to_pylist() == c2.to_pylist()
 
 
@@ -115,7 +115,7 @@ def test_from_dict() -> None:
     data = {"a": [1, 2], "b": [3, 4]}
     df = pl.from_dict(data)
     assert df.shape == (2, 2)
-    for s1, s2 in zip(list(df), [pl.Series("a", [1, 2]), pl.Series("b", [3, 4])]):
+    for s1, s2 in zip(list(df), [pl.Series("a", [1, 2]), pl.Series("b", [3, 4])], strict=True):
         assert_series_equal(s1, s2)
 
 

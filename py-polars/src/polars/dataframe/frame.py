@@ -961,7 +961,7 @@ class DataFrame:
         >>> df.schema
         Schema({'foo': Int64, 'bar': Float64, 'ham': String})
         """
-        return Schema(zip(self.columns, self.dtypes), check_dtypes=False)
+        return Schema(zip(self.columns, self.dtypes, strict=True), check_dtypes=False)
 
     def __array__(
         self,
@@ -9662,7 +9662,7 @@ class DataFrame:
 
             df = df.select(
                 s.extend_constant(next_fill, n_fill)
-                for s, next_fill in zip(df, fill_values)
+                for s, next_fill in zip(df, fill_values, strict=True)
             )
 
         if how == "horizontal":
@@ -9867,7 +9867,7 @@ class DataFrame:
                     raise ValueError(msg)
                 names = self.select(by_parsed).unique(maintain_order=True).rows()
 
-            return dict(zip(names, partitions))
+            return dict(zip(names, partitions, strict=True))
 
         return partitions
 
@@ -11474,7 +11474,7 @@ class DataFrame:
         if index is not None:
             row = self._df.row_tuple(index)
             if named:
-                return dict(zip(self.columns, row))
+                return dict(zip(self.columns, row, strict=True))
             else:
                 return row
 
@@ -11493,7 +11493,7 @@ class DataFrame:
 
             row = rows[0]
             if named:
-                return dict(zip(self.columns, row))
+                return dict(zip(self.columns, row, strict=True))
             else:
                 return row
         else:
@@ -11726,7 +11726,7 @@ class DataFrame:
             data_cols = [k for k in self.schema if k not in key]
             values = self.select(data_cols)
 
-        zipped = zip(keys, values.iter_rows(named=named))  # type: ignore[call-overload]
+        zipped = zip(keys, values.iter_rows(named=named), strict=True)  # type: ignore[call-overload]
 
         # if unique, we expect to write just one entry per key; otherwise, we're
         # returning a list of rows for each key, so append into a defaultdict.

@@ -142,7 +142,7 @@ class Schema(BaseSchema):
             return False
         if len(self) != len(other):
             return False
-        for (nm1, tp1), (nm2, tp2) in zip(self.items(), other.items()):
+        for (nm1, tp1), (nm2, tp2) in zip(self.items(), other.items(), strict=True):
             if nm1 != nm2 or not tp1.is_(tp2):
                 return False
         return True

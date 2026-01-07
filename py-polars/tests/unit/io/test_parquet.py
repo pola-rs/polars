@@ -2007,7 +2007,7 @@ def test_allow_missing_columns(
     dfs = [pl.DataFrame({"a": 1, "b": 1}), pl.DataFrame({"a": 2})]
     paths = [tmp_path / "1", tmp_path / "2"]
 
-    for df, path in zip(dfs, paths):
+    for df, path in zip(dfs, paths, strict=True):
         df.write_parquet(path)
 
     expected_full = pl.DataFrame({"a": [1, 2], "b": [1, None]})

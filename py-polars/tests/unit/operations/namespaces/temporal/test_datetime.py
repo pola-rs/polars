@@ -1401,7 +1401,7 @@ def test_series_duration_timeunits(
         for us in micros
         if isinstance(us, int)
     ):
-        for ns, us in zip(s.dt.total_nanoseconds(), micros):
+        for ns, us in zip(s.dt.total_nanoseconds(), micros, strict=True):
             assert ns == (us * 1000)
 
 

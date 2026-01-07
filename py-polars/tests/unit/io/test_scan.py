@@ -479,7 +479,7 @@ def test_scan_directory(
         tmp_path / "dir/data.bin",
     ]
 
-    for df, path in zip(dfs, paths):
+    for df, path in zip(dfs, paths, strict=True):
         path.parent.mkdir(exist_ok=True)
         write_func(df, path)
 

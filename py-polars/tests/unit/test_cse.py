@@ -668,7 +668,7 @@ def test_cse_14047() -> None:
     count_diff_exprs = [count_diff(pl.col("price"), span[0], span[1]) for span in spans]
     s_per_count_exprs = [
         s_per_count(count_diff, span).alias(f"zz_{span}")
-        for count_diff, span in zip(count_diff_exprs, spans)
+        for count_diff, span in zip(count_diff_exprs, spans, strict=True)
     ]
 
     exprs = count_diff_exprs + s_per_count_exprs

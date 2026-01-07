@@ -1145,7 +1145,7 @@ def test_join_empty_literal_17027() -> None:
     ("left_on", "right_on"),
     zip(
         [pl.col("a"), pl.col("a").sort(), [pl.col("a"), pl.col("b")]],
-        [pl.col("a").slice(0, 2) * 2, pl.col("b"), [pl.col("a"), pl.col("b").head()]],
+        [pl.col("a").slice(0, 2) * 2, pl.col("b"), [pl.col("a"), pl.col("b").head()]], strict=False,
     ),
 )
 def test_join_non_elementwise_keys_raises(left_on: pl.Expr, right_on: pl.Expr) -> None:

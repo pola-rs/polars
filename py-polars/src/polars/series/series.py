@@ -493,7 +493,7 @@ class Series:
         keys = ("values", "validity", "offsets")
         return {  # type: ignore[return-value]
             k: self._from_pyseries(b) if b is not None else b
-            for k, b in zip(keys, buffers)
+            for k, b in zip(keys, buffers, strict=True)
         }
 
     @classmethod
