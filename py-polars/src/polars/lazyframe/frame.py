@@ -3146,7 +3146,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         from deltalake import DeltaTable, write_deltalake
 
-        _check_for_unsupported_types(self.dtypes)
+        _check_for_unsupported_types(self.collect_schema().dtypes())
 
         if isinstance(target, (str, Path)):
             target = _resolve_delta_lake_uri(str(target), strict=False)
