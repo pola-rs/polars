@@ -3067,3 +3067,15 @@ def test_provided_schema_mismatch_truncate(read_fn: str) -> None:
     )
     expected = [pl.Series("A", [1])]
     assert_frame_equal(df, pl.DataFrame(expected))
+
+
+def test_invalid_utf8_in_schema() -> None:
+    csv_str = b"\xef\xff\xbdA,B\n3,\xe0\x80\x80\n-6,x3"
+    lf = pl.scan_csv(csv_str)
+
+    # Schema inference should not fail because of invalid utf-8.
+    assert lf.collect_schema() == {"���A": pl.Int64, "B": pl.String}
+
+    # But actual execution should.
+    with pytest.raises(pl.exceptions.ComputeError):
+        lf.collect()
