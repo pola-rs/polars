@@ -35,16 +35,6 @@ enum NeedMore {
     Finished,
 }
 
-impl NeedMore {
-    fn flip(self) -> Self {
-        match self {
-            NeedMore::Left => NeedMore::Right,
-            NeedMore::Right => NeedMore::Left,
-            other => other,
-        }
-    }
-}
-
 #[derive(Debug)]
 struct SideParams {
     input_schema: SchemaRef,
@@ -62,6 +52,16 @@ struct MergeJoinParams {
     key_nulls_last: bool,
     use_row_encoding: bool,
     args: JoinArgs,
+}
+
+impl MergeJoinParams {
+    fn right_is_build(&self) -> Option<bool> {
+        match self.args.maintain_order {
+            MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft => Some(true),
+            MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight => Some(false),
+            MaintainOrderJoin::None => None,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -350,24 +350,33 @@ struct FindMergeableParams<'sp, 'p> {
     params: &'p MergeJoinParams,
 }
 
-impl FindMergeableParams<'_, '_> {
-    fn flip(mut self) -> Self {
-        swap(&mut self.left_done, &mut self.right_done);
-        swap(&mut self.left_params, &mut self.right_params);
-        self
-    }
-}
-
 fn find_mergeable(
     left: &mut DataFrameBuffer,
     right: &mut DataFrameBuffer,
     search_limit: &mut usize,
     fmp: FindMergeableParams,
 ) -> PolarsResult<Either<UnitVec<(DataFrameBuffer, DataFrameBuffer)>, NeedMore>> {
+    let (left_mergeable, right_mergeable) =
+        match find_mergeable_limiting(left, right, search_limit, fmp.clone())? {
+            Left((left, right)) => (left, right),
+            Right(need_more) => return Ok(Right(need_more)),
+        };
+    assert!(!left_mergeable.is_empty() || !right_mergeable.is_empty());
+
+    let partitions = find_mergeable_partition(left_mergeable, right_mergeable, fmp)?;
+    Ok(Left(partitions))
+}
+
+fn find_mergeable_limiting(
+    left: &mut DataFrameBuffer,
+    right: &mut DataFrameBuffer,
+    search_limit: &mut usize,
+    fmp: FindMergeableParams,
+) -> PolarsResult<Either<(DataFrameBuffer, DataFrameBuffer), NeedMore>> {
     const SEARCH_LIMIT_BUMP_FACTOR: usize = 2;
     let morsel_size = get_ideal_morsel_size();
     debug_assert!(*search_limit >= morsel_size);
-    let mut mergeable = find_mergeable_flip(left, right, *search_limit, fmp.clone())?;
+    let mut mergeable = find_mergeable_search(left, right, *search_limit, fmp.clone())?;
     while match mergeable {
         Right(NeedMore::Left | NeedMore::Both) if *search_limit < left.len() => true,
         Right(NeedMore::Right | NeedMore::Both) if *search_limit < right.len() => true,
@@ -375,7 +384,7 @@ fn find_mergeable(
     } {
         // Exponential increase
         *search_limit *= SEARCH_LIMIT_BUMP_FACTOR;
-        mergeable = find_mergeable_flip(left, right, *search_limit, fmp.clone())?;
+        mergeable = find_mergeable_search(left, right, *search_limit, fmp.clone())?;
     }
     if mergeable.is_left() {
         *search_limit /= SEARCH_LIMIT_BUMP_FACTOR;
@@ -384,59 +393,58 @@ fn find_mergeable(
     Ok(mergeable)
 }
 
-fn find_mergeable_flip(
-    left: &mut DataFrameBuffer,
-    right: &mut DataFrameBuffer,
-    search_limit: usize,
-    fmp: FindMergeableParams,
-) -> PolarsResult<Either<UnitVec<(DataFrameBuffer, DataFrameBuffer)>, NeedMore>> {
-    let mergeable = if fmp.params.args.how == JoinType::Right {
-        match find_mergeable_partition(right, left, search_limit, fmp.flip())? {
-            Left(mut partitions) => {
-                partitions.iter_mut().for_each(|(x1, x2)| swap(x1, x2));
-                Left(partitions)
-            },
-            Right(side) => Right(side.flip()),
-        }
-    } else {
-        find_mergeable_partition(left, right, search_limit, fmp)?
-    };
-    Ok(mergeable)
-}
-
 fn find_mergeable_partition(
-    left: &mut DataFrameBuffer,
-    right: &mut DataFrameBuffer,
-    search_limit: usize,
+    mut build: DataFrameBuffer,
+    mut probe: DataFrameBuffer,
     fmp: FindMergeableParams,
-) -> PolarsResult<Either<UnitVec<(DataFrameBuffer, DataFrameBuffer)>, NeedMore>> {
+) -> PolarsResult<UnitVec<(DataFrameBuffer, DataFrameBuffer)>> {
     let morsel_size = get_ideal_morsel_size();
-    let is_full_join = fmp.params.args.how == JoinType::Full;
-    let mergeable = find_mergeable_search(left, right, search_limit, fmp)?;
-    let (left, right) = match mergeable {
-        Left((left, right)) => (left, right),
-        Right(need_more) => return Ok(Right(need_more)),
-    };
-    assert!(
-        !left.is_empty() || !right.is_empty(),
-        "search result is empty"
+    let emit_unmatched_left = fmp.left_params.emit_unmatched;
+    let emit_unmatched_right = fmp.right_params.emit_unmatched;
+    let maintain_order_left = matches!(
+        fmp.params.args.maintain_order,
+        MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight
     );
-    let chunks_count =
-        (left.len() * right.len() + left.len() + right.len()).div_ceil(morsel_size.pow(2));
-    if chunks_count <= 1 || is_full_join {
-        // TODO: In the case of a FULL join, the join cores would emit duplicate rows for unmatched
-        // rows on the right side. We should fix this and enable partitioning for FULL joins too
-        return Ok(Left(UnitVec::from([(left, right)])));
+    let maintain_order_right = matches!(
+        fmp.params.args.maintain_order,
+        MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft
+    );
+    let build_side_left = emit_unmatched_left || maintain_order_left;
+    let build_side_right = emit_unmatched_right || maintain_order_right;
+    if build_side_left && build_side_right {
+        // TODO: We may be able to partition a subset of these cases (e.g. for FULL joins)
+        return Ok(UnitVec::from([(build, probe)]));
     }
-    let chunk_size = left.len().div_ceil(chunks_count);
+
+    let partition_count =
+        (build.len() * probe.len() + build.len() + probe.len()).div_ceil(morsel_size.pow(2));
+    if partition_count <= 1 {
+        return Ok(UnitVec::from([(build, probe)]));
+    }
+
+    if build_side_right {
+        swap(&mut build, &mut probe);
+    }
+
+    let chunk_size = build.len().div_ceil(partition_count);
     let mut offset = 0;
-    let mut partitioned = UnitVec::with_capacity(chunks_count);
-    while offset < left.len() {
-        let left_chunk = left.clone().slice(offset, chunk_size);
-        partitioned.push((left_chunk, right.clone()));
+    let mut partitions = UnitVec::with_capacity(partition_count);
+    while offset < build.len() - chunk_size {
+        let build_chunk = build.clone().slice(offset, chunk_size);
+        partitions.push((build_chunk, probe.clone()));
         offset += chunk_size;
     }
-    Ok(Left(partitioned))
+    // Always make sure that there is at least one partition, even if the build side is empty.
+    let build_chunk = build.slice(offset, chunk_size);
+    partitions.push((build_chunk, probe));
+
+    if build_side_right {
+        for (l, r) in partitions.iter_mut() {
+            swap(l, r);
+        }
+    }
+
+    Ok(partitions)
 }
 
 fn find_mergeable_search(
@@ -657,14 +665,7 @@ async fn compute_join(
         .column(&params.right.key_col)
         .unwrap()
         .as_materialized_series();
-
-    let right_build_maintain_order = matches!(
-        params.args.maintain_order,
-        MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft,
-    );
-    let right_build_optimization = params.args.maintain_order == MaintainOrderJoin::None
-        && right_key.null_count() > left_key.null_count();
-    let right_is_build = right_build_maintain_order || right_build_optimization;
+    let right_is_build = params.right_is_build().unwrap_or(false);
 
     arenas.matched_probeside.clear();
     if right_is_build {
@@ -712,7 +713,6 @@ async fn compute_join(
             &mut arenas.df_builders,
             params,
         )?;
-
         if !df.is_empty() {
             let morsel = Morsel::new(df, seq, source_token.clone());
             if matched_send.send(morsel).await.is_err() {
@@ -841,11 +841,7 @@ fn gather_and_postprocess(
     }
 
     // Rename any right columns to "{}_right"
-    let left_cols: PlHashSet<PlSmallStr> = left
-        .column_iter()
-        .map(Column::name)
-        .cloned()
-        .collect::<PlHashSet<_>>();
+    let left_cols: PlHashSet<_> = left.column_iter().map(Column::name).cloned().collect();
     let right_cols_vec = right.get_column_names_owned();
     let renames = right_cols_vec
         .iter()

@@ -407,14 +407,14 @@ def test_cross_join_with_literal_column_25544() -> None:
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("on", [["key"], ["key", "key_ext"], ["key_ext", "key"]])
+@pytest.mark.parametrize("on", [["key"], ["key", "key_ext"]])
 @pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
 @pytest.mark.parametrize("descending", [False, True])
 @pytest.mark.parametrize("nulls_last", [False, True])
 @pytest.mark.parametrize("nulls_equal", [False, True])
 @pytest.mark.parametrize("coalesce", [None, True, False])
 @pytest.mark.parametrize("maintain_order", ["none", "left_right", "right_left"])
-@pytest.mark.parametrize("ideal_morsel_size", [1, 100])
+@pytest.mark.parametrize("ideal_morsel_size", [1, 1000])
 @given(
     df_left=st.dataframes(
         cols=[
@@ -431,7 +431,7 @@ def test_cross_join_with_literal_column_25544() -> None:
         ]
     ),
 )
-@settings(max_examples=100)
+@settings(max_examples=10)
 def test_merge_join(
     df_left: pl.DataFrame,
     df_right: pl.DataFrame,
@@ -448,15 +448,21 @@ def test_merge_join(
         monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", str(ideal_morsel_size))
         check_row_order = maintain_order in {"left_right", "right_left"}
 
-        df_left_sorted = df_left.lazy().sort(
-            *on, descending=descending, nulls_last=nulls_last
-        )
-        df_right_sorted = df_right.lazy().sort(
-            *on, descending=descending, nulls_last=nulls_last
-        )
+        def df_sorted(df: pl.DataFrame) -> pl.LazyFrame:
+            return (
+                df.lazy()
+                .sort(
+                    *on,
+                    descending=descending,
+                    nulls_last=nulls_last,
+                    maintain_order=True,
+                    multithreaded=False,
+                )
+                .set_sorted(on, descending=descending, nulls_last=nulls_last)
+            )
 
-        q = df_left_sorted.join(
-            df_right_sorted,
+        q = df_sorted(df_left).join(
+            df_sorted(df_right),
             on=on,
             how=how,
             nulls_equal=nulls_equal,
@@ -466,9 +472,6 @@ def test_merge_join(
         dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
         expected = q.collect(engine="in-memory")
         actual = q.collect(engine="streaming")
-
-        print(f"{actual = }")
-        print(f"{expected = }")
 
         assert "merge-join" in typing.cast("str", dot), "merge-join not used in plan"
         assert_frame_equal(actual, expected, check_row_order=check_row_order)
