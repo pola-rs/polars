@@ -156,11 +156,10 @@ impl CompressedReader {
 
         let mut buf = Vec::new();
         if self.is_compressed() {
-            let reserve_size = if read_size == usize::MAX {
-                self.total_len_estimate()
-            } else {
-                prev_len.saturating_add(read_size)
-            };
+            let reserve_size = cmp::min(
+                prev_len.saturating_add(read_size),
+                self.total_len_estimate().saturating_mul(2),
+            );
             buf.reserve_exact(reserve_size);
             buf.extend_from_slice(prev_leftover);
         }
