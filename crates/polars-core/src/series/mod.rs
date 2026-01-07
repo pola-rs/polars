@@ -277,7 +277,7 @@ impl Series {
 
     pub fn into_frame(self) -> DataFrame {
         // SAFETY: A single-column dataframe cannot have length mismatches or duplicate names
-        unsafe { DataFrame::new_no_checks(self.len(), vec![self.into()]) }
+        unsafe { DataFrame::new_unchecked(self.len(), vec![self.into()]) }
     }
 
     /// Rename series.

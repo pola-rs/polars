@@ -149,7 +149,7 @@ impl ComputeNode for ReduceNode {
                         })
                     })
                     .try_collect_vec()?;
-                let out = DataFrame::new(columns).unwrap();
+                let out = unsafe { DataFrame::new_unchecked(1, columns) };
 
                 self.state = ReduceState::Source(Some(out));
             },

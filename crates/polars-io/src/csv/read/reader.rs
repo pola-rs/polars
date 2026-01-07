@@ -153,9 +153,9 @@ where
         // As that leads to great memory overhead.
         if rechunk && df.first_col_n_chunks() > 1 {
             if low_memory {
-                df.as_single_chunk();
+                df.rechunk_mut();
             } else {
-                df.as_single_chunk_par();
+                df.rechunk_mut_par();
             }
         }
 

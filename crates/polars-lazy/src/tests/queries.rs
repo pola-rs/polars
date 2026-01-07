@@ -445,7 +445,7 @@ fn test_lazy_query_10() {
         TimeUnit::Nanoseconds,
     )
     .into_column();
-    let df = DataFrame::new(vec![x, y]).unwrap();
+    let df = DataFrame::new_infer_height(vec![x, y]).unwrap();
     let out = df
         .lazy()
         .select(&[(col("x") - col("y")).alias("z")])
@@ -482,7 +482,7 @@ fn test_lazy_query_10() {
         TimeUnit::Nanoseconds,
     )
     .into_column();
-    let df = DataFrame::new(vec![x, y]).unwrap();
+    let df = DataFrame::new_infer_height(vec![x, y]).unwrap();
     let out = df
         .lazy()
         .select(&[(col("x") - col("y")).alias("z")])
@@ -512,7 +512,7 @@ fn test_lazy_query_7() {
         NaiveDateTime::new(date, NaiveTime::from_hms_opt(12, 5, 0).unwrap()),
     ];
     let data = vec![Some(1.), Some(2.), Some(3.), Some(4.), None, None];
-    let df = DataFrame::new(vec![
+    let df = DataFrame::new_infer_height(vec![
         DatetimeChunked::from_naive_datetime("date".into(), dates, TimeUnit::Nanoseconds)
             .into_column(),
         Column::new("data".into(), data),
@@ -542,7 +542,7 @@ fn test_lazy_query_7() {
 #[test]
 fn test_lazy_shift_and_fill_all() {
     let data = &[1, 2, 3];
-    let df = DataFrame::new(vec![Column::new("data".into(), data)]).unwrap();
+    let df = DataFrame::new_infer_height(vec![Column::new("data".into(), data)]).unwrap();
     let out = df
         .lazy()
         .with_column(col("data").shift(lit(1)).fill_null(lit(0)).alias("output"))
@@ -1152,7 +1152,7 @@ fn test_filter_lit() {
     // failed due to broadcasting filters and splitting threads.
     let iter = (0..100).map(|i| ('A'..='Z').nth(i % 26).unwrap().to_string());
     let a = Series::from_iter(iter).into_column();
-    let df = DataFrame::new([a].into()).unwrap();
+    let df = DataFrame::new_infer_height([a].into()).unwrap();
 
     let out = df.lazy().filter(lit(true)).collect().unwrap();
     assert_eq!(out.shape(), (100, 1));
@@ -1411,7 +1411,7 @@ fn test_lazy_ternary_predicate_pushdown() -> PolarsResult<()> {
         .collect()?;
 
     assert_eq!(
-        Vec::from(out.get_columns()[0].i32()?),
+        Vec::from(out.columns()[0].i32()?),
         &[Some(1), Some(2), Some(3)]
     );
 
@@ -1514,7 +1514,7 @@ fn test_list_in_select_context() -> PolarsResult<()> {
     builder.append_series(s.as_materialized_series()).unwrap();
     let expected = builder.finish().into_column();
 
-    let df = DataFrame::new(vec![s])?;
+    let df = DataFrame::new_infer_height(vec![s])?;
 
     let out = df.lazy().select([col("a").implode()]).collect()?;
 
@@ -1590,7 +1590,7 @@ fn test_fill_nan() -> PolarsResult<()> {
     let s0 = Column::new("date".into(), &[1, 2, 3]).cast(&DataType::Date)?;
     let s1 = Column::new("float".into(), &[Some(1.0), Some(f32::NAN), Some(3.0)]);
 
-    let df = DataFrame::new(vec![s0, s1])?;
+    let df = DataFrame::new_infer_height(vec![s0, s1])?;
     let out = df.lazy().fill_nan(Null {}.lit()).collect()?;
     let out = out.column("float")?;
     assert_eq!(Vec::from(out.f32()?), &[Some(1.0), None, Some(3.0)]);
@@ -1983,7 +1983,7 @@ fn test_sort_maintain_order_true() -> PolarsResult<()> {
 
 #[test]
 fn test_over_with_options_empty_join() -> PolarsResult<()> {
-    let empty_df = DataFrame::new(vec![
+    let empty_df = DataFrame::new_infer_height(vec![
         Series::new_empty("a".into(), &DataType::Int32).into(),
         Series::new_empty("b".into(), &DataType::Int32).into(),
     ])?;
@@ -2010,7 +2010,7 @@ fn test_over_with_options_empty_join() -> PolarsResult<()> {
 fn test_named_udfs() -> PolarsResult<()> {
     use polars_plan::dsl::named_serde::{ExprRegistry, set_named_serde_registry};
 
-    let lf = DataFrame::new(vec![Column::new("a".into(), vec![1, 2, 3, 4])])?.lazy();
+    let lf = DataFrame::new_infer_height(vec![Column::new("a".into(), vec![1, 2, 3, 4])])?.lazy();
 
     struct X;
     impl ExprRegistry for X {
@@ -2039,7 +2039,7 @@ fn test_named_udfs() -> PolarsResult<()> {
 
     assert_eq!(
         lf.select(&[expr]).collect()?,
-        DataFrame::new(vec![Column::new("a".into(), vec![2, 4, 6, 8])])?,
+        DataFrame::new_infer_height(vec![Column::new("a".into(), vec![2, 4, 6, 8])])?,
     );
 
     Ok(())

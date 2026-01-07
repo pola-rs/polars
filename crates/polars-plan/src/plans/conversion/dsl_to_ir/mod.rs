@@ -755,14 +755,14 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             polars_ensure!(on.len() == on_columns.width(), InvalidOperation: "`pivot` expected `on` and `on_columns` to have the same amount of columns.");
             if on.len() > 1 {
                 polars_ensure!(
-                    on_columns.get_columns().iter().zip(on.iter()).all(|(c, o)| o == c.name()),
+                    on_columns.columns().iter().zip(on.iter()).all(|(c, o)| o == c.name()),
                     InvalidOperation: "`pivot` has mismatching column names between `on` and `on_columns`."
                 );
             }
             polars_ensure!(!values.is_empty(), InvalidOperation: "`pivot` called without `values` columns.");
 
             let on_titles = if on_columns.width() == 1 {
-                on_columns.get_columns()[0].cast(&DataType::String)?
+                on_columns.columns()[0].cast(&DataType::String)?
             } else {
                 on_columns
                     .as_ref()
@@ -836,7 +836,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     }
 
                     let predicate = if on.len() == 1 {
-                        on_predicate(&on[0], &on_columns.get_columns()[0], i, ctxt.expr_arena)
+                        on_predicate(&on[0], &on_columns.columns()[0], i, ctxt.expr_arena)
                     } else {
                         AExprBuilder::function(
                             on.iter()
@@ -844,7 +844,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                                 .map(|(j, on_col)| {
                                     on_predicate(
                                         on_col,
-                                        &on_columns.get_columns()[j],
+                                        &on_columns.columns()[j],
                                         i,
                                         ctxt.expr_arena,
                                     )

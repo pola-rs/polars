@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 import decimal
 import functools
-from typing import Any, Literal, Optional, Union, cast
+from typing import Any, Literal, cast
 
 import pytest
 from hypothesis import example, given
@@ -14,21 +14,20 @@ import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes, series
 
-Element = Optional[
-    Union[
-        bool,
-        int,
-        float,
-        str,
-        decimal.Decimal,
-        datetime.date,
-        datetime.datetime,
-        datetime.time,
-        datetime.timedelta,
-        list[Any],
-        dict[Any, Any],
-    ]
-]
+Element = (
+    None
+    | bool
+    | int
+    | float
+    | str
+    | decimal.Decimal
+    | datetime.date
+    | datetime.datetime
+    | datetime.time
+    | datetime.timedelta
+    | list[Any]
+    | dict[Any, Any]
+)
 OrderSign = Literal[-1, 0, 1]
 
 
@@ -84,7 +83,7 @@ def elem_order_sign(
         lhs_b: bytes = lhs
         rhs_b: bytes = rhs
 
-        for lh, rh in zip(lhs_b, rhs_b):
+        for lh, rh in zip(lhs_b, rhs_b, strict=False):
             o = elem_order_sign(lh, rh, descending=descending, nulls_last=nulls_last)
             if o != 0:
                 return o
@@ -96,7 +95,7 @@ def elem_order_sign(
     elif isinstance(lhs, str) and isinstance(rhs, str):
         return -1 if (lhs < rhs) ^ descending else 1
     elif isinstance(lhs, list) and isinstance(rhs, list):
-        for lh, rh in zip(lhs, rhs):
+        for lh, rh in zip(lhs, rhs, strict=False):
             # Nulls lasts is set to descending for nested values. See #22557.
             o = elem_order_sign(lh, rh, descending=descending, nulls_last=descending)
             if o != 0:
@@ -107,9 +106,7 @@ def elem_order_sign(
         else:
             return -1 if (len(lhs) < len(rhs)) ^ descending else 1
     elif isinstance(lhs, dict) and isinstance(rhs, dict):
-        assert len(lhs) == len(rhs)
-
-        for lh, rh in zip(lhs.values(), rhs.values()):
+        for lh, rh in zip(lhs.values(), rhs.values(), strict=True):
             # Nulls lasts is set to descending for nested values. See #22557.
             o = elem_order_sign(lh, rh, descending=descending, nulls_last=descending)
             if o != 0:
@@ -127,9 +124,7 @@ def tuple_order(
     descending: list[bool],
     nulls_last: list[bool],
 ) -> OrderSign:
-    assert len(lhs) == len(rhs)
-
-    for lh, rh, dsc, nl in zip(lhs, rhs, descending, nulls_last):
+    for lh, rh, dsc, nl in zip(lhs, rhs, descending, nulls_last, strict=True):
         o = elem_order_sign(lh, rh, descending=dsc, nulls_last=nl)
         if o != 0:
             return o
@@ -246,7 +241,7 @@ def assert_order_series(
 
             order = [
                 elem_order_sign(lh, rh, descending=descending, nulls_last=nulls_last)
-                for (lh, rh) in zip(lhs_s, rhs_s)
+                for (lh, rh) in zip(lhs_s, rhs_s, strict=True)
             ]
 
             assert_series_equal(

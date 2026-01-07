@@ -134,7 +134,7 @@ def test_map_groups_object_output() -> None:
     result = df.group_by("groups").agg(
         pl.map_groups(
             [pl.col("dates"), pl.col("names")],
-            lambda s: Foo(dict(zip(s[0], s[1]))),
+            lambda s: Foo(dict(zip(s[0], s[1], strict=True))),
             return_dtype=pl.Object,
             returns_scalar=True,
         )

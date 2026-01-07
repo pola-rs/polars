@@ -163,7 +163,7 @@ impl SinkNode for PartitionByKeySinkNode {
                         let partitions = partitions
                             .into_iter()
                             .map(|mut df| {
-                                let keys = df.select_columns(key_cols.iter().cloned())?;
+                                let keys = df.select_to_vec(key_cols.iter().cloned())?;
                                 let keys = keys
                                     .into_iter()
                                     .map(|c| c.head(Some(1)))

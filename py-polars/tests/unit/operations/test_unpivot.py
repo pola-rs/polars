@@ -117,7 +117,7 @@ def test_unpivot_categorical() -> None:
 
 
 def test_unpivot_index_not_found_23165() -> None:
-    with pytest.raises(pl.exceptions.SchemaFieldNotFoundError):
+    with pytest.raises(pl.exceptions.ColumnNotFoundError):
         pl.DataFrame({"a": [1]}).unpivot(index="b")
 
 

@@ -175,9 +175,9 @@ impl SinkNode for PartedPartitionSinkNode {
 
                     let mut c = if key_cols.len() == 1 {
                         let idx = df.try_get_column_index(&key_cols[0])?;
-                        df.get_columns()[idx].clone()
+                        df.columns()[idx].clone()
                     } else {
-                        let columns = df.select_columns(key_cols.iter().cloned())?;
+                        let columns = df.select_to_vec(key_cols.iter().cloned())?;
                         _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, &columns)?.into_column()
                     };
 
@@ -219,7 +219,7 @@ impl SinkNode for PartedPartitionSinkNode {
                         let current_sink = match current_sink_opt.as_mut() {
                             Some(c) => c,
                             None => {
-                                let keys = parted_df.select_columns(key_cols.iter().cloned())?;
+                                let keys = parted_df.select_to_vec(key_cols.iter().cloned())?;
                                 let result = open_new_sink(
                                     base_path.as_ref().as_ref(),
                                     file_path_cb.as_ref(),
