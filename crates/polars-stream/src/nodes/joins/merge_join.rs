@@ -933,6 +933,11 @@ fn compute_join_dispatch(
         DataType::Float16 => dispatch!(lk.f16().unwrap(), rk.f16().unwrap()),
         DataType::Float32 => dispatch!(lk.f32().unwrap(), rk.f32().unwrap()),
         DataType::Float64 => dispatch!(lk.f64().unwrap(), rk.f64().unwrap()),
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(_, _) => dispatch!(
+            lk.decimal().unwrap().physical(),
+            rk.decimal().unwrap().physical()
+        ),
         DataType::String => dispatch!(lk.str().unwrap(), rk.str().unwrap()),
         DataType::Binary => dispatch!(lk.binary().unwrap(), rk.binary().unwrap()),
         DataType::BinaryOffset => {
@@ -940,8 +945,6 @@ fn compute_join_dispatch(
         },
         #[cfg(feature = "dtype-date")]
         DataType::Date => dispatch!(lk.date().unwrap().physical(), rk.date().unwrap().physical()),
-        #[cfg(feature = "dtype-time")]
-        DataType::Time => dispatch!(lk.time().unwrap().physical(), rk.time().unwrap().physical()),
         #[cfg(feature = "dtype-datetime")]
         DataType::Datetime(_, _) => dispatch!(
             lk.datetime().unwrap().physical(),
@@ -952,10 +955,18 @@ fn compute_join_dispatch(
             lk.duration().unwrap().physical(),
             rk.duration().unwrap().physical()
         ),
-        #[cfg(feature = "dtype-decimal")]
-        DataType::Decimal(_, _) => dispatch!(
-            lk.decimal().unwrap().physical(),
-            rk.decimal().unwrap().physical()
+        #[cfg(feature = "dtype-time")]
+        DataType::Time => dispatch!(lk.time().unwrap().physical(), rk.time().unwrap().physical()),
+        DataType::Null => compute_join_kernel_nullkeys(
+            lk.len(),
+            rk.len(),
+            gather_left,
+            gather_right,
+            matched_right,
+            current_offset,
+            left_sp,
+            right_sp,
+            params,
         ),
         #[cfg(feature = "dtype-categorical")]
         dt @ (DataType::Enum(_, _) | DataType::Categorical(_, _)) => {
@@ -1046,6 +1057,46 @@ where
             gather_right.push(IdxSize::MAX);
         }
         *current_offset += 1;
+    }
+    true
+}
+
+#[allow(clippy::mut_range_bound, clippy::too_many_arguments)]
+fn compute_join_kernel_nullkeys(
+    left_n: usize,
+    right_n: usize,
+    gather_left: &mut Vec<IdxSize>,
+    gather_right: &mut Vec<IdxSize>,
+    matched_right: &mut MutableBitmap,
+    current_offset: &mut usize,
+    left_sp: &SideParams,
+    right_sp: &SideParams,
+    params: &MergeJoinParams,
+) -> bool {
+    debug_assert!(gather_left.is_empty());
+    debug_assert!(gather_right.is_empty());
+    if right_sp.emit_unmatched {
+        debug_assert!(matched_right.len() == right_n);
+    }
+    if !params.args.nulls_equal {
+        return true;
+    }
+
+    for idxl in *current_offset..left_n {
+        gather_left.push(idxl as IdxSize);
+        for idxr in 0..right_n {
+            gather_right.push(idxr as IdxSize);
+            if right_sp.emit_unmatched {
+                matched_right.set(idxr, true);
+            }
+        }
+        if left_sp.emit_unmatched && right_n == 0 {
+            gather_right.push(IdxSize::MAX);
+        }
+        *current_offset += 1;
+        if gather_left.len() >= get_ideal_morsel_size() {
+            return false;
+        }
     }
     true
 }

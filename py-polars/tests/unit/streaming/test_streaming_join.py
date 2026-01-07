@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import typing
-from datetime import datetime
-from typing import TYPE_CHECKING, Literal
+from datetime import datetime, timedelta
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 import pandas as pd
@@ -475,3 +475,76 @@ def test_merge_join(
 
         assert "merge-join" in typing.cast("str", dot), "merge-join not used in plan"
         assert_frame_equal(actual, expected, check_row_order=check_row_order)
+
+
+@pytest.mark.parametrize(
+    ("keys", "dtype"),
+    [
+        ([False, True, False], pl.Boolean),
+        ([1, 3, 2], pl.Int8),
+        ([1, 3, 2], pl.Int16),
+        ([1, 3, 2], pl.Int32),
+        ([1, 3, 2], pl.Int64),
+        ([1, 3, 2], pl.Int128),
+        ([1, 3, 2], pl.UInt8),
+        ([1, 3, 2], pl.UInt16),
+        ([1, 3, 2], pl.UInt32),
+        ([1, 3, 2], pl.UInt64),
+        ([1, 3, 2], pl.UInt128),
+        ([1.0, 3.0, 2.0], pl.Float16),
+        ([1.0, 3.0, 2.0], pl.Float32),
+        ([1.0, 3.0, 2.0], pl.Float64),
+        (["a", "b", "c"], pl.String),
+        ([b"a", b"b", b"c"], pl.Binary),
+        ([datetime(2024, 1, x) for x in [1, 3, 2]], pl.Date),
+        ([datetime(2024, 1, x, 12, 0) for x in [1, 3, 2]], pl.Time),
+        ([datetime(2024, 1, x, 12, 0) for x in [1, 3, 2]], pl.Datetime),
+        ([timedelta(days=x) for x in [1, 3, 2]], pl.Duration),
+        ([1, 3, 2], pl.Decimal),
+        ([pl.Null, pl.Null, pl.Null], pl.Null),
+        (["a", "c", "b"], pl.Enum(["a", "b", "c"])),
+        (["a", "c", "b"], pl.Categorical),
+    ],
+)
+def test_join_dtypes(keys: list[Any], dtype: pl.DataType) -> None:
+    df_left = pl.DataFrame({"key": pl.Series("key", keys[:2], dtype=dtype)})
+    df_right = pl.DataFrame({"key": pl.Series("key", keys[2:], dtype=dtype)})
+
+    def df_sorted(df: pl.DataFrame) -> pl.LazyFrame:
+        return (
+            df.lazy()
+            .sort(
+                "key",
+                maintain_order=True,
+                multithreaded=False,
+            )
+            .set_sorted("key")
+        )
+
+    q_hashjoin = df_left.lazy().join(
+        df_right.lazy(),
+        on="key",
+        how="inner",
+        maintain_order="none",
+    )
+    dot = q_hashjoin.show_graph(
+        engine="streaming", plan_stage="physical", raw_output=True
+    )
+    expected = q_hashjoin.collect(engine="in-memory")
+    actual = q_hashjoin.collect(engine="streaming")
+    assert "equi-join" in typing.cast("str", dot), "hash-join not used in plan"
+    assert_frame_equal(actual, expected, check_row_order=False)
+
+    q_mergejoin = df_sorted(df_left).join(
+        df_sorted(df_right),
+        on="key",
+        how="inner",
+        maintain_order="none",
+    )
+    dot = q_mergejoin.show_graph(
+        engine="streaming", plan_stage="physical", raw_output=True
+    )
+    expected = q_mergejoin.collect(engine="in-memory")
+    actual = q_mergejoin.collect(engine="streaming")
+    assert "merge-join" in typing.cast("str", dot), "merge-join not used in plan"
+    assert_frame_equal(actual, expected, check_row_order=False)
