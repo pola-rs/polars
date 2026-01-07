@@ -61,14 +61,24 @@ pub(super) fn pullup_orders(
                 sort_options.maintain_order &= inputs_ordered[0];
             },
             IR::GroupBy {
-                keys: _,
+                keys,
                 maintain_order,
                 ..
             } => {
-                // If maintain_order is false, the outputs are considered unordered.
-                // If maintain_order is true, we keep it – this was explicitly requested
-                // (e.g. group_by_stable / with_maintain_order(true)), even if the input
-                // itself is not guaranteed to be ordered.
+                if !inputs_ordered[0] && *maintain_order {
+                    // Unordered -> _
+                    //   to
+                    // maintain_order = false
+                    // and
+                    // Unordered -> Unordered
+
+                    let keys_produce_order = keys
+                        .iter()
+                        .any(|k| is_output_ordered(expr_arena.get(k.node()), expr_arena, false));
+                    if !keys_produce_order {
+                        *maintain_order = false;
+                    }
+                }
                 if !*maintain_order {
                     set_unordered_output!();
                 }

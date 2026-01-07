@@ -110,28 +110,32 @@ pub(super) fn pushdown_orders(
                 options,
                 ..
             } => {
-                // Explicit stable ordering → always order-observing.
-                if *maintain_order {
-                    [true].into()
-                } else {
-                    let is_order_observing =
-                        apply.is_some() || options.is_dynamic() || options.is_rolling() || {
-                            // If no expressions depend on order, treat as unordered.
+                *maintain_order &= !all_outputs_unordered;
 
-                            let expr_observing = adjust_for_with_columns_context(zip(keys
-                                .iter()
-                                .chain(aggs.iter())
-                                .map(|e| {
-                                    resolve_observable_orders(expr_arena.get(e.node()), expr_arena)
-                                })))
-                            .is_err();
+                let is_order_observing = apply.is_some()
+                    || options.is_dynamic()
+                    || options.is_rolling()
+                    || *maintain_order
+                    || {
+                        // _ -> Unordered
+                        //   to
+                        // maintain_order = false
+                        // and
+                        // Unordered -> Unordered (if no order sensitive expressions)
 
-                            expr_observing
-                                || aggs.iter().any(|agg| !is_scalar_ae(agg.node(), expr_arena))
-                        };
+                        let expr_observing = adjust_for_with_columns_context(zip(keys
+                            .iter()
+                            .chain(aggs.iter())
+                            .map(|e| {
+                                resolve_observable_orders(expr_arena.get(e.node()), expr_arena)
+                            })))
+                        .is_err();
 
-                    [is_order_observing].into()
-                }
+                        expr_observing
+                            // The auto-implode is also other sensitive.
+                            || aggs.iter().any(|agg| !is_scalar_ae(agg.node(), expr_arena))
+                    };
+                [is_order_observing].into()
             },
             #[cfg(feature = "merge_sorted")]
             IR::MergeSorted {
