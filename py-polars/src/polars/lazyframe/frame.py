@@ -3902,6 +3902,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             ]
             | PolarsDataType
             | pl.DataTypeExpr
+            | Schema
         ),
         *,
         strict: bool = True,
