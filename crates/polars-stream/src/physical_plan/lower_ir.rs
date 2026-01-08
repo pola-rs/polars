@@ -461,6 +461,7 @@ pub fn lower_ir(
                         RowEncodingVariant::Ordered {
                             descending: None,
                             nulls_last: None,
+                            broadcast_nulls: None,
                         },
                         key_dtype,
                         expr_arena,
