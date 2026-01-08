@@ -1698,25 +1698,7 @@ impl Iterator for ArrowStreamIterator {
         match next {
             None => None,
             Some(Err(err)) => return Some(Err(err)),
-            Some(Ok(mut df)) => {
-                df.rechunk_mut();
-                let batch_cols = df
-                    .columns()
-                    .iter()
-                    .map(|v| v.as_materialized_series().clone())
-                    .collect::<Vec<Series>>()
-                    .iter()
-                    .map(|s| s.to_arrow(0, CompatLevel::newest()))
-                    .collect::<Vec<_>>();
-
-                let array = arrow::array::StructArray::new(
-                    self.dtype.clone(),
-                    batch_cols[0].len(),
-                    batch_cols,
-                    None,
-                );
-                Some(Ok(Box::new(array)))
-            },
+            Some(Ok(mut df)) => Some(Ok(Box::new(df.to_arrow(Some(CompatLevel::newest()))))),
         }
     }
 }

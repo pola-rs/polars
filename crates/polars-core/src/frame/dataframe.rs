@@ -1,11 +1,15 @@
 use std::sync::{Arc, OnceLock};
 
+use arrow::array::StructArray;
+use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
 use super::broadcast::{broadcast_columns, infer_broadcast_height};
 use super::validation::validate_columns_slice;
 use crate::frame::column::Column;
-use crate::schema::{Schema, SchemaRef};
+use crate::prelude::CompatLevel;
+use crate::schema::{Schema, SchemaExt, SchemaRef};
+use crate::series::Series;
 
 /// A contiguous growable collection of [`Column`]s that have the same length.
 ///
@@ -373,5 +377,27 @@ impl DataFrame {
     fn clear_schema(&mut self) -> &mut Self {
         self.cached_schema = OnceLock::new();
         self
+    }
+
+    pub fn to_arrow(&mut self, compatlevel: Option<CompatLevel>) -> StructArray {
+        let compatlevel = compatlevel.unwrap_or_else(|| CompatLevel::newest());
+        let schema = ArrowDataType::Struct(
+            self.schema()
+                .to_arrow(compatlevel)
+                .into_iter_values()
+                .collect(),
+        );
+
+        self.rechunk_mut();
+        let batch_cols = self
+            .columns()
+            .iter()
+            .map(|v| v.as_materialized_series().clone())
+            .collect::<Vec<Series>>()
+            .iter()
+            .map(|s| s.to_arrow(0, compatlevel))
+            .collect::<Vec<_>>();
+
+        arrow::array::StructArray::new(schema, batch_cols[0].len(), batch_cols, None)
     }
 }
