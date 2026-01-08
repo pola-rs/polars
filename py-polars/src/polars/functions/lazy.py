@@ -2152,6 +2152,10 @@ def collect_all(
         Return as LazyFrame that can be collected later.
         This is only correct if all inputs sink to disk.
 
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
     Returns
     -------
     list of DataFrames
@@ -2160,6 +2164,9 @@ def collect_all(
     """
     lfs = [lf._ldf for lf in lazy_frames]
     if lazy:
+        msg = "the `lazy` parameter of `collect_all` is considered unstable."
+        issue_unstable_warning(msg)
+
         from polars.lazyframe import LazyFrame
 
         ldf = plr.collect_all_lazy(lfs, optimizations._pyoptflags)
