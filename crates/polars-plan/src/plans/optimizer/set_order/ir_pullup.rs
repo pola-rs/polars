@@ -103,9 +103,10 @@ pub(super) fn pullup_orders(
             },
             #[cfg(feature = "asof_join")]
             IR::Join { options, .. } if matches!(options.args.how, JoinType::AsOf(_)) => {
-                if !inputs_ordered[0] {
-                    set_unordered_output!();
-                }
+                // NOTE: As-of joins semantically require ordered inputs.
+                // If the inputs are not ordered, this should ideally be an error.
+                // However, the optimizer currently has no mechanism to surface errors,
+                // so we intentionally do nothing here and leave validation to later stages.
             },
             IR::Join { options, .. } => {
                 let left_unordered = !inputs_ordered[0];

@@ -185,10 +185,6 @@ pub(super) fn pushdown_orders(
                 // sensitivity.
                 [false, false].into()
             },
-            #[cfg(feature = "asof_join")]
-            IR::Join { options, .. } if matches!(options.args.how, JoinType::AsOf(_)) => {
-                [true, false].into()
-            },
             IR::Join {
                 input_left: _,
                 input_right: _,
