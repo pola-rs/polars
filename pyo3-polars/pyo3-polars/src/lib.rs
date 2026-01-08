@@ -50,12 +50,11 @@ pub mod export;
 
 pub mod types;
 
-pub use crate::alloc::PolarsAllocator;
-mod ffi;
-
 use once_cell::sync::Lazy;
 use pyo3::prelude::*;
 pub use types::*;
+
+pub use crate::alloc::PolarsAllocator;
 
 pub(crate) static POLARS: Lazy<Py<PyModule>> =
     Lazy::new(|| Python::attach(|py| PyModule::import(py, "polars").unwrap().unbind()));
