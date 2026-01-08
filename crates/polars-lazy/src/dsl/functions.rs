@@ -6,7 +6,6 @@
 use polars_core::prelude::*;
 pub use polars_plan::dsl::functions::*;
 use polars_plan::prelude::UnionArgs;
-use rayon::prelude::*;
 
 use crate::prelude::*;
 
