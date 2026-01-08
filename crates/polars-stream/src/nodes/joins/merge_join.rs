@@ -380,12 +380,15 @@ async fn compute_join(
             .as_materialized_series(),
     );
 
-    // Categoricals are lexicographically ordered, not by their physical values.
-    if matches!(left_key.dtype(), DataType::Categorical(_, _)) {
-        left_key = Cow::Owned(left_key.cast(&DataType::String)?);
-    }
-    if matches!(right_key.dtype(), DataType::Categorical(_, _)) {
-        right_key = Cow::Owned(right_key.cast(&DataType::String)?);
+    #[cfg(feature = "dtype-categorical")]
+    {
+        // Categoricals are lexicographically ordered, not by their physical values.
+        if matches!(left_key.dtype(), DataType::Categorical(_, _)) {
+            left_key = Cow::Owned(left_key.cast(&DataType::String)?);
+        }
+        if matches!(right_key.dtype(), DataType::Categorical(_, _)) {
+            right_key = Cow::Owned(right_key.cast(&DataType::String)?);
+        }
     }
 
     let right_is_build = params.right_is_build().unwrap_or(false);
