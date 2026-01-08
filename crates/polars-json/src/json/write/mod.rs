@@ -1,5 +1,6 @@
 //! APIs to write to JSON
 mod serialize;
+pub use serialize::{JsonSerializer, new_serializer};
 mod utf8;
 
 use std::io::Write;
@@ -10,7 +11,6 @@ use arrow::io::iterator::StreamingIterator;
 use arrow::record_batch::RecordBatchT;
 pub use fallible_streaming_iterator::*;
 use polars_error::{PolarsError, PolarsResult};
-pub(crate) use serialize::new_serializer;
 use serialize::serialize;
 pub use utf8::serialize_to_utf8;
 
@@ -88,7 +88,7 @@ impl<'a> RecordSerializer<'a> {
         let iterators = chunk
             .arrays()
             .iter()
-            .map(|arr| new_serializer(arr.as_ref(), 0, usize::MAX))
+            .map(|arr| new_serializer(arr.as_ref(), 0, usize::MAX) as _)
             .collect();
 
         Self {

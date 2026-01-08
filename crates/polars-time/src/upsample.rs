@@ -1,6 +1,7 @@
 #[cfg(feature = "timezones")]
 use polars_core::datatypes::time_zone::parse_time_zone;
 use polars_core::prelude::*;
+use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_ops::prelude::*;
 use polars_ops::series::SeriesMethods;
 
@@ -168,15 +169,64 @@ fn upsample_impl(
                 let index_column = source.column(index_column)?;
                 upsample_single_impl(source, index_column.as_materialized_series(), every)
             } else {
-                let gb = if stable {
-                    source.group_by_stable(by)
+                let source_schema = source.schema();
+
+                let group_keys_df = source.select(by)?;
+                let group_keys_schema = group_keys_df.schema();
+
+                let groups = if stable {
+                    group_keys_df.group_by_stable(group_keys_schema.iter_names_cloned())
                 } else {
-                    source.group_by(by)
+                    group_keys_df.group_by(group_keys_schema.iter_names_cloned())
+                }?
+                .into_groups();
+
+                let non_group_keys_df = unsafe {
+                    source.select_unchecked(
+                        source_schema
+                            .iter_names()
+                            .filter(|name| !group_keys_schema.contains(name.as_str())),
+                    )?
                 };
+
+                let upsample_index_col_idx: Option<usize> =
+                    non_group_keys_df.schema().index_of(index_column);
+
                 // don't parallelize this, this may SO on large data.
-                gb?.apply(|df| {
-                    let index_column = df.column(index_column)?;
-                    upsample_single_impl(&df, index_column.as_materialized_series(), every)
+                let dfs: Vec<DataFrame> = groups
+                    .iter()
+                    .map(|g| {
+                        let first_idx = g.first();
+
+                        let mut non_group_keys_df =
+                            unsafe { non_group_keys_df.gather_group_unchecked(&g) };
+
+                        if let Some(i) = upsample_index_col_idx {
+                            non_group_keys_df = upsample_single_impl(
+                                &non_group_keys_df,
+                                non_group_keys_df.columns()[i].as_materialized_series(),
+                                every,
+                            )?
+                        }
+
+                        let mut out = non_group_keys_df;
+
+                        let group_keys_df =
+                            group_keys_df.new_from_index(first_idx as usize, out.height());
+
+                        let out_cols = unsafe { out.columns_mut() };
+
+                        out_cols.reserve(group_keys_df.width());
+                        out_cols.extend(group_keys_df.into_columns());
+
+                        Ok(out)
+                    })
+                    .collect::<PolarsResult<_>>()?;
+
+                Ok(unsafe {
+                    accumulate_dataframes_vertical_unchecked(dfs)
+                        .select_unchecked(source_schema.iter_names())?
+                        .with_schema(source_schema.clone())
                 })
             }
         },

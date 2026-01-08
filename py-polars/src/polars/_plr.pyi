@@ -1,8 +1,7 @@
 from collections.abc import Callable, Sequence
-from typing import Any, Literal, overload
+from typing import Any, Literal, TypeAlias, overload
 
 from numpy.typing import NDArray
-from typing_extensions import TypeAlias
 
 from polars.io.scan_options._options import ScanOptions
 
@@ -939,6 +938,9 @@ class PyLazyFrame:
     ) -> tuple[PyDataFrame, PyDataFrame]: ...
     def collect(self, engine: Any, lambda_post_opt: Any | None) -> PyDataFrame: ...
     def collect_with_callback(self, engine: Any, lambda_func: Any) -> None: ...
+    def collect_batches(
+        self, engine: Any, maintain_order: bool, chunk_size: int | None, lazy: bool
+    ) -> PyCollectBatches: ...
     def sink_parquet(
         self,
         target: SinkTarget,
@@ -957,6 +959,7 @@ class PyLazyFrame:
         sink_options: Any,
         compression: IpcCompression | None,
         compat_level: CompatLevel,
+        record_batch_size: int | None,
     ) -> PyLazyFrame: ...
     def sink_csv(
         self,
@@ -1177,7 +1180,9 @@ class PyExpr:
     def is_nan(self) -> PyExpr: ...
     def is_not_nan(self) -> PyExpr: ...
     def min(self) -> PyExpr: ...
+    def min_by(self, other: PyExpr) -> PyExpr: ...
     def max(self) -> PyExpr: ...
+    def max_by(self, other: PyExpr) -> PyExpr: ...
     def nan_max(self) -> PyExpr: ...
     def nan_min(self) -> PyExpr: ...
     def mean(self) -> PyExpr: ...
@@ -1245,7 +1250,12 @@ class PyExpr:
     def index_of(self, element: PyExpr) -> PyExpr: ...
     def search_sorted(self, element: PyExpr, side: Any, descending: bool) -> PyExpr: ...
     def gather(self, idx: PyExpr) -> PyExpr: ...
-    def get(self, idx: PyExpr) -> PyExpr: ...
+    def get(
+        self,
+        idx: PyExpr,
+        *,
+        null_on_oob: bool = False,
+    ) -> PyExpr: ...
     def sort_by(
         self,
         by: Sequence[PyExpr],
@@ -2351,40 +2361,6 @@ class PyCategories:
     def cat_to_str(self, cat: int) -> str | None: ...
     def is_global(self) -> bool: ...
 
-class PyBatchedCsv:
-    @staticmethod
-    def new(
-        infer_schema_length: int | None,
-        chunk_size: int,
-        has_header: bool,
-        ignore_errors: bool,
-        n_rows: int | None,
-        skip_rows: int,
-        skip_lines: int,
-        projection: Sequence[int] | None,
-        separator: str,
-        rechunk: bool,
-        columns: Sequence[str] | None,
-        encoding: CsvEncoding,
-        n_threads: int | None,
-        path: Any,
-        schema_overrides: Sequence[tuple[str, DataType]] | None,
-        overwrite_dtype_slice: Sequence[DataType] | None,
-        low_memory: bool,
-        comment_prefix: str | None,
-        quote_char: str | None,
-        null_values: NullValues | None,
-        missing_utf8_is_empty_string: bool,
-        try_parse_dates: bool,
-        skip_rows_after_header: int,
-        row_index: tuple[str, int] | None,
-        eol_char: str,
-        raise_if_empty: bool,
-        truncate_ragged_lines: bool,
-        decimal_comma: bool,
-    ) -> PyBatchedCsv: ...
-    def next_batches(self, n: int) -> list[PyDataFrame] | None: ...
-
 # catalog
 class PyCatalogClient:
     @staticmethod
@@ -2454,6 +2430,12 @@ class PySQLContext:
     def get_tables(self) -> list[str]: ...
     def register(self, name: str, lf: PyLazyFrame) -> None: ...
     def unregister(self, name: str) -> None: ...
+    @staticmethod
+    def table_identifiers(
+        query: str,
+        include_schema: bool = ...,
+        unique: bool = ...,
+    ) -> list[str]: ...
 
 # testing
 def assert_series_equal_py(
@@ -2519,3 +2501,6 @@ class NodeTraverser:
     def add_expressions(self, expressions: list[PyExpr]) -> tuple[list[int], int]: ...
     def set_expr_mapping(self, mapping: list[int]) -> None: ...
     def unset_expr_mapping(self) -> None: ...
+
+class PyCollectBatches:
+    def start(self) -> None: ...

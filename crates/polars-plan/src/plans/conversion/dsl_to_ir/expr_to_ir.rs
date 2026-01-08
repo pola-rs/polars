@@ -168,6 +168,7 @@ pub(super) fn to_aexpr_impl(
             expr,
             idx,
             returns_scalar,
+            null_on_oob,
         } => {
             let (expr, output_name) = recurse_arc!(expr)?;
             let (idx, _) = to_aexpr_mat_lit_arc!(idx)?;
@@ -176,6 +177,7 @@ pub(super) fn to_aexpr_impl(
                     expr,
                     idx,
                     returns_scalar,
+                    null_on_oob,
                 },
                 output_name,
             )
@@ -236,6 +238,16 @@ pub(super) fn to_aexpr_impl(
                         },
                         output_name,
                     )
+                },
+                AggExpr::MinBy { input, by } => {
+                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
+                    let (by, _) = to_aexpr_mat_lit_arc!(by)?;
+                    (IRAggExpr::MinBy { input, by }, output_name)
+                },
+                AggExpr::MaxBy { input, by } => {
+                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
+                    let (by, _) = to_aexpr_mat_lit_arc!(by)?;
+                    (IRAggExpr::MaxBy { input, by }, output_name)
                 },
                 AggExpr::Median(input) => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;

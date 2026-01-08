@@ -457,9 +457,9 @@ impl PhysicalExpr for AggregationExpr {
 }
 
 pub struct AggQuantileExpr {
-    pub(crate) input: Arc<dyn PhysicalExpr>,
-    pub(crate) quantile: Arc<dyn PhysicalExpr>,
-    pub(crate) method: QuantileMethod,
+    input: Arc<dyn PhysicalExpr>,
+    quantile: Arc<dyn PhysicalExpr>,
+    method: QuantileMethod,
 }
 
 impl AggQuantileExpr {

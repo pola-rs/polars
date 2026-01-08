@@ -45,6 +45,14 @@ pub enum IRAggExpr {
         input: Node,
         propagate_nans: bool,
     },
+    MinBy {
+        input: Node,
+        by: Node,
+    },
+    MaxBy {
+        input: Node,
+        by: Node,
+    },
     Median(Node),
     NUnique(Node),
     Item {
@@ -167,7 +175,9 @@ impl From<IRAggExpr> for GroupByMethod {
             Std(_, ddof) => GroupByMethod::Std(ddof),
             Var(_, ddof) => GroupByMethod::Var(ddof),
             AggGroups(_) => GroupByMethod::Groups,
-            Quantile { .. } => unreachable!(),
+
+            // Multi-input aggregations.
+            Quantile { .. } | MinBy { .. } | MaxBy { .. } => unreachable!(),
         }
     }
 }
@@ -204,6 +214,7 @@ pub enum AExpr {
         expr: Node,
         idx: Node,
         returns_scalar: bool,
+        null_on_oob: bool,
     },
     SortBy {
         expr: Node,
@@ -399,6 +410,7 @@ impl AExpr {
                 expr: _,
                 idx,
                 returns_scalar,
+                null_on_oob: _,
             } => !returns_scalar && is_length_preserving_ae(*idx, arena),
             AExpr::SortBy { expr, by, .. } => broadcasting_input_length_preserving(
                 std::iter::once(*expr).chain(by.iter().copied()),

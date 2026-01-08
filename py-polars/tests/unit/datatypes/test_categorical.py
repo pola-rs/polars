@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import operator
 import pickle
-from typing import Callable
+from typing import TYPE_CHECKING
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -11,6 +11,9 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def test_categorical_full_outer_join() -> None:
@@ -850,7 +853,7 @@ def test_categorical_min_max() -> None:
     assert result_alt.to_dict(as_series=False) == result.to_dict(as_series=False)
 
 
-def test_categorical_io_roundtrip() -> None:
+def test_ipc_categorical_roundtrip() -> None:
     # Ensure dictionary IDs are offsetted correctly when there are nested columns
     # containing multiple categoricals.
     lf = pl.LazyFrame(
@@ -1009,3 +1012,11 @@ def test_categorical_serialization_prunes_unused_categories_24034() -> None:
     assert ipc_stream_size_ratio <= 0.8
     assert parquet_size_ratio <= 0.5
     assert pickle_size_ratio <= 0.8
+
+
+def test_categorical_cast_from_invalid_int() -> None:
+    dt = pl.Categorical(pl.Categories.random())
+    _dummy = pl.Series(["test"]).cast(dt)
+    s = pl.Series("a", [0, 1000, 2000, 3000]).cast(dt, strict=False)
+    assert s.null_count() == 3
+    assert_series_equal(s, pl.Series("a", ["test", None, None, None], dtype=dt))

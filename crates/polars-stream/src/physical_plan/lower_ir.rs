@@ -14,8 +14,8 @@ use polars_plan::dsl::default_values::DefaultFieldValues;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::sink2::FileProviderType;
 use polars_plan::dsl::{
-    CallbackSinkType, ExtraColumnsPolicy, FileScanIR, FileSinkOptions, PartitionStrategyIR,
-    PartitionVariantIR, PartitionedSinkOptionsIR, SinkOptions, SinkTypeIR, UnifiedSinkArgs,
+    CallbackSinkType, ExtraColumnsPolicy, FileScanIR, PartitionStrategyIR, PartitionVariantIR,
+    PartitionedSinkOptionsIR, SinkOptions, SinkTypeIR, UnifiedSinkArgs,
 };
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{
@@ -26,6 +26,8 @@ use polars_plan::prelude::GroupbyOptions;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
+#[cfg(feature = "parquet")]
+use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 use polars_utils::unique_id::UniqueId;
@@ -266,16 +268,10 @@ pub fn lower_ir(
                 }
             },
 
-            SinkTypeIR::File(options)
-                if match options.file_format.as_ref() {
-                    #[cfg(feature = "parquet")]
-                    polars_plan::dsl::FileType::Parquet(_) => true,
-                    _ => false,
-                } =>
-            {
+            SinkTypeIR::File(options) => {
                 let options = options.clone();
                 let input = lower_ir!(*input)?;
-                PhysNodeKind::FileSink2 { input, options }
+                PhysNodeKind::FileSink { input, options }
             },
 
             SinkTypeIR::Partitioned(options)
@@ -284,44 +280,24 @@ pub fn lower_ir(
                     && match options.file_format.as_ref() {
                         #[cfg(feature = "parquet")]
                         polars_plan::dsl::FileType::Parquet(_) => true,
-                        _ => false,
+                        #[cfg(feature = "ipc")]
+                        polars_plan::dsl::FileType::Ipc(_) => true,
+                        #[cfg(feature = "csv")]
+                        polars_plan::dsl::FileType::Csv(_) => true,
+                        #[cfg(feature = "json")]
+                        polars_plan::dsl::FileType::Json(_) => true,
+                        #[cfg(not(any(
+                            feature = "parquet",
+                            feature = "ipc",
+                            feature = "csv",
+                            feature = "json"
+                        )))]
+                        _ => panic!("no enum variants on FileType (hint: missing feature flags?)"),
                     } =>
             {
                 let options = options.clone();
                 let input = lower_ir!(*input)?;
                 PhysNodeKind::PartitionedSink2 { input, options }
-            },
-            SinkTypeIR::File(FileSinkOptions {
-                target,
-                file_format,
-                unified_sink_args,
-            }) => {
-                // Convert to old parameters for now
-
-                let target = target.clone();
-
-                let UnifiedSinkArgs {
-                    mkdir,
-                    maintain_order,
-                    sync_on_close,
-                    cloud_options,
-                } = unified_sink_args.clone();
-
-                let sink_options = SinkOptions {
-                    sync_on_close,
-                    maintain_order,
-                    mkdir,
-                };
-                let file_type = file_format.as_ref().clone();
-
-                let phys_input = lower_ir!(*input)?;
-                PhysNodeKind::FileSink {
-                    target,
-                    sink_options,
-                    file_type,
-                    input: phys_input,
-                    cloud_options: cloud_options.map(Arc::unwrap_or_clone),
-                }
             },
 
             SinkTypeIR::Partitioned(PartitionedSinkOptionsIR {
@@ -764,6 +740,9 @@ pub fn lower_ir(
                         crate::nodes::io_sources::parquet::builder::ParquetReaderBuilder {
                             options: Arc::new(options.clone()),
                             first_metadata: first_metadata.clone(),
+                            prefetch_limit: RelaxedCell::new_usize(0),
+                            prefetch_semaphore: std::sync::OnceLock::new(),
+                            shared_prefetch_wait_group_slot: Default::default(),
                         },
                     ) as _,
 
@@ -773,10 +752,13 @@ pub fn lower_ir(
                         metadata: first_metadata,
                     } => Arc::new(crate::nodes::io_sources::ipc::builder::IpcReaderBuilder {
                         first_metadata: first_metadata.clone(),
+                        prefetch_limit: RelaxedCell::new_usize(0),
+                        prefetch_semaphore: std::sync::OnceLock::new(),
+                        shared_prefetch_wait_group_slot: Default::default(),
                     }) as _,
 
                     #[cfg(feature = "csv")]
-                    FileScanIR::Csv { options } => Arc::new(Arc::new(options.clone())) as _,
+                    FileScanIR::Csv { options } => Arc::new(Arc::clone(options)) as _,
 
                     #[cfg(feature = "json")]
                     FileScanIR::NDJson { options } => Arc::new(Arc::new(options.clone())) as _,
@@ -805,15 +787,7 @@ pub fn lower_ir(
                 };
 
                 {
-                    let cloud_options = &unified_scan_args.cloud_options;
-                    let output_schema =
-                        if std::env::var("POLARS_FORCE_EMPTY_PROJECT").as_deref() == Ok("1") {
-                            Default::default()
-                        } else {
-                            output_schema
-                        };
-
-                    let cloud_options = cloud_options.clone().map(Arc::new);
+                    let cloud_options = unified_scan_args.cloud_options.clone().map(Arc::new);
                     let file_schema = file_info.schema;
 
                     let (projected_schema, file_schema) =

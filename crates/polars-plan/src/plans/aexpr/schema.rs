@@ -1,5 +1,6 @@
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::DEC128_MAX_PREC;
+use polars_core::series::arithmetic::NumericListOp;
 use polars_utils::format_pl_smallstr;
 use recursive::recursive;
 
@@ -140,6 +141,8 @@ impl AExpr {
                 match agg {
                     Max { input: expr, .. }
                     | Min { input: expr, .. }
+                    | MinBy { input: expr, .. }
+                    | MaxBy { input: expr, .. }
                     | First(expr)
                     | FirstNonNull(expr)
                     | Last(expr)
@@ -358,8 +361,10 @@ impl AExpr {
             | Ternary { truthy: expr, .. }
             | Eval { expr, .. }
             | Slice { input: expr, .. }
-            | Agg(Max { input: expr, .. })
             | Agg(Min { input: expr, .. })
+            | Agg(Max { input: expr, .. })
+            | Agg(MinBy { input: expr, .. })
+            | Agg(MaxBy { input: expr, .. })
             | Agg(First(expr))
             | Agg(FirstNonNull(expr))
             | Agg(Last(expr))
@@ -483,7 +488,7 @@ fn get_arithmetic_field(
                     // This currently doesn't cause any problems because the list arithmetic implementation checks and raises errors
                     // if the leaf types aren't numeric, but it means we don't raise an error until execution and the DSL schema
                     // may be incorrect.
-                    list_dtype.cast_leaf(try_get_supertype(
+                    list_dtype.cast_leaf(NumericListOp::sub().try_get_leaf_supertype(
                         list_dtype.leaf_dtype(),
                         other_dtype.leaf_dtype(),
                     )?)
@@ -545,7 +550,7 @@ fn get_arithmetic_field(
                     )
                 },
                 (list_dtype @ List(_), other_dtype) | (other_dtype, list_dtype @ List(_)) => {
-                    list_dtype.cast_leaf(try_get_supertype(
+                    list_dtype.cast_leaf(NumericListOp::add().try_get_leaf_supertype(
                         list_dtype.leaf_dtype(),
                         other_dtype.leaf_dtype(),
                     )?)

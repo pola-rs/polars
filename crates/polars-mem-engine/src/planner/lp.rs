@@ -1,7 +1,6 @@
 use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_expr::state::ExecutionState;
-use polars_io::get_upload_chunk_size;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::prelude::sink::CallbackSinkType;
 use polars_utils::unique_id::UniqueId;
@@ -10,10 +9,7 @@ use recursive::recursive;
 #[cfg(feature = "python")]
 use self::python_dsl::PythonScanSource;
 use super::*;
-use crate::executors::{
-    self, CachePrefiller, Executor, GroupByStreamingExec, PartitionedSinkExecutor, SinkExecutor,
-    sink_name,
-};
+use crate::executors::{self, CachePrefiller, Executor, GroupByStreamingExec, SinkExecutor};
 use crate::scan_predicate::functions::create_scan_predicate;
 
 pub type StreamingExecutorBuilder =
@@ -153,7 +149,7 @@ pub fn create_multiple_physical_plans(
 #[allow(clippy::type_complexity)]
 pub fn python_scan_predicate(
     options: &mut PythonOptions,
-    expr_arena: &Arena<AExpr>,
+    expr_arena: &mut Arena<AExpr>,
     state: &mut ExpressionConversionState,
 ) -> PolarsResult<(
     Option<Arc<dyn polars_expr::prelude::PhysicalExpr>>,
@@ -215,6 +211,12 @@ fn create_physical_plan_impl(
 ) -> PolarsResult<Box<dyn Executor>> {
     use IR::*;
 
+    let get_streaming_executor_builder = || {
+        build_streaming_executor.expect(
+            "get_streaming_executor_builder() failed (hint: missing feature new-streaming?)",
+        )
+    };
+
     macro_rules! recurse {
         ($node:expr, $state: expr) => {
             create_physical_plan_impl(
@@ -236,7 +238,7 @@ fn create_physical_plan_impl(
                 | IR::GroupBy { .. } // Needed for the streaming impl
                 | IR::Sink { // Needed for the streaming impl
                     payload:
-                        SinkTypeIR::Partitioned { .. },
+                        SinkTypeIR::File(_) | SinkTypeIR::Partitioned { .. },
                     ..
                 }
         ) {
@@ -257,140 +259,38 @@ fn create_physical_plan_impl(
                 predicate_serialized,
             }))
         },
-        Sink { input, payload } => {
-            let input = recurse!(input, state)?;
-            match payload {
-                SinkTypeIR::Memory => Ok(Box::new(SinkExecutor {
-                    input,
-                    name: "mem".to_string(),
-                    f: Box::new(move |df, _state| Ok(Some(df))),
-                })),
-                SinkTypeIR::Callback(CallbackSinkType {
-                    function,
-                    maintain_order: _,
-                    chunk_size,
-                }) => {
-                    let chunk_size = chunk_size.map_or(usize::MAX, Into::into);
+        Sink { input, payload } => match payload {
+            SinkTypeIR::Memory => Ok(Box::new(SinkExecutor {
+                input: recurse!(input, state)?,
+                name: PlSmallStr::from_static("mem"),
+                f: Box::new(move |df, _state| Ok(Some(df))),
+            })),
+            SinkTypeIR::Callback(CallbackSinkType {
+                function,
+                maintain_order: _,
+                chunk_size,
+            }) => {
+                let chunk_size = chunk_size.map_or(usize::MAX, Into::into);
 
-                    Ok(Box::new(SinkExecutor {
-                        input,
-                        name: "batches".to_string(),
-                        f: Box::new(move |mut buffer, _state| {
-                            while !buffer.is_empty() {
-                                let df;
-                                (df, buffer) =
-                                    buffer.split_at(buffer.height().min(chunk_size) as i64);
-                                let should_stop = function.call(df)?;
-                                if should_stop {
-                                    break;
-                                }
+                Ok(Box::new(SinkExecutor {
+                    input: recurse!(input, state)?,
+                    name: PlSmallStr::from_static("batches"),
+                    f: Box::new(move |mut buffer, _state| {
+                        while buffer.height() > 0 {
+                            let df;
+                            (df, buffer) = buffer.split_at(buffer.height().min(chunk_size) as i64);
+                            let should_stop = function.call(df)?;
+                            if should_stop {
+                                break;
                             }
-                            Ok(Some(DataFrame::empty()))
-                        }),
-                    }))
-                },
-                SinkTypeIR::File(FileSinkOptions {
-                    target,
-                    file_format,
-                    unified_sink_args,
-                }) => {
-                    let name = sink_name(&file_format).to_owned();
-                    Ok(Box::new(SinkExecutor {
-                        input,
-                        name,
-                        f: Box::new(move |mut df, _state| {
-                            let mut file = target.open_into_writeable(
-                                unified_sink_args.cloud_options.as_deref(),
-                                unified_sink_args.mkdir,
-                                get_upload_chunk_size(),
-                            )?;
-                            let writer = &mut *file;
-
-                            use std::io::BufWriter;
-                            match file_format.as_ref() {
-                                #[cfg(feature = "parquet")]
-                                FileType::Parquet(options) => {
-                                    use polars_io::parquet::write::ParquetWriter;
-                                    ParquetWriter::new(BufWriter::new(writer))
-                                        .with_compression(options.compression)
-                                        .with_statistics(options.statistics)
-                                        .with_row_group_size(options.row_group_size)
-                                        .with_data_page_size(options.data_page_size)
-                                        .with_key_value_metadata(options.key_value_metadata.clone())
-                                        .finish(&mut df)?;
-                                },
-                                #[cfg(feature = "ipc")]
-                                FileType::Ipc(options) => {
-                                    use polars_io::SerWriter;
-                                    use polars_io::ipc::IpcWriter;
-                                    IpcWriter::new(BufWriter::new(writer))
-                                        .with_compression(options.compression)
-                                        .with_compat_level(options.compat_level)
-                                        .finish(&mut df)?;
-                                },
-                                #[cfg(feature = "csv")]
-                                FileType::Csv(options) => {
-                                    use polars_io::SerWriter;
-                                    use polars_io::csv::write::CsvWriter;
-                                    CsvWriter::new(BufWriter::new(writer))
-                                        .include_bom(options.include_bom)
-                                        .include_header(options.include_header)
-                                        .with_separator(options.serialize_options.separator)
-                                        .with_line_terminator(
-                                            options.serialize_options.line_terminator.clone(),
-                                        )
-                                        .with_quote_char(options.serialize_options.quote_char)
-                                        .with_batch_size(options.batch_size)
-                                        .with_datetime_format(
-                                            options.serialize_options.datetime_format.clone(),
-                                        )
-                                        .with_date_format(
-                                            options.serialize_options.date_format.clone(),
-                                        )
-                                        .with_time_format(
-                                            options.serialize_options.time_format.clone(),
-                                        )
-                                        .with_float_scientific(
-                                            options.serialize_options.float_scientific,
-                                        )
-                                        .with_float_precision(
-                                            options.serialize_options.float_precision,
-                                        )
-                                        .with_decimal_comma(options.serialize_options.decimal_comma)
-                                        .with_null_value(options.serialize_options.null.clone())
-                                        .with_quote_style(options.serialize_options.quote_style)
-                                        .finish(&mut df)?;
-                                },
-                                #[cfg(feature = "json")]
-                                FileType::Json(_options) => {
-                                    use polars_io::SerWriter;
-                                    use polars_io::json::{JsonFormat, JsonWriter};
-
-                                    JsonWriter::new(BufWriter::new(writer))
-                                        .with_json_format(JsonFormat::JsonLines)
-                                        .finish(&mut df)?;
-                                },
-                                #[allow(unreachable_patterns)]
-                                _ => panic!("enable filetype feature"),
-                            }
-
-                            file.close(unified_sink_args.sync_on_close)?;
-
-                            Ok(None)
-                        }),
-                    }))
-                },
-                SinkTypeIR::Partitioned { .. } => {
-                    let builder = build_streaming_executor
-                        .expect("invalid build. Missing feature new-streaming");
-
-                    let executor = Box::new(PartitionedSinkExecutor::new(
-                        input, builder, root, lp_arena, expr_arena,
-                    ));
-
-                    Ok(executor)
-                },
-            }
+                        }
+                        Ok(Some(DataFrame::empty()))
+                    }),
+                }))
+            },
+            SinkTypeIR::File(_) | SinkTypeIR::Partitioned { .. } => {
+                get_streaming_executor_builder()(root, lp_arena, expr_arena)
+            },
         },
         SinkMultiple { .. } => {
             unreachable!("should be handled with create_multiple_physical_plans")
@@ -453,16 +353,9 @@ fn create_physical_plan_impl(
             let mut create_skip_batch_predicate = unified_scan_args.table_statistics.is_some();
             #[cfg(feature = "parquet")]
             {
-                create_skip_batch_predicate |= matches!(
-                    &*scan_type,
-                    FileScanIR::Parquet {
-                        options: polars_io::prelude::ParquetOptions {
-                            use_statistics: true,
-                            ..
-                        },
-                        ..
-                    }
-                );
+                if let FileScanIR::Parquet { options, .. } = scan_type.as_ref() {
+                    create_skip_batch_predicate |= options.use_statistics;
+                }
             }
 
             let predicate = predicate
@@ -490,25 +383,17 @@ fn create_physical_plan_impl(
                         predicate_has_windows: expr_conversion_state.has_windows,
                     }))
                 },
-                #[allow(unreachable_patterns)]
-                _ => {
-                    // We wrap in a CacheExec so that the new-streaming scan gets called from the
-                    // CachePrefiller. This ensures it is called from outside of rayon to avoid
-                    // deadlocks.
-                    //
-                    // Note that we don't actually want it to be kept in memory after being used,
-                    // so we set the count to have it be dropped after a single use (or however
-                    // many times it is referenced after CSE (subplan)).
-                    state.has_cache_parent = true;
-                    state.has_cache_child = true;
-
-                    let build_func = build_streaming_executor
-                        .expect("invalid build. Missing feature new-streaming");
-
-                    build_func(root, lp_arena, expr_arena)
-                },
-                #[allow(unreachable_patterns)]
-                _ => unreachable!(),
+                #[cfg_attr(
+                    not(any(
+                        feature = "parquet",
+                        feature = "ipc",
+                        feature = "csv",
+                        feature = "json",
+                        feature = "scan_lines"
+                    )),
+                    expect(unreachable_patterns)
+                )]
+                _ => get_streaming_executor_builder()(root, lp_arena, expr_arena),
             }
         },
 
@@ -654,8 +539,7 @@ fn create_physical_plan_impl(
                         false
                     }
                 });
-                let builder =
-                    build_streaming_executor.expect("invalid build. Missing feature new-streaming");
+                let builder = get_streaming_executor_builder();
 
                 let input = recurse!(input, state)?;
                 let executor = Box::new(GroupByStreamingExec::new(
@@ -746,7 +630,7 @@ fn create_physical_plan_impl(
                             let mask = phys_expr.evaluate(&df, &execution_state)?;
                             let mask = mask.as_materialized_series();
                             let mask = mask.bool()?;
-                            df._filter_seq(mask)
+                            df.filter_seq(mask)
                         }))
                     })
                 })

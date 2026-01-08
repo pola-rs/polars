@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -262,7 +263,7 @@ def test_list_contains_invalid_datatype() -> None:
     df = pl.DataFrame({"a": [[1, 2], [3, 4]]}, schema={"a": pl.Array(pl.Int8, shape=2)})
     with pytest.raises(
         InvalidOperationError,
-        match=r"expected List data type for list operation, got: array\[i8, 2\]",
+        match=r"expected List data type for list operation, got: Array\(Int8, 2\)",
     ):
         df.select(pl.col("a").list.contains(2))
 
@@ -841,7 +842,7 @@ def test_list_to_array_wrong_dtype() -> None:
     s = pl.Series([1.0, 2.0])
     with pytest.raises(
         InvalidOperationError,
-        match="expected List data type for list operation, got: f64",
+        match="expected List data type for list operation, got: Float64",
     ):
         s.list.to_array(2)
 
@@ -1309,3 +1310,31 @@ def test_list_slice_invalid_length_type_22025() -> None:
         TypeError, match="'length' must be an integer, string, or expression"
     ):
         df.select(pl.col.a.list.slice(0, {0, 1}))  # type: ignore[arg-type]
+
+
+def test_list_get_decimal_25830() -> None:
+    df = pl.DataFrame(
+        {
+            "data": [
+                [
+                    Decimal("3170.047636167534520980"),
+                    Decimal("3203.912032898265107424"),
+                ],
+                [
+                    Decimal("3170.047636167534520981"),
+                    Decimal("3203.912032898265107425"),
+                ],
+            ]
+        }
+    )
+
+    out = df.select(pl.col("data").list.get(pl.lit(pl.Series([0, 1]))))
+    expected = pl.DataFrame(
+        {
+            "data": [
+                Decimal("3170.047636167534520980"),
+                Decimal("3203.912032898265107425"),
+            ]
+        }
+    )
+    assert_frame_equal(out, expected)

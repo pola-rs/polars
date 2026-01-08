@@ -215,12 +215,18 @@ impl<'a> ObservableOrdersResolver<'a> {
                 | IRAggExpr::Std(node, _)
                 | IRAggExpr::Var(node, _)
                 | IRAggExpr::Item { input: node, .. } => {
-                    // Input order is deregarded, but must not observe order.
+                    // Input order is disregarded, but must not observe order.
                     _ = rec!(*node);
                     O::None
                 },
+                IRAggExpr::MinBy { input, by } | IRAggExpr::MaxBy { input, by } => {
+                    // Input and 'by' order is disregarded, but must not observe order.
+                    _ = rec!(*input);
+                    _ = rec!(*by);
+                    O::None
+                },
                 IRAggExpr::Quantile { expr, quantile, .. } => {
-                    // Input and quantile order is deregarded, but must not observe order.
+                    // Input and quantile order is disregarded, but must not observe order.
                     _ = rec!(*expr);
                     _ = rec!(*quantile);
                     O::None
@@ -253,6 +259,7 @@ impl<'a> ObservableOrdersResolver<'a> {
                 expr,
                 idx,
                 returns_scalar,
+                null_on_oob: _,
             } => {
                 let expr = rec!(*expr);
                 let idx = rec!(*idx);

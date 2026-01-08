@@ -15,8 +15,8 @@ if TYPE_CHECKING:
     with contextlib.suppress(ImportError):  # Module not available when building docs
         from polars._plr import PyDataFrame, PyExpr
 
-    from collections.abc import Sequence
-    from typing import IO, Any, Callable
+    from collections.abc import Callable, Sequence
+    from typing import IO, Any
 
     from polars._typing import SyncOnCloseMethod
     from polars.expr import Expr
@@ -498,8 +498,7 @@ class PartitionParted(_SinkDirectory):
         )
 
 
-# TODO: Add `kw_only=True` after 3.9 support dropped
-@dataclass
+@dataclass(kw_only=True)
 class _SinkDirectoryInner:
     """
     Holds parsed directory sink options.

@@ -123,7 +123,7 @@ pub(super) fn reshape(c: &Column, dimensions: &[ReshapeDimension]) -> PolarsResu
 pub(super) fn repeat_by(s: &[Column]) -> PolarsResult<Column> {
     let by = &s[1];
     let s = &s[0];
-    let by = by.cast(&IDX_DTYPE)?;
+    let by = by.strict_cast(&IDX_DTYPE)?;
     polars_ops::chunked_array::repeat_by(s.as_materialized_series(), by.idx()?)
         .map(|ok| ok.into_column())
 }

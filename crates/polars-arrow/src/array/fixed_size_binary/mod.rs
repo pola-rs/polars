@@ -185,7 +185,7 @@ impl FixedSizeBinaryArray {
     /// Panics iff the dtype is not supported for the physical type.
     #[inline]
     pub fn to(self, dtype: ArrowDataType) -> Self {
-        match (dtype.to_logical_type(), self.dtype().to_logical_type()) {
+        match (dtype.to_storage(), self.dtype().to_storage()) {
             (ArrowDataType::FixedSizeBinary(size_a), ArrowDataType::FixedSizeBinary(size_b))
                 if size_a == size_b => {},
             _ => panic!("Wrong DataType"),
@@ -207,7 +207,7 @@ impl FixedSizeBinaryArray {
 
 impl FixedSizeBinaryArray {
     pub(crate) fn maybe_get_size(dtype: &ArrowDataType) -> PolarsResult<usize> {
-        match dtype.to_logical_type() {
+        match dtype.to_storage() {
             ArrowDataType::Float16 => Ok(2),
             ArrowDataType::FixedSizeBinary(size) => {
                 polars_ensure!(*size != 0, ComputeError: "FixedSizeBinaryArray expects a positive size");

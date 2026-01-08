@@ -52,8 +52,8 @@ String
        (returning 0 indicates that the given string was not found).
    * - :ref:`STRPTIME <strptime>`
      - Converts a string to a Datetime using a strftime-compatible formatting string.
-   * - :ref:`SUBSTR <substr>`
-     - Returns a slice of the string data in the range [start, start + length]; note that `start` is 1-indexed.
+   * - :ref:`SUBSTR <substr>`, :ref:`SUBSTRING <substring>`
+     - Returns a slice of the string data (from a start index, with an optional length); note that `start` is 1-indexed.
    * - :ref:`TIMESTAMP <timestamp>`
      - Converts a formatted timestamp/datetime string to an actual Datetime value.
    * - :ref:`UPPER <upper>`
@@ -714,8 +714,12 @@ Converts a string to a Datetime using a `chrono strftime <https://docs.rs/chrono
 .. _substr:
 
 SUBSTR
----------
-Returns a slice of the string data in the range [start, start + length]; note that `start` is 1-indexed.
+------
+Returns a slice of the string data (from a start index, with an optional length); note that `start` is 1-indexed.
+
+.. seealso::
+
+   :ref:`SUBSTRING <substring>` supports the additional form (``FROM ... FOR ...``).
 
 **Example:**
 
@@ -735,6 +739,45 @@ Returns a slice of the string data in the range [start, start + length]; note th
     # │ banana ┆ nana    │
     # │ orange ┆ ange    │
     # │ grape  ┆ ape     │
+    # └────────┴─────────┘
+
+.. _substring:
+
+SUBSTRING
+---------
+Returns a slice of the string data (from a start index, with an optional length); note that `start` is 1-indexed.
+
+.. seealso::
+
+   :ref:`SUBSTR <substr>` for the simpler function-call syntax.
+
+Supports multiple forms:
+
+* ``SUBSTRING(str, start)``
+* ``SUBSTRING(str, start, length)``
+* ``SUBSTRING(str FROM start)``
+* ``SUBSTRING(str FROM start FOR length)``
+
+Note that `start` is 1-indexed.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": ["apple", "banana", "orange", "grape"]})
+    df.sql("""
+      SELECT foo, SUBSTRING(foo FROM 2 FOR 3) AS foo_2_3 FROM self
+    """)
+    # shape: (4, 2)
+    # ┌────────┬─────────┐
+    # │ foo    ┆ foo_2_3 │
+    # │ ---    ┆ ---     │
+    # │ str    ┆ str     │
+    # ╞════════╪═════════╡
+    # │ apple  ┆ ppl     │
+    # │ banana ┆ ana     │
+    # │ orange ┆ ran     │
+    # │ grape  ┆ rap     │
     # └────────┴─────────┘
 
 

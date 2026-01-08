@@ -78,18 +78,13 @@ def _patch_asyncio():
     # Use module level _current_tasks, all_tasks and patch run method.
     if hasattr(asyncio, "_nest_patched"):
         return
-    if sys.version_info >= (3, 6, 0):
-        asyncio.Task = asyncio.tasks._CTask = asyncio.tasks.Task = asyncio.tasks._PyTask
-        asyncio.Future = asyncio.futures._CFuture = asyncio.futures.Future = (
-            asyncio.futures._PyFuture
-        )
-    if sys.version_info < (3, 7, 0):
-        asyncio.tasks._current_tasks = asyncio.tasks.Task._current_tasks
-        asyncio.all_tasks = asyncio.tasks.Task.all_tasks
-    if sys.version_info >= (3, 9, 0):
-        events._get_event_loop = events.get_event_loop = asyncio.get_event_loop = (
-            _get_event_loop
-        )
+    asyncio.Task = asyncio.tasks._CTask = asyncio.tasks.Task = asyncio.tasks._PyTask
+    asyncio.Future = asyncio.futures._CFuture = asyncio.futures.Future = (
+        asyncio.futures._PyFuture
+    )
+    events._get_event_loop = events.get_event_loop = asyncio.get_event_loop = (
+        _get_event_loop
+    )
     asyncio.run = run
     asyncio._nest_patched = True
 
@@ -241,13 +236,7 @@ def _patch_loop(loop):
     cls._is_proactorloop = os.name == "nt" and issubclass(
         cls, asyncio.ProactorEventLoop
     )
-    if sys.version_info < (3, 7, 0):
-        cls._set_coroutine_origin_tracking = cls._set_coroutine_wrapper
-    curr_tasks = (
-        asyncio.tasks._current_tasks
-        if sys.version_info >= (3, 7, 0)
-        else asyncio.Task._current_tasks
-    )
+    curr_tasks = asyncio.tasks._current_tasks
     cls._nest_patched = True
 
 

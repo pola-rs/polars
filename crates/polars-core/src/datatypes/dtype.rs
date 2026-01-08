@@ -378,6 +378,28 @@ impl DataType {
         }
     }
 
+    /// Map all leaf types of nested dtypes (list, array, struct) using the
+    /// supplied function.
+    pub fn map_leaves<F: FnMut(DataType) -> DataType>(self, f: &mut F) -> DataType {
+        use DataType::*;
+        match self {
+            List(inner) => List(Box::new(inner.map_leaves(f))),
+            #[cfg(feature = "dtype-array")]
+            Array(inner, size) => Array(Box::new(inner.map_leaves(f)), size),
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields) => {
+                let new_fields = fields
+                    .into_iter()
+                    .map(|fld| Field::new(fld.name, fld.dtype.map_leaves(f)))
+                    .collect();
+                Struct(new_fields)
+            },
+            #[cfg(feature = "dtype-extension")]
+            Extension(ext, storage) => Extension(ext, Box::new(storage.map_leaves(f))),
+            _ => f(self),
+        }
+    }
+
     /// Return whether the cast to `to` makes sense.
     ///
     /// If it `None`, we are not sure.

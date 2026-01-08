@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
 from polars.testing.asserts.frame import assert_frame_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 READ_WRITE_FUNC_PARAM = [
     (pl.read_parquet, pl.DataFrame.write_parquet),

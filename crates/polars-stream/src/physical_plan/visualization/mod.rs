@@ -12,9 +12,11 @@ use polars_utils::arena::Arena;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{IdxSize, format_pl_smallstr};
 
+use crate::physical_plan::visualization::models::SortColumn;
+
 pub mod models;
 pub use models::{PhysNodeInfo, PhysicalPlanVisualizationData};
-use slotmap::SlotMap;
+use slotmap::{SecondaryMap, SlotMap};
 
 use crate::physical_plan::visualization::models::{Edge, PhysNodeProperties};
 use crate::physical_plan::{PhysNode, PhysNodeKey, PhysNodeKind};
@@ -29,6 +31,7 @@ pub fn generate_visualization_data(
         phys_sm,
         expr_arena,
         queue: VecDeque::from_iter(roots.iter().copied()),
+        marked_for_visit: SecondaryMap::from_iter(roots.iter().map(|r| (*r, ()))),
         nodes_list: vec![],
         edges: vec![],
     }
@@ -46,6 +49,7 @@ struct PhysicalPlanVisualizationDataGenerator<'a> {
     phys_sm: &'a SlotMap<PhysNodeKey, PhysNode>,
     expr_arena: &'a Arena<AExpr>,
     queue: VecDeque<PhysNodeKey>,
+    marked_for_visit: SecondaryMap<PhysNodeKey, ()>,
     nodes_list: Vec<PhysNodeInfo>,
     edges: Vec<Edge>,
 }
@@ -61,10 +65,13 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
             phys_node_info.id = current_node_key;
 
             for input_node in node_inputs.drain(..) {
-                let input_node_key = input_node.0.as_ffi();
+                self.edges
+                    .push(Edge::new(current_node_key, input_node.0.as_ffi()));
 
-                self.queue.push_back(input_node);
-                self.edges.push(Edge::new(current_node_key, input_node_key));
+                let not_yet_marked = self.marked_for_visit.insert(input_node, ()).is_none();
+                if not_yet_marked {
+                    self.queue.push_back(input_node);
+                }
             }
 
             self.nodes_list.push(phys_node_info);
@@ -117,38 +124,6 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     ..Default::default()
                 }
             },
-            PhysNodeKind::FileSink {
-                target,
-                sink_options:
-                    SinkOptions {
-                        sync_on_close,
-                        maintain_order,
-                        mkdir,
-                    },
-                file_type,
-                input,
-                cloud_options,
-            } => {
-                phys_node_inputs.push(input.node);
-
-                let properties = PhysNodeProperties::FileSink {
-                    target: match target {
-                        SinkTarget::Path(p) => format_pl_smallstr!("Path({})", p.to_str()),
-                        SinkTarget::Dyn(_) => PlSmallStr::from_static("DynWriteable"),
-                    },
-                    file_format: PlSmallStr::from_static(file_type.into()),
-                    sync_on_close: *sync_on_close,
-                    maintain_order: *maintain_order,
-                    mkdir: *mkdir,
-                    cloud_options: cloud_options.is_some(),
-                };
-
-                PhysNodeInfo {
-                    title: properties.variant_name(),
-                    properties,
-                    ..Default::default()
-                }
-            },
             PhysNodeKind::Filter { input, predicate } => {
                 phys_node_inputs.push(input.node);
 
@@ -176,12 +151,26 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     ..Default::default()
                 }
             },
-            PhysNodeKind::GroupBy { input, key, aggs } => {
-                phys_node_inputs.push(input.node);
+            PhysNodeKind::GroupBy {
+                inputs,
+                key_per_input,
+                aggs_per_input,
+            } => {
+                for input in inputs {
+                    phys_node_inputs.push(input.node);
+                }
 
+                let key_per_input: Vec<_> = key_per_input
+                    .iter()
+                    .map(|key| expr_list(key, self.expr_arena))
+                    .collect();
+                let aggs_per_input: Vec<_> = aggs_per_input
+                    .iter()
+                    .map(|aggs| expr_list(aggs, self.expr_arena))
+                    .collect();
                 let properties = PhysNodeProperties::GroupBy {
-                    keys: expr_list(key, self.expr_arena),
-                    aggs: expr_list(aggs, self.expr_arena),
+                    key_per_input,
+                    aggs_per_input,
                 };
 
                 PhysNodeInfo {
@@ -538,7 +527,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                 row_index,
                 pre_slice,
                 predicate,
-                predicate_file_skip_applied: _,
+                predicate_file_skip_applied,
                 hive_parts,
                 include_file_paths,
                 cast_columns_policy: _,
@@ -572,6 +561,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     predicate: predicate
                         .as_ref()
                         .map(|e| format_pl_smallstr!("{}", e.display(self.expr_arena))),
+                    predicate_file_skip_applied: *predicate_file_skip_applied,
                     has_table_statistics: table_statistics.is_some(),
                     include_file_paths: include_file_paths.clone(),
                     deletion_files_type: deletion_files
@@ -714,7 +704,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     ..Default::default()
                 }
             },
-            PhysNodeKind::FileSink2 {
+            PhysNodeKind::FileSink {
                 input,
                 options:
                     FileSinkOptions {
@@ -979,10 +969,17 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                 phys_node_inputs.push(input.node);
 
                 let properties = PhysNodeProperties::Sort {
-                    by_exprs: expr_list(by_column, self.expr_arena),
+                    sort_columns: by_column
+                        .iter()
+                        .zip(descending.iter())
+                        .zip(nulls_last.iter())
+                        .map(|((expr, &descending), &nulls_last)| SortColumn {
+                            expr: format_pl_smallstr!("{}", expr.display(self.expr_arena)),
+                            descending,
+                            nulls_last,
+                        })
+                        .collect(),
                     slice: convert_opt_slice(slice),
-                    descending: descending.clone(),
-                    nulls_last: nulls_last.clone(),
                     multithreaded: *multithreaded,
                     maintain_order: *maintain_order,
                     #[allow(clippy::useless_conversion)]
