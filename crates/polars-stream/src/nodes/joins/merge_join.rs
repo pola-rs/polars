@@ -559,21 +559,31 @@ fn compute_join_dispatch(
             params,
         ),
         #[cfg(feature = "dtype-categorical")]
-        dt @ (DataType::Enum(_, _) | DataType::Categorical(_, _)) => {
-            match dt.cat_physical().unwrap() {
-                CategoricalPhysical::U8 => {
-                    dispatch!(lk.cat8().unwrap().physical(), rk.cat8().unwrap().physical())
-                },
-                CategoricalPhysical::U16 => dispatch!(
-                    lk.cat16().unwrap().physical(),
-                    rk.cat16().unwrap().physical()
-                ),
-                CategoricalPhysical::U32 => dispatch!(
-                    lk.cat32().unwrap().physical(),
-                    rk.cat32().unwrap().physical()
-                ),
-            }
+        DataType::Enum(cats, _) => match cats.physical() {
+            CategoricalPhysical::U8 => {
+                dispatch!(lk.cat8().unwrap().physical(), rk.cat8().unwrap().physical())
+            },
+            CategoricalPhysical::U16 => dispatch!(
+                lk.cat16().unwrap().physical(),
+                rk.cat16().unwrap().physical()
+            ),
+            CategoricalPhysical::U32 => dispatch!(
+                lk.cat32().unwrap().physical(),
+                rk.cat32().unwrap().physical()
+            ),
         },
+        #[cfg(feature = "dtype-categorical")]
+        DataType::Categorical(_, _) => compute_join_dispatch(
+            &lk.cast(&DataType::String).unwrap(),
+            &rk.cast(&DataType::String).unwrap(),
+            gather_left,
+            gather_right,
+            matched_right,
+            current_offset,
+            left_sp,
+            right_sp,
+            params,
+        ),
         dt => unimplemented!("merge-join kernel not implemented for {:?}", dt),
     }
 }

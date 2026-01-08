@@ -449,7 +449,7 @@ def test_merge_join(
         )
 
     seed = 0
-    for height, _ in itertools.product(range(5), range(max_examples)):
+    for height, _ in itertools.product([0, 1, 5], range(max_examples)):
         # Use random testing, because hypothesis does not work well with
         # monkeypatch.
 
