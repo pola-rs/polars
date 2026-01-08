@@ -341,14 +341,14 @@ def test_order_observe_sort_before_unique_22485() -> None:
     q = lf.sort("order").unique(["id"], keep="last").sort("order")
 
     plan = q.explain()
-    assert "SORT BY" in plan[plan.index("UNIQUE"):]
+    assert "SORT BY" in plan[plan.index("UNIQUE") :]
 
     assert_frame_equal(q.collect(), expect)
 
     q = lf.sort("order").unique(["id"], keep="last", maintain_order=True)
 
     plan = q.explain()
-    assert "SORT BY" in plan[plan.index("UNIQUE"):]
+    assert "SORT BY" in plan[plan.index("UNIQUE") :]
 
     assert_frame_equal(q.collect(), expect)
 
