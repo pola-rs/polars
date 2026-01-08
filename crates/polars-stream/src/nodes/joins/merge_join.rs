@@ -327,7 +327,7 @@ impl ComputeNode for MergeJoinNode {
                 }
                 Ok(())
             }));
-        } else if self.state == MergeJoinState::EmitUnmatched {
+        } else if self.state == EmitUnmatched {
             assert!(recv_ports[0].is_none());
             assert!(recv_ports[1].is_none());
             assert!(send_ports[0].is_some());
