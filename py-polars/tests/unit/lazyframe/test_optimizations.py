@@ -341,14 +341,14 @@ def test_order_observe_sort_before_unique_22485() -> None:
     q = lf.sort("order").unique(["id"], keep="last").sort("order")
 
     plan = q.explain()
-    assert "SORT BY" in plan[plan.index("UNIQUE") :]
+    assert "SORT BY" in plan[plan.index("UNIQUE"):]
 
     assert_frame_equal(q.collect(), expect)
 
     q = lf.sort("order").unique(["id"], keep="last", maintain_order=True)
 
     plan = q.explain()
-    assert "SORT BY" in plan[plan.index("UNIQUE") :]
+    assert "SORT BY" in plan[plan.index("UNIQUE"):]
 
     assert_frame_equal(q.collect(), expect)
 
@@ -463,13 +463,13 @@ def test_slice_pushdown_expr_25473() -> None:
 
 
 def test_lazy_groupby_maintain_order_after_asof_join_25973() -> None:
-    # Build the time frames
+    # Small target times: 00:00, 00:10, 00:20, 00:30
     targettime = (
         pl.DataFrame(
             {
                 "targettime": pl.time_range(
                     dt.time(0, 0),
-                    dt.time(23, 59),
+                    dt.time(0, 30),
                     interval="10m",
                     closed="both",
                     eager=True,
@@ -483,12 +483,13 @@ def test_lazy_groupby_maintain_order_after_asof_join_25973() -> None:
         .lazy()
     )
 
+    # Small input times: every second from 00:00 to 00:30
     df = (
         pl.DataFrame(
             {
                 "time": pl.time_range(
                     dt.time(0, 0),
-                    dt.time(23, 59),
+                    dt.time(0, 30),
                     interval="1s",
                     closed="both",
                     eager=True,
@@ -518,5 +519,21 @@ def test_lazy_groupby_maintain_order_after_asof_join_25973() -> None:
         .collect()
     )
 
-    # Now should maintain order; just check monotonicity of the targettime key
-    assert result["targettime"].is_sorted()
+    # Fully static expected result (4 rows total)
+    expected = pl.DataFrame(
+        {
+            "targettime": [
+                dt.datetime(2026, 1, 1, 0, 0),
+                dt.datetime(2026, 1, 1, 0, 10),
+                dt.datetime(2026, 1, 1, 0, 20),
+                dt.datetime(2026, 1, 1, 0, 30),
+            ],
+            "value": pl.Series(
+                "value",
+                [0, 600, 1200, 1800],
+                dtype=pl.UInt64,
+            ),
+        }
+    )
+
+    assert_frame_equal(result, expected)
