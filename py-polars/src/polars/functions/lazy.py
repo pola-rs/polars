@@ -2025,7 +2025,7 @@ def collect_all(
     collapse_joins: bool = True,
     optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     engine: EngineType = "auto",
-    lazy: Literal[False],
+    lazy: Literal[False] = False,
 ) -> list[DataFrame]: ...
 
 

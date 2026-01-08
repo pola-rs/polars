@@ -183,7 +183,7 @@ def test_collect_all_lazy() -> None:
 
         q = pl.collect_all([d, b, c], lazy=True)
 
-        assert q._ldf._node_name() == "SinkMultiple"
+        assert q._ldf._node_name() == "SinkMultiple"  # type: ignore[attr-defined]
         q.collect()
         df_a = pl.read_csv(tmp_path / "a.csv")
         df_b = pl.read_csv(tmp_path / "b.csv")
