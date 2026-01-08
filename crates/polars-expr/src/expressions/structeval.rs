@@ -222,7 +222,7 @@ impl PhysicalExpr for StructEvalExpr {
         let mut eval = Vec::with_capacity(self.evaluation.len() + 1);
         let input_len = input.len();
 
-        state.with_fields = Arc::new(Some(input.struct_()?.clone()));
+        state.with_fields = Some(Arc::new(input.struct_()?.clone()));
 
         // Collect evaluation fields; input goes first.
         eval.push(input);
@@ -273,7 +273,7 @@ impl PhysicalExpr for StructEvalExpr {
 
         // Snap the AC into the ExecutionState for re-use when Field is evaluated.
         let mut state = state.clone();
-        state.with_fields_ac = Arc::new(Some(ac.into_static()));
+        state.with_fields_ac = Some(Arc::new(ac.into_static()));
 
         // Collect evaluation fields.
         let mut acs = Vec::with_capacity(self.evaluation.len() + 1);
@@ -298,7 +298,7 @@ impl PhysicalExpr for StructEvalExpr {
         }
 
         // Revert ExecutionState.
-        state.with_fields_ac = Arc::new(None);
+        state.with_fields_ac = None;
 
         // Merge the `evaluation` back into the `input` struct.
         // @NOTE. From this point on, we are dealing with a regular Function `with_fields`, which is

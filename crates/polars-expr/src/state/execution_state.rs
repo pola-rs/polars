@@ -124,9 +124,9 @@ pub struct ExecutionState {
     pub branch_idx: usize,
     pub flags: RelaxedCell<u8>,
     #[cfg(feature = "dtype-struct")]
-    pub with_fields: Arc<Option<StructChunked>>,
+    pub with_fields: Option<Arc<StructChunked>>,
     #[cfg(feature = "dtype-struct")]
-    pub with_fields_ac: Arc<Option<AggregationContext<'static>>>,
+    pub with_fields_ac: Option<Arc<AggregationContext<'static>>>,
     pub ext_contexts: Arc<Vec<DataFrame>>,
     pub element: Arc<Option<(Column, Option<Bitmap>)>>,
     node_timer: Option<NodeTimer>,

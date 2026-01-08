@@ -553,10 +553,10 @@ fn create_physical_expr_inner(
                 .get(expression)
                 .to_field(&ToFieldContext::new(expr_arena, schema))?;
             let input_field = expr_arena
-                .get(*expr)
+                .get(expr)
                 .to_field(&ToFieldContext::new(expr_arena, schema))?;
 
-            let input = create_physical_expr_inner(*expr, expr_arena, schema, state)?;
+            let input = create_physical_expr_inner(expr, expr_arena, schema, state)?;
 
             let mut eval_schema = schema.as_ref().clone();
             eval_schema.insert(get_pl_structfields_name(), input_field.dtype().clone());

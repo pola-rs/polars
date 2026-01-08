@@ -34,7 +34,6 @@ impl PhysicalExpr for FieldExpr {
         let ca = state
             .with_fields
             .as_ref()
-            .as_ref()
             .ok_or_else(|| polars_err!(invalid_field_use))?;
 
         ca.field_by_name(self.name.as_str()).map(Column::from)
@@ -49,7 +48,6 @@ impl PhysicalExpr for FieldExpr {
     ) -> PolarsResult<AggregationContext<'a>> {
         let ac = state
             .with_fields_ac
-            .as_ref()
             .as_ref()
             .ok_or_else(|| polars_err!(invalid_field_use))?;
 
