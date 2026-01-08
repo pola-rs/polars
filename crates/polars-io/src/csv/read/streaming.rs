@@ -184,8 +184,7 @@ fn for_each_line_from_reader(
 ) -> PolarsResult<MemSlice> {
     let mut is_first_line = is_file_start;
 
-    // Since this is used for schema inference, we want to avoid needlessly large reads at first.
-    let mut read_size = 128 * 1024;
+    let mut read_size = CompressedReader::initial_read_size();
     let mut retain_offset = None;
 
     loop {
@@ -221,7 +220,7 @@ fn for_each_line_from_reader(
             parse_options.comment_prefix.as_ref(),
         );
         let Some(mut prev_line) = lines.next() else {
-            read_size *= 2;
+            read_size = read_size.saturating_mul(2);
             prev_leftover = slice;
             continue;
         };
@@ -274,6 +273,10 @@ fn for_each_line_from_reader(
             let leftover = prev_leftover.slice(retain_offset.unwrap_or(0)..prev_leftover.len());
             return Ok(leftover);
         }
+
+        if read_size < CompressedReader::ideal_read_size() {
+            read_size *= 4;
+        }
     }
 }
 
@@ -290,8 +293,7 @@ fn skip_lines_naive(
     }
 
     let mut remaining = skip_lines;
-    // Since this is used for schema inference, we want to avoid needlessly large reads at first.
-    let mut read_size = 128 * 1024;
+    let mut read_size = CompressedReader::initial_read_size();
 
     loop {
         let (slice, bytes_read) = reader.read_next_slice(&prev_leftover, read_size)?;
@@ -299,7 +301,7 @@ fn skip_lines_naive(
 
         'inner: loop {
             let Some(mut pos) = memchr::memchr(eol_char, bytes) else {
-                read_size *= 2;
+                read_size = read_size.saturating_mul(2);
                 break 'inner;
             };
             pos = cmp::min(pos + 1, bytes.len());
@@ -324,6 +326,10 @@ fn skip_lines_naive(
 
         // No need to search for naive eol twice in the leftover.
         prev_leftover = MemSlice::EMPTY;
+
+        if read_size < CompressedReader::ideal_read_size() {
+            read_size *= 4;
+        }
     }
 }
 

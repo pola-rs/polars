@@ -109,6 +109,23 @@ impl CompressedReader {
         !matches!(&self, CompressedReader::Uncompressed { .. })
     }
 
+    pub const fn initial_read_size() -> usize {
+        // We don't want to read too much at the beginning to keep decompression to a minimum if for
+        // example only the schema is needed or a slice op is used. Keep in sync with
+        // `ideal_read_size` so that `initial_read_size * N * 4 == ideal_read_size`.
+        32 * 1024
+    }
+
+    pub const fn ideal_read_size() -> usize {
+        // Somewhat conservative guess for L2 size, which performs the best on most machines and is
+        // nearly always core exclusive. The loss of going larger and accidentally hitting L3 is not
+        // recouped by amortizing the block processing cost even further.
+        //
+        // It's possible that callers use or need a larger `read_size` if for example a single row
+        // doesn't fit in the 512KB.
+        512 * 1024
+    }
+
     /// If possible returns the total number of bytes that will be produced by reading from the
     /// start to finish.
     pub fn total_len_estimate(&self) -> usize {
