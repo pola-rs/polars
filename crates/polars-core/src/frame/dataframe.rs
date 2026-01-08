@@ -8,7 +8,6 @@ use super::validation::validate_columns_slice;
 use crate::frame::column::Column;
 use crate::prelude::CompatLevel;
 use crate::schema::{Schema, SchemaRef};
-use crate::utils::Container;
 
 /// A contiguous growable collection of [`Column`]s that have the same length.
 ///
