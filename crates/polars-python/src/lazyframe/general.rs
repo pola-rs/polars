@@ -1697,8 +1697,8 @@ impl Iterator for ArrowStreamIterator {
         let next = self.inner.lock().next();
         match next {
             None => None,
-            Some(df) => {
-                let mut df = df.unwrap();
+            Some(Err(err)) => return Some(Err(err)),
+            Some(Ok(mut df)) => {
                 df.rechunk_mut();
                 let batch_cols = df
                     .columns()
