@@ -35,6 +35,14 @@ enum NeedMore {
     Finished,
 }
 
+#[derive(Default)]
+struct ComputeJoinArenas {
+    gather_left: Vec<IdxSize>,
+    gather_right: Vec<IdxSize>,
+    matched_probeside: MutableBitmap,
+    df_builders: Option<(DataFrameBuilder, DataFrameBuilder)>,
+}
+
 #[derive(Debug)]
 struct SideParams {
     input_schema: SchemaRef,
@@ -287,7 +295,7 @@ impl ComputeNode for MergeJoinNode {
             join_handles.extend(dist_recv.into_iter().zip(send).map(|(mut recv, mut send)| {
                 let unmatched_send = unmatched_send.clone();
                 scope.spawn_task(TaskPriority::High, async move {
-                    let mut arenas = Arenas::default();
+                    let mut arenas = ComputeJoinArenas::default();
 
                     while let Ok((left, right, seq, source_token)) = recv.recv().await {
                         compute_join(
@@ -338,6 +346,489 @@ impl ComputeNode for MergeJoinNode {
                 Ok(())
             }));
         }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn compute_join(
+    left: DataFrameBuffer,
+    right: DataFrameBuffer,
+    seq: MorselSeq,
+    source_token: SourceToken,
+    params: &MergeJoinParams,
+    arenas: &mut ComputeJoinArenas,
+    matched_send: &mut PortSender,
+    unmatched_send: tokio::sync::mpsc::Sender<Morsel>,
+) -> PolarsResult<()> {
+    let mut left_sp = &params.left;
+    let mut right_sp = &params.right;
+    let mut left = left.into_df();
+    let mut right = right.into_df();
+
+    left.rechunk_mut();
+    right.rechunk_mut();
+
+    let left_key = left
+        .column(&params.left.key_col)
+        .unwrap()
+        .as_materialized_series();
+    let right_key = right
+        .column(&params.right.key_col)
+        .unwrap()
+        .as_materialized_series();
+    let right_is_build = params.right_is_build().unwrap_or(false);
+
+    arenas.matched_probeside.clear();
+    if right_is_build {
+        arenas.matched_probeside.resize(left_key.len(), false);
+    } else {
+        arenas.matched_probeside.resize(right_key.len(), false);
+    }
+
+    let mut current_offset = 0;
+    let mut done = false;
+    while !done {
+        arenas.gather_left.clear();
+        arenas.gather_right.clear();
+        if right_is_build {
+            done = compute_join_dispatch(
+                right_key,
+                left_key,
+                &mut arenas.gather_right,
+                &mut arenas.gather_left,
+                &mut arenas.matched_probeside,
+                &mut current_offset,
+                right_sp,
+                left_sp,
+                params,
+            );
+        } else {
+            done = compute_join_dispatch(
+                left_key,
+                right_key,
+                &mut arenas.gather_left,
+                &mut arenas.gather_right,
+                &mut arenas.matched_probeside,
+                &mut current_offset,
+                left_sp,
+                right_sp,
+                params,
+            );
+        }
+
+        let df = gather_and_postprocess(
+            left.clone(),
+            right.clone(),
+            &mut arenas.gather_left,
+            &mut arenas.gather_right,
+            &mut arenas.df_builders,
+            params,
+        )?;
+        if df.height() > 0 {
+            let morsel = Morsel::new(df, seq, source_token.clone());
+            if matched_send.send(morsel).await.is_err() {
+                panic!("broken pipe");
+            };
+        }
+    }
+
+    arenas.gather_left.clear();
+    arenas.gather_right.clear();
+    if right_is_build {
+        swap(&mut arenas.gather_left, &mut arenas.gather_right);
+        swap(&mut left_sp, &mut right_sp);
+    }
+    if right_sp.emit_unmatched {
+        for (idx, _) in arenas
+            .matched_probeside
+            .iter()
+            .enumerate_idx()
+            .filter(|(_, m)| !m)
+        {
+            arenas.gather_left.push(IdxSize::MAX);
+            arenas.gather_right.push(idx);
+        }
+    }
+    if right_is_build {
+        swap(&mut arenas.gather_left, &mut arenas.gather_right);
+        swap(&mut left_sp, &mut right_sp);
+    }
+
+    let df_unmatched = gather_and_postprocess(
+        left,
+        right,
+        &mut arenas.gather_left,
+        &mut arenas.gather_right,
+        &mut arenas.df_builders,
+        params,
+    )?;
+    if df_unmatched.height() > 0 {
+        let morsel = Morsel::new(df_unmatched, seq, source_token.clone());
+        if unmatched_send.send(morsel).await.is_err() {
+            panic!("broken pipe");
+        }
+    }
+
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn compute_join_dispatch(
+    lk: &Series,
+    rk: &Series,
+    gather_left: &mut Vec<IdxSize>,
+    gather_right: &mut Vec<IdxSize>,
+    matched_right: &mut MutableBitmap,
+    current_offset: &mut usize,
+    left_sp: &SideParams,
+    right_sp: &SideParams,
+    params: &MergeJoinParams,
+) -> bool {
+    macro_rules! dispatch {
+        ($left_key:expr, $right_key:expr) => {
+            compute_join_kernel(
+                $left_key,
+                $right_key,
+                gather_left,
+                gather_right,
+                matched_right,
+                current_offset,
+                left_sp,
+                right_sp,
+                params,
+            )
+        };
+    }
+
+    debug_assert_eq!(lk.dtype(), rk.dtype());
+    match lk.dtype() {
+        DataType::Boolean => dispatch!(lk.bool().unwrap(), rk.bool().unwrap()),
+        #[cfg(feature = "dtype-i8")]
+        DataType::Int8 => dispatch!(lk.i8().unwrap(), rk.i8().unwrap()),
+        #[cfg(feature = "dtype-i16")]
+        DataType::Int16 => dispatch!(lk.i16().unwrap(), rk.i16().unwrap()),
+        DataType::Int32 => dispatch!(lk.i32().unwrap(), rk.i32().unwrap()),
+        DataType::Int64 => dispatch!(lk.i64().unwrap(), rk.i64().unwrap()),
+        #[cfg(feature = "dtype-i128")]
+        DataType::Int128 => dispatch!(lk.i128().unwrap(), rk.i128().unwrap()),
+        #[cfg(feature = "dtype-u8")]
+        DataType::UInt8 => dispatch!(lk.u8().unwrap(), rk.u8().unwrap()),
+        #[cfg(feature = "dtype-u16")]
+        DataType::UInt16 => dispatch!(lk.u16().unwrap(), rk.u16().unwrap()),
+        DataType::UInt32 => dispatch!(lk.u32().unwrap(), rk.u32().unwrap()),
+        DataType::UInt64 => dispatch!(lk.u64().unwrap(), rk.u64().unwrap()),
+        #[cfg(feature = "dtype-u128")]
+        DataType::UInt128 => dispatch!(lk.u128().unwrap(), rk.u128().unwrap()),
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => dispatch!(lk.f16().unwrap(), rk.f16().unwrap()),
+        DataType::Float32 => dispatch!(lk.f32().unwrap(), rk.f32().unwrap()),
+        DataType::Float64 => dispatch!(lk.f64().unwrap(), rk.f64().unwrap()),
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(_, _) => dispatch!(
+            lk.decimal().unwrap().physical(),
+            rk.decimal().unwrap().physical()
+        ),
+        DataType::String => dispatch!(lk.str().unwrap(), rk.str().unwrap()),
+        DataType::Binary => dispatch!(lk.binary().unwrap(), rk.binary().unwrap()),
+        DataType::BinaryOffset => {
+            dispatch!(lk.binary_offset().unwrap(), rk.binary_offset().unwrap())
+        },
+        #[cfg(feature = "dtype-date")]
+        DataType::Date => dispatch!(lk.date().unwrap().physical(), rk.date().unwrap().physical()),
+        #[cfg(feature = "dtype-datetime")]
+        DataType::Datetime(_, _) => dispatch!(
+            lk.datetime().unwrap().physical(),
+            rk.datetime().unwrap().physical()
+        ),
+        #[cfg(feature = "dtype-duration")]
+        DataType::Duration(_) => dispatch!(
+            lk.duration().unwrap().physical(),
+            rk.duration().unwrap().physical()
+        ),
+        #[cfg(feature = "dtype-time")]
+        DataType::Time => dispatch!(lk.time().unwrap().physical(), rk.time().unwrap().physical()),
+        DataType::Null => compute_join_kernel_nullkeys(
+            lk.len(),
+            rk.len(),
+            gather_left,
+            gather_right,
+            matched_right,
+            current_offset,
+            left_sp,
+            right_sp,
+            params,
+        ),
+        #[cfg(feature = "dtype-categorical")]
+        dt @ (DataType::Enum(_, _) | DataType::Categorical(_, _)) => {
+            match dt.cat_physical().unwrap() {
+                CategoricalPhysical::U8 => {
+                    dispatch!(lk.cat8().unwrap().physical(), rk.cat8().unwrap().physical())
+                },
+                CategoricalPhysical::U16 => dispatch!(
+                    lk.cat16().unwrap().physical(),
+                    rk.cat16().unwrap().physical()
+                ),
+                CategoricalPhysical::U32 => dispatch!(
+                    lk.cat32().unwrap().physical(),
+                    rk.cat32().unwrap().physical()
+                ),
+            }
+        },
+        dt => unimplemented!("merge-join kernel not implemented for {:?}", dt),
+    }
+}
+
+#[allow(clippy::mut_range_bound, clippy::too_many_arguments)]
+fn compute_join_kernel<'a, T: PolarsDataType>(
+    left_key: &'a ChunkedArray<T>,
+    right_key: &'a ChunkedArray<T>,
+    gather_left: &mut Vec<IdxSize>,
+    gather_right: &mut Vec<IdxSize>,
+    matched_right: &mut MutableBitmap,
+    current_offset: &mut usize,
+    left_sp: &SideParams,
+    right_sp: &SideParams,
+    params: &MergeJoinParams,
+) -> bool
+where
+    T::Physical<'a>: TotalOrd,
+{
+    let morsel_size = get_ideal_morsel_size();
+
+    debug_assert!(gather_left.is_empty());
+    debug_assert!(gather_right.is_empty());
+    if right_sp.emit_unmatched {
+        debug_assert!(matched_right.len() == right_key.len());
+    }
+
+    let descending = params.key_descending;
+    let left_key = left_key.downcast_as_array();
+    let right_key = right_key.downcast_as_array();
+
+    let mut iterator = left_key.iter().enumerate().skip(*current_offset).peekable();
+    if iterator.peek().is_none() {
+        return true;
+    }
+    let mut skip_ahead_right = 0;
+    for (idxl, left_keyval) in iterator {
+        if gather_left.len() >= morsel_size {
+            return false;
+        }
+        let left_keyval = left_keyval.as_ref();
+        let mut matched = false;
+        if params.args.nulls_equal || left_keyval.is_some() {
+            for idxr in skip_ahead_right..right_key.len() {
+                let right_keyval = unsafe { right_key.get_unchecked(idxr) };
+                let right_keyval = right_keyval.as_ref();
+                let mut ord: Option<Ordering> = match (&left_keyval, &right_keyval) {
+                    (None, None) if params.args.nulls_equal => Some(Ordering::Equal),
+                    (Some(l), Some(r)) => Some(TotalOrd::tot_cmp(*l, *r)),
+                    _ => None,
+                };
+                if descending {
+                    ord = ord.map(Ordering::reverse);
+                }
+                if ord == Some(Ordering::Equal) {
+                    matched = true;
+                    if right_sp.emit_unmatched {
+                        matched_right.set(idxr, true);
+                    }
+                    gather_left.push(idxl as IdxSize);
+                    gather_right.push(idxr as IdxSize);
+                } else if ord == Some(Ordering::Greater) {
+                    skip_ahead_right = idxr;
+                } else if ord == Some(Ordering::Less) {
+                    break;
+                }
+            }
+        }
+        if left_sp.emit_unmatched && !matched {
+            gather_left.push(idxl as IdxSize);
+            gather_right.push(IdxSize::MAX);
+        }
+        *current_offset += 1;
+    }
+    true
+}
+
+#[allow(clippy::mut_range_bound, clippy::too_many_arguments)]
+fn compute_join_kernel_nullkeys(
+    left_n: usize,
+    right_n: usize,
+    gather_left: &mut Vec<IdxSize>,
+    gather_right: &mut Vec<IdxSize>,
+    matched_right: &mut MutableBitmap,
+    current_offset: &mut usize,
+    left_sp: &SideParams,
+    right_sp: &SideParams,
+    params: &MergeJoinParams,
+) -> bool {
+    debug_assert!(gather_left.is_empty());
+    debug_assert!(gather_right.is_empty());
+    if right_sp.emit_unmatched {
+        debug_assert!(matched_right.len() == right_n);
+    }
+    if !params.args.nulls_equal {
+        return true;
+    }
+
+    for idxl in *current_offset..left_n {
+        gather_left.push(idxl as IdxSize);
+        for idxr in 0..right_n {
+            gather_right.push(idxr as IdxSize);
+            if right_sp.emit_unmatched {
+                matched_right.set(idxr, true);
+            }
+        }
+        if left_sp.emit_unmatched && right_n == 0 {
+            gather_right.push(IdxSize::MAX);
+        }
+        *current_offset += 1;
+        if gather_left.len() >= get_ideal_morsel_size() {
+            return false;
+        }
+    }
+    true
+}
+
+fn gather_and_postprocess(
+    mut left: DataFrame,
+    mut right: DataFrame,
+    left_gather: &mut [IdxSize],
+    right_gather: &mut [IdxSize],
+    df_builders: &mut Option<(DataFrameBuilder, DataFrameBuilder)>,
+    params: &MergeJoinParams,
+) -> PolarsResult<DataFrame> {
+    let should_coalesce = params.args.should_coalesce();
+
+    // Remove non-payload columns
+    for col in left
+        .columns()
+        .iter()
+        .map(Column::name)
+        .cloned()
+        .collect_vec()
+    {
+        if params.left.on.contains(&col) && should_coalesce {
+            continue;
+        }
+        if !params.output_schema.contains(&col) {
+            left.drop_in_place(&col).unwrap();
+        }
+    }
+    for col in right
+        .columns()
+        .iter()
+        .map(Column::name)
+        .cloned()
+        .collect_vec()
+    {
+        if params.left.on.contains(&col) && should_coalesce {
+            continue;
+        }
+        let renamed_col = match left.schema().contains(&col) {
+            true => Cow::Owned(format_pl_smallstr!("{}{}", col, params.args.suffix())),
+            false => Cow::Borrowed(&col),
+        };
+        if !params.output_schema.contains(&renamed_col) {
+            right.drop_in_place(&col).unwrap();
+        }
+    }
+
+    if df_builders.is_none() {
+        *df_builders = Some((
+            DataFrameBuilder::new(left.schema().clone()),
+            DataFrameBuilder::new(right.schema().clone()),
+        ));
+    }
+
+    let (left_build, right_build) = df_builders.as_mut().unwrap();
+    if params.right.emit_unmatched {
+        left_build.opt_gather_extend(&left, left_gather, ShareStrategy::Never);
+    } else {
+        unsafe { left_build.gather_extend(&left, left_gather, ShareStrategy::Never) };
+    }
+    if params.left.emit_unmatched {
+        right_build.opt_gather_extend(&right, right_gather, ShareStrategy::Never);
+    } else {
+        unsafe { right_build.gather_extend(&right, right_gather, ShareStrategy::Never) };
+    }
+
+    let mut left = left_build.freeze_reset();
+    let mut right = right_build.freeze_reset();
+
+    // Coalsesce the key columns
+    if params.args.how == JoinType::Left && should_coalesce {
+        for c in &params.left.on {
+            if right.schema().contains(c) {
+                right.drop_in_place(c.as_str())?;
+            }
+        }
+    } else if params.args.how == JoinType::Right && should_coalesce {
+        for c in &params.right.on {
+            if left.schema().contains(c) {
+                left.drop_in_place(c.as_str())?;
+            }
+        }
+    }
+
+    // Rename any right columns to "{}_right"
+    let left_cols: PlHashSet<_> = left.columns().iter().map(Column::name).cloned().collect();
+    let right_cols_vec = right.get_column_names_owned();
+    let renames = right_cols_vec
+        .iter()
+        .filter(|c| left_cols.contains(*c))
+        .map(|c| {
+            let renamed = format_pl_smallstr!("{}{}", c, params.args.suffix());
+            (c.as_str(), renamed)
+        });
+    right.rename_many(renames).unwrap();
+
+    left.hstack_mut(right.columns())?;
+
+    if params.args.how == JoinType::Full && should_coalesce {
+        // Coalesce key columns
+        for (left_keycol, right_keycol) in
+            Iterator::zip(params.left.on.iter(), params.right.on.iter())
+        {
+            let right_keycol = format_pl_smallstr!("{}{}", right_keycol, params.args.suffix());
+            let left_col = left.column(left_keycol).unwrap();
+            let right_col = left.column(&right_keycol).unwrap();
+            let coalesced = coalesce_columns(&[left_col.clone(), right_col.clone()]).unwrap();
+            left.replace(left_keycol, coalesced)
+                .unwrap()
+                .drop_in_place(&right_keycol)
+                .unwrap();
+        }
+    }
+
+    if should_coalesce {
+        for col in &params.right.on {
+            let renamed = format_pl_smallstr!("{}{}", col, params.args.suffix());
+            if left.schema().contains(&renamed) && !params.output_schema.contains(&renamed) {
+                left.drop_in_place(&renamed).unwrap();
+            }
+        }
+    }
+
+    Ok(left)
+}
+
+async fn buffer_unmerged_from_pipe(
+    port: Option<&mut PortReceiver>,
+    unmerged: &mut DataFrameBuffer,
+) {
+    let Some(port) = port else {
+        return;
+    };
+    let Ok(morsel) = port.recv().await else {
+        return;
+    };
+    morsel.source_token().stop();
+    unmerged.push_df(morsel.into_df());
+
+    while let Ok(morsel) = port.recv().await {
+        unmerged.push_df(morsel.into_df());
     }
 }
 
@@ -621,497 +1112,6 @@ fn binary_search_upper(
     sp: &SideParams,
 ) -> PolarsResult<usize> {
     binary_search(vec, sv, Ordering::is_lt, params, sp)
-}
-
-#[derive(Default)]
-struct Arenas {
-    gather_left: Vec<IdxSize>,
-    gather_right: Vec<IdxSize>,
-    matched_probeside: MutableBitmap,
-    df_builders: Option<(DataFrameBuilder, DataFrameBuilder)>,
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn compute_join(
-    left: DataFrameBuffer,
-    right: DataFrameBuffer,
-    seq: MorselSeq,
-    source_token: SourceToken,
-    params: &MergeJoinParams,
-    arenas: &mut Arenas,
-    matched_send: &mut PortSender,
-    unmatched_send: tokio::sync::mpsc::Sender<Morsel>,
-) -> PolarsResult<()> {
-    let mut left_sp = &params.left;
-    let mut right_sp = &params.right;
-    let mut left = left.into_df();
-    let mut right = right.into_df();
-
-    left.rechunk_mut();
-    right.rechunk_mut();
-
-    let left_key = left
-        .column(&params.left.key_col)
-        .unwrap()
-        .as_materialized_series();
-    let right_key = right
-        .column(&params.right.key_col)
-        .unwrap()
-        .as_materialized_series();
-    let right_is_build = params.right_is_build().unwrap_or(false);
-
-    arenas.matched_probeside.clear();
-    if right_is_build {
-        arenas.matched_probeside.resize(left_key.len(), false);
-    } else {
-        arenas.matched_probeside.resize(right_key.len(), false);
-    }
-
-    let mut current_offset = 0;
-    let mut done = false;
-    while !done {
-        arenas.gather_left.clear();
-        arenas.gather_right.clear();
-        if right_is_build {
-            done = compute_join_dispatch(
-                right_key,
-                left_key,
-                &mut arenas.gather_right,
-                &mut arenas.gather_left,
-                &mut arenas.matched_probeside,
-                &mut current_offset,
-                right_sp,
-                left_sp,
-                params,
-            );
-        } else {
-            done = compute_join_dispatch(
-                left_key,
-                right_key,
-                &mut arenas.gather_left,
-                &mut arenas.gather_right,
-                &mut arenas.matched_probeside,
-                &mut current_offset,
-                left_sp,
-                right_sp,
-                params,
-            );
-        }
-
-        let df = gather_and_postprocess(
-            left.clone(),
-            right.clone(),
-            &mut arenas.gather_left,
-            &mut arenas.gather_right,
-            &mut arenas.df_builders,
-            params,
-        )?;
-        if df.height() > 0 {
-            let morsel = Morsel::new(df, seq, source_token.clone());
-            if matched_send.send(morsel).await.is_err() {
-                panic!("broken pipe");
-            };
-        }
-    }
-
-    arenas.gather_left.clear();
-    arenas.gather_right.clear();
-    if right_is_build {
-        swap(&mut arenas.gather_left, &mut arenas.gather_right);
-        swap(&mut left_sp, &mut right_sp);
-    }
-    if right_sp.emit_unmatched {
-        for (idx, _) in arenas
-            .matched_probeside
-            .iter()
-            .enumerate_idx()
-            .filter(|(_, m)| !m)
-        {
-            arenas.gather_left.push(IdxSize::MAX);
-            arenas.gather_right.push(idx);
-        }
-    }
-    if right_is_build {
-        swap(&mut arenas.gather_left, &mut arenas.gather_right);
-        swap(&mut left_sp, &mut right_sp);
-    }
-
-    let df_unmatched = gather_and_postprocess(
-        left,
-        right,
-        &mut arenas.gather_left,
-        &mut arenas.gather_right,
-        &mut arenas.df_builders,
-        params,
-    )?;
-    if df_unmatched.height() > 0 {
-        let morsel = Morsel::new(df_unmatched, seq, source_token.clone());
-        if unmatched_send.send(morsel).await.is_err() {
-            panic!("broken pipe");
-        }
-    }
-
-    Ok(())
-}
-
-fn gather_and_postprocess(
-    mut left: DataFrame,
-    mut right: DataFrame,
-    left_gather: &mut [IdxSize],
-    right_gather: &mut [IdxSize],
-    df_builders: &mut Option<(DataFrameBuilder, DataFrameBuilder)>,
-    params: &MergeJoinParams,
-) -> PolarsResult<DataFrame> {
-    let should_coalesce = params.args.should_coalesce();
-
-    // Remove non-payload columns
-    for col in left
-        .columns()
-        .iter()
-        .map(Column::name)
-        .cloned()
-        .collect_vec()
-    {
-        if params.left.on.contains(&col) && should_coalesce {
-            continue;
-        }
-        if !params.output_schema.contains(&col) {
-            left.drop_in_place(&col).unwrap();
-        }
-    }
-    for col in right
-        .columns()
-        .iter()
-        .map(Column::name)
-        .cloned()
-        .collect_vec()
-    {
-        if params.left.on.contains(&col) && should_coalesce {
-            continue;
-        }
-        let renamed_col = match left.schema().contains(&col) {
-            true => Cow::Owned(format_pl_smallstr!("{}{}", col, params.args.suffix())),
-            false => Cow::Borrowed(&col),
-        };
-        if !params.output_schema.contains(&renamed_col) {
-            right.drop_in_place(&col).unwrap();
-        }
-    }
-
-    if df_builders.is_none() {
-        *df_builders = Some((
-            DataFrameBuilder::new(left.schema().clone()),
-            DataFrameBuilder::new(right.schema().clone()),
-        ));
-    }
-
-    let (left_build, right_build) = df_builders.as_mut().unwrap();
-    if params.right.emit_unmatched {
-        left_build.opt_gather_extend(&left, left_gather, ShareStrategy::Never);
-    } else {
-        unsafe { left_build.gather_extend(&left, left_gather, ShareStrategy::Never) };
-    }
-    if params.left.emit_unmatched {
-        right_build.opt_gather_extend(&right, right_gather, ShareStrategy::Never);
-    } else {
-        unsafe { right_build.gather_extend(&right, right_gather, ShareStrategy::Never) };
-    }
-
-    let mut left = left_build.freeze_reset();
-    let mut right = right_build.freeze_reset();
-
-    // Coalsesce the key columns
-    if params.args.how == JoinType::Left && should_coalesce {
-        for c in &params.left.on {
-            if right.schema().contains(c) {
-                right.drop_in_place(c.as_str())?;
-            }
-        }
-    } else if params.args.how == JoinType::Right && should_coalesce {
-        for c in &params.right.on {
-            if left.schema().contains(c) {
-                left.drop_in_place(c.as_str())?;
-            }
-        }
-    }
-
-    // Rename any right columns to "{}_right"
-    let left_cols: PlHashSet<_> = left.columns().iter().map(Column::name).cloned().collect();
-    let right_cols_vec = right.get_column_names_owned();
-    let renames = right_cols_vec
-        .iter()
-        .filter(|c| left_cols.contains(*c))
-        .map(|c| {
-            let renamed = format_pl_smallstr!("{}{}", c, params.args.suffix());
-            (c.as_str(), renamed)
-        });
-    right.rename_many(renames).unwrap();
-
-    left.hstack_mut(right.columns())?;
-
-    if params.args.how == JoinType::Full && should_coalesce {
-        // Coalesce key columns
-        for (left_keycol, right_keycol) in
-            Iterator::zip(params.left.on.iter(), params.right.on.iter())
-        {
-            let right_keycol = format_pl_smallstr!("{}{}", right_keycol, params.args.suffix());
-            let left_col = left.column(left_keycol).unwrap();
-            let right_col = left.column(&right_keycol).unwrap();
-            let coalesced = coalesce_columns(&[left_col.clone(), right_col.clone()]).unwrap();
-            left.replace(left_keycol, coalesced)
-                .unwrap()
-                .drop_in_place(&right_keycol)
-                .unwrap();
-        }
-    }
-
-    if should_coalesce {
-        for col in &params.right.on {
-            let renamed = format_pl_smallstr!("{}{}", col, params.args.suffix());
-            if left.schema().contains(&renamed) && !params.output_schema.contains(&renamed) {
-                left.drop_in_place(&renamed).unwrap();
-            }
-        }
-    }
-
-    Ok(left)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn compute_join_dispatch(
-    lk: &Series,
-    rk: &Series,
-    gather_left: &mut Vec<IdxSize>,
-    gather_right: &mut Vec<IdxSize>,
-    matched_right: &mut MutableBitmap,
-    current_offset: &mut usize,
-    left_sp: &SideParams,
-    right_sp: &SideParams,
-    params: &MergeJoinParams,
-) -> bool {
-    macro_rules! dispatch {
-        ($left_key:expr, $right_key:expr) => {
-            compute_join_kernel(
-                $left_key,
-                $right_key,
-                gather_left,
-                gather_right,
-                matched_right,
-                current_offset,
-                left_sp,
-                right_sp,
-                params,
-            )
-        };
-    }
-
-    debug_assert_eq!(lk.dtype(), rk.dtype());
-    match lk.dtype() {
-        DataType::Boolean => dispatch!(lk.bool().unwrap(), rk.bool().unwrap()),
-        #[cfg(feature = "dtype-i8")]
-        DataType::Int8 => dispatch!(lk.i8().unwrap(), rk.i8().unwrap()),
-        #[cfg(feature = "dtype-i16")]
-        DataType::Int16 => dispatch!(lk.i16().unwrap(), rk.i16().unwrap()),
-        DataType::Int32 => dispatch!(lk.i32().unwrap(), rk.i32().unwrap()),
-        DataType::Int64 => dispatch!(lk.i64().unwrap(), rk.i64().unwrap()),
-        #[cfg(feature = "dtype-i128")]
-        DataType::Int128 => dispatch!(lk.i128().unwrap(), rk.i128().unwrap()),
-        #[cfg(feature = "dtype-u8")]
-        DataType::UInt8 => dispatch!(lk.u8().unwrap(), rk.u8().unwrap()),
-        #[cfg(feature = "dtype-u16")]
-        DataType::UInt16 => dispatch!(lk.u16().unwrap(), rk.u16().unwrap()),
-        DataType::UInt32 => dispatch!(lk.u32().unwrap(), rk.u32().unwrap()),
-        DataType::UInt64 => dispatch!(lk.u64().unwrap(), rk.u64().unwrap()),
-        #[cfg(feature = "dtype-u128")]
-        DataType::UInt128 => dispatch!(lk.u128().unwrap(), rk.u128().unwrap()),
-        #[cfg(feature = "dtype-f16")]
-        DataType::Float16 => dispatch!(lk.f16().unwrap(), rk.f16().unwrap()),
-        DataType::Float32 => dispatch!(lk.f32().unwrap(), rk.f32().unwrap()),
-        DataType::Float64 => dispatch!(lk.f64().unwrap(), rk.f64().unwrap()),
-        #[cfg(feature = "dtype-decimal")]
-        DataType::Decimal(_, _) => dispatch!(
-            lk.decimal().unwrap().physical(),
-            rk.decimal().unwrap().physical()
-        ),
-        DataType::String => dispatch!(lk.str().unwrap(), rk.str().unwrap()),
-        DataType::Binary => dispatch!(lk.binary().unwrap(), rk.binary().unwrap()),
-        DataType::BinaryOffset => {
-            dispatch!(lk.binary_offset().unwrap(), rk.binary_offset().unwrap())
-        },
-        #[cfg(feature = "dtype-date")]
-        DataType::Date => dispatch!(lk.date().unwrap().physical(), rk.date().unwrap().physical()),
-        #[cfg(feature = "dtype-datetime")]
-        DataType::Datetime(_, _) => dispatch!(
-            lk.datetime().unwrap().physical(),
-            rk.datetime().unwrap().physical()
-        ),
-        #[cfg(feature = "dtype-duration")]
-        DataType::Duration(_) => dispatch!(
-            lk.duration().unwrap().physical(),
-            rk.duration().unwrap().physical()
-        ),
-        #[cfg(feature = "dtype-time")]
-        DataType::Time => dispatch!(lk.time().unwrap().physical(), rk.time().unwrap().physical()),
-        DataType::Null => compute_join_kernel_nullkeys(
-            lk.len(),
-            rk.len(),
-            gather_left,
-            gather_right,
-            matched_right,
-            current_offset,
-            left_sp,
-            right_sp,
-            params,
-        ),
-        #[cfg(feature = "dtype-categorical")]
-        dt @ (DataType::Enum(_, _) | DataType::Categorical(_, _)) => {
-            match dt.cat_physical().unwrap() {
-                CategoricalPhysical::U8 => {
-                    dispatch!(lk.cat8().unwrap().physical(), rk.cat8().unwrap().physical())
-                },
-                CategoricalPhysical::U16 => dispatch!(
-                    lk.cat16().unwrap().physical(),
-                    rk.cat16().unwrap().physical()
-                ),
-                CategoricalPhysical::U32 => dispatch!(
-                    lk.cat32().unwrap().physical(),
-                    rk.cat32().unwrap().physical()
-                ),
-            }
-        },
-        dt => unimplemented!("merge-join kernel not implemented for {:?}", dt),
-    }
-}
-
-#[allow(clippy::mut_range_bound, clippy::too_many_arguments)]
-fn compute_join_kernel<'a, T: PolarsDataType>(
-    left_key: &'a ChunkedArray<T>,
-    right_key: &'a ChunkedArray<T>,
-    gather_left: &mut Vec<IdxSize>,
-    gather_right: &mut Vec<IdxSize>,
-    matched_right: &mut MutableBitmap,
-    current_offset: &mut usize,
-    left_sp: &SideParams,
-    right_sp: &SideParams,
-    params: &MergeJoinParams,
-) -> bool
-where
-    T::Physical<'a>: TotalOrd,
-{
-    let morsel_size = get_ideal_morsel_size();
-
-    debug_assert!(gather_left.is_empty());
-    debug_assert!(gather_right.is_empty());
-    if right_sp.emit_unmatched {
-        debug_assert!(matched_right.len() == right_key.len());
-    }
-
-    let descending = params.key_descending;
-    let left_key = left_key.downcast_as_array();
-    let right_key = right_key.downcast_as_array();
-
-    let mut iterator = left_key.iter().enumerate().skip(*current_offset).peekable();
-    if iterator.peek().is_none() {
-        return true;
-    }
-    let mut skip_ahead_right = 0;
-    for (idxl, left_keyval) in iterator {
-        if gather_left.len() >= morsel_size {
-            return false;
-        }
-        let left_keyval = left_keyval.as_ref();
-        let mut matched = false;
-        if params.args.nulls_equal || left_keyval.is_some() {
-            for idxr in skip_ahead_right..right_key.len() {
-                let right_keyval = unsafe { right_key.get_unchecked(idxr) };
-                let right_keyval = right_keyval.as_ref();
-                let mut ord: Option<Ordering> = match (&left_keyval, &right_keyval) {
-                    (None, None) if params.args.nulls_equal => Some(Ordering::Equal),
-                    (Some(l), Some(r)) => Some(TotalOrd::tot_cmp(*l, *r)),
-                    _ => None,
-                };
-                if descending {
-                    ord = ord.map(Ordering::reverse);
-                }
-                if ord == Some(Ordering::Equal) {
-                    matched = true;
-                    if right_sp.emit_unmatched {
-                        matched_right.set(idxr, true);
-                    }
-                    gather_left.push(idxl as IdxSize);
-                    gather_right.push(idxr as IdxSize);
-                } else if ord == Some(Ordering::Greater) {
-                    skip_ahead_right = idxr;
-                } else if ord == Some(Ordering::Less) {
-                    break;
-                }
-            }
-        }
-        if left_sp.emit_unmatched && !matched {
-            gather_left.push(idxl as IdxSize);
-            gather_right.push(IdxSize::MAX);
-        }
-        *current_offset += 1;
-    }
-    true
-}
-
-#[allow(clippy::mut_range_bound, clippy::too_many_arguments)]
-fn compute_join_kernel_nullkeys(
-    left_n: usize,
-    right_n: usize,
-    gather_left: &mut Vec<IdxSize>,
-    gather_right: &mut Vec<IdxSize>,
-    matched_right: &mut MutableBitmap,
-    current_offset: &mut usize,
-    left_sp: &SideParams,
-    right_sp: &SideParams,
-    params: &MergeJoinParams,
-) -> bool {
-    debug_assert!(gather_left.is_empty());
-    debug_assert!(gather_right.is_empty());
-    if right_sp.emit_unmatched {
-        debug_assert!(matched_right.len() == right_n);
-    }
-    if !params.args.nulls_equal {
-        return true;
-    }
-
-    for idxl in *current_offset..left_n {
-        gather_left.push(idxl as IdxSize);
-        for idxr in 0..right_n {
-            gather_right.push(idxr as IdxSize);
-            if right_sp.emit_unmatched {
-                matched_right.set(idxr, true);
-            }
-        }
-        if left_sp.emit_unmatched && right_n == 0 {
-            gather_right.push(IdxSize::MAX);
-        }
-        *current_offset += 1;
-        if gather_left.len() >= get_ideal_morsel_size() {
-            return false;
-        }
-    }
-    true
-}
-
-async fn buffer_unmerged_from_pipe(
-    port: Option<&mut PortReceiver>,
-    unmerged: &mut DataFrameBuffer,
-) {
-    let Some(port) = port else {
-        return;
-    };
-    let Ok(morsel) = port.recv().await else {
-        return;
-    };
-    morsel.source_token().stop();
-    unmerged.push_df(morsel.into_df());
-
-    while let Ok(morsel) = port.recv().await {
-        unmerged.push_df(morsel.into_df());
-    }
 }
 
 fn keys_cmp(left: &AnyValue, right: &AnyValue, params: &MergeJoinParams) -> Ordering {
