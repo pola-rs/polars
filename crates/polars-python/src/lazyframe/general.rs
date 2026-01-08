@@ -674,19 +674,16 @@ impl PyLazyFrame {
         lazy: bool,
     ) -> PyResult<PyCollectBatches> {
         py.enter_polars(|| {
-            let mut ldf = self.ldf.read().clone();
-            // let schema = ldf.collect_schema()?;
-            let schema = ldf
-                .collect_schema()
-                .map_err(PyPolarsErr::from)?
-                .to_arrow(CompatLevel::newest());
+            let ldf = self.ldf.read().clone();
+
             let collect_batches = ldf
+                .clone()
                 .collect_batches(engine.0, maintain_order, chunk_size, lazy)
                 .map_err(PyPolarsErr::from)?;
 
             PyResult::Ok(PyCollectBatches {
                 inner: Arc::new(Mutex::new(collect_batches)),
-                schema,
+                ldf,
             })
         })
     }
@@ -1632,7 +1629,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<polars_io::parquet::write::ParquetF
 #[pyclass(frozen)]
 struct PyCollectBatches {
     inner: Arc<Mutex<CollectBatches>>,
-    schema: ArrowSchema,
+    ldf: LazyFrame,
 }
 
 #[pymethods]
@@ -1659,7 +1656,13 @@ impl PyCollectBatches {
         py: Python<'py>,
         requested_schema: Option<Py<PyAny>>,
     ) -> PyResult<Bound<'py, PyCapsule>> {
-        let schema = ArrowDataType::Struct(self.schema.clone().into_iter_values().collect());
+        let mut ldf = self.ldf.clone();
+        let schema = ldf
+            .collect_schema()
+            .map_err(PyPolarsErr::from)?
+            .to_arrow(CompatLevel::newest());
+
+        let schema = ArrowDataType::Struct(schema.clone().into_iter_values().collect());
 
         let iter = Box::new(ArrowStreamIterator::new(self.inner.clone(), schema));
         let field = iter.field();
