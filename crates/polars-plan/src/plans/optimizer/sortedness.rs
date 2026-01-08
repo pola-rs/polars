@@ -124,10 +124,7 @@ fn is_sorted_rec(
                     }),
                 })
                 .collect_vec();
-            match sorted_cols.is_empty() {
-                false => Some(IRSorted(sorted_cols.into())),
-                true => None,
-            }
+            (!sorted_cols.is_empty()).then(|| IRSorted(sorted_cols.into()))
         },
         IR::SimpleProjection { input, columns } => {
             let (input, columns) = (*input, columns.clone());

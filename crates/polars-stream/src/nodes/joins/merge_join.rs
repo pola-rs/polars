@@ -387,8 +387,7 @@ fn find_mergeable_limiting(
         mergeable = find_mergeable_search(left, right, *search_limit, fmp.clone())?;
     }
     if mergeable.is_left() {
-        *search_limit /= SEARCH_LIMIT_BUMP_FACTOR;
-        *search_limit = usize::max(*search_limit, morsel_size);
+        *search_limit = morsel_size;
     }
     Ok(mergeable)
 }
@@ -588,7 +587,7 @@ unsafe fn series_get_bypass_validity<'a>(
 fn binary_search(
     vec: &DataFrameBuffer,
     search_value: &AnyValue,
-    op: fn(&AnyValue, &AnyValue, &MergeJoinParams) -> bool,
+    is_before: fn(Ordering) -> bool,
     params: &MergeJoinParams,
     sp: &SideParams,
 ) -> PolarsResult<usize> {
@@ -597,7 +596,7 @@ fn binary_search(
     while lower < upper {
         let mid = (lower + upper) / 2;
         let mid_val = unsafe { vec.get_bypass_validity(&sp.key_col, mid, params) };
-        if op(search_value, &mid_val, params) {
+        if is_before(keys_cmp(search_value, &mid_val, params)) {
             upper = mid;
         } else {
             lower = mid + 1;
@@ -612,10 +611,7 @@ fn binary_search_lower(
     params: &MergeJoinParams,
     sp: &SideParams,
 ) -> PolarsResult<usize> {
-    fn is_le(x1: &AnyValue<'_>, x2: &AnyValue, p: &MergeJoinParams) -> bool {
-        keys_cmp(x1, x2, p).is_le()
-    }
-    binary_search(vec, sv, is_le, params, sp)
+    binary_search(vec, sv, Ordering::is_le, params, sp)
 }
 
 fn binary_search_upper(
@@ -624,10 +620,7 @@ fn binary_search_upper(
     params: &MergeJoinParams,
     sp: &SideParams,
 ) -> PolarsResult<usize> {
-    fn is_lt(x1: &AnyValue<'_>, x2: &AnyValue, p: &MergeJoinParams) -> bool {
-        keys_cmp(x1, x2, p).is_lt()
-    }
-    binary_search(vec, sv, is_lt, params, sp)
+    binary_search(vec, sv, Ordering::is_lt, params, sp)
 }
 
 #[derive(Default)]

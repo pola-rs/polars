@@ -14,9 +14,9 @@ use polars_plan::dsl::{
     PartitionTargetCallback, PartitionVariantIR, PartitionedSinkOptionsIR, PredicateFileSkip,
     ScanSources, SinkFinishCallback, SinkOptions, SortColumnIR, TableStatistics,
 };
+use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::{AExpr, DataFrameUdf, IR};
-use polars_plan::prelude::expr_ir::*;
 
 mod fmt;
 mod io;
