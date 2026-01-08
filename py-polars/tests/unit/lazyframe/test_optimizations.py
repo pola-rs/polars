@@ -519,5 +519,5 @@ def test_lazy_groupby_maintain_order_after_asof_join_25973() -> None:
     )
 
     # Now should maintain order; just check monotonicity of the targettime key
-    times = result["targettime"].to_list()
+    assert result["targettime"].is_sorted()
     assert times == sorted(times)
