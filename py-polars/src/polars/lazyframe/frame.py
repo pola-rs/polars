@@ -2934,7 +2934,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         storage_options: dict[str, str] | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
         delta_write_options: dict[str, Any] | None = ...,
-        engine: EngineType = ...,
         optimizations: QueryOptFlags = ...,
     ) -> None: ...
 
@@ -2947,7 +2946,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         storage_options: dict[str, str] | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
         delta_merge_options: dict[str, Any],
-        engine: EngineType = ...,
         optimizations: QueryOptFlags = ...,
     ) -> deltalake.table.TableMerger: ...
 
@@ -2963,7 +2961,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         | None = "auto",
         delta_write_options: dict[str, Any] | None = None,
         delta_merge_options: dict[str, Any] | None = None,
-        engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> deltalake.table.TableMerger | None:
         """
@@ -3019,8 +3016,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         optimizations
             The optimization passes done during query optimization.
 
-            This has no effect if `lazy` is set to `True`.
-
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
@@ -3048,7 +3043,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        Write a dataframe to the local filesystem as a Delta Lake table.
+        Sink a large than fits into memory dataset to a Delta Lake table.
+
+        >>> lf = pl.scan_parquet(
+        ...     "/path/to/my_larger_than_ram_file.parquet"
+        ... )  # doctest: +SKIP
+        >>> table_path = "/path/to/delta-table/"
+        >>> lf.sink_delta(table_path)  # doctest: +SKIP
+
+
+        Sink a dataframe to the local filesystem as a Delta Lake table.
 
         >>> df = pl.DataFrame(
         ...     {
@@ -3058,29 +3062,29 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> table_path = "/path/to/delta-table/"
-        >>> df.sink_delta(table_path)  # doctest: +SKIP
+        >>> df.lazy().sink_delta(table_path)  # doctest: +SKIP
 
         Append data to an existing Delta Lake table on the local filesystem.
         Note that this will fail if the schema of the new data does not match the
         schema of the existing table.
 
-        >>> df.sink_delta(table_path, mode="append")  # doctest: +SKIP
+        >>> df.lazy().sink_delta(table_path, mode="append")  # doctest: +SKIP
 
         Overwrite a Delta Lake table as a new version.
         If the schemas of the new and old data are the same, specifying the
         `schema_mode` is not required.
 
         >>> existing_table_path = "/path/to/delta-table/"
-        >>> df.sink_delta(
+        >>> df.lazy().sink_delta(
         ...     existing_table_path,
         ...     mode="overwrite",
         ...     delta_write_options={"schema_mode": "overwrite"},
         ... )  # doctest: +SKIP
 
-        Write a DataFrame as a Delta Lake table to a cloud object store like S3.
+        Sink a DataFrame as a Delta Lake table to a cloud object store like S3.
 
         >>> table_path = "s3://bucket/prefix/to/delta-table/"
-        >>> df.sink_delta(
+        >>> df.lazy().sink_delta(
         ...     table_path,
         ...     storage_options={
         ...         "AWS_REGION": "THE_AWS_REGION",
@@ -3089,18 +3093,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     },
         ... )  # doctest: +SKIP
 
-        Write DataFrame as a Delta Lake table with non-nullable columns.
+        Sink DataFrame as a Delta Lake table with non-nullable columns.
 
         >>> import pyarrow as pa
         >>> existing_table_path = "/path/to/delta-table/"
-        >>> df.sink_delta(
+        >>> df.lazy().sink_delta(
         ...     existing_table_path,
         ...     delta_write_options={
         ...         "schema": pa.schema([pa.field("foo", pa.int64(), nullable=False)])
         ...     },
         ... )  # doctest: +SKIP
 
-        Write DataFrame as a Delta Lake table with zstd compression.
+        Sink DataFrame as a Delta Lake table with zstd compression.
         For all `delta_write_options` keyword arguments, check the deltalake docs
         `here
         <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.write_deltalake>`__,
@@ -3108,7 +3112,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.WriterProperties>`__.
 
         >>> import deltalake
-        >>> df.sink_delta(
+        >>> df.lazy().sink_delta(
         ...     table_path,
         ...     delta_write_options={
         ...         "writer_properties": deltalake.WriterProperties(compression="zstd"),
@@ -3128,7 +3132,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ... )
         >>> table_path = "/path/to/delta-table/"
         >>> (
-        ...     df.sink_delta(
+        ...     df.lazy()
+        ...     .sink_delta(
         ...         "table_path",
         ...         mode="merge",
         ...         delta_merge_options={
@@ -3194,7 +3199,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
         stream = ldf.collect_batches(
-            engine=engine,
+            engine="streaming",
             maintain_order=True,
             chunk_size=None,
             lazy=True,
