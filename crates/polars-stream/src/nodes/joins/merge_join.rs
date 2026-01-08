@@ -167,9 +167,6 @@ impl ComputeNode for MergeJoinNode {
         assert!(send.len() == 1);
 
         let prev_state = self.state;
-        let any_input_channel_blocked =
-            recv[0] == PortState::Blocked || recv[1] == PortState::Blocked;
-        let output_channel_blocked = send[0] == PortState::Blocked;
         let input_channels_done = recv[0] == PortState::Done && recv[1] == PortState::Done;
         let output_channel_done = send[0] == PortState::Done;
         let input_buffers_empty = self.left_unmerged.is_empty() && self.right_unmerged.is_empty();
@@ -192,17 +189,20 @@ impl ComputeNode for MergeJoinNode {
 
         match self.state {
             MergeJoinState::Running => {
-                if output_channel_blocked {
+                recv[0] = PortState::Ready;
+                recv[1] = PortState::Ready;
+                send[0] = PortState::Ready;
+                if recv[0] == PortState::Blocked {
+                    recv[1] = PortState::Blocked;
+                    send[0] = PortState::Blocked;
+                }
+                if recv[1] == PortState::Blocked {
+                    recv[0] = PortState::Blocked;
+                    send[0] = PortState::Blocked;
+                }
+                if send[0] == PortState::Blocked {
                     recv[0] = PortState::Blocked;
                     recv[1] = PortState::Blocked;
-                } else {
-                    recv[0] = PortState::Ready;
-                    recv[1] = PortState::Ready;
-                }
-                if any_input_channel_blocked {
-                    send[0] = PortState::Blocked;
-                } else {
-                    send[0] = PortState::Ready;
                 }
             },
             MergeJoinState::FlushInputBuffers | MergeJoinState::EmitUnmatched => {
