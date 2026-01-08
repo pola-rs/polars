@@ -1224,11 +1224,11 @@ def test_scan_with_schema_skips_schema_inference(
 
 @pytest.fixture(scope="session")
 def corrupt_compressed_csv() -> bytes:
-    large_and_simple_csv = b"line_val\n" * 500_000
+    large_and_simple_csv = b"line_val\n" * 200_000
     compressed_data = zlib.compress(large_and_simple_csv, level=0)
 
     corruption_start_pos = round(len(compressed_data) * 0.9)
-    assert corruption_start_pos > 4_000_000
+    assert corruption_start_pos > 1_600_000
     corruption_len = 500
 
     # The idea is to corrupt the input to make sure the scan never fully
@@ -1237,7 +1237,7 @@ def corrupt_compressed_csv() -> bytes:
     corrupted_data[corruption_start_pos : corruption_start_pos + corruption_len] = (
         b"\00"
     )
-    # ~4MB of valid zlib compressed CSV to read before the corrupted data
+    # ~1.6MB of valid zlib compressed CSV to read before the corrupted data
     # appears.
     return corrupted_data
 
