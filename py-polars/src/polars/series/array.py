@@ -574,11 +574,11 @@ class ArrayNameSpace:
         >>> s = pl.Series(
         ...     "a",
         ...     [[3, 2, 1], [1, None, None], [1, 2, 3]],
-        ...     dtype=pl.Array(pl.Int32, 2),
+        ...     dtype=pl.Array(pl.Int32, 3),
         ... )
-        >>> s.list.gather([0, 2])
+        >>> s.arr.gather([0, 2])
         shape: (3,)
-        Series: 'a' [list[i64]]
+        Series: 'a' [list[i32]]
         [
             [3, 1]
             [1, null]
