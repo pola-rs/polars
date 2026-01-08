@@ -59,8 +59,5 @@ pub use crate::alloc::PolarsAllocator;
 pub(crate) static POLARS: Lazy<Py<PyModule>> =
     Lazy::new(|| Python::attach(|py| PyModule::import(py, "polars").unwrap().unbind()));
 
-pub(crate) static POLARS_INTERCHANGE: Lazy<Py<PyModule>> =
-    Lazy::new(|| Python::attach(|py| PyModule::import(py, "polars.interchange").unwrap().unbind()));
-
 pub(crate) static SERIES: Lazy<Py<PyAny>> =
     Lazy::new(|| Python::attach(|py| POLARS.getattr(py, "Series").unwrap()));
