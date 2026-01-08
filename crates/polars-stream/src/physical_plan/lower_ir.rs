@@ -1202,35 +1202,20 @@ pub fn lower_ir(
                                 &mut right_sortedness,
                             ),
                         ] {
+                            let order_map: PlHashMap<PlSmallStr, Sorted> = sortedness
+                                .as_ref()
+                                .unwrap()
+                                .0
+                                .iter()
+                                .map(|s| (s.column.clone(), s.clone()))
+                                .collect();
                             let descending = on
                                 .iter()
-                                .map(|e| {
-                                    let name = e.output_name();
-                                    sortedness
-                                        .as_ref()
-                                        .unwrap()
-                                        .0
-                                        .iter()
-                                        .find(|s| s.column == *name)
-                                        .unwrap()
-                                        .descending
-                                        .unwrap()
-                                })
+                                .map(|e| order_map[e.output_name()].descending.unwrap())
                                 .collect_vec();
                             let nulls_last = on
                                 .iter()
-                                .map(|e| {
-                                    let name = e.output_name();
-                                    sortedness
-                                        .as_ref()
-                                        .unwrap()
-                                        .0
-                                        .iter()
-                                        .find(|s| s.column == *name)
-                                        .unwrap()
-                                        .nulls_last
-                                        .unwrap()
-                                })
+                                .map(|e| order_map[e.output_name()].nulls_last.unwrap())
                                 .collect_vec();
 
                             let nulls_last_encoded = nulls_last[0];
