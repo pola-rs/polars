@@ -368,14 +368,26 @@ async fn compute_join(
     left.rechunk_mut();
     right.rechunk_mut();
 
-    let left_key = left
-        .column(&params.left.key_col)
-        .unwrap()
-        .as_materialized_series();
-    let right_key = right
-        .column(&params.right.key_col)
-        .unwrap()
-        .as_materialized_series();
+    let mut left_key = Cow::Borrowed(
+        left.column(&params.left.key_col)
+            .unwrap()
+            .as_materialized_series(),
+    );
+    let mut right_key = Cow::Borrowed(
+        right
+            .column(&params.right.key_col)
+            .unwrap()
+            .as_materialized_series(),
+    );
+
+    // Categoricals are lexicographically ordered, not by their physical values.
+    if matches!(left_key.dtype(), DataType::Categorical(_, _)) {
+        left_key = Cow::Owned(left_key.cast(&DataType::String)?);
+    }
+    if matches!(right_key.dtype(), DataType::Categorical(_, _)) {
+        right_key = Cow::Owned(right_key.cast(&DataType::String)?);
+    }
+
     let right_is_build = params.right_is_build().unwrap_or(false);
 
     arenas.matched_probeside.clear();
@@ -392,8 +404,8 @@ async fn compute_join(
         arenas.gather_right.clear();
         if right_is_build {
             done = compute_join_dispatch(
-                right_key,
-                left_key,
+                &right_key,
+                &left_key,
                 &mut arenas.gather_right,
                 &mut arenas.gather_left,
                 &mut arenas.matched_probeside,
@@ -404,8 +416,8 @@ async fn compute_join(
             );
         } else {
             done = compute_join_dispatch(
-                left_key,
-                right_key,
+                &left_key,
+                &right_key,
                 &mut arenas.gather_left,
                 &mut arenas.gather_right,
                 &mut arenas.matched_probeside,
@@ -572,18 +584,6 @@ fn compute_join_dispatch(
                 rk.cat32().unwrap().physical()
             ),
         },
-        #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(_, _) => compute_join_dispatch(
-            &lk.cast(&DataType::String).unwrap(),
-            &rk.cast(&DataType::String).unwrap(),
-            gather_left,
-            gather_right,
-            matched_right,
-            current_offset,
-            left_sp,
-            right_sp,
-            params,
-        ),
         dt => unimplemented!("merge-join kernel not implemented for {:?}", dt),
     }
 }
