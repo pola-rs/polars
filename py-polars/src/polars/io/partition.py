@@ -216,7 +216,8 @@ class PartitionBy:
     include_key
         Include the partition key expression outputs in the output files.
     max_rows_per_file
-        Maximum number of rows to write for each file.
+        Maximum number of rows to write for each file. Note files may have less
+        than this amount of rows.
     approximate_bytes_per_file
         Approximate number of bytes to write to each file. This is measured as
         the estimated size of the DataFrame in memory.
