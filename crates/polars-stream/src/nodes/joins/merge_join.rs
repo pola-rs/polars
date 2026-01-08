@@ -869,8 +869,8 @@ fn find_mergeable_limiting(
     debug_assert!(*search_limit >= morsel_size);
     let mut mergeable = find_mergeable_search(left, right, *search_limit, fmp.clone())?;
     while match mergeable {
-        Right(NeedMore::Left | NeedMore::Both) if *search_limit < left.len() => true,
-        Right(NeedMore::Right | NeedMore::Both) if *search_limit < right.len() => true,
+        Right(NeedMore::Left | NeedMore::Both) if *search_limit < left.height() => true,
+        Right(NeedMore::Right | NeedMore::Both) if *search_limit < right.height() => true,
         _ => false,
     } {
         // Exponential increase
@@ -889,8 +889,6 @@ fn find_mergeable_partition(
     fmp: FindMergeableParams,
 ) -> PolarsResult<UnitVec<(DataFrameBuffer, DataFrameBuffer)>> {
     let morsel_size = get_ideal_morsel_size();
-    let emit_unmatched_left = fmp.left_params.emit_unmatched;
-    let emit_unmatched_right = fmp.right_params.emit_unmatched;
     let maintain_order_left = matches!(
         fmp.params.args.maintain_order,
         MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight
@@ -899,15 +897,15 @@ fn find_mergeable_partition(
         fmp.params.args.maintain_order,
         MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft
     );
-    let build_side_left = emit_unmatched_left || maintain_order_left;
-    let build_side_right = emit_unmatched_right || maintain_order_right;
+    let build_side_left = fmp.left_params.emit_unmatched || maintain_order_left;
+    let build_side_right = fmp.right_params.emit_unmatched || maintain_order_right;
     if build_side_left && build_side_right {
         // TODO: We may be able to partition a subset of these cases (e.g. for FULL joins)
         return Ok(UnitVec::from([(build, probe)]));
     }
 
-    let partition_count =
-        (build.len() * probe.len() + build.len() + probe.len()).div_ceil(morsel_size.pow(2));
+    let partition_count = (build.height() * probe.height() + build.height() + probe.height())
+        .div_ceil(morsel_size.pow(2));
     if partition_count <= 1 {
         return Ok(UnitVec::from([(build, probe)]));
     }
@@ -916,10 +914,10 @@ fn find_mergeable_partition(
         swap(&mut build, &mut probe);
     }
 
-    let chunk_size = build.len().div_ceil(partition_count);
+    let chunk_size = build.height().div_ceil(partition_count);
     let mut offset = 0;
     let mut partitions = UnitVec::with_capacity(partition_count);
-    while offset < build.len() - chunk_size {
+    while offset < build.height() - chunk_size {
         let build_chunk = build.clone().slice(offset, chunk_size);
         partitions.push((build_chunk, probe.clone()));
         offset += chunk_size;
@@ -998,18 +996,18 @@ fn find_mergeable_search(
         return Ok(Left((left_empty_buf(), right_split)));
     }
 
-    let left_last_idx = usize::min(left.len(), search_limit);
+    let left_last_idx = usize::min(left.height(), search_limit);
     let left_last = left_get(left_last_idx - 1);
     let left_first_incomplete = match left_done {
         false => binary_search_lower(left, &left_last, params, left_params)?,
-        true => left.len(),
+        true => left.height(),
     };
 
-    let right_last_idx = usize::min(right.len(), search_limit);
+    let right_last_idx = usize::min(right.height(), search_limit);
     let right_last = right_get(right_last_idx - 1);
     let right_first_incomplete = match right_done {
         false => binary_search_lower(right, &right_last, params, right_params)?,
-        true => right.len(),
+        true => right.height(),
     };
 
     if left_first_incomplete == 0 && right_first_incomplete == 0 {
@@ -1083,7 +1081,7 @@ fn binary_search(
     sp: &SideParams,
 ) -> PolarsResult<usize> {
     let mut lower = 0;
-    let mut upper = vec.len();
+    let mut upper = vec.height();
     while lower < upper {
         let mid = (lower + upper) / 2;
         let mid_val = unsafe { vec.get_bypass_validity(&sp.key_col, mid, params) };
@@ -1155,7 +1153,7 @@ impl DataFrameBuffer {
         }
     }
 
-    fn len(&self) -> usize {
+    fn height(&self) -> usize {
         self.total_rows
     }
 
