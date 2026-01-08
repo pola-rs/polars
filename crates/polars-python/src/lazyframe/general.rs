@@ -1694,7 +1694,8 @@ impl Iterator for ArrowStreamIterator {
     type Item = PolarsResult<ArrayRef>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.inner.lock().next() {
+        let next = self.inner.lock().next();
+        match next {
             None => None,
             Some(df) => {
                 let mut df = df.unwrap();
