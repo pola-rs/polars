@@ -587,6 +587,7 @@ pub fn try_build_sorted_group_by(
                 RowEncodingVariant::Ordered {
                     descending: None,
                     nulls_last: None,
+                    broadcast_nulls: None,
                 },
             ),
             expr_arena,
@@ -683,6 +684,7 @@ pub fn try_build_sorted_group_by(
                     RowEncodingVariant::Ordered {
                         descending: None,
                         nulls_last: None,
+                        broadcast_nulls: None,
                     },
                 ),
                 expr_arena,

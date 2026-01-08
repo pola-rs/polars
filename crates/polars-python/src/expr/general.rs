@@ -982,6 +982,7 @@ impl PyExpr {
             FunctionExpr::RowEncode(RowEncodingVariant::Ordered {
                 descending,
                 nulls_last,
+                broadcast_nulls: None,
             }),
             exprs.into_iter().map(|e| e.inner.clone()).collect(),
         )
@@ -1022,6 +1023,7 @@ impl PyExpr {
                 RowEncodingVariant::Ordered {
                     descending,
                     nulls_last,
+                    broadcast_nulls: None,
                 },
             ))
             .into()

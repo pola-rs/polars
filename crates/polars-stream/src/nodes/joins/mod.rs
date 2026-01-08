@@ -14,6 +14,7 @@ use crate::pipe::{PortReceiver, RecvPort, port_channel};
 pub mod cross_join;
 pub mod equi_join;
 pub mod in_memory;
+pub mod merge_join;
 #[cfg(feature = "semi_anti_join")]
 pub mod semi_anti_join;
 

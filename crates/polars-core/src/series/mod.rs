@@ -1085,6 +1085,7 @@ impl Series {
             &[self.clone().into_column()],
             &[descending],
             &[nulls_last],
+            false,
         )
     }
 }

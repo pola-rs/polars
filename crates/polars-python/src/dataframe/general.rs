@@ -604,6 +604,7 @@ impl PyDataFrame {
                     self.df.read().columns(),
                     descending.as_slice(),
                     nulls_last.as_slice(),
+                    false,
                 )
             }?;
 
