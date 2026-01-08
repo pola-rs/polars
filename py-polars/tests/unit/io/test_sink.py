@@ -179,12 +179,12 @@ def test_collect_all_lazy() -> None:
         a = pl.LazyFrame({"a": [1, 2, 3, 4, 5, 6]})
         b = a.filter(pl.col("a") % 2 == 0).sink_csv(tmp_path / "b.csv", lazy=True)
         c = a.filter(pl.col("a") % 3 == 0).sink_csv(tmp_path / "c.csv", lazy=True)
-        a = a.sink_csv(tmp_path / "a.csv", lazy=True)
+        d = a.sink_csv(tmp_path / "a.csv", lazy=True)
 
-        q = pl.collect_all([a, b, c], lazy=True)
+        q = pl.collect_all([d, b, c], lazy=True)
 
         assert q._ldf._node_name() == "SinkMultiple"
-        q.collect(engine="streaming")
+        q.collect()
         df_a = pl.read_csv(tmp_path / "a.csv")
         df_b = pl.read_csv(tmp_path / "b.csv")
         df_c = pl.read_csv(tmp_path / "c.csv")
@@ -192,3 +192,6 @@ def test_collect_all_lazy() -> None:
         assert_frame_equal(df_a, pl.DataFrame({"a": [1, 2, 3, 4, 5, 6]}))
         assert_frame_equal(df_b, pl.DataFrame({"a": [2, 4, 6]}))
         assert_frame_equal(df_c, pl.DataFrame({"a": [3, 6]}))
+
+    with pytest.raises(ValueError, match="all LazyFrames must end with a sink to use"):
+        pl.collect_all([a, a], lazy=True)

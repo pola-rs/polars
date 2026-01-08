@@ -147,7 +147,7 @@ pub fn collect_all_lazy(lfs: Vec<PyLazyFrame>, optflags: PyOptFlags) -> PyResult
     for plan in &plans {
         if !matches!(plan, DslPlan::Sink { .. }) {
             return Err(PyValueError::new_err(
-                "all LazyFrames must sink to disk to use 'collect_all(lazy=True)'",
+                "all LazyFrames must end with a sink to use 'collect_all(lazy=True)'",
             ));
         }
     }
