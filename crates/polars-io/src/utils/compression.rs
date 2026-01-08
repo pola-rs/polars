@@ -166,17 +166,17 @@ impl CompressedReader {
         }
 
         let new_slice_from_read =
-            |read_n: usize, mut buf: Vec<u8>| -> std::io::Result<(MemSlice, usize)> {
-                buf.truncate(prev_len + read_n);
-                Ok((MemSlice::from_vec(buf), read_n))
+            |bytes_read: usize, mut buf: Vec<u8>| -> std::io::Result<(MemSlice, usize)> {
+                buf.truncate(prev_len + bytes_read);
+                Ok((MemSlice::from_vec(buf), bytes_read))
             };
 
         match self {
             CompressedReader::Uncompressed { slice, offset, .. } => {
-                let read_n = cmp::min(read_size, slice.len() - *offset);
-                let new_slice = slice.slice((*offset - prev_len)..(*offset + read_n));
-                *offset += read_n;
-                Ok((new_slice, read_n))
+                let bytes_read = cmp::min(read_size, slice.len() - *offset);
+                let new_slice = slice.slice((*offset - prev_len)..(*offset + bytes_read));
+                *offset += bytes_read;
+                Ok((new_slice, bytes_read))
             },
             #[cfg(feature = "decompress")]
             CompressedReader::Gzip(decoder) => {
@@ -190,6 +190,27 @@ impl CompressedReader {
             CompressedReader::Zstd(decoder) => {
                 new_slice_from_read(decoder.take(read_size as u64).read_to_end(&mut buf)?, buf)
             },
+        }
+    }
+}
+
+/// This implementation is meant for compatibility. Use [`Self::read_next_slice`] for best
+/// performance.
+impl Read for CompressedReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            CompressedReader::Uncompressed { slice, offset, .. } => {
+                let bytes_read = cmp::min(buf.len(), slice.len() - *offset);
+                buf[..bytes_read].copy_from_slice(&slice.slice(*offset..(*offset + bytes_read)));
+                *offset += bytes_read;
+                Ok(bytes_read)
+            },
+            #[cfg(feature = "decompress")]
+            CompressedReader::Gzip(decoder) => decoder.read(buf),
+            #[cfg(feature = "decompress")]
+            CompressedReader::Zlib(decoder) => decoder.read(buf),
+            #[cfg(feature = "decompress")]
+            CompressedReader::Zstd(decoder) => decoder.read(buf),
         }
     }
 }
