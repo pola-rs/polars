@@ -273,7 +273,7 @@ impl ComputeNode for MergeJoinNode {
                                     ))
                                     .await
                                 {
-                                    panic!();
+                                    return Ok(());
                                 }
                                 *seq = seq.successor();
                             }
@@ -351,7 +351,7 @@ impl ComputeNode for MergeJoinNode {
                         let df = buf.split_at(get_ideal_morsel_size()).into_df();
                         let morsel = Morsel::new(df, *seq, SourceToken::new());
                         if let Err(_morsel) = send.send(morsel).await {
-                            panic!();
+                            return Ok(());
                         }
                     }
                 }
@@ -454,7 +454,7 @@ async fn compute_join(
         if df.height() > 0 {
             let morsel = Morsel::new(df, seq, source_token.clone());
             if matched_send.send(morsel).await.is_err() {
-                panic!("broken pipe");
+                return Ok(());
             };
         }
     }
@@ -492,7 +492,7 @@ async fn compute_join(
     if df_unmatched.height() > 0 {
         let morsel = Morsel::new(df_unmatched, seq, source_token.clone());
         if unmatched_send.send(morsel).await.is_err() {
-            panic!("broken pipe");
+            return Ok(());
         }
     }
 
