@@ -380,7 +380,7 @@ impl DataFrame {
     }
 
     pub fn to_arrow(&mut self, compatlevel: Option<CompatLevel>) -> StructArray {
-        let compatlevel = compatlevel.unwrap_or_else(|| CompatLevel::newest());
+        let compatlevel = compatlevel.unwrap_or_else(CompatLevel::newest);
         let schema = ArrowDataType::Struct(
             self.schema()
                 .to_arrow(compatlevel)

@@ -1697,7 +1697,7 @@ impl Iterator for ArrowStreamIterator {
         let next = self.inner.lock().next();
         match next {
             None => None,
-            Some(Err(err)) => return Some(Err(err)),
+            Some(Err(err)) => Some(Err(err)),
             Some(Ok(mut df)) => Some(Ok(Box::new(df.to_arrow(Some(CompatLevel::newest()))))),
         }
     }
