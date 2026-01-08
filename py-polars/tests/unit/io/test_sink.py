@@ -184,7 +184,7 @@ def test_collect_all_lazy() -> None:
         q = pl.collect_all([a, b, c], lazy=True)
 
         assert q._ldf._node_name() == "SinkMultiple"
-        q.collect()
+        q.collect(engine="streaming")
         df_a = pl.read_csv(tmp_path / "a.csv")
         df_b = pl.read_csv(tmp_path / "b.csv")
         df_c = pl.read_csv(tmp_path / "c.csv")
