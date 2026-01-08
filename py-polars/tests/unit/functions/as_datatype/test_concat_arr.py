@@ -84,7 +84,7 @@ def test_concat_arr_broadcast() -> None:
         pl.Series([[1, 1], [2, 1], [3, 1]], dtype=pl.Array(pl.Int64, 2)),
     )
 
-    with pytest.raises(ShapeError, match="length of column.*did not match"):
+    with pytest.raises(ShapeError, match=r"length of column.*did not match"):
         assert_series_equal(
             pl.select(
                 pl.concat_arr(pl.Series([1, 3, 5]), pl.Series([1, 1]))

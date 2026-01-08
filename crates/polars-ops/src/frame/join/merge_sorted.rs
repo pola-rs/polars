@@ -29,9 +29,9 @@ pub fn _merge_sorted_dfs(
 
     let merge_indicator = series_to_merge_indicator(left_s, right_s)?;
     let new_columns = left
-        .get_columns()
+        .columns()
         .iter()
-        .zip(right.get_columns())
+        .zip(right.columns())
         .map(|(lhs, rhs)| {
             let lhs_phys = lhs.to_physical_repr();
             let rhs_phys = rhs.to_physical_repr();
@@ -48,7 +48,7 @@ pub fn _merge_sorted_dfs(
         })
         .collect::<PolarsResult<_>>()?;
 
-    Ok(unsafe { DataFrame::new_no_checks(left.height() + right.height(), new_columns) })
+    Ok(unsafe { DataFrame::new_unchecked(left.height() + right.height(), new_columns) })
 }
 
 fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> PolarsResult<Series> {
@@ -72,6 +72,12 @@ fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> PolarsR
             let lhs = lhs.binary().unwrap();
             let rhs = rhs.binary().unwrap();
             merge_ca(lhs, rhs, merge_indicator).into_series()
+        },
+        #[cfg(feature = "dtype-extension")]
+        Extension(typ, _) => {
+            let lhs = lhs.ext().unwrap();
+            let rhs = rhs.ext().unwrap();
+            merge_series(lhs.storage(), rhs.storage(), merge_indicator)?.into_extension(typ.clone())
         },
         #[cfg(feature = "dtype-struct")]
         Struct(_) => {
@@ -179,7 +185,8 @@ where
 }
 
 fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> PolarsResult<Vec<bool>> {
-    if let Ok(cat_phys) = lhs.dtype().cat_physical() {
+    if lhs.dtype().is_categorical() || lhs.dtype().is_enum() {
+        let cat_phys = lhs.dtype().cat_physical().unwrap();
         with_match_categorical_physical_type!(cat_phys, |$C| {
             let lhs = lhs.cat::<$C>().unwrap();
             let rhs = rhs.cat::<$C>().unwrap();

@@ -237,7 +237,7 @@ fn serialize_compression(
 }
 
 fn set_variadic_buffer_counts(counts: &mut Vec<i64>, array: &dyn Array) {
-    match array.dtype() {
+    match array.dtype().to_storage() {
         ArrowDataType::Utf8View => {
             let array = array.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
             counts.push(array.data_buffers().len() as i64);
@@ -474,7 +474,7 @@ impl DictionaryTracker {
     ///   has never been seen before, return `Ok(true)` to indicate that the dictionary was just
     ///   inserted.
     pub fn insert(&mut self, dict_id: i64, array: &dyn Array) -> PolarsResult<bool> {
-        let values = match array.dtype() {
+        let values = match array.dtype().to_storage() {
             ArrowDataType::Dictionary(key_type, _, _) => {
                 match_integer_type!(key_type, |$T| {
                     let array = array

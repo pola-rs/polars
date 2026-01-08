@@ -2038,6 +2038,7 @@ class StringNameSpace:
         replace_with: Series | list[str] | str | NoDefault = no_default,
         *,
         ascii_case_insensitive: bool = False,
+        leftmost: bool = False,
     ) -> Series:
         """
         Use the Aho-Corasick algorithm to replace many matches.
@@ -2056,6 +2057,10 @@ class StringNameSpace:
             Enable ASCII-aware case-insensitive matching.
             When this option is enabled, searching will be performed without respect
             to case for ASCII letters (a-z and A-Z) only.
+        leftmost
+            Guarantees in case there are overlapping matches that the leftmost match
+            is used. In case there are multiple candidates for the leftmost match
+            the pattern which comes first in patterns is used.
 
         Notes
         -----
@@ -2127,6 +2132,43 @@ class StringNameSpace:
             "Tell you what me need, what me really really need"
             "Can me feel the love tonight"
         ]
+
+        Using `leftmost` and changing order of tokens in `patterns`, you can get fine
+        control over replacement logic, while default behavior does not provide
+        guarantees in case of overlapping patterns:
+
+        >>> s = pl.Series("haystack", ["abcd"])
+        >>> patterns = {"b": "x", "abc": "y", "abcd": "z"}
+        >>> s.str.replace_many(patterns)
+        shape: (1,)
+        Series: 'haystack' [str]
+        [
+            "axcd"
+        ]
+
+        Note that here `replaced` can be any of `axcd`, `yd` or `z`.
+
+        Adding `leftmost=True` matches pattern with leftmost start index first:
+
+        >>> s = pl.Series("haystack", ["abcd"])
+        >>> patterns = {"b": "x", "abc": "y", "abcd": "z"}
+        >>> s.str.replace_many(patterns, leftmost=True)
+        shape: (1,)
+        Series: 'haystack' [str]
+        [
+            "yd"
+        ]
+
+        Changing order inside patterns to match 'abcd' first:
+
+        >>> s = pl.Series("haystack", ["abcd"])
+        >>> patterns = {"abcd": "z", "abc": "y", "b": "x"}
+        >>> s.str.replace_many(patterns, leftmost=True)
+        shape: (1,)
+        Series: 'haystack' [str]
+        [
+            "z"
+        ]
         """
 
     @unstable()
@@ -2136,6 +2178,7 @@ class StringNameSpace:
         *,
         ascii_case_insensitive: bool = False,
         overlapping: bool = False,
+        leftmost: bool = False,
     ) -> Series:
         """
         Use the Aho-Corasick algorithm to extract many matches.
@@ -2150,6 +2193,11 @@ class StringNameSpace:
             to case for ASCII letters (a-z and A-Z) only.
         overlapping
             Whether matches may overlap.
+        leftmost
+            Guarantees in case there are overlapping matches that the leftmost match
+            is used. In case there are multiple candidates for the leftmost match
+            the pattern which comes first in patterns is used. May not be used
+            together with overlapping = True.
 
         Notes
         -----
@@ -2176,6 +2224,7 @@ class StringNameSpace:
         *,
         ascii_case_insensitive: bool = False,
         overlapping: bool = False,
+        leftmost: bool = False,
     ) -> Series:
         """
         Use the Aho-Corasick algorithm to find all matches.
@@ -2193,6 +2242,11 @@ class StringNameSpace:
             to case for ASCII letters (a-z and A-Z) only.
         overlapping
             Whether matches may overlap.
+        leftmost
+            Guarantees in case there are overlapping matches that the leftmost match
+            is used. In case there are multiple candidates for the leftmost match
+            the pattern which comes first in patterns is used. May not be used
+            together with overlapping = True.
 
         Notes
         -----

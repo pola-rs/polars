@@ -14,6 +14,8 @@ pub use temporal::time_zone::TimeZone;
 use super::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::get_object_physical_type;
+#[cfg(feature = "dtype-extension")]
+pub use crate::datatypes::extension::ExtensionTypeInstance;
 use crate::utils::materialize_dyn_int;
 
 pub trait MetaDataExt: IntoMetadata {
@@ -96,6 +98,7 @@ pub enum DataType {
     Int32,
     Int64,
     Int128,
+    Float16,
     Float32,
     Float64,
     /// Fixed point decimal type optional precision and non-negative scale.
@@ -134,6 +137,8 @@ pub enum DataType {
     Enum(Arc<FrozenCategories>, Arc<CategoricalMapping>),
     #[cfg(feature = "dtype-struct")]
     Struct(Vec<Field>),
+    #[cfg(feature = "dtype-extension")]
+    Extension(ExtensionTypeInstance, Box<DataType>),
     // some logical types we cannot know statically, e.g. Datetime
     Unknown(UnknownKind),
 }
@@ -373,6 +378,28 @@ impl DataType {
         }
     }
 
+    /// Map all leaf types of nested dtypes (list, array, struct) using the
+    /// supplied function.
+    pub fn map_leaves<F: FnMut(DataType) -> DataType>(self, f: &mut F) -> DataType {
+        use DataType::*;
+        match self {
+            List(inner) => List(Box::new(inner.map_leaves(f))),
+            #[cfg(feature = "dtype-array")]
+            Array(inner, size) => Array(Box::new(inner.map_leaves(f)), size),
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields) => {
+                let new_fields = fields
+                    .into_iter()
+                    .map(|fld| Field::new(fld.name, fld.dtype.map_leaves(f)))
+                    .collect();
+                Struct(new_fields)
+            },
+            #[cfg(feature = "dtype-extension")]
+            Extension(ext, storage) => Extension(ext, Box::new(storage.map_leaves(f))),
+            _ => f(self),
+        }
+    }
+
     /// Return whether the cast to `to` makes sense.
     ///
     /// If it `None`, we are not sure.
@@ -466,6 +493,18 @@ impl DataType {
                     .collect();
                 Struct(new_fields)
             },
+            #[cfg(feature = "dtype-extension")]
+            Extension(_, storage) => storage.to_physical(),
+            _ => self.clone(),
+        }
+    }
+
+    #[must_use]
+    pub fn to_storage(&self) -> DataType {
+        use DataType::*;
+        match self {
+            #[cfg(feature = "dtype-extension")]
+            Extension(_, storage) => storage.to_storage(),
             _ => self.clone(),
         }
     }
@@ -523,7 +562,16 @@ impl DataType {
     }
 
     pub fn is_nested(&self) -> bool {
-        self.is_list() || self.is_struct() || self.is_array()
+        match self {
+            DataType::List(_) => true,
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(_, _) => true,
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(_) => true,
+            #[cfg(feature = "dtype-extension")]
+            DataType::Extension(_, storage) => storage.is_nested(),
+            _ => false,
+        }
     }
 
     /// Check if this [`DataType`] is a struct
@@ -663,7 +711,10 @@ impl DataType {
     pub fn is_float(&self) -> bool {
         matches!(
             self,
-            DataType::Float32 | DataType::Float64 | DataType::Unknown(UnknownKind::Float)
+            DataType::Float16
+                | DataType::Float32
+                | DataType::Float64
+                | DataType::Unknown(UnknownKind::Float)
         )
     }
 
@@ -725,6 +776,17 @@ impl DataType {
             matches!(self, DataType::Enum(_, _))
         }
         #[cfg(not(feature = "dtype-categorical"))]
+        {
+            false
+        }
+    }
+
+    pub fn is_extension(&self) -> bool {
+        #[cfg(feature = "dtype-extension")]
+        {
+            matches!(self, DataType::Extension(_, _))
+        }
+        #[cfg(not(feature = "dtype-extension"))]
         {
             false
         }
@@ -798,6 +860,7 @@ impl DataType {
             UInt32 => Scalar::from(u32::MAX),
             UInt64 => Scalar::from(u64::MAX),
             UInt128 => Scalar::from(u128::MAX),
+            Float16 => Scalar::from(pf16::INFINITY),
             Float32 => Scalar::from(f32::INFINITY),
             Float64 => Scalar::from(f64::INFINITY),
             #[cfg(feature = "dtype-time")]
@@ -821,6 +884,7 @@ impl DataType {
             UInt32 => Scalar::from(u32::MIN),
             UInt64 => Scalar::from(u64::MIN),
             UInt128 => Scalar::from(u128::MIN),
+            Float16 => Scalar::from(pf16::NEG_INFINITY),
             Float32 => Scalar::from(f32::NEG_INFINITY),
             Float64 => Scalar::from(f64::NEG_INFINITY),
             #[cfg(feature = "dtype-time")]
@@ -851,6 +915,7 @@ impl DataType {
             Int32 => Ok(ArrowDataType::Int32),
             Int64 => Ok(ArrowDataType::Int64),
             Int128 => Ok(ArrowDataType::Int128),
+            Float16 => Ok(ArrowDataType::Float16),
             Float32 => Ok(ArrowDataType::Float32),
             Float64 => Ok(ArrowDataType::Float64),
             #[cfg(feature = "dtype-decimal")]
@@ -882,9 +947,10 @@ impl DataType {
             Duration(unit) => Ok(ArrowDataType::Duration(unit.to_arrow())),
             Time => Ok(ArrowDataType::Time64(ArrowTimeUnit::Nanosecond)),
             #[cfg(feature = "dtype-array")]
-            Array(dt, size) => Ok(dt
-                .try_to_arrow(compat_level)?
-                .to_fixed_size_list(*size, true)),
+            Array(dt, width) => Ok(ArrowDataType::FixedSizeList(
+                Box::new(dt.to_arrow_field(LIST_VALUES_NAME, compat_level)),
+                *width,
+            )),
             List(dt) => Ok(ArrowDataType::LargeList(Box::new(
                 dt.to_arrow_field(LIST_VALUES_NAME, compat_level),
             ))),
@@ -920,6 +986,14 @@ impl DataType {
                 Ok(ArrowDataType::Struct(fields))
             },
             BinaryOffset => Ok(ArrowDataType::LargeBinary),
+            #[cfg(feature = "dtype-extension")]
+            Extension(typ, inner) => Ok(ArrowDataType::Extension(Box::new(
+                arrow::datatypes::ExtensionType {
+                    name: typ.name().into(),
+                    inner: inner.try_to_arrow(compat_level)?,
+                    metadata: typ.serialize_metadata().map(|m| m.into()),
+                },
+            ))),
             Unknown(kind) => {
                 let dt = match kind {
                     UnknownKind::Any => ArrowDataType::Unknown,
@@ -1065,12 +1139,14 @@ impl Display for DataType {
             DataType::Int32 => "i32",
             DataType::Int64 => "i64",
             DataType::Int128 => "i128",
+            DataType::Float16 => "f16",
             DataType::Float32 => "f32",
             DataType::Float64 => "f64",
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(p, s) => return write!(f, "decimal[{p},{s}]"),
             DataType::String => "str",
             DataType::Binary => "binary",
+            DataType::BinaryOffset => "binary[offset]",
             DataType::Date => "date",
             DataType::Datetime(tu, None) => return write!(f, "datetime[{tu}]"),
             DataType::Datetime(tu, Some(tz)) => return write!(f, "datetime[{tu}, {tz}]"),
@@ -1097,13 +1173,14 @@ impl Display for DataType {
             DataType::Enum(_, _) => "enum",
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => return write!(f, "struct[{}]", fields.len()),
+            #[cfg(feature = "dtype-extension")]
+            DataType::Extension(typ, _) => return write!(f, "ext[{}]", typ.0.dyn_display()),
             DataType::Unknown(kind) => match kind {
                 UnknownKind::Any => "unknown",
                 UnknownKind::Int(_) => "dyn int",
                 UnknownKind::Float => "dyn float",
                 UnknownKind::Str => "dyn str",
             },
-            DataType::BinaryOffset => "binary[offset]",
         };
         f.write_str(s)
     }
@@ -1124,6 +1201,7 @@ impl std::fmt::Debug for DataType {
             Int32 => write!(f, "Int32"),
             Int64 => write!(f, "Int64"),
             Int128 => write!(f, "Int128"),
+            Float16 => write!(f, "Float16"),
             Float32 => write!(f, "Float32"),
             Float64 => write!(f, "Float64"),
             String => write!(f, "String"),
@@ -1179,6 +1257,8 @@ impl std::fmt::Debug for DataType {
             #[cfg(feature = "object")]
             Object(_) => write!(f, "Object"),
             Null => write!(f, "Null"),
+            #[cfg(feature = "dtype-extension")]
+            Extension(typ, inner) => write!(f, "Extension({}, {inner:?})", typ.0.dyn_debug()),
             Unknown(kind) => write!(f, "Unknown({kind:?})"),
         }
     }

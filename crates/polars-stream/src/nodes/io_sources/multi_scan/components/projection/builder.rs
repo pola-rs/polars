@@ -21,6 +21,10 @@ use crate::nodes::io_sources::multi_scan::components::projection::{
 
 /// Provides projections for columns that are sourced from the file.
 #[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "physical_plan_visualization",
+    derive(strum_macros::IntoStaticStr)
+)]
 pub enum ProjectionBuilder {
     Plain(SchemaRef),
     Iceberg {
@@ -258,5 +262,9 @@ impl ProjectionBuilder {
 
     pub fn num_projections(&self) -> usize {
         self.projected_schema().len()
+    }
+
+    pub fn projected_names(&self) -> impl Iterator<Item = &PlSmallStr> {
+        self.projected_schema().iter_names()
     }
 }

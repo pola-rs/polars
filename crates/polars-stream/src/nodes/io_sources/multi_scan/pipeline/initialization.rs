@@ -4,19 +4,18 @@ use std::sync::{Arc, Mutex};
 use futures::StreamExt;
 use polars_core::prelude::PlHashMap;
 use polars_error::PolarsResult;
-use polars_io::predicates::ScanIOPredicate;
-use polars_plan::dsl::TableStatistics;
-use polars_plan::plans::hive::HivePartitionsDf;
+use polars_mem_engine::scan_predicate::initialize_scan_predicate;
+use polars_plan::dsl::PredicateFileSkip;
+use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 
 use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
 use crate::async_primitives::connector::{self};
+use crate::execute::StreamingExecutionState;
 use crate::nodes::io_sources::multi_scan::components::bridge::{BridgeRecvPort, BridgeState};
-use crate::nodes::io_sources::multi_scan::components::row_counter::RowCounter;
 use crate::nodes::io_sources::multi_scan::components::row_deletions::{
     DeletionFilesProvider, ExternalFilterMask, RowDeletionsInit,
 };
-use crate::nodes::io_sources::multi_scan::components::skip_files::SkipFilesMask;
 use crate::nodes::io_sources::multi_scan::config::MultiScanConfig;
 use crate::nodes::io_sources::multi_scan::functions::resolve_slice::resolve_to_positive_slice;
 use crate::nodes::io_sources::multi_scan::pipeline::models::{
@@ -30,7 +29,10 @@ use crate::nodes::io_sources::multi_scan::pipeline::tasks::reader_starter::{
 use crate::nodes::io_sources::multi_scan::reader_interface::FileReader;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
 
-pub fn initialize_multi_scan_pipeline(config: Arc<MultiScanConfig>) -> InitializedPipelineState {
+pub fn initialize_multi_scan_pipeline(
+    config: Arc<MultiScanConfig>,
+    execution_state: StreamingExecutionState,
+) -> InitializedPipelineState {
     assert!(config.num_pipelines() > 0);
 
     if config.verbose {
@@ -55,7 +57,8 @@ pub fn initialize_multi_scan_pipeline(config: Arc<MultiScanConfig>) -> Initializ
 
     let task_handle =
         AbortOnDropHandle::new(async_executor::spawn(TaskPriority::Low, async move {
-            finish_initialize_multi_scan_pipeline(config, bridge_recv_port_tx).await?;
+            finish_initialize_multi_scan_pipeline(config, bridge_recv_port_tx, execution_state)
+                .await?;
             bridge_handle.await;
             Ok(())
         }));
@@ -70,15 +73,26 @@ pub fn initialize_multi_scan_pipeline(config: Arc<MultiScanConfig>) -> Initializ
 async fn finish_initialize_multi_scan_pipeline(
     config: Arc<MultiScanConfig>,
     bridge_recv_port_tx: connector::Sender<BridgeRecvPort>,
+    execution_state: StreamingExecutionState,
 ) -> PolarsResult<()> {
     let verbose = config.verbose;
 
-    let (skip_files_mask, predicate) = initialize_predicate(
-        config.predicate.as_ref(),
-        config.hive_parts.as_deref(),
-        config.table_statistics.as_ref(),
-        verbose,
-    )?;
+    let (skip_files_mask, predicate) = match config.predicate_file_skip_applied {
+        None => initialize_scan_predicate(
+            config.predicate.as_ref(),
+            config.hive_parts.as_deref(),
+            config.table_statistics.as_ref(),
+            verbose,
+        )?,
+        Some(PredicateFileSkip {
+            no_residual_predicate: false,
+            original_len: _,
+        }) => (None, config.predicate.as_ref()),
+        Some(PredicateFileSkip {
+            no_residual_predicate: true,
+            original_len: _,
+        }) => (None, None),
+    };
 
     if let Some(skip_files_mask) = &skip_files_mask {
         assert_eq!(skip_files_mask.len(), config.sources.len());
@@ -184,7 +198,7 @@ async fn finish_initialize_multi_scan_pipeline(
                 }
             }
 
-            resolve_to_positive_slice(&config).await?
+            resolve_to_positive_slice(&config, &execution_state).await?
         },
     };
 
@@ -282,7 +296,8 @@ async fn finish_initialize_multi_scan_pipeline(
         let sources = config.sources.clone();
         let cloud_options = config.cloud_options.clone();
         let file_reader_builder = config.file_reader_builder.clone();
-        let deletion_files_provider = DeletionFilesProvider::new(config.deletion_files.clone());
+        let deletion_files_provider =
+            DeletionFilesProvider::new(config.deletion_files.clone(), &execution_state);
 
         futures::stream::iter(range)
             .map(move |scan_source_idx| {
@@ -344,7 +359,7 @@ async fn finish_initialize_multi_scan_pipeline(
                     })
                 }))
             })
-            .buffered(config.n_readers_pre_init().min(config.sources.len()))
+            .buffered(config.n_readers_pre_init().max(1))
     };
 
     let sources = config.sources.clone();
@@ -398,71 +413,4 @@ async fn finish_initialize_multi_scan_pipeline(
     reader_starter_handle.await?;
 
     Ok(())
-}
-
-/// # Returns
-/// (skip_files_mask, predicate)
-fn initialize_predicate<'a>(
-    predicate: Option<&'a ScanIOPredicate>,
-    hive_parts: Option<&HivePartitionsDf>,
-    table_statsitics: Option<&TableStatistics>,
-    verbose: bool,
-) -> PolarsResult<(Option<SkipFilesMask>, Option<&'a ScanIOPredicate>)> {
-    #[expect(clippy::never_loop)]
-    loop {
-        let Some(predicate) = predicate else {
-            break;
-        };
-
-        let (skip_files_mask, send_predicate_to_readers) = if let Some(hive_parts) = hive_parts
-            && let Some(hive_predicate) = &predicate.hive_predicate
-        {
-            if verbose {
-                eprintln!("[MultiScan]: Source filter mask initialization via hive partitions");
-            }
-
-            let inclusion_mask = hive_predicate
-                .evaluate_io(hive_parts.df())?
-                .bool()?
-                .rechunk()
-                .into_owned()
-                .downcast_into_iter()
-                .next()
-                .unwrap()
-                .values()
-                .clone();
-
-            (
-                SkipFilesMask::Inclusion(inclusion_mask),
-                !predicate.hive_predicate_is_full_predicate,
-            )
-        } else if let Some(table_statsitics) = table_statsitics
-            && let Some(skip_batch_predicate) = &predicate.skip_batch_predicate
-        {
-            if verbose {
-                eprintln!("[MultiScan]: Source filter mask initialization via table statistics");
-            }
-
-            let exclusion_mask = skip_batch_predicate.evaluate_with_stat_df(&table_statsitics.0)?;
-
-            (SkipFilesMask::Exclusion(exclusion_mask), true)
-        } else {
-            break;
-        };
-
-        if verbose {
-            eprintln!(
-                "[MultiScan]: Predicate pushdown allows skipping {} / {} files",
-                skip_files_mask.num_skipped_files(),
-                skip_files_mask.len()
-            );
-        }
-
-        return Ok((
-            Some(skip_files_mask),
-            send_predicate_to_readers.then_some(predicate),
-        ));
-    }
-
-    Ok((None, predicate))
 }

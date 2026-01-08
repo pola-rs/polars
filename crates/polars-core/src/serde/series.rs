@@ -1,3 +1,5 @@
+use std::io::{Read, Seek};
+
 use polars_utils::pl_serialize::deserialize_map_bytes;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -7,7 +9,7 @@ use crate::prelude::*;
 impl Series {
     pub fn serialize_into_writer(&self, writer: &mut dyn std::io::Write) -> PolarsResult<()> {
         let mut df =
-            unsafe { DataFrame::new_no_checks_height_from_first(vec![self.clone().into_column()]) };
+            unsafe { DataFrame::new_unchecked_infer_height(vec![self.clone().into_column()]) };
 
         df.serialize_into_writer(writer)
     }
@@ -19,7 +21,7 @@ impl Series {
         Ok(buf)
     }
 
-    pub fn deserialize_from_reader(reader: &mut dyn std::io::Read) -> PolarsResult<Self> {
+    pub fn deserialize_from_reader<T: Read + Seek>(reader: &mut T) -> PolarsResult<Self> {
         let df = DataFrame::deserialize_from_reader(reader)?;
 
         if df.width() != 1 {
@@ -30,7 +32,7 @@ impl Series {
             )
         }
 
-        Ok(df.take_columns().swap_remove(0).take_materialized_series())
+        Ok(df.into_columns().swap_remove(0).take_materialized_series())
     }
 }
 
@@ -59,7 +61,8 @@ impl<'de> Deserialize<'de> for Series {
     {
         deserialize_map_bytes(deserializer, |b| {
             let v = &mut b.as_ref();
-            Self::deserialize_from_reader(v)
+            let mut reader = std::io::Cursor::new(v);
+            Self::deserialize_from_reader(&mut reader)
         })?
         .map_err(D::Error::custom)
     }
@@ -67,15 +70,15 @@ impl<'de> Deserialize<'de> for Series {
 
 #[cfg(feature = "dsl-schema")]
 impl schemars::JsonSchema for Series {
-    fn schema_name() -> String {
-        "Series".to_owned()
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Series".into()
     }
 
     fn schema_id() -> std::borrow::Cow<'static, str> {
         std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "Series"))
     }
 
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         Vec::<u8>::json_schema(generator)
     }
 }

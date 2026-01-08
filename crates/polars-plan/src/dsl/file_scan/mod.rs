@@ -36,13 +36,17 @@ bitflags::bitflags! {
     }
 }
 
+const _: () = {
+    assert!(std::mem::size_of::<FileScanDsl>() <= 100);
+};
+
 #[derive(Clone, Debug, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-// TODO: Arc<> some of the options and the cloud options.
+/// Note: This is cheaply cloneable.
 pub enum FileScanDsl {
     #[cfg(feature = "csv")]
-    Csv { options: CsvReadOptions },
+    Csv { options: Arc<CsvReadOptions> },
 
     #[cfg(feature = "json")]
     NDJson { options: NDJsonReadOptions },
@@ -58,6 +62,9 @@ pub enum FileScanDsl {
         dataset_object: Arc<python_dataset::PythonDatasetProvider>,
     },
 
+    #[cfg(feature = "scan_lines")]
+    Lines { name: PlSmallStr },
+
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     Anonymous {
         options: Arc<AnonymousScanOptions>,
@@ -66,13 +73,17 @@ pub enum FileScanDsl {
     },
 }
 
+const _: () = {
+    assert!(std::mem::size_of::<FileScanIR>() <= 80);
+};
+
 #[derive(Clone, Debug, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-// TODO: Arc<> some of the options and the cloud options.
+/// Note: This is cheaply cloneable.
 pub enum FileScanIR {
     #[cfg(feature = "csv")]
-    Csv { options: CsvReadOptions },
+    Csv { options: Arc<CsvReadOptions> },
 
     #[cfg(feature = "json")]
     NDJson { options: NDJsonReadOptions },
@@ -96,6 +107,9 @@ pub enum FileScanIR {
         dataset_object: Arc<python_dataset::PythonDatasetProvider>,
         cached_ir: Arc<Mutex<Option<ExpandedDataset>>>,
     },
+
+    #[cfg(feature = "scan_lines")]
+    Lines { name: PlSmallStr },
 
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     Anonymous {
@@ -167,9 +181,9 @@ pub struct CastColumnsPolicy {
     /// Allow casting when target dtype is lossless supertype
     pub integer_upcast: bool,
 
-    /// Allow Float32 -> Float64
+    /// Allow upcasting from small floats to bigger floats
     pub float_upcast: bool,
-    /// Allow Float64 -> Float32
+    /// Allow downcasting from big floats to smaller floats
     pub float_downcast: bool,
 
     /// Allow datetime[ns] to be casted to any lower precision. Important for
@@ -289,8 +303,30 @@ pub struct UnifiedScanArgs {
 
     pub deletion_files: Option<DeletionFilesList>,
     pub table_statistics: Option<TableStatistics>,
+    /// Stores (physical, deleted) row counts of the table if known upfront (e.g. for Iceberg).
+    /// This allows for row-count queries to succeed without scanning all files.
+    ///
+    /// Note, intentionally store u64 instead of IdxSize to avoid erroring if it's unused.
+    pub row_count: Option<(u64, u64)>,
 }
 
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub struct PredicateFileSkip {
+    /// If `true` the predicate can be skipped at runtime.
+    pub no_residual_predicate: bool,
+    /// Number of files before skipping
+    pub original_len: usize,
+}
+
+impl UnifiedScanArgs {
+    pub fn has_row_index_or_slice(&self) -> bool {
+        self.row_index.is_some() || self.pre_slice.is_some()
+    }
+}
+
+// Manual default, we have `glob: true` by default.
 impl Default for UnifiedScanArgs {
     fn default() -> Self {
         Self {
@@ -312,6 +348,7 @@ impl Default for UnifiedScanArgs {
             include_file_paths: None,
             deletion_files: None,
             table_statistics: None,
+            row_count: None,
         }
     }
 }
@@ -321,6 +358,9 @@ impl Default for UnifiedScanArgs {
 mod _file_scan_eq_hash {
     use std::hash::{Hash, Hasher};
     use std::sync::Arc;
+
+    #[cfg(feature = "scan_lines")]
+    use polars_utils::pl_str::PlSmallStr;
 
     use super::FileScanIR;
 
@@ -371,6 +411,9 @@ mod _file_scan_eq_hash {
             cached_ir: usize,
         },
 
+        #[cfg(feature = "scan_lines")]
+        Lines { name: &'a PlSmallStr },
+
         Anonymous {
             options: &'a crate::dsl::AnonymousScanOptions,
             function: usize,
@@ -410,6 +453,9 @@ mod _file_scan_eq_hash {
                     dataset_object: arc_as_ptr(dataset_object),
                     cached_ir: arc_as_ptr(cached_ir),
                 },
+
+                #[cfg(feature = "scan_lines")]
+                FileScanIR::Lines { name } => FileScanEqHashWrap::Lines { name },
 
                 FileScanIR::Anonymous { options, function } => FileScanEqHashWrap::Anonymous {
                     options,
@@ -614,7 +660,9 @@ impl CastColumnsPolicy {
 
         if target_dtype.is_float() && incoming_dtype.is_float() {
             return match (target_dtype, incoming_dtype) {
-                (DataType::Float64, DataType::Float32) => {
+                (DataType::Float64, DataType::Float32)
+                | (DataType::Float64, DataType::Float16)
+                | (DataType::Float32, DataType::Float16) => {
                     if self.float_upcast {
                         Ok(true)
                     } else {
@@ -624,7 +672,9 @@ impl CastColumnsPolicy {
                     }
                 },
 
-                (DataType::Float32, DataType::Float64) => {
+                (DataType::Float16, DataType::Float32)
+                | (DataType::Float16, DataType::Float64)
+                | (DataType::Float32, DataType::Float64) => {
                     if self.float_downcast {
                         Ok(true)
                     } else {

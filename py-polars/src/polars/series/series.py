@@ -11,7 +11,6 @@ from decimal import Decimal as PyDecimal
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     ClassVar,
     Literal,
     NoReturn,
@@ -104,6 +103,7 @@ from polars.series.array import ArrayNameSpace
 from polars.series.binary import BinaryNameSpace
 from polars.series.categorical import CatNameSpace
 from polars.series.datetime import DateTimeNameSpace
+from polars.series.ext import ExtensionNameSpace
 from polars.series.list import ListNameSpace
 from polars.series.plotting import SeriesPlot
 from polars.series.string import StringNameSpace
@@ -114,6 +114,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import PyDataFrame, PySeries
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     with contextlib.suppress(ImportError):  # Module not available when building docs
         import polars._plr as plr
 
@@ -265,6 +267,7 @@ class Series:
         "bin",
         "cat",
         "dt",
+        "ext",
         "list",
         "plot",
         "str",
@@ -406,8 +409,8 @@ class Series:
              - The raw pointer to a C ArrowArray struct
              - The raw pointer to a C ArrowSchema struct
 
-        Warning
-        -------
+        Warnings
+        --------
         This will read the `array` pointer without moving it. The host process should
         garbage collect the heap pointer, but not its contents.
         """
@@ -433,16 +436,13 @@ class Series:
         The series should only contain a single chunk. If you want to export all chunks,
         first call `Series.get_chunks` to give you a list of chunks.
 
-        Warning
-        -------
-        Safety
-        This function will write to the pointers given in `out_ptr` and `out_schema_ptr`
-        and thus is highly unsafe.
-
-        Leaking
-        If you don't pass the ArrowArray struct to a consumer,
-        array memory will leak. This is a low-level function intended for
-        expert users.
+        Warnings
+        --------
+        * Safety: This function will write to the pointers given in `out_ptr`
+          and `out_schema_ptr` and thus is highly unsafe.
+        * Leaking: If you don't pass the ArrowArray struct to a consumer,
+          array memory will leak. This is a low-level function intended for
+          expert users.
         """
         self._s._export_arrow_to_c(out_ptr, out_schema_ptr)
 
@@ -495,7 +495,7 @@ class Series:
         keys = ("values", "validity", "offsets")
         return {  # type: ignore[return-value]
             k: self._from_pyseries(b) if b is not None else b
-            for k, b in zip(keys, buffers)
+            for k, b in zip(keys, buffers, strict=True)
         }
 
     @classmethod
@@ -1436,7 +1436,9 @@ class Series:
             raise TypeError(msg)
 
     def __array__(
-        self, dtype: npt.DTypeLike | None = None, copy: bool | None = None
+        self,
+        dtype: npt.DTypeLike | None = None,
+        copy: bool | None = None,  # noqa: FBT001
     ) -> np.ndarray[Any, Any]:
         """
         Return a NumPy ndarray with the given data type.
@@ -2155,6 +2157,29 @@ class Series:
         """
         return self._s.min()
 
+    @unstable()
+    def min_by(self, by: IntoExpr) -> Expr:
+        """
+        Get the minimum value in this Series, ordered by an expression.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        by
+            Column used to determine the smallest element.
+            Accepts expression input. Strings are parsed as column names.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [-2.0, float("nan"), 1.0])
+        >>> s.min_by(pl.col.a.abs())
+        1.0
+        """
+        return self.to_frame().select_seq(F.col(self.name).min_by(by)).item()
+
     def max(self) -> PythonLiteral | None:
         """
         Get the maximum value in this Series.
@@ -2166,6 +2191,29 @@ class Series:
         3
         """
         return self._s.max()
+
+    @unstable()
+    def max_by(self, by: IntoExpr) -> Expr:
+        """
+        Get the maximum value in this Series, ordered by an expression.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        by
+            Column used to determine the largest element.
+            Accepts expression input. Strings are parsed as column names.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [-2.0, float("nan"), 1.0])
+        >>> s.max_by(pl.col.a.abs())
+        -2.0
+        """
+        return self.to_frame().select_seq(F.col(self.name).max_by(by)).item()
 
     def nan_max(self) -> int | float | date | datetime | timedelta | str:
         """
@@ -2293,7 +2341,8 @@ class Series:
         drop_first
             Remove the first category from the variable being encoded.
         drop_nulls
-            If there are `None` values in the series, a `null` column is not generated
+            If there are `None` values in the series, a `null` column is not generated.
+            Null values in the input are represented by zero vectors.
 
         Examples
         --------
@@ -2319,6 +2368,20 @@ class Series:
         ╞═════╪═════╡
         │ 0   ┆ 0   │
         │ 1   ┆ 0   │
+        │ 0   ┆ 1   │
+        └─────┴─────┘
+
+        >>> s = pl.Series("a", [1, 2, None, 3])
+        >>> s.to_dummies(drop_nulls=True, drop_first=True)
+        shape: (4, 2)
+        ┌─────┬─────┐
+        │ a_2 ┆ a_3 │
+        │ --- ┆ --- │
+        │ u8  ┆ u8  │
+        ╞═════╪═════╡
+        │ 0   ┆ 0   │
+        │ 1   ┆ 0   │
+        │ 0   ┆ 0   │
         │ 0   ┆ 1   │
         └─────┴─────┘
         """
@@ -3326,6 +3389,88 @@ class Series:
         ]
         """
 
+    def sql(self, query: str, *, table_name: str = "self") -> DataFrame:
+        """
+        Execute a SQL query against the Series.
+
+        .. versionadded:: 1.37.0
+
+        .. warning::
+            This functionality is considered **unstable**, although it is close to
+            being considered stable. It may be changed at any point without it being
+            considered a breaking change.
+
+        Parameters
+        ----------
+        query
+            SQL query to execute.
+        table_name
+            Optionally provide an explicit name for the table that represents the
+            calling frame (defaults to "self").
+
+        Notes
+        -----
+        * The calling Series is automatically registered as a table in the SQLContext
+          under the name "self". If you want access to the DataFrames, LazyFrames, and
+          other Series found in the current globals, use :meth:`pl.sql <polars.sql>`.
+        * More control over registration and execution behaviour is available by
+          using the :class:`SQLContext` object.
+        * The SQL query executes in lazy mode before being collected and returned
+          as a DataFrame.
+        * It is recommended to name your Series for use with SQL, otherwise the default
+          Series name (an empty string) is used; while `""` is valid, it is awkward.
+
+        See Also
+        --------
+        SQLContext
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> s = pl.Series(
+        ...     name="dt",
+        ...     values=[date(1999, 12, 31), date(2099, 2, 14), date(2026, 3, 5)],
+        ... )
+
+        Query the Series using SQL:
+
+        >>> s.sql('''
+        ...     SELECT
+        ...       EXTRACT('year',dt) AS y,
+        ...       EXTRACT('month',dt) AS m,
+        ...       EXTRACT('day',dt) AS d,
+        ...     FROM self
+        ...     WHERE dt > '2020-01-01'
+        ...     ORDER BY dt DESC
+        ... ''')
+        shape: (2, 3)
+        ┌──────┬─────┬─────┐
+        │ y    ┆ m   ┆ d   │
+        │ ---  ┆ --- ┆ --- │
+        │ i32  ┆ i8  ┆ i8  │
+        ╞══════╪═════╪═════╡
+        │ 2099 ┆ 2   ┆ 14  │
+        │ 2026 ┆ 3   ┆ 5   │
+        └──────┴─────┴─────┘
+
+        While you can refer to an unnamed Series column using the default empty
+        string, it is not recommended:
+
+        >>> s = pl.Series([1, 2, 3])
+        >>> s.sql('SELECT "" AS x, "" * 2 AS "2x" FROM self')
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ x   ┆ 2x  │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 2   │
+        │ 2   ┆ 4   │
+        │ 3   ┆ 6   │
+        └─────┴─────┘
+        """
+        return self.to_frame().sql(query, table_name=table_name)
+
     def sort(
         self,
         *,
@@ -4187,11 +4332,18 @@ class Series:
         ]
         """
 
-    def explode(self) -> Series:
+    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Series:
         """
         Explode a list Series.
 
         This means that every item is expanded to a new row.
+
+        Parameters
+        ----------
+        empty_as_null
+            Explode an empty list into a `null`.
+        keep_nulls
+            Explode a `null` list into a `null`.
 
         Returns
         -------
@@ -4982,7 +5134,7 @@ class Series:
         """
         return self._s.len()
 
-    def set(self, filter: Series, value: int | float | str | bool | None) -> Series:
+    def set(self, filter: Series, value: Any) -> Series:
         """
         Set masked values.
 
@@ -5027,11 +5179,8 @@ class Series:
         │ 3       │
         └─────────┘
         """
-        f = get_ffi_func("set_with_mask_<>", self.dtype, self._s)
-        if f is None:
-            msg = f"Series of type {self.dtype} can not be set"
-            raise NotImplementedError(msg)
-        return self._from_pyseries(f(filter._s, value))
+        value_s = Series([value], dtype=self.dtype)
+        return wrap_s(self._s.set(filter._s, value_s._s))
 
     def scatter(
         self,
@@ -5150,10 +5299,10 @@ class Series:
             null
         ]
         """
-        if n < 0:
-            msg = f"`n` should be greater than or equal to 0, got {n}"
-            raise ValueError(msg)
-        # faster path
+        if not (is_int := isinstance(n, int)) or n < 0:  # type: ignore[redundant-expr]
+            msg = f"`n` should be an integer >= 0, got {n}"
+            err = TypeError if not is_int else ValueError
+            raise err(msg)
         if n == 0:
             return self._from_pyseries(self._s.clear())
         s = (
@@ -5445,11 +5594,16 @@ class Series:
             raise ShapeError(msg)
         return self._s.dot(other._s)
 
-    def mode(self) -> Series:
+    def mode(self, *, maintain_order: bool = False) -> Series:
         """
         Compute the most occurring value(s).
 
         Can return multiple Values.
+
+        Parameters
+        ----------
+        maintain_order
+            Maintain order of data. This requires more work.
 
         Examples
         --------
@@ -8004,6 +8158,11 @@ class Series:
         seed
             If `method="random"`, use this as seed.
 
+        Notes
+        -----
+        If you're coming from SQL, you may be expecting null values to be ranked last.
+        Polars, however, only ranks non-null values and preserves the null ones.
+
         Examples
         --------
         The 'average' method:
@@ -8094,6 +8253,11 @@ class Series:
         ----------
         n
             periods to shift for forming percent change.
+
+        Notes
+        -----
+        Null values are preserved. If you're coming from pandas, this matches
+        their ``fill_method=None`` behaviour.
 
         Examples
         --------
@@ -8345,14 +8509,15 @@ class Series:
             Accepts expression input. Non-expression inputs are parsed as literals.
 
             .. deprecated:: 0.20.31
-                Use :meth:`replace_all` instead to set a default while replacing values.
+                Use :meth:`replace_strict` instead to set a default while
+                replacing values.
 
         return_dtype
             The data type of the resulting expression. If set to `None` (default),
             the data type is determined automatically based on the other inputs.
 
             .. deprecated:: 0.20.31
-                Use :meth:`replace_all` instead to set a return data type while
+                Use :meth:`replace_strict` instead to set a return data type while
                 replacing values.
 
 
@@ -8771,7 +8936,8 @@ class Series:
         Returns
         -------
         Expr
-            Float32 if input is Float32, otherwise Float64.
+            :class:`Float16` if input is `Float16`, :class:`.Float32` if input is
+            `Float32`, otherwise :class:`.Float64`.
 
         Examples
         --------
@@ -9110,6 +9276,8 @@ class Series:
         """
         Aggregate values into a list.
 
+        The returned list itself is a scalar value of `list` dtype.
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
@@ -9151,21 +9319,35 @@ class Series:
         """Perform an aggregation of bitwise XORs."""
         return self._s.bitwise_xor()
 
-    def first(self) -> PythonLiteral | None:
+    def first(self, *, ignore_nulls: bool = False) -> PythonLiteral | None:
         """
         Get the first element of the Series.
 
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the first non-null value is returned, otherwise `None` is
+            returned if no non-null value exists.
+
         Returns `None` if the Series is empty.
         """
-        return self._s.first()
+        return self._s.first(ignore_nulls=ignore_nulls)
 
-    def last(self) -> PythonLiteral | None:
+    def last(self, *, ignore_nulls: bool = False) -> PythonLiteral | None:
         """
         Get the last element of the Series.
 
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default `False`).
+            If set to `True`, the last non-null value is returned, otherwise `None` is
+            returned if no non-null value exists.
+
         Returns `None` if the Series is empty.
         """
-        return self._s.last()
+        return self._s.last(ignore_nulls=ignore_nulls)
 
     def approx_n_unique(self) -> PythonLiteral | None:
         """
@@ -9274,6 +9456,11 @@ class Series:
     def struct(self) -> StructNameSpace:
         """Create an object namespace of all struct related methods."""
         return StructNameSpace(self)
+
+    @property
+    def ext(self) -> ExtensionNameSpace:
+        """Create an object namespace of all extension type related methods."""
+        return ExtensionNameSpace(self)
 
     @property
     @unstable()

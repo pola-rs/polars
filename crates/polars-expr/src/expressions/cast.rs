@@ -2,7 +2,7 @@ use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 
 use super::*;
-use crate::expressions::{AggState, AggregationContext, PartitionedAggregation, PhysicalExpr};
+use crate::expressions::{AggState, AggregationContext, PhysicalExpr};
 
 pub struct CastExpr {
     pub(crate) input: Arc<dyn PhysicalExpr>,
@@ -97,31 +97,5 @@ impl PhysicalExpr for CastExpr {
 
     fn is_scalar(&self) -> bool {
         self.input.is_scalar()
-    }
-
-    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
-        Some(self)
-    }
-}
-
-impl PartitionedAggregation for CastExpr {
-    fn evaluate_partitioned(
-        &self,
-        df: &DataFrame,
-        groups: &GroupPositions,
-        state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        let e = self.input.as_partitioned_aggregator().unwrap();
-        self.finish(&e.evaluate_partitioned(df, groups, state)?)
-    }
-
-    fn finalize(
-        &self,
-        partitioned: Column,
-        groups: &GroupPositions,
-        state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        let agg = self.input.as_partitioned_aggregator().unwrap();
-        agg.finalize(partitioned, groups, state)
     }
 }

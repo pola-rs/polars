@@ -10,6 +10,10 @@ use crate::prelude::*;
 /// Categorical converter that prunes unused categories.
 pub struct CategoricalToArrowConverter {
     /// Converters keyed by the Arc address of `Arc<CategoricalMapping>`.
+    ///
+    /// # Safety
+    /// The `usize` key remains valid as `CategoricalArrayToArrowConverter` holds a ref-count to the
+    /// `Arc<>` that the key is derived from.
     pub converters: PlIndexMap<usize, CategoricalArrayToArrowConverter>,
     /// Persist the key remap to ensure consistent mapping across multiple calls.
     pub persist_remap: bool,
@@ -95,12 +99,18 @@ impl CategoricalToArrowConverter {
                     self.initialize(field.dtype())
                 }
             },
+            #[cfg(feature = "dtype-extension")]
+            Extension(_, inner) => self.initialize(inner),
             _ => assert!(!dtype.is_nested()),
         }
     }
 }
 
 pub enum CategoricalArrayToArrowConverter {
+    // # Safety
+    // All enum variants must hold a ref to the `Arc<CategoricalMapping>`, as this enum is inserted
+    // into a hashmap keyed by the address of the `Arc`ed value.
+    //
     Categorical {
         mapping: Arc<CategoricalMapping>,
         key_remap: CategoricalKeyRemap,

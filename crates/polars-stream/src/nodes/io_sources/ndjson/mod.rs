@@ -1,6 +1,7 @@
 pub mod builder;
 
 use std::cmp::Reverse;
+use std::num::NonZeroUsize;
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -26,6 +27,7 @@ use super::multi_scan::reader_interface::{BeginReadArgs, FileReader, FileReaderC
 use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
+use crate::async_primitives::oneshot_channel;
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::io_sources::multi_scan::reader_interface::Projection;
@@ -93,8 +95,8 @@ impl FileReader for NDJsonFileReader {
         // between the 2 dtypes.
         let schema = projected_schema;
 
-        if let Some(mut tx) = file_schema_tx {
-            _ = tx.try_send(schema.clone())
+        if let Some(tx) = file_schema_tx {
+            _ = tx.send(schema.clone())
         }
 
         let is_negative_slice = matches!(pre_slice, Some(Slice::Negative { .. }));
@@ -121,7 +123,7 @@ impl FileReader for NDJsonFileReader {
         };
 
         let (total_row_count_tx, total_row_count_rx) = if is_negative_slice && row_index.is_some() {
-            let (tx, rx) = tokio::sync::oneshot::channel();
+            let (tx, rx) = oneshot_channel::channel();
             (Some(tx), Some(rx))
         } else {
             (None, None)
@@ -168,8 +170,12 @@ impl FileReader for NDJsonFileReader {
             let chunk_size = chunk_size.clamp(min_chunk_size, max_chunk_size);
 
             std::env::var("POLARS_FORCE_NDJSON_CHUNK_SIZE").map_or(chunk_size, |x| {
-                x.parse::<usize>()
-                    .expect("expected `POLARS_FORCE_NDJSON_CHUNK_SIZE` to be an integer")
+                x.parse::<NonZeroUsize>()
+                    .ok()
+                    .unwrap_or_else(|| {
+                        panic!("invalid value for POLARS_FORCE_NDJSON_CHUNK_SIZE: {x}")
+                    })
+                    .get()
             })
         };
 
@@ -375,7 +381,7 @@ impl FileReader for NDJsonFileReader {
                 eprintln!("[NDJsonFileReader]: line batch processor handles returned");
             }
 
-            if let Some(mut row_position_on_end_tx) = row_position_on_end_tx {
+            if let Some(row_position_on_end_tx) = row_position_on_end_tx {
                 let n = match pre_slice {
                     None => n_rows_skipped.saturating_add(n_rows_processed),
 
@@ -391,7 +397,7 @@ impl FileReader for NDJsonFileReader {
                 let n = IdxSize::try_from(n)
                     .map_err(|_| polars_err!(bigidx, ctx = "ndjson file", size = n))?;
 
-                _ = row_position_on_end_tx.try_send(n);
+                _ = row_position_on_end_tx.send(n);
             }
 
             if let Some(tx) = total_row_count_tx {
@@ -406,7 +412,7 @@ impl FileReader for NDJsonFileReader {
                 _ = tx.send(total_row_count);
             }
 
-            if let Some(mut n_rows_in_file_tx) = n_rows_in_file_tx {
+            if let Some(n_rows_in_file_tx) = n_rows_in_file_tx {
                 let total_row_count = total_row_count.unwrap();
 
                 if verbose {
@@ -416,7 +422,7 @@ impl FileReader for NDJsonFileReader {
                 let num_rows = total_row_count;
                 let num_rows = IdxSize::try_from(num_rows)
                     .map_err(|_| polars_err!(bigidx, ctx = "ndjson file", size = num_rows))?;
-                _ = n_rows_in_file_tx.try_send(num_rows);
+                _ = n_rows_in_file_tx.send(num_rows);
             }
 
             if let Some(handle) = opt_post_process_handle {

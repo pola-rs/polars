@@ -8,6 +8,7 @@ use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_utils::aliases::PlHashSet;
 use polars_utils::relaxed_cell::RelaxedCell;
+use polars_utils::reuse_vec::reuse_vec;
 use slotmap::{SecondaryMap, SparseSecondaryMap};
 use tokio::task::JoinHandle;
 
@@ -30,7 +31,7 @@ pub struct StreamingExecutionState {
 
 impl StreamingExecutionState {
     /// Spawns a task which is awaited at the end of the query.
-    #[expect(unused)]
+    #[allow(unused)]
     pub fn spawn_query_task<F: Future<Output = PolarsResult<()>> + Send + 'static>(&self, fut: F) {
         self.query_tasks_send
             .send(polars_io::pl_async::get_runtime().spawn(fut))
@@ -132,17 +133,6 @@ fn find_runnable_subgraph(graph: &mut Graph) -> (PlHashSet<GraphNodeKey>, Vec<Lo
         to_run.push(node);
     }
     expand_ready_subgraph(graph, to_run)
-}
-
-/// Re-uses the memory for a vec while clearing it. Allows casting the type of
-/// the vec at the same time. The stdlib specializes collect() to re-use the
-/// memory.
-fn reuse_vec<T, U>(v: Vec<T>) -> Vec<U> {
-    const {
-        assert!(std::mem::size_of::<T>() == std::mem::size_of::<U>());
-        assert!(std::mem::align_of::<T>() == std::mem::align_of::<U>());
-    }
-    v.into_iter().filter_map(|_| None).collect()
 }
 
 /// Runs the given subgraph. Assumes the set of pipes is correct for the subgraph.
@@ -374,7 +364,7 @@ pub fn execute_graph(
         }
 
         if let Some(m) = metrics.as_ref() {
-            m.lock().flush(graph);
+            m.lock().flush(&graph.pipes);
         }
     }
 

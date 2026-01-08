@@ -51,15 +51,25 @@ impl TreeWalker for Expr {
             },
             Cast { expr, dtype, options: strict } => Cast { expr: am(expr, f)?, dtype, options: strict },
             Sort { expr, options } => Sort { expr: am(expr, f)?, options },
-            Gather { expr, idx, returns_scalar } => Gather { expr: am(expr, &mut f)?, idx: am(idx, f)?, returns_scalar },
+            Gather { expr, idx, returns_scalar, null_on_oob } => Gather {
+                expr: am(expr, &mut f)?,
+                idx: am(idx, f)?,
+                returns_scalar,
+                null_on_oob,
+            },
             SortBy { expr, by, sort_options } => SortBy { expr: am(expr, &mut f)?, by: by.into_iter().map(f).collect::<Result<_, _>>()?, sort_options },
             Agg(agg_expr) => Agg(match agg_expr {
                 Min { input, propagate_nans } => Min { input: am(input, f)?, propagate_nans },
                 Max { input, propagate_nans } => Max { input: am(input, f)?, propagate_nans },
+                MinBy { input, by } => MinBy { input: am(input, &mut f)?, by: am(by, f)? },
+                MaxBy { input, by } =>  MaxBy { input: am(input, &mut f)?, by: am(by, f)? },
                 Median(x) => Median(am(x, f)?),
                 NUnique(x) => NUnique(am(x, f)?),
                 First(x) => First(am(x, f)?),
+                FirstNonNull(x) => FirstNonNull(am(x, f)?),
                 Last(x) => Last(am(x, f)?),
+                LastNonNull(x) => LastNonNull(am(x, f)?),
+                Item { input, allow_empty } => Item { input: am(input, f)?, allow_empty },
                 Mean(x) => Mean(am(x, f)?),
                 Implode(x) => Implode(am(x, f)?),
                 Count { input, include_nulls } => Count { input: am(input, f)?, include_nulls },
@@ -71,14 +81,17 @@ impl TreeWalker for Expr {
             }),
             Ternary { predicate, truthy, falsy } => Ternary { predicate: am(predicate, &mut f)?, truthy: am(truthy, &mut f)?, falsy: am(falsy, f)? },
             Function { input, function } => Function { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function },
-            Explode { input, skip_empty } => Explode { input: am(input, f)?, skip_empty },
+            Explode { input, options } => Explode { input: am(input, f)?, options },
             Filter { input, by } => Filter { input: am(input, &mut f)?, by: am(by, f)? },
-            Window { function, partition_by, order_by, options } => {
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling { function, index_column, period, offset, closed_window  } => Rolling { function: am(function, &mut f)?, index_column: am(index_column, &mut f)?, period, offset, closed_window  },
+            Over { function, partition_by, order_by, mapping } => {
                 let partition_by = partition_by.into_iter().map(&mut f).collect::<Result<_, _>>()?;
-                Window { function: am(function, f)?, partition_by, order_by, options }
+                Over { function: am(function, f)?, partition_by, order_by, mapping }
             },
             Slice { input, offset, length } => Slice { input: am(input, &mut f)?, offset: am(offset, &mut f)?, length: am(length, f)? },
             KeepName(expr) => KeepName(am(expr, f)?),
+            Element => Element,
             Len => Len,
             RenameAlias { function, expr } => RenameAlias { function, expr: am(expr, f)? },
             AnonymousFunction { input, function, options, fmt_str } => {
@@ -154,7 +167,24 @@ impl AExpr {
         match (self, other) {
             (Column(l), Column(r)) => l == r,
             (Literal(l), Literal(r)) => l == r,
-            (Window { options: l, .. }, Window { options: r, .. }) => l == r,
+            #[cfg(feature = "dynamic_group_by")]
+            (
+                Rolling {
+                    function: _,
+                    index_column: _,
+                    period: l_period,
+                    offset: l_offset,
+                    closed_window: l_closed_window,
+                },
+                Rolling {
+                    function: _,
+                    index_column: _,
+                    period: r_period,
+                    offset: r_offset,
+                    closed_window: r_closed_window,
+                },
+            ) => l_period == r_period && l_offset == r_offset && l_closed_window == r_closed_window,
+            (Over { mapping: l, .. }, Over { mapping: r, .. }) => l == r,
             (
                 Cast {
                     options: strict_l,
@@ -176,13 +206,13 @@ impl AExpr {
             (
                 Explode {
                     expr: _,
-                    skip_empty: l_skip_empty,
+                    options: l_options,
                 },
                 Explode {
                     expr: _,
-                    skip_empty: r_skip_empty,
+                    options: r_options,
                 },
-            ) => l_skip_empty == r_skip_empty,
+            ) => l_options == r_options,
             (
                 SortBy {
                     sort_options: l_sort_options,

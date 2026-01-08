@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from hypothesis import given
@@ -11,6 +11,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import dataframes, series
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import PolarsDataType
 
 
@@ -34,9 +36,7 @@ def test_series_sort_idempotent(s: pl.Series) -> None:
             pl.Object,  # Unsortable type
             pl.Null,  # Bug, see: https://github.com/pola-rs/polars/issues/17007
             pl.Decimal,  # Bug, see: https://github.com/pola-rs/polars/issues/17009
-            pl.Categorical(
-                ordering="lexical"
-            ),  # Bug, see: https://github.com/pola-rs/polars/issues/20364
+            pl.Categorical(),  # Bug, see: https://github.com/pola-rs/polars/issues/20364
         ],
     )
 )
@@ -393,7 +393,7 @@ def test_sorted_join_and_dtypes(dtype: PolarsDataType) -> None:
                 "index": [1, 2, 3, 5],
                 "a": [-2, 3, 3, 10],
             },
-            schema={"index": pl.UInt32, "a": dtype},
+            schema={"index": pl.get_index_type(), "a": dtype},
         ),
         check_row_order=False,
     )
@@ -406,7 +406,7 @@ def test_sorted_join_and_dtypes(dtype: PolarsDataType) -> None:
                 "index": [0, 1, 2, 3, 4, 5],
                 "a": [-5, -2, 3, 3, 9, 10],
             },
-            schema={"index": pl.UInt32, "a": dtype},
+            schema={"index": pl.get_index_type(), "a": dtype},
         ),
         check_row_order=False,
     )
@@ -831,7 +831,9 @@ def test_sort_by_descending() -> None:
 def test_arg_sort_by_descending() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
     result = df.select(pl.arg_sort_by(["a", "b"], descending=True))
-    expected = pl.DataFrame({"a": [2, 1, 0]}).select(pl.col("a").cast(pl.UInt32))
+    expected = pl.DataFrame({"a": [2, 1, 0]}).select(
+        pl.col("a").cast(pl.get_index_type())
+    )
     assert_frame_equal(result, expected)
     result = df.select(pl.arg_sort_by(["a", "b"], descending=[True, True]))
     assert_frame_equal(result, expected)
@@ -1172,7 +1174,7 @@ def test_sort_bool_nulls_last() -> None:
     "dtype",
     [
         pl.Enum(["a", "b"]),
-        pl.Categorical(ordering="lexical"),
+        pl.Categorical(),
     ],
 )
 def test_sort_cat_nulls_last(dtype: PolarsDataType) -> None:
@@ -1254,4 +1256,12 @@ def test_sort_by_dynamic_24057(expr: pl.Expr, result: list[list[int]]) -> None:
     )
     out = q.collect()
     expected = pl.DataFrame({"time": [0, 5, 10], "sorted": result})
+    assert_frame_equal(out, expected)
+
+
+def test_sort_by_empty_list_eval_25433() -> None:
+    some_list = [2, 1, 3]
+    df = pl.DataFrame({"a": [some_list, []]})
+    out = df.select(pl.col.a.list.eval(pl.element().sort_by(pl.element())))
+    expected = pl.DataFrame({"a": [sorted(some_list), []]})
     assert_frame_equal(out, expected)

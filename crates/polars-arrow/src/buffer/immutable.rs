@@ -277,6 +277,11 @@ impl<T> Buffer<T> {
     pub fn storage_refcount(&self) -> u64 {
         self.storage.refcount()
     }
+
+    /// Whether these two buffers share the exact same data.
+    pub fn is_same_buffer(&self, other: &Self) -> bool {
+        self.ptr == other.ptr && self.length == other.length
+    }
 }
 
 impl<T: Pod> Buffer<T> {
@@ -422,7 +427,7 @@ mod _serde_impl {
 
 #[cfg(feature = "dsl-schema")]
 impl<T: schemars::JsonSchema> schemars::JsonSchema for Buffer<T> {
-    fn schema_name() -> String {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
         <[T] as schemars::JsonSchema>::schema_name()
     }
 
@@ -430,7 +435,7 @@ impl<T: schemars::JsonSchema> schemars::JsonSchema for Buffer<T> {
         <[T] as schemars::JsonSchema>::schema_id()
     }
 
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         <[T] as schemars::JsonSchema>::json_schema(generator)
     }
 }

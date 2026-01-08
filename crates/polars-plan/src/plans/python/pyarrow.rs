@@ -60,7 +60,7 @@ pub fn predicate_to_pa(
             } else {
                 let mut list_repr = String::with_capacity(s.len() * 5);
                 list_repr.push('[');
-                for av in s.rechunk().iter() {
+                for av in s.iter() {
                     match av {
                         AnyValue::Boolean(v) => {
                             let s = if v { "True" } else { "False" };

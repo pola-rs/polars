@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING, Any, Callable, overload
+import warnings
+from typing import TYPE_CHECKING, Any, overload
 
 import polars._reexport as pl
 import polars.functions as F
@@ -35,7 +36,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Awaitable, Collection, Iterable, Sequence
+    from collections.abc import Awaitable, Callable, Collection, Iterable, Sequence
     from typing import Literal
 
     from polars import DataFrame, Expr, LazyFrame, Series
@@ -153,7 +154,7 @@ def element() -> Expr:
     │ 3   ┆ 2   ┆ [2]       │
     └─────┴─────┴───────────┘
     """
-    return F.col("")
+    return wrap_expr(plr.element())
 
 
 def count(*columns: str) -> Expr:
@@ -1333,7 +1334,7 @@ def _row_encode(
     return wrap_expr(result)
 
 
-def _wrap_acc_lamba(
+def _wrap_acc_lambda(
     function: Callable[[Series, Series], Series],
 ) -> Callable[[tuple[plr.PySeries, plr.PySeries]], plr.PySeries]:
     def wrapper(t: tuple[plr.PySeries, plr.PySeries]) -> plr.PySeries:
@@ -1465,7 +1466,7 @@ def fold(
     return wrap_expr(
         plr.fold(
             pyacc,
-            _wrap_acc_lamba(function),
+            _wrap_acc_lambda(function),
             pyexprs,
             returns_scalar=returns_scalar,
             return_dtype=rt,
@@ -1548,7 +1549,7 @@ def reduce(
     pyexprs = parse_into_list_of_expressions(exprs)
     return wrap_expr(
         plr.reduce(
-            _wrap_acc_lamba(function),
+            _wrap_acc_lambda(function),
             pyexprs,
             returns_scalar=returns_scalar,
             return_dtype=rt,
@@ -1630,7 +1631,7 @@ def cum_fold(
     return wrap_expr(
         plr.cum_fold(
             pyacc,
-            _wrap_acc_lamba(function),
+            _wrap_acc_lambda(function),
             pyexprs,
             returns_scalar=returns_scalar,
             return_dtype=rt,
@@ -1698,7 +1699,7 @@ def cum_reduce(
     pyexprs = parse_into_list_of_expressions(exprs)
     return wrap_expr(
         plr.cum_reduce(
-            _wrap_acc_lamba(function),
+            _wrap_acc_lambda(function),
             pyexprs,
             returns_scalar=returns_scalar,
             return_dtype=rt,
@@ -1876,7 +1877,19 @@ def exclude(
 
 
 def groups(column: str) -> Expr:
-    """Syntactic sugar for `pl.col("foo").agg_groups()`."""
+    """
+    Syntactic sugar for `pl.col("foo").agg_groups()`.
+
+    .. deprecated:: 1.35
+        Use `df.with_row_index().group_by(...).agg(pl.col('index'))` instead.
+        This method will be removed in Polars 2.0.
+    """
+    warnings.warn(
+        "pl.groups() is deprecated and will be removed in Polars 2.0. "
+        "Use df.with_row_index().group_by(...).agg(pl.col('index')) instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     return F.col(column).agg_groups()
 
 
@@ -1996,6 +2009,46 @@ def arg_sort_by(
     )
 
 
+@overload
+def collect_all(
+    lazy_frames: Iterable[LazyFrame],
+    *,
+    type_coercion: bool = True,
+    predicate_pushdown: bool = True,
+    projection_pushdown: bool = True,
+    simplify_expression: bool = True,
+    no_optimization: bool = False,
+    slice_pushdown: bool = True,
+    comm_subplan_elim: bool = True,
+    comm_subexpr_elim: bool = True,
+    cluster_with_columns: bool = True,
+    collapse_joins: bool = True,
+    optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+    engine: EngineType = "auto",
+    lazy: Literal[False] = False,
+) -> list[DataFrame]: ...
+
+
+@overload
+def collect_all(
+    lazy_frames: Iterable[LazyFrame],
+    *,
+    type_coercion: bool = True,
+    predicate_pushdown: bool = True,
+    projection_pushdown: bool = True,
+    simplify_expression: bool = True,
+    no_optimization: bool = False,
+    slice_pushdown: bool = True,
+    comm_subplan_elim: bool = True,
+    comm_subexpr_elim: bool = True,
+    cluster_with_columns: bool = True,
+    collapse_joins: bool = True,
+    optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+    engine: EngineType = "auto",
+    lazy: Literal[True],
+) -> LazyFrame: ...
+
+
 @deprecate_streaming_parameter()
 @forward_old_opt_flags()
 def collect_all(
@@ -2013,7 +2066,8 @@ def collect_all(
     collapse_joins: bool = True,
     optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     engine: EngineType = "auto",
-) -> list[DataFrame]:
+    lazy: bool = False,
+) -> list[DataFrame] | LazyFrame:
     """
     Collect multiple LazyFrames at the same time.
 
@@ -2094,6 +2148,13 @@ def collect_all(
         .. note::
            The GPU engine does not support async, or running in the
            background. If either are enabled, then GPU execution is switched off.
+    lazy:
+        Return as LazyFrame that can be collected later.
+        This is only correct if all inputs sink to disk.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
     Returns
     -------
@@ -2101,10 +2162,17 @@ def collect_all(
         The collected DataFrames, returned in the same order as the input LazyFrames.
 
     """
-    if engine == "streaming":
-        issue_unstable_warning("streaming mode is considered unstable.")
-
     lfs = [lf._ldf for lf in lazy_frames]
+    if lazy:
+        msg = "the `lazy` parameter of `collect_all` is considered unstable."
+        issue_unstable_warning(msg)
+
+        from polars.lazyframe import LazyFrame
+
+        ldf = plr.collect_all_lazy(lfs, optimizations._pyoptflags)
+        lf = LazyFrame._from_pyldf(ldf)
+        return lf
+
     out = plr.collect_all(lfs, engine, optimizations._pyoptflags)
 
     # wrap the pydataframes into dataframe

@@ -4,7 +4,7 @@ import io
 import operator
 from dataclasses import dataclass
 from datetime import datetime, time
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 import pyarrow as pa
@@ -16,6 +16,8 @@ from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import PolarsDataType, SerializationFormat
 
 
@@ -1382,3 +1384,36 @@ def test_struct_notagg_partial_sort_24499() -> None:
         {"g": [10], "a": [[{"a": 1, "b": 4}, {"a": 2, "b": 5}, {"a": 3, "b": 6}]]}
     )
     assert_frame_equal(out, expected)
+
+
+def test_struct_reverse_chunked_25269() -> None:
+    s = pl.Series([None, {"a": None}])
+    assert_series_equal(
+        pl.concat([s.head(1), s.tail(1)]).reverse(), pl.Series([{"a": None}, None])
+    )
+
+
+def test_struct_equal_missing_null_25360() -> None:
+    lf = pl.LazyFrame({"a": [{"x": 0}]})
+
+    q1 = lf.select(a1=pl.col.a.slice(1, 1).first())
+    q2 = lf.group_by(pl.lit(1)).agg(a2=pl.col.a.slice(1, 1).first()).drop("literal")
+
+    q = pl.concat([q1, q2], how="horizontal").collect()
+
+    result = q.select(
+        eq=pl.col.a1.eq(pl.col.a2),
+        eq_missing=pl.col.a1.eq_missing(pl.col.a2),
+        ne=pl.col.a1.ne(pl.col.a2),
+        ne_missing=pl.col.a1.ne_missing(pl.col.a2),
+    )
+
+    assert_frame_equal(
+        result,
+        pl.select(
+            eq=pl.lit(None, pl.Boolean),
+            eq_missing=True,
+            ne=pl.lit(None, pl.Boolean),
+            ne_missing=False,
+        ),
+    )

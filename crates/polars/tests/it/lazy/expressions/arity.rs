@@ -358,10 +358,13 @@ fn test_binary_group_consistency() -> PolarsResult<()> {
 
     assert_eq!(out.dtype(), &DataType::List(Box::new(DataType::String)));
     assert_eq!(
-        out.explode(false)?
-            .str()?
-            .into_no_null_iter()
-            .collect::<Vec<_>>(),
+        out.explode(ExplodeOptions {
+            empty_as_null: true,
+            keep_nulls: true
+        })?
+        .str()?
+        .into_no_null_iter()
+        .collect::<Vec<_>>(),
         &["a", "b", "c", "d"]
     );
 

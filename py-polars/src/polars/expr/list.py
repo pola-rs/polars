@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Collection, Sequence
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
 from polars import exceptions
 from polars import functions as F
 from polars._utils.parse import parse_into_expression
+from polars._utils.unstable import unstable
 from polars._utils.various import issue_warning
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars import Expr, Series
     from polars._typing import (
         IntoExpr,
@@ -683,6 +686,56 @@ class ExprListNameSpace:
         """
         return self.get(-1, null_on_oob=True)
 
+    @unstable()
+    def item(self, *, allow_empty: bool = False) -> Expr:
+        """
+        Get the single value of the sublists.
+
+        This errors if the sublist length is not exactly one.
+
+        Parameters
+        ----------
+        allow_empty
+            Allow having no values to return `null`.
+
+        See Also
+        --------
+        :meth:`Expr.list.get` : Get the value by index in the sublists.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [[3], [1], [2]]})
+        >>> df.with_columns(item=pl.col("a").list.item())
+        shape: (3, 2)
+        ┌───────────┬──────┐
+        │ a         ┆ item │
+        │ ---       ┆ ---  │
+        │ list[i64] ┆ i64  │
+        ╞═══════════╪══════╡
+        │ [3]       ┆ 3    │
+        │ [1]       ┆ 1    │
+        │ [2]       ┆ 2    │
+        └───────────┴──────┘
+        >>> df = pl.DataFrame({"a": [[3, 2, 1], [1], [2]]})
+        >>> df.select(pl.col("a").list.item())
+        Traceback (most recent call last):
+        ...
+        polars.exceptions.ComputeError: aggregation 'item' expected a single value, got 3 values
+        >>> df = pl.DataFrame({"a": [[], [1], [2]]})
+        >>> df.select(pl.col("a").list.item(allow_empty=True))
+        shape: (3, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ i64  │
+        ╞══════╡
+        │ null │
+        │ 1    │
+        │ 2    │
+        └──────┘
+        """  # noqa: W505
+        return self.agg(F.element().item(allow_empty=allow_empty))
+
     def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Expr:
         """
         Check if sublists contain the given item.
@@ -953,6 +1006,17 @@ class ExprListNameSpace:
         │ [10, 2, 1]  ┆ [2, 1]    │
         └─────────────┴───────────┘
         """
+        if isinstance(offset, Collection) and not isinstance(offset, str):
+            msg = f"'offset' must be an integer, string, or expression, not {type(offset).__name__}"
+            raise TypeError(msg)
+        if (
+            length is not None
+            and isinstance(length, Collection)
+            and not isinstance(length, str)
+        ):
+            msg = f"'length' must be an integer, string, or expression, not {type(length).__name__}"
+            raise TypeError(msg)
+
         offset_pyexpr = parse_into_expression(offset)
         length_pyexpr = parse_into_expression(length)
         return wrap_expr(self._pyexpr.list_slice(offset_pyexpr, length_pyexpr))
@@ -1008,9 +1072,16 @@ class ExprListNameSpace:
         n_pyexpr = parse_into_expression(n)
         return wrap_expr(self._pyexpr.list_tail(n_pyexpr))
 
-    def explode(self) -> Expr:
+    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Expr:
         """
         Returns a column with a separate row for every list element.
+
+        Parameters
+        ----------
+        empty_as_null
+            Explode an empty list into a `null`.
+        keep_nulls
+            Explode a `null` list into a `null`.
 
         Returns
         -------
@@ -1039,7 +1110,9 @@ class ExprListNameSpace:
         │ 6   │
         └─────┘
         """
-        return wrap_expr(self._pyexpr.explode())
+        return wrap_expr(
+            self._pyexpr.explode(empty_as_null=empty_as_null, keep_nulls=keep_nulls)
+        )
 
     def count_matches(self, element: IntoExpr) -> Expr:
         """
@@ -1126,10 +1199,10 @@ class ExprListNameSpace:
             times, so the caller must provide an upper bound of the number of struct
             fields that will be created if `fields` is not a sequence of field names.
 
-        .. versionchanged: 1.33.0
-            The `n_field_strategy` parameter is ignored and deprecated. The `fields`
-            needs to be a sequence of field names or the upper bound is regarded as
-            ground truth.
+            .. versionchanged:: 1.33.0
+                The `n_field_strategy` parameter is ignored and deprecated. The `fields`
+                needs to be a sequence of field names or the upper bound is regarded as
+                ground truth.
 
         Examples
         --------
@@ -1189,8 +1262,7 @@ class ExprListNameSpace:
         Parameters
         ----------
         expr
-            Expression to run. Note that you can select an element with `pl.first()`, or
-            `pl.col()`
+            Expression to run. Note that you can select an element with `pl.element()`.
         parallel
             Run all expression parallel. Don't activate this blindly.
             Parallelism is worth it if there is enough work to do per thread.
@@ -1214,8 +1286,55 @@ class ExprListNameSpace:
         │ 8   ┆ 5   ┆ [2.0, 1.0] │
         │ 3   ┆ 2   ┆ [2.0, 1.0] │
         └─────┴─────┴────────────┘
+
+        See Also
+        --------
+        polars.Expr.list.agg: Evaluate any expression and automatically explode.
+        polars.Expr.arr.eval: Same for the Array datatype.
         """
         return wrap_expr(self._pyexpr.list_eval(expr._pyexpr, parallel))
+
+    def agg(self, expr: Expr) -> Expr:
+        """
+        Run any polars aggregation expression against the lists' elements.
+
+        Parameters
+        ----------
+        expr
+            Expression to run. Note that you can select an element with `pl.element()`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [[1, None], [42, 13], [None, None]]})
+        >>> df.with_columns(null_count=pl.col.a.list.agg(pl.element().null_count()))
+        shape: (3, 2)
+        ┌──────────────┬────────────┐
+        │ a            ┆ null_count │
+        │ ---          ┆ ---        │
+        │ list[i64]    ┆ u32        │
+        ╞══════════════╪════════════╡
+        │ [1, null]    ┆ 1          │
+        │ [42, 13]     ┆ 0          │
+        │ [null, null] ┆ 2          │
+        └──────────────┴────────────┘
+        >>> df.with_columns(no_nulls=pl.col.a.list.agg(pl.element().drop_nulls()))
+        shape: (3, 2)
+        ┌──────────────┬───────────┐
+        │ a            ┆ no_nulls  │
+        │ ---          ┆ ---       │
+        │ list[i64]    ┆ list[i64] │
+        ╞══════════════╪═══════════╡
+        │ [1, null]    ┆ [1]       │
+        │ [42, 13]     ┆ [42, 13]  │
+        │ [null, null] ┆ []        │
+        └──────────────┴───────────┘
+
+        See Also
+        --------
+        polars.Expr.list.eval: Evaluates expressions without automatically exploding.
+        polars.Expr.arr.agg: Same for the Array datatype.
+        """
+        return wrap_expr(self._pyexpr.list_agg(expr._pyexpr))
 
     def filter(self, predicate: Expr) -> Expr:
         """

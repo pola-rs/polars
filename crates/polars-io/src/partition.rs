@@ -8,11 +8,11 @@ use rayon::prelude::*;
 
 use crate::cloud::CloudOptions;
 use crate::parquet::write::ParquetWriteOptions;
+use crate::prelude::HIVE_VALUE_ENCODE_CHARSET;
 #[cfg(feature = "ipc")]
 use crate::prelude::IpcWriterOptions;
-use crate::prelude::URL_ENCODE_CHAR_SET;
-use crate::utils::file::try_get_writeable;
-use crate::{SerWriter, WriteDataFrameToFile};
+use crate::utils::file::Writeable;
+use crate::{SerWriter, WriteDataFrameToFile, get_upload_chunk_size};
 
 impl WriteDataFrameToFile for ParquetWriteOptions {
     fn write_df_to_file(
@@ -21,8 +21,8 @@ impl WriteDataFrameToFile for ParquetWriteOptions {
         addr: PlPathRef<'_>,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<()> {
-        let f = try_get_writeable(addr, cloud_options)?;
-        self.to_writer(f).finish(df)?;
+        let mut f = Writeable::try_new(addr, cloud_options, get_upload_chunk_size())?;
+        self.to_writer(&mut *f).finish(df)?;
         Ok(())
     }
 }
@@ -35,8 +35,8 @@ impl WriteDataFrameToFile for IpcWriterOptions {
         addr: PlPathRef<'_>,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<()> {
-        let f = try_get_writeable(addr, cloud_options)?;
-        self.to_writer(f).finish(df)?;
+        let mut f = Writeable::try_new(addr, cloud_options, get_upload_chunk_size())?;
+        self.to_writer(&mut *f).finish(df)?;
         Ok(())
     }
 }
@@ -51,7 +51,7 @@ pub fn write_partitioned_dataset(
     chunk_size: usize,
 ) -> PolarsResult<()> {
     // Ensure we have a single chunk as the gather will otherwise rechunk per group.
-    df.as_single_chunk_par();
+    df.rechunk_mut_par();
 
     // Note: When adding support for formats other than Parquet, avoid writing the partitioned
     // columns into the file. We write them for parquet because they are encoded efficiently with
@@ -70,7 +70,7 @@ pub fn write_partitioned_dataset(
             .collect::<PolarsResult<Vec<_>>>()?;
 
         move |df: &DataFrame| {
-            let cols = df.get_columns();
+            let cols = df.columns();
 
             partition_by_col_idx
                 .iter()
@@ -86,7 +86,7 @@ pub fn write_partitioned_dataset(
                                 .get(0)
                                 .unwrap_or("__HIVE_DEFAULT_PARTITION__")
                                 .as_bytes(),
-                            URL_ENCODE_CHAR_SET
+                            HIVE_VALUE_ENCODE_CHARSET
                         )
                     )
                 })
@@ -96,7 +96,7 @@ pub fn write_partitioned_dataset(
     };
 
     let base_path = addr;
-    let groups = df.group_by(partition_by)?.take_groups();
+    let groups = df.group_by(partition_by)?.into_groups();
 
     let init_part_base_dir = |part_df: &DataFrame| {
         let path_part = get_hive_path_part(part_df);

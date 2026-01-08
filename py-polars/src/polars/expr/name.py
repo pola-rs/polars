@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars import Expr
 
 
@@ -75,6 +77,7 @@ class ExprNameNameSpace:
         keep
         prefix
         suffix
+        replace
 
         Examples
         --------
@@ -295,7 +298,7 @@ class ExprNameNameSpace:
         return wrap_expr(self._pyexpr.name_prefix_fields(prefix))
 
     def replace(self, pattern: str, value: str, *, literal: bool = False) -> Expr:
-        """
+        r"""
         Replace matching regex/literal substring in the name with a new value.
 
         Parameters
@@ -310,11 +313,20 @@ class ExprNameNameSpace:
 
         Notes
         -----
-        This will undo any previous renaming operations on the expression.
+        * To modify regular expression behaviour (such as case-sensitivity) with flags,
+          use the inline `(?iLmsuxU)` syntax. See the regex crate's section on
+          `grouping and flags <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_
+          for additional information about the use of inline expression modifiers.
 
-        Due to implementation constraints, this method can only be called as the last
-        expression in a chain. Only one name operation per expression will work.
-        Consider using `.name.map` for advanced renaming.
+        * The dollar sign (`$`) is a special character related to capture groups; if you
+          want to replace some target pattern with characters that include a literal `$`
+          you should escape it by doubling it up as `$$`, or set `literal=True` if you
+          do not need a full regular expression pattern match. Otherwise, you will be
+          referencing a (potentially non-existent) capture group.
+
+        See Also
+        --------
+        Expr.str.replace
 
         Examples
         --------
@@ -324,7 +336,7 @@ class ExprNameNameSpace:
         ...         "n_bar": ["x", "y", "z"],
         ...     }
         ... )
-        >>> df.select(pl.all().name.replace("^n_", "col_"))
+        >>> df.select(pl.all().name.replace(r"^n_", "col_"))
         shape: (3, 2)
         ┌─────────┬─────────┐
         │ col_foo ┆ col_bar │
@@ -335,8 +347,54 @@ class ExprNameNameSpace:
         │ 2       ┆ y       │
         │ 3       ┆ z       │
         └─────────┴─────────┘
-        >>> df.select(pl.all().name.replace("(a|e|i|o|u)", "@")).schema
+        >>> df.select(pl.all().name.replace(r"(a|e|i|o|u)", "@")).schema
         Schema({'n_f@@': Int64, 'n_b@r': String})
+
+        Apply case-insensitive string replacement using the `(?i)` flag.
+
+        >>> pl.DataFrame({"Foo": [1], "faz": [2]}).select(
+        ...     pl.all().name.replace(r"(?i)^f", "b")
+        ... )
+        shape: (1, 2)
+        ┌─────┬─────┐
+        │ boo ┆ baz │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 2   │
+        └─────┴─────┘
+
+        Capture groups are supported. Use `$1` or `${1}` in the `value` string to refer
+        to the first capture group in the pattern, `$2` or `${2}` to refer to the
+        second capture group, and so on. You can also use named capture groups.
+
+        >>> df = pl.DataFrame({"x_1": [1], "x_2": [2], "group_id": ["xyz"]})
+        >>> df.select(pl.all().name.replace(r"_(\d+)$", ":$1"))
+        shape: (1, 3)
+        ┌─────┬─────┬──────────┐
+        │ x:1 ┆ x:2 ┆ group_id │
+        │ --- ┆ --- ┆ ---      │
+        │ i64 ┆ i64 ┆ str      │
+        ╞═════╪═════╪══════════╡
+        │ 1   ┆ 2   ┆ xyz      │
+        └─────┴─────┴──────────┘
+
+        The `${1}` form is used to disambiguate the group reference from surrounding
+        text.
+
+        >>> df = pl.DataFrame({"hat": [1], "hut": [2]}).with_row_index()
+        >>> df.with_columns(pl.all().name.replace(r"^h(.)t", "s$1m"))  # doctest: +SKIP
+        # ComputeError: the name 's' passed to `LazyFrame.with_columns` is duplicate
+
+        >>> df.with_columns(pl.all().name.replace(r"^h(.)t", "s${1}m"))
+        shape: (1, 5)
+        ┌───────┬─────┬─────┬─────┬─────┐
+        │ index ┆ hat ┆ hut ┆ sam ┆ sum │
+        │ ---   ┆ --- ┆ --- ┆ --- ┆ --- │
+        │ u32   ┆ i64 ┆ i64 ┆ i64 ┆ i64 │
+        ╞═══════╪═════╪═════╪═════╪═════╡
+        │ 0     ┆ 1   ┆ 2   ┆ 1   ┆ 2   │
+        └───────┴─────┴─────┴─────┴─────┘
         """
         return wrap_expr(self._pyexpr.name_replace(pattern, value, literal))
 

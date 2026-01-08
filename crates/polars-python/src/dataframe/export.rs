@@ -30,7 +30,7 @@ impl PyDataFrame {
         }
         PyTuple::new(
             py,
-            df.get_columns().iter().map(|s| match s.dtype() {
+            df.columns().iter().map(|s| match s.dtype() {
                 DataType::Object(_) => {
                     let obj: Option<&ObjectValue> = s.get_object(idx).map(|any| any.into());
                     obj.into_py_any(py).unwrap()
@@ -48,7 +48,7 @@ impl PyDataFrame {
         // TODO: iterate over the chunks directly instead of using random access.
         let df = if df.max_n_chunks() > 16 {
             rechunked = df.clone();
-            rechunked.as_single_chunk_par();
+            py.enter_polars_ok(|| rechunked.rechunk_mut_par())?;
             &rechunked
         } else {
             &df
@@ -58,7 +58,7 @@ impl PyDataFrame {
             (0..df.height()).map(|idx| {
                 PyTuple::new(
                     py,
-                    df.get_columns().iter().map(|c| match c.dtype() {
+                    df.columns().iter().map(|c| match c.dtype() {
                         DataType::Null => py.None(),
                         DataType::Object(_) => {
                             let obj: Option<&ObjectValue> = c.get_object(idx).map(|any| any.into());
@@ -77,7 +77,11 @@ impl PyDataFrame {
     }
 
     #[allow(clippy::wrong_self_convention)]
-    pub fn to_arrow(&self, py: Python<'_>, compat_level: PyCompatLevel) -> PyResult<Vec<PyObject>> {
+    pub fn to_arrow(
+        &self,
+        py: Python<'_>,
+        compat_level: PyCompatLevel,
+    ) -> PyResult<Vec<Py<PyAny>>> {
         let mut df = self.df.write();
         let dfr = &mut *df; // Lock guard isn't Send, but mut ref is.
         py.enter_polars_ok(|| dfr.align_chunks_par())?;
@@ -102,15 +106,15 @@ impl PyDataFrame {
     /// since those can't be converted correctly via PyArrow. The calling Python
     /// code should make sure these are not included.
     #[allow(clippy::wrong_self_convention)]
-    pub fn to_pandas(&self, py: Python) -> PyResult<Vec<PyObject>> {
+    pub fn to_pandas(&self, py: Python) -> PyResult<Vec<Py<PyAny>>> {
         let mut df = self.df.write();
         let dfr = &mut *df; // Lock guard isn't Send, but mut ref is.
-        py.enter_polars_ok(|| dfr.as_single_chunk_par())?;
+        py.enter_polars_ok(|| dfr.rechunk_mut_par())?;
         let df = RwLockWriteGuard::downgrade(df);
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let pyarrow = py.import("pyarrow")?;
             let cat_columns = df
-                .get_columns()
+                .columns()
                 .iter()
                 .enumerate()
                 .filter(|(_i, s)| {
@@ -173,10 +177,10 @@ impl PyDataFrame {
     fn __arrow_c_stream__<'py>(
         &self,
         py: Python<'py>,
-        requested_schema: Option<PyObject>,
+        requested_schema: Option<Py<PyAny>>,
     ) -> PyResult<Bound<'py, PyCapsule>> {
         py.enter_polars_ok(|| {
-            self.df.write().as_single_chunk_par();
+            self.df.write().rechunk_mut_par();
         })?;
         dataframe_to_stream(&self.df.read(), py)
     }

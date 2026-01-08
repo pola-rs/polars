@@ -33,6 +33,7 @@ pub enum DslFunction {
     OpaquePython(OpaquePythonUdf),
     Explode {
         columns: Selector,
+        options: ExplodeOptions,
         allow_empty: bool,
     },
     #[cfg(feature = "pivot")]
@@ -54,6 +55,7 @@ pub enum DslFunction {
     // Function that is already converted to IR.
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     FunctionIR(FunctionIR),
+    Hint(HintIR),
 }
 
 #[derive(Clone)]
@@ -94,15 +96,27 @@ impl DslFunction {
         let function = match self {
             #[cfg(feature = "pivot")]
             DslFunction::Unpivot { args } => {
-                let on = args.on.into_columns(input_schema, &Default::default())?;
-                let index = args.index.into_columns(input_schema, &Default::default())?;
-
-                let args = UnpivotArgsIR {
-                    on: on.into_iter().collect(),
-                    index: index.into_iter().collect(),
-                    variable_name: args.variable_name.clone(),
-                    value_name: args.value_name,
+                let on = match args.on {
+                    None => None,
+                    Some(on) => Some(
+                        on.into_columns(input_schema, &Default::default())?
+                            .into_iter()
+                            .collect::<Vec<_>>(),
+                    ),
                 };
+
+                let index = args
+                    .index
+                    .into_columns(input_schema, &Default::default())?
+                    .into_vec();
+
+                let args = UnpivotArgsIR::new(
+                    input_schema.iter().map(|(name, _)| name.clone()).collect(),
+                    on,
+                    index,
+                    args.value_name,
+                    args.variable_name,
+                );
 
                 FunctionIR::Unpivot {
                     args: Arc::new(args),
@@ -127,6 +141,7 @@ impl DslFunction {
                 }
                 FunctionIR::Unnest { columns, separator }
             },
+            DslFunction::Hint(h) => FunctionIR::Hint(h),
             #[cfg(feature = "python")]
             DslFunction::OpaquePython(inner) => FunctionIR::OpaquePython(inner),
             DslFunction::Stats(_)

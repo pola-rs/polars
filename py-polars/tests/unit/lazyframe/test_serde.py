@@ -155,3 +155,36 @@ def test_lf_serde_map_batches_on_lazyframe() -> None:
     result = pl.LazyFrame.deserialize(io.BytesIO(ser))
     expected = pl.LazyFrame({"a": [2, 3, 4]})
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("max_byte_slice_len", [1, 2, 3, 100, 4294967295])
+def test_lf_serde_chunked_bytes(
+    monkeypatch: pytest.MonkeyPatch, max_byte_slice_len: int
+) -> None:
+    monkeypatch.setenv(
+        "POLARS_SERIALIZE_LAZYFRAME_MAX_BYTE_SLICE_LEN", str(max_byte_slice_len)
+    )
+    lf = pl.LazyFrame({"a": range(5000)})
+
+    b = lf.serialize()
+
+    assert_frame_equal(pl.LazyFrame.deserialize(io.BytesIO(b)).collect(), lf.collect())
+
+
+def test_lf_collect_schema_does_not_change_serialize_25719() -> None:
+    df = pl.DataFrame({"x": [1, 2, 3]})
+
+    lf = df.lazy()
+    lf.collect_schema()
+
+    assert lf.serialize() == df.lazy().serialize()
+    lf_sum = lf.sum()
+    lf_sum.collect_schema()
+    assert lf_sum.serialize() == df.lazy().sum().serialize()
+
+    q = pl.concat([lf_sum, lf_sum])
+
+    assert_frame_equal(
+        pl.LazyFrame.deserialize(q.serialize()).collect(),
+        pl.DataFrame({"x": [6, 6]}),
+    )

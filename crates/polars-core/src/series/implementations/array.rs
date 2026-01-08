@@ -1,6 +1,8 @@
 use std::any::Any;
 use std::borrow::Cow;
 
+use arrow::bitmap::Bitmap;
+
 use self::compare_inner::{TotalEqInner, TotalOrdInner};
 use self::sort::arg_sort_row_fmt;
 use super::{IsSorted, StatisticsFlags, private};
@@ -10,7 +12,7 @@ use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::comparison::*;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
-use crate::prelude::row_encode::_get_rows_encoded_ca_unordered;
+use crate::prelude::row_encode::{_get_rows_encoded_ca_unordered, encode_rows_unordered};
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 
@@ -185,6 +187,10 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
         self.0.take_unchecked(indices).into_series()
     }
 
+    fn deposit(&self, validity: &Bitmap) -> Series {
+        self.0.deposit(validity).into_series()
+    }
+
     fn len(&self) -> usize {
         self.0.len()
     }
@@ -226,9 +232,6 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
 
     #[cfg(feature = "algorithm_group_by")]
     fn unique(&self) -> PolarsResult<Series> {
-        if !self.inner_dtype().is_primitive_numeric() {
-            polars_bail!(opq = unique, self.dtype());
-        }
         // this can be called in aggregation, so this fast path can be worth a lot
         if self.len() < 2 {
             return Ok(self.0.clone().into_series());
@@ -256,9 +259,6 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
 
     #[cfg(feature = "algorithm_group_by")]
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
-        if !self.inner_dtype().is_primitive_numeric() {
-            polars_bail!(opq = arg_unique, self.dtype());
-        }
         // this can be called in aggregation, so this fast path can be worth a lot
         if self.len() == 1 {
             return Ok(IdxCa::new_vec(self.name().clone(), vec![0 as IdxSize]));
@@ -268,6 +268,11 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
         let groups = self.group_tuples(main_thread, true)?;
         let first = groups.take_group_firsts();
         Ok(IdxCa::from_vec(self.name().clone(), first))
+    }
+
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        let ca = encode_rows_unordered(&[self.0.clone().into_column()])?;
+        ChunkUnique::unique_id(&ca)
     }
 
     fn is_null(&self) -> BooleanChunked {

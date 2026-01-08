@@ -1,4 +1,4 @@
-use polars_plan::prelude::PlanCallback;
+use polars_lazy::prelude::PlanCallback;
 
 use super::*;
 

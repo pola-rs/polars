@@ -4,7 +4,7 @@ import re
 from collections.abc import Coroutine, Sequence
 from contextlib import suppress
 from inspect import Parameter, signature
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 from polars import functions as F
 from polars._utils.various import parse_version, qualified_type_name
@@ -40,7 +40,7 @@ if TYPE_CHECKING:
     from polars import DataFrame
     from polars._typing import ConnectionOrCursor, Cursor, SchemaDict
 
-_INVALID_QUERY_TYPES = {
+_INVALID_QUERY_TYPES: Final[set[str]] = {
     "ALTER",
     "ANALYZE",
     "CREATE",
@@ -456,6 +456,12 @@ class ConnectionExecutor:
         """Execute a query using an async SQLAlchemy connection."""
         is_session = self._is_alchemy_session(self.cursor)
         cursor = self.cursor.begin() if is_session else self.cursor  # type: ignore[attr-defined]
+
+        # check if connection is already started (eg: user awaited `engine.connect()`);
+        # if so, use it directly without entering the context manager again
+        if getattr(cursor, "sync_connection", None) is not None:
+            return await cursor.execute(query, **options)
+
         async with cursor as conn:  # type: ignore[union-attr]
             if is_session and not hasattr(conn, "execute"):
                 conn = conn.session

@@ -10,9 +10,9 @@ use polars_io::cloud::CloudOptions;
 use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
-    CastColumnsPolicy, JoinTypeOptionsIR, MissingColumnsPolicy, PartitionTargetCallback,
-    PartitionVariantIR, ScanSources, SinkFinishCallback, SinkOptions, SinkTarget, SortColumnIR,
-    TableStatistics,
+    CastColumnsPolicy, FileSinkOptions, JoinTypeOptionsIR, MissingColumnsPolicy,
+    PartitionTargetCallback, PartitionVariantIR, PartitionedSinkOptionsIR, PredicateFileSkip,
+    ScanSources, SinkFinishCallback, SinkOptions, SortColumnIR, TableStatistics,
 };
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::{AExpr, DataFrameUdf, IR};
@@ -24,9 +24,14 @@ mod lower_expr;
 mod lower_group_by;
 mod lower_ir;
 mod to_graph;
+#[cfg(feature = "physical_plan_visualization")]
+pub mod visualization;
 
 pub use fmt::visualize_plan;
-use polars_plan::prelude::{FileType, PlanCallback};
+use polars_plan::prelude::{FileWriteFormat, PlanCallback};
+#[cfg(feature = "dynamic_group_by")]
+use polars_time::DynamicGroupOptions;
+use polars_time::{ClosedWindow, Duration};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::plpath::PlPath;
@@ -43,6 +48,12 @@ use crate::physical_plan::lower_expr::ExprCache;
 slotmap::new_key_type! {
     /// Key used for physical nodes.
     pub struct PhysNodeKey;
+}
+
+impl PhysNodeKey {
+    pub fn as_ffi(&self) -> u64 {
+        self.0.as_ffi()
+    }
 }
 
 /// A node in the physical plan.
@@ -78,7 +89,7 @@ pub struct PhysStream {
 }
 
 impl PhysStream {
-    #[expect(unused)]
+    #[allow(unused)]
     pub fn new(node: PhysNodeKey, port: usize) -> Self {
         Self { node, port }
     }
@@ -89,7 +100,31 @@ impl PhysStream {
     }
 }
 
+/// Behaviour when handling multiple DataFrames with different heights.
+
+#[derive(Clone, Debug, Copy)]
+#[cfg_attr(
+    feature = "physical_plan_visualization",
+    derive(serde::Serialize, serde::Deserialize)
+)]
+#[cfg_attr(
+    feature = "physical_plan_visualization_schema",
+    derive(schemars::JsonSchema)
+)]
+pub enum ZipBehavior {
+    /// Fill the shorter DataFrames with nulls to the height of the longest DataFrame.
+    NullExtend,
+    /// All inputs must be the same height, or have length 1 in which case they are broadcast.
+    Broadcast,
+    /// Raise an error if the DataFrames have different heights.
+    Strict,
+}
+
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "physical_plan_visualization",
+    derive(strum_macros::IntoStaticStr)
+)]
 pub enum PhysNodeKind {
     InMemorySource {
         df: Arc<DataFrame>,
@@ -162,23 +197,25 @@ pub enum PhysNodeKind {
     },
 
     FileSink {
-        target: SinkTarget,
-        sink_options: SinkOptions,
-        file_type: FileType,
         input: PhysStream,
-        cloud_options: Option<CloudOptions>,
+        options: FileSinkOptions,
     },
 
-    PartitionSink {
+    PartitionedSink {
         input: PhysStream,
         base_path: Arc<PlPath>,
         file_path_cb: Option<PartitionTargetCallback>,
         sink_options: SinkOptions,
         variant: PartitionVariantIR,
-        file_type: FileType,
+        file_type: FileWriteFormat,
         cloud_options: Option<CloudOptions>,
         per_partition_sort_by: Option<Vec<SortColumnIR>>,
         finish_callback: Option<SinkFinishCallback>,
+    },
+
+    PartitionedSink2 {
+        input: PhysStream,
+        options: PartitionedSinkOptionsIR,
     },
 
     SinkMultiple {
@@ -199,6 +236,16 @@ pub enum PhysNodeKind {
     Map {
         input: PhysStream,
         map: Arc<dyn DataFrameUdf>,
+
+        /// A formatted explain of what the in-memory map. This usually calls format on the IR.
+        format_str: Option<String>,
+    },
+
+    SortedGroupBy {
+        input: PhysStream,
+        key: PlSmallStr,
+        aggs: Vec<ExprIR>,
+        slice: Option<(IdxSize, IdxSize)>,
     },
 
     Sort {
@@ -246,10 +293,7 @@ pub enum PhysNodeKind {
 
     Zip {
         inputs: Vec<PhysStream>,
-        /// If true shorter inputs are extended with nulls to the longest input,
-        /// if false all inputs must be the same length, or have length 1 in
-        /// which case they are broadcast.
-        null_extend: bool,
+        zip_behavior: ZipBehavior,
     },
 
     #[allow(unused)]
@@ -271,6 +315,7 @@ pub enum PhysNodeKind {
         row_index: Option<RowIndex>,
         pre_slice: Option<Slice>,
         predicate: Option<ExprIR>,
+        predicate_file_skip_applied: Option<PredicateFileSkip>,
 
         hive_parts: Option<HivePartitionsDf>,
         include_file_paths: Option<PlSmallStr>,
@@ -291,9 +336,29 @@ pub enum PhysNodeKind {
     },
 
     GroupBy {
-        input: PhysStream,
-        key: Vec<ExprIR>,
+        inputs: Vec<PhysStream>,
+        // Must have the same schema when applied for each input.
+        key_per_input: Vec<Vec<ExprIR>>,
         // Must be a 'simple' expression, a singular column feeding into a single aggregate, or Len.
+        aggs_per_input: Vec<Vec<ExprIR>>,
+    },
+
+    #[cfg(feature = "dynamic_group_by")]
+    DynamicGroupBy {
+        input: PhysStream,
+        options: DynamicGroupOptions,
+        aggs: Vec<ExprIR>,
+        slice: Option<(IdxSize, IdxSize)>,
+    },
+
+    #[cfg(feature = "dynamic_group_by")]
+    RollingGroupBy {
+        input: PhysStream,
+        index_column: PlSmallStr,
+        period: Duration,
+        offset: Duration,
+        closed: ClosedWindow,
+        slice: Option<(IdxSize, IdxSize)>,
         aggs: Vec<ExprIR>,
     },
 
@@ -337,6 +402,24 @@ pub enum PhysNodeKind {
         input_left: PhysStream,
         input_right: PhysStream,
     },
+
+    #[cfg(feature = "ewma")]
+    EwmMean {
+        input: PhysStream,
+        options: polars_ops::series::EWMOptions,
+    },
+
+    #[cfg(feature = "ewma")]
+    EwmVar {
+        input: PhysStream,
+        options: polars_ops::series::EWMOptions,
+    },
+
+    #[cfg(feature = "ewma")]
+    EwmStd {
+        input: PhysStream,
+        options: polars_ops::series::EWMOptions,
+    },
 }
 
 fn visit_node_inputs_mut(
@@ -372,16 +455,28 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::InMemorySink { input }
             | PhysNodeKind::CallbackSink { input, .. }
             | PhysNodeKind::FileSink { input, .. }
-            | PhysNodeKind::PartitionSink { input, .. }
+            | PhysNodeKind::PartitionedSink { input, .. }
+            | PhysNodeKind::PartitionedSink2 { input, .. }
             | PhysNodeKind::InMemoryMap { input, .. }
+            | PhysNodeKind::SortedGroupBy { input, .. }
             | PhysNodeKind::Map { input, .. }
             | PhysNodeKind::Sort { input, .. }
             | PhysNodeKind::Multiplexer { input }
             | PhysNodeKind::GatherEvery { input, .. }
             | PhysNodeKind::Rle(input)
             | PhysNodeKind::RleId(input)
-            | PhysNodeKind::PeakMinMax { input, .. }
-            | PhysNodeKind::GroupBy { input, .. } => {
+            | PhysNodeKind::PeakMinMax { input, .. } => {
+                rec!(input.node);
+                visit(input);
+            },
+
+            #[cfg(feature = "dynamic_group_by")]
+            PhysNodeKind::DynamicGroupBy { input, .. } => {
+                rec!(input.node);
+                visit(input);
+            },
+            #[cfg(feature = "dynamic_group_by")]
+            PhysNodeKind::RollingGroupBy { input, .. } => {
                 rec!(input.node);
                 visit(input);
             },
@@ -474,7 +569,9 @@ fn visit_node_inputs_mut(
                 visit(repeats);
             },
 
-            PhysNodeKind::OrderedUnion { inputs } | PhysNodeKind::Zip { inputs, .. } => {
+            PhysNodeKind::GroupBy { inputs, .. }
+            | PhysNodeKind::OrderedUnion { inputs }
+            | PhysNodeKind::Zip { inputs, .. } => {
                 for input in inputs {
                     rec!(input.node);
                     visit(input);
@@ -486,6 +583,14 @@ fn visit_node_inputs_mut(
                     rec!(*sink);
                     visit(&mut PhysStream::first(*sink));
                 }
+            },
+
+            #[cfg(feature = "ewma")]
+            PhysNodeKind::EwmMean { input, options: _ }
+            | PhysNodeKind::EwmVar { input, options: _ }
+            | PhysNodeKind::EwmStd { input, options: _ } => {
+                rec!(input.node);
+                visit(input)
             },
         }
     }

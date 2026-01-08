@@ -5,15 +5,16 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from functools import partial
 from time import perf_counter
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Final, Literal
 
 import polars._reexport as pl
-from polars._utils.logging import eprint, verbose
+from polars._utils.logging import eprint, verbose, verbose_print_sensitive
 from polars.exceptions import ComputeError
 from polars.io.iceberg._utils import (
     IcebergStatisticsLoader,
     IdentityTransformedPartitionValuesBuilder,
     _scan_pyarrow_dataset_impl,
+    try_convert_pyarrow_predicate,
 )
 from polars.io.scan_options.cast_options import ScanCastOptions
 
@@ -36,6 +37,8 @@ class IcebergDataset:
         iceberg_storage_properties: dict[str, Any] | None = None,
         reader_override: Literal["native", "pyiceberg"] | None = None,
         use_metadata_statistics: bool = True,
+        fast_deletion_count: bool = True,
+        use_pyiceberg_filter: bool = True,
     ) -> None:
         self._metadata_path = None
         self._table = None
@@ -43,6 +46,8 @@ class IcebergDataset:
         self._iceberg_storage_properties = iceberg_storage_properties
         self._reader_override: Literal["native", "pyiceberg"] | None = reader_override
         self._use_metadata_statistics = use_metadata_statistics
+        self._fast_deletion_count = fast_deletion_count
+        self._use_pyiceberg_filter = use_pyiceberg_filter
 
         # Accept either a path or a table object. The one we don't have is
         # lazily initialized when needed.
@@ -73,6 +78,7 @@ class IcebergDataset:
         limit: int | None = None,
         projection: list[str] | None = None,
         filter_columns: list[str] | None = None,
+        pyarrow_predicate: str | None = None,
     ) -> tuple[LazyFrame, str] | None:
         """Construct a LazyFrame scan."""
         if (
@@ -81,6 +87,7 @@ class IcebergDataset:
                 limit=limit,
                 projection=projection,
                 filter_columns=filter_columns,
+                pyarrow_predicate=pyarrow_predicate,
             )
         ) is None:
             return None
@@ -94,6 +101,7 @@ class IcebergDataset:
         limit: int | None = None,
         projection: list[str] | None = None,
         filter_columns: list[str] | None = None,
+        pyarrow_predicate: str | None = None,
     ) -> _NativeIcebergScanData | _PyIcebergScanData | None:
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
@@ -101,15 +109,37 @@ class IcebergDataset:
 
         verbose = polars._utils.logging.verbose()
 
+        iceberg_table_filter = None
+
+        if (
+            pyarrow_predicate is not None
+            and self._use_metadata_statistics
+            and self._use_pyiceberg_filter
+        ):
+            iceberg_table_filter = try_convert_pyarrow_predicate(pyarrow_predicate)
+
         if verbose:
+            pyarrow_predicate_display = (
+                "Some(<redacted>)" if pyarrow_predicate is not None else "None"
+            )
+            iceberg_table_filter_display = (
+                "Some(<redacted>)" if iceberg_table_filter is not None else "None"
+            )
+
             eprint(
                 "IcebergDataset: to_dataset_scan(): "
                 f"snapshot ID: {self._snapshot_id}, "
                 f"limit: {limit}, "
                 f"projection: {projection}, "
                 f"filter_columns: {filter_columns}, "
+                f"pyarrow_predicate: {pyarrow_predicate_display}, "
+                f"iceberg_table_filter: {iceberg_table_filter_display}, "
                 f"self._use_metadata_statistics: {self._use_metadata_statistics}"
             )
+
+        verbose_print_sensitive(
+            lambda: f"IcebergDataset: to_dataset_scan(): {pyarrow_predicate = }, {iceberg_table_filter = }"
+        )
 
         tbl = self.table()
 
@@ -199,6 +229,8 @@ class IcebergDataset:
             else None
         )
         deletion_files: dict[int, list[str]] = {}
+        total_physical_rows: int = 0
+        total_deleted_rows: int = 0
 
         if reader_override != "pyiceberg" and not fallback_reason:
             from pyiceberg.manifest import DataFileContent, FileFormat
@@ -213,6 +245,9 @@ class IcebergDataset:
                 limit=limit,
                 selected_fields=selected_fields,
             )
+
+            if iceberg_table_filter is not None:
+                scan = scan.filter(iceberg_table_filter)
 
             total_deletion_files = 0
 
@@ -243,6 +278,7 @@ class IcebergDataset:
 
                         deletion_files[i].append(deletion_file.file_path)
                         total_deletion_files += 1
+                        total_deleted_rows += deletion_file.record_count
 
                 if fallback_reason:
                     break
@@ -255,6 +291,8 @@ class IcebergDataset:
 
                 if statistics_loader is not None:
                     statistics_loader.push_file_statistics(file_info.file)
+
+                total_physical_rows += file_info.file.record_count
 
                 sources.append(file_info.file.file_path)
 
@@ -308,6 +346,14 @@ class IcebergDataset:
                 min_max_statistics=min_max_statistics,
                 statistics_loader=statistics_loader,
                 storage_options=storage_options,
+                row_count=(
+                    (total_physical_rows, total_deleted_rows)
+                    if (
+                        self._use_metadata_statistics
+                        and (self._fast_deletion_count or total_deleted_rows == 0)
+                    )
+                    else None
+                ),
                 _snapshot_id_key=snapshot_id_key,
             )
 
@@ -327,6 +373,7 @@ class IcebergDataset:
             snapshot_id=snapshot_id,
             n_rows=limit,
             with_columns=projection,
+            iceberg_table_filter=iceberg_table_filter,
         )
 
         arrow_schema = schema_to_pyarrow(tbl.schema())
@@ -387,6 +434,9 @@ class IcebergDataset:
             "snapshot_id": self._snapshot_id,
             "iceberg_storage_properties": self._iceberg_storage_properties,
             "reader_override": self._reader_override,
+            "use_metadata_statistics": self._use_metadata_statistics,
+            "fast_deletion_count": self._fast_deletion_count,
+            "use_pyiceberg_filter": self._use_pyiceberg_filter,
         }
 
         if verbose():
@@ -394,13 +444,19 @@ class IcebergDataset:
             snapshot_id = f"'{v}'" if (v := state["snapshot_id"]) is not None else None
             keys_repr = _redact_dict_values(state["iceberg_storage_properties"])
             reader_override = state["reader_override"]
+            use_metadata_statistics = state["use_metadata_statistics"]
+            fast_deletion_count = state["fast_deletion_count"]
+            use_pyiceberg_filter = state["use_pyiceberg_filter"]
 
             eprint(
                 "IcebergDataset: getstate(): "
                 f"path: '{path_repr}', "
                 f"snapshot_id: {snapshot_id}, "
                 f"iceberg_storage_properties: {keys_repr}, "
-                f"reader_override: {reader_override}"
+                f"reader_override: {reader_override}, "
+                f"use_metadata_statistics: {use_metadata_statistics}, "
+                f"fast_deletion_count: {fast_deletion_count}, "
+                f"use_pyiceberg_filter: {use_pyiceberg_filter}"
             )
 
         return state
@@ -408,16 +464,22 @@ class IcebergDataset:
     def __setstate__(self, state: dict[str, Any]) -> None:
         if verbose():
             path_repr = state["metadata_path"]
-            snapshot_id = state["snapshot_id"]
+            snapshot_id = f"'{v}'" if (v := state["snapshot_id"]) is not None else None
             keys_repr = _redact_dict_values(state["iceberg_storage_properties"])
             reader_override = state["reader_override"]
+            use_metadata_statistics = state["use_metadata_statistics"]
+            fast_deletion_count = state["fast_deletion_count"]
+            use_pyiceberg_filter = state["use_pyiceberg_filter"]
 
             eprint(
                 "IcebergDataset: getstate(): "
                 f"path: '{path_repr}', "
                 f"snapshot_id: '{snapshot_id}', "
                 f"iceberg_storage_properties: {keys_repr}, "
-                f"reader_override: {reader_override}"
+                f"reader_override: {reader_override}, "
+                f"use_metadata_statistics: {use_metadata_statistics}, "
+                f"fast_deletion_count: {fast_deletion_count}, "
+                f"use_pyiceberg_filter: {use_pyiceberg_filter}"
             )
 
         IcebergDataset.__init__(
@@ -426,6 +488,9 @@ class IcebergDataset:
             snapshot_id=state["snapshot_id"],
             iceberg_storage_properties=state["iceberg_storage_properties"],
             reader_override=state["reader_override"],
+            use_metadata_statistics=state["use_metadata_statistics"],
+            fast_deletion_count=state["fast_deletion_count"],
+            use_pyiceberg_filter=state["use_pyiceberg_filter"],
         )
 
 
@@ -454,6 +519,8 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
     # coalescing.
     statistics_loader: IcebergStatisticsLoader | None
     storage_options: dict[str, str] | None
+    # (physical, deleted)
+    row_count: tuple[int, int] | None
     _snapshot_id_key: str
 
     def to_lazyframe(self) -> pl.LazyFrame:
@@ -469,6 +536,7 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
             _default_values=("iceberg", self.default_values),
             _deletion_files=("iceberg-position-delete", self.deletion_files),
             _table_statistics=self.min_max_statistics,
+            _row_count=self.row_count,
         )
 
     @property
@@ -495,7 +563,7 @@ class _PyIcebergScanData(_ResolvedScanDataBase):
 
 def _redact_dict_values(obj: Any) -> Any:
     return (
-        {k: "REDACTED" for k in obj.keys()}  # noqa: SIM118
+        dict.fromkeys(obj.keys(), "REDACTED")
         if isinstance(obj, dict)
         else f"<{type(obj).__name__} object>"
         if obj is not None
@@ -529,7 +597,7 @@ def _convert_iceberg_to_object_store_storage_options(
 
 # https://py.iceberg.apache.org/configuration/#fileio
 # This does not contain all keys - some have no object-store equivalent.
-ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP: dict[str, str] = {
+ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP: Final[dict[str, str]] = {
     # S3
     "s3.endpoint": "aws_endpoint_url",
     "s3.access-key-id": "aws_access_key_id",

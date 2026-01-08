@@ -1,5 +1,3 @@
-#![allow(unsafe_op_in_unsafe_fn)]
-use std::ptr::NonNull;
 use std::rc::Rc;
 
 use crate::prelude::*;
@@ -8,8 +6,6 @@ use crate::prelude::*;
 #[derive(Clone)]
 pub struct AmortSeries {
     container: Rc<Series>,
-    // the ptr to the inner chunk, this saves some ptr chasing
-    inner: NonNull<ArrayRef>,
 }
 
 /// We don't implement Deref so that the caller is aware of converting to Series
@@ -22,26 +18,9 @@ impl AsRef<Series> for AmortSeries {
 pub type ArrayBox = Box<dyn Array>;
 
 impl AmortSeries {
-    pub fn new(series: Rc<Series>) -> Self {
-        debug_assert_eq!(series.chunks().len(), 1);
-        let inner_chunk = series.array_ref(0) as *const ArrayRef as *mut arrow::array::ArrayRef;
-        let container = series;
-        AmortSeries {
-            container,
-            inner: NonNull::new(inner_chunk).unwrap(),
-        }
-    }
-
-    /// Creates a new [`UnsafeSeries`]
-    ///
-    /// # Safety
-    /// Inner chunks must be from `Series` otherwise the dtype may be incorrect and lead to UB.
-    #[inline]
-    pub(crate) unsafe fn new_with_chunk(series: Rc<Series>, inner_chunk: &ArrayRef) -> Self {
-        AmortSeries {
-            container: series,
-            inner: NonNull::new(inner_chunk as *const ArrayRef as *mut ArrayRef).unwrap_unchecked(),
-        }
+    pub fn new(container: Rc<Series>) -> Self {
+        debug_assert_eq!(container.chunks().len(), 1);
+        AmortSeries { container }
     }
 
     pub fn deep_clone(&self) -> Series {
@@ -60,12 +39,14 @@ impl AmortSeries {
     /// # Safety
     /// This swaps an underlying pointer that might be hold by other cloned series.
     pub unsafe fn swap(&mut self, array: &mut ArrayRef) {
-        std::mem::swap(self.inner.as_mut(), array);
+        let inner = self.container.array_ref(0) as *const ArrayRef as *mut ArrayRef;
+        let inner = inner.as_mut().unwrap();
+        std::mem::swap(inner, array);
 
         // ensure lengths are correct.
         unsafe {
             let ptr = Rc::as_ptr(&self.container) as *mut Series;
-            (*ptr)._get_inner_mut().compute_len()
+            (*ptr)._get_inner_mut().compute_len();
         }
     }
 

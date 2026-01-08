@@ -1,12 +1,13 @@
-use arrow::array::{Array, FixedSizeBinaryArray, PrimitiveArray, StructArray};
+use arrow::array::{Array, BinaryViewArray, FixedSizeBinaryArray, PrimitiveArray, StructArray};
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::{
     ArrowDataType, DTYPE_CATEGORICAL_LEGACY, DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY,
     DTYPE_ENUM_VALUES_NEW, Field, IntegerType, IntervalUnit, TimeUnit,
 };
-use arrow::types::{NativeType, days_ms, i256};
+use arrow::types::{days_ms, i256};
 use ethnum::I256;
 use polars_compute::cast::CastOptionsImpl;
+use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::utils::filter::Filter;
@@ -36,11 +37,39 @@ pub fn page_iter_to_array(
 
     let physical_type = &type_.physical_type;
     let logical_type = &type_.logical_type;
+    let is_pl_empty_struct = field.is_pl_pq_empty_struct();
     let dtype = field.dtype;
 
-    Ok(match (physical_type, dtype.to_logical_type()) {
+    Ok(match (physical_type, dtype.to_storage()) {
         (_, Null) => PageDecoder::new(&field.name, pages, dtype, null::NullDecoder, init_nested)?
             .collect_boxed(filter)?,
+
+        // Empty structs are roundtrippable by mapping to Boolean array.
+        (PhysicalType::Boolean, Struct(fs)) if fs.is_empty() && is_pl_empty_struct => {
+            let (nested, array, ptm) = PageDecoder::new(
+                &field.name,
+                pages,
+                ArrowDataType::Boolean,
+                boolean::BooleanDecoder,
+                init_nested,
+            )?
+            .collect(filter)?;
+
+            let array = array
+                .into_iter()
+                .map(|mut array| {
+                    StructArray::new(
+                        dtype.clone(),
+                        array.len(),
+                        Vec::new(),
+                        array.take_validity(),
+                    )
+                    .to_boxed()
+                })
+                .collect::<Vec<Box<dyn Array>>>();
+
+            (nested, array, ptm)
+        },
         (PhysicalType::Boolean, Boolean) => PageDecoder::new(
             &field.name,
             pages,
@@ -319,6 +348,44 @@ pub fn page_iter_to_array(
 
             (nested, array, ptm)
         },
+        (PhysicalType::ByteArray, Decimal(_, _)) => {
+            // @TODO: Make a separate decoder for this
+
+            let (nested, array, ptm) = PageDecoder::new(
+                &field.name,
+                pages,
+                ArrowDataType::BinaryView,
+                binview::BinViewDecoder::new(false),
+                init_nested,
+            )?
+            .collect(filter)?;
+
+            let array = array
+                .into_iter()
+                .map(|array| {
+                    let array = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
+                    let values = array
+                        .values_iter()
+                        .map(|value: &[u8]| {
+                            if value.len() <= 16 {
+                                Ok(super::super::convert_i128(value, value.len()))
+                            } else {
+                                Err(ParquetError::OutOfSpec(
+                                    "value has too many bytes for Decimal128".to_string(),
+                                ))
+                            }
+                        })
+                        .collect::<ParquetResult<Vec<_>>>()?;
+                    let validity = array.validity().cloned();
+                    Ok(
+                        PrimitiveArray::<i128>::try_new(dtype.clone(), values.into(), validity)?
+                            .to_boxed(),
+                    )
+                })
+                .collect::<ParquetResult<Vec<Box<dyn Array>>>>()?;
+
+            (nested, array, ptm)
+        },
         (PhysicalType::Int32, Decimal256(_, _)) => PageDecoder::new(
             &field.name,
             pages,
@@ -438,41 +505,14 @@ pub fn page_iter_to_array(
         )?
         .collect_boxed(filter)?,
 
-        // Float16
-        (PhysicalType::FixedLenByteArray(2), Float32) => {
-            // @NOTE: To reduce code bloat, we just use the FixedSizeBinary decoder.
-
-            let (nested, array, ptm) = PageDecoder::new(
-                &field.name,
-                pages,
-                ArrowDataType::FixedSizeBinary(2),
-                fixed_size_binary::BinaryDecoder { size: 2 },
-                init_nested,
-            )?
-            .collect(filter)?;
-
-            let array = array
-                .into_iter()
-                .map(|mut fsb_array| {
-                    let validity = fsb_array.take_validity();
-                    let values = fsb_array.values().as_slice();
-                    assert_eq!(values.len() % 2, 0);
-                    let values = values.chunks_exact(2);
-                    let values = values
-                        .map(|v| {
-                            // SAFETY: We know that `v` is always of size two.
-                            let le_bytes: [u8; 2] = unsafe { v.try_into().unwrap_unchecked() };
-                            let v = arrow::types::f16::from_le_bytes(le_bytes);
-                            v.to_f32()
-                        })
-                        .collect();
-                    Ok(PrimitiveArray::<f32>::new(dtype.clone(), values, validity).to_boxed())
-                })
-                .collect::<ParquetResult<Vec<Box<dyn Array>>>>()?;
-
-            (nested, array, ptm)
-        },
-
+        (PhysicalType::FixedLenByteArray(2), Float16) => PageDecoder::new(
+            &field.name,
+            pages,
+            dtype,
+            primitive::FloatDecoder::<pf16, _, _>::unit(),
+            init_nested,
+        )?
+        .collect_boxed(filter)?,
         (PhysicalType::Float, Float32) => PageDecoder::new(
             &field.name,
             pages,
@@ -508,7 +548,7 @@ pub fn page_iter_to_array(
                 binview::BinViewDecoder::new(is_string),
                 init_nested,
             )?
-            .collect(filter)?
+            .collect_boxed(filter)?
         },
         (_, Binary | Utf8) => unreachable!(),
         (PhysicalType::ByteArray, BinaryView | Utf8View) => {
@@ -520,7 +560,7 @@ pub fn page_iter_to_array(
                 binview::BinViewDecoder::new(is_string),
                 init_nested,
             )?
-            .collect(filter)?
+            .collect_boxed(filter)?
         },
         (_, Dictionary(key_type, value_type, _)) => {
             // @NOTE: This should only hit in two cases:

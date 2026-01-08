@@ -57,6 +57,8 @@ pub fn count_rows(
             ),
             #[cfg(feature = "json")]
             FileScanIR::NDJson { options } => count_rows_ndjson(sources, cloud_options),
+            #[cfg(feature = "scan_lines")]
+            FileScanIR::Lines { .. } => unreachable!(),
             #[cfg(feature = "python")]
             FileScanIR::PythonDataset { .. } => unreachable!(),
             FileScanIR::Anonymous { .. } => {
@@ -68,7 +70,8 @@ pub fn count_rows(
             |_| polars_err!(ComputeError: "count of {} exceeded maximum row size", count),
         )?;
         let column_name = alias.unwrap_or(PlSmallStr::from_static(crate::constants::LEN));
-        DataFrame::new(vec![Column::new(column_name, [count])])
+
+        Ok(unsafe { DataFrame::new_unchecked(1, vec![Column::new(column_name, [count])]) })
     }
 }
 
@@ -96,7 +99,7 @@ fn count_all_rows_csv(
                 let memslice = source.to_memslice()?;
 
                 polars_io::csv::read::count_rows_from_slice_par(
-                    &memslice[..],
+                    memslice,
                     parse_options.quote_char,
                     parse_options.comment_prefix.as_ref(),
                     parse_options.eol_char,

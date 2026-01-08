@@ -1,4 +1,4 @@
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(feature = "nightly", feature(unicode_internals))]
 #![cfg_attr(feature = "nightly", allow(internal_features))]
 #![cfg_attr(
@@ -8,7 +8,7 @@
 
 pub mod chunked_array;
 #[cfg(feature = "pivot")]
-pub use frame::pivot;
+pub use frame::unpivot;
 pub mod frame;
 pub mod prelude;
 pub mod series;

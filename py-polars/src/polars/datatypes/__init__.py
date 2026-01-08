@@ -5,6 +5,7 @@ from polars.datatypes._parse import (
 )
 from polars.datatypes.classes import (
     Array,
+    BaseExtension,
     Binary,
     Boolean,
     Categorical,
@@ -16,9 +17,12 @@ from polars.datatypes.classes import (
     Decimal,
     Duration,
     Enum,
+    Extension,
     Field,
+    Float16,
     Float32,
     Float64,
+    FloatType,
     Int8,
     Int16,
     Int32,
@@ -64,6 +68,7 @@ from polars.datatypes.convert import (
 __all__ = [
     # classes
     "Array",
+    "BaseExtension",
     "Binary",
     "Boolean",
     "Categorical",
@@ -75,9 +80,12 @@ __all__ = [
     "Decimal",
     "Duration",
     "Enum",
+    "Extension",
     "Field",
+    "Float16",
     "Float32",
     "Float64",
+    "FloatType",
     "Int16",
     "Int128",
     "Int32",

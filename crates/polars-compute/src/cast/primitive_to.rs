@@ -5,11 +5,12 @@ use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::compute::arity::unary;
 use arrow::datatypes::{ArrowDataType, TimeUnit};
 use arrow::offset::{Offset, Offsets};
-use arrow::types::{NativeType, f16};
+use arrow::types::NativeType;
 use num_traits::AsPrimitive;
 #[cfg(feature = "dtype-decimal")]
 use num_traits::Float;
 use polars_error::PolarsResult;
+use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::vec::PushUnchecked;
 
@@ -51,12 +52,21 @@ impl_ser_primitive!(u32);
 impl_ser_primitive!(u64);
 impl_ser_primitive!(u128);
 
+impl SerPrimitive for pf16 {
+    fn write(f: &mut Vec<u8>, val: Self) -> usize
+    where
+        Self: Sized,
+    {
+        f32::write(f, AsPrimitive::<f32>::as_(val))
+    }
+}
+
 impl SerPrimitive for f32 {
     fn write(f: &mut Vec<u8>, val: Self) -> usize
     where
         Self: Sized,
     {
-        let mut buffer = ryu::Buffer::new();
+        let mut buffer = zmij::Buffer::new();
         let value = buffer.format(val);
         f.extend_from_slice(value.as_bytes());
         value.len()
@@ -68,7 +78,7 @@ impl SerPrimitive for f64 {
     where
         Self: Sized,
     {
-        let mut buffer = ryu::Buffer::new();
+        let mut buffer = zmij::Buffer::new();
         let value = buffer.format(val);
         f.extend_from_slice(value.as_bytes());
         value.len()
@@ -558,11 +568,6 @@ pub fn timestamp_to_timestamp(
             to_type,
         )
     }
-}
-
-/// Casts f16 into f32
-pub fn f16_to_f32(from: &PrimitiveArray<f16>) -> PrimitiveArray<f32> {
-    unary(from, |x| x.to_f32(), ArrowDataType::Float32)
 }
 
 /// Returns a [`Utf8Array`] where every element is the utf8 representation of the number.

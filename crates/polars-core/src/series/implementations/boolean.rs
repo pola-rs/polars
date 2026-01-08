@@ -90,15 +90,15 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
 
     #[cfg(feature = "bitwise")]
     unsafe fn agg_and(&self, groups: &GroupsType) -> Series {
-        self.0.agg_and(groups)
+        self.0.agg_and(groups).into_series()
     }
     #[cfg(feature = "bitwise")]
     unsafe fn agg_or(&self, groups: &GroupsType) -> Series {
-        self.0.agg_or(groups)
+        self.0.agg_or(groups).into_series()
     }
     #[cfg(feature = "bitwise")]
     unsafe fn agg_xor(&self, groups: &GroupsType) -> Series {
-        self.0.agg_xor(groups)
+        self.0.agg_xor(groups).into_series()
     }
 
     #[cfg(feature = "algorithm_group_by")]
@@ -192,6 +192,10 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         self.0.take_unchecked(indices).into_series()
     }
 
+    fn deposit(&self, validity: &Bitmap) -> Series {
+        self.0.deposit(validity).into_series()
+    }
+
     fn len(&self) -> usize {
         self.0.len()
     }
@@ -242,6 +246,10 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
     #[cfg(feature = "algorithm_group_by")]
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         ChunkUnique::arg_unique(&self.0)
+    }
+
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        ChunkUnique::unique_id(&self.0)
     }
 
     fn is_null(&self) -> BooleanChunked {

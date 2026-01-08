@@ -242,6 +242,19 @@ fn deserialize_all<'a>(
                 AnyValue::Null
             });
         },
+        #[cfg(feature = "dtype-f16")]
+        dt @ DataType::Float16 => {
+            use num_traits::AsPrimitive;
+            use polars_utils::float16::pf16;
+
+            return match json.cast_f64() {
+                Some(v) => Ok(AnyValue::Float16(AsPrimitive::<pf16>::as_(v))),
+                None if ignore_errors => Ok(AnyValue::Null),
+                None => {
+                    polars_bail!(ComputeError: "cannot parse '{}' ({}) as {}", json, json.value_type(), dt)
+                },
+            };
+        },
         dt @ DataType::Float32 => {
             return match json.cast_f64() {
                 Some(v) => Ok(AnyValue::Float32(v as f32)),

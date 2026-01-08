@@ -1,8 +1,9 @@
 use std::borrow::Cow;
 
-use polars_core::prelude::{ArrowSchema, DataFrame, DataType, IDX_DTYPE, Series};
-use polars_core::schema::SchemaNamesAndDtypes;
+use polars_core::prelude::{ArrowSchema, Column, DataFrame, DataType, IDX_DTYPE, Series};
+use polars_core::schema::{SchemaExt, SchemaNamesAndDtypes};
 use polars_error::{PolarsResult, polars_bail};
+use polars_schema::Schema;
 
 use crate::RowIndex;
 use crate::hive::materialize_hive_partitions;
@@ -19,10 +20,10 @@ pub fn materialize_empty_df(
     } else {
         Cow::Borrowed(reader_schema)
     };
-    let mut df = DataFrame::empty_with_arrow_schema(&schema);
+    let mut df = DataFrame::empty_with_schema(&Schema::from_arrow_schema(&schema));
 
     if let Some(row_index) = row_index {
-        df.insert_column(0, Series::new_empty(row_index.name.clone(), &IDX_DTYPE))
+        df.insert_column(0, Column::new_empty(row_index.name.clone(), &IDX_DTYPE))
             .unwrap();
     }
 

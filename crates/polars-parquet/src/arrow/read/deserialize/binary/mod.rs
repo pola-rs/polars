@@ -164,7 +164,11 @@ impl utils::Decoder for BinaryDecoder {
         filter: Option<super::Filter>,
         chunks: &mut Vec<Self::Output>,
     ) -> ParquetResult<()> {
-        assert!(state.page_validity.is_none());
+        if state.page_validity.is_some() || matches!(filter, Some(Filter::Predicate(_))) {
+            // Currently we only use BinaryArray for internal (de)serialization, so this is a
+            // limited implementation to save effort.
+            unimplemented!()
+        }
 
         let mut target = Vec::new();
         let mut offsets =

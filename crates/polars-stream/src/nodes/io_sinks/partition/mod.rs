@@ -8,8 +8,8 @@ use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
 use polars_plan::dsl::{
-    FileType, PartitionTargetCallback, PartitionTargetCallbackResult, PartitionTargetContext,
-    SinkOptions, SinkTarget,
+    FileWriteFormat, PartitionTargetCallback, PartitionTargetCallbackResult,
+    PartitionTargetContext, SinkOptions, SinkTarget,
 };
 use polars_utils::format_pl_smallstr;
 use polars_utils::plpath::PlPathRef;
@@ -42,14 +42,14 @@ pub type CreateNewSinkFn =
     Arc<dyn Send + Sync + Fn(SchemaRef, SinkTarget) -> PolarsResult<Box<dyn SinkNode + Send>>>;
 
 pub fn get_create_new_fn(
-    file_type: FileType,
+    file_type: FileWriteFormat,
     sink_options: SinkOptions,
     cloud_options: Option<CloudOptions>,
     collect_metrics: bool,
 ) -> CreateNewSinkFn {
     match file_type {
         #[cfg(feature = "ipc")]
-        FileType::Ipc(ipc_writer_options) => Arc::new(move |input_schema, target| {
+        FileWriteFormat::Ipc(ipc_writer_options) => Arc::new(move |input_schema, target| {
             let sink = Box::new(super::ipc::IpcSinkNode::new(
                 input_schema,
                 target,
@@ -60,7 +60,7 @@ pub fn get_create_new_fn(
             Ok(sink)
         }) as _,
         #[cfg(feature = "json")]
-        FileType::Json(_ndjson_writer_options) => Arc::new(move |_input_schema, target| {
+        FileWriteFormat::NDJson(_ndjson_writer_options) => Arc::new(move |_input_schema, target| {
             let sink = Box::new(super::json::NDJsonSinkNode::new(
                 target,
                 sink_options.clone(),
@@ -69,7 +69,7 @@ pub fn get_create_new_fn(
             Ok(sink)
         }) as _,
         #[cfg(feature = "parquet")]
-        FileType::Parquet(parquet_writer_options) => {
+        FileWriteFormat::Parquet(parquet_writer_options) => {
             Arc::new(move |input_schema, target: SinkTarget| {
                 let sink = Box::new(super::parquet::ParquetSinkNode::new(
                     input_schema,
@@ -83,7 +83,7 @@ pub fn get_create_new_fn(
             }) as _
         },
         #[cfg(feature = "csv")]
-        FileType::Csv(csv_writer_options) => Arc::new(move |input_schema, target| {
+        FileWriteFormat::Csv(csv_writer_options) => Arc::new(move |input_schema, target| {
             let sink = Box::new(super::csv::CsvSinkNode::new(
                 target,
                 input_schema,
@@ -141,7 +141,8 @@ fn default_by_key_file_path_cb(
             .get(0)
             .unwrap_or("__HIVE_DEFAULT_PARTITION__")
             .as_bytes();
-        let value = percent_encoding::percent_encode(value, polars_io::utils::URL_ENCODE_CHAR_SET);
+        let value =
+            percent_encoding::percent_encode(value, polars_io::utils::HIVE_VALUE_ENCODE_CHARSET);
         write!(&mut file_path, "{name}={value}").unwrap();
         file_path.push(separator);
     }
@@ -184,7 +185,7 @@ async fn open_new_sink(
     let target = if let Some(file_path_cb) = file_path_cb {
         let keys = keys.map_or(Vec::new(), |keys| {
             keys.iter()
-                .map(|k| polars_plan::dsl::PartitionTargetContextKey {
+                .map(|k| polars_plan::dsl::sink::PartitionTargetContextKey {
                     name: k.name().clone(),
                     raw_value: Scalar::new(k.dtype().clone(), k.get(0).unwrap().into_static()),
                 })
@@ -290,7 +291,9 @@ async fn open_new_sink(
                     limit: None,
                 },
             )?;
-            df = df.select_by_range(0..df.width() - num_selectors)?;
+
+            let truncate_len = df.width() - num_selectors;
+            unsafe { df.columns_mut() }.truncate(truncate_len);
 
             _ = old_sender
                 .send(Morsel::new(df, MorselSeq::default(), SourceToken::new()))

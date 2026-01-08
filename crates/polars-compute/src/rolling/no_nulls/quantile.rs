@@ -51,6 +51,10 @@ impl<
         self.sorted.update(start, end);
         let length = self.sorted.len();
 
+        if length == 0 {
+            return None;
+        };
+
         let idx = match self.method {
             Linear => {
                 // Maybe add a fast path for median case? They could branch depending on odd/even.
@@ -70,10 +74,11 @@ impl<
             },
             Midpoint => {
                 let length_f = length as f64;
-                let idx = (length_f * self.prob) as usize;
-                let idx = std::cmp::min(idx, length - 1);
 
+                let idx = ((length_f - 1.0) * self.prob).floor() as usize;
+                let idx = std::cmp::min(idx, length - 1);
                 let top_idx = ((length_f - 1.0) * self.prob).ceil() as usize;
+
                 return if top_idx == idx {
                     Some(self.sorted.get(idx))
                 } else {

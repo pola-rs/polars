@@ -2,9 +2,9 @@ mod dot;
 mod format;
 pub mod inputs;
 mod schema;
-#[cfg(feature = "ir_text_plan_graph")]
-pub mod text_plan_graph;
 pub(crate) mod tree_format;
+#[cfg(feature = "ir_visualization")]
+pub mod visualization;
 
 use std::borrow::Cow;
 use std::fmt;
@@ -59,6 +59,9 @@ pub enum IR {
         file_info: FileInfo,
         hive_parts: Option<HivePartitionsDf>,
         predicate: Option<ExprIR>,
+        /// * None: No skipping
+        /// * Some(v): Files were skipped (filtered out)
+        predicate_file_skip_applied: Option<PredicateFileSkip>,
         /// schema of the projected file
         output_schema: Option<SchemaRef>,
         scan_type: Box<FileScanIR>,

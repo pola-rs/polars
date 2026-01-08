@@ -1,12 +1,14 @@
 use std::io::Write;
 use std::num::NonZeroUsize;
+use std::sync::Arc;
 
 use polars_core::POOL;
 use polars_core::frame::DataFrame;
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
+use polars_utils::pl_str::PlSmallStr;
 
-use super::write_impl::{write, write_bom, write_header};
+use super::write_impl::{write, write_bom, write_csv_header};
 use super::{QuoteStyle, SerializeOptions};
 use crate::shared::SerWriter;
 
@@ -17,7 +19,7 @@ use crate::shared::SerWriter;
 pub struct CsvWriter<W: Write> {
     /// File or Stream handler
     buffer: W,
-    options: SerializeOptions,
+    options: Arc<SerializeOptions>,
     header: bool,
     bom: bool,
     batch_size: NonZeroUsize,
@@ -29,15 +31,11 @@ where
     W: Write,
 {
     fn new(buffer: W) -> Self {
-        // 9f: all nanoseconds
-        let options = SerializeOptions {
-            time_format: Some("%T%.9f".to_string()),
-            ..Default::default()
-        };
+        let options = SerializeOptions::default();
 
         CsvWriter {
             buffer,
-            options,
+            options: options.into(),
             header: true,
             bom: false,
             batch_size: NonZeroUsize::new(1024).unwrap(),
@@ -55,13 +53,13 @@ where
             .map(|x| x.as_str())
             .collect::<Vec<_>>();
         if self.header {
-            write_header(&mut self.buffer, names.as_slice(), &self.options)?;
+            write_csv_header(&mut self.buffer, names.as_slice(), &self.options)?;
         }
         write(
             &mut self.buffer,
             df,
             self.batch_size.into(),
-            &self.options,
+            self.options.clone(),
             self.n_threads,
         )
     }
@@ -71,6 +69,10 @@ impl<W> CsvWriter<W>
 where
     W: Write,
 {
+    fn options_mut(&mut self) -> &mut SerializeOptions {
+        Arc::make_mut(&mut self.options)
+    }
+
     /// Set whether to write UTF-8 BOM.
     pub fn include_bom(mut self, include_bom: bool) -> Self {
         self.bom = include_bom;
@@ -85,7 +87,7 @@ where
 
     /// Set the CSV file's column separator as a byte character.
     pub fn with_separator(mut self, separator: u8) -> Self {
-        self.options.separator = separator;
+        self.options_mut().separator = separator;
         self
     }
 
@@ -96,25 +98,25 @@ where
     }
 
     /// Set the CSV file's date format.
-    pub fn with_date_format(mut self, format: Option<String>) -> Self {
+    pub fn with_date_format(mut self, format: Option<PlSmallStr>) -> Self {
         if format.is_some() {
-            self.options.date_format = format;
+            self.options_mut().date_format = format;
         }
         self
     }
 
     /// Set the CSV file's time format.
-    pub fn with_time_format(mut self, format: Option<String>) -> Self {
+    pub fn with_time_format(mut self, format: Option<PlSmallStr>) -> Self {
         if format.is_some() {
-            self.options.time_format = format;
+            self.options_mut().time_format = format;
         }
         self
     }
 
     /// Set the CSV file's datetime format.
-    pub fn with_datetime_format(mut self, format: Option<String>) -> Self {
+    pub fn with_datetime_format(mut self, format: Option<PlSmallStr>) -> Self {
         if format.is_some() {
-            self.options.datetime_format = format;
+            self.options_mut().datetime_format = format;
         }
         self
     }
@@ -122,7 +124,7 @@ where
     /// Set the CSV file's forced scientific notation for floats.
     pub fn with_float_scientific(mut self, scientific: Option<bool>) -> Self {
         if scientific.is_some() {
-            self.options.float_scientific = scientific;
+            self.options_mut().float_scientific = scientific;
         }
         self
     }
@@ -130,39 +132,39 @@ where
     /// Set the CSV file's float precision.
     pub fn with_float_precision(mut self, precision: Option<usize>) -> Self {
         if precision.is_some() {
-            self.options.float_precision = precision;
+            self.options_mut().float_precision = precision;
         }
         self
     }
 
     /// Set the CSV decimal separator.
     pub fn with_decimal_comma(mut self, decimal_comma: bool) -> Self {
-        self.options.decimal_comma = decimal_comma;
+        self.options_mut().decimal_comma = decimal_comma;
         self
     }
 
     /// Set the single byte character used for quoting.
     pub fn with_quote_char(mut self, char: u8) -> Self {
-        self.options.quote_char = char;
+        self.options_mut().quote_char = char;
         self
     }
 
     /// Set the CSV file's null value representation.
-    pub fn with_null_value(mut self, null_value: String) -> Self {
-        self.options.null = null_value;
+    pub fn with_null_value(mut self, null_value: PlSmallStr) -> Self {
+        self.options_mut().null = null_value;
         self
     }
 
     /// Set the CSV file's line terminator.
-    pub fn with_line_terminator(mut self, line_terminator: String) -> Self {
-        self.options.line_terminator = line_terminator;
+    pub fn with_line_terminator(mut self, line_terminator: PlSmallStr) -> Self {
+        self.options_mut().line_terminator = line_terminator;
         self
     }
 
     /// Set the CSV file's quoting behavior.
     /// See more on [`QuoteStyle`].
     pub fn with_quote_style(mut self, quote_style: QuoteStyle) -> Self {
-        self.options.quote_style = quote_style;
+        self.options_mut().quote_style = quote_style;
         self
     }
 
@@ -208,7 +210,7 @@ impl<W: Write> BatchedWriter<W> {
                 .into_iter()
                 .map(|x| x.as_str())
                 .collect::<Vec<_>>();
-            write_header(
+            write_csv_header(
                 &mut self.writer.buffer,
                 names.as_slice(),
                 &self.writer.options,
@@ -219,7 +221,7 @@ impl<W: Write> BatchedWriter<W> {
             &mut self.writer.buffer,
             df,
             self.writer.batch_size.into(),
-            &self.writer.options,
+            self.writer.options.clone(),
             self.writer.n_threads,
         )?;
         Ok(())
@@ -239,7 +241,7 @@ impl<W: Write> BatchedWriter<W> {
                 .iter_names()
                 .map(|x| x.as_str())
                 .collect::<Vec<_>>();
-            write_header(&mut self.writer.buffer, &names, &self.writer.options)?;
+            write_csv_header(&mut self.writer.buffer, &names, &self.writer.options)?;
         };
 
         Ok(())

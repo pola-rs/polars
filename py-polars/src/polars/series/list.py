@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from polars import functions as F
+from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
-    from collections.abc import Collection
+    from collections.abc import Callable, Collection
 
     from polars import Expr, Series
     from polars._plr import PySeries
@@ -570,6 +571,35 @@ class ListNameSpace:
         ]
         """
 
+    @unstable()
+    def item(self) -> Series:
+        """
+        Get the single value of the sublists.
+
+        This errors if the sublist length is not exactly one.
+
+        See Also
+        --------
+        :meth:`Series.list.get` : Get the value by index in the sublists.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1], [4], [6]])
+        >>> s.list.item()
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            1
+            4
+            6
+        ]
+        >>> df = pl.Series("a", [[3, 2, 1], [1], [2]])
+        >>> df.list.item()
+        Traceback (most recent call last):
+        ...
+        polars.exceptions.ComputeError: aggregation 'item' expected a single value, got 3 values
+        """  # noqa: W505
+
     def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Series:
         """
         Check if sublists contain the given item.
@@ -787,9 +817,16 @@ class ListNameSpace:
         ]
         """
 
-    def explode(self) -> Series:
+    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Series:
         """
         Returns a column with a separate row for every list element.
+
+        Parameters
+        ----------
+        empty_as_null
+            Explode an empty list into a `null`.
+        keep_nulls
+            Explode a `null` list into a `null`.
 
         Returns
         -------
@@ -959,6 +996,37 @@ class ListNameSpace:
             [1.0, 2.0]
             [2.0, 1.0]
             [2.0, 1.0]
+        ]
+        """
+
+    def agg(self, expr: Expr) -> Series:
+        """
+
+        Run any polars aggregation expression against the list' elements.
+
+        Parameters
+        ----------
+        expr
+            Expression to run. Note that you can select an element with `pl.element()`.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, None], [42, 13], [None, None]])
+        >>> s.list.agg(pl.element().null_count())
+        shape: (3,)
+        Series: 'a' [u32]
+        [
+            1
+            0
+            2
+        ]
+        >>> s.list.agg(pl.element().drop_nulls())
+        shape: (3,)
+        Series: 'a' [list[i64]]
+        [
+            [1]
+            [42, 13]
+            []
         ]
         """
 

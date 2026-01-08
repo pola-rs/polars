@@ -17,6 +17,7 @@ use crossbeam_deque::{Injector, Steal, Stealer, Worker as WorkQueue};
 use crossbeam_utils::CachePadded;
 use park_group::ParkGroup;
 use parking_lot::Mutex;
+use polars_core::ALLOW_RAYON_THREADS;
 use polars_utils::relaxed_cell::RelaxedCell;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
@@ -65,6 +66,7 @@ pub struct TaskMetrics {
     pub total_stolen_polls: RelaxedCell<u64>,
     pub total_poll_time_ns: RelaxedCell<u64>,
     pub max_poll_time_ns: RelaxedCell<u64>,
+    pub done: RelaxedCell<bool>,
 }
 
 struct TaskMetadata {
@@ -77,6 +79,10 @@ struct TaskMetadata {
 
 impl Drop for TaskMetadata {
     fn drop(&mut self) {
+        if let Some(metrics) = self.metrics.as_ref() {
+            metrics.done.store(true);
+        }
+
         if let Some(scoped) = &self.scoped {
             if let Some(completed_tasks) = scoped.completed_tasks.upgrade() {
                 completed_tasks.lock().push(scoped.task_key);
@@ -93,7 +99,7 @@ impl<T> JoinHandle<T> {
         self.0.metadata().metrics.as_ref()
     }
 
-    #[expect(unused)]
+    #[allow(unused)]
     pub fn spawn_location(&self) -> &'static Location<'static> {
         self.0.metadata().spawn_location
     }
@@ -265,6 +271,7 @@ impl Executor {
 
     fn runner(&self, thread: usize) {
         TLS_THREAD_ID.set(thread);
+        ALLOW_RAYON_THREADS.set(false);
 
         let mut rng = SmallRng::from_rng(&mut rand::rng());
         let mut worker = self.park_group.new_worker();

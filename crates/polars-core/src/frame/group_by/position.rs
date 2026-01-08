@@ -256,11 +256,13 @@ pub enum GroupsType {
     Slice {
         // the groups slices
         groups: GroupsSlice,
-        // Indicates if the groups may overlap, as is typically the case with `rolling`
-        // or `dynamic_group_by`.
-        // Example use cases: avoid memory explosion when calling aggregation; unroll groups
-        // when exploding an aggregated list with overlapping groups.
+        /// Indicates if the groups may overlap, i.e., at least one index MAY be
+        /// included in more than one group slice.
         overlapping: bool,
+        /// Indicates if the groups are rolling, i.e. for every consecutive group
+        /// slice (offset, len), and given start = offset and end = offset + len,
+        /// then both new_start >= start AND new_end >= end MUST be true.
+        monotonic: bool,
     },
 }
 
@@ -271,6 +273,65 @@ impl Default for GroupsType {
 }
 
 impl GroupsType {
+    pub fn new_slice(groups: GroupsSlice, overlapping: bool, monotonic: bool) -> Self {
+        #[cfg(debug_assertions)]
+        {
+            fn groups_overlap(groups: &GroupsSlice) -> bool {
+                if groups.len() < 2 {
+                    return false;
+                }
+                let mut groups = groups.clone();
+                groups.sort();
+                let mut prev_end = groups[0][1];
+
+                for g in &groups[1..] {
+                    let start = g[0];
+                    let end = g[1];
+                    if start < prev_end {
+                        return true;
+                    }
+                    if end > prev_end {
+                        prev_end = end;
+                    }
+                }
+                false
+            }
+
+            assert!(overlapping || !groups_overlap(&groups));
+
+            fn groups_are_monotonic(groups: &GroupsSlice) -> bool {
+                if groups.len() < 2 {
+                    return true;
+                }
+
+                let (offset, len) = (groups[0][0], groups[0][1]);
+                let mut prev_start = offset;
+                let mut prev_end = offset + len;
+
+                for g in &groups[1..] {
+                    let start = g[0];
+                    let end = g[0] + g[1];
+
+                    if start < prev_start || end < prev_end {
+                        return false;
+                    }
+
+                    prev_start = start;
+                    prev_end = end;
+                }
+                true
+            }
+
+            assert!(!monotonic || groups_are_monotonic(&groups));
+        }
+
+        Self::Slice {
+            groups,
+            overlapping,
+            monotonic,
+        }
+    }
+
     pub fn into_idx(self) -> GroupsIdx {
         match self {
             GroupsType::Idx(groups) => groups,
@@ -375,6 +436,16 @@ impl GroupsType {
         )
     }
 
+    pub fn is_monotonic(&self) -> bool {
+        matches!(
+            self,
+            GroupsType::Slice {
+                monotonic: true,
+                ..
+            }
+        )
+    }
+
     pub fn take_group_firsts(self) -> Vec<IdxSize> {
         match self {
             GroupsType::Idx(mut groups) => std::mem::take(&mut groups.first),
@@ -382,6 +453,18 @@ impl GroupsType {
                 groups.into_iter().map(|[first, _len]| first).collect()
             },
         }
+    }
+
+    /// Checks if groups are of equal length. The caller is responsible for
+    /// updating the groups by calling `groups()` prior to calling this method.
+    pub fn check_lengths(self: &GroupsType, other: &GroupsType) -> PolarsResult<()> {
+        if std::ptr::eq(self, other) {
+            return Ok(());
+        }
+        polars_ensure!(self.iter().zip(other.iter()).all(|(a, b)| {
+            a.len() == b.len()
+        }), ShapeMismatch: "expressions must have matching group lengths");
+        Ok(())
     }
 
     /// # Safety
@@ -502,14 +585,15 @@ impl GroupsType {
         slice_groups(Arc::new(self), 0, len)
     }
 
-    pub fn check_lengths(self: &GroupsType, other: &GroupsType) -> PolarsResult<()> {
-        if std::ptr::eq(self, other) {
-            return Ok(());
+    pub fn num_elements(&self) -> usize {
+        match self {
+            GroupsType::Idx(i) => i.all().iter().map(|v| v.len()).sum(),
+            GroupsType::Slice {
+                groups,
+                overlapping: _,
+                monotonic: _,
+            } => groups.iter().map(|[_, l]| *l as usize).sum(),
         }
-        polars_ensure!(self.iter().zip(other.iter()).all(|(a, b)| {
-            a.len() == b.len()
-        }), ComputeError: "expressions must have matching group lengths");
-        Ok(())
     }
 }
 
@@ -643,12 +727,6 @@ impl Clone for GroupPositions {
     }
 }
 
-impl PartialEq for GroupPositions {
-    fn eq(&self, other: &Self) -> bool {
-        self.offset == other.offset && self.len == other.len && self.sliced == other.sliced
-    }
-}
-
 impl AsRef<GroupsType> for GroupPositions {
     fn as_ref(&self) -> &GroupsType {
         self.sliced.deref()
@@ -708,11 +786,7 @@ impl GroupPositions {
                     })
                     .collect();
 
-                GroupsType::Slice {
-                    groups,
-                    overlapping: false,
-                }
-                .into_sliceable()
+                GroupsType::new_slice(groups, false, true).into_sliceable()
             },
         }
     }
@@ -721,11 +795,14 @@ impl GroupPositions {
         match &*self.sliced {
             GroupsType::Idx(_) => None,
             GroupsType::Slice {
-                overlapping: true, ..
+                groups: _,
+                overlapping: true,
+                monotonic: _,
             } => None,
             GroupsType::Slice {
                 groups,
                 overlapping: false,
+                monotonic: _,
             } => Some(groups),
         }
     }
@@ -759,6 +836,7 @@ fn slice_groups_inner(g: &GroupsType, offset: i64, len: usize) -> ManuallyDrop<G
         GroupsType::Slice {
             groups,
             overlapping,
+            monotonic,
         } => {
             let groups = unsafe {
                 let groups = slice_slice(groups, offset, len);
@@ -766,10 +844,7 @@ fn slice_groups_inner(g: &GroupsType, offset: i64, len: usize) -> ManuallyDrop<G
                 Vec::from_raw_parts(ptr, groups.len(), groups.len())
             };
 
-            ManuallyDrop::new(GroupsType::Slice {
-                groups,
-                overlapping: *overlapping,
-            })
+            ManuallyDrop::new(GroupsType::new_slice(groups, *overlapping, *monotonic))
         },
     }
 }

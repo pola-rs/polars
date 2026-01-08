@@ -22,11 +22,14 @@ use polars_compute::rolling::{
     SumWindow, quantile_filter,
 };
 use polars_utils::float::IsFloat;
+#[cfg(feature = "dtype-f16")]
+use polars_utils::float16::pf16;
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::kahan_sum::KahanSum;
 use polars_utils::min_max::MinMax;
 use rayon::prelude::*;
 
+use crate::POOL;
 use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::create_extension;
@@ -37,7 +40,6 @@ use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::series::implementations::SeriesWrap;
 use crate::utils::NoNull;
-use crate::{POOL, apply_method_physical_integer};
 
 fn idx2usize(idx: &[IdxSize]) -> impl ExactSizeIterator<Item = usize> + '_ {
     idx.iter().map(|i| *i as usize)
@@ -49,18 +51,15 @@ fn idx2usize(idx: &[IdxSize]) -> impl ExactSizeIterator<Item = usize> + '_ {
 //
 // if the windows don't overlap, we should not use these kernels as they are single threaded, so
 // we miss out on easy parallelization.
-pub fn _use_rolling_kernels(groups: &GroupsSlice, chunks: &[ArrayRef]) -> bool {
+pub fn _use_rolling_kernels(
+    groups: &GroupsSlice,
+    overlapping: bool,
+    monotonic: bool,
+    chunks: &[ArrayRef],
+) -> bool {
     match groups.len() {
         0 | 1 => false,
-        _ => {
-            let [first_offset, first_len] = groups[0];
-            let second_offset = groups[1][0];
-
-            second_offset >= first_offset // Prevent false positive from regular group-by that has out of order slices.
-                                          // Rolling group-by is expected to have monotonically increasing slices.
-                && second_offset < (first_offset + first_len)
-                && chunks.len() == 1
-        },
+        _ => overlapping && monotonic && chunks.len() == 1,
     }
 }
 
@@ -85,9 +84,7 @@ where
     // these represent the number of groups in the group_by operation
     let output_len = offsets.size_hint().0;
     // start with a dummy index, will be overwritten on first iteration.
-    // SAFETY:
-    // we are in bounds
-    let mut agg_window = unsafe { Agg::new(values, validity, 0, 0, params, None) };
+    let mut agg_window = Agg::new(values, validity, 0, 0, params, None);
 
     let mut validity = MutableBitmap::with_capacity(output_len);
     validity.extend_constant(output_len, true);
@@ -99,12 +96,7 @@ where
 
             // SAFETY:
             // we are in bounds
-
-            let agg = if start == end {
-                None
-            } else {
-                unsafe { agg_window.update(start as usize, end as usize) }
-            };
+            let agg = unsafe { agg_window.update(start as usize, end as usize) };
 
             match agg {
                 Some(val) => val,
@@ -143,12 +135,8 @@ where
         .map(|(start, len)| {
             let end = start + len;
 
-            if start == end {
-                None
-            } else {
-                // SAFETY: we are in bounds.
-                unsafe { agg_window.update(start as usize, end as usize) }
-            }
+            // SAFETY: we are in bounds.
+            unsafe { agg_window.update(start as usize, end as usize) }
         })
         .collect::<PrimitiveArray<T>>()
 }
@@ -191,17 +179,6 @@ where
     ca.into_series()
 }
 
-/// Same as `agg_helper_idx_on_all` but for aggregations that don't return an Option.
-fn agg_helper_idx_on_all_no_null<T, F>(groups: &GroupsIdx, f: F) -> Series
-where
-    F: Fn(&IdxVec) -> T::Native + Send + Sync,
-    T: PolarsNumericType,
-{
-    let ca: NoNull<ChunkedArray<T>> =
-        POOL.install(|| groups.all().into_par_iter().map(f).collect());
-    ca.into_inner().into_series()
-}
-
 pub fn _agg_helper_slice<T, F>(groups: &[[IdxSize; 2]], f: F) -> Series
 where
     F: Fn([IdxSize; 2]) -> Option<T::Native> + Send + Sync,
@@ -238,6 +215,16 @@ where
         self.quantile_faster(quantile, method)
     }
     fn _median(self) -> Option<f64> {
+        self.median_faster()
+    }
+}
+
+#[cfg(feature = "dtype-f16")]
+impl QuantileDispatcher<pf16> for Float16Chunked {
+    fn _quantile(self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<pf16>> {
+        self.quantile_faster(quantile, method)
+    }
+    fn _median(self) -> Option<pf16> {
         self.median_faster()
     }
 }
@@ -288,8 +275,12 @@ where
                 take._quantile(quantile, method).unwrap_unchecked()
             })
         },
-        GroupsType::Slice { groups, .. } => {
-            if _use_rolling_kernels(groups, ca.chunks()) {
+        GroupsType::Slice {
+            groups,
+            overlapping,
+            monotonic,
+        } => {
+            if _use_rolling_kernels(groups, *overlapping, *monotonic, ca.chunks()) {
                 // this cast is a no-op for floats
                 let s = ca
                     .cast_with_options(&K::get_static_dtype(), CastOptions::Overflowing)
@@ -446,13 +437,9 @@ where
 {
     pub(crate) unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
         // faster paths
-        match (self.is_sorted_flag(), self.null_count()) {
-            (IsSorted::Ascending, 0) => {
-                return self.clone().into_series().agg_first(groups);
-            },
-            (IsSorted::Descending, 0) => {
-                return self.clone().into_series().agg_last(groups);
-            },
+        match self.is_sorted_flag() {
+            IsSorted::Ascending => return self.clone().into_series().agg_first_non_null(groups),
+            IsSorted::Descending => return self.clone().into_series().agg_last_non_null(groups),
             _ => {},
         }
         match groups {
@@ -477,9 +464,10 @@ where
             },
             GroupsType::Slice {
                 groups: groups_slice,
-                ..
+                overlapping,
+                monotonic,
             } => {
-                if _use_rolling_kernels(groups_slice, self.chunks()) {
+                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
                     let arr = self.downcast_iter().next().unwrap();
                     let values = arr.values().as_slice();
                     let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
@@ -549,9 +537,10 @@ where
             },
             GroupsType::Slice {
                 groups: groups_slice,
-                ..
+                overlapping,
+                monotonic,
             } => {
-                if _use_rolling_kernels(groups_slice, self.chunks()) {
+                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
                     let arr = self.downcast_iter().next().unwrap();
                     let values = arr.values().as_slice();
                     let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
@@ -618,8 +607,12 @@ where
                     }
                 })
             },
-            GroupsType::Slice { groups, .. } => {
-                if _use_rolling_kernels(groups, self.chunks()) {
+            GroupsType::Slice {
+                groups,
+                overlapping,
+                monotonic,
+            } => {
+                if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
                     let arr = self.downcast_iter().next().unwrap();
                     let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
@@ -705,8 +698,12 @@ where
                     out.map(|flt| NumCast::from(flt).unwrap())
                 })
             },
-            GroupsType::Slice { groups, .. } => {
-                if _use_rolling_kernels(groups, self.chunks()) {
+            GroupsType::Slice {
+                groups,
+                overlapping,
+                monotonic,
+            } => {
+                if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
                     let arr = self.downcast_iter().next().unwrap();
                     let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
@@ -764,8 +761,12 @@ where
                     out.map(|flt| NumCast::from(flt).unwrap())
                 })
             },
-            GroupsType::Slice { groups, .. } => {
-                if _use_rolling_kernels(groups, self.chunks()) {
+            GroupsType::Slice {
+                groups,
+                overlapping,
+                monotonic,
+            } => {
+                if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
                     let arr = self.downcast_iter().next().unwrap();
                     let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
@@ -835,8 +836,12 @@ where
                     out.map(|flt| NumCast::from(flt.sqrt()).unwrap())
                 })
             },
-            GroupsType::Slice { groups, .. } => {
-                if _use_rolling_kernels(groups, self.chunks()) {
+            GroupsType::Slice {
+                groups,
+                overlapping,
+                monotonic,
+            } => {
+                if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
                     let arr = ca.downcast_iter().next().unwrap();
                     let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
@@ -968,9 +973,10 @@ where
             },
             GroupsType::Slice {
                 groups: groups_slice,
-                ..
+                overlapping,
+                monotonic,
             } => {
-                if _use_rolling_kernels(groups_slice, self.chunks()) {
+                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
                     let ca = self
                         .cast_with_options(&DataType::Float64, CastOptions::Overflowing)
                         .unwrap();
@@ -1012,9 +1018,10 @@ where
             },
             GroupsType::Slice {
                 groups: groups_slice,
-                ..
+                overlapping,
+                monotonic,
             } => {
-                if _use_rolling_kernels(groups_slice, self.chunks()) {
+                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
                     let ca = self
                         .cast_with_options(&DataType::Float64, CastOptions::Overflowing)
                         .unwrap();
@@ -1062,9 +1069,10 @@ where
             },
             GroupsType::Slice {
                 groups: groups_slice,
-                ..
+                overlapping,
+                monotonic,
             } => {
-                if _use_rolling_kernels(groups_slice, self.chunks()) {
+                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
                     let ca = self
                         .cast_with_options(&DataType::Float64, CastOptions::Overflowing)
                         .unwrap();

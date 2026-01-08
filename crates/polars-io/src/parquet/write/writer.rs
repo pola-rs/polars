@@ -210,7 +210,7 @@ fn to_column_write_options_rec(
                 _ => unreachable!(),
             });
 
-            let a = field.dtype().to_logical_type();
+            let a = field.dtype().to_storage();
             let child = if let ArrowDataType::List(inner) = a {
                 to_column_write_options_rec(inner, child_overwrites)
             } else if let ArrowDataType::LargeList(inner) = a {
@@ -225,29 +225,38 @@ fn to_column_write_options_rec(
                 ChildWriteOptions::ListLike(Box::new(ListLikeFieldWriteOptions { child }));
         },
         Struct => {
-            if let ArrowDataType::Struct(fields) = field.dtype().to_logical_type() {
-                let children_overwrites = overwrites.and_then(|o| match &o.children {
-                    ChildFieldOverwrites::None => None,
-                    ChildFieldOverwrites::Struct(child_overwrites) => Some(PlHashMap::from_iter(
-                        child_overwrites
-                            .iter()
-                            .map(|f| (f.name.as_ref().unwrap(), f)),
-                    )),
-                    _ => unreachable!(),
-                });
+            if let ArrowDataType::Struct(fields) = field.dtype().to_storage() {
+                if fields.is_empty() {
+                    // Allow empty structs by mapping to boolean array.
+                    column_options.children = ChildWriteOptions::Leaf(FieldWriteOptions {
+                        encoding: Encoding::Rle,
+                    });
+                } else {
+                    let children_overwrites = overwrites.and_then(|o| match &o.children {
+                        ChildFieldOverwrites::None => None,
+                        ChildFieldOverwrites::Struct(child_overwrites) => {
+                            Some(PlHashMap::from_iter(
+                                child_overwrites
+                                    .iter()
+                                    .map(|f| (f.name.as_ref().unwrap(), f)),
+                            ))
+                        },
+                        _ => unreachable!(),
+                    });
 
-                let children = fields
-                    .iter()
-                    .map(|f| {
-                        let overwrites = children_overwrites
-                            .as_ref()
-                            .and_then(|o| o.get(&f.name).copied());
-                        to_column_write_options_rec(f, overwrites)
-                    })
-                    .collect();
+                    let children = fields
+                        .iter()
+                        .map(|f| {
+                            let overwrites = children_overwrites
+                                .as_ref()
+                                .and_then(|o| o.get(&f.name).copied());
+                            to_column_write_options_rec(f, overwrites)
+                        })
+                        .collect();
 
-                column_options.children =
-                    ChildWriteOptions::Struct(Box::new(StructFieldWriteOptions { children }));
+                    column_options.children =
+                        ChildWriteOptions::Struct(Box::new(StructFieldWriteOptions { children }));
+                }
             } else {
                 unreachable!()
             }
@@ -282,14 +291,8 @@ fn encoding_map(dtype: &ArrowDataType) -> Encoding {
         | PhysicalType::LargeBinary
         | PhysicalType::LargeUtf8
         | PhysicalType::Utf8View
-        | PhysicalType::BinaryView => Encoding::RleDictionary,
-        PhysicalType::Primitive(dt) => {
-            use arrow::types::PrimitiveType::*;
-            match dt {
-                Float32 | Float64 | Float16 => Encoding::Plain,
-                _ => Encoding::RleDictionary,
-            }
-        },
+        | PhysicalType::BinaryView
+        | PhysicalType::Primitive(_) => Encoding::RleDictionary,
         // remaining is plain
         _ => Encoding::Plain,
     }

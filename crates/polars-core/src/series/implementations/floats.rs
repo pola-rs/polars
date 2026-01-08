@@ -1,3 +1,4 @@
+use num_traits::AsPrimitive;
 use polars_compute::rolling::QuantileMethod;
 
 use super::*;
@@ -85,12 +86,12 @@ macro_rules! impl_dyn_series {
 
             #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_std(&self, groups: &GroupsType, ddof: u8) -> Series {
-                self.agg_std(groups, ddof)
+                SeriesWrap::agg_std(self, groups, ddof)
             }
 
             #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_var(&self, groups: &GroupsType, ddof: u8) -> Series {
-                self.agg_var(groups, ddof)
+                SeriesWrap::agg_var(self, groups, ddof)
             }
 
             #[cfg(feature = "algorithm_group_by")]
@@ -209,7 +210,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn median(&self) -> Option<f64> {
-                self.0.median().map(|v| v as f64)
+                self.0.median().map(|v| v.as_())
             }
 
             fn std(&self, ddof: u8) -> Option<f64> {
@@ -234,6 +235,10 @@ macro_rules! impl_dyn_series {
 
             unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
                 self.0.take_unchecked(indices).into_series()
+            }
+
+            fn deposit(&self, validity: &Bitmap) -> Series {
+                self.0.deposit(validity).into_series()
             }
 
             fn len(&self) -> usize {
@@ -288,6 +293,10 @@ macro_rules! impl_dyn_series {
                 ChunkUnique::arg_unique(&self.0)
             }
 
+            fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+                ChunkUnique::unique_id(&self.0)
+            }
+
             fn is_null(&self) -> BooleanChunked {
                 self.0.is_null()
             }
@@ -320,7 +329,7 @@ macro_rules! impl_dyn_series {
             fn mean_reduce(&self) -> PolarsResult<Scalar> {
                 let mean = self
                     .mean()
-                    .map(|m| m as <$pdt as PolarsDataType>::OwnedPhysical);
+                    .map(AsPrimitive::<<$pdt as PolarsDataType>::OwnedPhysical>::as_);
                 Ok(Scalar::new(self.dtype().clone(), mean.into()))
             }
             fn median_reduce(&self) -> PolarsResult<Scalar> {
@@ -398,5 +407,7 @@ macro_rules! impl_dyn_series {
     };
 }
 
+#[cfg(feature = "dtype-f16")]
+impl_dyn_series!(Float16Chunked, Float16Type);
 impl_dyn_series!(Float32Chunked, Float32Type);
 impl_dyn_series!(Float64Chunked, Float64Type);

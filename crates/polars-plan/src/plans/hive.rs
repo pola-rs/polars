@@ -11,42 +11,18 @@ use serde::{Deserialize, Serialize};
 pub struct HivePartitionsDf(DataFrame);
 
 impl HivePartitionsDf {
-    pub fn get_projection_schema_and_indices(
-        &self,
-        names: &PlHashSet<PlSmallStr>,
-    ) -> (SchemaRef, Vec<usize>) {
-        let mut out_schema = Schema::with_capacity(self.schema().len());
-        let mut out_indices = Vec::with_capacity(self.0.get_columns().len());
+    /// Filter the columns to those contained in `projected_columns`.
+    pub fn filter_columns(&self, projected_columns: &Schema) -> Self {
+        let columns: Vec<_> = self
+            .df()
+            .columns()
+            .iter()
+            .filter(|c| projected_columns.contains(c.name()))
+            .cloned()
+            .collect();
 
-        for (i, column) in self.0.get_columns().iter().enumerate() {
-            let name = column.name();
-            if names.contains(name.as_str()) {
-                out_indices.push(i);
-                out_schema
-                    .insert_at_index(out_schema.len(), name.clone(), column.dtype().clone())
-                    .unwrap();
-            }
-        }
-
-        (out_schema.into(), out_indices)
-    }
-
-    pub fn apply_projection(&mut self, column_indices: &[usize]) {
-        let schema = self.schema();
-        let projected_schema = schema.try_project_indices(column_indices).unwrap();
-        self.0 = self.0.select(projected_schema.iter_names_cloned()).unwrap();
-    }
-
-    pub fn take_indices(&self, row_indexes: &[IdxSize]) -> Self {
-        if !row_indexes.is_empty() {
-            let mut max_idx = 0;
-            for &i in row_indexes {
-                max_idx = max_idx.max(i);
-            }
-            assert!(max_idx < self.0.height() as IdxSize);
-        }
-        // SAFETY: Checked bounds before.
-        Self(unsafe { self.0.take_slice_unchecked(row_indexes) })
+        let height = self.df().height();
+        unsafe { DataFrame::new_unchecked(height, columns) }.into()
     }
 
     pub fn df(&self) -> &DataFrame {
@@ -225,7 +201,7 @@ pub fn hive_partitions_from_paths(
         .collect::<PolarsResult<Vec<_>>>()?;
     buffers.sort_by_key(|s| reader_schema.index_of(s.name()).unwrap_or(usize::MAX));
 
-    Ok(Some(HivePartitionsDf(DataFrame::new_with_height(
+    Ok(Some(HivePartitionsDf(DataFrame::new(
         paths.len(),
         buffers,
     )?)))

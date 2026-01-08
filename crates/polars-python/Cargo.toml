@@ -24,7 +24,7 @@ polars-plan = { workspace = true }
 polars-row = { workspace = true }
 polars-testing = { workspace = true }
 polars-time = { workspace = true }
-polars-utils = { workspace = true }
+polars-utils = { workspace = true, features = ["python"] }
 
 arboard = { workspace = true, optional = true }
 arrow = { workspace = true }
@@ -42,7 +42,7 @@ ndarray = { workspace = true }
 num-traits = { workspace = true }
 numpy = { workspace = true }
 parking_lot = { workspace = true }
-pyo3 = { workspace = true, features = ["abi3-py39", "chrono", "chrono-tz", "multiple-pymethods"] }
+pyo3 = { workspace = true, features = ["abi3-py310", "chrono", "chrono-tz", "multiple-pymethods"] }
 rayon = { workspace = true }
 recursive = { workspace = true }
 serde_json = { workspace = true, optional = true }
@@ -78,6 +78,7 @@ features = [
   "dot_diagram",
   "dot_product",
   "dtype-categorical",
+  "dtype-extension",
   "dtype-full",
   "dynamic_group_by",
   "ewma",
@@ -138,12 +139,14 @@ c_api = []
 
 # Features below are only there to enable building a slim binary during development.
 avro = ["polars/avro"]
+async = ["polars-lazy/async", "polars-io/async"]
 catalog = ["polars-lazy/catalog"]
 parquet = ["polars/parquet", "polars-parquet", "polars-mem-engine/parquet"]
 ipc = ["polars/ipc", "polars-mem-engine/ipc"]
 ipc_streaming = ["polars/ipc_streaming"]
 is_in = ["polars/is_in"]
 json = ["polars/serde", "serde_json", "polars/json", "polars-utils/serde", "polars-mem-engine/json"]
+scan_lines = ["polars/scan_lines", "polars-mem-engine/scan_lines"]
 trigonometry = ["polars/trigonometry"]
 sign = ["polars/sign"]
 asof_join = ["polars/asof_join"]
@@ -181,7 +184,7 @@ list_sample = ["polars/list_sample"]
 cutqcut = ["polars/cutqcut"]
 rle = ["polars/rle"]
 extract_groups = ["polars/extract_groups"]
-ffi_plugin = ["polars-plan/ffi_plugin"]
+ffi_plugin = ["polars-lazy/ffi_plugin"]
 cloud = ["polars/cloud", "polars/aws", "polars/gcp", "polars/azure", "polars/http"]
 peaks = ["polars/peaks"]
 hist = ["polars/hist"]
@@ -198,6 +201,7 @@ dtype-u16 = []
 dtype-i128 = []
 dtype-u128 = []
 dtype-array = []
+dtype-f16 = []
 object = ["polars/object"]
 
 dtypes = [
@@ -208,6 +212,7 @@ dtypes = [
   "dtype-u8",
   "dtype-i128",
   "dtype-u128",
+  "dtype-f16",
   "object",
 ]
 
@@ -255,6 +260,7 @@ io = [
   "ipc_streaming",
   "avro",
   "csv",
+  "scan_lines",
   "cloud",
   "clipboard",
 ]
@@ -274,6 +280,7 @@ pymethods = []
 allow_unused = []
 
 full = [
+  "async",
   "pymethods",
   "optimizations",
   "io",
@@ -288,6 +295,10 @@ full = [
   "polars_cloud_client",
   "new_streaming",
 ]
+
+rt32 = []
+rt64 = ["polars/bigidx"]
+rtcompat = ["polars/bigidx"]
 
 # we cannot conditionally activate simd
 # https://github.com/rust-lang/cargo/issues/1197

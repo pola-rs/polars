@@ -8,6 +8,7 @@ use std::ops::{Add, Div, Mul, Sub};
 use arrow::pushable::Pushable;
 use arrow::types::NativeType;
 use num_traits::NumCast;
+use polars_utils::float16::pf16;
 use polars_utils::index::{Bounded, Indexable, NullCount};
 use polars_utils::nulls::IsNull;
 use polars_utils::slice::SliceAble;
@@ -539,6 +540,8 @@ impl SealedRolling for u16 {}
 impl SealedRolling for u32 {}
 impl SealedRolling for u64 {}
 impl SealedRolling for i128 {}
+impl SealedRolling for u128 {}
+impl SealedRolling for pf16 {}
 impl SealedRolling for f32 {}
 impl SealedRolling for f64 {}
 
@@ -642,7 +645,7 @@ where
                 self.inner.get(idx + null_count)
             },
             Midpoint => {
-                let idx = (valid_length_f * self.quantile) as usize;
+                let idx = ((valid_length_f - 1.0) * self.quantile).floor() as usize;
                 let idx = std::cmp::min(idx, valid_length - 1);
 
                 let top_idx = ((valid_length_f - 1.0) * self.quantile).ceil() as usize;

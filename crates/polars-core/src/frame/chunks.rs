@@ -30,7 +30,7 @@ impl From<RecordBatch> for DataFrame {
             .collect();
 
         // SAFETY: RecordBatch has the same invariants for names and heights as DataFrame.
-        unsafe { DataFrame::new_no_checks(height, columns) }
+        unsafe { DataFrame::new_unchecked(height, columns) }
     }
 }
 
@@ -39,7 +39,7 @@ impl DataFrame {
         self.align_chunks_par();
 
         let first_series_col_idx = self
-            .columns
+            .columns()
             .iter()
             .position(|col| col.as_series().is_some());
         let df_height = self.height();
@@ -48,22 +48,20 @@ impl DataFrame {
             // There might still be scalar/partitioned columns after aligning,
             // so we follow the size of the chunked column, if any.
             let chunk_size = first_series_col_idx
-                .map(|c| self.get_columns()[c].as_series().unwrap().chunks()[i].len())
+                .map(|c| self.columns()[c].as_series().unwrap().chunks()[i].len())
                 .unwrap_or(df_height);
             let columns = self
-                .get_columns()
+                .columns()
                 .iter()
                 .map(|col| match col {
                     Column::Series(s) => Column::from(s.select_chunk(i)),
-                    Column::Partitioned(_) | Column::Scalar(_) => {
-                        col.slice(prev_height as i64, chunk_size)
-                    },
+                    Column::Scalar(_) => col.slice(prev_height as i64, chunk_size),
                 })
                 .collect::<Vec<_>>();
 
             prev_height += chunk_size;
 
-            DataFrame::new_no_checks(chunk_size, columns)
+            DataFrame::new_unchecked(chunk_size, columns)
         })
     }
 
@@ -78,6 +76,22 @@ impl DataFrame {
         } else {
             split.into_iter().map(split_fn).collect()
         }
+    }
+
+    /// Convert the columns of this [DataFrame] to arrow arrays.
+    pub fn rechunk_to_arrow(&self, compat_level: CompatLevel) -> Vec<ArrayRef> {
+        self.columns()
+            .iter()
+            .map(|c| c.clone().rechunk_to_arrow(compat_level))
+            .collect()
+    }
+
+    /// Convert the columns of this [DataFrame] to arrow arrays.
+    pub fn rechunk_into_arrow(self, compat_level: CompatLevel) -> Vec<ArrayRef> {
+        self.into_columns()
+            .into_iter()
+            .map(|c| c.rechunk_to_arrow(compat_level))
+            .collect()
     }
 }
 
@@ -94,8 +108,8 @@ pub fn chunk_df_for_writing(
 
     // Accumulate many small chunks to the row group size.
     // See: #16403
-    if !df.get_columns().is_empty()
-        && df.get_columns()[0]
+    if !df.columns().is_empty()
+        && df.columns()[0]
             .as_materialized_series()
             .chunk_lengths()
             .take(5)
@@ -103,7 +117,7 @@ pub fn chunk_df_for_writing(
     {
         fn finish(scratch: &mut Vec<DataFrame>, new_chunks: &mut Vec<DataFrame>) {
             let mut new = accumulate_dataframes_vertical_unchecked(scratch.drain(..));
-            new.as_single_chunk_par();
+            new.rechunk_mut_par();
             new_chunks.push(new);
         }
 
@@ -138,7 +152,7 @@ pub fn chunk_df_for_writing(
             // merge them.
             let n_chunks = df.first_col_n_chunks();
             if n_chunks > 1 && (df.estimated_size() / n_chunks < 128 * 1024) {
-                df.as_single_chunk_par();
+                df.rechunk_mut_par();
             }
         }
 

@@ -10,7 +10,12 @@ fn test_to_list_logical() -> PolarsResult<()> {
     // check if dtype is maintained all the way to formatting
     assert!(s.contains("[2021-01-01, 2021-01-02, 2021-01-03]"));
 
-    let expl = out.explode(false).unwrap();
+    let expl = out
+        .explode(ExplodeOptions {
+            empty_as_null: true,
+            keep_nulls: true,
+        })
+        .unwrap();
     assert_eq!(expl.dtype(), &DataType::Date);
     Ok(())
 }

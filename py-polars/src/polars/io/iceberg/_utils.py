@@ -21,7 +21,7 @@ from ast import (
 )
 from dataclasses import dataclass
 from functools import cache, singledispatch
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
 from polars._utils.convert import to_py_date, to_py_datetime
@@ -30,7 +30,7 @@ from polars._utils.wrap import wrap_s
 from polars.exceptions import ComputeError
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
     from datetime import date, datetime
 
     import pyiceberg
@@ -54,7 +54,7 @@ ICEBERG_TIME_TO_NS: int = 1000
 def _scan_pyarrow_dataset_impl(
     tbl: Table,
     with_columns: list[str] | None = None,
-    predicate: str | None = None,
+    iceberg_table_filter: Any | None = None,
     n_rows: int | None = None,
     snapshot_id: int | None = None,
     **kwargs: Any,
@@ -68,8 +68,8 @@ def _scan_pyarrow_dataset_impl(
         pyarrow dataset
     with_columns
         Columns that are projected
-    predicate
-        pyarrow expression that can be evaluated with eval
+    iceberg_table_filter
+        PyIceberg filter expression
     n_rows:
         Materialize only n rows from the arrow dataset.
     snapshot_id:
@@ -90,17 +90,18 @@ def _scan_pyarrow_dataset_impl(
     if with_columns is not None:
         scan = scan.select(*with_columns)
 
-    if predicate is not None:
-        try:
-            expr_ast = _to_ast(predicate)
-            pyiceberg_expr = _convert_predicate(expr_ast)
-        except ValueError as e:
-            msg = f"Could not convert predicate to PyIceberg: {predicate}"
-            raise ValueError(msg) from e
-
-        scan = scan.filter(pyiceberg_expr)
+    if iceberg_table_filter is not None:
+        scan = scan.filter(iceberg_table_filter)
 
     return from_arrow(scan.to_arrow())
+
+
+def try_convert_pyarrow_predicate(pyarrow_predicate: str) -> Any | None:
+    with contextlib.suppress(Exception):
+        expr_ast = _to_ast(pyarrow_predicate)
+        return _convert_predicate(expr_ast)
+
+    return None
 
 
 def _to_ast(expr: str) -> ast.expr:
@@ -315,10 +316,10 @@ class IdentityTransformedPartitionValuesBuilder:
                 partition_spec_id
             ]
         except KeyError:
-            self.partition_values = {
-                k: f"partition spec ID not found: {partition_spec_id}"
-                for k in self.partition_values
-            }
+            self.partition_values = dict.fromkeys(
+                self.partition_values,
+                f"partition spec ID not found: {partition_spec_id}",
+            )
             return
 
         for i, source_field_id in identity_transforms:

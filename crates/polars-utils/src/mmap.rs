@@ -7,6 +7,7 @@ use std::sync::LazyLock;
 pub use memmap::Mmap;
 
 mod private {
+    use std::cmp;
     use std::fs::File;
     use std::ops::Deref;
     use std::sync::Arc;
@@ -23,7 +24,7 @@ mod private {
     ///
     /// This still owns the all the original memory and therefore should probably not be a long-lasting
     /// structure.
-    #[derive(Clone, Debug)]
+    #[derive(Clone)]
     pub struct MemSlice {
         // Store the `&[u8]` to make the `Deref` free.
         // `slice` is not 'static - it is backed by `inner`. This is safe as long as `slice` is not
@@ -35,7 +36,7 @@ mod private {
     }
 
     /// Keeps the underlying buffer alive. This should be cheaply cloneable.
-    #[derive(Clone, Debug)]
+    #[derive(Clone)]
     #[allow(unused)]
     enum MemSliceInner {
         Bytes(bytes::Bytes), // Separate because it does atomic refcounting internally
@@ -104,8 +105,13 @@ mod private {
             }
         }
 
+        /// Construct a `MemSlice` from a temporary slice being kept alive by
+        /// the arc.
+        ///
+        /// # Safety
+        /// The slice must stay alive while the Arc does.
         #[inline]
-        pub fn from_arc<T>(slice: &[u8], arc: Arc<T>) -> Self
+        pub unsafe fn from_arc<T>(slice: &[u8], arc: Arc<T>) -> Self
         where
             T: std::fmt::Debug + Send + Sync + 'static,
         {
@@ -148,6 +154,40 @@ mod private {
     impl From<bytes::Bytes> for MemSlice {
         fn from(value: bytes::Bytes) -> Self {
             Self::from_bytes(value)
+        }
+    }
+
+    impl std::fmt::Debug for MemSlice {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            const MAX_PRINT_BYTES: usize = 100;
+
+            write!(f, "MemSlice{{slice: ")?;
+
+            let end = cmp::min(self.slice.len(), MAX_PRINT_BYTES);
+            let truncated_slice = &self.slice[..end];
+
+            if let Ok(slice_as_str) = str::from_utf8(truncated_slice) {
+                write!(f, "{slice_as_str:?}")?;
+            } else {
+                write!(f, "{truncated_slice:?}(non-utf8)")?;
+            }
+
+            if self.slice.len() > MAX_PRINT_BYTES {
+                write!(f, " ... truncated ({MAX_PRINT_BYTES}/{})", self.slice.len())?;
+            }
+
+            write!(f, ", inner: ")?;
+
+            match &self.inner {
+                MemSliceInner::Arc(x) => {
+                    write!(f, "Arc(refcount: {})", Arc::strong_count(x))?;
+                },
+                MemSliceInner::Bytes(x) => {
+                    write!(f, "Bytes(unique: {})", x.is_unique())?;
+                },
+            }
+
+            write!(f, "}}")
         }
     }
 }
@@ -235,6 +275,21 @@ impl io::Read for MemReader {
         buf[..n].copy_from_slice(&self.data[self.position..self.position + n]);
         self.position += n;
         Ok(n)
+    }
+}
+
+/// Native implementation is more efficient than wrapping it in [`io::BufReader`]. The memory is
+/// already available as slice, duplicating the memory into a local buffer only adds an additional
+/// copy step. The number of total page-faults if the memory is backed by mmap will still be the
+/// same.
+impl io::BufRead for MemReader {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
+        Ok(&self.data[self.position..])
+    }
+
+    fn consume(&mut self, amount: usize) {
+        assert!(amount <= self.remaining_len());
+        self.position += amount;
     }
 }
 

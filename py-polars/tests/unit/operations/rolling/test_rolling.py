@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import random
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 import hypothesis.strategies as st
 import numpy as np
@@ -18,9 +19,11 @@ from polars.meta.index_type import get_index_type
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes, series
 from polars.testing.parametric.strategies.dtype import _time_units
-from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES
+from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES, TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from hypothesis.strategies import SearchStrategy
 
     from polars._typing import (
@@ -861,7 +864,7 @@ def test_rolling_aggregations_with_over_11225() -> None:
             "group": ["A", "A", "B", "B", "B"],
             "rolling_row_mean": [None, 0.0, None, 2.0, 2.5],
         },
-        schema_overrides={"index": pl.UInt32},
+        schema_overrides={"index": pl.get_index_type()},
     )
     assert_frame_equal(result, expected)
 
@@ -956,6 +959,33 @@ def test_rolling_std_nulls_min_samples_1_20076() -> None:
         [None, 0.7071067811865476, 0.7071067811865476, 1.4142135623730951]
     )
     assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("bools", "window", "expected"),
+    [
+        (
+            [[True, False, True]],
+            2,
+            [[None, 1, 1]],
+        ),
+        (
+            [[True, False, True, True, False, False, False, True, True]],
+            4,
+            [[None, None, None, 3, 2, 2, 1, 1, 2]],
+        ),
+    ],
+)
+def test_rolling_eval_boolean_list(
+    bools: list[list[bool]], window: int, expected: list[list[int]]
+) -> None:
+    for accessor, dtype in (
+        ("list", pl.List(pl.Boolean)),
+        ("arr", pl.Array(pl.Boolean, shape=len(bools[0]))),
+    ):
+        s = pl.Series(name="bools", values=bools, dtype=dtype)
+        res = getattr(s, accessor).eval(pl.element().rolling_sum(window)).to_list()
+        assert res == expected
 
 
 def test_rolling_by_date() -> None:
@@ -1562,6 +1592,203 @@ def test_rolling_quantile_nearest_23392() -> None:
         assert_series_equal(out, expected)
 
 
+def test_rolling_quantile_temporals() -> None:
+    tz = ZoneInfo("Asia/Tokyo")
+    dt = pl.Datetime("ms", "Asia/Tokyo")
+    # We use ms to verify that the correct time unit is propagating.
+    lf = pl.LazyFrame(
+        {
+            "date": [date(2025, 1, x) for x in range(1, 6)],
+            "datetime": [datetime(2025, 1, x) for x in range(1, 6)],
+            "datetime_tu_tz": pl.Series(
+                [datetime(2025, 1, x, tzinfo=tz) for x in range(1, 6)], dtype=dt
+            ),
+            "duration": pl.Series(
+                [timedelta(hours=x) for x in range(1, 6)], dtype=pl.Duration("ms")
+            ),
+            "time": [time(hour=x) for x in range(1, 6)],
+        }
+    )
+    result = lf.select(
+        rolling_date=pl.col("date").rolling_quantile(
+            quantile=0.5, window_size=4, interpolation="linear"
+        ),
+        rolling_datetime=pl.col("datetime").rolling_quantile(
+            quantile=0.5, window_size=4, interpolation="linear"
+        ),
+        rolling_datetime_tu_tz=pl.col("datetime_tu_tz").rolling_quantile(
+            quantile=0.5, window_size=4, interpolation="linear"
+        ),
+        rolling_duration=pl.col("duration").rolling_quantile(
+            quantile=0.5, window_size=4, interpolation="linear"
+        ),
+        rolling_time=pl.col("time").rolling_quantile(
+            quantile=0.5, window_size=4, interpolation="linear"
+        ),
+    )
+    expected = pl.DataFrame(
+        {
+            "rolling_date": pl.Series(
+                [None, None, None, datetime(2025, 1, 2, 12), datetime(2025, 1, 3, 12)],
+                dtype=pl.Datetime,
+            ),
+            "rolling_datetime": pl.Series(
+                [None, None, None, datetime(2025, 1, 2, 12), datetime(2025, 1, 3, 12)]
+            ),
+            "rolling_datetime_tu_tz": pl.Series(
+                [
+                    None,
+                    None,
+                    None,
+                    datetime(2025, 1, 2, 12, tzinfo=tz),
+                    datetime(2025, 1, 3, 12, tzinfo=tz),
+                ],
+                dtype=dt,
+            ),
+            "rolling_duration": pl.Series(
+                [None, None, None, timedelta(hours=2.5), timedelta(hours=3.5)],
+                dtype=pl.Duration("ms"),
+            ),
+            "rolling_time": [
+                None,
+                None,
+                None,
+                time(hour=2, minute=30),
+                time(hour=3, minute=30),
+            ],
+        }
+    )
+    assert result.collect_schema() == pl.Schema(
+        {  # type: ignore[arg-type]
+            "rolling_date": pl.Datetime("us"),
+            "rolling_datetime": pl.Datetime("us"),
+            "rolling_datetime_tu_tz": dt,
+            "rolling_duration": pl.Duration("ms"),
+            "rolling_time": pl.Time,
+        }
+    )
+    assert_frame_equal(result.collect(), expected)
+
+
+def test_rolling_agg_quantile_temporal() -> None:
+    tz = ZoneInfo("Asia/Tokyo")
+    dt = pl.Datetime("ms", "Asia/Tokyo")
+    # We use ms to verify that the correct time unit is propagating.
+    lf = pl.LazyFrame(
+        {
+            "index": [1, 2, 3, 4, 5],
+            "int": [1, 2, 3, 4, 5],
+            "date": [date(2025, 1, x) for x in range(1, 6)],
+            "datetime": [datetime(2025, 1, x) for x in range(1, 6)],
+            "datetime_tu_tz": pl.Series(
+                [datetime(2025, 1, x, tzinfo=tz) for x in range(1, 6)], dtype=dt
+            ),
+            "duration": pl.Series(
+                [timedelta(hours=x) for x in range(1, 6)], dtype=pl.Duration("ms")
+            ),
+            "time": [time(hour=x) for x in range(1, 6)],
+        }
+    )
+
+    # Using rolling.agg()
+    result1 = lf.rolling("index", period="4i").agg(
+        rolling_int=pl.col("int").quantile(0.5, "linear"),
+        rolling_date=pl.col("date").quantile(0.5, "linear"),
+        rolling_datetime=pl.col("datetime").quantile(0.5, "linear"),
+        rolling_datetime_tu_tz=pl.col("datetime_tu_tz").quantile(0.5, "linear"),
+        rolling_duration=pl.col("duration").quantile(0.5, "linear"),
+        rolling_time=pl.col("time").quantile(0.5, "linear"),
+    )
+    # Using rolling_quantile_by()
+    result2 = lf.select(
+        "index",
+        rolling_int=pl.col("int").rolling_quantile_by(
+            "index", window_size="4i", quantile=0.5, interpolation="linear"
+        ),
+        rolling_date=pl.col("date").rolling_quantile_by(
+            "index", window_size="4i", quantile=0.5, interpolation="linear"
+        ),
+        rolling_datetime=pl.col("datetime").rolling_quantile_by(
+            "index", window_size="4i", quantile=0.5, interpolation="linear"
+        ),
+        rolling_datetime_tu_tz=pl.col("datetime_tu_tz").rolling_quantile_by(
+            "index", window_size="4i", quantile=0.5, interpolation="linear"
+        ),
+        rolling_duration=pl.col("duration").rolling_quantile_by(
+            "index", window_size="4i", quantile=0.5, interpolation="linear"
+        ),
+        rolling_time=pl.col("time").rolling_quantile_by(
+            "index", window_size="4i", quantile=0.5, interpolation="linear"
+        ),
+    )
+    expected = pl.DataFrame(
+        {
+            "index": [1, 2, 3, 4, 5],
+            "rolling_int": [1.0, 1.5, 2.0, 2.5, 3.5],
+            "rolling_date": pl.Series(
+                [
+                    datetime(2025, 1, 1),
+                    datetime(2025, 1, 1, 12),
+                    datetime(2025, 1, 2),
+                    datetime(2025, 1, 2, 12),
+                    datetime(2025, 1, 3, 12),
+                ]
+            ),
+            "rolling_datetime": pl.Series(
+                [
+                    datetime(2025, 1, 1),
+                    datetime(2025, 1, 1, 12),
+                    datetime(2025, 1, 2),
+                    datetime(2025, 1, 2, 12),
+                    datetime(2025, 1, 3, 12),
+                ]
+            ),
+            "rolling_datetime_tu_tz": pl.Series(
+                [
+                    datetime(2025, 1, 1, tzinfo=tz),
+                    datetime(2025, 1, 1, 12, tzinfo=tz),
+                    datetime(2025, 1, 2, tzinfo=tz),
+                    datetime(2025, 1, 2, 12, tzinfo=tz),
+                    datetime(2025, 1, 3, 12, tzinfo=tz),
+                ],
+                dtype=dt,
+            ),
+            "rolling_duration": pl.Series(
+                [
+                    timedelta(hours=1),
+                    timedelta(hours=1.5),
+                    timedelta(hours=2),
+                    timedelta(hours=2.5),
+                    timedelta(hours=3.5),
+                ],
+                dtype=pl.Duration("ms"),
+            ),
+            "rolling_time": [
+                time(hour=1),
+                time(hour=1, minute=30),
+                time(hour=2),
+                time(hour=2, minute=30),
+                time(hour=3, minute=30),
+            ],
+        }
+    )
+    expected_schema = pl.Schema(
+        {  # type: ignore[arg-type]
+            "index": pl.Int64,
+            "rolling_int": pl.Float64,
+            "rolling_date": pl.Datetime("us"),
+            "rolling_datetime": pl.Datetime("us"),
+            "rolling_datetime_tu_tz": dt,
+            "rolling_duration": pl.Duration("ms"),
+            "rolling_time": pl.Time,
+        }
+    )
+    assert result1.collect_schema() == expected_schema
+    assert result2.collect_schema() == expected_schema
+    assert_frame_equal(result1.collect(), expected)
+    assert_frame_equal(result2.collect(), expected)
+
+
 def test_rolling_quantile_nearest_kernel_23392() -> None:
     df = pl.DataFrame(
         {
@@ -1702,9 +1929,11 @@ def test_rolling_sum_non_finite_23115(with_nulls: bool) -> None:
         values.append(None)
     data = random.choices(values, k=1000)
     naive = [
-        sum(0 if x is None else x for x in data[max(0, i + 1 - 4) : i + 1])
-        if sum(x is not None for x in data[max(0, i + 1 - 4) : i + 1]) >= 2
-        else None
+        (
+            sum(0 if x is None else x for x in data[max(0, i + 1 - 4) : i + 1])
+            if sum(x is not None for x in data[max(0, i + 1 - 4) : i + 1]) >= 2
+            else None
+        )
         for i in range(1000)
     ]
     assert_series_equal(pl.Series(data).rolling_sum(4, min_samples=2), pl.Series(naive))
@@ -1721,7 +1950,12 @@ def test_rolling_sum_non_finite_23115(with_nulls: bool) -> None:
 )
 @pytest.mark.parametrize("center", [False, True])
 @given(
-    s=series(name="a", allowed_dtypes=NUMERIC_DTYPES, min_size=1, max_size=50),
+    s=series(
+        name="a",
+        allowed_dtypes=NUMERIC_DTYPES + TEMPORAL_DTYPES + [pl.Boolean],
+        min_size=1,
+        max_size=50,
+    ),
     window_size=st.integers(1, 50),
 )
 def test_rolling_rank(
@@ -1770,7 +2004,12 @@ def test_rolling_rank(
 
 @pytest.mark.parametrize("center", [False, True])
 @given(
-    s=series(name="a", allowed_dtypes=NUMERIC_DTYPES, min_size=1, max_size=50),
+    s=series(
+        name="a",
+        allowed_dtypes=NUMERIC_DTYPES + TEMPORAL_DTYPES + [pl.Boolean],
+        min_size=1,
+        max_size=50,
+    ),
     window_size=st.integers(1, 50),
 )
 def test_rolling_rank_method_random(
@@ -1803,3 +2042,290 @@ def test_rolling_rank_method_random(
         .collect()
         .item()
     )
+
+
+@pytest.mark.parametrize("op", [pl.Expr.rolling_mean, pl.Expr.rolling_median])
+def test_rolling_mean_median_temporals(op: Callable[..., pl.Expr]) -> None:
+    tz = ZoneInfo("Asia/Tokyo")
+    # We use ms to verify that the correct time unit is propagating.
+    dt = pl.Datetime("ms", "Asia/Tokyo")
+    lf = pl.LazyFrame(
+        {
+            "int": [1, 2, 3, 4, 5],
+            "date": [date(2025, 1, x) for x in range(1, 6)],
+            "datetime": [datetime(2025, 1, x) for x in range(1, 6)],
+            "datetime_tu_tz": pl.Series(
+                [datetime(2025, 1, x, tzinfo=tz) for x in range(1, 6)], dtype=dt
+            ),
+            "duration": pl.Series(
+                [timedelta(hours=x) for x in range(1, 6)], dtype=pl.Duration("ms")
+            ),
+            "time": [time(hour=x) for x in range(1, 6)],
+        }
+    )
+    result = lf.select(
+        rolling_date=op(pl.col("date"), window_size=4),
+        rolling_datetime=op(pl.col("datetime"), window_size=4),
+        rolling_datetime_tu_tz=op(pl.col("datetime_tu_tz"), window_size=4),
+        rolling_duration=op(pl.col("duration"), window_size=4),
+        rolling_time=op(pl.col("time"), window_size=4),
+    )
+    expected = pl.DataFrame(
+        {
+            "rolling_date": pl.Series(
+                [None, None, None, datetime(2025, 1, 2, 12), datetime(2025, 1, 3, 12)],
+                dtype=pl.Datetime,
+            ),
+            "rolling_datetime": pl.Series(
+                [None, None, None, datetime(2025, 1, 2, 12), datetime(2025, 1, 3, 12)]
+            ),
+            "rolling_datetime_tu_tz": pl.Series(
+                [
+                    None,
+                    None,
+                    None,
+                    datetime(2025, 1, 2, 12, tzinfo=tz),
+                    datetime(2025, 1, 3, 12, tzinfo=tz),
+                ],
+                dtype=dt,
+            ),
+            "rolling_duration": pl.Series(
+                [None, None, None, timedelta(hours=2.5), timedelta(hours=3.5)],
+                dtype=pl.Duration("ms"),
+            ),
+            "rolling_time": [
+                None,
+                None,
+                None,
+                time(hour=2, minute=30),
+                time(hour=3, minute=30),
+            ],
+        }
+    )
+    assert result.collect_schema() == pl.Schema(
+        {  # type: ignore[arg-type]
+            "rolling_date": pl.Datetime("us"),
+            "rolling_datetime": pl.Datetime("us"),
+            "rolling_datetime_tu_tz": dt,
+            "rolling_duration": pl.Duration("ms"),
+            "rolling_time": pl.Time,
+        }
+    )
+    assert_frame_equal(result.collect(), expected)
+
+
+@pytest.mark.parametrize(
+    "op",
+    [
+        (pl.Expr.mean, pl.Expr.rolling_mean_by),
+        (pl.Expr.median, pl.Expr.rolling_median_by),
+    ],
+)
+def test_rolling_agg_mean_median_temporal(
+    op: tuple[Callable[..., pl.Expr], Callable[..., pl.Expr]],
+) -> None:
+    tz = ZoneInfo("Asia/Tokyo")
+    # We use ms to verify that the correct time unit is propagating.
+    dt = pl.Datetime("ms", "Asia/Tokyo")
+    lf = pl.LazyFrame(
+        {
+            "index": [1, 2, 3, 4, 5],
+            "int": [1, 2, 3, 4, 5],
+            "date": [date(2025, 1, x) for x in range(1, 6)],
+            "datetime": [datetime(2025, 1, x) for x in range(1, 6)],
+            "datetime_tu_tz": pl.Series(
+                [datetime(2025, 1, x, tzinfo=tz) for x in range(1, 6)], dtype=dt
+            ),
+            "duration": pl.Series(
+                [timedelta(hours=x) for x in range(1, 6)], dtype=pl.Duration("ms")
+            ),
+            "time": [time(hour=x) for x in range(1, 6)],
+        }
+    )
+
+    # Using rolling.agg()
+    result1 = lf.rolling("index", period="4i").agg(
+        rolling_int=op[0](pl.col("int")),
+        rolling_date=op[0](pl.col("date")),
+        rolling_datetime=op[0](pl.col("datetime")),
+        rolling_datetime_tu_tz=op[0](pl.col("datetime_tu_tz")),
+        rolling_duration=op[0](pl.col("duration")),
+        rolling_time=op[0](pl.col("time")),
+    )
+    # Using rolling_quantile_by()
+    result2 = lf.select(
+        "index",
+        rolling_int=op[1](pl.col("int"), "index", window_size="4i"),
+        rolling_date=op[1](pl.col("date"), "index", window_size="4i"),
+        rolling_datetime=op[1](pl.col("datetime"), "index", window_size="4i"),
+        rolling_datetime_tu_tz=op[1](
+            pl.col("datetime_tu_tz"), "index", window_size="4i"
+        ),
+        rolling_duration=op[1](pl.col("duration"), "index", window_size="4i"),
+        rolling_time=op[1](pl.col("time"), "index", window_size="4i"),
+    )
+    expected = pl.DataFrame(
+        {
+            "index": [1, 2, 3, 4, 5],
+            "rolling_int": [1.0, 1.5, 2.0, 2.5, 3.5],
+            "rolling_date": pl.Series(
+                [
+                    datetime(2025, 1, 1),
+                    datetime(2025, 1, 1, 12),
+                    datetime(2025, 1, 2),
+                    datetime(2025, 1, 2, 12),
+                    datetime(2025, 1, 3, 12),
+                ]
+            ),
+            "rolling_datetime": pl.Series(
+                [
+                    datetime(2025, 1, 1),
+                    datetime(2025, 1, 1, 12),
+                    datetime(2025, 1, 2),
+                    datetime(2025, 1, 2, 12),
+                    datetime(2025, 1, 3, 12),
+                ]
+            ),
+            "rolling_datetime_tu_tz": pl.Series(
+                [
+                    datetime(2025, 1, 1, tzinfo=tz),
+                    datetime(2025, 1, 1, 12, tzinfo=tz),
+                    datetime(2025, 1, 2, tzinfo=tz),
+                    datetime(2025, 1, 2, 12, tzinfo=tz),
+                    datetime(2025, 1, 3, 12, tzinfo=tz),
+                ],
+                dtype=dt,
+            ),
+            "rolling_duration": pl.Series(
+                [
+                    timedelta(hours=1),
+                    timedelta(hours=1.5),
+                    timedelta(hours=2),
+                    timedelta(hours=2.5),
+                    timedelta(hours=3.5),
+                ],
+                dtype=pl.Duration("ms"),
+            ),
+            "rolling_time": [
+                time(hour=1),
+                time(hour=1, minute=30),
+                time(hour=2),
+                time(hour=2, minute=30),
+                time(hour=3, minute=30),
+            ],
+        }
+    )
+    expected_schema = pl.Schema(
+        {  # type: ignore[arg-type]
+            "index": pl.Int64,
+            "rolling_int": pl.Float64,
+            "rolling_date": pl.Datetime("us"),
+            "rolling_datetime": pl.Datetime("us"),
+            "rolling_datetime_tu_tz": dt,
+            "rolling_duration": pl.Duration("ms"),
+            "rolling_time": pl.Time,
+        }
+    )
+    assert result1.collect_schema() == expected_schema
+    assert result2.collect_schema() == expected_schema
+    assert_frame_equal(result1.collect(), expected)
+    assert_frame_equal(result2.collect(), expected)
+
+
+@pytest.mark.parametrize(
+    ("df", "expected"),
+    [
+        (
+            pl.DataFrame(
+                {"a": [1, 2, 3, 4], "offset": [0, 0, 0, 0], "len": [3, 1, 2, 1]}
+            ),
+            pl.DataFrame({"a": [6, 2, 7, 4]}),
+        ),
+        (
+            pl.DataFrame(
+                {
+                    "a": [1, 2, 3, 4, 5, 6],
+                    "offset": [0, 0, 2, 0, 0, 0],
+                    "len": [3, 1, 3, 3, 1, 1],
+                }
+            ),
+            pl.DataFrame({"a": [6, 2, 11, 15, 5, 6]}),
+        ),
+        (
+            pl.DataFrame(
+                {"a": [1, 2, 3, None], "offset": [0, 0, 0, 0], "len": [3, 1, 2, 1]}
+            ),
+            pl.DataFrame({"a": [6, 2, 3, 0]}),
+        ),
+        (
+            pl.DataFrame(
+                {
+                    "a": [1, 2, 3, 4, 5, None],
+                    "offset": [0, 0, 2, 0, 0, 0],
+                    "len": [3, 1, 3, 3, 1, 1],
+                }
+            ),
+            pl.DataFrame({"a": [6, 2, 5, 9, 5, 0]}),
+        ),
+    ],
+)
+def test_rolling_agg_sum_varying_slice_25434(
+    df: pl.DataFrame, expected: pl.DataFrame
+) -> None:
+    out = df.with_row_index().select(
+        pl.col("a")
+        .slice(pl.col("offset").first(), pl.col("len").first())
+        .sum()
+        .rolling("index", period=f"{df.height}i", offset="0i", closed="left")
+    )
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("with_nulls", [True, False])
+def test_rolling_agg_sum_varying_slice_fuzz(with_nulls: bool) -> None:
+    n = 1000
+    max_rand = 10
+
+    def opt_null(n: int) -> int | None:
+        return None if random.randint(0, max_rand) == max_rand and with_nulls else n
+
+    df = pl.DataFrame(
+        {
+            "a": [opt_null(i) for i in range(n)],
+            "offset": [random.randint(0, max_rand) for _ in range(n)],
+            "length": [random.randint(0, max_rand) for _ in range(n)],
+        }
+    )
+
+    out = df.with_row_index().select(
+        pl.col("a")
+        .slice(pl.col("offset").first(), pl.col("length").first())
+        .sum()
+        .rolling("index", period=f"{df.height}i", offset="0i", closed="left")
+    )
+
+    out = out.select(pl.col("a").fill_null(0))
+    df = df.with_columns(pl.col("a").fill_null(0))
+
+    (a, offset, length) = (
+        df["a"].to_list(),
+        df["offset"].to_list(),
+        df["length"].to_list(),
+    )
+    expected = [sum(a[i + offset[i] : i + offset[i] + length[i]]) for i in range(n)]
+    assert_frame_equal(out, pl.DataFrame({"a": expected}))
+
+
+def test_rolling_midpoint_25793() -> None:
+    df = pl.DataFrame({"i": [1, 2, 3, 4], "x": [1, 2, 3, 4]})
+
+    out = df.select(
+        pl.col.x.quantile(0.5, interpolation="midpoint").rolling("i", period="4i")
+    )
+    expected = pl.DataFrame({"x": [1.0, 1.5, 2.0, 2.5]})
+    assert_frame_equal(out, expected)
+
+    out = df.select(
+        pl.col.x.cumulative_eval(pl.element().quantile(0.5, interpolation="midpoint"))
+    )
+    assert_frame_equal(out, expected)

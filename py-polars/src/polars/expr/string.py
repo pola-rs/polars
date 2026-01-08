@@ -1273,9 +1273,9 @@ class ExprStringNameSpace:
         infer_schema_length
             Deprecated and ignored.
 
-        .. versionchanged: 1.33.0
-            Deprecate `infer_schema_length` and make `dtype` non-optional to
-            ensure that the planner can determine the output datatype.
+            .. versionchanged:: 1.33.0
+                Deprecate `infer_schema_length` and make `dtype` non-optional to
+                ensure that the planner can determine the output datatype.
 
         See Also
         --------
@@ -2237,34 +2237,39 @@ class ExprStringNameSpace:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"s": ["pear", None, "papaya", "dragonfruit"]})
-        >>> df.with_columns(pl.col("s").str.slice(-3).alias("slice"))
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "s": ["pear", None, "papaya", "dragonfruit"],
+        ...         "idx": [1, 3, 5, 7],
+        ...     }
+        ... )
+        >>> df.select("s", substr=pl.col("s").str.slice(-3))
         shape: (4, 2)
-        ┌─────────────┬───────┐
-        │ s           ┆ slice │
-        │ ---         ┆ ---   │
-        │ str         ┆ str   │
-        ╞═════════════╪═══════╡
-        │ pear        ┆ ear   │
-        │ null        ┆ null  │
-        │ papaya      ┆ aya   │
-        │ dragonfruit ┆ uit   │
-        └─────────────┴───────┘
+        ┌─────────────┬────────┐
+        │ s           ┆ substr │
+        │ ---         ┆ ---    │
+        │ str         ┆ str    │
+        ╞═════════════╪════════╡
+        │ pear        ┆ ear    │
+        │ null        ┆ null   │
+        │ papaya      ┆ aya    │
+        │ dragonfruit ┆ uit    │
+        └─────────────┴────────┘
 
-        Using the optional `length` parameter
+        Using the optional `length` parameter and passing `offset` as an expression:
 
-        >>> df.with_columns(pl.col("s").str.slice(4, length=3).alias("slice"))
-        shape: (4, 2)
-        ┌─────────────┬───────┐
-        │ s           ┆ slice │
-        │ ---         ┆ ---   │
-        │ str         ┆ str   │
-        ╞═════════════╪═══════╡
-        │ pear        ┆       │
-        │ null        ┆ null  │
-        │ papaya      ┆ ya    │
-        │ dragonfruit ┆ onf   │
-        └─────────────┴───────┘
+        >>> df.with_columns(substr=pl.col("s").str.slice("idx", length=3))
+        shape: (4, 3)
+        ┌─────────────┬─────┬────────┐
+        │ s           ┆ idx ┆ substr │
+        │ ---         ┆ --- ┆ ---    │
+        │ str         ┆ i64 ┆ str    │
+        ╞═════════════╪═════╪════════╡
+        │ pear        ┆ 1   ┆ ear    │
+        │ null        ┆ 3   ┆ null   │
+        │ papaya      ┆ 5   ┆ a      │
+        │ dragonfruit ┆ 7   ┆ rui    │
+        └─────────────┴─────┴────────┘
         """
         offset_pyexpr = parse_into_expression(offset)
         length_pyexpr = parse_into_expression(length)
@@ -2524,7 +2529,10 @@ class ExprStringNameSpace:
         return wrap_expr(self._pyexpr.str_to_integer(base_pyexpr, dtype, strict))
 
     def contains_any(
-        self, patterns: IntoExpr, *, ascii_case_insensitive: bool = False
+        self,
+        patterns: IntoExpr,
+        *,
+        ascii_case_insensitive: bool = False,
     ) -> Expr:
         """
         Use the Aho-Corasick algorithm to find matches.
@@ -2582,6 +2590,7 @@ class ExprStringNameSpace:
         replace_with: IntoExpr | NoDefault = no_default,
         *,
         ascii_case_insensitive: bool = False,
+        leftmost: bool = False,
     ) -> Expr:
         """
         Use the Aho-Corasick algorithm to replace many matches.
@@ -2603,6 +2612,10 @@ class ExprStringNameSpace:
             Enable ASCII-aware case-insensitive matching.
             When this option is enabled, searching will be performed without respect
             to case for ASCII letters (a-z and A-Z) only.
+        leftmost
+            Guarantees in case there are overlapping matches that the leftmost match
+            is used. In case there are multiple candidates for the leftmost match
+            the pattern which comes first in patterns is used.
 
         Notes
         -----
@@ -2704,6 +2717,55 @@ class ExprStringNameSpace:
         │ Tell me what you want, what you really really want ┆ Tell you what me need, what me really really need │
         │ Can you feel the love tonight                      ┆ Can me feel the love tonight                      │
         └────────────────────────────────────────────────────┴───────────────────────────────────────────────────┘
+
+        Using `leftmost` and changing order of tokens in `patterns`, you can get fine control over replacement
+        logic, while default behavior does not provide guarantees in case of overlapping patterns:
+
+        >>> df = pl.DataFrame({"haystack": ["abcd"]})
+        >>> patterns = {"b": "x", "abc": "y", "abcd": "z"}
+        >>> df.with_columns(replaced=pl.col("haystack").str.replace_many(patterns))
+        shape: (1, 2)
+        ┌──────────┬──────────┐
+        │ haystack ┆ replaced │
+        │ ---      ┆ ---      │
+        │ str      ┆ str      │
+        ╞══════════╪══════════╡
+        │ abcd     ┆ axcd     │
+        └──────────┴──────────┘
+
+        Note that here `replaced` can be any of `axcd`, `yd` or `z`.
+
+        Adding `leftmost=True` matches pattern with leftmost start index first:
+
+        >>> df = pl.DataFrame({"haystack": ["abcd"]})
+        >>> patterns = {"b": "x", "abc": "y", "abcd": "z"}
+        >>> df.with_columns(
+        ...     replaced=pl.col("haystack").str.replace_many(patterns, leftmost=True)
+        ... )
+        shape: (1, 2)
+        ┌──────────┬──────────┐
+        │ haystack ┆ replaced │
+        │ ---      ┆ ---      │
+        │ str      ┆ str      │
+        ╞══════════╪══════════╡
+        │ abcd     ┆ yd       │
+        └──────────┴──────────┘
+
+        Changing order inside patterns to match 'abcd' first:
+
+        >>> df = pl.DataFrame({"haystack": ["abcd"]})
+        >>> patterns = {"abcd": "z", "abc": "y", "b": "x"}
+        >>> df.with_columns(
+        ...     replaced=pl.col("haystack").str.replace_many(patterns, leftmost=True)
+        ... )
+        shape: (1, 2)
+        ┌──────────┬──────────┐
+        │ haystack ┆ replaced │
+        │ ---      ┆ ---      │
+        │ str      ┆ str      │
+        ╞══════════╪══════════╡
+        │ abcd     ┆ z        │
+        └──────────┴──────────┘
         """  # noqa: W505
         if replace_with is no_default:
             if not isinstance(patterns, Mapping):
@@ -2722,7 +2784,7 @@ class ExprStringNameSpace:
         replace_with_pyexpr = parse_into_expression(replace_with, str_as_lit=True)
         return wrap_expr(
             self._pyexpr.str_replace_many(
-                patterns_pyexpr, replace_with_pyexpr, ascii_case_insensitive
+                patterns_pyexpr, replace_with_pyexpr, ascii_case_insensitive, leftmost
             )
         )
 
@@ -2733,6 +2795,7 @@ class ExprStringNameSpace:
         *,
         ascii_case_insensitive: bool = False,
         overlapping: bool = False,
+        leftmost: bool = False,
     ) -> Expr:
         """
         Use the Aho-Corasick algorithm to extract many matches.
@@ -2747,6 +2810,11 @@ class ExprStringNameSpace:
             to case for ASCII letters (a-z and A-Z) only.
         overlapping
             Whether matches may overlap.
+        leftmost
+            Guarantees in case there are overlapping matches that the leftmost match
+            is used. In case there are multiple candidates for the leftmost match
+            the pattern which comes first in patterns is used. May not be used
+            together with overlapping = True.
 
         Notes
         -----
@@ -2793,11 +2861,18 @@ class ExprStringNameSpace:
         │ ["disco"]       │
         │ ["rhap", "ody"] │
         └─────────────────┘
+
+        See Also
+        --------
+        replace_many
         """
+        if overlapping and leftmost:
+            msg = "can not match overlapping patterns when leftmost == True"
+            raise ValueError(msg)
         patterns_pyexpr = parse_into_expression(patterns, str_as_lit=False)
         return wrap_expr(
             self._pyexpr.str_extract_many(
-                patterns_pyexpr, ascii_case_insensitive, overlapping
+                patterns_pyexpr, ascii_case_insensitive, overlapping, leftmost
             )
         )
 
@@ -2808,6 +2883,7 @@ class ExprStringNameSpace:
         *,
         ascii_case_insensitive: bool = False,
         overlapping: bool = False,
+        leftmost: bool = False,
     ) -> Expr:
         """
         Use the Aho-Corasick algorithm to find many matches.
@@ -2825,6 +2901,11 @@ class ExprStringNameSpace:
             to case for ASCII letters (a-z and A-Z) only.
         overlapping
             Whether matches may overlap.
+        leftmost
+            Guarantees in case there are overlapping matches that the leftmost match
+            is used. In case there are multiple candidates for the leftmost match
+            the pattern which comes first in patterns is used. May not be used
+            together with overlapping = True.
 
         Notes
         -----
@@ -2871,11 +2952,18 @@ class ExprStringNameSpace:
         │ [0]       │
         │ [0, 5]    │
         └───────────┘
+
+        See Also
+        --------
+        replace_many
         """
+        if overlapping and leftmost:
+            msg = "can not match overlapping patterns when leftmost == True"
+            raise ValueError(msg)
         patterns_pyexpr = parse_into_expression(patterns, str_as_lit=False)
         return wrap_expr(
             self._pyexpr.str_find_many(
-                patterns_pyexpr, ascii_case_insensitive, overlapping
+                patterns_pyexpr, ascii_case_insensitive, overlapping, leftmost
             )
         )
 

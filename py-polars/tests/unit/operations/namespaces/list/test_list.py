@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime
-from typing import TYPE_CHECKING
+from decimal import Decimal
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
@@ -17,7 +18,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import time_func
 
 if TYPE_CHECKING:
-    from polars._typing import PolarsDataType
+    from polars._typing import EngineType, PolarsDataType
 
 
 def test_list_arr_get() -> None:
@@ -48,6 +49,12 @@ def test_list_arr_get() -> None:
     out_df = a.to_frame().select(pl.col.a.list.get(pl.lit(None), null_on_oob=False))
     expected_df = pl.Series("a", [None, None, None], dtype=pl.Int64).to_frame()
     assert_frame_equal(out_df, expected_df)
+
+    # item()
+    a = pl.Series("a", [[1], [4], [6]])
+    expected = pl.Series("a", [1, 4, 6])
+    out = a.list.item()
+    assert_series_equal(out, expected)
 
     a = pl.Series("a", [[1, 2, 3], [4, 5], [6, 7, 8, 9]])
 
@@ -256,7 +263,7 @@ def test_list_contains_invalid_datatype() -> None:
     df = pl.DataFrame({"a": [[1, 2], [3, 4]]}, schema={"a": pl.Array(pl.Int8, shape=2)})
     with pytest.raises(
         InvalidOperationError,
-        match=r"expected List data type for list operation, got: array\[i8, 2\]",
+        match=r"expected List data type for list operation, got: Array\(Int8, 2\)",
     ):
         df.select(pl.col("a").list.contains(2))
 
@@ -336,9 +343,9 @@ def test_list_arr_empty() -> None:
 
 def test_list_argminmax() -> None:
     s = pl.Series("a", [[1, 2], [3, 2, 1]])
-    expected = pl.Series("a", [0, 2], dtype=pl.UInt32)
+    expected = pl.Series("a", [0, 2], dtype=pl.get_index_type())
     assert_series_equal(s.list.arg_min(), expected)
-    expected = pl.Series("a", [1, 0], dtype=pl.UInt32)
+    expected = pl.Series("a", [1, 0], dtype=pl.get_index_type())
     assert_series_equal(s.list.arg_max(), expected)
 
 
@@ -374,7 +381,7 @@ def test_list_shift() -> None:
     assert_frame_equal(df, expected_df)
 
 
-def test_list_drop_nulls() -> None:
+def test_list_drop_nulls_eager() -> None:
     s = pl.Series("values", [[1, None, 2, None], [None, None], [1, 2], None])
     expected = pl.Series("values", [[1, 2], [], [1, 2], None])
     assert_series_equal(s.list.drop_nulls(), expected)
@@ -383,6 +390,25 @@ def test_list_drop_nulls() -> None:
     df = df.select(pl.col("values").list.drop_nulls())
     expected_df = pl.DataFrame({"values": [[1, 2], [], [3, 4]]})
     assert_frame_equal(df, expected_df)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    "data",
+    [
+        [None, ["value"]],
+        [None, ["value", None]],
+        [None, [None, "value", None]],
+    ],
+)
+def test_list_drop_nulls_lazy(engine: EngineType, data: list[Any]) -> None:
+    res = (
+        pl.LazyFrame({"foo": data})
+        .with_columns(pl.col("foo").list.drop_nulls())
+        .collect(engine=engine)
+    )
+    expected = pl.DataFrame({"foo": [None, ["value"]]})
+    assert_frame_equal(res, expected)
 
 
 def test_list_sample() -> None:
@@ -578,7 +604,8 @@ def test_list_gather() -> None:
     ]
 
 
-def test_list_function_group_awareness() -> None:
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_list_function_group_awareness(maintain_order: bool) -> None:
     df = pl.DataFrame(
         {
             "a": [100, 103, 105, 106, 105, 104, 103, 106, 100, 102],
@@ -586,22 +613,28 @@ def test_list_function_group_awareness() -> None:
         }
     )
 
-    assert df.group_by("group").agg(
-        [
-            pl.col("a").get(0).alias("get_scalar"),
-            pl.col("a").gather([0]).alias("take_no_implode"),
-            pl.col("a").implode().list.get(0).alias("implode_get"),
-            pl.col("a").implode().list.gather([0]).alias("implode_take"),
-            pl.col("a").implode().list.slice(0, 3).alias("implode_slice"),
-        ]
-    ).sort("group").to_dict(as_series=False) == {
-        "group": [0, 1, 2],
-        "get_scalar": [100, 105, 100],
-        "take_no_implode": [[100], [105], [100]],
-        "implode_get": [100, 105, 100],
-        "implode_take": [[100], [105], [100]],
-        "implode_slice": [[100, 103], [105, 106, 105], [100, 102]],
-    }
+    assert_frame_equal(
+        df.group_by("group", maintain_order=maintain_order).agg(
+            [
+                pl.col("a").get(0).alias("get_scalar"),
+                pl.col("a").gather([0]).alias("take_no_implode"),
+                pl.col("a").implode().list.get(0).alias("implode_get"),
+                pl.col("a").implode().list.gather([0]).alias("implode_take"),
+                pl.col("a").implode().list.slice(0, 3).alias("implode_slice"),
+            ]
+        ),
+        pl.DataFrame(
+            {
+                "group": [0, 1, 2],
+                "get_scalar": [100, 105, 100],
+                "take_no_implode": [[100], [105], [100]],
+                "implode_get": [100, 105, 100],
+                "implode_take": [[100], [105], [100]],
+                "implode_slice": [[100, 103], [105, 106, 105], [100, 102]],
+            }
+        ),
+        check_row_order=maintain_order,
+    )
 
 
 def test_list_get_logical_types() -> None:
@@ -809,7 +842,7 @@ def test_list_to_array_wrong_dtype() -> None:
     s = pl.Series([1.0, 2.0])
     with pytest.raises(
         InvalidOperationError,
-        match="expected List data type for list operation, got: f64",
+        match="expected List data type for list operation, got: Float64",
     ):
         s.list.to_array(2)
 
@@ -817,14 +850,15 @@ def test_list_to_array_wrong_dtype() -> None:
 def test_list_lengths() -> None:
     s = pl.Series([[1, 2, None], [5]])
     result = s.list.len()
-    expected = pl.Series([3, 1], dtype=pl.UInt32)
+    expected = pl.Series([3, 1], dtype=pl.get_index_type())
     assert_series_equal(result, expected)
 
     s = pl.Series("a", [[1, 2], [1, 2, 3]])
-    assert_series_equal(s.list.len(), pl.Series("a", [2, 3], dtype=pl.UInt32))
+    assert_series_equal(s.list.len(), pl.Series("a", [2, 3], dtype=pl.get_index_type()))
     df = pl.DataFrame([s])
     assert_series_equal(
-        df.select(pl.col("a").list.len())["a"], pl.Series("a", [2, 3], dtype=pl.UInt32)
+        df.select(pl.col("a").list.len())["a"],
+        pl.Series("a", [2, 3], dtype=pl.get_index_type()),
     )
 
     assert_series_equal(
@@ -833,7 +867,7 @@ def test_list_lengths() -> None:
             .then(pl.Series([[1, 1], [1, 1]]))
             .list.len()
         ).to_series(),
-        pl.Series([2, None], dtype=pl.UInt32),
+        pl.Series([2, None], dtype=pl.get_index_type()),
     )
 
     assert_series_equal(
@@ -842,7 +876,7 @@ def test_list_lengths() -> None:
             .then(pl.Series([[1, 1], [1, 1]]))
             .list.len()
         ).to_series(),
-        pl.Series([None, None], dtype=pl.UInt32),
+        pl.Series([None, None], dtype=pl.get_index_type()),
     )
 
 
@@ -933,7 +967,7 @@ def test_list_n_unique() -> None:
 
     out = df.select(n_unique=pl.col("a").list.n_unique())
     expected = pl.DataFrame(
-        {"n_unique": [2, 1, 1, None, 0]}, schema={"n_unique": pl.UInt32}
+        {"n_unique": [2, 1, 1, None, 0]}, schema={"n_unique": pl.get_index_type()}
     )
     assert_frame_equal(out, expected)
 
@@ -962,7 +996,7 @@ def test_list_get_with_null() -> None:
 
 def test_list_sum_bool_schema() -> None:
     q = pl.LazyFrame({"x": [[True, True, False]]})
-    assert q.select(pl.col("x").list.sum()).collect_schema()["x"] == pl.UInt32
+    assert q.select(pl.col("x").list.sum()).collect_schema()["x"] == pl.get_index_type()
 
 
 def test_list_concat_struct_19279() -> None:
@@ -1085,17 +1119,22 @@ def test_list_shift_self_broadcast() -> None:
 
 
 def test_list_filter_simple() -> None:
-    assert pl.Series(
-        [
-            [1, 2, 3, 4, 5],
-            [1, 3, 7, 8],
-            [6, 1, 4, 5],
-        ]
-    ).list.filter(pl.element() < 5).to_list() == [
-        [1, 2, 3, 4],
-        [1, 3],
-        [1, 4],
-    ]
+    assert_series_equal(
+        pl.Series(
+            [
+                [1, 2, 3, 4, 5],
+                [1, 3, 7, 8],
+                [6, 1, 4, 5],
+            ]
+        ).list.filter(pl.element() < 5),
+        pl.Series(
+            [
+                [1, 2, 3, 4],
+                [1, 3],
+                [1, 4],
+            ]
+        ),
+    )
 
 
 def test_list_filter_result_empty() -> None:
@@ -1247,3 +1286,55 @@ def test_list_df_invalid_type_in_planner() -> None:
 
     with pytest.raises(pl.exceptions.InvalidOperationError):
         q.collect_schema()
+
+
+def test_list_slice_invalid_length_type_22025() -> None:
+    df = pl.DataFrame([pl.Series("a", [["a"], ["eb", "d"]], pl.List(pl.String))])
+
+    with pytest.raises(
+        TypeError, match="'length' must be an integer, string, or expression"
+    ):
+        df.select(pl.col.a.list.slice(0, [0, 0]))  # type: ignore[arg-type]
+
+    with pytest.raises(
+        TypeError, match="'offset' must be an integer, string, or expression"
+    ):
+        df.select(pl.col.a.list.slice([0, 0], 1))  # type: ignore[arg-type]
+
+    with pytest.raises(
+        TypeError, match="'offset' must be an integer, string, or expression"
+    ):
+        df.select(pl.col.a.list.slice((0, 0), 1))  # type: ignore[arg-type]
+
+    with pytest.raises(
+        TypeError, match="'length' must be an integer, string, or expression"
+    ):
+        df.select(pl.col.a.list.slice(0, {0, 1}))  # type: ignore[arg-type]
+
+
+def test_list_get_decimal_25830() -> None:
+    df = pl.DataFrame(
+        {
+            "data": [
+                [
+                    Decimal("3170.047636167534520980"),
+                    Decimal("3203.912032898265107424"),
+                ],
+                [
+                    Decimal("3170.047636167534520981"),
+                    Decimal("3203.912032898265107425"),
+                ],
+            ]
+        }
+    )
+
+    out = df.select(pl.col("data").list.get(pl.lit(pl.Series([0, 1]))))
+    expected = pl.DataFrame(
+        {
+            "data": [
+                Decimal("3170.047636167534520980"),
+                Decimal("3203.912032898265107425"),
+            ]
+        }
+    )
+    assert_frame_equal(out, expected)

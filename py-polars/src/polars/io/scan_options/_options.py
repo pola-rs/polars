@@ -18,8 +18,7 @@ if TYPE_CHECKING:
 from dataclasses import dataclass
 
 
-# TODO: Add `kw_only=True` after 3.9 support dropped
-@dataclass
+@dataclass(kw_only=True)
 class ScanOptions:
     """
     Holds scan options that are generic over scan type.
@@ -57,3 +56,5 @@ class ScanOptions:
     default_values: DefaultFieldValues | None = None
     deletion_files: DeletionFiles | None = None
     table_statistics: DataFrame | None = None
+    # (physical, deleted)
+    row_count: tuple[int, int] | None = None

@@ -3,7 +3,7 @@ from __future__ import annotations
 import operator
 from collections import OrderedDict
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
@@ -26,6 +26,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES, UNSIGNED_INTEGER_DTYPES
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import PolarsIntegerType
 
 
@@ -662,7 +664,7 @@ def test_literal_subtract_schema_13284() -> None:
         .with_columns(pl.col("a") - pl.lit(1))
         .group_by("a")
         .len()
-    ).collect_schema() == OrderedDict([("a", pl.UInt8), ("len", pl.UInt32)])
+    ).collect_schema() == OrderedDict([("a", pl.UInt8), ("len", pl.get_index_type())])
 
 
 @pytest.mark.parametrize("dtype", INTEGER_DTYPES)

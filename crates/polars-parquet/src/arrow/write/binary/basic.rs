@@ -154,10 +154,3 @@ pub(crate) fn encode_delta<O: Offset>(
         &values[offsets.first().unwrap().to_usize()..offsets.last().unwrap().to_usize()],
     )
 }
-
-/// Returns the ordering of two binary values. This corresponds to pyarrows' ordering
-/// of statistics.
-#[inline(always)]
-pub(crate) fn ord_binary<'a>(a: &'a [u8], b: &'a [u8]) -> std::cmp::Ordering {
-    a.cmp(b)
-}

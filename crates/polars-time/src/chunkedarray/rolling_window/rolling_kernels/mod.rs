@@ -1,4 +1,6 @@
 pub(super) mod no_nulls;
+pub(super) mod nulls;
+
 use std::fmt::Debug;
 use std::ops::{AddAssign, Mul, SubAssign};
 

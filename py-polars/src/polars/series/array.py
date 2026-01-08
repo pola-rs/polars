@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 from polars import functions as F
 from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     from polars import Series
     from polars._plr import PySeries
@@ -73,6 +73,22 @@ class ArrayNameSpace:
         [
             3
             7
+        ]
+        """
+
+    def mean(self) -> Series:
+        """
+        Compute the mean of the values of the sub-arrays.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 2], [4, 3]], dtype=pl.Array(pl.Int64, 2))
+        >>> s.arr.mean()
+        shape: (2,)
+        Series: 'a' [f64]
+        [
+            1.5
+            3.5
         ]
         """
 
@@ -605,9 +621,16 @@ class ArrayNameSpace:
 
         """
 
-    def explode(self) -> Series:
+    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Series:
         """
         Returns a column with a separate row for every array element.
+
+        Parameters
+        ----------
+        empty_as_null
+            Explode an empty array into a `null`.
+        keep_nulls
+            Explode a `null` array into a `null`.
 
         Returns
         -------
@@ -799,5 +822,37 @@ class ArrayNameSpace:
             [1.0, 2.0]
             [2.0, 1.0]
             [2.0, 1.0]
+        ]
+        """
+
+    def agg(self, expr: Expr) -> Series:
+        """
+        Run any polars aggregation expression against the arrays' elements.
+
+        Parameters
+        ----------
+        expr
+            Expression to run. Note that you can select an element with `pl.element()`.
+
+        Examples
+        --------
+        >>> s = pl.Series(
+        ...     "a", [[1, None], [42, 13], [None, None]], pl.Array(pl.Int64, 2)
+        ... )
+        >>> s.arr.agg(pl.element().null_count())
+        shape: (3,)
+        Series: 'a' [u32]
+        [
+            1
+            0
+            2
+        ]
+        >>> s.arr.agg(pl.element().drop_nulls())
+        shape: (3,)
+        Series: 'a' [list[i64]]
+        [
+            [1]
+            [42, 13]
+            []
         ]
         """

@@ -36,7 +36,11 @@ where
         let sum = unsafe {
             RollingAggWindowNoNulls::update(&mut self.sum, start, end).unwrap_unchecked()
         };
-        Some(sum / NumCast::from(end - start).unwrap())
+        if start == end {
+            None
+        } else {
+            Some(sum / NumCast::from(end - start).unwrap())
+        }
     }
 }
 
@@ -53,7 +57,7 @@ impl<
         + PartialOrd,
 > RollingAggWindowNulls<'a, T> for MeanWindow<'a, T>
 {
-    unsafe fn new(
+    fn new(
         slice: &'a [T],
         validity: &'a Bitmap,
         start: usize,
@@ -62,9 +66,7 @@ impl<
         window_size: Option<usize>,
     ) -> Self {
         Self {
-            sum: unsafe {
-                RollingAggWindowNulls::new(slice, validity, start, end, params, window_size)
-            },
+            sum: RollingAggWindowNulls::new(slice, validity, start, end, params, window_size),
         }
     }
 

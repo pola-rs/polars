@@ -2,7 +2,7 @@ use polars_core::chunked_array::cast::CastOptions;
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_series;
 use polars_utils::python_function::PythonObject;
-use pyo3::exceptions::{PyIndexError, PyRuntimeError, PyValueError};
+use pyo3::exceptions::{PyIndexError, PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use pyo3::{IntoPyObjectExt, Python};
@@ -115,7 +115,7 @@ impl PySeries {
     }
 
     /// Get a value by index.
-    fn get_index(&self, py: Python<'_>, index: usize) -> PyResult<PyObject> {
+    fn get_index(&self, py: Python<'_>, index: usize) -> PyResult<Py<PyAny>> {
         let s = self.series.read();
         let av = match s.get(index) {
             Ok(v) => v,
@@ -135,7 +135,7 @@ impl PySeries {
     }
 
     /// Get a value by index, allowing negative indices.
-    fn get_index_signed(&self, py: Python<'_>, index: isize) -> PyResult<PyObject> {
+    fn get_index_signed(&self, py: Python<'_>, index: isize) -> PyResult<Py<PyAny>> {
         let index = if index < 0 {
             match self.len().checked_sub(index.unsigned_abs()) {
                 Some(v) => v,
@@ -371,12 +371,13 @@ impl PySeries {
         ))
     }
 
-    fn __setstate__(&self, py: Python<'_>, state: PyObject) -> PyResult<()> {
+    fn __setstate__(&self, py: Python<'_>, state: Py<PyAny>) -> PyResult<()> {
         // Used in pickle/pickling
         use pyo3::pybacked::PyBackedBytes;
-        match state.extract::<PyBackedBytes>(py) {
+        match state.extract::<PyBackedBytes>(py).map_err(PyErr::from) {
             Ok(bytes) => py.enter_polars(|| {
-                *self.series.write() = Series::deserialize_from_reader(&mut &*bytes)?;
+                let mut reader = std::io::Cursor::new(&*bytes);
+                *self.series.write() = Series::deserialize_from_reader(&mut reader)?;
                 PolarsResult::Ok(())
             }),
             Err(e) => Err(e),
@@ -408,8 +409,8 @@ impl PySeries {
         py.enter_polars_series(|| self.series.read().cast_with_options(&dtype.0, options))
     }
 
-    fn get_chunks(&self) -> PyResult<Vec<PyObject>> {
-        Python::with_gil(|py| {
+    fn get_chunks(&self) -> PyResult<Vec<Py<PyAny>>> {
+        Python::attach(|py| {
             let wrap_s = py_modules::polars(py).getattr(py, "wrap_s").unwrap();
             flatten_series(&self.series.read())
                 .into_iter()
@@ -517,7 +518,7 @@ impl PySeries {
         &self,
         py: Python<'_>,
         width_strat: Wrap<ListToStructWidthStrategy>,
-        name_gen: Option<PyObject>,
+        name_gen: Option<Py<PyAny>>,
     ) -> PyResult<Self> {
         py.enter_polars(|| {
             let get_index_name =
@@ -556,49 +557,51 @@ impl PySeries {
         .map_err(PyPolarsErr::from)
         .map_err(PyErr::from)
     }
-}
 
-macro_rules! impl_set_with_mask {
-    ($name:ident, $native:ty, $cast:ident, $variant:ident) => {
-        fn $name(
-            series: &Series,
-            filter: &PySeries,
-            value: Option<$native>,
-        ) -> PolarsResult<Series> {
-            let fs = filter.series.read();
-            let mask = fs.bool()?;
-            let ca = series.$cast()?;
-            let new = ca.set(mask, value)?;
-            Ok(new.into_series())
+    fn ext_to(&self, dtype: Wrap<DataType>) -> PyResult<Self> {
+        let DataType::Extension(typ, storage) = &dtype.0 else {
+            return Err(PyTypeError::new_err(
+                "ext.to(dtype) can only be used with Extension dtypes",
+            ));
+        };
+
+        let s = self.series.read();
+
+        if storage.as_ref() != s.dtype() {
+            return Err(PyErr::from(PyPolarsErr::from(polars_err!(SchemaMismatch:
+                "storage type mismatch in ext.to(): expected {}, got {}",
+                storage,
+                s.dtype()
+            ))));
         }
 
-        #[pymethods]
-        impl PySeries {
-            #[pyo3(signature = (filter, value))]
-            fn $name(
-                &self,
-                py: Python<'_>,
-                filter: &PySeries,
-                value: Option<$native>,
-            ) -> PyResult<Self> {
-                py.enter_polars_series(|| $name(&self.series.read(), filter, value))
-            }
-        }
-    };
-}
+        Ok(s.clone().into_extension(typ.clone()).into())
+    }
 
-impl_set_with_mask!(set_with_mask_str, &str, str, String);
-impl_set_with_mask!(set_with_mask_f64, f64, f64, Float64);
-impl_set_with_mask!(set_with_mask_f32, f32, f32, Float32);
-impl_set_with_mask!(set_with_mask_u8, u8, u8, UInt8);
-impl_set_with_mask!(set_with_mask_u16, u16, u16, UInt16);
-impl_set_with_mask!(set_with_mask_u32, u32, u32, UInt32);
-impl_set_with_mask!(set_with_mask_u64, u64, u64, UInt64);
-impl_set_with_mask!(set_with_mask_i8, i8, i8, Int8);
-impl_set_with_mask!(set_with_mask_i16, i16, i16, Int16);
-impl_set_with_mask!(set_with_mask_i32, i32, i32, Int32);
-impl_set_with_mask!(set_with_mask_i64, i64, i64, Int64);
-impl_set_with_mask!(set_with_mask_bool, bool, bool, Boolean);
+    fn ext_storage(&self) -> Self {
+        self.series.read().to_storage().clone().into()
+    }
+
+    fn set(&self, py: Python<'_>, mask: PySeries, value: PySeries) -> PyResult<Self> {
+        assert_eq!(value.len(), 1);
+        py.enter_polars(|| {
+            let slf = self.series.read();
+            let mask = mask.series.read();
+            let value = value.series.read();
+
+            let mask = mask.bool()?;
+
+            PolarsResult::Ok(
+                value
+                    .zip_with_same_type(mask, &slf)?
+                    .with_name(slf.name().clone()),
+            )
+        })
+        .map(Into::into)
+        .map_err(PyPolarsErr::from)
+        .map_err(PyErr::from)
+    }
+}
 
 macro_rules! impl_get {
     ($name:ident, $series_variant:ident, $type:ty) => {

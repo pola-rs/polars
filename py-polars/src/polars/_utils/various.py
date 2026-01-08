@@ -20,7 +20,6 @@ from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     Literal,
     TypeVar,
     overload,
@@ -43,7 +42,13 @@ from polars.datatypes import (
 from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, MutableMapping, Reversible
+    from collections.abc import (
+        Callable,
+        Iterator,
+        MutableMapping,
+        Reversible,
+    )
+    from typing import ParamSpec, TypeGuard
 
     from polars import DataFrame, Expr
     from polars._typing import PolarsDataType, SizeUnit
@@ -52,11 +57,6 @@ if TYPE_CHECKING:
         from typing import TypeIs
     else:
         from typing_extensions import TypeIs
-
-    if sys.version_info >= (3, 10):
-        from typing import ParamSpec, TypeGuard
-    else:
-        from typing_extensions import ParamSpec, TypeGuard
 
     P = ParamSpec("P")
     T = TypeVar("T")
@@ -396,7 +396,7 @@ def _cast_repr_strings_with_schema(
                     .then(pl.when(F.col(c).str.len_bytes() > 0).then(F.col(c)))
                     # check for scientific notation
                     .when(F.col(c).str.contains("[eE]"))
-                    .then(F.col(c).str.replace(r"[^eE\d]", "."))
+                    .then(F.col(c).str.replace(r"[^eE\d+-]", "."))
                     .otherwise(
                         # recombine sanitised integer/fractional components
                         pl.concat_str(
@@ -587,7 +587,7 @@ def _polars_warn(msg: str, category: type[Warning] = UserWarning) -> None:
 
 
 def extend_bool(
-    value: bool | Sequence[bool],
+    value: bool | Sequence[bool],  # noqa: FBT001
     n_match: int,
     value_name: str,
     match_name: str,

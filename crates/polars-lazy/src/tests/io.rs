@@ -419,14 +419,11 @@ fn test_ipc_globbing() -> PolarsResult<()> {
     let glob = "../../examples/datasets/foods*.ipc";
     let df = LazyFrame::scan_ipc(
         PlPath::new(glob),
-        ScanArgsIpc {
-            n_rows: None,
+        Default::default(),
+        UnifiedScanArgs {
             cache: true,
-            rechunk: false,
-            row_index: None,
-            cloud_options: None,
-            hive_options: Default::default(),
-            include_file_paths: None,
+            glob: true,
+            ..Default::default()
         },
     )?
     .collect()?;
@@ -520,7 +517,7 @@ fn test_union_and_agg_projections() -> PolarsResult<()> {
     // hashmap, if that doesn't set them sorted the vstack will panic.
     let lf1: LazyFrame = DslBuilder::scan_parquet(
         ScanSources::Paths(FromIterator::from_iter([PlPath::new(GLOB_PARQUET)])),
-        Default::default(),
+        ParquetOptions::default(),
         UnifiedScanArgs {
             extra_columns_policy: ExtraColumnsPolicy::Ignore,
             ..Default::default()
@@ -532,7 +529,7 @@ fn test_union_and_agg_projections() -> PolarsResult<()> {
 
     let lf2: LazyFrame = DslBuilder::scan_ipc(
         ScanSources::Paths(FromIterator::from_iter([PlPath::new(GLOB_IPC)])),
-        Default::default(),
+        IpcScanOptions {},
         UnifiedScanArgs {
             extra_columns_policy: ExtraColumnsPolicy::Ignore,
             ..Default::default()
@@ -544,7 +541,7 @@ fn test_union_and_agg_projections() -> PolarsResult<()> {
 
     let lf3: LazyFrame = DslBuilder::scan_csv(
         ScanSources::Paths(FromIterator::from_iter([PlPath::new(GLOB_CSV)])),
-        Default::default(),
+        CsvReadOptions::default(),
         UnifiedScanArgs {
             extra_columns_policy: ExtraColumnsPolicy::Ignore,
             ..Default::default()
@@ -658,8 +655,12 @@ fn test_row_index_on_files() -> PolarsResult<()> {
             (offset..27 + offset).collect::<Vec<_>>()
         );
 
-        let lf = LazyFrame::scan_ipc(PlPath::new(FOODS_IPC), Default::default())?
-            .with_row_index("index", Some(offset));
+        let lf = LazyFrame::scan_ipc(
+            PlPath::new(FOODS_IPC),
+            Default::default(),
+            Default::default(),
+        )?
+        .with_row_index("index", Some(offset));
 
         assert!(row_index_at_scan(lf.clone()));
         let df = lf.clone().collect()?;
@@ -767,10 +768,10 @@ fn scan_anonymous_fn_count() -> PolarsResult<()> {
         .collect()
         .unwrap();
 
-    assert_eq!(df.get_columns().len(), 1);
-    assert_eq!(df.get_columns()[0].len(), 1);
+    assert_eq!(df.columns().len(), 1);
+    assert_eq!(df.columns()[0].len(), 1);
     assert_eq!(
-        df.get_columns()[0]
+        df.columns()[0]
             .cast(&DataType::UInt32)
             .unwrap()
             .as_materialized_series()

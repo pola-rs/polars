@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -15,6 +15,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import PolarsDataType, TemporalLiteral, TimeUnit
 
 
@@ -1400,7 +1402,7 @@ def test_series_duration_timeunits(
         for us in micros
         if isinstance(us, int)
     ):
-        for ns, us in zip(s.dt.total_nanoseconds(), micros):
+        for ns, us in zip(s.dt.total_nanoseconds(), micros, strict=True):
             assert ns == (us * 1000)
 
 
@@ -1551,3 +1553,17 @@ def test_literal_from_timedelta(value: time, dtype: pl.Duration | None) -> None:
     out = pl.select(pl.lit(value, dtype=dtype))
     assert out.schema == OrderedDict({"literal": dtype or pl.Duration("us")})
     assert out.item() == value
+
+
+def test_out_of_range_date_year_11991() -> None:
+    # Out-of-range dates should return null instead of wrong values or panicking
+    # Regression test for #11991 where out-of-range dates silently returned
+    # the input value
+    s = pl.Series([-96_465_659]).cast(pl.Date)
+    result = s.dt.year()
+    # Should return null, not the input value -96465659
+    assert result[0] is None
+
+    # is_leap_year should also return null for out-of-range dates
+    result_leap = s.dt.is_leap_year()
+    assert result_leap[0] is None

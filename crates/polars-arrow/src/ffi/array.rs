@@ -106,7 +106,7 @@ impl ArrowArray {
         let (offset, mut buffers, children, dictionary) =
             offset_buffers_children_dictionary(array.as_ref());
 
-        let variadic_buffer_sizes = match array.dtype() {
+        let variadic_buffer_sizes = match array.dtype().to_storage() {
             ArrowDataType::BinaryView => {
                 let arr = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
                 let boxed = arr.variadic_buffer_lengths().into_boxed_slice();
@@ -343,7 +343,7 @@ fn buffer_offset(array: &ArrowArray, dtype: &ArrowDataType, i: usize) -> usize {
     match (dtype.to_physical_type(), i) {
         (LargeUtf8, 2) | (LargeBinary, 2) | (Utf8, 2) | (Binary, 2) => 0,
         (FixedSizeBinary, 1) => {
-            if let ArrowDataType::FixedSizeBinary(size) = dtype.to_logical_type() {
+            if let ArrowDataType::FixedSizeBinary(size) = dtype.to_storage() {
                 let offset: usize = array.offset.try_into().expect("Offset to fit in `usize`");
                 offset * *size
             } else {
@@ -358,14 +358,14 @@ fn buffer_offset(array: &ArrowArray, dtype: &ArrowDataType, i: usize) -> usize {
 unsafe fn buffer_len(array: &ArrowArray, dtype: &ArrowDataType, i: usize) -> PolarsResult<usize> {
     Ok(match (dtype.to_physical_type(), i) {
         (PhysicalType::FixedSizeBinary, 1) => {
-            if let ArrowDataType::FixedSizeBinary(size) = dtype.to_logical_type() {
+            if let ArrowDataType::FixedSizeBinary(size) = dtype.to_storage() {
                 *size * (array.offset as usize + array.length as usize)
             } else {
                 unreachable!()
             }
         },
         (PhysicalType::FixedSizeList, 1) => {
-            if let ArrowDataType::FixedSizeList(_, size) = dtype.to_logical_type() {
+            if let ArrowDataType::FixedSizeList(_, size) = dtype.to_storage() {
                 *size * (array.offset as usize + array.length as usize)
             } else {
                 unreachable!()

@@ -9,7 +9,7 @@ use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::write::BatchedWriter;
 use polars_io::prelude::{ParquetWriteOptions, get_column_write_options};
-use polars_io::schema_to_arrow_checked;
+use polars_io::{get_upload_chunk_size, schema_to_arrow_checked};
 use polars_parquet::parquet::error::ParquetResult;
 use polars_parquet::read::ParquetError;
 use polars_parquet::write::{
@@ -33,7 +33,7 @@ use crate::execute::StreamingExecutionState;
 use crate::nodes::io_sinks::SendBufferedMorsel;
 use crate::nodes::io_sinks::phase::PhaseOutcome;
 use crate::nodes::{JoinHandle, TaskPriority};
-use crate::utils::task_handles_ext::AbortOnDropHandle;
+use crate::utils::tokio_handle_ext::AbortOnDropHandle;
 
 pub struct ParquetSinkNode {
     target: SinkTarget,
@@ -64,6 +64,7 @@ impl ParquetSinkNode {
         collect_metrics: bool,
     ) -> PolarsResult<Self> {
         let schema = schema_to_arrow_checked(&input_schema, CompatLevel::newest(), "parquet")?;
+        // insert here
         let column_options: Vec<ColumnWriteOptions> =
             get_column_write_options(&schema, &write_options.field_overwrites);
         let parquet_schema = to_parquet_schema(&schema, &column_options)?;
@@ -126,7 +127,11 @@ impl SinkNode for ParquetSinkNode {
         let output_file_size = self.file_size.clone();
         let io_task = polars_io::pl_async::get_runtime().spawn(async move {
             let mut file = target
-                .open_into_writeable_async(&sink_options, cloud_options.as_ref())
+                .open_into_writeable_async(
+                    cloud_options.as_ref(),
+                    sink_options.mkdir,
+                    get_upload_chunk_size(),
+                )
                 .await?;
 
             let writer = BufWriter::new(&mut *file);
@@ -162,8 +167,7 @@ impl SinkNode for ParquetSinkNode {
             let file_size = writer.finish()?;
             drop(writer);
 
-            file.sync_on_close(sink_options.sync_on_close)?;
-            file.close()?;
+            file.close(sink_options.sync_on_close)?;
 
             output_file_size.store(file_size);
             PolarsResult::Ok(())
@@ -230,6 +234,7 @@ impl SinkNode for ParquetSinkNode {
                             let column_options = &column_options[col_idx];
 
                             let array = column.as_materialized_series().rechunk();
+                            // insert here
                             let array = array.to_arrow(0, CompatLevel::newest());
 
                             // @TODO: This causes all structs fields to be handled on a single thread. It

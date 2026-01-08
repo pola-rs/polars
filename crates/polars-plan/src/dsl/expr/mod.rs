@@ -1,11 +1,11 @@
+pub mod anonymous;
 mod datatype_fn;
-mod expr_dyn_fn;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 
+pub use anonymous::*;
 use bytes::Bytes;
 pub use datatype_fn::*;
-pub use expr_dyn_fn::*;
 use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
@@ -13,10 +13,6 @@ use polars_core::prelude::*;
 use polars_utils::format_pl_smallstr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "serde")]
-pub mod named_serde;
-#[cfg(feature = "serde")]
-mod serde_expr;
 
 use super::datatype_expr::DataTypeExpr;
 use crate::prelude::*;
@@ -33,10 +29,25 @@ pub enum AggExpr {
         input: Arc<Expr>,
         propagate_nans: bool,
     },
+    MinBy {
+        input: Arc<Expr>,
+        by: Arc<Expr>,
+    },
+    MaxBy {
+        input: Arc<Expr>,
+        by: Arc<Expr>,
+    },
     Median(Arc<Expr>),
     NUnique(Arc<Expr>),
     First(Arc<Expr>),
+    FirstNonNull(Arc<Expr>),
     Last(Arc<Expr>),
+    LastNonNull(Arc<Expr>),
+    Item {
+        input: Arc<Expr>,
+        /// Give a missing value if there are no values.
+        allow_empty: bool,
+    },
     Mean(Arc<Expr>),
     Implode(Arc<Expr>),
     Count {
@@ -58,12 +69,15 @@ impl AsRef<Expr> for AggExpr {
     fn as_ref(&self) -> &Expr {
         use AggExpr::*;
         match self {
-            Min { input, .. } => input,
-            Max { input, .. } => input,
+            Min { input, .. } | MinBy { input, .. } => input,
+            Max { input, .. } | MaxBy { input, .. } => input,
             Median(e) => e,
             NUnique(e) => e,
             First(e) => e,
+            FirstNonNull(e) => e,
             Last(e) => e,
+            LastNonNull(e) => e,
+            Item { input, .. } => input,
             Mean(e) => e,
             Implode(e) => e,
             Count { input, .. } => input,
@@ -86,6 +100,10 @@ impl AsRef<Expr> for AggExpr {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum Expr {
+    /// Values in a `eval` context.
+    ///
+    /// Equivalent of `pl.element()`.
+    Element,
     Alias(Arc<Expr>, PlSmallStr),
     Column(PlSmallStr),
     Selector(Selector),
@@ -109,6 +127,7 @@ pub enum Expr {
         expr: Arc<Expr>,
         idx: Arc<Expr>,
         returns_scalar: bool,
+        null_on_oob: bool,
     },
     SortBy {
         expr: Arc<Expr>,
@@ -131,19 +150,27 @@ pub enum Expr {
     },
     Explode {
         input: Arc<Expr>,
-        skip_empty: bool,
+        options: ExplodeOptions,
     },
     Filter {
         input: Arc<Expr>,
         by: Arc<Expr>,
     },
     /// Polars flavored window functions.
-    Window {
+    Over {
         /// Also has the input. i.e. avg("foo")
         function: Arc<Expr>,
         partition_by: Vec<Expr>,
         order_by: Option<(Arc<Expr>, SortOptions)>,
-        options: WindowType,
+        mapping: WindowMapping,
+    },
+    #[cfg(feature = "dynamic_group_by")]
+    Rolling {
+        function: Arc<Expr>,
+        index_column: Arc<Expr>,
+        period: Duration,
+        offset: Duration,
+        closed_window: ClosedWindow,
     },
     Slice {
         input: Arc<Expr>,
@@ -309,13 +336,15 @@ impl Hash for Expr {
                 expr,
                 idx,
                 returns_scalar,
+                null_on_oob,
             } => {
                 expr.hash(state);
                 idx.hash(state);
                 returns_scalar.hash(state);
+                null_on_oob.hash(state);
             },
             // already hashed by discriminant
-            Expr::Len => {},
+            Expr::Element | Expr::Len => {},
             Expr::SortBy {
                 expr,
                 by,
@@ -326,20 +355,34 @@ impl Hash for Expr {
                 sort_options.hash(state);
             },
             Expr::Agg(input) => input.hash(state),
-            Expr::Explode { input, skip_empty } => {
-                skip_empty.hash(state);
+            Expr::Explode { input, options } => {
+                options.hash(state);
                 input.hash(state)
             },
-            Expr::Window {
+            #[cfg(feature = "dynamic_group_by")]
+            Expr::Rolling {
+                function,
+                index_column,
+                period,
+                offset,
+                closed_window,
+            } => {
+                function.hash(state);
+                index_column.hash(state);
+                period.hash(state);
+                offset.hash(state);
+                closed_window.hash(state);
+            },
+            Expr::Over {
                 function,
                 partition_by,
                 order_by,
-                options,
+                mapping,
             } => {
                 function.hash(state);
                 partition_by.hash(state);
                 order_by.hash(state);
-                options.hash(state);
+                mapping.hash(state);
             },
             Expr::Slice {
                 input,
@@ -541,6 +584,8 @@ impl Expr {
 pub enum EvalVariant {
     /// `list.eval`
     List,
+    /// `list.agg`
+    ListAgg,
 
     /// `array.eval`
     Array {
@@ -548,6 +593,8 @@ pub enum EvalVariant {
         /// be `List`.
         as_list: bool,
     },
+    /// `arr.agg`
+    ArrayAgg,
 
     /// `cumulative_eval`
     Cumulative { min_samples: usize },
@@ -557,7 +604,9 @@ impl EvalVariant {
     pub fn to_name(&self) -> &'static str {
         match self {
             Self::List => "list.eval",
+            Self::ListAgg => "list.agg",
             Self::Array { .. } => "array.eval",
+            Self::ArrayAgg => "array.agg",
             Self::Cumulative { min_samples: _ } => "cumulative_eval",
         }
     }
@@ -565,9 +614,9 @@ impl EvalVariant {
     /// Get the `DataType` of the `pl.element()` value.
     pub fn element_dtype<'a>(&self, dtype: &'a DataType) -> PolarsResult<&'a DataType> {
         match (self, dtype) {
-            (Self::List, DataType::List(inner)) => Ok(inner.as_ref()),
+            (Self::List | Self::ListAgg, DataType::List(inner)) => Ok(inner.as_ref()),
             #[cfg(feature = "dtype-array")]
-            (Self::Array { .. }, DataType::Array(inner, _)) => Ok(inner.as_ref()),
+            (Self::Array { .. } | Self::ArrayAgg, DataType::Array(inner, _)) => Ok(inner.as_ref()),
             (Self::Cumulative { min_samples: _ }, dt) => Ok(dt),
             _ => polars_bail!(op = self.to_name(), dtype),
         }
@@ -578,9 +627,17 @@ impl EvalVariant {
         &self,
         dtype: &'_ DataType,
         output_element_dtype: DataType,
+        eval_is_scalar: bool,
     ) -> PolarsResult<DataType> {
         match (self, dtype) {
             (Self::List, DataType::List(_)) => Ok(DataType::List(Box::new(output_element_dtype))),
+            (Self::ListAgg, DataType::List(_)) => {
+                if eval_is_scalar {
+                    Ok(output_element_dtype)
+                } else {
+                    Ok(DataType::List(Box::new(output_element_dtype)))
+                }
+            },
             #[cfg(feature = "dtype-array")]
             (Self::Array { as_list: false }, DataType::Array(_, width)) => {
                 Ok(DataType::Array(Box::new(output_element_dtype), *width))
@@ -589,6 +646,14 @@ impl EvalVariant {
             (Self::Array { as_list: true }, DataType::Array(_, _)) => {
                 Ok(DataType::List(Box::new(output_element_dtype)))
             },
+            #[cfg(feature = "dtype-array")]
+            (Self::ArrayAgg, DataType::Array(_, _)) => {
+                if eval_is_scalar {
+                    Ok(output_element_dtype)
+                } else {
+                    Ok(DataType::List(Box::new(output_element_dtype)))
+                }
+            },
             (Self::Cumulative { min_samples: _ }, _) => Ok(output_element_dtype),
             _ => polars_bail!(op = self.to_name(), dtype),
         }
@@ -596,23 +661,27 @@ impl EvalVariant {
 
     pub fn is_elementwise(&self) -> bool {
         match self {
-            EvalVariant::List => true,
-            EvalVariant::Array { .. } => true,
+            EvalVariant::List | EvalVariant::ListAgg => true,
+            EvalVariant::Array { .. } | EvalVariant::ArrayAgg => true,
             EvalVariant::Cumulative { min_samples: _ } => false,
         }
     }
 
     pub fn is_row_separable(&self) -> bool {
         match self {
-            EvalVariant::List => true,
-            EvalVariant::Array { .. } => true,
+            EvalVariant::List | EvalVariant::ListAgg => true,
+            EvalVariant::Array { .. } | EvalVariant::ArrayAgg => true,
             EvalVariant::Cumulative { min_samples: _ } => false,
         }
     }
 
     pub fn is_length_preserving(&self) -> bool {
         match self {
-            EvalVariant::List | EvalVariant::Array { .. } | EvalVariant::Cumulative { .. } => true,
+            EvalVariant::List
+            | EvalVariant::ListAgg
+            | EvalVariant::Array { .. }
+            | EvalVariant::ArrayAgg
+            | EvalVariant::Cumulative { .. } => true,
         }
     }
 }
@@ -706,11 +775,13 @@ impl Operator {
             Operator::NotEq => Operator::NotEq,
             Operator::EqValidity => Operator::EqValidity,
             Operator::NotEqValidity => Operator::NotEqValidity,
-            Operator::Divide => Operator::Multiply,
-            Operator::Multiply => Operator::Divide,
+            // Operator::Divide requires modifying the right operand: left / right == 1/right * left
+            Operator::Divide => unimplemented!(),
+            Operator::Multiply => Operator::Multiply,
             Operator::And => Operator::And,
-            Operator::Plus => Operator::Minus,
-            Operator::Minus => Operator::Plus,
+            Operator::Plus => Operator::Plus,
+            // Operator::Minus requires modifying the right operand: left - right == -right + left
+            Operator::Minus => unimplemented!(),
             Operator::Lt => Operator::Gt,
             _ => unimplemented!(),
         }

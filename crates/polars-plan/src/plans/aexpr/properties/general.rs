@@ -25,9 +25,13 @@ impl AExpr {
 
             Eval { variant, .. } => variant.is_elementwise(),
 
-            BinaryExpr { .. } | Column(_) | Ternary { .. } | Cast { .. } => true,
+            Element | BinaryExpr { .. } | Column(_) | Ternary { .. } | Cast { .. } => true,
+
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling { .. } => false,
 
             Agg { .. }
+            | AnonymousStreamingAgg { .. }
             | Explode { .. }
             | Filter { .. }
             | Gather { .. }
@@ -35,7 +39,7 @@ impl AExpr {
             | Slice { .. }
             | Sort { .. }
             | SortBy { .. }
-            | Window { .. } => false,
+            | Over { .. } => false,
         }
     }
 
@@ -319,6 +323,8 @@ pub fn can_pre_agg(agg: Node, expr_arena: &Arena<AExpr>, _input_schema: &Schema)
                             agg_e,
                             IRAggExpr::Min { .. }
                                 | IRAggExpr::Max { .. }
+                                | IRAggExpr::MinBy { .. }
+                                | IRAggExpr::MaxBy { .. }
                                 | IRAggExpr::Sum(_)
                                 | IRAggExpr::Last(_)
                                 | IRAggExpr::First(_)

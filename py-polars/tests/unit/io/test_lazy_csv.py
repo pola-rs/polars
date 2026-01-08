@@ -179,7 +179,7 @@ def test_scan_csv_schema_new_columns_dtypes(
         ).collect()
 
     # cannot set both 'new_columns' and 'with_column_names'
-    with pytest.raises(ValueError, match="mutually.exclusive"):
+    with pytest.raises(ValueError, match=r"mutually.exclusive"):
         pl.scan_csv(
             file_path,
             schema_overrides=[pl.String, pl.String],
@@ -219,7 +219,7 @@ def test_lazy_row_index_no_push_down(foods_file_path: Path) -> None:
         q,
         pl.LazyFrame(
             [
-                pl.Series("index", [14, 20, 25], dtype=pl.UInt32),
+                pl.Series("index", [14, 20, 25], dtype=pl.get_index_type()),
                 pl.Series(
                     "category",
                     ["vegetables", "vegetables", "vegetables"],
@@ -282,7 +282,7 @@ def test_scan_csv_schema_overwrite_not_projected_8483(foods_file_path: Path) -> 
         .select(pl.len())
         .collect()
     )
-    expected = pl.DataFrame({"len": 27}, schema={"len": pl.UInt32})
+    expected = pl.DataFrame({"len": 27}, schema={"len": pl.get_index_type()})
     assert_frame_equal(df, expected)
 
 
@@ -380,7 +380,7 @@ def test_file_list_schema_mismatch(
 
     paths = [f"{tmp_path}/{i}.csv" for i in range(len(dfs))]
 
-    for df, path in zip(dfs, paths):
+    for df, path in zip(dfs, paths, strict=True):
         df.write_csv(path)
 
     lf = pl.scan_csv(paths)
@@ -419,7 +419,7 @@ c
 
     paths = [f"{tmp_path}/{i}.csv" for i in range(len(data_lst))]
 
-    for data, path in zip(data_lst, paths):
+    for data, path in zip(data_lst, paths, strict=True):
         with Path(path).open("w") as f:
             f.write(data)
 
@@ -449,7 +449,7 @@ c
 
     paths = [f"{tmp_path}/{i}.csv" for i in range(len(data_lst))]
 
-    for data, path in zip(data_lst, paths):
+    for data, path in zip(data_lst, paths, strict=True):
         with Path(path).open("w") as f:
             f.write(data)
 
@@ -490,7 +490,7 @@ a,b,c
 a,b,c
 """
 
-    schema = {x: pl.String for x in ["a", "b", "c", "d", "e"]}
+    schema = dict.fromkeys(["a", "b", "c", "d", "e"], pl.String)
 
     assert_frame_equal(
         pl.scan_csv(data, schema=schema).collect(),

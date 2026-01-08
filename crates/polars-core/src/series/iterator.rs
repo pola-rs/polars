@@ -74,25 +74,19 @@ impl FromIterator<String> for Series {
 pub type SeriesPhysIter<'a> = Box<dyn ExactSizeIterator<Item = AnyValue<'a>> + 'a>;
 
 impl Series {
-    /// iterate over [`Series`] as [`AnyValue`].
+    /// Iterate over [`Series`] as [`AnyValue`].
     ///
     /// # Panics
     /// This will panic if the array is not rechunked first.
     pub fn iter(&self) -> SeriesIter<'_> {
-        let dtype = self.dtype();
-        #[cfg(feature = "object")]
-        assert!(
-            !matches!(dtype, DataType::Object(_)),
-            "object dtype not supported in Series.iter"
-        );
-        assert_eq!(self.chunks().len(), 1, "impl error");
-        let arr = &*self.chunks()[0];
-        let len = arr.len();
+        let arrays = self.chunks();
         SeriesIter {
-            arr,
-            dtype,
-            idx: 0,
-            len,
+            idx_in_cur_arr: 0,
+            cur_arr_idx: 0,
+            cur_arr_len: arrays[0].len(),
+            arrays,
+            dtype: self.dtype(),
+            total_elems_in_remaining_arrays: self.len(),
         }
     }
 
@@ -102,11 +96,6 @@ impl Series {
 
         assert_eq!(dtype, &phys_dtype, "impl error");
         assert_eq!(self.chunks().len(), 1, "impl error");
-        #[cfg(feature = "object")]
-        assert!(
-            !matches!(dtype, DataType::Object(_)),
-            "object dtype not supported in Series.iter"
-        );
         let arr = &*self.chunks()[0];
 
         if phys_dtype.is_primitive_numeric() {
@@ -166,10 +155,12 @@ impl Series {
 }
 
 pub struct SeriesIter<'a> {
-    arr: &'a dyn Array,
+    arrays: &'a [Box<dyn Array>],
     dtype: &'a DataType,
-    idx: usize,
-    len: usize,
+    idx_in_cur_arr: usize,
+    cur_arr_len: usize,
+    cur_arr_idx: usize,
+    total_elems_in_remaining_arrays: usize,
 }
 
 impl<'a> Iterator for SeriesIter<'a> {
@@ -177,18 +168,29 @@ impl<'a> Iterator for SeriesIter<'a> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        let idx = self.idx;
+        loop {
+            if self.idx_in_cur_arr < self.cur_arr_len {
+                let arr = unsafe { self.arrays.get_unchecked(self.cur_arr_idx) };
+                let ret = unsafe { arr_to_any_value(&**arr, self.idx_in_cur_arr, self.dtype) };
+                self.idx_in_cur_arr += 1;
+                return Some(ret);
+            }
 
-        if idx == self.len {
-            None
-        } else {
-            self.idx += 1;
-            unsafe { Some(arr_to_any_value(self.arr, idx, self.dtype)) }
+            if self.cur_arr_idx + 1 < self.arrays.len() {
+                self.total_elems_in_remaining_arrays -= self.cur_arr_len;
+                self.cur_arr_idx += 1;
+                self.idx_in_cur_arr = 0;
+                let arr = unsafe { self.arrays.get_unchecked(self.cur_arr_idx) };
+                self.cur_arr_len = arr.len();
+            } else {
+                return None;
+            }
         }
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.len, Some(self.len))
+        let len = self.total_elems_in_remaining_arrays - self.idx_in_cur_arr;
+        (len, Some(len))
     }
 }
 

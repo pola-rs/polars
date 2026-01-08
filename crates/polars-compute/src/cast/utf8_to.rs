@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use arrow::array::*;
 use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
@@ -24,7 +22,9 @@ pub(super) fn utf8_to_dictionary_dyn<O: Offset, K: DictionaryKey>(
 pub fn utf8_to_dictionary<O: Offset, K: DictionaryKey>(
     from: &Utf8Array<O>,
 ) -> PolarsResult<DictionaryArray<K>> {
-    let mut array = MutableDictionaryArray::<K, MutableUtf8Array<O>>::new();
+    let mut array = MutableDictionaryArray::<K, MutableUtf8Array<O>>::empty_with_value_dtype(
+        from.dtype().clone(),
+    );
     array.reserve(from.len());
     array.try_extend(from.iter())?;
 
@@ -149,9 +149,9 @@ pub fn binary_to_binview<O: Offset>(arr: &BinaryArray<O>) -> BinaryViewArray {
         unsafe { views.push_unchecked(value) };
     }
     let buffers = if uses_buffer {
-        Arc::from(buffers)
+        Buffer::from(buffers)
     } else {
-        Arc::from([])
+        Buffer::new()
     };
     unsafe {
         BinaryViewArray::new_unchecked_unknown_md(

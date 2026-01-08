@@ -27,6 +27,7 @@ def test_cast_list_array() -> None:
         s.cast(pl.Array(pl.Int64, 2))
 
 
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 def test_array_in_group_by_iter() -> None:
     df = pl.DataFrame(
         [
@@ -458,6 +459,7 @@ def test_array_sum_with_nulls() -> None:
         (pl.UInt16, pl.Int64),
         (pl.UInt32, pl.UInt32),
         (pl.UInt64, pl.UInt64),
+        (pl.Float16, pl.Float16),
         (pl.Float32, pl.Float32),
         (pl.Float64, pl.Float64),
     ]:

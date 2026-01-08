@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     ClassVar,
     NoReturn,
     TypeVar,
@@ -33,7 +32,6 @@ from polars._dependencies import polars_cloud as pc
 from polars._dependencies import pyarrow as pa
 from polars._typing import (
     ParquetMetadata,
-    PartitioningScheme,
 )
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
 from polars._utils.convert import negate_duration_string, parse_as_duration_string
@@ -96,7 +94,7 @@ from polars.datatypes import (
     parse_into_dtype,
 )
 from polars.datatypes.group import DataTypeGroup
-from polars.exceptions import PerformanceWarning
+from polars.exceptions import InvalidOperationError, PerformanceWarning
 from polars.interchange.protocol import CompatLevel
 from polars.lazyframe.engine_config import GPUEngine
 from polars.lazyframe.group_by import LazyGroupBy
@@ -110,15 +108,17 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Awaitable, Iterator, Sequence
-    from concurrent.futures import Future
+    from collections.abc import Awaitable, Callable, Iterator, Sequence
     from io import IOBase
-    from typing import IO, Literal
+    from typing import IO, Concatenate, Literal, ParamSpec
 
+    import deltalake
+
+    from polars.io.partition import _SinkDirectory
     from polars.lazyframe.opt_flags import QueryOptFlags
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
-        from polars._plr import PyExpr, PyPartitioning, PySelector
+        from polars._plr import PyExpr, PySelector
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
         import polars._plr as plr
@@ -133,6 +133,7 @@ if TYPE_CHECKING:
         EngineType,
         ExplainFormat,
         FillNullStrategy,
+        FloatFmt,
         FrameInitTypes,
         IntoExpr,
         IntoExprColumn,
@@ -143,6 +144,7 @@ if TYPE_CHECKING:
         MaintainOrderJoin,
         Orientation,
         ParquetMetadata,
+        PivotAgg,
         PlanStage,
         PolarsDataType,
         PythonDataType,
@@ -154,13 +156,9 @@ if TYPE_CHECKING:
         SyncOnCloseMethod,
         UniqueKeepStrategy,
     )
+    from polars.config import TableFormatNames
     from polars.io.cloud import CredentialProviderFunction
     from polars.io.parquet import ParquetFieldOverwrites
-
-    if sys.version_info >= (3, 10):
-        from typing import Concatenate, ParamSpec
-    else:
-        from typing_extensions import Concatenate, ParamSpec
 
     if sys.version_info >= (3, 11):
         from typing import Self
@@ -184,14 +182,16 @@ def _select_engine(engine: EngineType) -> EngineType:
 
 
 def _to_sink_target(
-    path: str | Path | IO[bytes] | IO[str] | PartitioningScheme,
-) -> str | Path | IO[bytes] | IO[str] | PyPartitioning:
+    path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
+) -> str | Path | IO[bytes] | IO[str] | _SinkDirectory:
+    from polars.io.partition import _SinkDirectory
+
     if isinstance(path, (str, Path)):
         return normalize_filepath(path)
     elif isinstance(path, io.IOBase):
-        return path  # type: ignore[return-value]
-    elif isinstance(path, PartitioningScheme):
-        return path._py_partitioning
+        return path
+    elif isinstance(path, _SinkDirectory):
+        return path
     elif callable(getattr(path, "write", None)):
         # This allows for custom writers
         return path
@@ -473,7 +473,10 @@ class LazyFrame:
 
     @classmethod
     def deserialize(
-        cls, source: str | Path | IOBase, *, format: SerializationFormat = "binary"
+        cls,
+        source: str | bytes | Path | IOBase,
+        *,
+        format: SerializationFormat = "binary",
     ) -> LazyFrame:
         """
         Read a logical plan from a file to construct a LazyFrame.
@@ -524,6 +527,8 @@ class LazyFrame:
             source = BytesIO(source.getvalue().encode())
         elif isinstance(source, (str, Path)):
             source = normalize_filepath(source)
+        elif isinstance(source, bytes):
+            source = io.BytesIO(source)
 
         if format == "binary":
             deserializer = PyLazyFrame.deserialize_binary
@@ -1012,14 +1017,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2.0 ┆ 2.5 ┆ 3.0 │
         └─────┴─────┴─────┘
         """
-        return self._from_pyldf(
-            self._ldf.pipe_with_schema(
-                lambda lf_and_schema: function(
-                    self._from_pyldf(lf_and_schema[0]),
-                    lf_and_schema[1],
-                )._ldf
-            )
-        )
+
+        def wrapper(lf_and_schema: Any) -> PyLazyFrame:
+            # The last index is because we return a list for multiple inputs
+            # to make `pipe_with_schemas` (plural) work, but we don't use that
+            return function(
+                self._from_pyldf(lf_and_schema[0][0]),
+                lf_and_schema[1][0],
+            )._ldf
+
+        return self._from_pyldf(self._ldf.pipe_with_schema(wrapper))
 
     def describe(
         self,
@@ -1209,7 +1216,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             df_metrics.row(0)[(n * n_metrics) : (n + 1) * n_metrics]
             for n in range(schema.len())
         ]
-        summary = dict(zip(schema, column_metrics))
+        summary = dict(zip(schema, column_metrics, strict=True))
 
         # cast by column type (numeric/bool -> float), (other -> string)
         for c in schema:
@@ -1715,7 +1722,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Notes
         -----
-        * The calling frame is automatically registered as a table in the SQL context
+        * The calling LazyFrame is automatically registered as a table in the SQLContext
           under the name "self". If you want access to the DataFrames and LazyFrames
           found in the current globals, use the top-level :meth:`pl.sql <polars.sql>`.
         * More control over registration and execution behaviour is available by
@@ -2546,6 +2553,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Resolve the schema of this LazyFrame.
 
+        .. caution::
+            Computing the schema of a LazyFrame is a potentially expensive operation,
+            as it may involve reading metadata from (slow) disk storage, or performing
+            network requests if the data is remote.
+
         Examples
         --------
         Determine the schema.
@@ -2577,7 +2589,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_parquet(
         self,
-        path: str | Path | IO[bytes] | PartitioningScheme,
+        path: str | Path | IO[bytes] | _SinkDirectory,
         *,
         compression: str = "zstd",
         compression_level: int | None = None,
@@ -2605,7 +2617,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_parquet(
         self,
-        path: str | Path | IO[bytes] | PartitioningScheme,
+        path: str | Path | IO[bytes] | _SinkDirectory,
         *,
         compression: str = "zstd",
         compression_level: int | None = None,
@@ -2632,7 +2644,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def sink_parquet(
         self,
-        path: str | Path | IO[bytes] | PartitioningScheme,
+        path: str | Path | IO[bytes] | _SinkDirectory,
         *,
         compression: str = "zstd",
         compression_level: int | None = None,
@@ -2665,7 +2677,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         path
             File path to which the file should be written.
-        compression : {'lz4', 'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'zstd'}
+        compression : {'lz4', 'uncompressed', 'snappy', 'gzip', 'brotli', 'zstd'}
             Choose "zstd" for good compression performance.
             Choose "lz4" for fast compression/decompression.
             Choose "snappy" for more backwards compatibility guarantees
@@ -2685,10 +2697,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             - `True`: enable default set of statistics (default). Some
               statistics may be disabled.
             - `False`: disable all statistics
-            - "full": calculate and write all available statistics. Cannot be
-              combined with `use_pyarrow`.
-            - `{ "statistic-key": True / False, ... }`. Cannot be combined with
-              `use_pyarrow`. Available keys:
+            - "full": calculate and write all available statistics.
+            - `{ "statistic-key": True / False, ... }`. Available keys:
 
               - "min": column minimum value (default: `True`)
               - "max": column maximum value (default: `True`)
@@ -2796,6 +2806,23 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
         >>> lf.sink_parquet("out.parquet")  # doctest: +SKIP
+
+        Sink to a `BytesIO` object.
+
+        >>> import io
+        >>> buf = io.BytesIO()  # doctest: +SKIP
+        >>> pl.LazyFrame({"x": [1, 2, 1]}).sink_parquet(buf)  # doctest: +SKIP
+
+        Split into a hive-partitioning style partition:
+
+        >>> pl.LazyFrame({"x": [1, 2, 1], "y": [3, 4, 5]}).sink_parquet(
+        ...     pl.PartitionByKey("./out/", by="x"),
+        ...     mkdir=True
+        ... )  # doctest: +SKIP
+
+        See Also
+        --------
+        PartitionByKey
         """
         engine = _select_engine(engine)
         if metadata is not None:
@@ -2828,18 +2855,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         del credential_provider
 
-        if storage_options:
-            storage_options = list(storage_options.items())  # type: ignore[assignment]
-        else:
-            # Handle empty dict input
-            storage_options = None
-
         target = _to_sink_target(path)
-        sink_options = {
-            "sync_on_close": sync_on_close or "none",
-            "maintain_order": maintain_order,
-            "mkdir": mkdir,
-        }
 
         if isinstance(metadata, dict):
             if metadata:
@@ -2877,17 +2893,27 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 msg = f"field_overwrites got the wrong type {type(field_overwrites)}"
                 raise TypeError(msg)
 
+        from polars.io.partition import _SinkOptions
+
+        sink_options = _SinkOptions(
+            mkdir=mkdir,
+            maintain_order=maintain_order,
+            sync_on_close=sync_on_close,
+            storage_options=(
+                list(storage_options.items()) if storage_options is not None else None
+            ),
+            credential_provider=credential_provider_builder,
+            retries=retries,
+        )
+
         ldf_py = self._ldf.sink_parquet(
             target=target,
+            sink_options=sink_options,
             compression=compression,
             compression_level=compression_level,
             statistics=statistics,
             row_group_size=row_group_size,
             data_page_size=data_page_size,
-            cloud_options=storage_options,
-            credential_provider=credential_provider_builder,
-            retries=retries,
-            sink_options=sink_options,
             metadata=metadata,
             field_overwrites=field_overwrites_dicts,
         )
@@ -2900,12 +2926,317 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         return LazyFrame._from_pyldf(ldf_py)
 
     @overload
+    def sink_delta(
+        self,
+        target: str | Path | deltalake.DeltaTable,
+        *,
+        mode: Literal["error", "append", "overwrite", "ignore"] = ...,
+        storage_options: dict[str, str] | None = ...,
+        credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
+        delta_write_options: dict[str, Any] | None = ...,
+        optimizations: QueryOptFlags = ...,
+    ) -> None: ...
+
+    @overload
+    def sink_delta(
+        self,
+        target: str | Path | deltalake.DeltaTable,
+        *,
+        mode: Literal["merge"],
+        storage_options: dict[str, str] | None = ...,
+        credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
+        delta_merge_options: dict[str, Any],
+        optimizations: QueryOptFlags = ...,
+    ) -> deltalake.table.TableMerger: ...
+
+    @unstable()
+    def sink_delta(
+        self,
+        target: str | Path | deltalake.DeltaTable,
+        *,
+        mode: Literal["error", "append", "overwrite", "ignore", "merge"] = "error",
+        storage_options: dict[str, str] | None = None,
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
+        delta_write_options: dict[str, Any] | None = None,
+        delta_merge_options: dict[str, Any] | None = None,
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+    ) -> deltalake.table.TableMerger | None:
+        """
+
+        Sink DataFrame as delta table.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        target
+            URI of a table or a DeltaTable object.
+        mode : {'error', 'append', 'overwrite', 'ignore', 'merge'}
+            How to handle existing data.
+
+            - If 'error', throw an error if the table already exists (default).
+            - If 'append', will add new data.
+            - If 'overwrite', will replace table with new data.
+            - If 'ignore', will not write anything if table already exists.
+            - If 'merge', return a `TableMerger` object to merge data from the DataFrame
+            with the existing data.
+        storage_options
+            Extra options for the storage backends supported by `deltalake`.
+            For cloud storages, this may include configurations for authentication etc.
+
+            - See a list of supported storage options for S3 `here <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html#variants>`__.
+            - See a list of supported storage options for GCS `here <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html#variants>`__.
+            - See a list of supported storage options for Azure `here <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html#variants>`__.
+        credential_provider
+            Provide a function that can be called to provide cloud storage
+            credentials. The function is expected to return a dictionary of
+            credential keys along with an optional credential expiry time.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+        delta_write_options
+            Additional keyword arguments while writing a Delta lake Table.
+            See a list of supported write options `here <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.write_deltalake>`__.
+        delta_merge_options
+            Keyword arguments which are required to `MERGE` a Delta lake Table.
+            See a list of supported merge options `here <https://delta-io.github.io/delta-rs/api/delta_table/#deltalake.DeltaTable.merge>`__.
+        engine
+            Select the engine used to process the query, optional.
+            At the moment, if set to `"auto"` (default), the query is run
+            using the polars streaming engine. Polars will also
+            attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
+            environment variable. If it cannot run the query using the
+            selected engine, the query is run using the polars streaming
+            engine.
+        optimizations
+            The optimization passes done during query optimization.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+
+        Raises
+        ------
+        TypeError
+            If the DataFrame contains unsupported data types.
+        ArrowInvalidError
+            If the DataFrame contains data types that could not be cast to their
+            primitive type.
+        TableNotFoundError
+            If the delta table doesn't exist and MERGE action is triggered
+
+        Notes
+        -----
+        The Polars data types :class:`Null` and :class:`Time` are not supported
+        by the delta protocol specification and will raise a TypeError. Columns
+        using The :class:`Categorical` data type will be converted to
+        normal (non-categorical) strings when written.
+
+        Polars columns are always nullable. To write data to a delta table with
+        non-nullable columns, a custom pyarrow schema has to be passed to the
+        `delta_write_options`. See the last example below.
+
+        Examples
+        --------
+        Sink a large than fits into memory dataset to a Delta Lake table.
+
+        >>> lf = pl.scan_parquet(
+        ...     "/path/to/my_larger_than_ram_file.parquet"
+        ... )  # doctest: +SKIP
+        >>> table_path = "/path/to/delta-table/"
+        >>> lf.sink_delta(table_path)  # doctest: +SKIP
+
+
+        Sink a dataframe to the local filesystem as a Delta Lake table.
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3, 4, 5],
+        ...         "bar": [6, 7, 8, 9, 10],
+        ...         "ham": ["a", "b", "c", "d", "e"],
+        ...     }
+        ... )
+        >>> table_path = "/path/to/delta-table/"
+        >>> df.lazy().sink_delta(table_path)  # doctest: +SKIP
+
+        Append data to an existing Delta Lake table on the local filesystem.
+        Note that this will fail if the schema of the new data does not match the
+        schema of the existing table.
+
+        >>> df.lazy().sink_delta(table_path, mode="append")  # doctest: +SKIP
+
+        Overwrite a Delta Lake table as a new version.
+        If the schemas of the new and old data are the same, specifying the
+        `schema_mode` is not required.
+
+        >>> existing_table_path = "/path/to/delta-table/"
+        >>> df.lazy().sink_delta(
+        ...     existing_table_path,
+        ...     mode="overwrite",
+        ...     delta_write_options={"schema_mode": "overwrite"},
+        ... )  # doctest: +SKIP
+
+        Sink a DataFrame as a Delta Lake table to a cloud object store like S3.
+
+        >>> table_path = "s3://bucket/prefix/to/delta-table/"
+        >>> df.lazy().sink_delta(
+        ...     table_path,
+        ...     storage_options={
+        ...         "AWS_REGION": "THE_AWS_REGION",
+        ...         "AWS_ACCESS_KEY_ID": "THE_AWS_ACCESS_KEY_ID",
+        ...         "AWS_SECRET_ACCESS_KEY": "THE_AWS_SECRET_ACCESS_KEY",
+        ...     },
+        ... )  # doctest: +SKIP
+
+        Sink DataFrame as a Delta Lake table with non-nullable columns.
+
+        >>> import pyarrow as pa
+        >>> existing_table_path = "/path/to/delta-table/"
+        >>> df.lazy().sink_delta(
+        ...     existing_table_path,
+        ...     delta_write_options={
+        ...         "schema": pa.schema([pa.field("foo", pa.int64(), nullable=False)])
+        ...     },
+        ... )  # doctest: +SKIP
+
+        Sink DataFrame as a Delta Lake table with zstd compression.
+        For all `delta_write_options` keyword arguments, check the deltalake docs
+        `here
+        <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.write_deltalake>`__,
+        and for Writer Properties in particular `here
+        <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.WriterProperties>`__.
+
+        >>> import deltalake
+        >>> df.lazy().sink_delta(
+        ...     table_path,
+        ...     delta_write_options={
+        ...         "writer_properties": deltalake.WriterProperties(compression="zstd"),
+        ...     },
+        ... )  # doctest: +SKIP
+
+        Merge the DataFrame with an existing Delta Lake table.
+        For all `TableMerger` methods, check the deltalake docs
+        `here <https://delta-io.github.io/delta-rs/api/delta_table/delta_table_merger/>`__.
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3, 4, 5],
+        ...         "bar": [6, 7, 8, 9, 10],
+        ...         "ham": ["a", "b", "c", "d", "e"],
+        ...     }
+        ... )
+        >>> table_path = "/path/to/delta-table/"
+        >>> (
+        ...     df.lazy()
+        ...     .sink_delta(
+        ...         "table_path",
+        ...         mode="merge",
+        ...         delta_merge_options={
+        ...             "predicate": "s.foo = t.foo",
+        ...             "source_alias": "s",
+        ...             "target_alias": "t",
+        ...         },
+        ...     )
+        ...     .when_matched_update_all()
+        ...     .when_not_matched_insert_all()
+        ...     .execute()
+        ... )  # doctest: +SKIP
+        """
+        from polars.io.delta import (
+            _check_for_unsupported_types,
+            _check_if_delta_available,
+            _resolve_delta_lake_uri,
+        )
+
+        _check_if_delta_available()
+
+        from deltalake import DeltaTable, write_deltalake
+
+        _check_for_unsupported_types(self.collect_schema().dtypes())
+
+        if isinstance(target, (str, Path)):
+            target = _resolve_delta_lake_uri(str(target), strict=False)
+
+        from polars.io.cloud.credential_provider._builder import (
+            _init_credential_provider_builder,
+        )
+        from polars.io.cloud.credential_provider._providers import (
+            _get_credentials_from_provider_expiry_aware,
+        )
+
+        if not isinstance(target, DeltaTable):
+            credential_provider_builder = _init_credential_provider_builder(
+                credential_provider, target, storage_options, "sink_delta"
+            )
+        elif credential_provider is not None and credential_provider != "auto":
+            msg = "cannot use credential_provider when passing a DeltaTable object"
+            raise ValueError(msg)
+        else:
+            credential_provider_builder = None
+
+        del credential_provider
+
+        credential_provider_creds = {}
+
+        if credential_provider_builder and (
+            provider := credential_provider_builder.build_credential_provider()
+        ):
+            credential_provider_creds = (
+                _get_credentials_from_provider_expiry_aware(provider) or {}
+            )
+
+        # We aren't calling into polars-native write functions so we just update
+        # the storage_options here.
+        storage_options = (
+            {**(storage_options or {}), **credential_provider_creds}
+            if storage_options is not None or credential_provider_builder is not None
+            else None
+        )
+        ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
+        stream = ldf.collect_batches(
+            engine="streaming",
+            maintain_order=True,
+            chunk_size=None,
+            lazy=True,
+        )
+
+        if mode == "merge":
+            if delta_merge_options is None:
+                msg = "you need to pass delta_merge_options with at least a given predicate for `MERGE` to work."
+                raise ValueError(msg)
+            if isinstance(target, str):
+                dt = DeltaTable(table_uri=target, storage_options=storage_options)
+            else:
+                dt = target
+
+            return dt.merge(stream, **delta_merge_options)
+
+        else:
+            if delta_write_options is None:
+                delta_write_options = {}
+
+            write_deltalake(
+                table_or_uri=target,
+                data=stream,
+                mode=mode,
+                storage_options=storage_options,
+                **delta_write_options,
+            )
+            return None
+
+    @overload
     def sink_ipc(
         self,
-        path: str | Path | IO[bytes] | PartitioningScheme,
+        path: str | Path | IO[bytes] | _SinkDirectory,
         *,
         compression: IpcCompression | None = "uncompressed",
         compat_level: CompatLevel | None = None,
+        record_batch_size: int | None = None,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
         credential_provider: CredentialProviderFunction
@@ -2922,10 +3253,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_ipc(
         self,
-        path: str | Path | IO[bytes] | PartitioningScheme,
+        path: str | Path | IO[bytes] | _SinkDirectory,
         *,
         compression: IpcCompression | None = "uncompressed",
         compat_level: CompatLevel | None = None,
+        record_batch_size: int | None = None,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
         credential_provider: CredentialProviderFunction
@@ -2941,10 +3273,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def sink_ipc(
         self,
-        path: str | Path | IO[bytes] | PartitioningScheme,
+        path: str | Path | IO[bytes] | _SinkDirectory,
         *,
         compression: IpcCompression | None = "uncompressed",
         compat_level: CompatLevel | None = None,
+        record_batch_size: int | None = None,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
         credential_provider: CredentialProviderFunction
@@ -2972,6 +3305,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         compat_level
             Use a specific compatibility level
             when exporting Polars' internal data structures.
+        record_batch_size
+            Size of the record batches in number of rows.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
         maintain_order
             Maintain the order in which data is processed.
             Setting this to `False` will be slightly faster.
@@ -3053,6 +3392,23 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
         >>> lf.sink_ipc("out.arrow")  # doctest: +SKIP
+
+        Sink to a `BytesIO` object.
+
+        >>> import io
+        >>> buf = io.BytesIO()  # doctest: +SKIP
+        >>> pl.LazyFrame({"x": [1, 2, 1]}).sink_ipc(buf)  # doctest: +SKIP
+
+        Split into a hive-partitioning style partition:
+
+        >>> pl.LazyFrame({"x": [1, 2, 1], "y": [3, 4, 5]}).sink_ipc(
+        ...     pl.PartitionByKey("./out/", by="x"),
+        ...     mkdir=True
+        ... )  # doctest: +SKIP
+
+        See Also
+        --------
+        PartitionByKey
         """
         engine = _select_engine(engine)
 
@@ -3065,18 +3421,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         del credential_provider
 
-        if storage_options:
-            storage_options = list(storage_options.items())  # type: ignore[assignment]
-        else:
-            # Handle empty dict input
-            storage_options = None
-
         target = _to_sink_target(path)
-        sink_options = {
-            "sync_on_close": sync_on_close or "none",
-            "maintain_order": maintain_order,
-            "mkdir": mkdir,
-        }
 
         compat_level_py: int | bool
         if compat_level is None:
@@ -3090,14 +3435,25 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if compression is None:
             compression = "uncompressed"
 
-        ldf_py = self._ldf.sink_ipc(
-            target=target,
-            compression=compression,
-            compat_level=compat_level_py,
-            cloud_options=storage_options,
+        from polars.io.partition import _SinkOptions
+
+        sink_options = _SinkOptions(
+            mkdir=mkdir,
+            maintain_order=maintain_order,
+            sync_on_close=sync_on_close,
+            storage_options=(
+                list(storage_options.items()) if storage_options is not None else None
+            ),
             credential_provider=credential_provider_builder,
             retries=retries,
+        )
+
+        ldf_py = self._ldf.sink_ipc(
+            target=target,
             sink_options=sink_options,
+            compression=compression,
+            compat_level=compat_level_py,
+            record_batch_size=record_batch_size,
         )
 
         if not lazy:
@@ -3110,7 +3466,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_csv(
         self,
-        path: str | Path | IO[bytes] | IO[str] | PartitioningScheme,
+        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
         *,
         include_bom: bool = False,
         include_header: bool = True,
@@ -3142,7 +3498,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_csv(
         self,
-        path: str | Path | IO[bytes] | IO[str] | PartitioningScheme,
+        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
         *,
         include_bom: bool = False,
         include_header: bool = True,
@@ -3173,7 +3529,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def sink_csv(
         self,
-        path: str | Path | IO[bytes] | IO[str] | PartitioningScheme,
+        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
         *,
         include_bom: bool = False,
         include_header: bool = True,
@@ -3238,10 +3594,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Rust crate.
         float_scientific
             Whether to use scientific form always (true), never (false), or
-            automatically (None) for `Float32` and `Float64` datatypes.
+            automatically (None) for floating-point datatypes.
         float_precision
-            Number of decimal places to write, applied to both `Float32` and
-            `Float64` datatypes.
+            Number of decimal places to write, applied to both floating-point
+            datatypes.
         decimal_comma
             Use a comma as the decimal separator instead of a point. Floats will be
             encapsulated in quotes if necessary; set the field separator to override.
@@ -3342,6 +3698,23 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
         >>> lf.sink_csv("out.csv")  # doctest: +SKIP
+
+        Sink to a `BytesIO` object.
+
+        >>> import io
+        >>> buf = io.BytesIO()  # doctest: +SKIP
+        >>> pl.LazyFrame({"x": [1, 2, 1]}).sink_csv(buf)  # doctest: +SKIP
+
+        Split into a hive-partitioning style partition:
+
+        >>> pl.LazyFrame({"x": [1, 2, 1], "y": [3, 4, 5]}).sink_csv(
+        ...     pl.PartitionByKey("./out/", by="x"),
+        ...     mkdir=True
+        ... )  # doctest: +SKIP
+
+        See Also
+        --------
+        PartitionByKey
         """
         from polars.io.csv._utils import _check_arg_is_1byte
 
@@ -3360,21 +3733,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         del credential_provider
 
-        if storage_options:
-            storage_options = list(storage_options.items())  # type: ignore[assignment]
-        else:
-            # Handle empty dict input
-            storage_options = None
-
         target = _to_sink_target(path)
-        sink_options = {
-            "sync_on_close": sync_on_close or "none",
-            "maintain_order": maintain_order,
-            "mkdir": mkdir,
-        }
+
+        from polars.io.partition import _SinkOptions
+
+        sink_options = _SinkOptions(
+            mkdir=mkdir,
+            maintain_order=maintain_order,
+            sync_on_close=sync_on_close,
+            storage_options=(
+                list(storage_options.items()) if storage_options is not None else None
+            ),
+            credential_provider=credential_provider_builder,
+            retries=retries,
+        )
 
         ldf_py = self._ldf.sink_csv(
             target=target,
+            sink_options=sink_options,
             include_bom=include_bom,
             include_header=include_header,
             separator=ord(separator),
@@ -3389,10 +3765,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             decimal_comma=decimal_comma,
             null_value=null_value,
             quote_style=quote_style,
-            cloud_options=storage_options,
-            credential_provider=credential_provider_builder,
-            retries=retries,
-            sink_options=sink_options,
         )
 
         if not lazy:
@@ -3405,7 +3777,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_ndjson(
         self,
-        path: str | Path | IO[bytes] | IO[str] | PartitioningScheme,
+        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
         *,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
@@ -3423,7 +3795,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_ndjson(
         self,
-        path: str | Path | IO[bytes] | IO[str] | PartitioningScheme,
+        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
         *,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
@@ -3440,7 +3812,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def sink_ndjson(
         self,
-        path: str | Path | IO[bytes] | IO[str] | PartitioningScheme,
+        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
         *,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
@@ -3541,6 +3913,23 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
         >>> lf.sink_ndjson("out.ndjson")  # doctest: +SKIP
+
+        Sink to a `BytesIO` object.
+
+        >>> import io
+        >>> buf = io.BytesIO()  # doctest: +SKIP
+        >>> pl.LazyFrame({"x": [1, 2, 1]}).sink_ndjson(buf)  # doctest: +SKIP
+
+        Split into a hive-partitioning style partition:
+
+        >>> pl.LazyFrame({"x": [1, 2, 1], "y": [3, 4, 5]}).sink_ndjson(
+        ...     pl.PartitionByKey("./out/", by="x"),
+        ...     mkdir=True
+        ... )  # doctest: +SKIP
+
+        See Also
+        --------
+        PartitionByKey
         """
         engine = _select_engine(engine)
 
@@ -3553,26 +3942,22 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         del credential_provider
 
-        if storage_options:
-            storage_options = list(storage_options.items())  # type: ignore[assignment]
-        else:
-            # Handle empty dict input
-            storage_options = None
-
         target = _to_sink_target(path)
-        sink_options = {
-            "sync_on_close": sync_on_close or "none",
-            "maintain_order": maintain_order,
-            "mkdir": mkdir,
-        }
 
-        ldf_py = self._ldf.sink_json(
-            target=target,
-            cloud_options=storage_options,
+        from polars.io.partition import _SinkOptions
+
+        sink_options = _SinkOptions(
+            mkdir=mkdir,
+            maintain_order=maintain_order,
+            sync_on_close=sync_on_close,
+            storage_options=(
+                list(storage_options.items()) if storage_options is not None else None
+            ),
             credential_provider=credential_provider_builder,
             retries=retries,
-            sink_options=sink_options,
         )
+
+        ldf_py = self._ldf.sink_json(target=target, sink_options=sink_options)
 
         if not lazy:
             ldf_py = ldf_py.with_optimizations(optimizations._pyoptflags)
@@ -3592,6 +3977,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> None: ...
+
     @overload
     def sink_batches(
         self,
@@ -3603,6 +3989,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> pl.LazyFrame: ...
+
     @unstable()
     def sink_batches(
         self,
@@ -3728,101 +4115,26 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> for df in lf.collect_batches():
         ...     print(df)  # doctest: +SKIP
         """
-        from queue import Queue
 
-        class BatchCollector:
-            def __init__(
-                self,
-                *,
-                lf: pl.LazyFrame,
-                chunk_size: int | None,
-                maintain_order: bool,
-                lazy: bool,
-                engine: EngineType,
-                optimizations: QueryOptFlags,
-            ) -> None:
-                class SharedState:
-                    def __init__(self) -> None:
-                        self.queue: Queue[pl.DataFrame | None] = Queue(maxsize=1)
-                        self.stopped = False
+        class CollectBatches:
+            def __init__(self, inner: Any) -> None:
+                self._inner = inner
 
-                self._lf = lf
-                self._chunk_size = chunk_size
-                self._maintain_order = maintain_order
-                self._engine = engine
-                self._optimizations = optimizations
-                self._shared = SharedState()
-                self._fut: Future[None] | None = None
-
-                if not lazy:
-                    self._start()
-
-            def _start(self) -> None:
-                if self._fut is not None:
-                    return
-
-                # Make sure we don't capture self which would cause __del__
-                # to not get called.
-                shared = self._shared
-                chunk_size = self._chunk_size
-                maintain_order = self._maintain_order
-                engine = self._engine
-                optimizations = self._optimizations
-                lf = self._lf
-
-                def task() -> None:
-                    def put_batch_in_queue(df: DataFrame) -> bool | None:
-                        if shared.stopped:
-                            return True
-                        shared.queue.put(df)
-                        return shared.stopped
-
-                    try:
-                        lf.sink_batches(
-                            put_batch_in_queue,
-                            chunk_size=chunk_size,
-                            maintain_order=maintain_order,
-                            engine=engine,
-                            optimizations=optimizations,
-                            lazy=False,
-                        )
-                    finally:
-                        shared.queue.put(None)  # Signal the end of batches.
-
-                self._fut = _COLLECT_BATCHES_POOL.submit(task)
-
-            def __iter__(self) -> BatchCollector:
+            def __iter__(self) -> CollectBatches:
                 return self
 
             def __next__(self) -> DataFrame:
-                if self._shared.stopped:
-                    raise StopIteration
+                pydf = next(self._inner)
+                return pl.DataFrame._from_pydf(pydf)
 
-                self._start()
-                df = self._shared.queue.get()
-                if df is None:
-                    self._shared.stopped = True
-                    raise StopIteration
-
-                return df
-
-            def __del__(self) -> None:
-                if not self._shared.stopped:
-                    # Signal to stop and unblock sink_batches task.
-                    self._shared.stopped = True
-                    while self._shared.queue.get() is not None:
-                        pass
-                if self._fut is not None:
-                    self._fut.result()
-
-        return BatchCollector(
-            lf=self,
-            chunk_size=chunk_size,
-            maintain_order=maintain_order,
-            lazy=lazy,
+        ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
+        inner = ldf.collect_batches(
             engine=engine,
-            optimizations=optimizations,
+            maintain_order=maintain_order,
+            chunk_size=chunk_size,
+            lazy=lazy,
         )
+        return CollectBatches(inner)
 
     @deprecated(
         "`LazyFrame.fetch` is deprecated; use `LazyFrame.collect` "
@@ -3896,6 +4208,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             ]
             | PolarsDataType
             | pl.DataTypeExpr
+            | Schema
         ),
         *,
         strict: bool = True,
@@ -5599,6 +5912,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                * - **left**
                  - Returns all rows from the left table, and the matched rows from
                    the right table.
+               * - **right**
+                 - Returns all rows from the right table, and the matched rows from
+                   the left table.
                * - **full**
                  - Returns all rows when there is a match in either left or right.
                * - **cross**
@@ -6281,6 +6597,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Validate that all column names exist in the current schema,
             and throw an exception if any do not. (Note that this parameter
             is a no-op when passing a function to `mapping`).
+
+        See Also
+        --------
+        Expr.name.replace
 
         Notes
         -----
@@ -7294,6 +7614,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         columns: ColumnNameOrSelector | Iterable[ColumnNameOrSelector],
         *more_columns: ColumnNameOrSelector,
+        empty_as_null: bool = True,
+        keep_nulls: bool = True,
     ) -> LazyFrame:
         """
         Explode the DataFrame to long format by exploding the given columns.
@@ -7305,6 +7627,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             columns being exploded must be of the `List` or `Array` data type.
         *more_columns
             Additional names of columns to explode, specified as positional arguments.
+        empty_as_null
+            Explode an empty list/array into a `null`.
+        keep_nulls
+            Explode a `null` list/array into a `null`.
 
         Examples
         --------
@@ -7334,36 +7660,41 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         subset = parse_list_into_selector(columns) | parse_list_into_selector(  # type: ignore[arg-type]
             more_columns
         )
-        return self._from_pyldf(self._ldf.explode(subset=subset._pyselector))
+        return self._from_pyldf(
+            self._ldf.explode(
+                subset=subset._pyselector,
+                empty_as_null=empty_as_null,
+                keep_nulls=keep_nulls,
+            )
+        )
 
     def unique(
         self,
-        subset: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
+        subset: IntoExpr | Collection[IntoExpr] | None = None,
         *,
         keep: UniqueKeepStrategy = "any",
         maintain_order: bool = False,
     ) -> LazyFrame:
-        """
-        Drop duplicate rows from this DataFrame.
+        r"""
+        Drop duplicate rows from this LazyFrame.
 
         Parameters
         ----------
         subset
-            Column name(s) or selector(s), to consider when identifying
-            duplicate rows. If set to `None` (default), use all columns.
+            Column name(s), selector(s), or expressions to consider when identifying
+            duplicate rows. If set to `None` (default), all columns are considered.
         keep : {'first', 'last', 'any', 'none'}
             Which of the duplicate rows to keep.
 
             * 'any': Does not give any guarantee of which row is kept.
                      This allows more optimizations.
             * 'none': Don't keep duplicate rows.
-            * 'first': Keep first unique row.
-            * 'last': Keep last unique row.
+            * 'first': Keep the first unique row.
+            * 'last': Keep the last unique row.
         maintain_order
-            Keep the same order as the original DataFrame. This is more expensive to
-            compute.
-            Settings this to `True` blocks the possibility
-            to run on the streaming engine.
+            Keep the same order as the original DataFrame. This is more expensive
+            to compute. Settings this to `True` blocks the possibility to run on
+            the streaming engine.
 
         Returns
         -------
@@ -7372,24 +7703,43 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Warnings
         --------
-        This method will fail if there is a column of type `List` in the DataFrame or
-        subset.
+        This method will fail if there is a column of type `List` in the DataFrame (or
+        in the "subset" parameter).
 
         Notes
         -----
-        If you're coming from pandas, this is similar to
+        If you're coming from Pandas, this is similar to
         `pandas.DataFrame.drop_duplicates`.
 
         Examples
         --------
         >>> lf = pl.LazyFrame(
         ...     {
-        ...         "foo": [1, 2, 3, 1],
-        ...         "bar": ["a", "a", "a", "a"],
-        ...         "ham": ["b", "b", "b", "b"],
+        ...         "foo": [1, 2, 3, 1, 1],
+        ...         "bar": ["a", "a", "a", "x", "x"],
+        ...         "ham": ["b", "b", "b", "y", "y"],
         ...     }
         ... )
+
+        By default, all columns are considered when determining which rows are unique:
+
         >>> lf.unique(maintain_order=True).collect()
+        shape: (4, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ str ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ a   ┆ b   │
+        │ 2   ┆ a   ┆ b   │
+        │ 3   ┆ a   ┆ b   │
+        │ 1   ┆ x   ┆ y   │
+        └─────┴─────┴─────┘
+
+        We can also consider only a subset of columns when determining uniqueness,
+        controlling which row we keep when duplicates are found:
+
+        >>> lf.unique(subset="foo", keep="first", maintain_order=True).collect()
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -7400,16 +7750,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2   ┆ a   ┆ b   │
         │ 3   ┆ a   ┆ b   │
         └─────┴─────┴─────┘
-        >>> lf.unique(subset=["bar", "ham"], maintain_order=True).collect()
-        shape: (1, 3)
-        ┌─────┬─────┬─────┐
-        │ foo ┆ bar ┆ ham │
-        │ --- ┆ --- ┆ --- │
-        │ i64 ┆ str ┆ str │
-        ╞═════╪═════╪═════╡
-        │ 1   ┆ a   ┆ b   │
-        └─────┴─────┴─────┘
-        >>> lf.unique(keep="last", maintain_order=True).collect()
+        >>> lf.unique(subset="foo", keep="last", maintain_order=True).collect()
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -7418,13 +7759,63 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ╞═════╪═════╪═════╡
         │ 2   ┆ a   ┆ b   │
         │ 3   ┆ a   ┆ b   │
-        │ 1   ┆ a   ┆ b   │
+        │ 1   ┆ x   ┆ y   │
         └─────┴─────┴─────┘
+        >>> lf.unique(subset="foo", keep="none", maintain_order=True).collect()
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ str ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 2   ┆ a   ┆ b   │
+        │ 3   ┆ a   ┆ b   │
+        └─────┴─────┴─────┘
+
+        Selectors can be used to define the "subset" parameter:
+
+        >>> import polars.selectors as cs
+        >>> lf.unique(subset=cs.string(), maintain_order=True).collect()
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ str ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ a   ┆ b   │
+        │ 1   ┆ x   ┆ y   │
+        └─────┴─────┴─────┘
+
+        We can also use an arbitrary expression in the "subset" parameter; in this
+        example we use the part of the label in front of ":" to determine uniqueness:
+
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "label": ["xx:1", "xx:2", "yy:3", "yy:4"],
+        ...         "value": [100, 200, 300, 400],
+        ...     }
+        ... )
+        >>> lf.unique(
+        ...     subset=pl.col("label").str.extract(r"^(\w+):"),
+        ...     maintain_order=True,
+        ...     keep="first",
+        ... ).collect()
+        shape: (2, 2)
+        ┌───────┬───────┐
+        │ label ┆ value │
+        │ ---   ┆ ---   │
+        │ str   ┆ i64   │
+        ╞═══════╪═══════╡
+        │ xx:1  ┆ 100   │
+        │ yy:3  ┆ 300   │
+        └───────┴───────┘
         """
-        selector_subset: PySelector | None = None
+        parsed_subset: list[PyExpr] | None = None
         if subset is not None:
-            selector_subset = parse_list_into_selector(subset)._pyselector
-        return self._from_pyldf(self._ldf.unique(maintain_order, selector_subset, keep))
+            parsed_subset = parse_into_list_of_expressions(
+                subset, __require_selectors=True
+            )
+        return self._from_pyldf(self._ldf.unique(maintain_order, parsed_subset, keep))
 
     def drop_nans(
         self,
@@ -7599,6 +7990,245 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             selector_subset = parse_list_into_selector(subset)._pyselector
         return self._from_pyldf(self._ldf.drop_nulls(subset=selector_subset))
 
+    def pivot(
+        self,
+        on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
+        on_columns: Sequence[Any] | pl.Series | pl.DataFrame,
+        *,
+        index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        aggregate_function: PivotAgg | Expr | None = None,
+        maintain_order: bool = False,
+        separator: str = "_",
+    ) -> LazyFrame:
+        """
+        Create a spreadsheet-style pivot table as a DataFrame.
+
+        Parameters
+        ----------
+        on
+            The column(s) whose values will be used as the new columns of the output
+            DataFrame.
+        on_columns
+            What value combinations will be considered for the output table.
+        index
+            The column(s) that remain from the input to the output. The output DataFrame will have one row
+            for each unique combination of the `index`'s values.
+            If None, all remaining columns not specified on `on` and `values` will be used. At least one
+            of `index` and `values` must be specified.
+        values
+            The existing column(s) of values which will be moved under the new columns from index. If an
+            aggregation is specified, these are the values on which the aggregation will be computed.
+            If None, all remaining columns not specified on `on` and `index` will be used.
+            At least one of `index` and `values` must be specified.
+        aggregate_function
+            Choose from:
+
+            - None: no aggregation takes place, will raise error if multiple values are in group.
+            - A predefined aggregate function string, one of
+              {'min', 'max', 'first', 'last', 'sum', 'mean', 'median', 'len', 'item'}
+            - An expression to do the aggregation. The expression can only access data from the respective
+              'values' columns as generated by pivot, through `pl.element()`.
+        maintain_order
+            Ensure the values of `index` are sorted by discovery order.
+        separator
+            Used as separator/delimiter in generated column names in case of multiple
+            `values` columns.
+
+        Returns
+        -------
+        DataFrame
+
+        Notes
+        -----
+        In some other frameworks, you might know this operation as `pivot_wider`.
+
+        Examples
+        --------
+        You can use `pivot` to reshape a dataframe from "long" to "wide" format.
+
+        For example, suppose we have a dataframe of test scores achieved by some
+        students, where each row represents a distinct test.
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "name": ["Cady", "Cady", "Karen", "Karen"],
+        ...         "subject": ["maths", "physics", "maths", "physics"],
+        ...         "test_1": [98, 99, 61, 58],
+        ...         "test_2": [100, 100, 60, 60],
+        ...     }
+        ... )
+        >>> df
+        shape: (4, 4)
+        ┌───────┬─────────┬────────┬────────┐
+        │ name  ┆ subject ┆ test_1 ┆ test_2 │
+        │ ---   ┆ ---     ┆ ---    ┆ ---    │
+        │ str   ┆ str     ┆ i64    ┆ i64    │
+        ╞═══════╪═════════╪════════╪════════╡
+        │ Cady  ┆ maths   ┆ 98     ┆ 100    │
+        │ Cady  ┆ physics ┆ 99     ┆ 100    │
+        │ Karen ┆ maths   ┆ 61     ┆ 60     │
+        │ Karen ┆ physics ┆ 58     ┆ 60     │
+        └───────┴─────────┴────────┴────────┘
+
+        Using `pivot`, we can reshape so we have one row per student, with different
+        subjects as columns, and their `test_1` scores as values:
+
+        >>> df.lazy().pivot(
+        ...     "subject",
+        ...     on_columns=["maths", "physics"],
+        ...     index="name",
+        ...     values="test_1",
+        ... ).collect()  # doctest: +IGNORE_RESULT
+        shape: (2, 3)
+        ┌───────┬───────┬─────────┐
+        │ name  ┆ maths ┆ physics │
+        │ ---   ┆ ---   ┆ ---     │
+        │ str   ┆ i64   ┆ i64     │
+        ╞═══════╪═══════╪═════════╡
+        │ Cady  ┆ 98    ┆ 99      │
+        │ Karen ┆ 61    ┆ 58      │
+        └───────┴───────┴─────────┘
+
+        You can use selectors too - here we include all test scores in the pivoted table:
+
+        >>> import polars.selectors as cs
+        >>> df.lazy().pivot(
+        ...     "subject",
+        ...     on_columns=["maths", "physics"],
+        ...     values=cs.starts_with("test"),
+        ... ).collect()  # doctest: +IGNORE_RESULT
+        shape: (2, 5)
+        ┌───────┬──────────────┬────────────────┬──────────────┬────────────────┐
+        │ name  ┆ test_1_maths ┆ test_1_physics ┆ test_2_maths ┆ test_2_physics │
+        │ ---   ┆ ---          ┆ ---            ┆ ---          ┆ ---            │
+        │ str   ┆ i64          ┆ i64            ┆ i64          ┆ i64            │
+        ╞═══════╪══════════════╪════════════════╪══════════════╪════════════════╡
+        │ Cady  ┆ 98           ┆ 99             ┆ 100          ┆ 100            │
+        │ Karen ┆ 61           ┆ 58             ┆ 60           ┆ 60             │
+        └───────┴──────────────┴────────────────┴──────────────┴────────────────┘
+
+        If you end up with multiple values per cell, you can specify how to aggregate
+        them with `aggregate_function`:
+
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "ix": [1, 1, 2, 2, 1, 2],
+        ...         "col": ["a", "a", "a", "a", "b", "b"],
+        ...         "foo": [0, 1, 2, 2, 7, 1],
+        ...         "bar": [0, 2, 0, 0, 9, 4],
+        ...     }
+        ... )
+        >>> lf.pivot(
+        ...     "col", on_columns=["a", "b"], index="ix", aggregate_function="sum"
+        ... ).collect()  # doctest: +IGNORE_RESULT
+        shape: (2, 5)
+        ┌─────┬───────┬───────┬───────┬───────┐
+        │ ix  ┆ foo_a ┆ foo_b ┆ bar_a ┆ bar_b │
+        │ --- ┆ ---   ┆ ---   ┆ ---   ┆ ---   │
+        │ i64 ┆ i64   ┆ i64   ┆ i64   ┆ i64   │
+        ╞═════╪═══════╪═══════╪═══════╪═══════╡
+        │ 1   ┆ 1     ┆ 7     ┆ 2     ┆ 9     │
+        │ 2   ┆ 4     ┆ 1     ┆ 0     ┆ 4     │
+        └─────┴───────┴───────┴───────┴───────┘
+
+        You can also pass a custom aggregation function using
+        :meth:`polars.element`:
+
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "col1": ["a", "a", "a", "b", "b", "b"],
+        ...         "col2": ["x", "x", "x", "x", "y", "y"],
+        ...         "col3": [6, 7, 3, 2, 5, 7],
+        ...     }
+        ... )
+        >>> lf.pivot(
+        ...     "col2",
+        ...     on_columns=["x", "y"],
+        ...     index="col1",
+        ...     values="col3",
+        ...     aggregate_function=pl.element().tanh().mean(),
+        ... ).collect()  # doctest: +IGNORE_RESULT
+        shape: (2, 3)
+        ┌──────┬──────────┬──────────┐
+        │ col1 ┆ x        ┆ y        │
+        │ ---  ┆ ---      ┆ ---      │
+        │ str  ┆ f64      ┆ f64      │
+        ╞══════╪══════════╪══════════╡
+        │ a    ┆ 0.998347 ┆ null     │
+        │ b    ┆ 0.964028 ┆ 0.999954 │
+        └──────┴──────────┴──────────┘
+        """  # noqa: W505
+        if index is None and values is None:
+            msg = "`pivot` needs either `index or `values` needs to be specified"
+            raise InvalidOperationError(msg)
+
+        on_selector = parse_list_into_selector(on)
+        if values is not None:
+            values_selector = parse_list_into_selector(values)
+        if index is not None:
+            index_selector = parse_list_into_selector(index)
+
+        if values is None:
+            values_selector = cs.all() - on_selector - index_selector
+        if index is None:
+            index_selector = cs.all() - on_selector - values_selector
+
+        agg = F.element()
+        if isinstance(aggregate_function, str):
+            if aggregate_function == "first":
+                agg = agg.first()
+            elif aggregate_function == "item":
+                agg = agg.item()
+            elif aggregate_function == "sum":
+                agg = agg.sum()
+            elif aggregate_function == "max":
+                agg = agg.max()
+            elif aggregate_function == "min":
+                agg = agg.min()
+            elif aggregate_function == "mean":
+                agg = agg.mean()
+            elif aggregate_function == "median":
+                agg = agg.median()
+            elif aggregate_function == "last":
+                agg = agg.last()
+            elif aggregate_function == "len":
+                agg = agg.len()
+            elif aggregate_function == "count":
+                issue_deprecation_warning(
+                    "`aggregate_function='count'` input for `pivot` is deprecated."
+                    " Please use `aggregate_function='len'`.",
+                    version="0.20.5",
+                )
+                agg = agg.len()
+            else:
+                msg = f"invalid input for `aggregate_function` argument: {aggregate_function!r}"
+                raise ValueError(msg)
+        elif aggregate_function is None:
+            agg = agg.item(allow_empty=True)
+        else:
+            agg = aggregate_function
+
+        on_cols: pl.DataFrame
+        if isinstance(on_columns, pl.DataFrame):
+            on_cols = on_columns
+        elif isinstance(on_columns, pl.Series):
+            on_cols = on_columns.to_frame()
+        else:
+            on_cols = pl.Series(on_columns).to_frame()
+
+        return self._from_pyldf(
+            self._ldf.pivot(
+                on=on_selector._pyselector,
+                on_columns=on_cols._df,
+                index=index_selector._pyselector,
+                values=values_selector._pyselector,
+                agg=agg._pyexpr,
+                maintain_order=maintain_order,
+                separator=separator,
+            )
+        )
+
     def unpivot(
         self,
         on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
@@ -7622,7 +8252,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         on
             Column(s) or selector(s) to use as values variables; if `on`
-            is empty all columns that are not in `index` will be used.
+            is empty no columns will be used. If set to `None` (default)
+            all columns that are not in `index` will be used.
         index
             Column(s) or selector(s) to use as identifier variables.
         variable_name
@@ -7637,6 +8268,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         If you're coming from pandas, this is similar to `pandas.DataFrame.melt`,
         but with `index` replacing `id_vars` and `on` replacing `value_vars`.
         In other frameworks, you might know this operation as `pivot_longer`.
+
+        The resulting row order is unspecified.
 
         Examples
         --------
@@ -7670,16 +8303,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 version="1.5.0",
             )
 
-        selector_on: pl.Selector = (
-            cs.empty() if on is None else parse_list_into_selector(on)
-        )
+        selector_on = None if on is None else parse_list_into_selector(on)._pyselector
+
         selector_index: pl.Selector = (
             cs.empty() if index is None else parse_list_into_selector(index)
         )
 
         return self._from_pyldf(
             self._ldf.unpivot(
-                selector_on._pyselector,
+                selector_on,
                 selector_index._pyselector,
                 value_name,
                 variable_name,
@@ -7980,9 +8612,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def set_sorted(
         self,
-        column: str,
-        *,
-        descending: bool = False,
+        column: str | list[str],
+        *more_columns: str,
+        descending: bool | list[bool] = False,
+        nulls_last: bool | list[bool] = False,
     ) -> LazyFrame:
         """
         Flag a column as sorted.
@@ -7992,9 +8625,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Parameters
         ----------
         column
-            Column that is sorted
+            Column(s) that is sorted
+        more_columns
+            Columns that are sorted over after `column`.
         descending
             Whether the column is sorted in descending order.
+        nulls_last
+            Whether the nulls are at the end.
 
         Warnings
         --------
@@ -8002,12 +8639,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Use with care!
 
         """
-        # NOTE: Only accepts 1 column on purpose! User think they are sorted by
-        # the combined multicolumn values.
-        if not isinstance(column, str):
-            msg = "expected a 'str' for argument 'column' in 'set_sorted'"
-            raise TypeError(msg)
-        return self.with_columns(F.col(column).set_sorted(descending=descending))
+        cs: list[str]
+        if isinstance(column, str):
+            cs = [column] + list(more_columns)
+        else:
+            cs = column + list(more_columns)
+
+        ds: list[bool]
+        nl: list[bool]
+        if isinstance(descending, bool):
+            ds = [descending]
+        else:
+            ds = descending
+        if isinstance(nulls_last, bool):
+            nl = [nulls_last]
+        else:
+            nl = nulls_last
+
+        return self._from_pyldf(self._ldf.hint_sorted(cs, descending=ds, nulls_last=nl))
 
     @unstable()
     def update(
@@ -8325,7 +8974,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def remote(
         self,
         context: pc.ComputeContext | None = None,
+        *,
         plan_type: pc._typing.PlanTypePreference = "dot",
+        n_retries: int = 0,
+        engine: pc._typing.Engine = "auto",
+        scaling_mode: pc._typing.ScalingMode = "auto",
     ) -> pc.LazyFrameRemote:
         """
         Run a query remotely on Polars Cloud.
@@ -8344,6 +8997,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         plan_type: {'plain', 'dot'}
             Whether to give a dot diagram of a plain text
             version of logical plan.
+        n_retries:
+            How often a stage should be retried on failure.
+        engine: {'auto', 'streaming', 'in-memory'}
+            This will serve as a hint that tells Polars which engine
+            to prefer. It doesn't have to be respected.
+        scaling_mode: {'auto', 'single-node', 'distributed'}
+            If set to auto, a query that doesn't explicitly specify
+            a scaling mode via `remote().distributed()` or
+            `remote().single_node()` will run in distributed mode
+            if the cluster has more than 1 node.
+
 
         Examples
         --------
@@ -8362,7 +9026,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 6        │
         └──────────┘
 
-        Run a query distributed.
+        Explicitly run a query distributed.
 
         >>> lf = (
         ...     pl.scan_parquet("s3://my_bucket/").group_by("key").agg(pl.sum("values"))
@@ -8575,6 +9239,194 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 integer_cast=integer_cast,
                 float_cast=float_cast,
             )
+        )
+
+    def show(
+        self,
+        limit: int | None = 5,
+        *,
+        ascii_tables: bool | None = None,
+        decimal_separator: str | None = None,
+        thousands_separator: str | bool | None = None,
+        float_precision: int | None = None,
+        fmt_float: FloatFmt | None = None,
+        fmt_str_lengths: int | None = None,
+        fmt_table_cell_list_len: int | None = None,
+        tbl_cell_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None = None,
+        tbl_cell_numeric_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None = None,
+        tbl_cols: int | None = None,
+        tbl_column_data_type_inline: bool | None = None,
+        tbl_dataframe_shape_below: bool | None = None,
+        tbl_formatting: TableFormatNames | None = None,
+        tbl_hide_column_data_types: bool | None = None,
+        tbl_hide_column_names: bool | None = None,
+        tbl_hide_dtype_separator: bool | None = None,
+        tbl_hide_dataframe_shape: bool | None = None,
+        tbl_width_chars: int | None = None,
+        trim_decimal_zeros: bool | None = True,
+    ) -> None:
+        """
+        Show the first `n` rows.
+
+        Parameters
+        ----------
+        limit : int
+            Number of rows to show. If None is passed, raises a ValueError. This is done
+            to match the signature of :func:`DataFrame.show`.
+        ascii_tables : bool
+            Use ASCII characters to display table outlines. Set False to revert to the
+            default UTF8_FULL_CONDENSED formatting style. See
+            :func:`Config.set_ascii_tables` for more information.
+        decimal_separator : str
+            Set the decimal separator character. See
+            :func:`Config.set_decimal_separator` for more information.
+        thousands_separator : str, bool
+            Set the thousands grouping separator character. See
+            :func:`Config.set_thousands_separator` for more information.
+        float_precision : int
+            Number of decimal places to display for floating point values. See
+            :func:`Config.set_float_precision` for more information.
+        fmt_float : {"mixed", "full"}
+            Control how floating point values are displayed. See
+            :func:`Config.set_fmt_float` for more information. Supported options are:
+
+            * "mixed": Limit the number of decimal places and use scientific notation
+              for large/small values.
+            * "full": Print the full precision of the floating point number.
+
+        fmt_str_lengths : int
+            Number of characters to display for string values. See
+            :func:`Config.set_fmt_str_lengths` for more information.
+        fmt_table_cell_list_len : int
+            Number of elements to display for List values. See
+            :func:`Config.set_fmt_table_cell_list_len` for more information.
+        tbl_cell_alignment : str
+            Set table cell alignment. See :func:`Config.set_tbl_cell_alignment` for more
+            information. Supported options are:
+
+            * "LEFT": left aligned
+            * "CENTER": center aligned
+            * "RIGHT": right aligned
+
+        tbl_cell_numeric_alignment : str
+            Set table cell alignment for numeric columns. See
+            :func:`Config.set_tbl_cell_numeric_alignment` for more information.
+            Supported options are:
+
+            * "LEFT": left aligned
+            * "CENTER": center aligned
+            * "RIGHT": right aligned
+
+        tbl_cols : int
+            Number of columns to display. See :func:`Config.set_tbl_cols` for more
+            information.
+        tbl_column_data_type_inline : bool
+            Moves the data type inline with the column name (to the right, in
+            parentheses). See :func:`Config.set_tbl_column_data_type_inline` for more
+            information.
+        tbl_dataframe_shape_below : bool
+            Print the DataFrame shape information below the data when displaying tables.
+            See :func:`Config.set_tbl_dataframe_shape_below` for more information.
+        tbl_formatting : str
+            Set table formatting style. See :func:`Config.set_tbl_formatting` for more
+            information. Supported options are:
+
+            * "ASCII_FULL": ASCII, with all borders and lines, including row dividers.
+            * "ASCII_FULL_CONDENSED": Same as ASCII_FULL, but with dense row spacing.
+            * "ASCII_NO_BORDERS": ASCII, no borders.
+            * "ASCII_BORDERS_ONLY": ASCII, borders only.
+            * "ASCII_BORDERS_ONLY_CONDENSED": ASCII, borders only, dense row spacing.
+            * "ASCII_HORIZONTAL_ONLY": ASCII, horizontal lines only.
+            * "ASCII_MARKDOWN": Markdown format (ascii ellipses for truncated values).
+            * "MARKDOWN": Markdown format (utf8 ellipses for truncated values).
+            * "UTF8_FULL": UTF8, with all borders and lines, including row dividers.
+            * "UTF8_FULL_CONDENSED": Same as UTF8_FULL, but with dense row spacing.
+            * "UTF8_NO_BORDERS": UTF8, no borders.
+            * "UTF8_BORDERS_ONLY": UTF8, borders only.
+            * "UTF8_HORIZONTAL_ONLY": UTF8, horizontal lines only.
+            * "NOTHING": No borders or other lines.
+
+        tbl_hide_column_data_types : bool
+            Hide table column data types (i64, f64, str etc.). See
+            :func:`Config.set_tbl_hide_column_data_types` for more information.
+        tbl_hide_column_names : bool
+            Hide table column names. See :func:`Config.set_tbl_hide_column_names` for
+            more information.
+        tbl_hide_dtype_separator : bool
+            Hide the '---' separator between the column names and column types. See
+            :func:`Config.set_tbl_hide_dtype_separator` for more information.
+        tbl_hide_dataframe_shape : bool
+            Hide the DataFrame shape information when displaying tables. See
+            :func:`Config.set_tbl_hide_dataframe_shape` for more information.
+        tbl_width_chars : int
+            Set the maximum width of a table in characters. See
+            :func:`Config.set_tbl_width_chars` for more information.
+        trim_decimal_zeros : bool
+            Strip trailing zeros from Decimal data type values. See
+            :func:`Config.set_trim_decimal_zeros` for more information.
+
+        Warnings
+        --------
+        * This method does *not* maintain the laziness of the frame, and will `collect`
+          the final result. This could potentially be an expensive operation.
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": [1, 2, 3, 4, 5, 6],
+        ...         "b": [7, 8, 9, 10, 11, 12],
+        ...     }
+        ... )
+        >>> lf.show()
+        shape: (5, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 7   │
+        │ 2   ┆ 8   │
+        │ 3   ┆ 9   │
+        │ 4   ┆ 10  │
+        │ 5   ┆ 11  │
+        └─────┴─────┘
+        >>> lf.show(2)
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 7   │
+        │ 2   ┆ 8   │
+        └─────┴─────┘
+        """
+        if limit is None:
+            msg = "`limit` cannot be None. If you want to show the complete lazyframe, call `.collect().show()` on it."
+            raise ValueError(msg)
+
+        self.head(limit).collect(engine="streaming").show(
+            limit,
+            ascii_tables=ascii_tables,
+            decimal_separator=decimal_separator,
+            thousands_separator=thousands_separator,
+            float_precision=float_precision,
+            fmt_float=fmt_float,
+            fmt_str_lengths=fmt_str_lengths,
+            fmt_table_cell_list_len=fmt_table_cell_list_len,
+            tbl_cell_alignment=tbl_cell_alignment,
+            tbl_cell_numeric_alignment=tbl_cell_numeric_alignment,
+            tbl_cols=tbl_cols,
+            tbl_column_data_type_inline=tbl_column_data_type_inline,
+            tbl_dataframe_shape_below=tbl_dataframe_shape_below,
+            tbl_formatting=tbl_formatting,
+            tbl_hide_column_data_types=tbl_hide_column_data_types,
+            tbl_hide_column_names=tbl_hide_column_names,
+            tbl_hide_dtype_separator=tbl_hide_dtype_separator,
+            tbl_hide_dataframe_shape=tbl_hide_dataframe_shape,
+            tbl_width_chars=tbl_width_chars,
+            trim_decimal_zeros=trim_decimal_zeros,
         )
 
     def _to_metadata(

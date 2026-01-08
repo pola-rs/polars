@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import functools
 from decimal import Decimal as PyDecimal
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from polars import datatypes as dt
 from polars._dependencies import numpy as np
@@ -16,7 +16,7 @@ except ImportError:
     _DOCUMENTING = True
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     from polars._typing import PolarsDataType
 
@@ -24,6 +24,7 @@ if not _DOCUMENTING:
     _POLARS_TYPE_TO_CONSTRUCTOR: dict[
         PolarsDataType, Callable[[str, Sequence[Any], bool], PySeries]
     ] = {
+        dt.Float16: PySeries.new_opt_f16,
         dt.Float32: PySeries.new_opt_f32,
         dt.Float64: PySeries.new_opt_f64,
         dt.Int8: PySeries.new_opt_i8,
@@ -73,6 +74,7 @@ _NUMPY_TYPE_TO_CONSTRUCTOR = None
 def _set_numpy_to_constructor() -> None:
     global _NUMPY_TYPE_TO_CONSTRUCTOR
     _NUMPY_TYPE_TO_CONSTRUCTOR = {
+        np.float16: PySeries.new_f16,
         np.float32: PySeries.new_f32,
         np.float64: PySeries.new_f64,
         np.int8: PySeries.new_i8,
@@ -96,15 +98,12 @@ def _normalise_numpy_dtype(dtype: Any) -> tuple[Any, Any]:
     normalised_dtype = (
         np.dtype(dtype.base.name) if dtype.kind in ("i", "u", "f") else dtype
     ).type
-    cast_as: Any = None
-    if normalised_dtype == np.float16:
-        normalised_dtype = cast_as = np.float32
-    elif normalised_dtype in (np.datetime64, np.timedelta64):
+    if normalised_dtype in (np.datetime64, np.timedelta64):
         time_unit = np.datetime_data(dtype)[0]
         if time_unit in dt.DTYPE_TEMPORAL_UNITS or (
             time_unit == "D" and normalised_dtype == np.datetime64
         ):
-            cast_as = np.int64
+            return normalised_dtype, np.int64
         else:
             msg = (
                 "incorrect NumPy datetime resolution"
@@ -112,7 +111,7 @@ def _normalise_numpy_dtype(dtype: Any) -> tuple[Any, Any]:
                 " Please cast to the closest supported unit before converting."
             )
             raise ValueError(msg)
-    return normalised_dtype, cast_as
+    return normalised_dtype, None
 
 
 def numpy_values_and_dtype(

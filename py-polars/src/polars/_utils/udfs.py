@@ -17,27 +17,22 @@ from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     ClassVar,
+    Final,
     Literal,
     NamedTuple,
-    Union,
 )
 
 from polars._utils.cache import LRUCache
 from polars._utils.various import no_default, re_escape
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, MutableMapping
+    from collections.abc import Callable, Iterator, MutableMapping
     from collections.abc import Set as AbstractSet
     from dis import Instruction
+    from typing import TypeAlias
 
     from polars._utils.various import NoDefault
-
-    if sys.version_info >= (3, 10):
-        from typing import TypeAlias
-    else:
-        from typing_extensions import TypeAlias
 
 
 class StackValue(NamedTuple):
@@ -49,11 +44,11 @@ class StackValue(NamedTuple):
 
 
 MapTarget: TypeAlias = Literal["expr", "frame", "series"]
-StackEntry: TypeAlias = Union[str, StackValue]
+StackEntry: TypeAlias = str | StackValue
 
-_MIN_PY311 = sys.version_info >= (3, 11)
-_MIN_PY312 = _MIN_PY311 and sys.version_info >= (3, 12)
-_MIN_PY314 = _MIN_PY312 and sys.version_info >= (3, 14)
+_MIN_PY311: Final = sys.version_info >= (3, 11)
+_MIN_PY312: Final = _MIN_PY311 and sys.version_info >= (3, 12)
+_MIN_PY314: Final = _MIN_PY312 and sys.version_info >= (3, 14)
 
 _BYTECODE_PARSER_CACHE_: MutableMapping[
     tuple[Callable[[Any], Any], str], BytecodeParser
@@ -121,7 +116,7 @@ class OpNames:
 
 
 # math module funcs that we can map to native expressions
-_MATH_FUNCTIONS = frozenset(
+_MATH_FUNCTIONS: Final[frozenset[str]] = frozenset(
     (
         "acos",
         "acosh",
@@ -150,8 +145,8 @@ _MATH_FUNCTIONS = frozenset(
 )
 
 # numpy functions that we can map to native expressions
-_NUMPY_MODULE_ALIASES = frozenset(("np", "numpy"))
-_NUMPY_FUNCTIONS = frozenset(
+_NUMPY_MODULE_ALIASES: Final[frozenset[str]] = frozenset(("np", "numpy"))
+_NUMPY_FUNCTIONS: Final[frozenset[str]] = frozenset(
     (
         # "abs",  # TODO: this one clashes with Python builtin abs
         "arccos",
@@ -181,7 +176,7 @@ _NUMPY_FUNCTIONS = frozenset(
 )
 
 # python attrs/funcs that map to native expressions
-_PYTHON_ATTRS_MAP = {
+_PYTHON_ATTRS_MAP: Final[dict[str, str]] = {
     "date": "dt.date()",
     "day": "dt.day()",
     "hour": "dt.hour()",
@@ -191,9 +186,13 @@ _PYTHON_ATTRS_MAP = {
     "second": "dt.second()",
     "year": "dt.year()",
 }
-_PYTHON_CASTS_MAP = {"float": "Float64", "int": "Int64", "str": "String"}
-_PYTHON_BUILTINS = frozenset(_PYTHON_CASTS_MAP) | {"abs"}
-_PYTHON_METHODS_MAP = {
+_PYTHON_CASTS_MAP: Final[dict[str, str]] = {
+    "float": "Float64",
+    "int": "Int64",
+    "str": "String",
+}
+_PYTHON_BUILTINS: Final[frozenset[str]] = frozenset(_PYTHON_CASTS_MAP) | {"abs"}
+_PYTHON_METHODS_MAP: Final[dict[str, str]] = {
     # string
     "endswith": "str.ends_with",
     "lower": "str.to_lowercase",
@@ -284,7 +283,7 @@ _MODULE_FUNCTIONS = [
     for unary in [[set(OpNames.UNARY)], []]
 ]
 # Lookup for module functions that have different names as polars expressions
-_MODULE_FUNC_TO_EXPR_NAME = {
+_MODULE_FUNC_TO_EXPR_NAME: Final[dict[str, str]] = {
     "math.acos": "arccos",
     "math.acosh": "arccosh",
     "math.asin": "arcsin",
@@ -293,9 +292,9 @@ _MODULE_FUNC_TO_EXPR_NAME = {
     "math.atanh": "arctanh",
     "json.loads": "str.json_decode",
 }
-_RE_IMPLICIT_BOOL = re.compile(r'pl\.col\("([^"]*)"\) & pl\.col\("\1"\)\.(.+)')
-_RE_SERIES_NAMES = re.compile(r"^(s|srs\d?|series)\.")
-_RE_STRIP_BOOL = re.compile(r"^bool\((.+)\)$")
+_RE_IMPLICIT_BOOL: Final = re.compile(r'pl\.col\("([^"]*)"\) & pl\.col\("\1"\)\.(.+)')
+_RE_SERIES_NAMES: Final = re.compile(r"^(s|srs\d?|series)\.")
+_RE_STRIP_BOOL: Final = re.compile(r"^bool\((.+)\)$")
 
 
 def _get_all_caller_variables() -> dict[str, Any]:

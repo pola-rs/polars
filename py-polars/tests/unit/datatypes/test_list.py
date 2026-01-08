@@ -326,6 +326,7 @@ def test_list_sum_and_dtypes() -> None:
         (pl.UInt32, pl.UInt32),
         (pl.UInt64, pl.UInt64),
         (pl.UInt128, pl.UInt128),
+        (pl.Float16, pl.Float16),
         (pl.Float32, pl.Float32),
         (pl.Float64, pl.Float64),
     ]:
@@ -548,7 +549,7 @@ def test_logical_parallel_list_collect() -> None:
         .explode("Values")
         .unnest("Values")
     )
-    assert out.dtypes == [pl.String, pl.Categorical, pl.UInt32]
+    assert out.dtypes == [pl.String, pl.Categorical, pl.get_index_type()]
     assert out.to_dict(as_series=False) == {
         "Group": ["GroupA", "GroupA"],
         "Values": ["Value1", "Value2"],
