@@ -291,7 +291,7 @@ def test_quantile_time() -> None:
     assert_frame_equal(result.collect(), expected)
 
 
-# @pytest.mark.slow
+@pytest.mark.slow
 @pytest.mark.parametrize("tp", [int, float])
 @pytest.mark.parametrize("n", [1, 2, 10, 100])
 def test_quantile_vs_numpy(tp: type, n: int) -> None:
