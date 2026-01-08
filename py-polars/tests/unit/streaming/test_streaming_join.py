@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import typing
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Literal
@@ -7,10 +8,8 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 import pandas as pd
 import pytest
-from hypothesis import given, settings
 
 import polars as pl
-import polars.testing.parametric.strategies as st
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -415,26 +414,7 @@ def test_cross_join_with_literal_column_25544() -> None:
 @pytest.mark.parametrize("coalesce", [None, True, False])
 @pytest.mark.parametrize("maintain_order", ["none", "left_right", "right_left"])
 @pytest.mark.parametrize("ideal_morsel_size", [1, 1000])
-@given(
-    df_left=st.dataframes(
-        cols=[
-            st.column("key", dtype=pl.Int16),
-            st.column("key_ext", dtype=pl.Int16),
-            st.column("x", dtype=pl.UInt16, allow_null=False, unique=True),
-        ]
-    ),
-    df_right=st.dataframes(
-        cols=[
-            st.column("key", dtype=pl.Int16),
-            st.column("key_ext", dtype=pl.Int16),
-            st.column("x", dtype=pl.UInt16, allow_null=False, unique=True),
-        ]
-    ),
-)
-@settings(max_examples=10)
 def test_merge_join(
-    df_left: pl.DataFrame,
-    df_right: pl.DataFrame,
     on: list[str],
     how: JoinStrategy,
     descending: bool,
@@ -443,23 +423,49 @@ def test_merge_join(
     coalesce: bool | None,
     maintain_order: MaintainOrderJoin,
     ideal_morsel_size: int,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    with pytest.MonkeyPatch.context() as monkeypatch:
-        monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", str(ideal_morsel_size))
-        check_row_order = maintain_order in {"left_right", "right_left"}
+    max_examples = 10
+    key_value_set = pl.Series([None] * 5 + list(range(5)), dtype=pl.Int32)
+    check_row_order = maintain_order in {"left_right", "right_left"}
+    monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", str(ideal_morsel_size))
 
-        def df_sorted(df: pl.DataFrame) -> pl.LazyFrame:
-            return (
-                df.lazy()
-                .sort(
-                    *on,
-                    descending=descending,
-                    nulls_last=nulls_last,
-                    maintain_order=True,
-                    multithreaded=False,
-                )
-                .set_sorted(on, descending=descending, nulls_last=nulls_last)
+    def sample_keys(height: int, seed: int) -> pl.Series:
+        return key_value_set.sample(
+            height, with_replacement=True, shuffle=True, seed=seed
+        )
+
+    def df_sorted(df: pl.DataFrame) -> pl.LazyFrame:
+        return (
+            df.lazy()
+            .sort(
+                *on,
+                descending=descending,
+                nulls_last=nulls_last,
+                maintain_order=True,
+                multithreaded=False,
             )
+            .set_sorted(on, descending=descending, nulls_last=nulls_last)
+        )
+
+    seed = 0
+    for height, _ in itertools.product(range(5), range(max_examples)):
+        # Use random testing, because hypothesis does not work well with
+        # monkeypatch.
+
+        df_left = pl.DataFrame(
+            {
+                "key": sample_keys(height, seed),
+                "key_ext": sample_keys(height, seed + 1),
+            },
+        ).with_row_index()
+        df_right = pl.DataFrame(
+            {
+                "key": sample_keys(height, seed + 2),
+                "key_ext": sample_keys(height, seed + 3),
+            },
+        ).with_row_index()
+        seed += 4
 
         q = df_sorted(df_left).join(
             df_sorted(df_right),
