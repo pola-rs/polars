@@ -49,6 +49,18 @@ def test_series_rolling_mean_by(values: pl.Series, by_col: pl.Series) -> None:
     assert_series_equal(actual, expected)
 
 
+def test_series_rolling_mean_by_with_nulls(
+    values: pl.Series, by_col: pl.Series
+) -> None:
+    values[2] = None
+    values[3] = None
+    actual = values.rolling_mean_by(by_col, "2i")
+    print(actual)
+    expected = pl.Series([7.5, 7.5, 7.5, 7.5, 4.5, 4.5, 5.0, 5.0])
+    print(expected)
+    assert_series_equal(actual, expected)
+
+
 def test_series_rolling_median_by(values: pl.Series, by_col: pl.Series) -> None:
     actual = values.rolling_median_by(by_col, "2i")
     expected = pl.Series([7.5, 7.5, 5.5, 5.5, 3.5, 3.5, 5.5, 5.5])
