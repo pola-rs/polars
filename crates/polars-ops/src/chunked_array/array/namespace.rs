@@ -1,8 +1,8 @@
+use std::borrow::Cow;
+
 use arrow::array::builder::{ShareStrategy, make_builder};
 use arrow::array::{Array, FixedSizeListArray};
 use arrow::bitmap::BitmapBuilder;
-#[cfg(feature = "array_gather")]
-use num_traits::{NumCast, Signed, ToPrimitive, Zero};
 use polars_core::prelude::arity::unary_kernel;
 use polars_core::utils::slice_offsets;
 
@@ -256,230 +256,72 @@ pub trait ArrayNameSpace: AsArray {
     #[cfg(feature = "array_gather")]
     fn arr_gather(&self, idx: &Series, null_on_oob: bool) -> PolarsResult<Series> {
         let array_ca = self.as_array();
-        let idx_ca = idx.list()?;
-
-        polars_ensure!(
-            idx_ca.inner_dtype().is_integer(),
-            ComputeError: "cannot use dtype `{}` as an index", idx_ca.inner_dtype()
-        );
-
-        let index_typed_index = |idx: &Series| {
-            let idx: Series = idx.cast(&IDX_DTYPE).unwrap();
-            {
-                array_ca
-                    .amortized_iter()
-                    .map(|s| {
-                        s.map(|s| {
-                            let s = s.as_ref();
-                            take_series(s, idx.clone(), null_on_oob)
-                        })
-                        .transpose()
-                    })
-                    .collect::<PolarsResult<ListChunked>>()
-                    .map(|mut ca| {
-                        ca.rename(array_ca.name().clone());
-                        ca.into_series()
-                    })
-            }
-        };
-
-        match (array_ca.len(), idx_ca.len()) {
-            (1, _) => {
-                let mut out = if array_ca.has_nulls() {
-                    ListChunked::full_null_with_dtype(
-                        PlSmallStr::EMPTY,
-                        idx.len(),
-                        array_ca.inner_dtype(),
-                    )
-                } else {
-                    let s = array_ca.explode(ExplodeOptions {
-                        empty_as_null: true,
-                        keep_nulls: true,
-                    })?;
-                    idx_ca
-                        .into_iter()
-                        .map(|opt_idx| {
-                            opt_idx
-                                .map(|idx| take_series(&s, idx, null_on_oob))
-                                .transpose()
-                        })
-                        .collect::<PolarsResult<ListChunked>>()?
-                };
-                out.rename(array_ca.name().clone());
-                Ok(out.into_series())
-            },
-            (_, 1) => {
-                let idx_ca = idx_ca.explode(ExplodeOptions {
-                    empty_as_null: true,
-                    keep_nulls: true,
-                })?;
-
-                use DataType as D;
-                match idx_ca.dtype() {
-                    D::UInt32 | D::UInt64 => index_typed_index(&idx_ca),
-                    dt if dt.is_signed_integer() => {
-                        if let Some(min) = idx_ca.min::<i64>().unwrap() {
-                            if min >= 0 {
-                                index_typed_index(&idx_ca)
-                            } else {
-                                let mut out = {
-                                    array_ca
-                                        .amortized_iter()
-                                        .map(|opt_s| {
-                                            opt_s
-                                                .map(|s| {
-                                                    take_series(
-                                                        s.as_ref(),
-                                                        idx_ca.clone(),
-                                                        null_on_oob,
-                                                    )
-                                                })
-                                                .transpose()
-                                        })
-                                        .collect::<PolarsResult<ListChunked>>()?
-                                };
-                                out.rename(array_ca.name().clone());
-                                Ok(out.into_series())
-                            }
-                        } else {
-                            polars_bail!(ComputeError: "all indices are null");
-                        }
-                    },
-                    dt => polars_bail!(ComputeError: "cannot use dtype `{dt}` as an index"),
-                }
-            },
-            (a, b) if a == b => {
-                let mut out = {
-                    array_ca
-                        .amortized_iter()
-                        .zip(idx_ca)
-                        .map(|(opt_s, opt_idx)| {
-                            {
-                                match (opt_s, opt_idx) {
-                                    (Some(s), Some(idx)) => {
-                                        Some(take_series(s.as_ref(), idx, null_on_oob))
-                                    },
-                                    _ => None,
-                                }
-                            }
-                            .transpose()
-                        })
-                        .collect::<PolarsResult<ListChunked>>()?
-                };
-                out.rename(array_ca.name().clone());
-                Ok(out.into_series())
-            },
-            (a, b) => polars_bail!(length_mismatch = "arr.gather", a, b),
-        }
+        arr_gather_impl(array_ca, idx, null_on_oob)
     }
 }
 
 impl ArrayNameSpace for ArrayChunked {}
 
 #[cfg(feature = "array_gather")]
-fn take_series(s: &Series, idx: Series, null_on_oob: bool) -> PolarsResult<Series> {
-    let len = s.len();
-    let idx = cast_index(idx, len, null_on_oob)?;
-    let idx = idx.idx().unwrap();
-    s.take(idx)
-}
+fn arr_gather_impl(
+    array_ca: &ArrayChunked,
+    idx: &Series,
+    null_on_oob: bool,
+) -> PolarsResult<Series> {
+    use polars_compute::gather::sublist::fixed_size_list::sub_fixed_size_list_gather;
 
-#[cfg(feature = "array_gather")]
-fn cast_signed_index_ca<T: PolarsNumericType>(idx: &ChunkedArray<T>, len: usize) -> Series
-where
-    T::Native: Copy + PartialOrd + PartialEq + NumCast + Signed + Zero,
-{
-    idx.iter()
-        .map(|opt_idx| opt_idx.and_then(|idx| idx.negative_to_usize(len).map(|idx| idx as IdxSize)))
-        .collect::<IdxCa>()
-        .into_series()
-}
+    let idx_ca = idx.list()?;
 
-#[cfg(feature = "array_gather")]
-fn cast_unsigned_index_ca<T: PolarsNumericType>(idx: &ChunkedArray<T>, len: usize) -> Series
-where
-    T::Native: Copy + PartialOrd + ToPrimitive,
-{
-    idx.iter()
-        .map(|opt_idx| {
-            opt_idx.and_then(|idx| {
-                let idx = idx.to_usize().unwrap();
-                if idx >= len {
-                    None
-                } else {
-                    Some(idx as IdxSize)
-                }
-            })
-        })
-        .collect::<IdxCa>()
-        .into_series()
-}
-
-#[cfg(feature = "array_gather")]
-fn cast_index(idx: Series, len: usize, null_on_oob: bool) -> PolarsResult<Series> {
-    let idx_null_count = idx.null_count();
-    use DataType::*;
-    let out = match idx.dtype() {
-        #[cfg(feature = "big_idx")]
-        UInt32 => {
-            if null_on_oob {
-                let a = idx.u32().unwrap();
-                cast_unsigned_index_ca(a, len)
-            } else {
-                idx.cast(&IDX_DTYPE).unwrap()
-            }
-        },
-        #[cfg(feature = "big_idx")]
-        UInt64 => {
-            if null_on_oob {
-                let a = idx.u64().unwrap();
-                cast_unsigned_index_ca(a, len)
-            } else {
-                idx
-            }
-        },
-        #[cfg(not(feature = "big_idx"))]
-        UInt64 => {
-            if null_on_oob {
-                let a = idx.u64().unwrap();
-                cast_unsigned_index_ca(a, len)
-            } else {
-                idx.cast(&IDX_DTYPE).unwrap()
-            }
-        },
-        #[cfg(not(feature = "big_idx"))]
-        UInt32 => {
-            if null_on_oob {
-                let a = idx.u32().unwrap();
-                cast_unsigned_index_ca(a, len)
-            } else {
-                idx
-            }
-        },
-        dt if dt.is_unsigned_integer() => idx.cast(&IDX_DTYPE).unwrap(),
-        Int8 => {
-            let a = idx.i8().unwrap();
-            cast_signed_index_ca(a, len)
-        },
-        Int16 => {
-            let a = idx.i16().unwrap();
-            cast_signed_index_ca(a, len)
-        },
-        Int32 => {
-            let a = idx.i32().unwrap();
-            cast_signed_index_ca(a, len)
-        },
-        Int64 => {
-            let a = idx.i64().unwrap();
-            cast_signed_index_ca(a, len)
-        },
-        _ => {
-            unreachable!()
-        },
-    };
     polars_ensure!(
-        out.null_count() == idx_null_count || null_on_oob,
-        OutOfBounds: "gather indices are out of bounds"
+        idx_ca.inner_dtype().is_integer(),
+        ComputeError: "cannot use dtype `{}` as an index", idx_ca.inner_dtype()
     );
-    Ok(out)
+
+    let (array_ca, idx_ca): (Cow<'_, ArrayChunked>, Cow<'_, ListChunked>) =
+        match (array_ca.len(), idx_ca.len()) {
+            (1, idx_len) if idx_len > 1 => {
+                // Broadcast array
+                if array_ca.has_nulls() {
+                    let out = ListChunked::full_null_with_dtype(
+                        array_ca.name().clone(),
+                        idx_len,
+                        array_ca.inner_dtype(),
+                    );
+                    return Ok(out.into_series());
+                }
+                (
+                    Cow::Owned(array_ca.new_from_index(0, idx_len)),
+                    Cow::Borrowed(idx_ca),
+                )
+            },
+            (arr_len, 1) if arr_len > 1 => (
+                Cow::Borrowed(array_ca),
+                Cow::Owned(idx_ca.new_from_index(0, arr_len)),
+            ),
+            (a, b) if a == b => (Cow::Borrowed(array_ca), Cow::Borrowed(idx_ca)),
+            (a, b) => polars_bail!(length_mismatch = "arr.gather", a, b),
+        };
+
+    // Rechunk for single-chunk processing
+    let array_ca = array_ca.rechunk();
+    let idx_ca = idx_ca.rechunk();
+
+    let arr_chunk = array_ca.downcast_iter().next().unwrap();
+    let idx_chunk = idx_ca.downcast_iter().next().unwrap();
+
+    let result = sub_fixed_size_list_gather(arr_chunk, idx_chunk, null_on_oob)?;
+
+    let chunks: Vec<ArrayRef> = vec![Box::new(result)];
+
+    // SAFETY: We constructed the ListArray with the correct dtype (matching inner_dtype)
+    // and the chunks come from sub_fixed_size_list_gather which produces valid ListArray<i64>
+    let out = unsafe {
+        ListChunked::from_chunks_and_dtype(
+            array_ca.name().clone(),
+            chunks,
+            DataType::List(Box::new(array_ca.inner_dtype().clone())),
+        )
+    };
+
+    Ok(out.into_series())
 }
