@@ -506,7 +506,7 @@ def test_lazy_groupby_maintain_order_after_asof_join_25973() -> None:
 
     # This used to produce out-of-order results.
     # The optimizer previously cleared maintain_order.
-    result = (
+    q = (
         df.join_asof(
             targettime,
             left_on="time",
@@ -516,10 +516,16 @@ def test_lazy_groupby_maintain_order_after_asof_join_25973() -> None:
         .drop_nulls("targettime")
         .group_by("targettime", maintain_order=True)
         .agg(pl.col("value").last())
-        .collect()
     )
 
-    # Fully static expected result (4 rows total)
+    # Verify optimizer preserves maintain_order on UNIQUE
+    plan = q.explain()
+    assert "AGGREGATE[maintain_order: true" in plan
+
+    result = q.collect()
+
+    idx_dtype = pl.get_index_type()
+
     expected = pl.DataFrame(
         {
             "targettime": [
@@ -528,11 +534,7 @@ def test_lazy_groupby_maintain_order_after_asof_join_25973() -> None:
                 dt.datetime(2026, 1, 1, 0, 20),
                 dt.datetime(2026, 1, 1, 0, 30),
             ],
-            "value": pl.Series(
-                "value",
-                [0, 600, 1200, 1800],
-                dtype=pl.UInt64,
-            ),
+            "value": pl.Series("value", [0, 600, 1200, 1800], dtype=idx_dtype),
         }
     )
 
