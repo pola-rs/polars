@@ -25,7 +25,7 @@ impl<
         + Sub<Output = T>,
 > RollingAggWindowNulls<'a, T> for QuantileWindow<'a, T>
 {
-    unsafe fn new(
+    fn new(
         slice: &'a [T],
         validity: &'a Bitmap,
         start: usize,

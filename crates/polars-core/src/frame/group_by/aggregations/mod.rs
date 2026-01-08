@@ -84,9 +84,7 @@ where
     // these represent the number of groups in the group_by operation
     let output_len = offsets.size_hint().0;
     // start with a dummy index, will be overwritten on first iteration.
-    // SAFETY:
-    // we are in bounds
-    let mut agg_window = unsafe { Agg::new(values, validity, 0, 0, params, None) };
+    let mut agg_window = Agg::new(values, validity, 0, 0, params, None);
 
     let mut validity = MutableBitmap::with_capacity(output_len);
     validity.extend_constant(output_len, true);

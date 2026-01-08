@@ -153,7 +153,7 @@ where
     T: NativeType + IsFloat + Sub<Output = T> + NumCast + PartialOrd,
     S: NativeType + AddAssign + SubAssign + Sub<Output = S> + Add<Output = S> + NumCast,
 {
-    unsafe fn new(
+    fn new(
         slice: &'a [T],
         validity: &'a Bitmap,
         start: usize,
@@ -161,7 +161,9 @@ where
         _params: Option<RollingFnParams>,
         _window_size: Option<usize>,
     ) -> Self {
+        assert!(start <= slice.len() && end <= slice.len() && start <= end);
         let mut out = Self::new_impl(slice, Some(validity));
+        // SAFETY: We bounds checked `start` and `end`.
         unsafe { RollingAggWindowNulls::update(&mut out, start, end) };
         out
     }
