@@ -948,9 +948,13 @@ pub fn row_encode(
         RowEncodingVariant::Ordered {
             descending,
             nulls_last,
+            broadcast_nulls,
         } => {
             let descending = descending.unwrap_or_else(|| vec![false; c.len()]);
             let nulls_last = nulls_last.unwrap_or_else(|| vec![false; c.len()]);
+            if broadcast_nulls.is_some() {
+                unimplemented!();
+            }
 
             assert_eq!(c.len(), descending.len());
             assert_eq!(c.len(), nulls_last.len());
@@ -981,9 +985,13 @@ pub fn row_decode(
         RowEncodingVariant::Ordered {
             descending,
             nulls_last,
+            broadcast_nulls,
         } => {
             let descending = descending.unwrap_or_else(|| vec![false; fields.len()]);
             let nulls_last = nulls_last.unwrap_or_else(|| vec![false; fields.len()]);
+            if broadcast_nulls.is_some() {
+                unimplemented!();
+            }
 
             assert_eq!(fields.len(), descending.len());
             assert_eq!(fields.len(), nulls_last.len());
