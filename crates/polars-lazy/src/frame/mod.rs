@@ -103,7 +103,7 @@ impl LazyFrame {
         self.opt_state
     }
 
-    fn from_logical_plan(logical_plan: DslPlan, opt_state: OptFlags) -> Self {
+    pub fn from_logical_plan(logical_plan: DslPlan, opt_state: OptFlags) -> Self {
         LazyFrame {
             logical_plan,
             opt_state,
@@ -627,14 +627,28 @@ impl LazyFrame {
     ///
     /// The query is optimized prior to execution.
     pub fn collect_with_engine(mut self, mut engine: Engine) -> PolarsResult<DataFrame> {
-        let payload = if let DslPlan::Sink { payload, .. } = &self.logical_plan {
-            payload.clone()
-        } else {
-            self.logical_plan = DslPlan::Sink {
-                input: Arc::new(self.logical_plan),
-                payload: SinkType::Memory,
-            };
-            SinkType::Memory
+        let payload = match &self.logical_plan {
+            DslPlan::Sink { payload, .. } => payload.clone(),
+            DslPlan::SinkMultiple { .. } => {
+                polars_ensure!(matches!(engine, Engine::Auto | Engine::Streaming), InvalidOperation: "lazy multisinks only supported on streaming engine");
+                feature_gated!("new_streaming", {
+                    let sink_multiple = self.with_new_streaming(true);
+                    let mut alp_plan = sink_multiple.to_alp_optimized()?;
+                    let result = polars_stream::run_query(
+                        alp_plan.lp_top,
+                        &mut alp_plan.lp_arena,
+                        &mut alp_plan.expr_arena,
+                    );
+                    return result.map(|_| DataFrame::empty());
+                })
+            },
+            _ => {
+                self.logical_plan = DslPlan::Sink {
+                    input: Arc::new(self.logical_plan),
+                    payload: SinkType::Memory,
+                };
+                SinkType::Memory
+            },
         };
 
         // Default engine for collect is InMemory, sink_* is Streaming

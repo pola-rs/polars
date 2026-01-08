@@ -1503,6 +1503,11 @@ impl PyLazyFrame {
         Ok(out.into())
     }
 
+    fn _node_name(&self) -> &str {
+        let plan = &self.ldf.read().logical_plan;
+        plan.into()
+    }
+
     fn hint_sorted(
         &self,
         columns: Vec<String>,
