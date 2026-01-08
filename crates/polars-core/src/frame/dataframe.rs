@@ -3,6 +3,7 @@ use std::sync::{Arc, OnceLock};
 use arrow::array::StructArray;
 use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
+use polars_row::ArrayRef;
 
 use super::broadcast::{broadcast_columns, infer_broadcast_height};
 use super::validation::validate_columns_slice;
@@ -379,25 +380,11 @@ impl DataFrame {
         self
     }
 
-    pub fn to_arrow(&mut self, compatlevel: Option<CompatLevel>) -> StructArray {
-        let compatlevel = compatlevel.unwrap_or_else(CompatLevel::newest);
-        let schema = ArrowDataType::Struct(
-            self.schema()
-                .to_arrow(compatlevel)
-                .into_iter_values()
-                .collect(),
-        );
-
+    pub fn rechunk_to_arrow(&mut self, compat_level: CompatLevel) -> Vec<ArrayRef> {
         self.rechunk_mut();
-        let batch_cols = self
-            .columns()
+        self.columns()
             .iter()
-            .map(|v| v.as_materialized_series().clone())
-            .collect::<Vec<Series>>()
-            .iter()
-            .map(|s| s.to_arrow(0, compatlevel))
-            .collect::<Vec<_>>();
-
-        arrow::array::StructArray::new(schema, batch_cols[0].len(), batch_cols, None)
+            .map(|c| c.clone().rechunk_to_arrow(compat_level))
+            .collect()
     }
 }
