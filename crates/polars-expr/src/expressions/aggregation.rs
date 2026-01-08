@@ -474,32 +474,6 @@ impl AggQuantileExpr {
             method,
         }
     }
-
-    fn get_quantile(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Vec<f64>> {
-        let col = self.quantile.evaluate(df, state)?;
-        let s = col.as_materialized_series_maintain_scalar();
-
-        // If the user passed a list of quantiles, extract the inner series
-        let s = match s.dtype() {
-            DataType::List(_) => {
-                let list = s.list()?;
-                list.get_as_series(0).unwrap()
-            },
-            _ => s,
-        };
-
-        if s.has_nulls() {
-            polars_bail!(ComputeError: "quantile expression contains null values");
-        }
-
-        let v: Vec<f64> = s
-            .cast(&DataType::Float64)?
-            .f64()?
-            .into_no_null_iter()
-            .collect();
-
-        Ok(v)
-    }
 }
 
 impl PhysicalExpr for AggQuantileExpr {
@@ -509,15 +483,34 @@ impl PhysicalExpr for AggQuantileExpr {
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let input = self.input.evaluate(df, state)?;
-        let quantile = self.get_quantile(df, state)?;
-        if quantile.len() == 1 {
-            input
-                .quantile_reduce(quantile[0], self.method)
-                .map(|sc| sc.into_column(input.name().clone()))
-        } else {
-            input
-                .quantiles_reduce(&quantile, self.method)
-                .map(|sc| sc.into_column(input.name().clone()))
+
+        let col = self.quantile.evaluate(df, state)?;
+        let s = col.as_materialized_series_maintain_scalar();
+
+        match s.dtype() {
+            DataType::List(_) => {
+                let list = s.list()?;
+                let inner_s = list.get_as_series(0).unwrap();
+                if inner_s.has_nulls() {
+                    polars_bail!(ComputeError: "quantile expression contains null values");
+                }
+
+                let v: Vec<f64> = inner_s
+                    .cast(&DataType::Float64)?
+                    .f64()?
+                    .into_no_null_iter()
+                    .collect();
+
+                input
+                    .quantiles_reduce(&v, self.method)
+                    .map(|sc| sc.into_column(input.name().clone()))
+            },
+            _ => {
+                let q: f64 = col.get(0).unwrap().try_extract()?;
+                input
+                    .quantile_reduce(q, self.method)
+                    .map(|sc| sc.into_column(input.name().clone()))
+            },
         }
     }
 
@@ -537,15 +530,11 @@ impl PhysicalExpr for AggQuantileExpr {
         // don't change names by aggregations as is done in polars-core
         let keep_name = ac.get_values().name().clone();
 
-        let quantile = self.get_quantile(df, state)?;
-
-        if quantile.len() > 1 {
-            polars_bail!(
-                ComputeError: "aggregating multiple quantiles is not implemented"
-            );
-        }
-
-        let quantile = quantile[0];
+        let quantile_column = self.quantile.evaluate(df, state)?;
+        polars_ensure!(quantile_column.len() <= 1, ComputeError:
+            "polars only supports computing a single quantile in a groupby aggregation context"
+        );
+        let quantile: f64 = quantile_column.get(0).unwrap().try_extract()?;
 
         if let AggState::LiteralScalar(c) = &mut ac.state {
             *c = c

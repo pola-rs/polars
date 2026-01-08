@@ -118,6 +118,12 @@ def test_quantile() -> None:
     assert s.quantile(0.5, "higher") == 2
     assert s.quantile([0.25, 0.75], "linear") == [1.5, 2.5]
 
+    df = pl.DataFrame({"a": [1.0, 2.0, 3.0]})
+    expected = pl.DataFrame({"a": [[2.0]]})
+    assert_frame_equal(
+        df.select(pl.col("a").quantile([0.5], interpolation="linear")), expected
+    )
+
 
 def test_quantile_error_checking() -> None:
     s = pl.Series([1, 2, 3])
@@ -285,7 +291,7 @@ def test_quantile_time() -> None:
     assert_frame_equal(result.collect(), expected)
 
 
-@pytest.mark.slow
+# @pytest.mark.slow
 @pytest.mark.parametrize("tp", [int, float])
 @pytest.mark.parametrize("n", [1, 2, 10, 100])
 def test_quantile_vs_numpy(tp: type, n: int) -> None:
