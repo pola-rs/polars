@@ -2951,6 +2951,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         optimizations: QueryOptFlags = ...,
     ) -> deltalake.table.TableMerger: ...
 
+    @unstable()
     def sink_delta(
         self,
         target: str | Path | deltalake.DeltaTable,
@@ -2966,7 +2967,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> deltalake.table.TableMerger | None:
         """
+
         Sink DataFrame as delta table.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
