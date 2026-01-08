@@ -255,7 +255,7 @@ def test_sink_delta(df: pl.DataFrame, tmp_path: Path) -> None:
             tmp_path, mode="overwrite", delta_write_options={"schema_mode": "overwrite"}
         )
 
-    partitioned_tbl_uri = (tmp_path / ".." / "partitioned_table").resolve()
+    partitioned_tbl_uri = (tmp_path / ".." / "partitioned_table_sink").resolve()
 
     # Case: Write new partitioned table (version 0)
     df_supported.lazy().sink_delta(
