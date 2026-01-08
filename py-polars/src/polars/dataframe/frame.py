@@ -192,7 +192,7 @@ if TYPE_CHECKING:
     from polars.config import TableFormatNames
     from polars.interchange.dataframe import PolarsDataFrame
     from polars.io.cloud import CredentialProviderFunction
-    from polars.io.partition import _SinkDirectory
+    from polars.io.partition import PartitionBy
     from polars.ml.torch import PolarsDataset
 
     if sys.version_info >= (3, 13):
@@ -4182,17 +4182,20 @@ class DataFrame:
 
             return
 
-        target: str | Path | IO[bytes] | _SinkDirectory = file
+        target: str | Path | IO[bytes] | PartitionBy = file
         engine: EngineType = "streaming"
         if partition_by is not None:
             if not isinstance(file, str):
                 msg = "expected file to be a `str` since partition-by is set"
                 raise TypeError(msg)
 
-            from polars.io import PartitionByKey
+            from polars.io.partition import PartitionBy
 
-            target = PartitionByKey(file, by=partition_by)
-            mkdir = True
+            target = PartitionBy(
+                file,
+                key=partition_by,
+                approximate_bytes_per_file=partition_chunk_size_bytes,
+            )
 
         from polars.lazyframe.opt_flags import QueryOptFlags
 

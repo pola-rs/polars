@@ -756,9 +756,7 @@ def test_cached_credential_provider_returns_copied_creds() -> None:
 @pytest.mark.parametrize(
     "partition_target",
     [
-        pl.PartitionByKey("s3://.../...", by=""),
-        pl.PartitionMaxSize("s3://.../...", max_size=1),
-        pl.PartitionParted("s3://.../...", by=""),
+        pl.PartitionBy("s3://.../...", key=""),
     ],
 )
 def test_credential_provider_init_from_partition_target(

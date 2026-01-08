@@ -520,8 +520,10 @@ def test_partition_sink_sensitivity() -> None:
         pl.LazyFrame({"a": [1, 2, 3]})
         .unique(maintain_order=True)
         .sink_csv(
-            pl.PartitionByKey(
-                ".", file_path=lambda _: io.BytesIO(), by=pl.col.a.cum_sum()
+            pl.PartitionBy(
+                ".",
+                file_path_provider=lambda _: io.BytesIO(),
+                key=pl.col.a.cum_sum(),
             ),
             lazy=True,
             maintain_order=False,

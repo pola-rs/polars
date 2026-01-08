@@ -847,7 +847,6 @@ def test_hive_write(tmp_path: Path, df: pl.DataFrame) -> None:
 
 @pytest.mark.slow
 @pytest.mark.write_disk
-@pytest.mark.xfail
 def test_hive_write_multiple_files(tmp_path: Path) -> None:
     chunk_size = 262_144
     n_rows = 100_000
@@ -860,7 +859,11 @@ def test_hive_write_multiple_files(tmp_path: Path) -> None:
     root = tmp_path
     df.write_parquet(root, partition_by="a", partition_chunk_size_bytes=chunk_size)
 
-    assert sum(1 for _ in (root / "a=0").iterdir()) == n_files
+    n_out = sum(1 for _ in (root / "a=0").iterdir())
+
+    assert n_out > 1
+    assert abs(n_out - n_files) <= 2
+
     assert_frame_equal(pl.scan_parquet(root).collect(), df)
 
 

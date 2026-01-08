@@ -3,9 +3,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from polars import DataFrame
+from polars._utils.deprecation import issue_deprecation_warning
 from polars._utils.parse.expr import parse_into_list_of_expressions
 from polars._utils.unstable import issue_unstable_warning
 
@@ -125,7 +126,7 @@ class BasePartitionContext:
     )
 
 
-# TODO: Expose this as Python API (as unstable).
+# TODO: Remove in favor of `PartitionBy`
 class _SinkDirectory:
     def __init__(
         self,
@@ -180,6 +181,124 @@ class _SinkDirectory:
     @property
     def _base_path(self) -> str | None:
         return self._pl_sink_directory.base_path
+
+
+@dataclass(kw_only=True)
+class FileProviderArgs:
+    """
+    Holds information on the file being sinked to.
+
+    .. warning::
+        This functionality is currently considered **unstable**. It may be
+        changed at any point without it being considered a breaking change.
+    """
+
+    index_in_partition: int
+    partition_keys: DataFrame
+
+
+class PartitionBy:
+    """
+    Configuration for writing to multiple output files.
+
+    .. warning::
+        This functionality is currently considered **unstable**. It may be
+        changed at any point without it being considered a breaking change.
+
+    Parameters
+    ----------
+    base_path
+        Base path to write to.
+    file_path_provider
+        Callable for custom file output paths.
+    key
+        Expressions to partition by.
+    include_key
+        Include the partition key expression outputs in the output files.
+    max_rows_per_file
+        Maximum number of rows to write for each file.
+    approximate_bytes_per_file
+        Approximate number of bytes to write to each file. This is measured as
+        the estimated size of the DataFrame in memory.
+
+    Examples
+    --------
+    Split to multiple files partitioned by year:
+
+    >>> pl.LazyFrame({"year": [2026, 2027, 1970], "month": [0, 0, 0]}).sink_parquet(
+    ...     pl.PartitionBy("data/", key="year")
+    ... )  # doctest: +SKIP
+
+    Split to multiple files based on size:
+
+    >>> pl.LazyFrame({"year": [2026, 2027, 1970], "month": [0, 0, 0]}).sink_parquet(
+    ...     pl.PartitionBy(
+    ...         "data/", max_rows_per_file=1000, approximate_bytes_per_file=100_000_000
+    ...     )
+    ... )  # doctest: +SKIP
+
+    Split to multiple files partitioned by year, with limits on individual file sizes:
+
+    >>> pl.LazyFrame({"year": [2026, 2027, 1970], "month": [0, 0, 0]}).sink_parquet(
+    ...     pl.PartitionBy(
+    ...         "data/",
+    ...         key="year",
+    ...         max_rows_per_file=1000,
+    ...         approximate_bytes_per_file=100_000_000,
+    ...     )
+    ... )  # doctest: +SKIP
+    """
+
+    def __init__(
+        self,
+        base_path: str | Path,
+        *,
+        file_path_provider: Callable[
+            [FileProviderArgs], str | Path | IO[bytes] | IO[str]
+        ]
+        | None = None,
+        key: str | Expr | Sequence[str | Expr] | Mapping[str, Expr] | None = None,
+        include_key: bool | None = None,
+        max_rows_per_file: int | None = None,
+        approximate_bytes_per_file: int | Literal["auto"] | None = "auto",
+    ) -> None:
+        msg = "`PartitionBy` functionality is considered unstable"
+        issue_unstable_warning(msg)
+
+        if (
+            key is None
+            and max_rows_per_file is None
+            and approximate_bytes_per_file == "auto"
+        ):
+            msg = (
+                "at least one of "
+                "('key', 'max_rows_per_file', 'approximate_bytes_per_file') "
+                "must be specified for PartitionBy"
+            )
+            raise ValueError(msg)
+
+        if key is None and include_key is not None:
+            msg = "cannot use 'include_key' without specifying 'key'"
+            raise ValueError(msg)
+
+        base_path = str(base_path)
+
+        if approximate_bytes_per_file == "auto":
+            approximate_bytes_per_file = (
+                4_294_967_295 if max_rows_per_file is None else None
+            )
+
+        if approximate_bytes_per_file is None:
+            approximate_bytes_per_file = (1 << 64) - 1
+
+        self._pl_partition_by = _PartitionByInner(
+            base_path=base_path,
+            file_path_provider=file_path_provider,
+            key=_parse_to_pyexpr_list(key) if key is not None else None,
+            include_key=include_key,
+            max_rows_per_file=max_rows_per_file,
+            approximate_bytes_per_file=approximate_bytes_per_file,
+        )
 
 
 def _parse_to_pyexpr_list(
@@ -253,6 +372,9 @@ class PartitionMaxSize(_SinkDirectory):
         This functionality is currently considered **unstable**. It may be
         changed at any point without it being considered a breaking change.
 
+    .. deprecated:: 1.36.1
+        Use `PartitionBy` instead.
+
     Parameters
     ----------
     base_path
@@ -301,6 +423,9 @@ class PartitionMaxSize(_SinkDirectory):
         finish_callback: Callable[[DataFrame], None] | None = None,
     ) -> None:
         issue_unstable_warning("partitioning strategies are considered unstable.")
+        issue_deprecation_warning(
+            "`PartitionMaxSize` was deprecated in 1.36.1; use `PartitionBy` instead."
+        )
 
         file_path_provider = _cast_base_file_path_cb(file_path)
 
@@ -326,6 +451,9 @@ class PartitionByKey(_SinkDirectory):
     .. warning::
         This functionality is currently considered **unstable**. It may be
         changed at any point without it being considered a breaking change.
+
+    .. deprecated:: 1.36.1
+        Use `PartitionBy` instead.
 
     Parameters
     ----------
@@ -402,6 +530,9 @@ class PartitionByKey(_SinkDirectory):
         finish_callback: Callable[[DataFrame], None] | None = None,
     ) -> None:
         issue_unstable_warning("partitioning strategies are considered unstable.")
+        issue_deprecation_warning(
+            "`PartitionByKey` was deprecated in 1.36.1; use `PartitionBy` instead."
+        )
 
         super().__init__(
             base_path=base_path,
@@ -428,6 +559,9 @@ class PartitionParted(_SinkDirectory):
     .. warning::
         This functionality is currently considered **unstable**. It may be
         changed at any point without it being considered a breaking change.
+
+    .. deprecated:: 1.36.1
+        Use `PartitionBy` instead.
 
     Parameters
     ----------
@@ -486,6 +620,9 @@ class PartitionParted(_SinkDirectory):
         finish_callback: Callable[[DataFrame], None] | None = None,
     ) -> None:
         issue_unstable_warning("partitioning strategies are considered unstable.")
+        issue_deprecation_warning(
+            "`PartitionParted` was deprecated in 1.36.1; use `PartitionBy` instead."
+        )
 
         super().__init__(
             base_path=base_path,
@@ -517,6 +654,24 @@ class _SinkDirectoryInner:
     per_file_sort_by: list[PyExpr] | None
     max_rows_per_file: int | None
     finish_callback: Callable[[PyDataFrame], None] | None
+
+
+@dataclass(kw_only=True)
+class _PartitionByInner:
+    """
+    Holds parsed partitioned sink options.
+
+    For internal use.
+    """
+
+    base_path: str
+    file_path_provider: (
+        Callable[[FileProviderArgs], str | Path | IO[bytes] | IO[str]] | None
+    )
+    key: list[PyExpr] | None
+    include_key: bool | None
+    max_rows_per_file: int | None
+    approximate_bytes_per_file: int
 
 
 @dataclass
