@@ -288,8 +288,8 @@ def test_sink_delta(df: pl.DataFrame, tmp_path: Path) -> None:
     assert Path(uri) == partitioned_tbl_uri
     assert partitioned_tbl.metadata().partition_columns == ["strings"]
 
-    assert_frame_equal(v0, pl_df_0, check_row_order=False)
-    assert_frame_equal(v1, pl_df_1, check_row_order=False)
+    assert_frame_equal(v0.collect(), pl_df_0, check_row_order=False)
+    assert_frame_equal(v1.collect(), pl_df_1, check_row_order=False)
 
     cols = [c for c in df_supported.columns if not c.startswith("list_")]
     assert_frame_equal(
