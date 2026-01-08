@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use arrow::io::ipc::IpcField;
 use polars_core::schema::SchemaRef;
 use polars_core::utils::arrow;
@@ -13,7 +15,7 @@ pub struct IOWriter {
     pub file:
         tokio_handle_ext::AbortOnDropHandle<PolarsResult<polars_io::prelude::file::Writeable>>,
     pub ipc_batch_rx: tokio::sync::mpsc::Receiver<IpcBatch>,
-    pub options: IpcWriterOptions,
+    pub options: Arc<IpcWriterOptions>,
     pub schema: SchemaRef,
     pub ipc_fields: Vec<IpcField>,
     pub sync_on_close: SyncOnCloseType,

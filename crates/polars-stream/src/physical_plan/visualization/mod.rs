@@ -726,7 +726,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                         SinkTarget::Path(p) => format_pl_smallstr!("Path({})", p.to_str()),
                         SinkTarget::Dyn(_) => PlSmallStr::from_static("DynWriteable"),
                     },
-                    file_format: PlSmallStr::from_static(file_format.as_ref().into()),
+                    file_format: PlSmallStr::from_static(file_format.into()),
                     sync_on_close: *sync_on_close,
                     maintain_order: *maintain_order,
                     mkdir: *mkdir,
@@ -802,7 +802,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                 let properties = PhysNodeProperties::PartitionSink2 {
                     base_path: base_path.to_str().into(),
                     file_path_provider: file_path_provider.clone(),
-                    file_format: PlSmallStr::from_static(file_format.as_ref().into()),
+                    file_format: PlSmallStr::from_static(file_format.into()),
                     partition_strategy: PlSmallStr::from_static(partition_strategy.into()),
                     partition_key_exprs,
                     include_keys: include_keys_,

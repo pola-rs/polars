@@ -16,7 +16,7 @@ use polars_utils::arena::Arena;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::plpath::{CloudScheme, PlPath};
 
-use super::{ExprIR, FileType};
+use super::{ExprIR, FileWriteFormat};
 use crate::dsl::sink2::FileProviderType;
 use crate::dsl::{AExpr, Expr, PartitionStrategy, PartitionStrategyIR, SpecialEq, UnifiedSinkArgs};
 use crate::prelude::PlanCallback;
@@ -559,7 +559,7 @@ pub struct PartitionedSinkOptions {
     pub partition_strategy: PartitionStrategy,
     /// TODO: Move this to UnifiedSinkArgs
     pub finish_callback: Option<SinkFinishCallback>,
-    pub file_format: Arc<FileType>,
+    pub file_format: FileWriteFormat,
     pub unified_sink_args: UnifiedSinkArgs,
     pub max_rows_per_file: IdxSize,
     pub approximate_bytes_per_file: u64,
@@ -646,7 +646,7 @@ pub struct PartitionedSinkOptionsIR {
     pub partition_strategy: PartitionStrategyIR,
     /// TODO: Move this to UnifiedSinkArgs
     pub finish_callback: Option<SinkFinishCallback>,
-    pub file_format: Arc<FileType>,
+    pub file_format: FileWriteFormat,
     pub unified_sink_args: UnifiedSinkArgs,
     pub max_rows_per_file: IdxSize,
     pub approximate_bytes_per_file: u64,
@@ -745,6 +745,6 @@ impl PartitionVariantIR {
 #[derive(Clone, Debug, Hash, PartialEq)]
 pub struct FileSinkOptions {
     pub target: SinkTarget,
-    pub file_format: Arc<FileType>,
+    pub file_format: FileWriteFormat,
     pub unified_sink_args: UnifiedSinkArgs,
 }

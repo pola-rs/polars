@@ -24,7 +24,7 @@ mod io_writer;
 mod row_group_encoder;
 
 pub struct ParquetWriterStarter {
-    pub options: ParquetWriteOptions,
+    pub options: Arc<ParquetWriteOptions>,
     pub arrow_schema: ArrowSchemaRef,
     pub initialized_state: std::sync::Mutex<Option<InitializedState>>,
     pub pipeline_depth: usize,

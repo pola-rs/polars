@@ -24,7 +24,7 @@ mod io_writer;
 mod record_batch_encoder;
 
 pub struct IpcWriterStarter {
-    pub options: IpcWriterOptions,
+    pub options: Arc<IpcWriterOptions>,
     pub schema: SchemaRef,
     pub pipeline_depth: usize,
     pub sync_on_close: SyncOnCloseType,
@@ -79,7 +79,7 @@ impl FileWriterStarter for IpcWriterStarter {
     ) -> PolarsResult<async_executor::JoinHandle<PolarsResult<()>>> {
         let file_schema = Arc::clone(&self.schema);
         let pipeline_depth = self.pipeline_depth;
-        let options = self.options;
+        let options = Arc::clone(&self.options);
         let sync_on_close = self.sync_on_close;
         let compression = self.options.compression.map(|x| x.into());
 

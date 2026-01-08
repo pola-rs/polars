@@ -977,7 +977,7 @@ impl LazyFrame {
     pub fn sink(
         mut self,
         sink_type: SinkDestination,
-        file_format: impl Into<Arc<FileType>>,
+        file_format: FileWriteFormat,
         unified_sink_args: UnifiedSinkArgs,
     ) -> PolarsResult<Self> {
         polars_ensure!(
@@ -990,7 +990,7 @@ impl LazyFrame {
             payload: match sink_type {
                 SinkDestination::File { target } => SinkType::File(FileSinkOptions {
                     target,
-                    file_format: file_format.into(),
+                    file_format,
                     unified_sink_args,
                 }),
                 SinkDestination::Partitioned {
@@ -1005,7 +1005,7 @@ impl LazyFrame {
                     file_path_provider,
                     partition_strategy,
                     finish_callback,
-                    file_format: file_format.into(),
+                    file_format,
                     unified_sink_args,
                     max_rows_per_file,
                     approximate_bytes_per_file,

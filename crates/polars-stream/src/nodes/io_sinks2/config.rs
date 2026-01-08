@@ -4,7 +4,7 @@ use std::sync::Arc;
 use polars_core::prelude::SortMultipleOptions;
 use polars_core::schema::SchemaRef;
 use polars_plan::dsl::sink2::FileProviderType;
-use polars_plan::dsl::{FileType, SinkTarget, UnifiedSinkArgs};
+use polars_plan::dsl::{FileWriteFormat, SinkTarget, UnifiedSinkArgs};
 use polars_utils::plpath::{CloudScheme, PlPath};
 
 use crate::expression::StreamExpr;
@@ -13,7 +13,7 @@ use crate::nodes::io_sinks2::components::partitioner::Partitioner;
 use crate::nodes::io_sinks2::components::size::NonZeroRowCountAndSize;
 
 pub struct IOSinkNodeConfig {
-    pub file_format: Arc<FileType>,
+    pub file_format: FileWriteFormat,
     pub target: IOSinkTarget,
     pub unified_sink_args: UnifiedSinkArgs,
     pub input_schema: SchemaRef,

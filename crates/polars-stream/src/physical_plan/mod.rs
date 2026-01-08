@@ -28,7 +28,7 @@ mod to_graph;
 pub mod visualization;
 
 pub use fmt::visualize_plan;
-use polars_plan::prelude::{FileType, PlanCallback};
+use polars_plan::prelude::{FileWriteFormat, PlanCallback};
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::DynamicGroupOptions;
 use polars_time::{ClosedWindow, Duration};
@@ -207,7 +207,7 @@ pub enum PhysNodeKind {
         file_path_cb: Option<PartitionTargetCallback>,
         sink_options: SinkOptions,
         variant: PartitionVariantIR,
-        file_type: FileType,
+        file_type: FileWriteFormat,
         cloud_options: Option<CloudOptions>,
         per_partition_sort_by: Option<Vec<SortColumnIR>>,
         finish_callback: Option<SinkFinishCallback>,
