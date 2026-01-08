@@ -25,7 +25,6 @@ use pyo3::types::{PyDict, PyString};
 
 use super::*;
 use crate::error::PyPolarsErr;
-use crate::ffi::to_py::to_py_array;
 
 #[cfg(feature = "dtype-categorical")]
 pub(crate) fn get_series(obj: &Bound<'_, PyAny>) -> PyResult<Series> {
