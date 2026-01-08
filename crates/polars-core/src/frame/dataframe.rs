@@ -1,7 +1,5 @@
 use std::sync::{Arc, OnceLock};
 
-use arrow::array::StructArray;
-use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 use polars_row::ArrayRef;
 
@@ -9,8 +7,7 @@ use super::broadcast::{broadcast_columns, infer_broadcast_height};
 use super::validation::validate_columns_slice;
 use crate::frame::column::Column;
 use crate::prelude::CompatLevel;
-use crate::schema::{Schema, SchemaExt, SchemaRef};
-use crate::series::Series;
+use crate::schema::{Schema, SchemaRef};
 
 /// A contiguous growable collection of [`Column`]s that have the same length.
 ///
