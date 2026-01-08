@@ -114,8 +114,6 @@ if TYPE_CHECKING:
 
     import deltalake
 
-    import deltalake
-
     from polars.io.partition import PartitionBy, _SinkDirectory
     from polars.lazyframe.opt_flags import QueryOptFlags
 
