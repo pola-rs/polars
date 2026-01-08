@@ -282,6 +282,12 @@ impl ComputeNode for MergeJoinNode {
                 let mut search_limit = get_ideal_morsel_size();
 
                 loop {
+                    if source_token.stop_requested() {
+                        buffer_unmerged_from_pipe(recv_left.as_mut(), left_unmerged).await;
+                        buffer_unmerged_from_pipe(recv_right.as_mut(), right_unmerged).await;
+                        return Ok(());
+                    }
+
                     let fmp = FindMergeableParams {
                         left_done: recv_left.is_none(),
                         right_done: recv_right.is_none(),
@@ -310,26 +316,25 @@ impl ComputeNode for MergeJoinNode {
                             let Ok(m) = recv_left.as_mut().unwrap().recv().await else {
                                 buffer_unmerged_from_pipe(recv_right.as_mut(), right_unmerged)
                                     .await;
-                                break;
+                                return Ok(());
                             };
                             left_unmerged.push_df(m.into_df());
                         },
                         Right(NeedMore::Right | NeedMore::Both) if recv_right.is_some() => {
                             let Ok(m) = recv_right.as_mut().unwrap().recv().await else {
                                 buffer_unmerged_from_pipe(recv_left.as_mut(), left_unmerged).await;
-                                break;
+                                return Ok(());
                             };
                             right_unmerged.push_df(m.into_df());
                         },
                         Right(NeedMore::Finished) => {
-                            break;
+                            return Ok(());
                         },
                         Right(other) => {
                             unreachable!("unexpected NeedMore value: {other:?}");
                         },
                     }
                 }
-                Ok(())
             }));
 
             join_handles.extend(dist_recv.into_iter().zip(send).map(|(mut recv, mut send)| {
