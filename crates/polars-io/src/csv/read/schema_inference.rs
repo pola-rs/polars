@@ -7,7 +7,7 @@ use polars_utils::format_pl_smallstr;
 use polars_utils::mmap::MemSlice;
 
 use super::splitfields::SplitFields;
-use super::{CsvEncoding, CsvParseOptions, NullValues};
+use super::{CsvParseOptions, NullValues};
 use crate::utils::{BOOLEAN_RE, FLOAT_RE, FLOAT_RE_DECIMAL, INTEGER_RE};
 
 /// Low-level CSV schema inference function.
