@@ -157,11 +157,11 @@ impl StructEvalExpr {
         &self,
         mut acs: Vec<AggregationContext<'a>>,
     ) -> PolarsResult<AggregationContext<'a>> {
+        let len = acs[0].groups.len();
         let mut iters = acs
             .iter_mut()
             .map(|ac| ac.iter_groups(true))
             .collect::<Vec<_>>();
-        let len = iters[0].size_hint().0;
         let ca = (0..len)
             .map(|_| {
                 let mut cols = Vec::with_capacity(iters.len());
@@ -329,7 +329,7 @@ impl PhysicalExpr for StructEvalExpr {
                         has_not_agg_with_overlapping_groups = true;
                     }
                 },
-                _ => {},
+                AggState::LiteralScalar(_) => {},
             }
         }
 

@@ -2,6 +2,7 @@ use std::fmt::Formatter;
 use std::iter::FlatMap;
 
 use polars_core::prelude::*;
+use polars_utils::format_pl_smallstr;
 
 use self::visitor::{AexprNode, RewritingVisitor, TreeWalker};
 use crate::constants::get_len_name;
@@ -382,9 +383,7 @@ pub fn structfield_to_column(
             arena: &mut Self::Arena,
         ) -> PolarsResult<Self::Node> {
             if let AExpr::StructField(name) = arena.get(node.node()) {
-                let mut new_name = self.0.clone().to_string();
-                new_name.push_str(name);
-                let new_name = PlSmallStr::from_string(new_name);
+                let new_name = format_pl_smallstr!("{}{}", self.0, name);
                 return Ok(AexprNode::new(arena.add(AExpr::Column(new_name))));
             }
 

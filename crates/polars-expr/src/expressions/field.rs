@@ -57,7 +57,6 @@ impl PhysicalExpr for FieldExpr {
         let ca = col.struct_()?;
         let out = ca.field_by_name(self.name.as_str()).map(Column::from)?;
 
-        // Ok(AggregationContext::new(out, ac.groups.clone(), false))
         Ok(AggregationContext {
             state: match ac.agg_state() {
                 AggState::AggregatedList(_) => AggState::AggregatedList(out),
