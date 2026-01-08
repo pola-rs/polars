@@ -1,9 +1,10 @@
 use std::convert::Infallible;
+use std::mem::ManuallyDrop;
 
-use arrow;
 use polars::prelude::*;
-use polars_core::datatypes::{CompatLevel, DataType};
+use polars_core::datatypes::DataType;
 use polars_core::utils::materialize_dyn_int;
+use polars_ffi::version_0::{export_series, import_series, SeriesExport};
 #[cfg(feature = "lazy")]
 use polars_lazy::frame::LazyFrame;
 #[cfg(feature = "lazy")]
@@ -13,7 +14,6 @@ use polars_plan::dsl::Expr;
 #[cfg(feature = "lazy")]
 use polars_utils::pl_serialize;
 use pyo3::exceptions::{PyTypeError, PyValueError};
-use pyo3::ffi::Py_uintptr_t;
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
@@ -25,7 +25,6 @@ use pyo3::types::{PyDict, PyString};
 
 use super::*;
 use crate::error::PyPolarsErr;
-use crate::ffi::to_py::to_py_array;
 
 #[cfg(feature = "dtype-categorical")]
 pub(crate) fn get_series(obj: &Bound<'_, PyAny>) -> PyResult<Series> {
@@ -178,32 +177,11 @@ impl<'a, 'py> FromPyObject<'a, 'py> for PySeries {
     type Error = PyErr;
 
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
-        let ob = ob.call_method0("rechunk")?;
-
-        let name = ob.getattr("name")?;
-        let py_name = name.str()?;
-        let name = py_name.to_cow()?;
-
-        let kwargs = PyDict::new(ob.py());
-        if let Ok(compat_level) = ob.call_method0("_newest_compat_level") {
-            // Choose the maximum supported between both us and Python's compatibility level.
-            let compat_level = compat_level.extract().unwrap();
-            let compat_level =
-                CompatLevel::with_level(compat_level).unwrap_or(CompatLevel::newest());
-            let compat_level_type = POLARS_INTERCHANGE
-                .bind(ob.py())
-                .getattr("CompatLevel")
-                .unwrap();
-            let py_compat_level =
-                compat_level_type.call_method1("_with_version", (compat_level.get_level(),))?;
-            kwargs.set_item("compat_level", py_compat_level)?;
-        }
-        let arr = ob.call_method("to_arrow", (), Some(&kwargs))?;
-        let arr = ffi::to_rust::array_to_rust(&arr)?;
-        let name = name.as_ref();
-        Ok(PySeries(
-            Series::try_from((PlSmallStr::from(name), arr)).map_err(PyPolarsErr::from)?,
-        ))
+        let mut export = SeriesExport::empty();
+        ob.getattr("_s")?
+            .call_method1("_export", ((&raw mut export).addr(),))?;
+        let series = unsafe { import_series(export).map_err(PyPolarsErr::from)? };
+        Ok(PySeries(series))
     }
 }
 
@@ -267,76 +245,9 @@ impl<'py> IntoPyObject<'py> for PySeries {
     type Error = PyErr;
 
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        let polars = POLARS.bind(py);
         let s = SERIES.bind(py);
-        match s
-            .getattr("_import_arrow_from_c")
-            .or_else(|_| s.getattr("_import_from_c"))
-        {
-            // Go via polars
-            Ok(import_arrow_from_c) => {
-                // Get supported compatibility level
-                let compat_level = CompatLevel::with_level(
-                    s.getattr("_newest_compat_level")
-                        .map_or(1, |newest_compat_level| {
-                            newest_compat_level.call0().unwrap().extract().unwrap()
-                        }),
-                )
-                .unwrap_or(CompatLevel::newest());
-                // Prepare pointers on the heap.
-                let mut chunk_ptrs = Vec::with_capacity(self.0.n_chunks());
-                for i in 0..self.0.n_chunks() {
-                    let array = self.0.to_arrow(i, compat_level);
-                    let schema = Box::new(arrow::ffi::export_field_to_c(&ArrowField::new(
-                        "".into(),
-                        array.dtype().clone(),
-                        true,
-                    )));
-                    let array = Box::new(arrow::ffi::export_array_to_c(array.clone()));
-
-                    let schema_ptr: *const arrow::ffi::ArrowSchema = Box::leak(schema);
-                    let array_ptr: *const arrow::ffi::ArrowArray = Box::leak(array);
-
-                    chunk_ptrs.push((schema_ptr as Py_uintptr_t, array_ptr as Py_uintptr_t))
-                }
-
-                // Somehow we need to clone the Vec, because pyo3 doesn't accept a slice here.
-                let pyseries = import_arrow_from_c
-                    .call1((self.0.name().as_str(), chunk_ptrs.clone()))
-                    .unwrap();
-                // Deallocate boxes
-                for (schema_ptr, array_ptr) in chunk_ptrs {
-                    let schema_ptr = schema_ptr as *mut arrow::ffi::ArrowSchema;
-                    let array_ptr = array_ptr as *mut arrow::ffi::ArrowArray;
-                    unsafe {
-                        // We can drop both because the `schema` isn't read in an owned matter on the other side.
-                        let _ = Box::from_raw(schema_ptr);
-
-                        // The array is `ptr::read_unaligned` so there are two owners.
-                        // We drop the box, and forget the content so the other process is the owner.
-                        let array = Box::from_raw(array_ptr);
-                        // We must forget because the other process will call the release callback.
-                        // Read *array as Box::into_inner
-                        let array = *array;
-                        std::mem::forget(array);
-                    }
-                }
-
-                Ok(pyseries)
-            },
-            // Go via pyarrow
-            Err(_) => {
-                let s = self.0.rechunk();
-                let name = s.name().as_str();
-                let arr = s.to_arrow(0, CompatLevel::oldest());
-                let pyarrow = py.import("pyarrow").expect("pyarrow not installed");
-
-                let arg = to_py_array(arr, pyarrow).unwrap();
-                let s = polars.call_method1("from_arrow", (arg,)).unwrap();
-                let s = s.call_method1("rename", (name,)).unwrap();
-                Ok(s)
-            },
-        }
+        let series_export = ManuallyDrop::new(export_series(&self.0));
+        s.call_method1("_import", ((&raw const series_export).addr(),))
     }
 }
 
