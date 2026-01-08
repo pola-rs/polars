@@ -8,6 +8,7 @@ use super::validation::validate_columns_slice;
 use crate::frame::column::Column;
 use crate::prelude::CompatLevel;
 use crate::schema::{Schema, SchemaRef};
+use crate::utils::Container;
 
 /// A contiguous growable collection of [`Column`]s that have the same length.
 ///
@@ -378,7 +379,10 @@ impl DataFrame {
     }
 
     pub fn rechunk_to_arrow(&mut self, compat_level: CompatLevel) -> Vec<ArrayRef> {
-        self.rechunk_mut();
+        if self.n_chunks() > 1 {
+            self.rechunk_mut();
+        }
+
         self.columns()
             .iter()
             .map(|c| c.clone().rechunk_to_arrow(compat_level))
