@@ -3035,7 +3035,7 @@ def test_skip_lines_and_rows_raise(read_fn: str) -> None:
     ],
 )
 def test_utf8_bom(read_fn: str, csv_str: bytes, expected: list[pl.Series]) -> None:
-    csv_str = b"\xef\xbb\xbd" + csv_str
+    csv_str = b"\xef\xbb\xbf" + csv_str
     df = getattr(pl, read_fn)(csv_str, raise_if_empty=False).lazy().collect()
     assert_frame_equal(df, pl.DataFrame(expected))
 
@@ -3046,6 +3046,18 @@ def test_invalid_utf8_bom(read_fn: str) -> None:
     df = getattr(pl, read_fn)(csv_str, raise_if_empty=False).lazy().collect()
     expected = [pl.Series("諾A", [3])]
     assert_frame_equal(df, pl.DataFrame(expected))
+
+
+def test_invalid_utf8_in_schema() -> None:
+    csv_str = b"\xef\xff\xbdA,B\n3,\xe0\x80\x80\n-6,x3"
+    lf = pl.scan_csv(csv_str)
+
+    # Schema inference should not fail because of invalid utf-8.
+    assert lf.collect_schema() == {"���A": pl.Int64, "B": pl.String}
+
+    # But actual execution should.
+    with pytest.raises(pl.exceptions.ComputeError):
+        lf.collect()
 
 
 @pytest.mark.parametrize("read_fn", ["read_csv", "scan_csv"])
@@ -3067,15 +3079,3 @@ def test_provided_schema_mismatch_truncate(read_fn: str) -> None:
     )
     expected = [pl.Series("A", [1])]
     assert_frame_equal(df, pl.DataFrame(expected))
-
-
-def test_invalid_utf8_in_schema() -> None:
-    csv_str = b"\xef\xff\xbdA,B\n3,\xe0\x80\x80\n-6,x3"
-    lf = pl.scan_csv(csv_str)
-
-    # Schema inference should not fail because of invalid utf-8.
-    assert lf.collect_schema() == {"���A": pl.Int64, "B": pl.String}
-
-    # But actual execution should.
-    with pytest.raises(pl.exceptions.ComputeError):
-        lf.collect()
