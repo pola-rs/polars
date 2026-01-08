@@ -4,17 +4,15 @@ use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::prelude::{CsvWriterOptions, write_bom, write_csv_header};
 use polars_io::utils::file::AsyncWriteable;
-use polars_io::utils::sync_on_close::SyncOnCloseType;
 use tokio::io::AsyncWriteExt as _;
 
 use crate::async_executor;
 use crate::nodes::io_sinks2::components::sink_morsel::SinkMorselPermit;
 use crate::nodes::io_sinks2::writers::csv::morsel_serializer::MorselSerializer;
-use crate::utils::tokio_handle_ext;
+use crate::nodes::io_sinks2::writers::interface::FileOpenTaskHandle;
 
 pub struct IOWriter {
-    pub file:
-        tokio_handle_ext::AbortOnDropHandle<PolarsResult<polars_io::prelude::file::Writeable>>,
+    pub file: FileOpenTaskHandle,
     pub filled_serializer_rx: tokio::sync::mpsc::Receiver<(
         async_executor::AbortOnDropHandle<PolarsResult<MorselSerializer>>,
         SinkMorselPermit,
@@ -22,7 +20,6 @@ pub struct IOWriter {
     pub reuse_serializer_tx: tokio::sync::mpsc::Sender<MorselSerializer>,
     pub schema: SchemaRef,
     pub options: Arc<CsvWriterOptions>,
-    pub sync_on_close: SyncOnCloseType,
 }
 
 impl IOWriter {
@@ -33,10 +30,9 @@ impl IOWriter {
             reuse_serializer_tx,
             schema,
             options,
-            sync_on_close,
         } = self;
 
-        let mut file = file.await.unwrap()?;
+        let (mut file, sync_on_close) = file.await?;
 
         if options.include_bom {
             write_bom(&mut *file)?

@@ -178,11 +178,9 @@ impl IOSinkNodeState {
             return Ok(());
         }
 
-        let Uninitialized { mut config } = std::mem::replace(self, Finished) else {
+        let Uninitialized { config } = std::mem::replace(self, Finished) else {
             unreachable!()
         };
-
-        config.num_pipelines = execution_state.num_pipelines;
 
         let (phase_channel_tx, mut phase_channel_rx) = connector::connector::<PortReceiver>();
         let (mut multi_phase_tx, multi_phase_rx) = connector::connector();
@@ -209,9 +207,12 @@ impl IOSinkNodeState {
         });
 
         let task_handle = match &config.target {
-            IOSinkTarget::File(_) => {
-                start_single_file_sink_pipeline(node_name.clone(), multi_phase_rx, *config)?
-            },
+            IOSinkTarget::File(_) => start_single_file_sink_pipeline(
+                node_name.clone(),
+                multi_phase_rx,
+                *config,
+                execution_state,
+            )?,
 
             IOSinkTarget::Partitioned { .. } => {
                 start_partition_sink_pipeline(node_name, multi_phase_rx, *config, execution_state)?

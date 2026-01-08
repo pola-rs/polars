@@ -4,7 +4,6 @@ use arrow::datatypes::ArrowSchemaRef;
 use polars_error::PolarsResult;
 use polars_io::pl_async;
 use polars_io::prelude::{ParquetWriteOptions, get_column_write_options};
-use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_parquet::write::{
     ColumnWriteOptions, CompressedPage, SchemaDescriptor, Version, WriteOptions, to_parquet_schema,
 };
@@ -17,7 +16,9 @@ use crate::nodes::io_sinks2::components::sink_morsel::{SinkMorsel, SinkMorselPer
 use crate::nodes::io_sinks2::components::size::{
     NonZeroRowCountAndSize, RowCountAndSize, TakeableRowsProvider,
 };
-use crate::nodes::io_sinks2::writers::interface::{FileWriterStarter, ideal_sink_morsel_size_env};
+use crate::nodes::io_sinks2::writers::interface::{
+    FileOpenTaskHandle, FileWriterStarter, ideal_sink_morsel_size_env,
+};
 use crate::utils::tokio_handle_ext;
 
 mod io_writer;
@@ -27,8 +28,6 @@ pub struct ParquetWriterStarter {
     pub options: Arc<ParquetWriteOptions>,
     pub arrow_schema: ArrowSchemaRef,
     pub initialized_state: std::sync::Mutex<Option<InitializedState>>,
-    pub pipeline_depth: usize,
-    pub sync_on_close: SyncOnCloseType,
     pub row_group_size: Option<IdxSize>,
 }
 
@@ -77,9 +76,8 @@ impl FileWriterStarter for ParquetWriterStarter {
     fn start_file_writer(
         &self,
         morsel_rx: connector::Receiver<SinkMorsel>,
-        file: tokio_handle_ext::AbortOnDropHandle<
-            PolarsResult<polars_io::prelude::file::Writeable>,
-        >,
+        file: FileOpenTaskHandle,
+        num_pipelines: std::num::NonZeroUsize,
     ) -> PolarsResult<async_executor::JoinHandle<PolarsResult<()>>> {
         let InitializedState {
             column_options,
@@ -107,7 +105,7 @@ impl FileWriterStarter for ParquetWriterStarter {
 
         let (encoded_row_group_tx, encoded_row_group_rx) = tokio::sync::mpsc::channel::<
             async_executor::AbortOnDropHandle<PolarsResult<EncodedRowGroup>>,
-        >(self.pipeline_depth);
+        >(num_pipelines.get());
 
         let key_value_metadata = self.options.key_value_metadata.clone();
         let write_options = WriteOptions {
@@ -117,7 +115,6 @@ impl FileWriterStarter for ParquetWriterStarter {
             data_page_size: self.options.data_page_size,
         };
 
-        let sync_on_close = self.sync_on_close;
         let arrow_schema = Arc::clone(&self.arrow_schema);
         let num_leaf_columns = schema_descriptor.leaves().len();
 
@@ -132,7 +129,6 @@ impl FileWriterStarter for ParquetWriterStarter {
                     column_options: Arc::clone(&column_options),
                     key_value_metadata,
                     num_leaf_columns,
-                    sync_on_close,
                 }
                 .run(),
             ),

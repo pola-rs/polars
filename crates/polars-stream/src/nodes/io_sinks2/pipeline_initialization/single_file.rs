@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
@@ -8,20 +9,24 @@ use polars_utils::pl_str::PlSmallStr;
 
 use crate::async_executor::{self, TaskPriority};
 use crate::async_primitives::connector;
+use crate::execute::StreamingExecutionState;
 use crate::morsel::Morsel;
 use crate::nodes::io_sinks2::components::morsel_resize_pipeline::MorselResizePipeline;
 use crate::nodes::io_sinks2::config::{IOSinkNodeConfig, IOSinkTarget};
 use crate::nodes::io_sinks2::writers::create_file_writer_starter;
-use crate::nodes::io_sinks2::writers::interface::FileWriterStarter;
+use crate::nodes::io_sinks2::writers::interface::{FileOpenTaskHandle, FileWriterStarter};
 use crate::utils::tokio_handle_ext;
 
 pub fn start_single_file_sink_pipeline(
     node_name: PlSmallStr,
     morsel_rx: connector::Receiver<Morsel>,
     config: IOSinkNodeConfig,
+    execution_state: &StreamingExecutionState,
 ) -> PolarsResult<async_executor::AbortOnDropHandle<PolarsResult<()>>> {
-    let inflight_morsel_limit = config.inflight_morsel_limit();
-    let per_sink_pipeline_depth = config.per_sink_pipeline_depth();
+    let num_pipelines: NonZeroUsize = execution_state.num_pipelines.try_into().unwrap();
+
+    let inflight_morsel_limit = config.inflight_morsel_limit(num_pipelines);
+    let num_pipelines_per_sink = config.num_pipelines_per_sink(num_pipelines);
     let upload_chunk_size = config.cloud_upload_chunk_size();
 
     let IOSinkNodeConfig {
@@ -35,7 +40,6 @@ pub fn start_single_file_sink_pipeline(
                 cloud_options,
             },
         input_schema,
-        num_pipelines: _,
     } = config
     else {
         unreachable!()
@@ -50,13 +54,10 @@ pub fn start_single_file_sink_pipeline(
                 .open_into_writeable_async(cloud_options.as_deref(), mkdir, upload_chunk_size)
                 .await
         }));
+    let file_open_task = FileOpenTaskHandle::new(file_open_task, sync_on_close);
 
-    let file_writer_starter: Arc<dyn FileWriterStarter> = create_file_writer_starter(
-        &file_format,
-        &file_schema,
-        per_sink_pipeline_depth,
-        sync_on_close,
-    )?;
+    let file_writer_starter: Arc<dyn FileWriterStarter> =
+        create_file_writer_starter(&file_format, &file_schema)?;
     let takeable_rows_provider = file_writer_starter.takeable_rows_provider();
 
     if verbose {
@@ -72,10 +73,12 @@ pub fn start_single_file_sink_pipeline(
     }
 
     let (writer_tx, writer_rx) = connector::connector();
-    let writer_handle = file_writer_starter.start_file_writer(writer_rx, file_open_task)?;
+    let writer_handle =
+        file_writer_starter.start_file_writer(writer_rx, file_open_task, num_pipelines_per_sink)?;
 
     let empty_with_schema_df = DataFrame::empty_with_arc_schema(file_schema.clone());
-    let inflight_morsel_semaphore = Arc::new(tokio::sync::Semaphore::new(inflight_morsel_limit));
+    let inflight_morsel_semaphore =
+        Arc::new(tokio::sync::Semaphore::new(inflight_morsel_limit.get()));
 
     let resize_pipeline = MorselResizePipeline {
         empty_with_schema_df,

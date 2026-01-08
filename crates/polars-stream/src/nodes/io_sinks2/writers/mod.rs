@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
-use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_plan::dsl::FileWriteFormat;
 use polars_utils::IdxSize;
 
@@ -21,8 +20,6 @@ mod parquet;
 pub fn create_file_writer_starter(
     file_format: &FileWriteFormat,
     file_schema: &SchemaRef,
-    pipeline_depth: usize,
-    sync_on_close: SyncOnCloseType,
 ) -> PolarsResult<Arc<dyn FileWriterStarter>> {
     Ok(match file_format {
         #[cfg(feature = "parquet")]
@@ -42,8 +39,6 @@ pub fn create_file_writer_starter(
                 options: Arc::clone(options),
                 arrow_schema,
                 initialized_state: Default::default(),
-                pipeline_depth,
-                sync_on_close,
                 row_group_size: options
                     .row_group_size
                     .map(|x| IdxSize::try_from(x).unwrap()),
@@ -54,8 +49,6 @@ pub fn create_file_writer_starter(
             Arc::new(crate::nodes::io_sinks2::writers::ipc::IpcWriterStarter {
                 options: Arc::new(*options),
                 schema: file_schema.clone(),
-                pipeline_depth,
-                sync_on_close,
                 record_batch_size: options
                     .record_batch_size
                     .map(|x| IdxSize::try_from(x).unwrap()),
@@ -75,8 +68,6 @@ pub fn create_file_writer_starter(
                 )?
                 .into(),
                 schema: file_schema.clone(),
-                pipeline_depth,
-                sync_on_close,
                 initialized_state: Default::default(),
             }) as _
         },
@@ -84,8 +75,6 @@ pub fn create_file_writer_starter(
         FileWriteFormat::NDJson(polars_io::json::JsonWriterOptions {}) => Arc::new(
             crate::nodes::io_sinks2::writers::ndjson::NDJsonWriterStarter {
                 schema: file_schema.clone(),
-                pipeline_depth,
-                sync_on_close,
                 initialized_state: Default::default(),
             },
         ) as _,
