@@ -5,6 +5,7 @@ use super::compute_node_prelude::*;
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::{MorselSeq, SourceToken, get_ideal_morsel_size};
 
+#[derive(Debug)]
 pub struct InMemorySourceNode {
     source: Option<Arc<DataFrame>>,
     morsel_size: usize,

@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt;
-use std::mem::swap;
+use std::mem::{swap, take};
 
 use arrow::array::Array;
 use arrow::array::builder::ShareStrategy;
@@ -23,6 +23,7 @@ use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
 use crate::nodes::ComputeNode;
+use crate::nodes::in_memory_source::InMemorySourceNode;
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 
 pub const KEY_COL_NAME: &str = "__POLARS_JOIN_KEY_TMP";
@@ -78,16 +79,16 @@ pub struct MergeJoinNode {
     params: MergeJoinParams,
     left_unmerged: DataFrameBuffer,
     right_unmerged: DataFrameBuffer,
-    unmatched: BTreeMap<MorselSeq, DataFrameBuffer>,
+    unmatched: BTreeMap<MorselSeq, DataFrame>,
     seq: MorselSeq,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Default)]
 enum MergeJoinState {
     #[default]
     Running,
     FlushInputBuffers,
-    EmitUnmatched,
+    EmitUnmatched(InMemorySourceNode),
     Done,
 }
 
@@ -161,34 +162,50 @@ impl ComputeNode for MergeJoinNode {
         &mut self,
         recv: &mut [PortState],
         send: &mut [PortState],
-        _state: &StreamingExecutionState,
+        state: &StreamingExecutionState,
     ) -> PolarsResult<()> {
+        use MergeJoinState::*;
+
         assert!(recv.len() == 2);
         assert!(send.len() == 1);
 
-        let prev_state = self.state;
         let input_channels_done = recv[0] == PortState::Done && recv[1] == PortState::Done;
         let output_channel_done = send[0] == PortState::Done;
         let input_buffers_empty = self.left_unmerged.is_empty() && self.right_unmerged.is_empty();
         let unmatched_buffers_empty = self.unmatched.is_empty();
 
         if output_channel_done {
-            self.state = MergeJoinState::Done;
+            self.state = Done;
         } else if !input_channels_done {
-            self.state = MergeJoinState::Running
+            self.state = Running
         } else if input_channels_done && !input_buffers_empty {
-            self.state = MergeJoinState::FlushInputBuffers;
-        } else if input_channels_done && input_buffers_empty && !unmatched_buffers_empty {
-            self.state = MergeJoinState::EmitUnmatched;
+            self.state = FlushInputBuffers;
+        } else if input_channels_done
+            && input_buffers_empty
+            && matches!(self.state, Running | FlushInputBuffers)
+        {
+            let mut seq = MorselSeq::default();
+            let mut all_unmatched = DataFrame::empty_with_schema(&self.params.output_schema);
+            for (unmatched_seq, df) in take(&mut self.unmatched).into_iter() {
+                seq = unmatched_seq;
+                all_unmatched.vstack_mut_owned(df)?;
+            }
+            let src_node = InMemorySourceNode::new(Arc::new(all_unmatched), seq.successor());
+            self.state = EmitUnmatched(src_node);
         } else if input_channels_done && input_buffers_empty && unmatched_buffers_empty {
-            self.state = MergeJoinState::Done;
+            self.state = Done;
         } else {
             unreachable!()
         }
-        assert!(prev_state <= self.state);
 
-        match self.state {
-            MergeJoinState::Running => {
+        // TODO [amber] LEFT HERE
+        // I am at the moment fixing Orson's comments.  However, after introducing
+        // an InMemorySourceNode, somehow the order of the output changes.
+        // Currently debugging this.
+        // Good luck! Don't forget to drink water 💦
+
+        match &mut self.state {
+            Running => {
                 recv[0] = PortState::Ready;
                 recv[1] = PortState::Ready;
                 send[0] = PortState::Ready;
@@ -205,17 +222,26 @@ impl ComputeNode for MergeJoinNode {
                     recv[1] = PortState::Blocked;
                 }
             },
-            MergeJoinState::FlushInputBuffers | MergeJoinState::EmitUnmatched => {
+            FlushInputBuffers => {
                 recv[0] = PortState::Done;
                 recv[1] = PortState::Done;
                 send[0] = PortState::Ready;
             },
-            MergeJoinState::Done => {
+            EmitUnmatched(src_node) => {
+                recv[0] = PortState::Done;
+                recv[1] = PortState::Done;
+                src_node.update_state(&mut [], &mut send[..], state)?;
+                if send[0] == PortState::Done {
+                    self.state = Done;
+                }
+            },
+            Done => {
                 recv[0] = PortState::Done;
                 recv[1] = PortState::Done;
                 send[0] = PortState::Done;
             },
         }
+
         Ok(())
     }
 
@@ -224,7 +250,7 @@ impl ComputeNode for MergeJoinNode {
         scope: &'s TaskScope<'s, 'env>,
         recv_ports: &mut [Option<RecvPort<'_>>],
         send_ports: &mut [Option<SendPort<'_>>],
-        _state: &'s StreamingExecutionState,
+        state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         use MergeJoinState::*;
@@ -329,34 +355,22 @@ impl ComputeNode for MergeJoinNode {
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 while let Some(morsel) = unmatched_recv.recv().await {
                     let (df, seq, _st, _) = morsel.into_inner();
-                    if let Some(buf) = unmatched.get_mut(&seq) {
-                        buf.push_df(df);
+                    if let Some(acc) = unmatched.get_mut(&seq) {
+                        acc.vstack_mut_owned(df)?;
+                        dbg!(acc);
                     } else {
-                        let mut buf = DataFrameBuffer::empty_with_schema(df.schema().clone());
-                        buf.push_df(df);
-                        unmatched.insert(seq, buf);
+                        unmatched.insert(seq, df);
                     }
                 }
                 Ok(())
             }));
-        } else if self.state == EmitUnmatched {
+        } else if let EmitUnmatched(src_node) = &mut self.state {
             assert!(recv_ports[0].is_none());
             assert!(recv_ports[1].is_none());
             assert!(send_ports[0].is_some());
-            let mut send = send_ports[0].take().unwrap().serial();
-
-            join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                while let Some((_, mut buf)) = unmatched.pop_first() {
-                    while !buf.is_empty() {
-                        let df = buf.split_at(get_ideal_morsel_size()).into_df();
-                        let morsel = Morsel::new(df, *seq, SourceToken::new());
-                        if let Err(_morsel) = send.send(morsel).await {
-                            return Ok(());
-                        }
-                    }
-                }
-                Ok(())
-            }));
+            src_node.spawn(scope, &mut [], send_ports, state, join_handles);
+        } else {
+            unreachable!()
         }
     }
 }
