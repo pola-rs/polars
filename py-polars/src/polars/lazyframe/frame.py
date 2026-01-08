@@ -114,7 +114,7 @@ if TYPE_CHECKING:
 
     import deltalake
 
-    from polars.io.partition import _SinkDirectory
+    from polars.io.partition import PartitionBy, _SinkDirectory
     from polars.lazyframe.opt_flags import QueryOptFlags
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -182,15 +182,15 @@ def _select_engine(engine: EngineType) -> EngineType:
 
 
 def _to_sink_target(
-    path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
-) -> str | Path | IO[bytes] | IO[str] | _SinkDirectory:
-    from polars.io.partition import _SinkDirectory
+    path: str | Path | IO[bytes] | IO[str] | _SinkDirectory | PartitionBy,
+) -> str | Path | IO[bytes] | IO[str] | _SinkDirectory | PartitionBy:
+    from polars.io.partition import PartitionBy, _SinkDirectory
 
     if isinstance(path, (str, Path)):
         return normalize_filepath(path)
     elif isinstance(path, io.IOBase):
         return path
-    elif isinstance(path, _SinkDirectory):
+    elif isinstance(path, (_SinkDirectory, PartitionBy)):
         return path
     elif callable(getattr(path, "write", None)):
         # This allows for custom writers
@@ -2589,7 +2589,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_parquet(
         self,
-        path: str | Path | IO[bytes] | _SinkDirectory,
+        path: str | Path | IO[bytes] | _SinkDirectory | PartitionBy,
         *,
         compression: str = "zstd",
         compression_level: int | None = None,
@@ -2617,7 +2617,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_parquet(
         self,
-        path: str | Path | IO[bytes] | _SinkDirectory,
+        path: str | Path | IO[bytes] | _SinkDirectory | PartitionBy,
         *,
         compression: str = "zstd",
         compression_level: int | None = None,
@@ -2644,7 +2644,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def sink_parquet(
         self,
-        path: str | Path | IO[bytes] | _SinkDirectory,
+        path: str | Path | IO[bytes] | _SinkDirectory | PartitionBy,
         *,
         compression: str = "zstd",
         compression_level: int | None = None,
@@ -2816,13 +2816,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Split into a hive-partitioning style partition:
 
         >>> pl.LazyFrame({"x": [1, 2, 1], "y": [3, 4, 5]}).sink_parquet(
-        ...     pl.PartitionByKey("./out/", by="x"),
+        ...     pl.PartitionBy("./out/", key="x"),
         ...     mkdir=True
         ... )  # doctest: +SKIP
 
         See Also
         --------
-        PartitionByKey
+        PartitionBy
         """
         engine = _select_engine(engine)
         if metadata is not None:
@@ -2964,7 +2964,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> deltalake.table.TableMerger | None:
         """
-
         Sink DataFrame as delta table.
 
         .. warning::
@@ -2983,7 +2982,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             - If 'overwrite', will replace table with new data.
             - If 'ignore', will not write anything if table already exists.
             - If 'merge', return a `TableMerger` object to merge data from the DataFrame
-            with the existing data.
+              with the existing data.
         storage_options
             Extra options for the storage backends supported by `deltalake`.
             For cloud storages, this may include configurations for authentication etc.
@@ -3232,7 +3231,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_ipc(
         self,
-        path: str | Path | IO[bytes] | _SinkDirectory,
+        path: str | Path | IO[bytes] | _SinkDirectory | PartitionBy,
         *,
         compression: IpcCompression | None = "uncompressed",
         compat_level: CompatLevel | None = None,
@@ -3253,7 +3252,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_ipc(
         self,
-        path: str | Path | IO[bytes] | _SinkDirectory,
+        path: str | Path | IO[bytes] | _SinkDirectory | PartitionBy,
         *,
         compression: IpcCompression | None = "uncompressed",
         compat_level: CompatLevel | None = None,
@@ -3273,7 +3272,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def sink_ipc(
         self,
-        path: str | Path | IO[bytes] | _SinkDirectory,
+        path: str | Path | IO[bytes] | _SinkDirectory | PartitionBy,
         *,
         compression: IpcCompression | None = "uncompressed",
         compat_level: CompatLevel | None = None,
@@ -3402,13 +3401,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Split into a hive-partitioning style partition:
 
         >>> pl.LazyFrame({"x": [1, 2, 1], "y": [3, 4, 5]}).sink_ipc(
-        ...     pl.PartitionByKey("./out/", by="x"),
+        ...     pl.PartitionBy("./out/", key="x"),
         ...     mkdir=True
         ... )  # doctest: +SKIP
 
         See Also
         --------
-        PartitionByKey
+        PartitionBy
         """
         engine = _select_engine(engine)
 
@@ -3466,7 +3465,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_csv(
         self,
-        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
+        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory | PartitionBy,
         *,
         include_bom: bool = False,
         include_header: bool = True,
@@ -3498,7 +3497,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_csv(
         self,
-        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
+        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory | PartitionBy,
         *,
         include_bom: bool = False,
         include_header: bool = True,
@@ -3529,7 +3528,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def sink_csv(
         self,
-        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
+        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory | PartitionBy,
         *,
         include_bom: bool = False,
         include_header: bool = True,
@@ -3708,13 +3707,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Split into a hive-partitioning style partition:
 
         >>> pl.LazyFrame({"x": [1, 2, 1], "y": [3, 4, 5]}).sink_csv(
-        ...     pl.PartitionByKey("./out/", by="x"),
+        ...     pl.PartitionBy("./out/", key="x"),
         ...     mkdir=True
         ... )  # doctest: +SKIP
 
         See Also
         --------
-        PartitionByKey
+        PartitionBy
         """
         from polars.io.csv._utils import _check_arg_is_1byte
 
@@ -3777,7 +3776,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_ndjson(
         self,
-        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
+        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory | PartitionBy,
         *,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
@@ -3795,7 +3794,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_ndjson(
         self,
-        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
+        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory | PartitionBy,
         *,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
@@ -3812,7 +3811,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def sink_ndjson(
         self,
-        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory,
+        path: str | Path | IO[bytes] | IO[str] | _SinkDirectory | PartitionBy,
         *,
         maintain_order: bool = True,
         storage_options: dict[str, Any] | None = None,
@@ -3923,13 +3922,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Split into a hive-partitioning style partition:
 
         >>> pl.LazyFrame({"x": [1, 2, 1], "y": [3, 4, 5]}).sink_ndjson(
-        ...     pl.PartitionByKey("./out/", by="x"),
+        ...     pl.PartitionBy("./out/", key="x"),
         ...     mkdir=True
         ... )  # doctest: +SKIP
 
         See Also
         --------
-        PartitionByKey
+        PartitionBy
         """
         engine = _select_engine(engine)
 

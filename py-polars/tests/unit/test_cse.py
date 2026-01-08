@@ -967,7 +967,7 @@ def test_multiplex_predicate_pushdown() -> None:
     with TemporaryDirectory() as f:
         tmppath = Path(f)
         ldf.sink_parquet(
-            pl.PartitionByKey(tmppath, by="a", include_key=True),
+            pl.PartitionBy(tmppath, key="a", include_key=True),
             sync_on_close="all",
             mkdir=True,
         )

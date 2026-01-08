@@ -77,10 +77,18 @@ impl PartitionMorselSender {
                     available_row_capacity = if self.file_size_limit.get() == RowCountAndSize::MAX {
                         RowCountAndSize::MAX
                     } else {
-                        self.file_size_limit
-                            .get()
-                            .checked_sub(used_row_capacity)
-                            .unwrap()
+                        let file_size_limit = self.file_size_limit.get();
+                        RowCountAndSize {
+                            num_rows: IdxSize::checked_sub(
+                                file_size_limit.num_rows,
+                                used_row_capacity.num_rows,
+                            )
+                            .unwrap(),
+                            num_bytes: u64::saturating_sub(
+                                file_size_limit.num_bytes,
+                                used_row_capacity.num_bytes,
+                            ),
+                        }
                     };
                 }};
             }
