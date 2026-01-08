@@ -1699,7 +1699,7 @@ impl Iterator for ArrowStreamIterator {
             None => None,
             Some(Err(err)) => Some(Err(err)),
             Some(Ok(df)) => {
-                let arrays = df.rechunk_to_arrow(CompatLevel::newest());
+                let arrays = df.rechunk_into_arrow(CompatLevel::newest());
                 Some(Ok(Box::new(arrow::array::StructArray::new(
                     self.dtype.clone(),
                     df.height(),
