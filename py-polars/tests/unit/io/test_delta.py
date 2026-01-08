@@ -271,9 +271,9 @@ def test_sink_delta(df: pl.DataFrame, tmp_path: Path) -> None:
     pl_df_partitioned = pl.read_delta(partitioned_tbl_uri)
 
     assert v0.collect().shape == pl_df_0.shape
-    assert v0.columns == pl_df_0.columns
+    assert v0.collect_schema().names() == pl_df_0.columns
     assert v1.collect().shape == pl_df_1.shape
-    assert v1.columns == pl_df_1.columns
+    assert v1.collect_schema().names() == pl_df_1.columns
 
     assert df_supported.shape == pl_df_partitioned.shape
     assert sorted(df_supported.columns) == sorted(pl_df_partitioned.columns)
@@ -305,7 +305,7 @@ def test_sink_delta(df: pl.DataFrame, tmp_path: Path) -> None:
 
     assert tbl.version() == 2
     assert pl_df_1.shape == (6, 2)  # Rows are doubled
-    assert v1.columns == pl_df_1.columns
+    assert v1.collect_schema().names() == pl_df_1.columns
 
     df_supported.lazy().sink_delta(partitioned_tbl_uri, mode="append")
     partitioned_tbl = DeltaTable(partitioned_tbl_uri)
