@@ -1661,7 +1661,7 @@ impl PyCollectBatches {
     ) -> PyResult<Bound<'py, PyCapsule>> {
         let schema = ArrowDataType::Struct(self.schema.clone().into_iter_values().collect());
 
-        let iter = Box::new(LazyFrameStreamIterator::new(self.inner.clone(), schema));
+        let iter = Box::new(ArrowStreamIterator::new(self.inner.clone(), schema));
         let field = iter.field();
         let stream = export_iterator(iter, field);
         let stream_capsule_name = CString::new("arrow_array_stream").unwrap();
@@ -1669,12 +1669,12 @@ impl PyCollectBatches {
     }
 }
 
-pub struct LazyFrameStreamIterator {
+pub struct ArrowStreamIterator {
     inner: Arc<Mutex<CollectBatches>>,
     dtype: ArrowDataType,
 }
 
-impl LazyFrameStreamIterator {
+impl ArrowStreamIterator {
     fn new(inner: Arc<Mutex<CollectBatches>>, schema: ArrowDataType) -> Self {
         Self {
             inner,
@@ -1687,7 +1687,7 @@ impl LazyFrameStreamIterator {
     }
 }
 
-impl Iterator for LazyFrameStreamIterator {
+impl Iterator for ArrowStreamIterator {
     type Item = PolarsResult<ArrayRef>;
 
     fn next(&mut self) -> Option<Self::Item> {
