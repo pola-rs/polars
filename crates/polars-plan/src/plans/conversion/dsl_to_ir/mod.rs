@@ -13,7 +13,6 @@ use super::convert_utils::SplitPredicates;
 use super::stack_opt::ConversionOptimizer;
 use super::*;
 use crate::constants::get_pl_element_name;
-use crate::dsl;
 use crate::dsl::PartitionedSinkOptions;
 use crate::dsl::functions::{all_horizontal, col};
 use crate::dsl::sink2::FileProviderType;
