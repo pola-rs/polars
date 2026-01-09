@@ -1764,13 +1764,19 @@ class DataFrame:
         bar: [["a","b","c","d","e","f"]]
         """
         if self.width == 0:
-            return pa.Table.from_pydict(
-                {
-                    "": pl.Series([{}], dtype=Struct({}))
-                    .new_from_index(0, self.height)
-                    .to_arrow()
-                }
-            ).select([])
+            if self.height == 0:
+                return pa.table({})
+
+            s = pl.Series([{}], dtype=Struct({}))
+
+            arr = s.new_from_index(0, min(self.height, (1 << 32) - 2)).to_arrow()
+
+            if len(arr) < self.height:
+                arr = pa.concat_arrays(
+                    [arr, s.new_from_index(0, self.height - len(arr)).to_arrow()]
+                )
+
+            return pa.table({"": arr}).select([])
 
         compat_level_py: int | bool
         if compat_level is None:
