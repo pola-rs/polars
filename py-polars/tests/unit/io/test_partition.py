@@ -456,11 +456,11 @@ def test_partition_approximate_size(tmp_path: Path) -> None:
 
     root = tmp_path
     df.lazy().sink_parquet(
-        pl.PartitionBy(root, key="a", approximate_bytes_per_file=400000),
+        pl.PartitionBy(root, approximate_bytes_per_file=400000),
         row_group_size=10_000,
     )
 
-    files = sorted((root / "a=0").iterdir())
+    files = sorted(root.iterdir())
 
     assert len(files) == 15
 
