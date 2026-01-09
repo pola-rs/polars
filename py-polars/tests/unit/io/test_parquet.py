@@ -3779,7 +3779,7 @@ def test_parquet_schema_correctness(
 
 
 @pytest.mark.slow
-def test_parquet_is_in_pushdown_large() -> None:
+def test_parquet_is_in_pushdown_large_26007() -> None:
     # Create parquet with large_string type and ZSTD compression.
     df = pl.DataFrame(
         {
