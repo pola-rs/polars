@@ -1642,10 +1642,13 @@ impl PyCollectBatches {
         slf
     }
 
-    fn __next__(slf: PyRef<'_, Self>) -> Option<PyResult<PyDataFrame>> {
-        slf.inner.lock().next().map(|rdf| {
-            rdf.map(PyDataFrame::new)
-                .map_err(|e| PyErr::from(PyPolarsErr::from(e)))
+    fn __next__(slf: PyRef<'_, Self>, py: Python) -> Option<PyResult<PyDataFrame>> {
+        let inner = Arc::clone(&slf.inner);
+        py.detach(|| {
+            inner.lock().next().map(|rdf| {
+                rdf.map(PyDataFrame::new)
+                    .map_err(|e| PyErr::from(PyPolarsErr::from(e)))
+            })
         })
     }
 
