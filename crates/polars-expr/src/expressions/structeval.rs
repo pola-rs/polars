@@ -115,7 +115,7 @@ impl StructEvalExpr {
                 })?;
 
                 let out = out.into_column();
-                debug_assert!(input_len == out.len());
+                assert!(input_len == out.len());
 
                 let mut ac = acs.swap_remove(base_ac_idx);
                 ac.with_values_and_args(
@@ -129,7 +129,7 @@ impl StructEvalExpr {
             },
             _ => {
                 let aggregated = acs.iter().any(|ac| ac.is_aggregated());
-                debug_assert!(aggregated == self.is_scalar());
+                assert!(aggregated == self.is_scalar());
 
                 let cols = acs
                     .iter()
@@ -138,7 +138,7 @@ impl StructEvalExpr {
 
                 let input_len = cols[base_ac_idx].len();
                 let out = with_fields(&cols)?;
-                debug_assert!(input_len == out.len());
+                assert!(input_len == out.len());
 
                 let mut ac = acs.swap_remove(base_ac_idx);
                 ac.with_values_and_args(
