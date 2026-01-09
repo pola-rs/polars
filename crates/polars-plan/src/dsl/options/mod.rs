@@ -37,8 +37,9 @@ pub use sink::{
 pub use sink2::{PartitionStrategy, PartitionStrategyIR, SinkDestination, UnifiedSinkArgs};
 use strum_macros::IntoStaticStr;
 
-use super::{Expr, ExprIR};
+use super::Expr;
 use crate::dsl::Selector;
+use crate::plans::ExprIR;
 
 #[derive(Copy, Clone, PartialEq, Debug, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
