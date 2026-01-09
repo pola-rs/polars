@@ -456,16 +456,16 @@ def test_partition_approximate_size(tmp_path: Path) -> None:
 
     root = tmp_path
     df.lazy().sink_parquet(
-        pl.PartitionBy(root, approximate_bytes_per_file=400000),
+        pl.PartitionBy(root, approximate_bytes_per_file=200000),
         row_group_size=10_000,
     )
 
     files = sorted(root.iterdir())
 
-    assert len(files) == 15
+    assert len(files) == 30
 
     assert [
         pl.scan_parquet(x).select(pl.len()).collect().item() for x in files
-    ] == 14 * [33334] + [33324]
+    ] == 29 * [16667] + [16657]
 
     assert_frame_equal(pl.scan_parquet(root).collect(), df)
