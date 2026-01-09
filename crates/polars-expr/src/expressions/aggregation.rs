@@ -484,8 +484,14 @@ impl PhysicalExpr for AggQuantileExpr {
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let input = self.input.evaluate(df, state)?;
 
-        let col = self.quantile.evaluate(df, state)?;
-        let s = col.as_materialized_series_maintain_scalar();
+        let quantile = self.quantile.evaluate(df, state)?;
+
+        polars_ensure!(quantile.len() <= 1, ComputeError:
+            "polars does not support varying quantiles yet, \
+            make sure the 'quantile' expression input produces a single quantile or a list of quantiles"
+        );
+
+        let s = quantile.as_materialized_series();
 
         match s.dtype() {
             DataType::List(_) => {
@@ -506,7 +512,7 @@ impl PhysicalExpr for AggQuantileExpr {
                     .map(|sc| sc.into_column(input.name().clone()))
             },
             _ => {
-                let q: f64 = col.get(0).unwrap().try_extract()?;
+                let q: f64 = quantile.get(0).unwrap().try_extract()?;
                 input
                     .quantile_reduce(q, self.method)
                     .map(|sc| sc.into_column(input.name().clone()))
