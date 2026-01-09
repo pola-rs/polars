@@ -1642,14 +1642,9 @@ impl PyCollectBatches {
         slf
     }
 
-    fn __next__(slf: PyRef<'_, Self>, py: Python) -> Option<PyResult<PyDataFrame>> {
+    fn __next__(slf: PyRef<'_, Self>, py: Python) -> PyResult<Option<PyDataFrame>> {
         let inner = Arc::clone(&slf.inner);
-        py.detach(|| {
-            inner.lock().next().map(|rdf| {
-                rdf.map(PyDataFrame::new)
-                    .map_err(|e| PyErr::from(PyPolarsErr::from(e)))
-            })
-        })
+        py.enter_polars(|| PolarsResult::Ok(inner.lock().next().transpose()?.map(PyDataFrame::new)))
     }
 
     #[allow(unused_variables)]
@@ -1665,7 +1660,7 @@ impl PyCollectBatches {
             .map_err(PyPolarsErr::from)?
             .to_arrow(CompatLevel::newest());
 
-        let schema = ArrowDataType::Struct(schema.clone().into_iter_values().collect());
+        let schema = ArrowDataType::Struct(schema.into_iter_values().collect());
 
         let iter = Box::new(ArrowStreamIterator::new(self.inner.clone(), schema));
         let field = iter.field();
