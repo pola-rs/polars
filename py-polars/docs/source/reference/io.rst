@@ -107,6 +107,7 @@ Sink to disk with differing partitioning strategies.
 .. autosummary::
    :toctree: api/
 
+   PartitionBy
    PartitionByKey
    PartitionMaxSize
    PartitionParted
@@ -116,6 +117,7 @@ Sink to disk with differing partitioning strategies.
 .. autosummary::
    :toctree: api/
 
+   FileProviderArgs
    KeyedPartition
    BasePartitionContext
    KeyedPartitionContext

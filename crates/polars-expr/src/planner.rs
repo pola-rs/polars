@@ -1,5 +1,5 @@
 use polars_core::prelude::*;
-use polars_plan::constants::{get_literal_name, get_pl_element_name};
+use polars_plan::constants::{get_literal_name, get_pl_element_name, get_pl_structfields_name};
 use polars_plan::prelude::expr_ir::ExprIR;
 use polars_plan::prelude::*;
 use recursive::recursive;
@@ -310,6 +310,18 @@ fn create_physical_expr_inner(
 
             Ok(Arc::new(ElementExpr::new(output_field)))
         },
+        #[cfg(feature = "dtype-struct")]
+        StructField(field) => {
+            let output_field = expr_arena
+                .get(expression)
+                .to_field(&ToFieldContext::new(expr_arena, schema))?;
+
+            Ok(Arc::new(FieldExpr::new(
+                field.clone(),
+                node_to_expr(expression, expr_arena),
+                output_field,
+            )))
+        },
         Sort { expr, options } => {
             let phys_expr = create_physical_expr_inner(expr, expr_arena, schema, state)?;
             Ok(Arc::new(SortExpr::new(
@@ -322,6 +334,7 @@ fn create_physical_expr_inner(
             expr,
             idx,
             returns_scalar,
+            null_on_oob,
         } => {
             let phys_expr = create_physical_expr_inner(expr, expr_arena, schema, state)?;
             let phys_idx = create_physical_expr_inner(idx, expr_arena, schema, state)?;
@@ -330,6 +343,7 @@ fn create_physical_expr_inner(
                 idx: phys_idx,
                 expr: node_to_expr(expression, expr_arena),
                 returns_scalar,
+                null_on_oob,
             }))
         },
         SortBy {
@@ -386,6 +400,7 @@ fn create_physical_expr_inner(
                         expr: input,
                         idx: arg_min,
                         returns_scalar: true,
+                        null_on_oob: false,
                     };
                     let gather = expr_arena.add(gather_aexpr);
 
@@ -403,6 +418,7 @@ fn create_physical_expr_inner(
                         expr: input,
                         idx: arg_min,
                         returns_scalar: true,
+                        null_on_oob: false,
                     };
                     let gather = expr_arena.add(gather_aexpr);
 
@@ -528,6 +544,36 @@ fn create_physical_expr_inner(
                 evaluation_is_scalar,
                 evaluation_is_elementwise,
                 evaluation_is_fallible,
+            )))
+        },
+        #[cfg(feature = "dtype-struct")]
+        StructEval { expr, evaluation } => {
+            let is_scalar = is_scalar_ae(expression, expr_arena);
+            let output_field = expr_arena
+                .get(expression)
+                .to_field(&ToFieldContext::new(expr_arena, schema))?;
+            let input_field = expr_arena
+                .get(expr)
+                .to_field(&ToFieldContext::new(expr_arena, schema))?;
+
+            let input = create_physical_expr_inner(expr, expr_arena, schema, state)?;
+
+            let mut eval_schema = schema.as_ref().clone();
+            eval_schema.insert(get_pl_structfields_name(), input_field.dtype().clone());
+            let eval_schema = Arc::new(eval_schema);
+
+            let evaluation = evaluation
+                .iter()
+                .map(|e| create_physical_expr(e, expr_arena, &eval_schema, state))
+                .collect::<PolarsResult<Vec<_>>>()?;
+
+            Ok(Arc::new(StructEvalExpr::new(
+                input,
+                evaluation,
+                node_to_expr(expression, expr_arena),
+                output_field,
+                is_scalar,
+                state.allow_threading,
             )))
         },
         Function {

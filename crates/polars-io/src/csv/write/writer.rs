@@ -6,6 +6,7 @@ use polars_core::POOL;
 use polars_core::frame::DataFrame;
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
+use polars_utils::pl_str::PlSmallStr;
 
 use super::write_impl::{write, write_bom, write_csv_header};
 use super::{QuoteStyle, SerializeOptions};
@@ -97,7 +98,7 @@ where
     }
 
     /// Set the CSV file's date format.
-    pub fn with_date_format(mut self, format: Option<String>) -> Self {
+    pub fn with_date_format(mut self, format: Option<PlSmallStr>) -> Self {
         if format.is_some() {
             self.options_mut().date_format = format;
         }
@@ -105,7 +106,7 @@ where
     }
 
     /// Set the CSV file's time format.
-    pub fn with_time_format(mut self, format: Option<String>) -> Self {
+    pub fn with_time_format(mut self, format: Option<PlSmallStr>) -> Self {
         if format.is_some() {
             self.options_mut().time_format = format;
         }
@@ -113,7 +114,7 @@ where
     }
 
     /// Set the CSV file's datetime format.
-    pub fn with_datetime_format(mut self, format: Option<String>) -> Self {
+    pub fn with_datetime_format(mut self, format: Option<PlSmallStr>) -> Self {
         if format.is_some() {
             self.options_mut().datetime_format = format;
         }
@@ -149,13 +150,13 @@ where
     }
 
     /// Set the CSV file's null value representation.
-    pub fn with_null_value(mut self, null_value: String) -> Self {
+    pub fn with_null_value(mut self, null_value: PlSmallStr) -> Self {
         self.options_mut().null = null_value;
         self
     }
 
     /// Set the CSV file's line terminator.
-    pub fn with_line_terminator(mut self, line_terminator: String) -> Self {
+    pub fn with_line_terminator(mut self, line_terminator: PlSmallStr) -> Self {
         self.options_mut().line_terminator = line_terminator;
         self
     }

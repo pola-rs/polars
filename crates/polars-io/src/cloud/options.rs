@@ -199,22 +199,9 @@ pub(super) fn get_client_options() -> ClientOptions {
     use reqwest::header::HeaderValue;
 
     ClientOptions::new()
-        // We set request timeout super high as the timeout isn't reset at ACK,
-        // but starts from the moment we start downloading a body.
-        // https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html#method.timeout
-        .with_timeout(std::time::Duration::from_secs(
-            std::env::var("POLARS_HTTP_CLIENT_TIMEOUT_SECONDS")
-                .map(|x| {
-                    x.parse::<NonZeroU64>()
-                        .ok()
-                        .unwrap_or_else(|| {
-                            panic!("invalid value for POLARS_HTTP_CLIENT_TIMEOUT_SECONDS: {x}")
-                        })
-                        .get()
-                })
-                .unwrap_or(10 * 60),
-        ))
-        // Concurrency can increase connection latency, so also set high.
+        // Disables the time limit for downloading the response body.
+        .with_timeout_disabled()
+        // Set the time limit for establishing the connection.
         .with_connect_timeout(std::time::Duration::from_secs(
             std::env::var("POLARS_HTTP_CONNECT_TIMEOUT_SECONDS")
                 .map(|x| {
@@ -225,7 +212,7 @@ pub(super) fn get_client_options() -> ClientOptions {
                         })
                         .get()
                 })
-                .unwrap_or(10 * 60),
+                .unwrap_or(5 * 60),
         ))
         .with_user_agent(HeaderValue::from_static(USER_AGENT))
         .with_allow_http(true)

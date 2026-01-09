@@ -4,16 +4,14 @@ use arrow::datatypes::ArrowSchemaRef;
 use polars_error::PolarsResult;
 use polars_io::parquet::write::BatchedWriter;
 use polars_io::prelude::KeyValueMetadata;
-use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_parquet::write::{ColumnWriteOptions, FileWriter, SchemaDescriptor, WriteOptions};
 
 use crate::async_executor::{self};
+use crate::nodes::io_sinks2::writers::interface::FileOpenTaskHandle;
 use crate::nodes::io_sinks2::writers::parquet::EncodedRowGroup;
-use crate::utils::tokio_handle_ext;
 
 pub struct IOWriter {
-    pub file:
-        tokio_handle_ext::AbortOnDropHandle<PolarsResult<polars_io::prelude::file::Writeable>>,
+    pub file: FileOpenTaskHandle,
     pub encoded_row_group_rx: tokio::sync::mpsc::Receiver<
         async_executor::AbortOnDropHandle<PolarsResult<EncodedRowGroup>>,
     >,
@@ -23,7 +21,6 @@ pub struct IOWriter {
     pub column_options: Arc<Vec<ColumnWriteOptions>>,
     pub key_value_metadata: Option<KeyValueMetadata>,
     pub num_leaf_columns: usize,
-    pub sync_on_close: SyncOnCloseType,
 }
 
 impl IOWriter {
@@ -37,10 +34,9 @@ impl IOWriter {
             column_options,
             key_value_metadata,
             num_leaf_columns,
-            sync_on_close,
         } = self;
 
-        let mut file = file.await.unwrap()?;
+        let (mut file, sync_on_close) = file.await?;
         let mut buffered_file = file.as_buffered();
 
         let mut parquet_writer = BatchedWriter::new(

@@ -55,7 +55,7 @@ impl<T: NativeType, P: MinMaxPolicy> MinMaxWindow<'_, T, P> {
 }
 
 impl<'a, T: NativeType, P: MinMaxPolicy> RollingAggWindowNulls<'a, T> for MinMaxWindow<'a, T, P> {
-    unsafe fn new(
+    fn new(
         slice: &'a [T],
         validity: &'a Bitmap,
         start: usize,
@@ -64,6 +64,8 @@ impl<'a, T: NativeType, P: MinMaxPolicy> RollingAggWindowNulls<'a, T> for MinMax
         _window_size: Option<usize>,
     ) -> Self {
         assert!(params.is_none());
+        assert!(start <= slice.len() && end <= slice.len() && start <= end);
+
         let mut slf = Self {
             values: slice,
             validity: Some(validity),
@@ -73,6 +75,7 @@ impl<'a, T: NativeType, P: MinMaxPolicy> RollingAggWindowNulls<'a, T> for MinMax
             last_end: 0,
             policy: PhantomData,
         };
+        // SAFETY: We bounds checked `start` and `end`.
         unsafe {
             RollingAggWindowNulls::update(&mut slf, start, end);
         }

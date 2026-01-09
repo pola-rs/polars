@@ -193,6 +193,8 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::col)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::collect_all))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::collect_all_lazy))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::element)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::explain_all))
         .unwrap();

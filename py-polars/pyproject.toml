@@ -12,7 +12,7 @@ authors = [
 # example: 1.35.0b1
 version = "1.36.1"
 license = { file = "LICENSE" }
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 
 keywords = ["dataframe", "arrow", "out-of-core"]
 classifiers = [
@@ -24,7 +24,6 @@ classifiers = [
   "Programming Language :: Python",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",

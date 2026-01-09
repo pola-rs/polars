@@ -106,21 +106,19 @@ fn is_sorted_rec(
         } => rec!(*input),
         IR::Scan { .. } => None,
         IR::DataFrameScan { df, .. } => Some(IRSorted(
-            [df.get_columns()
-                .iter()
-                .find_map(|c| match c.is_sorted_flag() {
-                    IsSorted::Not => None,
-                    IsSorted::Ascending => Some(Sorted {
-                        column: c.name().clone(),
-                        descending: Some(false),
-                        nulls_last: Some(c.get(0).is_ok_and(|v| !v.is_null())),
-                    }),
-                    IsSorted::Descending => Some(Sorted {
-                        column: c.name().clone(),
-                        descending: Some(true),
-                        nulls_last: Some(c.get(0).is_ok_and(|v| !v.is_null())),
-                    }),
-                })?]
+            [df.columns().iter().find_map(|c| match c.is_sorted_flag() {
+                IsSorted::Not => None,
+                IsSorted::Ascending => Some(Sorted {
+                    column: c.name().clone(),
+                    descending: Some(false),
+                    nulls_last: Some(c.get(0).is_ok_and(|v| !v.is_null())),
+                }),
+                IsSorted::Descending => Some(Sorted {
+                    column: c.name().clone(),
+                    descending: Some(true),
+                    nulls_last: Some(c.get(0).is_ok_and(|v| !v.is_null())),
+                }),
+            })?]
             .into(),
         )),
         IR::SimpleProjection { input, columns } => {
@@ -396,6 +394,8 @@ pub fn aexpr_sortedness(
                 nulls_last: fst.nulls_last,
             })
         },
+        #[cfg(feature = "dtype-struct")]
+        AExpr::StructField(_) => None,
         AExpr::Literal(lv) if lv.is_scalar() => Some(AExprSorted {
             descending: Some(false),
             nulls_last: Some(false),
@@ -445,6 +445,10 @@ pub fn aexpr_sortedness(
         | AExpr::AnonymousFunction { .. }
         | AExpr::Eval { .. }
         | AExpr::Over { .. } => None,
+
+        #[cfg(feature = "dtype-struct")]
+        AExpr::StructEval { .. } => None,
+
         #[cfg(feature = "dynamic_group_by")]
         AExpr::Rolling { .. } => None,
     }

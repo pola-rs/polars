@@ -9,7 +9,6 @@ from operator import itemgetter
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
 )
 
 import polars._reexport as pl
@@ -60,7 +59,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import PyDataFrame
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, MutableMapping
+    from collections.abc import Callable, Iterable, MutableMapping
 
     from polars import DataFrame, Series
     from polars._plr import PySeries
@@ -132,6 +131,7 @@ def dict_to_pydf(
                                 ),
                                 list(data.items()),
                             ),
+                            strict=True,
                         )
                     )
             except FileNotFoundError:
@@ -952,7 +952,7 @@ def _establish_dataclass_or_model_schema(
             )
 
     if model_fields and len(model_fields) == len(overrides):
-        overrides = dict(zip(model_fields, overrides.values()))
+        overrides = dict(zip(model_fields, overrides.values(), strict=True))
 
     return unpack_nested, column_names, schema_overrides, overrides
 
@@ -1292,7 +1292,7 @@ def numpy_to_pydf(
                 strict=strict,
                 nan_to_null=nan_to_null,
             )._s
-            for series_name, record_name in zip(column_names, record_names)
+            for series_name, record_name in zip(column_names, record_names, strict=True)
         ]
     elif shape == (0,) and n_columns == 0:
         data_series = []

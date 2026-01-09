@@ -66,7 +66,7 @@ impl EvalExpr {
         state: &ExecutionState,
         is_agg: bool,
     ) -> PolarsResult<Column> {
-        let df = DataFrame::empty();
+        let df = DataFrame::empty_with_height(ca.len());
         let ca = ca
             .trim_lists_to_normalized_offsets()
             .map_or(Cow::Borrowed(ca), Cow::Owned);
@@ -197,7 +197,7 @@ impl EvalExpr {
         as_list: bool,
         is_agg: bool,
     ) -> PolarsResult<Column> {
-        let df = DataFrame::empty();
+        let df = DataFrame::empty_with_height(ca.len());
         let ca = ca
             .trim_lists_to_normalized_offsets()
             .map_or(Cow::Borrowed(ca), Cow::Owned);
@@ -388,7 +388,7 @@ impl EvalExpr {
 
         let groups = groups.into_sliceable();
 
-        let df = DataFrame::empty();
+        let df = DataFrame::empty_with_height(input.len());
 
         let mut state = state.clone();
         state.element = Arc::new(Some((flattened, validity)));

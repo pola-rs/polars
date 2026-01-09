@@ -1,12 +1,14 @@
+use std::io::BufReader;
 use std::sync::LazyLock;
 
 use arrow::buffer::Buffer;
 use either::Either;
 use polars_io::RowIndex;
+use polars_io::csv::read::streaming::read_until_start_and_infer_schema;
 #[cfg(feature = "cloud")]
 use polars_io::pl_async::get_runtime;
 use polars_io::prelude::*;
-use polars_io::utils::compression::maybe_decompress_bytes;
+use polars_io::utils::compression::CompressedReader;
 
 use super::*;
 
@@ -333,12 +335,8 @@ pub fn csv_file_info(
     csv_options: &mut CsvReadOptions,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<FileInfo> {
-    use std::io::{Read, Seek};
-
     use polars_core::error::feature_gated;
     use polars_core::{POOL, config};
-    use polars_io::csv::read::schema_inference::SchemaInferenceResult;
-    use polars_io::utils::get_reader_bytes;
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
     // Holding _first_scan_source should guarantee sources is not empty.
@@ -370,47 +368,46 @@ pub fn csv_file_info(
 
     let infer_schema_func = |i| {
         let source = sources.at(i);
-        let memslice = source.to_memslice_possibly_async(run_async, cache_entries.as_ref(), i)?;
-        let owned = &mut vec![];
-        let mut reader = std::io::Cursor::new(maybe_decompress_bytes(&memslice, owned)?);
-        if reader.read(&mut [0; 4])? < 2 && csv_options.raise_if_empty {
-            polars_bail!(NoData: "empty CSV")
-        }
-        reader.rewind()?;
+        let mem_slice = source.to_memslice_possibly_async(run_async, cache_entries.as_ref(), i)?;
+        let mut reader = CompressedReader::try_new(mem_slice)?;
 
-        let reader_bytes = get_reader_bytes(&mut reader).expect("could not mmap file");
+        let mut first_row_len = 0;
+        let (schema, _) = read_until_start_and_infer_schema(
+            csv_options,
+            None,
+            Some(Box::new(|line| {
+                first_row_len = line.len() + 1;
+            })),
+            &mut reader,
+        )?;
 
-        // this needs a way to estimated bytes/rows.
-        SchemaInferenceResult::try_from_reader_bytes_and_options(&reader_bytes, csv_options)
+        let estimated_rows =
+            (reader.total_len_estimate() as f64 / first_row_len as f64).round() as usize;
+
+        Ok((schema, estimated_rows))
     };
 
-    let merge_func = |a: PolarsResult<SchemaInferenceResult>,
-                      b: PolarsResult<SchemaInferenceResult>| {
-        match (a, b) {
+    let merge_func =
+        |a: PolarsResult<(Schema, usize)>, b: PolarsResult<(Schema, usize)>| match (a, b) {
             (Err(e), _) | (_, Err(e)) => Err(e),
-            (Ok(a), Ok(b)) => {
-                let merged_schema = if csv_options.schema.is_some() {
-                    csv_options.schema.clone().unwrap()
-                } else {
-                    let schema_a = a.get_inferred_schema();
-                    let schema_b = b.get_inferred_schema();
-
-                    match (schema_a.is_empty(), schema_b.is_empty()) {
-                        (true, _) => schema_b,
-                        (_, true) => schema_a,
-                        _ => {
-                            let mut s = Arc::unwrap_or_clone(schema_a);
-                            s.to_supertype(&schema_b)?;
-                            Arc::new(s)
-                        },
-                    }
-                };
-
-                Ok(a.with_inferred_schema(merged_schema))
+            (Ok((mut schema_a, row_estimate_a)), Ok((schema_b, row_estimate_b))) => {
+                match (schema_a.is_empty(), schema_b.is_empty()) {
+                    (true, _) => Ok((schema_b, row_estimate_b)),
+                    (_, true) => Ok((schema_a, row_estimate_a)),
+                    _ => {
+                        schema_a.to_supertype(&schema_b)?;
+                        Ok((schema_a, row_estimate_a + row_estimate_b))
+                    },
+                }
             },
-        }
-    };
+        };
 
+    assert!(
+        csv_options.schema.is_none(),
+        "DSL to IR schema inference should not run if user provides a schema."
+    );
+    // Run inference in parallel with a specific merge order.
+    // TODO: flatten to single level once Schema::to_supertype is commutative.
     let si_results = POOL.join(
         || infer_schema_func(0),
         || {
@@ -421,26 +418,17 @@ pub fn csv_file_info(
         },
     );
 
-    let si_result = merge_func(si_results.0, si_results.1)?;
+    let (inferred_schema, estimated_n_rows) = merge_func(si_results.0, si_results.1)?;
+    let inferred_schema_ref = Arc::new(inferred_schema);
 
-    csv_options.update_with_inference_result(&si_result);
-
-    let mut schema = csv_options
-        .schema
-        .clone()
-        .unwrap_or_else(|| si_result.get_inferred_schema());
-
-    let reader_schema = if let Some(rc) = row_index {
-        let reader_schema = schema.clone();
-        let mut output_schema = (*reader_schema).clone();
+    let (schema, reader_schema) = if let Some(rc) = row_index {
+        let mut output_schema = (*inferred_schema_ref).clone();
         insert_row_index_to_schema(&mut output_schema, rc.name.clone())?;
-        schema = Arc::new(output_schema);
-        reader_schema
-    } else {
-        schema.clone()
-    };
 
-    let estimated_n_rows = si_result.get_estimated_n_rows();
+        (Arc::new(output_schema), inferred_schema_ref)
+    } else {
+        (inferred_schema_ref.clone(), inferred_schema_ref)
+    };
 
     Ok(FileInfo::new(
         schema,
@@ -479,14 +467,12 @@ pub fn ndjson_file_info(
         }
     };
 
-    let owned = &mut vec![];
-
     let mut schema = if let Some(schema) = ndjson_options.schema.clone() {
         schema
     } else {
-        let memslice =
+        let mem_slice =
             first_scan_source.to_memslice_possibly_async(run_async, cache_entries.as_ref(), 0)?;
-        let mut reader = std::io::Cursor::new(maybe_decompress_bytes(&memslice, owned)?);
+        let mut reader = BufReader::new(CompressedReader::try_new(mem_slice)?);
 
         Arc::new(polars_io::ndjson::infer_schema(
             &mut reader,
@@ -665,7 +651,7 @@ this scan to succeed with an empty DataFrame.",
                             sources,
                             first_scan_source,
                             unified_scan_args.row_index.as_ref(),
-                            &mut options,
+                            Arc::make_mut(&mut options),
                             cloud_options,
                         )?
                     };

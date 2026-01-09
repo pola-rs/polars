@@ -1,7 +1,10 @@
 use std::collections::HashMap;
+use std::ffi::CString;
 use std::num::NonZeroUsize;
 
+use arrow::ffi::export_iterator;
 use either::Either;
+use parking_lot::Mutex;
 use polars::io::RowIndex;
 use polars::time::*;
 use polars_core::prelude::*;
@@ -14,7 +17,7 @@ use polars_utils::python_function::PythonObject;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
-use pyo3::types::{PyDict, PyDictMethods, PyList};
+use pyo3::types::{PyCapsule, PyDict, PyDictMethods, PyList};
 
 use super::{PyLazyFrame, PyOptFlags};
 use crate::error::PyPolarsErr;
@@ -627,6 +630,7 @@ impl PyLazyFrame {
         })
     }
 
+    #[cfg(feature = "async")]
     #[pyo3(signature = (engine, lambda))]
     fn collect_with_callback(
         &self,
@@ -637,7 +641,9 @@ impl PyLazyFrame {
         py.enter_polars_ok(|| {
             let ldf = self.ldf.read().clone();
 
-            polars_core::POOL.spawn(move || {
+            // We use a tokio spawn_blocking here as it has a high blocking
+            // thread pool limit.
+            polars_io::pl_async::get_runtime().spawn_blocking(move || {
                 let result = ldf
                     .collect_with_engine(engine.0)
                     .map(PyDataFrame::new)
@@ -655,6 +661,30 @@ impl PyLazyFrame {
                     },
                 });
             });
+        })
+    }
+
+    #[cfg(feature = "async")]
+    fn collect_batches(
+        &self,
+        py: Python<'_>,
+        engine: Wrap<Engine>,
+        maintain_order: bool,
+        chunk_size: Option<NonZeroUsize>,
+        lazy: bool,
+    ) -> PyResult<PyCollectBatches> {
+        py.enter_polars(|| {
+            let ldf = self.ldf.read().clone();
+
+            let collect_batches = ldf
+                .clone()
+                .collect_batches(engine.0, maintain_order, chunk_size, lazy)
+                .map_err(PyPolarsErr::from)?;
+
+            PyResult::Ok(PyCollectBatches {
+                inner: Arc::new(Mutex::new(collect_batches)),
+                ldf,
+            })
         })
     }
 
@@ -694,7 +724,11 @@ impl PyLazyFrame {
             self.ldf
                 .read()
                 .clone()
-                .sink(target, FileType::Parquet(options), unified_sink_args)
+                .sink(
+                    target,
+                    FileWriteFormat::Parquet(Arc::new(options)),
+                    unified_sink_args,
+                )
                 .into()
         })
         .map(Into::into)
@@ -703,7 +737,7 @@ impl PyLazyFrame {
 
     #[cfg(feature = "ipc")]
     #[pyo3(signature = (
-        target, sink_options, compression, compat_level
+        target, sink_options, compression, compat_level, record_batch_size
     ))]
     fn sink_ipc(
         &self,
@@ -712,10 +746,12 @@ impl PyLazyFrame {
         sink_options: PySinkOptions,
         compression: Wrap<Option<IpcCompression>>,
         compat_level: PyCompatLevel,
+        record_batch_size: Option<usize>,
     ) -> PyResult<PyLazyFrame> {
         let options = IpcWriterOptions {
             compression: compression.0,
             compat_level: compat_level.0,
+            record_batch_size,
             ..Default::default()
         };
 
@@ -726,7 +762,7 @@ impl PyLazyFrame {
             self.ldf
                 .read()
                 .clone()
-                .sink(target, FileType::Ipc(options), unified_sink_args)
+                .sink(target, FileWriteFormat::Ipc(options), unified_sink_args)
                 .into()
         })
         .map(Into::into)
@@ -747,32 +783,34 @@ impl PyLazyFrame {
         include_bom: bool,
         include_header: bool,
         separator: u8,
-        line_terminator: String,
+        line_terminator: Wrap<PlSmallStr>,
         quote_char: u8,
         batch_size: NonZeroUsize,
-        datetime_format: Option<String>,
-        date_format: Option<String>,
-        time_format: Option<String>,
+        datetime_format: Option<Wrap<PlSmallStr>>,
+        date_format: Option<Wrap<PlSmallStr>>,
+        time_format: Option<Wrap<PlSmallStr>>,
         float_scientific: Option<bool>,
         float_precision: Option<usize>,
         decimal_comma: bool,
-        null_value: Option<String>,
+        null_value: Option<Wrap<PlSmallStr>>,
         quote_style: Option<Wrap<QuoteStyle>>,
     ) -> PyResult<PyLazyFrame> {
         let quote_style = quote_style.map_or(QuoteStyle::default(), |wrap| wrap.0);
-        let null_value = null_value.unwrap_or(SerializeOptions::default().null);
+        let null_value = null_value
+            .map(|x| x.0)
+            .unwrap_or(SerializeOptions::default().null);
 
         let serialize_options = SerializeOptions {
-            date_format,
-            time_format,
-            datetime_format,
+            date_format: date_format.map(|x| x.0),
+            time_format: time_format.map(|x| x.0),
+            datetime_format: datetime_format.map(|x| x.0),
             float_scientific,
             float_precision,
             decimal_comma,
             separator,
             quote_char,
             null: null_value,
-            line_terminator,
+            line_terminator: line_terminator.0,
             quote_style,
         };
 
@@ -780,7 +818,7 @@ impl PyLazyFrame {
             include_bom,
             include_header,
             batch_size,
-            serialize_options,
+            serialize_options: serialize_options.into(),
         };
 
         let target = target.extract_file_sink_destination()?;
@@ -790,7 +828,7 @@ impl PyLazyFrame {
             self.ldf
                 .read()
                 .clone()
-                .sink(target, FileType::Csv(options), unified_sink_args)
+                .sink(target, FileWriteFormat::Csv(options), unified_sink_args)
                 .into()
         })
         .map(Into::into)
@@ -815,7 +853,7 @@ impl PyLazyFrame {
             self.ldf
                 .read()
                 .clone()
-                .sink(target, FileType::Json(options), unified_sink_args)
+                .sink(target, FileWriteFormat::NDJson(options), unified_sink_args)
                 .into()
         })
         .map(Into::into)
@@ -1470,6 +1508,11 @@ impl PyLazyFrame {
         Ok(out.into())
     }
 
+    fn _node_name(&self) -> &str {
+        let plan = &self.ldf.read().logical_plan;
+        plan.into()
+    }
+
     fn hint_sorted(
         &self,
         columns: Vec<String>,
@@ -1580,5 +1623,91 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<polars_io::parquet::write::ParquetF
             metadata,
             required,
         }))
+    }
+}
+
+#[pyclass(frozen)]
+struct PyCollectBatches {
+    inner: Arc<Mutex<CollectBatches>>,
+    ldf: LazyFrame,
+}
+
+#[pymethods]
+impl PyCollectBatches {
+    fn start(&self) {
+        self.inner.lock().start();
+    }
+
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    fn __next__(slf: PyRef<'_, Self>) -> Option<PyResult<PyDataFrame>> {
+        slf.inner.lock().next().map(|rdf| {
+            rdf.map(PyDataFrame::new)
+                .map_err(|e| PyErr::from(PyPolarsErr::from(e)))
+        })
+    }
+
+    #[allow(unused_variables)]
+    #[pyo3(signature = (requested_schema=None))]
+    fn __arrow_c_stream__<'py>(
+        &self,
+        py: Python<'py>,
+        requested_schema: Option<Py<PyAny>>,
+    ) -> PyResult<Bound<'py, PyCapsule>> {
+        let mut ldf = self.ldf.clone();
+        let schema = ldf
+            .collect_schema()
+            .map_err(PyPolarsErr::from)?
+            .to_arrow(CompatLevel::newest());
+
+        let schema = ArrowDataType::Struct(schema.clone().into_iter_values().collect());
+
+        let iter = Box::new(ArrowStreamIterator::new(self.inner.clone(), schema));
+        let field = iter.field();
+        let stream = export_iterator(iter, field);
+        let stream_capsule_name = CString::new("arrow_array_stream").unwrap();
+        PyCapsule::new(py, stream, Some(stream_capsule_name))
+    }
+}
+
+pub struct ArrowStreamIterator {
+    inner: Arc<Mutex<CollectBatches>>,
+    dtype: ArrowDataType,
+}
+
+impl ArrowStreamIterator {
+    fn new(inner: Arc<Mutex<CollectBatches>>, schema: ArrowDataType) -> Self {
+        Self {
+            inner,
+            dtype: schema,
+        }
+    }
+
+    fn field(&self) -> ArrowField {
+        ArrowField::new(PlSmallStr::EMPTY, self.dtype.clone(), false)
+    }
+}
+
+impl Iterator for ArrowStreamIterator {
+    type Item = PolarsResult<ArrayRef>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let next = self.inner.lock().next();
+        match next {
+            None => None,
+            Some(Err(err)) => Some(Err(err)),
+            Some(Ok(df)) => {
+                let height = df.height();
+                let arrays = df.rechunk_into_arrow(CompatLevel::newest());
+                Some(Ok(Box::new(arrow::array::StructArray::new(
+                    self.dtype.clone(),
+                    height,
+                    arrays,
+                    None,
+                ))))
+            },
+        }
     }
 }

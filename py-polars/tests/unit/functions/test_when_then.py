@@ -578,15 +578,22 @@ def test_when_then_parametric(
 
         py_mask, py_true, py_false = (
             [c[0]] * len if b else c
-            for b, c in zip(broadcast, [mask, if_true, if_false])
+            for b, c in zip(broadcast, [mask, if_true, if_false], strict=True)
         )
         pl_mask, pl_true, pl_false = (
             c.first() if b else c
-            for b, c in zip(broadcast, [pl.col.mask, pl.col.if_true, pl.col.if_false])
+            for b, c in zip(
+                broadcast, [pl.col.mask, pl.col.if_true, pl.col.if_false], strict=True
+            )
         )
 
         ref = pl.DataFrame(
-            {"if_true": [t if m else f for m, t, f in zip(py_mask, py_true, py_false)]},
+            {
+                "if_true": [
+                    t if m else f
+                    for m, t, f in zip(py_mask, py_true, py_false, strict=True)
+                ]
+            },
             schema={"if_true": dtype},
         )
         df = pl.DataFrame(

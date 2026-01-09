@@ -125,7 +125,7 @@ impl RollingGroupBy {
             columns.push(agg.with_name(name.clone()));
         }
 
-        Ok(unsafe { DataFrame::new_no_checks(height, columns) })
+        Ok(unsafe { DataFrame::new_unchecked(height, columns) })
     }
 
     /// Progress the state and get the next available evaluation windows, data and key.
@@ -221,7 +221,7 @@ impl ComputeNode for RollingGroupBy {
             recv[0] = PortState::Done;
             std::mem::take(&mut self.buf_df);
         } else if recv[0] == PortState::Done {
-            if self.buf_df.is_empty() {
+            if self.buf_df.height() == 0 {
                 send[0] = PortState::Done;
             } else {
                 send[0] = PortState::Ready;
@@ -245,7 +245,7 @@ impl ComputeNode for RollingGroupBy {
 
         let Some(recv) = recv_ports[0].take() else {
             // We no longer have to receive data. Finalize and send all remaining data.
-            assert!(!self.buf_df.is_empty());
+            assert!(self.buf_df.height() > 0);
             assert!(self.slice_length > 0);
             let mut send = send_ports[0].take().unwrap().serial();
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {

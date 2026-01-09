@@ -1146,12 +1146,16 @@ fn array_to_page_nested(
         },
         Int128 => {
             let array: &PrimitiveArray<i128> = array.as_any().downcast_ref().unwrap();
-            let statistics = if options.has_statistics() {
+            // Can't write min/max statistics for signed 128-bit integer, see #25965.
+            let mut no_mm_options = options;
+            no_mm_options.statistics.min_value = false;
+            no_mm_options.statistics.max_value = false;
+            let statistics = if no_mm_options.has_statistics() {
                 let stats = fixed_size_binary::build_statistics_decimal(
                     array,
                     type_.clone(),
                     16,
-                    &options.statistics,
+                    &no_mm_options.statistics,
                 );
                 Some(stats)
             } else {
@@ -1162,7 +1166,13 @@ fn array_to_page_nested(
                 array.values().clone().try_transmute().unwrap(),
                 array.validity().cloned(),
             );
-            fixed_size_binary::nested_array_to_page(&array, options, type_, nested, statistics)
+            fixed_size_binary::nested_array_to_page(
+                &array,
+                no_mm_options,
+                type_,
+                nested,
+                statistics,
+            )
         },
         UInt128 => {
             let array: &PrimitiveArray<u128> = array.as_any().downcast_ref().unwrap();

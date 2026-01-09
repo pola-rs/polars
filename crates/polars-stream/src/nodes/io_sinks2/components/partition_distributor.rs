@@ -31,7 +31,6 @@ pub struct PartitionDistributor {
     pub open_sinks_semaphore: Arc<tokio::sync::Semaphore>,
     pub partition_sink_starter: PartitionSinkStarter,
     pub per_partition_sort: Option<ArgSortBy>,
-    pub inflight_morsel_limit: usize,
     pub no_partition_keys: bool,
     pub verbose: bool,
 }
@@ -48,7 +47,6 @@ impl PartitionDistributor {
             open_sinks_semaphore,
             partition_sink_starter,
             per_partition_sort,
-            inflight_morsel_limit,
             no_partition_keys,
             verbose,
         } = self;
@@ -283,9 +281,10 @@ impl PartitionDistributor {
                     assert_eq!(partition.buffered_size(), partition.total_size);
 
                     let mut df = std::mem::take(&mut partition.buffered_rows);
-                    rechunk_par(unsafe { df.get_columns_mut() }).await;
+                    rechunk_par(unsafe { df.columns_mut_retain_schema() }).await;
                     let df = Arc::new(df);
 
+                    #[expect(unused)]
                     let gather_indices = per_partition_sort.arg_sort_by_par(&df).await?;
 
                     todo!()

@@ -95,7 +95,7 @@ def test_get_columns() -> None:
     out = dfi.get_columns()
 
     expected = [s1, s2]
-    for o, e in zip(out, expected):
+    for o, e in zip(out, expected, strict=True):
         assert_series_equal(o._col, e)
 
 
@@ -155,7 +155,7 @@ def test_get_chunks(n_chunks: int | None) -> None:
     out = dfi.get_chunks(n_chunks)
 
     expected = dfi._get_chunks_from_col_chunks()
-    for o, e in zip(out, expected):
+    for o, e in zip(out, expected, strict=True):
         assert_frame_equal(o._df, e)
 
 

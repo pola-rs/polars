@@ -1,13 +1,10 @@
 use std::sync::Arc;
 
 use polars_core::config;
-use polars_core::prelude::DataType;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::pl_async;
 use polars_io::prelude::{CsvSerializer, CsvWriterOptions};
-use polars_io::utils::sync_on_close::SyncOnCloseType;
-use polars_utils::IdxSize;
 use polars_utils::index::NonZeroIdxSize;
 
 use crate::async_executor::{self, TaskPriority};
@@ -16,7 +13,9 @@ use crate::nodes::io_sinks2::components::sink_morsel::{SinkMorsel, SinkMorselPer
 use crate::nodes::io_sinks2::components::size::{
     NonZeroRowCountAndSize, RowCountAndSize, TakeableRowsProvider,
 };
-use crate::nodes::io_sinks2::writers::interface::{FileWriterStarter, ideal_sink_morsel_size_env};
+use crate::nodes::io_sinks2::writers::interface::{
+    FileOpenTaskHandle, FileWriterStarter, ideal_sink_morsel_size_env,
+};
 use crate::utils::tokio_handle_ext;
 
 mod io_writer;
@@ -27,8 +26,6 @@ pub struct CsvWriterStarter {
     /// `Mutex` is to handle `dyn ColumnSerializer` not being `Sync`.
     pub base_serializer: std::sync::Mutex<CsvSerializer>,
     pub schema: SchemaRef,
-    pub pipeline_depth: usize,
-    pub sync_on_close: SyncOnCloseType,
     pub initialized_state: std::sync::Mutex<Option<InitializedState>>,
 }
 
@@ -95,20 +92,17 @@ impl FileWriterStarter for CsvWriterStarter {
     fn start_file_writer(
         &self,
         morsel_rx: connector::Receiver<SinkMorsel>,
-        file: tokio_handle_ext::AbortOnDropHandle<
-            PolarsResult<polars_io::prelude::file::Writeable>,
-        >,
+        file: FileOpenTaskHandle,
+        num_pipelines: std::num::NonZeroUsize,
     ) -> PolarsResult<async_executor::JoinHandle<PolarsResult<()>>> {
         let (filled_serializer_tx, filled_serializer_rx) = tokio::sync::mpsc::channel::<(
             async_executor::AbortOnDropHandle<PolarsResult<morsel_serializer::MorselSerializer>>,
             SinkMorselPermit,
-        )>(self.pipeline_depth);
+        )>(num_pipelines.get());
 
-        let max_serializers = self.pipeline_depth;
+        let max_serializers = num_pipelines.get();
         let (reuse_serializer_tx, reuse_serializer_rx) =
             tokio::sync::mpsc::channel::<morsel_serializer::MorselSerializer>(max_serializers);
-
-        let sync_on_close = self.sync_on_close;
 
         let io_handle = tokio_handle_ext::AbortOnDropHandle(
             pl_async::get_runtime().spawn(
@@ -118,7 +112,6 @@ impl FileWriterStarter for CsvWriterStarter {
                     reuse_serializer_tx,
                     schema: Arc::clone(&self.schema),
                     options: Arc::clone(&self.options),
-                    sync_on_close,
                 }
                 .run(),
             ),

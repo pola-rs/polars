@@ -154,7 +154,7 @@ impl CsvSerializer {
         let options = options.as_ref();
 
         let mut serializers_vec = reuse_vec(std::mem::take(&mut self.serializers));
-        let serializers = self.build_serializers(df.get_columns(), &mut serializers_vec)?;
+        let serializers = self.build_serializers(df.columns(), &mut serializers_vec)?;
 
         for _ in 0..df.height() {
             serializers[0].serialize(buffer, options);
@@ -225,7 +225,7 @@ pub(crate) fn write(
                 // so will be faster.
                 // and allows writing `pl.concat([df] * 100, rechunk=False).write_csv()` as the rechunk
                 // would go OOM
-                df.as_single_chunk();
+                df.rechunk_mut();
 
                 csv_serializer.serialize_to_csv(&df, write_buffer)?;
 

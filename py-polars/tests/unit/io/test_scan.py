@@ -8,7 +8,7 @@ from datetime import datetime
 from functools import partial
 from math import ceil
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -16,6 +16,8 @@ import polars as pl
 from polars.testing.asserts.frame import assert_frame_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import SchemaDict
 
 
@@ -478,7 +480,7 @@ def test_scan_directory(
         tmp_path / "dir/data.bin",
     ]
 
-    for df, path in zip(dfs, paths):
+    for df, path in zip(dfs, paths, strict=True):
         path.parent.mkdir(exist_ok=True)
         write_func(df, path)
 
@@ -1222,11 +1224,11 @@ def test_scan_with_schema_skips_schema_inference(
 
 @pytest.fixture(scope="session")
 def corrupt_compressed_csv() -> bytes:
-    large_and_simple_csv = b"line_val\n" * 500_000
+    large_and_simple_csv = b"line_val\n" * 200_000
     compressed_data = zlib.compress(large_and_simple_csv, level=0)
 
     corruption_start_pos = round(len(compressed_data) * 0.9)
-    assert corruption_start_pos > 4_000_000
+    assert corruption_start_pos > 1_600_000
     corruption_len = 500
 
     # The idea is to corrupt the input to make sure the scan never fully
@@ -1235,7 +1237,7 @@ def corrupt_compressed_csv() -> bytes:
     corrupted_data[corruption_start_pos : corruption_start_pos + corruption_len] = (
         b"\00"
     )
-    # ~4MB of valid zlib compressed CSV to read before the corrupted data
+    # ~1.6MB of valid zlib compressed CSV to read before the corrupted data
     # appears.
     return corrupted_data
 

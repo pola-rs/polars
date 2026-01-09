@@ -45,13 +45,13 @@ pub(crate) fn materialize_hive_partitions<D>(
 
         // `hive_partitions_from_paths()` guarantees `hive_columns` is sorted by their appearance in `reader_schema`.
         merge_sorted_to_schema_order(
-            &mut unsafe { df.get_columns_mut().drain(..) },
+            &mut unsafe { df.columns_mut() }.drain(..),
             &mut hive_columns.into_iter(),
             reader_schema,
             &mut merged,
         );
 
-        *df = unsafe { DataFrame::new_no_checks(num_rows, merged) };
+        *df = unsafe { DataFrame::new_unchecked(num_rows, merged) };
     }
 }
 

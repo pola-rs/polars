@@ -149,7 +149,7 @@ pub struct JoinOptions {
 
 impl Default for JoinOptions {
     fn default() -> Self {
-        JoinOptions {
+        Self {
             allow_parallel: true,
             force_parallel: false,
             // Todo!: make default
@@ -335,22 +335,25 @@ pub struct AnonymousScanOptions {
     pub fmt_str: &'static str,
 }
 
+const _: () = {
+    assert!(std::mem::size_of::<FileWriteFormat>() <= 50);
+};
+
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, strum_macros::IntoStaticStr)]
-/// TODO: Rename to `FileWriteFormat`
-pub enum FileType {
+pub enum FileWriteFormat {
     #[cfg(feature = "parquet")]
-    Parquet(ParquetWriteOptions),
+    Parquet(Arc<ParquetWriteOptions>),
     #[cfg(feature = "ipc")]
     Ipc(IpcWriterOptions),
     #[cfg(feature = "csv")]
     Csv(CsvWriterOptions),
     #[cfg(feature = "json")]
-    Json(JsonWriterOptions),
+    NDJson(JsonWriterOptions),
 }
 
-impl FileType {
+impl FileWriteFormat {
     pub fn extension(&self) -> &'static str {
         match self {
             #[cfg(feature = "parquet")]
@@ -360,7 +363,7 @@ impl FileType {
             #[cfg(feature = "csv")]
             Self::Csv(_) => "csv",
             #[cfg(feature = "json")]
-            Self::Json(_) => "jsonl",
+            Self::NDJson(_) => "jsonl",
 
             #[allow(unreachable_patterns)]
             _ => unreachable!("enable file type features"),

@@ -3,7 +3,7 @@ from __future__ import annotations
 import abc
 import os
 import threading
-from typing import TYPE_CHECKING, Any, Callable, Final, Literal, Union
+from typing import TYPE_CHECKING, Any, Final, Literal
 
 import polars._utils.logging
 from polars._utils.cache import LRUCache
@@ -22,12 +22,8 @@ from polars.io.cloud.credential_provider._providers import (
 )
 
 if TYPE_CHECKING:
-    import sys
-
-    if sys.version_info >= (3, 10):
-        from typing import TypeAlias
-    else:
-        from typing_extensions import TypeAlias
+    from collections.abc import Callable
+    from typing import TypeAlias
 
 # https://docs.rs/object_store/latest/object_store/enum.ClientConfigKey.html
 OBJECT_STORE_CLIENT_OPTIONS: Final[frozenset[str]] = frozenset(
@@ -52,9 +48,9 @@ OBJECT_STORE_CLIENT_OPTIONS: Final[frozenset[str]] = frozenset(
     ]
 )
 
-CredentialProviderBuilderReturn: TypeAlias = Union[
-    CredentialProvider, CredentialProviderFunction, None
-]
+CredentialProviderBuilderReturn: TypeAlias = (
+    CredentialProvider | CredentialProviderFunction | None
+)
 
 
 class CredentialProviderBuilder:

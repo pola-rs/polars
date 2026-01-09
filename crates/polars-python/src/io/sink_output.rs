@@ -1,6 +1,6 @@
 use polars::prelude::sink::{PartitionTargetCallback, SinkFinishCallback};
-use polars::prelude::sink2::FileProviderType;
-use polars::prelude::{PartitionStrategy, PlPath, SinkDestination, SortColumn};
+use polars::prelude::sink2::{FileProviderFunction, FileProviderType};
+use polars::prelude::{PartitionStrategy, PlPath, SinkDestination, SortColumn, SpecialEq};
 use polars_utils::IdxSize;
 use polars_utils::python_function::PythonObject;
 use pyo3::exceptions::PyValueError;
@@ -26,6 +26,10 @@ impl PyFileSinkDestination<'_> {
 
         if let Ok(sink_output_dataclass) = self.0.getattr(intern!(py, "_pl_sink_directory")) {
             return self.extract_from_py_sink_directory(sink_output_dataclass);
+        };
+
+        if let Ok(partition_by_dataclass) = self.0.getattr(intern!(py, "_pl_partition_by")) {
+            return self.extract_from_py_partition_by(partition_by_dataclass);
         };
 
         let v: Wrap<polars_plan::dsl::SinkTarget> = self.0.extract()?;
@@ -126,6 +130,58 @@ impl PyFileSinkDestination<'_> {
             finish_callback: finish_callback.map(|x| SinkFinishCallback::Python(PythonObject(x))),
             max_rows_per_file: max_rows_per_file.unwrap_or(IdxSize::MAX),
             approximate_bytes_per_file: u64::MAX,
+        })
+    }
+
+    fn extract_from_py_partition_by(
+        &self,
+        partition_by_dataclass: Bound<'_, PyAny>,
+    ) -> PyResult<SinkDestination> {
+        /// Extract from `PartitionByInner` dataclass.
+        #[derive(FromPyObject)]
+        struct Extract {
+            base_path: Wrap<PlPath>,
+            file_path_provider: Option<Py<PyAny>>,
+            key: Option<Vec<PyExpr>>,
+            include_key: Option<bool>,
+            max_rows_per_file: Option<IdxSize>,
+            approximate_bytes_per_file: u64,
+        }
+
+        let Extract {
+            base_path,
+            file_path_provider,
+            key,
+            include_key,
+            max_rows_per_file,
+            approximate_bytes_per_file,
+        } = partition_by_dataclass.extract()?;
+
+        let partition_strategy: PartitionStrategy = if let Some(partition_by) = key {
+            PartitionStrategy::Keyed {
+                keys: partition_by.into_iter().map(|x| x.inner).collect(),
+                include_keys: include_key.unwrap_or(true),
+                keys_pre_grouped: false,
+                per_partition_sort_by: vec![],
+            }
+        } else {
+            // Should be validated on Python side
+            assert!(include_key.is_none());
+
+            PartitionStrategy::FileSize
+        };
+
+        Ok(SinkDestination::Partitioned {
+            base_path: base_path.0,
+            file_path_provider: file_path_provider.map(|x| {
+                FileProviderType::Function(FileProviderFunction::Python(SpecialEq::new(
+                    PythonObject(x).into(),
+                )))
+            }),
+            partition_strategy,
+            finish_callback: None,
+            max_rows_per_file: max_rows_per_file.unwrap_or(IdxSize::MAX),
+            approximate_bytes_per_file,
         })
     }
 }
