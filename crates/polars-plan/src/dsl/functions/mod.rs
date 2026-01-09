@@ -28,9 +28,11 @@ pub use concat::*;
 #[cfg(feature = "cov")]
 pub use correlation::*;
 pub use horizontal::{
-    all_horizontal, any_horizontal, coalesce, cum_fold_exprs, cum_reduce_exprs, fold_exprs,
-    max_horizontal, mean_horizontal, min_horizontal, reduce_exprs, sum_horizontal,
+    all_horizontal, any_horizontal, coalesce, fold_exprs, max_horizontal, mean_horizontal,
+    min_horizontal, reduce_exprs, sum_horizontal,
 };
+#[cfg(feature = "dtype-struct")]
+pub use horizontal::{cum_fold_exprs, cum_reduce_exprs};
 #[cfg(any(feature = "range", feature = "arg_where"))]
 pub use index::*;
 #[cfg(all(
