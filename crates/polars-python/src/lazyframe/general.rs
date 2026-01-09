@@ -1660,10 +1660,10 @@ impl PyCollectBatches {
             .map_err(PyPolarsErr::from)?
             .to_arrow(CompatLevel::newest());
 
-        let schema = ArrowDataType::Struct(schema.into_iter_values().collect());
+        let dtype = ArrowDataType::Struct(schema.into_iter_values().collect());
 
-        let iter = Box::new(ArrowStreamIterator::new(self.inner.clone(), schema));
-        let field = iter.field();
+        let iter = Box::new(ArrowStreamIterator::new(self.inner.clone(), dtype.clone()));
+        let field = ArrowField::new(PlSmallStr::EMPTY, dtype, false);
         let stream = export_iterator(iter, field);
         let stream_capsule_name = CString::new("arrow_array_stream").unwrap();
         PyCapsule::new(py, stream, Some(stream_capsule_name))
@@ -1681,10 +1681,6 @@ impl ArrowStreamIterator {
             inner,
             dtype: schema,
         }
-    }
-
-    fn field(&self) -> ArrowField {
-        ArrowField::new(PlSmallStr::EMPTY, self.dtype.clone(), false)
     }
 }
 
