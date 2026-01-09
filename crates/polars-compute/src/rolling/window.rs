@@ -79,6 +79,10 @@ impl<'a, T: NativeType + PartialOrd + Copy> SortedBuf<'a, T> {
     pub(super) fn len(&self) -> usize {
         self.buf.len()
     }
+
+    pub(super) fn slice_len(&self) -> usize {
+        self.slice.len()
+    }
 }
 
 pub(super) struct SortedBufNulls<'a, T: NativeType> {
@@ -178,6 +182,10 @@ impl<'a, T: NativeType + PartialOrd> SortedBufNulls<'a, T> {
 
     pub fn len(&self) -> usize {
         self.null_count + self.buf.len()
+    }
+
+    pub fn slice_len(&self) -> usize {
+        self.slice.len()
     }
 
     pub fn get(&self, idx: usize) -> Option<T> {
