@@ -3776,3 +3776,35 @@ def test_parquet_schema_correctness(
     f.seek(0)
     table = pq.read_table(f)
     assert table["a"].type == pa.struct([pa.field("f0", pa_dtype_nested or pa_dtype)])
+
+
+@pytest.mark.slow
+def test_parquet_is_in_pushdown_large() -> None:
+    # Create parquet with large_string type and ZSTD compression.
+    df = pl.DataFrame(
+        {
+            "id": list(range(161877)),
+            "symbol": pl.Series([f"SYM{i:06d} VALUE" for i in range(161877)]),
+            "val": pl.Series([f"SYM{i:06d} VALUE" for i in range(161877)]),
+            "currency": ["USD"] * 161877,
+        }
+    )
+
+    buf = io.BytesIO()
+    df.write_parquet(buf, compression="zstd")
+    buf.seek(0)
+
+    # Large filter.
+    filter_keys = [f"SYM{i:06d} VALUE" for i in range(0, 161877, 100)] * 10
+
+    lf = pl.scan_parquet(buf)
+    result = lf.filter(pl.col("symbol").is_in(filter_keys)).collect()
+    expected = pl.DataFrame(
+        {
+            "id": list(range(0, 161877, 100)),
+            "symbol": pl.Series([f"SYM{i:06d} VALUE" for i in range(0, 161877, 100)]),
+            "val": pl.Series([f"SYM{i:06d} VALUE" for i in range(0, 161877, 100)]),
+            "currency": ["USD"] * (1 + 161877 // 100),
+        }
+    )
+    assert_frame_equal(result, expected)
