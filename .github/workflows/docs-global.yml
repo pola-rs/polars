@@ -84,7 +84,11 @@ jobs:
 
       - name: Install Polars
         working-directory: py-polars
-        run: make build
+        run: |
+          # Make sure we use the Polars we're about to build.
+          uv pip uninstall polars-runtime-32 polars-runtime-64 polars-runtime-compat
+          uv pip install --no-deps -e .
+          make build
 
       - name: Set up Graphviz
         uses: ts-graphviz/setup-graphviz@v2
