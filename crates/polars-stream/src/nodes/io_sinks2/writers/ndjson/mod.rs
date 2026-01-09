@@ -2,7 +2,6 @@ use polars_core::config;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::pl_async;
-use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_utils::IdxSize;
 use polars_utils::index::NonZeroIdxSize;
 
@@ -13,7 +12,9 @@ use crate::nodes::io_sinks2::components::sink_morsel::{SinkMorsel, SinkMorselPer
 use crate::nodes::io_sinks2::components::size::{
     NonZeroRowCountAndSize, RowCountAndSize, TakeableRowsProvider,
 };
-use crate::nodes::io_sinks2::writers::interface::{FileWriterStarter, ideal_sink_morsel_size_env};
+use crate::nodes::io_sinks2::writers::interface::{
+    FileOpenTaskHandle, FileWriterStarter, ideal_sink_morsel_size_env,
+};
 use crate::utils::tokio_handle_ext;
 
 mod io_writer;
@@ -21,8 +22,6 @@ mod morsel_serializer;
 
 pub struct NDJsonWriterStarter {
     pub schema: SchemaRef,
-    pub pipeline_depth: usize,
-    pub sync_on_close: SyncOnCloseType,
     pub initialized_state: std::sync::Mutex<Option<InitializedState>>,
 }
 
@@ -90,20 +89,17 @@ impl FileWriterStarter for NDJsonWriterStarter {
     fn start_file_writer(
         &self,
         morsel_rx: connector::Receiver<SinkMorsel>,
-        file: tokio_handle_ext::AbortOnDropHandle<
-            PolarsResult<polars_io::prelude::file::Writeable>,
-        >,
+        file: FileOpenTaskHandle,
+        num_pipelines: std::num::NonZeroUsize,
     ) -> PolarsResult<async_executor::JoinHandle<PolarsResult<()>>> {
         let (filled_serializer_tx, filled_serializer_rx) = tokio::sync::mpsc::channel::<(
             async_executor::AbortOnDropHandle<PolarsResult<morsel_serializer::MorselSerializer>>,
             SinkMorselPermit,
-        )>(self.pipeline_depth);
+        )>(num_pipelines.get());
 
-        let max_serializers = self.pipeline_depth;
+        let max_serializers = num_pipelines.get();
         let (reuse_serializer_tx, reuse_serializer_rx) =
             tokio::sync::mpsc::channel::<morsel_serializer::MorselSerializer>(max_serializers);
-
-        let sync_on_close = self.sync_on_close;
 
         let io_handle = tokio_handle_ext::AbortOnDropHandle(
             pl_async::get_runtime().spawn(
@@ -111,7 +107,6 @@ impl FileWriterStarter for NDJsonWriterStarter {
                     file,
                     filled_serializer_rx,
                     reuse_serializer_tx,
-                    sync_on_close,
                 }
                 .run(),
             ),

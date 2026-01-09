@@ -6,19 +6,16 @@ use polars_core::utils::arrow;
 use polars_error::PolarsResult;
 use polars_io::SerWriter;
 use polars_io::ipc::{IpcWriter, IpcWriterOptions};
-use polars_io::utils::sync_on_close::SyncOnCloseType;
 
+use crate::nodes::io_sinks2::writers::interface::FileOpenTaskHandle;
 use crate::nodes::io_sinks2::writers::ipc::IpcBatch;
-use crate::utils::tokio_handle_ext;
 
 pub struct IOWriter {
-    pub file:
-        tokio_handle_ext::AbortOnDropHandle<PolarsResult<polars_io::prelude::file::Writeable>>,
+    pub file: FileOpenTaskHandle,
     pub ipc_batch_rx: tokio::sync::mpsc::Receiver<IpcBatch>,
     pub options: Arc<IpcWriterOptions>,
     pub schema: SchemaRef,
     pub ipc_fields: Vec<IpcField>,
-    pub sync_on_close: SyncOnCloseType,
 }
 
 impl IOWriter {
@@ -29,10 +26,9 @@ impl IOWriter {
             options,
             schema,
             ipc_fields,
-            sync_on_close,
         } = self;
 
-        let mut file = file.await.unwrap()?;
+        let (mut file, sync_on_close) = file.await?;
         let mut buffered_file = file.as_buffered();
 
         let mut ipc_writer = IpcWriter::new(&mut *buffered_file)

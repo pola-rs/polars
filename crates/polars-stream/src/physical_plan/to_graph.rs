@@ -336,7 +336,6 @@ fn to_graph_rec<'a>(
                 target,
                 unified_sink_args: unified_sink_args.clone(),
                 input_schema,
-                num_pipelines: 0,
             };
 
             ctx.graph
@@ -525,7 +524,6 @@ fn to_graph_rec<'a>(
                 target,
                 unified_sink_args: unified_sink_args.clone(),
                 input_schema,
-                num_pipelines: 0,
             };
 
             ctx.graph

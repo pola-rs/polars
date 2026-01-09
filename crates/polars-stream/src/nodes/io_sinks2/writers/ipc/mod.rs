@@ -5,7 +5,6 @@ use polars_core::utils::arrow::io::ipc::write::{EncodedData, WriteOptions};
 use polars_error::PolarsResult;
 use polars_io::ipc::IpcWriterOptions;
 use polars_io::pl_async;
-use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_utils::IdxSize;
 use polars_utils::index::NonZeroIdxSize;
 
@@ -15,7 +14,9 @@ use crate::nodes::io_sinks2::components::sink_morsel::{SinkMorsel, SinkMorselPer
 use crate::nodes::io_sinks2::components::size::{
     NonZeroRowCountAndSize, RowCountAndSize, TakeableRowsProvider,
 };
-use crate::nodes::io_sinks2::writers::interface::{FileWriterStarter, ideal_sink_morsel_size_env};
+use crate::nodes::io_sinks2::writers::interface::{
+    FileOpenTaskHandle, FileWriterStarter, ideal_sink_morsel_size_env,
+};
 use crate::nodes::io_sinks2::writers::ipc::initialization::build_ipc_write_components;
 use crate::utils::tokio_handle_ext;
 
@@ -26,8 +27,6 @@ mod record_batch_encoder;
 pub struct IpcWriterStarter {
     pub options: Arc<IpcWriterOptions>,
     pub schema: SchemaRef,
-    pub pipeline_depth: usize,
-    pub sync_on_close: SyncOnCloseType,
     pub record_batch_size: Option<IdxSize>,
 }
 
@@ -73,19 +72,16 @@ impl FileWriterStarter for IpcWriterStarter {
     fn start_file_writer(
         &self,
         morsel_rx: connector::Receiver<SinkMorsel>,
-        file: tokio_handle_ext::AbortOnDropHandle<
-            PolarsResult<polars_io::prelude::file::Writeable>,
-        >,
+        file: FileOpenTaskHandle,
+        num_pipelines: std::num::NonZeroUsize,
     ) -> PolarsResult<async_executor::JoinHandle<PolarsResult<()>>> {
         let file_schema = Arc::clone(&self.schema);
-        let pipeline_depth = self.pipeline_depth;
         let options = Arc::clone(&self.options);
-        let sync_on_close = self.sync_on_close;
         let compression = self.options.compression.map(|x| x.into());
 
         let handle = async_executor::spawn(TaskPriority::High, async move {
             let (ipc_batch_tx, ipc_batch_rx) =
-                tokio::sync::mpsc::channel::<IpcBatch>(pipeline_depth);
+                tokio::sync::mpsc::channel::<IpcBatch>(num_pipelines.get());
 
             let (arrow_converters, ipc_fields, dictionary_id_offsets) =
                 build_ipc_write_components(file_schema.as_ref(), options.compat_level);
@@ -98,7 +94,6 @@ impl FileWriterStarter for IpcWriterStarter {
                         options,
                         schema: file_schema,
                         ipc_fields,
-                        sync_on_close,
                     }
                     .run(),
                 ),
