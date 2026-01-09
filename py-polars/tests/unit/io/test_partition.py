@@ -446,3 +446,26 @@ def test_partition_empty_dtype_24545(tmp_path: Path, dtype: pl.DataType) -> None
     extra.write_parquet(Path(tmp_path / "a=" / "000.parquet"), mkdir=True)
 
     assert_frame_equal(pl.read_parquet(tmp_path), pl.concat([extra, df]))
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+def test_partition_approximate_size(tmp_path: Path) -> None:
+    n_rows = 500_000
+    df = pl.select(a=pl.repeat(0, n_rows), b=pl.int_range(0, n_rows))
+
+    root = tmp_path
+    df.lazy().sink_parquet(
+        pl.PartitionBy(root, key="a", approximate_bytes_per_file=400000),
+        row_group_size=10_000,
+    )
+
+    files = sorted((root / "a=0").iterdir())
+
+    assert len(files) == 15
+
+    assert [
+        pl.scan_parquet(x).select(pl.len()).collect().item() for x in files
+    ] == 14 * [33334] + [33324]
+
+    assert_frame_equal(pl.scan_parquet(root).collect(), df)
