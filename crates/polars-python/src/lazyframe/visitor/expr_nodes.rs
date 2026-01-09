@@ -561,6 +561,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
             name: name.into_py_any(py)?,
         }
         .into_py_any(py),
+        AExpr::StructField(_) => Err(PyNotImplementedError::new_err("field")),
         AExpr::Literal(lit) => {
             use polars_core::prelude::AnyValue;
             let dtype: Py<PyAny> = Wrap(lit.get_datatype()).into_py_any(py)?;
@@ -976,9 +977,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     },
                     #[cfg(feature = "json")]
                     IRStructFunction::JsonEncode => (PyStructFunction::JsonEncode,).into_py_any(py),
-                    IRStructFunction::WithFields => {
-                        return Err(PyNotImplementedError::new_err("with_fields"));
-                    },
                     IRStructFunction::MapFieldNames(_) => {
                         return Err(PyNotImplementedError::new_err("map_field_names"));
                     },
@@ -1479,5 +1477,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
         .into_py_any(py),
         AExpr::Len => Len {}.into_py_any(py),
         AExpr::Eval { .. } => Err(PyNotImplementedError::new_err("list.eval")),
+        AExpr::StructEval { .. } => Err(PyNotImplementedError::new_err("struct.with_fields")),
     }
 }

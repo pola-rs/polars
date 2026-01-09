@@ -19,7 +19,6 @@ pub fn function_expr_to_udf(func: IRStructFunction) -> SpecialEq<Arc<dyn Columns
         SuffixFields(suffix) => map!(suffix_fields, suffix.as_str()),
         #[cfg(feature = "json")]
         JsonEncode => map!(to_json),
-        WithFields => map_as_slice!(with_fields),
         MapFieldNames(function) => map!(map_field_names, &function),
     }
 }
@@ -92,7 +91,7 @@ pub(super) fn to_json(col: &Column) -> PolarsResult<Column> {
     Ok(StringChunked::from_chunk_iter(s.name().clone(), iter).into_column())
 }
 
-pub(super) fn with_fields(args: &[Column]) -> PolarsResult<Column> {
+pub(crate) fn with_fields(args: &[Column]) -> PolarsResult<Column> {
     let s = &args[0];
 
     let ca = s.struct_()?;

@@ -88,6 +88,11 @@ macro_rules! push_expr {
                 $push($c, evaluation);
                 $push($c, expr);
             },
+            #[cfg(feature = "dtype-struct")]
+            StructEval { expr, evaluation } => {
+                evaluation.$iter().rev().for_each(|e| $push_owned($c, e));
+                $push($c, expr);
+            },
             Function { input, .. } => input.$iter().rev().for_each(|e| $push_owned($c, e)),
             Explode { input, .. } => $push($c, input),
             #[cfg(feature = "dynamic_group_by")]
@@ -198,7 +203,8 @@ impl<'a> Iterator for AExprIter<'a> {
             // take the arena because the bchk doesn't allow a mutable borrow to the field.
             let arena = self.arena.unwrap();
             let current_expr = arena.get(node);
-            current_expr.inputs_rev(&mut self.stack);
+            // Expressions such as StructEval may reference columns that are not input.
+            current_expr.children_rev(&mut self.stack);
 
             self.arena = Some(arena);
             (node, current_expr)
