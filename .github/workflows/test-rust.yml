@@ -43,8 +43,8 @@ jobs:
         with:
           key: ${{ matrix.os }}
 
-      - name: Set up sccache
-        uses: mozilla/sccache-action@v0.0.6
+      - name: Sccache cache
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Compile tests
         run: >
@@ -97,8 +97,8 @@ jobs:
         with:
           key: ${{ matrix.os }}
 
-      - name: Set up sccache
-        uses: mozilla/sccache-action@v0.0.6
+      - name: Sccache cache
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Compile integration tests
         run: cargo test --all-features -p polars --test it --no-run
@@ -118,8 +118,8 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
 
-      - name: Set up sccache
-        uses: mozilla/sccache-action@v0.0.6
+      - name: Sccache cache
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Install cargo hack
         uses: taiki-e/install-action@v2
@@ -142,8 +142,8 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
 
-      - name: Set up sccache
-        uses: mozilla/sccache-action@v0.0.6
+      - name: Sccache cache
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Install cargo hack
         uses: taiki-e/install-action@v2
@@ -165,8 +165,8 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
 
-      - name: Set up sccache
-        uses: mozilla/sccache-action@v0.0.6
+      - name: Sccache cache
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Build DSL schema check
         run: cargo build --all-features

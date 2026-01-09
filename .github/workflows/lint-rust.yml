@@ -45,8 +45,8 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
 
-      - name: Set up sccache
-        uses: mozilla/sccache-action@v0.0.6
+      - name: Sccache cache
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Run cargo clippy with all features enabled
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings -D clippy::dbg_macro
@@ -66,8 +66,8 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
 
-      - name: Set up sccache
-        uses: mozilla/sccache-action@v0.0.6
+      - name: Sccache cache
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Run cargo clippy
         run: cargo clippy --all-targets --locked -- -D warnings -D clippy::dbg_macro

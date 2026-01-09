@@ -27,8 +27,8 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
 
-      - name: Set up sccache
-        uses: mozilla/sccache-action@v0.0.6
+      - name: Sccache cache
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Build Rust documentation
         env:
