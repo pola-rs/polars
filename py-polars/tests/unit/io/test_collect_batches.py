@@ -10,8 +10,6 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from typing import Any
-
     from polars._typing import EngineType
 
 
