@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from datetime import date, datetime, timedelta
 from typing import Any, NamedTuple
 
@@ -425,3 +426,121 @@ def test_map_elements_list_dtype_24006() -> None:
 def test_map_elements_reentrant_mutable_no_deadlock() -> None:
     s = pl.Series("a", [1, 2, 3])
     s.map_elements(lambda _: s.rechunk(in_place=True)[0])
+
+
+@pytest.mark.parametrize("elements_in_each_group", [1, 5, 1000])
+def test_map_elements_with_list_of_structs(elements_in_each_group: int) -> None:
+    """Test map_elements with list of structs (no group_by).
+
+    Checks a related regression in Polars v1.32.0 to v1.34.0 where map_elements on
+    list-of-structs columns in group_by gets called with {"a": val, "b": val}
+    instead of [{"a": val, "b": val}] (or equivalent pl.Series objects).
+    This test proves the issue is related only to a group_by.
+
+    Related to https://github.com/pola-rs/polars/issues/24924.
+    """
+    df = pl.DataFrame(
+        [
+            {"group": 1, "struct": [{"a": 1, "b": 10}] * elements_in_each_group},
+            {"group": 2, "struct": [{"a": 2, "b": 20}] * elements_in_each_group},
+            {"group": 3, "struct": [{"a": None, "b": None}] * elements_in_each_group},
+        ]
+    )
+    assert df.height == 3
+
+    def process_struct_list(struct_list: Iterable[dict[str, int | None]]) -> int:
+        """Process a list of structs and return the sum of 'a' fields."""
+        assert isinstance(struct_list, Iterable), (
+            f"Expected Iterable, got {type(struct_list)}"
+        )
+
+        idx = -1  # Preset to avoid unbound pyright error.
+        for idx, element in enumerate(struct_list):
+            assert isinstance(element, dict), (
+                f"Expected each element to be dict. "
+                f'struct_list[{idx}]="{element}". struct_list="{struct_list}"'
+            )
+        assert idx + 1 == elements_in_each_group, (
+            f"Expected {elements_in_each_group} elements in each group (test parameter), "
+            f"got {idx + 1} elements."
+        )
+
+        return sum(s["a"] for s in struct_list if s["a"] is not None)
+
+    df = df.with_columns(
+        total_a=(
+            pl.col("struct").map_elements(
+                lambda structs: process_struct_list(structs),
+                return_dtype=pl.Int64,
+            )
+        )
+    ).sort("group")
+
+    assert df["total_a"].to_list() == [
+        elements_in_each_group,
+        2 * elements_in_each_group,
+        0,
+    ]
+
+
+@pytest.mark.parametrize("elements_in_each_group", [1, 5, 1000])
+def test_polars_map_elements_with_list_of_structs_in_group_by(
+    elements_in_each_group: int,
+) -> None:
+    """Test polars map_elements with list of structs.
+
+    Demonstrates a regression in Polars v1.32.0 to v1.34.0 where map_elements on
+    list-of-structs columns in group_by gets called with {"a": val, "b": val}
+    instead of [{"a": val, "b": val}] (or equivalent pl.Series objects).
+
+    Related to https://github.com/pola-rs/polars/issues/24924.
+    """
+    df = pl.DataFrame(
+        [
+            {"group": 1, "struct": {"a": 1, "b": 10}},
+            {"group": 2, "struct": {"a": 2, "b": 20}},
+            {"group": 3, "struct": {"a": None, "b": None}},
+        ]
+        * elements_in_each_group
+    )
+    assert df.height == 3 * elements_in_each_group
+
+    def process_struct_list(struct_list: Iterable[dict[str, int | None]]) -> int:
+        """Process a list of structs and return the sum of 'a' fields."""
+        assert isinstance(struct_list, Iterable), (
+            f"Expected Iterable, got {type(struct_list)}"
+        )
+
+        idx = -1  # Preset to avoid unbound pyright error.
+        for idx, element in enumerate(struct_list):
+            assert isinstance(element, dict), (
+                f"Expected each element to be dict. "
+                f'struct_list[{idx}]="{element}". struct_list="{struct_list}"'
+            )
+        assert idx + 1 == elements_in_each_group, (
+            f"Expected {elements_in_each_group} elements in each group (test parameter), "
+            f"got {idx + 1} elements."
+        )
+
+        return sum(s["a"] for s in struct_list if s["a"] is not None)
+
+    df = (
+        df.group_by("group")
+        .agg(
+            total_a=(
+                pl.col("struct")
+                .implode()  # <- Critical part to retain old behavior.
+                .map_elements(
+                    lambda structs: process_struct_list(structs),
+                    return_dtype=pl.Int64,
+                )
+            )
+        )
+        .sort("group")
+    )
+
+    assert df["total_a"].to_list() == [
+        elements_in_each_group,
+        2 * elements_in_each_group,
+        0,
+    ]
