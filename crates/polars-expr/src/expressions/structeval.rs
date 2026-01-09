@@ -75,7 +75,6 @@ impl StructEvalExpr {
 
         let mut previous = None;
         for ac in acs.iter_mut() {
-            // TBD: If we want to be strict, we would check all groups
             if matches!(
                 ac.state,
                 AggState::LiteralScalar(_) | AggState::AggregatedScalar(_)
