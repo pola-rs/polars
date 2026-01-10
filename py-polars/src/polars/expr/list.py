@@ -1525,3 +1525,76 @@ class ExprListNameSpace:
         return wrap_expr(
             self._pyexpr.list_set_operation(other_pyexpr, "symmetric_difference")
         )
+
+    @unstable()
+    def zip(self, other: IntoExpr, *, pad: bool = False) -> Expr:
+        """
+        Zip this list with another list element-wise into structs.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        This combines elements from two lists position-wise into struct values.
+        Lists are aligned element-by-element, and the resulting list length is
+        determined by the shorter input list by default, or the longer list when
+        padding is enabled.
+
+        Parameters
+        ----------
+        other
+            Another list expression to zip with. Must be a list column or expression
+            that evaluates to a list.
+        pad
+            If False (default), the length of the resulting list is determined by the
+            shorter of the two input lists. If True, the lists are padded with nulls
+            to match the length of the longer list.
+
+        Returns
+        -------
+        Expr
+            Expression that evaluates to a list of structs, where each struct
+            contains the corresponding elements from the two input lists.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [[1, 2], [3], None, [None]],
+        ...         "b": [[10, 20], [30, 35], [40], [35]],
+        ...     }
+        ... )
+        >>> df.with_columns(pl.col("a").list.zip(pl.col("b")).alias("zipped"))
+        shape: (4, 3)
+        ┌───────────┬───────────┬──────────────────┐
+        │ a         ┆ b         ┆ zipped           │
+        │ ---       ┆ ---       ┆ ---              │
+        │ list[i64] ┆ list[i64] ┆ list[struct[2]]  │
+        ╞═══════════╪═══════════╪══════════════════╡
+        │ [1, 2]    ┆ [10, 20]  ┆ [{1,10}, {2,20}] │
+        │ [3]       ┆ [30, 35]  ┆ [{3,30}]         │
+        │ null      ┆ [40]      ┆ null             │
+        │ [null]    ┆ [35]      ┆ [{null,35}]      │
+        └───────────┴───────────┴──────────────────┘
+
+        Use padding to match the length of the longer list:
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [[1, 2, 3], [4]],
+        ...         "b": [["x", "y"], ["z", "w", "v"]],
+        ...     }
+        ... )
+        >>> df.with_columns(pl.col("a").list.zip(pl.col("b"), pad=True).alias("zipped"))
+        shape: (2, 3)
+        ┌───────────┬─────────────────┬─────────────────────────────────┐
+        │ a         ┆ b               ┆ zipped                          │
+        │ ---       ┆ ---             ┆ ---                             │
+        │ list[i64] ┆ list[str]       ┆ list[struct[2]]                 │
+        ╞═══════════╪═════════════════╪═════════════════════════════════╡
+        │ [1, 2, 3] ┆ ["x", "y"]      ┆ [{1,"x"}, {2,"y"}, {3,null}]    │
+        │ [4]       ┆ ["z", "w", "v"] ┆ [{4,"z"}, {null,"w"}, {null,"v… │
+        └───────────┴─────────────────┴─────────────────────────────────┘
+        """
+        other_pyexpr = parse_into_expression(other)
+        return wrap_expr(self._pyexpr.list_zip(other_pyexpr, pad))
