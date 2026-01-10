@@ -66,7 +66,7 @@ libloading = "0.8.0"
 libm = "0.2"
 memchr = "2.6"
 memmap = { package = "memmap2", version = "0.9" }
-ndarray = { version = "0.17", default-features = false }
+ndarray = { version = "0.16", default-features = false }
 num-bigint = "0.4.6"
 num-derive = "0.4.2"
 num-traits = "0.2"
