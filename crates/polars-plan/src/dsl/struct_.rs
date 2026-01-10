@@ -1,4 +1,5 @@
 use super::*;
+use crate::dsl::functions::nth;
 use crate::plans::conversion::is_regex_projection;
 
 /// Specialized expressions for Struct dtypes.

@@ -86,9 +86,10 @@ impl RecordBatchDataFetcher {
                         if let DynByteSource::MemSlice(mem_slice) = current_byte_source.as_ref() {
                             let slice = mem_slice.0.as_ref();
 
-                            if memory_prefetch_func as usize
-                                != polars_utils::mem::prefetch::no_prefetch as usize
-                            {
+                            if !std::ptr::eq(
+                                memory_prefetch_func as *const (),
+                                polars_utils::mem::prefetch::no_prefetch as *const (),
+                            ) {
                                 debug_assert!(range.end <= slice.len());
                                 memory_prefetch_func(unsafe { slice.get_unchecked(range.clone()) })
                             }

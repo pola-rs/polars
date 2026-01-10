@@ -428,8 +428,7 @@ impl SQLContext {
             }) => self.process_values(rows),
 
             SetExpr::Table(tbl) => {
-                if tbl.table_name.is_some() {
-                    let table_name = tbl.table_name.as_ref().unwrap();
+                if let Some(table_name) = tbl.table_name.as_ref() {
                     self.get_table_from_current_scope(table_name)
                         .ok_or_else(|| {
                             polars_err!(

@@ -10,11 +10,12 @@ use polars_lazy::dsl::Expr;
 use polars_lazy::prelude::{RankMethod, RankOptions};
 use polars_ops::chunked_array::UnicodeForm;
 use polars_ops::series::RoundMode;
-use polars_plan::dsl::{
-    as_struct, coalesce, concat_str, element, int_range, len, max_horizontal, min_horizontal, when,
+use polars_plan::dsl::functions::{
+    as_struct, coalesce, col, cols, concat_str, element, int_range, len, lit, max_horizontal,
+    min_horizontal, when,
 };
 use polars_plan::plans::{DynLiteralValue, LiteralValue, typed_lit};
-use polars_plan::prelude::{StrptimeOptions, col, cols, lit};
+use polars_plan::prelude::StrptimeOptions;
 use polars_utils::pl_str::PlSmallStr;
 use sqlparser::ast::helpers::attached_token::AttachedToken;
 use sqlparser::ast::{
