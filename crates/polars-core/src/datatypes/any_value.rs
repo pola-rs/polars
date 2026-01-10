@@ -682,7 +682,7 @@ impl<'a> AnyValue<'a> {
     pub fn str_value(&self) -> Cow<'a, str> {
         match self {
             Self::String(s) => {
-                if s.parse::<i64>().is_ok() {
+                if s.parse::<i128>().is_ok() {
                     Cow::Owned(fmt_int_string(s))
                 } else if s.parse::<f64>().is_ok() {
                     Cow::Owned(fmt_float_string(s))
@@ -691,7 +691,7 @@ impl<'a> AnyValue<'a> {
                 }
             },
             Self::StringOwned(s) => {
-                if s.parse::<i64>().is_ok() {
+                if s.parse::<i128>().is_ok() {
                     Cow::Owned(fmt_int_string(s))
                 } else if s.parse::<f64>().is_ok() {
                     Cow::Owned(fmt_float_string(s))
