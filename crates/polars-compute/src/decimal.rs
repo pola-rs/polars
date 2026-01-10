@@ -1063,6 +1063,7 @@ mod test {
     }
 
     #[test]
+    #[ignore = "takes ~20 mins, only meant for development"]
     fn test_str_to_dec_against_ref() {
         let exps = [0, 1, 3, 20, 50, 150];
         let digits = [0, 4, 5, 6, 9];
