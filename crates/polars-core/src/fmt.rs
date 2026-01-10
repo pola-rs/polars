@@ -1187,19 +1187,7 @@ impl Display for AnyValue<'_> {
             AnyValue::Float32(v) => fmt_float(f, width, *v),
             AnyValue::Float64(v) => fmt_float(f, width, *v),
             AnyValue::Boolean(v) => write!(f, "{}", *v),
-            AnyValue::String(v) => {
-                if let Ok(v) = v.parse::<i64>() {
-                    write!(f, "\"")?;
-                    fmt_integer(f, width, v)?;
-                    write!(f, "\"")
-                } else if let Ok(v) = v.parse::<f64>() {
-                    write!(f, "\"")?;
-                    fmt_float(f, width, v)?;
-                    write!(f, "\"")
-                } else {
-                    write!(f, "{}", format_args!("\"{v}\""))
-                }
-            },
+            AnyValue::String(v) => write!(f, "{}", format_args!("\"{v}\"")),
             AnyValue::StringOwned(v) => write!(f, "{}", format_args!("\"{v}\"")),
             AnyValue::Binary(d) => format_blob(f, d),
             AnyValue::BinaryOwned(d) => format_blob(f, d),
