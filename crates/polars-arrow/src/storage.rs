@@ -187,8 +187,8 @@ impl<T> SharedStorage<T> {
     }
 
     /// # Safety
-    /// The range [ptr, ptr+len) needs to be valid while arr lives and aligned
-    /// for T. ptr may not be null.
+    /// The range [ptr, ptr+len) needs to be valid while arr lives, and ptr
+    /// must be aligned for T. ptr may not be null.
     pub unsafe fn from_internal_arrow_array(
         ptr: *const T,
         len: usize,
