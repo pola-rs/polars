@@ -105,6 +105,7 @@ tokio = { version = "1.44", default-features = false }
 unicode-normalization = "0.1.24"
 unicode-reverse = "1.0.8"
 uuid = { version = "1.15.1", features = ["v4"] }
+url = "2.5.7" #kdn
 version_check = "0.9.4"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 zmij = "1.0.0"
