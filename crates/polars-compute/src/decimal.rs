@@ -1063,7 +1063,7 @@ mod test {
     }
 
     #[test]
-    #[ignore = "takes ~20 mins, only meant for development"]
+    #[ignore = "very slow, meant for development"]
     fn test_str_to_dec_against_ref() {
         let exps = [0, 1, 3, 20, 50, 150];
         let digits = [0, 4, 5, 6, 9];
@@ -1098,6 +1098,7 @@ mod test {
     }
 
     #[test]
+    #[ignore = "very slow, meant for development"]
     fn test_str_dec_roundtrip() {
         let mut buf = DecimalFmtBuffer::new();
         for &p in &INTERESTING_SCALE_PREC {
@@ -1121,6 +1122,7 @@ mod test {
     }
 
     #[test]
+    #[ignore = "very slow, meant for development"]
     fn test_mul() {
         for &p in &INTERESTING_SCALE_PREC {
             for &s in &INTERESTING_SCALE_PREC {
@@ -1146,6 +1148,7 @@ mod test {
     }
 
     #[test]
+    #[ignore = "very slow, meant for development"]
     fn test_div() {
         for &p in &INTERESTING_SCALE_PREC {
             for &s in &INTERESTING_SCALE_PREC {
