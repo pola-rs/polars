@@ -513,6 +513,7 @@ impl SQLContext {
                 let opts = UnionArgs {
                     parallel: true,
                     to_supertypes: true,
+                    maintain_order: false,
                     ..Default::default()
                 };
                 let out = match quantifier {
