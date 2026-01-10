@@ -16,9 +16,10 @@ use polars_utils::arena::Arena;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::plpath::{CloudScheme, PlPath};
 
-use super::{ExprIR, FileWriteFormat};
+use super::FileWriteFormat;
 use crate::dsl::sink2::FileProviderType;
 use crate::dsl::{AExpr, Expr, PartitionStrategy, PartitionStrategyIR, SpecialEq, UnifiedSinkArgs};
+use crate::plans::ExprIR;
 use crate::prelude::PlanCallback;
 
 /// Options that apply to all sinks.

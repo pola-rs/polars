@@ -164,7 +164,8 @@ mod tests {
     use polars_core::prelude::*;
 
     use super::*;
-    use crate::dsl::{SinkTypeIR, col, lit};
+    use crate::dsl::SinkTypeIR;
+    use crate::dsl::functions::{col, lit};
     use crate::plans::{ArenaLpIter as _, ExprToIRContext, to_expr_ir};
 
     //           SINK[right]
