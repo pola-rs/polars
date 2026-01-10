@@ -1,5 +1,4 @@
 use arrow::bitmap::Bitmap;
-use arrow::compute::utils::combine_validities_and;
 use arrow::legacy::kernels::set::set_at_nulls;
 use num_traits::Float;
 use polars_compute::nan::{is_nan, is_not_nan};
