@@ -470,14 +470,6 @@ impl Debug for DataFrame {
 }
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 fn make_str_val(v: &str, truncate: usize, ellipsis: &String) -> String {
-    let v = if v.parse::<i64>().is_ok() {
-        &fmt_int_string(v)
-    } else if v.parse::<f64>().is_ok() {
-        &fmt_float_string(v)
-    } else {
-        v
-    };
-
     let v_trunc = &v[..v
         .char_indices()
         .take(truncate)
@@ -871,7 +863,7 @@ fn fmt_int_string_custom(num: &str, group_size: u8, group_separator: &str) -> St
     }
 }
 
-fn fmt_int_string(num: &str) -> String {
+pub fn fmt_int_string(num: &str) -> String {
     fmt_int_string_custom(num, 3, &get_thousands_separator())
 }
 
@@ -907,7 +899,7 @@ fn fmt_float_string_custom(
     }
 }
 
-fn fmt_float_string(num: &str) -> String {
+pub fn fmt_float_string(num: &str) -> String {
     fmt_float_string_custom(num, 3, &get_thousands_separator(), get_decimal_separator())
 }
 
