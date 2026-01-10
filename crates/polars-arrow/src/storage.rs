@@ -3,7 +3,6 @@ use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 use std::ptr::NonNull;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use bytemuck::Pod;
@@ -42,7 +41,7 @@ enum BackingStorage {
         vtable: &'static VecVTable,
     },
     InternalArrowArray(InternalArrowArray),
-    ForeignOwner(Arc<dyn Any>),
+    ForeignOwner(Box<dyn Any + Send + 'static>),
 
     /// Backed by some external method which we do not need to take care of,
     /// but we still should refcount and drop the SharedStorageInner.
@@ -162,7 +161,7 @@ impl<T> SharedStorage<T> {
 
     /// # Safety
     /// The slice must be valid as long as owner lives.
-    pub unsafe fn from_slice_with_owner<O: 'static>(slice: &[T], owner: Arc<O>) -> Self {
+    pub unsafe fn from_slice_with_owner<O: Send + 'static>(slice: &[T], owner: O) -> Self {
         #[expect(clippy::manual_slice_size_calculation)]
         let length_in_bytes = slice.len() * size_of::<T>();
         let ptr = slice.as_ptr().cast_mut();
@@ -170,7 +169,7 @@ impl<T> SharedStorage<T> {
             ref_count: AtomicU64::new(1),
             ptr,
             length_in_bytes,
-            backing: BackingStorage::ForeignOwner(owner),
+            backing: BackingStorage::ForeignOwner(Box::new(owner)),
             phantom: PhantomData,
         };
         Self {
