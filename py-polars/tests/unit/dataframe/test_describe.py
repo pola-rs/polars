@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import io
+import re
+from contextlib import redirect_stdout
 from datetime import date, datetime, time
 
 import pytest
@@ -108,6 +111,24 @@ def test_df_describe(lazy: bool) -> None:
         }
     )
     assert_frame_equal(result, expected)
+
+
+def test_df_thousands_string() -> None:
+    df = pl.DataFrame(
+        {"int": [1000, 2000], "float": [1000.0, 2000.0], "string": ["1000", "2000.0"]}
+    )
+
+    f = io.StringIO()
+    with pl.Config(thousands_separator="a"):
+        with redirect_stdout(f):
+            print(df)
+
+        output = f.getvalue()
+        match = re.findall(r"1a000", output)
+        assert len(match) == 3
+
+        match = re.findall(r"2a000", output)
+        assert len(match) == 3
 
 
 def test_df_describe_nested() -> None:

@@ -470,6 +470,14 @@ impl Debug for DataFrame {
 }
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 fn make_str_val(v: &str, truncate: usize, ellipsis: &String) -> String {
+    let v = if v.parse::<i64>().is_ok() {
+        fmt_int_string(v)
+    } else if v.parse::<f64>().is_ok() {
+        fmt_float_string(v)
+    } else {
+        v.to_string()
+    };
+
     let v_trunc = &v[..v
         .char_indices()
         .take(truncate)
@@ -1179,7 +1187,19 @@ impl Display for AnyValue<'_> {
             AnyValue::Float32(v) => fmt_float(f, width, *v),
             AnyValue::Float64(v) => fmt_float(f, width, *v),
             AnyValue::Boolean(v) => write!(f, "{}", *v),
-            AnyValue::String(v) => write!(f, "{}", format_args!("\"{v}\"")),
+            AnyValue::String(v) => {
+                if let Ok(v) = v.parse::<i64>() {
+                    write!(f, "\"")?;
+                    fmt_integer(f, width, v)?;
+                    write!(f, "\"")
+                } else if let Ok(v) = v.parse::<f64>() {
+                    write!(f, "\"")?;
+                    fmt_float(f, width, v)?;
+                    write!(f, "\"")
+                } else {
+                    write!(f, "{}", format_args!("\"{v}\""))
+                }
+            },
             AnyValue::StringOwned(v) => write!(f, "{}", format_args!("\"{v}\"")),
             AnyValue::Binary(d) => format_blob(f, d),
             AnyValue::BinaryOwned(d) => format_blob(f, d),
