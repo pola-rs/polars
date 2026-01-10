@@ -1840,8 +1840,7 @@ impl SQLContext {
             &by,
             SortMultipleOptions::default()
                 .with_order_descending_multi(descending)
-                .with_nulls_last_multi(nulls_last)
-                .with_maintain_order(true),
+                .with_nulls_last_multi(nulls_last),
         ))
     }
 
