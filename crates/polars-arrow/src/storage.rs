@@ -1,7 +1,9 @@
+use std::any::Any;
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 use std::ptr::NonNull;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use bytemuck::Pod;
@@ -40,6 +42,7 @@ enum BackingStorage {
         vtable: &'static VecVTable,
     },
     InternalArrowArray(InternalArrowArray),
+    ForeignOwner(Arc<dyn Any>),
 
     /// Backed by some external method which we do not need to take care of,
     /// but we still should refcount and drop the SharedStorageInner.
@@ -86,6 +89,7 @@ impl<T> Drop for SharedStorageInner<T> {
     fn drop(&mut self) {
         match core::mem::replace(&mut self.backing, BackingStorage::External) {
             BackingStorage::InternalArrowArray(a) => drop(a),
+            BackingStorage::ForeignOwner(o) => drop(o),
             BackingStorage::Vec {
                 original_capacity,
                 vtable,
@@ -156,6 +160,25 @@ impl<T> SharedStorage<T> {
         }
     }
 
+    /// # Safety
+    /// The slice must be valid as long as owner lives.
+    pub unsafe fn from_slice_with_owner<O: 'static>(slice: &[T], owner: Arc<O>) -> Self {
+        #[expect(clippy::manual_slice_size_calculation)]
+        let length_in_bytes = slice.len() * size_of::<T>();
+        let ptr = slice.as_ptr().cast_mut();
+        let inner = SharedStorageInner {
+            ref_count: AtomicU64::new(1),
+            ptr,
+            length_in_bytes,
+            backing: BackingStorage::ForeignOwner(owner),
+            phantom: PhantomData,
+        };
+        Self {
+            inner: NonNull::new(Box::into_raw(Box::new(inner))).unwrap(),
+            phantom: PhantomData,
+        }
+    }
+
     pub fn from_vec(v: Vec<T>) -> Self {
         Self {
             inner: NonNull::new(Box::into_raw(Box::new(SharedStorageInner::from_vec(v)))).unwrap(),
@@ -164,8 +187,8 @@ impl<T> SharedStorage<T> {
     }
 
     /// # Safety
-    /// The range [ptr, ptr+len) needs to be valid and aligned for T.
-    /// ptr may not be null.
+    /// The range [ptr, ptr+len) needs to be valid while arr lives, and ptr
+    /// must be aligned for T. ptr may not be null.
     pub unsafe fn from_internal_arrow_array(
         ptr: *const T,
         len: usize,
