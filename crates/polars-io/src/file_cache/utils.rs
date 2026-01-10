@@ -63,7 +63,7 @@ fn init_entries_from_uri_list_impl(
     uri_list: &mut dyn ExactSizeIterator<Item = Arc<str>>,
     cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<Vec<Arc<FileCacheEntry>>> {
-    #[expect(clippy::len_zero)]
+    #[allow(clippy::len_zero)]
     if uri_list.len() == 0 {
         return Ok(Default::default());
     }

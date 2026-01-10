@@ -82,7 +82,7 @@ pub(super) fn dsl_to_ir(
         }
 
         let hive_parts = if unified_scan_args.hive_options.enabled.unwrap()
-            && file_info.reader_schema.is_some()
+            && let Some(file_schema) = file_info.reader_schema.as_ref()
         {
             let paths = sources
                 .as_paths()
@@ -95,7 +95,7 @@ pub(super) fn dsl_to_ir(
                 paths,
                 unified_scan_args.hive_options.hive_start_idx,
                 unified_scan_args.hive_options.schema.clone(),
-                match file_info.reader_schema.as_ref().unwrap() {
+                match file_schema {
                     Either::Left(v) => {
                         owned = Some(Schema::from_arrow_schema(v.as_ref()));
                         owned.as_ref().unwrap()
@@ -131,9 +131,9 @@ pub(super) fn dsl_to_ir(
             schema.insert_at_index(schema.len(), file_path_col.clone(), DataType::String)?;
         }
 
-        unified_scan_args.projection = if file_info.reader_schema.is_some() {
+        unified_scan_args.projection = if let Some(file_schema) = file_info.reader_schema.as_ref() {
             maybe_init_projection_excluding_hive(
-                file_info.reader_schema.as_ref().unwrap(),
+                file_schema,
                 hive_parts.as_ref().map(|h| h.schema()),
             )
         } else {

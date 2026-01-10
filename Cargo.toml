@@ -41,7 +41,7 @@ blake3 = { version = "1.8.2" }
 boxcar = "0.2.12"
 bytemuck = { version = "1.22", features = ["derive", "extern_crate_alloc"] }
 bytes = { version = "1.10" }
-chrono = { version = "0.4.31", default-features = false, features = ["std"] }
+chrono = { version = "=0.4.41", default-features = false, features = ["std"] }
 chrono-tz = "0.10"
 compact_str = { version = "0.9.0", features = ["serde"] }
 crossbeam-channel = "0.5.15"
@@ -66,12 +66,12 @@ libloading = "0.8.0"
 libm = "0.2"
 memchr = "2.6"
 memmap = { package = "memmap2", version = "0.9" }
-ndarray = { version = "0.16", default-features = false }
+ndarray = { version = "0.17", default-features = false }
 num-bigint = "0.4.6"
 num-derive = "0.4.2"
 num-traits = "0.2"
 numpy = "0.27"
-object_store = { version = "0.12", default-features = false, features = ["fs"] }
+object_store = { version = "=0.12.2", default-features = false, features = ["fs"] }
 parking_lot = "0.12"
 percent-encoding = "2.3"
 pin-project-lite = "0.2"
