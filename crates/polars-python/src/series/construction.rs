@@ -45,7 +45,7 @@ init_method!(new_u32, u32);
 init_method!(new_u64, u64);
 
 fn numpy_array_to_arrow<T: Element + NativeType>(array: &Bound<PyArray1<T>>) -> PrimitiveArray<T> {
-    let owner = Arc::new(array.clone().unbind());
+    let owner = array.clone().unbind();
     let ro = array.readonly();
     let vals = ro.as_slice().unwrap();
     unsafe {
