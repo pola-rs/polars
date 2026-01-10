@@ -1,3 +1,5 @@
+#![allow(clippy::eq_op)] // We use x != x to detect NaN generically.
+
 use arrow::bitmap::Bitmap;
 use arrow::storage::SharedStorage;
 use polars_utils::float::IsFloat;
@@ -48,11 +50,8 @@ pub fn is_not_nan<T: PartialEq + IsFloat>(slice: &[T]) -> Option<Bitmap> {
 
 fn is_not_nan_impl<T: PartialEq + IsFloat>(slice: &[T], invert: bool) -> Option<Bitmap> {
     assert!(T::is_float());
-    let Some(first_idx) = first_nan_idx(slice) else {
-        return None;
-    };
-
     let invert_mask = if invert { u64::MAX } else { 0 };
+    let first_idx = first_nan_idx(slice)?;
     let no_nan_chunks = first_idx / 64;
     let mut words = Vec::with_capacity(slice.len().div_ceil(64));
     let mut unset_bits = 0;
