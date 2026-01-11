@@ -217,7 +217,13 @@ impl ParsedBuffer for Utf8Field {
         let escaped_bytes = if needs_escaping {
             self.scratch.clear();
             self.scratch.reserve(bytes.len());
-            polars_ensure!(bytes.len() > 1 && bytes.last() == Some(&self.quote_char), ComputeError: "invalid csv file\n\nField `{}` is not properly escaped.", std::str::from_utf8(bytes).map_err(to_compute_err)?);
+            if !(bytes.len() > 1 && bytes.last() == Some(&self.quote_char)) {
+                if ignore_errors {
+                    self.mutable.push_null();
+                    return Ok(());
+                }
+                polars_bail!(ComputeError: "invalid csv file\n\nField `{}` is not properly escaped.", std::str::from_utf8(bytes).map_err(to_compute_err)?);
+            }
 
             // SAFETY:
             // we just allocated enough capacity and data_len is correct.
