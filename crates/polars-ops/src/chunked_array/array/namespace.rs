@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use arrow::array::builder::{ShareStrategy, make_builder};
 use arrow::array::{Array, FixedSizeListArray};
 use arrow::bitmap::BitmapBuilder;
@@ -250,6 +252,76 @@ pub trait ArrayNameSpace: AsArray {
         );
         Ok(slice_arr.into_series())
     }
+
+    #[cfg(feature = "array_gather")]
+    fn arr_gather(&self, idx: &Series, null_on_oob: bool) -> PolarsResult<Series> {
+        let array_ca = self.as_array();
+        arr_gather_impl(array_ca, idx, null_on_oob)
+    }
 }
 
 impl ArrayNameSpace for ArrayChunked {}
+
+#[cfg(feature = "array_gather")]
+fn arr_gather_impl(
+    array_ca: &ArrayChunked,
+    idx: &Series,
+    null_on_oob: bool,
+) -> PolarsResult<Series> {
+    use polars_compute::gather::sublist::fixed_size_list::sub_fixed_size_list_gather;
+
+    let idx_ca = idx.list()?;
+
+    polars_ensure!(
+        idx_ca.inner_dtype().is_integer(),
+        ComputeError: "cannot use dtype `{}` as an index", idx_ca.inner_dtype()
+    );
+
+    let (array_ca, idx_ca): (Cow<'_, ArrayChunked>, Cow<'_, ListChunked>) =
+        match (array_ca.len(), idx_ca.len()) {
+            (1, idx_len) if idx_len > 1 => {
+                // Broadcast array
+                if array_ca.has_nulls() {
+                    let out = ListChunked::full_null_with_dtype(
+                        array_ca.name().clone(),
+                        idx_len,
+                        array_ca.inner_dtype(),
+                    );
+                    return Ok(out.into_series());
+                }
+                (
+                    Cow::Owned(array_ca.new_from_index(0, idx_len)),
+                    Cow::Borrowed(idx_ca),
+                )
+            },
+            (arr_len, 1) if arr_len > 1 => (
+                Cow::Borrowed(array_ca),
+                Cow::Owned(idx_ca.new_from_index(0, arr_len)),
+            ),
+            (a, b) if a == b => (Cow::Borrowed(array_ca), Cow::Borrowed(idx_ca)),
+            (a, b) => polars_bail!(length_mismatch = "arr.gather", a, b),
+        };
+
+    // Rechunk for single-chunk processing
+    let array_ca = array_ca.rechunk();
+    let idx_ca = idx_ca.rechunk();
+
+    let arr_chunk = array_ca.downcast_iter().next().unwrap();
+    let idx_chunk = idx_ca.downcast_iter().next().unwrap();
+
+    let result = sub_fixed_size_list_gather(arr_chunk, idx_chunk, null_on_oob)?;
+
+    let chunks: Vec<ArrayRef> = vec![Box::new(result)];
+
+    // SAFETY: We constructed the ListArray with the correct dtype (matching inner_dtype)
+    // and the chunks come from sub_fixed_size_list_gather which produces valid ListArray<i64>
+    let out = unsafe {
+        ListChunked::from_chunks_and_dtype(
+            array_ca.name().clone(),
+            chunks,
+            DataType::List(Box::new(array_ca.inner_dtype().clone())),
+        )
+    };
+
+    Ok(out.into_series())
+}
