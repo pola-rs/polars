@@ -35,6 +35,17 @@ pub trait AnonymousScan: Send + Sync {
     fn allows_projection_pushdown(&self) -> bool {
         false
     }
+
+    /// Whether this scan supports streaming execution via `next_batch`.
+    fn supports_streaming(&self) -> bool {
+        false
+    }
+
+    /// Returns the next batch of data for streaming execution.
+    /// Returns `Ok(None)` when exhausted.
+    fn next_batch(&self) -> PolarsResult<Option<DataFrame>> {
+        polars_bail!(ComputeError: "streaming not supported for this scan");
+    }
 }
 
 impl Debug for dyn AnonymousScan {

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use arrow::buffer::Buffer;
 use parking_lot::Mutex;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
 use polars_core::prelude::{DataType, PlHashMap, PlHashSet};
@@ -15,7 +16,7 @@ use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::sink2::FileProviderType;
 use polars_plan::dsl::{
     CallbackSinkType, ExtraColumnsPolicy, FileScanIR, PartitionStrategyIR, PartitionVariantIR,
-    PartitionedSinkOptionsIR, SinkOptions, SinkTypeIR, UnifiedSinkArgs,
+    PartitionedSinkOptionsIR, ScanSources, SinkOptions, SinkTypeIR, UnifiedSinkArgs,
 };
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{
@@ -26,6 +27,7 @@ use polars_plan::prelude::GroupbyOptions;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::plpath::PlPath;
 #[cfg(feature = "parquet")]
 use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::row_counter::RowCounter;
@@ -36,6 +38,7 @@ use slotmap::SlotMap;
 
 use super::lower_expr::build_hstack_stream;
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
+use crate::execute::StreamingExecutionState;
 use crate::nodes::io_sources::multi_scan;
 use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
@@ -784,7 +787,42 @@ pub fn lower_ir(
                     #[cfg(feature = "scan_lines")]
                     FileScanIR::Lines { name: _ } => todo!(),
 
-                    FileScanIR::Anonymous { .. } => todo!("unimplemented: AnonymousScan"),
+                    FileScanIR::Anonymous { function, .. } => {
+                        if !function.supports_streaming() {
+                            polars_bail!(ComputeError: "non-streaming AnonymousScan is not supported in the streaming engine");
+                        }
+
+                        use crate::nodes::io_sources::batch::builder::BatchFnReaderBuilder;
+                        use crate::nodes::io_sources::batch::{BatchFnReader, GetBatchState};
+
+                        let function = function.clone();
+                        let get_batch_fn = Box::new(move |_state: &StreamingExecutionState| {
+                            function.next_batch()
+                        }) as Box<_>;
+
+                        let reader = BatchFnReader {
+                            name: PlSmallStr::from_static("anonymous_scan"),
+                            output_schema: Some(output_schema.clone()),
+                            get_batch_state: Some(GetBatchState::from(get_batch_fn)),
+                            execution_state: None,
+                            verbose: config::verbose(),
+                        };
+
+                        Arc::new(BatchFnReaderBuilder {
+                            name: PlSmallStr::from_static("anonymous_scan"),
+                            reader: std::sync::Mutex::new(Some(reader)),
+                            execution_state: Default::default(),
+                        }) as _
+                    },
+                };
+
+                // Give MultiScan a single dummy scan source for Anonymous scan.
+                // MultiScan iterates over sources, so it needs at least one source
+                // even though BatchFnReaderBuilder doesn't actually read from it.
+                let scan_sources = if matches!(scan_type.as_ref(), FileScanIR::Anonymous { .. }) {
+                    ScanSources::Paths(Buffer::from_iter([PlPath::from_str("anonymous-scan-0")]))
+                } else {
+                    scan_sources
                 };
 
                 {
