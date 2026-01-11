@@ -84,7 +84,7 @@ rayon = "1.9"
 recursive = "0.1"
 regex = "1.9"
 regex-syntax = "0.8.5"
-reqwest = { version = "0.13", default-features = false, features = ["query"] }
+reqwest = { version = "0.12", default-features = false }
 rmp-serde = "1.3"
 rustflags = "0.1.7"
 schemars = { version = "0.9.0", features = ["preserve_order"] }
