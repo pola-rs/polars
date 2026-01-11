@@ -1749,8 +1749,15 @@ class ExprStringNameSpace:
         pattern_pyexpr = parse_into_expression(pattern, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_count_matches(pattern_pyexpr, literal))
 
-    def split(self, by: IntoExpr, *, inclusive: bool = False) -> Expr:
-        """
+    def split(
+        self,
+        by: IntoExpr,
+        *,
+        inclusive: bool = False,
+        regex: bool = False,
+        strict: bool = True,
+    ) -> Expr:
+        r"""
         Split the string by a substring.
 
         Parameters
@@ -1759,6 +1766,11 @@ class ExprStringNameSpace:
             Substring to split by.
         inclusive
             If True, include the split character/string in the results.
+        regex
+            If True, interpret the split character/string as a regex.
+        strict
+            Raise an error if the underlying pattern is not a valid regex,
+            otherwise mask out with a null value.
 
         Examples
         --------
@@ -1798,12 +1810,61 @@ class ExprStringNameSpace:
         │ foo*bar*baz ┆ *   ┆ ["foo", "bar", "baz"] ┆ ["foo*", "bar*", "baz"] │
         └─────────────┴─────┴───────────────────────┴─────────────────────────┘
 
+        >>> df = pl.DataFrame({"s": ["foo1bar", "foo99bar", "foo1bar2baz"]})
+        >>> df.with_columns(
+        ...     pl.col("s").str.split(by=r"\d+", regex=True).alias("split_regex"),
+        ...     pl.col("s")
+        ...     .str.split(by=r"\d+", regex=True, inclusive=True)
+        ...     .alias("split_regex_inclusive"),
+        ... )
+        shape: (3, 3)
+        ┌───────────────┬────────────────────────┬──────────────────────────────┐
+        │ s             ┆ split_regex            ┆ split_regex_inclusive        │
+        │ ---           ┆ ---                    ┆ ---                          │
+        │ str           ┆ list[str]              ┆ list[str]                    │
+        ╞═══════════════╪════════════════════════╪══════════════════════════════╡
+        │ foo1bar       ┆ ["foo", "bar"]         ┆ ["foo1", "bar"]              │
+        │ foo99bar      ┆ ["foo", "bar"]         ┆ ["foo99", "bar"]             │
+        │ foo1bar2baz   ┆ ["foo", "bar", "baz"]  ┆ ["foo1", "bar2", "baz"]      │
+        └───────────────┴────────────────────────┴──────────────────────────────┘
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "s": ["foo1bar", "foo bar", "foo-bar baz"],
+        ...         "by": [r"\d", r"\s", r"-"],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("s").str.split(by=pl.col("by"), regex=True).alias("split_regex"),
+        ...     pl.col("s")
+        ...     .str.split(by=pl.col("by"), regex=True, inclusive=True)
+        ...     .alias("split_regex_inclusive"),
+        ... )
+        shape: (3, 4)
+        ┌───────────────┬─────┬────────────────────────┬──────────────────────────────┐
+        │ s             ┆ by  ┆ split_regex            ┆ split_regex_inclusive        │
+        │ ---           ┆ --- ┆ ---                    ┆ ---                          │
+        │ str           ┆ str ┆ list[str]              ┆ list[str]                    │
+        ╞═══════════════╪═════╪════════════════════════╪══════════════════════════════╡
+        │ foo1bar       ┆ \d  ┆ ["foo", "bar"]         ┆ ["foo1", "bar"]              │
+        │ foo bar       ┆ \s  ┆ ["foo", "bar"]         ┆ ["foo ", "bar"]              │
+        │ foo-bar baz   ┆ -   ┆ ["foo", "bar baz"]     ┆ ["foo-", "bar baz"]          │
+        └───────────────┴─────┴────────────────────────┴──────────────────────────────┘
+
         Returns
         -------
         Expr
             Expression of data type :class:`String`.
         """
         by_pyexpr = parse_into_expression(by, str_as_lit=True)
+
+        if regex:
+            if inclusive:
+                return wrap_expr(
+                    self._pyexpr.str_split_regex_inclusive(by_pyexpr, strict)
+                )
+            return wrap_expr(self._pyexpr.str_split_regex(by_pyexpr, strict))
+
         if inclusive:
             return wrap_expr(self._pyexpr.str_split_inclusive(by_pyexpr))
         return wrap_expr(self._pyexpr.str_split(by_pyexpr))
