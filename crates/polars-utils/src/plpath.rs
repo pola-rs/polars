@@ -227,7 +227,7 @@ impl<'a> PlPathRef<'a> {
             return self.into_owned();
         }
 
-        match self {
+        let out = match self {
             Self::Local(p) => PlPath::Local(p.join(other).into()),
             Self::Cloud(p) => {
                 if let Some(cloud_path) = PlCloudPathRef::new(other) {
@@ -255,6 +255,13 @@ impl<'a> PlPathRef<'a> {
                     uri,
                 })
             },
+        };
+
+        if cfg!(windows) {
+            // Go via `into_owned` to replace backward slashes
+            out.as_ref().into_owned()
+        } else {
+            out
         }
     }
 
@@ -562,16 +569,17 @@ mod tests {
 
             // On Windows, PlPath normalizes backslashes to forward slashes,
             // so we always expect forward slashes in the result
-            #[cfg(windows)]
-            let path_result = expect.to_string();
-            #[cfg(not(windows))]
-            let path_result = expect
-                .chars()
-                .map(|c| match c {
-                    '/' => std::path::MAIN_SEPARATOR,
-                    c => c,
-                })
-                .collect::<String>();
+            let path_result = if cfg!(windows) {
+                expect.to_string()
+            } else {
+                expect
+                    .chars()
+                    .map(|c| match c {
+                        '/' => std::path::MAIN_SEPARATOR,
+                        c => c,
+                    })
+                    .collect::<String>()
+            };
 
             assert_eq!(
                 PlPath::new(&path_base).as_ref().join(path_added).to_str(),
