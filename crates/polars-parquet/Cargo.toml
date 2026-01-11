@@ -35,7 +35,7 @@ async-stream = { version = "0.3.3", optional = true }
 brotli = { version = "8", optional = true }
 flate2 = { workspace = true, optional = true }
 lz4 = { version = "1.24", optional = true }
-lz4_flex = { version = "0.11", optional = true }
+lz4_flex = { version = "0.12", optional = true }
 schemars = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 snap = { version = "^1.1", optional = true }

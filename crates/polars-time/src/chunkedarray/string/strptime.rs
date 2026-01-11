@@ -22,7 +22,7 @@ fn update_and_parse<T: atoi_simd::Parse>(
     // this maybe oob because we cannot entirely sure about fmt lengths
     let new_offset = offset + incr;
     let bytes = vals.get(offset..new_offset)?;
-    let (val, parsed) = atoi_simd::parse_any(bytes).ok()?;
+    let (val, parsed) = atoi_simd::parse_prefix(bytes).ok()?;
     if parsed != incr {
         None
     } else {
@@ -252,7 +252,7 @@ impl StrpTimeState {
                         let new_offset = offset + 2;
                         let bytes = val.get_unchecked(offset..new_offset);
 
-                        let (decade, parsed) = atoi_simd::parse_any::<i32>(bytes).ok()?;
+                        let (decade, parsed) = atoi_simd::parse_prefix::<i32>(bytes).ok()?;
                         if parsed == 0 {
                             return None;
                         }

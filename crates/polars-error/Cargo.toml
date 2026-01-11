@@ -18,7 +18,7 @@ regex = { workspace = true, optional = true }
 simdutf8 = { workspace = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
-signal-hook = "0.3"
+signal-hook = "0.4"
 
 [features]
 python = ["dep:pyo3"]
