@@ -2127,92 +2127,20 @@ fn scan_anonymous_fn_streaming() -> PolarsResult<()> {
     assert_eq!(df_result.shape(), (7, 2));
     assert_eq!(df_result.get_column_names(), vec!["sepal_width", "variety"]);
 
-    Ok(())
-}
-
-#[test]
-#[cfg(feature = "new_streaming")]
-fn scan_anonymous_fn_new_streaming_engine() -> PolarsResult<()> {
-    use std::sync::Mutex;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    use crate::prelude::{AnonymousScan, AnonymousScanArgs, ScanArgsAnonymous};
-
-    struct MyStreamingScan {
-        batches: Mutex<Vec<DataFrame>>,
-        batch_idx: AtomicUsize,
-        schema: SchemaRef,
-    }
-
-    impl AnonymousScan for MyStreamingScan {
-        fn as_any(&self) -> &dyn std::any::Any {
-            self
-        }
-
-        fn allows_projection_pushdown(&self) -> bool {
-            true
-        }
-
-        fn scan(&self, scan_opts: AnonymousScanArgs) -> PolarsResult<DataFrame> {
-            // This should not be called when using the streaming engine
-            let batches = self.batches.lock().unwrap();
-            let mut result = polars_core::utils::accumulate_dataframes_vertical(batches.clone())?;
-
-            if let Some(with_columns) = &scan_opts.with_columns {
-                result = result.select(with_columns.iter().cloned())?;
-            }
-
-            if let Some(n_rows) = scan_opts.n_rows {
-                result = result.head(Some(n_rows));
-            }
-
-            Ok(result)
-        }
-
-        fn schema(&self, _infer_schema_length: Option<usize>) -> PolarsResult<SchemaRef> {
-            Ok(self.schema.clone())
-        }
-
-        fn supports_streaming(&self) -> bool {
-            true
-        }
-
-        fn next_batch(&self) -> PolarsResult<Option<DataFrame>> {
-            let idx = self.batch_idx.fetch_add(1, Ordering::SeqCst);
-            let batches = self.batches.lock().unwrap();
-            if idx < batches.len() {
-                Ok(Some(batches[idx].clone()))
-            } else {
-                Ok(None)
-            }
-        }
-    }
-
-    // Create test data with multiple batches
-    let df = get_df();
-    let schema = df.schema().clone();
-    let batch1 = df.slice(0, 3);
-    let batch2 = df.slice(3, 4);
-
-    let function = Arc::new(MyStreamingScan {
-        batches: Mutex::new(vec![batch1, batch2]),
-        batch_idx: AtomicUsize::new(0),
-        schema,
-    });
-
-    let args = ScanArgsAnonymous {
-        schema: Some(get_df().schema().clone()),
-        ..ScanArgsAnonymous::default()
-    };
-
     // Test with the new streaming engine explicitly enabled
-    let q = LazyFrame::anonymous_scan(function.clone(), args.clone())?
-        .with_new_streaming(true)
-        .select([col("sepal_width"), col("variety")]);
+    #[cfg(feature = "new_streaming")]
+    {
+        // Reset batch index for the next test
+        function.batch_idx.store(0, Ordering::SeqCst);
 
-    let df_result = q.collect()?;
-    assert_eq!(df_result.shape(), (7, 2));
-    assert_eq!(df_result.get_column_names(), vec!["sepal_width", "variety"]);
+        let q = LazyFrame::anonymous_scan(function, args)?
+            .with_new_streaming(true)
+            .select([col("sepal_width"), col("variety")]);
+
+        let df_result = q.collect()?;
+        assert_eq!(df_result.shape(), (7, 2));
+        assert_eq!(df_result.get_column_names(), vec!["sepal_width", "variety"]);
+    }
 
     Ok(())
 }
