@@ -3,6 +3,8 @@ use std::sync::Arc;
 
 use polars_core::prelude::*;
 use polars_core::utils::{CustomIterTools, handle_casting_failures};
+#[cfg(feature = "regex")]
+use polars_ops::chunked_array::strings::split_regex_helper;
 use polars_ops::prelude::{BinaryNameSpaceImpl, StringNameSpaceImpl};
 #[cfg(feature = "temporal")]
 use polars_plan::dsl::StrptimeOptions;
@@ -57,6 +59,10 @@ pub fn function_expr_to_udf(func: IRStringFunction) -> SpecialEq<Arc<dyn Columns
         },
         Split(inclusive) => {
             map_as_slice!(strings::split, inclusive)
+        },
+        #[cfg(feature = "regex")]
+        SplitRegex { inclusive, strict } => {
+            map_as_slice!(strings::split_regex, inclusive, strict)
         },
         #[cfg(feature = "dtype-struct")]
         SplitExact { n, inclusive } => map_as_slice!(strings::split_exact, n, inclusive),
@@ -448,6 +454,15 @@ pub(super) fn split(s: &[Column], inclusive: bool) -> PolarsResult<Column> {
     } else {
         Ok(ca.split(by)?.into_column())
     }
+}
+
+#[cfg(feature = "regex")]
+pub(super) fn split_regex(s: &[Column], inclusive: bool, strict: bool) -> PolarsResult<Column> {
+    let ca = s[0].str()?;
+    let by = s[1].str()?;
+
+    let out = split_regex_helper(ca, by, inclusive, strict)?;
+    Ok(out.into_column())
 }
 
 #[cfg(feature = "dtype-date")]
