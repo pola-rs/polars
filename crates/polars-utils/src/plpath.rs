@@ -559,6 +559,12 @@ mod tests {
                     c => c,
                 })
                 .collect::<String>();
+
+            // On Windows, PlPath normalizes backslashes to forward slashes,
+            // so we always expect forward slashes in the result
+            #[cfg(windows)]
+            let path_result = expect.to_string();
+            #[cfg(not(windows))]
             let path_result = expect
                 .chars()
                 .map(|c| match c {
@@ -566,6 +572,7 @@ mod tests {
                     c => c,
                 })
                 .collect::<String>();
+
             assert_eq!(
                 PlPath::new(&path_base).as_ref().join(path_added).to_str(),
                 path_result
