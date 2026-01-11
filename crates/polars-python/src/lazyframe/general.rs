@@ -491,12 +491,10 @@ impl PyLazyFrame {
 
     #[staticmethod]
     #[pyo3(signature = (source, schema=None))]
-    fn scan_arrow_c_stream(
-        source: &Bound<PyAny>,
-        schema: Option<Wrap<Schema>>,
-    ) -> PyResult<Self> {
-        use super::ArrowCStreamScan;
+    fn scan_arrow_c_stream(source: &Bound<PyAny>, schema: Option<Wrap<Schema>>) -> PyResult<Self> {
         use polars_lazy::prelude::{LazyFrame, ScanArgsAnonymous};
+
+        use super::ArrowCStreamScan;
 
         let schema_ref = schema.map(|s| Arc::new(s.0));
         let scan = ArrowCStreamScan::new(source, schema_ref)?;

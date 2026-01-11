@@ -2047,8 +2047,8 @@ fn test_named_udfs() -> PolarsResult<()> {
 
 #[test]
 fn scan_anonymous_fn_streaming() -> PolarsResult<()> {
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use crate::prelude::{AnonymousScan, AnonymousScanArgs, ScanArgsAnonymous};
 
@@ -2133,8 +2133,8 @@ fn scan_anonymous_fn_streaming() -> PolarsResult<()> {
 #[test]
 #[cfg(feature = "new_streaming")]
 fn scan_anonymous_fn_new_streaming_engine() -> PolarsResult<()> {
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use crate::prelude::{AnonymousScan, AnonymousScanArgs, ScanArgsAnonymous};
 

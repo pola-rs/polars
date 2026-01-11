@@ -796,9 +796,9 @@ pub fn lower_ir(
                         use crate::nodes::io_sources::batch::{BatchFnReader, GetBatchState};
 
                         let function = function.clone();
-                        let get_batch_fn = Box::new(move |_state: &StreamingExecutionState| {
-                            function.next_batch()
-                        }) as Box<_>;
+                        let get_batch_fn =
+                            Box::new(move |_state: &StreamingExecutionState| function.next_batch())
+                                as Box<_>;
 
                         let reader = BatchFnReader {
                             name: PlSmallStr::from_static("anonymous_scan"),

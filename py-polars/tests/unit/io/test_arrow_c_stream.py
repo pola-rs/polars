@@ -60,7 +60,9 @@ def test_scan_arrow_c_stream_projection() -> None:
 def test_scan_arrow_c_stream_filter() -> None:
     """Test that filtering works with scan_arrow_c_stream."""
     schema = pa.schema([("a", pa.int64()), ("b", pa.string())])
-    batches = [pa.record_batch([[1, 2, 3, 4, 5], ["x", "y", "z", "a", "b"]], schema=schema)]
+    batches = [
+        pa.record_batch([[1, 2, 3, 4, 5], ["x", "y", "z", "a", "b"]], schema=schema)
+    ]
     reader = pa.RecordBatchReader.from_batches(schema, batches)
 
     lf = pl.scan_arrow_c_stream(reader)
@@ -128,19 +130,24 @@ def test_scan_arrow_c_stream_streaming_engine() -> None:
 
 def test_scan_arrow_c_stream_multiple_dtypes() -> None:
     """Test scan_arrow_c_stream with various data types."""
-    schema = pa.schema([
-        ("int_col", pa.int64()),
-        ("float_col", pa.float64()),
-        ("str_col", pa.string()),
-        ("bool_col", pa.bool_()),
-    ])
+    schema = pa.schema(
+        [
+            ("int_col", pa.int64()),
+            ("float_col", pa.float64()),
+            ("str_col", pa.string()),
+            ("bool_col", pa.bool_()),
+        ]
+    )
     batches = [
-        pa.record_batch([
-            [1, 2, 3],
-            [1.1, 2.2, 3.3],
-            ["a", "b", "c"],
-            [True, False, True],
-        ], schema=schema)
+        pa.record_batch(
+            [
+                [1, 2, 3],
+                [1.1, 2.2, 3.3],
+                ["a", "b", "c"],
+                [True, False, True],
+            ],
+            schema=schema,
+        )
     ]
     reader = pa.RecordBatchReader.from_batches(schema, batches)
 

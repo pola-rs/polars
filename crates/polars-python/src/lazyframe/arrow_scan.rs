@@ -87,7 +87,7 @@ impl ArrowCStreamScan {
                         ));
                     },
                 };
-                Arc::new(Schema::from_iter(struct_fields.iter().map(|f| Field::from(f))))
+                Arc::new(Schema::from_iter(struct_fields.iter().map(Field::from)))
             },
         };
 
@@ -114,9 +114,10 @@ impl AnonymousScan for ArrowCStreamScan {
         // For non-streaming execution, collect all batches into a single DataFrame
         let mut state = self.state.lock();
         let schema = state.schema.clone();
-        let reader = state.reader.as_mut().ok_or_else(|| {
-            polars_err!(ComputeError: "Arrow C Stream has already been consumed")
-        })?;
+        let reader = state
+            .reader
+            .as_mut()
+            .ok_or_else(|| polars_err!(ComputeError: "Arrow C Stream has already been consumed"))?;
 
         let mut chunks: Vec<DataFrame> = Vec::new();
         while let Some(array_result) = unsafe { reader.next() } {

@@ -10,7 +10,6 @@ pub mod visit;
 pub mod visitor;
 
 pub use arrow_scan::ArrowCStreamScan;
-
 #[cfg(not(target_arch = "wasm32"))]
 pub use exitable::PyInProcessQuery;
 use parking_lot::RwLock;

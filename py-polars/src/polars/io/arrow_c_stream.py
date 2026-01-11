@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-import polars._plr as plr
 from polars._utils.unstable import unstable
-from polars.lazyframe import LazyFrame
 
 if TYPE_CHECKING:
     from polars._typing import SchemaDict
+    from polars.lazyframe import LazyFrame
 
 __all__ = ["scan_arrow_c_stream"]
 
@@ -81,6 +80,9 @@ def scan_arrow_c_stream(
         msg = "source must implement the Arrow PyCapsule Interface (__arrow_c_stream__)"
         raise TypeError(msg)
 
-    # schema is passed directly to Rust as a dict (Rust's FromPyObject handles conversion)
+    import polars._plr as plr
+    from polars.lazyframe import LazyFrame
+
+    # schema is passed directly to Rust (FromPyObject handles conversion)
     pylf = plr.PyLazyFrame.scan_arrow_c_stream(source, schema)
     return LazyFrame._from_pyldf(pylf)
