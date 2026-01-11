@@ -616,6 +616,7 @@ def test_scan_nonexistent_path(format: str) -> None:
     "streaming",
     [True, False],
 )
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows paths are different")
 def test_scan_include_file_paths(
     tmp_path: Path,
     scan_func: Callable[..., pl.LazyFrame],
