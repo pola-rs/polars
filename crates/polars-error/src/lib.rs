@@ -496,6 +496,9 @@ on startup."#.trim_start())
     (invalid_field_use) => {
         $crate::polars_err!(InvalidOperation: "`field` is not allowed in this context")
     };
+    (non_utf8_path) => {
+        $crate::polars_err!(ComputeError: "encountered non UTF-8 path characters")
+    };
     (assertion_error = $objects:expr, $detail:expr, $lhs:expr, $rhs:expr) => {
         $crate::polars_err!(
             AssertionError: "{} are different ({})\n[left]: {}\n[right]: {}",

@@ -859,7 +859,7 @@ fn test_cte_values() -> PolarsResult<()> {
 #[test]
 #[cfg(feature = "ipc")]
 fn test_group_by_2() -> PolarsResult<()> {
-    use polars_utils::plpath::PlPath;
+    use polars_utils::pl_path::PlRefPath;
 
     let mut context = SQLContext::new();
     let sql = r#"
@@ -882,7 +882,7 @@ fn test_group_by_2() -> PolarsResult<()> {
     let df_sql = context.execute(sql)?;
     let df_sql = df_sql.collect()?;
     let expected = LazyFrame::scan_ipc(
-        PlPath::new("../../examples/datasets/foods1.ipc"),
+        PlRefPath::new("../../examples/datasets/foods1.ipc"),
         Default::default(),
         Default::default(),
     )?

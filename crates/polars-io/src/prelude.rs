@@ -10,8 +10,6 @@ pub use crate::ndjson::core::*;
 pub use crate::options::*;
 #[cfg(feature = "parquet")]
 pub use crate::parquet::{metadata::*, read::*, write::*};
-#[cfg(feature = "parquet")]
-pub use crate::partition::write_partitioned_dataset;
 pub use crate::path_utils::*;
 pub use crate::shared::{SerReader, SerWriter};
 pub use crate::utils::*;

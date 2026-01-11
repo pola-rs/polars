@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use polars::io::mmap::MmapBytesReader;
-use polars::prelude::PlPath;
+use polars::prelude::PlRefPath;
 use polars::prelude::file::{Writeable, WriteableTrait};
 use polars_error::polars_err;
 use polars_utils::create_file;
@@ -22,6 +22,7 @@ use pyo3::types::{PyBytes, PyString, PyStringMethods};
 
 use crate::error::PyPolarsErr;
 use crate::prelude::resolve_homedir;
+use crate::utils::to_py_err;
 
 pub(crate) struct PyFileLikeObject {
     inner: Py<PyAny>,
@@ -303,7 +304,7 @@ impl EitherRustPythonFile {
 
 pub(crate) enum PythonScanSourceInput {
     Buffer(MemSlice),
-    Path(PlPath),
+    Path(PlRefPath),
     File(std::fs::File),
 }
 
@@ -426,12 +427,9 @@ pub(crate) fn get_python_scan_source_input(
         }
 
         if let Ok(s) = py_f.extract::<Cow<str>>() {
-            let mut file_path = PlPath::new(&s);
-            if let Some(p) = file_path.as_ref().as_local_path() {
-                if p.starts_with("~/") {
-                    file_path = PlPath::Local(resolve_homedir(&p).into());
-                }
-            }
+            let file_path = PlRefPath::try_from_path(resolve_homedir(s.as_ref()).as_ref())
+                .map_err(to_py_err)?;
+
             Ok(PythonScanSourceInput::Path(file_path))
         } else {
             Ok(try_get_pyfile(py, py_f, write)?.0.into_scan_source_input())
@@ -446,13 +444,16 @@ fn get_either_buffer_or_path(
     Python::attach(|py| {
         let py_f = py_f.into_bound(py);
         if let Ok(s) = py_f.extract::<Cow<str>>() {
-            let file_path = resolve_homedir(&&*s);
+            let file_path = resolve_homedir(s.as_ref());
             let f = if write {
                 create_file(&file_path).map_err(PyPolarsErr::from)?
             } else {
                 polars_utils::open_file(&file_path).map_err(PyPolarsErr::from)?
             };
-            Ok((EitherRustPythonFile::Rust(f.into()), Some(file_path)))
+            Ok((
+                EitherRustPythonFile::Rust(f.into()),
+                Some(file_path.into_owned()),
+            ))
         } else {
             try_get_pyfile(py, py_f, write)
         }

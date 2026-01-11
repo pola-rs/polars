@@ -1,6 +1,6 @@
 use polars_io::cloud::CloudOptions;
 use polars_utils::mmap::MemSlice;
-use polars_utils::plpath::PlPath;
+use polars_utils::pl_path::PlRefPath;
 
 use super::*;
 
@@ -90,7 +90,7 @@ fn visit_logical_plan_for_scan_paths(
     match lp_arena.get(node) {
         IR::Union { inputs, .. } => {
             enum MutableSources {
-                Addresses(Vec<PlPath>),
+                Paths(Vec<PlRefPath>),
                 Buffers(Vec<MemSlice>),
             }
 
@@ -110,10 +110,10 @@ fn visit_logical_plan_for_scan_paths(
                         match (expr.sources, &mut sources) {
                             (
                                 ScanSources::Paths(addrs),
-                                Some(MutableSources::Addresses(mutable_addrs)),
+                                Some(MutableSources::Paths(mutable_addrs)),
                             ) => mutable_addrs.extend_from_slice(&addrs[..]),
                             (ScanSources::Paths(addrs), None) => {
-                                sources = Some(MutableSources::Addresses(addrs.to_vec()))
+                                sources = Some(MutableSources::Paths(addrs.to_vec()))
                             },
                             (
                                 ScanSources::Buffers(buffers),
@@ -146,7 +146,7 @@ fn visit_logical_plan_for_scan_paths(
             }
             Some(CountStarExpr {
                 sources: match sources {
-                    Some(MutableSources::Addresses(addrs)) => ScanSources::Paths(addrs.into()),
+                    Some(MutableSources::Paths(addrs)) => ScanSources::Paths(addrs.into()),
                     Some(MutableSources::Buffers(buffers)) => ScanSources::Buffers(buffers.into()),
                     None => ScanSources::default(),
                 },
