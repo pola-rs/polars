@@ -1,0 +1,6 @@
+﻿polars.Series.bin.tail
+======================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.bin.tail
