@@ -288,6 +288,13 @@ class LazyFrame:
     nan_to_null : bool, default False
         If the data comes from one or more numpy arrays, can optionally convert input
         data np.nan values to null instead. This is a no-op for all other input data.
+    height  : int or None, default None
+        Allows constructing DataFrames with 0 width and a specified height. If
+        passed with data, ensures the resulting DataFrame has this height.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
     Notes
     -----
@@ -409,6 +416,7 @@ class LazyFrame:
         orient: Orientation | None = None,
         infer_schema_length: int | None = N_INFER_DEFAULT,
         nan_to_null: bool = False,
+        height: int | None = None,
     ) -> None:
         from polars.dataframe import DataFrame
 
@@ -421,6 +429,7 @@ class LazyFrame:
                 orient=orient,
                 infer_schema_length=infer_schema_length,
                 nan_to_null=nan_to_null,
+                height=height,
             )
             .lazy()
             ._ldf

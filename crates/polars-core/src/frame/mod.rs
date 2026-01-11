@@ -2114,7 +2114,7 @@ impl DataFrame {
                 .any(|s| matches!(s.dtype(), DataType::String | DataType::Binary));
 
         RecordBatchIter {
-            columns: self.columns(),
+            df: self,
             schema: Arc::new(
                 self.columns()
                     .iter()
@@ -2122,7 +2122,11 @@ impl DataFrame {
                     .collect(),
             ),
             idx: 0,
-            n_chunks: self.first_col_n_chunks(),
+            n_chunks: if self.shape() == (0, 0) {
+                0
+            } else {
+                usize::max(1, self.first_col_n_chunks())
+            },
             compat_level,
             parallel,
         }
@@ -2641,7 +2645,7 @@ impl DataFrame {
 }
 
 pub struct RecordBatchIter<'a> {
-    columns: &'a [Column],
+    df: &'a DataFrame,
     schema: ArrowSchemaRef,
     idx: usize,
     n_chunks: usize,
@@ -2657,25 +2661,35 @@ impl Iterator for RecordBatchIter<'_> {
             return None;
         }
 
-        // Create a batch of the columns with the same chunk no.
-        let batch_cols: Vec<ArrayRef> = if self.parallel {
-            let iter = self
-                .columns
-                .par_iter()
-                .map(Column::as_materialized_series)
-                .map(|s| s.to_arrow(self.idx, self.compat_level));
-            POOL.install(|| iter.collect())
+        let out = if self.df.width() == 0 {
+            RecordBatch::new(self.df.height(), self.schema.clone(), vec![])
         } else {
-            self.columns
-                .iter()
-                .map(Column::as_materialized_series)
-                .map(|s| s.to_arrow(self.idx, self.compat_level))
-                .collect()
+            // Create a batch of the columns with the same chunk no.
+            let batch_cols: Vec<ArrayRef> = if self.parallel {
+                let iter = self
+                    .df
+                    .columns()
+                    .par_iter()
+                    .map(Column::as_materialized_series)
+                    .map(|s| s.to_arrow(self.idx, self.compat_level));
+                POOL.install(|| iter.collect())
+            } else {
+                self.df
+                    .columns()
+                    .iter()
+                    .map(Column::as_materialized_series)
+                    .map(|s| s.to_arrow(self.idx, self.compat_level))
+                    .collect()
+            };
+
+            let length = batch_cols.first().map_or(0, |arr| arr.len());
+
+            RecordBatch::new(length, self.schema.clone(), batch_cols)
         };
+
         self.idx += 1;
 
-        let length = batch_cols.first().map_or(0, |arr| arr.len());
-        Some(RecordBatch::new(length, self.schema.clone(), batch_cols))
+        Some(out)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {

@@ -18,7 +18,7 @@ use crate::error::PyPolarsErr;
 use crate::prelude::strings_to_pl_smallstr;
 use crate::py_modules::polars;
 use crate::series::{PySeries, ToPySeries, ToSeries};
-use crate::utils::EnterPolarsExt;
+use crate::utils::{EnterPolarsExt, to_py_err};
 
 #[pymethods]
 impl PyDataFrame {
@@ -29,6 +29,15 @@ impl PyDataFrame {
         let columns = columns.into_iter().map(|s| s.into()).collect();
         let df = DataFrame::new_infer_height(columns).map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
+    }
+
+    #[staticmethod]
+    pub fn empty_with_height(height: u64) -> PyResult<Self> {
+        Ok(PyDataFrame::new(DataFrame::empty_with_height(
+            IdxSize::try_from(height)
+                .map_err(|_| polars_err!(bigidx, ctx = "DataFrame(height = _)", size = height))
+                .map_err(to_py_err)? as usize,
+        )))
     }
 
     pub fn estimated_size(&self) -> usize {
