@@ -116,7 +116,8 @@ impl AnonymousScan for ArrowCStreamScan {
         let mut chunks: Vec<DataFrame> = Vec::new();
         while let Some(array_result) = unsafe { reader.next() } {
             let array = array_result?;
-            let df = array_to_dataframe(array, &schema)?;
+            // Apply projection during conversion to skip unnecessary column conversions
+            let df = array_to_dataframe(array, &schema, scan_opts.with_columns.as_ref())?;
             chunks.push(df);
         }
 
@@ -124,15 +125,22 @@ impl AnonymousScan for ArrowCStreamScan {
         state.reader = None;
 
         let mut result = if chunks.is_empty() {
-            DataFrame::empty_with_schema(&schema)
+            // Create empty schema with only projected columns if specified
+            let output_schema: Arc<Schema> = if let Some(with_columns) = &scan_opts.with_columns {
+                Arc::new(
+                    schema
+                        .iter()
+                        .filter(|(name, _)| with_columns.iter().any(|c| c == *name))
+                        .map(|(name, dtype)| (name.clone(), dtype.clone()))
+                        .collect::<Schema>(),
+                )
+            } else {
+                schema
+            };
+            DataFrame::empty_with_schema(&output_schema)
         } else {
             polars_core::utils::accumulate_dataframes_vertical(chunks)?
         };
-
-        // Apply projection pushdown if columns are specified
-        if let Some(with_columns) = &scan_opts.with_columns {
-            result = result.select(with_columns.iter().cloned())?;
-        }
 
         // Apply n_rows limit if specified
         if let Some(n_rows) = scan_opts.n_rows {
@@ -161,7 +169,7 @@ impl AnonymousScan for ArrowCStreamScan {
         true
     }
 
-    fn next_batch(&self) -> PolarsResult<Option<DataFrame>> {
+    fn next_batch(&self, args: &AnonymousScanArgs) -> PolarsResult<Option<DataFrame>> {
         let mut state = self.state.lock();
         let reader: &mut ArrowArrayStreamReader<Box<ArrowArrayStream>> = match state.reader.as_mut()
         {
@@ -171,7 +179,8 @@ impl AnonymousScan for ArrowCStreamScan {
 
         match unsafe { reader.next() } {
             Some(Ok(array)) => {
-                let df = array_to_dataframe(array, &state.schema)?;
+                // Apply projection during conversion to skip unnecessary column conversions
+                let df = array_to_dataframe(array, &state.schema, args.with_columns.as_ref())?;
                 Ok(Some(df))
             },
             Some(Err(e)) => Err(e),
@@ -184,9 +193,11 @@ impl AnonymousScan for ArrowCStreamScan {
 }
 
 /// Converts an Arrow array (expected to be a StructArray) to a DataFrame.
+/// If `with_columns` is provided, only those columns are converted to Series.
 fn array_to_dataframe(
     array: Box<dyn arrow::array::Array>,
     schema: &Schema,
+    with_columns: Option<&Arc<[PlSmallStr]>>,
 ) -> PolarsResult<DataFrame> {
     let struct_array = array
         .as_any()
@@ -197,7 +208,16 @@ fn array_to_dataframe(
         .values()
         .iter()
         .zip(schema.iter())
-        .map(|(arr, (name, _dtype))| {
+        .filter_map(|(arr, (name, _dtype))| {
+            // Skip columns not in the projection list
+            if let Some(cols) = with_columns {
+                if !cols.iter().any(|c| c == name) {
+                    return None;
+                }
+            }
+            Some((arr, name))
+        })
+        .map(|(arr, name)| {
             let series = unsafe {
                 Series::_try_from_arrow_unchecked(name.clone(), vec![arr.clone()], arr.dtype())?
             };

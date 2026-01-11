@@ -2091,11 +2091,18 @@ fn scan_anonymous_fn_streaming() -> PolarsResult<()> {
             true
         }
 
-        fn next_batch(&self) -> PolarsResult<Option<DataFrame>> {
+        fn next_batch(&self, args: &AnonymousScanArgs) -> PolarsResult<Option<DataFrame>> {
             let idx = self.batch_idx.fetch_add(1, Ordering::SeqCst);
             let batches = self.batches.lock().unwrap();
             if idx < batches.len() {
-                Ok(Some(batches[idx].clone()))
+                let mut df = batches[idx].clone();
+
+                // Apply projection pushdown if columns are specified
+                if let Some(with_columns) = &args.with_columns {
+                    df = df.select(with_columns.iter().cloned())?;
+                }
+
+                Ok(Some(df))
             } else {
                 Ok(None)
             }

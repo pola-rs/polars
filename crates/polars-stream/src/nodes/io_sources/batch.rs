@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use polars_core::frame::DataFrame;
 use polars_core::schema::SchemaRef;
 use polars_error::{PolarsResult, polars_err};
+use polars_plan::plans::AnonymousScanArgs;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -78,23 +79,35 @@ pub mod builder {
     }
 }
 
-pub type GetBatchFn =
-    Box<dyn Fn(&StreamingExecutionState) -> PolarsResult<Option<DataFrame>> + Send + Sync>;
+pub type GetBatchFn = Box<
+    dyn Fn(&StreamingExecutionState, &AnonymousScanArgs) -> PolarsResult<Option<DataFrame>>
+        + Send
+        + Sync,
+>;
 
 pub use get_batch_state::GetBatchState;
 
 mod get_batch_state {
     use polars_io::pl_async::get_runtime;
 
-    use super::{DataFrame, GetBatchFn, PolarsResult, StreamingExecutionState};
+    use super::{AnonymousScanArgs, DataFrame, GetBatchFn, PolarsResult, StreamingExecutionState};
 
     /// Wraps `GetBatchFn` to support peeking.
     pub struct GetBatchState {
         func: GetBatchFn,
         peek: Option<DataFrame>,
+        batch_args: AnonymousScanArgs,
     }
 
     impl GetBatchState {
+        pub fn new(func: GetBatchFn, batch_args: AnonymousScanArgs) -> Self {
+            Self {
+                func,
+                peek: None,
+                batch_args,
+            }
+        }
+
         pub async fn next(
             mut slf: Self,
             execution_state: StreamingExecutionState,
@@ -127,7 +140,7 @@ mod get_batch_state {
             state: &StreamingExecutionState,
         ) -> PolarsResult<Option<DataFrame>> {
             if self.peek.is_none() {
-                self.peek = (self.func)(state)?;
+                self.peek = (self.func)(state, &self.batch_args)?;
             }
 
             Ok(self.peek.clone())
@@ -143,14 +156,18 @@ mod get_batch_state {
             if let Some(df) = self.peek.take() {
                 Ok(Some(df))
             } else {
-                (self.func)(state)
+                (self.func)(state, &self.batch_args)
             }
         }
     }
 
     impl From<GetBatchFn> for GetBatchState {
         fn from(func: GetBatchFn) -> Self {
-            Self { func, peek: None }
+            Self {
+                func,
+                peek: None,
+                batch_args: AnonymousScanArgs::default(),
+            }
         }
     }
 }

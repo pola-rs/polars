@@ -792,18 +792,34 @@ pub fn lower_ir(
                             polars_bail!(ComputeError: "non-streaming AnonymousScan is not supported in the streaming engine");
                         }
 
+                        use polars_plan::plans::AnonymousScanArgs;
+
                         use crate::nodes::io_sources::batch::builder::BatchFnReaderBuilder;
                         use crate::nodes::io_sources::batch::{BatchFnReader, GetBatchState};
 
                         let function = function.clone();
-                        let get_batch_fn =
-                            Box::new(move |_state: &StreamingExecutionState| function.next_batch())
-                                as Box<_>;
+                        let get_batch_fn = Box::new(
+                            move |_state: &StreamingExecutionState, args: &AnonymousScanArgs| {
+                                function.next_batch(args)
+                            },
+                        ) as Box<_>;
+
+                        // Build streaming batch args with projection from unified_scan_args
+                        let batch_args = AnonymousScanArgs {
+                            n_rows: unified_scan_args
+                                .pre_slice
+                                .as_ref()
+                                .map(|s| s.end_position()),
+                            with_columns: unified_scan_args.projection.clone(),
+                            schema: output_schema.clone(),
+                            output_schema: None,
+                            predicate: None,
+                        };
 
                         let reader = BatchFnReader {
                             name: PlSmallStr::from_static("anonymous_scan"),
                             output_schema: Some(output_schema.clone()),
-                            get_batch_state: Some(GetBatchState::from(get_batch_fn)),
+                            get_batch_state: Some(GetBatchState::new(get_batch_fn, batch_args)),
                             execution_state: None,
                             verbose: config::verbose(),
                         };

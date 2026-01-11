@@ -5,12 +5,26 @@ use polars_core::prelude::*;
 
 use crate::dsl::Expr;
 
+/// Arguments passed to `AnonymousScan::scan()` and `AnonymousScan::next_batch()`.
+#[derive(Clone)]
 pub struct AnonymousScanArgs {
     pub n_rows: Option<usize>,
     pub with_columns: Option<Arc<[PlSmallStr]>>,
     pub schema: SchemaRef,
     pub output_schema: Option<SchemaRef>,
     pub predicate: Option<Expr>,
+}
+
+impl Default for AnonymousScanArgs {
+    fn default() -> Self {
+        Self {
+            n_rows: None,
+            with_columns: None,
+            schema: Arc::new(Schema::default()),
+            output_schema: None,
+            predicate: None,
+        }
+    }
 }
 
 pub trait AnonymousScan: Send + Sync {
@@ -42,8 +56,16 @@ pub trait AnonymousScan: Send + Sync {
     }
 
     /// Returns the next batch of data for streaming execution.
-    /// Returns `Ok(None)` when exhausted.
-    fn next_batch(&self) -> PolarsResult<Option<DataFrame>> {
+    ///
+    /// # Arguments
+    /// * `args` - Arguments containing projection (`with_columns`) and row limit (`n_rows`).
+    ///   Implementations should use `args.with_columns` to return only the requested columns
+    ///   (projection pushdown) and respect `args.n_rows` for early termination.
+    ///
+    /// # Returns
+    /// * `Ok(Some(df))` - The next batch of data
+    /// * `Ok(None)` - No more data available (stream exhausted)
+    fn next_batch(&self, _args: &AnonymousScanArgs) -> PolarsResult<Option<DataFrame>> {
         polars_bail!(ComputeError: "streaming not supported for this scan");
     }
 }
