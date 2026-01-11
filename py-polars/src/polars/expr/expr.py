@@ -11159,16 +11159,38 @@ Consider using {self}.implode() instead"""
                 raise TypeError(msg)
             new = list(old.values())
             old = list(old.keys())
+
+        old_is_seq = isinstance(old, Sequence) and not isinstance(old, (str, pl.Series))
+        new_is_seq = isinstance(new, Sequence) and not isinstance(new, (str, pl.Series))
+        has_expr_in_old = old_is_seq and any(isinstance(v, Expr) for v in old)  # type: ignore[union-attr]
+        has_expr_in_new = new_is_seq and any(isinstance(v, Expr) for v in new)  # type: ignore[union-attr]
+
+        if has_expr_in_old or has_expr_in_new:
+            old_list = list(old) if old_is_seq else [old]  # type: ignore[arg-type, misc]
+            new_list = list(new) if new_is_seq else [new]  # type: ignore[arg-type]
+
+            if len(new_list) == 1 and len(old_list) > 1:
+                new_list = new_list * len(old_list)
+
+            if len(old_list) != len(new_list):
+                msg = f"lengths of `old` ({len(old_list)}) and `new` ({len(new_list)}) must match"
+                raise ValueError(msg)
+
+            # when(False).then(self) preserves the column name
+            result: Expr = F.when(F.lit(False)).then(self)
+            for old_val, new_val in zip(old_list, new_list, strict=True):
+                result = result.when(self == old_val).then(new_val)  # type: ignore[attr-defined]
+            result = result.otherwise(self)  # type: ignore[attr-defined]
         else:
-            if isinstance(old, Sequence) and not isinstance(old, (str, pl.Series)):
+            if old_is_seq:
                 old = pl.Series(old)
-            if isinstance(new, Sequence) and not isinstance(new, (str, pl.Series)):
+            if new_is_seq:
                 new = pl.Series(new)
 
-        old_pyexpr = parse_into_expression(old, str_as_lit=True)  # type: ignore[arg-type]
-        new_pyexpr = parse_into_expression(new, str_as_lit=True)
+            old_pyexpr = parse_into_expression(old, str_as_lit=True)  # type: ignore[arg-type]
+            new_pyexpr = parse_into_expression(new, str_as_lit=True)  # type: ignore[arg-type]
 
-        result = wrap_expr(self._pyexpr.replace(old_pyexpr, new_pyexpr))
+            result = wrap_expr(self._pyexpr.replace(old_pyexpr, new_pyexpr))
 
         if return_dtype is not None:
             result = result.cast(return_dtype)
@@ -11355,6 +11377,37 @@ Consider using {self}.implode() instead"""
                 raise TypeError(msg)
             new = list(old.values())
             old = list(old.keys())
+
+        old_is_seq = isinstance(old, Sequence) and not isinstance(old, (str, pl.Series))
+        new_is_seq = isinstance(new, Sequence) and not isinstance(new, (str, pl.Series))
+        has_expr_in_old = old_is_seq and any(isinstance(v, Expr) for v in old)  # type: ignore[union-attr]
+        has_expr_in_new = new_is_seq and any(isinstance(v, Expr) for v in new)  # type: ignore[union-attr]
+
+        if has_expr_in_old or has_expr_in_new:
+            old_list = list(old) if old_is_seq else [old]  # type: ignore[arg-type, misc]
+            new_list = list(new) if new_is_seq else [new]  # type: ignore[arg-type]
+
+            if len(new_list) == 1 and len(old_list) > 1:
+                new_list = new_list * len(old_list)
+
+            if len(old_list) != len(new_list):
+                msg = f"lengths of `old` ({len(old_list)}) and `new` ({len(new_list)}) must match"
+                raise ValueError(msg)
+
+            # when(False).then(self) preserves the column name
+            result: Expr = F.when(F.lit(False)).then(self)
+            for old_val, new_val in zip(old_list, new_list, strict=True):
+                result = result.when(self == old_val).then(new_val)  # type: ignore[attr-defined]
+
+            if default is no_default:
+                result = result.otherwise(None)  # type: ignore[attr-defined]
+            else:
+                result = result.otherwise(default)  # type: ignore[attr-defined]
+
+            if return_dtype is not None:
+                result = result.cast(return_dtype)
+
+            return result
 
         old_pyexpr = parse_into_expression(old, str_as_lit=True)  # type: ignore[arg-type]
         new_pyexpr = parse_into_expression(new, str_as_lit=True)  # type: ignore[arg-type]
