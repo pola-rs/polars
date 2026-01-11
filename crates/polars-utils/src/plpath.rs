@@ -68,9 +68,20 @@ impl PlCloudPathRef<'_> {
     }
 
     pub fn into_owned(self) -> PlCloudPath {
-        PlCloudPath {
-            scheme: self.scheme,
-            uri: self.uri.into(),
+        #[cfg(windows)]
+        {
+            let normalized = self.uri.replace('\\', "/");
+            PlCloudPath {
+                scheme: self.scheme,
+                uri: normalized.into(),
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            PlCloudPath {
+                scheme: self.scheme,
+                uri: self.uri.into(),
+            }
         }
     }
 
@@ -265,7 +276,18 @@ impl<'a> PlPathRef<'a> {
 
     pub fn into_owned(self) -> PlPath {
         match self {
-            Self::Local(p) => PlPath::Local(p.into()),
+            Self::Local(p) => {
+                #[cfg(windows)]
+                {
+                    let path_str = p.to_str().unwrap();
+                    let normalized = path_str.replace('\\', "/");
+                    PlPath::Local(Path::new(&normalized).into())
+                }
+                #[cfg(not(windows))]
+                {
+                    PlPath::Local(p.into())
+                }
+            },
             Self::Cloud(p) => PlPath::Cloud(p.into_owned()),
         }
     }
