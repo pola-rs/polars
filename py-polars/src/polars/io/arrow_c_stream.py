@@ -60,8 +60,8 @@ def scan_arrow_c_stream(
     ...     pa.record_batch([[4, 5], ["a", "b"]], schema=schema),
     ... ]
     >>> reader = pa.RecordBatchReader.from_batches(schema, batches)
-    >>> lf = pl.scan_arrow_c_stream(reader)  # doctest: +SKIP
-    >>> lf.collect()  # doctest: +SKIP
+    >>> lf = pl.scan_arrow_c_stream(reader)
+    >>> lf.collect()
     shape: (5, 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
