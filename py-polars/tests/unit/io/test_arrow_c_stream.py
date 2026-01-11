@@ -75,7 +75,7 @@ def test_scan_arrow_c_stream_filter() -> None:
 def test_scan_arrow_c_stream_empty() -> None:
     """Test scan_arrow_c_stream with empty batches."""
     schema = pa.schema([("a", pa.int64()), ("b", pa.string())])
-    batches: list[pa.RecordBatch] = []
+    batches: list = []  # type: ignore[type-arg]
     reader = pa.RecordBatchReader.from_batches(schema, batches)
 
     lf = pl.scan_arrow_c_stream(reader)
