@@ -68,9 +68,20 @@ impl PlCloudPathRef<'_> {
     }
 
     pub fn into_owned(self) -> PlCloudPath {
-        PlCloudPath {
-            scheme: self.scheme,
-            uri: self.uri.into(),
+        #[cfg(windows)]
+        {
+            let normalized = self.uri.replace('\\', "/");
+            PlCloudPath {
+                scheme: self.scheme,
+                uri: normalized.into(),
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            PlCloudPath {
+                scheme: self.scheme,
+                uri: self.uri.into(),
+            }
         }
     }
 
@@ -216,7 +227,7 @@ impl<'a> PlPathRef<'a> {
             return self.into_owned();
         }
 
-        match self {
+        let out = match self {
             Self::Local(p) => PlPath::Local(p.join(other).into()),
             Self::Cloud(p) => {
                 if let Some(cloud_path) = PlCloudPathRef::new(other) {
@@ -244,6 +255,13 @@ impl<'a> PlPathRef<'a> {
                     uri,
                 })
             },
+        };
+
+        if cfg!(windows) {
+            // Go via `into_owned` to replace backward slashes
+            out.as_ref().into_owned()
+        } else {
+            out
         }
     }
 
@@ -265,7 +283,18 @@ impl<'a> PlPathRef<'a> {
 
     pub fn into_owned(self) -> PlPath {
         match self {
-            Self::Local(p) => PlPath::Local(p.into()),
+            Self::Local(p) => {
+                #[cfg(windows)]
+                {
+                    let path_str = p.to_str().unwrap();
+                    let normalized = path_str.replace('\\', "/");
+                    PlPath::Local(Path::new(&normalized).into())
+                }
+                #[cfg(not(windows))]
+                {
+                    PlPath::Local(p.into())
+                }
+            },
             Self::Cloud(p) => PlPath::Cloud(p.into_owned()),
         }
     }
@@ -537,13 +566,21 @@ mod tests {
                     c => c,
                 })
                 .collect::<String>();
-            let path_result = expect
-                .chars()
-                .map(|c| match c {
-                    '/' => std::path::MAIN_SEPARATOR,
-                    c => c,
-                })
-                .collect::<String>();
+
+            // On Windows, PlPath normalizes backslashes to forward slashes,
+            // so we always expect forward slashes in the result
+            let path_result = if cfg!(windows) {
+                expect.to_string()
+            } else {
+                expect
+                    .chars()
+                    .map(|c| match c {
+                        '/' => std::path::MAIN_SEPARATOR,
+                        c => c,
+                    })
+                    .collect::<String>()
+            };
+
             assert_eq!(
                 PlPath::new(&path_base).as_ref().join(path_added).to_str(),
                 path_result

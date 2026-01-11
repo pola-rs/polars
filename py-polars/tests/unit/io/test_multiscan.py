@@ -27,6 +27,7 @@ SCAN_AND_WRITE_FUNCS = [
 ]
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows paths are different")
 @pytest.mark.write_disk
 @pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
 def test_include_file_paths(tmp_path: Path, scan: Any, write: Any) -> None:
