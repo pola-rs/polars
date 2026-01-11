@@ -530,6 +530,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                     B::Strptime(dtype.into(), strptime_options)
                 },
                 IB::Split(v) => B::Split(v),
+                #[cfg(feature = "regex")]
+                IB::SplitRegex { inclusive, strict } => B::SplitRegex { inclusive, strict },
                 #[cfg(feature = "dtype-decimal")]
                 IB::ToDecimal { scale } => B::ToDecimal { scale },
                 #[cfg(feature = "nightly")]

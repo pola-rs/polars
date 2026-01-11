@@ -363,6 +363,31 @@ impl StringNameSpace {
     }
 
     #[cfg(feature = "regex")]
+    /// Split the string by a regex pattern. The resulting dtype is `List<String>`.
+    pub fn split_regex(self, pat: Expr, strict: bool) -> Expr {
+        self.0.map_binary(
+            StringFunction::SplitRegex {
+                inclusive: false,
+                strict,
+            },
+            pat,
+        )
+    }
+
+    #[cfg(feature = "regex")]
+    /// Split the string by a regex pattern and keep the matched substrings.
+    /// The resulting dtype is `List<String>`.
+    pub fn split_regex_inclusive(self, pat: Expr, strict: bool) -> Expr {
+        self.0.map_binary(
+            StringFunction::SplitRegex {
+                inclusive: true,
+                strict,
+            },
+            pat,
+        )
+    }
+
+    #[cfg(feature = "regex")]
     /// Replace values that match a regex `pat` with a `value`.
     pub fn replace(self, pat: Expr, value: Expr, literal: bool) -> Expr {
         self.0
