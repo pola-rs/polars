@@ -461,7 +461,7 @@ pub(super) fn split_regex(s: &[Column], inclusive: bool, strict: bool) -> Polars
     let ca = s[0].str()?;
     let by = s[1].str()?;
 
-    let out = split_regex_helper(&ca, &by, inclusive, strict)?;
+    let out = split_regex_helper(ca, by, inclusive, strict)?;
     Ok(out.into_column())
 }
 
