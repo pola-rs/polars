@@ -1932,6 +1932,20 @@ def test_ignore_errors_date_parser() -> None:
         )
 
 
+def test_ignore_errors_improperly_escaped_field() -> None:
+    csv = '"col1","col2"\n"0","0"\n"1","2'
+    result = pl.read_csv(
+        source=io.StringIO(csv),
+        ignore_errors=True,
+    )
+    assert result.to_dict(as_series=False) == {"col1": [0, 1], "col2": ["0", None]}
+    with pytest.raises(ComputeError, match=r"not properly escaped"):
+        pl.read_csv(
+            source=io.StringIO(csv),
+            ignore_errors=False,
+        )
+
+
 def test_csv_ragged_lines() -> None:
     expected = {"A": ["B", "C"]}
     assert (
