@@ -5,7 +5,7 @@ use polars_core::prelude::*;
 use polars_core::{POOL, config};
 use polars_error::feature_gated;
 use polars_utils::mmap::{MMapSemaphore, MemSlice};
-use polars_utils::plpath::PlPathRef;
+use polars_utils::pl_path::PlRefPath;
 use polars_utils::select::select_unpredictable;
 use rayon::prelude::*;
 
@@ -21,7 +21,7 @@ use crate::utils::compression::CompressedReader;
 /// useful for count(*) queries
 #[allow(clippy::too_many_arguments)]
 pub fn count_rows(
-    addr: PlPathRef<'_>,
+    path: PlRefPath,
     quote_char: Option<u8>,
     comment_prefix: Option<&CommentPrefix>,
     eol_char: u8,
@@ -30,18 +30,16 @@ pub fn count_rows(
     skip_rows_before_header: usize,
     skip_rows_after_header: usize,
 ) -> PolarsResult<usize> {
-    let file = match addr
-        .as_local_path()
-        .and_then(|v| (!config::force_async()).then_some(v))
-    {
-        None => feature_gated!("cloud", {
+    let file = if path.has_scheme() || config::force_async() {
+        feature_gated!("cloud", {
             crate::file_cache::FILE_CACHE
-                .get_entry(addr)
+                .get_entry(path)
                 // Safety: This was initialized by schema inference.
                 .unwrap()
                 .try_open_assume_latest()?
-        }),
-        Some(path) => polars_utils::open_file(path)?,
+        })
+    } else {
+        polars_utils::open_file(path.as_std_path())?
     };
 
     let mmap = MMapSemaphore::new_from_file(&file).unwrap();

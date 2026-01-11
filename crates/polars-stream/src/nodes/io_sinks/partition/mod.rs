@@ -12,7 +12,7 @@ use polars_plan::dsl::{
     PartitionTargetContext, SinkOptions, SinkTarget,
 };
 use polars_utils::format_pl_smallstr;
-use polars_utils::plpath::PlPathRef;
+use polars_utils::pl_path::PlRefPath;
 
 use super::{DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE, SinkInputPort, SinkNode};
 use crate::async_executor::{AbortOnDropHandle, spawn};
@@ -156,7 +156,7 @@ type FilePathCallback =
 
 #[allow(clippy::too_many_arguments)]
 async fn open_new_sink(
-    base_path: PlPathRef<'_>,
+    base_path: PlRefPath,
     file_path_cb: Option<&PartitionTargetCallback>,
     default_file_path_cb: FilePathCallback,
     file_idx: usize,
@@ -211,10 +211,9 @@ async fn open_new_sink(
 
     if verbose {
         match &target {
-            SinkTarget::Path(p) => eprintln!(
-                "[partition[{partition_name}]]: Start on new file '{}'",
-                p.display(),
-            ),
+            SinkTarget::Path(p) => {
+                eprintln!("[partition[{partition_name}]]: Start on new file '{p}'")
+            },
             SinkTarget::Dyn(_) => eprintln!("[partition[{partition_name}]]: Start on new file",),
         }
     }

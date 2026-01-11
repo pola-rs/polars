@@ -9,8 +9,8 @@ use polars_core::schema::SchemaRef;
 use polars_error::{PolarsResult, polars_ensure};
 use polars_plan::dsl::{PartitionTargetCallback, SinkFinishCallback, SinkOptions};
 use polars_utils::IdxSize;
+use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::plpath::PlPath;
 use polars_utils::relaxed_cell::RelaxedCell;
 
 use super::{CreateNewSinkFn, PerPartitionSortBy};
@@ -28,7 +28,7 @@ pub struct MaxSizePartitionSinkNode {
     input_schema: SchemaRef,
     max_size: IdxSize,
 
-    base_path: Arc<PlPath>,
+    base_path: PlRefPath,
     file_path_cb: Option<PartitionTargetCallback>,
     create_new: CreateNewSinkFn,
     ext: PlSmallStr,
@@ -55,7 +55,7 @@ impl MaxSizePartitionSinkNode {
     pub fn new(
         input_schema: SchemaRef,
         max_size: IdxSize,
-        base_path: Arc<PlPath>,
+        base_path: PlRefPath,
         file_path_cb: Option<PartitionTargetCallback>,
         create_new: CreateNewSinkFn,
         ext: PlSmallStr,
@@ -165,7 +165,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
                             Some(c) => c,
                             None => {
                                 let result = open_new_sink(
-                                    base_path.as_ref().as_ref(),
+                                    base_path.clone(),
                                     file_path_cb.as_ref(),
                                     default_file_path_cb,
                                     file_idx,

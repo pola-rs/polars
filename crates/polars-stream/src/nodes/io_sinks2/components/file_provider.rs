@@ -9,10 +9,10 @@ use polars_io::utils::HIVE_VALUE_ENCODE_CHARSET;
 use polars_io::utils::file::Writeable;
 use polars_plan::dsl::sink2::{FileProviderReturn, FileProviderType};
 use polars_plan::prelude::sink2::FileProviderArgs;
-use polars_utils::plpath::PlPath;
+use polars_utils::pl_path::PlRefPath;
 
 pub struct FileProvider {
-    pub base_path: PlPath,
+    pub base_path: PlRefPath,
     pub cloud_options: Option<Arc<CloudOptions>>,
     pub provider_type: FileProviderType,
     pub upload_chunk_size: usize,
@@ -62,10 +62,11 @@ impl FileProvider {
             FileProviderType::Legacy(_) => unreachable!(),
         };
 
-        let path = self.base_path.as_ref().join(&provided_path);
-        let path = path.as_ref();
+        let path = self.base_path.join(&provided_path);
 
-        if let Some(path) = path.as_local_path().and_then(|p| p.parent()) {
+        if !path.has_scheme()
+            && let Some(path) = path.parent()
+        {
             // Ignore errors from directory creation - the `Writeable::try_new()` below will raise
             // appropriate errors.
             let _ = tokio::fs::DirBuilder::new()

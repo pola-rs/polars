@@ -6,7 +6,7 @@ use polars_core::chunked_array::cast::CastOptions;
 use polars_core::config::verbose;
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
-use polars_utils::plpath::PlPath;
+use polars_utils::pl_path::PlRefPath;
 use polars_utils::unique_id::UniqueId;
 
 use super::convert_utils::SplitPredicates;

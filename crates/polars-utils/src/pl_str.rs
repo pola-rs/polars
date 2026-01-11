@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+pub use super::pl_ref_str::PlRefStr;
 use crate::relaxed_cell::RelaxedCell;
 
 #[macro_export]
@@ -134,7 +135,7 @@ impl AsRef<std::path::Path> for PlSmallStr {
 impl AsRef<[u8]> for PlSmallStr {
     #[inline(always)]
     fn as_ref(&self) -> &[u8] {
-        self.as_str().as_bytes()
+        self.as_bytes()
     }
 }
 

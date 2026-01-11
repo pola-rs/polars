@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use arrow::io::ipc::read::{Dictionaries, read_dictionary_block};
 use async_trait::async_trait;
+use polars_core::config;
 use polars_core::prelude::DataType;
 use polars_core::schema::{Schema, SchemaExt};
 use polars_core::utils::arrow::io::ipc::read::{
@@ -19,7 +20,6 @@ use polars_io::utils::slice::SplitSlicePosition;
 use polars_plan::dsl::{ScanSource, ScanSourceRef};
 use polars_utils::IdxSize;
 use polars_utils::mem::prefetch::get_memory_prefetch_func;
-use polars_utils::plpath::PlPathRef;
 use polars_utils::slice_enum::Slice;
 use record_batch_data_fetch::RecordBatchDataFetcher;
 use record_batch_decode::RecordBatchDecoder;
@@ -455,13 +455,13 @@ impl IpcFileReader {
         }
 
         let metadata = match self.scan_source.as_scan_source_ref() {
-            ScanSourceRef::Path(path) => match path {
-                PlPathRef::Cloud(_) => {
+            ScanSourceRef::Path(path) => {
+                if path.has_scheme() || config::force_async() {
                     feature_gated!("cloud", {
                         get_runtime().block_in_place_on(async {
                             let metadata: PolarsResult<_> = {
                                 let reader = polars_io::ipc::IpcReaderAsync::from_uri(
-                                    path,
+                                    path.clone(),
                                     self.cloud_options.as_deref(),
                                 )
                                 .await?;
@@ -471,12 +471,12 @@ impl IpcFileReader {
                             metadata
                         })?
                     })
-                },
-                PlPathRef::Local(path) => {
+                } else {
                     // Local file I/O is typically synchronous in Arrow-rs
-                    let mut reader = std::io::BufReader::new(polars_utils::open_file(path)?);
+                    let mut reader =
+                        std::io::BufReader::new(polars_utils::open_file(path.as_std_path())?);
                     read_file_metadata(&mut reader)?
-                },
+                }
             },
             ScanSourceRef::File(file) => {
                 let mut reader = std::io::BufReader::new(file);

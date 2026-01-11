@@ -5,7 +5,7 @@ use polars_core::prelude::SortMultipleOptions;
 use polars_core::schema::SchemaRef;
 use polars_plan::dsl::sink2::FileProviderType;
 use polars_plan::dsl::{FileWriteFormat, SinkTarget, UnifiedSinkArgs};
-use polars_utils::plpath::{CloudScheme, PlPath};
+use polars_utils::pl_path::{CloudScheme, PlRefPath};
 
 use crate::expression::StreamExpr;
 use crate::nodes::io_sinks2::components::hstack_columns::HStackColumns;
@@ -85,14 +85,14 @@ impl IOSinkTarget {
     pub fn is_cloud_location(&self) -> bool {
         match self {
             Self::File(v) => v.cloud_scheme(),
-            Self::Partitioned(v) => v.base_path.cloud_scheme(),
+            Self::Partitioned(v) => v.base_path.scheme(),
         }
         .is_some_and(|x| !matches!(x, CloudScheme::File | CloudScheme::FileNoHostname))
     }
 }
 
 pub struct PartitionedTarget {
-    pub base_path: PlPath,
+    pub base_path: PlRefPath,
     pub file_path_provider: FileProviderType,
     pub partitioner: Partitioner,
     /// How to hstack the keys back into the dataframe (with_columns)

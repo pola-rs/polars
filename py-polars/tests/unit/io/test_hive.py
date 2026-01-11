@@ -498,7 +498,7 @@ def test_hive_partition_schema_inference(tmp_path: Path) -> None:
     for i in range(3):
         paths[i].parent.mkdir(exist_ok=True, parents=True)
         dfs[i].write_parquet(paths[i])
-        out = pl.scan_parquet(tmp_path).collect()
+        out = pl.scan_parquet(tmp_path).sort("x").collect()
 
         assert_series_equal(out["a"], expected[i])
 

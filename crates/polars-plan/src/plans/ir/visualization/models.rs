@@ -4,8 +4,8 @@ use polars_core::frame::UniqueKeepStrategy;
 use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_ops::frame::{JoinCoalesce, JoinValidation, MaintainOrderJoin};
 use polars_utils::arena::Arena;
+use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::plpath::PlPath;
 use polars_utils::unique_id::UniqueId;
 use polars_utils::{IdxSize, format_pl_smallstr};
 
@@ -328,7 +328,7 @@ pub struct FileSinkOptions {
 #[cfg_attr(feature = "ir_visualization_schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum SinkTarget {
-    Path(PlPath),
+    Path(PlRefPath),
     Dyn,
 }
 
@@ -345,7 +345,7 @@ impl From<&crate::dsl::SinkTarget> for SinkTarget {
 #[cfg_attr(feature = "ir_visualization_schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq)]
 pub struct PartitionedSinkOptions {
-    pub base_path: PlPath,
+    pub base_path: PlRefPath,
     pub file_path_provider: FileProviderType,
     pub partition_strategy: PartitionStrategy,
     pub file_format: FileFormat,

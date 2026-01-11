@@ -1,6 +1,6 @@
 use polars::prelude::sink::{PartitionTargetCallback, SinkFinishCallback};
 use polars::prelude::sink2::{FileProviderFunction, FileProviderType};
-use polars::prelude::{PartitionStrategy, PlPath, SinkDestination, SortColumn, SpecialEq};
+use polars::prelude::{PartitionStrategy, PlRefPath, SinkDestination, SortColumn, SpecialEq};
 use polars_utils::IdxSize;
 use polars_utils::python_function::PythonObject;
 use pyo3::exceptions::PyValueError;
@@ -44,7 +44,7 @@ impl PyFileSinkDestination<'_> {
         /// Extract from `SinkDirectoryInner` dataclass.
         #[derive(FromPyObject)]
         struct Extract {
-            base_path: Wrap<PlPath>,
+            base_path: Wrap<PlRefPath>,
             file_path_provider: Option<Py<PyAny>>,
             partition_by: Option<Vec<PyExpr>>,
             partition_keys_sorted: Option<bool>,
@@ -140,7 +140,7 @@ impl PyFileSinkDestination<'_> {
         /// Extract from `PartitionByInner` dataclass.
         #[derive(FromPyObject)]
         struct Extract {
-            base_path: Wrap<PlPath>,
+            base_path: Wrap<PlRefPath>,
             file_path_provider: Option<Py<PyAny>>,
             key: Option<Vec<PyExpr>>,
             include_key: Option<bool>,

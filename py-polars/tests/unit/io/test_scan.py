@@ -1144,7 +1144,7 @@ def test_scan_empty_paths_friendly_error(
 
     assert (
         f"ComputeError: {failed_message}: expanded paths were empty "
-        "(path expansion input: 'paths: [Local"
+        "(path expansion input: 'paths: "
     ) in exc_str
 
     assert "glob: true)." in exc_str
@@ -1173,7 +1173,7 @@ def test_scan_empty_paths_friendly_error(
 
     assert (
         f"ComputeError: {failed_message}: expanded paths were empty "
-        "(path expansion input: 'paths: [Local"
+        "(path expansion input: 'paths: "
     ) in exc_str
 
     assert "glob: true)." in exc_str
