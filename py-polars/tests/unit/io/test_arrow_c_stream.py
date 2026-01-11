@@ -28,21 +28,6 @@ def test_scan_arrow_c_stream_basic() -> None:
     assert_frame_equal(df, expected)
 
 
-def test_scan_arrow_c_stream_with_schema() -> None:
-    """Test scan_arrow_c_stream with explicit schema."""
-    schema = pa.schema([("a", pa.int64()), ("b", pa.string())])
-    batches = [pa.record_batch([[1, 2], ["x", "y"]], schema=schema)]
-    reader = pa.RecordBatchReader.from_batches(schema, batches)
-
-    # Provide explicit polars schema
-    pl_schema = {"a": pl.Int64, "b": pl.String}
-    lf = pl.scan_arrow_c_stream(reader, schema=pl_schema)
-    df = lf.collect()
-
-    assert df.schema == pl_schema
-    assert df.shape == (2, 2)
-
-
 def test_scan_arrow_c_stream_projection() -> None:
     """Test that projection pushdown works with scan_arrow_c_stream."""
     schema = pa.schema([("a", pa.int64()), ("b", pa.string()), ("c", pa.float64())])

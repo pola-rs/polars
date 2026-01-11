@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any
 from polars._utils.unstable import unstable
 
 if TYPE_CHECKING:
-    from polars._typing import SchemaDict
     from polars.lazyframe import LazyFrame
 
 __all__ = ["scan_arrow_c_stream"]
@@ -16,8 +15,6 @@ __all__ = ["scan_arrow_c_stream"]
 @unstable()
 def scan_arrow_c_stream(
     source: Any,
-    *,
-    schema: SchemaDict | None = None,
 ) -> LazyFrame:
     """
     Scan an Arrow C Stream source.
@@ -35,9 +32,6 @@ def scan_arrow_c_stream(
     source
         Any object implementing the Arrow PyCapsule Interface
         (i.e., has a `__arrow_c_stream__` method).
-    schema
-        Optional schema to enforce on the data. If not provided,
-        the schema will be inferred from the stream.
 
     Returns
     -------
@@ -83,6 +77,5 @@ def scan_arrow_c_stream(
     import polars._plr as plr
     from polars.lazyframe import LazyFrame
 
-    # schema is passed directly to Rust (FromPyObject handles conversion)
-    pylf = plr.PyLazyFrame.scan_arrow_c_stream(source, schema)
+    pylf = plr.PyLazyFrame.scan_arrow_c_stream(source)
     return LazyFrame._from_pyldf(pylf)

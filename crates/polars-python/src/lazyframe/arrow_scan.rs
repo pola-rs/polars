@@ -50,8 +50,7 @@ impl ArrowCStreamScan {
     ///
     /// # Arguments
     /// * `source` - Python object with `__arrow_c_stream__` method
-    /// * `schema` - Optional schema; if None, will be inferred from the stream
-    pub fn new(source: &Bound<PyAny>, schema: Option<SchemaRef>) -> PyResult<Self> {
+    pub fn new(source: &Bound<PyAny>) -> PyResult<Self> {
         // Get the stream capsule from __arrow_c_stream__
         let capsule: Bound<PyCapsule> = if source.hasattr("__arrow_c_stream__")? {
             source.getattr("__arrow_c_stream__")?.call0()?.extract()?
@@ -74,22 +73,17 @@ impl ArrowCStreamScan {
                 .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?
         };
 
-        // Derive schema from stream field if not provided
-        let schema = match schema {
-            Some(s) => s,
-            None => {
-                let field = reader.field();
-                let struct_fields = match &field.dtype {
-                    ArrowDataType::Struct(fields) => fields,
-                    _ => {
-                        return Err(pyo3::exceptions::PyValueError::new_err(
-                            "Arrow stream schema must be a struct type",
-                        ));
-                    },
-                };
-                Arc::new(Schema::from_iter(struct_fields.iter().map(Field::from)))
+        // Derive schema from stream field
+        let field = reader.field();
+        let struct_fields = match &field.dtype {
+            ArrowDataType::Struct(fields) => fields,
+            _ => {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "Arrow stream schema must be a struct type",
+                ));
             },
         };
+        let schema = Arc::new(Schema::from_iter(struct_fields.iter().map(Field::from)));
 
         Ok(Self {
             state: Arc::new(Mutex::new(ArrowCStreamState {
