@@ -5,11 +5,11 @@ import os
 from collections.abc import Sequence
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, Callable, Literal
+from typing import IO, TYPE_CHECKING, Any, Literal
 
 import polars._reexport as pl
 import polars.functions as F
-from polars._utils.deprecation import deprecate_renamed_parameter
+from polars._utils.deprecation import deprecate_renamed_parameter, deprecated
 from polars._utils.various import (
     _process_null_values,
     is_path_or_str_sequence,
@@ -35,7 +35,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import PyDataFrame, PyLazyFrame
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping
 
     from polars import DataFrame, LazyFrame
     from polars._typing import CsvEncoding, PolarsDataType, SchemaDict
@@ -172,8 +172,10 @@ def read_csv(
         specified in `schema` or `schema_overrides`.
     infer_schema_length
         The maximum number of rows to scan for schema inference.
-        If set to `None`, the full data may be scanned *(this is slow)*.
-        Set `infer_schema=False` to read all columns as `pl.String`.
+        If set to `None`, the full data will be scanned into memory
+        **(this is slow)**.
+        Alternatively set `infer_schema=False` to read all columns as
+        `pl.String`.
     batch_size
         Number of lines to read into the buffer at once.
         Modify this to change performance.
@@ -390,7 +392,7 @@ def read_csv(
         # Map list of dtypes when used together with selected columns as a dtypes dict
         # so the dtypes are applied to the correct column instead of the first x
         # columns.
-        schema_overrides = dict(zip(columns, schema_overrides))
+        schema_overrides = dict(zip(columns, schema_overrides, strict=False))
 
     if new_columns and schema_overrides and isinstance(schema_overrides, dict):
         current_columns = None
@@ -448,7 +450,7 @@ def read_csv(
                     schema_overrides = dtype_list
 
         if current_columns and isinstance(schema_overrides, dict):
-            new_to_current = dict(zip(new_columns, current_columns))
+            new_to_current = dict(zip(new_columns, current_columns, strict=False))
             # Change new column names to current column names in dtype.
             schema_overrides = {
                 new_to_current.get(column_name, column_name): column_dtype
@@ -732,6 +734,9 @@ def _read_csv_impl(
 @deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
+@deprecated(
+    "`read_csv_batched` is deprecated; use `scan_csv().collect_batches()` instead."
+)
 def read_csv_batched(
     source: str | Path,
     *,
@@ -778,6 +783,9 @@ def read_csv_batched(
     .. versionchanged:: 0.20.4
         * The `row_count_name` parameter was renamed `row_index_name`.
         * The `row_count_offset` parameter was renamed `row_index_offset`.
+
+    .. deprecated:: 1.37.0
+        Use `scan_csv().collect_batches()` instead.
 
     Parameters
     ----------
@@ -959,7 +967,7 @@ def read_csv_batched(
         # Map list of dtypes when used together with selected columns as a dtypes dict
         # so the dtypes are applied to the correct column instead of the first x
         # columns.
-        schema_overrides = dict(zip(columns, schema_overrides))
+        schema_overrides = dict(zip(columns, schema_overrides, strict=False))
 
     if new_columns and schema_overrides and isinstance(schema_overrides, dict):
         current_columns = None
@@ -1011,7 +1019,7 @@ def read_csv_batched(
                     schema_overrides = dtype_list
 
         if current_columns and isinstance(schema_overrides, dict):
-            new_to_current = dict(zip(new_columns, current_columns))
+            new_to_current = dict(zip(new_columns, current_columns, strict=False))
             # Change new column names to current column names in dtype.
             schema_overrides = {
                 new_to_current.get(column_name, column_name): column_dtype
@@ -1177,8 +1185,10 @@ def scan_csv(
         specified in `schema` or `schema_overrides`.
     infer_schema_length
         The maximum number of rows to scan for schema inference.
-        If set to `None`, the full data may be scanned *(this is slow)*.
-        Set `infer_schema=False` to read all columns as `pl.String`.
+        If set to `None`, the full data will be scanned into memory
+        **(this is slow)**.
+        Alternatively set `infer_schema=False` to read all columns as
+        `pl.String`.
     n_rows
         Stop reading from CSV file after reading `n_rows`.
     encoding : {'utf8', 'utf8-lossy'}
@@ -1327,7 +1337,7 @@ def scan_csv(
             msg = "cannot set both `with_column_names` and `new_columns`; mutually exclusive"
             raise ValueError(msg)
         if schema_overrides and isinstance(schema_overrides, Sequence):
-            schema_overrides = dict(zip(new_columns, schema_overrides))
+            schema_overrides = dict(zip(new_columns, schema_overrides, strict=False))
 
         # wrap new column names as a callable
         def with_column_names(cols: list[str]) -> list[str]:

@@ -224,7 +224,7 @@ impl BooleanArray {
     /// if it is being shared (since it results in a `O(N)` memcopy).
     /// # Panics
     /// This function panics if the function modifies the length of the [`MutableBitmap`].
-    pub fn apply_values_mut<F: Fn(&mut MutableBitmap)>(&mut self, f: F) {
+    pub fn apply_values_mut<F: FnOnce(&mut MutableBitmap)>(&mut self, f: F) {
         let values = std::mem::take(&mut self.values);
         let mut values = values.make_mut();
         f(&mut values);

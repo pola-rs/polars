@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any, cast
 from zoneinfo import ZoneInfo
 
@@ -1467,6 +1468,8 @@ def test_arg_sort() -> None:
         # Numeric
         (pl.Series([5, 3, 4, 1, 2]), 3, 0),
         (pl.Series([None, 5, 1]), 2, 1),
+        (pl.Series([float("nan"), 3.0, 5.0]), 1, 2),
+        (pl.Series([None, float("nan"), 3.0, 5.0]), 2, 3),
         # Boolean
         (pl.Series([True, False]), 1, 0),
         (pl.Series([True, True]), 0, 0),
@@ -1477,6 +1480,12 @@ def test_arg_sort() -> None:
         # String
         (pl.Series(["a", "c", "b"]), 0, 1),
         (pl.Series([None, "a", None, "b"]), 1, 3),
+        # Binary
+        (pl.Series([b"a", b"c", b"b"]), 0, 1),
+        (pl.Series([None, b"a", None, b"b"]), 1, 3),
+        # Decimal
+        (pl.Series([Decimal("1.1"), Decimal("2.2"), Decimal("0.5")]), 2, 1),
+        (pl.Series([None, Decimal("1.1"), None, Decimal("2.2")]), 1, 3),
         # Categorical
         (pl.Series(["c", "b", "a"], dtype=pl.Categorical()), 2, 0),
         (pl.Series("s", [None, "c", "b", None, "a"], pl.Categorical()), 4, 1),

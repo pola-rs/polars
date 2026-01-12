@@ -1,8 +1,8 @@
-use polars::prelude::ColumnMapping;
 #[cfg(feature = "iejoin")]
 use polars::prelude::JoinTypeOptionsIR;
 use polars::prelude::deletion::DeletionFilesList;
 use polars::prelude::python_dsl::PythonScanSource;
+use polars::prelude::{ColumnMapping, PredicateFileSkip};
 use polars_core::prelude::IdxSize;
 use polars_io::cloud::CloudOptions;
 use polars_ops::prelude::JoinType;
@@ -421,7 +421,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                     // Manual conversion to preserve `uri://...` - converting Rust `Path` to `PosixPath`
                     // will corrupt to `uri:/...`
                     for path in paths.iter() {
-                        out.append(path.to_str())?;
+                        out.append(path.as_str())?;
                     }
 
                     out.into_py_any(py)?
@@ -430,7 +430,15 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                 file_info: py.None(),
                 predicate: predicate
                     .as_ref()
-                    .filter(|_| *predicate_file_skip_applied != Some(true))
+                    .filter(|_| {
+                        !matches!(
+                            predicate_file_skip_applied,
+                            Some(PredicateFileSkip {
+                                no_residual_predicate: true,
+                                original_len: _,
+                            })
+                        )
+                    })
                     .map(|e| e.into()),
                 file_options: PyFileOptions {
                     inner: (**unified_scan_args).clone(),
@@ -655,7 +663,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                             PyNotImplementedError::new_err("FastCount with BytesIO sources")
                         })?
                         .iter()
-                        .map(|p| p.to_str())
+                        .map(|p| p.as_str())
                         .collect::<Vec<_>>()
                         .into_py_any(py)?;
 

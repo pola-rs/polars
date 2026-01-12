@@ -4,7 +4,7 @@ pub mod allocator;
 // Since Python Polars cannot share its version into here and we need to be able to build this
 // package correctly without `py-polars`, we need to mirror the version here.
 // example: 1.35.0-beta.1
-pub static PYPOLARS_VERSION: &str = "1.36.0";
+pub static PYPOLARS_VERSION: &str = "1.37.0";
 
 // We allow multiple features to be set simultaneously so checking with all-features
 // is possible. In the case multiple are set or none at all, we set the repr to "unknown".
@@ -24,8 +24,6 @@ pub static RUNTIME_REPR: &str = "unknown";
 use pyo3::prelude::*;
 use pyo3::{wrap_pyfunction, wrap_pymodule};
 
-#[cfg(feature = "csv")]
-use crate::batched_csv::PyBatchedCsv;
 #[cfg(feature = "catalog")]
 use crate::catalog::unity::PyCatalogClient;
 #[cfg(feature = "polars_cloud_client")]
@@ -47,7 +45,7 @@ use crate::series::PySeries;
 use crate::sql::PySQLContext;
 use crate::{datatypes, exceptions, extension, functions, testing};
 
-#[pymodule]
+#[pymodule(gil_used = false)] // gil_used = false will be default in PyO3 0.28.
 fn _ir_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     use crate::lazyframe::visitor::nodes::*;
     m.add_class::<PythonScan>().unwrap();
@@ -73,7 +71,7 @@ fn _ir_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     Ok(())
 }
 
-#[pymodule]
+#[pymodule(gil_used = false)] // gil_used = false will be default in PyO3 0.28.
 fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     use crate::lazyframe::visit::PyExprIR;
     use crate::lazyframe::visitor::expr_nodes::*;
@@ -106,7 +104,7 @@ fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     Ok(())
 }
 
-#[pymodule]
+#[pymodule(gil_used = false)] // gil_used = false will be default in PyO3 0.28.
 pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     // Classes
     m.add_class::<PySeries>().unwrap();
@@ -120,8 +118,6 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyDataTypeExpr>().unwrap();
     m.add_class::<PySelector>().unwrap();
     m.add_class::<PyStringCacheHolder>().unwrap();
-    #[cfg(feature = "csv")]
-    m.add_class::<PyBatchedCsv>().unwrap();
     #[cfg(feature = "sql")]
     m.add_class::<PySQLContext>().unwrap();
     m.add_class::<PyCategories>().unwrap();
@@ -196,6 +192,8 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::field)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::col)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::collect_all))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::collect_all_lazy))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::element)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::explain_all))

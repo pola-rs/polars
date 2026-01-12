@@ -10,18 +10,19 @@ use polars_lazy::dsl::Expr;
 use polars_lazy::prelude::{RankMethod, RankOptions};
 use polars_ops::chunked_array::UnicodeForm;
 use polars_ops::series::RoundMode;
-use polars_plan::dsl::{
-    as_struct, coalesce, concat_str, element, int_range, len, max_horizontal, min_horizontal, when,
+use polars_plan::dsl::functions::{
+    as_struct, coalesce, col, cols, concat_str, element, int_range, len, lit, max_horizontal,
+    min_horizontal, when,
 };
 use polars_plan::plans::{DynLiteralValue, LiteralValue, typed_lit};
-use polars_plan::prelude::{StrptimeOptions, col, cols, lit};
+use polars_plan::prelude::StrptimeOptions;
 use polars_utils::pl_str::PlSmallStr;
 use sqlparser::ast::helpers::attached_token::AttachedToken;
 use sqlparser::ast::{
     DateTimeField, DuplicateTreatment, Expr as SQLExpr, Function as SQLFunction, FunctionArg,
     FunctionArgExpr, FunctionArgumentClause, FunctionArgumentList, FunctionArguments, Ident,
-    OrderByExpr, Value as SQLValue, WindowFrame, WindowFrameBound, WindowFrameUnits, WindowSpec,
-    WindowType,
+    OrderByExpr, Value as SQLValue, ValueWithSpan, WindowFrame, WindowFrameBound, WindowFrameUnits,
+    WindowSpec, WindowType,
 };
 use sqlparser::tokenizer::Span;
 
@@ -887,7 +888,7 @@ impl PolarsSQLFunctions {
 
 impl PolarsSQLFunctions {
     fn try_from_sql(function: &'_ SQLFunction, ctx: &'_ SQLContext) -> PolarsResult<Self> {
-        let function_name = function.name.0[0].value.to_lowercase();
+        let function_name = function.name.0[0].as_ident().unwrap().value.to_lowercase();
         Ok(match function_name.as_str() {
             // ----
             // Bitwise functions
@@ -2198,17 +2199,16 @@ impl SQLFunctionVisitor<'_> {
         for ob in order_by {
             // Note: if not specified 'NULLS FIRST' is default for DESC, 'NULLS LAST' otherwise
             // https://www.postgresql.org/docs/current/queries-order.html
-            let desc_order = !ob.asc.unwrap_or(true);
+            let desc_order = !ob.options.asc.unwrap_or(true);
             by.push(parse_sql_expr(&ob.expr, self.ctx, self.active_schema)?);
-            nulls_last.push(!ob.nulls_first.unwrap_or(desc_order));
+            nulls_last.push(!ob.options.nulls_first.unwrap_or(desc_order));
             descending.push(desc_order);
         }
         Ok(expr.sort_by(
             by,
             SortMultipleOptions::default()
                 .with_order_descending_multi(descending)
-                .with_nulls_last_multi(nulls_last)
-                .with_maintain_order(true),
+                .with_nulls_last_multi(nulls_last),
         ))
     }
 
@@ -2220,8 +2220,8 @@ impl SQLFunctionVisitor<'_> {
     ) -> PolarsResult<Expr> {
         // If ORDER BY references the base expression, use .sort() directly
         if order_by.len() == 1 && order_by[0].expr == *base_sql_expr {
-            let desc_order = !order_by[0].asc.unwrap_or(true);
-            let nulls_last = !order_by[0].nulls_first.unwrap_or(desc_order);
+            let desc_order = !order_by[0].options.asc.unwrap_or(true);
+            let nulls_last = !order_by[0].options.nulls_first.unwrap_or(desc_order);
             return Ok(expr.sort(
                 SortOptions::default()
                     .with_order_descending(desc_order)
@@ -2242,10 +2242,10 @@ impl SQLFunctionVisitor<'_> {
             return Ok((Vec::new(), false));
         }
         // Parse expressions and validate uniform direction
-        let all_ascending = order_by[0].asc.unwrap_or(true);
+        let all_ascending = order_by[0].options.asc.unwrap_or(true);
         let mut exprs = Vec::with_capacity(order_by.len());
         for o in order_by {
-            if all_ascending != o.asc.unwrap_or(true) {
+            if all_ascending != o.options.asc.unwrap_or(true) {
                 // TODO: mixed sort directions are not currently supported; we
                 //  need to enhance `over_with_options` to take SortMultipleOptions
                 polars_bail!(
@@ -2369,7 +2369,7 @@ impl FromSQLExpr for f64 {
         Self: Sized,
     {
         match expr {
-            SQLExpr::Value(v) => match v {
+            SQLExpr::Value(ValueWithSpan { value: v, .. }) => match v {
                 SQLValue::Number(s, _) => s
                     .parse()
                     .map_err(|_| polars_err!(SQLInterface: "cannot parse literal {:?}", s)),
@@ -2386,7 +2386,7 @@ impl FromSQLExpr for bool {
         Self: Sized,
     {
         match expr {
-            SQLExpr::Value(v) => match v {
+            SQLExpr::Value(ValueWithSpan { value: v, .. }) => match v {
                 SQLValue::Boolean(v) => Ok(*v),
                 _ => polars_bail!(SQLInterface: "cannot parse boolean {:?}", v),
             },
@@ -2401,7 +2401,7 @@ impl FromSQLExpr for String {
         Self: Sized,
     {
         match expr {
-            SQLExpr::Value(v) => match v {
+            SQLExpr::Value(ValueWithSpan { value: v, .. }) => match v {
                 SQLValue::SingleQuotedString(s) => Ok(s.clone()),
                 _ => polars_bail!(SQLInterface: "cannot parse literal {:?}", v),
             },
@@ -2416,7 +2416,7 @@ impl FromSQLExpr for StrptimeOptions {
         Self: Sized,
     {
         match expr {
-            SQLExpr::Value(v) => match v {
+            SQLExpr::Value(ValueWithSpan { value: v, .. }) => match v {
                 SQLValue::SingleQuotedString(s) => Ok(StrptimeOptions {
                     format: Some(PlSmallStr::from_str(s)),
                     ..StrptimeOptions::default()

@@ -389,6 +389,8 @@ impl Display for ExprIRDisplay<'_> {
                 f.write_char(')')
             },
             Column(name) => write!(f, "col(\"{name}\")"),
+            #[cfg(feature = "dtype-struct")]
+            StructField(name) => write!(f, "field(\"{name}\")"),
             Literal(v) => write!(f, "{v:?}"),
             BinaryExpr { left, op, right } => {
                 let left = self.with_root(left);
@@ -422,6 +424,7 @@ impl Display for ExprIRDisplay<'_> {
                 expr,
                 idx,
                 returns_scalar,
+                null_on_oob: _,
             } => {
                 let expr = self.with_root(expr);
                 let idx = self.with_root(idx);
@@ -457,6 +460,16 @@ impl Display for ExprIRDisplay<'_> {
                         } else {
                             write!(f, ".max()")
                         }
+                    },
+                    MinBy { input, by } => {
+                        let input = self.with_root(input);
+                        let by = self.with_root(by);
+                        write!(f, "{input}.min_by({by})",)
+                    },
+                    MaxBy { input, by } => {
+                        let input = self.with_root(input);
+                        let by = self.with_root(by);
+                        write!(f, "{input}.max_by({by})",)
                     },
                     Median(expr) => write!(f, "{}.median()", self.with_root(expr)),
                     Mean(expr) => write!(f, "{}.mean()", self.with_root(expr)),
@@ -564,6 +577,12 @@ impl Display for ExprIRDisplay<'_> {
                         "{expr}.cumulative_eval({evaluation}, min_samples={min_samples})"
                     ),
                 }
+            },
+            #[cfg(feature = "dtype-struct")]
+            StructEval { expr, evaluation } => {
+                let expr = self.with_root(expr);
+                let evaluation = self.with_slice(evaluation);
+                write!(f, "{expr}.struct.with_fields({evaluation})")
             },
             Slice {
                 input,

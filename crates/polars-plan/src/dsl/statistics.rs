@@ -29,6 +29,24 @@ impl Expr {
         .into()
     }
 
+    /// Get minimum value, ordered by another expression.
+    pub fn min_by(self, by: Self) -> Self {
+        AggExpr::MinBy {
+            input: Arc::new(self),
+            by: Arc::new(by),
+        }
+        .into()
+    }
+
+    /// Get minimum value, ordered by another expression.
+    pub fn max_by(self, by: Self) -> Self {
+        AggExpr::MaxBy {
+            input: Arc::new(self),
+            by: Arc::new(by),
+        }
+        .into()
+    }
+
     /// Reduce groups to minimal value.
     pub fn nan_min(self) -> Self {
         AggExpr::Min {

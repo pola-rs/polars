@@ -141,6 +141,25 @@ pub fn collect_all(
 }
 
 #[pyfunction]
+pub fn collect_all_lazy(lfs: Vec<PyLazyFrame>, optflags: PyOptFlags) -> PyResult<PyLazyFrame> {
+    let plans = lfs_to_plans(lfs);
+
+    for plan in &plans {
+        if !matches!(plan, DslPlan::Sink { .. }) {
+            return Err(PyValueError::new_err(
+                "all LazyFrames must end with a sink to use 'collect_all(lazy=True)'",
+            ));
+        }
+    }
+
+    Ok(LazyFrame::from_logical_plan(
+        DslPlan::SinkMultiple { inputs: plans },
+        optflags.inner.into_inner(),
+    )
+    .into())
+}
+
+#[pyfunction]
 pub fn explain_all(lfs: Vec<PyLazyFrame>, optflags: PyOptFlags, py: Python) -> PyResult<String> {
     let plans = lfs_to_plans(lfs);
     let explained =
@@ -448,16 +467,16 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
     if value.is_instance_of::<PyBool>() {
         let val = value.extract::<bool>()?;
         Ok(dsl::lit(val).into())
-    } else if let Ok(int) = value.downcast::<PyInt>() {
+    } else if let Ok(int) = value.cast::<PyInt>() {
         let v = int
             .extract::<i128>()
             .map_err(|e| polars_err!(InvalidOperation: "integer too large for Polars: {e}"))
             .map_err(PyPolarsErr::from)?;
         Ok(Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(v))).into())
-    } else if let Ok(float) = value.downcast::<PyFloat>() {
+    } else if let Ok(float) = value.cast::<PyFloat>() {
         let val = float.extract::<f64>()?;
         Ok(Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(val))).into())
-    } else if let Ok(pystr) = value.downcast::<PyString>() {
+    } else if let Ok(pystr) = value.cast::<PyString>() {
         Ok(dsl::lit(pystr.to_string()).into())
     } else if let Ok(series) = value.extract::<PySeries>() {
         let s = series.series.into_inner();
@@ -472,7 +491,7 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
         }
     } else if value.is_none() {
         Ok(dsl::lit(Null {}).into())
-    } else if let Ok(value) = value.downcast::<PyBytes>() {
+    } else if let Ok(value) = value.cast::<PyBytes>() {
         Ok(dsl::lit(value.as_bytes()).into())
     } else {
         let av = py_object_to_any_value(value, true, allow_object).map_err(|_| {

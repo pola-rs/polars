@@ -11,7 +11,6 @@ from decimal import Decimal as PyDecimal
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     ClassVar,
     Literal,
     NoReturn,
@@ -115,6 +114,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import PyDataFrame, PySeries
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     with contextlib.suppress(ImportError):  # Module not available when building docs
         import polars._plr as plr
 
@@ -494,7 +495,7 @@ class Series:
         keys = ("values", "validity", "offsets")
         return {  # type: ignore[return-value]
             k: self._from_pyseries(b) if b is not None else b
-            for k, b in zip(keys, buffers)
+            for k, b in zip(keys, buffers, strict=True)
         }
 
     @classmethod
@@ -2156,6 +2157,32 @@ class Series:
         """
         return self._s.min()
 
+    @unstable()
+    def min_by(self, by: IntoExpr) -> Expr:
+        """
+        Get the minimum value in this Series, ordered by an expression.
+
+        If the by expression has multiple values equal to the minimum it is not
+        defined which value will be chosen.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        by
+            Column used to determine the smallest element.
+            Accepts expression input. Strings are parsed as column names.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [-2.0, float("nan"), 1.0])
+        >>> s.min_by(pl.col.a.abs())
+        1.0
+        """
+        return self.to_frame().select_seq(F.col(self.name).min_by(by)).item()
+
     def max(self) -> PythonLiteral | None:
         """
         Get the maximum value in this Series.
@@ -2167,6 +2194,32 @@ class Series:
         3
         """
         return self._s.max()
+
+    @unstable()
+    def max_by(self, by: IntoExpr) -> Expr:
+        """
+        Get the maximum value in this Series, ordered by an expression.
+
+        If the by expression has multiple values equal to the maximum it is not
+        defined which value will be chosen.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        by
+            Column used to determine the largest element.
+            Accepts expression input. Strings are parsed as column names.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [-2.0, float("nan"), 1.0])
+        >>> s.max_by(pl.col.a.abs())
+        -2.0
+        """
+        return self.to_frame().select_seq(F.col(self.name).max_by(by)).item()
 
     def nan_max(self) -> int | float | date | datetime | timedelta | str:
         """
@@ -2295,7 +2348,7 @@ class Series:
             Remove the first category from the variable being encoded.
         drop_nulls
             If there are `None` values in the series, a `null` column is not generated.
-            Null values in the nput are represented by zero vectors.
+            Null values in the input are represented by zero vectors.
 
         Examples
         --------
@@ -3341,6 +3394,88 @@ class Series:
             4
         ]
         """
+
+    def sql(self, query: str, *, table_name: str = "self") -> DataFrame:
+        """
+        Execute a SQL query against the Series.
+
+        .. versionadded:: 1.37.0
+
+        .. warning::
+            This functionality is considered **unstable**, although it is close to
+            being considered stable. It may be changed at any point without it being
+            considered a breaking change.
+
+        Parameters
+        ----------
+        query
+            SQL query to execute.
+        table_name
+            Optionally provide an explicit name for the table that represents the
+            calling frame (defaults to "self").
+
+        Notes
+        -----
+        * The calling Series is automatically registered as a table in the SQLContext
+          under the name "self". If you want access to the DataFrames, LazyFrames, and
+          other Series found in the current globals, use :meth:`pl.sql <polars.sql>`.
+        * More control over registration and execution behaviour is available by
+          using the :class:`SQLContext` object.
+        * The SQL query executes in lazy mode before being collected and returned
+          as a DataFrame.
+        * It is recommended to name your Series for use with SQL, otherwise the default
+          Series name (an empty string) is used; while `""` is valid, it is awkward.
+
+        See Also
+        --------
+        SQLContext
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> s = pl.Series(
+        ...     name="dt",
+        ...     values=[date(1999, 12, 31), date(2099, 2, 14), date(2026, 3, 5)],
+        ... )
+
+        Query the Series using SQL:
+
+        >>> s.sql('''
+        ...     SELECT
+        ...       EXTRACT('year',dt) AS y,
+        ...       EXTRACT('month',dt) AS m,
+        ...       EXTRACT('day',dt) AS d,
+        ...     FROM self
+        ...     WHERE dt > '2020-01-01'
+        ...     ORDER BY dt DESC
+        ... ''')
+        shape: (2, 3)
+        ┌──────┬─────┬─────┐
+        │ y    ┆ m   ┆ d   │
+        │ ---  ┆ --- ┆ --- │
+        │ i32  ┆ i8  ┆ i8  │
+        ╞══════╪═════╪═════╡
+        │ 2099 ┆ 2   ┆ 14  │
+        │ 2026 ┆ 3   ┆ 5   │
+        └──────┴─────┴─────┘
+
+        While you can refer to an unnamed Series column using the default empty
+        string, it is not recommended:
+
+        >>> s = pl.Series([1, 2, 3])
+        >>> s.sql('SELECT "" AS x, "" * 2 AS "2x" FROM self')
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ x   ┆ 2x  │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 2   │
+        │ 2   ┆ 4   │
+        │ 3   ┆ 6   │
+        └─────┴─────┘
+        """
+        return self.to_frame().sql(query, table_name=table_name)
 
     def sort(
         self,
@@ -8028,6 +8163,11 @@ class Series:
             Rank in descending order.
         seed
             If `method="random"`, use this as seed.
+
+        Notes
+        -----
+        If you're coming from SQL, you may be expecting null values to be ranked last.
+        Polars, however, only ranks non-null values and preserves the null ones.
 
         Examples
         --------

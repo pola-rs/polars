@@ -22,7 +22,7 @@ from polars.testing.parametric.strategies.dtype import _time_units
 from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES, TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
-    from typing import Callable
+    from collections.abc import Callable
 
     from hypothesis.strategies import SearchStrategy
 
@@ -2314,3 +2314,18 @@ def test_rolling_agg_sum_varying_slice_fuzz(with_nulls: bool) -> None:
     )
     expected = [sum(a[i + offset[i] : i + offset[i] + length[i]]) for i in range(n)]
     assert_frame_equal(out, pl.DataFrame({"a": expected}))
+
+
+def test_rolling_midpoint_25793() -> None:
+    df = pl.DataFrame({"i": [1, 2, 3, 4], "x": [1, 2, 3, 4]})
+
+    out = df.select(
+        pl.col.x.quantile(0.5, interpolation="midpoint").rolling("i", period="4i")
+    )
+    expected = pl.DataFrame({"x": [1.0, 1.5, 2.0, 2.5]})
+    assert_frame_equal(out, expected)
+
+    out = df.select(
+        pl.col.x.cumulative_eval(pl.element().quantile(0.5, interpolation="midpoint"))
+    )
+    assert_frame_equal(out, expected)

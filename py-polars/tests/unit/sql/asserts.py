@@ -37,7 +37,9 @@ def _execute_with_sqlite(
 
             frame_schema = df.schema
             types = (_POLARS_TO_SQLITE_[frame_schema[col]] for col in df.columns)
-            schema = ", ".join(f"{col} {tp}" for col, tp in zip(df.columns, types))
+            schema = ", ".join(
+                f"{col} {tp}" for col, tp in zip(df.columns, types, strict=True)
+            )
             cursor.execute(f"CREATE TABLE {name} ({schema})")
             cursor.executemany(
                 f"INSERT INTO {name} VALUES ({','.join(['?'] * len(df.columns))})",

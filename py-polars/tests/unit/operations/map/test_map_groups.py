@@ -134,7 +134,7 @@ def test_map_groups_object_output() -> None:
     result = df.group_by("groups").agg(
         pl.map_groups(
             [pl.col("dates"), pl.col("names")],
-            lambda s: Foo(dict(zip(s[0], s[1]))),
+            lambda s: Foo(dict(zip(s[0], s[1], strict=True))),
             return_dtype=pl.Object,
             returns_scalar=True,
         )
@@ -243,9 +243,11 @@ def test_nested_query_with_streaming_dispatch_25172() -> None:
         import io
 
         pl.LazyFrame({}).sink_parquet(
-            pl.PartitionMaxSize("", file_path=lambda _: io.BytesIO(), max_size=1),
-            engine="in-memory",
+            pl.PartitionBy(
+                "", file_path_provider=lambda _: io.BytesIO(), max_rows_per_file=1
+            ),
         )
+
         return pl.Series([1])
 
     assert_frame_equal(
@@ -256,3 +258,19 @@ def test_nested_query_with_streaming_dispatch_25172() -> None:
         .sort("a"),
         pl.DataFrame({"a": ["A", "B"], "b": [1, 1]}, schema_overrides={"b": pl.Int64}),
     )
+
+
+def test_map_groups_with_slice_25805() -> None:
+    schema = {"a": pl.Int8, "b": pl.Int8}
+
+    df = (
+        pl.LazyFrame(
+            data={"a": [1, 1], "b": [1, 2]},
+            schema=schema,
+        )
+        .group_by("a", maintain_order=True)
+        .map_groups(lambda df: df, schema=schema)
+        .head(1)
+        .collect()
+    )
+    assert_frame_equal(df, pl.DataFrame({"a": [1], "b": [1]}, schema=schema))

@@ -9,6 +9,7 @@ use crate::nodes::io_sinks2::components::size::RowCountAndSize;
 pub struct PartitionState {
     pub buffered_rows: DataFrame,
     pub total_size: RowCountAndSize,
+    /// Must always be <= `total_size`.
     pub sinked_size: RowCountAndSize,
     pub num_sink_opens: usize,
     pub keys_df: Arc<DataFrame>,

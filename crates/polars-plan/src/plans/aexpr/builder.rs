@@ -165,6 +165,26 @@ impl AExprBuilder {
         )
     }
 
+    pub fn min_by(self, by: impl IntoAExprBuilder, arena: &mut Arena<AExpr>) -> Self {
+        Self::agg(
+            IRAggExpr::MinBy {
+                input: self.node(),
+                by: by.into_aexpr_builder().node(),
+            },
+            arena,
+        )
+    }
+
+    pub fn max_by(self, by: impl IntoAExprBuilder, arena: &mut Arena<AExpr>) -> Self {
+        Self::agg(
+            IRAggExpr::MaxBy {
+                input: self.node(),
+                by: by.into_aexpr_builder().node(),
+            },
+            arena,
+        )
+    }
+
     pub fn sum(self, arena: &mut Arena<AExpr>) -> Self {
         Self::agg(IRAggExpr::Sum(self.node()), arena)
     }

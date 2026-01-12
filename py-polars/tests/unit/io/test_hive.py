@@ -7,7 +7,7 @@ from collections import OrderedDict
 from datetime import date, datetime
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import pyarrow.parquet as pq
 import pytest
@@ -15,6 +15,9 @@ import pytest
 import polars as pl
 from polars.exceptions import ComputeError, SchemaFieldNotFoundError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def impl_test_hive_partitioned_predicate_pushdown(
@@ -495,7 +498,7 @@ def test_hive_partition_schema_inference(tmp_path: Path) -> None:
     for i in range(3):
         paths[i].parent.mkdir(exist_ok=True, parents=True)
         dfs[i].write_parquet(paths[i])
-        out = pl.scan_parquet(tmp_path).collect()
+        out = pl.scan_parquet(tmp_path).sort("x").collect()
 
         assert_series_equal(out["a"], expected[i])
 
@@ -844,20 +847,17 @@ def test_hive_write(tmp_path: Path, df: pl.DataFrame) -> None:
 
 @pytest.mark.slow
 @pytest.mark.write_disk
-@pytest.mark.xfail
 def test_hive_write_multiple_files(tmp_path: Path) -> None:
-    chunk_size = 262_144
-    n_rows = 100_000
+    chunk_size = 1
+    n_rows = 500_000
     df = pl.select(a=pl.repeat(0, n_rows), b=pl.int_range(0, n_rows))
-
-    n_files = int(df.estimated_size() / chunk_size)
-
-    assert n_files > 1, "increase df size or decrease file size"
 
     root = tmp_path
     df.write_parquet(root, partition_by="a", partition_chunk_size_bytes=chunk_size)
 
-    assert sum(1 for _ in (root / "a=0").iterdir()) == n_files
+    n_out = sum(1 for _ in (root / "a=0").iterdir())
+    assert n_out == 5
+
     assert_frame_equal(pl.scan_parquet(root).collect(), df)
 
 
@@ -1123,7 +1123,7 @@ def test_hive_decode_utf8_23241(tmp_path: Path) -> None:
 @pytest.mark.write_disk
 def test_hive_filter_lit_true_24235(tmp_path: Path) -> None:
     df = pl.DataFrame({"p": [1, 2, 3, 4, 5], "x": [1, 1, 2, 2, 3]})
-    df.lazy().sink_parquet(pl.PartitionByKey(tmp_path, by="p"), mkdir=True)
+    df.lazy().sink_parquet(pl.PartitionBy(tmp_path, key="p"), mkdir=True)
 
     assert_frame_equal(
         pl.scan_parquet(tmp_path).filter(True).collect(),
@@ -1175,7 +1175,7 @@ def test_hive_filter_in_ir(
         )
 
     plan = pl.scan_parquet(tmp_path).filter(pl.col("a") < 0).explain()
-    assert plan.startswith("DF [")
+    assert plan.startswith("Parquet SCAN []")
 
     assert_frame_equal(
         pl.scan_parquet(tmp_path).with_row_index().filter(pl.col("a") == 2).collect(),

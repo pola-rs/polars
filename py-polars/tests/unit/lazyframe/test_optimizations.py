@@ -1,3 +1,4 @@
+import datetime as dt
 import itertools
 from io import BytesIO
 
@@ -459,3 +460,82 @@ def test_slice_pushdown_expr_25473() -> None:
 
     with pytest.raises(pl.exceptions.ShapeError, match=r"lengths.*5 != 2"):
         q.collect()
+
+
+def test_lazy_groupby_maintain_order_after_asof_join_25973() -> None:
+    # Small target times: 00:00, 00:10, 00:20, 00:30
+    targettime = (
+        pl.DataFrame(
+            {
+                "targettime": pl.time_range(
+                    dt.time(0, 0),
+                    dt.time(0, 30),
+                    interval="10m",
+                    closed="both",
+                    eager=True,
+                )
+            }
+        )
+        .with_columns(
+            targettime=pl.lit(dt.date(2026, 1, 1)).dt.combine(pl.col("targettime")),
+            grp=pl.lit(1),
+        )
+        .lazy()
+    )
+
+    # Small input times: every second from 00:00 to 00:30
+    df = (
+        pl.DataFrame(
+            {
+                "time": pl.time_range(
+                    dt.time(0, 0),
+                    dt.time(0, 30),
+                    interval="1s",
+                    closed="both",
+                    eager=True,
+                )
+            }
+        )
+        .with_row_index("value")
+        .with_columns(
+            time=pl.lit(dt.date(2026, 1, 1)).dt.combine(pl.col("time")),
+            grp=pl.lit(1),
+        )
+        .lazy()
+    )
+
+    # This used to produce out-of-order results.
+    # The optimizer previously cleared maintain_order.
+    q = (
+        df.join_asof(
+            targettime,
+            left_on="time",
+            right_on="targettime",
+            strategy="forward",
+        )
+        .drop_nulls("targettime")
+        .group_by("targettime", maintain_order=True)
+        .agg(pl.col("value").last())
+    )
+
+    # Verify optimizer preserves maintain_order on UNIQUE
+    plan = q.explain()
+    assert "AGGREGATE[maintain_order: true" in plan
+
+    result = q.collect()
+
+    idx_dtype = pl.get_index_type()
+
+    expected = pl.DataFrame(
+        {
+            "targettime": [
+                dt.datetime(2026, 1, 1, 0, 0),
+                dt.datetime(2026, 1, 1, 0, 10),
+                dt.datetime(2026, 1, 1, 0, 20),
+                dt.datetime(2026, 1, 1, 0, 30),
+            ],
+            "value": pl.Series("value", [0, 600, 1200, 1800], dtype=idx_dtype),
+        }
+    )
+
+    assert_frame_equal(result, expected)

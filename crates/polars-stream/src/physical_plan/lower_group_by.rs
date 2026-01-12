@@ -74,7 +74,7 @@ fn build_group_by_fallback(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn try_replace_agg_input_uniq(
+fn try_replace_agg_inputs_uniq(
     expr: Node,
     outer_name: Option<PlSmallStr>,
     expr_merger: &NaiveExprMerger,
@@ -87,17 +87,21 @@ fn try_replace_agg_input_uniq(
     let aexpr = expr_arena.get(expr).clone();
     let mut inputs = Vec::new();
     aexpr.inputs_rev(&mut inputs);
+    inputs.reverse();
 
-    assert!(inputs.len() == 1);
-    let input = inputs[0];
-
-    if is_input_independent(input, expr_arena, expr_cache) {
+    if inputs
+        .iter()
+        .any(|i| is_input_independent(*i, expr_arena, expr_cache))
+    {
         // TODO: we could simply return expr here, but we first need an is_scalar function, because if
         // it is not a scalar we need to return expr.implode().
         return None;
     }
 
-    if !is_elementwise_rec_cached(input, expr_arena, expr_cache) {
+    if !inputs
+        .iter()
+        .all(|i| is_elementwise_rec_cached(*i, expr_arena, expr_cache))
+    {
         return None;
     }
 
@@ -105,13 +109,18 @@ fn try_replace_agg_input_uniq(
     let name = uniq_agg_exprs
         .entry(agg_id)
         .or_insert_with(|| {
-            let input_id = expr_merger.get_uniq_id(input).unwrap();
-            let input_col = uniq_input_exprs
-                .entry(input_id)
-                .or_insert_with(unique_column_name)
-                .clone();
-            let input_col_node = expr_arena.add(AExpr::Column(input_col));
-            let trans_agg_node = expr_arena.add(aexpr.replace_inputs(&[input_col_node]));
+            let input_cols = inputs
+                .iter()
+                .map(|input| {
+                    let input_id = expr_merger.get_uniq_id(*input).unwrap();
+                    let input_col = uniq_input_exprs
+                        .entry(input_id)
+                        .or_insert_with(unique_column_name)
+                        .clone();
+                    expr_arena.add(AExpr::Column(input_col))
+                })
+                .collect::<Vec<_>>();
+            let trans_agg_node = expr_arena.add(aexpr.replace_inputs(&input_cols));
 
             // Add to aggregation expressions and replace with a reference to its output.
             let agg_expr = if let Some(name) = outer_name {
@@ -159,9 +168,9 @@ fn try_lower_elementwise_scalar_agg_expr(
         };
     }
 
-    macro_rules! replace_agg_input {
+    macro_rules! replace_agg_inputs {
         ($input:expr) => {
-            try_replace_agg_input_uniq(
+            try_replace_agg_inputs_uniq(
                 $input,
                 outer_name,
                 expr_merger,
@@ -177,6 +186,11 @@ fn try_lower_elementwise_scalar_agg_expr(
     match expr_arena.get(expr) {
         // Should be handled separately in `Eval`.
         AExpr::Element => unreachable!(),
+
+        AExpr::StructField(_) => {
+            // Reflecting StructEval expr state is not yet supported.
+            None
+        },
 
         AExpr::Column(_) => {
             // Implicit implode not yet supported.
@@ -227,6 +241,29 @@ fn try_lower_elementwise_scalar_agg_expr(
             }))
         },
 
+        AExpr::StructEval { expr, evaluation } => {
+            // @TODO: Reflect the lowering result of `expr` into the respective
+            // StructField lowering calls.
+            let (expr, evaluation) = (*expr, evaluation.clone());
+            let expr = lower_rec!(expr)?;
+
+            let new_evaluation = evaluation
+                .into_iter()
+                .map(|i| {
+                    let new_node = lower_rec!(i.node())?;
+                    Some(ExprIR::new(
+                        new_node,
+                        OutputName::Alias(i.output_name().clone()),
+                    ))
+                })
+                .collect::<Option<Vec<_>>>()?;
+
+            Some(expr_arena.add(AExpr::StructEval {
+                expr,
+                evaluation: new_evaluation,
+            }))
+        },
+
         AExpr::Ternary {
             predicate,
             truthy,
@@ -250,20 +287,20 @@ fn try_lower_elementwise_scalar_agg_expr(
                     IRBitwiseFunction::And | IRBitwiseFunction::Or | IRBitwiseFunction::Xor,
                 ),
             ..
-        } => replace_agg_input!(expr),
+        } => replace_agg_inputs!(expr),
 
         #[cfg(feature = "approx_unique")]
         AExpr::Function {
             function: IRFunctionExpr::ApproxNUnique,
             ..
-        } => replace_agg_input!(expr),
+        } => replace_agg_inputs!(expr),
 
         AExpr::Function {
             function:
                 IRFunctionExpr::Boolean(IRBooleanFunction::Any { .. } | IRBooleanFunction::All { .. })
                 | IRFunctionExpr::NullCount,
             ..
-        } => replace_agg_input!(expr),
+        } => replace_agg_inputs!(expr),
 
         node @ AExpr::Function { input, options, .. }
         | node @ AExpr::AnonymousFunction { input, options, .. }
@@ -315,6 +352,8 @@ fn try_lower_elementwise_scalar_agg_expr(
             match agg {
                 IRAggExpr::Min { .. }
                 | IRAggExpr::Max { .. }
+                | IRAggExpr::MinBy { .. }
+                | IRAggExpr::MaxBy { .. }
                 | IRAggExpr::First(_)
                 | IRAggExpr::FirstNonNull(_)
                 | IRAggExpr::Last(_)
@@ -325,7 +364,7 @@ fn try_lower_elementwise_scalar_agg_expr(
                 | IRAggExpr::Var(..)
                 | IRAggExpr::Std(..)
                 | IRAggExpr::Count { .. } => {
-                    replace_agg_input!(expr)
+                    replace_agg_inputs!(expr)
                 },
                 IRAggExpr::Median(..)
                 | IRAggExpr::NUnique(..)
@@ -432,6 +471,7 @@ fn try_build_streaming_group_by(
     }
 
     let mut uniq_agg_exprs = PlIndexMap::new();
+
     for agg in aggs {
         let trans_node = try_lower_elementwise_scalar_agg_expr(
             agg.node(),
@@ -480,9 +520,9 @@ fn try_build_streaming_group_by(
     let agg_node = phys_sm.insert(PhysNode::new(
         group_by_output_schema.clone(),
         PhysNodeKind::GroupBy {
-            input: pre_select,
-            key: trans_keys,
-            aggs: trans_agg_exprs,
+            inputs: vec![pre_select],
+            key_per_input: vec![trans_keys],
+            aggs_per_input: vec![trans_agg_exprs],
         },
     ));
 
@@ -576,6 +616,7 @@ pub fn try_build_sorted_group_by(
                 RowEncodingVariant::Ordered {
                     descending: None,
                     nulls_last: None,
+                    broadcast_nulls: None,
                 },
             ),
             expr_arena,
@@ -672,6 +713,7 @@ pub fn try_build_sorted_group_by(
                     RowEncodingVariant::Ordered {
                         descending: None,
                         nulls_last: None,
+                        broadcast_nulls: None,
                     },
                 ),
                 expr_arena,

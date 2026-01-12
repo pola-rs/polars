@@ -10,9 +10,9 @@ authors = [
   { name = "Ritchie Vink", email = "ritchie46@gmail.com" },
 ]
 # example: 1.35.0b1
-version = "1.36.0"
+version = "1.37.0"
 license = { file = "LICENSE" }
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 
 keywords = ["dataframe", "arrow", "out-of-core"]
 classifiers = [
@@ -24,7 +24,6 @@ classifiers = [
   "Programming Language :: Python",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
@@ -34,7 +33,7 @@ classifiers = [
   "Typing :: Typed",
 ]
 # example: 1.35.0b1
-dependencies = ["polars-runtime-32 == 1.36.0"]
+dependencies = ["polars-runtime-32 == 1.37.0"]
 
 [project.urls]
 Homepage = "https://www.pola.rs/"
@@ -45,8 +44,8 @@ Changelog = "https://github.com/pola-rs/polars/releases"
 [project.optional-dependencies]
 # Runtimes
 # example: 1.35.0b1
-rt64 = ["polars-runtime-64 == 1.36.0"]
-rtcompat = ["polars-runtime-compat == 1.36.0"]
+rt64 = ["polars-runtime-64 == 1.37.0"]
+rtcompat = ["polars-runtime-compat == 1.37.0"]
 
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
 polars_cloud = ["polars_cloud >= 0.4.0"]

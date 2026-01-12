@@ -108,13 +108,15 @@ impl<'a, T: NativeType + PartialOrd> SortedBufNulls<'a, T> {
         self.buf.extend(iter);
     }
 
-    pub unsafe fn new(
+    pub fn new(
         slice: &'a [T],
         validity: &'a Bitmap,
         start: usize,
         end: usize,
         max_window_size: Option<usize>,
     ) -> Self {
+        assert!(start <= slice.len() && end <= slice.len() && start <= end);
+
         let buf = if let Some(max_window_size) = max_window_size {
             OrderStatisticTree::with_capacity(max_window_size, TotalOrd::tot_cmp)
         } else {
@@ -130,6 +132,7 @@ impl<'a, T: NativeType + PartialOrd> SortedBufNulls<'a, T> {
             buf,
             null_count: 0,
         };
+        // SAFETY: We bounds checked `start` and `end`.
         unsafe { out.fill_and_sort_buf(start, end) };
         out
     }

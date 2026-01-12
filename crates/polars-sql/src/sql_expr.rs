@@ -19,9 +19,10 @@ use rand::distr::Alphanumeric;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
-    BinaryOperator as SQLBinaryOperator, CastFormat, CastKind, DataType as SQLDataType,
+    AccessExpr, BinaryOperator as SQLBinaryOperator, CastFormat, CastKind, DataType as SQLDataType,
     DateTimeField, Expr as SQLExpr, Function as SQLFunction, Ident, Interval, Query as Subquery,
-    SelectItem, Subscript, TimezoneInfo, TrimWhereField, UnaryOperator, Value as SQLValue,
+    SelectItem, Subscript, TimezoneInfo, TrimWhereField, TypedString, UnaryOperator,
+    Value as SQLValue, ValueWithSpan,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -62,9 +63,11 @@ impl SQLExprVisitor<'_> {
         let mut array_elements = Vec::with_capacity(elements.len());
         for e in elements {
             let val = match e {
-                SQLExpr::Value(v) => self.visit_any_value(v, None),
+                SQLExpr::Value(ValueWithSpan { value: v, .. }) => self.visit_any_value(v, None),
                 SQLExpr::UnaryOp { op, expr } => match expr.as_ref() {
-                    SQLExpr::Value(v) => self.visit_any_value(v, Some(op)),
+                    SQLExpr::Value(ValueWithSpan { value: v, .. }) => {
+                        self.visit_any_value(v, Some(op))
+                    },
                     _ => Err(polars_err!(SQLInterface: "array element {:?} is not supported", e)),
                 },
                 SQLExpr::Array(values) => {
@@ -107,6 +110,21 @@ impl SQLExprVisitor<'_> {
                 format,
             } => self.visit_cast(expr, data_type, format, kind),
             SQLExpr::Ceil { expr, .. } => Ok(self.visit_expr(expr)?.ceil()),
+            SQLExpr::CompoundFieldAccess { root, access_chain } => {
+                // simple subscript access (eg: "array_col[1]")
+                if access_chain.len() == 1 {
+                    match &access_chain[0] {
+                        AccessExpr::Subscript(subscript) => {
+                            return self.visit_subscript(root, subscript);
+                        },
+                        AccessExpr::Dot(_) => {
+                            polars_bail!(SQLSyntax: "dot-notation field access is currently unsupported: {:?}", access_chain[0])
+                        },
+                    }
+                }
+                // chained dot/bracket notation (eg: "struct_col.field[2].foo[0].bar")
+                polars_bail!(SQLSyntax: "complex field access chains are currently unsupported: {:?}", access_chain[0])
+            },
             SQLExpr::CompoundIdentifier(idents) => self.visit_compound_identifier(idents),
             SQLExpr::Extract {
                 field,
@@ -154,7 +172,11 @@ impl SQLExprVisitor<'_> {
                 if *any {
                     polars_bail!(SQLSyntax: "LIKE ANY is not a supported syntax")
                 }
-                self.visit_like(*negated, expr, pattern, escape_char, false)
+                let escape_str = escape_char.as_ref().and_then(|v| match v {
+                    SQLValue::SingleQuotedString(s) => Some(s.clone()),
+                    _ => None,
+                });
+                self.visit_like(*negated, expr, pattern, &escape_str, false)
             },
             SQLExpr::ILike {
                 negated,
@@ -166,7 +188,11 @@ impl SQLExprVisitor<'_> {
                 if *any {
                     polars_bail!(SQLSyntax: "ILIKE ANY is not a supported syntax")
                 }
-                self.visit_like(*negated, expr, pattern, escape_char, true)
+                let escape_str = escape_char.as_ref().and_then(|v| match v {
+                    SQLValue::SingleQuotedString(s) => Some(s.clone()),
+                    _ => None,
+                });
+                self.visit_like(*negated, expr, pattern, &escape_str, true)
             },
             SQLExpr::Nested(expr) => self.visit_expr(expr),
             SQLExpr::Position { expr, r#in } => Ok(
@@ -191,35 +217,48 @@ impl SQLExprVisitor<'_> {
                     .contains(self.visit_expr(pattern)?, true);
                 Ok(if *negated { matches.not() } else { matches })
             },
-            SQLExpr::Subscript { expr, subscript } => self.visit_subscript(expr, subscript),
             SQLExpr::Subquery(_) => polars_bail!(SQLInterface: "unexpected subquery"),
+            SQLExpr::Substring {
+                expr,
+                substring_from,
+                substring_for,
+                ..
+            } => self.visit_substring(expr, substring_from.as_deref(), substring_for.as_deref()),
             SQLExpr::Trim {
                 expr,
                 trim_where,
                 trim_what,
                 trim_characters,
             } => self.visit_trim(expr, trim_where, trim_what, trim_characters),
-            SQLExpr::TypedString { data_type, value } => match data_type {
+            SQLExpr::TypedString(TypedString {
+                data_type,
+                value:
+                    ValueWithSpan {
+                        value: SQLValue::SingleQuotedString(v),
+                        ..
+                    },
+                uses_odbc_syntax: _,
+            }) => match data_type {
                 SQLDataType::Date => {
-                    if is_iso_date(value) {
-                        Ok(lit(value.as_str()).cast(DataType::Date))
+                    if is_iso_date(v) {
+                        Ok(lit(v.as_str()).cast(DataType::Date))
                     } else {
-                        polars_bail!(SQLSyntax: "invalid DATE literal '{}'", value)
+                        polars_bail!(SQLSyntax: "invalid DATE literal '{}'", v)
                     }
                 },
                 SQLDataType::Time(None, TimezoneInfo::None) => {
-                    if is_iso_time(value) {
-                        Ok(lit(value.as_str()).str().to_time(StrptimeOptions {
+                    if is_iso_time(v) {
+                        Ok(lit(v.as_str()).str().to_time(StrptimeOptions {
                             strict: true,
                             ..Default::default()
                         }))
                     } else {
-                        polars_bail!(SQLSyntax: "invalid TIME literal '{}'", value)
+                        polars_bail!(SQLSyntax: "invalid TIME literal '{}'", v)
                     }
                 },
                 SQLDataType::Timestamp(None, TimezoneInfo::None) | SQLDataType::Datetime(None) => {
-                    if is_iso_datetime(value) {
-                        Ok(lit(value.as_str()).str().to_datetime(
+                    if is_iso_datetime(v) {
+                        Ok(lit(v.as_str()).str().to_datetime(
                             None,
                             None,
                             StrptimeOptions {
@@ -234,7 +273,7 @@ impl SQLExprVisitor<'_> {
                             SQLDataType::Datetime(_) => "DATETIME",
                             _ => unreachable!(),
                         };
-                        polars_bail!(SQLSyntax: "invalid {} literal '{}'", fn_name, value)
+                        polars_bail!(SQLSyntax: "invalid {} literal '{}'", fn_name, v)
                     }
                 },
                 _ => {
@@ -242,7 +281,7 @@ impl SQLExprVisitor<'_> {
                 },
             },
             SQLExpr::UnaryOp { op, expr } => self.visit_unary_op(op, expr),
-            SQLExpr::Value(value) => self.visit_literal(value),
+            SQLExpr::Value(ValueWithSpan { value, .. }) => self.visit_literal(value),
             SQLExpr::Wildcard(_) => Ok(all().as_expr()),
             e @ SQLExpr::Case { .. } => self.visit_case_when_then(e),
             other => {
@@ -968,6 +1007,74 @@ impl SQLExprVisitor<'_> {
         })
     }
 
+    fn visit_substring(
+        &mut self,
+        expr: &SQLExpr,
+        substring_from: Option<&SQLExpr>,
+        substring_for: Option<&SQLExpr>,
+    ) -> PolarsResult<Expr> {
+        let e = self.visit_expr(expr)?;
+
+        match (substring_from, substring_for) {
+            // SUBSTRING(expr FROM start FOR length)
+            (Some(from_expr), Some(for_expr)) => {
+                let start = self.visit_expr(from_expr)?;
+                let length = self.visit_expr(for_expr)?;
+
+                // note: SQL is 1-indexed, so we need to adjust the offsets accordingly
+                Ok(match (start.clone(), length.clone()) {
+                    (Expr::Literal(lv), _) | (_, Expr::Literal(lv)) if lv.is_null() => lit(lv),
+                    (_, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n)))) if n < 0 => {
+                        polars_bail!(SQLSyntax: "SUBSTR does not support negative length ({})", n)
+                    },
+                    (Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))), _) if n > 0 => {
+                        e.str().slice(lit(n - 1), length)
+                    },
+                    (Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))), _) => e
+                        .str()
+                        .slice(lit(0), (length + lit(n - 1)).clip_min(lit(0))),
+                    (Expr::Literal(_), _) => {
+                        polars_bail!(SQLSyntax: "invalid 'start' for SUBSTRING")
+                    },
+                    (_, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(_)))) => {
+                        polars_bail!(SQLSyntax: "invalid 'length' for SUBSTRING")
+                    },
+                    _ => {
+                        let adjusted_start = start - lit(1);
+                        when(adjusted_start.clone().lt(lit(0)))
+                            .then(e.clone().str().slice(
+                                lit(0),
+                                (length.clone() + adjusted_start.clone()).clip_min(lit(0)),
+                            ))
+                            .otherwise(e.str().slice(adjusted_start, length))
+                    },
+                })
+            },
+            // SUBSTRING(expr FROM start)
+            (Some(from_expr), None) => {
+                let start = self.visit_expr(from_expr)?;
+
+                Ok(match start {
+                    Expr::Literal(lv) if lv.is_null() => lit(lv),
+                    Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) if n <= 0 => e,
+                    Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => {
+                        e.str().slice(lit(n - 1), lit(LiteralValue::untyped_null()))
+                    },
+                    Expr::Literal(_) => {
+                        polars_bail!(SQLSyntax: "invalid 'start' for SUBSTRING")
+                    },
+                    _ => e
+                        .str()
+                        .slice(start - lit(1), lit(LiteralValue::untyped_null())),
+                })
+            },
+            // SUBSTRING(expr) - not valid, but handle gracefully
+            (None, _) => {
+                polars_bail!(SQLSyntax: "SUBSTR expects 2-3 arguments (found 1)")
+            },
+        }
+    }
+
     /// Visit a SQL subquery inside an `IN` expression.
     fn visit_in_subquery(
         &mut self,
@@ -989,22 +1096,19 @@ impl SQLExprVisitor<'_> {
     /// Visit `CASE` control flow expression.
     fn visit_case_when_then(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
         if let SQLExpr::Case {
+            case_token: _,
+            end_token: _,
             operand,
             conditions,
-            results,
             else_result,
         } = expr
         {
-            polars_ensure!(
-                conditions.len() == results.len(),
-                SQLSyntax: "WHEN and THEN expressions must have the same length"
-            );
             polars_ensure!(
                 !conditions.is_empty(),
                 SQLSyntax: "WHEN and THEN expressions must have at least one element"
             );
 
-            let mut when_thens = conditions.iter().zip(results.iter());
+            let mut when_thens = conditions.iter();
             let first = when_thens.next();
             if first.is_none() {
                 polars_bail!(SQLSyntax: "WHEN and THEN expressions must have at least one element");
@@ -1017,44 +1121,44 @@ impl SQLExprVisitor<'_> {
                 let first_operand_expr = self.visit_expr(operand_expr)?;
 
                 let first = first.unwrap();
-                let first_cond = first_operand_expr.eq(self.visit_expr(first.0)?);
-                let first_then = self.visit_expr(first.1)?;
+                let first_cond = first_operand_expr.eq(self.visit_expr(&first.condition)?);
+                let first_then = self.visit_expr(&first.result)?;
                 let expr = when(first_cond).then(first_then);
                 let next = when_thens.next();
 
-                let mut when_then = if let Some((cond, res)) = next {
+                let mut when_then = if let Some(case_when) = next {
                     let second_operand_expr = self.visit_expr(operand_expr)?;
-                    let cond = second_operand_expr.eq(self.visit_expr(cond)?);
-                    let res = self.visit_expr(res)?;
+                    let cond = second_operand_expr.eq(self.visit_expr(&case_when.condition)?);
+                    let res = self.visit_expr(&case_when.result)?;
                     expr.when(cond).then(res)
                 } else {
                     return Ok(expr.otherwise(else_res));
                 };
-                for (cond, res) in when_thens {
+                for case_when in when_thens {
                     let new_operand_expr = self.visit_expr(operand_expr)?;
-                    let cond = new_operand_expr.eq(self.visit_expr(cond)?);
-                    let res = self.visit_expr(res)?;
+                    let cond = new_operand_expr.eq(self.visit_expr(&case_when.condition)?);
+                    let res = self.visit_expr(&case_when.result)?;
                     when_then = when_then.when(cond).then(res);
                 }
                 return Ok(when_then.otherwise(else_res));
             }
 
             let first = first.unwrap();
-            let first_cond = self.visit_expr(first.0)?;
-            let first_then = self.visit_expr(first.1)?;
+            let first_cond = self.visit_expr(&first.condition)?;
+            let first_then = self.visit_expr(&first.result)?;
             let expr = when(first_cond).then(first_then);
             let next = when_thens.next();
 
-            let mut when_then = if let Some((cond, res)) = next {
-                let cond = self.visit_expr(cond)?;
-                let res = self.visit_expr(res)?;
+            let mut when_then = if let Some(case_when) = next {
+                let cond = self.visit_expr(&case_when.condition)?;
+                let res = self.visit_expr(&case_when.result)?;
                 expr.when(cond).then(res)
             } else {
                 return Ok(expr.otherwise(else_res));
             };
-            for (cond, res) in when_thens {
-                let cond = self.visit_expr(cond)?;
-                let res = self.visit_expr(res)?;
+            for case_when in when_thens {
+                let cond = self.visit_expr(&case_when.condition)?;
+                let res = self.visit_expr(&case_when.result)?;
                 when_then = when_then.when(cond).then(res);
             }
             Ok(when_then.otherwise(else_res))
@@ -1121,7 +1225,10 @@ pub(crate) fn interval_to_duration(interval: &Interval, fixed: bool) -> PolarsRe
         SQLExpr::UnaryOp { .. } => {
             polars_bail!(SQLSyntax: "unary ops are not valid on interval strings; found {}", interval.value)
         },
-        SQLExpr::Value(SQLValue::SingleQuotedString(s)) => Some(s),
+        SQLExpr::Value(ValueWithSpan {
+            value: SQLValue::SingleQuotedString(s),
+            ..
+        }) => Some(s),
         _ => None,
     };
     match s {
@@ -1203,16 +1310,16 @@ pub(crate) fn parse_extract_date_part(expr: Expr, field: &DateTimeField) -> Pola
         DateTimeField::Century => expr.dt().century(),
         DateTimeField::Decade => expr.dt().year() / typed_lit(10i32),
         DateTimeField::Isoyear => expr.dt().iso_year(),
-        DateTimeField::Year => expr.dt().year(),
+        DateTimeField::Year | DateTimeField::Years => expr.dt().year(),
         DateTimeField::Quarter => expr.dt().quarter(),
-        DateTimeField::Month => expr.dt().month(),
+        DateTimeField::Month | DateTimeField::Months => expr.dt().month(),
         DateTimeField::Week(weekday) => {
             if weekday.is_some() {
                 polars_bail!(SQLSyntax: "EXTRACT/DATE_PART does not support '{}' part", field)
             }
             expr.dt().week()
         },
-        DateTimeField::IsoWeek => expr.dt().week(),
+        DateTimeField::IsoWeek | DateTimeField::Weeks => expr.dt().week(),
         DateTimeField::DayOfYear | DateTimeField::Doy => expr.dt().ordinal_day(),
         DateTimeField::DayOfWeek | DateTimeField::Dow => {
             let w = expr.dt().weekday();
@@ -1221,10 +1328,10 @@ pub(crate) fn parse_extract_date_part(expr: Expr, field: &DateTimeField) -> Pola
                 .otherwise(w)
         },
         DateTimeField::Isodow => expr.dt().weekday(),
-        DateTimeField::Day => expr.dt().day(),
-        DateTimeField::Hour => expr.dt().hour(),
-        DateTimeField::Minute => expr.dt().minute(),
-        DateTimeField::Second => expr.dt().second(),
+        DateTimeField::Day | DateTimeField::Days => expr.dt().day(),
+        DateTimeField::Hour | DateTimeField::Hours => expr.dt().hour(),
+        DateTimeField::Minute | DateTimeField::Minutes => expr.dt().minute(),
+        DateTimeField::Second | DateTimeField::Seconds => expr.dt().second(),
         DateTimeField::Millisecond | DateTimeField::Milliseconds => {
             (expr.clone().dt().second() * typed_lit(1_000f64))
                 + expr.dt().nanosecond().div(typed_lit(1_000_000f64))

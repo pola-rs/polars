@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 from typing import TYPE_CHECKING
 
 import pytest
@@ -64,3 +66,45 @@ def test_chunk_size() -> None:
         df = df.slice(10)
 
         assert_frame_equal(f, expected)
+
+
+def test_collect_batches_releases_gil_26031() -> None:
+    out = subprocess.check_output(
+        [
+            sys.executable,
+            "-c",
+            """\
+import polars as pl
+from polars.testing import assert_frame_equal
+
+def reentrant_add(x: int):
+    return next(
+        pl.DataFrame({"": x})
+        .lazy()
+        .select(pl.first().map_elements(lambda x: x + 1, return_dtype=pl.UInt32))
+        .collect_batches(engine="streaming")
+    ).item()
+
+assert_frame_equal(
+    pl.concat(
+        pl.LazyFrame({"a": range(10)})
+        .with_columns(
+            out=pl.col("a").map_elements(reentrant_add, return_dtype=pl.UInt32)
+        )
+        .collect_batches(engine="streaming")
+    ),
+    pl.DataFrame(
+        [
+            pl.Series("a", [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], dtype=pl.Int64),
+            pl.Series("out", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], dtype=pl.UInt32),
+        ]
+    ),
+)
+
+print("OK", end="")
+""",
+        ],
+        timeout=5,
+    )
+
+    assert out == b"OK"

@@ -9,8 +9,8 @@ use polars_core::prelude::{AnyValue, Column, IntoColumn, PlHashSet};
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_plan::dsl::{PartitionTargetCallback, SinkFinishCallback, SinkOptions};
+use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::plpath::PlPath;
 use polars_utils::relaxed_cell::RelaxedCell;
 
 use super::{CreateNewSinkFn, PerPartitionSortBy};
@@ -31,7 +31,7 @@ pub struct PartedPartitionSinkNode {
     sink_input_schema: SchemaRef,
 
     key_cols: Arc<[PlSmallStr]>,
-    base_path: Arc<PlPath>,
+    base_path: PlRefPath,
     file_path_cb: Option<PartitionTargetCallback>,
     create_new: CreateNewSinkFn,
     ext: PlSmallStr,
@@ -59,7 +59,7 @@ impl PartedPartitionSinkNode {
     pub fn new(
         input_schema: SchemaRef,
         key_cols: Arc<[PlSmallStr]>,
-        base_path: Arc<PlPath>,
+        base_path: PlRefPath,
         file_path_cb: Option<PartitionTargetCallback>,
         create_new: CreateNewSinkFn,
         ext: PlSmallStr,
@@ -175,9 +175,9 @@ impl SinkNode for PartedPartitionSinkNode {
 
                     let mut c = if key_cols.len() == 1 {
                         let idx = df.try_get_column_index(&key_cols[0])?;
-                        df.get_columns()[idx].clone()
+                        df.columns()[idx].clone()
                     } else {
-                        let columns = df.select_columns(key_cols.iter().cloned())?;
+                        let columns = df.select_to_vec(key_cols.iter().cloned())?;
                         _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, &columns)?.into_column()
                     };
 
@@ -219,9 +219,9 @@ impl SinkNode for PartedPartitionSinkNode {
                         let current_sink = match current_sink_opt.as_mut() {
                             Some(c) => c,
                             None => {
-                                let keys = parted_df.select_columns(key_cols.iter().cloned())?;
+                                let keys = parted_df.select_to_vec(key_cols.iter().cloned())?;
                                 let result = open_new_sink(
-                                    base_path.as_ref().as_ref(),
+                                    base_path.clone(),
                                     file_path_cb.as_ref(),
                                     super::default_by_key_file_path_cb,
                                     file_idx,

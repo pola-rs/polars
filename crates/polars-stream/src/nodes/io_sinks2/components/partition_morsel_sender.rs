@@ -13,12 +13,14 @@ use crate::nodes::io_sinks2::components::hstack_columns::HStackColumns;
 use crate::nodes::io_sinks2::components::partition_sink_starter::PartitionSinkStarter;
 use crate::nodes::io_sinks2::components::partition_state::PartitionState;
 use crate::nodes::io_sinks2::components::sink_morsel::SinkMorsel;
-use crate::nodes::io_sinks2::components::size::RowCountAndSize;
+use crate::nodes::io_sinks2::components::size::{
+    NonZeroRowCountAndSize, RowCountAndSize, TakeableRowsProvider,
+};
 
 pub struct PartitionMorselSender {
     /// Note: Must be <= `file_size_limit` if there is one.
-    pub ideal_morsel_size: RowCountAndSize,
-    pub file_size_limit: Option<RowCountAndSize>,
+    pub takeable_rows_provider: TakeableRowsProvider,
+    pub file_size_limit: NonZeroRowCountAndSize,
     pub inflight_morsel_semaphore: Arc<tokio::sync::Semaphore>,
     pub open_sinks_semaphore: Arc<tokio::sync::Semaphore>,
     pub partition_sink_starter: PartitionSinkStarter,
@@ -45,17 +47,18 @@ impl PartitionMorselSender {
         // Sorted finalize
         morsel_stream: Option<(futures::stream::BoxStream<'static, (SinkMorsel, bool)>, u64)>,
     ) -> PolarsResult<()> {
+        #[expect(unused)]
         let row_byte_size: u64;
 
-        let mut sorted_finalize_stream = if let Some((stream, row_byte_size_)) = morsel_stream {
-            row_byte_size = row_byte_size_;
+        let mut sorted_finalize_stream = if let Some((stream, _)) = morsel_stream {
+            // row_byte_size = row_byte_size_;
 
             assert_eq!(partition.sinked_size, RowCountAndSize::default());
             assert_eq!(partition.buffered_rows.height(), 0);
 
             Some(stream)
         } else {
-            row_byte_size = partition.buffered_size().row_byte_size();
+            // row_byte_size = partition.buffered_size().row_byte_size();
             None
         };
 
@@ -71,17 +74,22 @@ impl PartitionMorselSender {
                         .sinked_size
                         .checked_sub($file_sink_task_data.start_position)
                         .unwrap();
-                    available_row_capacity =
-                        self.file_size_limit
-                            .map_or(RowCountAndSize::MAX, |file_size_limit| RowCountAndSize {
-                                num_rows: file_size_limit
-                                    .num_rows
-                                    .checked_sub(used_row_capacity.num_rows)
-                                    .unwrap(),
-                                num_bytes: file_size_limit
-                                    .num_bytes
-                                    .saturating_sub(used_row_capacity.num_bytes),
-                            });
+                    available_row_capacity = if self.file_size_limit.get() == RowCountAndSize::MAX {
+                        RowCountAndSize::MAX
+                    } else {
+                        let file_size_limit = self.file_size_limit.get();
+                        RowCountAndSize {
+                            num_rows: IdxSize::checked_sub(
+                                file_size_limit.num_rows,
+                                used_row_capacity.num_rows,
+                            )
+                            .unwrap(),
+                            num_bytes: u64::saturating_sub(
+                                file_size_limit.num_bytes,
+                                used_row_capacity.num_bytes,
+                            ),
+                        }
+                    };
                 }};
             }
 
@@ -109,17 +117,20 @@ impl PartitionMorselSender {
                     return Ok(());
                 }
 
-                let num_rows_to_take = self.ideal_morsel_size.num_rows_takeable_from(buffered_size);
-
-                let could_buffer_more = num_rows_to_take == buffered_size.num_rows
-                    && num_rows_to_take < self.ideal_morsel_size.num_rows;
-
-                if could_buffer_more && !flush {
+                let Some(num_rows_to_take) = self
+                    .takeable_rows_provider
+                    .num_rows_takeable_from(buffered_size, flush)
+                else {
                     return Ok(());
-                }
+                };
 
-                let max_takeable_rows: IdxSize =
-                    available_row_capacity.num_rows_takeable_from(buffered_size);
+                let file_min_available_rows_for_byte_size =
+                    NonZeroRowCountAndSize::get(self.takeable_rows_provider.max_size)
+                        .num_rows
+                        .saturating_sub(used_row_capacity.num_rows);
+
+                let max_takeable_rows: IdxSize = available_row_capacity
+                    .num_rows_takeable_from(buffered_size, file_min_available_rows_for_byte_size);
 
                 let start_new_sink = max_takeable_rows == 0;
                 let num_rows_to_take = if start_new_sink {
@@ -193,23 +204,23 @@ impl PartitionMorselSender {
             let morsel_height: IdxSize = IdxSize::try_from(morsel.df().height()).unwrap();
 
             debug_assert!(
-                self.ideal_morsel_size.num_rows
-                    <= self.file_size_limit.map_or(IdxSize::MAX, |x| x.num_rows)
+                self.takeable_rows_provider.max_size.get().num_rows
+                    <= self.file_size_limit.get().num_rows
             );
-            debug_assert!(morsel_height <= self.ideal_morsel_size.num_rows);
+            debug_assert!(morsel_height <= self.takeable_rows_provider.max_size.get().num_rows);
 
             assert!((1..=available_row_capacity.num_rows).contains(&morsel_height));
 
             if let Some(hstack_keys) = self.hstack_keys.as_ref() {
-                let columns = morsel.df().get_columns();
+                let columns = morsel.df().columns();
                 let height = morsel.df().height();
                 let new_columns = hstack_keys.hstack_columns_broadcast(
                     height,
                     columns,
-                    partition.keys_df.get_columns(),
+                    partition.keys_df.columns(),
                 );
 
-                *morsel.df_mut() = unsafe { DataFrame::new_no_checks(height, new_columns) };
+                *morsel.df_mut() = unsafe { DataFrame::new_unchecked(height, new_columns) };
             };
 
             if file_sink_task_data.morsel_tx.send(morsel).await.is_err() {
@@ -217,17 +228,9 @@ impl PartitionMorselSender {
                 return Err(handle.await.unwrap_err());
             }
 
-            let sinked_size_delta = RowCountAndSize {
-                num_rows: morsel_height,
-                #[allow(clippy::useless_conversion)]
-                num_bytes: u64::from(morsel_height)
-                    .saturating_mul(row_byte_size)
-                    .min(available_row_capacity.num_bytes),
-            };
-
             partition.sinked_size = partition
                 .sinked_size
-                .checked_add(sinked_size_delta)
+                .add_delta(morsel_height, partition.total_size)
                 .unwrap();
         }
     }

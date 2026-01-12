@@ -312,7 +312,7 @@ impl Selector {
     ///
     /// You may also use regexes in the exclude as long as they start with `^` and end with `$`.
     pub fn exclude_cols(self, columns: impl IntoVec<PlSmallStr>) -> Self {
-        self - cols(columns.into_vec())
+        self - functions::cols(columns.into_vec())
     }
 
     pub fn exclude_dtype<D: AsRef<[DataType]>>(self, dtypes: D) -> Self {

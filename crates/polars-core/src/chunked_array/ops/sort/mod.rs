@@ -709,6 +709,7 @@ impl ChunkSort<ListType> for ListChunked {
             &[self.clone().into_column()],
             &[options.descending],
             &[options.nulls_last],
+            false,
         )
         .unwrap();
         bin.arg_sort(Default::default())
@@ -1002,7 +1003,7 @@ mod test {
             PlSmallStr::from_static("c"),
             &["a", "b", "c", "d", "e", "f", "g", "h"],
         );
-        let df = DataFrame::new(vec![
+        let df = DataFrame::new_infer_height(vec![
             a.into_series().into(),
             b.into_series().into(),
             c.into_series().into(),
@@ -1030,7 +1031,7 @@ mod test {
         )
         .into_series();
         let b = Int32Chunked::new(PlSmallStr::from_static("b"), &[5, 4, 2, 3, 4, 5]).into_series();
-        let df = DataFrame::new(vec![a.into(), b.into()])?;
+        let df = DataFrame::new_infer_height(vec![a.into(), b.into()])?;
 
         let out = df.sort(["a", "b"], SortMultipleOptions::default())?;
         let expected = df!(

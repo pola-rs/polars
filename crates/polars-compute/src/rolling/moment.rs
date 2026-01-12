@@ -251,7 +251,7 @@ where
     T: NativeType + ToPrimitive + IsFloat + FromPrimitive,
     M: StateUpdate,
 {
-    unsafe fn new(
+    fn new(
         slice: &'a [T],
         validity: &'a Bitmap,
         start: usize,
@@ -259,7 +259,9 @@ where
         params: Option<RollingFnParams>,
         _window_size: Option<usize>,
     ) -> Self {
+        assert!(start <= slice.len() && end <= slice.len() && start <= end);
         let mut out = Self::new_impl(slice, Some(validity), params);
+        // SAFETY: We bounds checked `start` and `end`.
         unsafe { RollingAggWindowNulls::update(&mut out, start, end) };
         out
     }

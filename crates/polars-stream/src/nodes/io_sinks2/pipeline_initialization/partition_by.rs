@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use polars_error::PolarsResult;
@@ -16,6 +17,7 @@ use crate::nodes::io_sinks2::components::partition_morsel_sender::PartitionMorse
 use crate::nodes::io_sinks2::components::partition_sink_starter::PartitionSinkStarter;
 use crate::nodes::io_sinks2::components::partitioner::Partitioner;
 use crate::nodes::io_sinks2::components::partitioner_pipeline::PartitionerPipeline;
+use crate::nodes::io_sinks2::components::size::NonZeroRowCountAndSize;
 use crate::nodes::io_sinks2::config::{IOSinkNodeConfig, IOSinkTarget, PartitionedTarget};
 use crate::nodes::io_sinks2::writers::create_file_writer_starter;
 use crate::nodes::io_sinks2::writers::interface::FileWriterStarter;
@@ -26,9 +28,12 @@ pub fn start_partition_sink_pipeline(
     config: IOSinkNodeConfig,
     execution_state: &StreamingExecutionState,
 ) -> PolarsResult<async_executor::AbortOnDropHandle<PolarsResult<()>>> {
-    let inflight_morsel_limit = config.inflight_morsel_limit();
-    let per_sink_pipeline_depth = config.per_sink_pipeline_depth();
-    let max_open_sinks = config.max_open_sinks();
+    let num_pipelines: NonZeroUsize = execution_state.num_pipelines.try_into().unwrap();
+
+    let inflight_morsel_limit = config.inflight_morsel_limit(num_pipelines);
+    let num_pipelines_per_sink = config.num_pipelines_per_sink(num_pipelines);
+    let max_open_sinks = config.max_open_sinks().get();
+    let upload_chunk_size = config.partitioned_cloud_upload_chunk_size();
 
     let IOSinkNodeConfig {
         file_format,
@@ -41,7 +46,6 @@ pub fn start_partition_sink_pipeline(
                 cloud_options,
             },
         input_schema: _,
-        num_pipelines: _,
     } = config
     else {
         unreachable!()
@@ -66,19 +70,16 @@ pub fn start_partition_sink_pipeline(
         base_path,
         cloud_options,
         provider_type: file_path_provider,
+        upload_chunk_size,
     });
 
-    let file_writer_starter: Arc<dyn FileWriterStarter> = create_file_writer_starter(
-        &file_format,
-        &file_schema,
-        per_sink_pipeline_depth,
-        sync_on_close,
-    )?;
+    let file_writer_starter: Arc<dyn FileWriterStarter> =
+        create_file_writer_starter(&file_format, &file_schema)?;
 
-    let mut ideal_morsel_size = file_writer_starter.ideal_morsel_size();
+    let mut takeable_rows_provider = file_writer_starter.takeable_rows_provider();
 
     if let Some(file_size_limit) = file_size_limit {
-        ideal_morsel_size = ideal_morsel_size.min(file_size_limit)
+        takeable_rows_provider.max_size = takeable_rows_provider.max_size.min(file_size_limit)
     }
 
     if verbose {
@@ -89,25 +90,28 @@ pub fn start_partition_sink_pipeline(
             file_provider: {:?}, \
             max_open_sinks: {}, \
             inflight_morsel_limit: {}, \
-            ideal_morsel_size: {:?}, \
+            takeable_rows_provider: {:?}, \
             file_size_limit: {:?}, \
-            per_partition_sort: {}",
+            per_partition_sort: {}, \
+            upload_chunk_size: {}",
             partitioner.verbose_display(),
             file_writer_starter.writer_name(),
             &file_provider.provider_type,
             max_open_sinks,
             inflight_morsel_limit,
-            ideal_morsel_size,
+            takeable_rows_provider,
             file_size_limit,
             per_partition_sort.is_some(),
+            upload_chunk_size
         );
     }
 
     let (partitioned_dfs_tx, partitioned_dfs_rx) = tokio::sync::mpsc::channel(match &partitioner {
-        Partitioner::Keyed(_) => inflight_morsel_limit,
+        Partitioner::Keyed(_) => inflight_morsel_limit.get(),
         Partitioner::FileSize => 1,
     });
-    let inflight_morsel_semaphore = Arc::new(tokio::sync::Semaphore::new(inflight_morsel_limit));
+    let inflight_morsel_semaphore =
+        Arc::new(tokio::sync::Semaphore::new(inflight_morsel_limit.get()));
     let no_partition_keys = matches!(partitioner, Partitioner::FileSize);
 
     let partitioner_handle = async_executor::AbortOnDropHandle::new(async_executor::spawn(
@@ -129,11 +133,13 @@ pub fn start_partition_sink_pipeline(
     let partition_sink_starter = PartitionSinkStarter {
         file_provider,
         writer_starter: Arc::clone(&file_writer_starter),
+        sync_on_close,
+        num_pipelines_per_sink,
     };
 
     let partition_morsel_sender = PartitionMorselSender {
-        ideal_morsel_size,
-        file_size_limit,
+        takeable_rows_provider,
+        file_size_limit: file_size_limit.unwrap_or(NonZeroRowCountAndSize::MAX),
         inflight_morsel_semaphore,
         open_sinks_semaphore: open_sinks_semaphore.clone(),
         partition_sink_starter: partition_sink_starter.clone(),
@@ -160,7 +166,6 @@ pub fn start_partition_sink_pipeline(
                 open_sinks_semaphore,
                 partition_sink_starter,
                 per_partition_sort,
-                inflight_morsel_limit,
                 no_partition_keys,
                 verbose,
             }

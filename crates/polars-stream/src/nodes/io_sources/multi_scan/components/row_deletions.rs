@@ -11,8 +11,9 @@ use polars_io::cloud::CloudOptions;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{CastColumnsPolicy, ScanSource};
 use polars_utils::format_pl_smallstr;
+use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::plpath::PlPath;
+use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::slice_enum::Slice;
 
 use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
@@ -35,35 +36,44 @@ pub enum DeletionFilesProvider {
 }
 
 impl DeletionFilesProvider {
-    pub fn new(deletion_files: Option<DeletionFilesList>) -> Self {
+    pub fn new(
+        deletion_files: Option<DeletionFilesList>,
+        execution_state: &crate::execute::StreamingExecutionState,
+    ) -> Self {
         if deletion_files.is_none() {
             return Self::None;
         }
 
         match deletion_files.unwrap() {
-            DeletionFilesList::IcebergPositionDelete(paths) => feature_gated!(
-                "parquet",
+            DeletionFilesList::IcebergPositionDelete(paths) => feature_gated!("parquet", {
+                let reader_builder = ParquetReaderBuilder {
+                    first_metadata: None,
+                    options: Arc::new(polars_io::prelude::ParquetOptions {
+                        schema: Some(Arc::new(Schema::from_iter([
+                            (PlSmallStr::from_static("file_path"), DataType::String),
+                            (PlSmallStr::from_static("pos"), DataType::Int64),
+                        ]))),
+
+                        parallel: polars_io::prelude::ParallelStrategy::Auto,
+                        low_memory: false,
+                        use_statistics: false,
+                    }),
+                    prefetch_limit: RelaxedCell::new_usize(0),
+                    prefetch_semaphore: std::sync::OnceLock::new(),
+                    shared_prefetch_wait_group_slot: Default::default(),
+                };
+
+                reader_builder.set_execution_state(execution_state);
+
                 Self::IcebergPositionDelete {
                     paths,
-                    reader_builder: ParquetReaderBuilder {
-                        first_metadata: None,
-                        options: Arc::new(polars_io::prelude::ParquetOptions {
-                            schema: Some(Arc::new(Schema::from_iter([
-                                (PlSmallStr::from_static("file_path"), DataType::String),
-                                (PlSmallStr::from_static("pos"), DataType::Int64),
-                            ]))),
-
-                            parallel: polars_io::prelude::ParallelStrategy::Auto,
-                            low_memory: false,
-                            use_statistics: false,
-                        }),
-                    },
+                    reader_builder,
                     projected_schema: Arc::new(Schema::from_iter([
                         (PlSmallStr::from_static("file_path"), DataType::String),
                         (PlSmallStr::from_static("pos"), DataType::Int64),
                     ])),
                 }
-            ),
+            }),
         }
     }
 
@@ -99,7 +109,7 @@ impl DeletionFilesProvider {
                     .iter()
                     .enumerate()
                     .map(|(deletion_file_idx, path)| {
-                        let source = ScanSource::Path(PlPath::new(path));
+                        let source = ScanSource::Path(PlRefPath::new(path));
                         let mut reader = reader_builder.build_file_reader(
                             source,
                             cloud_options.clone(),
@@ -300,11 +310,11 @@ impl ExternalFilterMask {
                 if !mask.is_empty() {
                     *df = if mask.len() < df.height() {
                         accumulate_dataframes_vertical_unchecked([
-                            df.slice(0, mask.len())._filter_seq(mask)?,
+                            df.slice(0, mask.len()).filter_seq(mask)?,
                             df.slice(i64::try_from(mask.len()).unwrap(), df.height() - mask.len()),
                         ])
                     } else {
-                        df._filter_seq(mask)?
+                        df.filter_seq(mask)?
                     }
                 }
             },

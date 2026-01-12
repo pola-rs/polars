@@ -17,8 +17,10 @@ from polars.io.parquet import (
 )
 from polars.io.partition import (
     BasePartitionContext,
+    FileProviderArgs,
     KeyedPartition,
     KeyedPartitionContext,
+    PartitionBy,
     PartitionByKey,
     PartitionMaxSize,
     PartitionParted,
@@ -30,6 +32,8 @@ from polars.io.spreadsheet import read_excel, read_ods
 
 __all__ = [
     "defer",
+    "FileProviderArgs",
+    "PartitionBy",
     "PartitionByKey",
     "PartitionMaxSize",
     "PartitionParted",

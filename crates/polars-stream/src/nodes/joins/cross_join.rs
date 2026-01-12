@@ -173,18 +173,15 @@ impl ComputeNode for CrossJoinNode {
                                             core::mem::swap(&mut left_join_df, &mut right_join_df);
                                         }
 
-                                        for (col, opt_rename) in right_join_df
-                                            .get_columns_mut()
-                                            .iter_mut()
-                                            .zip(right_rename)
+                                        for (col, opt_rename) in
+                                            right_join_df.columns_mut().iter_mut().zip(right_rename)
                                         {
                                             if let Some(rename) = opt_rename {
                                                 col.rename(rename.clone());
                                             }
                                         }
 
-                                        left_join_df
-                                            .hstack_mut_unchecked(right_join_df.get_columns());
+                                        left_join_df.hstack_mut_unchecked(right_join_df.columns());
                                         Morsel::new(
                                             left_join_df,
                                             morsel.seq(),

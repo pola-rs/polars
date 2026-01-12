@@ -29,7 +29,7 @@ def test_arrow_list_roundtrip() -> None:
 
     assert arw.shape == tbl.shape
     assert arw.schema.names == tbl.schema.names
-    for c1, c2 in zip(arw.columns, tbl.columns):
+    for c1, c2 in zip(arw.columns, tbl.columns, strict=True):
         assert c1.to_pylist() == c2.to_pylist()
 
 
@@ -44,7 +44,7 @@ def test_arrow_null_roundtrip() -> None:
 
     assert arw.shape == tbl.shape
     assert arw.schema.names == tbl.schema.names
-    for c1, c2 in zip(arw.columns, tbl.columns):
+    for c1, c2 in zip(arw.columns, tbl.columns, strict=True):
         assert c1.to_pylist() == c2.to_pylist()
 
 
@@ -115,7 +115,9 @@ def test_from_dict() -> None:
     data = {"a": [1, 2], "b": [3, 4]}
     df = pl.from_dict(data)
     assert df.shape == (2, 2)
-    for s1, s2 in zip(list(df), [pl.Series("a", [1, 2]), pl.Series("b", [3, 4])]):
+    for s1, s2 in zip(
+        list(df), [pl.Series("a", [1, 2]), pl.Series("b", [3, 4])], strict=True
+    ):
         assert_series_equal(s1, s2)
 
 
@@ -1191,7 +1193,7 @@ def test_pycapsule_stream_interface_all_types() -> None:
     assert_frame_equal(
         df.map_columns(
             pl.selectors.all(),
-            lambda s: pl.Series(PyCapsuleStreamHolder(s.reshape((1, 1)))).reshape((1,)),
+            lambda s: pl.Series(PyCapsuleStreamHolder(s.reshape((3, 1)))).reshape((3,)),
         ),
         df,
     )
@@ -1205,8 +1207,8 @@ def test_pycapsule_stream_interface_all_types() -> None:
         df,
     )
     assert_frame_equal(
-        pl.DataFrame(PyCapsuleStreamHolder(df.select(pl.all().reshape((1, 1))))).select(
-            pl.all().reshape((1,))
+        pl.DataFrame(PyCapsuleStreamHolder(df.select(pl.all().reshape((3, 1))))).select(
+            pl.all().reshape((3,))
         ),
         df,
     )
