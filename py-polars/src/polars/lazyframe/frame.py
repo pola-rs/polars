@@ -4126,6 +4126,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 pydf = next(self._inner)
                 return pl.DataFrame._from_pydf(pydf)
 
+            def __arrow_c_stream__(
+                self, requested_schema: object | None = None
+            ) -> object:
+                return self._inner.__arrow_c_stream__(requested_schema)
+
         ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
         inner = ldf.collect_batches(
             engine=engine,
