@@ -3138,6 +3138,9 @@ class Expr:
         """
         Get maximum value, ordered by another expression.
 
+        If the by expression has multiple values equal to the maximum it is not
+        defined which value will be chosen.
+
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
@@ -3187,6 +3190,9 @@ class Expr:
     def min_by(self, by: IntoExpr) -> Expr:
         """
         Get minimum value, ordered by another expression.
+
+        If the by expression has multiple values equal to the minimum it is not
+        defined which value will be chosen.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
