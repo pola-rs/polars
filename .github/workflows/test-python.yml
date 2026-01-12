@@ -51,6 +51,13 @@ jobs:
         uses: jlumbroso/free-disk-space@v1.3.1
         if: ${{ matrix.os != 'windows-latest' }}
 
+      - name: Enable long paths on Windows
+        if: matrix.os == 'windows-latest'
+        shell:
+          powershell
+        run: |
+          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name 'LongPathsEnabled' -Value 1
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
