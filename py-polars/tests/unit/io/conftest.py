@@ -14,7 +14,7 @@ def io_files_path() -> Path:
 def format_file_uri(absolute_local_path: str | Path) -> str:
     if sys.platform == "win32":
         assert absolute_local_path[0].isalpha() and absolute_local_path[1] == ":"
-        return Path(f"file:///{absolute_local_path}")
+        return f"file:///{absolute_local_path}"
 
     assert absolute_local_path.startswith("/")
-    return Path(f"file://{absolute_local_path}")
+    return f"file://{absolute_local_path}"
