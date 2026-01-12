@@ -98,9 +98,9 @@ enum MergeJoinState {
 impl MergeJoinNode {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        left_input_schema: Arc<Schema>,
-        right_input_schema: Arc<Schema>,
-        output_schema: Arc<Schema>,
+        left_input_schema: SchemaRef,
+        right_input_schema: SchemaRef,
+        output_schema: SchemaRef,
         left_on: Vec<PlSmallStr>,
         right_on: Vec<PlSmallStr>,
         descending: bool,
@@ -1178,7 +1178,7 @@ fn keys_cmp(left: &AnyValue, right: &AnyValue, params: &MergeJoinParams) -> Orde
 
 #[derive(Clone)]
 struct DataFrameBuffer {
-    schema: Arc<Schema>,
+    schema: SchemaRef,
     buf: BTreeMap<usize, DataFrame>,
     total_rows: usize,
     skip_rows: usize,
@@ -1192,7 +1192,7 @@ impl fmt::Debug for DataFrameBuffer {
 }
 
 impl DataFrameBuffer {
-    fn empty_with_schema(schema: Arc<Schema>) -> Self {
+    fn empty_with_schema(schema: SchemaRef) -> Self {
         DataFrameBuffer {
             schema,
             buf: BTreeMap::new(),
