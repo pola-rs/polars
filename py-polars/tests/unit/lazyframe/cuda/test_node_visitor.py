@@ -155,8 +155,7 @@ def test_path_uri_to_python_conversion_22766(tmp_path: Path) -> None:
     assert out[0].startswith("file://")
 
     # Windows fails because it turns everything into `\\`
-    if sys.platform != "win32":
-        assert out == [path]
+    assert out == [path]
 
 
 def test_node_traverse_sink(tmp_path: Path) -> None:

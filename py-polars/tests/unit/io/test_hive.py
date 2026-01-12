@@ -15,6 +15,7 @@ import pytest
 import polars as pl
 from polars.exceptions import ComputeError, SchemaFieldNotFoundError
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.io.conftest import format_file_uri
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -1000,7 +1001,7 @@ def test_hive_file_as_uri_with_hive_start_idx_23830(
     # ensure we have a trailing "/"
     uri = tmp_path.resolve().as_posix().rstrip("/") + "/"
 
-    lf = pl.scan_parquet(f"file://{uri}", hive_schema={"a": pl.UInt8})
+    lf = pl.scan_parquet(format_file_uri(uri), hive_schema={"a": pl.UInt8})
 
     assert_frame_equal(
         lf.collect(),
@@ -1010,18 +1011,17 @@ def test_hive_file_as_uri_with_hive_start_idx_23830(
         ),
     )
 
-    if sys.platform != "win32":
-        # https://github.com/pola-rs/polars/issues/24506
-        # `file:` URI with `//hostname` component omitted
-        lf = pl.scan_parquet(f"file:{uri}", hive_schema={"a": pl.UInt8})
+    # https://github.com/pola-rs/polars/issues/24506
+    # `file:` URI with `//hostname` component omitted
+    lf = pl.scan_parquet(f"file:{uri}", hive_schema={"a": pl.UInt8})
 
-        assert_frame_equal(
-            lf.collect(),
-            pl.select(
-                pl.Series("x", [1]),
-                pl.Series("a", [1], dtype=pl.UInt8),
-            ),
-        )
+    assert_frame_equal(
+        lf.collect(),
+        pl.select(
+            pl.Series("x", [1]),
+            pl.Series("a", [1], dtype=pl.UInt8),
+        ),
+    )
 
 
 @pytest.mark.write_disk

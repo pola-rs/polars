@@ -616,7 +616,6 @@ def test_scan_nonexistent_path(format: str) -> None:
     "streaming",
     [True, False],
 )
-@pytest.mark.skipif(sys.platform == "win32", reason="Windows paths are different")
 def test_scan_include_file_paths(
     tmp_path: Path,
     scan_func: Callable[..., pl.LazyFrame],
@@ -1026,7 +1025,6 @@ def test_only_project_missing(scan_type: tuple[Any, Any]) -> None:
     )
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="windows paths are a mess")
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
     "scan_type",

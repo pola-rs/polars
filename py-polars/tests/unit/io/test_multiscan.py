@@ -27,7 +27,6 @@ SCAN_AND_WRITE_FUNCS = [
 ]
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Windows paths are different")
 @pytest.mark.write_disk
 @pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
 def test_include_file_paths(tmp_path: Path, scan: Any, write: Any) -> None:
@@ -770,9 +769,6 @@ def test_scan_ignore_hidden_files_21762(
             pl.DataFrame({"rel_path": f"_folder/{file_name}"}),
             tmp_path / "_folder" / file_name,
         )
-
-    if prefix.startswith("file:") and sys.platform == "win32":
-        pytest.skip("Unsupported on Windows")
 
     suffix = "/**/*.ext" if use_glob else "/" if prefix.startswith("file:") else ""
     root = f"{prefix}{tmp_path}{suffix}"

@@ -113,10 +113,6 @@ impl PlPath {
     pub fn strip_scheme_split_authority(&self) -> Option<(&'_ str, &'_ str)> {
         match self.scheme() {
             None => Some(("", self.strip_scheme())),
-            // FIXME: Remove this, it's not correct.
-            Some(CloudScheme::File | CloudScheme::FileNoHostname) => {
-                Some(("", self.strip_scheme()))
-            },
             Some(scheme) => {
                 let path_str = self.as_str();
                 let position = self.authority_end_position();
@@ -512,6 +508,35 @@ mod tests {
         );
 
         assert_eq!(PlRefPath::new("file://").scheme(), Some(CloudScheme::File));
+
+        assert_eq!(
+            PlRefPath::new("file:///path").strip_scheme_split_authority(),
+            Some(("", "/path"))
+        );
+
+        assert_eq!(
+            PlRefPath::new("file://hostname:80/path").strip_scheme_split_authority(),
+            Some(("hostname:80", "/path"))
+        );
+
+        assert_eq!(
+            PlRefPath::new("file:").scheme(),
+            Some(CloudScheme::FileNoHostname)
+        );
+        assert_eq!(
+            PlRefPath::new("file:/").scheme(),
+            Some(CloudScheme::FileNoHostname)
+        );
+        assert_eq!(PlRefPath::new("file:").strip_scheme_split_authority(), None);
+        assert_eq!(
+            PlRefPath::new("file:/Local/path").strip_scheme_split_authority(),
+            Some(("", "/Local/path"))
+        );
+
+        assert_eq!(
+            PlRefPath::new(r#"\\?\C:\Windows\system32"#).as_str(),
+            "C:/Windows/system32"
+        );
     }
 
     #[test]
