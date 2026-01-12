@@ -222,25 +222,27 @@ impl StringNameSpace {
 
     /// Find the index of a literal substring within another string value.
     #[cfg(feature = "regex")]
-    pub fn find_literal(self, pat: Expr) -> Expr {
-        self.0.map_binary(
+    pub fn find_literal(self, pat: Expr, offset: Expr) -> Expr {
+        self.0.map_ternary(
             StringFunction::Find {
                 literal: true,
                 strict: false,
             },
             pat,
+            offset,
         )
     }
 
     /// Find the index of a substring defined by a regular expressions within another string value.
     #[cfg(feature = "regex")]
-    pub fn find(self, pat: Expr, strict: bool) -> Expr {
-        self.0.map_binary(
+    pub fn find(self, pat: Expr, strict: bool, offset: Expr) -> Expr {
+        self.0.map_ternary(
             StringFunction::Find {
                 literal: false,
                 strict,
             },
             pat,
+            offset,
         )
     }
 

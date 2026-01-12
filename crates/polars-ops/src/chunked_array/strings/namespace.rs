@@ -102,6 +102,105 @@ where
     Ok(out.into_series())
 }
 
+fn find_many_literal(
+    ca: &StringChunked,
+    pat: &StringChunked,
+    offset: &UInt32Chunked,
+) -> PolarsResult<UInt32Chunked> {
+    let scalar_offset = (offset.len() == 1).then(|| offset.get(0).unwrap_or(0) as usize);
+    Ok(match scalar_offset {
+        Some(0) => broadcast_binary_elementwise(ca, pat, |src: Option<&str>, pat: Option<&str>| {
+            src?.find(pat?).map(|i| i as u32)
+        }),
+        Some(off) => {
+            broadcast_binary_elementwise(ca, pat, |src: Option<&str>, pat: Option<&str>| {
+                src?.get(off..)?.find(pat?).map(|i| (i + off) as u32)
+            })
+        },
+        None => ternary_elementwise(
+            ca,
+            pat,
+            offset,
+            |src: Option<&str>, pat: Option<&str>, off: Option<u32>| {
+                let off = off.unwrap_or(0) as usize;
+                src?.get(off..)?.find(pat?).map(|i| (i + off) as u32)
+            },
+        ),
+    })
+}
+
+fn find_many_regex(
+    ca: &StringChunked,
+    pat: &StringChunked,
+    offset: &UInt32Chunked,
+    strict: bool,
+) -> PolarsResult<UInt32Chunked> {
+    let scalar_offset = (offset.len() == 1).then(|| offset.get(0).unwrap_or(0) as usize);
+    with_regex_cache(|cache| {
+        if strict {
+            match scalar_offset {
+                Some(0) => broadcast_try_binary_elementwise(ca, pat, |src, pat| match (src, pat) {
+                    (Some(src), Some(pat)) => {
+                        Ok(cache.compile(pat)?.find(src).map(|m| m.start() as u32))
+                    },
+                    _ => Ok(None),
+                }),
+                Some(off) => {
+                    broadcast_try_binary_elementwise(ca, pat, |src, pat| match (src, pat) {
+                        (Some(src), Some(pat)) => {
+                            let re = cache.compile(pat)?;
+                            Ok(src
+                                .get(off..)
+                                .and_then(|s| re.find(s).map(|m| (m.start() + off) as u32)))
+                        },
+                        _ => Ok(None),
+                    })
+                },
+                None => {
+                    try_ternary_elementwise(ca, pat, offset, |src, pat, off| match (src, pat) {
+                        (Some(src), Some(pat)) => {
+                            let off = off.unwrap_or(0) as usize;
+                            let re = cache.compile(pat)?;
+                            Ok(src
+                                .get(off..)
+                                .and_then(|s| re.find(s).map(|m| (m.start() + off) as u32)))
+                        },
+                        _ => Ok(None),
+                    })
+                },
+            }
+        } else {
+            Ok(match scalar_offset {
+                Some(0) => {
+                    broadcast_binary_elementwise(ca, pat, |src: Option<&str>, pat: Option<&str>| {
+                        cache
+                            .compile(pat?)
+                            .ok()?
+                            .find(src?)
+                            .map(|m| m.start() as u32)
+                    })
+                },
+                Some(off) => {
+                    broadcast_binary_elementwise(ca, pat, |src: Option<&str>, pat: Option<&str>| {
+                        let re = cache.compile(pat?).ok()?;
+                        re.find(src?.get(off..)?).map(|m| (m.start() + off) as u32)
+                    })
+                },
+                None => ternary_elementwise(
+                    ca,
+                    pat,
+                    offset,
+                    |src: Option<&str>, pat: Option<&str>, off: Option<u32>| {
+                        let off = off.unwrap_or(0) as usize;
+                        let re = cache.compile(pat?).ok()?;
+                        re.find(src?.get(off..)?).map(|m| (m.start() + off) as u32)
+                    },
+                ),
+            })
+        }
+    })
+}
+
 pub trait StringNameSpaceImpl: AsString {
     #[cfg(not(feature = "binary_encoding"))]
     fn hex_decode(&self) -> PolarsResult<StringChunked> {
@@ -231,41 +330,44 @@ pub trait StringNameSpaceImpl: AsString {
         pat: &StringChunked,
         literal: bool,
         strict: bool,
+        offset: &Column,
     ) -> PolarsResult<UInt32Chunked> {
+        let offset_col = offset.strict_cast(&DataType::UInt32)?;
+        let offset = offset_col.u32()?;
+
+        // Fast path: nulls
         let ca = self.as_string();
-        if pat.len() == 1 {
-            return if let Some(pat) = pat.get(0) {
-                if literal {
-                    ca.find_literal(pat)
-                } else {
-                    ca.find(pat, strict)
-                }
-            } else {
-                Ok(UInt32Chunked::full_null(ca.name().clone(), ca.len()))
-            };
-        } else if ca.len() == 1 && ca.null_count() == 1 {
+        if ca.len() == 1 && ca.null_count() == 1 {
             return Ok(UInt32Chunked::full_null(
                 ca.name().clone(),
-                ca.len().max(pat.len()),
+                ca.len().max(pat.len()).max(offset.len()),
             ));
         }
+
+        // Single regex/literal
+        if pat.len() == 1 {
+            let Some(pat) = pat.get(0) else {
+                return Ok(UInt32Chunked::full_null(
+                    ca.name().clone(),
+                    ca.len().max(offset.len()),
+                ));
+            };
+            let offset_arg = match (offset.len(), offset.get(0)) {
+                (1, Some(0)) => None,
+                _ => Some(offset),
+            };
+            return if literal {
+                ca.find_literal(pat, offset_arg)
+            } else {
+                ca.find(pat, strict, offset_arg)
+            };
+        }
+
+        // Multiple regex/literals
         if literal {
-            Ok(broadcast_binary_elementwise(
-                ca,
-                pat,
-                |src: Option<&str>, pat: Option<&str>| src?.find(pat?).map(|idx| idx as u32),
-            ))
+            find_many_literal(ca, pat, offset)
         } else {
-            with_regex_cache(|reg_cache| {
-                let matcher = |src: Option<&str>, pat: Option<&str>| -> PolarsResult<Option<u32>> {
-                    if let (Some(src), Some(pat)) = (src, pat) {
-                        let re = reg_cache.compile(pat)?;
-                        return Ok(re.find(src).map(|m| m.start() as u32));
-                    }
-                    Ok(None)
-                };
-                broadcast_try_binary_elementwise(ca, pat, matcher)
-            })
+            find_many_regex(ca, pat, offset, strict)
         }
     }
 
@@ -337,17 +439,45 @@ pub trait StringNameSpaceImpl: AsString {
     }
 
     /// Return the index position of a literal substring in the target string.
-    fn find_literal(&self, lit: &str) -> PolarsResult<UInt32Chunked> {
-        self.find(regex::escape(lit).as_str(), true)
+    fn find_literal(
+        &self,
+        lit: &str,
+        offset: Option<&UInt32Chunked>,
+    ) -> PolarsResult<UInt32Chunked> {
+        self.find(regex::escape(lit).as_str(), true, offset)
     }
 
     /// Return the index position of a regular expression substring in the target string.
-    fn find(&self, pat: &str, strict: bool) -> PolarsResult<UInt32Chunked> {
+    fn find(
+        &self,
+        pat: &str,
+        strict: bool,
+        offset: Option<&UInt32Chunked>,
+    ) -> PolarsResult<UInt32Chunked> {
         let ca = self.as_string();
         match polars_utils::regex_cache::compile_regex(pat) {
-            Ok(rx) => Ok(unary_elementwise(ca, |opt_s| {
-                opt_s.and_then(|s| rx.find(s)).map(|m| m.start() as u32)
-            })),
+            Ok(rx) => {
+                if let Some(offset) = offset {
+                    Ok(broadcast_binary_elementwise(
+                        ca,
+                        offset,
+                        |opt_s: Option<&str>, opt_off: Option<u32>| {
+                            let s = opt_s?;
+                            let off = opt_off.unwrap_or(0) as usize;
+                            if off >= s.len() {
+                                return None;
+                            }
+                            s.get(off..)
+                                .and_then(|sliced| rx.find(sliced))
+                                .map(|m| (m.start() + off) as u32)
+                        },
+                    ))
+                } else {
+                    Ok(unary_elementwise(ca, |opt_s| {
+                        opt_s.and_then(|s| rx.find(s)).map(|m| m.start() as u32)
+                    }))
+                }
+            },
             Err(_) if !strict => Ok(UInt32Chunked::full_null(ca.name().clone(), ca.len())),
             Err(e) => Err(PolarsError::ComputeError(
                 format!("Invalid regular expression: {e}").into(),

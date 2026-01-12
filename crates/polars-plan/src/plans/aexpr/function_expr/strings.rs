@@ -262,7 +262,7 @@ impl IRStringFunction {
             #[cfg(feature = "string_to_integer")]
             S::ToInteger { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "regex")]
-            S::Find { .. } => FunctionOptions::elementwise().with_supertyping(Default::default()),
+            S::Find { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "extract_jsonpath")]
             S::JsonDecode { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "extract_jsonpath")]

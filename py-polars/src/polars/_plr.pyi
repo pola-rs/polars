@@ -1856,7 +1856,12 @@ class PyExpr:
         self, pat: PyExpr, literal: bool | None = None, strict: bool = True
     ) -> PyExpr: ...
     def str_find(
-        self, pat: PyExpr, literal: bool | None = None, strict: bool = True
+        self,
+        pat: PyExpr,
+        *,
+        literal: bool | None = None,
+        strict: bool = True,
+        offset: PyExpr | None = None,
     ) -> PyExpr: ...
     def str_ends_with(self, sub: PyExpr) -> PyExpr: ...
     def str_starts_with(self, sub: PyExpr) -> PyExpr: ...

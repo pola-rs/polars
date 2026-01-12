@@ -31,6 +31,9 @@ String
      - Convert string to the specified Unicode normalization form (one of NFC, NFD, NFKC, NFKD).
    * - :ref:`OCTET_LENGTH <octet_length>`
      - Returns the length of a given string in bytes.
+   * - :ref:`POSITION <position>`
+     - Returns the index of a given substring in the target string, or 0 if the substring is not contained;
+       result is 1-indexed.
    * - :ref:`REGEXP_LIKE <regexp_like>`
      - Returns True if `pattern` matches the value (optional: `flags`).
    * - :ref:`REPLACE <replace>`
@@ -440,6 +443,36 @@ Returns the length of a given string in bytes.
     # │ es       ┆ amarillo ┆ 8       ┆ 8       │
     # └──────────┴──────────┴─────────┴─────────┘
 
+.. _position:
+
+POSITION
+--------
+Returns the index of a given substring in the target string.
+
+.. seealso::
+
+   `STRPOS`
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": ["apple", "banana", "orange", "grape"]})
+    df.sql("""
+      SELECT foo, POSITION('a' IN foo) AS pos_a FROM self
+    """)
+    # shape: (4, 2)
+    # ┌────────┬───────┐
+    # │ foo    ┆ pos_a │
+    # │ ---    ┆ ---   │
+    # │ str    ┆ u32   │
+    # ╞════════╪═══════╡
+    # │ apple  ┆ 1     │
+    # │ banana ┆ 2     │
+    # │ orange ┆ 3     │
+    # │ grape  ┆ 3     │
+    # └────────┴───────┘
+
 .. _regexp_like:
 
 REGEXP_LIKE
@@ -656,25 +689,33 @@ STRPOS
 ------
 Returns the index of the given substring in the target string.
 
+.. admonition:: Aliases
+
+   `CHARINDEX`, `LOCATE`
+
 **Example:**
 
 .. code-block:: python
 
     df = pl.DataFrame({"foo": ["apple", "banana", "orange", "grape"]})
     df.sql("""
-      SELECT foo, STRPOS(foo, 'a') AS pos_a FROM self
+      SELECT
+        foo,
+        STRPOS(foo, 'a') AS pos_a,
+        STRPOS(foo, 'a', 2) AS pos_a_offset,
+      FROM self
     """)
-    # shape: (4, 2)
-    # ┌────────┬───────┐
-    # │ foo    ┆ pos_a │
-    # │ ---    ┆ ---   │
-    # │ str    ┆ u32   │
-    # ╞════════╪═══════╡
-    # │ apple  ┆ 1     │
-    # │ banana ┆ 2     │
-    # │ orange ┆ 3     │
-    # │ grape  ┆ 3     │
-    # └────────┴───────┘
+    # shape: (4, 3)
+    # ┌────────┬───────┬──────────────┐
+    # │ foo    ┆ pos_a ┆ pos_a_offset │
+    # │ ---    ┆ ---   ┆ ---          │
+    # │ str    ┆ u32   ┆ u32          │
+    # ╞════════╪═══════╪══════════════╡
+    # │ apple  ┆ 1     ┆ 0            │
+    # │ banana ┆ 2     ┆ 4            │
+    # │ orange ┆ 3     ┆ 3            │
+    # │ grape  ┆ 3     ┆ 3            │
+    # └────────┴───────┴──────────────┘
 
 
 .. _strptime:

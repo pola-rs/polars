@@ -255,7 +255,8 @@ pub(super) fn find(s: &[Column], literal: bool, strict: bool) -> PolarsResult<Co
     _check_same_length(s, "find")?;
     let ca = s[0].str()?;
     let pat = s[1].str()?;
-    ca.find_chunked(pat, literal, strict)
+    let offset = &s[2];
+    ca.find_chunked(pat, literal, strict, offset)
         .map(|ok| ok.into_column())
 }
 

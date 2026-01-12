@@ -302,19 +302,19 @@ def test_string_position() -> None:
             SELECT
               POSITION('a' IN city) AS a_lc1,
               POSITION('A' IN city) AS a_uc1,
-              STRPOS(city,'a') AS a_lc2,
+              -- note: locate/charindex/strpos are aliases
+              LOCATE(city,'a',3) AS a_lc2,
+              CHARINDEX(city,'a') AS a_lc3,
               STRPOS(city,'A') AS a_uc2,
             FROM cities
             """
         )
-        expected_lc = [4, 7, 3, 0, 4, 2]
-        expected_uc = [0, 1, 0, 1, 1, 5]
-
         assert res.to_dict(as_series=False) == {
-            "a_lc1": expected_lc,
-            "a_uc1": expected_uc,
-            "a_lc2": expected_lc,
-            "a_uc2": expected_uc,
+            "a_lc1": [4, 7, 3, 0, 4, 2],
+            "a_uc1": [0, 1, 0, 1, 1, 5],
+            "a_lc2": [4, 7, 6, 0, 4, 10],
+            "a_lc3": [4, 7, 3, 0, 4, 2],
+            "a_uc2": [0, 1, 0, 1, 1, 5],
         }
 
     df = pl.DataFrame({"txt": ["AbCdEXz", "XyzFDkE"]})

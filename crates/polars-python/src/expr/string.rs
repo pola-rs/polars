@@ -194,12 +194,22 @@ impl PyExpr {
         }
     }
 
-    #[pyo3(signature = (pat, literal, strict))]
+    #[pyo3(signature = (pat, literal, strict, offset))]
     #[cfg(feature = "regex")]
-    fn str_find(&self, pat: Self, literal: Option<bool>, strict: bool) -> Self {
+    fn str_find(&self, pat: Self, literal: Option<bool>, strict: bool, offset: Self) -> Self {
         match literal {
-            Some(true) => self.inner.clone().str().find_literal(pat.inner).into(),
-            _ => self.inner.clone().str().find(pat.inner, strict).into(),
+            Some(true) => self
+                .inner
+                .clone()
+                .str()
+                .find_literal(pat.inner, offset.inner)
+                .into(),
+            _ => self
+                .inner
+                .clone()
+                .str()
+                .find(pat.inner, strict, offset.inner)
+                .into(),
         }
     }
 

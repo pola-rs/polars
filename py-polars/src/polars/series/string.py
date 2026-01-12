@@ -540,7 +540,12 @@ class StringNameSpace:
         """
 
     def find(
-        self, pattern: str | Expr, *, literal: bool = False, strict: bool = True
+        self,
+        pattern: str | Expr,
+        *,
+        literal: bool = False,
+        strict: bool = True,
+        offset: int | IntoExprColumn | None = None,
     ) -> Series:
         """
         Return the bytes offset of the first substring matching a pattern.
@@ -557,6 +562,9 @@ class StringNameSpace:
         strict
             Raise an error if the underlying pattern is not a valid regex,
             otherwise mask out with a null value.
+        offset
+            Start searching at this byte offset into the string (the returned
+            position is still relative to the start of the string).
 
         Notes
         -----
@@ -611,7 +619,7 @@ class StringNameSpace:
             7
         ]
 
-        Match against a pattern found in another column or (expression):
+        Match against a pattern found in another column (or expression):
 
         >>> p = pl.Series("pat", ["a[bc]", "b.t", "[aeiuo]", "(?i)A[BC]"])
         >>> s.str.find(p).rename("idx")
@@ -622,6 +630,18 @@ class StringNameSpace:
             2
             null
             5
+        ]
+
+        Use the `offset` parameter to start searching later in the string:
+
+        >>> s = pl.Series(name="txt", values=["abcabc", "aaaaa", "axxx"])
+        >>> s.str.find("a", offset=2)
+        shape: (3,)
+        Series: 'txt' [u32]
+        [
+            3
+            2
+            null
         ]
         """
 

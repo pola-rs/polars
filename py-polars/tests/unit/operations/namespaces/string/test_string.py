@@ -279,7 +279,8 @@ def test_str_decode_exception() -> None:
 
 
 @pytest.mark.parametrize("strict", [True, False])
-def test_str_find(strict: bool) -> None:
+@pytest.mark.parametrize("match_lit", [True, False])
+def test_str_find(strict: bool, match_lit: bool) -> None:
     df = pl.DataFrame(
         data=[
             ("Dubai", 3564931, "b[ai]", "ai"),
@@ -302,21 +303,40 @@ def test_str_find(strict: bool) -> None:
     )
     city, pop, pat, lit = (pl.col(c) for c in ("city", "population", "pat", "lit"))
 
-    for match_lit in (True, False):
-        res = df.select(
-            find_a_regex=city.str.find("(?i)a", strict=strict),
-            find_a_lit=city.str.find("a", literal=match_lit),
-            find_00_lit=pop.cast(pl.String).str.find("00", literal=match_lit),
-            find_col_lit=city.str.find(lit, strict=strict, literal=match_lit),
-            find_col_pat=city.str.find(pat, strict=strict),
-        )
-        assert res.to_dict(as_series=False) == {
-            "find_a_regex": [3, 0, 2, 0, 0, 1, 3, 4, None],
-            "find_a_lit": [3, 6, 2, None, 3, 1, 3, 10, None],
-            "find_00_lit": [None, 4, 4, None, 2, None, None, None, None],
-            "find_col_lit": [3, 3, None, 0, 2, 7, None, 9, None],
-            "find_col_pat": [2, 7, None, 4, 3, 1, 3, None, None],
-        }
+    res = df.select(
+        find_a_regex=city.str.find("(?i)a", strict=strict),
+        find_a_lit=city.str.find("a", literal=match_lit),
+        find_00_lit=pop.cast(pl.String).str.find("00", literal=match_lit),
+        find_col_lit=city.str.find(lit, strict=strict, literal=match_lit),
+        find_col_pat=city.str.find(pat, strict=strict),
+    )
+    assert res.to_dict(as_series=False) == {
+        "find_a_regex": [3, 0, 2, 0, 0, 1, 3, 4, None],
+        "find_a_lit": [3, 6, 2, None, 3, 1, 3, 10, None],
+        "find_00_lit": [None, 4, 4, None, 2, None, None, None, None],
+        "find_col_lit": [3, 3, None, 0, 2, 7, None, 9, None],
+        "find_col_pat": [2, 7, None, 4, 3, 1, 3, None, None],
+    }
+
+    # test with 'offset' param
+    res = df.select(
+        f2=city.str.find("(?i)a", offset=2, strict=strict),
+        f3=city.str.find("a", offset=3, literal=match_lit),
+        f4=city.str.find(lit, offset=4, strict=strict, literal=match_lit),
+        f5=city.str.find(pat, offset=5, strict=strict),
+    )
+    assert res.to_dict(as_series=False) == {
+        "f2": [3, 6, 2, 3, 3, 4, 3, 4, None],
+        "f3": [3, 6, 5, None, 3, 9, 3, 10, None],
+        "f4": [None, None, None, 4, None, 7, None, 9, None],
+        "f5": [None, 7, None, None, None, 9, None, None, None],
+    }
+
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"conversion from `i\d+` to `u32` failed",
+    ):
+        df.select(err=city.str.find("a", offset=-3))
 
 
 def test_str_find_invalid_regex() -> None:
@@ -324,7 +344,7 @@ def test_str_find_invalid_regex() -> None:
     df = pl.DataFrame({"txt": ["AbCdEfG"]})
     rx_invalid = "(?i)AB.))"
 
-    with pytest.raises(ComputeError):
+    with pytest.raises(ComputeError, match="Invalid regular expression"):
         df.with_columns(pl.col("txt").str.find(rx_invalid, strict=True))
 
     res = df.with_columns(pl.col("txt").str.find(rx_invalid, strict=False))

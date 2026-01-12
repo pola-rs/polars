@@ -200,7 +200,7 @@ impl SQLExprVisitor<'_> {
                 (self
                     .visit_expr(r#in)?
                     .str()
-                    .find(self.visit_expr(expr)?, true)
+                    .find(self.visit_expr(expr)?, true, lit(0u32))
                     + typed_lit(1u32))
                 .fill_null(typed_lit(0u32)),
             ),

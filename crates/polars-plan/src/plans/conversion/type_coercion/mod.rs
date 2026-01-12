@@ -753,6 +753,48 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 }
             },
 
+            #[cfg(all(feature = "strings", feature = "regex"))]
+            AExpr::Function {
+                function: ref function @ IRFunctionExpr::StringExpr(IRStringFunction::Find { .. }),
+                ref input,
+                options,
+            } => {
+                let (_, type_pat) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
+                let (_, type_offset) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[2].node(), schema));
+
+                if type_pat == DataType::String && type_offset == DataType::UInt32 {
+                    None
+                } else {
+                    let function = function.clone();
+                    let mut input = input.clone();
+                    if type_pat != DataType::String {
+                        cast_expr_ir(
+                            &mut input[1],
+                            &type_pat,
+                            &DataType::String,
+                            expr_arena,
+                            CastOptions::NonStrict,
+                        )?;
+                    }
+                    if type_offset != DataType::UInt32 {
+                        cast_expr_ir(
+                            &mut input[2],
+                            &type_offset,
+                            &DataType::UInt32,
+                            expr_arena,
+                            CastOptions::Strict,
+                        )?;
+                    }
+                    Some(AExpr::Function {
+                        function,
+                        input,
+                        options,
+                    })
+                }
+            },
+
             #[cfg(all(feature = "strings", feature = "find_many"))]
             AExpr::Function {
                 function:

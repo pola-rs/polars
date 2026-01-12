@@ -976,7 +976,7 @@ impl PolarsSQLFunctions {
             "ltrim" => Self::LTrim,
             "normalize" => Self::Normalize,
             "octet_length" => Self::OctetLength,
-            "strpos" => Self::StrPos,
+            "strpos" | "charindex" | "locate" | "instr" => Self::StrPos,
             "regexp_like" => Self::RegexpLike,
             "replace" => Self::Replace,
             "reverse" => Self::Reverse,
@@ -1328,9 +1328,20 @@ impl SQLFunctionVisitor<'_> {
             OctetLength => self.visit_unary(|e| e.str().len_bytes()),
             StrPos => {
                 // note: SQL is 1-indexed; returns zero if no match found
-                self.visit_binary(|expr, substring| {
-                    (expr.str().find(substring, true) + typed_lit(1u32)).fill_null(typed_lit(0u32))
-                })
+                let args = extract_args(function)?;
+                match args.len() {
+                    2 => self.visit_binary(|expr, substring| {
+                        (expr.str().find(substring, true, lit(0u32)) + typed_lit(1u32))
+                            .fill_null(typed_lit(0u32))
+                    }),
+                    3 => self.try_visit_ternary(|expr, substring, offset| {
+                        Ok((expr.str().find(substring, true, offset) + typed_lit(1u32))
+                            .fill_null(typed_lit(0u32)))
+                    }),
+                    _ => {
+                        polars_bail!(SQLSyntax: "{} expects 2-3 arguments (found {})", function.name, args.len())
+                    },
+                }
             },
             RegexpLike => {
                 let args = extract_args(function)?;

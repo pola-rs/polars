@@ -1037,7 +1037,12 @@ class ExprStringNameSpace:
         return wrap_expr(self._pyexpr.str_contains(pattern_pyexpr, literal, strict))
 
     def find(
-        self, pattern: str | Expr, *, literal: bool = False, strict: bool = True
+        self,
+        pattern: str | Expr,
+        *,
+        literal: bool = False,
+        strict: bool = True,
+        offset: int | IntoExprColumn | None = None,
     ) -> Expr:
         """
         Return the bytes offset of the first substring matching a pattern.
@@ -1054,6 +1059,9 @@ class ExprStringNameSpace:
         strict
             Raise an error if the underlying pattern is not a valid regex,
             otherwise mask out with a null value.
+        offset
+            Start searching at this byte offset into the string (the returned
+            position is still relative to the start of the string).
 
         Notes
         -----
@@ -1125,9 +1133,36 @@ class ExprStringNameSpace:
         │ null       ┆ [aeiuo]   ┆ null     │
         │ Crustacean ┆ (?i)A[BC] ┆ 5        │
         └────────────┴───────────┴──────────┘
+
+        Use the `offset` parameter to start searching later in the string:
+
+        >>> df = pl.DataFrame({"txt": ["abcabc", "aaa", "xxx"]})
+        >>> df.select(
+        ...     pl.col("txt"),
+        ...     pl.col("txt").str.find("a", literal=True).alias("a"),
+        ...     pl.col("txt").str.find("a", literal=True, offset=1).alias("a_offset_1"),
+        ... )
+        shape: (3, 3)
+        ┌────────┬──────┬────────────┐
+        │ txt    ┆ a    ┆ a_offset_1 │
+        │ ---    ┆ ---  ┆ ---        │
+        │ str    ┆ u32  ┆ u32        │
+        ╞════════╪══════╪════════════╡
+        │ abcabc ┆ 0    ┆ 3          │
+        │ aaa    ┆ 0    ┆ 1          │
+        │ xxx    ┆ null ┆ null       │
+        └────────┴──────┴────────────┘
         """
         pattern_pyexpr = parse_into_expression(pattern, str_as_lit=True)
-        return wrap_expr(self._pyexpr.str_find(pattern_pyexpr, literal, strict))
+        offset_pyexpr = parse_into_expression(0 if offset is None else offset)
+        return wrap_expr(
+            self._pyexpr.str_find(
+                pattern_pyexpr,
+                literal=literal,
+                strict=strict,
+                offset=offset_pyexpr,
+            )
+        )
 
     def ends_with(self, suffix: str | Expr) -> Expr:
         """
