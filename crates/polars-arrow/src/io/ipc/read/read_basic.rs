@@ -101,12 +101,12 @@ fn read_uncompressed_buffer<T: NativeType, R: Read + Seek>(
 fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
     reader: &mut R,
     buffer_length: usize,
-    output_length: Option<usize>,
+    row_limit: Option<usize>,
     is_little_endian: bool,
     compression: Compression,
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<Vec<T>> {
-    if output_length == Some(0) {
+    if row_limit == Some(0) {
         return Ok(vec![]);
     }
 
@@ -135,10 +135,14 @@ fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
         })?
     };
 
-    polars_ensure!(decompressed_bytes.is_multiple_of(size_of::<T>()), ComputeError: "Malformed IPC file: got decompressed buffer length which is not a multiple of the data type");
-    let real_output_len = decompressed_bytes / size_of::<T>();
-    if let Some(output_length) = output_length {
-        polars_ensure!(output_length == real_output_len, ComputeError: "Malformed IPC file: got unexpected decompressed buffer size {real_output_len}, expected {output_length}");
+    polars_ensure!(decompressed_bytes.is_multiple_of(size_of::<T>()),
+            ComputeError: "Malformed IPC file: got decompressed buffer length which is not a multiple of the data type");
+    let total_length_in_array = decompressed_bytes / size_of::<T>();
+
+    // Note: in case of slicing, the lengths may not match
+    if let Some(row_limit) = row_limit {
+        polars_ensure!(row_limit <= total_length_in_array, 
+            ComputeError: "Malformed IPC file: got unexpected decompressed buffer size {total_length_in_array}, expected {row_limit}");
     }
 
     if decompressed_len_field == -1 {
@@ -147,7 +151,12 @@ fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
 
     // It is undefined behavior to call read_exact on un-initialized, https://doc.rust-lang.org/std/io/trait.Read.html#tymethod.read
     // see also https://github.com/MaikKlein/ash/issues/354#issue-781730580
-    let mut buffer = vec![T::default(); real_output_len];
+    let exact_row_size = match row_limit {
+        Some(row_limit) => row_limit,
+        None => total_length_in_array,
+    };
+
+    let mut buffer = vec![T::default(); exact_row_size];
     let out_slice = bytemuck::cast_slice_mut(&mut buffer);
 
     let compression = compression

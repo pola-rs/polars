@@ -41,7 +41,7 @@ impl RecordBatchDecoder {
         let mut data_scratch = Vec::new();
         let mut message_scratch = Vec::new();
 
-        let limit = None;
+        let limit = Some(slice_offset + slice_len);
 
         // Create the DataFrame with the appropriate schema based on the data.
         // @NOTE: This empty schema code path is relied upon for `select(pl.len())`
