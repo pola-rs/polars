@@ -91,14 +91,11 @@ impl RecordBatchDecoder {
                     flags.len(), df.columns().len()
                 );
                 unsafe {
-                    df.columns_mut()
-                        .iter_mut()
-                        .zip(flags)
-                        .for_each(|(c, f)| {
-                            if let Some(f) = f {
-                                c.set_flags(f);
-                            }
-                        })
+                    df.columns_mut().iter_mut().zip(flags).for_each(|(c, f)| {
+                        if let Some(f) = f {
+                            c.set_flags(f);
+                        }
+                    })
                 }
             }
             df.slice(i64::try_from(slice_offset).unwrap(), slice_len)
