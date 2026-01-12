@@ -912,9 +912,12 @@ def test_hive_predicate_dates_14712(
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Test is only for Windows paths")
 @pytest.mark.write_disk
-def test_hive_windows_splits_on_forward_slashes(tmp_path: Path) -> None:
+@pytest.mark.parametrize("prefix", ["", "file:", "file:///"])
+def test_hive_windows_splits_on_forward_slashes(tmp_path: Path, prefix: str) -> None:
     # Note: This needs to be an absolute path.
     tmp_path = tmp_path.resolve()
+    assert f"{tmp_path}"[0].isalpha() and f"{tmp_path}"[1] == ":"
+
     path = f"{tmp_path}/a=1/b=1/c=1/d=1/e=1"
     Path(path).mkdir(exist_ok=True, parents=True)
 
@@ -923,7 +926,7 @@ def test_hive_windows_splits_on_forward_slashes(tmp_path: Path) -> None:
 
     expect = pl.DataFrame(
         [
-            s.new_from_index(0, 5)
+            s.new_from_index(0, 7)
             for s in pl.DataFrame(
                 {
                     "x": "x",
@@ -940,16 +943,32 @@ def test_hive_windows_splits_on_forward_slashes(tmp_path: Path) -> None:
     assert_frame_equal(
         pl.scan_parquet(
             [
-                f"{tmp_path}/a=1/b=1/c=1/d=1/e=1/data.parquet",
-                f"{tmp_path}\\a=1\\b=1\\c=1\\d=1\\e=1\\data.parquet",
-                f"{tmp_path}\\a=1/b=1/c=1/d=1/**/*",
-                f"{tmp_path}/a=1/b=1\\c=1/d=1/**/*",
-                f"{tmp_path}/a=1/b=1/c=1/d=1\\e=1/*",
+                f"{prefix}{tmp_path}/a=1/b=1/c=1/d=1/e=1/data.parquet",
+                f"{prefix}{tmp_path}\\a=1\\b=1\\c=1\\d=1\\e=1\\data.parquet",
+                f"{prefix}{tmp_path}\\a=1/b=1/c=1/d=1/**/*",
+                f"{prefix}{tmp_path}/a=1/b=1\\c=1/d=1/**/*",
+                f"{prefix}{tmp_path}/a=1/b=1/c=1/d=1\\e=1/*",
             ],
             hive_partitioning=True,
         ).collect(),
         expect,
     )
+
+    results = []
+
+    try:
+        pl.scan_parquet().collect(f"file:/{tmp_path}/a=1/b=1/c=1/d=1/e=1/data.parquet")
+        results.append("OK")
+    except Exception as e:
+        results.append(str(e))
+
+    try:
+        pl.scan_parquet().collect(f"file://{tmp_path}/a=1/b=1/c=1/d=1/e=1/data.parquet")
+        results.append("OK")
+    except Exception as e:
+        results.append(str(e))
+
+    raise f"{results = }"
 
 
 @pytest.mark.write_disk
