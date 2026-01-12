@@ -101,6 +101,7 @@ fn read_uncompressed_buffer<T: NativeType, R: Read + Seek>(
 fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
     reader: &mut R,
     buffer_length: usize,
+    // Upper bound for the number of rows to be returned.
     row_limit: Option<usize>,
     is_little_endian: bool,
     compression: Compression,
@@ -137,13 +138,7 @@ fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
 
     polars_ensure!(decompressed_bytes.is_multiple_of(size_of::<T>()),
             ComputeError: "Malformed IPC file: got decompressed buffer length which is not a multiple of the data type");
-    let total_length_in_array = decompressed_bytes / size_of::<T>();
-
-    // Note: in case of slicing, the lengths may not match
-    if let Some(row_limit) = row_limit {
-        polars_ensure!(row_limit <= total_length_in_array, 
-            ComputeError: "Malformed IPC file: got unexpected decompressed buffer size {total_length_in_array}, expected {row_limit}");
-    }
+    let n_rows_in_array = decompressed_bytes / size_of::<T>();
 
     if decompressed_len_field == -1 {
         return Ok(bytemuck::cast_slice(&scratch[8..]).to_vec());
@@ -151,12 +146,12 @@ fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
 
     // It is undefined behavior to call read_exact on un-initialized, https://doc.rust-lang.org/std/io/trait.Read.html#tymethod.read
     // see also https://github.com/MaikKlein/ash/issues/354#issue-781730580
-    let exact_row_size = match row_limit {
-        Some(row_limit) => row_limit,
-        None => total_length_in_array,
-    };
 
-    let mut buffer = vec![T::default(); exact_row_size];
+    let n_rows_exact = row_limit
+        .map(|limit| std::cmp::min(limit, n_rows_in_array))
+        .unwrap_or(n_rows_in_array);
+
+    let mut buffer = vec![T::default(); n_rows_exact];
     let out_slice = bytemuck::cast_slice_mut(&mut buffer);
 
     let compression = compression
