@@ -11,6 +11,7 @@ use either::{Either, Left, Right};
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
 use polars_core::utils::Container;
+use polars_core::with_match_physical_numeric_polars_type;
 use polars_ops::prelude::*;
 use polars_utils::itertools::Itertools;
 use polars_utils::total_ord::TotalOrd;
@@ -443,13 +444,13 @@ async fn compute_join(
 
     let mut build_key = Cow::Borrowed(
         build
-            .column(&params.left.key_col)
+            .column(&build_sp.key_col)
             .unwrap()
             .as_materialized_series(),
     );
     let mut probe_key = Cow::Borrowed(
         probe
-            .column(&params.right.key_col)
+            .column(&probe_sp.key_col)
             .unwrap()
             .as_materialized_series(),
     );
@@ -464,6 +465,9 @@ async fn compute_join(
             probe_key = Cow::Owned(probe_key.cast(&DataType::String)?);
         }
     }
+
+    let build_key = build_key.to_physical_repr();
+    let probe_key = probe_key.to_physical_repr();
 
     arenas.matched_probeside.clear();
     arenas.matched_probeside.resize(probe_key.len(), false);
@@ -554,10 +558,10 @@ fn compute_join_dispatch(
     params: &MergeJoinParams,
 ) -> bool {
     macro_rules! dispatch {
-        ($left_key:expr, $right_key:expr) => {
+        ($left_key_ca:expr) => {
             compute_join_kernel(
-                $left_key,
-                $right_key,
+                $left_key_ca,
+                rk.as_ref().as_ref(),
                 gather_left,
                 gather_right,
                 matched_right,
@@ -569,53 +573,25 @@ fn compute_join_dispatch(
         };
     }
 
-    debug_assert_eq!(lk.dtype(), rk.dtype());
+    assert_eq!(lk.dtype(), rk.dtype());
     match lk.dtype() {
-        DataType::Boolean => dispatch!(lk.bool().unwrap(), rk.bool().unwrap()),
-        #[cfg(feature = "dtype-i8")]
-        DataType::Int8 => dispatch!(lk.i8().unwrap(), rk.i8().unwrap()),
-        #[cfg(feature = "dtype-i16")]
-        DataType::Int16 => dispatch!(lk.i16().unwrap(), rk.i16().unwrap()),
-        DataType::Int32 => dispatch!(lk.i32().unwrap(), rk.i32().unwrap()),
-        DataType::Int64 => dispatch!(lk.i64().unwrap(), rk.i64().unwrap()),
-        #[cfg(feature = "dtype-i128")]
-        DataType::Int128 => dispatch!(lk.i128().unwrap(), rk.i128().unwrap()),
-        #[cfg(feature = "dtype-u8")]
-        DataType::UInt8 => dispatch!(lk.u8().unwrap(), rk.u8().unwrap()),
-        #[cfg(feature = "dtype-u16")]
-        DataType::UInt16 => dispatch!(lk.u16().unwrap(), rk.u16().unwrap()),
-        DataType::UInt32 => dispatch!(lk.u32().unwrap(), rk.u32().unwrap()),
-        DataType::UInt64 => dispatch!(lk.u64().unwrap(), rk.u64().unwrap()),
-        #[cfg(feature = "dtype-u128")]
-        DataType::UInt128 => dispatch!(lk.u128().unwrap(), rk.u128().unwrap()),
-        #[cfg(feature = "dtype-f16")]
-        DataType::Float16 => dispatch!(lk.f16().unwrap(), rk.f16().unwrap()),
-        DataType::Float32 => dispatch!(lk.f32().unwrap(), rk.f32().unwrap()),
-        DataType::Float64 => dispatch!(lk.f64().unwrap(), rk.f64().unwrap()),
-        #[cfg(feature = "dtype-decimal")]
-        DataType::Decimal(_, _) => dispatch!(
-            lk.decimal().unwrap().physical(),
-            rk.decimal().unwrap().physical()
-        ),
-        DataType::String => dispatch!(lk.str().unwrap(), rk.str().unwrap()),
-        DataType::Binary => dispatch!(lk.binary().unwrap(), rk.binary().unwrap()),
-        DataType::BinaryOffset => {
-            dispatch!(lk.binary_offset().unwrap(), rk.binary_offset().unwrap())
+        dt if dt.is_primitive_numeric() => {
+            with_match_physical_numeric_polars_type!(dt, |$T| {
+                type PhysCa = ChunkedArray<$T>;
+                let lk_ca: &PhysCa  = lk.as_ref().as_ref();
+                dispatch!(lk_ca)
+            })
         },
-        #[cfg(feature = "dtype-date")]
-        DataType::Date => dispatch!(lk.date().unwrap().physical(), rk.date().unwrap().physical()),
-        #[cfg(feature = "dtype-datetime")]
-        DataType::Datetime(_, _) => dispatch!(
-            lk.datetime().unwrap().physical(),
-            rk.datetime().unwrap().physical()
-        ),
-        #[cfg(feature = "dtype-duration")]
-        DataType::Duration(_) => dispatch!(
-            lk.duration().unwrap().physical(),
-            rk.duration().unwrap().physical()
-        ),
-        #[cfg(feature = "dtype-time")]
-        DataType::Time => dispatch!(lk.time().unwrap().physical(), rk.time().unwrap().physical()),
+        DataType::Boolean => dispatch!(lk.bool().unwrap()),
+        DataType::String => dispatch!(lk.str().unwrap()),
+        DataType::Binary => dispatch!(lk.binary().unwrap()),
+        DataType::BinaryOffset => dispatch!(lk.binary_offset().unwrap()),
+        #[cfg(feature = "dtype-categorical")]
+        DataType::Enum(cats, _) => with_match_categorical_physical_type!(cats.physical(), |$C| {
+            type PhysCa = ChunkedArray<<$C as PolarsCategoricalType>::PolarsPhysical>;
+            let lk_ca: &PhysCa = lk.as_ref().as_ref();
+            dispatch!(lk_ca)
+        }),
         DataType::Null => compute_join_kernel_nullkeys(
             lk.len(),
             rk.len(),
@@ -627,20 +603,6 @@ fn compute_join_dispatch(
             right_sp,
             params,
         ),
-        #[cfg(feature = "dtype-categorical")]
-        DataType::Enum(cats, _) => match cats.physical() {
-            CategoricalPhysical::U8 => {
-                dispatch!(lk.cat8().unwrap().physical(), rk.cat8().unwrap().physical())
-            },
-            CategoricalPhysical::U16 => dispatch!(
-                lk.cat16().unwrap().physical(),
-                rk.cat16().unwrap().physical()
-            ),
-            CategoricalPhysical::U32 => dispatch!(
-                lk.cat32().unwrap().physical(),
-                rk.cat32().unwrap().physical()
-            ),
-        },
         dt => unimplemented!("merge-join kernel not implemented for {:?}", dt),
     }
 }
