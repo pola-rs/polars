@@ -14,6 +14,7 @@ import pytest
 
 import polars as pl
 from polars.testing.asserts.frame import assert_frame_equal
+from tests.unit.io.conftest import format_file_uri, normalize_path_separator_pl
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -630,7 +631,7 @@ def test_scan_include_file_paths(
         dfs.append(pl.DataFrame({"x": 10 * [x]}).with_columns(path=pl.lit(str(path))))
         write_func(dfs[-1].drop("path"), path)
 
-    df = pl.concat(dfs)
+    df = pl.concat(dfs).with_columns(normalize_path_separator_pl(pl.col("path")))
     assert df.columns == ["x", "path"]
 
     with pytest.raises(
@@ -1043,7 +1044,7 @@ def test_async_read_21945(tmp_path: Path, scan_type: tuple[Any, Any]) -> None:
     pl.DataFrame({"value": [3]}).write_parquet(f2)
 
     df = (
-        pl.scan_parquet(["file://" + str(f1), str(f2)], include_file_paths="foo")
+        pl.scan_parquet([format_file_uri(str(f1)), str(f2)], include_file_paths="foo")
         .filter(value=1)
         .collect()
     )

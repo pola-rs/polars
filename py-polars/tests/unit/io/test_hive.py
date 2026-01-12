@@ -926,7 +926,7 @@ def test_hive_windows_splits_on_forward_slashes(tmp_path: Path, prefix: str) -> 
 
     expect = pl.DataFrame(
         [
-            s.new_from_index(0, 7)
+            s.new_from_index(0, 5)
             for s in pl.DataFrame(
                 {
                     "x": "x",

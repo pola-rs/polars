@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 import polars as pl
 from polars._plr import _ir_nodes
 from polars._utils.wrap import wrap_df
+from tests.unit.io.conftest import format_file_uri
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -142,7 +143,7 @@ def test_run_on_pandas() -> None:
 
 
 def test_path_uri_to_python_conversion_22766(tmp_path: Path) -> None:
-    path = f"file://{tmp_path / 'data.parquet'}"
+    path = format_file_uri(f"{tmp_path / 'data.parquet'}")
 
     df = pl.DataFrame({"x": 1})
     df.write_parquet(path)
@@ -153,8 +154,6 @@ def test_path_uri_to_python_conversion_22766(tmp_path: Path) -> None:
     assert len(out) == 1
 
     assert out[0].startswith("file://")
-
-    # Windows fails because it turns everything into `\\`
     assert out == [path]
 
 

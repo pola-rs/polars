@@ -119,7 +119,9 @@ impl PlPath {
 
                 if position < path_str.len() {
                     assert!(
-                        path_str[position..].starts_with('/') || path_str[position..].is_empty()
+                        path_str[position..].starts_with('/')
+                            || path_str[position..].is_empty()
+                            || matches!(scheme, CloudScheme::FileNoHostname)
                     );
                 }
 
@@ -135,7 +137,7 @@ impl PlPath {
     /// separator found, `i` will simply be the length of the string.
     pub fn authority_end_position(&self) -> usize {
         match self.scheme() {
-            None => 0,
+            None => self.as_str().len(),
             Some(scheme @ CloudScheme::FileNoHostname) => scheme.strip_scheme_index(),
             Some(_) => {
                 let after_scheme = self.strip_scheme();
