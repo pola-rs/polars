@@ -189,12 +189,6 @@ impl ComputeNode for MergeJoinNode {
         } else if input_channels_done
             && input_buffers_empty
             && matches!(self.state, Running | FlushInputBuffers)
-            && unmatched_buffers_empty
-        {
-            self.state = Done;
-        } else if input_channels_done
-            && input_buffers_empty
-            && matches!(self.state, Running | FlushInputBuffers)
         {
             let mut all_unmatched = DataFrame::empty_with_schema(&self.params.output_schema);
             for df in take(&mut self.unmatched).into_values() {
