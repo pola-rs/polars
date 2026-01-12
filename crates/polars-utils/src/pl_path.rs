@@ -510,6 +510,16 @@ mod tests {
         assert_eq!(PlRefPath::new("file://").scheme(), Some(CloudScheme::File));
 
         assert_eq!(
+            PlRefPath::new("file://").strip_scheme_split_authority(),
+            None
+        );
+
+        assert_eq!(
+            PlRefPath::new("file:///").strip_scheme_split_authority(),
+            Some(("", "/"))
+        );
+
+        assert_eq!(
             PlRefPath::new("file:///path").strip_scheme_split_authority(),
             Some(("", "/path"))
         );
