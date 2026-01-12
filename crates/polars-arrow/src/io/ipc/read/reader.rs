@@ -1,6 +1,7 @@
 use std::io::{Read, Seek};
 
-use polars_error::PolarsResult;
+use arrow_format::ipc::KeyValue;
+use polars_error::{PolarsResult, polars_err};
 
 use super::common::*;
 use super::file::{get_message_from_block, get_message_from_block_offset, get_record_batch};
@@ -221,8 +222,42 @@ impl<R: Read + Seek> BlockReader<R> {
 
         let message = get_message_from_block_offset(&mut self.reader, offset, message_scratch)?;
         let batch = get_record_batch(message)?;
-
         let out = batch.length().map(|l| usize::try_from(l).unwrap())?;
         Ok(out)
+    }
+
+    /// Reads the record batch header and returns the custom_metadata.
+    pub fn record_batch_custom_metadata(
+        &mut self,
+        message_scratch: &mut Vec<u8>,
+    ) -> PolarsResult<Option<Vec<KeyValue>>> {
+        let offset: u64 = 0;
+        let message = get_message_from_block_offset(&mut self.reader, offset, message_scratch)?;
+        let custom_metadata = message.custom_metadata()?;
+
+        //kdn TODO - use KeyValueRefs instead of KeyValue
+        custom_metadata
+            .map(|kv_results| {
+                kv_results
+                    .iter()
+                    .map(|res| {
+                        let kv_ref =
+                            res.map_err(|e| polars_err!(ComputeError: "failed to get KeyValue from IPC custom metadata: {}", e))?;
+
+                        let key = kv_ref
+                            .key()
+                            .map_err(|e| polars_err!(ComputeError: "failed to extract key from IPC custom metadata: {}", e))?
+                            .map(|s| s.to_string());
+
+                        let value = kv_ref
+                            .value()
+                            .map_err(|e| polars_err!(ComputeError: "failed to extract value from IPC custom metadata: {}", e))?
+                            .map(|s| s.to_string());
+
+                        Ok(KeyValue { key, value })
+                    })
+                    .collect::<PolarsResult<Vec<KeyValue>>>()
+            })
+            .transpose()
     }
 }

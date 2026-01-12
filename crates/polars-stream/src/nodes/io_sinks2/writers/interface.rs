@@ -6,12 +6,16 @@ use polars_io::utils::file::Writeable;
 use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_utils::IdxSize;
 use polars_utils::index::NonZeroIdxSize;
+use polars_utils::pl_str::PlSmallStr;
 
 use crate::async_executor;
 use crate::async_primitives::connector;
 use crate::nodes::io_sinks2::components::sink_morsel::SinkMorsel;
 use crate::nodes::io_sinks2::components::size::TakeableRowsProvider;
 use crate::utils::tokio_handle_ext;
+
+pub const IPC_RW_RECORD_BATCH_FLAGS_KEY: PlSmallStr =
+    PlSmallStr::from_static("polars:statistics:v1");
 
 pub trait FileWriterStarter: Send + Sync + 'static {
     fn writer_name(&self) -> &str;
