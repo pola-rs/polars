@@ -86,12 +86,12 @@ impl RecordBatchDecoder {
 
             // Update df with flags.
             if let Some(Some(flags)) = flags {
-                polars_ensure!(flags.len() == df.get_columns().len(),
+                polars_ensure!(flags.len() == df.columns().len(),
                     ComputeError: "IPC metadata flags count ({}) does not match number of columns ({})",
-                    flags.len(), df.get_columns().len()
+                    flags.len(), df.columns().len()
                 );
                 unsafe {
-                    df.get_columns_mut()
+                    df.columns_mut()
                         .iter_mut()
                         .zip(flags)
                         .for_each(|(c, f)| {
