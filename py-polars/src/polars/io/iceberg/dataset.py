@@ -13,6 +13,7 @@ from polars.exceptions import ComputeError
 from polars.io.iceberg._utils import (
     IcebergStatisticsLoader,
     IdentityTransformedPartitionValuesBuilder,
+    _normalize_windows_iceberg_file_uri,
     _scan_pyarrow_dataset_impl,
     try_convert_pyarrow_predicate,
 )
@@ -294,7 +295,9 @@ class IcebergDataset:
 
                 total_physical_rows += file_info.file.record_count
 
-                sources.append(file_info.file.file_path)
+                sources.append(
+                    _normalize_windows_iceberg_file_uri(file_info.file.file_path)
+                )
 
             if verbose:
                 elapsed = perf_counter() - start_time

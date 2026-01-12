@@ -596,7 +596,6 @@ def test_overlapping_groups_4628() -> None:
     }
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Minor numerical diff")
 def test_rolling_skew_lagging_null_5179() -> None:
     s = pl.Series([None, 3, 4, 1, None, None, None, None, 3, None, 5, 4, 7, 2, 1, None])
     result = s.rolling_skew(3, min_samples=1).fill_nan(-1.0)
