@@ -135,6 +135,11 @@ impl ExprIR {
                     out.output_name = OutputName::ColumnLhs(name.clone());
                     break;
                 },
+                #[cfg(feature = "dtype-struct")]
+                AExpr::StructField(name) => {
+                    out.output_name = OutputName::Field(name.clone());
+                    break;
+                },
                 AExpr::Literal(lv) => {
                     if let LiteralValue::Series(s) = lv {
                         out.output_name = OutputName::LiteralLhs(s.name().clone());
@@ -195,7 +200,7 @@ impl ExprIR {
         }
     }
 
-    pub(crate) fn set_node(&mut self, node: Node) {
+    pub fn set_node(&mut self, node: Node) {
         self.node = node;
         self.output_dtype = OnceLock::new();
     }

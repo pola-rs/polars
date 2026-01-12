@@ -14,6 +14,7 @@ impl Hash for AExpr {
 
         match self {
             AExpr::Column(name) => name.hash(state),
+            AExpr::StructField(name) => name.hash(state),
             AExpr::Literal(lv) => lv.hash(state),
             AExpr::Function {
                 options,
@@ -99,6 +100,10 @@ impl Hash for AExpr {
                 evaluation: _,
                 variant,
             } => variant.hash(state),
+            AExpr::StructEval {
+                expr: _,
+                evaluation: _,
+            } => {},
             AExpr::Slice {
                 input: _,
                 offset: _,

@@ -616,6 +616,7 @@ def test_scan_nonexistent_path(format: str) -> None:
     "streaming",
     [True, False],
 )
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows paths are different")
 def test_scan_include_file_paths(
     tmp_path: Path,
     scan_func: Callable[..., pl.LazyFrame],
@@ -1242,10 +1243,10 @@ def corrupt_compressed_csv() -> bytes:
     return corrupted_data
 
 
-def test_scan_csv_streaming_decompression(corrupt_compressed_csv: bytes) -> None:
-    # TODO: also without schema
-    schema = {"line_val": pl.String}
-
+@pytest.mark.parametrize("schema", [{"line_val": pl.String}, None])
+def test_scan_csv_streaming_decompression(
+    corrupt_compressed_csv: bytes, schema: Any
+) -> None:
     slice_count = 11
 
     df = (

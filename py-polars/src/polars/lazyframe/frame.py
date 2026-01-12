@@ -1326,7 +1326,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         streaming
             Unused parameter, kept for backward compatibility.
 
-           ... deprecated:: 1.30.0
+            .. deprecated:: 1.30.0
                 Use the `engine` parameter instead.
         engine
             Select the engine used to process the query, optional.

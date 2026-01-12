@@ -50,7 +50,7 @@ old_getrandom = { version = "0.2", features = ["js"], package = "getrandom" }
 [features]
 sql = ["polars-sql"]
 rows = ["polars-core/rows"]
-simd = ["polars-core/simd", "polars-io/simd", "polars-ops?/simd"]
+simd = ["polars-core/simd", "polars-compute/simd", "polars-io/simd", "polars-ops?/simd"]
 avx512 = ["polars-core/avx512"]
 nightly = [
   "polars-core/nightly",

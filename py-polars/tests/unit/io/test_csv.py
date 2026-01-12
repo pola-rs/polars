@@ -3016,3 +3016,66 @@ def test_empty_csv_raise(read_fn: str) -> None:
     csv_str = b""
     with pytest.raises(pl.exceptions.NoDataError):
         getattr(pl, read_fn)(csv_str, raise_if_empty=True).lazy().collect()
+
+
+@pytest.mark.parametrize("read_fn", ["read_csv", "scan_csv"])
+def test_skip_lines_and_rows_raise(read_fn: str) -> None:
+    csv_str = b"A,1,2,3"
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        getattr(pl, read_fn)(csv_str, skip_lines=1, skip_rows=2).lazy().collect()
+
+
+@pytest.mark.parametrize("read_fn", ["read_csv", "scan_csv"])
+@pytest.mark.parametrize(
+    ("csv_str", "expected"),
+    [
+        (b"", []),
+        (b"A", [pl.Series("A", [], pl.String)]),
+        (b"A\n1\n2\n3", [pl.Series("A", [1, 2, 3])]),
+    ],
+)
+def test_utf8_bom(read_fn: str, csv_str: bytes, expected: list[pl.Series]) -> None:
+    csv_str = b"\xef\xbb\xbf" + csv_str
+    df = getattr(pl, read_fn)(csv_str, raise_if_empty=False).lazy().collect()
+    assert_frame_equal(df, pl.DataFrame(expected))
+
+
+@pytest.mark.parametrize("read_fn", ["read_csv", "scan_csv"])
+def test_invalid_utf8_bom(read_fn: str) -> None:
+    csv_str = b"\xef\xaa\xbdA\n3"
+    df = getattr(pl, read_fn)(csv_str, raise_if_empty=False).lazy().collect()
+    expected = [pl.Series("諾A", [3])]
+    assert_frame_equal(df, pl.DataFrame(expected))
+
+
+def test_invalid_utf8_in_schema() -> None:
+    csv_str = b"\xef\xff\xbdA,B\n3,\xe0\x80\x80\n-6,x3"
+    lf = pl.scan_csv(csv_str)
+
+    # Schema inference should not fail because of invalid utf-8.
+    assert lf.collect_schema() == {"���A": pl.Int64, "B": pl.String}
+
+    # But actual execution should.
+    with pytest.raises(pl.exceptions.ComputeError):
+        lf.collect()
+
+
+@pytest.mark.parametrize("read_fn", ["read_csv", "scan_csv"])
+def test_provided_schema_mismatch_raise(read_fn: str) -> None:
+    csv_str = b"A,B\n1,2"
+    schema = {"A": pl.Int64}
+    with pytest.raises(pl.exceptions.SchemaError):
+        getattr(pl, read_fn)(csv_str, schema=schema).lazy().collect()
+
+
+@pytest.mark.parametrize("read_fn", ["read_csv", "scan_csv"])
+def test_provided_schema_mismatch_truncate(read_fn: str) -> None:
+    csv_str = b"A,B\n1,2"
+    schema = {"A": pl.Int64}
+    df = (
+        getattr(pl, read_fn)(csv_str, schema=schema, truncate_ragged_lines=True)
+        .lazy()
+        .collect()
+    )
+    expected = [pl.Series("A", [1])]
+    assert_frame_equal(df, pl.DataFrame(expected))
