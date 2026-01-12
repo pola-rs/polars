@@ -11,7 +11,7 @@ macro_rules! format_pl_refstr {
 
         let mut string = String::new();
         write!(string, $($arg)*).unwrap();
-        $crate::pl_ref_str::PlRefStr::from_string(string)
+        $crate::pl_str::PlRefStr::from_string(string)
     }}
 }
 
