@@ -9,4 +9,4 @@ pub use polars_ops::prelude::*;
 #[cfg(feature = "temporal")]
 pub use polars_time::prelude::*;
 pub use polars_utils::float16::pf16;
-pub use polars_utils::plpath::{CloudScheme, PlPath, PlPathRef};
+pub use polars_utils::pl_path::{CloudScheme, PlRefPath};
