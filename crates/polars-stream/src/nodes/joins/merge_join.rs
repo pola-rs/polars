@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt;
-use std::mem::{swap, take};
+use std::mem::take;
 
 use arrow::array::Array;
 use arrow::array::builder::ShareStrategy;
@@ -64,11 +64,12 @@ struct MergeJoinParams {
 }
 
 impl MergeJoinParams {
-    fn right_is_build(&self) -> Option<bool> {
+    fn left_is_build(&self) -> bool {
         match self.args.maintain_order {
-            MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft => Some(true),
-            MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight => Some(false),
-            MaintainOrderJoin::None => None,
+            MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft => false,
+            MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight => true,
+            MaintainOrderJoin::None if self.args.how == JoinType::Right => false,
+            _ => true,
         }
     }
 }
@@ -419,21 +420,41 @@ async fn compute_join(
     unmatched_send: tokio::sync::mpsc::Sender<Morsel>,
     max_seq_sent_send: tokio::sync::mpsc::Sender<MorselSeq>,
 ) -> PolarsResult<()> {
-    let mut left_sp = &params.left;
-    let mut right_sp = &params.right;
     let mut left = left.into_df();
     let mut right = right.into_df();
-
     left.rechunk_mut();
     right.rechunk_mut();
 
-    let mut left_key = Cow::Borrowed(
-        left.column(&params.left.key_col)
+    let build;
+    let build_sp;
+    let gather_build;
+    let probe;
+    let probe_sp;
+    let gather_probe;
+    if params.left_is_build() {
+        build = left.clone();
+        build_sp = &params.left;
+        gather_build = &mut arenas.gather_left;
+        probe = right.clone();
+        probe_sp = &params.right;
+        gather_probe = &mut arenas.gather_right;
+    } else {
+        build = right.clone();
+        build_sp = &params.right;
+        gather_build = &mut arenas.gather_right;
+        probe = left.clone();
+        probe_sp = &params.left;
+        gather_probe = &mut arenas.gather_left;
+    }
+
+    let mut build_key = Cow::Borrowed(
+        build
+            .column(&params.left.key_col)
             .unwrap()
             .as_materialized_series(),
     );
-    let mut right_key = Cow::Borrowed(
-        right
+    let mut probe_key = Cow::Borrowed(
+        probe
             .column(&params.right.key_col)
             .unwrap()
             .as_materialized_series(),
@@ -442,59 +463,38 @@ async fn compute_join(
     #[cfg(feature = "dtype-categorical")]
     {
         // Categoricals are lexicographically ordered, not by their physical values.
-        if matches!(left_key.dtype(), DataType::Categorical(_, _)) {
-            left_key = Cow::Owned(left_key.cast(&DataType::String)?);
+        if matches!(build_key.dtype(), DataType::Categorical(_, _)) {
+            build_key = Cow::Owned(build_key.cast(&DataType::String)?);
         }
-        if matches!(right_key.dtype(), DataType::Categorical(_, _)) {
-            right_key = Cow::Owned(right_key.cast(&DataType::String)?);
+        if matches!(probe_key.dtype(), DataType::Categorical(_, _)) {
+            probe_key = Cow::Owned(probe_key.cast(&DataType::String)?);
         }
     }
-
-    let right_is_build = params.right_is_build().unwrap_or(false);
 
     arenas.matched_probeside.clear();
-    if right_is_build {
-        arenas.matched_probeside.resize(left_key.len(), false);
-    } else {
-        arenas.matched_probeside.resize(right_key.len(), false);
-    }
+    arenas.matched_probeside.resize(probe_key.len(), false);
 
     let mut current_offset = 0;
     let mut done = false;
     while !done {
-        arenas.gather_left.clear();
-        arenas.gather_right.clear();
-        if right_is_build {
-            done = compute_join_dispatch(
-                &right_key,
-                &left_key,
-                &mut arenas.gather_right,
-                &mut arenas.gather_left,
-                &mut arenas.matched_probeside,
-                &mut current_offset,
-                right_sp,
-                left_sp,
-                params,
-            );
-        } else {
-            done = compute_join_dispatch(
-                &left_key,
-                &right_key,
-                &mut arenas.gather_left,
-                &mut arenas.gather_right,
-                &mut arenas.matched_probeside,
-                &mut current_offset,
-                left_sp,
-                right_sp,
-                params,
-            );
-        }
-
+        gather_build.clear();
+        gather_probe.clear();
+        done = compute_join_dispatch(
+            &build_key,
+            &probe_key,
+            gather_build,
+            gather_probe,
+            &mut arenas.matched_probeside,
+            &mut current_offset,
+            build_sp,
+            probe_sp,
+            params,
+        );
         let df = gather_and_postprocess(
-            left.clone(),
-            right.clone(),
-            &mut arenas.gather_left,
-            &mut arenas.gather_right,
+            build.clone(),
+            probe.clone(),
+            gather_build,
+            gather_probe,
             &mut arenas.df_builders,
             params,
         )?;
@@ -506,45 +506,37 @@ async fn compute_join(
         }
     }
 
-    arenas.gather_left.clear();
-    arenas.gather_right.clear();
-    if right_is_build {
-        swap(&mut arenas.gather_left, &mut arenas.gather_right);
-        swap(&mut left_sp, &mut right_sp);
-    }
-    if right_sp.emit_unmatched {
+    if probe_sp.emit_unmatched {
+        gather_build.clear();
+        gather_probe.clear();
         for (idx, _) in arenas
             .matched_probeside
             .iter()
             .enumerate_idx()
             .filter(|(_, m)| !m)
         {
-            arenas.gather_left.push(IdxSize::MAX);
-            arenas.gather_right.push(idx);
+            gather_build.push(IdxSize::MAX);
+            gather_probe.push(idx);
         }
-    }
-    if right_is_build {
-        swap(&mut arenas.gather_left, &mut arenas.gather_right);
-        swap(&mut left_sp, &mut right_sp);
-    }
 
-    let df_unmatched = gather_and_postprocess(
-        left,
-        right,
-        &mut arenas.gather_left,
-        &mut arenas.gather_right,
-        &mut arenas.df_builders,
-        params,
-    )?;
-    if df_unmatched.height() > 0 {
-        let morsel = Morsel::new(df_unmatched, seq, source_token.clone());
-        if params.args.maintain_order == MaintainOrderJoin::None {
-            if send.send(morsel).await.is_err() {
-                return Ok(());
-            }
-        } else {
-            if unmatched_send.send(morsel).await.is_err() {
-                panic!("broken pipe");
+        let df_unmatched = gather_and_postprocess(
+            build,
+            probe,
+            gather_build,
+            gather_probe,
+            &mut arenas.df_builders,
+            params,
+        )?;
+        if df_unmatched.height() > 0 {
+            let morsel = Morsel::new(df_unmatched, seq, source_token.clone());
+            if params.args.maintain_order == MaintainOrderJoin::None {
+                if send.send(morsel).await.is_err() {
+                    return Ok(());
+                }
+            } else {
+                if unmatched_send.send(morsel).await.is_err() {
+                    panic!("broken pipe");
+                }
             }
         }
     }
@@ -773,14 +765,30 @@ fn compute_join_kernel_nullkeys(
 }
 
 fn gather_and_postprocess(
-    mut left: DataFrame,
-    mut right: DataFrame,
-    left_gather: &mut [IdxSize],
-    right_gather: &mut [IdxSize],
+    build: DataFrame,
+    probe: DataFrame,
+    gather_build: &[IdxSize],
+    gather_probe: &[IdxSize],
     df_builders: &mut Option<(DataFrameBuilder, DataFrameBuilder)>,
     params: &MergeJoinParams,
 ) -> PolarsResult<DataFrame> {
     let should_coalesce = params.args.should_coalesce();
+
+    let mut left;
+    let gather_left;
+    let mut right;
+    let gather_right;
+    if params.left_is_build() {
+        left = build;
+        gather_left = gather_build;
+        right = probe;
+        gather_right = gather_probe;
+    } else {
+        right = build;
+        gather_right = gather_build;
+        left = probe;
+        gather_left = gather_probe;
+    }
 
     // Remove non-payload columns
     for col in left
@@ -825,14 +833,14 @@ fn gather_and_postprocess(
 
     let (left_build, right_build) = df_builders.as_mut().unwrap();
     if params.right.emit_unmatched {
-        left_build.opt_gather_extend(&left, left_gather, ShareStrategy::Never);
+        left_build.opt_gather_extend(&left, gather_left, ShareStrategy::Never);
     } else {
-        unsafe { left_build.gather_extend(&left, left_gather, ShareStrategy::Never) };
+        unsafe { left_build.gather_extend(&left, gather_left, ShareStrategy::Never) };
     }
     if params.left.emit_unmatched {
-        right_build.opt_gather_extend(&right, right_gather, ShareStrategy::Never);
+        right_build.opt_gather_extend(&right, gather_right, ShareStrategy::Never);
     } else {
-        unsafe { right_build.gather_extend(&right, right_gather, ShareStrategy::Never) };
+        unsafe { right_build.gather_extend(&right, gather_right, ShareStrategy::Never) };
     }
 
     let mut left = left_build.freeze_reset();
@@ -965,8 +973,8 @@ fn find_mergeable_limiting(
 }
 
 fn find_mergeable_partition(
-    mut build: DataFrameBuffer,
-    mut probe: DataFrameBuffer,
+    left: DataFrameBuffer,
+    right: DataFrameBuffer,
     fmp: FindMergeableParams,
 ) -> PolarsResult<UnitVec<(DataFrameBuffer, DataFrameBuffer)>> {
     let morsel_size = get_ideal_morsel_size();
@@ -978,41 +986,45 @@ fn find_mergeable_partition(
         fmp.params.args.maintain_order,
         MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft
     );
-    let build_side_left = fmp.left_params.emit_unmatched || maintain_order_left;
-    let build_side_right = fmp.right_params.emit_unmatched || maintain_order_right;
-    if build_side_left && build_side_right {
+    let partition_left = fmp.left_params.emit_unmatched || maintain_order_left;
+    let partition_right = fmp.right_params.emit_unmatched || maintain_order_right;
+    if partition_left && partition_right {
         // TODO: We may be able to partition a subset of these cases (e.g. for FULL joins)
-        return Ok(UnitVec::from([(build, probe)]));
+        return Ok(UnitVec::from([(left, right)]));
     }
 
-    let partition_count = (build.height() * probe.height() + build.height() + probe.height())
+    let partition_count = (left.height() * right.height() + left.height() + right.height())
         .div_ceil(morsel_size.pow(2));
     if partition_count <= 1 {
-        return Ok(UnitVec::from([(build, probe)]));
+        return Ok(UnitVec::from([(left, right)]));
     }
 
-    if build_side_right {
-        swap(&mut build, &mut probe);
-    }
-
-    let chunk_size = build.height().div_ceil(partition_count);
-    let mut offset = 0;
+    let partition_side;
+    let broadcast_side;
     let mut partitions = UnitVec::with_capacity(partition_count);
-    while offset < build.height() - chunk_size {
-        let build_chunk = build.clone().slice(offset, chunk_size);
-        partitions.push((build_chunk, probe.clone()));
+    let mut push_partition: Box<dyn FnMut(DataFrameBuffer, DataFrameBuffer)>;
+    if partition_left {
+        partition_side = left;
+        broadcast_side = right;
+        push_partition = Box::new(|part, broad| partitions.push((part, broad)));
+    } else {
+        partition_side = right;
+        broadcast_side = left;
+        push_partition = Box::new(|part, broad| partitions.push((broad, part)));
+    }
+
+    let chunk_size = partition_side.height().div_ceil(partition_count);
+    let mut offset = 0;
+    while offset < partition_side.height() - chunk_size {
+        let partition_chunk = partition_side.clone().slice(offset, chunk_size);
+        push_partition(partition_chunk, broadcast_side.clone());
         offset += chunk_size;
     }
     // Always make sure that there is at least one partition, even if the build side is empty.
-    let build_chunk = build.slice(offset, chunk_size);
-    partitions.push((build_chunk, probe));
+    let build_chunk = partition_side.slice(offset, chunk_size);
+    push_partition(build_chunk, broadcast_side);
 
-    if build_side_right {
-        for (l, r) in partitions.iter_mut() {
-            swap(l, r);
-        }
-    }
-
+    drop(push_partition);
     Ok(partitions)
 }
 
