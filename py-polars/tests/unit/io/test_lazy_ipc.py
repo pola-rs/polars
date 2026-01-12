@@ -327,3 +327,14 @@ def test_sink_ipc_record_batch_size(record_batch_size: int, n_chunks: int) -> No
         assert n_rows == record_batch_size or (
             i + 1 == n_batches and n_rows <= record_batch_size
         )
+
+
+@pytest.mark.parametrize("compression", COMPRESSIONS)
+def test_scan_ipc_compression_with_slice_26063(compression: IpcCompression) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    buf = io.BytesIO()
+
+    df.lazy().sink_ipc(buf, compression=compression)
+    out = pl.scan_ipc(buf).slice(0, 1).collect()
+    expected = df.slice(0, 1)
+    assert_frame_equal(out, expected)
