@@ -947,6 +947,7 @@ print("OK", end="")
     assert out == b"OK"
 
 
+@pytest.mark.slow
 def test_scan_parquet_in_mem_to_streaming_dispatch_deadlock_22641() -> None:
     out = subprocess.check_output(
         [
