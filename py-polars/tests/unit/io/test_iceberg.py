@@ -52,6 +52,7 @@ from polars._utils.various import parse_version
 from polars.io.iceberg._utils import _convert_predicate, _to_ast
 from polars.io.iceberg.dataset import IcebergDataset, _NativeIcebergScanData
 from polars.testing import assert_frame_equal
+from tests.unit.io.conftest import format_file_uri, normalize_path_separator_pl
 
 with warnings.catch_warnings():
     # Upstream issue at https://github.com/apache/iceberg-python/issues/2648.
@@ -73,7 +74,7 @@ def iceberg_path(io_files_path: Path) -> str:
         os.symlink(f"{current_path}/files/iceberg-table", "/tmp/iceberg/t1")  # noqa: PTH211
 
     iceberg_path = io_files_path / "iceberg-table" / "metadata" / "v2.metadata.json"
-    return f"file://{iceberg_path.resolve()}"
+    return format_file_uri(f"{iceberg_path.resolve()}")
 
 
 @pytest.mark.slow
@@ -250,7 +251,7 @@ def test_write_iceberg(df: pl.DataFrame, tmp_path: Path) -> None:
 
     # in-memory catalog
     catalog = SqlCatalog(
-        "default", uri="sqlite:///:memory:", warehouse=f"file://{tmp_path}"
+        "default", uri="sqlite:///:memory:", warehouse=format_file_uri(tmp_path)
     )
     catalog.create_namespace("foo")
     table = catalog.create_table(
@@ -276,7 +277,7 @@ def test_scan_iceberg_row_index_renamed(tmp_path: Path) -> None:
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
-        warehouse=f"file://{tmp_path}",
+        warehouse=format_file_uri(tmp_path),
     )
     catalog.create_namespace("namespace")
 
@@ -350,7 +351,7 @@ def test_scan_iceberg_collect_without_version_scans_latest(
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
-        warehouse=f"file://{tmp_path}",
+        warehouse=format_file_uri(tmp_path),
     )
 
     catalog.create_namespace("namespace")
@@ -403,7 +404,7 @@ def test_scan_iceberg_extra_columns(tmp_path: Path) -> None:
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
-        warehouse=f"file://{tmp_path}",
+        warehouse=format_file_uri(tmp_path),
     )
     catalog.create_namespace("namespace")
 
@@ -467,7 +468,7 @@ def test_scan_iceberg_extra_struct_fields(tmp_path: Path) -> None:
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
-        warehouse=f"file://{tmp_path}",
+        warehouse=format_file_uri(tmp_path),
     )
     catalog.create_namespace("namespace")
 
@@ -538,7 +539,7 @@ def test_scan_iceberg_column_deletion(tmp_path: Path) -> None:
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
-        warehouse=f"file://{tmp_path}",
+        warehouse=format_file_uri(tmp_path),
     )
     catalog.create_namespace("namespace")
 
@@ -578,7 +579,7 @@ def test_scan_iceberg_nested_column_cast_deletion_rename(tmp_path: Path) -> None
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
-        warehouse=f"file://{tmp_path}",
+        warehouse=format_file_uri(tmp_path),
     )
     catalog.create_namespace("namespace")
 
@@ -910,7 +911,7 @@ def test_scan_iceberg_nulls_multiple_nesting(tmp_path: Path) -> None:
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
-        warehouse=f"file://{tmp_path}",
+        warehouse=format_file_uri(tmp_path),
     )
     catalog.create_namespace("namespace")
 
@@ -1051,7 +1052,7 @@ def test_scan_iceberg_nulls_nested(tmp_path: Path) -> None:
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
-        warehouse=f"file://{tmp_path}",
+        warehouse=format_file_uri(tmp_path),
     )
     catalog.create_namespace("namespace")
 
@@ -1121,7 +1122,7 @@ def test_scan_iceberg_parquet_prefilter_with_column_mapping(
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
-        warehouse=f"file://{tmp_path}",
+        warehouse=format_file_uri(tmp_path),
     )
     catalog.create_namespace("namespace")
 
@@ -1240,7 +1241,7 @@ def test_fill_missing_fields_with_identity_partition_values(
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
-        warehouse=f"file://{tmp_path}",
+        warehouse=format_file_uri(tmp_path),
     )
     catalog.create_namespace("namespace")
 
@@ -1393,7 +1394,7 @@ def test_fill_missing_fields_with_identity_partition_values_nested(
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
-        warehouse=f"file://{tmp_path}",
+        warehouse=format_file_uri(tmp_path),
     )
     catalog.create_namespace("namespace")
 
@@ -1511,7 +1512,7 @@ def test_scan_iceberg_min_max_statistics_filter(
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
-        warehouse=f"file://{tmp_path}",
+        warehouse=format_file_uri(tmp_path),
     )
     catalog.create_namespace("namespace")
 
@@ -1920,7 +1921,7 @@ def test_scan_iceberg_categorical_24140(tmp_path: Path) -> None:
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
-        warehouse=f"file://{tmp_path}",
+        warehouse=format_file_uri(tmp_path),
     )
     catalog.create_namespace("namespace")
 
@@ -1962,7 +1963,7 @@ def test_scan_iceberg_fast_count(tmp_path: Path) -> None:
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
-        warehouse=f"file://{tmp_path}",
+        warehouse=format_file_uri(tmp_path),
     )
     catalog.create_namespace("namespace")
 

@@ -15,6 +15,7 @@ pub const WINDOWS_EXTPATH_PREFIX: &str = r#"\\?\"#;
 
 #[repr(transparent)]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// UTF-8 path.
 pub struct PlPath {
     inner: str,
 }
@@ -23,7 +24,7 @@ pub struct PlPath {
 // TODO: Derive after DSL unfreeze
 // #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 // #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-/// Reference-counted path.
+/// Reference-counted [`PlPath`]
 pub struct PlRefPath {
     inner: PlRefStr,
 }
@@ -113,17 +114,15 @@ impl PlPath {
     pub fn strip_scheme_split_authority(&self) -> Option<(&'_ str, &'_ str)> {
         match self.scheme() {
             None => Some(("", self.strip_scheme())),
-            // FIXME: Remove this, it's not correct.
-            Some(CloudScheme::File | CloudScheme::FileNoHostname) => {
-                Some(("", self.strip_scheme()))
-            },
             Some(scheme) => {
                 let path_str = self.as_str();
                 let position = self.authority_end_position();
 
                 if position < path_str.len() {
                     assert!(
-                        path_str[position..].starts_with('/') || path_str[position..].is_empty()
+                        path_str[position..].starts_with('/')
+                            || path_str[position..].is_empty()
+                            || matches!(scheme, CloudScheme::FileNoHostname)
                     );
                 }
 
@@ -139,7 +138,7 @@ impl PlPath {
     /// separator found, `i` will simply be the length of the string.
     pub fn authority_end_position(&self) -> usize {
         match self.scheme() {
-            None => 0,
+            None => self.as_str().len(),
             Some(scheme @ CloudScheme::FileNoHostname) => scheme.strip_scheme_index(),
             Some(_) => {
                 let after_scheme = self.strip_scheme();
@@ -174,11 +173,7 @@ impl PlPath {
                 .strip_prefix(WINDOWS_EXTPATH_PREFIX)
                 .unwrap_or(path_str);
 
-            if matches!(
-                CloudScheme::from_path(path_str),
-                None | Some(CloudScheme::File | CloudScheme::FileNoHostname)
-            ) && path_str.contains('\\')
-            {
+            if CloudScheme::from_path(path_str).is_none() && path_str.contains('\\') {
                 let new_path = path_str.replace('\\', "/");
                 let inner = PlRefStr::from_string(new_path);
                 return Some(PlRefPath { inner });
@@ -228,7 +223,9 @@ impl PlRefPath {
         Self::default()
     }
 
-    /// This will normalize Windows paths to use forward slashes.
+    /// # Windows Paths
+    /// Windows paths will have leading `\\?\` prefix stripped, and all backslashes normalized to
+    /// forward slashes.
     pub fn new(path: impl AsRef<str> + Into<PlRefStr>) -> Self {
         if let Some(path) = PlPath::normalize_windows_path(path.as_ref()) {
             return path;
@@ -512,6 +509,45 @@ mod tests {
         );
 
         assert_eq!(PlRefPath::new("file://").scheme(), Some(CloudScheme::File));
+
+        assert_eq!(
+            PlRefPath::new("file://").strip_scheme_split_authority(),
+            None
+        );
+
+        assert_eq!(
+            PlRefPath::new("file:///").strip_scheme_split_authority(),
+            Some(("", "/"))
+        );
+
+        assert_eq!(
+            PlRefPath::new("file:///path").strip_scheme_split_authority(),
+            Some(("", "/path"))
+        );
+
+        assert_eq!(
+            PlRefPath::new("file://hostname:80/path").strip_scheme_split_authority(),
+            Some(("hostname:80", "/path"))
+        );
+
+        assert_eq!(
+            PlRefPath::new("file:").scheme(),
+            Some(CloudScheme::FileNoHostname)
+        );
+        assert_eq!(
+            PlRefPath::new("file:/").scheme(),
+            Some(CloudScheme::FileNoHostname)
+        );
+        assert_eq!(PlRefPath::new("file:").strip_scheme_split_authority(), None);
+        assert_eq!(
+            PlRefPath::new("file:/Local/path").strip_scheme_split_authority(),
+            Some(("", "/Local/path"))
+        );
+
+        assert_eq!(
+            PlRefPath::new(r#"\\?\C:\Windows\system32"#).as_str(),
+            "C:/Windows/system32"
+        );
     }
 
     #[test]
