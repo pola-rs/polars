@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use polars_core::functions::concat_df_horizontal;
+use polars_core::prelude::{Column, IntoColumn};
 use polars_core::schema::Schema;
 use polars_core::series::Series;
 use polars_error::polars_ensure;
@@ -80,27 +81,31 @@ impl InputHead {
     }
 
     fn take(&mut self, len: usize) -> DataFrame {
-        if self.is_broadcast.unwrap() {
+        let columns: Vec<Column> = if self.is_broadcast.unwrap() {
             self.morsels[0]
                 .df()
+                .columns()
                 .iter()
                 .map(|s| s.new_from_index(0, len))
                 .collect()
         } else if self.total_len > 0 {
             self.total_len -= len;
-            if self.morsels[0].df().height() == len {
+
+            return if self.morsels[0].df().height() == len {
                 self.morsels.pop_front().unwrap().into_df()
             } else {
                 let (head, tail) = self.morsels[0].df().split_at(len as i64);
                 *self.morsels[0].df_mut() = tail;
                 head
-            }
+            };
         } else {
             self.schema
                 .iter()
-                .map(|(name, dtype)| Series::full_null(name.clone(), len, dtype))
+                .map(|(name, dtype)| Series::full_null(name.clone(), len, dtype).into_column())
                 .collect()
-        }
+        };
+
+        unsafe { DataFrame::new_unchecked(len, columns) }
     }
 
     fn consume_broadcast(&mut self) -> DataFrame {

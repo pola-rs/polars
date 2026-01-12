@@ -483,7 +483,7 @@ def test_parquet_slice_pushdown_non_zero_offset(
     paths = [tmp_path / "1", tmp_path / "2", tmp_path / "3"]
     dfs = [pl.DataFrame({"x": i}) for i in range(len(paths))]
 
-    for df, p in zip(dfs, paths):
+    for df, p in zip(dfs, paths, strict=True):
         df.write_parquet(p)
 
     # Parquet files containing only the metadata - i.e. the data parts are removed.
@@ -647,7 +647,7 @@ def test_parquet_unaligned_schema_read(tmp_path: Path) -> None:
 
     paths = [tmp_path / "1", tmp_path / "2", tmp_path / "3"]
 
-    for df, path in zip(dfs, paths):
+    for df, path in zip(dfs, paths, strict=True):
         df.write_parquet(path)
 
     lf = pl.scan_parquet(paths, extra_columns="ignore")
@@ -693,7 +693,7 @@ def test_parquet_unaligned_schema_read_dtype_mismatch(
 
     paths = [tmp_path / "1", tmp_path / "2"]
 
-    for df, path in zip(dfs, paths):
+    for df, path in zip(dfs, paths, strict=True):
         df.write_parquet(path)
 
     lf = pl.scan_parquet(paths)
@@ -714,7 +714,7 @@ def test_parquet_unaligned_schema_read_missing_cols_from_first(
 
     paths = [tmp_path / "1", tmp_path / "2"]
 
-    for df, path in zip(dfs, paths):
+    for df, path in zip(dfs, paths, strict=True):
         df.write_parquet(path)
 
     lf = pl.scan_parquet(paths)
@@ -737,7 +737,7 @@ def test_parquet_schema_arg(
     dfs = [pl.DataFrame({"a": 1, "b": 1}), pl.DataFrame({"a": 2, "b": 2})]
     paths = [tmp_path / "1", tmp_path / "2"]
 
-    for df, path in zip(dfs, paths):
+    for df, path in zip(dfs, paths, strict=True):
         df.write_parquet(path)
 
     schema: dict[str, pl.DataType] = {
@@ -895,7 +895,7 @@ def test_scan_parquet_streaming_row_index_19606(
 
     dfs = [pl.DataFrame({"x": i}) for i in range(len(paths))]
 
-    for df, p in zip(dfs, paths):
+    for df, p in zip(dfs, paths, strict=True):
         df.write_parquet(p)
 
     assert_frame_equal(
@@ -1206,3 +1206,24 @@ def test_scan_parquet_filter_index_panic_23849(monkeypatch: pytest.MonkeyPatch) 
         pl.scan_parquet(f, parallel=parallel).filter(  # type: ignore[arg-type]
             pl.col("col_0").ge(0) & pl.col("col_0").lt(num_rows + 1)
         ).collect()
+
+
+@pytest.mark.write_disk
+def test_sink_large_rows_25834(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("POLARS_IDEAL_SINK_MORSEL_SIZE_BYTES", "1")
+    df = pl.select(idx=pl.repeat(1, 20_000), bytes=pl.lit(b"AAAAA"))
+
+    df.write_parquet(tmp_path / "single.parquet")
+    assert_frame_equal(pl.scan_parquet(tmp_path / "single.parquet").collect(), df)
+
+    md = pq.read_metadata(tmp_path / "single.parquet")
+    assert [md.row_group(i).num_rows for i in range(md.num_row_groups)] == [
+        16384,
+        3616,
+    ]
+
+    df.write_parquet(
+        tmp_path / "partitioned",
+        partition_by="idx",
+    )
+    assert_frame_equal(pl.scan_parquet(tmp_path / "partitioned").collect(), df)

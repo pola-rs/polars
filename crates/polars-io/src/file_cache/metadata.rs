@@ -1,6 +1,6 @@
 use std::path::Path;
-use std::sync::Arc;
 
+use polars_utils::pl_path::PlRefPath;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -22,7 +22,7 @@ pub type LocalCompareResult = Result<(), LocalCompareError>;
 /// Metadata written to a file used to track state / synchronize across processes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(super) struct EntryMetadata {
-    pub(super) uri: Arc<str>,
+    pub(super) uri: PlRefPath,
     pub(super) local_last_modified: u64,
     pub(super) local_size: u64,
     pub(super) remote_version: FileVersion,
@@ -48,7 +48,7 @@ impl std::fmt::Display for LocalCompareError {
 }
 
 impl EntryMetadata {
-    pub(super) fn new(uri: Arc<str>, ttl: u64) -> Self {
+    pub(super) fn new(uri: PlRefPath, ttl: u64) -> Self {
         Self {
             uri,
             local_last_modified: 0,

@@ -34,6 +34,7 @@ pub(super) struct MemberCollector {
     pub(crate) has_sort: bool,
     pub(crate) has_group_by: bool,
     pub(crate) has_hint: bool,
+    pub(crate) with_columns_count: u32,
     #[cfg(feature = "cse")]
     scans: UniqueScans,
 }
@@ -50,6 +51,7 @@ impl MemberCollector {
             has_sort: false,
             has_group_by: false,
             has_hint: false,
+            with_columns_count: 0,
             #[cfg(feature = "cse")]
             scans: UniqueScans::default(),
         }
@@ -77,6 +79,9 @@ impl MemberCollector {
                 #[cfg(feature = "cse")]
                 Scan { .. } => {
                     self.scans.insert(_node, lp_arena, _expr_arena);
+                },
+                HStack { .. } => {
+                    self.with_columns_count += 1;
                 },
                 HConcat { .. } => {
                     self.has_joins_or_unions = true;

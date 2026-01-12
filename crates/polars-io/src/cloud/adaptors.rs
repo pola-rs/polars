@@ -6,11 +6,11 @@ use object_store::ObjectStore;
 use object_store::buffered::BufWriter;
 use object_store::path::Path;
 use polars_error::PolarsResult;
-use polars_utils::plpath::PlPathRef;
+use polars_utils::pl_path::PlRefPath;
 use tokio::io::AsyncWriteExt;
 
 use super::{CloudOptions, object_path_from_str};
-use crate::pl_async::{get_runtime, get_upload_chunk_size};
+use crate::pl_async::get_runtime;
 use crate::utils::file::WriteableTrait;
 
 fn clone_io_err(e: &std::io::Error) -> std::io::Error {
@@ -37,8 +37,9 @@ impl BlockingCloudWriter {
     pub fn new_with_object_store(
         object_store: Arc<dyn ObjectStore>,
         path: Path,
+        cloud_upload_chunk_size: usize,
     ) -> PolarsResult<Self> {
-        let writer = BufWriter::with_capacity(object_store, path, get_upload_chunk_size());
+        let writer = BufWriter::with_capacity(object_store, path, cloud_upload_chunk_size);
         Ok(BlockingCloudWriter { state: Ok(writer) })
     }
 
@@ -47,14 +48,16 @@ impl BlockingCloudWriter {
     /// Wrapper around `BlockingCloudWriter::new_with_object_store` that is useful if you only have a single write task.
     /// TODO: Naming?
     pub async fn new(
-        uri: PlPathRef<'_>,
+        uri: PlRefPath,
         cloud_options: Option<&CloudOptions>,
+        cloud_upload_chunk_size: usize,
     ) -> PolarsResult<Self> {
         let (cloud_location, object_store) =
             crate::cloud::build_object_store(uri, cloud_options, false).await?;
         Self::new_with_object_store(
             object_store.to_dyn_object_store().await,
             object_path_from_str(&cloud_location.prefix)?,
+            cloud_upload_chunk_size,
         )
     }
 
@@ -151,6 +154,8 @@ mod tests {
     use polars_core::df;
     use polars_core::prelude::DataFrame;
 
+    use crate::get_upload_chunk_size;
+
     fn example_dataframe() -> DataFrame {
         df!(
             "foo" => &[1, 2, 3],
@@ -176,7 +181,8 @@ mod tests {
         let path: object_store::path::Path = "cloud_writer_example.csv".into();
 
         let mut cloud_writer =
-            BlockingCloudWriter::new_with_object_store(object_store, path).unwrap();
+            BlockingCloudWriter::new_with_object_store(object_store, path, get_upload_chunk_size())
+                .unwrap();
         CsvWriter::new(&mut cloud_writer)
             .finish(&mut df)
             .expect("Could not write DataFrame as CSV to remote location");
@@ -187,6 +193,8 @@ mod tests {
     #[cfg(feature = "csv")]
     #[test]
     fn cloudwriter_from_cloudlocation_test() {
+        use polars_utils::pl_path::format_file_uri;
+
         use super::*;
         use crate::SerReader;
         use crate::csv::write::CsvWriter;
@@ -200,8 +208,9 @@ mod tests {
 
         let mut cloud_writer = get_runtime()
             .block_on(BlockingCloudWriter::new(
-                PlPathRef::new(&format!("file://{path}")),
+                format_file_uri(path),
                 None,
+                get_upload_chunk_size(),
             ))
             .unwrap();
 

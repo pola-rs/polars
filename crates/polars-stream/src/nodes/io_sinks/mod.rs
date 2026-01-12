@@ -79,14 +79,14 @@ impl SendBufferedMorsel {
     async fn send(&mut self, seq_id: usize, df: DataFrame) -> Result<(), ()> {
         match self {
             Self::Distributor(dist_tx) => {
-                for (i, col) in df.take_columns().into_iter().enumerate() {
+                for (i, col) in df.into_columns().into_iter().enumerate() {
                     dist_tx.send((seq_id, i, col)).await.map_err(|_| ())?
                 }
             },
             Self::PerColumn(txs) => {
                 debug_assert_eq!(txs.len(), df.width());
 
-                for (tx, col) in txs.iter_mut().zip(df.take_columns()) {
+                for (tx, col) in txs.iter_mut().zip(df.into_columns()) {
                     tx.send((seq_id, col)).await.map_err(|_| ())?
                 }
             },
@@ -120,7 +120,7 @@ fn buffer_and_distribute_columns_task(
                 }
 
                 // @NOTE: This also performs schema validation.
-                buffer.vstack_mut(&df)?;
+                buffer.vstack_mut_owned(df)?;
 
                 while buffer.height() >= chunk_size {
                     let df;
@@ -145,7 +145,7 @@ fn buffer_and_distribute_columns_task(
         }
 
         // Don't write an empty row group at the end.
-        if buffer.is_empty() {
+        if buffer.height() == 0 {
             return Ok(());
         }
 

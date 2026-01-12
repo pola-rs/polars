@@ -1,3 +1,4 @@
+use arrow::bitmap::Bitmap;
 use polars_core::{with_match_physical_float_polars_type, with_match_physical_numeric_polars_type};
 use polars_ops::series::SeriesMethods;
 
@@ -58,23 +59,38 @@ where
     Series::try_from((ca.name().clone(), arr))
 }
 
+type NonNullsAggFn<T> = dyn Fn(
+    &[T],
+    Duration,
+    &[i64],
+    ClosedWindow,
+    usize,
+    TimeUnit,
+    Option<&TimeZone>,
+    Option<RollingFnParams>,
+    Option<&[IdxSize]>,
+) -> PolarsResult<ArrayRef>;
+
+type NullsAggFn<T> = dyn for<'a> Fn(
+    &'a [T],
+    &'a Bitmap,
+    Duration,
+    &[i64],
+    ClosedWindow,
+    usize,
+    TimeUnit,
+    Option<&TimeZone>,
+    Option<RollingFnParams>,
+    Option<&[IdxSize]>,
+) -> PolarsResult<ArrayRef>;
+
 #[cfg(feature = "rolling_window_by")]
-#[allow(clippy::type_complexity)]
 fn rolling_agg_by<T>(
     ca: &ChunkedArray<T>,
     by: &Series,
     options: RollingOptionsDynamicWindow,
-    rolling_agg_fn_dynamic: &dyn Fn(
-        &[T::Native],
-        Duration,
-        &[i64],
-        ClosedWindow,
-        usize,
-        TimeUnit,
-        Option<&TimeZone>,
-        Option<RollingFnParams>,
-        Option<&[IdxSize]>,
-    ) -> PolarsResult<ArrayRef>,
+    rolling_agg_fn_dynamic_non_nulls: &NonNullsAggFn<T::Native>,
+    rolling_agg_fn_dynamic_nulls: Option<&NullsAggFn<T::Native>>,
 ) -> PolarsResult<Series>
 where
     T: PolarsNumericType,
@@ -82,10 +98,20 @@ where
     if ca.is_empty() {
         return Ok(Series::new_empty(ca.name().clone(), ca.dtype()));
     }
-    polars_ensure!(by.null_count() == 0 && ca.null_count() == 0, InvalidOperation: "'Expr.rolling_*_by(...)' not yet supported for series with null values, consider using 'DataFrame.rolling' or 'Expr.rolling'");
-    polars_ensure!(ca.len() == by.len(), InvalidOperation: "`by` column in `rolling_*_by` must be the same length as values column");
+    polars_ensure!(
+        by.null_count() == 0 && !(ca.null_count() != 0 && rolling_agg_fn_dynamic_nulls.is_none()),
+        InvalidOperation: "'Expr.rolling_*_by(...)' not yet supported for series with null values, consider using 'DataFrame.rolling' or 'Expr.rolling'"
+    );
+    polars_ensure!(
+        ca.len() == by.len(),
+        InvalidOperation: "`by` column in `rolling_*_by` must be the same length as values column"
+    );
     ensure_duration_matches_dtype(options.window_size, by.dtype(), "window_size")?;
-    polars_ensure!(!options.window_size.is_zero() && !options.window_size.negative, InvalidOperation: "`window_size` must be strictly positive");
+    polars_ensure!(
+        !options.window_size.is_zero() && !options.window_size.negative,
+        InvalidOperation: "`window_size` must be strictly positive"
+    );
+
     let (by, tz) = match by.dtype() {
         DataType::Datetime(tu, tz) => (by.cast(&DataType::Datetime(*tu, None))?, tz),
         DataType::Date => (
@@ -115,22 +141,37 @@ where
     let by = by.datetime().unwrap();
     let tu = by.time_unit();
 
-    let func = rolling_agg_fn_dynamic;
     let out: ArrayRef = if by_is_sorted {
         let arr = ca.downcast_iter().next().unwrap();
         let by_values = by.physical().cont_slice().unwrap();
         let values = arr.values().as_slice();
-        func(
-            values,
-            options.window_size,
-            by_values,
-            options.closed_window,
-            options.min_periods,
-            tu,
-            tz.as_ref(),
-            options.fn_params,
-            None,
-        )?
+
+        if ca.null_count() == 0 {
+            rolling_agg_fn_dynamic_non_nulls(
+                values,
+                options.window_size,
+                by_values,
+                options.closed_window,
+                options.min_periods,
+                tu,
+                tz.as_ref(),
+                options.fn_params,
+                None,
+            )?
+        } else {
+            (rolling_agg_fn_dynamic_nulls.unwrap())(
+                values,
+                arr.validity().unwrap(),
+                options.window_size,
+                by_values,
+                options.closed_window,
+                options.min_periods,
+                tu,
+                tz.as_ref(),
+                options.fn_params,
+                None,
+            )?
+        }
     } else {
         let sorting_indices = by.physical().arg_sort(Default::default());
         let ca = unsafe { ca.take_unchecked(&sorting_indices) };
@@ -138,17 +179,33 @@ where
         let arr = ca.downcast_iter().next().unwrap();
         let by_values = by.cont_slice().unwrap();
         let values = arr.values().as_slice();
-        func(
-            values,
-            options.window_size,
-            by_values,
-            options.closed_window,
-            options.min_periods,
-            tu,
-            tz.as_ref(),
-            options.fn_params,
-            Some(sorting_indices.cont_slice().unwrap()),
-        )?
+
+        if ca.null_count() == 0 {
+            rolling_agg_fn_dynamic_non_nulls(
+                values,
+                options.window_size,
+                by_values,
+                options.closed_window,
+                options.min_periods,
+                tu,
+                tz.as_ref(),
+                options.fn_params,
+                Some(sorting_indices.cont_slice().unwrap()),
+            )?
+        } else {
+            (rolling_agg_fn_dynamic_nulls.unwrap())(
+                values,
+                arr.validity().unwrap(),
+                options.window_size,
+                by_values,
+                options.closed_window,
+                options.min_periods,
+                tu,
+                tz.as_ref(),
+                options.fn_params,
+                Some(sorting_indices.cont_slice().unwrap()),
+            )?
+        }
     };
     Series::try_from((ca.name().clone(), out))
 }
@@ -169,6 +226,7 @@ pub trait SeriesOpsTime: AsSeries {
                 by,
                 options,
                 &super::rolling_kernels::no_nulls::rolling_mean,
+                Some(&super::rolling_kernels::nulls::rolling_mean),
             )
         })
     }
@@ -219,6 +277,7 @@ pub trait SeriesOpsTime: AsSeries {
                 by,
                 options,
                 &super::rolling_kernels::no_nulls::rolling_sum,
+                None,
             )
         })
     }
@@ -270,6 +329,7 @@ pub trait SeriesOpsTime: AsSeries {
             by,
             options,
             &super::rolling_kernels::no_nulls::rolling_quantile,
+            None,
         )
         })
     }
@@ -326,6 +386,7 @@ pub trait SeriesOpsTime: AsSeries {
                 by,
                 options,
                 &super::rolling_kernels::no_nulls::rolling_min,
+                None,
             )
         })
     }
@@ -407,6 +468,7 @@ pub trait SeriesOpsTime: AsSeries {
                 by,
                 options,
                 &super::rolling_kernels::no_nulls::rolling_max,
+                None,
             )
         })
     }
@@ -469,6 +531,7 @@ pub trait SeriesOpsTime: AsSeries {
                 by,
                 options,
                 &super::rolling_kernels::no_nulls::rolling_var,
+                None,
             )
         })
     }
@@ -577,6 +640,7 @@ pub trait SeriesOpsTime: AsSeries {
                 by,
                 options,
                 &super::rolling_kernels::no_nulls::rolling_rank,
+                None,
             )
         })
     }

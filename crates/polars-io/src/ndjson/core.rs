@@ -135,8 +135,8 @@ where
 
 impl JsonLineReader<'_, File> {
     /// This is the recommended way to create a json reader as this allows for fastest parsing.
-    pub fn from_path<P: Into<PathBuf>>(path: P) -> PolarsResult<Self> {
-        let path = crate::resolve_homedir(&path.into());
+    pub fn from_path<P: AsRef<std::path::Path> + ?Sized>(path: &P) -> PolarsResult<Self> {
+        let path = crate::resolve_homedir(path.as_ref());
         let f = polars_utils::open_file(&path)?;
         Ok(Self::new(f).with_path(Some(path)))
     }
@@ -185,7 +185,7 @@ where
 
         let mut df: DataFrame = json_reader.as_df()?;
         if rechunk && df.first_col_n_chunks() > 1 {
-            df.as_single_chunk_par();
+            df.rechunk_mut_par();
         }
         Ok(df)
     }
@@ -426,7 +426,7 @@ pub fn parse_ndjson(
     let mut buffers = init_buffers(schema, capacity, ignore_errors)?;
     parse_lines(bytes, &mut buffers, ignore_errors)?;
 
-    DataFrame::new(
+    DataFrame::new_infer_height(
         buffers
             .into_values()
             .map(|buf| Ok(buf.into_series()?.into_column()))

@@ -99,7 +99,7 @@ impl SortedGroupBy {
             columns.push(agg.with_name(name.clone()));
         }
 
-        Ok(unsafe { DataFrame::new_no_checks(idxs.len(), columns) })
+        Ok(unsafe { DataFrame::new_unchecked(idxs.len(), columns) })
     }
 }
 
@@ -126,7 +126,7 @@ impl ComputeNode for SortedGroupBy {
             recv[0] = PortState::Done;
             std::mem::take(&mut self.buf_df);
         } else if recv[0] == PortState::Done {
-            if self.buf_df.is_empty() {
+            if self.buf_df.height() == 0 {
                 send[0] = PortState::Done;
             } else {
                 send[0] = PortState::Ready;
@@ -150,7 +150,7 @@ impl ComputeNode for SortedGroupBy {
 
         let Some(recv) = recv_ports[0].take() else {
             // We no longer have to receive data. Finalize and send all remaining data.
-            assert!(!self.buf_df.is_empty());
+            assert!(self.buf_df.height() > 0);
             assert!(self.slice.is_none_or(|(_, l)| l > 0));
             let mut send = send_ports[0].take().unwrap().serial();
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {

@@ -27,6 +27,9 @@ impl AExpr {
 
             Element | BinaryExpr { .. } | Column(_) | Ternary { .. } | Cast { .. } => true,
 
+            #[cfg(feature = "dtype-struct")]
+            StructEval { .. } | StructField(_) => true,
+
             #[cfg(feature = "dynamic_group_by")]
             Rolling { .. } => false,
 
@@ -141,10 +144,11 @@ pub fn is_prop<P: Fn(&AExpr) -> bool>(
                     return;
                 }
             };
-
             ae.inputs_rev(stack);
         })(),
-        _ => ae.inputs_rev(stack),
+        _ => {
+            ae.inputs_rev(stack);
+        },
     }
 
     true
@@ -323,6 +327,8 @@ pub fn can_pre_agg(agg: Node, expr_arena: &Arena<AExpr>, _input_schema: &Schema)
                             agg_e,
                             IRAggExpr::Min { .. }
                                 | IRAggExpr::Max { .. }
+                                | IRAggExpr::MinBy { .. }
+                                | IRAggExpr::MaxBy { .. }
                                 | IRAggExpr::Sum(_)
                                 | IRAggExpr::Last(_)
                                 | IRAggExpr::First(_)

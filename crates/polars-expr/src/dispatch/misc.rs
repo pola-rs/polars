@@ -123,7 +123,7 @@ pub(super) fn reshape(c: &Column, dimensions: &[ReshapeDimension]) -> PolarsResu
 pub(super) fn repeat_by(s: &[Column]) -> PolarsResult<Column> {
     let by = &s[1];
     let s = &s[0];
-    let by = by.cast(&IDX_DTYPE)?;
+    let by = by.strict_cast(&IDX_DTYPE)?;
     polars_ops::chunked_array::repeat_by(s.as_materialized_series(), by.idx()?)
         .map(|ok| ok.into_column())
 }
@@ -948,14 +948,16 @@ pub fn row_encode(
         RowEncodingVariant::Ordered {
             descending,
             nulls_last,
+            broadcast_nulls,
         } => {
             let descending = descending.unwrap_or_else(|| vec![false; c.len()]);
             let nulls_last = nulls_last.unwrap_or_else(|| vec![false; c.len()]);
+            let broadcast_nulls = broadcast_nulls.unwrap_or(false);
 
             assert_eq!(c.len(), descending.len());
             assert_eq!(c.len(), nulls_last.len());
 
-            _get_rows_encoded_ca(name, c, &descending, &nulls_last)
+            _get_rows_encoded_ca(name, c, &descending, &nulls_last, broadcast_nulls)
         },
     }
     .map(IntoColumn::into_column)
@@ -981,9 +983,13 @@ pub fn row_decode(
         RowEncodingVariant::Ordered {
             descending,
             nulls_last,
+            broadcast_nulls,
         } => {
             let descending = descending.unwrap_or_else(|| vec![false; fields.len()]);
             let nulls_last = nulls_last.unwrap_or_else(|| vec![false; fields.len()]);
+            if broadcast_nulls.is_some() {
+                polars_bail!(InvalidOperation: "broadcast_nulls is not supported for row_decode.");
+            }
 
             assert_eq!(fields.len(), descending.len());
             assert_eq!(fields.len(), nulls_last.len());

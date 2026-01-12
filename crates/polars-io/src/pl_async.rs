@@ -31,23 +31,6 @@ pub(super) fn get_download_chunk_size() -> usize {
     *DOWNLOAD_CHUNK_SIZE
 }
 
-static UPLOAD_CHUNK_SIZE: LazyLock<usize> = LazyLock::new(|| {
-    let v: usize = std::env::var("POLARS_UPLOAD_CHUNK_SIZE")
-        .as_deref()
-        .map(|x| x.parse().expect("integer"))
-        .unwrap_or(64 * 1024 * 1024);
-
-    if config::verbose() {
-        eprintln!("async upload_chunk_size: {v}")
-    }
-
-    v
-});
-
-pub(super) fn get_upload_chunk_size() -> usize {
-    *UPLOAD_CHUNK_SIZE
-}
-
 pub trait GetSize {
     fn size(&self) -> u64;
 }
@@ -279,12 +262,17 @@ impl RuntimeManager {
             .map(|x| x.parse::<usize>().expect("integer"))
             .unwrap_or(POOL.current_num_threads().clamp(1, 4));
 
+        let max_blocking = std::env::var("POLARS_MAX_BLOCKING_THREAD_COUNT")
+            .map(|x| x.parse::<usize>().expect("integer"))
+            .unwrap_or(512);
+
         if polars_core::config::verbose() {
             eprintln!("async thread count: {n_threads}");
         }
 
         let rt = Builder::new_multi_thread()
             .worker_threads(n_threads)
+            .max_blocking_threads(max_blocking)
             .enable_io()
             .enable_time()
             .build()

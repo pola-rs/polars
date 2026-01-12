@@ -17,8 +17,8 @@ an index or a `reset_index` call.
 
 In Polars a DataFrame will always be a 2D table with heterogeneous data-types. The data-types may
 have nesting, but the table itself will not. Operations like resampling will be done by specialized
-functions or methods that act like 'verbs' on a table explicitly stating the columns that that
-'verb' operates on. As such, it is our conviction that not having indices make things simpler, more
+functions or methods that act like 'verbs' on a table explicitly stating the columns that 'verb'
+operates on. As such, it is our conviction that not having indices make things simpler, more
 explicit, more readable and less error-prone.
 
 Note that an 'index' data structure as known in databases will be used by Polars as an optimization

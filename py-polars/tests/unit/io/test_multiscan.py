@@ -4,7 +4,7 @@ import io
 import re
 import sys
 from functools import partial
-from typing import IO, TYPE_CHECKING, Any, Callable
+from typing import IO, TYPE_CHECKING, Any
 
 import pyarrow.parquet as pq
 import pytest
@@ -16,6 +16,7 @@ from polars.meta.index_type import get_index_type
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
 SCAN_AND_WRITE_FUNCS = [
@@ -26,6 +27,7 @@ SCAN_AND_WRITE_FUNCS = [
 ]
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows paths are different")
 @pytest.mark.write_disk
 @pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
 def test_include_file_paths(tmp_path: Path, scan: Any, write: Any) -> None:

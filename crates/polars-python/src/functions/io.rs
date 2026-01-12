@@ -42,7 +42,6 @@ pub fn read_parquet_metadata(
     use polars_io::pl_async::get_runtime;
     use polars_parquet::read::read_metadata;
     use polars_parquet::read::schema::read_custom_key_value_metadata;
-    use polars_utils::plpath::PlPath;
 
     use crate::file::{PythonScanSourceInput, get_python_scan_source_input};
 
@@ -52,36 +51,31 @@ pub fn read_parquet_metadata(
         },
         PythonScanSourceInput::Path(p) => {
             let cloud_options = parse_cloud_options(
-                CloudScheme::from_uri(p.to_str()),
+                CloudScheme::from_path(p.as_str()),
                 storage_options,
                 credential_provider,
                 retries,
             )?;
-            match p {
-                PlPath::Local(local) => {
-                    let file = polars_utils::open_file(&local).map_err(PyPolarsErr::from)?;
-                    read_metadata(&mut BufReader::new(file)).map_err(PyPolarsErr::from)?
-                },
-                PlPath::Cloud(_) => {
+
+            if p.has_scheme() {
+                feature_gated!("cloud", {
                     use polars::prelude::ParquetObjectStore;
                     use polars_error::PolarsResult;
 
-                    feature_gated!("cloud", {
-                        py.detach(|| {
-                            get_runtime().block_on(async {
-                                let mut reader = ParquetObjectStore::from_uri(
-                                    p.as_ref(),
-                                    cloud_options.as_ref(),
-                                    None,
-                                )
-                                .await?;
-                                let result = reader.get_metadata().await?;
-                                PolarsResult::Ok((**result).clone())
-                            })
+                    py.detach(|| {
+                        get_runtime().block_on(async {
+                            let mut reader =
+                                ParquetObjectStore::from_uri(p, cloud_options.as_ref(), None)
+                                    .await?;
+                            let result = reader.get_metadata().await?;
+                            PolarsResult::Ok((**result).clone())
                         })
                     })
-                    .map_err(PyPolarsErr::from)?
-                },
+                })
+                .map_err(PyPolarsErr::from)?
+            } else {
+                let file = polars_utils::open_file(p.as_std_path()).map_err(PyPolarsErr::from)?;
+                read_metadata(&mut BufReader::new(file)).map_err(PyPolarsErr::from)?
             }
         },
         PythonScanSourceInput::File(f) => {

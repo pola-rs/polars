@@ -54,8 +54,10 @@ from polars.io.iceberg.dataset import IcebergDataset, _NativeIcebergScanData
 from polars.testing import assert_frame_equal
 
 with warnings.catch_warnings():
-    # Upstream issue at https://github.com/apache/iceberg-python/issues/2648
+    # Upstream issue at https://github.com/apache/iceberg-python/issues/2648.
     warnings.simplefilter("ignore", pydantic.warnings.PydanticDeprecatedSince212)
+    # Upstream issue at https://github.com/apache/iceberg-python/issues/2849.
+    warnings.simplefilter("ignore", DeprecationWarning)
     from pyiceberg.catalog.sql import SqlCatalog
     from pyiceberg.io.pyarrow import schema_to_pyarrow
 
@@ -1817,7 +1819,11 @@ def test_scan_iceberg_min_max_statistics_filter(
             capture = capfd.readouterr().err
 
             if "iceberg_table_filter: Some(<redacted>)" in capture:
-                assert "apply_scan_predicate_to_scan_ir: remove 0 / 0 files" in capture
+                assert "allows skipping 0 / 0 files" in capture
+                assert (
+                    "apply_scan_predicate_to_scan_ir: PredicateFileSkip { no_residual_predicate: false, original_len: 0 }"
+                    in capture
+                )
 
                 # Scanning with pyiceberg can also skip the file if the predicate
                 # can be converted.
@@ -1830,7 +1836,11 @@ def test_scan_iceberg_min_max_statistics_filter(
 
                 iceberg_table_filter_seen = True
             else:
-                assert "apply_scan_predicate_to_scan_ir: remove 1 / 1 file" in capture
+                assert "allows skipping 1 / 1 files" in capture
+                assert (
+                    "apply_scan_predicate_to_scan_ir: PredicateFileSkip { no_residual_predicate: false, original_len: 1 }"
+                    in capture
+                )
 
             capfd.readouterr()
 

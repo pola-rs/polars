@@ -3,7 +3,7 @@ use std::io::{Read, Seek};
 use polars_error::PolarsResult;
 
 use super::common::*;
-use super::file::{get_message_from_block, get_record_batch};
+use super::file::{get_message_from_block, get_message_from_block_offset, get_record_batch};
 use super::{Dictionaries, FileMetadata, read_batch, read_file_dictionaries};
 use crate::array::Array;
 use crate::datatypes::ArrowSchema;
@@ -114,7 +114,7 @@ impl<R: Read + Seek> FileReader<R> {
         (self.data_scratch, self.message_scratch) = scratches;
     }
 
-    fn read_dictionaries(&mut self) -> PolarsResult<()> {
+    pub fn read_dictionaries(&mut self) -> PolarsResult<()> {
         if self.dictionaries.is_none() {
             self.dictionaries = Some(read_file_dictionaries(
                 &mut self.reader,
@@ -187,6 +187,7 @@ impl<R: Read + Seek> Iterator for FileReader<R> {
             self.projection.as_ref().map(|x| x.columns.as_ref()),
             Some(self.remaining),
             block,
+            false,
             &mut self.message_scratch,
             &mut self.data_scratch,
         );
@@ -199,5 +200,29 @@ impl<R: Read + Seek> Iterator for FileReader<R> {
             chunk
         };
         Some(chunk)
+    }
+}
+
+/// A reader that has access to exactly one standalone IPC Block of an Arrow IPC file.
+/// The block contains either a `RecordBatch` or a `DictionaryBatch`.
+/// The `dictionaries` field must be initialized prior to decoding a `RecordBatch`.
+pub struct BlockReader<R: Read + Seek> {
+    pub reader: R,
+}
+
+impl<R: Read + Seek> BlockReader<R> {
+    pub fn new(reader: R) -> Self {
+        Self { reader }
+    }
+
+    /// Reads the record batch header and returns its length (i.e., number of rows).
+    pub fn record_batch_num_rows(&mut self, message_scratch: &mut Vec<u8>) -> PolarsResult<usize> {
+        let offset: u64 = 0;
+
+        let message = get_message_from_block_offset(&mut self.reader, offset, message_scratch)?;
+        let batch = get_record_batch(message)?;
+
+        let out = batch.length().map(|l| usize::try_from(l).unwrap())?;
+        Ok(out)
     }
 }

@@ -3,7 +3,7 @@ use std::fmt::Write;
 use polars_plan::dsl::{PartitionStrategyIR, PartitionVariantIR};
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, EscapeLabel};
-use polars_plan::prelude::FileType;
+use polars_plan::prelude::FileWriteFormat;
 use polars_time::ClosedWindow;
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::DynamicGroupOptions;
@@ -264,20 +264,6 @@ fn visualize_plan_rec(
         ),
         PhysNodeKind::InMemorySink { input } => ("in-memory-sink".to_string(), from_ref(input)),
         PhysNodeKind::CallbackSink { input, .. } => ("callback-sink".to_string(), from_ref(input)),
-        PhysNodeKind::FileSink {
-            input, file_type, ..
-        } => match file_type {
-            #[cfg(feature = "parquet")]
-            FileType::Parquet(_) => ("parquet-sink".to_string(), from_ref(input)),
-            #[cfg(feature = "ipc")]
-            FileType::Ipc(_) => ("ipc-sink".to_string(), from_ref(input)),
-            #[cfg(feature = "csv")]
-            FileType::Csv(_) => ("csv-sink".to_string(), from_ref(input)),
-            #[cfg(feature = "json")]
-            FileType::Json(_) => ("ndjson-sink".to_string(), from_ref(input)),
-            #[allow(unreachable_patterns)]
-            _ => todo!(),
-        },
         PhysNodeKind::PartitionedSink {
             input,
             file_type,
@@ -292,26 +278,26 @@ fn visualize_plan_rec(
 
             match file_type {
                 #[cfg(feature = "parquet")]
-                FileType::Parquet(_) => (format!("{variant}[parquet]"), from_ref(input)),
+                FileWriteFormat::Parquet(_) => (format!("{variant}[parquet]"), from_ref(input)),
                 #[cfg(feature = "ipc")]
-                FileType::Ipc(_) => (format!("{variant}[ipc]"), from_ref(input)),
+                FileWriteFormat::Ipc(_) => (format!("{variant}[ipc]"), from_ref(input)),
                 #[cfg(feature = "csv")]
-                FileType::Csv(_) => (format!("{variant}[csv]"), from_ref(input)),
+                FileWriteFormat::Csv(_) => (format!("{variant}[csv]"), from_ref(input)),
                 #[cfg(feature = "json")]
-                FileType::Json(_) => (format!("{variant}[ndjson]"), from_ref(input)),
+                FileWriteFormat::NDJson(_) => (format!("{variant}[ndjson]"), from_ref(input)),
                 #[allow(unreachable_patterns)]
                 _ => todo!(),
             }
         },
-        PhysNodeKind::FileSink2 { input, options } => match options.file_format.as_ref() {
+        PhysNodeKind::FileSink { input, options } => match options.file_format {
             #[cfg(feature = "parquet")]
-            FileType::Parquet(_) => ("parquet-sink".to_string(), from_ref(input)),
+            FileWriteFormat::Parquet(_) => ("parquet-sink".to_string(), from_ref(input)),
             #[cfg(feature = "ipc")]
-            FileType::Ipc(_) => ("ipc-sink".to_string(), from_ref(input)),
+            FileWriteFormat::Ipc(_) => ("ipc-sink".to_string(), from_ref(input)),
             #[cfg(feature = "csv")]
-            FileType::Csv(_) => ("csv-sink".to_string(), from_ref(input)),
+            FileWriteFormat::Csv(_) => ("csv-sink".to_string(), from_ref(input)),
             #[cfg(feature = "json")]
-            FileType::Json(_) => ("ndjson-sink".to_string(), from_ref(input)),
+            FileWriteFormat::NDJson(_) => ("ndjson-sink".to_string(), from_ref(input)),
             #[allow(unreachable_patterns)]
             _ => todo!(),
         },
@@ -321,15 +307,15 @@ fn visualize_plan_rec(
                 PartitionStrategyIR::FileSize => "partition-file-size",
             };
 
-            match options.file_format.as_ref() {
+            match options.file_format {
                 #[cfg(feature = "parquet")]
-                FileType::Parquet(_) => (format!("{variant}[parquet]"), from_ref(input)),
+                FileWriteFormat::Parquet(_) => (format!("{variant}[parquet]"), from_ref(input)),
                 #[cfg(feature = "ipc")]
-                FileType::Ipc(_) => (format!("{variant}[ipc]"), from_ref(input)),
+                FileWriteFormat::Ipc(_) => (format!("{variant}[ipc]"), from_ref(input)),
                 #[cfg(feature = "csv")]
-                FileType::Csv(_) => (format!("{variant}[csv]"), from_ref(input)),
+                FileWriteFormat::Csv(_) => (format!("{variant}[csv]"), from_ref(input)),
                 #[cfg(feature = "json")]
-                FileType::Json(_) => (format!("{variant}[ndjson]"), from_ref(input)),
+                FileWriteFormat::NDJson(_) => (format!("{variant}[ndjson]"), from_ref(input)),
                 #[allow(unreachable_patterns)]
                 _ => todo!(),
             }
@@ -537,14 +523,27 @@ fn visualize_plan_rec(
 
             (out, &[][..])
         },
-        PhysNodeKind::GroupBy { input, key, aggs } => (
-            format!(
-                "group-by\\nkey:\\n{}\\naggs:\\n{}",
-                fmt_exprs_to_label(key, expr_arena, FormatExprStyle::Select),
-                fmt_exprs_to_label(aggs, expr_arena, FormatExprStyle::Select)
-            ),
-            from_ref(input),
-        ),
+        PhysNodeKind::GroupBy {
+            inputs,
+            key_per_input,
+            aggs_per_input,
+        } => {
+            let mut out = String::new();
+            for (key, aggs) in key_per_input.iter().zip(aggs_per_input) {
+                if !out.is_empty() {
+                    out.push('\n');
+                }
+
+                write!(
+                    &mut out,
+                    "group-by\\nkey:\\n{}\\naggs:\\n{}",
+                    fmt_exprs_to_label(key, expr_arena, FormatExprStyle::Select),
+                    fmt_exprs_to_label(aggs, expr_arena, FormatExprStyle::Select)
+                )
+                .ok();
+            }
+            (out, inputs.as_slice())
+        },
         #[cfg(feature = "dynamic_group_by")]
         PhysNodeKind::DynamicGroupBy {
             input,

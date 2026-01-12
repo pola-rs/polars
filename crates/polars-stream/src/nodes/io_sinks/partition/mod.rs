@@ -8,11 +8,11 @@ use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
 use polars_plan::dsl::{
-    FileType, PartitionTargetCallback, PartitionTargetCallbackResult, PartitionTargetContext,
-    SinkOptions, SinkTarget,
+    FileWriteFormat, PartitionTargetCallback, PartitionTargetCallbackResult,
+    PartitionTargetContext, SinkOptions, SinkTarget,
 };
 use polars_utils::format_pl_smallstr;
-use polars_utils::plpath::PlPathRef;
+use polars_utils::pl_path::PlRefPath;
 
 use super::{DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE, SinkInputPort, SinkNode};
 use crate::async_executor::{AbortOnDropHandle, spawn};
@@ -42,14 +42,14 @@ pub type CreateNewSinkFn =
     Arc<dyn Send + Sync + Fn(SchemaRef, SinkTarget) -> PolarsResult<Box<dyn SinkNode + Send>>>;
 
 pub fn get_create_new_fn(
-    file_type: FileType,
+    file_type: FileWriteFormat,
     sink_options: SinkOptions,
     cloud_options: Option<CloudOptions>,
     collect_metrics: bool,
 ) -> CreateNewSinkFn {
     match file_type {
         #[cfg(feature = "ipc")]
-        FileType::Ipc(ipc_writer_options) => Arc::new(move |input_schema, target| {
+        FileWriteFormat::Ipc(ipc_writer_options) => Arc::new(move |input_schema, target| {
             let sink = Box::new(super::ipc::IpcSinkNode::new(
                 input_schema,
                 target,
@@ -60,7 +60,7 @@ pub fn get_create_new_fn(
             Ok(sink)
         }) as _,
         #[cfg(feature = "json")]
-        FileType::Json(_ndjson_writer_options) => Arc::new(move |_input_schema, target| {
+        FileWriteFormat::NDJson(_ndjson_writer_options) => Arc::new(move |_input_schema, target| {
             let sink = Box::new(super::json::NDJsonSinkNode::new(
                 target,
                 sink_options.clone(),
@@ -69,7 +69,7 @@ pub fn get_create_new_fn(
             Ok(sink)
         }) as _,
         #[cfg(feature = "parquet")]
-        FileType::Parquet(parquet_writer_options) => {
+        FileWriteFormat::Parquet(parquet_writer_options) => {
             Arc::new(move |input_schema, target: SinkTarget| {
                 let sink = Box::new(super::parquet::ParquetSinkNode::new(
                     input_schema,
@@ -83,7 +83,7 @@ pub fn get_create_new_fn(
             }) as _
         },
         #[cfg(feature = "csv")]
-        FileType::Csv(csv_writer_options) => Arc::new(move |input_schema, target| {
+        FileWriteFormat::Csv(csv_writer_options) => Arc::new(move |input_schema, target| {
             let sink = Box::new(super::csv::CsvSinkNode::new(
                 target,
                 input_schema,
@@ -156,7 +156,7 @@ type FilePathCallback =
 
 #[allow(clippy::too_many_arguments)]
 async fn open_new_sink(
-    base_path: PlPathRef<'_>,
+    base_path: PlRefPath,
     file_path_cb: Option<&PartitionTargetCallback>,
     default_file_path_cb: FilePathCallback,
     file_idx: usize,
@@ -211,10 +211,9 @@ async fn open_new_sink(
 
     if verbose {
         match &target {
-            SinkTarget::Path(p) => eprintln!(
-                "[partition[{partition_name}]]: Start on new file '{}'",
-                p.display(),
-            ),
+            SinkTarget::Path(p) => {
+                eprintln!("[partition[{partition_name}]]: Start on new file '{p}'")
+            },
             SinkTarget::Dyn(_) => eprintln!("[partition[{partition_name}]]: Start on new file",),
         }
     }
@@ -291,7 +290,9 @@ async fn open_new_sink(
                     limit: None,
                 },
             )?;
-            df = df.select_by_range(0..df.width() - num_selectors)?;
+
+            let truncate_len = df.width() - num_selectors;
+            unsafe { df.columns_mut() }.truncate(truncate_len);
 
             _ = old_sender
                 .send(Morsel::new(df, MorselSeq::default(), SourceToken::new()))

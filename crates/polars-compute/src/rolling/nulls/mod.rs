@@ -18,7 +18,7 @@ use super::*;
 pub trait RollingAggWindowNulls<'a, T: NativeType, Out: NativeType = T> {
     /// # Safety
     /// `start` and `end` must be in bounds for `slice` and `validity`
-    unsafe fn new(
+    fn new(
         slice: &'a [T],
         validity: &'a Bitmap,
         start: usize,
@@ -51,9 +51,7 @@ where
 {
     let len = values.len();
     let (start, end) = det_offsets_fn(0, window_size, len);
-    // SAFETY; we are in bounds
-    let mut agg_window =
-        unsafe { Agg::new(values, validity, start, end, params, Some(window_size)) };
+    let mut agg_window = Agg::new(values, validity, start, end, params, Some(window_size));
 
     let mut validity = create_validity(min_periods, len, window_size, det_offsets_fn)
         .unwrap_or_else(|| {

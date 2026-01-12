@@ -22,7 +22,7 @@ where
     Out: NativeType,
     P: RankPolicy<T, Out>,
 {
-    unsafe fn new(
+    fn new(
         slice: &'a [T],
         validity: &'a Bitmap,
         start: usize,
@@ -30,6 +30,8 @@ where
         params: Option<RollingFnParams>,
         window_size: Option<usize>,
     ) -> Self {
+        assert!(start <= slice.len() && end <= slice.len() && start <= end);
+
         let cmp = |a: &&T, b: &&T| T::tot_cmp(*a, *b);
         let ost: OrderStatisticTree<&T> = match window_size {
             Some(ws) => OrderStatisticTree::with_capacity(ws, cmp),
@@ -44,6 +46,7 @@ where
             policy: P::new(&params.unwrap()),
             _out: PhantomData,
         };
+        // SAFETY: We bounds checked `start` and `end`.
         unsafe {
             slf.update(start, end);
         }

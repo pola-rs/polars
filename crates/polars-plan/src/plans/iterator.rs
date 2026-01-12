@@ -43,6 +43,14 @@ macro_rules! push_expr {
                 match agg_e {
                     Max { input, .. } => $push($c, input),
                     Min { input, .. } => $push($c, input),
+                    MinBy { input, by } => {
+                        $push($c, by);
+                        $push($c, input);
+                    },
+                    MaxBy { input, by } => {
+                        $push($c, by);
+                        $push($c, input);
+                    },
                     Mean(e) => $push($c, e),
                     Median(e) => $push($c, e),
                     NUnique(e) => $push($c, e),
@@ -53,6 +61,7 @@ macro_rules! push_expr {
                     Item { input, .. } => $push($c, input),
                     Implode(e) => $push($c, e),
                     Count { input, .. } => $push($c, input),
+                    // TODO: shouldn't quantile push the quantile expr as well?
                     Quantile { expr, .. } => $push($c, expr),
                     Sum(e) => $push($c, e),
                     AggGroups(e) => $push($c, e),
@@ -77,6 +86,11 @@ macro_rules! push_expr {
                 expr, evaluation, ..
             } => {
                 $push($c, evaluation);
+                $push($c, expr);
+            },
+            #[cfg(feature = "dtype-struct")]
+            StructEval { expr, evaluation } => {
+                evaluation.$iter().rev().for_each(|e| $push_owned($c, e));
                 $push($c, expr);
             },
             Function { input, .. } => input.$iter().rev().for_each(|e| $push_owned($c, e)),
@@ -189,7 +203,8 @@ impl<'a> Iterator for AExprIter<'a> {
             // take the arena because the bchk doesn't allow a mutable borrow to the field.
             let arena = self.arena.unwrap();
             let current_expr = arena.get(node);
-            current_expr.inputs_rev(&mut self.stack);
+            // Expressions such as StructEval may reference columns that are not input.
+            current_expr.children_rev(&mut self.stack);
 
             self.arena = Some(arena);
             (node, current_expr)

@@ -668,7 +668,7 @@ def test_cse_14047() -> None:
     count_diff_exprs = [count_diff(pl.col("price"), span[0], span[1]) for span in spans]
     s_per_count_exprs = [
         s_per_count(count_diff, span).alias(f"zz_{span}")
-        for count_diff, span in zip(count_diff_exprs, spans)
+        for count_diff, span in zip(count_diff_exprs, spans, strict=True)
     ]
 
     exprs = count_diff_exprs + s_per_count_exprs
@@ -967,7 +967,7 @@ def test_multiplex_predicate_pushdown() -> None:
     with TemporaryDirectory() as f:
         tmppath = Path(f)
         ldf.sink_parquet(
-            pl.PartitionByKey(tmppath, by="a", include_key=True),
+            pl.PartitionBy(tmppath, key="a", include_key=True),
             sync_on_close="all",
             mkdir=True,
         )
@@ -1209,3 +1209,15 @@ def test_cpse_predicates_25030() -> None:
 
     assert_frame_equal(got, expected)
     assert q4.explain().count("CACHE") == 2
+
+
+def test_asof_join_25699() -> None:
+    df = pl.LazyFrame({"a": [10], "b": [10]})
+
+    df = df.with_columns(pl.col("a"))
+    df = df.with_columns(pl.col("b"))
+
+    assert_frame_equal(
+        df.join_asof(df, on="b").collect(),
+        pl.DataFrame({"a": [10], "b": [10], "a_right": [10]}),
+    )

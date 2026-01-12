@@ -1,11 +1,12 @@
 use std::ops::Range;
+use std::path::Path;
 use std::sync::Arc;
 
 use polars_core::prelude::PlHashMap;
 use polars_error::PolarsResult;
 use polars_utils::_limit_path_len_io_err;
 use polars_utils::mmap::MemSlice;
-use polars_utils::plpath::PlPathRef;
+use polars_utils::pl_path::PlRefPath;
 
 use crate::cloud::{
     CloudLocation, CloudOptions, ObjectStorePath, PolarsObjectStore, build_object_store,
@@ -30,11 +31,9 @@ pub struct MemSliceByteSource(pub MemSlice);
 
 impl MemSliceByteSource {
     async fn try_new_mmap_from_path(
-        path: PlPathRef<'_>,
+        path: &Path,
         _cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<Self> {
-        let path = path.as_local_path().unwrap();
-
         let file = Arc::new(
             tokio::fs::File::open(path)
                 .await
@@ -75,7 +74,7 @@ pub struct ObjectStoreByteSource {
 
 impl ObjectStoreByteSource {
     async fn try_new_from_path(
-        path: PlPathRef<'_>,
+        path: PlRefPath,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<Self> {
         let (CloudLocation { prefix, .. }, store) =
@@ -181,13 +180,15 @@ pub enum DynByteSourceBuilder {
 impl DynByteSourceBuilder {
     pub async fn try_build_from_path(
         &self,
-        path: PlPathRef<'_>,
+        path: PlRefPath,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<DynByteSource> {
         Ok(match self {
-            Self::Mmap => MemSliceByteSource::try_new_mmap_from_path(path, cloud_options)
-                .await?
-                .into(),
+            Self::Mmap => {
+                MemSliceByteSource::try_new_mmap_from_path(path.as_std_path(), cloud_options)
+                    .await?
+                    .into()
+            },
             Self::ObjectStore => ObjectStoreByteSource::try_new_from_path(path, cloud_options)
                 .await?
                 .into(),

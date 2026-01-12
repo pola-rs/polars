@@ -1,3 +1,4 @@
+use std::hash::{BuildHasher, Hash, Hasher};
 use std::ops::Neg;
 
 use polars::lazy::dsl;
@@ -29,6 +30,12 @@ impl PyExpr {
             CompareOp::Ge => self.gt_eq(other),
             CompareOp::Le => self.lt_eq(other),
         }
+    }
+
+    fn __hash__(&self) -> isize {
+        let mut state = PlFixedStateQuality::with_seed(0).build_hasher();
+        Hash::hash(&self.inner, &mut state);
+        state.finish() as _
     }
 
     fn __add__(&self, rhs: Self) -> PyResult<Self> {
@@ -114,9 +121,19 @@ impl PyExpr {
     fn min(&self) -> Self {
         self.inner.clone().min().into()
     }
+
     fn max(&self) -> Self {
         self.inner.clone().max().into()
     }
+
+    fn min_by(&self, by: Self) -> Self {
+        self.inner.clone().min_by(by.inner).into()
+    }
+
+    fn max_by(&self, by: Self) -> Self {
+        self.inner.clone().max_by(by.inner).into()
+    }
+
     #[cfg(feature = "propagate_nans")]
     fn nan_max(&self) -> Self {
         self.inner.clone().nan_max().into()
@@ -341,10 +358,10 @@ impl PyExpr {
         self.inner.clone().gather(idx.inner).into()
     }
 
-    fn get(&self, idx: Self) -> Self {
-        self.inner.clone().get(idx.inner).into()
+    #[pyo3(signature = (idx, null_on_oob=false))]
+    fn get(&self, idx: Self, null_on_oob: bool) -> Self {
+        self.inner.clone().get(idx.inner, null_on_oob).into()
     }
-
     fn sort_by(
         &self,
         by: Vec<Self>,
@@ -965,6 +982,7 @@ impl PyExpr {
             FunctionExpr::RowEncode(RowEncodingVariant::Ordered {
                 descending,
                 nulls_last,
+                broadcast_nulls: None,
             }),
             exprs.into_iter().map(|e| e.inner.clone()).collect(),
         )
@@ -1005,6 +1023,7 @@ impl PyExpr {
                 RowEncodingVariant::Ordered {
                     descending,
                     nulls_last,
+                    broadcast_nulls: None,
                 },
             ))
             .into()

@@ -78,6 +78,7 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
         assert!(dtype.cat_physical().ok() == Some(T::physical()));
 
         unsafe {
+            let mut invariants_violated = false;
             let mut validity = BitmapBuilder::new();
             for arr in cat_ids.downcast_iter_mut() {
                 validity.reserve(arr.len());
@@ -96,10 +97,16 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
                 }
 
                 if arr.null_count() != validity.unset_bits() {
+                    invariants_violated = true;
                     arr.set_validity(core::mem::take(&mut validity).into_opt_validity());
                 } else {
                     validity.clear();
                 }
+            }
+
+            if invariants_violated {
+                cat_ids.set_flags(StatisticsFlags::empty());
+                cat_ids.compute_len();
             }
         }
 

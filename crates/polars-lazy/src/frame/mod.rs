@@ -8,6 +8,7 @@ mod err;
 mod exitable;
 
 use std::num::NonZeroUsize;
+use std::sync::mpsc::{Receiver, sync_channel};
 use std::sync::{Arc, Mutex};
 
 pub use anonymous_scan::*;
@@ -102,7 +103,7 @@ impl LazyFrame {
         self.opt_state
     }
 
-    fn from_logical_plan(logical_plan: DslPlan, opt_state: OptFlags) -> Self {
+    pub fn from_logical_plan(logical_plan: DslPlan, opt_state: OptFlags) -> Self {
         LazyFrame {
             logical_plan,
             opt_state,
@@ -626,14 +627,28 @@ impl LazyFrame {
     ///
     /// The query is optimized prior to execution.
     pub fn collect_with_engine(mut self, mut engine: Engine) -> PolarsResult<DataFrame> {
-        let payload = if let DslPlan::Sink { payload, .. } = &self.logical_plan {
-            payload.clone()
-        } else {
-            self.logical_plan = DslPlan::Sink {
-                input: Arc::new(self.logical_plan),
-                payload: SinkType::Memory,
-            };
-            SinkType::Memory
+        let payload = match &self.logical_plan {
+            DslPlan::Sink { payload, .. } => payload.clone(),
+            DslPlan::SinkMultiple { .. } => {
+                polars_ensure!(matches!(engine, Engine::Auto | Engine::Streaming), InvalidOperation: "lazy multisinks only supported on streaming engine");
+                feature_gated!("new_streaming", {
+                    let sink_multiple = self.with_new_streaming(true);
+                    let mut alp_plan = sink_multiple.to_alp_optimized()?;
+                    let result = polars_stream::run_query(
+                        alp_plan.lp_top,
+                        &mut alp_plan.lp_arena,
+                        &mut alp_plan.expr_arena,
+                    );
+                    return result.map(|_| DataFrame::empty());
+                })
+            },
+            _ => {
+                self.logical_plan = DslPlan::Sink {
+                    input: Arc::new(self.logical_plan),
+                    payload: SinkType::Memory,
+                };
+                SinkType::Memory
+            },
         };
 
         // Default engine for collect is InMemory, sink_* is Streaming
@@ -823,6 +838,49 @@ impl LazyFrame {
         self.collect_with_engine(Engine::InMemory)
     }
 
+    /// Collect the query in batches.
+    ///
+    /// If lazy is true the query will not start until the first poll (or until
+    /// start is called on CollectBatches).
+    #[cfg(feature = "async")]
+    pub fn collect_batches(
+        self,
+        engine: Engine,
+        maintain_order: bool,
+        chunk_size: Option<NonZeroUsize>,
+        lazy: bool,
+    ) -> PolarsResult<CollectBatches> {
+        let (send, recv) = sync_channel(1);
+        let runner_send = send.clone();
+        let ldf = self.sink_batches(
+            PlanCallback::new(move |df| {
+                // Stop if receiver has closed.
+                let send_result = send.send(Ok(df));
+                Ok(send_result.is_err())
+            }),
+            maintain_order,
+            chunk_size,
+        )?;
+        let runner = move || {
+            // We use a tokio spawn_blocking here as it has a high blocking
+            // thread pool limit.
+            polars_io::pl_async::get_runtime().spawn_blocking(move || {
+                if let Err(e) = ldf.collect_with_engine(engine) {
+                    runner_send.send(Err(e)).ok();
+                }
+            });
+        };
+
+        let mut collect_batches = CollectBatches {
+            recv,
+            runner: Some(Box::new(runner)),
+        };
+        if !lazy {
+            collect_batches.start();
+        }
+        Ok(collect_batches)
+    }
+
     // post_opt: A function that is called after optimization. This can be used to modify the IR jit.
     // This version does profiling of the node execution.
     pub fn _profile_post_opt<P>(self, post_opt: P) -> PolarsResult<(DataFrame, DataFrame)>
@@ -933,7 +991,7 @@ impl LazyFrame {
     pub fn sink(
         mut self,
         sink_type: SinkDestination,
-        file_format: impl Into<Arc<FileType>>,
+        file_format: FileWriteFormat,
         unified_sink_args: UnifiedSinkArgs,
     ) -> PolarsResult<Self> {
         polars_ensure!(
@@ -946,7 +1004,7 @@ impl LazyFrame {
             payload: match sink_type {
                 SinkDestination::File { target } => SinkType::File(FileSinkOptions {
                     target,
-                    file_format: file_format.into(),
+                    file_format,
                     unified_sink_args,
                 }),
                 SinkDestination::Partitioned {
@@ -961,7 +1019,7 @@ impl LazyFrame {
                     file_path_provider,
                     partition_strategy,
                     finish_callback,
-                    file_format: file_format.into(),
+                    file_format,
                     unified_sink_args,
                     max_rows_per_file,
                     approximate_bytes_per_file,
@@ -1554,7 +1612,26 @@ impl LazyFrame {
         callback: PlanCallback<(Vec<DslPlan>, Vec<SchemaRef>), DslPlan>,
     ) -> Self {
         let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().pipe_with_schema(callback).build();
+        let lp = self
+            .get_plan_builder()
+            .pipe_with_schema(vec![], callback)
+            .build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
+    pub fn pipe_with_schemas(
+        self,
+        others: Vec<LazyFrame>,
+        callback: PlanCallback<(Vec<DslPlan>, Vec<SchemaRef>), DslPlan>,
+    ) -> Self {
+        let opt_state = self.get_opt_state();
+        let lp = self
+            .get_plan_builder()
+            .pipe_with_schema(
+                others.into_iter().map(|lf| lf.logical_plan).collect(),
+                callback,
+            )
+            .build();
         Self::from_logical_plan(lp, opt_state)
     }
 
@@ -2393,3 +2470,26 @@ pub const BUILD_STREAMING_EXECUTOR: Option<polars_mem_engine::StreamingExecutorB
         Some(polars_stream::build_streaming_query_executor)
     }
 };
+
+pub struct CollectBatches {
+    recv: Receiver<PolarsResult<DataFrame>>,
+    runner: Option<Box<dyn FnOnce() + Send + 'static>>,
+}
+
+impl CollectBatches {
+    /// Start running the query, if not already.
+    pub fn start(&mut self) {
+        if let Some(runner) = self.runner.take() {
+            runner()
+        }
+    }
+}
+
+impl Iterator for CollectBatches {
+    type Item = PolarsResult<DataFrame>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.start();
+        self.recv.recv().ok()
+    }
+}

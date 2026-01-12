@@ -5,8 +5,6 @@ use polars_core::prelude::*;
 
 use super::options::CsvReadOptions;
 use super::read_impl::CoreReader;
-use super::read_impl::batched::to_batched_owned;
-use super::{BatchedCsvReader, OwnedBatchedCsvReader};
 use crate::mmap::MmapBytesReader;
 use crate::path_utils::resolve_homedir;
 use crate::predicates::PhysicalIoExpr;
@@ -47,12 +45,6 @@ where
 {
     pub fn _with_predicate(mut self, predicate: Option<Arc<dyn PhysicalIoExpr>>) -> Self {
         self.predicate = predicate;
-        self
-    }
-
-    // TODO: Investigate if we can remove this
-    pub(crate) fn with_schema(mut self, schema: SchemaRef) -> Self {
-        self.options.schema = Some(schema);
         self
     }
 }
@@ -125,28 +117,12 @@ impl<R: MmapBytesReader> CsvReader<R> {
             self.options.n_threads,
             self.options.schema_overwrite.clone(),
             self.options.dtype_overwrite.clone(),
-            self.options.chunk_size,
             self.predicate.clone(),
             self.options.fields_to_cast.clone(),
             self.options.skip_rows_after_header,
             self.options.row_index.clone(),
             self.options.raise_if_empty,
         )
-    }
-
-    pub fn batched_borrowed(&mut self) -> PolarsResult<BatchedCsvReader<'_>> {
-        let csv_reader = self.core_reader()?;
-        csv_reader.batched()
-    }
-}
-
-impl CsvReader<Box<dyn MmapBytesReader>> {
-    pub fn batched(mut self, schema: Option<SchemaRef>) -> PolarsResult<OwnedBatchedCsvReader> {
-        if let Some(schema) = schema {
-            self = self.with_schema(schema);
-        }
-
-        to_batched_owned(self)
     }
 }
 
@@ -177,9 +153,9 @@ where
         // As that leads to great memory overhead.
         if rechunk && df.first_col_n_chunks() > 1 {
             if low_memory {
-                df.as_single_chunk();
+                df.rechunk_mut();
             } else {
-                df.as_single_chunk_par();
+                df.rechunk_mut_par();
             }
         }
 

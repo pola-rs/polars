@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     ClassVar,
     NoReturn,
     TypeVar,
@@ -83,7 +82,7 @@ if TYPE_CHECKING:
     with contextlib.suppress(ImportError):  # Module not available when building docs
         import polars._plr as plr
 
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
     from io import IOBase
 
     from polars import DataFrame, LazyFrame, Series
@@ -111,7 +110,9 @@ if TYPE_CHECKING:
     if sys.version_info >= (3, 11):
         from typing import Concatenate, ParamSpec
     else:
-        from typing_extensions import Concatenate, ParamSpec
+        from typing import Concatenate
+
+        from typing_extensions import ParamSpec
 
     if sys.version_info >= (3, 13):
         from warnings import deprecated
@@ -156,12 +157,22 @@ class Expr:
         return self._pyexpr.to_str()
 
     def __repr__(self) -> str:
-        if len(expr_str := self._pyexpr.to_str()) > 30:
-            expr_str = f"{expr_str[:30]}…"
-        return f"<{self.__class__.__name__} [{expr_str!r}] at 0x{id(self):X}>"
+        if self._pyexpr is not None:
+            if len(expr_str := self._pyexpr.to_str()) > 30:
+                expr_str = f"{expr_str[:30]}…"
+            return f"<{self.__class__.__name__} [{expr_str!r}] at 0x{id(self):X}>"
+        else:
+            return "only during sphinx"
 
     def __str__(self) -> str:
-        return self._pyexpr.to_str()
+        if self._pyexpr is not None:
+            return self._pyexpr.to_str()
+        else:
+            return "only during sphinx"
+
+    def __hash__(self) -> int:
+        msg = f"unhashable type: 'Expr'\n\nConsider hashing '{self}.meta'."
+        raise TypeError(msg)
 
     def __bool__(self) -> NoReturn:
         msg = (
@@ -2695,7 +2706,7 @@ class Expr:
             indices_lit_pyexpr = parse_into_expression(indices)
         return wrap_expr(self._pyexpr.gather(indices_lit_pyexpr))
 
-    def get(self, index: int | Expr) -> Expr:
+    def get(self, index: int | Expr, *, null_on_oob: bool = False) -> Expr:
         """
         Return a single value by index.
 
@@ -2703,6 +2714,13 @@ class Expr:
         ----------
         index
             An expression that leads to a UInt32 index.
+            Negative indexing is supported.
+
+        null_on_oob
+            Behavior if an index is out of bounds:
+
+            - True  -> set the result to null
+            - False -> raise an error
 
         Returns
         -------
@@ -2736,7 +2754,7 @@ class Expr:
         └───────┴───────┘
         """
         index_lit_pyexpr = parse_into_expression(index)
-        return wrap_expr(self._pyexpr.get(index_lit_pyexpr))
+        return wrap_expr(self._pyexpr.get(index_lit_pyexpr, null_on_oob=null_on_oob))
 
     def shift(
         self, n: int | IntoExprColumn = 1, *, fill_value: IntoExpr | None = None
@@ -3115,6 +3133,40 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.max())
 
+    @unstable()
+    def max_by(self, by: IntoExpr) -> Expr:
+        """
+        Get maximum value, ordered by another expression.
+
+        If the by expression has multiple values equal to the maximum it is not
+        defined which value will be chosen.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        by
+            Column used to determine the largest element.
+            Accepts expression input. Strings are parsed as column names.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [-1.0, float("nan"), 1.0], "b": ["x", "y", "z"]})
+        >>> df.select(pl.col("b").max_by("a"))
+        shape: (1, 1)
+        ┌─────┐
+        │ b   │
+        │ --- │
+        │ str │
+        ╞═════╡
+        │ z   │
+        └─────┘
+        """
+        by_pyexpr = parse_into_expression(by)
+        return wrap_expr(self._pyexpr.max_by(by_pyexpr))
+
     def min(self) -> Expr:
         """
         Get minimum value.
@@ -3133,6 +3185,40 @@ class Expr:
         └──────┘
         """
         return wrap_expr(self._pyexpr.min())
+
+    @unstable()
+    def min_by(self, by: IntoExpr) -> Expr:
+        """
+        Get minimum value, ordered by another expression.
+
+        If the by expression has multiple values equal to the minimum it is not
+        defined which value will be chosen.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        by
+            Column used to determine the smallest element.
+            Accepts expression input. Strings are parsed as column names.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [-1.0, float("nan"), 1.0], "b": ["x", "y", "z"]})
+        >>> df.select(pl.col("b").min_by("a"))
+        shape: (1, 1)
+        ┌─────┐
+        │ b   │
+        │ --- │
+        │ str │
+        ╞═════╡
+        │ x   │
+        └─────┘
+        """
+        by_pyexpr = parse_into_expression(by)
+        return wrap_expr(self._pyexpr.min_by(by_pyexpr))
 
     def nan_max(self) -> Expr:
         """
@@ -9053,6 +9139,11 @@ Consider using {self}.implode() instead"""
             Rank in descending order.
         seed
             If `method="random"`, use this as seed.
+
+        Notes
+        -----
+        If you're coming from SQL, you may be expecting null values to be ranked last.
+        Polars, however, only ranks non-null values and preserves the null ones.
 
         Examples
         --------

@@ -4,7 +4,7 @@ use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 #[cfg(any(feature = "csv", feature = "ipc"))]
 use polars_sql::*;
-use polars_utils::plpath::PlPath;
+use polars_utils::pl_path::PlRefPath;
 
 #[test]
 #[cfg(feature = "csv")]
@@ -38,7 +38,7 @@ fn read_csv_tbl_func_inline() {
             FROM read_csv('../../examples/datasets/foods1.csv') as foods1"#;
     let df_sql = context.execute(sql).unwrap().collect().unwrap();
 
-    let expected = LazyCsvReader::new(PlPath::new("../../examples/datasets/foods1.csv"))
+    let expected = LazyCsvReader::new(PlRefPath::new("../../examples/datasets/foods1.csv"))
         .finish()
         .unwrap()
         .select(&[col("category")])
@@ -56,7 +56,7 @@ fn read_csv_tbl_func_inline_2() {
             FROM read_csv('../../examples/datasets/foods1.csv')"#;
     let df_sql = context.execute(sql).unwrap().collect().unwrap();
 
-    let expected = LazyCsvReader::new(PlPath::new("../../examples/datasets/foods1.csv"))
+    let expected = LazyCsvReader::new(PlRefPath::new("../../examples/datasets/foods1.csv"))
         .finish()
         .unwrap()
         .select(&[col("category")])

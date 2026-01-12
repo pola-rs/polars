@@ -314,6 +314,8 @@ impl ReaderStarter {
                 ..Default::default()
             };
 
+            reader.prepare_read()?;
+
             let start_args_this_file = StartReaderArgsPerFile {
                 scan_source,
                 scan_source_idx,
@@ -543,7 +545,7 @@ async fn start_reader_impl(
         if let Some(hp) = &hive_parts {
             external_predicate_cols.extend(
                 hp.df()
-                    .get_columns()
+                    .columns()
                     .iter()
                     .filter(|c| predicate.live_columns.contains(c.name()))
                     .map(|c| {

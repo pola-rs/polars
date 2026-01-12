@@ -50,7 +50,7 @@ old_getrandom = { version = "0.2", features = ["js"], package = "getrandom" }
 [features]
 sql = ["polars-sql"]
 rows = ["polars-core/rows"]
-simd = ["polars-core/simd", "polars-io/simd", "polars-ops?/simd"]
+simd = ["polars-core/simd", "polars-compute/simd", "polars-io/simd", "polars-ops?/simd"]
 avx512 = ["polars-core/avx512"]
 nightly = [
   "polars-core/nightly",
@@ -105,7 +105,7 @@ lazy = ["polars-core/lazy", "polars-lazy"]
 strings = ["polars-core/strings", "polars-lazy?/strings", "polars-ops/strings"]
 
 # support for ObjectChunked<T> (downcastable Series of any type)
-object = ["polars-core/object", "polars-lazy?/object", "polars-io/object"]
+object = ["polars-core/object", "polars-lazy?/object", "polars-io/object", "polars-expr/object"]
 
 # support for arrows json parsing
 json = ["polars-io", "polars-io/json", "polars-lazy?/json", "polars-sql?/json", "dtype-struct", "new_streaming"]
@@ -216,7 +216,7 @@ merge_sorted = ["polars-lazy?/merge_sorted"]
 meta = ["polars-lazy?/meta"]
 mode = ["polars-ops/mode", "polars-lazy?/mode"]
 moment = ["polars-ops/moment", "polars-lazy?/moment"]
-new_streaming = ["polars-lazy?/new_streaming", "polars-core/dtype-categorical"]
+new_streaming = ["polars-lazy?/new_streaming", "dtype-categorical"]
 partition_by = ["polars-core/partition_by"]
 pct_change = ["polars-ops/pct_change", "polars-lazy?/pct_change"]
 peaks = ["polars-lazy/peaks"]

@@ -1,7 +1,16 @@
+use std::sync::Arc;
+
 use polars_core::frame::UniqueKeepStrategy;
+use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_ops::frame::{JoinCoalesce, JoinValidation, MaintainOrderJoin};
+use polars_utils::arena::Arena;
+use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unique_id::UniqueId;
+use polars_utils::{IdxSize, format_pl_smallstr};
+
+use crate::dsl::{PartitionStrategyIR, PredicateFileSkip, SinkTypeIR, SortColumnIR};
+use crate::plans::{AExpr, ExprIR};
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "ir_visualization_schema", derive(schemars::JsonSchema))]
@@ -129,6 +138,7 @@ pub enum IRNodeProperties {
         row_index_offset: Option<u64>,
         pre_slice: Option<(i64, u64)>,
         predicate: Option<PlSmallStr>,
+        predicate_file_skip_applied: Option<PredicateFileSkip>,
         has_table_statistics: bool,
         include_file_paths: Option<PlSmallStr>,
         column_mapping_type: Option<PlSmallStr>,
@@ -147,7 +157,7 @@ pub enum IRNodeProperties {
         columns: Vec<PlSmallStr>,
     },
     Sink {
-        payload: PlSmallStr,
+        payload: SinkType,
     },
     SinkMultiple {
         num_inputs: u64,
@@ -157,10 +167,8 @@ pub enum IRNodeProperties {
         len: u64,
     },
     Sort {
-        by_exprs: Vec<PlSmallStr>,
+        sort_columns: Vec<SortColumn>,
         slice: Option<(i64, u64)>,
-        descending: Vec<bool>,
-        nulls_last: Vec<bool>,
         multithreaded: bool,
         maintain_order: bool,
         limit: Option<u64>,
@@ -237,4 +245,216 @@ pub enum IRNodeProperties {
         is_pure: bool,
         validate_schema: bool,
     },
+}
+
+pub trait FromWithArena<T>: Sized {
+    fn from_with_arena(value: T, expr_arena: &Arena<AExpr>) -> Self;
+}
+
+pub trait IntoWithArena<T> {
+    fn into_with_arena(self, expr_arena: &Arena<AExpr>) -> T;
+}
+
+impl<T, U> IntoWithArena<U> for T
+where
+    U: FromWithArena<T>,
+{
+    fn into_with_arena(self, expr_arena: &Arena<AExpr>) -> U {
+        U::from_with_arena(self, expr_arena)
+    }
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ir_visualization_schema", derive(schemars::JsonSchema))]
+#[derive(Clone, Debug, PartialEq)]
+pub enum SinkType {
+    Memory,
+    Callback(CallbackSinkType),
+    File(FileSinkOptions),
+    #[cfg_attr(all(feature = "serde", not(feature = "ir_serde")), serde(skip))]
+    Partitioned(PartitionedSinkOptions),
+}
+
+impl FromWithArena<&SinkTypeIR> for SinkType {
+    fn from_with_arena(value: &SinkTypeIR, expr_arena: &Arena<AExpr>) -> Self {
+        match value {
+            SinkTypeIR::Memory => Self::Memory,
+            SinkTypeIR::Callback(c) => Self::Callback(CallbackSinkType {
+                maintain_order: c.maintain_order,
+                chunk_size: c.chunk_size,
+            }),
+            SinkTypeIR::File(f) => Self::File(FileSinkOptions {
+                target: (&f.target).into(),
+                file_format: (&f.file_format).into(),
+                mkdir: f.unified_sink_args.mkdir,
+                maintain_order: f.unified_sink_args.maintain_order,
+                sync_on_close: f.unified_sink_args.sync_on_close,
+            }),
+            SinkTypeIR::Partitioned(p) => Self::Partitioned(PartitionedSinkOptions {
+                base_path: p.base_path.clone(),
+                file_path_provider: (&p.file_path_provider).into(),
+                partition_strategy: (&p.partition_strategy).into_with_arena(expr_arena),
+                file_format: (&p.file_format).into(),
+                mkdir: p.unified_sink_args.mkdir,
+                maintain_order: p.unified_sink_args.maintain_order,
+                sync_on_close: p.unified_sink_args.sync_on_close,
+                max_rows_per_file: p.max_rows_per_file,
+                approximate_bytes_per_file: p.approximate_bytes_per_file,
+            }),
+        }
+    }
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ir_visualization_schema", derive(schemars::JsonSchema))]
+#[derive(Clone, Debug, PartialEq, Hash)]
+pub struct CallbackSinkType {
+    pub maintain_order: bool,
+    pub chunk_size: Option<std::num::NonZeroUsize>,
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ir_visualization_schema", derive(schemars::JsonSchema))]
+#[derive(Clone, Debug, Hash, PartialEq)]
+pub struct FileSinkOptions {
+    pub target: SinkTarget,
+    pub file_format: FileFormat,
+    pub mkdir: bool,
+    pub maintain_order: bool,
+    pub sync_on_close: SyncOnCloseType,
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ir_visualization_schema", derive(schemars::JsonSchema))]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub enum SinkTarget {
+    Path(PlRefPath),
+    Dyn,
+}
+
+impl From<&crate::dsl::SinkTarget> for SinkTarget {
+    fn from(value: &crate::dsl::SinkTarget) -> Self {
+        match value {
+            crate::dsl::SinkTarget::Path(path) => Self::Path(path.to_owned()),
+            crate::dsl::SinkTarget::Dyn(_) => Self::Dyn,
+        }
+    }
+}
+
+#[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ir_visualization_schema", derive(schemars::JsonSchema))]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PartitionedSinkOptions {
+    pub base_path: PlRefPath,
+    pub file_path_provider: FileProviderType,
+    pub partition_strategy: PartitionStrategy,
+    pub file_format: FileFormat,
+    pub mkdir: bool,
+    pub maintain_order: bool,
+    pub sync_on_close: SyncOnCloseType,
+    pub max_rows_per_file: IdxSize,
+    pub approximate_bytes_per_file: u64,
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ir_visualization_schema", derive(schemars::JsonSchema))]
+#[derive(Clone, Debug, Hash, PartialEq)]
+pub enum FileProviderType {
+    Hive { extension: PlSmallStr },
+    Function,
+    Legacy,
+}
+
+impl From<&crate::dsl::sink2::FileProviderType> for FileProviderType {
+    fn from(value: &crate::dsl::sink2::FileProviderType) -> Self {
+        match value {
+            crate::dsl::sink2::FileProviderType::Hive { extension } => Self::Hive {
+                extension: extension.to_owned(),
+            },
+            crate::dsl::sink2::FileProviderType::Function(_) => Self::Function,
+            crate::dsl::sink2::FileProviderType::Legacy(_) => Self::Legacy,
+        }
+    }
+}
+
+#[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ir_visualization_schema", derive(schemars::JsonSchema))]
+#[derive(Clone, Debug, PartialEq)]
+pub enum PartitionStrategy {
+    Keyed {
+        keys: Vec<PlSmallStr>,
+        include_keys: bool,
+        keys_pregrouped: bool,
+        pre_partition_sort_by: Vec<SortColumn>,
+    },
+    FileSize,
+}
+
+impl FromWithArena<&PartitionStrategyIR> for PartitionStrategy {
+    fn from_with_arena(value: &PartitionStrategyIR, expr_arena: &Arena<AExpr>) -> Self {
+        match value {
+            PartitionStrategyIR::Keyed {
+                keys,
+                include_keys,
+                keys_pre_grouped,
+                per_partition_sort_by,
+            } => Self::Keyed {
+                keys: expr_list(keys, expr_arena),
+                include_keys: *include_keys,
+                keys_pregrouped: *keys_pre_grouped,
+                pre_partition_sort_by: per_partition_sort_by
+                    .iter()
+                    .map(
+                        |SortColumnIR {
+                             expr,
+                             descending,
+                             nulls_last,
+                         }| SortColumn {
+                            expr: format_pl_smallstr!("{}", expr.display(expr_arena)),
+                            descending: *descending,
+                            nulls_last: *nulls_last,
+                        },
+                    )
+                    .collect(),
+            },
+            PartitionStrategyIR::FileSize => Self::FileSize,
+        }
+    }
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ir_visualization_schema", derive(schemars::JsonSchema))]
+#[derive(Clone, Debug, Hash, PartialEq)]
+pub enum FileFormat {
+    Parquet,
+    Ipc,
+    Csv,
+    NDJson,
+}
+
+impl From<&crate::dsl::FileWriteFormat> for FileFormat {
+    fn from(value: &crate::dsl::FileWriteFormat) -> Self {
+        match value {
+            crate::dsl::FileWriteFormat::Parquet(_) => FileFormat::Parquet,
+            crate::dsl::FileWriteFormat::Ipc(_) => FileFormat::Ipc,
+            crate::dsl::FileWriteFormat::Csv(_) => FileFormat::Csv,
+            crate::dsl::FileWriteFormat::NDJson(_) => FileFormat::NDJson,
+        }
+    }
+}
+
+#[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ir_visualization_schema", derive(schemars::JsonSchema))]
+#[derive(Clone, Debug, PartialEq)]
+pub struct SortColumn {
+    pub expr: PlSmallStr,
+    pub descending: bool,
+    pub nulls_last: bool,
+}
+
+pub fn expr_list(exprs: &[ExprIR], expr_arena: &Arena<AExpr>) -> Vec<PlSmallStr> {
+    exprs
+        .iter()
+        .map(|e| format_pl_smallstr!("{}", e.display(expr_arena)))
+        .collect()
 }

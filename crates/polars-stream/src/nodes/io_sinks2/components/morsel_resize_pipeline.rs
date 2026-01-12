@@ -1,17 +1,18 @@
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
+use polars_error::PolarsResult;
 use polars_utils::IdxSize;
 
 use crate::async_primitives::connector;
 use crate::morsel::Morsel;
 use crate::nodes::io_sinks2::components::sink_morsel::SinkMorsel;
-use crate::nodes::io_sinks2::components::size::RowCountAndSize;
+use crate::nodes::io_sinks2::components::size::{RowCountAndSize, TakeableRowsProvider};
 
 /// Splits large morsels / combines small morsels.
 pub struct MorselResizePipeline {
     pub empty_with_schema_df: DataFrame,
-    pub ideal_morsel_size: RowCountAndSize,
+    pub takeable_rows_provider: TakeableRowsProvider,
     pub inflight_morsel_semaphore: Arc<tokio::sync::Semaphore>,
     pub morsel_rx: connector::Receiver<Morsel>,
     pub morsel_tx: connector::Sender<SinkMorsel>,
@@ -19,12 +20,11 @@ pub struct MorselResizePipeline {
 
 impl MorselResizePipeline {
     /// # Returns
-    /// Returns how many rows were sent. If wrapped in `Err(_)`, indicates that the send channel
-    /// closed prematurely.
-    pub async fn run(self) -> Result<RowCountAndSize, RowCountAndSize> {
+    /// Returns an error if number of rows overflowed `IdxSize::MAX`.
+    pub async fn run(self) -> PolarsResult<RowCountAndSize> {
         let MorselResizePipeline {
             empty_with_schema_df,
-            ideal_morsel_size,
+            takeable_rows_provider,
             inflight_morsel_semaphore,
             mut morsel_rx,
             mut morsel_tx,
@@ -32,6 +32,7 @@ impl MorselResizePipeline {
 
         let mut buffered_rows: DataFrame = empty_with_schema_df;
         let mut received_size: RowCountAndSize = RowCountAndSize::default();
+        // Must always be <= received_size.
         let mut sent_size: RowCountAndSize = RowCountAndSize::default();
 
         let mut flush = false;
@@ -42,11 +43,9 @@ impl MorselResizePipeline {
                 buffered_size.num_rows,
                 IdxSize::try_from(buffered_rows.height()).unwrap()
             );
-            let num_rows_to_take = ideal_morsel_size.num_rows_takeable_from(buffered_size);
 
-            if num_rows_to_take < buffered_size.num_rows
-                || num_rows_to_take == ideal_morsel_size.num_rows
-                || (num_rows_to_take > 0 && flush)
+            if let Some(num_rows_to_take) =
+                takeable_rows_provider.num_rows_takeable_from(buffered_size, flush)
             {
                 let morsel_permit = inflight_morsel_semaphore
                     .clone()
@@ -64,20 +63,14 @@ impl MorselResizePipeline {
                     .await
                     .is_err()
                 {
-                    return Err(sent_size);
+                    return Ok(sent_size);
                 };
 
                 buffered_rows = remaining;
 
-                let sent_size_delta = RowCountAndSize {
-                    num_rows: num_rows_to_take,
-                    #[allow(clippy::useless_conversion)]
-                    num_bytes: u64::from(num_rows_to_take)
-                        .saturating_mul(buffered_size.row_byte_size())
-                        .min(received_size.num_bytes),
-                };
-
-                sent_size = sent_size.checked_add(sent_size_delta).unwrap();
+                sent_size = sent_size
+                    .add_delta(num_rows_to_take, received_size)
+                    .unwrap();
 
                 continue;
             }
@@ -94,15 +87,7 @@ impl MorselResizePipeline {
             let df = morsel.into_df();
             let morsel_size = RowCountAndSize::new_from_df(&df);
 
-            received_size = received_size
-                .checked_add(RowCountAndSize {
-                    num_rows: morsel_size.num_rows,
-                    num_bytes: std::cmp::min(
-                        morsel_size.num_bytes,
-                        u64::MAX - received_size.num_bytes,
-                    ),
-                })
-                .unwrap();
+            received_size = received_size.add(morsel_size)?;
 
             buffered_rows.vstack_mut_owned_unchecked(df);
         }
