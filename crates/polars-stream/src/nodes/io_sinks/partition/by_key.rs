@@ -11,8 +11,8 @@ use polars_core::schema::SchemaRef;
 use polars_core::utils::arrow::buffer::Buffer;
 use polars_error::PolarsResult;
 use polars_plan::dsl::{PartitionTargetCallback, SinkFinishCallback, SinkOptions};
+use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::plpath::PlPath;
 use polars_utils::priority::Priority;
 
 use super::{CreateNewSinkFn, PerPartitionSortBy};
@@ -39,7 +39,7 @@ pub struct PartitionByKeySinkNode {
     max_open_partitions: usize,
     include_key: bool,
 
-    base_path: Arc<PlPath>,
+    base_path: PlRefPath,
     file_path_cb: Option<PartitionTargetCallback>,
     create_new: CreateNewSinkFn,
     ext: PlSmallStr,
@@ -56,7 +56,7 @@ impl PartitionByKeySinkNode {
     pub fn new(
         input_schema: SchemaRef,
         key_cols: Arc<[PlSmallStr]>,
-        base_path: Arc<PlPath>,
+        base_path: PlRefPath,
         file_path_cb: Option<PartitionTargetCallback>,
         create_new: CreateNewSinkFn,
         ext: PlSmallStr,
@@ -256,7 +256,7 @@ impl SinkNode for PartitionByKeySinkNode {
                                 },
                                 None => {
                                     let result = open_new_sink(
-                                        base_path.as_ref().as_ref(),
+                                        base_path.clone(),
                                         file_path_cb.as_ref(),
                                         super::default_by_key_file_path_cb,
                                         file_idx,
@@ -313,7 +313,7 @@ impl SinkNode for PartitionByKeySinkNode {
                     OpenPartition::Sink { sender, join_handles, node, keys } => (sender, join_handles, node, keys),
                     OpenPartition::Buffer { buffered, keys } => {
                         let result = open_new_sink(
-                            base_path.as_ref().as_ref(),
+                            base_path.clone(),
                             file_path_cb.as_ref(),
                             super::default_by_key_file_path_cb,
                             file_idx,

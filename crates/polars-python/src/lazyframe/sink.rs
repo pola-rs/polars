@@ -2,19 +2,21 @@ use std::sync::{Arc, Mutex};
 
 use polars::prelude::sink2::FileProviderReturn;
 use polars::prelude::sync_on_close::SyncOnCloseType;
-use polars::prelude::{PartitionTargetCallbackResult, PlPath, SpecialEq};
+use polars::prelude::{PartitionTargetCallbackResult, PlRefPath, SpecialEq};
+use polars_error::polars_err;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 
 use crate::prelude::Wrap;
+use crate::utils::to_py_err;
 
 impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<polars_plan::dsl::SinkTarget> {
     type Error = PyErr;
 
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         if let Ok(v) = ob.extract::<PyBackedStr>() {
-            Ok(Wrap(polars::prelude::SinkTarget::Path(PlPath::new(&v))))
+            Ok(Wrap(polars::prelude::SinkTarget::Path(PlRefPath::new(&*v))))
         } else {
             let writer = Python::attach(|py| {
                 let py_f = ob.to_owned();
@@ -42,7 +44,9 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<PartitionTargetCallbackResult> {
             )))
         } else if let Ok(v) = ob.extract::<std::path::PathBuf>() {
             Ok(Wrap(polars::prelude::PartitionTargetCallbackResult::Str(
-                v.to_str().unwrap().to_string(),
+                v.to_str()
+                    .ok_or_else(|| to_py_err(polars_err!(non_utf8_path)))?
+                    .to_string(),
             )))
         } else {
             let writer = Python::attach(|py| {
@@ -71,7 +75,9 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<FileProviderReturn> {
             Ok(Wrap(FileProviderReturn::Path(v.to_string())))
         } else if let Ok(v) = ob.extract::<std::path::PathBuf>() {
             Ok(Wrap(FileProviderReturn::Path(
-                v.to_str().unwrap().to_string(),
+                v.to_str()
+                    .ok_or_else(|| to_py_err(polars_err!(non_utf8_path)))?
+                    .to_string(),
             )))
         } else {
             let py = ob.py();
