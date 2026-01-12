@@ -3196,12 +3196,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             if storage_options is not None or credential_provider_builder is not None
             else None
         )
-        ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
-        stream = ldf.collect_batches(
+        stream = self.collect_batches(
             engine="streaming",
             maintain_order=True,
             chunk_size=None,
             lazy=True,
+            optimizations=optimizations,
         )
 
         if mode == "merge":
