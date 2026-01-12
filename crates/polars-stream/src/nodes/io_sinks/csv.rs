@@ -4,9 +4,9 @@ use std::pin::Pin;
 use polars_core::frame::DataFrame;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
-use polars_io::SerWriter;
 use polars_io::cloud::CloudOptions;
 use polars_io::prelude::{CsvWriter, CsvWriterOptions};
+use polars_io::{SerWriter, get_upload_chunk_size};
 use polars_plan::dsl::{SinkOptions, SinkTarget};
 use polars_utils::priority::Priority;
 
@@ -19,6 +19,7 @@ use crate::morsel::MorselSeq;
 use crate::nodes::io_sinks::parallelize_receive_task;
 use crate::nodes::io_sinks::phase::PhaseOutcome;
 use crate::nodes::{JoinHandle, TaskPriority};
+use crate::utils::tokio_handle_ext::AbortOnDropHandle;
 
 type IOSend = Linearizer<Priority<Reverse<MorselSeq>, Vec<u8>>>;
 
@@ -30,7 +31,7 @@ pub struct CsvSinkNode {
     cloud_options: Option<CloudOptions>,
 
     io_tx: Option<Sender<IOSend>>,
-    io_task: Option<tokio_util::task::AbortOnDropHandle<PolarsResult<()>>>,
+    io_task: Option<AbortOnDropHandle<PolarsResult<()>>>,
 }
 impl CsvSinkNode {
     pub fn new(
@@ -77,7 +78,11 @@ impl SinkNode for CsvSinkNode {
             use tokio::io::AsyncWriteExt;
 
             let mut file = target
-                .open_into_writeable_async(&sink_options, cloud_options.as_ref())
+                .open_into_writeable_async(
+                    cloud_options.as_ref(),
+                    sink_options.mkdir,
+                    get_upload_chunk_size(),
+                )
                 .await?;
 
             // Write the header
@@ -109,14 +114,13 @@ impl SinkNode for CsvSinkNode {
                 }
             }
 
-            file.sync_on_close(sink_options.sync_on_close).await?;
-            file.close().await?;
+            file.close(sink_options.sync_on_close).await?;
 
             PolarsResult::Ok(())
         });
 
         self.io_tx = Some(io_tx);
-        self.io_task = Some(tokio_util::task::AbortOnDropHandle::new(io_task));
+        self.io_task = Some(AbortOnDropHandle(io_task));
 
         Ok(())
     }

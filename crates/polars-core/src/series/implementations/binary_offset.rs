@@ -132,6 +132,10 @@ impl SeriesTrait for SeriesWrap<BinaryOffsetChunked> {
         self.0.take_unchecked(indices).into_series()
     }
 
+    fn deposit(&self, validity: &Bitmap) -> Series {
+        self.0.deposit(validity).into_series()
+    }
+
     fn len(&self) -> usize {
         self.0.len()
     }
@@ -140,6 +144,10 @@ impl SeriesTrait for SeriesWrap<BinaryOffsetChunked> {
     fn n_unique(&self) -> PolarsResult<usize> {
         // Only used by multi-key join validation, doesn't have to be optimal
         self.group_tuples(true, false).map(|g| g.len())
+    }
+
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        ChunkUnique::unique_id(&self.0)
     }
 
     fn rechunk(&self) -> Series {

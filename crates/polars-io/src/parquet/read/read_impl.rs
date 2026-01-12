@@ -142,7 +142,7 @@ fn rg_to_dfs(
             let placeholder =
                 NullChunkedBuilder::new(PlSmallStr::from_static("__PL_TMP"), pre_slice.1).finish();
             return Ok(vec![
-                DataFrame::new(vec![placeholder.into_series().into_column()])?
+                DataFrame::new_infer_height(vec![placeholder.into_series().into_column()])?
                     .with_row_index(
                         row_index.name.clone(),
                         Some(row_index.offset + IdxSize::try_from(pre_slice.0).unwrap()),
@@ -250,7 +250,7 @@ fn rg_to_dfs_optionally_par_over_columns(
             projection.iter().map(f).collect::<PolarsResult<Vec<_>>>()?
         };
 
-        let mut df = unsafe { DataFrame::new_no_checks(rg_slice.1, columns) };
+        let mut df = unsafe { DataFrame::new_unchecked(rg_slice.1, columns) };
         if let Some(rc) = &row_index {
             unsafe {
                 df.with_row_index_mut(
@@ -262,13 +262,15 @@ fn rg_to_dfs_optionally_par_over_columns(
 
         materialize_hive_partitions(&mut df, schema.as_ref(), hive_partition_columns);
 
-        *previous_row_count = previous_row_count.checked_add(current_row_count).ok_or_else(||
-            polars_err!(
-                ComputeError: "Parquet file produces more than pow(2, 32) rows; \
-                consider compiling with polars-bigidx feature (polars-u64-idx package on python), \
-                or set 'streaming'"
-            ),
-        )?;
+        *previous_row_count = previous_row_count
+            .checked_add(current_row_count)
+            .ok_or_else(|| {
+                polars_err!(
+                    ComputeError: "Parquet file produces more than pow(2, 32) rows; \
+                    consider compiling with polars-bigidx feature (pip install polars[rt64]), \
+                    or set 'streaming'"
+                )
+            })?;
         dfs.push(df);
 
         if *previous_row_count as usize >= slice_end {
@@ -381,7 +383,7 @@ fn rg_to_dfs_par_over_rg(
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
-                let mut df = unsafe { DataFrame::new_no_checks(slice.1, columns) };
+                let mut df = unsafe { DataFrame::new_unchecked(slice.1, columns) };
 
                 if let Some(rc) = &row_index {
                     unsafe {

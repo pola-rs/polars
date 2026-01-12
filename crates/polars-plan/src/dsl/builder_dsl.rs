@@ -9,10 +9,10 @@ use polars_io::ipc::IpcScanOptions;
 use polars_io::parquet::read::ParquetOptions;
 use polars_utils::unique_id::UniqueId;
 
+use crate::dsl::functions::lit;
 #[cfg(feature = "python")]
 use crate::dsl::python_dsl::PythonFunction;
 use crate::prelude::*;
-
 pub struct DslBuilder(pub DslPlan);
 
 impl From<DslPlan> for DslBuilder {
@@ -52,7 +52,6 @@ impl DslBuilder {
     }
 
     #[cfg(feature = "parquet")]
-    #[allow(clippy::too_many_arguments)]
     pub fn scan_parquet(
         sources: ScanSources,
         options: ParquetOptions,
@@ -68,7 +67,6 @@ impl DslBuilder {
     }
 
     #[cfg(feature = "ipc")]
-    #[allow(clippy::too_many_arguments)]
     pub fn scan_ipc(
         sources: ScanSources,
         options: IpcScanOptions,
@@ -83,17 +81,34 @@ impl DslBuilder {
         .into())
     }
 
+    #[cfg(feature = "scan_lines")]
+    pub fn scan_lines(
+        sources: ScanSources,
+        unified_scan_args: UnifiedScanArgs,
+        name: PlSmallStr,
+    ) -> PolarsResult<Self> {
+        Ok(DslPlan::Scan {
+            sources,
+            unified_scan_args: Box::new(unified_scan_args),
+            scan_type: Box::new(FileScanDsl::Lines { name }),
+            cached_ir: Default::default(),
+        }
+        .into())
+    }
+
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "csv")]
     pub fn scan_csv(
         sources: ScanSources,
-        options: CsvReadOptions,
+        options: impl Into<Arc<CsvReadOptions>>,
         unified_scan_args: UnifiedScanArgs,
     ) -> PolarsResult<Self> {
         Ok(DslPlan::Scan {
             sources,
             unified_scan_args: Box::new(unified_scan_args),
-            scan_type: Box::new(FileScanDsl::Csv { options }),
+            scan_type: Box::new(FileScanDsl::Csv {
+                options: options.into(),
+            }),
             cached_ir: Default::default(),
         }
         .into())
@@ -140,7 +155,7 @@ impl DslBuilder {
 
     pub fn fill_null(self, fill_value: Expr) -> Self {
         self.project(
-            vec![all().as_expr().fill_null(fill_value)],
+            vec![functions::all().as_expr().fill_null(fill_value)],
             ProjectionOptions {
                 duplicate_check: false,
                 ..Default::default()
@@ -153,12 +168,12 @@ impl DslBuilder {
             .unwrap_or(DataTypeSelector::Float.as_selector())
             .as_expr()
             .is_nan();
-        self.remove(any_horizontal([is_nan]).unwrap())
+        self.remove(functions::any_horizontal([is_nan]).unwrap())
     }
 
     pub fn drop_nulls(self, subset: Option<Selector>) -> Self {
         let is_not_null = subset.unwrap_or(Selector::Wildcard).as_expr().is_not_null();
-        self.filter(all_horizontal([is_not_null]).unwrap())
+        self.filter(functions::all_horizontal([is_not_null]).unwrap())
     }
 
     pub fn fill_nan(self, fill_value: Expr) -> Self {
@@ -193,9 +208,15 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn pipe_with_schema(self, callback: PlanCallback<(DslPlan, Schema), DslPlan>) -> Self {
+    pub fn pipe_with_schema(
+        self,
+        others: Vec<DslPlan>,
+        callback: PlanCallback<(Vec<DslPlan>, Vec<SchemaRef>), DslPlan>,
+    ) -> Self {
+        let mut input = vec![self.0];
+        input.extend(others);
         DslPlan::PipeWithSchema {
-            input: Arc::new(self.0),
+            input: Arc::from(input),
             callback,
         }
         .into()
@@ -228,9 +249,11 @@ impl DslBuilder {
         .into()
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn group_by<E: AsRef<[Expr]>>(
         self,
         keys: Vec<Expr>,
+        predicates: Vec<Expr>,
         aggs: E,
         apply: Option<(PlanCallback<DataFrame, DataFrame>, SchemaRef)>,
         maintain_order: bool,
@@ -249,6 +272,7 @@ impl DslBuilder {
         DslPlan::GroupBy {
             input: Arc::new(self.0),
             keys,
+            predicates,
             aggs,
             apply,
             maintain_order,
@@ -280,13 +304,39 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn explode(self, columns: Selector, allow_empty: bool) -> Self {
+    pub fn explode(self, columns: Selector, options: ExplodeOptions, allow_empty: bool) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
             function: DslFunction::Explode {
                 columns,
+                options,
                 allow_empty,
             },
+        }
+        .into()
+    }
+
+    #[cfg(feature = "pivot")]
+    #[expect(clippy::too_many_arguments)]
+    pub fn pivot(
+        self,
+        on: Selector,
+        on_columns: Arc<DataFrame>,
+        index: Selector,
+        values: Selector,
+        agg: Expr,
+        maintain_order: bool,
+        separator: PlSmallStr,
+    ) -> Self {
+        DslPlan::Pivot {
+            input: Arc::new(self.0),
+            on,
+            on_columns,
+            index,
+            values,
+            agg,
+            maintain_order,
+            separator,
         }
         .into()
     }

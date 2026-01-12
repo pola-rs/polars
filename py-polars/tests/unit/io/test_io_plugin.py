@@ -305,3 +305,12 @@ def test_io_plugin_categorical_24172() -> None:
         register_io_source(lambda *_: iter([df]), schema=df.schema).collect(),
         df,
     )
+
+
+def test_io_plugin_object_dtype_25740() -> None:
+    dummy = object()
+    df = pl.DataFrame({"a": [dummy, None]}, schema={"a": pl.Object})
+    lf = pl.defer(lambda: df, schema=df.schema)
+    out = lf.collect()
+    assert out.schema == df.schema
+    assert out.to_dict(as_series=False) == {"a": [dummy, None]}

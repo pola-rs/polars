@@ -29,7 +29,7 @@ impl DataFrame {
             },
         };
 
-        let cols = &self.columns;
+        let cols = self.columns();
         match dtype {
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => numeric_transpose::<Int8Type>(cols, names_out, &mut cols_t),
@@ -84,7 +84,8 @@ impl DataFrame {
                 }));
             },
         };
-        Ok(unsafe { DataFrame::new_no_checks(new_height, cols_t) })
+
+        DataFrame::new(new_height, cols_t)
     }
 
     pub fn transpose(
@@ -109,7 +110,7 @@ impl DataFrame {
         new_col_names: Option<Either<PlSmallStr, Vec<PlSmallStr>>>,
     ) -> PolarsResult<DataFrame> {
         // We must iterate columns as [`AnyValue`], so we must be contiguous.
-        self.as_single_chunk_par();
+        self.rechunk_mut_par();
 
         let mut df = Cow::Borrowed(self); // Can't use self because we might drop a name column
         let names_out = match new_col_names {

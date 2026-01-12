@@ -153,19 +153,19 @@ def test_join_lazy_on_df() -> None:
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .*to be a 'LazyFrame'.* not 'DataFrame'",
+        match=r"expected `other` .*to be a 'LazyFrame'.* not 'DataFrame'",
     ):
         df_left.lazy().join(df_right, on="Id")  # type: ignore[arg-type]
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .*to be a 'LazyFrame'.* not 'DataFrame'",
+        match=r"expected `other` .*to be a 'LazyFrame'.* not 'DataFrame'",
     ):
         df_left.lazy().join_asof(df_right, on="Id")  # type: ignore[arg-type]
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .*to be a 'LazyFrame'.* not 'pandas.core.frame.DataFrame'",
+        match=r"expected `other` .*to be a 'LazyFrame'.* not 'pandas.core.frame.DataFrame'",
     ):
         df_left.lazy().join_asof(df_right.to_pandas(), on="Id")  # type: ignore[arg-type]
 
@@ -225,33 +225,6 @@ def test_err_bubbling_up_to_lit() -> None:
         df.filter(pl.col("date") == pl.Date("2020-01-01"))  # type: ignore[call-arg,operator]
 
 
-def test_error_on_double_agg() -> None:
-    for e in [
-        "mean",
-        "max",
-        "min",
-        "sum",
-        "std",
-        "var",
-        "n_unique",
-        "last",
-        "first",
-        "median",
-        "skew",  # this one is comes from Apply
-    ]:
-        with pytest.raises(ComputeError, match="the column is already aggregated"):
-            (
-                pl.DataFrame(
-                    {
-                        "a": [1, 1, 1, 2, 2],
-                        "b": [1, 2, 3, 4, 5],
-                    }
-                )
-                .group_by("a")
-                .agg([getattr(pl.col("b").min(), e)()])
-            )
-
-
 def test_filter_not_of_type_bool() -> None:
     df = pl.DataFrame({"json_val": ['{"a":"hello"}', None, '{"a":"world"}']})
     with pytest.raises(
@@ -291,7 +264,7 @@ def test_invalid_concat_type_err() -> None:
     )
     with pytest.raises(
         ValueError,
-        match="DataFrame `how` must be one of {'vertical', '.+', 'align_right'}, got 'sausage'",
+        match=r"DataFrame `how` must be one of {'vertical', '.+', 'align_right'}, got 'sausage'",
     ):
         pl.concat([df, df], how="sausage")  # type: ignore[arg-type]
 
@@ -352,7 +325,7 @@ def test_invalid_dtype() -> None:
 
     with pytest.raises(
         TypeError,
-        match="cannot parse input <class 'datetime.tzinfo'> into Polars data type",
+        match=r"cannot parse input <class 'datetime\.tzinfo'> into Polars data type",
     ):
         pl.Series([None], dtype=tzinfo)  # type: ignore[arg-type]
 
@@ -382,7 +355,7 @@ def test_sort_by_different_lengths() -> None:
         }
     )
     with pytest.raises(
-        ComputeError,
+        ShapeError,
         match=r"expressions in 'sort_by' must have matching group lengths",
     ):
         df.group_by("group").agg(
@@ -392,12 +365,22 @@ def test_sort_by_different_lengths() -> None:
         )
 
     with pytest.raises(
-        ComputeError,
+        ShapeError,
         match=r"expressions in 'sort_by' must have matching group lengths",
     ):
         df.group_by("group").agg(
             [
                 pl.col("col1").sort_by(pl.col("col2").arg_unique()),
+            ]
+        )
+
+    with pytest.raises(
+        ShapeError,
+        match=r"expressions in 'sort_by' must have matching group lengths",
+    ):
+        df.group_by("group").agg(
+            [
+                pl.col("col1").sort_by(pl.col("col2").first()),
             ]
         )
 
@@ -491,7 +474,7 @@ def test_skip_nulls_err() -> None:
     df = pl.DataFrame({"foo": [None, None]})
     with pytest.raises(
         pl.exceptions.InvalidOperationError,
-        match="UDF called without return type, but was not able to infer the output type.",
+        match=r"UDF called without return type, but was not able to infer the output type",
     ):
         df.with_columns(pl.col("foo").map_elements(lambda x: x, skip_nulls=True))
 
@@ -512,11 +495,6 @@ def test_cast_err_column_value_highlighting(
 ) -> None:
     with pytest.raises(InvalidOperationError, match=expected_message):
         test_df.with_columns(pl.all().cast(type))
-
-
-def test_lit_agg_err() -> None:
-    with pytest.raises(ComputeError, match=r"cannot aggregate a literal"):
-        pl.DataFrame({"y": [1]}).with_columns(pl.lit(1).sum().over("y"))
 
 
 def test_invalid_group_by_arg() -> None:
@@ -540,7 +518,7 @@ def test_sort_by_err_9259() -> None:
         {"a": [1, 1, 1], "b": [3, 2, 1], "c": [1, 1, 2]},
         schema={"a": pl.Float32, "b": pl.Float32, "c": pl.Float32},
     )
-    with pytest.raises(ComputeError):
+    with pytest.raises(ShapeError):
         df.lazy().group_by("c").agg(
             [pl.col("a").sort_by(pl.col("b").filter(pl.col("b") > 100)).sum()]
         ).collect()
@@ -594,7 +572,7 @@ def test_invalid_is_in_dtypes(
     if expected is None:
         with pytest.raises(
             InvalidOperationError,
-            match="'is_in' cannot check for .*? values in .*? data",
+            match=r"'is_in' cannot check for .*? values in .*? data",
         ):
             df.select(pl.col(colname).is_in(values))
     else:
@@ -612,7 +590,7 @@ def test_sort_by_error() -> None:
     )
 
     with pytest.raises(
-        ComputeError,
+        ShapeError,
         match="expressions in 'sort_by' must have matching group lengths",
     ):
         df.group_by("id", maintain_order=True).agg(
@@ -674,17 +652,10 @@ def test_raise_invalid_arithmetic() -> None:
         df.select(pl.col("a") - pl.col("a"))
 
 
-def test_raise_on_sorted_multi_args() -> None:
-    with pytest.raises(TypeError):
-        pl.DataFrame({"a": [1], "b": [1]}).set_sorted(
-            ["a", "b"]  # type: ignore[arg-type]
-        )
-
-
 def test_err_invalid_comparison() -> None:
     with pytest.raises(
         SchemaError,
-        match="could not evaluate comparison between series 'a' of dtype: date and series 'b' of dtype: bool",
+        match="could not evaluate comparison between series 'a' of dtype: Date and series 'b' of dtype: Boolean",
     ):
         _ = pl.Series("a", [date(2020, 1, 1)]) == pl.Series("b", [True])
 
@@ -762,3 +733,44 @@ def test_shift_with_null_deprecated_24105(fill_value: Any) -> None:
         pl.DataFrame({"x": [None, None, None]}),
         check_dtypes=False,
     )
+
+
+def test_raies_on_mismatch_column_length_24500() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [10, 10, 10, 20, 20, 20],
+            "b": [2, 2, 99, 3, 3, 3],
+            "c": [3, 3, 3, 2, 2, 99],
+        }
+    )
+    with pytest.raises(
+        ShapeError,
+        match="expressions must have matching group lengths",
+    ):
+        df.group_by("a").agg(
+            pl.struct(
+                pl.col("b").head(pl.col("b").first()),
+                pl.col("c").head(pl.col("c").first()),
+            )
+        )
+
+
+def test_raies_on_mismatch_column_length_binary_expr() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [10, 10, 10, 20, 20, 20],
+            "b": [2, 0, 99, 0, 0, 0],
+            "c": [3, 0, 0, 2, 0, 99],
+        }
+    )
+
+    with pytest.raises(
+        ShapeError,
+        match="expressions must have matching group lengths",
+    ):
+        df.group_by("a").agg(
+            pl.Expr.add(
+                pl.col("b").head(pl.col("b").first()),
+                pl.col("c").head(pl.col("c").first()),
+            )
+        )

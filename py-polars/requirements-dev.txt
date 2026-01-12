@@ -33,10 +33,11 @@ connectorx
 kuzu
 # Cloud
 azure-identity
+boto3
 cloudpickle
 fsspec
 pyiceberg>=0.7.1; python_version < '3.13'
-s3fs[boto3]
+s3fs
 # Spreadsheet
 fastexcel>=0.11.5
 openpyxl

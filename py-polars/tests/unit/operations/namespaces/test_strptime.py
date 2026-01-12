@@ -64,6 +64,7 @@ def test_to_datetime_precision() -> None:
             [789321000, 987456000],
             [789321456, 987456321],
         ),
+        strict=False,
     )
     for time_unit, suffix, expected_values in test_data:
         ds = s.str.to_datetime(f"%Y-%m-%d %H:%M:%S{suffix}", time_unit=time_unit)
@@ -694,7 +695,7 @@ def test_to_time_subseconds(data: str, format: str, expected: time) -> None:
 
 def test_to_time_format_warning() -> None:
     s = pl.Series(["05:10:10.074000"])
-    with pytest.warns(ChronoFormatWarning, match=".%f"):
+    with pytest.warns(ChronoFormatWarning, match=r".%f"):
         result = s.str.to_time("%H:%M:%S.%f").item()
     assert result == time(5, 10, 10, 74)
 
@@ -764,7 +765,7 @@ def test_strptime_ambiguous_earliest(exact: bool) -> None:
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_to_datetime_out_of_range_13401(time_unit: TimeUnit) -> None:
     s = pl.Series(["2020-January-01 12:34:66"])
-    with pytest.raises(InvalidOperationError, match="conversion .* failed"):
+    with pytest.raises(InvalidOperationError, match=r"conversion .* failed"):
         s.str.to_datetime("%Y-%B-%d %H:%M:%S", time_unit=time_unit)
     assert (
         s.str.to_datetime("%Y-%B-%d %H:%M:%S", strict=False, time_unit=time_unit).item()
@@ -916,3 +917,18 @@ def test_eager_inference_on_expr(length: int) -> None:
         match="`strptime` / `to_datetime` was called with no format and no time zone, but a time zone is part of the data",
     ):
         s.to_frame().select(pl.col("a").str.strptime(pl.Datetime))
+
+
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_strptime_in_group_by(maintain_order: bool) -> None:
+    df = pl.DataFrame({"g": [1, 2], "a": ["AAA", "2025-01-01"]})
+
+    assert_frame_equal(
+        df.group_by("g", maintain_order=maintain_order).agg(
+            pl.col.a.filter(pl.col.a != "AAA").str.to_date("%Y-%m-%d").min()
+        ),
+        pl.DataFrame({"g": [1, 2], "a": [None, "2025-01-01"]}).with_columns(
+            pl.col.a.str.to_date("%Y-%m-%d")
+        ),
+        check_row_order=maintain_order,
+    )

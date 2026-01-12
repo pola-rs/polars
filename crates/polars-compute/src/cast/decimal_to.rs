@@ -13,7 +13,7 @@ pub fn decimal_to_decimal(
     to_scale: usize,
 ) -> PrimitiveArray<i128> {
     let (from_precision, from_scale) =
-        if let ArrowDataType::Decimal(p, s) = from.dtype().to_logical_type() {
+        if let ArrowDataType::Decimal(p, s) = from.dtype().to_storage() {
             (*p, *s)
         } else {
             panic!("internal error: i128 is always a decimal")
@@ -56,7 +56,7 @@ where
     T: NativeType + Float,
     f64: AsPrimitive<T>,
 {
-    let (_, from_scale) = if let ArrowDataType::Decimal(p, s) = from.dtype().to_logical_type() {
+    let (_, from_scale) = if let ArrowDataType::Decimal(p, s) = from.dtype().to_storage() {
         (*p, *s)
     } else {
         unreachable!()
@@ -82,7 +82,7 @@ pub fn decimal_to_integer<T>(from: &PrimitiveArray<i128>) -> PrimitiveArray<T>
 where
     T: NativeType + NumCast,
 {
-    let (_, from_scale) = if let ArrowDataType::Decimal(p, s) = from.dtype().to_logical_type() {
+    let (_, from_scale) = if let ArrowDataType::Decimal(p, s) = from.dtype().to_storage() {
         (*p, *s)
     } else {
         unreachable!()
@@ -107,7 +107,7 @@ where
 pub(super) fn decimal_to_utf8view(from: &PrimitiveArray<i128>) -> Utf8ViewArray {
     use crate::decimal::DecimalFmtBuffer;
 
-    let (_, from_scale) = if let ArrowDataType::Decimal(p, s) = from.dtype().to_logical_type() {
+    let (_, from_scale) = if let ArrowDataType::Decimal(p, s) = from.dtype().to_storage() {
         (*p, *s)
     } else {
         unreachable!()
@@ -116,7 +116,7 @@ pub(super) fn decimal_to_utf8view(from: &PrimitiveArray<i128>) -> Utf8ViewArray 
     let mut mutable = MutableBinaryViewArray::with_capacity(from.len());
     let mut fmt_buf = DecimalFmtBuffer::new();
     for &x in from.values().iter() {
-        mutable.push_value_ignore_validity(fmt_buf.format_dec128(x, from_scale, false))
+        mutable.push_value_ignore_validity(fmt_buf.format_dec128(x, from_scale, false, false))
     }
 
     mutable.freeze().with_validity(from.validity().cloned())

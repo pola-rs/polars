@@ -18,6 +18,8 @@ impl IRFunctionExpr {
             BinaryExpr(s) => s.get_field(mapper),
             #[cfg(feature = "dtype-categorical")]
             Categorical(func) => func.get_field(mapper),
+            #[cfg(feature = "dtype-extension")]
+            Extension(func) => func.get_field(mapper),
             ListExpr(func) => func.get_field(mapper),
             #[cfg(feature = "strings")]
             StringExpr(s) => s.get_field(mapper),
@@ -57,7 +59,7 @@ impl IRFunctionExpr {
             Atan2 => mapper.map_to_float_dtype(),
             #[cfg(feature = "sign")]
             Sign => mapper
-                .ensure_satisfies(|_, dtype| dtype.is_primitive_numeric(), "sign")?
+                .ensure_satisfies(|_, dtype| dtype.is_numeric(), "sign")?
                 .with_same_dtype(),
             FillNull => mapper.map_to_supertype(),
             #[cfg(feature = "rolling_window")]
@@ -68,6 +70,14 @@ impl IRFunctionExpr {
                     Mean | Quantile | Std => mapper.moment_dtype(),
                     Var => mapper.var_dtype(),
                     Sum => mapper.sum_dtype(),
+                    Rank => match options.fn_params {
+                        Some(RollingFnParams::Rank {
+                            method: RollingRankMethod::Average,
+                            ..
+                        }) => mapper.with_dtype(DataType::Float64),
+                        Some(RollingFnParams::Rank { .. }) => mapper.with_dtype(IDX_DTYPE),
+                        _ => unreachable!("should be Some(RollingFnParams::Rank)"),
+                    },
                     #[cfg(feature = "cov")]
                     CorrCov { .. } => mapper.map_to_float_dtype(),
                     #[cfg(feature = "moment")]
@@ -75,6 +85,8 @@ impl IRFunctionExpr {
                     Map(_) => mapper.try_map_field(|field| {
                         if options.weights.is_some() {
                             let dtype = match field.dtype() {
+                                #[cfg(feature = "dtype-f16")]
+                                DataType::Float16 => DataType::Float16,
                                 DataType::Float32 => DataType::Float32,
                                 _ => DataType::Float64,
                             };
@@ -86,13 +98,25 @@ impl IRFunctionExpr {
                 }
             },
             #[cfg(feature = "rolling_window_by")]
-            RollingExprBy { function_by, .. } => {
+            RollingExprBy {
+                function_by,
+                options,
+                ..
+            } => {
                 use IRRollingFunctionBy::*;
                 match function_by {
                     MinBy | MaxBy => mapper.with_same_dtype(),
                     MeanBy | QuantileBy | StdBy => mapper.moment_dtype(),
                     VarBy => mapper.var_dtype(),
                     SumBy => mapper.sum_dtype(),
+                    RankBy => match options.fn_params {
+                        Some(RollingFnParams::Rank {
+                            method: RollingRankMethod::Average,
+                            ..
+                        }) => mapper.with_dtype(DataType::Float64),
+                        Some(RollingFnParams::Rank { .. }) => mapper.with_dtype(IDX_DTYPE),
+                        _ => unreachable!("should be Some(RollingFnParams::Rank)"),
+                    },
                 }
             },
             Rechunk => mapper.with_same_dtype(),
@@ -107,9 +131,12 @@ impl IRFunctionExpr {
             DropNans => mapper.with_same_dtype(),
             DropNulls => mapper.with_same_dtype(),
             #[cfg(feature = "round_series")]
-            Clip { .. } => mapper.with_same_dtype(),
+            Clip {
+                has_min: _,
+                has_max: _,
+            } => mapper.with_same_dtype(),
             #[cfg(feature = "mode")]
-            Mode => mapper.with_same_dtype(),
+            Mode { maintain_order: _ } => mapper.with_same_dtype(),
             #[cfg(feature = "moment")]
             Skew(_) => mapper.with_dtype(DataType::Float64),
             #[cfg(feature = "moment")]
@@ -118,6 +145,8 @@ impl IRFunctionExpr {
             Product => mapper.map_dtype(|dtype| {
                 use DataType as T;
                 match dtype {
+                    #[cfg(feature = "dtype-f16")]
+                    T::Float16 => T::Float16,
                     T::Float32 => T::Float32,
                     T::Float64 => T::Float64,
                     T::UInt64 => T::UInt64,
@@ -227,7 +256,9 @@ impl IRFunctionExpr {
             }),
             #[cfg(feature = "pct_change")]
             PctChange => mapper.map_dtype(|dt| match dt {
-                DataType::Float64 | DataType::Float32 => dt.clone(),
+                #[cfg(feature = "dtype-f16")]
+                DataType::Float16 => dt.clone(),
+                DataType::Float32 => dt.clone(),
                 _ => DataType::Float64,
             }),
             #[cfg(feature = "interpolate")]
@@ -244,7 +275,6 @@ impl IRFunctionExpr {
             Unique(_) => mapper.with_same_dtype(),
             #[cfg(feature = "round_series")]
             Round { .. } | RoundSF { .. } | Floor | Ceil => mapper.with_same_dtype(),
-            UpperBound | LowerBound => mapper.with_same_dtype(),
             #[cfg(feature = "fused")]
             Fused(_) => mapper.map_to_supertype(),
             ConcatExpr(_) => mapper.map_to_supertype(),
@@ -374,13 +404,13 @@ impl IRFunctionExpr {
             }),
             MeanHorizontal { .. } => mapper.map_to_supertype().map(|mut f| {
                 match f.dtype {
-                    dt @ DataType::Float32 => {
-                        f.dtype = dt;
-                    },
+                    #[cfg(feature = "dtype-f16")]
+                    DataType::Float16 => {},
+                    DataType::Float32 => {},
                     _ => {
                         f.dtype = DataType::Float64;
                     },
-                };
+                }
                 f
             }),
             #[cfg(feature = "ewma")]
@@ -494,9 +524,13 @@ impl<'a> FieldsMapper<'a> {
     pub fn moment_dtype(&self) -> PolarsResult<Field> {
         let map_inner = |dt: &DataType| match dt {
             DataType::Boolean => DataType::Float64,
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => DataType::Float16,
             DataType::Float32 => DataType::Float32,
             DataType::Float64 => DataType::Float64,
             dt if dt.is_primitive_numeric() => DataType::Float64,
+            #[cfg(feature = "dtype-date")]
+            DataType::Date => DataType::Datetime(TimeUnit::Microseconds, None),
             #[cfg(feature = "dtype-datetime")]
             dt @ DataType::Datetime(_, _) => dt.clone(),
             #[cfg(feature = "dtype-duration")]
@@ -521,6 +555,8 @@ impl<'a> FieldsMapper<'a> {
     /// Map to a float supertype.
     pub fn map_to_float_dtype(&self) -> PolarsResult<Field> {
         self.map_dtype(|dtype| match dtype {
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => DataType::Float16,
             DataType::Float32 => DataType::Float32,
             _ => DataType::Float64,
         })
@@ -530,6 +566,8 @@ impl<'a> FieldsMapper<'a> {
     pub fn map_numeric_to_float_dtype(&self, coerce_decimal: bool) -> PolarsResult<Field> {
         self.map_dtype(|dt| {
             let should_coerce = match dt {
+                #[cfg(feature = "dtype-f16")]
+                DataType::Float16 => false,
                 DataType::Float32 => false,
                 #[cfg(feature = "dtype-decimal")]
                 DataType::Decimal(..) => coerce_decimal,
@@ -646,6 +684,7 @@ impl<'a> FieldsMapper<'a> {
         use DataType::*;
         self.map_dtype(|dtype| match dtype {
             Int8 | UInt8 | Int16 | UInt16 => Int64,
+            Boolean => IDX_DTYPE,
             dt => dt.clone(),
         })
     }
@@ -682,6 +721,8 @@ impl<'a> FieldsMapper<'a> {
             #[cfg(feature = "dtype-datetime")]
             Date => Datetime(TimeUnit::Microseconds, None),
             dt if dt.is_temporal() => dt,
+            #[cfg(feature = "dtype-f16")]
+            Float16 => Float16,
             Float32 => Float32,
             _ => Float64,
         };
@@ -753,16 +794,6 @@ impl<'a> FieldsMapper<'a> {
             );
         }
 
-        Ok(self)
-    }
-
-    /// Validate that the dtype is a List.
-    pub fn ensure_is_list(self) -> PolarsResult<Self> {
-        let dtype = self.fields[0].dtype();
-        polars_ensure!(
-            dtype.is_list(),
-            InvalidOperation:"expected List data type for list operation, got: {dtype}"
-        );
         Ok(self)
     }
 }

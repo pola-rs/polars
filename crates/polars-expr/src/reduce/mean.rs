@@ -19,13 +19,23 @@ pub fn new_mean_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReduct
         },
         #[cfg(feature = "dtype-decimal")]
         Decimal(_, _) => Box::new(VGR::new(dtype, NumMeanReducer::<Int128Type>(PhantomData))),
-        Null => Box::new(super::NullGroupedReduction::new(DataType::Null)),
+        Null => Box::new(super::NullGroupedReduction::new(Scalar::null(
+            DataType::Null,
+        ))),
         _ => polars_bail!(InvalidOperation: "`mean` operation not supported for dtype `{dtype}`"),
     })
 }
 
 fn finish_output(values: Vec<(f64, usize)>, dtype: &DataType) -> Series {
     match dtype {
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            let ca: Float16Chunked = values
+                .into_iter()
+                .map(|(s, c)| (c != 0).then(|| (s / c as f64).as_()))
+                .collect_ca(PlSmallStr::EMPTY);
+            ca.into_series()
+        },
         DataType::Float32 => {
             let ca: Float32Chunked = values
                 .into_iter()

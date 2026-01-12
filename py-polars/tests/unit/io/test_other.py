@@ -3,12 +3,15 @@ from __future__ import annotations
 import copy
 import sys
 from pathlib import Path
-from typing import Any, Callable, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 @pytest.mark.parametrize(
@@ -70,7 +73,7 @@ def test_read_missing_file_path_truncated() -> None:
 
     with pytest.raises(
         FileNotFoundError,
-        match="\\.\\.\\.lskdfj14lskdfj15lskdfj16lskdfj17lskdfj18lskdfj19lskdfj20lskdfj21lskdfj22lskdfj23lskdfj24 \\(set POLARS_VERBOSE=1 to see full path\\)",
+        match=r"\.\.\.lskdfj14lskdfj15lskdfj16lskdfj17lskdfj18lskdfj19lskdfj20lskdfj21lskdfj22lskdfj23lskdfj24 \(set POLARS_VERBOSE=1 to see full path\)",
     ):
         pl.read_csv(content)
 
@@ -106,7 +109,7 @@ def test_categorical_round_trip() -> None:
     tbl = df.to_arrow()
     assert "dictionary" in str(tbl["cat"].type)
 
-    df2 = cast(pl.DataFrame, pl.from_arrow(tbl))
+    df2 = cast("pl.DataFrame", pl.from_arrow(tbl))
     assert df2.dtypes == [pl.Int64, pl.Categorical]
 
 

@@ -173,7 +173,7 @@ to specify so when creating the column:
 {{code_block('user-guide/expressions/categoricals', 'stringcache-categorical-comparison-lexical',
 ['StringCache', 'Categorical'])}}
 
-```python exec="on" result="text" session="expressions/categoricals"
+```python result="text" session="expressions/categoricals"
 --8<-- "python/user-guide/expressions/categoricals.py:stringcache-categorical-comparison-lexical"
 ```
 

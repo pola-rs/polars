@@ -1,17 +1,17 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 import pyarrow.dataset as ds
+import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
-
-    import pytest
 
 
 def helper_dataset_test(
@@ -94,7 +94,9 @@ def test_pyarrow_dataset_source(df: pl.DataFrame, tmp_path: Path) -> None:
         check_predicate_pushdown=True,
     )
 
-    for closed, n_expected in zip(["both", "left", "right", "none"], [3, 2, 2, 1]):
+    for closed, n_expected in zip(
+        ["both", "left", "right", "none"], [3, 2, 2, 1], strict=True
+    ):
         helper_dataset_test(
             file_path,
             lambda lf, closed=closed: lf.filter(  # type: ignore[misc]
@@ -224,9 +226,11 @@ def test_pyarrow_dataset_comm_subplan_elim(tmp_path: Path) -> None:
     lf0 = pl.scan_pyarrow_dataset(ds0)
     lf1 = pl.scan_pyarrow_dataset(ds1)
 
-    assert lf0.join(lf1, on="a", how="inner").collect().to_dict(as_series=False) == {
-        "a": [1, 2]
-    }
+    assert_frame_equal(
+        lf0.join(lf1, on="a", how="inner").collect(),
+        pl.DataFrame({"a": [1, 2]}),
+        check_row_order=False,
+    )
 
 
 def test_pyarrow_dataset_predicate_verbose_log(
@@ -265,3 +269,55 @@ def test_pyarrow_dataset_predicate_verbose_log(
         'predicate node: [(col("a").strict_cast(String)) < ("3")], '
         "converted pyarrow predicate: <conversion failed>\n"
     ) in capture
+
+
+@pytest.mark.write_disk
+def test_pyarrow_dataset_python_scan(tmp_path: Path) -> None:
+    df = pl.DataFrame({"x": [0, 1, 2, 3]})
+    file_path = tmp_path / "0.parquet"
+    df.write_parquet(file_path)
+
+    dataset = ds.dataset(file_path)
+    lf = pl.scan_pyarrow_dataset(dataset)
+    out = lf.collect(engine="streaming")
+
+    assert_frame_equal(df, out)
+
+
+@pytest.mark.write_disk
+def test_pyarrow_dataset_allow_pyarrow_filter_false(tmp_path: Path) -> None:
+    df = pl.DataFrame({"item": ["foo", "bar", "baz"], "price": [10.0, 20.0, 30.0]})
+    file_path = tmp_path / "data.parquet"
+    df.write_parquet(file_path)
+
+    dataset = ds.dataset(file_path)
+
+    # basic scan without filter
+    result = pl.scan_pyarrow_dataset(dataset, allow_pyarrow_filter=False).collect()
+    assert_frame_equal(result, df)
+
+    # with filter (predicate should be applied by Polars, not PyArrow)
+    result = (
+        pl.scan_pyarrow_dataset(dataset, allow_pyarrow_filter=False)
+        .filter(pl.col("price") > 15)
+        .collect()
+    )
+
+    expected = pl.DataFrame({"item": ["bar", "baz"], "price": [20.0, 30.0]})
+    assert_frame_equal(result, expected)
+
+    # check user-specified `batch_size` doesn't error (ref: #25316)
+    result = (
+        pl.scan_pyarrow_dataset(dataset, allow_pyarrow_filter=False, batch_size=1000)
+        .filter(pl.col("price") > 15)
+        .collect()
+    )
+    assert_frame_equal(result, expected)
+
+    # check `allow_pyarrow_filter=True` still works
+    result = (
+        pl.scan_pyarrow_dataset(dataset, allow_pyarrow_filter=True)
+        .filter(pl.col("price") > 15)
+        .collect()
+    )
+    assert_frame_equal(result, expected)

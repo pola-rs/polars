@@ -14,7 +14,7 @@ use polars_plan::plans::{
     IRStringFunction, IRStructFunction, IRTemporalFunction,
 };
 use polars_plan::prelude::{
-    AExpr, GroupbyOptions, IRAggExpr, LiteralValue, Operator, WindowMapping, WindowType,
+    AExpr, GroupbyOptions, IRAggExpr, LiteralValue, Operator, WindowMapping,
 };
 use polars_time::prelude::RollingGroupOptions;
 use polars_time::{Duration, DynamicGroupOptions};
@@ -31,21 +31,21 @@ pub struct Alias {
     #[pyo3(get)]
     expr: usize,
     #[pyo3(get)]
-    name: PyObject,
+    name: Py<PyAny>,
 }
 
 #[pyclass(frozen)]
 pub struct Column {
     #[pyo3(get)]
-    name: PyObject,
+    name: Py<PyAny>,
 }
 
 #[pyclass(frozen)]
 pub struct Literal {
     #[pyo3(get)]
-    value: PyObject,
+    value: Py<PyAny>,
     #[pyo3(get)]
-    dtype: PyObject,
+    dtype: Py<PyAny>,
 }
 
 #[pyclass(name = "Operator", eq, frozen)]
@@ -296,7 +296,7 @@ pub struct BinaryExpr {
     #[pyo3(get)]
     left: usize,
     #[pyo3(get)]
-    op: PyObject,
+    op: Py<PyAny>,
     #[pyo3(get)]
     right: usize,
 }
@@ -306,7 +306,7 @@ pub struct Cast {
     #[pyo3(get)]
     expr: usize,
     #[pyo3(get)]
-    dtype: PyObject,
+    dtype: Py<PyAny>,
     // 0: strict
     // 1: non-strict
     // 2: overflow
@@ -355,12 +355,12 @@ pub struct SortBy {
 #[pyclass(frozen)]
 pub struct Agg {
     #[pyo3(get)]
-    name: PyObject,
+    name: Py<PyAny>,
     #[pyo3(get)]
     arguments: Vec<usize>,
     #[pyo3(get)]
     // Arbitrary control options
-    options: PyObject,
+    options: Py<PyAny>,
 }
 
 #[pyclass(frozen)]
@@ -378,9 +378,9 @@ pub struct Function {
     #[pyo3(get)]
     input: Vec<usize>,
     #[pyo3(get)]
-    function_data: PyObject,
+    function_data: Py<PyAny>,
     #[pyo3(get)]
-    options: PyObject,
+    options: Py<PyAny>,
 }
 
 #[pyclass(frozen)]
@@ -409,7 +409,7 @@ pub struct Window {
     #[pyo3(get)]
     order_by_nulls_last: bool,
     #[pyo3(get)]
-    options: PyObject,
+    options: Py<PyAny>,
 }
 
 #[pyclass(name = "WindowMapping", frozen)]
@@ -553,16 +553,18 @@ impl PyGroupbyOptions {
     }
 }
 
-pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
+pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
     match expr {
+        AExpr::Element => Err(PyNotImplementedError::new_err("element")),
         AExpr::Explode { .. } => Err(PyNotImplementedError::new_err("explode")),
         AExpr::Column(name) => Column {
             name: name.into_py_any(py)?,
         }
         .into_py_any(py),
+        AExpr::StructField(_) => Err(PyNotImplementedError::new_err("field")),
         AExpr::Literal(lit) => {
             use polars_core::prelude::AnyValue;
-            let dtype: PyObject = Wrap(lit.get_datatype()).into_py_any(py)?;
+            let dtype: Py<PyAny> = Wrap(lit.get_datatype()).into_py_any(py)?;
             let py_value = match lit {
                 LiteralValue::Dyn(d) => match d {
                     DynLiteralValue::Int(v) => v.into_py_any(py)?,
@@ -621,6 +623,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
             expr,
             idx,
             returns_scalar,
+            null_on_oob: _,
         } => Gather {
             expr: expr.0,
             idx: idx.0,
@@ -663,6 +666,16 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 arguments: vec![input.0],
                 options: propagate_nans.into_py_any(py)?,
             },
+            IRAggExpr::MinBy { input, by } => Agg {
+                name: "min_by".into_py_any(py)?,
+                arguments: vec![input.0, by.0],
+                options: py.None(),
+            },
+            IRAggExpr::MaxBy { input, by } => Agg {
+                name: "max_by".into_py_any(py)?,
+                arguments: vec![input.0, by.0],
+                options: py.None(),
+            },
             IRAggExpr::Median(n) => Agg {
                 name: "median".into_py_any(py)?,
                 arguments: vec![n.0],
@@ -678,10 +691,28 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 arguments: vec![n.0],
                 options: py.None(),
             },
+            IRAggExpr::FirstNonNull(n) => Agg {
+                name: "first_non_null".into_py_any(py)?,
+                arguments: vec![n.0],
+                options: py.None(),
+            },
             IRAggExpr::Last(n) => Agg {
                 name: "last".into_py_any(py)?,
                 arguments: vec![n.0],
                 options: py.None(),
+            },
+            IRAggExpr::LastNonNull(n) => Agg {
+                name: "last_non_null".into_py_any(py)?,
+                arguments: vec![n.0],
+                options: py.None(),
+            },
+            IRAggExpr::Item {
+                input: n,
+                allow_empty,
+            } => Agg {
+                name: "item".into_py_any(py)?,
+                arguments: vec![n.0],
+                options: allow_empty.into_py_any(py)?,
             },
             IRAggExpr::Mean(n) => Agg {
                 name: "mean".into_py_any(py)?,
@@ -743,6 +774,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
         }
         .into_py_any(py),
         AExpr::AnonymousFunction { .. } => Err(PyNotImplementedError::new_err("anonymousfunction")),
+        AExpr::AnonymousStreamingAgg { .. } => {
+            Err(PyNotImplementedError::new_err("anonymous_streaming_agg"))
+        },
         AExpr::Function {
             input,
             function,
@@ -760,6 +794,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 IRFunctionExpr::Categorical(_) => {
                     return Err(PyNotImplementedError::new_err("categorical expr"));
                 },
+                IRFunctionExpr::Extension(_) => {
+                    return Err(PyNotImplementedError::new_err("extension expr"));
+                },
                 IRFunctionExpr::ListExpr(_) => {
                     return Err(PyNotImplementedError::new_err("list expr"));
                 },
@@ -767,6 +804,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     return Err(PyNotImplementedError::new_err("bitwise expr"));
                 },
                 IRFunctionExpr::StringExpr(strfun) => match strfun {
+                    IRStringFunction::Format { .. } => {
+                        return Err(PyNotImplementedError::new_err("bitwise expr"));
+                    },
                     IRStringFunction::ConcatHorizontal {
                         delimiter,
                         ignore_nulls,
@@ -902,7 +942,13 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     #[cfg(feature = "find_many")]
                     IRStringFunction::ReplaceMany {
                         ascii_case_insensitive,
-                    } => (PyStringFunction::ReplaceMany, ascii_case_insensitive).into_py_any(py),
+                        leftmost,
+                    } => (
+                        PyStringFunction::ReplaceMany,
+                        ascii_case_insensitive,
+                        leftmost,
+                    )
+                        .into_py_any(py),
                     #[cfg(feature = "find_many")]
                     IRStringFunction::ExtractMany { .. } => {
                         return Err(PyNotImplementedError::new_err("extract_many"));
@@ -931,9 +977,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     },
                     #[cfg(feature = "json")]
                     IRStructFunction::JsonEncode => (PyStructFunction::JsonEncode,).into_py_any(py),
-                    IRStructFunction::WithFields => {
-                        return Err(PyNotImplementedError::new_err("with_fields"));
-                    },
                     IRStructFunction::MapFieldNames(_) => {
                         return Err(PyNotImplementedError::new_err("map_field_names"));
                     },
@@ -977,26 +1020,26 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     IRTemporalFunction::DaysInMonth => {
                         (PyTemporalFunction::DaysInMonth,).into_py_any(py)
                     },
-                    IRTemporalFunction::TotalDays => {
-                        (PyTemporalFunction::TotalDays,).into_py_any(py)
+                    IRTemporalFunction::TotalDays { fractional } => {
+                        (PyTemporalFunction::TotalDays, fractional).into_py_any(py)
                     },
-                    IRTemporalFunction::TotalHours => {
-                        (PyTemporalFunction::TotalHours,).into_py_any(py)
+                    IRTemporalFunction::TotalHours { fractional } => {
+                        (PyTemporalFunction::TotalHours, fractional).into_py_any(py)
                     },
-                    IRTemporalFunction::TotalMinutes => {
-                        (PyTemporalFunction::TotalMinutes,).into_py_any(py)
+                    IRTemporalFunction::TotalMinutes { fractional } => {
+                        (PyTemporalFunction::TotalMinutes, fractional).into_py_any(py)
                     },
-                    IRTemporalFunction::TotalSeconds => {
-                        (PyTemporalFunction::TotalSeconds,).into_py_any(py)
+                    IRTemporalFunction::TotalSeconds { fractional } => {
+                        (PyTemporalFunction::TotalSeconds, fractional).into_py_any(py)
                     },
-                    IRTemporalFunction::TotalMilliseconds => {
-                        (PyTemporalFunction::TotalMilliseconds,).into_py_any(py)
+                    IRTemporalFunction::TotalMilliseconds { fractional } => {
+                        (PyTemporalFunction::TotalMilliseconds, fractional).into_py_any(py)
                     },
-                    IRTemporalFunction::TotalMicroseconds => {
-                        (PyTemporalFunction::TotalMicroseconds,).into_py_any(py)
+                    IRTemporalFunction::TotalMicroseconds { fractional } => {
+                        (PyTemporalFunction::TotalMicroseconds, fractional).into_py_any(py)
                     },
-                    IRTemporalFunction::TotalNanoseconds => {
-                        (PyTemporalFunction::TotalNanoseconds,).into_py_any(py)
+                    IRTemporalFunction::TotalNanoseconds { fractional } => {
+                        (PyTemporalFunction::TotalNanoseconds, fractional).into_py_any(py)
                     },
                     IRTemporalFunction::ToString(format) => {
                         (PyTemporalFunction::ToString, format).into_py_any(py)
@@ -1180,6 +1223,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     IRRollingFunctionBy::StdBy => {
                         return Err(PyNotImplementedError::new_err("rolling std by"));
                     },
+                    IRRollingFunctionBy::RankBy => {
+                        return Err(PyNotImplementedError::new_err("rolling rank by"));
+                    },
                 },
                 IRFunctionExpr::Rechunk => ("rechunk",).into_py_any(py),
                 IRFunctionExpr::Append { upcast } => ("append", upcast).into_py_any(py),
@@ -1187,7 +1233,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 IRFunctionExpr::Shift => ("shift",).into_py_any(py),
                 IRFunctionExpr::DropNans => ("drop_nans",).into_py_any(py),
                 IRFunctionExpr::DropNulls => ("drop_nulls",).into_py_any(py),
-                IRFunctionExpr::Mode => ("mode",).into_py_any(py),
+                IRFunctionExpr::Mode { maintain_order } => {
+                    ("mode", *maintain_order).into_py_any(py)
+                },
                 IRFunctionExpr::Skew(bias) => ("skew", bias).into_py_any(py),
                 IRFunctionExpr::Kurtosis(fisher, bias) => {
                     ("kurtosis", fisher, bias).into_py_any(py)
@@ -1272,8 +1320,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 IRFunctionExpr::RoundSF { digits } => ("round_sig_figs", digits).into_py_any(py),
                 IRFunctionExpr::Floor => ("floor",).into_py_any(py),
                 IRFunctionExpr::Ceil => ("ceil",).into_py_any(py),
-                IRFunctionExpr::UpperBound => ("upper_bound",).into_py_any(py),
-                IRFunctionExpr::LowerBound => ("lower_bound",).into_py_any(py),
                 IRFunctionExpr::Fused(_) => return Err(PyNotImplementedError::new_err("fused")),
                 IRFunctionExpr::ConcatExpr(_) => {
                     return Err(PyNotImplementedError::new_err("concat expr"));
@@ -1346,7 +1392,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 },
                 IRFunctionExpr::Negate => ("negate",).into_py_any(py),
                 IRFunctionExpr::FillNullWithStrategy(strategy) => {
-                    let (strategy_str, py_limit): (&str, PyObject) = match strategy {
+                    let (strategy_str, py_limit): (&str, Py<PyAny>) = match strategy {
                         FillNullStrategy::Forward(limit) => {
                             let py_limit = limit
                                 .map(|v| PyInt::new(py, v).into())
@@ -1391,11 +1437,12 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
             options: py.None(),
         }
         .into_py_any(py),
-        AExpr::Window {
+        AExpr::Rolling { .. } => Err(PyNotImplementedError::new_err("rolling")),
+        AExpr::Over {
             function,
             partition_by,
             order_by,
-            options,
+            mapping,
         } => {
             let function = function.0;
             let partition_by = partition_by.iter().map(|n| n.0).collect();
@@ -1407,13 +1454,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 .unwrap_or(false);
             let order_by = order_by.map(|(n, _)| n.0);
 
-            let options = match options {
-                WindowType::Over(options) => PyWindowMapping { inner: *options }.into_py_any(py)?,
-                WindowType::Rolling(options) => PyRollingGroupOptions {
-                    inner: options.clone(),
-                }
-                .into_py_any(py)?,
-            };
+            let options = PyWindowMapping { inner: *mapping }.into_py_any(py)?;
             Window {
                 function,
                 partition_by,
@@ -1436,5 +1477,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
         .into_py_any(py),
         AExpr::Len => Len {}.into_py_any(py),
         AExpr::Eval { .. } => Err(PyNotImplementedError::new_err("list.eval")),
+        AExpr::StructEval { .. } => Err(PyNotImplementedError::new_err("struct.with_fields")),
     }
 }

@@ -185,7 +185,7 @@ where
 
         let mut df: DataFrame = json_reader.as_df()?;
         if rechunk && df.first_col_n_chunks() > 1 {
-            df.as_single_chunk_par();
+            df.rechunk_mut_par();
         }
         Ok(df)
     }
@@ -426,7 +426,7 @@ pub fn parse_ndjson(
     let mut buffers = init_buffers(schema, capacity, ignore_errors)?;
     parse_lines(bytes, &mut buffers, ignore_errors)?;
 
-    DataFrame::new(
+    DataFrame::new_infer_height(
         buffers
             .into_values()
             .map(|buf| Ok(buf.into_series()?.into_column()))

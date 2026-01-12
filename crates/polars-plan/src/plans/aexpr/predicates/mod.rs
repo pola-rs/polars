@@ -23,8 +23,8 @@ fn get_binary_expr_col_and_lv<'a>(
     (Option<Cow<'a, LiteralValue>>, Node),
 )> {
     match (
-        into_column(left, expr_arena, schema, 0),
-        into_column(right, expr_arena, schema, 0),
+        into_column(left, expr_arena),
+        into_column(right, expr_arena),
         constant_evaluate(left, expr_arena, schema, 0),
         constant_evaluate(right, expr_arena, schema, 0),
     ) {

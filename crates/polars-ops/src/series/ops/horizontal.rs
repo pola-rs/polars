@@ -31,10 +31,10 @@ pub trait MinMaxHorizontal {
 
 impl MinMaxHorizontal for DataFrame {
     fn min_horizontal(&self) -> PolarsResult<Option<Column>> {
-        min_horizontal(self.get_columns())
+        min_horizontal(self.columns())
     }
     fn max_horizontal(&self) -> PolarsResult<Option<Column>> {
-        max_horizontal(self.get_columns())
+        max_horizontal(self.columns())
     }
 }
 
@@ -54,10 +54,10 @@ pub trait SumMeanHorizontal {
 
 impl SumMeanHorizontal for DataFrame {
     fn sum_horizontal(&self, null_strategy: NullStrategy) -> PolarsResult<Option<Column>> {
-        sum_horizontal(self.get_columns(), null_strategy)
+        sum_horizontal(self.columns(), null_strategy)
     }
     fn mean_horizontal(&self, null_strategy: NullStrategy) -> PolarsResult<Option<Column>> {
-        mean_horizontal(self.get_columns(), null_strategy)
+        mean_horizontal(self.columns(), null_strategy)
     }
 }
 
@@ -287,7 +287,7 @@ pub fn mean_horizontal(
     match num_rows {
         0 => Ok(None),
         1 => Ok(Some(match columns[0].dtype() {
-            dt if dt != &DataType::Float32 && !dt.is_decimal() => {
+            dt if !matches!(dt, DataType::Float16 | DataType::Float32) && !dt.is_decimal() => {
                 columns[0].cast(&DataType::Float64)?
             },
             _ => columns[0].clone(),
@@ -329,14 +329,11 @@ pub fn mean_horizontal(
 
             // make sure that we do not divide by zero
             // by replacing with None
-            let dt = if sum
+            let dt = sum
                 .as_ref()
-                .is_some_and(|s| s.dtype() == &DataType::Float32)
-            {
-                &DataType::Float32
-            } else {
-                &DataType::Float64
-            };
+                .map(Column::dtype)
+                .filter(|dt| matches!(dt, DataType::Float16 | DataType::Float32))
+                .unwrap_or(&DataType::Float64);
             let value_length = value_length
                 .set(&value_length.equal(0), None)?
                 .into_column()
@@ -377,7 +374,7 @@ mod tests {
         let b = Column::new("b".into(), [Some(1), None, None]);
         let c = Column::new("c".into(), [Some(4), None, Some(3)]);
 
-        let df = DataFrame::new(vec![a, b, c]).unwrap();
+        let df = DataFrame::new_infer_height(vec![a, b, c]).unwrap();
         assert_eq!(
             Vec::from(
                 df.mean_horizontal(NullStrategy::Ignore)

@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use arrow::array::*;
 use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
@@ -14,7 +12,7 @@ fn array() -> BinaryViewArrayGeneric<str> {
     let hello_there = View::new_from_bytes(b"hello there", 1, 0);
 
     let views = Buffer::from(vec![hello, there, bye, excl, hello_there]);
-    let buffers = Arc::new([
+    let buffers = Buffer::from(vec![
         Buffer::from(b"hello there".to_vec()),
         Buffer::from(b"bye!!!".to_vec()),
     ]);

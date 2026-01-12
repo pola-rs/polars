@@ -13,11 +13,11 @@ use polars_io::predicates::{
 pub use polars_io::prelude::_internal::PrefilterMaskSetting;
 use polars_io::prelude::try_set_sorted_flag;
 use polars_parquet::read::{Filter, ParquetType, PredicateFilter, PrimitiveLogicalType};
-use polars_utils::IdxSize;
-use polars_utils::enum_unit_vec::EUnitVec;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::{IdxSize, UnitVec};
 
 use super::row_group_data_fetch::RowGroupData;
+use crate::async_executor::TaskPriority;
 use crate::async_primitives::opt_spawned_future::parallelize_first_to_local;
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
 
@@ -86,18 +86,20 @@ impl RowGroupDecoder {
         )
         .await?;
 
+        drop(row_group_data);
+
         let projection_height = slice_range.len();
 
         out_columns.extend(decoded_cols);
 
-        let df = unsafe { DataFrame::new_no_checks(projection_height, out_columns) };
+        let df = unsafe { DataFrame::new_unchecked(projection_height, out_columns) };
 
         let df = if let Some(predicate) = self.predicate.as_ref() {
             let mask = predicate.predicate.evaluate_io(&df)?;
             let mask = mask.bool().unwrap();
 
             let filtered =
-                filter_cols(df.take_columns(), mask, self.target_values_per_thread).await?;
+                filter_cols(df.into_columns(), mask, self.target_values_per_thread).await?;
 
             let height = if let Some(fst) = filtered.first() {
                 fst.len()
@@ -105,7 +107,7 @@ impl RowGroupDecoder {
                 mask.num_trues()
             };
 
-            unsafe { DataFrame::new_no_checks(height, filtered) }
+            unsafe { DataFrame::new_unchecked(height, filtered) }
         } else {
             df
         };
@@ -185,6 +187,7 @@ impl RowGroupDecoder {
             let filter = filter.clone();
 
             parallelize_first_to_local(
+                TaskPriority::Low,
                 (0..projected_arrow_fields.len())
                     .step_by(cols_per_thread)
                     .map(move |offset| {
@@ -215,7 +218,7 @@ impl RowGroupDecoder {
 
                                     Ok((col, pred_true_mask))
                                 })
-                                .collect::<PolarsResult<EUnitVec<_>>>()
+                                .collect::<PolarsResult<UnitVec<_>>>()
                         }
                     }),
             )
@@ -310,15 +313,18 @@ async fn filter_cols(
         let cols = &cols;
         let mask = &mask;
 
-        parallelize_first_to_local((0..cols.len()).step_by(cols_per_thread).map(move |offset| {
-            let cols = cols.clone();
-            let mask = mask.clone();
-            async move {
-                (offset..offset.saturating_add(cols_per_thread).min(cols.len()))
-                    .map(|i| cols[i].filter(&mask))
-                    .collect::<PolarsResult<EUnitVec<_>>>()
-            }
-        }))
+        parallelize_first_to_local(
+            TaskPriority::Low,
+            (0..cols.len()).step_by(cols_per_thread).map(move |offset| {
+                let cols = cols.clone();
+                let mask = mask.clone();
+                async move {
+                    (offset..offset.saturating_add(cols_per_thread).min(cols.len()))
+                        .map(|i| cols[i].filter(&mask))
+                        .collect::<PolarsResult<UnitVec<_>>>()
+                }
+            }),
+        )
     };
 
     for fut in task_handles {
@@ -437,6 +443,7 @@ impl RowGroupDecoder {
             let row_group_data = row_group_data.clone();
 
             parallelize_first_to_local(
+                TaskPriority::Low,
                 (0..self.predicate_field_indices.len())
                     .step_by(cols_per_thread)
                     .map(move |offset| {
@@ -473,7 +480,7 @@ impl RowGroupDecoder {
 
                                     Ok((col, pred_true_mask))
                                 })
-                                .collect::<PolarsResult<EUnitVec<_>>>()
+                                .collect::<PolarsResult<UnitVec<_>>>()
                         }
                     }),
             )
@@ -488,10 +495,10 @@ impl RowGroupDecoder {
 
         let (live_df_filtered, mut mask) = if use_column_predicates {
             assert!(scan_predicate.column_predicates.is_sumwise_complete);
-            if masks.len() == 1 {
+            if let [mask] = masks.as_slice() {
                 (
-                    DataFrame::new(live_columns).unwrap(),
-                    BooleanChunked::from_bitmap(PlSmallStr::EMPTY, masks[0].clone()),
+                    unsafe { DataFrame::new_unchecked_infer_height(live_columns) },
+                    BooleanChunked::from_bitmap(PlSmallStr::EMPTY, mask.clone()),
                 )
             } else {
                 let mut mask = MutableBitmap::new();
@@ -513,24 +520,27 @@ impl RowGroupDecoder {
                     })
                     .collect();
 
-                (DataFrame::new(live_columns).unwrap(), mask)
+                (
+                    unsafe { DataFrame::new_unchecked_infer_height(live_columns) },
+                    mask,
+                )
             }
         } else {
             let mut live_df = unsafe {
-                DataFrame::new_no_checks(row_group_data.row_group_metadata.num_rows(), live_columns)
+                DataFrame::new_unchecked(row_group_data.row_group_metadata.num_rows(), live_columns)
             };
 
             let mask = scan_predicate.predicate.evaluate_io(&live_df)?;
             let mask = mask.bool().unwrap();
 
             unsafe {
-                live_df.get_columns_mut().truncate(
+                live_df.columns_mut().truncate(
                     self.row_index.is_some() as usize + self.predicate_field_indices.len(),
                 )
             }
 
             let filtered =
-                filter_cols(live_df.take_columns(), mask, self.target_values_per_thread).await?;
+                filter_cols(live_df.into_columns(), mask, self.target_values_per_thread).await?;
 
             let filtered_height = if let Some(fst) = filtered.first() {
                 fst.len()
@@ -539,7 +549,7 @@ impl RowGroupDecoder {
             };
 
             (
-                unsafe { DataFrame::new_no_checks(filtered_height, filtered) },
+                unsafe { DataFrame::new_unchecked(filtered_height, filtered) },
                 mask.clone(),
             )
         };
@@ -572,40 +582,45 @@ impl RowGroupDecoder {
             let projected_arrow_fields = self.projected_arrow_fields.clone();
             let row_group_data = row_group_data.clone();
 
-            parallelize_first_to_local((0..non_predicate_len).step_by(cols_per_thread).map(
-                move |offset| {
-                    let row_group_data = row_group_data.clone();
-                    let non_predicate_field_indices = non_predicate_field_indices.clone();
-                    let projected_arrow_fields = projected_arrow_fields.clone();
-                    let mask = mask.clone();
-                    let mask_bitmap = mask_bitmap.clone();
+            parallelize_first_to_local(
+                TaskPriority::Low,
+                (0..non_predicate_len)
+                    .step_by(cols_per_thread)
+                    .map(move |offset| {
+                        let row_group_data = row_group_data.clone();
+                        let non_predicate_field_indices = non_predicate_field_indices.clone();
+                        let projected_arrow_fields = projected_arrow_fields.clone();
+                        let mask = mask.clone();
+                        let mask_bitmap = mask_bitmap.clone();
 
-                    async move {
-                        (offset
-                            ..offset
-                                .saturating_add(cols_per_thread)
-                                .min(non_predicate_len))
-                            .map(|i| {
-                                let projection =
-                                    &projected_arrow_fields[non_predicate_field_indices[i]];
+                        async move {
+                            (offset
+                                ..offset
+                                    .saturating_add(cols_per_thread)
+                                    .min(non_predicate_len))
+                                .map(|i| {
+                                    let projection =
+                                        &projected_arrow_fields[non_predicate_field_indices[i]];
 
-                                let col = decode_column_prefiltered(
-                                    projection.arrow_field(),
-                                    row_group_data.as_ref(),
-                                    &mask,
-                                    &mask_bitmap,
-                                    expected_num_rows,
-                                )?;
+                                    let col = decode_column_prefiltered(
+                                        projection.arrow_field(),
+                                        row_group_data.as_ref(),
+                                        &mask,
+                                        &mask_bitmap,
+                                        expected_num_rows,
+                                    )?;
 
-                                projection.apply_transform(col)
-                            })
-                            .collect::<PolarsResult<EUnitVec<_>>>()
-                    }
-                },
-            ))
+                                    projection.apply_transform(col)
+                                })
+                                .collect::<PolarsResult<UnitVec<_>>>()
+                        }
+                    }),
+            )
         };
 
-        let live_columns = live_df_filtered.take_columns();
+        drop(row_group_data);
+
+        let live_columns = live_df_filtered.into_columns();
 
         let mut dead_cols = Vec::with_capacity(self.non_predicate_field_indices.len());
         for fut in task_handles {
@@ -614,7 +629,7 @@ impl RowGroupDecoder {
 
         let mut merged = live_columns;
         merged.extend(dead_cols);
-        let df = unsafe { DataFrame::new_no_checks(expected_num_rows, merged) };
+        let df = unsafe { DataFrame::new_unchecked(expected_num_rows, merged) };
         Ok(df)
     }
 }

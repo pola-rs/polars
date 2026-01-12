@@ -23,10 +23,7 @@ impl FunctionIR {
         }
     }
 
-    pub(crate) fn schema<'a>(
-        &self,
-        input_schema: &'a SchemaRef,
-    ) -> PolarsResult<Cow<'a, SchemaRef>> {
+    pub fn schema<'a>(&self, input_schema: &'a SchemaRef) -> PolarsResult<Cow<'a, SchemaRef>> {
         use FunctionIR::*;
         match self {
             Opaque { schema, .. } => match schema {
@@ -48,17 +45,25 @@ impl FunctionIR {
                 Ok(Cow::Owned(Arc::new(schema)))
             },
             Rechunk => Ok(Cow::Borrowed(input_schema)),
-            Unnest { columns: _columns } => {
+            Unnest { columns, separator } => {
                 #[cfg(feature = "dtype-struct")]
                 {
                     let mut new_schema = Schema::with_capacity(input_schema.len() * 2);
                     for (name, dtype) in input_schema.iter() {
-                        if _columns.iter().any(|item| item == name) {
+                        if columns.iter().any(|item| item == name) {
                             match dtype {
                                 DataType::Struct(flds) => {
                                     for fld in flds {
-                                        new_schema
-                                            .with_column(fld.name().clone(), fld.dtype().clone());
+                                        let fld_name = match separator {
+                                            None => fld.name().clone(),
+                                            Some(sep) => {
+                                                polars_utils::format_pl_smallstr!(
+                                                    "{name}{sep}{}",
+                                                    fld.name()
+                                                )
+                                            },
+                                        };
+                                        new_schema.with_column(fld_name, fld.dtype().clone());
                                     }
                                 },
                                 DataType::Unknown(_) => {
@@ -87,9 +92,14 @@ impl FunctionIR {
                 input_schema,
                 name.clone(),
             ))),
-            Explode { schema, columns } => explode_schema(schema, input_schema, columns),
+            Explode {
+                schema,
+                options: _,
+                columns,
+            } => explode_schema(schema, input_schema, columns),
             #[cfg(feature = "pivot")]
             Unpivot { schema, args } => unpivot_schema(args, schema, input_schema),
+            Hint(_) => Ok(Cow::Borrowed(input_schema)),
         }
     }
 }
@@ -157,37 +167,18 @@ fn unpivot_schema<'a>(
         .iter()
         .map(|id| Ok(Field::new(id.clone(), input_schema.try_get(id)?.clone())))
         .collect::<PolarsResult<Schema>>()?;
-    let variable_name = args
-        .variable_name
-        .as_ref()
-        .cloned()
-        .unwrap_or_else(|| "variable".into());
-    let value_name = args
-        .value_name
-        .as_ref()
-        .cloned()
-        .unwrap_or_else(|| "value".into());
 
-    new_schema.with_column(variable_name, DataType::String);
+    new_schema.with_column(args.variable_name.clone(), DataType::String);
 
     // We need to determine the supertype of all value columns.
     let mut supertype = DataType::Null;
 
-    // take all columns that are not in `id_vars` as `value_var`
-    if args.on.is_empty() {
-        let id_vars = PlHashSet::from_iter(&args.index);
-        for (name, dtype) in input_schema.iter() {
-            if !id_vars.contains(name) {
-                supertype = try_get_supertype(&supertype, dtype)?;
-            }
-        }
-    } else {
-        for name in &args.on {
-            let dtype = input_schema.try_get(name)?;
-            supertype = try_get_supertype(&supertype, dtype)?;
-        }
+    for name in &args.on {
+        let dtype = input_schema.try_get(name)?;
+        supertype = try_get_supertype(&supertype, dtype)?;
     }
-    new_schema.with_column(value_name, supertype);
+
+    new_schema.with_column(args.value_name.clone(), supertype);
     let schema = Arc::new(new_schema);
     *guard = Some(schema.clone());
     Ok(Cow::Owned(schema))

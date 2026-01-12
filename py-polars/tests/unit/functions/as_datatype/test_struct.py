@@ -309,7 +309,7 @@ agg_expressions = [
 @pytest.mark.parametrize("rhs", agg_expressions)
 @pytest.mark.parametrize("n_rows", [0, 1, 2, 3])
 @pytest.mark.parametrize("maintain_order", [True, False])
-def test_struct_schema_in_group_by_apply_expr_24168(
+def test_struct_aggstates_in_apply_expr_24168(
     lhs: tuple[pl.Expr, bool, list[int]],
     rhs: tuple[pl.Expr, bool, list[int]],
     n_rows: int,
@@ -329,7 +329,9 @@ def test_struct_schema_in_group_by_apply_expr_24168(
         data = df.to_dict(as_series=False)
 
         result: dict[int, Any] = {}
-        for gg, ll, rr in zip(data["g"][:n_rows], lhs[2][:n_rows], rhs[2][:n_rows]):
+        for gg, ll, rr in zip(
+            data["g"][:n_rows], lhs[2][:n_rows], rhs[2][:n_rows], strict=True
+        ):
             result.setdefault(gg, []).append({"lhs": ll, "rhs": rr})
 
         if lhs[1] and rhs[1]:
@@ -356,3 +358,50 @@ def test_struct_schema_in_group_by_apply_expr_24168(
             out_non_agg = out_non_agg.vstack(df)
 
         assert_frame_equal(out, out_non_agg, check_row_order=maintain_order)
+
+
+# parametric tuples: (expr, values with broadcast)
+agg_expressions_partial_sort = [
+    (pl.col("n"), [2, 1, 3]),  # NotAggregated
+    (pl.int_range(pl.len()), [0, 1, 0]),  # AggregatedList
+    (pl.col("n").sort(), [1, 2, 3]),  # NotAggregated
+    (pl.int_range(pl.len()).reverse(), [1, 0, 0]),  # AggregatedList
+]
+
+
+@pytest.mark.parametrize("lhs", agg_expressions_partial_sort)
+@pytest.mark.parametrize("rhs", agg_expressions_partial_sort)
+@pytest.mark.parametrize("maintain_order", [True, False])
+def test_struct_aggstates_partial_sort_in_apply_expr_24499(
+    lhs: tuple[pl.Expr, list[int]],
+    rhs: tuple[pl.Expr, list[int]],
+    maintain_order: bool,
+) -> None:
+    df = pl.DataFrame({"g": [10, 10, 20], "n": [2, 1, 3]})
+    lf = df.lazy()
+    expr = pl.struct(lhs[0].alias("lhs"), rhs[0].alias("rhs")).alias("expr")
+    q = lf.group_by("g", maintain_order=maintain_order).agg(expr)
+    out = q.collect()
+
+    # check schema
+    assert q.collect_schema() == out.schema
+
+    # check output against ground truth
+    data = df.to_dict(as_series=False)
+    result: dict[int, list[dict[str, int]]] = {}
+    for gg, ll, rr in zip(data["g"], lhs[1], rhs[1], strict=True):
+        result.setdefault(gg, []).append({"lhs": ll, "rhs": rr})
+
+    expected = pl.DataFrame({"g": list(result.keys()), "expr": list(result.values())})
+    assert_frame_equal(out, expected, check_row_order=maintain_order)
+
+    # check output against non_aggregated expression evaluation
+    grouped = df.group_by("g", maintain_order=maintain_order)
+
+    out_non_agg = pl.DataFrame({})
+    for df_group in grouped:
+        df = df_group[1]
+        df = df.select(["g", expr.implode()]).head(1)
+        out_non_agg = out_non_agg.vstack(df)
+
+    assert_frame_equal(out, out_non_agg, check_row_order=maintain_order)

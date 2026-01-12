@@ -5,7 +5,6 @@ use polars_parquet::parquet::error::ParquetResult;
 use polars_parquet::parquet::metadata::Descriptor;
 use polars_parquet::parquet::page::{DataPage, DataPageHeader, DataPageHeaderV1, Page};
 use polars_parquet::parquet::statistics::BinaryStatistics;
-use polars_parquet::parquet::types::ord_binary;
 use polars_parquet::parquet::write::WriteOptions;
 
 fn unzip_option(array: &[Option<Vec<u8>>]) -> ParquetResult<(Vec<u8>, Vec<u8>)> {
@@ -55,16 +54,8 @@ pub fn array_to_page_v1(
             primitive_type: descriptor.primitive_type.clone(),
             null_count: Some((array.len() - array.iter().flatten().count()) as i64),
             distinct_count: None,
-            max_value: array
-                .iter()
-                .flatten()
-                .max_by(|x, y| ord_binary(x, y))
-                .cloned(),
-            min_value: array
-                .iter()
-                .flatten()
-                .min_by(|x, y| ord_binary(x, y))
-                .cloned(),
+            max_value: array.iter().filter_map(Option::as_ref).max().cloned(),
+            min_value: array.iter().filter_map(Option::as_ref).min().cloned(),
         };
         Some(statistics.serialize())
     } else {

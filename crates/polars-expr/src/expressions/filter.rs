@@ -1,11 +1,8 @@
-use arrow::legacy::is_valid::IsValid;
 use polars_core::POOL;
 use polars_core::prelude::*;
-use polars_utils::idx_vec::IdxVec;
-use rayon::prelude::*;
+use polars_utils::UnitVec;
 
 use super::*;
-use crate::expressions::UpdateGroups::WithSeriesLen;
 use crate::expressions::{AggregationContext, PhysicalExpr};
 
 pub struct FilterExpr {
@@ -46,108 +43,95 @@ impl PhysicalExpr for FilterExpr {
 
         let (ac_s, ac_predicate) = POOL.install(|| rayon::join(ac_s_f, ac_predicate_f));
         let (mut ac_s, mut ac_predicate) = (ac_s?, ac_predicate?);
-        // Check if the groups are still equal, otherwise aggregate.
-        // TODO! create a special group iters that don't materialize
-        if !std::ptr::eq(
-            ac_s.groups.as_ref() as *const _,
-            ac_predicate.groups.as_ref() as *const _,
-        ) {
-            let _ = ac_s.aggregated();
-            let _ = ac_predicate.aggregated();
-        }
 
-        if ac_predicate.is_aggregated() || ac_s.is_aggregated() {
-            let preds = ac_predicate.iter_groups(false);
-            let s = ac_s.aggregated();
-            let ca = s.list()?;
-            let out = if ca.is_empty() {
-                // return an empty list if ca is empty.
-                ListChunked::full_null_with_dtype(ca.name().clone(), 0, ca.inner_dtype())
-            } else {
-                {
-                    ca.amortized_iter()
-                        .zip(preds)
-                        .map(|(opt_s, opt_pred)| match (opt_s, opt_pred) {
-                            (Some(s), Some(pred)) => {
-                                s.as_ref().filter(pred.as_ref().bool()?).map(Some)
-                            },
-                            _ => Ok(None),
+        ac_s.set_groups_for_undefined_agg_states();
+        ac_predicate.set_groups_for_undefined_agg_states();
+
+        ac_s.groups();
+        ac_predicate.groups();
+
+        assert_eq!(ac_s.groups.len(), ac_predicate.groups.len());
+
+        // Slow path. Different groups for input and predicate.
+        if !std::ptr::eq(ac_s.groups.as_ref(), ac_predicate.groups.as_ref()) {
+            let mut needs_broadcast = false;
+            for (l, r) in ac_s.groups.iter().zip(ac_predicate.groups.iter()) {
+                needs_broadcast |= (l.len() == 1 || r.len() == 1) && l.len() != r.len();
+                if l.len() != 1 && r.len() != 1 && l.len() != r.len() {
+                    polars_bail!(length_mismatch = "filter", l.len(), r.len());
+                }
+            }
+
+            fn broadcast(
+                groups: &GroupsType,
+                other_lengths: impl Iterator<Item = usize>,
+            ) -> GroupsIdx {
+                match groups {
+                    GroupsType::Idx(i) => i
+                        .iter()
+                        .zip(other_lengths)
+                        .map(|((fst, idxs), l)| {
+                            if idxs.len() != l && idxs.len() == 1 {
+                                (fst, UnitVec::from_iter(std::iter::repeat_n(fst, l)))
+                            } else {
+                                (fst, idxs.clone())
+                            }
                         })
-                        .collect::<PolarsResult<ListChunked>>()?
-                        .with_name(s.name().clone())
-                }
-            };
-            ac_s.with_values(out.into_column(), true, Some(&self.expr))?;
-            ac_s.update_groups = WithSeriesLen;
-            Ok(ac_s)
-        } else {
-            let groups = ac_s.groups();
-            let predicate_s = ac_predicate.flat_naive();
-            let predicate = predicate_s.bool()?;
-
-            // All values true - don't do anything.
-            if let Some(true) = predicate.all_kleene() {
-                return Ok(ac_s);
-            }
-            // All values false - create empty groups.
-            let groups = if !predicate.any() {
-                let groups = groups.iter().map(|gi| [gi.first(), 0]).collect::<Vec<_>>();
-                GroupsType::Slice {
-                    groups,
-                    rolling: false,
+                        .collect(),
+                    GroupsType::Slice {
+                        groups,
+                        overlapping: _,
+                        monotonic: _,
+                    } => groups
+                        .iter()
+                        .zip(other_lengths)
+                        .map(|([start, length], l)| {
+                            if *length as usize != l && *length == 1 {
+                                (*start, UnitVec::from_iter(std::iter::repeat_n(*start, l)))
+                            } else {
+                                (*start, UnitVec::from_iter(*start..*start + *length))
+                            }
+                        })
+                        .collect(),
                 }
             }
-            // Filter the indexes that are true.
-            else {
-                let predicate = predicate.rechunk();
-                let predicate = predicate.downcast_as_array();
-                POOL.install(|| {
-                    match groups.as_ref().as_ref() {
-                        GroupsType::Idx(groups) => {
-                            let groups = groups
-                                .par_iter()
-                                .map(|(first, idx)| unsafe {
-                                    let idx: IdxVec = idx
-                                        .iter()
-                                        .copied()
-                                        .filter(|i| {
-                                            // SAFETY: just checked bounds in short circuited lhs.
-                                            predicate.value(*i as usize)
-                                                && predicate.is_valid_unchecked(*i as usize)
-                                        })
-                                        .collect();
 
-                                    (*idx.first().unwrap_or(&first), idx)
-                                })
-                                .collect();
+            // If either side needs a broadcast, perform the broadcasting on the groups before the
+            // `aggregated`.
+            if needs_broadcast {
+                ac_s.groups = Cow::Owned(
+                    GroupsType::Idx(broadcast(
+                        ac_s.groups.as_ref(),
+                        ac_predicate.groups.iter().map(|i| i.len()),
+                    ))
+                    .into_sliceable(),
+                );
+                ac_predicate.groups = Cow::Owned(
+                    GroupsType::Idx(broadcast(
+                        ac_predicate.groups.as_ref(),
+                        ac_s.groups.iter().map(|i| i.len()),
+                    ))
+                    .into_sliceable(),
+                );
+            }
 
-                            GroupsType::Idx(groups)
-                        },
-                        GroupsType::Slice { groups, .. } => {
-                            let groups = groups
-                                .par_iter()
-                                .map(|&[first, len]| unsafe {
-                                    let idx: IdxVec = (first..first + len)
-                                        .filter(|&i| {
-                                            // SAFETY: just checked bounds in short circuited lhs
-                                            predicate.value(i as usize)
-                                                && predicate.is_valid_unchecked(i as usize)
-                                        })
-                                        .collect();
-
-                                    (*idx.first().unwrap_or(&first), idx)
-                                })
-                                .collect();
-                            GroupsType::Idx(groups)
-                        },
-                    }
-                })
-            };
-
-            ac_s.with_groups(groups.into_sliceable())
-                .set_original_len(false);
-            Ok(ac_s)
+            ac_s.normalize_values();
+            ac_predicate.normalize_values();
         }
+
+        let predicate = ac_predicate.flat_naive();
+        let predicate = predicate.bool()?;
+        let predicate = predicate.rechunk();
+        let predicate = predicate.downcast_as_array();
+        let predicate = if let Some(validity) = predicate.validity()
+            && validity.unset_bits() > 0
+        {
+            predicate.values() & validity
+        } else {
+            predicate.values().clone()
+        };
+
+        crate::dispatch::drop_items(ac_s, &predicate)
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {

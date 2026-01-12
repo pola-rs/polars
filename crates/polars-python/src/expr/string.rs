@@ -321,11 +321,17 @@ impl PyExpr {
         patterns: PyExpr,
         replace_with: PyExpr,
         ascii_case_insensitive: bool,
+        leftmost: bool,
     ) -> Self {
         self.inner
             .clone()
             .str()
-            .replace_many(patterns.inner, replace_with.inner, ascii_case_insensitive)
+            .replace_many(
+                patterns.inner,
+                replace_with.inner,
+                ascii_case_insensitive,
+                leftmost,
+            )
             .into()
     }
 
@@ -335,11 +341,17 @@ impl PyExpr {
         patterns: PyExpr,
         ascii_case_insensitive: bool,
         overlapping: bool,
+        leftmost: bool,
     ) -> Self {
         self.inner
             .clone()
             .str()
-            .extract_many(patterns.inner, ascii_case_insensitive, overlapping)
+            .extract_many(
+                patterns.inner,
+                ascii_case_insensitive,
+                overlapping,
+                leftmost,
+            )
             .into()
     }
 
@@ -349,16 +361,30 @@ impl PyExpr {
         patterns: PyExpr,
         ascii_case_insensitive: bool,
         overlapping: bool,
+        leftmost: bool,
     ) -> Self {
         self.inner
             .clone()
             .str()
-            .find_many(patterns.inner, ascii_case_insensitive, overlapping)
+            .find_many(
+                patterns.inner,
+                ascii_case_insensitive,
+                overlapping,
+                leftmost,
+            )
             .into()
     }
 
     #[cfg(feature = "regex")]
     fn str_escape_regex(&self) -> Self {
         self.inner.clone().str().escape_regex().into()
+    }
+
+    #[staticmethod]
+    fn str_format(f_string: String, exprs: Vec<PyExpr>) -> PyResult<Self> {
+        let exprs = exprs.into_iter().map(|e| e.inner).collect::<Vec<_>>();
+        Ok(format_str(&f_string, exprs)
+            .map_err(PyPolarsErr::from)?
+            .into())
     }
 }

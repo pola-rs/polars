@@ -5,10 +5,10 @@ use polars_core::prelude::*;
 use polars_core::schema::Schema;
 
 use super::compute_node_prelude::*;
-use crate::async_primitives::connector::{Receiver, Sender};
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::{SourceToken, get_ideal_morsel_size};
 use crate::nodes::in_memory_sink::InMemorySinkNode;
+use crate::pipe::PortReceiver;
 
 #[allow(private_interfaces)]
 pub enum ShiftNode {
@@ -33,8 +33,8 @@ struct ShiftState {
 impl ShiftState {
     async fn shift_positive(
         &mut self,
-        mut recv: Option<Receiver<Morsel>>,
-        mut send: Sender<Morsel>,
+        mut recv: Option<PortReceiver>,
+        mut send: PortSender,
     ) -> PolarsResult<()> {
         let mut source_token = SourceToken::new();
         let wait_group = WaitGroup::default();
@@ -45,7 +45,7 @@ impl ShiftState {
                 if let Some(r) = &mut recv {
                     let Ok(morsel) = r.recv().await else { break };
                     source_token = morsel.source_token().clone();
-                    if morsel.df().is_empty() {
+                    if morsel.df().height() == 0 {
                         continue;
                     }
                     self.rows_received += morsel.df().height();
@@ -62,7 +62,7 @@ impl ShiftState {
                 let src = self.buffer.front_mut().unwrap();
                 let len = self.rows_received - self.rows_sent;
                 (df, *src) = src.split_at(len as i64);
-                if src.is_empty() {
+                if src.height() == 0 {
                     self.buffer.pop_front();
                 }
             };
@@ -75,9 +75,6 @@ impl ShiftState {
                 break;
             }
             wait_group.wait().await;
-            if source_token.stop_requested() {
-                break;
-            }
         }
 
         Ok(())
@@ -85,8 +82,8 @@ impl ShiftState {
 
     async fn shift_negative(
         &mut self,
-        mut recv: Receiver<Morsel>,
-        mut send: Sender<Morsel>,
+        mut recv: PortReceiver,
+        mut send: PortSender,
     ) -> PolarsResult<()> {
         let shift = self.offset.unsigned_abs() as usize;
 
@@ -97,7 +94,7 @@ impl ShiftState {
                 morsel =
                     morsel.map(|df| df.slice(shift_needed.min(df.height()) as i64, df.height()));
             }
-            if morsel.df().is_empty() {
+            if morsel.df().height() == 0 {
                 continue;
             }
 
@@ -114,7 +111,7 @@ impl ShiftState {
 
     async fn flush_negative(
         &mut self,
-        mut send: Sender<Morsel>,
+        mut send: PortSender,
         state: &StreamingExecutionState,
     ) -> PolarsResult<()> {
         let source_token = SourceToken::new();
@@ -137,9 +134,6 @@ impl ShiftState {
                 break;
             }
             wait_group.wait().await;
-            if source_token.stop_requested() {
-                break;
-            }
         }
 
         Ok(())
@@ -189,7 +183,7 @@ impl ComputeNode for ShiftNode {
             {
                 let offset_frame = offset.get_output()?.unwrap();
                 polars_ensure!(offset_frame.height() == 1, ComputeError: "got more than one value for 'n' in shift");
-                let offset_item = offset_frame.get_columns()[0].get(0)?;
+                let offset_item = offset_frame.columns()[0].get(0)?;
                 let offset = if offset_item.is_null() {
                     polars_warn!(
                         Deprecation, // @2.0

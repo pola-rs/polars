@@ -1,4 +1,8 @@
-use arrow::types::{AlignedBytes, Bytes4Alignment4, Bytes8Alignment8, Bytes12Alignment4};
+use arrow::types::{
+    AlignedBytes, Bytes2Alignment2, Bytes4Alignment4, Bytes8Alignment8, Bytes12Alignment4,
+};
+use num_traits::{FromBytes, ToBytes};
+use polars_utils::float16::pf16;
 
 use crate::parquet::schema::types::PhysicalType;
 use crate::read::expr::ParquetScalar;
@@ -86,6 +90,30 @@ native!(i64, Bytes8Alignment8, PhysicalType::Int64, Int64);
 native!(f32, Bytes4Alignment4, PhysicalType::Float, Float32);
 native!(f64, Bytes8Alignment8, PhysicalType::Double, Float64);
 
+use crate::parquet::types::PhysicalType::FixedLenByteArray;
+
+no_parquet_scalar_impl!(pf16);
+impl NativeType for pf16 {
+    const TYPE: PhysicalType = FixedLenByteArray(2);
+    type Bytes = [u8; size_of::<Self>()];
+    type AlignedBytes = Bytes2Alignment2;
+
+    #[inline]
+    fn to_le_bytes(&self) -> Self::Bytes {
+        <Self as ToBytes>::to_le_bytes(self)
+    }
+
+    #[inline]
+    fn from_le_bytes(bytes: Self::Bytes) -> Self {
+        <Self as FromBytes>::from_le_bytes(&bytes)
+    }
+
+    #[inline]
+    fn ord(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(other).unwrap_or(std::cmp::Ordering::Equal)
+    }
+}
+
 no_parquet_scalar_impl!([u32; 3]);
 impl NativeType for [u32; 3] {
     const TYPE: PhysicalType = PhysicalType::Int96;
@@ -155,25 +183,6 @@ pub fn int96_to_i64_ns(value: [u32; 3]) -> i64 {
     let seconds = (day - JULIAN_DAY_OF_EPOCH) * SECONDS_PER_DAY;
 
     seconds * NANOS_PER_SECOND + nanoseconds
-}
-
-/// Returns the ordering of two binary values.
-pub fn ord_binary<'a>(a: &'a [u8], b: &'a [u8]) -> std::cmp::Ordering {
-    use std::cmp::Ordering::*;
-    match (a.is_empty(), b.is_empty()) {
-        (true, true) => return Equal,
-        (true, false) => return Less,
-        (false, true) => return Greater,
-        (false, false) => {},
-    }
-
-    for (v1, v2) in a.iter().zip(b.iter()) {
-        match v1.cmp(v2) {
-            Equal => continue,
-            other => return other,
-        }
-    }
-    Equal
 }
 
 #[inline]

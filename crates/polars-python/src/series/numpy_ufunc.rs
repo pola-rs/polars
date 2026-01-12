@@ -46,7 +46,7 @@ unsafe fn aligned_array<T: Element + NativeType>(
     );
     (
         Bound::from_owned_ptr(py, ptr)
-            .downcast_into_exact::<PyArray1<T>>()
+            .cast_into_exact::<PyArray1<T>>()
             .unwrap(),
         buf,
     )
@@ -80,7 +80,7 @@ macro_rules! impl_ufuncs {
             // have to convert that NumPy array into a pl.Series.
             fn $name(&self, lambda: &Bound<PyAny>, allocate_out: bool) -> PyResult<PySeries> {
                 // numpy array object, and a *mut ptr
-                Python::with_gil(|py| {
+                Python::attach(|py| {
                     if !allocate_out {
                         // We're not going to allocate the output array.
                         // Instead, we'll let the ufunc do it.
@@ -89,7 +89,8 @@ macro_rules! impl_ufuncs {
                         return series_factory
                             .call((self.name(), result), None)?
                             .getattr("_s")?
-                            .extract::<PySeries>();
+                            .extract::<PySeries>()
+                            .map_err(PyErr::from);
                     }
 
                     let size = self.len();

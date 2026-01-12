@@ -4,7 +4,6 @@ use polars_core::prelude::ChunkCompareIneq;
 use polars_ops::frame::_merge_sorted_dfs;
 
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
-use crate::async_primitives::connector::Receiver;
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::morsel::{SourceToken, get_ideal_morsel_size};
 use crate::nodes::compute_node_prelude::*;
@@ -69,8 +68,8 @@ fn find_mergeable(
             (None, None) => return Ok(None),
         };
 
-        let left_key = left.get_columns().last().unwrap();
-        let right_key = right.get_columns().last().unwrap();
+        let left_key = left.columns().last().unwrap();
+        let right_key = right.columns().last().unwrap();
 
         let left_null_count = left_key.null_count();
         let right_null_count = right_key.null_count();
@@ -148,10 +147,10 @@ fn find_mergeable(
         (left_mergeable, left) = left.split_at(left_cutoff as i64);
         (right_mergeable, right) = right.split_at(right_cutoff as i64);
 
-        if !left.is_empty() {
+        if left.height() > 0 {
             left_unmerged.push_front(left);
         }
-        if !right.is_empty() {
+        if right.height() > 0 {
             right_unmerged.push_front(right);
         }
 
@@ -164,8 +163,7 @@ fn remove_key_column(df: &mut DataFrame) {
     // - We only pop so height stays same.
     // - We only pop so no new name collisions.
     // - We clear schema afterwards.
-    unsafe { df.get_columns_mut().pop().unwrap() };
-    df.clear_schema();
+    unsafe { df.columns_mut().pop().unwrap() };
 }
 
 impl ComputeNode for MergeSortedNode {
@@ -286,7 +284,7 @@ impl ComputeNode for MergeSortedNode {
             // data.
             (left, right) => {
                 async fn buffer_unmerged(
-                    port: &mut Receiver<Morsel>,
+                    port: &mut PortReceiver,
                     unmerged: &mut VecDeque<DataFrame>,
                 ) {
                     // If a stop was requested, we need to buffer the remaining
@@ -455,7 +453,7 @@ impl ComputeNode for MergeSortedNode {
                             // When we are flushing the buffer, we will just send one morsel from
                             // the input. We don't want to mess with the source token or wait group
                             // and just pass it on.
-                            if right.is_empty() {
+                            if right.shape_has_zero() {
                                 remove_key_column(left.df_mut());
 
                                 if send.send(left).await.is_err() {
@@ -468,13 +466,13 @@ impl ComputeNode for MergeSortedNode {
                             assert!(wg.is_none());
 
                             let left_s = left
-                                .get_columns()
+                                .columns()
                                 .last()
                                 .unwrap()
                                 .as_materialized_series()
                                 .clone();
                             let right_s = right
-                                .get_columns()
+                                .columns()
                                 .last()
                                 .unwrap()
                                 .as_materialized_series()

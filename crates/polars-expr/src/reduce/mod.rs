@@ -1,13 +1,17 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 mod any_all;
+#[cfg(feature = "approx_unique")]
+mod approx_n_unique;
 #[cfg(feature = "bitwise")]
 mod bitwise;
 mod convert;
 mod count;
 mod first_last;
+mod first_last_nonnull;
 mod len;
 mod mean;
 mod min_max;
+mod min_max_by;
 mod sum;
 mod var_std;
 
@@ -45,7 +49,7 @@ pub trait GroupedReduction: Any + Send + Sync {
     /// order between calls/multiple reductions.
     fn update_group(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         group_idx: IdxSize,
         seq_id: u64,
     ) -> PolarsResult<()>;
@@ -59,13 +63,14 @@ pub trait GroupedReduction: Any + Send + Sync {
     /// The subset and group_idxs are in-bounds.
     unsafe fn update_groups_subset(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         subset: &[IdxSize],
         group_idxs: &[IdxSize],
         seq_id: u64,
     ) -> PolarsResult<()> {
         assert!(values.len() < (1 << (IdxSize::BITS - 1)));
-        let evict_group_idxs = core::mem::transmute::<&[IdxSize], &[EvictIdx]>(group_idxs);
+        // SAFETY: EvictIdx is a wrapper for IdxSize and has same alignment.
+        let evict_group_idxs = EvictIdx::cast_slice(group_idxs);
         self.update_groups_while_evicting(values, subset, evict_group_idxs, seq_id)
     }
 
@@ -79,7 +84,7 @@ pub trait GroupedReduction: Any + Send + Sync {
     /// The subset and group_idxs are in-bounds.
     unsafe fn update_groups_while_evicting(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         subset: &[IdxSize],
         group_idxs: &[EvictIdx],
         seq_id: u64,
@@ -217,7 +222,7 @@ pub struct VecGroupedReduction<R: Reducer> {
 }
 
 impl<R: Reducer> VecGroupedReduction<R> {
-    fn new(in_dtype: DataType, reducer: R) -> Self {
+    pub fn new(in_dtype: DataType, reducer: R) -> Self {
         Self {
             values: Vec::new(),
             evicted_values: Vec::new(),
@@ -250,10 +255,12 @@ where
 
     fn update_group(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         group_idx: IdxSize,
         seq_id: u64,
     ) -> PolarsResult<()> {
+        assert!(values.len() == 1);
+        let values = values[0];
         assert!(values.dtype() == &self.in_dtype);
         let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
         let values = values.as_materialized_series(); // @scalar-opt
@@ -266,11 +273,12 @@ where
 
     unsafe fn update_groups_while_evicting(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         subset: &[IdxSize],
         group_idxs: &[EvictIdx],
         seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         assert!(values.dtype() == &self.in_dtype);
         assert!(subset.len() == group_idxs.len());
         let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
@@ -386,10 +394,11 @@ where
 
     fn update_group(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         group_idx: IdxSize,
         seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         assert!(values.dtype() == &self.in_dtype);
         let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
         let values = values.as_materialized_series(); // @scalar-opt
@@ -405,11 +414,12 @@ where
 
     unsafe fn update_groups_while_evicting(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         subset: &[IdxSize],
         group_idxs: &[EvictIdx],
         seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         assert!(values.dtype() == &self.in_dtype);
         assert!(subset.len() == group_idxs.len());
         let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
@@ -483,25 +493,26 @@ where
     }
 }
 
-struct NullGroupedReduction {
+#[derive(Clone)]
+pub struct NullGroupedReduction {
     num_groups: IdxSize,
     num_evictions: IdxSize,
-    dtype: DataType,
+    output: Scalar,
 }
 
 impl NullGroupedReduction {
-    fn new(dtype: DataType) -> Self {
+    pub fn new(output: Scalar) -> Self {
         Self {
             num_groups: 0,
             num_evictions: 0,
-            dtype,
+            output,
         }
     }
 }
 
 impl GroupedReduction for NullGroupedReduction {
     fn new_empty(&self) -> Box<dyn GroupedReduction> {
-        Box::new(Self::new(self.dtype.clone()))
+        Box::new(Self::new(self.output.clone()))
     }
 
     fn reserve(&mut self, _additional: usize) {}
@@ -512,20 +523,25 @@ impl GroupedReduction for NullGroupedReduction {
 
     fn update_group(
         &mut self,
-        _values: &Column,
+        values: &[&Column],
         _group_idx: IdxSize,
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
+        assert!(values.dtype().is_null());
         Ok(())
     }
 
     unsafe fn update_groups_while_evicting(
         &mut self,
-        _values: &Column,
-        _subset: &[IdxSize],
+        values: &[&Column],
+        subset: &[IdxSize],
         group_idxs: &[EvictIdx],
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
+        assert!(values.dtype().is_null());
+        assert!(subset.len() == group_idxs.len());
         for g in group_idxs {
             self.num_evictions += g.should_evict() as IdxSize;
         }
@@ -534,10 +550,12 @@ impl GroupedReduction for NullGroupedReduction {
 
     unsafe fn combine_subset(
         &mut self,
-        _other: &dyn GroupedReduction,
-        _subset: &[IdxSize],
-        _group_idxs: &[IdxSize],
+        other: &dyn GroupedReduction,
+        subset: &[IdxSize],
+        group_idxs: &[IdxSize],
     ) -> PolarsResult<()> {
+        let _other = other.as_any().downcast_ref::<Self>().unwrap();
+        assert!(subset.len() == group_idxs.len());
         Ok(())
     }
 
@@ -545,16 +563,14 @@ impl GroupedReduction for NullGroupedReduction {
         Box::new(Self {
             num_groups: core::mem::replace(&mut self.num_evictions, 0),
             num_evictions: 0,
-            dtype: self.dtype.clone(),
+            output: self.output.clone(),
         })
     }
 
     fn finalize(&mut self) -> PolarsResult<Series> {
-        Ok(Series::full_null(
-            PlSmallStr::EMPTY,
-            core::mem::replace(&mut self.num_groups, 0) as usize,
-            &self.dtype,
-        ))
+        let length = core::mem::replace(&mut self.num_groups, 0) as usize;
+        let s = self.output.clone().into_series(PlSmallStr::EMPTY);
+        Ok(s.new_from_index(0, length))
     }
 
     fn as_any(&self) -> &dyn Any {

@@ -6,6 +6,7 @@ use chrono::{
 };
 use chrono_tz::Tz;
 use hashbrown::HashMap;
+use num_traits::ToPrimitive;
 #[cfg(feature = "object")]
 use polars::chunked_array::object::PolarsObjectSafe;
 #[cfg(feature = "object")]
@@ -18,7 +19,7 @@ use polars_core::utils::arrow::temporal_conversions::date32_to_date;
 use polars_utils::aliases::PlFixedStateQuality;
 use pyo3::exceptions::{PyOverflowError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::sync::GILOnceCell;
+use pyo3::sync::PyOnceLock;
 use pyo3::types::{
     PyBool, PyBytes, PyDate, PyDateTime, PyDelta, PyDict, PyFloat, PyInt, PyList, PyMapping,
     PyRange, PySequence, PyString, PyTime, PyTuple, PyType, PyTzInfo,
@@ -53,9 +54,11 @@ impl<'py> IntoPyObject<'py> for &Wrap<AnyValue<'_>> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<AnyValue<'static>> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
-        py_object_to_any_value(ob, true, true).map(Wrap)
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<AnyValue<'static>> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        py_object_to_any_value(&ob.to_owned(), true, true).map(Wrap)
     }
 }
 
@@ -75,6 +78,7 @@ pub(crate) fn any_value_into_py_object<'py>(
         AnyValue::Int32(v) => v.into_bound_py_any(py),
         AnyValue::Int64(v) => v.into_bound_py_any(py),
         AnyValue::Int128(v) => v.into_bound_py_any(py),
+        AnyValue::Float16(v) => v.to_f32().into_bound_py_any(py),
         AnyValue::Float32(v) => v.into_bound_py_any(py),
         AnyValue::Float64(v) => v.into_bound_py_any(py),
         AnyValue::Null => py.None().into_bound_py_any(py),
@@ -124,7 +128,7 @@ pub(crate) fn any_value_into_py_object<'py>(
         AnyValue::Decimal(v, prec, scale) => {
             let convert = utils.getattr(intern!(py, "to_py_decimal"))?;
             let mut buf = DecimalFmtBuffer::new();
-            let s = buf.format_dec128(v, scale, false);
+            let s = buf.format_dec128(v, scale, false, false);
             convert.call1((prec, s))
         },
     }
@@ -216,18 +220,9 @@ pub(crate) fn py_object_to_any_value(
     }
 
     fn get_str(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
-        // Ideally we'd be returning an AnyValue::String(&str) instead, as was
-        // the case in previous versions of this function. However, if compiling
-        // with abi3 for versions older than Python 3.10, the APIs that purport
-        // to return &str actually just encode to UTF-8 as a newly allocated
-        // PyBytes object, and then return reference to that. So what we're
-        // doing here isn't any different fundamentally, and the APIs to for
-        // converting to &str are deprecated in PyO3 0.21.
-        //
-        // Once Python 3.10 is the minimum supported version, converting to &str
-        // will be cheaper, and we should do that. Python 3.9 security updates
-        // end-of-life is Oct 31, 2025.
-        Ok(AnyValue::StringOwned(ob.extract::<String>()?.into()))
+        Ok(AnyValue::StringOwned(PlSmallStr::from(
+            ob.extract::<&str>()?,
+        )))
     }
 
     fn get_bytes(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
@@ -259,13 +254,13 @@ pub(crate) fn py_object_to_any_value(
             .ok()
             .and_then(|tz| (!tz.is_none()).then_some(tz))
         {
-            let tzinfo = PyTzInfo::timezone(py, tz.downcast_into::<PyString>()?)?;
+            let tzinfo = PyTzInfo::timezone(py, tz.cast_into::<PyString>()?)?;
             (
                 &ob.call_method(intern!(py, "astimezone"), (&tzinfo,), None)?,
                 tzinfo,
             )
         } else {
-            (ob, tzinfo.downcast_into()?)
+            (ob, tzinfo.cast_into()?)
         };
 
         let (timestamp, tz) = if tzinfo.hasattr(intern!(py, "key"))? {
@@ -375,7 +370,7 @@ pub(crate) fn py_object_to_any_value(
                 &DataType::Null,
             )))
         } else if ob.is_instance_of::<PyList>() | ob.is_instance_of::<PyTuple>() {
-            let list = ob.downcast::<PySequence>()?;
+            let list = ob.cast::<PySequence>()?;
 
             // Try to find first non-null.
             let length = list.len()?;
@@ -434,13 +429,13 @@ pub(crate) fn py_object_to_any_value(
     }
 
     fn get_mapping(ob: &Bound<'_, PyAny>, strict: bool) -> PyResult<AnyValue<'static>> {
-        let mapping = ob.downcast::<PyMapping>()?;
+        let mapping = ob.cast::<PyMapping>()?;
         let len = mapping.len()?;
         let mut keys = Vec::with_capacity(len);
         let mut vals = Vec::with_capacity(len);
 
         for item in mapping.items()?.try_iter()? {
-            let item = item?.downcast_into::<PyTuple>()?;
+            let item = item?.cast_into::<PyTuple>()?;
             let (key_py, val_py) = (item.get_item(0)?, item.get_item(1)?);
 
             let key: Cow<str> = key_py.extract()?;
@@ -453,11 +448,29 @@ pub(crate) fn py_object_to_any_value(
     }
 
     fn get_struct(ob: &Bound<'_, PyAny>, strict: bool) -> PyResult<AnyValue<'static>> {
-        let dict = ob.downcast::<PyDict>().unwrap();
+        let dict = ob.cast::<PyDict>().unwrap();
         let len = dict.len();
         let mut keys = Vec::with_capacity(len);
         let mut vals = Vec::with_capacity(len);
         for (k, v) in dict.into_iter() {
+            let key = k.extract::<Cow<str>>()?;
+            let val = py_object_to_any_value(&v, strict, true)?;
+            let dtype = val.dtype();
+            keys.push(Field::new(key.as_ref().into(), dtype));
+            vals.push(val)
+        }
+        Ok(AnyValue::StructOwned(Box::new((vals, keys))))
+    }
+
+    fn get_namedtuple(ob: &Bound<'_, PyAny>, strict: bool) -> PyResult<AnyValue<'static>> {
+        let tuple = ob.cast::<PyTuple>().unwrap();
+        let len = tuple.len();
+        let fields = ob
+            .getattr(intern!(ob.py(), "_fields"))?
+            .cast_into::<PyTuple>()?;
+        let mut keys = Vec::with_capacity(len);
+        let mut vals = Vec::with_capacity(len);
+        for (k, v) in fields.into_iter().zip(tuple.into_iter()) {
             let key = k.extract::<Cow<str>>()?;
             let val = py_object_to_any_value(&v, strict, true)?;
             let dtype = val.dtype();
@@ -500,15 +513,22 @@ pub(crate) fn py_object_to_any_value(
             Ok(get_str)
         } else if ob.is_instance_of::<PyBytes>() {
             Ok(get_bytes)
-        } else if ob.is_instance_of::<PyList>() || ob.is_instance_of::<PyTuple>() {
+        } else if ob.is_instance_of::<PyTuple>() {
+            // NamedTuple-like object?
+            if ob.hasattr(intern!(py, "_fields"))? {
+                Ok(get_namedtuple)
+            } else {
+                Ok(get_list)
+            }
+        } else if ob.is_instance_of::<PyList>() {
             Ok(get_list)
         } else if ob.is_instance_of::<PyDict>() {
             Ok(get_struct)
         } else if PyMapping::type_check(ob) {
             Ok(get_mapping)
         }
-        // datetime must be checked before date because
-        // Python datetime is an instance of date.
+        // note: datetime must be checked *before* date
+        // (as python datetime is an instance of date)
         else if PyDateTime::type_check(ob) {
             Ok(get_datetime as InitFn)
         } else if PyDate::type_check(ob) {
@@ -519,13 +539,22 @@ pub(crate) fn py_object_to_any_value(
             Ok(get_timedelta as InitFn)
         } else if ob.is_instance_of::<PyRange>() {
             Ok(get_list as InitFn)
+        } else if ob.is_instance(pl_series(py).bind(py))? {
+            Ok(get_list_from_series as InitFn)
         } else {
-            static DECIMAL_TYPE: GILOnceCell<Py<PyType>> = GILOnceCell::new();
+            static NDARRAY_TYPE: PyOnceLock<Py<PyType>> = PyOnceLock::new();
+            if let Ok(ndarray_type) = NDARRAY_TYPE.import(py, "numpy", "ndarray") {
+                if ob.is_instance(ndarray_type)? {
+                    // will convert via Series -> mmap_numpy_array
+                    return Ok(get_list as InitFn);
+                }
+            }
+            static DECIMAL_TYPE: PyOnceLock<Py<PyType>> = PyOnceLock::new();
             if ob.is_instance(DECIMAL_TYPE.import(py, "decimal", "Decimal")?)? {
                 return Ok(get_decimal as InitFn);
             }
 
-            // Support NumPy scalars.
+            // support NumPy scalars
             if ob.extract::<i64>().is_ok() || ob.extract::<u64>().is_ok() {
                 return Ok(get_int as InitFn);
             } else if ob.extract::<f64>().is_ok() {

@@ -5,7 +5,9 @@ use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_io::predicates::ScanIOPredicate;
 use polars_plan::dsl::deletion::DeletionFilesList;
-use polars_plan::dsl::{CastColumnsPolicy, MissingColumnsPolicy, ScanSources, TableStatistics};
+use polars_plan::dsl::{
+    CastColumnsPolicy, MissingColumnsPolicy, PredicateFileSkip, ScanSources, TableStatistics,
+};
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::relaxed_cell::RelaxedCell;
@@ -32,6 +34,7 @@ pub struct MultiScanConfig {
     pub row_index: Option<RowIndex>,
     pub pre_slice: Option<Slice>,
     pub predicate: Option<ScanIOPredicate>,
+    pub predicate_file_skip_applied: Option<PredicateFileSkip>,
 
     pub hive_parts: Option<Arc<HivePartitionsDf>>,
     pub include_file_paths: Option<PlSmallStr>,

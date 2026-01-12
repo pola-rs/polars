@@ -10,7 +10,7 @@ use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 
 use self::metrics::WriteMetrics;
-use super::{ComputeNode, JoinHandle, Morsel, PortState, RecvPort, SendPort, TaskScope};
+use super::{ComputeNode, JoinHandle, PortState, RecvPort, SendPort, TaskScope};
 use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::async_primitives::connector::{Receiver, Sender, connector};
 use crate::async_primitives::distributor_channel;
@@ -18,6 +18,7 @@ use crate::async_primitives::linearizer::{Inserter, Linearizer};
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::execute::StreamingExecutionState;
 use crate::nodes::TaskPriority;
+use crate::pipe::PortReceiver;
 
 mod metrics;
 mod phase;
@@ -47,19 +48,19 @@ static DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE: LazyLock<usize> = LazyLock::new(|| 
 });
 
 pub enum SinkInputPort {
-    Serial(Receiver<Morsel>),
-    Parallel(Vec<Receiver<Morsel>>),
+    Serial(PortReceiver),
+    Parallel(Vec<PortReceiver>),
 }
 
 impl SinkInputPort {
-    pub fn serial(self) -> Receiver<Morsel> {
+    pub fn serial(self) -> PortReceiver {
         match self {
             Self::Serial(s) => s,
             _ => panic!(),
         }
     }
 
-    pub fn parallel(self) -> Vec<Receiver<Morsel>> {
+    pub fn parallel(self) -> Vec<PortReceiver> {
         match self {
             Self::Parallel(s) => s,
             _ => panic!(),
@@ -67,17 +68,45 @@ impl SinkInputPort {
     }
 }
 
+enum SendBufferedMorsel {
+    /// Sender<(seq_id, column_idx, _)>
+    Distributor(distributor_channel::Sender<(usize, usize, Column)>),
+    /// Vec<Sender<(seq_id, _)>>
+    PerColumn(Vec<tokio::sync::mpsc::Sender<(usize, Column)>>),
+}
+
+impl SendBufferedMorsel {
+    async fn send(&mut self, seq_id: usize, df: DataFrame) -> Result<(), ()> {
+        match self {
+            Self::Distributor(dist_tx) => {
+                for (i, col) in df.into_columns().into_iter().enumerate() {
+                    dist_tx.send((seq_id, i, col)).await.map_err(|_| ())?
+                }
+            },
+            Self::PerColumn(txs) => {
+                debug_assert_eq!(txs.len(), df.width());
+
+                for (tx, col) in txs.iter_mut().zip(df.into_columns()) {
+                    tx.send((seq_id, col)).await.map_err(|_| ())?
+                }
+            },
+        }
+
+        Ok(())
+    }
+}
+
 /// Spawn a task that linearizes and buffers morsels until a given a maximum chunk size is reached
 /// and then distributes the columns amongst worker tasks.
 fn buffer_and_distribute_columns_task(
     mut recv_port_rx: Receiver<(PhaseOutcome, SinkInputPort)>,
-    mut dist_tx: distributor_channel::Sender<(usize, usize, Column)>,
+    mut send_morsel: SendBufferedMorsel,
     chunk_size: usize,
     schema: SchemaRef,
     metrics: Arc<Mutex<Option<WriteMetrics>>>,
 ) -> JoinHandle<PolarsResult<()>> {
     spawn(TaskPriority::High, async move {
-        let mut seq = 0usize;
+        let mut seq_id: usize = 0;
         let mut buffer = DataFrame::empty_with_schema(schema.as_ref());
 
         let mut metrics_ = metrics.lock().unwrap().take();
@@ -91,18 +120,17 @@ fn buffer_and_distribute_columns_task(
                 }
 
                 // @NOTE: This also performs schema validation.
-                buffer.vstack_mut(&df)?;
+                buffer.vstack_mut_owned(df)?;
 
                 while buffer.height() >= chunk_size {
                     let df;
                     (df, buffer) = buffer.split_at(buffer.height().min(chunk_size) as i64);
 
-                    for (i, column) in df.take_columns().into_iter().enumerate() {
-                        if dist_tx.send((seq, i, column)).await.is_err() {
-                            return Ok(());
-                        }
+                    if send_morsel.send(seq_id, df).await.is_err() {
+                        return Ok(());
                     }
-                    seq += 1;
+
+                    seq_id += 1;
                 }
                 drop(consume_token); // Increase the backpressure. Only free up a pipeline when the
                 // morsel has started encoding in its entirety. This still
@@ -117,17 +145,14 @@ fn buffer_and_distribute_columns_task(
         }
 
         // Don't write an empty row group at the end.
-        if buffer.is_empty() {
+        if buffer.height() == 0 {
             return Ok(());
         }
 
         // Flush the remaining rows.
         assert!(buffer.height() <= chunk_size);
-        for (i, column) in buffer.take_columns().into_iter().enumerate() {
-            if dist_tx.send((seq, i, column)).await.is_err() {
-                return Ok(());
-            }
-        }
+
+        let _ = send_morsel.send(seq_id, buffer).await;
 
         PolarsResult::Ok(())
     })
@@ -140,7 +165,7 @@ pub fn parallelize_receive_task<T: Ord + Send + 'static>(
     num_pipelines: usize,
     maintain_order: bool,
     mut io_tx: Sender<Linearizer<T>>,
-) -> Vec<Receiver<(Receiver<Morsel>, Inserter<T>)>> {
+) -> Vec<Receiver<(PortReceiver, Inserter<T>)>> {
     // Phase Handling Task -> Encode Tasks.
     let (mut pass_txs, pass_rxs) = (0..num_pipelines)
         .map(|_| connector())

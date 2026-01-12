@@ -9,9 +9,9 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unique_id::UniqueId;
 
-use super::expr_pushdown::{adjust_for_with_columns_context, get_frame_observing, zip};
-use crate::dsl::{PartitionVariantIR, SinkTypeIR, UnionOptions};
-use crate::plans::set_order::expr_pushdown::FrameOrderObserved;
+use super::expr_pushdown::{adjust_for_with_columns_context, resolve_observable_orders, zip};
+use crate::dsl::{PartitionStrategyIR, SinkTypeIR, UnionOptions};
+use crate::plans::set_order::expr_pushdown::ColumnOrderObserved;
 use crate::plans::{AExpr, IR, is_scalar_ae};
 
 pub(super) fn pushdown_orders(
@@ -59,11 +59,15 @@ pub(super) fn pushdown_orders(
                 slice,
                 sort_options: _,
                 ..
-            } if slice.is_none() && all_outputs_unordered => {
+            } if slice.is_none() && all_outputs_unordered
+            // Skip optimization if input node is missing from outputs (e.g. after CSE).
+            && outputs.contains_key(input) =>
+            {
                 // _ -> Unordered
                 //
                 // Remove sort.
                 let input = *input;
+
                 _ = ir_arena.take(node);
 
                 let node_outputs = outputs.remove(&node).unwrap();
@@ -80,7 +84,9 @@ pub(super) fn pushdown_orders(
                 }
                 outputs.get_mut(&input).unwrap().retain(|(n, _)| *n != node);
 
-                stack.push(input);
+                if !orders.contains_key(&input) {
+                    stack.push(input);
+                }
                 continue;
             },
             IR::Sort {
@@ -91,7 +97,7 @@ pub(super) fn pushdown_orders(
                 let is_order_observing = sort_options.maintain_order || {
                     adjust_for_with_columns_context(zip(by_column
                         .iter()
-                        .map(|e| get_frame_observing(expr_arena.get(e.node()), expr_arena))))
+                        .map(|e| resolve_observable_orders(expr_arena.get(e.node()), expr_arena))))
                     .is_err()
                 };
                 [is_order_observing].into()
@@ -120,7 +126,9 @@ pub(super) fn pushdown_orders(
                         let expr_observing = adjust_for_with_columns_context(zip(keys
                             .iter()
                             .chain(aggs.iter())
-                            .map(|e| get_frame_observing(expr_arena.get(e.node()), expr_arena))))
+                            .map(|e| {
+                                resolve_observable_orders(expr_arena.get(e.node()), expr_arena)
+                            })))
                         .is_err();
 
                         expr_observing
@@ -209,7 +217,7 @@ pub(super) fn pushdown_orders(
             },
             IR::MapFunction { input: _, function } => {
                 let is_order_observing = (function.has_equal_order() && !all_outputs_unordered)
-                    || !function.is_input_order_agnostic();
+                    || function.observes_input_order();
                 [is_order_observing].into()
             },
             IR::SimpleProjection { .. } => [!all_outputs_unordered].into(),
@@ -218,7 +226,7 @@ pub(super) fn pushdown_orders(
                 let input = *input;
                 let mut observing = zip(exprs
                     .iter()
-                    .map(|e| get_frame_observing(expr_arena.get(e.node()), expr_arena)));
+                    .map(|e| resolve_observable_orders(expr_arena.get(e.node()), expr_arena)));
 
                 let input_schema = ir_arena.get(input).schema(ir_arena).as_ref().clone();
                 ir = ir_arena.get_mut(node);
@@ -236,18 +244,18 @@ pub(super) fn pushdown_orders(
                 }
 
                 let is_order_observing = match observing {
-                    Ok(o) => o.has_frame_ordering() && !all_outputs_unordered,
-                    Err(FrameOrderObserved) => true,
+                    Ok(o) => o.column_ordering_observable() && !all_outputs_unordered,
+                    Err(ColumnOrderObserved) => true,
                 };
                 [is_order_observing].into()
             },
             IR::Select { expr: exprs, .. } => {
                 let observing = zip(exprs
                     .iter()
-                    .map(|e| get_frame_observing(expr_arena.get(e.node()), expr_arena)));
+                    .map(|e| resolve_observable_orders(expr_arena.get(e.node()), expr_arena)));
                 let is_order_observing = match observing {
-                    Ok(o) => o.has_frame_ordering() && !all_outputs_unordered,
-                    Err(FrameOrderObserved) => true,
+                    Ok(o) => o.column_ordering_observable() && !all_outputs_unordered,
+                    Err(ColumnOrderObserved) => true,
                 };
                 [is_order_observing].into()
             },
@@ -256,13 +264,13 @@ pub(super) fn pushdown_orders(
                 input: _,
                 predicate,
             } => {
-                let observing = adjust_for_with_columns_context(get_frame_observing(
+                let observing = adjust_for_with_columns_context(resolve_observable_orders(
                     expr_arena.get(predicate.node()),
                     expr_arena,
                 ));
                 let is_order_observing = match observing {
-                    Ok(o) => o.has_frame_ordering() && !all_outputs_unordered,
-                    Err(FrameOrderObserved) => true,
+                    Ok(o) => o.column_ordering_observable() && !all_outputs_unordered,
+                    Err(ColumnOrderObserved) => true,
                 };
                 [is_order_observing].into()
             },
@@ -287,17 +295,21 @@ pub(super) fn pushdown_orders(
                 let is_order_observing = payload.maintain_order()
                     || match payload {
                         SinkTypeIR::Memory => false,
-                        SinkTypeIR::File(_) => false,
                         SinkTypeIR::Callback(_) => false,
-                        SinkTypeIR::Partition(p) => match &p.variant {
-                            PartitionVariantIR::MaxSize(_) => false,
-                            PartitionVariantIR::Parted { .. } => true,
-                            PartitionVariantIR::ByKey { key_exprs, .. } => {
-                                adjust_for_with_columns_context(zip(key_exprs.iter().map(|e| {
-                                    get_frame_observing(expr_arena.get(e.node()), expr_arena)
-                                })))
-                                .is_err()
-                            },
+                        SinkTypeIR::File { .. } => false,
+                        SinkTypeIR::Partitioned(options) => {
+                            matches!(
+                                options.partition_strategy,
+                                PartitionStrategyIR::Keyed {
+                                    keys: _,
+                                    include_keys: _,
+                                    keys_pre_grouped: true,
+                                    per_partition_sort_by: _
+                                }
+                            ) || adjust_for_with_columns_context(zip(options.expr_irs_iter().map(
+                                |e| resolve_observable_orders(expr_arena.get(e.node()), expr_arena),
+                            )))
+                            .is_err()
                         },
                     };
 

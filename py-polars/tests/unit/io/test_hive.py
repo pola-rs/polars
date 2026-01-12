@@ -7,7 +7,7 @@ from collections import OrderedDict
 from datetime import date, datetime
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import pyarrow.parquet as pq
 import pytest
@@ -15,6 +15,9 @@ import pytest
 import polars as pl
 from polars.exceptions import ComputeError, SchemaFieldNotFoundError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def impl_test_hive_partitioned_predicate_pushdown(
@@ -844,20 +847,17 @@ def test_hive_write(tmp_path: Path, df: pl.DataFrame) -> None:
 
 @pytest.mark.slow
 @pytest.mark.write_disk
-@pytest.mark.xfail
 def test_hive_write_multiple_files(tmp_path: Path) -> None:
-    chunk_size = 262_144
-    n_rows = 100_000
+    chunk_size = 1
+    n_rows = 500_000
     df = pl.select(a=pl.repeat(0, n_rows), b=pl.int_range(0, n_rows))
-
-    n_files = int(df.estimated_size() / chunk_size)
-
-    assert n_files > 1, "increase df size or decrease file size"
 
     root = tmp_path
     df.write_parquet(root, partition_by="a", partition_chunk_size_bytes=chunk_size)
 
-    assert sum(1 for _ in (root / "a=0").iterdir()) == n_files
+    n_out = sum(1 for _ in (root / "a=0").iterdir())
+    assert n_out == 5
+
     assert_frame_equal(pl.scan_parquet(root).collect(), df)
 
 
@@ -1010,6 +1010,19 @@ def test_hive_file_as_uri_with_hive_start_idx_23830(
         ),
     )
 
+    if sys.platform != "win32":
+        # https://github.com/pola-rs/polars/issues/24506
+        # `file:` URI with `//hostname` component omitted
+        lf = pl.scan_parquet(f"file:{uri}", hive_schema={"a": pl.UInt8})
+
+        assert_frame_equal(
+            lf.collect(),
+            pl.select(
+                pl.Series("x", [1]),
+                pl.Series("a", [1], dtype=pl.UInt8),
+            ),
+        )
+
 
 @pytest.mark.write_disk
 @pytest.mark.parametrize("force_single_thread", [True, False])
@@ -1110,7 +1123,7 @@ def test_hive_decode_utf8_23241(tmp_path: Path) -> None:
 @pytest.mark.write_disk
 def test_hive_filter_lit_true_24235(tmp_path: Path) -> None:
     df = pl.DataFrame({"p": [1, 2, 3, 4, 5], "x": [1, 1, 2, 2, 3]})
-    df.lazy().sink_parquet(pl.PartitionByKey(tmp_path, by="p"), mkdir=True)
+    df.lazy().sink_parquet(pl.PartitionBy(tmp_path, key="p"), mkdir=True)
 
     assert_frame_equal(
         pl.scan_parquet(tmp_path).filter(True).collect(),
@@ -1130,4 +1143,49 @@ def test_hive_filter_lit_true_24235(tmp_path: Path) -> None:
     assert_frame_equal(
         pl.scan_parquet(tmp_path).filter(pl.lit(False)).collect(),
         df.clear(),
+    )
+
+
+def test_hive_filter_in_ir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "a=1").mkdir()
+    pl.DataFrame({"x": [0, 1, 2, 3, 4]}).write_parquet(tmp_path / "a=1/data.parquet")
+    (tmp_path / "a=2").mkdir()
+    pl.DataFrame({"x": [5, 6, 7, 8, 9]}).write_parquet(tmp_path / "a=2/data.parquet")
+
+    with monkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
+
+        capfd.readouterr()
+
+        assert_frame_equal(
+            pl.scan_parquet(tmp_path).filter(pl.col("a") == 1).collect(),
+            pl.DataFrame({"x": [0, 1, 2, 3, 4], "a": [1, 1, 1, 1, 1]}),
+        )
+
+        capture = capfd.readouterr().err
+
+        # Ensure this only happens once.
+        assert (
+            capture.count(
+                "initialize_scan_predicate: Predicate pushdown allows skipping 1 / 2 files"
+            )
+            == 1
+        )
+
+    plan = pl.scan_parquet(tmp_path).filter(pl.col("a") < 0).explain()
+    assert plan.startswith("Parquet SCAN []")
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path).with_row_index().filter(pl.col("a") == 2).collect(),
+        pl.DataFrame(
+            {"index": [5, 6, 7, 8, 9], "x": [5, 6, 7, 8, 9], "a": [2, 2, 2, 2, 2]},
+            schema_overrides={"index": pl.get_index_type()},
+        ),
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path).tail(1).filter(pl.col("a") == 1).collect(),
+        pl.DataFrame(schema={"x": pl.Int64, "a": pl.Int64}),
     )

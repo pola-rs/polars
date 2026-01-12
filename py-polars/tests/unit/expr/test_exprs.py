@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, timedelta, timezone
 from itertools import permutations
 from typing import TYPE_CHECKING, Any, cast
@@ -23,10 +24,16 @@ if TYPE_CHECKING:
     from polars._typing import PolarsDataType
 
 
+def assert_expression_repr_matches(expression: pl.Expr, match: str) -> None:
+    """Assert that the `repr` of a given Expression matches expectation."""
+    pattern = rf"<Expr \['{re.escape(match)}'\] at 0x[\dA-Fa-f]+>$"
+    assert re.search(pattern, repr(expression)) is not None
+
+
 def test_arg_true() -> None:
     df = pl.DataFrame({"a": [1, 1, 2, 1]})
     res = df.select((pl.col("a") == 1).arg_true())
-    expected = pl.DataFrame([pl.Series("a", [0, 1, 3], dtype=pl.UInt32)])
+    expected = pl.DataFrame([pl.Series("a", [0, 1, 3], dtype=pl.get_index_type())])
     assert_frame_equal(res, expected)
 
 
@@ -101,7 +108,7 @@ def test_len_expr() -> None:
 
     out = df.select(pl.len())
     assert out.shape == (1, 1)
-    assert cast(int, out.item()) == 5
+    assert cast("int", out.item()) == 5
 
     out = df.group_by("b", maintain_order=True).agg(pl.len())
     assert out["b"].to_list() == ["a", "b"]
@@ -140,10 +147,7 @@ def test_entropy() -> None:
 
 @pytest.mark.parametrize(
     "dtype",
-    [
-        pl.Float64,
-        pl.Float32,
-    ],
+    FLOAT_DTYPES,
 )
 def test_log_broadcast(dtype: pl.DataType) -> None:
     a = pl.Series("a", [1, 3, 9, 27, 81], dtype=dtype)
@@ -165,6 +169,7 @@ def test_log_broadcast(dtype: pl.DataType) -> None:
     [
         (pl.Float64, pl.Float64),
         (pl.Float32, pl.Float32),
+        (pl.Float16, pl.Float16),
         (pl.Int32, pl.Float64),
         (pl.Int64, pl.Float64),
     ],
@@ -182,12 +187,19 @@ def test_log_broadcast_upcasting(
 @pytest.mark.parametrize(
     ("dtype_a", "dtype_base", "dtype_out"),
     [
+        (pl.Float16, pl.Float16, pl.Float16),
+        (pl.Float16, pl.Float32, pl.Float16),
+        (pl.Float16, pl.Float64, pl.Float16),
+        (pl.Float32, pl.Float16, pl.Float32),
         (pl.Float32, pl.Float32, pl.Float32),
         (pl.Float32, pl.Float64, pl.Float32),
+        (pl.Float64, pl.Float16, pl.Float64),
         (pl.Float64, pl.Float32, pl.Float64),
         (pl.Float64, pl.Float64, pl.Float64),
+        (pl.Float16, pl.Int32, pl.Float16),
         (pl.Float32, pl.Int32, pl.Float32),
         (pl.Float64, pl.Int32, pl.Float64),
+        (pl.Int32, pl.Float16, pl.Float16),
         (pl.Int32, pl.Float32, pl.Float32),
         (pl.Int32, pl.Float64, pl.Float64),
         (pl.Decimal(21, 3), pl.Decimal(21, 3), pl.Float64),
@@ -216,6 +228,7 @@ def test_log(
     ("dtype_in", "dtype_out"),
     [
         (pl.Int32, pl.Float64),
+        (pl.Float16, pl.Float16),
         (pl.Float32, pl.Float32),
         (pl.Float64, pl.Float64),
     ],
@@ -277,6 +290,7 @@ def test_dtype_col_selection() -> None:
             "l": pl.UInt16,
             "m": pl.UInt32,
             "n": pl.UInt64,
+            "o": pl.Float16,
         },
     )
     assert df.select(pl.col(INTEGER_DTYPES)).columns == [
@@ -289,7 +303,7 @@ def test_dtype_col_selection() -> None:
         "m",
         "n",
     ]
-    assert df.select(pl.col(FLOAT_DTYPES)).columns == ["i", "j"]
+    assert df.select(pl.col(FLOAT_DTYPES)).columns == ["i", "j", "o"]
     assert df.select(pl.col(NUMERIC_DTYPES)).columns == [
         "e",
         "f",
@@ -301,6 +315,7 @@ def test_dtype_col_selection() -> None:
         "l",
         "m",
         "n",
+        "o",
     ]
     assert df.select(pl.col(TEMPORAL_DTYPES)).columns == [
         "a1",
@@ -473,7 +488,9 @@ def test_lit_dtypes() -> None:
             "dur_ms": lit_series(td, pl.Duration("ms")),
             "dur_us": lit_series(td, pl.Duration("us")),
             "dur_ns": lit_series(td, pl.Duration("ns")),
+            "f16": lit_series(0, pl.Float16),
             "f32": lit_series(0, pl.Float32),
+            "f64": lit_series(0, pl.Float64),
             "u16": lit_series(0, pl.UInt16),
             "i16": lit_series(0, pl.Int16),
             "i64": lit_series(pl.Series([8]), None),
@@ -491,7 +508,9 @@ def test_lit_dtypes() -> None:
         pl.Duration("ms"),
         pl.Duration("us"),
         pl.Duration("ns"),
+        pl.Float16,
         pl.Float32,
+        pl.Float64,
         pl.UInt16,
         pl.Int16,
         pl.Int64,
@@ -508,6 +527,8 @@ def test_lit_dtypes() -> None:
         td_ms,
         td,
         td,
+        0,
+        0,
         0,
         0,
         0,
@@ -682,32 +703,39 @@ def test_tail() -> None:
 
 def test_repr_short_expression() -> None:
     expr = pl.functions.all().len().name.prefix("length-long:")
-    # we cut off the last ten characters because that includes the
-    # memory location which will vary between runs
-    result = repr(expr).split("0x")[0]
-
-    expected = "<Expr ['cs.all().len().name.prefix(len…'] at "
-    assert result == expected
+    assert_expression_repr_matches(
+        expression=expr,
+        match="cs.all().len().name.prefix(len…",
+    )
 
 
 def test_repr_long_expression() -> None:
     expr = pl.functions.col(pl.String).str.count_matches("")
-
-    # we cut off the last ten characters because that includes the
-    # memory location which will vary between runs
-    result = repr(expr).split("0x")[0]
-
-    # note the … denoting that there was truncated text
-    expected = "<Expr ['cs.string().str.count_matches(…'] at "
-    assert result == expected
-    assert repr(expr).endswith(">")
+    assert_expression_repr_matches(
+        expression=expr,
+        match="cs.string().str.count_matches(…",
+    )
 
 
 def test_repr_gather() -> None:
-    result = repr(pl.col("a").gather(0))
-    assert 'col("a").gather(dyn int: 0)' in result
-    result = repr(pl.col("a").get(0))
-    assert 'col("a").get(dyn int: 0)' in result
+    assert_expression_repr_matches(
+        expression=pl.col("a").gather(0),
+        match='col("a").gather(dyn int: 0)',
+    )
+    assert_expression_repr_matches(
+        expression=pl.col("a").get(0),
+        match='col("a").get(dyn int: 0)',
+    )
+
+
+def test_repr_miscellaneous() -> None:
+    expr = pl.struct("x", pl.col("y"), pl.col("z").sin() ** 2)
+    assert_expression_repr_matches(
+        expression=expr,
+        match='as_struct("x", "y", col("z").s…',
+    )
+    full_repr = expr._pyexpr.to_str()
+    assert full_repr == 'as_struct("x", "y", col("z").sin().pow([dyn int: 2]))'
 
 
 def test_replace_no_cse() -> None:
@@ -748,7 +776,10 @@ def test_slice() -> None:
 @pytest.mark.may_fail_cloud  # reason: shrink_dtype
 def test_function_expr_scalar_identification_18755() -> None:
     # The function uses `ApplyOptions::GroupWise`, however the input is scalar.
-    with pytest.warns(DeprecationWarning):
+    with pytest.warns(
+        DeprecationWarning,
+        match=r"use `Series\.shrink_dtype` instead",
+    ):
         assert_frame_equal(
             pl.DataFrame({"a": [1, 2]}).with_columns(
                 pl.lit(5, pl.Int64).shrink_dtype().alias("b")
@@ -758,7 +789,7 @@ def test_function_expr_scalar_identification_18755() -> None:
 
 
 def test_concat_deprecation() -> None:
-    with pytest.deprecated_call(match="`str.concat` is deprecated."):
+    with pytest.deprecated_call(match=r"`str\.concat` is deprecated."):
         pl.Series(["foo"]).str.concat()
-    with pytest.deprecated_call(match="`str.concat` is deprecated."):
+    with pytest.deprecated_call(match=r"`str\.concat` is deprecated."):
         pl.DataFrame({"foo": ["bar"]}).select(pl.all().str.concat())

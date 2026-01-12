@@ -15,10 +15,10 @@ use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::sparse_init_vec::SparseInitVec;
 use rayon::prelude::*;
+use tokio::sync::mpsc::{Receiver, channel};
 
 use super::compute_node_prelude::*;
 use crate::async_executor;
-use crate::async_primitives::connector::Receiver;
 use crate::expression::StreamExpr;
 use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::in_memory_source::InMemorySourceNode;
@@ -39,7 +39,7 @@ struct LocalGroupBySinkState {
     // for partition p, where start, stop are:
     // let start = morsel_idxs_offsets[i * num_partitions + p];
     // let stop = morsel_idxs_offsets[(i + 1) * num_partitions + p];
-    cold_morsels: Vec<(u64, HashKeys, DataFrame)>,
+    cold_morsels: Vec<(usize, u64, HashKeys, DataFrame)>,
     morsel_idxs_values_per_p: Vec<Vec<IdxSize>>,
     morsel_idxs_offsets_per_p: Vec<usize>,
 
@@ -102,10 +102,11 @@ impl LocalGroupBySinkState {
 }
 
 struct GroupBySinkState {
-    key_selectors: Vec<StreamExpr>,
+    key_selectors_per_input: Vec<Vec<StreamExpr>>,
+    reductions_per_input: Vec<Vec<usize>>,
     grouper: Box<dyn Grouper>,
-    uniq_grouped_reduction_cols: Vec<PlSmallStr>,
-    grouped_reduction_cols: Vec<PlSmallStr>,
+    uniq_grouped_reduction_cols_per_input: Vec<Vec<PlSmallStr>>,
+    grouped_reduction_cols: Vec<Vec<PlSmallStr>>,
     grouped_reductions: Vec<Box<dyn GroupedReduction>>,
     locals: Vec<LocalGroupBySinkState>,
     random_state: PlRandomState,
@@ -117,13 +118,14 @@ impl GroupBySinkState {
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
-        receivers: Vec<Receiver<Morsel>>,
+        receivers: Vec<Receiver<(usize, Morsel)>>,
         state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         for (mut recv, local) in receivers.into_iter().zip(&mut self.locals) {
-            let key_selectors = &self.key_selectors;
-            let uniq_grouped_reduction_cols = &self.uniq_grouped_reduction_cols;
+            let key_selectors_per_input = &self.key_selectors_per_input;
+            let reductions_per_input = &self.reductions_per_input;
+            let uniq_grouped_reduction_cols_per_input = &self.uniq_grouped_reduction_cols_per_input;
             let grouped_reduction_cols = &self.grouped_reduction_cols;
             let random_state = &self.random_state;
             let partitioner = self.partitioner.clone();
@@ -132,17 +134,20 @@ impl GroupBySinkState {
                 let mut hot_idxs = Vec::new();
                 let mut hot_group_idxs = Vec::new();
                 let mut cold_idxs = Vec::new();
-                while let Ok(morsel) = recv.recv().await {
+                let mut in_cols = Vec::new();
+                while let Some((input_idx, morsel)) = recv.recv().await {
                     // Compute hot group indices from key.
                     let seq = morsel.seq().to_u64();
                     let mut df = morsel.into_df();
                     let mut key_columns = Vec::new();
-                    for selector in key_selectors {
+                    for selector in &key_selectors_per_input[input_idx] {
                         let s = selector.evaluate(&df, &state.in_memory_exec_state).await?;
                         key_columns.push(s.into_column());
                     }
-                    let keys = DataFrame::new_with_broadcast_len(key_columns, df.height())?;
-                    let hash_keys = HashKeys::from_df(&keys, *random_state, true, false);
+                    let keys = unsafe {
+                        DataFrame::new_unchecked_with_broadcast(df.height(), key_columns)?
+                    };
+                    let hash_keys = HashKeys::from_df(&keys, random_state.clone(), true, false);
 
                     hot_idxs.clear();
                     hot_group_idxs.clear();
@@ -156,26 +161,33 @@ impl GroupBySinkState {
                     );
 
                     // Drop columns not used for reductions (key-only columns).
-                    if uniq_grouped_reduction_cols.len() < grouped_reduction_cols.len() {
-                        df = df._select_impl(uniq_grouped_reduction_cols).unwrap();
+                    let uniq_grouped_reduction_cols =
+                        &uniq_grouped_reduction_cols_per_input[input_idx];
+                    if uniq_grouped_reduction_cols.len() < df.width() {
+                        df = unsafe { df.select_unchecked(uniq_grouped_reduction_cols.as_slice()) }
+                            .unwrap();
                     }
                     df.rechunk_mut(); // For gathers.
 
                     // Update hot reductions.
-                    for (col, reduction) in grouped_reduction_cols
-                        .iter()
-                        .zip(&mut local.hot_grouped_reductions)
-                    {
+                    for red_idx in &reductions_per_input[input_idx] {
+                        let cols = &grouped_reduction_cols[*red_idx];
+                        let reduction = &mut local.hot_grouped_reductions[*red_idx];
+                        for col in cols {
+                            in_cols.push(df.column(col).unwrap());
+                        }
                         unsafe {
                             // SAFETY: we resize the reduction to the number of groups beforehand.
                             reduction.resize(local.hot_grouper.num_groups());
                             reduction.update_groups_while_evicting(
-                                df.column(col).unwrap(),
+                                &in_cols,
                                 &hot_idxs,
                                 &hot_group_idxs,
                                 seq,
                             )?;
                         }
+                        in_cols.clear();
+                        in_cols = in_cols.into_iter().map(|_| unreachable!()).collect(); // Clear lifetimes.
                     }
 
                     // Store cold keys.
@@ -194,7 +206,9 @@ impl GroupBySinkState {
                             local
                                 .morsel_idxs_offsets_per_p
                                 .extend(local.morsel_idxs_values_per_p.iter().map(|vp| vp.len()));
-                            local.cold_morsels.push((seq, cold_keys, cold_df));
+                            local
+                                .cold_morsels
+                                .push((input_idx, seq, cold_keys, cold_df));
                         }
                     }
 
@@ -249,6 +263,7 @@ impl GroupBySinkState {
             SparseInitVec::with_capacity(num_partitions);
         let locals = &self.locals;
         let grouper_template = &self.grouper;
+        let reductions_per_input = &self.reductions_per_input;
         let grouped_reductions_template = &self.grouped_reductions;
         let grouped_reduction_cols = &self.grouped_reduction_cols;
 
@@ -291,6 +306,7 @@ impl GroupBySinkState {
                     // Insert morsels.
                     let mut skip_drop_attempt = false;
                     let mut group_idxs = Vec::new();
+                    let mut in_cols = Vec::new();
                     for (l, l_morsels) in locals.iter().zip(morsels_per_local) {
                         // Try to help with dropping.
                         if !skip_drop_attempt {
@@ -298,7 +314,7 @@ impl GroupBySinkState {
                         }
 
                         for (i, morsel) in l_morsels.iter().enumerate() {
-                            let (seq_id, keys, cols) = morsel;
+                            let (input_idx, seq_id, keys, morsel_df) = morsel;
                             unsafe {
                                 let p_morsel_idxs_start =
                                     l.morsel_idxs_offsets_per_p[i * num_partitions + p];
@@ -313,18 +329,25 @@ impl GroupBySinkState {
                                     p_morsel_idxs,
                                     Some(&mut group_idxs),
                                 );
-                                for (c, r) in grouped_reduction_cols.iter().zip(&mut p_reductions) {
-                                    let values = cols.column(c.as_str()).unwrap();
-                                    r.resize(p_grouper.num_groups());
-                                    r.update_groups_subset(
-                                        values,
+
+                                for red_idx in &reductions_per_input[*input_idx] {
+                                    let cols = &grouped_reduction_cols[*red_idx];
+                                    let reduction = &mut p_reductions[*red_idx];
+                                    for col in cols {
+                                        in_cols.push(morsel_df.column(col).unwrap());
+                                    }
+                                    reduction.resize(p_grouper.num_groups());
+                                    reduction.update_groups_subset(
+                                        &in_cols,
                                         p_morsel_idxs,
                                         &group_idxs,
                                         *seq_id,
                                     )?;
+                                    in_cols.clear();
                                 }
                             }
                         }
+                        in_cols = in_cols.into_iter().map(|_| unreachable!()).collect(); // Clear lifetimes.
 
                         if let Some(l) = Arc::into_inner(l_morsels) {
                             // If we're the last thread to process this set of morsels we're probably
@@ -439,7 +462,7 @@ impl GroupByPartition {
         let out_names = output_schema.iter_names().skip(out.width());
         for (mut r, name) in self.grouped_reductions.into_iter().zip(out_names) {
             unsafe {
-                out.with_column_unchecked(r.finalize()?.with_name(name.clone()).into_column());
+                out.push_column_unchecked(r.finalize()?.with_name(name.clone()).into_column());
             }
         }
         Ok(out)
@@ -455,6 +478,8 @@ enum GroupByState {
 pub struct GroupByNode {
     state: GroupByState,
     key_schema: Arc<Schema>,
+    num_inputs: usize,
+    num_pipelines: usize,
     output_schema: Arc<Schema>,
 }
 
@@ -462,9 +487,13 @@ impl GroupByNode {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         key_schema: Arc<Schema>,
-        key_selectors: Vec<StreamExpr>,
+        // Input stream i selects keys with key_selectors_per_input[i].
+        key_selectors_per_input: Vec<Vec<StreamExpr>>,
+        // Input stream i feeds grouped_reductions[k] for each k in reductions_per_input[i].
+        reductions_per_input: Vec<Vec<usize>>,
         grouper: Box<dyn Grouper>,
-        grouped_reduction_cols: Vec<PlSmallStr>,
+        // grouped_reductions[k] is passed input cols grouped_reduction_cols[k].
+        grouped_reduction_cols: Vec<Vec<PlSmallStr>>,
         grouped_reductions: Vec<Box<dyn GroupedReduction>>,
         output_schema: Arc<Schema>,
         random_state: PlRandomState,
@@ -474,12 +503,18 @@ impl GroupByNode {
         let hot_table_size = std::env::var("POLARS_HOT_TABLE_SIZE")
             .map(|sz| sz.parse::<usize>().unwrap())
             .unwrap_or(DEFAULT_HOT_TABLE_SIZE);
+        let num_inputs = key_selectors_per_input.len();
         let num_partitions = num_pipelines;
-        let uniq_grouped_reduction_cols = grouped_reduction_cols
+        let uniq_grouped_reduction_cols_per_input = reductions_per_input
             .iter()
-            .cloned()
-            .collect::<PlHashSet<_>>()
-            .into_iter()
+            .map(|rs| {
+                rs.iter()
+                    .flat_map(|k| grouped_reduction_cols[*k].iter())
+                    .cloned()
+                    .collect::<PlHashSet<_>>()
+                    .into_iter()
+                    .collect_vec()
+            })
             .collect_vec();
         let locals = (0..num_pipelines)
             .map(|_| {
@@ -495,17 +530,20 @@ impl GroupByNode {
         let partitioner = HashPartitioner::new(num_partitions, 0);
         Self {
             state: GroupByState::Sink(GroupBySinkState {
-                key_selectors,
+                key_selectors_per_input,
+                reductions_per_input,
                 grouped_reductions,
                 grouper,
                 random_state,
-                uniq_grouped_reduction_cols,
+                uniq_grouped_reduction_cols_per_input,
                 grouped_reduction_cols,
                 locals,
                 partitioner,
                 has_order_sensitive_agg,
             }),
             key_schema,
+            num_inputs,
+            num_pipelines,
             output_schema,
         }
     }
@@ -586,16 +624,36 @@ impl ComputeNode for GroupByNode {
         state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        assert!(send_ports.len() == 1 && recv_ports.len() == 1);
+        assert!(send_ports.len() == 1 && recv_ports.len() == self.num_inputs);
         match &mut self.state {
             GroupByState::Sink(sink) => {
                 assert!(send_ports[0].is_none());
-                sink.spawn(
-                    scope,
-                    recv_ports[0].take().unwrap().parallel(),
-                    state,
-                    join_handles,
-                )
+                assert!(recv_ports.iter().any(|r| r.is_some()));
+
+                // If we have multiple input streams merge them into one (still identifying which
+                // input stream it came from).
+                let (senders, receivers): (Vec<_>, Vec<_>) =
+                    (0..self.num_pipelines).map(|_| channel(1)).unzip();
+                for (i, recv_port) in recv_ports.iter_mut().enumerate() {
+                    if let Some(recv_port) = recv_port.take() {
+                        for (mut r, s) in recv_port
+                            .parallel()
+                            .into_iter()
+                            .zip(senders.iter().cloned())
+                        {
+                            join_handles.push(scope.spawn_task(TaskPriority::High, async move {
+                                while let Ok(morsel) = r.recv().await {
+                                    if s.send((i, morsel)).await.is_err() {
+                                        break;
+                                    }
+                                }
+
+                                Ok(())
+                            }));
+                        }
+                    }
+                }
+                sink.spawn(scope, receivers, state, join_handles)
             },
             GroupByState::Source(source) => {
                 assert!(recv_ports[0].is_none());

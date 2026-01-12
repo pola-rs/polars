@@ -4,7 +4,7 @@
 )]
 #![cfg_attr(feature = "nightly", feature(core_intrinsics))] // For algebraic ops, select_unpredictable.
 #![cfg_attr(feature = "nightly", allow(internal_features))]
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 pub mod abs_diff;
 pub mod algebraic_ops;
 pub mod arena;
@@ -15,25 +15,30 @@ pub mod cell;
 pub mod chunks;
 pub mod clmul;
 mod config;
+pub mod small_bytes;
 pub use config::check_allow_importing_interval_as_struct;
+pub mod arg_min_max;
 pub mod cpuid;
-pub mod decimal;
-pub mod enum_unit_vec;
 pub mod error;
+pub mod float16;
 pub mod floor_divmod;
 pub mod functions;
 pub mod hashing;
 pub mod idx_map;
 pub mod idx_mapper;
 pub mod idx_vec;
+pub mod marked_usize;
 pub mod mem;
 pub mod min_max;
+pub mod order_statistic_tree;
 pub mod parma;
 pub mod pl_str;
 pub mod plpath;
 pub mod priority;
 pub mod regex_cache;
 pub mod relaxed_cell;
+pub mod reuse_vec;
+pub mod row_counter;
 pub mod select;
 pub mod slice;
 pub mod slice_enum;
@@ -57,8 +62,6 @@ pub mod itertools;
 pub mod macros;
 pub mod option;
 pub mod vec;
-#[cfg(target_family = "wasm")]
-pub mod wasm;
 
 pub mod float;
 pub mod index;
@@ -83,3 +86,6 @@ pub mod pl_serialize;
 
 pub mod kahan_sum;
 pub use either;
+pub use idx_vec::UnitVec;
+pub mod chunked_bytes_cursor;
+pub mod concat_vec;

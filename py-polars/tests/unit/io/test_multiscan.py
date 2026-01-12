@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import io
 import re
+import sys
 from functools import partial
-from typing import IO, TYPE_CHECKING, Any, Callable
+from typing import IO, TYPE_CHECKING, Any
 
 import pyarrow.parquet as pq
 import pytest
@@ -15,6 +16,7 @@ from polars.meta.index_type import get_index_type
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
 SCAN_AND_WRITE_FUNCS = [
@@ -25,6 +27,7 @@ SCAN_AND_WRITE_FUNCS = [
 ]
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows paths are different")
 @pytest.mark.write_disk
 @pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
 def test_include_file_paths(tmp_path: Path, scan: Any, write: Any) -> None:
@@ -283,6 +286,27 @@ def test_multiscan_row_index(
             [
                 pl.Series("ri", [start + 0, start + 1, start + 4], get_index_type()),
                 pl.Series("col", [5, 10, 13]),
+            ]
+        ),
+    )
+
+    with pytest.raises(
+        pl.exceptions.DuplicateError, match="'index' has more than one occurrence"
+    ):
+        scan(g).with_row_index().with_row_index().collect()
+
+    assert_frame_equal(
+        scan(g)
+        .with_row_index()
+        .with_row_index("index_1", offset=1)
+        .with_row_index("index_2", offset=2)
+        .collect(),
+        pl.DataFrame(
+            [
+                pl.Series("index_2", [2, 3, 4, 5, 6, 7], get_index_type()),
+                pl.Series("index_1", [1, 2, 3, 4, 5, 6], get_index_type()),
+                pl.Series("index", [0, 1, 2, 3, 4, 5], get_index_type()),
+                col,
             ]
         ),
     )
@@ -638,9 +662,9 @@ def test_extra_columns_not_ignored_22218() -> None:
 
     with pytest.raises(
         pl.exceptions.SchemaError,
-        match="extra column in file outside of expected schema: c, hint: specify .*or pass",
+        match=r"extra column in file outside of expected schema: c, hint: specify .*or pass",
     ):
-        (pl.scan_parquet(files, missing_columns="insert").select(pl.all()).collect())
+        pl.scan_parquet(files, missing_columns="insert").select(pl.all()).collect()
 
     assert_frame_equal(
         pl.scan_parquet(
@@ -721,9 +745,10 @@ def test_scan_null_upcast_to_nested(scan: Any, write: Any) -> None:
         (pl.scan_parquet, pl.DataFrame.write_parquet),
     ],
 )
+@pytest.mark.parametrize("prefix", ["", "file:", "file://"])
 @pytest.mark.parametrize("use_glob", [True, False])
 def test_scan_ignore_hidden_files_21762(
-    tmp_path: Path, scan: Any, write: Any, use_glob: bool
+    tmp_path: Path, scan: Any, write: Any, use_glob: bool, prefix: str
 ) -> None:
     file_names: list[str] = ["a.ext", "_a.ext", ".a.ext", "a_.ext"]
 
@@ -746,7 +771,11 @@ def test_scan_ignore_hidden_files_21762(
             tmp_path / "_folder" / file_name,
         )
 
-    root = f"{tmp_path}/**/*.ext" if use_glob else tmp_path
+    if prefix.startswith("file:") and sys.platform == "win32":
+        pytest.skip("Unsupported on Windows")
+
+    suffix = "/**/*.ext" if use_glob else "/" if prefix.startswith("file:") else ""
+    root = f"{prefix}{tmp_path}{suffix}"
 
     assert_frame_equal(
         scan(root).sort("*"),
@@ -822,7 +851,7 @@ def test_scan_ignore_hidden_files_21762(
     )
 
     # Top-level glob only
-    root = tmp_path / "*.ext"
+    root = f"{tmp_path}/*.ext"
 
     assert_frame_equal(
         scan(root).sort("*"),
@@ -866,3 +895,49 @@ def test_scan_ignore_hidden_files_21762(
     # Direct file passed
     with pytest.raises(pl.exceptions.ComputeError, match="expanded paths were empty"):
         scan(tmp_path / "_a.ext", hidden_file_prefix="_").collect()
+
+
+def test_row_count_estimate_multifile(io_files_path: Path) -> None:
+    src = io_files_path / "foods*.parquet"
+    # test that it doesn't check only the first file
+    assert "ESTIMATED ROWS: 54" in pl.scan_parquet(src).explain()
+
+
+@pytest.mark.parametrize(
+    ("scan", "write", "ext"),
+    [
+        (pl.scan_ipc, pl.DataFrame.write_ipc, "ipc"),
+        (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("predicate", "expected_indices"),
+    [
+        ((pl.col.x == 1) & True, [0]),
+        (True & (pl.col.x == 1), [0]),
+    ],
+)
+@pytest.mark.write_disk
+def test_hive_predicate_filtering_edge_case_25630(
+    tmp_path: Path,
+    scan: Callable[..., pl.LazyFrame],
+    write: Callable[[pl.DataFrame, Path], Any],
+    ext: str,
+    predicate: pl.Expr,
+    expected_indices: list[int],
+) -> None:
+    df = pl.DataFrame({"x": [1, 2, 3], "y": [0, 1, 1]}).with_row_index()
+
+    (tmp_path / "y=0").mkdir()
+    (tmp_path / "y=1").mkdir()
+
+    # previously we could panic if hive columns were all filtered out of the projection
+    write(df.filter(pl.col.y == 0).drop("y"), tmp_path / "y=0" / f"data.{ext}")
+    write(df.filter(pl.col.y == 1).drop("y"), tmp_path / "y=1" / f"data.{ext}")
+
+    res = scan(tmp_path).filter(predicate).select("index").collect(engine="streaming")
+    expected = pl.DataFrame(
+        data={"index": expected_indices},
+        schema={"index": pl.get_index_type()},
+    )
+    assert_frame_equal(res, expected)

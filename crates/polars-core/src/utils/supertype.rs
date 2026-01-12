@@ -171,6 +171,8 @@ pub fn get_supertype_with_options(
             (Int8, UInt32) => Some(Int64),
             #[cfg(feature = "dtype-i8")]
             (Int8, UInt64) => Some(Float64), // Follow numpy
+            #[cfg(all(feature = "dtype-i8", feature = "dtype-f16"))]
+            (Int8, Float16) => Some(Float16),
             #[cfg(feature = "dtype-i8")]
             (Int8, Float32) => Some(Float32),
             #[cfg(feature = "dtype-i8")]
@@ -193,6 +195,8 @@ pub fn get_supertype_with_options(
             (Int16, UInt32) => Some(Int64),
             #[cfg(feature = "dtype-i16")]
             (Int16, UInt64) => Some(Float64), // Follow numpy
+            #[cfg(all(feature = "dtype-i16", feature = "dtype-f16"))]
+            (Int16, Float16) => Some(Float32),
             #[cfg(feature = "dtype-i16")]
             (Int16, Float32) => Some(Float32),
             #[cfg(feature = "dtype-i16")]
@@ -214,6 +218,8 @@ pub fn get_supertype_with_options(
             (Int32, UInt64) => Some(Float64), // Follow numpy
             #[cfg(feature = "bigidx")]
             (Int32, UInt64) => Some(Int64), // Needed for bigidx
+            #[cfg(feature = "dtype-f16")]
+            (Int32, Float16) => Some(Float64),
             (Int32, Float32) => Some(Float64), // Follow numpy
             (Int32, Float64) => Some(Float64),
 
@@ -233,6 +239,8 @@ pub fn get_supertype_with_options(
             (Int64, UInt64) => Some(Float64), // Follow numpy
             #[cfg(feature = "bigidx")]
             (Int64, UInt64) => Some(Int64), // Needed for bigidx
+            #[cfg(feature = "dtype-f16")]
+            (Int64, Float16) => Some(Float64), // Follow (Int64, Float32) case
             (Int64, Float32) => Some(Float64), // Follow numpy
             (Int64, Float64) => Some(Float64),
 
@@ -269,14 +277,21 @@ pub fn get_supertype_with_options(
             (Boolean, UInt32) => Some(UInt32),
             (Boolean, UInt64) => Some(UInt64),
 
+            #[cfg(all(feature = "dtype-f16", feature = "dtype-u8"))]
+            (Float16, UInt8) => Some(Float16),
+            #[cfg(all(feature = "dtype-f16", feature = "dtype-u16"))]
+            (Float16, UInt16) => Some(Float32),
+            #[cfg(feature = "dtype-f16")]
+            (Float16, UInt32) => Some(Float64),
+            #[cfg(feature = "dtype-f16")]
+            (Float16, UInt64) => Some(Float64),
+
             #[cfg(feature = "dtype-u8")]
             (Float32, UInt8) => Some(Float32),
             #[cfg(feature = "dtype-u16")]
             (Float32, UInt16) => Some(Float32),
             (Float32, UInt32) => Some(Float64),
             (Float32, UInt64) => Some(Float64),
-
-            (Float32, Float64) => Some(Float64),
 
             #[cfg(feature = "dtype-u8")]
             (Float64, UInt8) => Some(Float64),
@@ -285,6 +300,15 @@ pub fn get_supertype_with_options(
             (Float64, UInt32) => Some(Float64),
             (Float64, UInt64) => Some(Float64),
 
+            #[cfg(feature = "dtype-f16")]
+            (Float16, Float32) => Some(Float32),
+            #[cfg(feature = "dtype-f16")]
+            (Float16, Float64) => Some(Float64),
+            (Float32, Float64) => Some(Float64),
+            #[cfg(feature = "dtype-f16")]
+            (Float32, Float16) => Some(Float32),
+            #[cfg(feature = "dtype-f16")]
+            (Float64, Float16) => Some(Float64),
             (Float64, Float32) => Some(Float64),
 
             // Time related dtypes
@@ -296,6 +320,8 @@ pub fn get_supertype_with_options(
             (Date, Int32) => Some(Int32),
             #[cfg(feature = "dtype-date")]
             (Date, Int64) => Some(Int64),
+            #[cfg(all(feature = "dtype-date", feature = "dtype-f16"))]
+            (Date, Float16) => Some(Float32),
             #[cfg(feature = "dtype-date")]
             (Date, Float32) => Some(Float32),
             #[cfg(feature = "dtype-date")]
@@ -311,6 +337,8 @@ pub fn get_supertype_with_options(
             (Datetime(_, _), Int32) => Some(Int64),
             #[cfg(feature = "dtype-datetime")]
             (Datetime(_, _), Int64) => Some(Int64),
+            #[cfg(all(feature = "dtype-datetime", feature = "dtype-f16"))]
+            (Datetime(_, _), Float16) => Some(Float64),
             #[cfg(feature = "dtype-datetime")]
             (Datetime(_, _), Float32) => Some(Float64),
             #[cfg(feature = "dtype-datetime")]
@@ -318,6 +346,8 @@ pub fn get_supertype_with_options(
             #[cfg(all(feature = "dtype-datetime", feature = "dtype-date"))]
             (Datetime(tu, tz), Date) => Some(Datetime(*tu, tz.clone())),
 
+            #[cfg(feature = "dtype-f16")]
+            (Boolean, Float16) => Some(Float16),
             (Boolean, Float32) => Some(Float32),
             (Boolean, Float64) => Some(Float64),
 
@@ -329,6 +359,8 @@ pub fn get_supertype_with_options(
             (Duration(_), Int32) => Some(Int64),
             #[cfg(feature = "dtype-duration")]
             (Duration(_), Int64) => Some(Int64),
+            #[cfg(all(feature = "dtype-duration", feature = "dtype-f16"))]
+            (Duration(_), Float16) => Some(Float64),
             #[cfg(feature = "dtype-duration")]
             (Duration(_), Float32) => Some(Float64),
             #[cfg(feature = "dtype-duration")]
@@ -338,13 +370,15 @@ pub fn get_supertype_with_options(
             (Time, Int32) => Some(Int64),
             #[cfg(feature = "dtype-time")]
             (Time, Int64) => Some(Int64),
+            #[cfg(all(feature = "dtype-time", feature = "dtype-f16"))]
+            (Time, Float16) => Some(Float64),
             #[cfg(feature = "dtype-time")]
             (Time, Float32) => Some(Float64),
             #[cfg(feature = "dtype-time")]
             (Time, Float64) => Some(Float64),
 
             // Every known type can be cast to a string except binary
-            (dt, String) if !matches!(dt, Unknown(UnknownKind::Any | UnknownKind::Ufunc)) && dt != &Binary && options.allow_primitive_to_string() || !dt.to_physical().is_primitive() => Some(String),
+            (dt, String) if !matches!(dt, Unknown(UnknownKind::Any)) && dt != &Binary && options.allow_primitive_to_string() || !dt.to_physical().is_primitive() => Some(String),
             (String, Binary) => Some(Binary),
             (dt, Null) => Some(dt.clone()),
 
@@ -475,6 +509,8 @@ pub fn get_supertype_with_options(
             (Decimal(p1, s1), Decimal(p2, s2)) => {
                 Some(Decimal((*p1).max(*p2), (*s1).max(*s2)))
             },
+            #[cfg(all(feature = "dtype-decimal", feature = "dtype-f16"))]
+            (Decimal(_, _), Float16) => Some(Float64),
             #[cfg(feature = "dtype-decimal")]
             (Decimal(_, _), Float32 | Float64) => Some(Float64),
             #[cfg(feature = "dtype-decimal")]

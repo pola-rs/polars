@@ -388,9 +388,6 @@ def test_group_by_key_sensitivity(
     df = q.collect()
     assert ("AGGREGATE[maintain_order: true]" in q.explain()) is is_ordered
 
-    print(q.explain())
-    print(df)
-
     expected_values = pl.Series("a", values)
 
     if values is not None:
@@ -511,7 +508,7 @@ def test_partition_sink_sensitivity() -> None:
         pl.LazyFrame({"a": [1, 2, 3]})
         .unique(maintain_order=True)
         .sink_csv(
-            pl.PartitionByKey(".", file_path=lambda _: io.BytesIO(), by=pl.col.a),
+            pl.PartitionBy(".", file_path_provider=lambda _: io.BytesIO(), key="a"),
             lazy=True,
             maintain_order=False,
         )
@@ -523,8 +520,10 @@ def test_partition_sink_sensitivity() -> None:
         pl.LazyFrame({"a": [1, 2, 3]})
         .unique(maintain_order=True)
         .sink_csv(
-            pl.PartitionByKey(
-                ".", file_path=lambda _: io.BytesIO(), by=pl.col.a.cum_sum()
+            pl.PartitionBy(
+                ".",
+                file_path_provider=lambda _: io.BytesIO(),
+                key=pl.col.a.cum_sum(),
             ),
             lazy=True,
             maintain_order=False,
@@ -532,3 +531,49 @@ def test_partition_sink_sensitivity() -> None:
     )
 
     assert "UNIQUE[maintain_order: true" in q.explain()
+
+
+def test_reverse_non_order_observe() -> None:
+    q = (
+        pl.LazyFrame({"x": [0, 1, 2, 3, 4]})
+        .unique(maintain_order=True)
+        .select(pl.col("x").reverse().sum())
+    )
+
+    plan = q.explain()
+
+    assert "UNIQUE[maintain_order: false" in plan
+    assert q.collect().item() == 10
+
+    # Observing the order of the output of `reverse()` implicitly observes the
+    # input to `reverse()`.
+    q = (
+        pl.LazyFrame({"x": [0, 1, 2, 3, 4]})
+        .unique(maintain_order=True)
+        .select(pl.col("x").reverse().last())
+    )
+
+    plan = q.explain()
+
+    assert "UNIQUE[maintain_order: true" in plan
+    assert q.collect().item() == 0
+
+    # Zipping `reverse()` must also consider the ordering of the input to
+    # `reverse()`.
+    q = (
+        pl.LazyFrame({"x": [0, 1, 2, 3, 4]})
+        .unique(maintain_order=True)
+        .select(x=pl.Series([0, 1, 2, 3, 4]), x_reverse=pl.col("x").reverse())
+    )
+
+    plan = q.explain()
+    assert "UNIQUE[maintain_order: true" in plan
+    assert_frame_equal(
+        q,
+        pl.LazyFrame(
+            {
+                "x": [0, 1, 2, 3, 4],
+                "x_reverse": [4, 3, 2, 1, 0],
+            }
+        ),
+    )

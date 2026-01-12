@@ -28,6 +28,39 @@ def test_concat_lf_stack_overflow() -> None:
     assert bar.collect().shape == (1001, 1)
 
 
+def test_concat_horizontally_strict() -> None:
+    df1 = pl.DataFrame({"c": [11], "d": [42]})  # 1 vs N (may broadcast)
+    df2 = pl.DataFrame({"c": [11, 12], "d": [42, 24]})  # 2 vs N
+    df3 = pl.DataFrame({"a": [0, 1, 2], "b": [1, 2, 3]})
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.concat([df1, df3], how="horizontal", strict=True)
+
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.concat([df2, df3], how="horizontal", strict=True)
+
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.concat([df1.lazy(), df3.lazy()], how="horizontal", strict=True).collect()
+
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.concat([df2.lazy(), df3.lazy()], how="horizontal", strict=True).collect()
+
+    out = pl.concat([df1, df3], how="horizontal", strict=False)
+    assert out.to_dict(as_series=False) == {
+        "a": [0, 1, 2],
+        "b": [1, 2, 3],
+        "c": [11, None, None],
+        "d": [42, None, None],
+    }
+
+    out = pl.concat([df2, df3], how="horizontal", strict=False)
+    assert out.to_dict(as_series=False) == {
+        "a": [0, 1, 2],
+        "b": [1, 2, 3],
+        "c": [11, 12, None],
+        "d": [42, 24, None],
+    }
+
+
 def test_concat_vertically_relaxed() -> None:
     a = pl.DataFrame(
         data={"a": [1, 2, 3], "b": [True, False, None]},
@@ -364,3 +397,18 @@ def test_concat_with_empty_dataframes() -> None:
 
     result2 = pl.concat([df_with_data, empty_df])
     assert_frame_equal(result2, df_with_data)
+
+
+def test_concat_with_empty_dataframes_nonstrict_25727() -> None:
+    df = pl.LazyFrame({"a": [1, 2], "b": ["x", "y"]})
+    result = pl.concat([df, df.select([])], how="horizontal", strict=False)
+    expected = pl.LazyFrame({"a": [1, 2], "b": ["x", "y"]})
+    assert_frame_equal(result, expected)
+
+    empty_df = pl.LazyFrame(schema={"c": pl.Int64})
+    result = pl.concat([empty_df, df], how="horizontal", strict=False)
+    expected = pl.LazyFrame(
+        {"c": [None, None], "a": [1, 2], "b": ["x", "y"]},
+        schema={"c": pl.Int64, "a": pl.Int64, "b": pl.String},
+    )
+    assert_frame_equal(result, expected)

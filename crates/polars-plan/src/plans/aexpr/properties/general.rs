@@ -23,14 +23,18 @@ impl AExpr {
 
             Literal(v) => v.is_scalar(),
 
-            Eval { variant, .. } => match variant {
-                EvalVariant::List => true,
-                EvalVariant::Cumulative { min_samples: _ } => false,
-            },
+            Eval { variant, .. } => variant.is_elementwise(),
 
-            BinaryExpr { .. } | Column(_) | Ternary { .. } | Cast { .. } => true,
+            Element | BinaryExpr { .. } | Column(_) | Ternary { .. } | Cast { .. } => true,
+
+            #[cfg(feature = "dtype-struct")]
+            StructEval { .. } | StructField(_) => true,
+
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling { .. } => false,
 
             Agg { .. }
+            | AnonymousStreamingAgg { .. }
             | Explode { .. }
             | Filter { .. }
             | Gather { .. }
@@ -38,7 +42,7 @@ impl AExpr {
             | Slice { .. }
             | Sort { .. }
             | SortBy { .. }
-            | Window { .. } => false,
+            | Over { .. } => false,
         }
     }
 
@@ -140,10 +144,11 @@ pub fn is_prop<P: Fn(&AExpr) -> bool>(
                     return;
                 }
             };
-
             ae.inputs_rev(stack);
         })(),
-        _ => ae.inputs_rev(stack),
+        _ => {
+            ae.inputs_rev(stack);
+        },
     }
 
     true
@@ -223,66 +228,7 @@ impl ExprPushdownGroup {
         match self {
             ExprPushdownGroup::Pushable | ExprPushdownGroup::Fallible => {
                 // Downgrade to unpushable if fallible
-                if match ae {
-                    // Rows that go OOB on get/gather may be filtered out in earlier operations,
-                    // so we don't push these down.
-                    AExpr::Function {
-                        function: IRFunctionExpr::ListExpr(IRListFunction::Get(false)),
-                        ..
-                    } => true,
-
-                    #[cfg(feature = "list_gather")]
-                    AExpr::Function {
-                        function: IRFunctionExpr::ListExpr(IRListFunction::Gather(false)),
-                        ..
-                    } => true,
-
-                    #[cfg(feature = "dtype-array")]
-                    AExpr::Function {
-                        function: IRFunctionExpr::ArrayExpr(IRArrayFunction::Get(false)),
-                        ..
-                    } => true,
-
-                    #[cfg(all(feature = "strings", feature = "temporal"))]
-                    AExpr::Function {
-                        input,
-                        function:
-                            IRFunctionExpr::StringExpr(IRStringFunction::Strptime(_, strptime_options)),
-                        ..
-                    } => {
-                        debug_assert!(input.len() <= 2);
-
-                        let ambiguous_arg_is_infallible_scalar = input
-                            .get(1)
-                            .map(|x| expr_arena.get(x.node()))
-                            .is_some_and(|ae| match ae {
-                                AExpr::Literal(lv) => {
-                                    lv.extract_str().is_some_and(|ambiguous| match ambiguous {
-                                        "earliest" | "latest" | "null" => true,
-                                        "raise" => false,
-                                        v => {
-                                            if cfg!(debug_assertions) {
-                                                panic!("unhandled parameter to ambiguous: {v}")
-                                            }
-                                            false
-                                        },
-                                    })
-                                },
-                                _ => false,
-                            });
-
-                        let ambiguous_is_fallible = !ambiguous_arg_is_infallible_scalar;
-
-                        strptime_options.strict || ambiguous_is_fallible
-                    },
-                    AExpr::Cast {
-                        expr,
-                        dtype: _,
-                        options: CastOptions::Strict,
-                    } => !matches!(expr_arena.get(*expr), AExpr::Literal(_)),
-
-                    _ => false,
-                } {
+                if ae.is_fallible_top_level(expr_arena) {
                     *self = ExprPushdownGroup::Fallible;
                 }
 
@@ -381,6 +327,8 @@ pub fn can_pre_agg(agg: Node, expr_arena: &Arena<AExpr>, _input_schema: &Schema)
                             agg_e,
                             IRAggExpr::Min { .. }
                                 | IRAggExpr::Max { .. }
+                                | IRAggExpr::MinBy { .. }
+                                | IRAggExpr::MaxBy { .. }
                                 | IRAggExpr::Sum(_)
                                 | IRAggExpr::Last(_)
                                 | IRAggExpr::First(_)

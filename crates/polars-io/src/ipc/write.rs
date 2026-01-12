@@ -1,6 +1,7 @@
 use std::io::Write;
 
 use arrow::datatypes::Metadata;
+use arrow::io::ipc::IpcField;
 use arrow::io::ipc::write::{self, EncodedData, WriteOptions};
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
@@ -17,6 +18,8 @@ pub struct IpcWriterOptions {
     pub compression: Option<IpcCompression>,
     /// Compatibility level
     pub compat_level: CompatLevel,
+    /// Number of rows per record batch
+    pub record_batch_size: Option<usize>,
     /// Size of each written chunk.
     pub chunk_size: IdxSize,
 }
@@ -26,6 +29,7 @@ impl Default for IpcWriterOptions {
         Self {
             compression: None,
             compat_level: CompatLevel::newest(),
+            record_batch_size: None,
             chunk_size: 1 << 18,
         }
     }
@@ -33,7 +37,9 @@ impl Default for IpcWriterOptions {
 
 impl IpcWriterOptions {
     pub fn to_writer<W: Write>(&self, writer: W) -> IpcWriter<W> {
-        IpcWriter::new(writer).with_compression(self.compression)
+        IpcWriter::new(writer)
+            .with_compression(self.compression)
+            .with_record_batch_size(self.record_batch_size)
     }
 }
 
@@ -69,6 +75,7 @@ pub struct IpcWriter<W> {
     pub(super) compression: Option<IpcCompression>,
     /// Polars' flavor of arrow. This might be temporary.
     pub(super) compat_level: CompatLevel,
+    pub(super) record_batch_size: Option<usize>,
     pub(super) parallel: bool,
     pub(super) custom_schema_metadata: Option<Arc<Metadata>>,
 }
@@ -85,17 +92,26 @@ impl<W: Write> IpcWriter<W> {
         self
     }
 
+    pub fn with_record_batch_size(mut self, record_batch_size: Option<usize>) -> Self {
+        self.record_batch_size = record_batch_size;
+        self
+    }
+
     pub fn with_parallel(mut self, parallel: bool) -> Self {
         self.parallel = parallel;
         self
     }
 
-    pub fn batched(self, schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
+    pub fn batched(
+        self,
+        schema: &Schema,
+        ipc_fields: Vec<IpcField>,
+    ) -> PolarsResult<BatchedWriter<W>> {
         let schema = schema_to_arrow_checked(schema, self.compat_level, "ipc")?;
         let mut writer = write::FileWriter::new(
             self.writer,
             Arc::new(schema),
-            None,
+            Some(ipc_fields),
             WriteOptions {
                 compression: self.compression.map(|c| c.into()),
             },
@@ -123,6 +139,7 @@ where
             writer,
             compression: None,
             compat_level: CompatLevel::newest(),
+            record_batch_size: None,
             parallel: true,
             custom_schema_metadata: None,
         }
@@ -184,8 +201,14 @@ impl<W: Write> BatchedWriter<W> {
         dictionaries: &[EncodedData],
         message: &EncodedData,
     ) -> PolarsResult<()> {
-        self.writer.write_encoded(dictionaries, message)?;
-        Ok(())
+        self.writer.write_encoded(dictionaries, message)
+    }
+
+    pub fn write_encoded_dictionaries(
+        &mut self,
+        encoded_dictionaries: &[EncodedData],
+    ) -> PolarsResult<()> {
+        self.writer.write_encoded_dictionaries(encoded_dictionaries)
     }
 
     /// Writes the footer of the IPC file.

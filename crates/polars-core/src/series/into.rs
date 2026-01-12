@@ -4,7 +4,7 @@
     feature = "dtype-duration",
     feature = "dtype-time"
 ))]
-use polars_compute::cast::cast_default as cast;
+use polars_compute::cast::cast_default;
 use polars_compute::cast::cast_unchecked;
 
 use crate::prelude::*;
@@ -20,65 +20,81 @@ impl Series {
     /// This conversion is needed because polars doesn't use a
     /// 1 on 1 mapping for logical/categoricals, etc.
     pub fn to_arrow(&self, chunk_idx: usize, compat_level: CompatLevel) -> ArrayRef {
-        match self.dtype() {
+        ToArrowConverter {
+            compat_level,
+            #[cfg(feature = "dtype-categorical")]
+            categorical_converter: {
+                let mut categorical_converter =
+                    crate::series::categorical_to_arrow::CategoricalToArrowConverter {
+                        converters: Default::default(),
+                        persist_remap: false,
+                        output_keys_only: false,
+                    };
+
+                categorical_converter.initialize(self.dtype());
+
+                categorical_converter
+            },
+        }
+        .array_to_arrow(self.chunks().get(chunk_idx).unwrap().as_ref(), self.dtype())
+    }
+}
+
+pub struct ToArrowConverter {
+    pub compat_level: CompatLevel,
+    #[cfg(feature = "dtype-categorical")]
+    pub categorical_converter: crate::series::categorical_to_arrow::CategoricalToArrowConverter,
+}
+
+impl ToArrowConverter {
+    pub fn array_to_arrow(&mut self, array: &dyn Array, dtype: &DataType) -> Box<dyn Array> {
+        match dtype {
             // make sure that we recursively apply all logical types.
             #[cfg(feature = "dtype-struct")]
-            dt @ DataType::Struct(fields) => {
-                let ca = self.struct_().unwrap();
-                let arr = ca.downcast_chunks().get(chunk_idx).unwrap();
+            DataType::Struct(fields) => {
+                use arrow::array::StructArray;
+
+                let arr: &StructArray = array.as_any().downcast_ref().unwrap();
                 let values = arr
                     .values()
                     .iter()
                     .zip(fields.iter())
-                    .map(|(values, field)| {
-                        let dtype = &field.dtype;
-                        let s = unsafe {
-                            Series::from_chunks_and_dtype_unchecked(
-                                PlSmallStr::EMPTY,
-                                vec![values.clone()],
-                                &dtype.to_physical(),
-                            )
-                            .from_physical_unchecked(dtype)
-                            .unwrap()
-                        };
-                        s.to_arrow(0, compat_level)
-                    })
+                    .map(|(values, field)| self.array_to_arrow(values.as_ref(), field.dtype()))
                     .collect::<Vec<_>>();
+
                 StructArray::new(
-                    dt.to_arrow(compat_level),
+                    ArrowDataType::Struct(
+                        fields
+                            .iter()
+                            .map(|x| (x.name().clone(), x.dtype()))
+                            .zip(values.iter().map(|x| x.dtype()))
+                            .map(|((name, dtype), converted_arrow_dtype)| {
+                                create_arrow_field(
+                                    name,
+                                    dtype,
+                                    converted_arrow_dtype,
+                                    self.compat_level,
+                                )
+                            })
+                            .collect(),
+                    ),
                     arr.len(),
                     values,
                     arr.validity().cloned(),
                 )
                 .boxed()
             },
-            // special list branch to
-            // make sure that we recursively apply all logical types.
             DataType::List(inner) => {
-                let ca = self.list().unwrap();
-                let arr = ca.chunks[chunk_idx].clone();
-                let arr = arr.as_any().downcast_ref::<ListArray<i64>>().unwrap();
+                let arr: &ListArray<i64> = array.as_any().downcast_ref().unwrap();
+                let new_values = self.array_to_arrow(arr.values().as_ref(), inner);
 
-                let new_values = if let DataType::Null = &**inner {
-                    arr.values().clone()
-                } else {
-                    // We pass physical arrays and cast to logical before we convert to arrow.
-                    let s = unsafe {
-                        Series::from_chunks_and_dtype_unchecked(
-                            PlSmallStr::EMPTY,
-                            vec![arr.values().clone()],
-                            &inner.to_physical(),
-                        )
-                        .from_physical_unchecked(inner)
-                        .unwrap()
-                    };
-
-                    s.to_arrow(0, compat_level)
-                };
-
-                let dtype = self.dtype().to_arrow(compat_level);
                 let arr = ListArray::<i64>::new(
-                    dtype,
+                    ArrowDataType::LargeList(Box::new(create_arrow_field(
+                        LIST_VALUES_NAME,
+                        inner.as_ref(),
+                        new_values.dtype(),
+                        self.compat_level,
+                    ))),
                     arr.offsets().clone(),
                     new_values,
                     arr.validity().cloned(),
@@ -87,109 +103,112 @@ impl Series {
             },
             #[cfg(feature = "dtype-array")]
             DataType::Array(inner, width) => {
-                let ca = self.array().unwrap();
-                let arr = ca.chunks[chunk_idx].clone();
-                let arr = arr.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
+                use arrow::array::FixedSizeListArray;
 
-                let new_values = if let DataType::Null = &**inner {
-                    arr.values().clone()
-                } else {
-                    let s = unsafe {
-                        Series::from_chunks_and_dtype_unchecked(
-                            PlSmallStr::EMPTY,
-                            vec![arr.values().clone()],
-                            &inner.to_physical(),
-                        )
-                        .from_physical_unchecked(inner)
-                        .unwrap()
-                    };
+                let arr: &FixedSizeListArray = array.as_any().downcast_ref().unwrap();
+                let new_values = self.array_to_arrow(arr.values().as_ref(), inner);
 
-                    s.to_arrow(0, compat_level)
-                };
-
-                let dtype =
-                    FixedSizeListArray::default_datatype(inner.to_arrow(compat_level), *width);
-                let arr =
-                    FixedSizeListArray::new(dtype, arr.len(), new_values, arr.validity().cloned());
+                let arr = FixedSizeListArray::new(
+                    ArrowDataType::FixedSizeList(
+                        Box::new(create_arrow_field(
+                            LIST_VALUES_NAME,
+                            inner.as_ref(),
+                            new_values.dtype(),
+                            self.compat_level,
+                        )),
+                        *width,
+                    ),
+                    arr.len(),
+                    new_values,
+                    arr.validity().cloned(),
+                );
                 Box::new(arr)
             },
             #[cfg(feature = "dtype-categorical")]
-            dt @ (DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
-                with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
-                    let ca = self.cat::<$C>().unwrap();
-                    let arr = ca.physical().chunks()[chunk_idx].clone();
-                    unsafe {
-                        let new_phys = ChunkedArray::from_chunks(PlSmallStr::EMPTY, vec![arr]);
-                        let new = CategoricalChunked::<$C>::from_cats_and_dtype_unchecked(new_phys, dt.clone());
-                        new.to_arrow(compat_level).boxed()
-                    }
-                })
-            },
+            DataType::Categorical(_, _) | DataType::Enum(_, _) => self
+                .categorical_converter
+                .array_to_arrow(array, dtype, self.compat_level),
             #[cfg(feature = "dtype-date")]
-            DataType::Date => cast(
-                &*self.chunks()[chunk_idx],
-                &DataType::Date.to_arrow(compat_level),
-            )
-            .unwrap(),
+            DataType::Date => {
+                cast_default(array, &DataType::Date.to_arrow(self.compat_level)).unwrap()
+            },
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(_, _) => cast(
-                &*self.chunks()[chunk_idx],
-                &self.dtype().to_arrow(compat_level),
-            )
-            .unwrap(),
+            DataType::Datetime(_, _) => {
+                cast_default(array, &dtype.to_arrow(self.compat_level)).unwrap()
+            },
             #[cfg(feature = "dtype-duration")]
-            DataType::Duration(_) => cast(
-                &*self.chunks()[chunk_idx],
-                &self.dtype().to_arrow(compat_level),
-            )
-            .unwrap(),
+            DataType::Duration(_) => {
+                cast_default(array, &dtype.to_arrow(self.compat_level)).unwrap()
+            },
             #[cfg(feature = "dtype-time")]
-            DataType::Time => cast(
-                &*self.chunks()[chunk_idx],
-                &DataType::Time.to_arrow(compat_level),
-            )
-            .unwrap(),
+            DataType::Time => {
+                cast_default(array, &DataType::Time.to_arrow(self.compat_level)).unwrap()
+            },
             #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(_, _) => self.decimal().unwrap().physical().chunks()[chunk_idx]
+            DataType::Decimal(_, _) => array
                 .as_any()
-                .downcast_ref::<PrimitiveArray<i128>>()
+                .downcast_ref::<arrow::array::PrimitiveArray<i128>>()
                 .unwrap()
                 .clone()
-                .to(self.dtype().to_arrow(CompatLevel::newest()))
+                .to(dtype.to_arrow(CompatLevel::newest()))
                 .to_boxed(),
             #[cfg(feature = "object")]
             DataType::Object(_) => {
                 use crate::chunked_array::object::builder::object_series_to_arrow_array;
-                if self.chunks().len() == 1 && chunk_idx == 0 {
-                    object_series_to_arrow_array(self)
-                } else {
-                    // we slice the series to only that chunk
-                    let offset = self.chunks()[..chunk_idx]
-                        .iter()
-                        .map(|arr| arr.len())
-                        .sum::<usize>() as i64;
-                    let len = self.chunks()[chunk_idx].len();
-                    let s = self.slice(offset, len);
-                    object_series_to_arrow_array(&s)
-                }
+                object_series_to_arrow_array(&unsafe {
+                    Series::from_chunks_and_dtype_unchecked(
+                        PlSmallStr::EMPTY,
+                        vec![array.to_boxed()],
+                        dtype,
+                    )
+                })
             },
             DataType::String => {
-                if compat_level.0 >= 1 {
-                    self.array_ref(chunk_idx).clone()
+                if self.compat_level.0 >= 1 {
+                    array.to_boxed()
                 } else {
-                    let arr = self.array_ref(chunk_idx);
-                    cast_unchecked(arr.as_ref(), &ArrowDataType::LargeUtf8).unwrap()
+                    cast_unchecked(array, &ArrowDataType::LargeUtf8).unwrap()
                 }
             },
             DataType::Binary => {
-                if compat_level.0 >= 1 {
-                    self.array_ref(chunk_idx).clone()
+                if self.compat_level.0 >= 1 {
+                    array.to_boxed()
                 } else {
-                    let arr = self.array_ref(chunk_idx);
-                    cast_unchecked(arr.as_ref(), &ArrowDataType::LargeBinary).unwrap()
+                    cast_unchecked(array, &ArrowDataType::LargeBinary).unwrap()
                 }
             },
-            _ => self.array_ref(chunk_idx).clone(),
+            #[cfg(feature = "dtype-extension")]
+            DataType::Extension(typ, storage_dtype) => {
+                use arrow::datatypes::ExtensionType;
+
+                let mut arr = self.array_to_arrow(array, storage_dtype);
+                *arr.dtype_mut() = ArrowDataType::Extension(Box::new(ExtensionType {
+                    name: typ.name().into(),
+                    metadata: typ.serialize_metadata().map(|md| md.into()),
+                    inner: arr.dtype().clone(),
+                }));
+                arr
+            },
+            _ => {
+                assert!(!dtype.is_logical());
+                array.to_boxed()
+            },
         }
+    }
+}
+
+fn create_arrow_field(
+    name: PlSmallStr,
+    dtype: &DataType,
+    arrow_dtype: &ArrowDataType,
+    compat_level: CompatLevel,
+) -> ArrowField {
+    match (dtype, arrow_dtype) {
+        #[cfg(feature = "dtype-categorical")]
+        (DataType::Categorical(..) | DataType::Enum(..), ArrowDataType::Dictionary(_, _, _)) => {
+            // Sets _PL_ metadata
+            dtype.to_arrow_field(name, compat_level)
+        },
+        _ => ArrowField::new(name, arrow_dtype.clone(), true),
     }
 }

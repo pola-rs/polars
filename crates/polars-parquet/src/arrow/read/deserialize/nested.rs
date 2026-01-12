@@ -19,7 +19,7 @@ pub fn columns_to_iter_recursive(
     mut init: Vec<InitNested>,
     filter: Option<Filter>,
 ) -> ParquetResult<(NestedState, Vec<Box<dyn Array>>, Bitmap)> {
-    if !field.dtype().is_nested() {
+    if !field.dtype().is_nested() || field.is_pl_pq_empty_struct() {
         let pages = columns.pop().unwrap();
         init.push(InitNested::Primitive(field.is_nullable));
         let type_ = types.pop().unwrap();
@@ -217,6 +217,26 @@ pub fn columns_to_iter_recursive(
                     Ok((nested.unwrap(), arr, ptm))
                 }
             },
+
+            ArrowDataType::Extension(ext) => {
+                // Perform deserialization for the storage type.
+                let (nested, mut array, ptm) = columns_to_iter_recursive(
+                    columns,
+                    types,
+                    field.with_dtype(ext.inner.clone()),
+                    init,
+                    filter,
+                )?;
+
+                // Restore the extension type.
+                for arr in &mut array {
+                    assert!(arr.dtype() == &ext.inner);
+                    *arr.dtype_mut() = field.dtype.clone();
+                }
+
+                Ok((nested, array, ptm))
+            },
+
             other => Err(ParquetError::not_supported(format!(
                 "Deserializing type {other:?} from parquet"
             ))),

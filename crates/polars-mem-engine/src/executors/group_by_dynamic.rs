@@ -23,7 +23,7 @@ impl GroupByDynamicExec {
     ) -> PolarsResult<DataFrame> {
         use crate::executors::group_by_rolling::sort_and_groups;
 
-        df.as_single_chunk_par();
+        df.rechunk_mut_par();
 
         let mut keys = self
             .keys
@@ -47,12 +47,7 @@ impl GroupByDynamicExec {
 
         if let Some(f) = &self.apply {
             let gb = GroupBy::new(&df, vec![], groups, None);
-            let out = gb.apply(move |df| f.call(df))?;
-            return Ok(if let Some((offset, len)) = self.slice {
-                out.slice(offset, len)
-            } else {
-                out
-            });
+            return gb.apply_sliced(self.slice, move |df| f.call(df));
         }
 
         let mut groups = &groups;
@@ -80,7 +75,7 @@ impl GroupByDynamicExec {
         columns.push(time_key);
         columns.extend(agg_columns);
 
-        DataFrame::new(columns)
+        DataFrame::new_infer_height(columns)
     }
 }
 

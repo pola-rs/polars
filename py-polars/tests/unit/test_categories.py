@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import pickle
 import subprocess
 import sys
 
@@ -26,7 +27,7 @@ def test_categories_eq_hash() -> None:
     left = CATS
     right = [pl.Categories(c.name(), c.namespace(), c.physical()) for c in CATS]
 
-    for lc, rc in zip(left, right):
+    for lc, rc in zip(left, right, strict=True):
         assert hash(lc) == hash(rc)
         assert lc == rc
 
@@ -146,3 +147,13 @@ print("OK", end="")
     )
 
     assert out == b"OK"
+
+
+def test_categories_pickle_24690() -> None:
+    categories = pickle.loads(
+        pickle.dumps(pl.Categories("name", "namespace", pl.UInt8))
+    )
+
+    assert categories.name() == "name"
+    assert categories.namespace() == "namespace"
+    assert categories.physical() == pl.UInt8

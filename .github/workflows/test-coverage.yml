@@ -38,7 +38,7 @@ jobs:
     # https://github.com/pola-rs/polars/issues/14255
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Rust
         run: rustup component add llvm-tools-preview
@@ -70,14 +70,16 @@ jobs:
           -p polars-time
           -p polars-utils
 
-      - name: Run integration tests
-        run: cargo test --all-features -p polars --test it
+      # Unfortunately we run out of disk space when running integration tests with coverage enabled.
+      # Skipping for now.
+      # - name: Run integration tests
+      #   run: cargo test --all-features -p polars --test it
 
       - name: Report coverage
         run: cargo llvm-cov report --lcov --output-path coverage-rust.lcov
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-rust
           path: coverage-rust.lcov
@@ -87,10 +89,10 @@ jobs:
     # https://github.com/pola-rs/polars/issues/14255
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           check-latest: true
@@ -130,7 +132,11 @@ jobs:
         run: cargo llvm-cov clean --workspace
 
       - name: Install Polars
-        run: maturin develop -m py-polars/Cargo.toml
+        run: |
+          # Make sure we use the Polars we're about to build.
+          uv pip uninstall polars-runtime-32 polars-runtime-64 polars-runtime-compat
+          uv pip install --no-deps -e py-polars
+          make build
 
       - name: Run Python tests
         working-directory: py-polars
@@ -170,7 +176,7 @@ jobs:
         run: cargo llvm-cov report --lcov --output-path coverage-python.lcov
 
       - name: Upload coverage reports
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-python
           path: |
@@ -184,10 +190,10 @@ jobs:
 
     steps:
       # Needed to fetch the Codecov config file
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Download coverage reports
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           merge-multiple: true
 

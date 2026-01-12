@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Mutex, RwLock};
 use std::time::Duration;
 
+use arrow::bitmap::Bitmap;
 use bitflags::bitflags;
 use polars_core::config::verbose;
 use polars_core::prelude::*;
@@ -11,6 +12,7 @@ use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::unique_id::UniqueId;
 
 use super::NodeTimer;
+use crate::prelude::AggregationContext;
 
 pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, ChunkJoinOptIds>>>;
 
@@ -23,10 +25,14 @@ pub struct WindowCache {
 
 impl WindowCache {
     pub(crate) fn clear(&self) {
-        let mut g = self.groups.write().unwrap();
-        g.clear();
-        let mut g = self.join_tuples.write().unwrap();
-        g.clear();
+        let Self {
+            groups,
+            join_tuples,
+            map_idx,
+        } = self;
+        groups.write().unwrap().clear();
+        join_tuples.write().unwrap().clear();
+        map_idx.write().unwrap().clear();
     }
 
     pub fn get_groups(&self, key: &str) -> Option<GroupPositions> {
@@ -117,7 +123,12 @@ pub struct ExecutionState {
     // every join/union split gets an increment to distinguish between schema state
     pub branch_idx: usize,
     pub flags: RelaxedCell<u8>,
+    #[cfg(feature = "dtype-struct")]
+    pub with_fields: Option<Arc<StructChunked>>,
+    #[cfg(feature = "dtype-struct")]
+    pub with_fields_ac: Option<Arc<AggregationContext<'static>>>,
     pub ext_contexts: Arc<Vec<DataFrame>>,
+    pub element: Arc<Option<(Column, Option<Bitmap>)>>,
     node_timer: Option<NodeTimer>,
     stop: Arc<RelaxedCell<bool>>,
 }
@@ -134,7 +145,12 @@ impl ExecutionState {
             window_cache: Default::default(),
             branch_idx: 0,
             flags: RelaxedCell::from(StateFlags::init().as_u8()),
+            #[cfg(feature = "dtype-struct")]
+            with_fields: Default::default(),
+            #[cfg(feature = "dtype-struct")]
+            with_fields_ac: Default::default(),
             ext_contexts: Default::default(),
+            element: Default::default(),
             node_timer: None,
             stop: Arc::new(RelaxedCell::from(false)),
         }
@@ -199,6 +215,12 @@ impl ExecutionState {
             branch_idx: self.branch_idx,
             flags: self.flags.clone(),
             ext_contexts: self.ext_contexts.clone(),
+            // Retain input values for `pl.element` in Eval context
+            element: self.element.clone(),
+            #[cfg(feature = "dtype-struct")]
+            with_fields: self.with_fields.clone(),
+            #[cfg(feature = "dtype-struct")]
+            with_fields_ac: self.with_fields_ac.clone(),
             node_timer: self.node_timer.clone(),
             stop: self.stop.clone(),
         }
