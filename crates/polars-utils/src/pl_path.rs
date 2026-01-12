@@ -15,6 +15,7 @@ pub const WINDOWS_EXTPATH_PREFIX: &str = r#"\\?\"#;
 
 #[repr(transparent)]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// UTF-8 path.
 pub struct PlPath {
     inner: str,
 }
@@ -23,7 +24,7 @@ pub struct PlPath {
 // TODO: Derive after DSL unfreeze
 // #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 // #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-/// Reference-counted path.
+/// Reference-counted [`PlPath`]
 pub struct PlRefPath {
     inner: PlRefStr,
 }
@@ -172,11 +173,7 @@ impl PlPath {
                 .strip_prefix(WINDOWS_EXTPATH_PREFIX)
                 .unwrap_or(path_str);
 
-            if matches!(
-                CloudScheme::from_path(path_str),
-                None | Some(CloudScheme::File | CloudScheme::FileNoHostname)
-            ) && path_str.contains('\\')
-            {
+            if CloudScheme::from_path(path_str).is_none() && path_str.contains('\\') {
                 let new_path = path_str.replace('\\', "/");
                 let inner = PlRefStr::from_string(new_path);
                 return Some(PlRefPath { inner });
@@ -226,7 +223,9 @@ impl PlRefPath {
         Self::default()
     }
 
-    /// This will normalize Windows paths to use forward slashes.
+    /// # Windows Paths
+    /// Windows paths will have leading `\\?\` prefix stripped, and all backslashes normalized to
+    /// forward slashes.
     pub fn new(path: impl AsRef<str> + Into<PlRefStr>) -> Self {
         if let Some(path) = PlPath::normalize_windows_path(path.as_ref()) {
             return path;
