@@ -14,7 +14,7 @@ use super::get_binary_expr_col_and_lv;
 use crate::dsl::Operator;
 use crate::plans::aexpr::evaluate::{constant_evaluate, into_column};
 use crate::plans::{
-    aexpr_to_leaf_names_iter, AExpr, IRBooleanFunction, IRFunctionExpr, MintermIter,
+    AExpr, IRBooleanFunction, IRFunctionExpr, MintermIter, aexpr_to_leaf_names_iter,
 };
 
 pub struct ColumnPredicates {
@@ -352,7 +352,9 @@ fn is_between(
     }
 
     use AnyValue as AV;
-    ints!(Int8, Int16, Int32, Int64, Int128, UInt8, UInt16, UInt32, UInt64);
+    ints!(
+        Int8, Int16, Int32, Int64, Int128, UInt8, UInt16, UInt32, UInt64
+    );
 
     Some(SpecializedColumnPredicate::Between(low, high))
 }
@@ -362,9 +364,9 @@ mod tests {
     use polars_error::PolarsResult;
 
     use super::*;
-    use crate::dsl::functions::{col, lit};
     use crate::dsl::Expr;
-    use crate::plans::{to_expr_ir, typed_lit, ExprToIRContext};
+    use crate::dsl::functions::{col, lit};
+    use crate::plans::{ExprToIRContext, to_expr_ir, typed_lit};
 
     /// Given a single-column `Expr`, call `aexpr_to_column_predicates()` and
     /// return the corresponding column's `Option<SpecializedColumnPredicate>`.
