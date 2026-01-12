@@ -249,7 +249,7 @@ class DataFrame:
     nan_to_null : bool, default False
         If the data comes from one or more numpy arrays, can optionally convert input
         data np.nan values to null instead. This is a no-op for all other input data.
-    height  : int or None, default None
+    height : int or None, default None
         Allows constructing DataFrames with 0 width and a specified height. If
         passed with data, ensures the resulting DataFrame has this height.
 
