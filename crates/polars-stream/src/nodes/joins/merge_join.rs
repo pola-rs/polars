@@ -175,6 +175,9 @@ impl ComputeNode for MergeJoinNode {
         let output_channel_done = send[0] == PortState::Done;
         let input_buffers_empty = self.left_unmerged.is_empty() && self.right_unmerged.is_empty();
         let unmatched_buffers_empty = self.unmatched.is_empty();
+        if self.params.args.maintain_order == MaintainOrderJoin::None {
+            debug_assert!(unmatched_buffers_empty);
+        }
 
         if output_channel_done {
             self.state = Done;
@@ -182,6 +185,12 @@ impl ComputeNode for MergeJoinNode {
             self.state = Running
         } else if input_channels_done && !input_buffers_empty {
             self.state = FlushInputBuffers;
+        } else if input_channels_done
+            && input_buffers_empty
+            && matches!(self.state, Running | FlushInputBuffers)
+            && unmatched_buffers_empty
+        {
+            self.state = Done;
         } else if input_channels_done
             && input_buffers_empty
             && matches!(self.state, Running | FlushInputBuffers)
@@ -194,6 +203,9 @@ impl ComputeNode for MergeJoinNode {
                 InMemorySourceNode::new(Arc::new(all_unmatched), self.max_seq_sent.successor());
             self.state = EmitUnmatched(src_node);
         } else if input_channels_done && input_buffers_empty && unmatched_buffers_empty {
+            self.left_unmerged.clear();
+            self.right_unmerged.clear();
+            self.unmatched.clear();
             self.state = Done;
         } else {
             unreachable!()
@@ -228,6 +240,9 @@ impl ComputeNode for MergeJoinNode {
                 send[0] = PortState::Ready;
             },
             EmitUnmatched(src_node) => {
+                debug_assert!(self.left_unmerged.is_empty());
+                debug_assert!(self.right_unmerged.is_empty());
+                debug_assert!(self.unmatched.is_empty());
                 recv[0] = PortState::Done;
                 recv[1] = PortState::Done;
                 src_node.update_state(&mut [], &mut send[..], state)?;
@@ -236,6 +251,9 @@ impl ComputeNode for MergeJoinNode {
                 }
             },
             Done => {
+                debug_assert!(self.left_unmerged.is_empty());
+                debug_assert!(self.right_unmerged.is_empty());
+                debug_assert!(self.unmatched.is_empty());
                 recv[0] = PortState::Done;
                 recv[1] = PortState::Done;
                 send[0] = PortState::Done;
@@ -397,7 +415,7 @@ async fn compute_join(
     source_token: SourceToken,
     params: &MergeJoinParams,
     arenas: &mut ComputeJoinArenas,
-    matched_send: &mut PortSender,
+    send: &mut PortSender,
     unmatched_send: tokio::sync::mpsc::Sender<Morsel>,
     max_seq_sent_send: tokio::sync::mpsc::Sender<MorselSeq>,
 ) -> PolarsResult<()> {
@@ -482,7 +500,7 @@ async fn compute_join(
         )?;
         if df.height() > 0 {
             let morsel = Morsel::new(df, seq, source_token.clone());
-            if matched_send.send(morsel).await.is_err() {
+            if send.send(morsel).await.is_err() {
                 return Ok(());
             };
         }
@@ -520,8 +538,14 @@ async fn compute_join(
     )?;
     if df_unmatched.height() > 0 {
         let morsel = Morsel::new(df_unmatched, seq, source_token.clone());
-        if unmatched_send.send(morsel).await.is_err() {
-            return Ok(());
+        if params.args.maintain_order == MaintainOrderJoin::None {
+            if send.send(morsel).await.is_err() {
+                return Ok(());
+            }
+        } else {
+            if unmatched_send.send(morsel).await.is_err() {
+                panic!("broken pipe");
+            }
         }
     }
 
