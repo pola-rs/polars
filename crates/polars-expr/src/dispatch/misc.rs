@@ -987,9 +987,8 @@ pub fn row_decode(
         } => {
             let descending = descending.unwrap_or_else(|| vec![false; fields.len()]);
             let nulls_last = nulls_last.unwrap_or_else(|| vec![false; fields.len()]);
-            let broadcast_nulls = broadcast_nulls.unwrap_or(false);
-            if broadcast_nulls {
-                unimplemented!()
+            if broadcast_nulls.is_some() {
+                polars_bail!(InvalidOperation: "broadcast_nulls is not supported for row_decode.");
             }
 
             assert_eq!(fields.len(), descending.len());

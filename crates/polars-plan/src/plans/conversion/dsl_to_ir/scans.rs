@@ -1,3 +1,4 @@
+use std::io::BufReader;
 use std::sync::LazyLock;
 
 use arrow::buffer::Buffer;
@@ -7,7 +8,7 @@ use polars_io::csv::read::streaming::read_until_start_and_infer_schema;
 #[cfg(feature = "cloud")]
 use polars_io::pl_async::get_runtime;
 use polars_io::prelude::*;
-use polars_io::utils::compression::{CompressedReader, maybe_decompress_bytes};
+use polars_io::utils::compression::CompressedReader;
 
 use super::*;
 
@@ -81,7 +82,7 @@ pub(super) fn dsl_to_ir(
         }
 
         let hive_parts = if unified_scan_args.hive_options.enabled.unwrap()
-            && file_info.reader_schema.is_some()
+            && let Some(file_schema) = file_info.reader_schema.as_ref()
         {
             let paths = sources
                 .as_paths()
@@ -94,7 +95,7 @@ pub(super) fn dsl_to_ir(
                 paths,
                 unified_scan_args.hive_options.hive_start_idx,
                 unified_scan_args.hive_options.schema.clone(),
-                match file_info.reader_schema.as_ref().unwrap() {
+                match file_schema {
                     Either::Left(v) => {
                         owned = Some(Schema::from_arrow_schema(v.as_ref()));
                         owned.as_ref().unwrap()
@@ -130,9 +131,9 @@ pub(super) fn dsl_to_ir(
             schema.insert_at_index(schema.len(), file_path_col.clone(), DataType::String)?;
         }
 
-        unified_scan_args.projection = if file_info.reader_schema.is_some() {
+        unified_scan_args.projection = if let Some(file_schema) = file_info.reader_schema.as_ref() {
             maybe_init_projection_excluding_hive(
-                file_info.reader_schema.as_ref().unwrap(),
+                file_schema,
                 hive_parts.as_ref().map(|h| h.schema()),
             )
         } else {
@@ -466,16 +467,13 @@ pub fn ndjson_file_info(
         }
     };
 
-    let owned = &mut vec![];
-
     let mut schema = if let Some(schema) = ndjson_options.schema.clone() {
         schema
     } else {
-        let memslice =
+        let mem_slice =
             first_scan_source.to_memslice_possibly_async(run_async, cache_entries.as_ref(), 0)?;
-        let mut reader = std::io::Cursor::new(maybe_decompress_bytes(&memslice, owned)?);
+        let mut reader = BufReader::new(CompressedReader::try_new(mem_slice)?);
 
-        // TODO: streaming infer
         Arc::new(polars_io::ndjson::infer_schema(
             &mut reader,
             ndjson_options.infer_schema_length,

@@ -94,7 +94,7 @@ impl RowCountAndSize {
             return None;
         }
 
-        let num_bytes = std::cmp::min(
+        let num_bytes = u64::min(
             available.row_byte_size().saturating_mul(
                 #[cfg_attr(feature = "bigidx", expect(clippy::useless_conversion))]
                 u64::from(num_rows),

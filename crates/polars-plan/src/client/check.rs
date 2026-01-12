@@ -10,7 +10,7 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan, allow_local_scans: bool) -> P
     }
 
     // Check that the plan ends with a sink.
-    if !matches!(dsl, DslPlan::Sink { .. }) {
+    if !matches!(dsl, DslPlan::Sink { .. } | DslPlan::SinkMultiple { .. }) {
         return ineligible_error("does not contain a sink");
     }
 
@@ -56,9 +56,6 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan, allow_local_scans: bool) -> P
                         // eligibility here.
                     },
                 }
-            },
-            DslPlan::SinkMultiple { .. } => {
-                return ineligible_error("contains sink multiple");
             },
             _ => (),
         }

@@ -286,17 +286,17 @@ def test_scan_ipc_varying_block_metadata_len_c4812(
     n_a: int, n_b: int, compression: IpcCompression, monkeypatch: Any
 ) -> None:
     monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
-    monkeypatch.setenv("POLARS_IDEAL_SINK_MORSEL_SIZE_ROWS", "1")
 
     buf = io.BytesIO()
-    lf = pl.DataFrame({"a": [n_a * "A", n_b * "B"]}).lazy()
-    lf.sink_ipc(buf, compression=compression)
-    df = lf.collect()
+    df = pl.DataFrame({"a": [n_a * "A", n_b * "B"]})
+    df.lazy().sink_ipc(buf, compression=compression, record_batch_size=1)
 
-    assert_frame_equal(
-        pl.scan_ipc(buf).collect(),
-        df,
-    )
+    with pyarrow.ipc.open_file(buf) as reader:
+        assert [
+            reader.get_batch(i).num_rows for i in range(reader.num_record_batches)
+        ] == [1, 1]
+
+    assert_frame_equal(pl.scan_ipc(buf).collect(), df)
 
 
 @pytest.mark.parametrize(

@@ -109,6 +109,23 @@ impl CompressedReader {
         !matches!(&self, CompressedReader::Uncompressed { .. })
     }
 
+    pub const fn initial_read_size() -> usize {
+        // We don't want to read too much at the beginning to keep decompression to a minimum if for
+        // example only the schema is needed or a slice op is used. Keep in sync with
+        // `ideal_read_size` so that `initial_read_size * N * 4 == ideal_read_size`.
+        32 * 1024
+    }
+
+    pub const fn ideal_read_size() -> usize {
+        // Somewhat conservative guess for L2 size, which performs the best on most machines and is
+        // nearly always core exclusive. The loss of going larger and accidentally hitting L3 is not
+        // recouped by amortizing the block processing cost even further.
+        //
+        // It's possible that callers use or need a larger `read_size` if for example a single row
+        // doesn't fit in the 512KB.
+        512 * 1024
+    }
+
     /// If possible returns the total number of bytes that will be produced by reading from the
     /// start to finish.
     pub fn total_len_estimate(&self) -> usize {
@@ -156,27 +173,26 @@ impl CompressedReader {
 
         let mut buf = Vec::new();
         if self.is_compressed() {
-            let reserve_size = if read_size == usize::MAX {
-                self.total_len_estimate()
-            } else {
-                prev_len.saturating_add(read_size)
-            };
+            let reserve_size = cmp::min(
+                prev_len.saturating_add(read_size),
+                self.total_len_estimate().saturating_mul(2),
+            );
             buf.reserve_exact(reserve_size);
             buf.extend_from_slice(prev_leftover);
         }
 
         let new_slice_from_read =
-            |read_n: usize, mut buf: Vec<u8>| -> std::io::Result<(MemSlice, usize)> {
-                buf.truncate(prev_len + read_n);
-                Ok((MemSlice::from_vec(buf), read_n))
+            |bytes_read: usize, mut buf: Vec<u8>| -> std::io::Result<(MemSlice, usize)> {
+                buf.truncate(prev_len + bytes_read);
+                Ok((MemSlice::from_vec(buf), bytes_read))
             };
 
         match self {
             CompressedReader::Uncompressed { slice, offset, .. } => {
-                let read_n = cmp::min(read_size, slice.len() - *offset);
-                let new_slice = slice.slice((*offset - prev_len)..(*offset + read_n));
-                *offset += read_n;
-                Ok((new_slice, read_n))
+                let bytes_read = cmp::min(read_size, slice.len() - *offset);
+                let new_slice = slice.slice((*offset - prev_len)..(*offset + bytes_read));
+                *offset += bytes_read;
+                Ok((new_slice, bytes_read))
             },
             #[cfg(feature = "decompress")]
             CompressedReader::Gzip(decoder) => {
@@ -190,6 +206,27 @@ impl CompressedReader {
             CompressedReader::Zstd(decoder) => {
                 new_slice_from_read(decoder.take(read_size as u64).read_to_end(&mut buf)?, buf)
             },
+        }
+    }
+}
+
+/// This implementation is meant for compatibility. Use [`Self::read_next_slice`] for best
+/// performance.
+impl Read for CompressedReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            CompressedReader::Uncompressed { slice, offset, .. } => {
+                let bytes_read = cmp::min(buf.len(), slice.len() - *offset);
+                buf[..bytes_read].copy_from_slice(&slice.slice(*offset..(*offset + bytes_read)));
+                *offset += bytes_read;
+                Ok(bytes_read)
+            },
+            #[cfg(feature = "decompress")]
+            CompressedReader::Gzip(decoder) => decoder.read(buf),
+            #[cfg(feature = "decompress")]
+            CompressedReader::Zlib(decoder) => decoder.read(buf),
+            #[cfg(feature = "decompress")]
+            CompressedReader::Zstd(decoder) => decoder.read(buf),
         }
     }
 }

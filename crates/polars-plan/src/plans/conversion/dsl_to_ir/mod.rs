@@ -14,6 +14,7 @@ use super::stack_opt::ConversionOptimizer;
 use super::*;
 use crate::constants::get_pl_element_name;
 use crate::dsl::PartitionedSinkOptions;
+use crate::dsl::functions::{all_horizontal, col};
 use crate::dsl::sink2::FileProviderType;
 
 mod concat;
@@ -162,10 +163,10 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 .map_err(|e| e.context(failed_here!(vertical concat)))?;
             }
 
-            let first = *inputs.first().ok_or_else(
+            let first_n = *inputs.first().ok_or_else(
                 || polars_err!(InvalidOperation: "expected at least one input in 'union'/'concat'"),
             )?;
-            let schema = ctxt.lp_arena.get(first).schema(ctxt.lp_arena);
+            let schema = ctxt.lp_arena.get(first_n).schema(ctxt.lp_arena);
             for n in &inputs[1..] {
                 let schema_i = ctxt.lp_arena.get(*n).schema(ctxt.lp_arena);
                 // The first argument

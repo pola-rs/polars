@@ -285,7 +285,7 @@ impl FromWithArena<&SinkTypeIR> for SinkType {
             }),
             SinkTypeIR::File(f) => Self::File(FileSinkOptions {
                 target: (&f.target).into(),
-                file_format: f.file_format.as_ref().into(),
+                file_format: (&f.file_format).into(),
                 mkdir: f.unified_sink_args.mkdir,
                 maintain_order: f.unified_sink_args.maintain_order,
                 sync_on_close: f.unified_sink_args.sync_on_close,
@@ -294,7 +294,7 @@ impl FromWithArena<&SinkTypeIR> for SinkType {
                 base_path: p.base_path.clone(),
                 file_path_provider: (&p.file_path_provider).into(),
                 partition_strategy: (&p.partition_strategy).into_with_arena(expr_arena),
-                file_format: p.file_format.as_ref().into(),
+                file_format: (&p.file_format).into(),
                 mkdir: p.unified_sink_args.mkdir,
                 maintain_order: p.unified_sink_args.maintain_order,
                 sync_on_close: p.unified_sink_args.sync_on_close,
@@ -318,7 +318,7 @@ pub struct CallbackSinkType {
 #[derive(Clone, Debug, Hash, PartialEq)]
 pub struct FileSinkOptions {
     pub target: SinkTarget,
-    pub file_format: FileType,
+    pub file_format: FileFormat,
     pub mkdir: bool,
     pub maintain_order: bool,
     pub sync_on_close: SyncOnCloseType,
@@ -348,7 +348,7 @@ pub struct PartitionedSinkOptions {
     pub base_path: PlPath,
     pub file_path_provider: FileProviderType,
     pub partition_strategy: PartitionStrategy,
-    pub file_format: FileType,
+    pub file_format: FileFormat,
     pub mkdir: bool,
     pub maintain_order: bool,
     pub sync_on_close: SyncOnCloseType,
@@ -425,20 +425,20 @@ impl FromWithArena<&PartitionStrategyIR> for PartitionStrategy {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "ir_visualization_schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Hash, PartialEq)]
-pub enum FileType {
+pub enum FileFormat {
     Parquet,
     Ipc,
     Csv,
-    Json,
+    NDJson,
 }
 
-impl From<&crate::dsl::FileType> for FileType {
-    fn from(value: &crate::dsl::FileType) -> Self {
+impl From<&crate::dsl::FileWriteFormat> for FileFormat {
+    fn from(value: &crate::dsl::FileWriteFormat) -> Self {
         match value {
-            crate::dsl::FileType::Parquet(_) => FileType::Parquet,
-            crate::dsl::FileType::Ipc(_) => FileType::Ipc,
-            crate::dsl::FileType::Csv(_) => FileType::Csv,
-            crate::dsl::FileType::Json(_) => FileType::Json,
+            crate::dsl::FileWriteFormat::Parquet(_) => FileFormat::Parquet,
+            crate::dsl::FileWriteFormat::Ipc(_) => FileFormat::Ipc,
+            crate::dsl::FileWriteFormat::Csv(_) => FileFormat::Csv,
+            crate::dsl::FileWriteFormat::NDJson(_) => FileFormat::NDJson,
         }
     }
 }

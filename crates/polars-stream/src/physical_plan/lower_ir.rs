@@ -278,15 +278,15 @@ pub fn lower_ir(
             SinkTypeIR::Partitioned(options)
                 if !matches!(options.file_path_provider, FileProviderType::Legacy(_))
                     && options.finish_callback.is_none()
-                    && match options.file_format.as_ref() {
+                    && match options.file_format {
                         #[cfg(feature = "parquet")]
-                        polars_plan::dsl::FileType::Parquet(_) => true,
+                        polars_plan::dsl::FileWriteFormat::Parquet(_) => true,
                         #[cfg(feature = "ipc")]
-                        polars_plan::dsl::FileType::Ipc(_) => true,
+                        polars_plan::dsl::FileWriteFormat::Ipc(_) => true,
                         #[cfg(feature = "csv")]
-                        polars_plan::dsl::FileType::Csv(_) => true,
+                        polars_plan::dsl::FileWriteFormat::Csv(_) => true,
                         #[cfg(feature = "json")]
-                        polars_plan::dsl::FileType::Json(_) => true,
+                        polars_plan::dsl::FileWriteFormat::NDJson(_) => true,
                         #[cfg(not(any(
                             feature = "parquet",
                             feature = "ipc",
@@ -319,7 +319,7 @@ pub fn lower_ir(
                     FileProviderType::Hive { .. } => None,
                     FileProviderType::Function(_) => None,
                 };
-                let file_type = file_format.as_ref().clone();
+                let file_type = file_format.clone();
                 let finish_callback = finish_callback.clone();
 
                 let (variant, per_partition_sort_by) = match partition_strategy {

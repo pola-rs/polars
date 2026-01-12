@@ -2,8 +2,7 @@ use std::sync::Arc;
 
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
-use polars_io::utils::sync_on_close::SyncOnCloseType;
-use polars_plan::dsl::FileType;
+use polars_plan::dsl::FileWriteFormat;
 use polars_utils::IdxSize;
 
 use crate::nodes::io_sinks2::writers::interface::FileWriterStarter;
@@ -19,14 +18,12 @@ mod ndjson;
 mod parquet;
 
 pub fn create_file_writer_starter(
-    file_format: &Arc<FileType>,
+    file_format: &FileWriteFormat,
     file_schema: &SchemaRef,
-    pipeline_depth: usize,
-    sync_on_close: SyncOnCloseType,
 ) -> PolarsResult<Arc<dyn FileWriterStarter>> {
-    Ok(match file_format.as_ref() {
+    Ok(match file_format {
         #[cfg(feature = "parquet")]
-        FileType::Parquet(options) => {
+        FileWriteFormat::Parquet(options) => {
             use polars_core::prelude::CompatLevel;
             use polars_io::schema_to_arrow_checked;
 
@@ -39,60 +36,48 @@ pub fn create_file_writer_starter(
             )?);
 
             Arc::new(ParquetWriterStarter {
-                options: options.clone(),
+                options: Arc::clone(options),
                 arrow_schema,
                 initialized_state: Default::default(),
-                pipeline_depth,
-                sync_on_close,
                 row_group_size: options
                     .row_group_size
                     .map(|x| IdxSize::try_from(x).unwrap()),
             }) as _
         },
         #[cfg(feature = "ipc")]
-        FileType::Ipc(options) => {
-            use crate::nodes::io_sinks2::writers::ipc::IpcWriterStarter;
-
-            Arc::new(IpcWriterStarter {
-                options: *options,
+        FileWriteFormat::Ipc(options) => {
+            Arc::new(crate::nodes::io_sinks2::writers::ipc::IpcWriterStarter {
+                options: Arc::new(*options),
                 schema: file_schema.clone(),
-                pipeline_depth,
-                sync_on_close,
                 record_batch_size: options
                     .record_batch_size
                     .map(|x| IdxSize::try_from(x).unwrap()),
             }) as _
         },
         #[cfg(feature = "csv")]
-        FileType::Csv(options) => {
+        FileWriteFormat::Csv(options) => {
             use polars_io::prelude::CsvSerializer;
 
             use crate::nodes::io_sinks2::writers::csv::CsvWriterStarter;
 
             Arc::new(CsvWriterStarter {
-                options: options.clone().into(),
+                options: Arc::new(options.clone()),
                 base_serializer: CsvSerializer::new(
                     file_schema.clone(),
-                    Arc::new(options.serialize_options.clone()),
+                    Arc::clone(&options.serialize_options),
                 )?
                 .into(),
                 schema: file_schema.clone(),
-                pipeline_depth,
-                sync_on_close,
                 initialized_state: Default::default(),
             }) as _
         },
         #[cfg(feature = "json")]
-        FileType::Json(polars_io::json::JsonWriterOptions {}) => {
-            use crate::nodes::io_sinks2::writers::ndjson::NDJsonWriterStarter;
-
-            Arc::new(NDJsonWriterStarter {
+        FileWriteFormat::NDJson(polars_io::json::JsonWriterOptions {}) => Arc::new(
+            crate::nodes::io_sinks2::writers::ndjson::NDJsonWriterStarter {
                 schema: file_schema.clone(),
-                pipeline_depth,
-                sync_on_close,
                 initialized_state: Default::default(),
-            }) as _
-        },
+            },
+        ) as _,
         #[cfg(not(any(
             feature = "parquet",
             feature = "ipc",

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use polars_core::prelude::SortMultipleOptions;
 use polars_core::schema::SchemaRef;
 use polars_plan::dsl::sink2::FileProviderType;
-use polars_plan::dsl::{FileType, SinkTarget, UnifiedSinkArgs};
+use polars_plan::dsl::{FileWriteFormat, SinkTarget, UnifiedSinkArgs};
 use polars_utils::plpath::{CloudScheme, PlPath};
 
 use crate::expression::StreamExpr;
@@ -13,50 +13,46 @@ use crate::nodes::io_sinks2::components::partitioner::Partitioner;
 use crate::nodes::io_sinks2::components::size::NonZeroRowCountAndSize;
 
 pub struct IOSinkNodeConfig {
-    pub file_format: Arc<FileType>,
+    pub file_format: FileWriteFormat,
     pub target: IOSinkTarget,
     pub unified_sink_args: UnifiedSinkArgs,
     pub input_schema: SchemaRef,
-    pub num_pipelines: usize,
 }
 
 impl IOSinkNodeConfig {
-    pub fn per_sink_pipeline_depth(&self) -> usize {
-        self.inflight_morsel_limit().min(self.num_pipelines)
+    pub fn num_pipelines_per_sink(&self, num_pipelines: NonZeroUsize) -> NonZeroUsize {
+        NonZeroUsize::min(num_pipelines, self.inflight_morsel_limit(num_pipelines))
     }
 
-    pub fn inflight_morsel_limit(&self) -> usize {
+    pub fn inflight_morsel_limit(&self, num_pipelines: NonZeroUsize) -> NonZeroUsize {
         if let Ok(v) = std::env::var("POLARS_INFLIGHT_SINK_MORSEL_LIMIT").map(|x| {
-            x.parse::<NonZeroUsize>()
-                .ok()
-                .unwrap_or_else(|| {
-                    panic!("invalid value for POLARS_INFLIGHT_SINK_MORSEL_LIMIT: {x}")
-                })
-                .get()
+            x.parse::<NonZeroUsize>().ok().unwrap_or_else(|| {
+                panic!("invalid value for POLARS_INFLIGHT_SINK_MORSEL_LIMIT: {x}")
+            })
         }) {
             return v;
         };
 
-        self.num_pipelines.saturating_add(
+        NonZeroUsize::saturating_add(
+            num_pipelines,
             // Additional buffer to accommodate head-of-line blocking
             4,
         )
     }
 
-    pub fn max_open_sinks(&self) -> usize {
+    pub fn max_open_sinks(&self) -> NonZeroUsize {
         if let Ok(v) = std::env::var("POLARS_MAX_OPEN_SINKS").map(|x| {
             x.parse::<NonZeroUsize>()
                 .ok()
                 .unwrap_or_else(|| panic!("invalid value for POLARS_MAX_OPEN_SINKS: {x}"))
-                .get()
         }) {
             return v;
         }
 
         if self.target.is_cloud_location() {
-            512
+            const { NonZeroUsize::new(512).unwrap() }
         } else {
-            128
+            const { NonZeroUsize::new(128).unwrap() }
         }
     }
 
