@@ -447,11 +447,12 @@ async fn compute_join(
             gather_build,
             gather_probe,
             &mut arenas.matched_probeside,
-            skip_build_rows,
+            probe_sp.emit_unmatched,
+            build_sp.emit_unmatched,
+            params.key_descending,
+            params.args.nulls_equal,
             morsel_size,
-            build_sp,
-            probe_sp,
-            params,
+            skip_build_rows,
         );
         let df = gather_and_postprocess(
             build.clone(),

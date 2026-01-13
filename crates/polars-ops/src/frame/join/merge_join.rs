@@ -51,11 +51,12 @@ pub fn match_keys(
     gather_build: &mut Vec<IdxSize>,
     gather_probe: &mut Vec<IdxSize>,
     matched_probe: &mut MutableBitmap,
-    skip_build_rows: usize,
+    probe_mark_matched: bool,
+    build_emit_unmatched: bool,
+    descending: bool,
+    nulls_equal: bool,
     limit_results: usize,
-    build_sp: &MergeJoinSideParams,
-    probe_sp: &MergeJoinSideParams,
-    params: &MergeJoinParams,
+    mut skip_build_rows: usize,
 ) -> (bool, usize) {
     macro_rules! dispatch {
         ($left_keys_ca:expr) => {
@@ -65,11 +66,12 @@ pub fn match_keys(
                 gather_build,
                 gather_probe,
                 matched_probe,
-                skip_build_rows,
+                probe_mark_matched,
+                build_emit_unmatched,
+                descending,
+                nulls_equal,
                 limit_results,
-                build_sp,
-                probe_sp,
-                params,
+                skip_build_rows,
             )
         };
     }
@@ -99,11 +101,12 @@ pub fn match_keys(
             gather_build,
             gather_probe,
             matched_probe,
-            skip_build_rows,
+            probe_mark_matched,
+            build_emit_unmatched,
+            descending,
+            nulls_equal,
             limit_results,
-            build_sp,
-            probe_sp,
-            params,
+            skip_build_rows,
         ),
         dt => unimplemented!("merge-join kernel not implemented for {:?}", dt),
     }
@@ -116,22 +119,22 @@ fn match_keys_impl<'a, T: PolarsDataType>(
     gather_left: &mut Vec<IdxSize>,
     gather_right: &mut Vec<IdxSize>,
     matched_right: &mut MutableBitmap,
-    mut skip_build_rows: usize,
+    probe_mark_matched: bool,
+    build_emit_unmatched: bool,
+    descending: bool,
+    nulls_equal: bool,
     limit_results: usize,
-    build_sp: &MergeJoinSideParams,
-    probe_sp: &MergeJoinSideParams,
-    params: &MergeJoinParams,
+    mut skip_build_rows: usize,
 ) -> (bool, usize)
 where
     T::Physical<'a>: TotalOrd,
 {
-    debug_assert!(gather_left.is_empty());
-    debug_assert!(gather_right.is_empty());
-    if probe_sp.emit_unmatched {
-        debug_assert!(matched_right.len() == right_keys.len());
+    assert!(gather_left.is_empty());
+    assert!(gather_right.is_empty());
+    if probe_mark_matched {
+        assert_eq!(matched_right.len(), right_keys.len());
     }
 
-    let descending = params.key_descending;
     let left_key = left_keys.downcast_as_array();
     let right_key = right_keys.downcast_as_array();
 
@@ -146,12 +149,12 @@ where
         }
         let left_keyval = left_keyval.as_ref();
         let mut matched = false;
-        if params.args.nulls_equal || left_keyval.is_some() {
+        if nulls_equal || left_keyval.is_some() {
             for idxr in skip_ahead_right..right_key.len() {
                 let right_keyval = unsafe { right_key.get_unchecked(idxr) };
                 let right_keyval = right_keyval.as_ref();
                 let mut ord: Option<Ordering> = match (&left_keyval, &right_keyval) {
-                    (None, None) if params.args.nulls_equal => Some(Ordering::Equal),
+                    (None, None) if nulls_equal => Some(Ordering::Equal),
                     (Some(l), Some(r)) => Some(TotalOrd::tot_cmp(*l, *r)),
                     _ => None,
                 };
@@ -160,7 +163,7 @@ where
                 }
                 if ord == Some(Ordering::Equal) {
                     matched = true;
-                    if probe_sp.emit_unmatched {
+                    if probe_mark_matched {
                         matched_right.set(idxr, true);
                     }
                     gather_left.push(idxl as IdxSize);
@@ -172,7 +175,7 @@ where
                 }
             }
         }
-        if build_sp.emit_unmatched && !matched {
+        if build_emit_unmatched && !matched {
             gather_left.push(idxl as IdxSize);
             gather_right.push(IdxSize::MAX);
         }
@@ -185,37 +188,39 @@ where
 fn match_null_keys_impl(
     left_n: usize,
     right_n: usize,
-    gather_left: &mut Vec<IdxSize>,
-    gather_right: &mut Vec<IdxSize>,
-    matched_right: &mut MutableBitmap,
-    mut skip_build_rows: usize,
+    gather_build: &mut Vec<IdxSize>,
+    gather_probe: &mut Vec<IdxSize>,
+    matched_probe: &mut MutableBitmap,
+    probe_mark_matched: bool,
+    build_emit_unmatched: bool,
+    descending: bool,
+    nulls_equal: bool,
     limit_results: usize,
-    left_sp: &MergeJoinSideParams,
-    right_sp: &MergeJoinSideParams,
-    params: &MergeJoinParams,
+    mut skip_build_rows: usize,
 ) -> (bool, usize) {
-    debug_assert!(gather_left.is_empty());
-    debug_assert!(gather_right.is_empty());
-    if right_sp.emit_unmatched {
-        debug_assert!(matched_right.len() == right_n);
+    assert!(gather_build.is_empty());
+    assert!(gather_probe.is_empty());
+    if probe_mark_matched {
+        assert_eq!(matched_probe.len(), right_n);
     }
-    if !params.args.nulls_equal {
+    if !nulls_equal {
         return (true, skip_build_rows);
     }
 
     for idxl in skip_build_rows..left_n {
-        gather_left.push(idxl as IdxSize);
         for idxr in 0..right_n {
-            gather_right.push(idxr as IdxSize);
-            if right_sp.emit_unmatched {
-                matched_right.set(idxr, true);
+            gather_build.push(idxl as IdxSize);
+            gather_probe.push(idxr as IdxSize);
+            if probe_mark_matched {
+                matched_probe.set(idxr, true);
             }
         }
-        if left_sp.emit_unmatched && right_n == 0 {
-            gather_right.push(IdxSize::MAX);
+        if build_emit_unmatched && right_n == 0 {
+            gather_probe.push(idxl as IdxSize);
+            gather_probe.push(IdxSize::MAX);
         }
         skip_build_rows += 1;
-        if gather_left.len() >= limit_results {
+        if gather_build.len() >= limit_results {
             return (false, skip_build_rows);
         }
     }
