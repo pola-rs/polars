@@ -1122,6 +1122,9 @@ pub fn lower_ir(
             let input_right_schema = IR::schema_with_cache(input_right, ir_arena, schema_cache);
             let left_on = left_on.clone();
             let right_on = right_on.clone();
+            let expr_is_column = |c: &ExprIR| matches!(expr_arena.get(c.node()), AExpr::Column(_));
+            let left_on_all_cols = left_on.iter().all(expr_is_column);
+            let right_on_all_cols = right_on.iter().all(expr_is_column);
             let get_expr_name = |e: &ExprIR| e.output_name().clone();
             let left_on_names = left_on.iter().map(get_expr_name).collect_vec();
             let right_on_names = right_on.iter().map(get_expr_name).collect_vec();
@@ -1181,7 +1184,9 @@ pub fn lower_ir(
                 trans_left_on.drain(left_on.len()..);
                 trans_right_on.drain(right_on.len()..);
 
-                let node = if args.how.is_equi() && left_is_sorted && right_is_sorted {
+                let can_use_merge_join =
+                    left_is_sorted && right_is_sorted && left_on_all_cols && right_on_all_cols;
+                let node = if args.how.is_equi() && can_use_merge_join {
                     let row_encode_key_cols = left_on_names.len() > 1;
                     if row_encode_key_cols {
                         // For merge-joins, row-encode key columns if there are more than one
