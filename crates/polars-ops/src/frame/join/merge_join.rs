@@ -45,17 +45,17 @@ impl MergeJoinParams {
 }
 
 pub struct MergeJoin<'a> {
-    build: DataFrame,
-    probe: DataFrame,
-    build_keys: Series,
-    probe_keys: Series,
-    params: &'a MergeJoinParams,
-    build_sp: &'a MergeJoinSideParams,
-    probe_sp: &'a MergeJoinSideParams,
-    gather_build: &'a mut Vec<IdxSize>,
-    gather_probe: &'a mut Vec<IdxSize>,
-    matched_probeside: &'a mut MutableBitmap,
-    df_builders: &'a mut Option<(DataFrameBuilder, DataFrameBuilder)>,
+    pub build: DataFrame,
+    pub probe: DataFrame,
+    pub build_keys: Series,
+    pub probe_keys: Series,
+    pub params: &'a MergeJoinParams,
+    pub build_sp: &'a MergeJoinSideParams,
+    pub probe_sp: &'a MergeJoinSideParams,
+    pub gather_build: &'a mut Vec<IdxSize>,
+    pub gather_probe: &'a mut Vec<IdxSize>,
+    pub matched_probeside: &'a mut MutableBitmap,
+    pub df_builders: &'a mut Option<(DataFrameBuilder, DataFrameBuilder)>,
     match_keys_done: bool,
     skip_build_rows: usize,
 }
@@ -171,7 +171,7 @@ impl<'a> MergeJoin<'a> {
         Ok(Some(df))
     }
 
-    pub fn unmatched(self) -> PolarsResult<DataFrame> {
+    pub fn next_unmatched_chunk(self) -> PolarsResult<DataFrame> {
         assert!(self.match_keys_done);
         if !self.probe_sp.emit_unmatched {
             return Ok(DataFrame::empty_with_schema(&self.params.output_schema));
@@ -443,14 +443,8 @@ pub fn gather_and_postprocess(
             DataFrameBuilder::new(right.schema().clone()),
         ));
     }
-    let (left_build, right_build) = df_builders.as_mut().unwrap();
-    if *left_build.schema() != **left.schema() {
-        *left_build = DataFrameBuilder::new(left.schema().clone());
-    }
-    if *right_build.schema() != **right.schema() {
-        *right_build = DataFrameBuilder::new(right.schema().clone());
-    }
 
+    let (left_build, right_build) = df_builders.as_mut().unwrap();
     if params.right.emit_unmatched {
         left_build.opt_gather_extend(&left, gather_left, ShareStrategy::Never);
     } else {
