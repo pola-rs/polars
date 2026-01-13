@@ -10,9 +10,6 @@ use polars_core::{with_match_physical_float_polars_type, with_match_physical_num
 use polars_ops::series::SeriesMethods;
 use polars_utils::float::IsFloat;
 
-use super::rolling_kernels::shared::{
-    RollingAggWindowNoNullsWrapper, RollingAggWindowNullsWrapper, rolling_apply_agg,
-};
 use super::*;
 use crate::prelude::*;
 use crate::series::AsSeries;
@@ -83,6 +80,10 @@ where
     NoNullsAgg: RollingAggWindowNoNulls<T::Native, Out>,
     NullsAgg: RollingAggWindowNulls<T::Native, Out>,
 {
+    use crate::chunkedarray::rolling_window::rolling_kernels::shared::{
+        RollingAggWindowNoNullsWrapper, RollingAggWindowNullsWrapper, rolling_apply_agg,
+    };
+
     if ca.is_empty() {
         return Ok(Series::new_empty(ca.name().clone(), ca.dtype()));
     }
