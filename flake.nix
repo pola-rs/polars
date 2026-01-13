@@ -39,11 +39,8 @@
               rustc = rustToolchain;
             };
 
-            # Create a python platform that contains the python interpreter and its packages
-            # in a single set that can be reused throughout this flake.
-            pythonPlatform = lib.recursiveUpdate {
-              python = pkgs.python311;
-            } pkgs.python311Packages;
+            # Create an alias for python packages, such that we can use the same python version for everything
+            py = pkgs.python313Packages;
 
           in
           {
@@ -327,9 +324,9 @@
                 packages =
                   with pkgs;
                   [
-                    pythonPlatform.python
-                    pythonPlatform.venvShellHook
-                    pythonPlatform.build
+                    py.python
+                    py.venvShellHook
+                    py.build
 
                     rustPkg
 
@@ -452,7 +449,7 @@
               let
                 project = builtins.fromTOML (builtins.readFile ./py-polars/Cargo.toml);
               in
-              pkgs.python3Packages.buildPythonPackage {
+              py.buildPythonPackage {
                 pname = "polars";
                 version = project.package.version;
 
