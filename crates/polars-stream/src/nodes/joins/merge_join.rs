@@ -9,7 +9,8 @@ use either::{Either, Left, Right};
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
 use polars_core::utils::Container;
-use polars_ops::prelude::*;
+use polars_ops::frame::merge_join::*;
+use polars_ops::frame::{JoinArgs, JoinType, MaintainOrderJoin};
 use polars_utils::UnitVec;
 use polars_utils::itertools::Itertools;
 
