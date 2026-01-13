@@ -20,7 +20,7 @@ use crate::nodes::io_sources::multi_scan::components::projection::{
 };
 
 /// Provides projections for columns that are sourced from the file.
-#[derive(Debug, Clone, strum_macros::IntoStaticStr)]
+#[derive(Debug, Clone)]
 pub enum ProjectionBuilder {
     Plain(SchemaRef),
     Iceberg {

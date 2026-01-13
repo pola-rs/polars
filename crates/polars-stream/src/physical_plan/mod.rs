@@ -115,7 +115,7 @@ pub enum ZipBehavior {
     Strict,
 }
 
-#[derive(Clone, Debug, strum_macros::IntoStaticStr)]
+#[derive(Clone, Debug)]
 pub enum PhysNodeKind {
     InMemorySource {
         df: Arc<DataFrame>,
