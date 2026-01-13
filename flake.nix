@@ -73,6 +73,7 @@
             #     maturinBuildFlags = [
             #       "-m"
             #       "py-polars/runtime/polars-runtime-32/Cargo.toml"
+            #       "--uv"
             #     ];
             #
             #     cargoDeps = rustPlatform.importCargoLock {
@@ -153,32 +154,32 @@
                   };
                   pybuild = {
                     pwd = "py-polars";
-                    cmd = buildPy "debug" "maturin develop -m $WORKSPACE_ROOT/py-polars/runtime/polars-runtime-32/Cargo.toml \"$@\"";
+                    cmd = buildPy "debug" "maturin develop -m $WORKSPACE_ROOT/py-polars/runtime/polars-runtime-32/Cargo.toml \"$@\" --uv";
                     doc = "Build the python library";
                   };
                   pybuild-mindebug = {
                     pwd = "py-polars";
-                    cmd = buildPy "mindebug" "maturin develop --profile mindebug-dev \"$@\"";
+                    cmd = buildPy "mindebug" "maturin develop --profile mindebug-dev \"$@\" --uv";
                     doc = "Build the python library with minimal debug information";
                   };
                   pybuild-nodebug-release = {
                     pwd = "py-polars";
-                    cmd = buildPy "nodebug-release" "maturin develop --profile nodebug-release \"$@\"";
+                    cmd = buildPy "nodebug-release" "maturin develop --profile nodebug-release \"$@\" --uv";
                     doc = "Build the python library in release mode without debug symbols";
                   };
                   pybuild-release = {
                     pwd = "py-polars";
-                    cmd = buildPy "release" "maturin develop --profile release \"$@\"";
+                    cmd = buildPy "release" "maturin develop --profile release \"$@\" --uv";
                     doc = "Build the python library in release mode with minimal debug symbols";
                   };
                   pybuild-debug-release = {
                     pwd = "py-polars";
-                    cmd = buildPy "debug-release" "maturin develop --profile debug-release \"$@\"";
+                    cmd = buildPy "debug-release" "maturin develop --profile debug-release \"$@\" --uv";
                     doc = "Build the python library in release mode with full debug symbols";
                   };
                   pybuild-dist-release = {
                     pwd = "py-polars";
-                    cmd = buildPy "dist-release" "maturin develop --profile dist-release \"$@\"";
+                    cmd = buildPy "dist-release" "maturin develop --profile dist-release \"$@\" --uv";
                     doc = "Build the python library in release mode which would be distributed to users";
                   };
                   pyselect-build = {
@@ -467,6 +468,7 @@
                 maturinBuildFlags = [
                   "-m"
                   "py-polars/runtime/polars-runtime-32/Cargo.toml"
+                  "--uv"
                 ];
                 postInstall = ''
 									# Move polars.abi3.so -> polars.so
