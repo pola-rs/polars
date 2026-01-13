@@ -149,6 +149,8 @@ impl fmt::Debug for Expr {
                             write!(f, "{input:?}.max()")
                         }
                     },
+                    ArgMin(expr) => write!(f, "{expr:?}.arg_min()"),
+                    ArgMax(expr) => write!(f, "{expr:?}.arg_max()"),
                     MinBy { input, by } => {
                         write!(f, "{input:?}.min_by({by:?})")
                     },

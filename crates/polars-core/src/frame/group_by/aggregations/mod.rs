@@ -510,6 +510,206 @@ where
         }
     }
 
+    pub(crate) unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+        match self.is_sorted_flag() {
+            IsSorted::Ascending => {
+                return self.clone().into_series().agg_arg_first_non_null(groups);
+            },
+            IsSorted::Descending => {
+                return self.clone().into_series().agg_arg_last_non_null(groups);
+            },
+            _ => {},
+        }
+
+        #[inline]
+        fn eq_min<V: PartialEq + Copy>(v: V, m: V) -> bool {
+            (v == m) || ((v != v) && (m != m))
+        }
+
+        match groups {
+            GroupsType::Idx(groups) => {
+                let ca = self.rechunk();
+                let arr = ca.downcast_iter().next().unwrap();
+                let no_nulls = arr.null_count() == 0;
+
+                agg_helper_idx_on_all::<IdxType, _>(groups, |idx| {
+                    if idx.is_empty() {
+                        return None;
+                    }
+
+                    let mut best_pos: Option<IdxSize> = None;
+                    let mut best_val: Option<T::Native> = None;
+
+                    if no_nulls {
+                        for (pos, &i) in idx.iter().enumerate() {
+                            let v = arr.value_unchecked(i as usize);
+                            match best_val {
+                                None => {
+                                    best_val = Some(v);
+                                    best_pos = Some(pos as IdxSize);
+                                },
+                                Some(cur) => {
+                                    let mv = v.min_ignore_nan(cur);
+                                    if mv == v && !eq_min(v, cur) {
+                                        best_val = Some(v);
+                                        best_pos = Some(pos as IdxSize);
+                                    }
+                                },
+                            }
+                        }
+                    } else {
+                        for (pos, &i) in idx.iter().enumerate() {
+                            if let Some(v) = arr.get(i as usize) {
+                                match best_val {
+                                    None => {
+                                        best_val = Some(v);
+                                        best_pos = Some(pos as IdxSize);
+                                    },
+                                    Some(cur) => {
+                                        let mv = v.min_ignore_nan(cur);
+                                        if mv == v && !eq_min(v, cur) {
+                                            best_val = Some(v);
+                                            best_pos = Some(pos as IdxSize);
+                                        }
+                                    },
+                                }
+                            }
+                        }
+                    }
+
+                    best_pos
+                })
+            },
+            GroupsType::Slice {
+                groups: groups_slice,
+                overlapping,
+                monotonic,
+            } => {
+                let ca = self.rechunk();
+                let arr = ca.downcast_iter().next().unwrap();
+                let no_nulls = arr.null_count() == 0;
+
+                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
+                    let values = arr.values().as_slice();
+                    let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
+
+                    let mins_arr = match arr.validity() {
+                        None => _rolling_apply_agg_window_no_nulls::<MinWindow<_>, _, _>(
+                            values,
+                            offset_iter,
+                            None,
+                        ),
+                        Some(validity) => _rolling_apply_agg_window_nulls::<
+                            rolling::nulls::MinWindow<_>,
+                            _,
+                            _,
+                        >(
+                            values, validity, offset_iter, None
+                        ),
+                    };
+
+                    let mins_ca = Self::from(mins_arr);
+                    let mins = mins_ca.downcast_iter().next().unwrap();
+
+                    let out: IdxCa = groups_slice
+                        .iter()
+                        .enumerate()
+                        .map(|(g, &[first, len])| -> Option<IdxSize> {
+                            if len == 0 {
+                                return None;
+                            }
+
+                            let m = mins.get(g)?;
+
+                            let start = first as usize;
+                            let end = (first + len) as usize;
+
+                            if no_nulls {
+                                for (pos, i) in (start..end).enumerate() {
+                                    let v = arr.value_unchecked(i);
+                                    if eq_min(v, m) {
+                                        return Some(pos as IdxSize);
+                                    }
+                                }
+                            } else {
+                                for (pos, i) in (start..end).enumerate() {
+                                    if let Some(v) = arr.get(i) {
+                                        if eq_min(v, m) {
+                                            return Some(pos as IdxSize);
+                                        }
+                                    }
+                                }
+                            }
+
+                            None
+                        })
+                        .collect_ca(PlSmallStr::EMPTY);
+
+                    out.into_series()
+                } else {
+                    _agg_helper_slice::<IdxType, _>(groups_slice, |[first, len]| {
+                        if len == 0 {
+                            return None;
+                        }
+                        if len == 1 {
+                            let i = first as usize;
+                            return if no_nulls {
+                                Some(0 as IdxSize)
+                            } else {
+                                arr.get(i).map(|_| 0 as IdxSize)
+                            };
+                        }
+
+                        let start = first as usize;
+                        let end = (first + len) as usize;
+
+                        let mut best_pos: Option<IdxSize> = None;
+                        let mut best_val: Option<T::Native> = None;
+
+                        if no_nulls {
+                            for (pos, i) in (start..end).enumerate() {
+                                let v = arr.value_unchecked(i);
+                                match best_val {
+                                    None => {
+                                        best_val = Some(v);
+                                        best_pos = Some(pos as IdxSize);
+                                    },
+                                    Some(cur) => {
+                                        let mv = v.min_ignore_nan(cur);
+                                        if mv == v && !eq_min(v, cur) {
+                                            best_val = Some(v);
+                                            best_pos = Some(pos as IdxSize);
+                                        }
+                                    },
+                                }
+                            }
+                        } else {
+                            for (pos, i) in (start..end).enumerate() {
+                                if let Some(v) = arr.get(i) {
+                                    match best_val {
+                                        None => {
+                                            best_val = Some(v);
+                                            best_pos = Some(pos as IdxSize);
+                                        },
+                                        Some(cur) => {
+                                            let mv = v.min_ignore_nan(cur);
+                                            if mv == v && !eq_min(v, cur) {
+                                                best_val = Some(v);
+                                                best_pos = Some(pos as IdxSize);
+                                            }
+                                        },
+                                    }
+                                }
+                            }
+                        }
+
+                        best_pos
+                    })
+                }
+            },
+        }
+    }
+
     pub(crate) unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
         // faster paths
         if groups.is_sorted_flag() {
@@ -577,6 +777,210 @@ where
                                 ChunkAgg::max(&arr_group)
                             },
                         }
+                    })
+                }
+            },
+        }
+    }
+
+    pub(crate) unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+        match (self.is_sorted_flag(), self.null_count()) {
+            (IsSorted::Ascending, 0) => {
+                return self.clone().into_series().agg_arg_last(groups); // must be group-local impl
+            },
+            (IsSorted::Descending, 0) => {
+                return self.clone().into_series().agg_arg_first(groups); // must be group-local impl
+            },
+            _ => {},
+        }
+
+        #[inline]
+        fn eq_max<V: PartialEq + Copy>(v: V, m: V) -> bool {
+            (v == m) || ((v != v) && (m != m))
+        }
+
+        match groups {
+            GroupsType::Idx(groups) => {
+                let ca = self.rechunk();
+                let arr = ca.downcast_iter().next().unwrap();
+                let no_nulls = arr.null_count() == 0;
+
+                agg_helper_idx_on_all::<IdxType, _>(groups, |idx| {
+                    if idx.is_empty() {
+                        return None;
+                    }
+
+                    if no_nulls {
+                        // Initialize from the first element (safe because idx non-empty).
+                        let mut best_pos: IdxSize = 0;
+                        let mut best_val: T::Native = arr.value_unchecked(idx[0] as usize);
+
+                        for (pos, &i) in idx.iter().enumerate().skip(1) {
+                            let v = arr.value_unchecked(i as usize);
+
+                            // max_ignore_nan decides which value is "better" for max semantics.
+                            let mv = v.max_ignore_nan(best_val);
+
+                            // Update only if v is strictly better than current best.
+                            // eq_max handles NaN==NaN for float matching; for ints it reduces to v==best_val.
+                            if mv == v && !eq_max(v, best_val) {
+                                best_val = v;
+                                best_pos = pos as IdxSize;
+                            }
+                        }
+
+                        Some(best_pos)
+                    } else {
+                        let mut best_pos: Option<IdxSize> = None;
+                        let mut best_val: Option<T::Native> = None;
+
+                        for (pos, &i) in idx.iter().enumerate() {
+                            if let Some(v) = arr.get(i as usize) {
+                                match best_val {
+                                    None => {
+                                        best_val = Some(v);
+                                        best_pos = Some(pos as IdxSize);
+                                    },
+                                    Some(cur) => {
+                                        let mv = v.max_ignore_nan(cur);
+                                        if mv == v && !eq_max(v, cur) {
+                                            best_val = Some(v);
+                                            best_pos = Some(pos as IdxSize);
+                                        }
+                                    },
+                                }
+                            }
+                        }
+
+                        best_pos
+                    }
+                })
+            },
+
+            GroupsType::Slice {
+                groups: groups_slice,
+                overlapping,
+                monotonic,
+            } => {
+                let ca = self.rechunk();
+                let arr = ca.downcast_iter().next().unwrap();
+                let no_nulls = arr.null_count() == 0;
+
+                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
+                    let values = arr.values().as_slice();
+                    let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
+
+                    let maxs_arr = match arr.validity() {
+                        None => _rolling_apply_agg_window_no_nulls::<MaxWindow<_>, _, _>(
+                            values,
+                            offset_iter,
+                            None,
+                        ),
+                        Some(validity) => _rolling_apply_agg_window_nulls::<
+                            rolling::nulls::MaxWindow<_>,
+                            _,
+                            _,
+                        >(
+                            values, validity, offset_iter, None
+                        ),
+                    };
+
+                    let maxs_ca = Self::from(maxs_arr);
+                    let maxs = maxs_ca.downcast_iter().next().unwrap();
+
+                    let out: IdxCa = groups_slice
+                        .iter()
+                        .enumerate()
+                        .map(|(g, &[first, len])| -> Option<IdxSize> {
+                            if len == 0 {
+                                return None;
+                            }
+
+                            let m = maxs.get(g)?;
+
+                            let start = first as usize;
+                            let end = (first + len) as usize;
+
+                            if no_nulls {
+                                for (pos, i) in (start..end).enumerate() {
+                                    let v = arr.value_unchecked(i);
+                                    if eq_max(v, m) {
+                                        return Some(pos as IdxSize);
+                                    }
+                                }
+                            } else {
+                                for (pos, i) in (start..end).enumerate() {
+                                    if let Some(v) = arr.get(i) {
+                                        if eq_max(v, m) {
+                                            return Some(pos as IdxSize);
+                                        }
+                                    }
+                                }
+                            }
+
+                            None
+                        })
+                        .collect_ca(PlSmallStr::EMPTY);
+
+                    out.into_series()
+                } else {
+                    _agg_helper_slice::<IdxType, _>(groups_slice, |[first, len]| {
+                        if len == 0 {
+                            return None;
+                        }
+                        if len == 1 {
+                            let i = first as usize;
+                            return if no_nulls {
+                                Some(0 as IdxSize)
+                            } else {
+                                arr.get(i).map(|_| 0 as IdxSize)
+                            };
+                        }
+
+                        let start = first as usize;
+                        let end = (first + len) as usize;
+
+                        let mut best_pos: Option<IdxSize> = None;
+                        let mut best_val: Option<T::Native> = None;
+
+                        if no_nulls {
+                            for (pos, i) in (start..end).enumerate() {
+                                let v = arr.value_unchecked(i);
+                                match best_val {
+                                    None => {
+                                        best_val = Some(v);
+                                        best_pos = Some(pos as IdxSize);
+                                    },
+                                    Some(cur) => {
+                                        let mv = v.max_ignore_nan(cur);
+                                        if mv == v && !eq_max(v, cur) {
+                                            best_val = Some(v);
+                                            best_pos = Some(pos as IdxSize);
+                                        }
+                                    },
+                                }
+                            }
+                        } else {
+                            for (pos, i) in (start..end).enumerate() {
+                                if let Some(v) = arr.get(i) {
+                                    match best_val {
+                                        None => {
+                                            best_val = Some(v);
+                                            best_pos = Some(pos as IdxSize);
+                                        },
+                                        Some(cur) => {
+                                            let mv = v.max_ignore_nan(cur);
+                                            if mv == v && !eq_max(v, cur) {
+                                                best_val = Some(v);
+                                                best_pos = Some(pos as IdxSize);
+                                            }
+                                        },
+                                    }
+                                }
+                            }
+                        }
+
+                        best_pos
                     })
                 }
             },

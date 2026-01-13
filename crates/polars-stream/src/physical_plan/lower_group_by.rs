@@ -98,6 +98,22 @@ fn replace_agg_uniq(
     aexpr.inputs_rev(&mut inputs);
     inputs.reverse();
 
+    if inputs
+        .iter()
+        .any(|i| is_input_independent(*i, expr_arena, expr_cache))
+    {
+        // TODO: we could simply return expr here, but we first need an is_scalar function, because if
+        // it is not a scalar we need to return expr.implode().
+        return None;
+    }
+
+    if !inputs
+        .iter()
+        .all(|i| is_elementwise_rec_cached(*i, expr_arena, expr_cache))
+    {
+        return None;
+    }
+
     let agg_id = expr_merger.get_uniq_id(expr).unwrap();
     let name = uniq_agg_exprs
         .entry(agg_id)

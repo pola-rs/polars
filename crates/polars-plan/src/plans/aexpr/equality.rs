@@ -115,6 +115,8 @@ impl IRAggExpr {
             A::Var(_, l_ddof) => matches!(other, A::Var(_, r_ddof) if l_ddof == r_ddof),
 
             // Discriminant check done above.
+            A::ArgMin { .. } |
+            A::ArgMax { .. } |
             A::Median(_) |
             A::NUnique(_) |
             A::First(_) |

@@ -61,6 +61,9 @@ impl TreeWalker for Expr {
             Agg(agg_expr) => Agg(match agg_expr {
                 Min { input, propagate_nans } => Min { input: am(input, f)?, propagate_nans },
                 Max { input, propagate_nans } => Max { input: am(input, f)?, propagate_nans },
+ArgMin(input) => ArgMin(am(input, f)?),
+ArgMax(input) => ArgMax(am(input, f)?),
+
                 MinBy { input, by } => MinBy { input: am(input, &mut f)?, by: am(by, f)? },
                 MaxBy { input, by } =>  MaxBy { input: am(input, &mut f)?, by: am(by, f)? },
                 Median(x) => Median(am(x, f)?),
@@ -78,6 +81,7 @@ impl TreeWalker for Expr {
                 AggGroups(x) => AggGroups(am(x, f)?),
                 Std(x, ddf) => Std(am(x, f)?, ddf),
                 Var(x, ddf) => Var(am(x, f)?, ddf),
+
             }),
             Ternary { predicate, truthy, falsy } => Ternary { predicate: am(predicate, &mut f)?, truthy: am(truthy, &mut f)?, falsy: am(falsy, f)? },
             Function { input, function } => Function { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function },

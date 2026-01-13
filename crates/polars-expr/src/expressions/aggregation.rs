@@ -6,6 +6,7 @@ use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::{_split_offsets, NoNull};
+use polars_ops::prelude::ArgAgg;
 #[cfg(feature = "propagate_nans")]
 use polars_ops::prelude::nan_propagating_aggregate;
 use rayon::prelude::*;
@@ -160,6 +161,20 @@ impl PhysicalExpr for AggregationExpr {
                 .var_reduce(ddof)
                 .map(|sc| sc.into_column(s.name().clone())),
             GroupByMethod::Quantile(_, _) => unimplemented!(),
+            GroupByMethod::ArgMin => {
+                let opt = s.as_materialized_series().arg_min();
+                Ok(opt.map_or_else(
+                    || Column::full_null(s.name().clone(), 1, &IDX_DTYPE),
+                    |idx| IdxCa::from_slice(s.name().clone(), &[idx as IdxSize]).into_column(),
+                ))
+            },
+            GroupByMethod::ArgMax => {
+                let opt = s.as_materialized_series().arg_max();
+                Ok(opt.map_or_else(
+                    || Column::full_null(s.name().clone(), 1, &IDX_DTYPE),
+                    |idx| IdxCa::from_slice(s.name().clone(), &[idx as IdxSize]).into_column(),
+                ))
+            },
         }
     }
     #[allow(clippy::ptr_arg)]
@@ -195,6 +210,18 @@ impl PhysicalExpr for AggregationExpr {
                 GroupByMethod::Max => {
                     let (c, groups) = ac.get_final_aggregation();
                     let agg_c = c.agg_max(&groups);
+                    AggregatedScalar(agg_c.with_name(keep_name))
+                },
+                GroupByMethod::ArgMin => {
+                    eprintln!("HIT GroupByMethod::ArgMin in AggregationExpr::evaluate_on_groups");
+
+                    let (c, groups) = ac.get_final_aggregation();
+                    let agg_c = c.agg_arg_min(&groups); // you will add this
+                    AggregatedScalar(agg_c.with_name(keep_name))
+                },
+                GroupByMethod::ArgMax => {
+                    let (c, groups) = ac.get_final_aggregation();
+                    let agg_c = c.agg_arg_max(&groups); // you will add this
                     AggregatedScalar(agg_c.with_name(keep_name))
                 },
                 GroupByMethod::Median => {

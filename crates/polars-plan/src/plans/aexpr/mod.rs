@@ -79,6 +79,12 @@ pub enum IRAggExpr {
     Std(Node, u8),
     Var(Node, u8),
     AggGroups(Node),
+    ArgMin {
+        input: Node,
+    },
+    ArgMax {
+        input: Node,
+    },
 }
 
 impl Hash for IRAggExpr {
@@ -175,7 +181,8 @@ impl From<IRAggExpr> for GroupByMethod {
             Std(_, ddof) => GroupByMethod::Std(ddof),
             Var(_, ddof) => GroupByMethod::Var(ddof),
             AggGroups(_) => GroupByMethod::Groups,
-
+            ArgMin { .. } => GroupByMethod::ArgMin,
+            ArgMax { .. } => GroupByMethod::ArgMax,
             // Multi-input aggregations.
             Quantile { .. } | MinBy { .. } | MaxBy { .. } => unreachable!(),
         }

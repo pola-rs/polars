@@ -282,14 +282,12 @@ impl Expr {
 
     /// Get the index value that has the minimum value.
     pub fn arg_min(self) -> Self {
-        self.map_unary(FunctionExpr::ArgMin)
+        Expr::Agg(AggExpr::ArgMin(Arc::new(self)))
     }
-
     /// Get the index value that has the maximum value.
     pub fn arg_max(self) -> Self {
-        self.map_unary(FunctionExpr::ArgMax)
+        Expr::Agg(AggExpr::ArgMax(Arc::new(self)))
     }
-
     /// Get the index values that would sort this expression.
     pub fn arg_sort(self, descending: bool, nulls_last: bool) -> Self {
         self.map_unary(FunctionExpr::ArgSort {

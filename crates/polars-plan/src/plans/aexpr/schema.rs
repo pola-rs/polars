@@ -250,6 +250,11 @@ impl AExpr {
                         let mapper = FieldsMapper::new(&field);
                         mapper.moment_dtype()
                     },
+                    ArgMin { input } | ArgMax { input } => {
+                        let mut field = ctx.arena.get(*input).to_field_impl(ctx)?;
+                        field.coerce(IDX_DTYPE);
+                        Ok(field)
+                    },
                 }
             },
             Cast { expr, dtype, .. } => {
@@ -423,6 +428,8 @@ impl AExpr {
             | Slice { input: expr, .. }
             | Agg(Min { input: expr, .. })
             | Agg(Max { input: expr, .. })
+            | Agg(ArgMin { input: expr })
+            | Agg(ArgMax { input: expr })
             | Agg(MinBy { input: expr, .. })
             | Agg(MaxBy { input: expr, .. })
             | Agg(First(expr))

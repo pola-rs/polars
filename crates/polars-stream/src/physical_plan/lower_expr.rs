@@ -1953,7 +1953,9 @@ fn lower_exprs_with_ctx(
                 IRAggExpr::Median(_)
                 | IRAggExpr::Implode(_)
                 | IRAggExpr::Quantile { .. }
-                | IRAggExpr::AggGroups(_) => {
+                | IRAggExpr::AggGroups(_)
+                | IRAggExpr::ArgMin { .. }
+                | IRAggExpr::ArgMax { .. } => {
                     let out_name = unique_column_name();
                     fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
                     transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
