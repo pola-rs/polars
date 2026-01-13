@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use arrow::array::TryExtend;
 use arrow::io::ipc::read::{Dictionaries, ProjectionInfo};
-use arrow::io::ipc::write::KeyValue;
+use arrow::io::ipc::write::KeyValueRef;
 use polars_core::chunked_array::flags::StatisticsFlags;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::PlHashMap;
@@ -114,16 +114,16 @@ impl RecordBatchDecoder {
 }
 
 fn get_flags(
-    metadata: &Option<Vec<KeyValue>>,
+    metadata: &Option<Vec<KeyValueRef>>,
 ) -> PolarsResult<Option<Vec<Option<StatisticsFlags>>>> {
     if let Some(metadata) = metadata {
         for kv in metadata {
-            if let Some(key) = &kv.key
-                && *key == IPC_RW_RECORD_BATCH_FLAGS_KEY
+            if let Some(key) = kv.key()?
+                && key == IPC_RW_RECORD_BATCH_FLAGS_KEY
             {
-                match &kv.value {
+                match kv.value()? {
                     Some(s) => {
-                        let flags: Vec<u32> = serde_json::from_str(s.as_str())
+                        let flags: Vec<u32> = serde_json::from_str(s)
                             .map_err(|e| polars_err!(ComputeError: "Unable to parse IPC statistics flags: {}", e))?;
                         let flags = flags
                             .iter()

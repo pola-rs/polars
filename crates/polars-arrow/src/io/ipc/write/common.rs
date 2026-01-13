@@ -359,7 +359,7 @@ pub fn encode_record_batch(
         variadic_buffer_counts,
         buffers,
         nodes,
-        None, //kdn TODO review use case
+        None,
         encoded_message,
     );
 }

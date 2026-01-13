@@ -1,6 +1,6 @@
 use std::io::{Read, Seek};
 
-use arrow_format::ipc::KeyValue;
+use arrow_format::ipc::KeyValueRef;
 use polars_error::{PolarsResult, polars_err};
 
 use super::common::*;
@@ -227,36 +227,28 @@ impl<R: Read + Seek> BlockReader<R> {
     }
 
     /// Reads the record batch header and returns the custom_metadata.
-    pub fn record_batch_custom_metadata(
+    pub fn record_batch_custom_metadata<'a>(
         &mut self,
-        message_scratch: &mut Vec<u8>,
-    ) -> PolarsResult<Option<Vec<KeyValue>>> {
+        message_scratch: &'a mut Vec<u8>,
+    ) -> PolarsResult<Option<Vec<KeyValueRef<'a>>>> {
         let offset: u64 = 0;
         let message = get_message_from_block_offset(&mut self.reader, offset, message_scratch)?;
         let custom_metadata = message.custom_metadata()?;
 
-        //kdn TODO - use KeyValueRefs instead of KeyValue
         custom_metadata
             .map(|kv_results| {
                 kv_results
-                    .iter()
+                    .into_iter()
                     .map(|res| {
-                        let kv_ref =
-                            res.map_err(|e| polars_err!(ComputeError: "failed to get KeyValue from IPC custom metadata: {}", e))?;
-
-                        let key = kv_ref
-                            .key()
-                            .map_err(|e| polars_err!(ComputeError: "failed to extract key from IPC custom metadata: {}", e))?
-                            .map(|s| s.to_string());
-
-                        let value = kv_ref
-                            .value()
-                            .map_err(|e| polars_err!(ComputeError: "failed to extract value from IPC custom metadata: {}", e))?
-                            .map(|s| s.to_string());
-
-                        Ok(KeyValue { key, value })
+                        res.map_err(|e| {
+                            polars_err!(
+                                ComputeError:
+                                "failed to get KeyValue from IPC custom metadata: {}",
+                                e
+                            )
+                        })
                     })
-                    .collect::<PolarsResult<Vec<KeyValue>>>()
+                    .collect::<Result<Vec<KeyValueRef>, _>>()
             })
             .transpose()
     }

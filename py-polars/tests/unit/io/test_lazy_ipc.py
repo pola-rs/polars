@@ -352,7 +352,7 @@ def test_scan_ipc_compression_with_slice_26063(
 def test_sink_scan_ipc_round_trip_statistics(monkeypatch: Any) -> None:
     monkeypatch.setenv("POLARS_IPC_RW_RECORD_BATCH_STATISTICS_FLAGS", "1")
 
-    n_rows = 4_000  # must be high to avoid inference
+    n_rows = 4_000  # must be high to avoid sortedness inference
     buf = io.BytesIO()
 
     df = (
@@ -380,6 +380,10 @@ def test_sink_scan_ipc_round_trip_statistics(monkeypatch: Any) -> None:
     assert out._to_metadata().select(pl.col("sorted_asc").sum()).item() == 0
     assert out._to_metadata().select(pl.col("sorted_dsc").sum()).item() == 0
 
+    # remain pyarrow compatible
+    out = pl.read_ipc(buf, use_pyarrow=True)
+    assert_frame_equal(df, out)
+
 
 @pytest.mark.parametrize(
     "selection",
@@ -390,7 +394,7 @@ def test_sink_scan_ipc_round_trip_statistics_projection(
     selection: list[str], record_batch_size: int, monkeypatch: Any
 ) -> None:
     monkeypatch.setenv("POLARS_IPC_RW_RECORD_BATCH_STATISTICS_FLAGS", "1")
-    n_rows = 4_000  # must be high to avoid inference
+    n_rows = 4_000  # must be high to avoid sortedness inference
     buf = io.BytesIO()
 
     df = (
