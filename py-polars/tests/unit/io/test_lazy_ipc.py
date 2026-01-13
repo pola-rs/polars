@@ -373,6 +373,13 @@ def test_sink_scan_ipc_round_trip_statistics(monkeypatch: Any) -> None:
     out = pl.scan_ipc(buf).collect()
     assert_frame_equal(metadata, out._to_metadata())
 
+    # do not read unless requested
+    monkeypatch.setenv("POLARS_IPC_RW_RECORD_BATCH_STATISTICS_FLAGS", "0")
+
+    out = pl.scan_ipc(buf).collect()
+    assert out._to_metadata().select(pl.col("sorted_asc").sum()).item() == 0
+    assert out._to_metadata().select(pl.col("sorted_dsc").sum()).item() == 0
+
 
 @pytest.mark.parametrize(
     "selection",
