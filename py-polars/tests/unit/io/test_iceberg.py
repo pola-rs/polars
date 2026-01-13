@@ -49,7 +49,7 @@ from pyiceberg.types import (
 
 import polars as pl
 from polars._utils.various import parse_version
-from polars.io.iceberg._utils import _convert_predicate, _to_ast
+from polars.io.iceberg._utils import _convert_predicate, _to_ast, try_convert_pyarrow_predicate
 from polars.io.iceberg.dataset import IcebergDataset, _NativeIcebergScanData
 from polars.testing import assert_frame_equal
 
@@ -150,6 +150,15 @@ class TestIcebergScanIO:
             (3, "3", datetime(2023, 3, 2, 22, 0)),
         ]
 
+    def test_scan_iceberg_filter_on_true_false(self, iceberg_path: str) -> None:
+        lf = pl.scan_iceberg(iceberg_path)
+
+        res = lf.filter(pl.lit(True))
+        assert len(res.collect()) == 3
+
+        res = lf.filter(pl.lit(False))
+        assert len(res.collect()) == 0
+
 
 @pytest.mark.ci_only
 class TestIcebergExpressions:
@@ -235,6 +244,15 @@ class TestIcebergExpressions:
 
         expr = _to_ast("(pa.compute.field('ts') == pa.compute.scalar(False))")
         assert _convert_predicate(expr) == EqualTo("ts", False)
+
+    def test_parse_always_true_false(self) -> None:
+        from pyiceberg.expressions import AlwaysFalse, AlwaysTrue
+
+        true_predicate = "pa.compute.scalar(True)"
+        assert try_convert_pyarrow_predicate(true_predicate) == AlwaysTrue()
+
+        false_predicate = "pa.compute.scalar(False)"
+        assert try_convert_pyarrow_predicate(false_predicate) == AlwaysFalse()
 
 
 @pytest.mark.slow
