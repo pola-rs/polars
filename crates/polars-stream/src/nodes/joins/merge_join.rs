@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -12,7 +11,6 @@ use polars_core::utils::Container;
 use polars_ops::frame::merge_join::*;
 use polars_ops::frame::{JoinArgs, JoinType, MaintainOrderJoin};
 use polars_utils::UnitVec;
-use polars_utils::itertools::Itertools;
 
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
@@ -379,88 +377,20 @@ async fn compute_join(
 ) -> PolarsResult<()> {
     let morsel_size = get_ideal_morsel_size();
 
-    let mut left = left.into_df();
-    let mut right = right.into_df();
-    left.rechunk_mut();
-    right.rechunk_mut();
+    let left = left.into_df();
+    let right = right.into_df();
 
-    let build;
-    let build_sp;
-    let gather_build;
-    let probe;
-    let probe_sp;
-    let gather_probe;
-    if params.left_is_build() {
-        build = left.clone();
-        build_sp = &params.left;
-        gather_build = &mut arenas.gather_left;
-        probe = right.clone();
-        probe_sp = &params.right;
-        gather_probe = &mut arenas.gather_right;
-    } else {
-        build = right.clone();
-        build_sp = &params.right;
-        gather_build = &mut arenas.gather_right;
-        probe = left.clone();
-        probe_sp = &params.left;
-        gather_probe = &mut arenas.gather_left;
-    }
+    let mut merge_join = MergeJoin::new(
+        params,
+        left,
+        right,
+        &mut arenas.gather_left,
+        &mut arenas.gather_right,
+        &mut arenas.matched_probeside,
+        &mut arenas.df_builders,
+    )?;
 
-    let mut build_key = Cow::Borrowed(
-        build
-            .column(&build_sp.key_col)
-            .unwrap()
-            .as_materialized_series(),
-    );
-    let mut probe_key = Cow::Borrowed(
-        probe
-            .column(&probe_sp.key_col)
-            .unwrap()
-            .as_materialized_series(),
-    );
-
-    #[cfg(feature = "dtype-categorical")]
-    {
-        // Categoricals are lexicographically ordered, not by their physical values.
-        if matches!(build_key.dtype(), DataType::Categorical(_, _)) {
-            build_key = Cow::Owned(build_key.cast(&DataType::String)?);
-        }
-        if matches!(probe_key.dtype(), DataType::Categorical(_, _)) {
-            probe_key = Cow::Owned(probe_key.cast(&DataType::String)?);
-        }
-    }
-
-    let build_key = build_key.to_physical_repr();
-    let probe_key = probe_key.to_physical_repr();
-
-    arenas.matched_probeside.clear();
-    arenas.matched_probeside.resize(probe_key.len(), false);
-
-    let mut done = false;
-    let mut skip_build_rows = 0;
-    while !done {
-        gather_build.clear();
-        gather_probe.clear();
-        (done, skip_build_rows) = match_keys(
-            &build_key,
-            &probe_key,
-            gather_build,
-            gather_probe,
-            &mut arenas.matched_probeside,
-            skip_build_rows,
-            morsel_size,
-            build_sp,
-            probe_sp,
-            params,
-        );
-        let df = gather_and_postprocess(
-            build.clone(),
-            probe.clone(),
-            gather_build,
-            gather_probe,
-            &mut arenas.df_builders,
-            params,
-        )?;
+    while let Some(df) = merge_join.next_matched_chunk(morsel_size)? {
         if df.height() > 0 {
             let morsel = Morsel::new(df, seq, source_token.clone());
             if send.send(morsel).await.is_err() {
@@ -469,35 +399,15 @@ async fn compute_join(
         }
     }
 
-    if probe_sp.emit_unmatched {
-        gather_build.clear();
-        gather_probe.clear();
-        for (idx, _) in arenas
-            .matched_probeside
-            .iter()
-            .enumerate_idx()
-            .filter(|(_, m)| !m)
-        {
-            gather_build.push(IdxSize::MAX);
-            gather_probe.push(idx);
-        }
-        let df_unmatched = gather_and_postprocess(
-            build,
-            probe,
-            gather_build,
-            gather_probe,
-            &mut arenas.df_builders,
-            params,
-        )?;
-        if df_unmatched.height() > 0 {
-            let morsel = Morsel::new(df_unmatched, seq, source_token.clone());
-            if params.args.maintain_order == MaintainOrderJoin::None {
-                if send.send(morsel).await.is_err() {
-                    return Ok(());
-                }
-            } else if unmatched_send.send(morsel).await.is_err() {
-                panic!("broken pipe");
+    let df_unmatched = merge_join.next_unmatched_chunk()?;
+    if df_unmatched.height() > 0 {
+        let morsel = Morsel::new(df_unmatched, seq, source_token.clone());
+        if params.args.maintain_order == MaintainOrderJoin::None {
+            if send.send(morsel).await.is_err() {
+                return Ok(());
             }
+        } else if unmatched_send.send(morsel).await.is_err() {
+            panic!("broken pipe");
         }
     }
 
