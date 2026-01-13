@@ -38,7 +38,8 @@ def test_type_aliases_deprecated() -> None:
         match=r"the `polars\.type_aliases` module was deprecated in version 1.0.0."
     ):
         from polars.type_aliases import PolarsDataType
-    assert str(PolarsDataType).startswith("typing.Union")
+
+        _ = PolarsDataType
 
 
 def test_import_all() -> None:

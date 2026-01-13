@@ -33,8 +33,8 @@ use polars_plan::prelude::{FileWriteFormat, PlanCallback};
 use polars_time::DynamicGroupOptions;
 use polars_time::{ClosedWindow, Duration};
 use polars_utils::arena::{Arena, Node};
+use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::plpath::PlPath;
 use polars_utils::slice_enum::Slice;
 use slotmap::{SecondaryMap, SlotMap};
 pub use to_graph::physical_plan_to_graph;
@@ -203,7 +203,7 @@ pub enum PhysNodeKind {
 
     PartitionedSink {
         input: PhysStream,
-        base_path: Arc<PlPath>,
+        base_path: Arc<PlRefPath>,
         file_path_cb: Option<PartitionTargetCallback>,
         sink_options: SinkOptions,
         variant: PartitionVariantIR,

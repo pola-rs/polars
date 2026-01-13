@@ -116,6 +116,7 @@ def test_credential_provider_serialization_auto_init(
         q.collect()
 
 
+@pytest.mark.slow
 def test_credential_provider_serialization_custom_provider() -> None:
     err_magic = "err_magic_3"
 

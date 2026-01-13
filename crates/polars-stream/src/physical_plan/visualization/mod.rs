@@ -722,7 +722,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     });
 
                 let properties = PhysNodeProperties::PartitionSink {
-                    base_path: base_path.to_str().into(),
+                    base_path: base_path.as_str().into(),
                     file_path_callback: file_path_cb.as_ref().map(|x| x.display_str()),
                     partition_variant: PlSmallStr::from_static(variant.into()),
                     partition_variant_max_size,
@@ -763,7 +763,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
 
                 let properties = PhysNodeProperties::FileSink {
                     target: match target {
-                        SinkTarget::Path(p) => format_pl_smallstr!("Path({})", p.to_str()),
+                        SinkTarget::Path(p) => format_pl_smallstr!("Path({})", p),
                         SinkTarget::Dyn(_) => PlSmallStr::from_static("DynWriteable"),
                     },
                     file_format: PlSmallStr::from_static(file_format.into()),
@@ -840,7 +840,7 @@ impl PhysicalPlanVisualizationDataGenerator<'_> {
                     });
 
                 let properties = PhysNodeProperties::PartitionSink2 {
-                    base_path: base_path.to_str().into(),
+                    base_path: base_path.as_str().into(),
                     file_path_provider: file_path_provider.clone(),
                     file_format: PlSmallStr::from_static(file_format.into()),
                     partition_strategy: PlSmallStr::from_static(partition_strategy.into()),

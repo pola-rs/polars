@@ -135,8 +135,8 @@ where
 
 impl JsonLineReader<'_, File> {
     /// This is the recommended way to create a json reader as this allows for fastest parsing.
-    pub fn from_path<P: Into<PathBuf>>(path: P) -> PolarsResult<Self> {
-        let path = crate::resolve_homedir(&path.into());
+    pub fn from_path<P: AsRef<std::path::Path> + ?Sized>(path: &P) -> PolarsResult<Self> {
+        let path = crate::resolve_homedir(path.as_ref());
         let f = polars_utils::open_file(&path)?;
         Ok(Self::new(f).with_path(Some(path)))
     }
