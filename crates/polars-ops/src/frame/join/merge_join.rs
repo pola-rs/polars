@@ -44,168 +44,13 @@ impl MergeJoinParams {
     }
 }
 
-pub struct MergeJoin<'a> {
-    pub build: DataFrame,
-    pub probe: DataFrame,
-    pub build_keys: Series,
-    pub probe_keys: Series,
-    pub params: &'a MergeJoinParams,
-    pub build_sp: &'a MergeJoinSideParams,
-    pub probe_sp: &'a MergeJoinSideParams,
-    pub gather_build: &'a mut Vec<IdxSize>,
-    pub gather_probe: &'a mut Vec<IdxSize>,
-    pub matched_probeside: &'a mut MutableBitmap,
-    pub df_builders: &'a mut Option<(DataFrameBuilder, DataFrameBuilder)>,
-    match_keys_done: bool,
-    skip_build_rows: usize,
-}
-
-impl<'a> MergeJoin<'a> {
-    pub fn new(
-        params: &'a MergeJoinParams,
-        mut left: DataFrame,
-        mut right: DataFrame,
-        gather_left: &'a mut Vec<IdxSize>,
-        gather_right: &'a mut Vec<IdxSize>,
-        matched_probeside: &'a mut MutableBitmap,
-        df_builders: &'a mut Option<(DataFrameBuilder, DataFrameBuilder)>,
-    ) -> PolarsResult<Self> {
-        left.rechunk_mut();
-        right.rechunk_mut();
-
-        let build;
-        let build_sp;
-        let gather_build;
-        let probe;
-        let probe_sp;
-        let gather_probe;
-        if params.left_is_build() {
-            build = left;
-            build_sp = &params.left;
-            gather_build = gather_left;
-            probe = right;
-            probe_sp = &params.right;
-            gather_probe = gather_right;
-        } else {
-            build = right;
-            build_sp = &params.right;
-            gather_build = gather_right;
-            probe = left;
-            probe_sp = &params.left;
-            gather_probe = gather_left;
-        }
-
-        // TODO: [amber] Possible unnecessary clones here
-
-        let mut build_keys = build
-            .column(&build_sp.key_col)
-            .unwrap()
-            .as_materialized_series()
-            .to_owned();
-        let mut probe_keys = probe
-            .column(&probe_sp.key_col)
-            .unwrap()
-            .as_materialized_series()
-            .to_owned();
-
-        #[cfg(feature = "dtype-categorical")]
-        {
-            // Categoricals are lexicographically ordered, not by their physical values.
-            if matches!(build_keys.dtype(), DataType::Categorical(_, _)) {
-                build_keys = build_keys.cast(&DataType::String)?;
-            }
-            if matches!(probe_keys.dtype(), DataType::Categorical(_, _)) {
-                probe_keys = probe_keys.cast(&DataType::String)?;
-            }
-        }
-
-        let build_keys = build_keys.to_physical_repr().into_owned();
-        let probe_keys = probe_keys.to_physical_repr().into_owned();
-
-        matched_probeside.clear();
-        matched_probeside.resize(probe_keys.len(), false);
-
-        Ok(Self {
-            build,
-            probe,
-            build_keys,
-            probe_keys,
-            params,
-            build_sp,
-            probe_sp,
-            gather_build,
-            gather_probe,
-            matched_probeside,
-            df_builders,
-            match_keys_done: false,
-            skip_build_rows: 0,
-        })
-    }
-
-    pub fn next_matched_chunk(&mut self, rough_limit: usize) -> PolarsResult<Option<DataFrame>> {
-        if self.match_keys_done {
-            return Ok(None);
-        }
-        self.gather_build.clear();
-        self.gather_probe.clear();
-        (self.match_keys_done, self.skip_build_rows) = match_keys(
-            &self.build_keys,
-            &self.probe_keys,
-            self.gather_build,
-            self.gather_probe,
-            self.matched_probeside,
-            self.skip_build_rows,
-            rough_limit,
-            self.build_sp,
-            self.probe_sp,
-            self.params,
-        );
-        let df = gather_and_postprocess(
-            self.build.clone(),
-            self.probe.clone(),
-            self.gather_build,
-            self.gather_probe,
-            self.df_builders,
-            self.params,
-        )?;
-        Ok(Some(df))
-    }
-
-    pub fn next_unmatched_chunk(self) -> PolarsResult<DataFrame> {
-        assert!(self.match_keys_done);
-        if !self.probe_sp.emit_unmatched {
-            return Ok(DataFrame::empty_with_schema(&self.params.output_schema));
-        }
-        self.gather_build.clear();
-        self.gather_probe.clear();
-        for (idx, _) in self
-            .matched_probeside
-            .iter()
-            .enumerate_idx()
-            .filter(|(_, m)| !m)
-        {
-            self.gather_build.push(IdxSize::MAX);
-            self.gather_probe.push(idx);
-        }
-        let df_unmatched = gather_and_postprocess(
-            self.build,
-            self.probe,
-            self.gather_build,
-            self.gather_probe,
-            self.df_builders,
-            self.params,
-        )?;
-        Ok(df_unmatched)
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 pub fn match_keys(
     left_keys: &Series,
     right_keys: &Series,
-    gather_build: &mut Vec<IdxSize>,
-    gather_probe: &mut Vec<IdxSize>,
-    matched_probeside: &mut MutableBitmap,
+    gather_left: &mut Vec<IdxSize>,
+    gather_right: &mut Vec<IdxSize>,
+    matched_right: &mut MutableBitmap,
     skip_build_rows: usize,
     limit_results: usize,
     left_sp: &MergeJoinSideParams,
@@ -217,9 +62,9 @@ pub fn match_keys(
             match_keys_impl(
                 $left_keys_ca,
                 right_keys.as_ref().as_ref(),
-                gather_build,
-                gather_probe,
-                matched_probeside,
+                gather_left,
+                gather_right,
+                matched_right,
                 skip_build_rows,
                 limit_results,
                 left_sp,
@@ -251,9 +96,9 @@ pub fn match_keys(
         DataType::Null => match_null_keys_impl(
             left_keys.len(),
             right_keys.len(),
-            gather_build,
-            gather_probe,
-            matched_probeside,
+            gather_left,
+            gather_right,
+            matched_right,
             skip_build_rows,
             limit_results,
             left_sp,
@@ -268,9 +113,9 @@ pub fn match_keys(
 fn match_keys_impl<'a, T: PolarsDataType>(
     left_keys: &'a ChunkedArray<T>,
     right_keys: &'a ChunkedArray<T>,
-    gather_build: &mut Vec<IdxSize>,
-    gather_probe: &mut Vec<IdxSize>,
-    matched_probe: &mut MutableBitmap,
+    gather_left: &mut Vec<IdxSize>,
+    gather_right: &mut Vec<IdxSize>,
+    matched_right: &mut MutableBitmap,
     mut skip_build_rows: usize,
     limit_results: usize,
     build_sp: &MergeJoinSideParams,
@@ -280,10 +125,10 @@ fn match_keys_impl<'a, T: PolarsDataType>(
 where
     T::Physical<'a>: TotalOrd,
 {
-    debug_assert!(gather_build.is_empty());
-    debug_assert!(gather_probe.is_empty());
+    debug_assert!(gather_left.is_empty());
+    debug_assert!(gather_right.is_empty());
     if probe_sp.emit_unmatched {
-        debug_assert!(matched_probe.len() == right_keys.len());
+        debug_assert!(matched_right.len() == right_keys.len());
     }
 
     let descending = params.key_descending;
@@ -296,7 +141,7 @@ where
     }
     let mut skip_ahead_right = 0;
     for (idxl, left_keyval) in iterator {
-        if gather_build.len() >= limit_results {
+        if gather_left.len() >= limit_results {
             return (false, skip_build_rows);
         }
         let left_keyval = left_keyval.as_ref();
@@ -316,10 +161,10 @@ where
                 if ord == Some(Ordering::Equal) {
                     matched = true;
                     if probe_sp.emit_unmatched {
-                        matched_probe.set(idxr, true);
+                        matched_right.set(idxr, true);
                     }
-                    gather_build.push(idxl as IdxSize);
-                    gather_probe.push(idxr as IdxSize);
+                    gather_left.push(idxl as IdxSize);
+                    gather_right.push(idxr as IdxSize);
                 } else if ord == Some(Ordering::Greater) {
                     skip_ahead_right = idxr;
                 } else if ord == Some(Ordering::Less) {
@@ -328,8 +173,8 @@ where
             }
         }
         if build_sp.emit_unmatched && !matched {
-            gather_build.push(idxl as IdxSize);
-            gather_probe.push(IdxSize::MAX);
+            gather_left.push(idxl as IdxSize);
+            gather_right.push(IdxSize::MAX);
         }
         skip_build_rows += 1;
     }
@@ -340,8 +185,8 @@ where
 fn match_null_keys_impl(
     left_n: usize,
     right_n: usize,
-    gather_build: &mut Vec<IdxSize>,
-    gather_probe: &mut Vec<IdxSize>,
+    gather_left: &mut Vec<IdxSize>,
+    gather_right: &mut Vec<IdxSize>,
     matched_right: &mut MutableBitmap,
     mut skip_build_rows: usize,
     limit_results: usize,
@@ -349,8 +194,8 @@ fn match_null_keys_impl(
     right_sp: &MergeJoinSideParams,
     params: &MergeJoinParams,
 ) -> (bool, usize) {
-    debug_assert!(gather_build.is_empty());
-    debug_assert!(gather_probe.is_empty());
+    debug_assert!(gather_left.is_empty());
+    debug_assert!(gather_right.is_empty());
     if right_sp.emit_unmatched {
         debug_assert!(matched_right.len() == right_n);
     }
@@ -359,18 +204,18 @@ fn match_null_keys_impl(
     }
 
     for idxl in skip_build_rows..left_n {
-        gather_build.push(idxl as IdxSize);
+        gather_left.push(idxl as IdxSize);
         for idxr in 0..right_n {
-            gather_probe.push(idxr as IdxSize);
+            gather_right.push(idxr as IdxSize);
             if right_sp.emit_unmatched {
                 matched_right.set(idxr, true);
             }
         }
         if left_sp.emit_unmatched && right_n == 0 {
-            gather_probe.push(IdxSize::MAX);
+            gather_right.push(IdxSize::MAX);
         }
         skip_build_rows += 1;
-        if gather_build.len() >= limit_results {
+        if gather_left.len() >= limit_results {
             return (false, skip_build_rows);
         }
     }
