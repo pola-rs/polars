@@ -1,11 +1,14 @@
 use std::cmp;
-use std::io::Read;
+use std::io::{Read, Write};
 
 use polars_core::prelude::*;
 use polars_error::{feature_gated, to_compute_err};
 use polars_utils::mmap::{MemReader, MemSlice};
 
+use crate::utils::file::WriteableTrait;
+
 /// Represents the compression algorithms that we have decoders for
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub enum SupportedCompression {
     GZIP,
     ZLIB,
@@ -228,5 +231,71 @@ impl Read for CompressedReader {
             #[cfg(feature = "decompress")]
             CompressedReader::Zstd(decoder) => decoder.read(buf),
         }
+    }
+}
+
+/// Constructor for `WriteableTrait` compressed encoders.
+pub struct CompressedWriter;
+
+pub struct ZstdEncoder<T: Write>(Option<zstd::Encoder<'static, T>>);
+
+impl CompressedWriter {
+    pub fn gzip<T: WriteableTrait>(writer: T, level: Option<u32>) -> impl WriteableTrait {
+        feature_gated!("decompress", {
+            flate2::write::GzEncoder::new(
+                writer,
+                level.map(flate2::Compression::new).unwrap_or_default(),
+            )
+        })
+    }
+
+    pub fn zstd<T: WriteableTrait>(
+        writer: T,
+        level: Option<u32>,
+    ) -> std::io::Result<impl WriteableTrait> {
+        feature_gated!("decompress", {
+            zstd::Encoder::new(writer, level.unwrap_or(3) as i32)
+                .map(|encoder| ZstdEncoder(Some(encoder)))
+        })
+    }
+}
+
+impl<T: WriteableTrait> WriteableTrait for flate2::write::GzEncoder<T> {
+    fn close(&mut self) -> std::io::Result<()> {
+        self.try_finish()?;
+        self.get_mut().close()
+    }
+
+    fn sync_all(&self) -> std::io::Result<()> {
+        self.get_ref().sync_all()
+    }
+
+    fn sync_data(&self) -> std::io::Result<()> {
+        self.get_ref().sync_data()
+    }
+}
+
+impl<T: Write> Write for ZstdEncoder<T> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.as_mut().unwrap().write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.0.as_mut().unwrap().flush()
+    }
+}
+
+impl<T: WriteableTrait> WriteableTrait for ZstdEncoder<T> {
+    fn close(&mut self) -> std::io::Result<()> {
+        let mut inner = self.0.take().unwrap().finish()?;
+        inner.close()
+    }
+
+    fn sync_all(&self) -> std::io::Result<()> {
+        self.0.as_ref().unwrap().get_ref().sync_all()
+    }
+
+    fn sync_data(&self) -> std::io::Result<()> {
+        self.0.as_ref().unwrap().get_ref().sync_data()
     }
 }

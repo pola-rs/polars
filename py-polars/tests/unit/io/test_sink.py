@@ -27,11 +27,15 @@ def test_mkdir(tmp_path: Path, scan: Any, sink: Any, engine: EngineType) -> None
         }
     )
 
+    extra_args = {"strict_naming": False} if sink == pl.LazyFrame.sink_csv else {}
+
     with pytest.raises(FileNotFoundError):
-        sink(df.lazy(), tmp_path / "a" / "b" / "c" / "file", engine=engine)
+        sink(
+            df.lazy(), tmp_path / "a" / "b" / "c" / "file", engine=engine, **extra_args
+        )
 
     f = tmp_path / "a" / "b" / "c" / "file2"
-    sink(df.lazy(), f, mkdir=True)
+    sink(df.lazy(), f, mkdir=True, **extra_args)
 
     assert_frame_equal(scan(f).collect(), df)
 
@@ -56,9 +60,11 @@ def test_write_mkdir(tmp_path: Path) -> None:
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 @pytest.mark.write_disk
 def test_lazy_sinks(tmp_path: Path, scan: Any, sink: Any, engine: EngineType) -> None:
+    extra_args = {"strict_naming": False} if sink == pl.LazyFrame.sink_csv else {}
+
     df = pl.DataFrame({"a": [1, 2, 3]})
-    lf1 = sink(df.lazy(), tmp_path / "a", lazy=True)
-    lf2 = sink(df.lazy(), tmp_path / "b", lazy=True)
+    lf1 = sink(df.lazy(), tmp_path / "a", lazy=True, **extra_args)
+    lf2 = sink(df.lazy(), tmp_path / "b", lazy=True, **extra_args)
 
     assert not Path(tmp_path / "a").exists()
     assert not Path(tmp_path / "b").exists()

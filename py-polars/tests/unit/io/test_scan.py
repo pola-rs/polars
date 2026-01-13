@@ -438,8 +438,11 @@ def test_scan_limit_0_does_not_panic(
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
     path = tmp_path / "data.bin"
+    extra_args = (
+        {"strict_naming": False} if write_func == pl.DataFrame.write_csv else {}
+    )
     df = pl.DataFrame({"x": 1})
-    write_func(df, path)
+    write_func(df, path, **extra_args)
     assert_frame_equal(
         scan_func(path)
         .head(0)
@@ -482,9 +485,13 @@ def test_scan_directory(
         tmp_path / "dir/data.bin",
     ]
 
+    extra_args = (
+        {"strict_naming": False} if write_func == pl.DataFrame.write_csv else {}
+    )
+
     for df, path in zip(dfs, paths, strict=True):
         path.parent.mkdir(exist_ok=True)
-        write_func(df, path)
+        write_func(df, path, **extra_args)
 
     df = pl.concat(dfs)
 
@@ -627,10 +634,14 @@ def test_scan_include_file_paths(
     tmp_path.mkdir(exist_ok=True)
     dfs: list[pl.DataFrame] = []
 
+    extra_args = (
+        {"strict_naming": False} if write_func == pl.DataFrame.write_csv else {}
+    )
+
     for x in ["1", "2"]:
         path = Path(f"{tmp_path}/{x}.bin").absolute()
         dfs.append(pl.DataFrame({"x": 10 * [x]}).with_columns(path=pl.lit(str(path))))
-        write_func(dfs[-1].drop("path"), path)
+        write_func(dfs[-1].drop("path"), path, **extra_args)
 
     df = pl.concat(dfs).with_columns(normalize_path_separator_pl(pl.col("path")))
     assert df.columns == ["x", "path"]
@@ -1092,6 +1103,7 @@ def test_hive_pruning_str_contains_21706(
     )
 
 
+@pytest.mark.write_disk
 @pytest.mark.skipif(
     sys.platform == "win32", reason="path characters not valid on Windows"
 )
@@ -1109,9 +1121,11 @@ def test_scan_no_glob_special_chars_23292(
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
 
+    extra_args = {"strict_naming": False} if write == pl.DataFrame.write_csv else {}
+
     path = tmp_path / file_name
     df = pl.DataFrame({"a": 1})
-    write(df, path)
+    write(df, path, **extra_args)
 
     assert_frame_equal(scan(path, glob=False).collect(), df)
     assert_frame_equal(scan(f"file://{path}", glob=False).collect(), df)

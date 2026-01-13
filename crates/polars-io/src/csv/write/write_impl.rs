@@ -256,11 +256,7 @@ pub(crate) fn write(
 }
 
 /// Writes a CSV header to `writer`.
-pub fn write_csv_header(
-    mut writer: impl std::io::Write,
-    names: &[&str],
-    options: &SerializeOptions,
-) -> PolarsResult<()> {
+pub fn csv_header(names: &[&str], options: &SerializeOptions) -> PolarsResult<Vec<u8>> {
     let mut header = Vec::new();
 
     // A hack, but it works for this case.
@@ -278,13 +274,7 @@ pub fn write_csv_header(
         }
     }
     header.extend_from_slice(options.line_terminator.as_bytes());
-    writer.write_all(&header)?;
-    Ok(())
+    Ok(header)
 }
 
-/// Writes a UTF-8 BOM to `writer`.
-pub fn write_bom(mut writer: impl std::io::Write) -> PolarsResult<()> {
-    const BOM: [u8; 3] = [0xEF, 0xBB, 0xBF];
-    writer.write_all(&BOM)?;
-    Ok(())
-}
+pub const UTF8_BOM: [u8; 3] = [0xEF, 0xBB, 0xBF];

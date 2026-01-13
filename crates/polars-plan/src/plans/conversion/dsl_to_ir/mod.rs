@@ -1248,7 +1248,32 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let payload = match payload {
                 SinkType::Memory => SinkTypeIR::Memory,
                 SinkType::Callback(f) => SinkTypeIR::Callback(f),
-                SinkType::File(options) => SinkTypeIR::File(options),
+                SinkType::File(options) => {
+                    if let FileWriteFormat::Csv(csv_options) = &options.file_format {
+                        if let SinkTarget::Path(path) = &options.target
+                            && csv_options.strict_naming
+                        {
+                            let compression_suffix = csv_options.compression.file_suffix();
+                            let suffix = compression_suffix.unwrap_or(".csv");
+                            let path_str = path.as_str();
+
+                            if compression_suffix.is_none()
+                                && (path_str.ends_with(".gz") || path_str.ends_with(".zst"))
+                            {
+                                polars_bail!(
+                                    InvalidOperation: "use the compression parameter to control compression, or set `strict_naming` to `False` if you want to suffix an uncompressed file with an ending intended for compression"
+                                );
+                            }
+
+                            polars_ensure!(
+                                path_str.ends_with(suffix),
+                                InvalidOperation: "the path ({}) does not conform to standard naming, expected suffix: ({}), set `strict_naming` to `False` if you don't want this behavior", path, suffix
+                            );
+                        }
+                    }
+
+                    SinkTypeIR::File(options)
+                },
                 SinkType::Partitioned(PartitionedSinkOptions {
                     base_path,
                     file_path_provider,

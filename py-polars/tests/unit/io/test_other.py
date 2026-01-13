@@ -63,9 +63,11 @@ def test_write_missing_directory(write_method_name: str) -> None:
         pytest.fail(
             "Testing on a non existing path failed because the path does exist."
         )
+
+    extra_args = {"strict_naming": False} if write_method_name == "write_csv" else {}
     write_method = getattr(df, write_method_name)
     with pytest.raises(FileNotFoundError):
-        write_method(non_existing_path)
+        write_method(non_existing_path, **extra_args)
 
 
 def test_read_missing_file_path_truncated() -> None:
@@ -165,9 +167,12 @@ def test_no_glob(
     df = pl.DataFrame({"x": 1})
 
     paths = [tmp_path / f"{char}", tmp_path / f"{char}1"]
+    extra_args = (
+        {"strict_naming": False} if write_func == pl.DataFrame.write_csv else {}
+    )
 
-    write_func(df, paths[0])
-    write_func(df, paths[1])
+    write_func(df, paths[0], **extra_args)
+    write_func(df, paths[1], **extra_args)
 
     for func in scan_funcs:
         assert_frame_equal(func(paths[0], glob=False).lazy().collect(), df)  # type: ignore[call-arg]

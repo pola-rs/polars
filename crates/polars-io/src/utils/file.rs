@@ -2,7 +2,7 @@ use std::io;
 use std::ops::{Deref, DerefMut};
 
 #[cfg(feature = "cloud")]
-pub use async_writeable::AsyncWriteable;
+pub use async_writeable::{AsyncDynWriteable, AsyncWriteable};
 use polars_core::config;
 use polars_error::{PolarsError, PolarsResult, feature_gated, polars_err};
 use polars_utils::create_file;
@@ -14,6 +14,7 @@ use super::sync_on_close::SyncOnCloseType;
 use crate::cloud::CloudOptions;
 use crate::resolve_homedir;
 
+// TODO document precise contract.
 pub trait WriteableTrait: std::io::Write {
     fn close(&mut self) -> std::io::Result<()>;
     fn sync_all(&self) -> std::io::Result<()>;
@@ -137,6 +138,68 @@ impl Writeable {
             #[cfg(feature = "cloud")]
             Self::Cloud(mut v) => v.close(),
         }
+    }
+}
+
+impl io::Write for Writeable {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match self {
+            Self::Dyn(v) => v.write(buf),
+            Self::Local(v) => v.write(buf),
+            #[cfg(feature = "cloud")]
+            Self::Cloud(v) => v.write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.sync_all()
+    }
+}
+
+impl WriteableTrait for Writeable {
+    fn close(&mut self) -> std::io::Result<()> {
+        self.sync_all()?;
+
+        match std::mem::replace(self, Self::Dyn(Box::new(EmptyTakenWriter))) {
+            Self::Dyn(mut v) => v.close(),
+            Self::Local(v) => close_file(v),
+            #[cfg(feature = "cloud")]
+            Self::Cloud(mut v) => v.close(),
+        }
+    }
+
+    fn sync_all(&self) -> std::io::Result<()> {
+        self.sync_all()
+    }
+
+    fn sync_data(&self) -> std::io::Result<()> {
+        self.sync_data()
+    }
+}
+
+struct EmptyTakenWriter;
+
+impl io::Write for EmptyTakenWriter {
+    fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
+        unreachable!()
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        unreachable!()
+    }
+}
+
+impl WriteableTrait for EmptyTakenWriter {
+    fn close(&mut self) -> std::io::Result<()> {
+        unreachable!()
+    }
+
+    fn sync_all(&self) -> std::io::Result<()> {
+        unreachable!()
+    }
+
+    fn sync_data(&self) -> std::io::Result<()> {
+        unreachable!()
     }
 }
 

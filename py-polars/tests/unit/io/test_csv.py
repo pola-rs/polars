@@ -8,8 +8,9 @@ import textwrap
 import zlib
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal as D
+from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 import numpy as np
 import pyarrow as pa
@@ -23,8 +24,6 @@ from polars.io.csv import BatchedCsvReader
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from polars._typing import CsvQuoteStyle, TimeUnit
 
 
@@ -3079,3 +3078,96 @@ def test_provided_schema_mismatch_truncate(read_fn: str) -> None:
     )
     expected = [pl.Series("A", [1])]
     assert_frame_equal(df, pl.DataFrame(expected))
+
+
+def check_compression(content: bytes, expected_format: str) -> None:
+    if expected_format == "gzip":
+        assert content[:2] == bytes([0x1F, 0x8B])
+    elif expected_format == "zstd":
+        assert content[:4] == bytes([0x28, 0xB5, 0x2F, 0xFD])
+    else:
+        pytest.fail("Unreachable")
+
+
+def write_fn(df: pl.DataFrame, sink_fn: str) -> Any:
+    if sink_fn == "write_csv":
+        return df.write_csv
+    else:
+        assert sink_fn == "sink_csv"
+        return df.lazy().sink_csv
+
+
+@pytest.mark.parametrize("write_fn_name", ["write_csv", "sink_csv"])
+@pytest.mark.parametrize("fmt", ["gzip", "zstd"])
+@pytest.mark.parametrize("level", [None, 0, 9])
+def test_write_compressed(write_fn_name: str, fmt: str, level: int | None) -> None:
+    original = pl.DataFrame([pl.Series("A", [3.2, 6.2]), pl.Series("B", ["a", "z"])])
+    buf = io.BytesIO()
+    write_fn(original, write_fn_name)(buf, compression=fmt, compression_level=level)
+    buf.seek(0)
+    check_compression(buf.read(), fmt)
+    buf.seek(0)
+    df = pl.scan_csv(buf).collect()
+    assert_frame_equal(df, original)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("write_fn_name", ["write_csv", "sink_csv"])
+@pytest.mark.parametrize(("fmt", "suffix"), [("gzip", "gz"), ("zstd", "zst")])
+def test_write_compressed_disk(
+    tmp_path: Path, write_fn_name: str, fmt: str, suffix: str
+) -> None:
+    original = pl.DataFrame([pl.Series("A", [3.2, 6.2]), pl.Series("B", ["a", "z"])])
+    path = tmp_path / f"test_file.csv.{suffix}"
+    write_fn(original, write_fn_name)(path, compression=fmt)
+    with Path.open(path, "rb") as file:
+        check_compression(file.read(), fmt)
+    df = pl.scan_csv(path).collect()
+    assert_frame_equal(df, original)
+
+
+@pytest.mark.parametrize("write_fn_name", ["write_csv", "sink_csv"])
+@pytest.mark.parametrize("fmt", ["gzip", "zstd"])
+def test_write_uncommon_file_suffix_raise(write_fn_name: str, fmt: str) -> None:
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        write_fn(pl.DataFrame(), write_fn_name)("x.csv", compression=fmt)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("write_fn_name", ["write_csv", "sink_csv"])
+@pytest.mark.parametrize("fmt", ["gzip", "zstd"])
+def test_write_uncommon_file_suffix_ignore(
+    tmp_path: Path, write_fn_name: str, fmt: str
+) -> None:
+    path = tmp_path / "x.csv"
+    write_fn(pl.DataFrame(), write_fn_name)(path, compression=fmt, strict_naming=False)
+    with Path.open(path, "rb") as file:
+        check_compression(file.read(), fmt)
+
+
+@pytest.mark.parametrize("write_fn_name", ["write_csv", "sink_csv"])
+def test_write_intended_compression(write_fn_name: str) -> None:
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError, match="use the compression parameter"
+    ):
+        write_fn(pl.DataFrame(), write_fn_name)("x.csv.gz")
+
+
+@pytest.mark.parametrize("write_fn_name", ["write_csv", "sink_csv"])
+@pytest.mark.parametrize("filename", ["c", "csv", "a.b"])
+def test_write_non_std_ending_raise(write_fn_name: str, filename: str) -> None:
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError, match="does not conform to standard naming"
+    ):
+        write_fn(pl.DataFrame(), write_fn_name)(filename)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("write_fn_name", ["write_csv", "sink_csv"])
+@pytest.mark.parametrize("filename", ["c", "csv", "a.b"])
+def test_write_non_std_ending_ignore(
+    tmp_path: Path, write_fn_name: str, filename: str
+) -> None:
+    path = tmp_path / filename
+    write_fn(pl.DataFrame(), write_fn_name)(path, strict_naming=False)
+    assert Path.exists(path)
