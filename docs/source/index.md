@@ -1,4 +1,4 @@
-![logo](https://raw.githubusercontent.com/pola-rs/polars-static/master/banner/polars_github_banner.svg) 
+![logo](https://raw.githubusercontent.com/pola-rs/polars-static/master/banner/polars_github_banner.svg)
 
 <h1 style="text-align:center">Blazingly Fast DataFrame Library </h1>
 <div align="center">
