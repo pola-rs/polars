@@ -207,11 +207,6 @@ impl ComputeNode for MergeJoinNode {
             unreachable!()
         }
 
-        // TODO [amber] LEFT HERE
-        // I am at the moment fixing Orson's comments.
-        //
-        // Good luck! Don't forget to drink water 💦
-
         match &mut self.state {
             Running => {
                 let recv0_blocked = recv[0] == PortState::Blocked;
