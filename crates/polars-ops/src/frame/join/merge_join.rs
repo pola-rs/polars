@@ -270,14 +270,14 @@ pub fn gather_and_postprocess(
         .cloned()
         .collect_vec()
     {
-        if params.right.on.contains(&col) && should_coalesce {
+        if params.left.on.contains(&col) && should_coalesce {
             continue;
         }
-        let renamed_col = match right.schema().contains(&col) {
+        let renamed = match left.schema().contains(&col) {
             true => Cow::Owned(format_pl_smallstr!("{}{}", col, params.args.suffix())),
             false => Cow::Borrowed(&col),
         };
-        if !params.output_schema.contains(&renamed_col) {
+        if !params.output_schema.contains(&renamed) {
             right.drop_in_place(&col).unwrap();
         }
     }
@@ -356,7 +356,10 @@ pub fn gather_and_postprocess(
             }
         }
         for col in &params.right.on {
-            let renamed = format_pl_smallstr!("{}{}", col, params.args.suffix());
+            let renamed = match left.schema().contains(col) {
+                true => Cow::Owned(format_pl_smallstr!("{}{}", col, params.args.suffix())),
+                false => Cow::Borrowed(col),
+            };
             if left.schema().contains(&renamed) && !params.output_schema.contains(&renamed) {
                 left.drop_in_place(&renamed).unwrap();
             }
