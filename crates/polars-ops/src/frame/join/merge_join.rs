@@ -45,7 +45,7 @@ impl MergeJoinParams {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn compute_join_dispatch(
+pub fn match_keys(
     lk: &Series,
     rk: &Series,
     gather_left: &mut Vec<IdxSize>,
@@ -59,7 +59,7 @@ pub fn compute_join_dispatch(
 ) -> (bool, usize) {
     macro_rules! dispatch {
         ($left_key_ca:expr) => {
-            compute_join_impl(
+            match_keys_impl(
                 $left_key_ca,
                 rk.as_ref().as_ref(),
                 gather_left,
@@ -93,7 +93,7 @@ pub fn compute_join_dispatch(
             let lk_ca: &PhysCa = lk.as_ref().as_ref();
             dispatch!(lk_ca)
         }),
-        DataType::Null => compute_join_impl_nullkeys(
+        DataType::Null => match_null_keys_impl(
             lk.len(),
             rk.len(),
             gather_left,
@@ -110,7 +110,7 @@ pub fn compute_join_dispatch(
 }
 
 #[allow(clippy::mut_range_bound, clippy::too_many_arguments)]
-fn compute_join_impl<'a, T: PolarsDataType>(
+fn match_keys_impl<'a, T: PolarsDataType>(
     left_key: &'a ChunkedArray<T>,
     right_key: &'a ChunkedArray<T>,
     gather_left: &mut Vec<IdxSize>,
@@ -182,7 +182,7 @@ where
 }
 
 #[allow(clippy::mut_range_bound, clippy::too_many_arguments)]
-fn compute_join_impl_nullkeys(
+fn match_null_keys_impl(
     left_n: usize,
     right_n: usize,
     gather_left: &mut Vec<IdxSize>,

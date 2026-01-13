@@ -440,7 +440,7 @@ async fn compute_join(
     while !done {
         gather_build.clear();
         gather_probe.clear();
-        (done, skip_build_rows) = compute_join_dispatch(
+        (done, skip_build_rows) = match_keys(
             &build_key,
             &probe_key,
             gather_build,
@@ -480,7 +480,6 @@ async fn compute_join(
             gather_build.push(IdxSize::MAX);
             gather_probe.push(idx);
         }
-
         let df_unmatched = gather_and_postprocess(
             build,
             probe,
