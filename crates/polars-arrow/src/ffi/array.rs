@@ -260,7 +260,7 @@ unsafe fn create_buffer_known_len<T: NativeType>(
         return Ok(Buffer::new());
     }
     let ptr: *mut T = get_buffer_ptr(array, dtype, index)?;
-    let storage = SharedStorage::from_internal_arrow_array(ptr, len, owner);
+    let storage = SharedStorage::from_nonnull_ptr_with_owner(ptr, len, owner);
     Ok(Buffer::from_storage(storage))
 }
 
@@ -289,7 +289,7 @@ unsafe fn create_buffer<T: NativeType>(
     // We have to check alignment.
     // This is the zero-copy path.
     if ptr.align_offset(align_of::<T>()) == 0 {
-        let storage = SharedStorage::from_internal_arrow_array(ptr, len, owner);
+        let storage = SharedStorage::from_nonnull_ptr_with_owner(ptr, len, owner);
         Ok(Buffer::from_storage(storage).sliced(offset, len - offset))
     }
     // This is the path where alignment isn't correct.
@@ -326,7 +326,7 @@ unsafe fn create_bitmap(
 
     let offset: usize = array.offset.try_into().expect("offset to fit in `usize`");
     let bytes_len = bytes_for(offset + len);
-    let storage = SharedStorage::from_internal_arrow_array(ptr, bytes_len, owner);
+    let storage = SharedStorage::from_nonnull_ptr_with_owner(ptr, bytes_len, owner);
 
     let null_count = if is_validity {
         Some(array.null_count())

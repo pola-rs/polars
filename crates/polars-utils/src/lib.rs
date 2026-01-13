@@ -42,6 +42,7 @@ pub mod relaxed_cell;
 pub mod reuse_vec;
 pub mod row_counter;
 pub mod select;
+pub mod shared_storage;
 pub mod slice;
 pub mod slice_enum;
 pub mod sort;

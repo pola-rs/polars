@@ -26,7 +26,7 @@ pub mod record_batch;
 
 pub mod offset;
 pub mod scalar;
-pub mod storage;
+pub use polars_utils::shared_storage as storage;
 pub mod trusted_len;
 pub mod types;
 

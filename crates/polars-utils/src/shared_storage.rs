@@ -33,14 +33,13 @@ impl VecVTable {
     }
 }
 
-use crate::ffi::InternalArrowArray;
+const _: () = assert!(std::mem::size_of::<BackingStorage>() <= 24);
 
 enum BackingStorage {
     Vec {
         original_capacity: usize, // Elements, not bytes.
         vtable: &'static VecVTable,
     },
-    InternalArrowArray(InternalArrowArray),
     ForeignOwner(Box<dyn Any + Send + 'static>),
 
     /// Backed by some external method which we do not need to take care of,
@@ -87,7 +86,6 @@ impl<T> SharedStorageInner<T> {
 impl<T> Drop for SharedStorageInner<T> {
     fn drop(&mut self) {
         match core::mem::replace(&mut self.backing, BackingStorage::External) {
-            BackingStorage::InternalArrowArray(a) => drop(a),
             BackingStorage::ForeignOwner(o) => drop(o),
             BackingStorage::Vec {
                 original_capacity,
@@ -185,26 +183,20 @@ impl<T> SharedStorage<T> {
         }
     }
 
+    /// Note, used for InternalArrowArray.
+    ///
+    /// # Panics
+    /// Panics if `ptr` is null or not aligned.
+    ///
     /// # Safety
-    /// The range [ptr, ptr+len) needs to be valid while arr lives, and ptr
-    /// must be aligned for T. ptr may not be null.
-    pub unsafe fn from_internal_arrow_array(
+    /// `ptr` must be valid for reads up to `len` as long as owner lives.
+    pub unsafe fn from_nonnull_ptr_with_owner<O: Send + 'static>(
         ptr: *const T,
         len: usize,
-        arr: InternalArrowArray,
+        owner: O,
     ) -> Self {
         assert!(!ptr.is_null() && ptr.is_aligned());
-        let inner = SharedStorageInner {
-            ref_count: AtomicU64::new(1),
-            ptr: ptr.cast_mut(),
-            length_in_bytes: len * size_of::<T>(),
-            backing: BackingStorage::InternalArrowArray(arr),
-            phantom: PhantomData,
-        };
-        Self {
-            inner: NonNull::new(Box::into_raw(Box::new(inner))).unwrap(),
-            phantom: PhantomData,
-        }
+        unsafe { Self::from_slice_with_owner(core::slice::from_raw_parts(ptr, len), owner) }
     }
 
     /// Leaks this SharedStorage such that it and its inner value is never
