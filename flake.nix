@@ -366,10 +366,10 @@
                 postVenvCreation = ''
                   unset CONDA_PREFIX 
                   MATURIN_PEP517_ARGS="--profile dev" uv pip install --upgrade --compile-bytecode --no-build \
-                    -r py-polars/requirements-ci.txt \
                     -r py-polars/requirements-dev.txt \
                     -r py-polars/requirements-lint.txt \
                     -r py-polars/docs/requirements-docs.txt \
+                    -r docs/source/requirements.txt \
                     ${builtins.concatStringsSep " " extraPyDeps} \
                   && uv pip install --upgrade --compile-bytecode "pyiceberg>=0.7.1" pyiceberg-core
                 '';
