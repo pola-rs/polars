@@ -210,7 +210,7 @@ def test_streaming_shift_25226() -> None:
     )
 
 
-def test_streaming_shift_with_head_26097() -> None:
+def test_streaming_shift_with_head_26098() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 
     q = df.lazy().select(pl.col("a").shift(-1)).head(1)
