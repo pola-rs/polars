@@ -90,7 +90,6 @@ ewma = ["polars-plan/ewma"]
 mode = ["polars-plan/mode"]
 object = ["polars-ops/object"]
 physical_plan_visualization_schema = [
-  "physical_plan_visualization",
   "dep:schemars",
   "polars-plan/dsl-schema",
   "polars-utils/dsl-schema",
