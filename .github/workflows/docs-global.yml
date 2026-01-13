@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 env:
-  RUSTFLAGS: -Zunstable-options -Csymbol-mangling-version=legacy
+  RUSTFLAGS: -C debuginfo=0 # Do not produce debug symbols to keep memory usage down
 
 jobs:
   markdown-link-check:
