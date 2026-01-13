@@ -52,7 +52,7 @@
 
             # packages.polars =
             #   let
-            #     project = builtins.fromTOML (builtins.readFile ./py-polars/Cargo.toml);
+            #     project = builtins.fromTOML (builtins.readFile ./py-polars/runtime/polars-runtime-32/Cargo.toml);
             #   in
             #   pythonPlatform.buildPythonPackage {
             #     pname = "polars";
@@ -72,7 +72,7 @@
             #
             #     maturinBuildFlags = [
             #       "-m"
-            #       "py-polars/Cargo.toml"
+            #       "py-polars/runtime/polars-runtime-32/Cargo.toml"
             #     ];
             #
             #     cargoDeps = rustPlatform.importCargoLock {
@@ -153,7 +153,7 @@
                   };
                   pybuild = {
                     pwd = "py-polars";
-                    cmd = buildPy "debug" "maturin develop -m $WORKSPACE_ROOT/py-polars/Cargo.toml \"$@\"";
+                    cmd = buildPy "debug" "maturin develop -m $WORKSPACE_ROOT/py-polars/runtime/polars-runtime-32/Cargo.toml \"$@\"";
                     doc = "Build the python library";
                   };
                   pybuild-mindebug = {
@@ -448,7 +448,7 @@
             );
             packages.polars =
               let
-                project = builtins.fromTOML (builtins.readFile ./py-polars/Cargo.toml);
+                project = builtins.fromTOML (builtins.readFile ./py-polars/runtime/polars-runtime-32/Cargo.toml);
               in
               py.buildPythonPackage {
                 pname = "polars";
@@ -466,7 +466,7 @@
 
                 maturinBuildFlags = [
                   "-m"
-                  "py-polars/Cargo.toml"
+                  "py-polars/runtime/polars-runtime-32/Cargo.toml"
                 ];
                 postInstall = ''
 									# Move polars.abi3.so -> polars.so
