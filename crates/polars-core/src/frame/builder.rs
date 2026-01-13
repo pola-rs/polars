@@ -27,6 +27,10 @@ impl DataFrameBuilder {
         }
     }
 
+    pub fn schema(&self) -> &Schema {
+        &self.schema
+    }
+
     pub fn reserve(&mut self, additional: usize) {
         for builder in &mut self.builders {
             builder.reserve(additional);

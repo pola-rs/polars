@@ -399,7 +399,7 @@ async fn compute_join(
         }
     }
 
-    let df_unmatched = merge_join.next_unmatched_chunk()?;
+    let df_unmatched = merge_join.unmatched()?;
     if df_unmatched.height() > 0 {
         let morsel = Morsel::new(df_unmatched, seq, source_token.clone());
         if params.args.maintain_order == MaintainOrderJoin::None {
