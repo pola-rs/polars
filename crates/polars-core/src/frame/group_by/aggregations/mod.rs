@@ -522,8 +522,28 @@ where
         }
 
         #[inline]
-        fn eq_min<V: PartialEq + Copy>(v: V, m: V) -> bool {
-            (v == m) || ((v != v) && (m != m))
+        fn eq_min<T>(v: T::Native, m: T::Native) -> bool
+        where
+            T: PolarsNumericType + Sync,
+            T::Native: NativeType
+                + PartialOrd
+                + Num
+                + NumCast
+                + Zero
+                + Bounded
+                + std::iter::Sum<T::Native>,
+        {
+            if T::Native::is_float() {
+                // Treat NaN == NaN for matching extrema positions.
+                let v: Option<f64> = NumCast::from(v);
+                let m: Option<f64> = NumCast::from(m);
+                match (v, m) {
+                    (Some(v), Some(m)) => (v == m) || (v.is_nan() && m.is_nan()),
+                    _ => v == m,
+                }
+            } else {
+                v == m
+            }
         }
 
         match groups {
@@ -550,7 +570,7 @@ where
                                 },
                                 Some(cur) => {
                                     let mv = v.min_ignore_nan(cur);
-                                    if mv == v && !eq_min(v, cur) {
+                                    if mv == v && !eq_min::<T>(v, cur) {
                                         best_val = Some(v);
                                         best_pos = Some(pos as IdxSize);
                                     }
@@ -567,7 +587,7 @@ where
                                     },
                                     Some(cur) => {
                                         let mv = v.min_ignore_nan(cur);
-                                        if mv == v && !eq_min(v, cur) {
+                                        if mv == v && !eq_min::<T>(v, cur) {
                                             best_val = Some(v);
                                             best_pos = Some(pos as IdxSize);
                                         }
@@ -627,14 +647,14 @@ where
                             if no_nulls {
                                 for (pos, i) in (start..end).enumerate() {
                                     let v = arr.value_unchecked(i);
-                                    if eq_min(v, m) {
+                                    if eq_min::<T>(v, m) {
                                         return Some(pos as IdxSize);
                                     }
                                 }
                             } else {
                                 for (pos, i) in (start..end).enumerate() {
                                     if let Some(v) = arr.get(i) {
-                                        if eq_min(v, m) {
+                                        if eq_min::<T>(v, m) {
                                             return Some(pos as IdxSize);
                                         }
                                     }
@@ -676,7 +696,7 @@ where
                                     },
                                     Some(cur) => {
                                         let mv = v.min_ignore_nan(cur);
-                                        if mv == v && !eq_min(v, cur) {
+                                        if mv == v && !eq_min::<T>(v, cur) {
                                             best_val = Some(v);
                                             best_pos = Some(pos as IdxSize);
                                         }
@@ -693,7 +713,7 @@ where
                                         },
                                         Some(cur) => {
                                             let mv = v.min_ignore_nan(cur);
-                                            if mv == v && !eq_min(v, cur) {
+                                            if mv == v && !eq_min::<T>(v, cur) {
                                                 best_val = Some(v);
                                                 best_pos = Some(pos as IdxSize);
                                             }
@@ -795,8 +815,28 @@ where
         }
 
         #[inline]
-        fn eq_max<V: PartialEq + Copy>(v: V, m: V) -> bool {
-            (v == m) || ((v != v) && (m != m))
+        fn eq_max<T>(v: T::Native, m: T::Native) -> bool
+        where
+            T: PolarsNumericType + Sync,
+            T::Native: NativeType
+                + PartialOrd
+                + Num
+                + NumCast
+                + Zero
+                + Bounded
+                + std::iter::Sum<T::Native>,
+        {
+            if T::Native::is_float() {
+                // Treat NaN == NaN for matching extrema positions.
+                let v: Option<f64> = NumCast::from(v);
+                let m: Option<f64> = NumCast::from(m);
+                match (v, m) {
+                    (Some(v), Some(m)) => (v == m) || (v.is_nan() && m.is_nan()),
+                    _ => v == m,
+                }
+            } else {
+                v == m
+            }
         }
 
         match groups {
@@ -823,7 +863,7 @@ where
 
                             // Update only if v is strictly better than current best.
                             // eq_max handles NaN==NaN for float matching; for ints it reduces to v==best_val.
-                            if mv == v && !eq_max(v, best_val) {
+                            if mv == v && !eq_max::<T>(v, best_val) {
                                 best_val = v;
                                 best_pos = pos as IdxSize;
                             }
@@ -843,7 +883,7 @@ where
                                     },
                                     Some(cur) => {
                                         let mv = v.max_ignore_nan(cur);
-                                        if mv == v && !eq_max(v, cur) {
+                                        if mv == v && !eq_max::<T>(v, cur) {
                                             best_val = Some(v);
                                             best_pos = Some(pos as IdxSize);
                                         }
@@ -904,14 +944,14 @@ where
                             if no_nulls {
                                 for (pos, i) in (start..end).enumerate() {
                                     let v = arr.value_unchecked(i);
-                                    if eq_max(v, m) {
+                                    if eq_max::<T>(v, m) {
                                         return Some(pos as IdxSize);
                                     }
                                 }
                             } else {
                                 for (pos, i) in (start..end).enumerate() {
                                     if let Some(v) = arr.get(i) {
-                                        if eq_max(v, m) {
+                                        if eq_max::<T>(v, m) {
                                             return Some(pos as IdxSize);
                                         }
                                     }
@@ -953,7 +993,7 @@ where
                                     },
                                     Some(cur) => {
                                         let mv = v.max_ignore_nan(cur);
-                                        if mv == v && !eq_max(v, cur) {
+                                        if mv == v && !eq_max::<T>(v, cur) {
                                             best_val = Some(v);
                                             best_pos = Some(pos as IdxSize);
                                         }
@@ -970,7 +1010,7 @@ where
                                         },
                                         Some(cur) => {
                                             let mv = v.max_ignore_nan(cur);
-                                            if mv == v && !eq_max(v, cur) {
+                                            if mv == v && !eq_max::<T>(v, cur) {
                                                 best_val = Some(v);
                                                 best_pos = Some(pos as IdxSize);
                                             }
@@ -986,7 +1026,6 @@ where
             },
         }
     }
-
     pub(crate) unsafe fn agg_sum(&self, groups: &GroupsType) -> Series {
         match groups {
             GroupsType::Idx(groups) => {
