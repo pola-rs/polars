@@ -119,7 +119,6 @@ module = [
   "gevent",
   "great_tables",
   "jax.*",
-  "kuzu",
   "marimo",
   "matplotlib.*",
   "moto.server",
