@@ -30,7 +30,6 @@ adbc-driver-manager; platform_system != 'Windows'
 adbc-driver-sqlite; platform_system != 'Windows'
 aiosqlite
 connectorx>=0.4.5a2
-kuzu
 # Cloud
 azure-identity
 boto3
