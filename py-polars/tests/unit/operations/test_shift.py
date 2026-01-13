@@ -209,6 +209,7 @@ def test_streaming_shift_25226() -> None:
         df.with_columns(b=pl.Series([2, 3, 4, None]), c=pl.lit(1, pl.Int64)),
     )
 
+
 def test_streaming_shift_with_head_26097() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 
