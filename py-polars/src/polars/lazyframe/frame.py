@@ -3213,7 +3213,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             else:
                 dt = target
 
-            return dt.merge(stream, **delta_merge_options)
+            return dt.merge(stream, **delta_merge_options)  # type: ignore[arg-type]
 
         else:
             if delta_write_options is None:
@@ -3221,7 +3221,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
             write_deltalake(
                 table_or_uri=target,
-                data=stream,
+                data=stream,  # type: ignore[call-overload]
                 mode=mode,
                 storage_options=storage_options,
                 **delta_write_options,
