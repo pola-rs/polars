@@ -24,7 +24,6 @@ pub use position::*;
 use crate::chunked_array::ops::row_encode::{
     encode_rows_unordered, encode_rows_vertical_par_unordered,
 };
-use crate::prelude::GroupByMethod::{ArgMax, ArgMin};
 
 impl DataFrame {
     pub fn group_by_with_series(
