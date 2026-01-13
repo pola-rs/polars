@@ -13,7 +13,11 @@ use crate::pl_str::PlRefStr;
 /// <https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation?tabs=registry>
 pub const WINDOWS_EXTPATH_PREFIX: &str = r#"\\?\"#;
 
-/// UTF-8 path. Not to be constructed directly; use [`PlRefPath::new`] instead.
+/// Path represented as a UTF-8 string.
+///
+/// Equality and ordering are based on the string value, which can be sensitive to duplicate
+/// separators. `as_std_path()` can be used to return a `&std::path::Path` for comparisons / API
+/// access.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct PlPath {
@@ -35,16 +39,16 @@ pub struct PlRefPath {
 
 impl PlPath {
     // Note: Do not expose the following constructors, they do not normalize paths.
-    fn new<S: AsRef<str> + ?Sized>(s: &S) -> &PlPath {
+    fn _new<S: AsRef<str> + ?Sized>(s: &S) -> &PlPath {
         let s: &str = s.as_ref();
         // Safety: `PlPath` is `repr(transparent)` on `str`.
         unsafe { &*(s as *const str as *const PlPath) }
     }
 
-    fn try_from_path(path: &Path) -> PolarsResult<&PlPath> {
+    fn _try_from_path(path: &Path) -> PolarsResult<&PlPath> {
         path.to_str()
             .ok_or_else(|| polars_err!(non_utf8_path))
-            .map(Self::new)
+            .map(Self::_new)
     }
 
     pub fn as_str(&self) -> &str {
@@ -64,7 +68,7 @@ impl PlPath {
     }
 
     pub fn to_ref_path(&self) -> PlRefPath {
-        PlRefPath::new(self.as_str())
+        PlRefPath::_new_no_normalize(self.as_str().into())
     }
 
     pub fn scheme(&self) -> Option<CloudScheme> {
@@ -99,7 +103,7 @@ impl PlPath {
 
     /// Slices the path.
     pub fn sliced(&self, range: Range<usize>) -> &PlPath {
-        Self::new(&self.as_str()[range])
+        Self::_new(&self.as_str()[range])
     }
 
     /// Strips the scheme, then returns the authority component, and the remaining
@@ -229,16 +233,21 @@ impl PlRefPath {
         Self::default()
     }
 
+    /// Normalizes Windows paths.
     pub fn new(path: impl AsRef<str> + Into<PlRefStr>) -> Self {
         if let Some(path) = PlPath::normalize_windows_path(path.as_ref()) {
             return path;
         }
 
-        Self { inner: path.into() }
+        Self::_new_no_normalize(path.into())
+    }
+
+    const fn _new_no_normalize(path: PlRefStr) -> Self {
+        Self { inner: path }
     }
 
     pub fn try_from_path(path: &Path) -> PolarsResult<PlRefPath> {
-        Ok(PlPath::try_from_path(path)?.to_ref_path())
+        Ok(Self::new(PlPath::_try_from_path(path)?.as_str()))
     }
 
     pub fn try_from_pathbuf(path: PathBuf) -> PolarsResult<PlRefPath> {
@@ -262,7 +271,7 @@ impl PlRefPath {
         if range == (0..self.as_str().len()) {
             self.clone()
         } else {
-            PlPath::sliced(self, range).to_ref_path()
+            Self::_new_no_normalize(PlPath::sliced(self, range).as_str().into())
         }
     }
 
@@ -304,7 +313,7 @@ impl Deref for PlRefPath {
     type Target = PlPath;
 
     fn deref(&self) -> &Self::Target {
-        PlPath::new(self)
+        PlPath::_new(self)
     }
 }
 
