@@ -36,9 +36,9 @@ enum NeedMore {
 
 #[derive(Default)]
 struct ComputeJoinArenas {
-    gather_left: Vec<IdxSize>,
-    gather_right: Vec<IdxSize>,
-    matched_probeside: MutableBitmap,
+    gather_build: Vec<IdxSize>,
+    gather_probe: Vec<IdxSize>,
+    matched_probe: MutableBitmap,
     df_builders: Option<(DataFrameBuilder, DataFrameBuilder)>,
 }
 
@@ -46,8 +46,8 @@ struct ComputeJoinArenas {
 pub struct MergeJoinNode {
     state: MergeJoinState,
     params: MergeJoinParams,
-    left_unmerged: DataFrameBuffer,
-    right_unmerged: DataFrameBuffer,
+    build_unmerged: DataFrameBuffer,
+    probe_unmerged: DataFrameBuffer,
     unmatched: BTreeMap<MorselSeq, DataFrame>,
     mergeable_seq: MorselSeq,
     max_seq_sent: MorselSeq,
@@ -79,6 +79,28 @@ impl MergeJoinParams {
             MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight => true,
             MaintainOrderJoin::None if self.args.how == JoinType::Right => false,
             _ => true,
+        }
+    }
+
+    pub fn preserve_order_probe(&self) -> bool {
+        match &self.args.maintain_order {
+            MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight => !self.left_is_build(),
+            MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft => self.left_is_build(),
+            _ => false,
+        }
+    }
+
+    pub fn build(&self) -> &MergeJoinSideParams {
+        match self.left_is_build() {
+            true => &self.left,
+            false => &self.right,
+        }
+    }
+
+    pub fn probe(&self) -> &MergeJoinSideParams {
+        match self.left_is_build() {
+            true => &self.right,
+            false => &self.left,
         }
     }
 }
@@ -119,10 +141,8 @@ impl MergeJoinNode {
             left_key_col = left_on[0].clone();
             right_key_col = right_on[0].clone();
         }
-        let left_unmerged = DataFrameBuffer::empty_with_schema(left_input_schema.clone());
-        let right_unmerged = DataFrameBuffer::empty_with_schema(right_input_schema.clone());
         let left = MergeJoinSideParams {
-            input_schema: left_input_schema,
+            input_schema: left_input_schema.clone(),
             on: left_on,
             key_col: left_key_col,
             emit_unmatched: matches!(args.how, JoinType::Left | JoinType::Full),
@@ -142,11 +162,19 @@ impl MergeJoinNode {
             use_row_encoding,
             args,
         };
+        let build_idx = match params.left_is_build() {
+            true => 0,
+            false => 1,
+        };
+        let build_schema = [&left_input_schema, &right_input_schema][build_idx];
+        let probe_schema = [&left_input_schema, &right_input_schema][1 - build_idx];
+        let build_unmerged = DataFrameBuffer::empty_with_schema(build_schema.clone());
+        let probe_unmerged = DataFrameBuffer::empty_with_schema(probe_schema.clone());
         Ok(MergeJoinNode {
             state,
             params,
-            left_unmerged,
-            right_unmerged,
+            build_unmerged,
+            probe_unmerged,
             unmatched: Default::default(),
             mergeable_seq: MorselSeq::default(),
             max_seq_sent: MorselSeq::default(),
@@ -172,7 +200,7 @@ impl ComputeNode for MergeJoinNode {
 
         let input_channels_done = recv[0] == PortState::Done && recv[1] == PortState::Done;
         let output_channel_done = send[0] == PortState::Done;
-        let input_buffers_empty = self.left_unmerged.is_empty() && self.right_unmerged.is_empty();
+        let input_buffers_empty = self.build_unmerged.is_empty() && self.probe_unmerged.is_empty();
         let unmatched_buffers_empty = self.unmatched.is_empty();
         if self.params.args.maintain_order == MaintainOrderJoin::None {
             debug_assert!(unmatched_buffers_empty);
@@ -196,8 +224,8 @@ impl ComputeNode for MergeJoinNode {
                 InMemorySourceNode::new(Arc::new(all_unmatched), self.max_seq_sent.successor());
             self.state = EmitUnmatched(src_node);
         } else if input_channels_done && input_buffers_empty && unmatched_buffers_empty {
-            self.left_unmerged.clear();
-            self.right_unmerged.clear();
+            self.build_unmerged.clear();
+            self.probe_unmerged.clear();
             self.unmatched.clear();
             self.state = Done;
         } else {
@@ -228,8 +256,8 @@ impl ComputeNode for MergeJoinNode {
                 send[0] = PortState::Ready;
             },
             EmitUnmatched(src_node) => {
-                debug_assert!(self.left_unmerged.is_empty());
-                debug_assert!(self.right_unmerged.is_empty());
+                debug_assert!(self.build_unmerged.is_empty());
+                debug_assert!(self.probe_unmerged.is_empty());
                 debug_assert!(self.unmatched.is_empty());
                 recv[0] = PortState::Done;
                 recv[1] = PortState::Done;
@@ -239,8 +267,8 @@ impl ComputeNode for MergeJoinNode {
                 }
             },
             Done => {
-                debug_assert!(self.left_unmerged.is_empty());
-                debug_assert!(self.right_unmerged.is_empty());
+                debug_assert!(self.build_unmerged.is_empty());
+                debug_assert!(self.probe_unmerged.is_empty());
                 debug_assert!(self.unmatched.is_empty());
                 recv[0] = PortState::Done;
                 recv[1] = PortState::Done;
@@ -265,14 +293,18 @@ impl ComputeNode for MergeJoinNode {
         assert!(send_ports.len() == 1);
 
         let params = &self.params;
-        let left_unmerged = &mut self.left_unmerged;
-        let right_unmerged = &mut self.right_unmerged;
+        let build_unmerged = &mut self.build_unmerged;
+        let probe_unmerged = &mut self.probe_unmerged;
         let unmatched = &mut self.unmatched;
         let mergeable_seq = &mut self.mergeable_seq;
         let max_seq_sent = &mut self.max_seq_sent;
 
-        let mut recv_left = recv_ports[0].take().map(RecvPort::serial);
-        let mut recv_right = recv_ports[1].take().map(RecvPort::serial);
+        let build_idx = match self.params.left_is_build() {
+            true => 0,
+            false => 1,
+        };
+        let mut recv_build = recv_ports[build_idx].take().map(RecvPort::serial);
+        let mut recv_probe = recv_ports[1 - build_idx].take().map(RecvPort::serial);
 
         if matches!(self.state, Running | FlushInputBuffers) {
             assert!(send_ports[0].is_some());
@@ -289,19 +321,17 @@ impl ComputeNode for MergeJoinNode {
 
                 loop {
                     if source_token.stop_requested() {
-                        buffer_unmerged_from_pipe(recv_left.as_mut(), left_unmerged).await;
-                        buffer_unmerged_from_pipe(recv_right.as_mut(), right_unmerged).await;
+                        buffer_unmerged_from_pipe(recv_build.as_mut(), build_unmerged).await;
+                        buffer_unmerged_from_pipe(recv_probe.as_mut(), probe_unmerged).await;
                         return Ok(());
                     }
 
                     let fmp = FindMergeableParams {
-                        left_done: recv_left.is_none(),
-                        right_done: recv_right.is_none(),
-                        left_params: &params.left,
-                        right_params: &params.right,
+                        build_done: recv_build.is_none(),
+                        probe_done: recv_probe.is_none(),
                         params,
                     };
-                    match find_mergeable(left_unmerged, right_unmerged, &mut search_limit, fmp)? {
+                    match find_mergeable(build_unmerged, probe_unmerged, &mut search_limit, fmp)? {
                         Left(partitions) => {
                             for (left_mergeable, right_mergeable) in partitions.into_iter() {
                                 if let Err((_, _, _, _)) = distributor
@@ -318,20 +348,21 @@ impl ComputeNode for MergeJoinNode {
                                 *mergeable_seq = mergeable_seq.successor();
                             }
                         },
-                        Right(NeedMore::Left | NeedMore::Both) if recv_left.is_some() => {
-                            let Ok(m) = recv_left.as_mut().unwrap().recv().await else {
-                                buffer_unmerged_from_pipe(recv_right.as_mut(), right_unmerged)
+                        Right(NeedMore::Left | NeedMore::Both) if recv_build.is_some() => {
+                            let Ok(m) = recv_build.as_mut().unwrap().recv().await else {
+                                buffer_unmerged_from_pipe(recv_probe.as_mut(), probe_unmerged)
                                     .await;
                                 return Ok(());
                             };
-                            left_unmerged.push_df(m.into_df());
+                            build_unmerged.push_df(m.into_df());
                         },
-                        Right(NeedMore::Right | NeedMore::Both) if recv_right.is_some() => {
-                            let Ok(m) = recv_right.as_mut().unwrap().recv().await else {
-                                buffer_unmerged_from_pipe(recv_left.as_mut(), left_unmerged).await;
+                        Right(NeedMore::Right | NeedMore::Both) if recv_probe.is_some() => {
+                            let Ok(m) = recv_probe.as_mut().unwrap().recv().await else {
+                                buffer_unmerged_from_pipe(recv_build.as_mut(), build_unmerged)
+                                    .await;
                                 return Ok(());
                             };
-                            right_unmerged.push_df(m.into_df());
+                            probe_unmerged.push_df(m.into_df());
                         },
                         Right(NeedMore::Finished) => {
                             return Ok(());
@@ -349,10 +380,10 @@ impl ComputeNode for MergeJoinNode {
                 scope.spawn_task(TaskPriority::High, async move {
                     let mut arenas = ComputeJoinArenas::default();
 
-                    while let Ok((left, right, seq, source_token)) = recv.recv().await {
+                    while let Ok((build, probe, seq, source_token)) = recv.recv().await {
                         compute_join(
-                            left,
-                            right,
+                            build,
+                            probe,
                             seq,
                             source_token,
                             params,
@@ -397,8 +428,8 @@ impl ComputeNode for MergeJoinNode {
 
 #[allow(clippy::too_many_arguments)]
 async fn compute_join(
-    left: DataFrameBuffer,
-    right: DataFrameBuffer,
+    build: DataFrameBuffer,
+    probe: DataFrameBuffer,
     seq: MorselSeq,
     source_token: SourceToken,
     params: &MergeJoinParams,
@@ -409,42 +440,20 @@ async fn compute_join(
 ) -> PolarsResult<()> {
     let morsel_size = get_ideal_morsel_size();
 
-    let mut left = left.into_df();
-    let mut right = right.into_df();
-    left.rechunk_mut();
-    right.rechunk_mut();
-
-    let build;
-    let build_sp;
-    let gather_build;
-    let probe;
-    let probe_sp;
-    let gather_probe;
-    if params.left_is_build() {
-        build = left.clone();
-        build_sp = &params.left;
-        gather_build = &mut arenas.gather_left;
-        probe = right.clone();
-        probe_sp = &params.right;
-        gather_probe = &mut arenas.gather_right;
-    } else {
-        build = right.clone();
-        build_sp = &params.right;
-        gather_build = &mut arenas.gather_right;
-        probe = left.clone();
-        probe_sp = &params.left;
-        gather_probe = &mut arenas.gather_left;
-    }
+    let mut build = build.into_df();
+    let mut probe = probe.into_df();
+    build.rechunk_mut();
+    probe.rechunk_mut();
 
     let mut build_key = Cow::Borrowed(
         build
-            .column(&build_sp.key_col)
+            .column(&params.build().key_col)
             .unwrap()
             .as_materialized_series(),
     );
     let mut probe_key = Cow::Borrowed(
         probe
-            .column(&probe_sp.key_col)
+            .column(&params.probe().key_col)
             .unwrap()
             .as_materialized_series(),
     );
@@ -463,22 +472,22 @@ async fn compute_join(
     let build_key = build_key.to_physical_repr();
     let probe_key = probe_key.to_physical_repr();
 
-    arenas.matched_probeside.clear();
-    arenas.matched_probeside.resize(probe_key.len(), false);
+    arenas.matched_probe.clear();
+    arenas.matched_probe.resize(probe_key.len(), false);
 
     let mut done = false;
     let mut skip_build_rows = 0;
     while !done {
-        gather_build.clear();
-        gather_probe.clear();
+        arenas.gather_build.clear();
+        arenas.gather_probe.clear();
         (done, skip_build_rows) = match_keys(
             &build_key,
             &probe_key,
-            gather_build,
-            gather_probe,
-            &mut arenas.matched_probeside,
-            probe_sp.emit_unmatched,
-            build_sp.emit_unmatched,
+            &mut arenas.gather_build,
+            &mut arenas.gather_probe,
+            &mut arenas.matched_probe,
+            params.probe().emit_unmatched,
+            params.build().emit_unmatched,
             params.key_descending,
             params.args.nulls_equal,
             morsel_size,
@@ -487,8 +496,8 @@ async fn compute_join(
         let df = gather_and_postprocess(
             build.clone(),
             probe.clone(),
-            gather_build,
-            gather_probe,
+            &arenas.gather_build,
+            &arenas.gather_probe,
             &mut arenas.df_builders,
             &params.args,
             &params.left.on,
@@ -504,23 +513,23 @@ async fn compute_join(
         }
     }
 
-    if probe_sp.emit_unmatched {
-        gather_build.clear();
-        gather_probe.clear();
+    if params.probe().emit_unmatched {
+        arenas.gather_build.clear();
+        arenas.gather_probe.clear();
         for (idx, _) in arenas
-            .matched_probeside
+            .matched_probe
             .iter()
             .enumerate_idx()
             .filter(|(_, m)| !m)
         {
-            gather_build.push(IdxSize::MAX);
-            gather_probe.push(idx);
+            arenas.gather_build.push(IdxSize::MAX);
+            arenas.gather_probe.push(idx);
         }
         let df_unmatched = gather_and_postprocess(
             build,
             probe,
-            gather_build,
-            gather_probe,
+            &arenas.gather_build,
+            &arenas.gather_probe,
             &mut arenas.df_builders,
             &params.args,
             &params.left.on,
@@ -565,49 +574,47 @@ async fn buffer_unmerged_from_pipe(
 }
 
 #[derive(Clone, Debug)]
-struct FindMergeableParams<'sp, 'p> {
-    left_done: bool,
-    right_done: bool,
-    left_params: &'sp MergeJoinSideParams,
-    right_params: &'sp MergeJoinSideParams,
-    params: &'p MergeJoinParams,
+struct FindMergeableParams<'a> {
+    build_done: bool,
+    probe_done: bool,
+    params: &'a MergeJoinParams,
 }
 
 fn find_mergeable(
-    left: &mut DataFrameBuffer,
-    right: &mut DataFrameBuffer,
+    build: &mut DataFrameBuffer,
+    probe: &mut DataFrameBuffer,
     search_limit: &mut usize,
     fmp: FindMergeableParams,
 ) -> PolarsResult<Either<UnitVec<(DataFrameBuffer, DataFrameBuffer)>, NeedMore>> {
-    let (left_mergeable, right_mergeable) =
-        match find_mergeable_limiting(left, right, search_limit, fmp.clone())? {
-            Left((left, right)) => (left, right),
+    let (build_mergeable, probe_mergeable) =
+        match find_mergeable_limiting(build, probe, search_limit, fmp.clone())? {
+            Left((build, probe)) => (build, probe),
             Right(need_more) => return Ok(Right(need_more)),
         };
-    assert!(!left_mergeable.is_empty() || !right_mergeable.is_empty());
+    assert!(!build_mergeable.is_empty() || !probe_mergeable.is_empty());
 
-    let partitions = find_mergeable_partition(left_mergeable, right_mergeable, fmp)?;
+    let partitions = find_mergeable_partition(build_mergeable, probe_mergeable, fmp)?;
     Ok(Left(partitions))
 }
 
 fn find_mergeable_limiting(
-    left: &mut DataFrameBuffer,
-    right: &mut DataFrameBuffer,
+    build: &mut DataFrameBuffer,
+    probe: &mut DataFrameBuffer,
     search_limit: &mut usize,
     fmp: FindMergeableParams,
 ) -> PolarsResult<Either<(DataFrameBuffer, DataFrameBuffer), NeedMore>> {
     const SEARCH_LIMIT_BUMP_FACTOR: usize = 2;
     let morsel_size = get_ideal_morsel_size();
     debug_assert!(*search_limit >= morsel_size);
-    let mut mergeable = find_mergeable_search(left, right, *search_limit, fmp.clone())?;
+    let mut mergeable = find_mergeable_search(build, probe, *search_limit, fmp.clone())?;
     while match mergeable {
-        Right(NeedMore::Left | NeedMore::Both) if *search_limit < left.height() => true,
-        Right(NeedMore::Right | NeedMore::Both) if *search_limit < right.height() => true,
+        Right(NeedMore::Left | NeedMore::Both) if *search_limit < build.height() => true,
+        Right(NeedMore::Right | NeedMore::Both) if *search_limit < probe.height() => true,
         _ => false,
     } {
         // Exponential increase
         *search_limit *= SEARCH_LIMIT_BUMP_FACTOR;
-        mergeable = find_mergeable_search(left, right, *search_limit, fmp.clone())?;
+        mergeable = find_mergeable_search(build, probe, *search_limit, fmp.clone())?;
     }
     if mergeable.is_left() {
         *search_limit = morsel_size;
@@ -616,183 +623,159 @@ fn find_mergeable_limiting(
 }
 
 fn find_mergeable_partition(
-    left: DataFrameBuffer,
-    right: DataFrameBuffer,
+    build: DataFrameBuffer,
+    probe: DataFrameBuffer,
     fmp: FindMergeableParams,
 ) -> PolarsResult<UnitVec<(DataFrameBuffer, DataFrameBuffer)>> {
     let morsel_size = get_ideal_morsel_size();
-    let maintain_order_left = matches!(
-        fmp.params.args.maintain_order,
-        MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight
-    );
-    let maintain_order_right = matches!(
-        fmp.params.args.maintain_order,
-        MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft
-    );
-    let partition_left = fmp.left_params.emit_unmatched || maintain_order_left;
-    let partition_right = fmp.right_params.emit_unmatched || maintain_order_right;
-    if partition_left && partition_right {
-        // TODO: We may be able to partition a subset of these cases (e.g. for FULL joins)
-        return Ok(UnitVec::from([(left, right)]));
+
+    if fmp.params.preserve_order_probe() || fmp.params.probe().emit_unmatched {
+        return Ok(UnitVec::from([(build, probe)]));
     }
 
-    let partition_count = (left.height() * right.height() + left.height() + right.height())
+    let partition_count = (build.height() * probe.height() + build.height() + probe.height())
         .div_ceil(morsel_size.pow(2));
     if partition_count <= 1 {
-        return Ok(UnitVec::from([(left, right)]));
+        return Ok(UnitVec::from([(build, probe)]));
     }
 
-    let partition_side;
-    let broadcast_side;
-    let mut partitions = UnitVec::with_capacity(partition_count);
-    let mut push_partition: Box<dyn FnMut(DataFrameBuffer, DataFrameBuffer)>;
-    if partition_left {
-        partition_side = left;
-        broadcast_side = right;
-        push_partition = Box::new(|part, broad| partitions.push((part, broad)));
-    } else {
-        partition_side = right;
-        broadcast_side = left;
-        push_partition = Box::new(|part, broad| partitions.push((broad, part)));
-    }
-
-    let chunk_size = partition_side.height().div_ceil(partition_count);
+    let chunk_size = build.height().div_ceil(partition_count);
     let mut offset = 0;
-    while offset < partition_side.height() - chunk_size {
-        let partition_chunk = partition_side.clone().slice(offset, chunk_size);
-        push_partition(partition_chunk, broadcast_side.clone());
+    let mut partitions = UnitVec::with_capacity(partition_count);
+    while offset < build.height() - chunk_size {
+        let partition_chunk = build.clone().slice(offset, chunk_size);
+        partitions.push((partition_chunk, probe.clone()));
         offset += chunk_size;
     }
     // Always make sure that there is at least one partition, even if the build side is empty.
-    let build_chunk = partition_side.slice(offset, chunk_size);
-    push_partition(build_chunk, broadcast_side);
+    let build_chunk = build.slice(offset, chunk_size);
+    partitions.push((build_chunk, probe));
 
-    drop(push_partition);
     Ok(partitions)
 }
 
 fn find_mergeable_search(
-    left: &mut DataFrameBuffer,
-    right: &mut DataFrameBuffer,
+    build: &mut DataFrameBuffer,
+    probe: &mut DataFrameBuffer,
     search_limit: usize,
     fmp: FindMergeableParams,
 ) -> PolarsResult<Either<(DataFrameBuffer, DataFrameBuffer), NeedMore>> {
     let FindMergeableParams {
-        left_done,
-        right_done,
-        left_params,
-        right_params,
+        build_done,
+        probe_done,
         params,
     } = fmp;
-    let left_empty_buf = || DataFrameBuffer::empty_with_schema(left_params.input_schema.clone());
-    let right_empty_buf = || DataFrameBuffer::empty_with_schema(right_params.input_schema.clone());
-    let left_get = |idx| unsafe { left.get_bypass_validity(&left_params.key_col, idx, params) };
-    let right_get = |idx| unsafe { right.get_bypass_validity(&right_params.key_col, idx, params) };
+    let build_params = params.build();
+    let probe_params = params.probe();
+    let build_empty_buf = || DataFrameBuffer::empty_with_schema(build_params.input_schema.clone());
+    let probe_empty_buf = || DataFrameBuffer::empty_with_schema(probe_params.input_schema.clone());
+    let build_get = |idx| unsafe { build.get_bypass_validity(&build_params.key_col, idx, params) };
+    let probe_get = |idx| unsafe { probe.get_bypass_validity(&probe_params.key_col, idx, params) };
 
-    if left_done && left.is_empty() && right_done && right.is_empty() {
+    if build_done && build.is_empty() && probe_done && probe.is_empty() {
         return Ok(Right(NeedMore::Finished));
-    } else if left_done && left.is_empty() && !right_done && right.is_empty() {
+    } else if build_done && build.is_empty() && !probe_done && probe.is_empty() {
         return Ok(Right(NeedMore::Right));
-    } else if right_done && right.is_empty() && !left_done && left.is_empty() {
+    } else if probe_done && probe.is_empty() && !build_done && build.is_empty() {
         return Ok(Right(NeedMore::Left));
-    } else if left_done && left.is_empty() && !right_params.emit_unmatched {
-        // We will never match on the remaining right keys
-        right.clear();
+    } else if build_done && build.is_empty() && !probe_params.emit_unmatched {
+        // We will never match on the remaining build keys
+        probe.clear();
         return Ok(Right(NeedMore::Finished));
-    } else if right_done && right.is_empty() && !left_params.emit_unmatched {
-        // We will never match on the remaining left keys
-        left.clear();
+    } else if probe_done && probe.is_empty() && !build_params.emit_unmatched {
+        // We will never match on the remaining probe keys
+        build.clear();
         return Ok(Right(NeedMore::Finished));
-    } else if left_done && left.is_empty() {
-        let right_split = right.split_at(get_ideal_morsel_size());
-        return Ok(Left((left_empty_buf(), right_split)));
-    } else if right_done && right.is_empty() {
-        let left_split = left.split_at(get_ideal_morsel_size());
-        return Ok(Left((left_split, right_empty_buf())));
-    } else if left.is_empty() && !left_done {
+    } else if build_done && build.is_empty() {
+        let probe_split = probe.split_at(get_ideal_morsel_size());
+        return Ok(Left((build_empty_buf(), probe_split)));
+    } else if probe_done && probe.is_empty() {
+        let build_split = build.split_at(get_ideal_morsel_size());
+        return Ok(Left((build_split, probe_empty_buf())));
+    } else if build.is_empty() && !build_done {
         return Ok(Right(NeedMore::Left));
-    } else if right.is_empty() && !right_done {
+    } else if probe.is_empty() && !probe_done {
         return Ok(Right(NeedMore::Right));
     }
 
-    let left_first = left_get(0);
-    let right_first = right_get(0);
+    let build_first = build_get(0);
+    let probe_first = probe_get(0);
 
     // First return chunks of nulls if there are any
-    if !params.args.nulls_equal && !params.key_nulls_last && left_first == AnyValue::Null {
-        let left_first_nonnull_idx =
-            binary_search_upper(left, &AnyValue::Null, params, left_params)?;
-        let left_split = left.split_at(left_first_nonnull_idx);
-        return Ok(Left((left_split, right_empty_buf())));
+    if !params.args.nulls_equal && !params.key_nulls_last && build_first == AnyValue::Null {
+        let build_first_nonnull_idx =
+            binary_search_upper(build, &AnyValue::Null, params, build_params)?;
+        let build_split = build.split_at(build_first_nonnull_idx);
+        return Ok(Left((build_split, probe_empty_buf())));
     }
-    if !params.args.nulls_equal && !params.key_nulls_last && right_first == AnyValue::Null {
-        let right_first_nonnull_idx =
-            binary_search_upper(right, &AnyValue::Null, params, right_params)?;
-        let right_split = right.split_at(right_first_nonnull_idx);
-        return Ok(Left((left_empty_buf(), right_split)));
+    if !params.args.nulls_equal && !params.key_nulls_last && probe_first == AnyValue::Null {
+        let probe_first_nonnull_idx =
+            binary_search_upper(probe, &AnyValue::Null, params, probe_params)?;
+        let right_split = probe.split_at(probe_first_nonnull_idx);
+        return Ok(Left((build_empty_buf(), right_split)));
     }
 
-    let left_last_idx = usize::min(left.height(), search_limit);
-    let left_last = left_get(left_last_idx - 1);
-    let left_first_incomplete = match left_done {
-        false => binary_search_lower(left, &left_last, params, left_params)?,
-        true => left.height(),
+    let build_last_idx = usize::min(build.height(), search_limit);
+    let build_last = build_get(build_last_idx - 1);
+    let build_first_incomplete = match build_done {
+        false => binary_search_lower(build, &build_last, params, build_params)?,
+        true => build.height(),
     };
 
-    let right_last_idx = usize::min(right.height(), search_limit);
-    let right_last = right_get(right_last_idx - 1);
-    let right_first_incomplete = match right_done {
-        false => binary_search_lower(right, &right_last, params, right_params)?,
-        true => right.height(),
+    let probe_last_idx = usize::min(probe.height(), search_limit);
+    let probe_last = probe_get(probe_last_idx - 1);
+    let probe_first_incomplete = match probe_done {
+        false => binary_search_lower(probe, &probe_last, params, probe_params)?,
+        true => probe.height(),
     };
 
-    if left_first_incomplete == 0 && right_first_incomplete == 0 {
-        debug_assert!(!left_done && !right_done);
+    if build_first_incomplete == 0 && probe_first_incomplete == 0 {
+        debug_assert!(!build_done && !probe_done);
         return Ok(Right(NeedMore::Both));
-    } else if left_first_incomplete == 0 {
-        debug_assert!(!left_done);
+    } else if build_first_incomplete == 0 {
+        debug_assert!(!build_done);
         return Ok(Right(NeedMore::Left));
-    } else if right_first_incomplete == 0 {
-        debug_assert!(!right_done);
+    } else if probe_first_incomplete == 0 {
+        debug_assert!(!probe_done);
         return Ok(Right(NeedMore::Right));
     }
 
-    let left_last_completed_val = left_get(left_first_incomplete - 1);
-    let right_last_completed_val = right_get(right_first_incomplete - 1);
+    let build_last_completed_val = build_get(build_first_incomplete - 1);
+    let probe_last_completed_val = probe_get(probe_first_incomplete - 1);
 
-    let left_mergeable_until; // bound is *exclusive*
-    let right_mergeable_until;
-    let ord = keys_cmp(&left_last_completed_val, &right_last_completed_val, params);
+    let build_mergeable_until; // bound is *exclusive*
+    let probe_mergeable_until;
+    let ord = keys_cmp(&build_last_completed_val, &probe_last_completed_val, params);
     if ord.is_eq() {
-        left_mergeable_until = left_first_incomplete;
-        right_mergeable_until = right_first_incomplete;
+        build_mergeable_until = build_first_incomplete;
+        probe_mergeable_until = probe_first_incomplete;
     } else if ord.is_lt() {
-        left_mergeable_until = left_first_incomplete;
-        right_mergeable_until = binary_search_upper(
-            right,
-            &left_get(left_mergeable_until - 1),
+        build_mergeable_until = build_first_incomplete;
+        probe_mergeable_until = binary_search_upper(
+            probe,
+            &build_get(build_mergeable_until - 1),
             params,
-            right_params,
+            probe_params,
         )?;
     } else if ord.is_gt() {
-        right_mergeable_until = right_first_incomplete;
-        left_mergeable_until = binary_search_upper(
-            left,
-            &right_get(right_mergeable_until - 1),
+        probe_mergeable_until = probe_first_incomplete;
+        build_mergeable_until = binary_search_upper(
+            build,
+            &probe_get(probe_mergeable_until - 1),
             params,
-            left_params,
+            build_params,
         )?;
     } else {
         unreachable!();
     }
 
-    if left_mergeable_until == 0 && right_mergeable_until == 0 {
+    if build_mergeable_until == 0 && probe_mergeable_until == 0 {
         return Ok(Right(NeedMore::Both));
     }
 
-    let left_split = left.split_at(left_mergeable_until);
-    let right_split = right.split_at(right_mergeable_until);
-    Ok(Left((left_split, right_split)))
+    let build_split = build.split_at(build_mergeable_until);
+    let probe_split = probe.split_at(probe_mergeable_until);
+    Ok(Left((build_split, probe_split)))
 }
 
 unsafe fn series_get_bypass_validity<'a>(
@@ -848,13 +831,13 @@ fn binary_search_upper(
     binary_search(vec, sv, Ordering::is_lt, params, sp)
 }
 
-fn keys_cmp(left: &AnyValue, right: &AnyValue, params: &MergeJoinParams) -> Ordering {
-    match AnyValue::partial_cmp(left, right) {
+fn keys_cmp(lhs: &AnyValue, rhs: &AnyValue, params: &MergeJoinParams) -> Ordering {
+    match AnyValue::partial_cmp(lhs, rhs) {
         Some(Ordering::Equal) => Ordering::Equal,
-        _ if left.is_null() && params.key_nulls_last => Ordering::Greater,
-        _ if right.is_null() && params.key_nulls_last => Ordering::Less,
-        _ if left.is_null() => Ordering::Less,
-        _ if right.is_null() => Ordering::Greater,
+        _ if lhs.is_null() && params.key_nulls_last => Ordering::Greater,
+        _ if rhs.is_null() && params.key_nulls_last => Ordering::Less,
+        _ if lhs.is_null() => Ordering::Less,
+        _ if rhs.is_null() => Ordering::Greater,
         Some(Ordering::Greater) if params.key_descending => Ordering::Less,
         Some(Ordering::Less) if params.key_descending => Ordering::Greater,
         Some(Ordering::Greater) => Ordering::Greater,

@@ -11,7 +11,7 @@ use polars_utils::itertools::Itertools;
 use polars_utils::total_ord::TotalOrd;
 use polars_utils::{IdxSize, format_pl_smallstr};
 
-use crate::frame::{JoinArgs, JoinType, MaintainOrderJoin};
+use crate::frame::{JoinArgs, JoinType};
 use crate::series::coalesce_columns;
 
 #[allow(clippy::too_many_arguments)]
@@ -26,7 +26,7 @@ pub fn match_keys(
     descending: bool,
     nulls_equal: bool,
     limit_results: usize,
-    mut skip_build_rows: usize,
+    skip_build_rows: usize,
 ) -> (bool, usize) {
     macro_rules! dispatch {
         ($left_keys_ca:expr) => {
@@ -163,7 +163,7 @@ fn match_null_keys_impl(
     matched_probe: &mut MutableBitmap,
     probe_mark_matched: bool,
     build_emit_unmatched: bool,
-    descending: bool,
+    _descending: bool,
     nulls_equal: bool,
     limit_results: usize,
     mut skip_build_rows: usize,
@@ -197,6 +197,7 @@ fn match_null_keys_impl(
     (true, skip_build_rows)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn gather_and_postprocess(
     build: DataFrame,
     probe: DataFrame,
