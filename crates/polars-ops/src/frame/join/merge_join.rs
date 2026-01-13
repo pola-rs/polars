@@ -14,36 +14,6 @@ use polars_utils::{IdxSize, format_pl_smallstr};
 use crate::frame::{JoinArgs, JoinType, MaintainOrderJoin};
 use crate::series::coalesce_columns;
 
-#[derive(Debug)]
-pub struct MergeJoinSideParams {
-    pub input_schema: SchemaRef,
-    pub on: Vec<PlSmallStr>,
-    pub key_col: PlSmallStr,
-    pub emit_unmatched: bool,
-}
-
-#[derive(Debug)]
-pub struct MergeJoinParams {
-    pub left: MergeJoinSideParams,
-    pub right: MergeJoinSideParams,
-    pub output_schema: SchemaRef,
-    pub key_descending: bool,
-    pub key_nulls_last: bool,
-    pub use_row_encoding: bool,
-    pub args: JoinArgs,
-}
-
-impl MergeJoinParams {
-    pub fn left_is_build(&self) -> bool {
-        match self.args.maintain_order {
-            MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft => false,
-            MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight => true,
-            MaintainOrderJoin::None if self.args.how == JoinType::Right => false,
-            _ => true,
-        }
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 pub fn match_keys(
     left_keys: &Series,
@@ -233,15 +203,21 @@ pub fn gather_and_postprocess(
     gather_build: &[IdxSize],
     gather_probe: &[IdxSize],
     df_builders: &mut Option<(DataFrameBuilder, DataFrameBuilder)>,
-    params: &MergeJoinParams,
+    args: &JoinArgs,
+    left_on: &[PlSmallStr],
+    right_on: &[PlSmallStr],
+    left_is_build: bool,
+    output_schema: &Schema,
 ) -> PolarsResult<DataFrame> {
-    let should_coalesce = params.args.should_coalesce();
+    let should_coalesce = args.should_coalesce();
+    let left_emit_unmatched = matches!(args.how, JoinType::Left | JoinType::Full);
+    let right_emit_unmatched = matches!(args.how, JoinType::Right | JoinType::Full);
 
     let mut left;
     let gather_left;
     let mut right;
     let gather_right;
-    if params.left_is_build() {
+    if left_is_build {
         left = build;
         gather_left = gather_build;
         right = probe;
@@ -261,10 +237,10 @@ pub fn gather_and_postprocess(
         .cloned()
         .collect_vec()
     {
-        if params.left.on.contains(&col) && should_coalesce {
+        if left_on.contains(&col) && should_coalesce {
             continue;
         }
-        if !params.output_schema.contains(&col) {
+        if !output_schema.contains(&col) {
             left.drop_in_place(&col).unwrap();
         }
     }
@@ -275,14 +251,14 @@ pub fn gather_and_postprocess(
         .cloned()
         .collect_vec()
     {
-        if params.left.on.contains(&col) && should_coalesce {
+        if left_on.contains(&col) && should_coalesce {
             continue;
         }
         let renamed = match left.schema().contains(&col) {
-            true => Cow::Owned(format_pl_smallstr!("{}{}", col, params.args.suffix())),
+            true => Cow::Owned(format_pl_smallstr!("{}{}", col, args.suffix())),
             false => Cow::Borrowed(&col),
         };
-        if !params.output_schema.contains(&renamed) {
+        if !output_schema.contains(&renamed) {
             right.drop_in_place(&col).unwrap();
         }
     }
@@ -295,12 +271,12 @@ pub fn gather_and_postprocess(
     }
 
     let (left_build, right_build) = df_builders.as_mut().unwrap();
-    if params.right.emit_unmatched {
+    if right_emit_unmatched {
         left_build.opt_gather_extend(&left, gather_left, ShareStrategy::Never);
     } else {
         unsafe { left_build.gather_extend(&left, gather_left, ShareStrategy::Never) };
     }
-    if params.left.emit_unmatched {
+    if left_emit_unmatched {
         right_build.opt_gather_extend(&right, gather_right, ShareStrategy::Never);
     } else {
         unsafe { right_build.gather_extend(&right, gather_right, ShareStrategy::Never) };
@@ -310,14 +286,14 @@ pub fn gather_and_postprocess(
     let mut right = right_build.freeze_reset();
 
     // Coalsesce the key columns
-    if params.args.how == JoinType::Left && should_coalesce {
-        for c in &params.left.on {
+    if args.how == JoinType::Left && should_coalesce {
+        for c in left_on {
             if right.schema().contains(c) {
                 right.drop_in_place(c.as_str())?;
             }
         }
-    } else if params.args.how == JoinType::Right && should_coalesce {
-        for c in &params.right.on {
+    } else if args.how == JoinType::Right && should_coalesce {
+        for c in right_on {
             if left.schema().contains(c) {
                 left.drop_in_place(c.as_str())?;
             }
@@ -331,19 +307,17 @@ pub fn gather_and_postprocess(
         .iter()
         .filter(|c| left_cols.contains(*c))
         .map(|c| {
-            let renamed = format_pl_smallstr!("{}{}", c, params.args.suffix());
+            let renamed = format_pl_smallstr!("{}{}", c, args.suffix());
             (c.as_str(), renamed)
         });
     right.rename_many(renames).unwrap();
 
     left.hstack_mut(right.columns())?;
 
-    if params.args.how == JoinType::Full && should_coalesce {
+    if args.how == JoinType::Full && should_coalesce {
         // Coalesce key columns
-        for (left_keycol, right_keycol) in
-            Iterator::zip(params.left.on.iter(), params.right.on.iter())
-        {
-            let right_keycol = format_pl_smallstr!("{}{}", right_keycol, params.args.suffix());
+        for (left_keycol, right_keycol) in Iterator::zip(left_on.iter(), right_on.iter()) {
+            let right_keycol = format_pl_smallstr!("{}{}", right_keycol, args.suffix());
             let left_col = left.column(left_keycol).unwrap();
             let right_col = left.column(&right_keycol).unwrap();
             let coalesced = coalesce_columns(&[left_col.clone(), right_col.clone()]).unwrap();
@@ -355,22 +329,22 @@ pub fn gather_and_postprocess(
     }
 
     if should_coalesce {
-        for col in &params.left.on {
-            if left.schema().contains(col) && !params.output_schema.contains(col) {
+        for col in left_on {
+            if left.schema().contains(col) && !output_schema.contains(col) {
                 left.drop_in_place(col).unwrap();
             }
         }
-        for col in &params.right.on {
+        for col in right_on {
             let renamed = match left.schema().contains(col) {
-                true => Cow::Owned(format_pl_smallstr!("{}{}", col, params.args.suffix())),
+                true => Cow::Owned(format_pl_smallstr!("{}{}", col, args.suffix())),
                 false => Cow::Borrowed(col),
             };
-            if left.schema().contains(&renamed) && !params.output_schema.contains(&renamed) {
+            if left.schema().contains(&renamed) && !output_schema.contains(&renamed) {
                 left.drop_in_place(&renamed).unwrap();
             }
         }
     }
 
-    debug_assert_eq!(left.schema(), &params.output_schema);
+    debug_assert_eq!(**left.schema(), *output_schema);
     Ok(left)
 }

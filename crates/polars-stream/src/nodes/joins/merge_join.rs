@@ -53,6 +53,36 @@ pub struct MergeJoinNode {
     max_seq_sent: MorselSeq,
 }
 
+#[derive(Debug)]
+pub struct MergeJoinSideParams {
+    pub input_schema: SchemaRef,
+    pub on: Vec<PlSmallStr>,
+    pub key_col: PlSmallStr,
+    pub emit_unmatched: bool,
+}
+
+#[derive(Debug)]
+pub struct MergeJoinParams {
+    pub left: MergeJoinSideParams,
+    pub right: MergeJoinSideParams,
+    pub output_schema: SchemaRef,
+    pub key_descending: bool,
+    pub key_nulls_last: bool,
+    pub use_row_encoding: bool,
+    pub args: JoinArgs,
+}
+
+impl MergeJoinParams {
+    pub fn left_is_build(&self) -> bool {
+        match self.args.maintain_order {
+            MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft => false,
+            MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight => true,
+            MaintainOrderJoin::None if self.args.how == JoinType::Right => false,
+            _ => true,
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 enum MergeJoinState {
     #[default]
@@ -460,7 +490,11 @@ async fn compute_join(
             gather_build,
             gather_probe,
             &mut arenas.df_builders,
-            params,
+            &params.args,
+            &params.left.on,
+            &params.right.on,
+            params.left_is_build(),
+            &params.output_schema,
         )?;
         if df.height() > 0 {
             let morsel = Morsel::new(df, seq, source_token.clone());
@@ -488,7 +522,11 @@ async fn compute_join(
             gather_build,
             gather_probe,
             &mut arenas.df_builders,
-            params,
+            &params.args,
+            &params.left.on,
+            &params.right.on,
+            params.left_is_build(),
+            &params.output_schema,
         )?;
         if df_unmatched.height() > 0 {
             let morsel = Morsel::new(df_unmatched, seq, source_token.clone());
