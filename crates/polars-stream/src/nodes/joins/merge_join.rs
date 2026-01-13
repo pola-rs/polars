@@ -526,10 +526,8 @@ async fn compute_join(
                 if send.send(morsel).await.is_err() {
                     return Ok(());
                 }
-            } else {
-                if unmatched_send.send(morsel).await.is_err() {
-                    panic!("broken pipe");
-                }
+            } else if unmatched_send.send(morsel).await.is_err() {
+                panic!("broken pipe");
             }
         }
     }
