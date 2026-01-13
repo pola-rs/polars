@@ -371,7 +371,9 @@
                     -r py-polars/docs/requirements-docs.txt \
                     -r docs/source/requirements.txt \
                     ${builtins.concatStringsSep " " extraPyDeps} \
-                  && uv pip install --upgrade --compile-bytecode "pyiceberg>=0.7.1" pyiceberg-core
+                  && uv pip install --upgrade --compile-bytecode "pyiceberg>=0.7.1" pyiceberg-core \
+                	&& uv pip install --no-deps -e py-polars \
+                	&& uv pip uninstall polars-runtime-compat polars-runtime-64  ## Uninstall runtimes which might take precedence over polars-runtime-32
                 '';
 
                 venvDir = ".venv";
