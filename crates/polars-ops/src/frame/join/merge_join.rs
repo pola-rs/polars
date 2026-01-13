@@ -46,8 +46,8 @@ impl MergeJoinParams {
 
 #[allow(clippy::too_many_arguments)]
 pub fn match_keys(
-    lk: &Series,
-    rk: &Series,
+    left_keys: &Series,
+    right_keys: &Series,
     gather_left: &mut Vec<IdxSize>,
     gather_right: &mut Vec<IdxSize>,
     matched_right: &mut MutableBitmap,
@@ -58,10 +58,10 @@ pub fn match_keys(
     params: &MergeJoinParams,
 ) -> (bool, usize) {
     macro_rules! dispatch {
-        ($left_key_ca:expr) => {
+        ($left_keys_ca:expr) => {
             match_keys_impl(
-                $left_key_ca,
-                rk.as_ref().as_ref(),
+                $left_keys_ca,
+                right_keys.as_ref().as_ref(),
                 gather_left,
                 gather_right,
                 matched_right,
@@ -74,28 +74,28 @@ pub fn match_keys(
         };
     }
 
-    assert_eq!(lk.dtype(), rk.dtype());
-    match lk.dtype() {
+    assert_eq!(left_keys.dtype(), right_keys.dtype());
+    match left_keys.dtype() {
         dt if dt.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(dt, |$T| {
                 type PhysCa = ChunkedArray<$T>;
-                let lk_ca: &PhysCa  = lk.as_ref().as_ref();
-                dispatch!(lk_ca)
+                let left_keys_ca: &PhysCa  = left_keys.as_ref().as_ref();
+                dispatch!(left_keys_ca)
             })
         },
-        DataType::Boolean => dispatch!(lk.bool().unwrap()),
-        DataType::String => dispatch!(lk.str().unwrap()),
-        DataType::Binary => dispatch!(lk.binary().unwrap()),
-        DataType::BinaryOffset => dispatch!(lk.binary_offset().unwrap()),
+        DataType::Boolean => dispatch!(left_keys.bool().unwrap()),
+        DataType::String => dispatch!(left_keys.str().unwrap()),
+        DataType::Binary => dispatch!(left_keys.binary().unwrap()),
+        DataType::BinaryOffset => dispatch!(left_keys.binary_offset().unwrap()),
         #[cfg(feature = "dtype-categorical")]
         DataType::Enum(cats, _) => with_match_categorical_physical_type!(cats.physical(), |$C| {
             type PhysCa = ChunkedArray<<$C as PolarsCategoricalType>::PolarsPhysical>;
-            let lk_ca: &PhysCa = lk.as_ref().as_ref();
-            dispatch!(lk_ca)
+            let left_keys_ca: &PhysCa = left_keys.as_ref().as_ref();
+            dispatch!(left_keys_ca)
         }),
         DataType::Null => match_null_keys_impl(
-            lk.len(),
-            rk.len(),
+            left_keys.len(),
+            right_keys.len(),
             gather_left,
             gather_right,
             matched_right,
@@ -111,8 +111,8 @@ pub fn match_keys(
 
 #[allow(clippy::mut_range_bound, clippy::too_many_arguments)]
 fn match_keys_impl<'a, T: PolarsDataType>(
-    left_key: &'a ChunkedArray<T>,
-    right_key: &'a ChunkedArray<T>,
+    left_keys: &'a ChunkedArray<T>,
+    right_keys: &'a ChunkedArray<T>,
     gather_left: &mut Vec<IdxSize>,
     gather_right: &mut Vec<IdxSize>,
     matched_right: &mut MutableBitmap,
@@ -128,12 +128,12 @@ where
     debug_assert!(gather_left.is_empty());
     debug_assert!(gather_right.is_empty());
     if probe_sp.emit_unmatched {
-        debug_assert!(matched_right.len() == right_key.len());
+        debug_assert!(matched_right.len() == right_keys.len());
     }
 
     let descending = params.key_descending;
-    let left_key = left_key.downcast_as_array();
-    let right_key = right_key.downcast_as_array();
+    let left_key = left_keys.downcast_as_array();
+    let right_key = right_keys.downcast_as_array();
 
     let mut iterator = left_key.iter().enumerate().skip(skip_build_rows).peekable();
     if iterator.peek().is_none() {
@@ -351,8 +351,8 @@ pub fn gather_and_postprocess(
 
     if should_coalesce {
         for col in &params.left.on {
-            if left.schema().contains(&col) && !params.output_schema.contains(&col) {
-                left.drop_in_place(&col).unwrap();
+            if left.schema().contains(col) && !params.output_schema.contains(col) {
+                left.drop_in_place(col).unwrap();
             }
         }
         for col in &params.right.on {
