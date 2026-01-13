@@ -11,6 +11,9 @@ on:
       - python-release-docs
   workflow_dispatch:
 
+env:
+  RUSTFLAGS: -Zunstable-options -Csymbol-mangling-version=legacy
+
 jobs:
   markdown-link-check:
     runs-on: ubuntu-latest
