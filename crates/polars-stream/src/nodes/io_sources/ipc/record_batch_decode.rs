@@ -48,11 +48,13 @@ impl RecordBatchDecoder {
 
         let limit = Some(slice_offset + slice_len);
 
-        // Extract statistics flags from the metadata.
-        let custom_metadata = self
+        // Extract statistics flags from the metadata
+        let flags = self
             .read_statistics_flags
-            .then_some(reader.record_batch_custom_metadata(&mut message_scratch)?);
-        let flags = custom_metadata.as_ref().map(get_flags).transpose()?;
+            .then_some(reader.record_batch_custom_metadata(&mut message_scratch)?)
+            .as_ref()
+            .map(get_flags)
+            .transpose()?;
 
         // Create the DataFrame with the appropriate schema based on the data.
         // @NOTE: This empty schema code path is relied upon for `select(pl.len())`
