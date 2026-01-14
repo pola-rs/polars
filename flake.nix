@@ -327,6 +327,7 @@
                     py.python
                     py.venvShellHook
                     py.build
+                    py.mypy
 
                     rustPkg
 
@@ -336,7 +337,6 @@
                     maturin
 
                     typos
-                    mypy
                     dprint
 										uv
 
