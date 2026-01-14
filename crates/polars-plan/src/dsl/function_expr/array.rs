@@ -37,6 +37,8 @@ pub enum ArrayFunction {
     #[cfg(feature = "array_count")]
     CountMatches,
     Shift,
+    #[cfg(feature = "array_gather")]
+    Gather(bool),
     Explode(ExplodeOptions),
     Concat,
     #[cfg(feature = "array_to_struct")]
@@ -75,6 +77,8 @@ impl fmt::Display for ArrayFunction {
             #[cfg(feature = "array_count")]
             CountMatches => "count_matches",
             Shift => "shift",
+            #[cfg(feature = "array_gather")]
+            Gather(_) => "gather",
             Explode { .. } => "explode",
             #[cfg(feature = "array_to_struct")]
             ToStruct(_) => "to_struct",
