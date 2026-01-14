@@ -226,12 +226,12 @@ impl PhysicalExpr for AggregationExpr {
                 },
                 GroupByMethod::ArgMin => {
                     let (c, groups) = ac.get_final_aggregation();
-                    let agg_c = c.agg_arg_min(&groups); // you will add this
+                    let agg_c = c.agg_arg_min(&groups);
                     AggregatedScalar(agg_c.with_name(keep_name))
                 },
                 GroupByMethod::ArgMax => {
                     let (c, groups) = ac.get_final_aggregation();
-                    let agg_c = c.agg_arg_max(&groups); // you will add this
+                    let agg_c = c.agg_arg_max(&groups);
                     AggregatedScalar(agg_c.with_name(keep_name))
                 },
                 GroupByMethod::Median => {
