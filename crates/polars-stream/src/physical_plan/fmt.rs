@@ -528,15 +528,11 @@ fn visualize_plan_rec(
             key_per_input,
             aggs_per_input,
         } => {
-            let mut out = String::new();
+            let mut out = String::from("group-by");
             for (key, aggs) in key_per_input.iter().zip(aggs_per_input) {
-                if !out.is_empty() {
-                    out.push('\n');
-                }
-
                 write!(
                     &mut out,
-                    "group-by\\nkey:\\n{}\\naggs:\\n{}",
+                    "\\nkey:\\n{}\\naggs:\\n{}",
                     fmt_exprs_to_label(key, expr_arena, FormatExprStyle::Select),
                     fmt_exprs_to_label(aggs, expr_arena, FormatExprStyle::Select)
                 )
