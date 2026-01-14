@@ -3,16 +3,22 @@ use std::sync::Arc;
 use polars_core::config;
 use polars_io::cloud::CloudOptions;
 use polars_plan::dsl::ScanSource;
+use polars_utils::pl_str::PlSmallStr;
 
-use super::{FileReader, NDJsonFileReader};
+use crate::nodes::io_sources::multi_scan::reader_interface::FileReader;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
+use crate::nodes::io_sources::ndjson::NDJsonFileReader;
 use crate::nodes::io_sources::ndjson::chunk_reader::ChunkReaderBuilder;
 
-#[cfg(feature = "json")]
-impl FileReaderBuilder for polars_plan::dsl::NDJsonReadOptions {
+#[derive(Debug)]
+pub struct LineReaderBuilder {
+    pub name: PlSmallStr,
+}
+
+impl FileReaderBuilder for LineReaderBuilder {
     fn reader_name(&self) -> &str {
-        "ndjson"
+        "line"
     }
 
     fn reader_capabilities(&self) -> ReaderCapabilities {
@@ -28,8 +34,8 @@ impl FileReaderBuilder for polars_plan::dsl::NDJsonReadOptions {
         _scan_source_idx: usize,
     ) -> Box<dyn FileReader> {
         let scan_source = source;
-        let chunk_reader_builder = ChunkReaderBuilder::NDJson {
-            ignore_errors: self.ignore_errors,
+        let chunk_reader_builder = ChunkReaderBuilder::Lines {
+            name: self.name.clone(),
         };
         let verbose = config::verbose();
 
@@ -37,7 +43,7 @@ impl FileReaderBuilder for polars_plan::dsl::NDJsonReadOptions {
             scan_source,
             cloud_options,
             chunk_reader_builder,
-            count_rows_fn: polars_io::ndjson::count_rows,
+            count_rows_fn: polars_io::scan_lines::count_lines,
             cached_bytes: None,
             verbose,
         };
