@@ -164,6 +164,7 @@ csv = ["polars/csv", "polars-mem-engine/csv"]
 clipboard = ["arboard"]
 extract_jsonpath = ["polars/extract_jsonpath"]
 pivot = ["polars/pivot"]
+random = ["polars/random"]
 top_k = ["polars/top_k"]
 propagate_nans = ["polars/propagate_nans"]
 sql = ["polars/sql"]
@@ -251,6 +252,7 @@ operations = [
   "hist",
   "find_many",
   "string_normalize",
+  "random",
 ]
 
 io = [

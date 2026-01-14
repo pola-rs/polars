@@ -52,6 +52,16 @@ pub enum DslFunction {
     Stats(StatsFunction),
     /// FillValue
     FillNan(Expr),
+    /// Sample rows from a DataFrame using Bernoulli sampling
+    #[cfg(feature = "random")]
+    Sample {
+        /// Fraction of rows to sample (0.0 to 1.0+)
+        fraction: f64,
+        /// Allow sampling with replacement (uses Poisson sampling when fraction > 1.0)
+        with_replacement: bool,
+        /// Random seed for reproducibility
+        seed: Option<u64>,
+    },
     // Function that is already converted to IR.
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     FunctionIR(FunctionIR),
@@ -144,6 +154,16 @@ impl DslFunction {
             DslFunction::Hint(h) => FunctionIR::Hint(h),
             #[cfg(feature = "python")]
             DslFunction::OpaquePython(inner) => FunctionIR::OpaquePython(inner),
+            #[cfg(feature = "random")]
+            DslFunction::Sample {
+                fraction,
+                with_replacement,
+                seed,
+            } => FunctionIR::Sample {
+                fraction,
+                with_replacement,
+                seed,
+            },
             DslFunction::Stats(_)
             | DslFunction::FillNan(_)
             | DslFunction::Rename { .. }

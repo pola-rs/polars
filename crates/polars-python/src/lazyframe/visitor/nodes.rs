@@ -677,6 +677,18 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                     ("fast_count", sources, scan_type, alias).into_py_any(py)?
                 },
                 FunctionIR::Hint(_) => return Err(PyNotImplementedError::new_err("hint ir")),
+                #[cfg(feature = "random")]
+                FunctionIR::Sample {
+                    fraction,
+                    with_replacement,
+                    seed,
+                } => (
+                    "sample",
+                    fraction,
+                    *with_replacement,
+                    *seed,
+                )
+                    .into_py_any(py)?,
             },
         }
         .into_py_any(py),

@@ -76,6 +76,16 @@ pub enum FunctionIR {
         // used for formatting
         fmt_str: PlSmallStr,
     },
+    /// Sample rows from a DataFrame using Bernoulli sampling
+    #[cfg(feature = "random")]
+    Sample {
+        /// Fraction of rows to sample (0.0 to 1.0+)
+        fraction: f64,
+        /// Allow sampling with replacement (uses Poisson sampling when fraction > 1.0)
+        with_replacement: bool,
+        /// Random seed for reproducibility
+        seed: Option<u64>,
+    },
     Hint(HintIR),
 }
 
@@ -109,6 +119,19 @@ impl PartialEq for FunctionIR {
             #[cfg(feature = "pivot")]
             (Unpivot { args: l, .. }, Unpivot { args: r, .. }) => l == r,
             (RowIndex { name: l, .. }, RowIndex { name: r, .. }) => l == r,
+            #[cfg(feature = "random")]
+            (
+                Sample {
+                    fraction: frac_l,
+                    with_replacement: wr_l,
+                    seed: seed_l,
+                },
+                Sample {
+                    fraction: frac_r,
+                    with_replacement: wr_r,
+                    seed: seed_r,
+                },
+            ) => frac_l == frac_r && wr_l == wr_r && seed_l == seed_r,
             _ => false,
         }
     }
@@ -155,6 +178,16 @@ impl Hash for FunctionIR {
                 name.hash(state);
                 offset.hash(state);
             },
+            #[cfg(feature = "random")]
+            FunctionIR::Sample {
+                fraction,
+                with_replacement,
+                seed,
+            } => {
+                fraction.to_bits().hash(state);
+                with_replacement.hash(state);
+                seed.hash(state);
+            },
             FunctionIR::Hint(hint) => hint.hash(state),
         }
     }
@@ -173,6 +206,8 @@ impl FunctionIR {
             #[cfg(feature = "python")]
             OpaquePython(OpaquePythonUdf { streamable, .. }) => *streamable,
             RowIndex { .. } => false,
+            #[cfg(feature = "random")]
+            Sample { .. } => true,  // Bernoulli sampling is streamable
             Hint(_) => true,
         }
     }
@@ -184,6 +219,12 @@ impl FunctionIR {
             #[cfg(feature = "pivot")]
             Unpivot { .. } => true,
             Explode { .. } => true,
+            #[cfg(feature = "random")]
+            Sample {
+                with_replacement,
+                fraction,
+                ..
+            } => *with_replacement && *fraction > 1.0,
             _ => false,
         }
     }
@@ -198,6 +239,8 @@ impl FunctionIR {
             Unpivot { .. } => true,
             Rechunk | Unnest { .. } | Explode { .. } | Hint(_) => true,
             RowIndex { .. } | FastCount { .. } => false,
+            #[cfg(feature = "random")]
+            Sample { .. } => true,  // Bernoulli sampling allows predicate pushdown
         }
     }
 
@@ -211,6 +254,8 @@ impl FunctionIR {
             #[cfg(feature = "pivot")]
             Unpivot { .. } => true,
             RowIndex { .. } => true,
+            #[cfg(feature = "random")]
+            Sample { .. } => true,
         }
     }
 
@@ -260,6 +305,16 @@ impl FunctionIR {
                 df.unpivot2(args)
             },
             RowIndex { name, offset, .. } => df.with_row_index(name.clone(), *offset),
+            #[cfg(feature = "random")]
+            Sample {
+                fraction,
+                with_replacement,
+                seed,
+            } => {
+                // Use Bernoulli/Poisson sampling (preserves row order)
+                let frac_series = Series::new(PlSmallStr::EMPTY, &[*fraction]);
+                df.sample_frac_ordered(&frac_series, *with_replacement, *seed)
+            },
             Hint(hint) => {
                 #[expect(irrefutable_let_patterns)]
                 if let HintIR::Sorted(s) = &hint
@@ -294,6 +349,8 @@ impl FunctionIR {
             #[cfg(feature = "pivot")]
             FunctionIR::Unpivot { .. } => true,
             FunctionIR::Opaque { .. } => true,
+            #[cfg(feature = "random")]
+            FunctionIR::Sample { .. } => is_input_ordered,  // Bernoulli preserves order
             FunctionIR::Hint(_) => is_input_ordered,
         }
     }
@@ -305,6 +362,8 @@ impl FunctionIR {
             Self::OpaquePython(..) => false,
             #[cfg(feature = "pivot")]
             Self::Unpivot { .. } => false,
+            #[cfg(feature = "random")]
+            Self::Sample { .. } => false,
             Self::RowIndex { .. }
             | Self::FastCount { .. }
             | Self::Rechunk
@@ -325,6 +384,8 @@ impl FunctionIR {
             Self::OpaquePython(..) => false,
             #[cfg(feature = "pivot")]
             Self::Unpivot { .. } => false,
+            #[cfg(feature = "random")]
+            Self::Sample { .. } => true,  // Bernoulli sampling preserves row order
             Self::RowIndex { .. }
             | Self::FastCount { .. }
             | Self::Explode { .. }
@@ -418,6 +479,17 @@ impl Display for FunctionIR {
             #[cfg(feature = "python")]
             OpaquePython(_) => f.write_str(<&'static str>::from(self)),
             Rechunk => f.write_str(<&'static str>::from(self)),
+            #[cfg(feature = "random")]
+            Sample {
+                fraction,
+                with_replacement,
+                seed,
+            } => {
+                write!(
+                    f,
+                    "SAMPLE fraction: {fraction}, with_replacement: {with_replacement}, seed: {seed:?}"
+                )
+            },
         }
     }
 }

@@ -146,3 +146,152 @@ def test_sample_16232() -> None:
     assert df.select(pl.col("b").list.sample(n=pl.col("a"), seed=0)).to_dict(
         as_series=False
     ) == {"b": [[], [], [1]]}
+
+
+def _split_exact_n(df: pl.LazyFrame, height: int, n: int) -> list[pl.LazyFrame]:
+    base, rem = divmod(height, n)
+    out = []
+    start = 0
+    for i in range(n):
+        size = base + (1 if i < rem else 0)
+        out.append(df.slice(start, size))
+        start += size
+    return out
+
+
+def _force_n_chunks_like(df: pl.LazyFrame, height: int, n: int) -> pl.LazyFrame:
+    parts = _split_exact_n(df, height, n)
+    # keep order, build from multiple record batches
+    return pl.concat(parts, rechunk=False)
+
+
+def test_sample_lazy_frame_bernoulli() -> None:
+    """Test LazyFrame.sample uses Bernoulli sampling (probabilistic, order-preserving)."""
+    n = 10000
+    lf = pl.LazyFrame({"foo": range(n), "bar": range(n, 2 * n)})
+
+    fraction = 0.3
+    result = lf.sample(fraction=fraction, seed=42).collect()
+
+    # Bernoulli: expect ~n*fraction rows, Binomial(n, fraction) distribution
+    expected = n * fraction
+    std = (n * fraction * (1 - fraction)) ** 0.5
+    assert abs(result.shape[0] - expected) < 5 * std
+    assert result.shape[1] == 2
+
+    # Test that sampled values come from original data
+    assert result["foo"].is_in(lf.collect()["foo"]).all()
+
+
+def test_sample_lazy_frame_preserves_order() -> None:
+    """Test that Bernoulli sampling preserves row order."""
+    lf = pl.LazyFrame({"foo": range(1000)})
+
+    result_without_replacement = lf.sample(fraction=0.5, seed=0).collect()
+    values_without_replacement = result_without_replacement["foo"].to_list()
+    assert values_without_replacement == sorted(values_without_replacement)
+
+    result_with_replacement = lf.sample(fraction=0.5, with_replacement=True, seed=0).collect()
+    values_with_replacement = result_with_replacement["foo"].to_list()
+    assert values_with_replacement == sorted(values_with_replacement)
+
+    result_without_replacement_force_n_chunks = _force_n_chunks_like(lf, 1000, 10).sample(fraction=0.5, seed=0).collect()
+    values_without_replacement_force_n_chunks = result_without_replacement_force_n_chunks["foo"].to_list()
+    assert values_without_replacement_force_n_chunks == sorted(values_without_replacement_force_n_chunks)
+
+
+def test_sample_lazy_frame_with_replacement() -> None:
+    """Test LazyFrame.sample with replacement uses Poisson sampling."""
+    n = 1000
+    lf = pl.LazyFrame({"foo": range(n)})
+
+    fraction = 0.6
+    result = lf.sample(fraction=fraction, with_replacement=True, seed=42).collect()
+
+    # Poisson: expect ~n*fraction rows, sum of Poisson(fraction) has mean=n*fraction, var=n*fraction
+    expected = n * fraction
+    std = (n * fraction) ** 0.5
+    assert abs(result.shape[0] - expected) < 5 * std
+
+    # Some values should appear multiple times
+    assert result["foo"].n_unique() < result.shape[0]
+
+
+def test_sample_lazy_frame_series_fraction() -> None:
+    """Test LazyFrame.sample with Series for fraction parameter."""
+    n = 1000
+    lf = pl.LazyFrame({"foo": range(n), "bar": range(n, 2 * n)})
+
+    # Test with Series for fraction
+    fraction = 0.4
+    result = lf.sample(fraction=pl.Series([fraction]), seed=0).collect()
+
+    # Bernoulli: expect ~n*fraction rows
+    expected = n * fraction
+    std = (n * fraction * (1 - fraction)) ** 0.5
+    assert abs(result.shape[0] - expected) < 5 * std
+
+
+def test_sample_lazy_frame_reproducibility() -> None:
+    """Test that LazyFrame.sample is reproducible with same seed."""
+    lf = pl.LazyFrame({"foo": range(100)})
+
+    result1 = lf.sample(fraction=0.5, seed=42).collect()
+    result2 = lf.sample(fraction=0.5, seed=42).collect()
+
+    assert_frame_equal(result1, result2)
+
+
+def test_sample_lazy_frame_different_seeds() -> None:
+    """Test that LazyFrame.sample produces different results with different seeds."""
+    lf = pl.LazyFrame({"foo": range(100)})
+
+    result1 = lf.sample(fraction=0.5, seed=1).collect()
+    result2 = lf.sample(fraction=0.5, seed=2).collect()
+
+    # Results should be different (with very high probability for 100 rows)
+    assert not result1.equals(result2)
+
+
+def test_sample_lazy_frame_empty() -> None:
+    """Test LazyFrame.sample with empty DataFrame."""
+    lf = pl.LazyFrame({"foo": []})
+
+    # Empty DataFrame should remain empty
+    result = lf.sample(fraction=0.5, seed=0).collect()
+    assert result.shape == (0, 1)
+
+    # With replacement should also be empty
+    result = lf.sample(fraction=0.5, with_replacement=True, seed=0).collect()
+    assert result.shape == (0, 1)
+
+
+def test_sample_lazy_frame_without_replacement_over_100() -> None:
+    """Test that sampling > 100% without replacement raises error."""
+    lf = pl.LazyFrame({"foo": [1, 2, 3, 4, 5]})
+
+    # Without replacement, fraction > 1.0 should error
+    with pytest.raises(pl.exceptions.ComputeError):
+        lf.sample(fraction=2.0, with_replacement=False, seed=0).collect()
+
+
+def test_sample_lazy_frame_invalid_series_fraction() -> None:
+    """Test that Series with more than one element raises error."""
+    lf = pl.LazyFrame({"foo": [1, 2, 3]})
+
+    with pytest.raises(ValueError, match="Sample fraction must be a single value"):
+        lf.sample(fraction=pl.Series([0.5, 0.6]), seed=0).collect()
+
+
+def test_sample_lazy_frame_small_fraction() -> None:
+    """Test sampling with very small fraction."""
+    n = 100000
+    lf = pl.LazyFrame({"foo": range(n)})
+
+    fraction = 0.001
+    result = lf.sample(fraction=fraction, seed=42).collect()
+
+    # Should get approximately 100 rows (Binomial(100000, 0.001))
+    expected = n * fraction
+    std = (n * fraction * (1 - fraction)) ** 0.5
+    assert abs(result.shape[0] - expected) < 5 * std

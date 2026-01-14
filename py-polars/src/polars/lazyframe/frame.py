@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import io
 import os
+import random
 import warnings
 from collections.abc import Collection, Iterable, Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
@@ -6608,6 +6609,62 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┘
         """
         return self._from_pyldf(self._ldf.tail(n))
+
+    def sample(
+        self,
+        fraction: float | pl.Series,
+        *,
+        with_replacement: bool = False,
+        seed: int | None = None,
+    ) -> LazyFrame:
+        """
+        Sample from this LazyFrame.
+
+        Row order is preserved. The number of rows returned is approximate ``fraction * n``.
+
+        Parameters
+        ----------
+        fraction
+            Fraction of rows to sample.
+        with_replacement
+            If False, uses Bernoulli sampling (each row included with probability
+            `fraction`). If True, uses Poisson sampling (each row appears
+            Poisson(`fraction`) times on average, allowing duplicates).
+        seed
+            Seed for the random number generator. If set to None (default),
+            a random seed is generated for each sample operation.
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
+        >>> lf.sample(fraction=0.5, seed=0).collect()  # doctest: +IGNORE_RESULT
+        shape: (1, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 2   ┆ 7   ┆ b   │
+        └─────┴─────┴─────┘
+        """
+        if seed is None:
+            seed = random.randint(0, 10000)
+
+        if isinstance(fraction, pl.Series):
+            if len(fraction) != 1:
+                msg = "Sample fraction must be a single value."
+                raise ValueError(msg)
+            fraction = fraction[0]
+
+        return self._from_pyldf(
+            self._ldf.sample_frac(fraction, with_replacement, seed)
+        )
 
     def last(self) -> LazyFrame:
         """

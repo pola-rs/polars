@@ -238,6 +238,65 @@ impl DataFrame {
             None => Ok(self.clear()),
         }
     }
+
+    /// Sample using Bernoulli/Poisson distribution (preserves row order).
+    pub fn sample_frac_ordered(
+        &self,
+        frac: &Series,
+        with_replacement: bool,
+        seed: Option<u64>,
+    ) -> PolarsResult<Self> {
+        polars_ensure!(
+            frac.len() == 1,
+            ComputeError: "Sample fraction must be a single value."
+        );
+
+        let frac = frac.cast(&Float64)?;
+        let frac = frac.f64()?;
+
+        match frac.get(0) {
+            Some(fraction) => {
+                polars_ensure!(
+                    fraction >= 0.0,
+                    ComputeError: "Sample fraction must be non-negative."
+                );
+                polars_ensure!(
+                    fraction <= 1.0 || with_replacement,
+                    ComputeError: "Sample fraction > 1.0 requires with_replacement=true."
+                );
+
+                let height = self.height();
+                if height == 0 || fraction == 0.0 {
+                    return Ok(self.clear());
+                }
+
+                let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_global_random_u64));
+
+                if with_replacement {
+                    // Poisson sampling: each row appears Poisson(fraction) times
+                    use rand_distr::Poisson;
+                    let poisson = Poisson::new(fraction).map_err(to_compute_err)?;
+
+                    let mut indices = Vec::with_capacity((height as f64 * fraction) as usize);
+                    for i in 0..height as IdxSize {
+                        let count = poisson.sample(&mut rng) as usize;
+                        for _ in 0..count {
+                            indices.push(i);
+                        }
+                    }
+
+                    let idx = IdxCa::new_vec(PlSmallStr::EMPTY, indices);
+                    Ok(unsafe { self.take_unchecked(&idx) })
+                } else {
+                    // Bernoulli sampling: each row included with probability `fraction`
+                    let dist = Bernoulli::new(fraction).map_err(to_compute_err)?;
+                    let mask: BooleanChunked = (0..height).map(|_| dist.sample(&mut rng)).collect();
+                    self.filter(&mask)
+                }
+            },
+            None => Ok(self.clear()),
+        }
+    }
 }
 
 impl<T> ChunkedArray<T>
