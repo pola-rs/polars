@@ -367,8 +367,11 @@ pub fn split_regex_helper(
                         Ok(re) => re,
                         Err(_) if strict => return Err(invalid_regex_err(pat0)),
                         Err(_) => {
-                            ca.for_each(|_| builder.append_null());
-                            return Ok(builder.finish());
+                            return Ok(ListChunked::full_null_with_dtype(
+                                ca.name().clone(),
+                                ca.len(),
+                                &DataType::String,
+                            ));
                         },
                     };
 
