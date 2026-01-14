@@ -142,6 +142,259 @@ impl BinaryChunked {
             }),
         }
     }
+
+    pub(crate) unsafe fn agg_arg_min<'a>(&'a self, groups: &GroupsType) -> Series {
+        // fast paths, consistent with other impls
+        match self.is_sorted_flag() {
+            IsSorted::Ascending => {
+                return self.clone().into_series().agg_arg_first_non_null(groups);
+            },
+            IsSorted::Descending => {
+                return self.clone().into_series().agg_arg_last_non_null(groups);
+            },
+            _ => {},
+        }
+
+        let ca_self = self.rechunk();
+        let arr = ca_self.downcast_as_array();
+        let no_nulls = arr.null_count() == 0;
+
+        let out: IdxCa = match groups {
+            GroupsType::Idx(groups) => groups
+                .all()
+                .iter()
+                .map(|idx| -> Option<IdxSize> {
+                    if idx.is_empty() {
+                        return None;
+                    }
+
+                    let mut best_pos: Option<IdxSize> = None;
+                    let mut best_val: Option<&[u8]> = None;
+
+                    if no_nulls {
+                        for (pos, &i) in idx.iter().enumerate() {
+                            // BinaryViewArray typically provides value_unchecked for no-nulls.
+                            let v = arr.value_unchecked(i as usize);
+                            match best_val {
+                                None => {
+                                    best_val = Some(v);
+                                    best_pos = Some(pos as IdxSize);
+                                },
+                                Some(cur) => {
+                                    if v < cur {
+                                        best_val = Some(v);
+                                        best_pos = Some(pos as IdxSize);
+                                    }
+                                },
+                            }
+                        }
+                    } else {
+                        for (pos, &i) in idx.iter().enumerate() {
+                            if let Some(v) = arr.get(i as usize) {
+                                match best_val {
+                                    None => {
+                                        best_val = Some(v);
+                                        best_pos = Some(pos as IdxSize);
+                                    },
+                                    Some(cur) => {
+                                        if v < cur {
+                                            best_val = Some(v);
+                                            best_pos = Some(pos as IdxSize);
+                                        }
+                                    },
+                                }
+                            }
+                        }
+                    }
+
+                    best_pos
+                })
+                .collect_ca(PlSmallStr::EMPTY),
+
+            GroupsType::Slice {
+                groups: groups_slice,
+                ..
+            } => groups_slice
+                .iter()
+                .map(|&[first, len]| -> Option<IdxSize> {
+                    if len == 0 {
+                        return None;
+                    }
+
+                    let start = first as usize;
+                    let end = (first + len) as usize;
+
+                    let mut best_pos: Option<IdxSize> = None;
+                    let mut best_val: Option<&[u8]> = None;
+
+                    if no_nulls {
+                        for (pos, i) in (start..end).enumerate() {
+                            let v = arr.value_unchecked(i);
+                            match best_val {
+                                None => {
+                                    best_val = Some(v);
+                                    best_pos = Some(pos as IdxSize);
+                                },
+                                Some(cur) => {
+                                    if v < cur {
+                                        best_val = Some(v);
+                                        best_pos = Some(pos as IdxSize);
+                                    }
+                                },
+                            }
+                        }
+                    } else {
+                        for (pos, i) in (start..end).enumerate() {
+                            if let Some(v) = arr.get(i) {
+                                match best_val {
+                                    None => {
+                                        best_val = Some(v);
+                                        best_pos = Some(pos as IdxSize);
+                                    },
+                                    Some(cur) => {
+                                        if v < cur {
+                                            best_val = Some(v);
+                                            best_pos = Some(pos as IdxSize);
+                                        }
+                                    },
+                                }
+                            }
+                        }
+                    }
+
+                    best_pos
+                })
+                .collect_ca(PlSmallStr::EMPTY),
+        };
+
+        out.into_series()
+    }
+
+    pub(crate) unsafe fn agg_arg_max<'a>(&'a self, groups: &GroupsType) -> Series {
+        // fast paths
+        match (self.is_sorted_flag(), self.null_count()) {
+            (IsSorted::Ascending, 0) => {
+                return self.clone().into_series().agg_arg_last(groups);
+            },
+            (IsSorted::Descending, 0) => {
+                return self.clone().into_series().agg_arg_first(groups);
+            },
+            _ => {},
+        }
+
+        let ca_self = self.rechunk();
+        let arr = ca_self.downcast_as_array();
+        let no_nulls = arr.null_count() == 0;
+
+        let out: IdxCa = match groups {
+            GroupsType::Idx(groups) => groups
+                .all()
+                .iter()
+                .map(|idx| -> Option<IdxSize> {
+                    if idx.is_empty() {
+                        return None;
+                    }
+
+                    let mut best_pos: Option<IdxSize> = None;
+                    let mut best_val: Option<&[u8]> = None;
+
+                    if no_nulls {
+                        for (pos, &i) in idx.iter().enumerate() {
+                            let v = arr.value_unchecked(i as usize);
+                            match best_val {
+                                None => {
+                                    best_val = Some(v);
+                                    best_pos = Some(pos as IdxSize);
+                                },
+                                Some(cur) => {
+                                    if v > cur {
+                                        best_val = Some(v);
+                                        best_pos = Some(pos as IdxSize);
+                                    }
+                                },
+                            }
+                        }
+                    } else {
+                        for (pos, &i) in idx.iter().enumerate() {
+                            if let Some(v) = arr.get(i as usize) {
+                                match best_val {
+                                    None => {
+                                        best_val = Some(v);
+                                        best_pos = Some(pos as IdxSize);
+                                    },
+                                    Some(cur) => {
+                                        if v > cur {
+                                            best_val = Some(v);
+                                            best_pos = Some(pos as IdxSize);
+                                        }
+                                    },
+                                }
+                            }
+                        }
+                    }
+
+                    best_pos
+                })
+                .collect_ca(PlSmallStr::EMPTY),
+
+            GroupsType::Slice {
+                groups: groups_slice,
+                ..
+            } => groups_slice
+                .iter()
+                .map(|&[first, len]| -> Option<IdxSize> {
+                    if len == 0 {
+                        return None;
+                    }
+
+                    let start = first as usize;
+                    let end = (first + len) as usize;
+
+                    let mut best_pos: Option<IdxSize> = None;
+                    let mut best_val: Option<&[u8]> = None;
+
+                    if no_nulls {
+                        for (pos, i) in (start..end).enumerate() {
+                            let v = arr.value_unchecked(i);
+                            match best_val {
+                                None => {
+                                    best_val = Some(v);
+                                    best_pos = Some(pos as IdxSize);
+                                },
+                                Some(cur) => {
+                                    if v > cur {
+                                        best_val = Some(v);
+                                        best_pos = Some(pos as IdxSize);
+                                    }
+                                },
+                            }
+                        }
+                    } else {
+                        for (pos, i) in (start..end).enumerate() {
+                            if let Some(v) = arr.get(i) {
+                                match best_val {
+                                    None => {
+                                        best_val = Some(v);
+                                        best_pos = Some(pos as IdxSize);
+                                    },
+                                    Some(cur) => {
+                                        if v > cur {
+                                            best_val = Some(v);
+                                            best_pos = Some(pos as IdxSize);
+                                        }
+                                    },
+                                }
+                            }
+                        }
+                    }
+
+                    best_pos
+                })
+                .collect_ca(PlSmallStr::EMPTY),
+        };
+
+        out.into_series()
+    }
 }
 
 impl StringChunked {
@@ -155,5 +408,15 @@ impl StringChunked {
     pub(crate) unsafe fn agg_max<'a>(&'a self, groups: &GroupsType) -> Series {
         let out = self.as_binary().agg_max(groups);
         out.binary().unwrap().to_string_unchecked().into_series()
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    pub(crate) unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+        self.as_binary().agg_arg_min(groups)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    pub(crate) unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+        self.as_binary().agg_arg_max(groups)
     }
 }

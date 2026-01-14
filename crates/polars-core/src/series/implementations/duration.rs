@@ -94,6 +94,16 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+        self.0.physical().agg_arg_min(groups)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+        self.0.physical().agg_arg_max(groups)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_sum(&self, groups: &GroupsType) -> Series {
         self.0
             .physical()
