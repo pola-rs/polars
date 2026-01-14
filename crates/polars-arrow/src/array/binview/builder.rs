@@ -62,7 +62,7 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
     fn reserve_active_buffer(&mut self, additional: usize) {
         let len = self.active_buffer.len();
         let cap = self.active_buffer.capacity();
-        if additional > cap - len || len + additional >= Self::MAX_ROW_BYTE_LEN as usize {
+        if additional > cap - len || len + additional >= Self::MAX_ROW_BYTE_LEN {
             self.reserve_active_buffer_slow(additional);
         }
     }
@@ -70,7 +70,7 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
     #[cold]
     fn reserve_active_buffer_slow(&mut self, additional: usize) {
         assert!(
-            additional <= Self::MAX_ROW_BYTE_LEN as usize,
+            additional <= Self::MAX_ROW_BYTE_LEN,
             "strings longer than 2^32 - 2 are not supported"
         );
 
