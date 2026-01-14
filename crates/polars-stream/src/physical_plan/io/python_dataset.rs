@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use polars_core::config;
-use polars_plan::plans::{ExpandedPythonScan, python_df_to_rust};
+use polars_plan::plans::{AnonymousScanArgs, ExpandedPythonScan, python_df_to_rust};
 use polars_utils::format_pl_smallstr;
 
 use crate::execute::StreamingExecutionState;
@@ -23,22 +23,24 @@ pub fn python_dataset_scan_to_reader_builder(
 
             (
                 format_pl_smallstr!("python[{} @ pyarrow]", &expanded_scan.name),
-                Box::new(move |_state: &StreamingExecutionState| {
-                    Python::attach(|py| {
-                        let Some(python_scan_function) =
-                            python_scan_function.lock().unwrap().take()
-                        else {
-                            return Ok(None);
-                        };
+                Box::new(
+                    move |_state: &StreamingExecutionState, _args: &AnonymousScanArgs| {
+                        Python::attach(|py| {
+                            let Some(python_scan_function) =
+                                python_scan_function.lock().unwrap().take()
+                            else {
+                                return Ok(None);
+                            };
 
-                        // Note: to_dataset_scan() has already captured projection / limit.
+                            // Note: to_dataset_scan() has already captured projection / limit.
 
-                        let df = python_scan_function.call0(py)?;
-                        let df = python_df_to_rust(py, df.bind(py).clone())?;
+                            let df = python_scan_function.call0(py)?;
+                            let df = python_df_to_rust(py, df.bind(py).clone())?;
 
-                        Ok(Some(df))
-                    })
-                }) as GetBatchFn,
+                            Ok(Some(df))
+                        })
+                    },
+                ) as GetBatchFn,
             )
         },
 

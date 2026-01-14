@@ -478,6 +478,28 @@ impl PyLazyFrame {
         .into())
     }
 
+    #[staticmethod]
+    fn scan_arrow_c_stream(source: &Bound<PyAny>) -> PyResult<Self> {
+        use polars_lazy::prelude::{LazyFrame, ScanArgsAnonymous};
+
+        use super::ArrowCStreamScan;
+
+        let scan = ArrowCStreamScan::new(source)?;
+        let schema = scan.schema();
+
+        let lf = LazyFrame::anonymous_scan(
+            Arc::new(scan),
+            ScanArgsAnonymous {
+                schema: Some(schema),
+                name: "ARROW_C_STREAM",
+                ..Default::default()
+            },
+        )
+        .map_err(PyPolarsErr::from)?;
+
+        Ok(lf.into())
+    }
+
     fn describe_plan(&self, py: Python) -> PyResult<String> {
         py.enter_polars(|| self.ldf.read().describe_plan())
     }
