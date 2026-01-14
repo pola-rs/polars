@@ -291,7 +291,7 @@ def test_multiscan_row_index(
     )
 
     with pytest.raises(
-        pl.exceptions.DuplicateError, match="'index' has more than one occurrence"
+        pl.exceptions.DuplicateError, match="duplicate column name index"
     ):
         scan(g).with_row_index().with_row_index().collect()
 
