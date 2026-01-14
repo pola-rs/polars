@@ -114,7 +114,7 @@ if TYPE_CHECKING:
 
     import deltalake
 
-    from polars.io.partition import PartitionBy, _SinkDirectory
+    from polars.io.partition import PartitionBy
     from polars.lazyframe.opt_flags import QueryOptFlags
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -184,13 +184,13 @@ def _select_engine(engine: EngineType) -> EngineType:
 def _to_sink_target(
     path: str | Path | IO[bytes] | IO[str] | PartitionBy,
 ) -> str | Path | IO[bytes] | IO[str] | PartitionBy:
-    from polars.io.partition import PartitionBy, _SinkDirectory
+    from polars.io.partition import PartitionBy
 
     if isinstance(path, (str, Path)):
         return normalize_filepath(path)
     elif isinstance(path, io.IOBase):
         return path
-    elif isinstance(path, (_SinkDirectory, PartitionBy)):
+    elif isinstance(path, PartitionBy):
         return path
     elif callable(getattr(path, "write", None)):
         # This allows for custom writers

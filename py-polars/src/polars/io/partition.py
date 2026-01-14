@@ -2,15 +2,16 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from polars import DataFrame
 from polars._utils.parse.expr import parse_into_list_of_expressions
 from polars._utils.unstable import issue_unstable_warning
 
 if TYPE_CHECKING:
     import contextlib
+    from pathlib import Path
+
+    from polars import DataFrame
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
         from polars._plr import PyExpr
