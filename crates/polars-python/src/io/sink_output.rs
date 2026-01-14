@@ -1,9 +1,7 @@
-use polars::prelude::sink::{PartitionTargetCallback, SinkFinishCallback};
 use polars::prelude::sink2::{FileProviderFunction, FileProviderType};
-use polars::prelude::{PartitionStrategy, PlRefPath, SinkDestination, SortColumn, SpecialEq};
+use polars::prelude::{PartitionStrategy, PlRefPath, SinkDestination, SpecialEq};
 use polars_utils::IdxSize;
 use polars_utils::python_function::PythonObject;
-use pyo3::exceptions::PyValueError;
 use pyo3::intern;
 use pyo3::prelude::*;
 
