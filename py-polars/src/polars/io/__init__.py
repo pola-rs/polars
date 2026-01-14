@@ -16,14 +16,8 @@ from polars.io.parquet import (
     scan_parquet,
 )
 from polars.io.partition import (
-    BasePartitionContext,
     FileProviderArgs,
-    KeyedPartition,
-    KeyedPartitionContext,
     PartitionBy,
-    PartitionByKey,
-    PartitionMaxSize,
-    PartitionParted,
 )
 from polars.io.plugins import _defer as defer
 from polars.io.pyarrow_dataset import scan_pyarrow_dataset
@@ -34,12 +28,6 @@ __all__ = [
     "defer",
     "FileProviderArgs",
     "PartitionBy",
-    "PartitionByKey",
-    "PartitionMaxSize",
-    "PartitionParted",
-    "KeyedPartition",
-    "BasePartitionContext",
-    "KeyedPartitionContext",
     "read_avro",
     "read_clipboard",
     "read_csv",
