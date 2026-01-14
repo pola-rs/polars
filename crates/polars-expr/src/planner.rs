@@ -440,6 +440,41 @@ fn create_physical_expr_inner(
                 output_field,
             )))
         },
+        Function {
+            input,
+            function: function @ (IRFunctionExpr::ArgMin | IRFunctionExpr::ArgMax),
+            options,
+        } if options.flags.returns_scalar() => {
+            polars_ensure!(
+                input.len() == 1,
+                ComputeError: "arg_min/arg_max expects a single input"
+            );
+
+            let phys_input =
+                create_physical_expr_inner(input[0].node(), expr_arena, schema, state)?;
+
+            let mut output_field = expr_arena
+                .get(expression)
+                .to_field(&ToFieldContext::new(expr_arena, schema))?;
+            output_field = Field::new(output_field.name().clone(), IDX_DTYPE.clone());
+
+            let groupby = match function {
+                IRFunctionExpr::ArgMin => GroupByMethod::ArgMin,
+                IRFunctionExpr::ArgMax => GroupByMethod::ArgMax,
+                _ => unreachable!(), // guaranteed by pattern
+            };
+
+            let agg_type = AggregationType {
+                groupby,
+                allow_threading: state.allow_threading,
+            };
+
+            Ok(Arc::new(AggregationExpr::new(
+                phys_input,
+                agg_type,
+                output_field,
+            )))
+        },
         Cast {
             expr,
             dtype,
@@ -583,45 +618,10 @@ fn create_physical_expr_inner(
         } => {
             let is_scalar = is_scalar_ae(expression, expr_arena);
 
-            let mut output_field = expr_arena
+            let output_field = expr_arena
                 .get(expression)
                 .to_field(&ToFieldContext::new(expr_arena, schema))?;
 
-            // Special-case arg_min/arg_max when used as an aggregation expression.
-            if matches!(function, IRFunctionExpr::ArgMin | IRFunctionExpr::ArgMax)
-                && options.flags.returns_scalar()
-            {
-                polars_ensure!(
-                    input.len() == 1,
-                    ComputeError: "arg_min/arg_max expects a single input"
-                );
-
-                // Build input physical expression (no alias wrapper surprises).
-                let phys_input =
-                    create_physical_expr_inner(input[0].node(), expr_arena, schema, state)?;
-
-                // Force output dtype to the group-index dtype (IdxSize / IDX_DTYPE).
-                output_field = Field::new(output_field.name().clone(), IDX_DTYPE.clone());
-
-                let groupby = match function {
-                    IRFunctionExpr::ArgMin => GroupByMethod::ArgMin,
-                    IRFunctionExpr::ArgMax => GroupByMethod::ArgMax,
-                    _ => unreachable!(),
-                };
-
-                let agg_type = AggregationType {
-                    groupby,
-                    allow_threading: state.allow_threading,
-                };
-
-                return Ok(Arc::new(AggregationExpr::new(
-                    phys_input,
-                    agg_type,
-                    output_field,
-                )));
-            }
-
-            // Default: keep using ApplyExpr for non-aggregation functions.
             let input = create_physical_expressions_from_irs(&input, expr_arena, schema, state)?;
             let is_fallible = expr_arena.get(expression).is_fallible_top_level(expr_arena);
 
