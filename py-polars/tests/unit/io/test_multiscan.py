@@ -34,10 +34,8 @@ def test_include_file_paths(tmp_path: Path, scan: Any, write: Any) -> None:
     a_path = tmp_path / "a"
     b_path = tmp_path / "b"
 
-    extra_args = {"strict_naming": False} if write == pl.DataFrame.write_csv else {}
-
-    write(pl.DataFrame({"a": [5, 10]}), a_path, **extra_args)
-    write(pl.DataFrame({"a": [1996]}), b_path, **extra_args)
+    write(pl.DataFrame({"a": [5, 10]}), a_path)
+    write(pl.DataFrame({"a": [1996]}), b_path)
 
     out = scan([a_path, b_path], include_file_paths="f")
 
@@ -240,11 +238,9 @@ def test_multiscan_row_index(
     b = pl.DataFrame({"col": [42]})
     c = pl.DataFrame({"col": [13, 37]})
 
-    extra_args = {"strict_naming": False} if write == pl.DataFrame.write_csv else {}
-
-    write(a, tmp_path / "a", **extra_args)
-    write(b, tmp_path / "b", **extra_args)
-    write(c, tmp_path / "c", **extra_args)
+    write(a, tmp_path / "a")
+    write(b, tmp_path / "b")
+    write(c, tmp_path / "c")
 
     col = pl.concat([a, b, c]).to_series()
     g = tmp_path / "*"

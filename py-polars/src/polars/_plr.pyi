@@ -968,7 +968,7 @@ class PyLazyFrame:
         include_bom: bool,
         compression: Literal["uncompressed", "gzip", "zstd"],
         compression_level: int | None,
-        strict_naming: bool,
+        check_extension: bool,
         include_header: bool,
         separator: int,
         line_terminator: str,

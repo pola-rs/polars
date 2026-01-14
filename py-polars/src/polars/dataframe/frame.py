@@ -2951,7 +2951,7 @@ class DataFrame:
         include_bom: bool = ...,
         compression: Literal["uncompressed", "gzip", "zstd"] = ...,
         compression_level: int | None = None,
-        strict_naming: bool = ...,
+        check_extension: bool = ...,
         include_header: bool = ...,
         separator: str = ...,
         line_terminator: str = ...,
@@ -2978,7 +2978,7 @@ class DataFrame:
         include_bom: bool = ...,
         compression: Literal["uncompressed", "gzip", "zstd"] = ...,
         compression_level: int | None = None,
-        strict_naming: bool = ...,
+        check_extension: bool = ...,
         include_header: bool = ...,
         separator: str = ...,
         line_terminator: str = ...,
@@ -3004,7 +3004,7 @@ class DataFrame:
         include_bom: bool = False,
         compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
         compression_level: int | None = None,
-        strict_naming: bool = True,
+        check_extension: bool = True,
         include_header: bool = True,
         separator: str = ",",
         line_terminator: str = "\n",
@@ -3039,7 +3039,7 @@ class DataFrame:
         compression_level
             The compression level to use, typically 0-9 or `None` to let the
             engine choose.
-        strict_naming
+        check_extension
             Whether to check if the filename suffix conforms to standard naming
             conventions. Only applies if the file is a path.
         include_header
@@ -3159,7 +3159,7 @@ class DataFrame:
             include_bom=include_bom,
             compression=compression,
             compression_level=compression_level,
-            strict_naming=strict_naming,
+            check_extension=check_extension,
             include_header=include_header,
             separator=separator,
             line_terminator=line_terminator,

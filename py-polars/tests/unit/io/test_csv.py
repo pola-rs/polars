@@ -3113,24 +3113,18 @@ def test_write_compressed(write_fn_name: str, fmt: str, level: int | None) -> No
 
 @pytest.mark.write_disk
 @pytest.mark.parametrize("write_fn_name", ["write_csv", "sink_csv"])
-@pytest.mark.parametrize(("fmt", "suffix"), [("gzip", "gz"), ("zstd", "zst")])
+@pytest.mark.parametrize(("fmt", "suffix"), [("gzip", ".gz"), ("zstd", ".zst")])
+@pytest.mark.parametrize("with_suffix", [True, False])
 def test_write_compressed_disk(
-    tmp_path: Path, write_fn_name: str, fmt: str, suffix: str
+    tmp_path: Path, write_fn_name: str, fmt: str, suffix: str, with_suffix: bool
 ) -> None:
     original = pl.DataFrame([pl.Series("A", [3.2, 6.2]), pl.Series("B", ["a", "z"])])
-    path = tmp_path / f"test_file.csv.{suffix}"
+    path = tmp_path / f"test_file.csv.{suffix}" if with_suffix else "test_file"
     write_fn(original, write_fn_name)(path, compression=fmt)
     with Path.open(path, "rb") as file:
         check_compression(file.read(), fmt)
     df = pl.scan_csv(path).collect()
     assert_frame_equal(df, original)
-
-
-@pytest.mark.parametrize("write_fn_name", ["write_csv", "sink_csv"])
-@pytest.mark.parametrize("fmt", ["gzip", "zstd"])
-def test_write_uncommon_file_suffix_raise(write_fn_name: str, fmt: str) -> None:
-    with pytest.raises(pl.exceptions.InvalidOperationError):
-        write_fn(pl.DataFrame(), write_fn_name)("x.csv", compression=fmt)
 
 
 @pytest.mark.write_disk
@@ -3140,34 +3134,35 @@ def test_write_uncommon_file_suffix_ignore(
     tmp_path: Path, write_fn_name: str, fmt: str
 ) -> None:
     path = tmp_path / "x.csv"
-    write_fn(pl.DataFrame(), write_fn_name)(path, compression=fmt, strict_naming=False)
+    write_fn(pl.DataFrame(), write_fn_name)(
+        path, compression=fmt, check_extension=False
+    )
     with Path.open(path, "rb") as file:
         check_compression(file.read(), fmt)
 
 
 @pytest.mark.parametrize("write_fn_name", ["write_csv", "sink_csv"])
-def test_write_intended_compression(write_fn_name: str) -> None:
-    with pytest.raises(
-        pl.exceptions.InvalidOperationError, match="use the compression parameter"
-    ):
-        write_fn(pl.DataFrame(), write_fn_name)("x.csv.gz")
+@pytest.mark.parametrize("fmt", ["gzip", "zstd"])
+def test_write_uncommon_file_suffix_raise(write_fn_name: str, fmt: str) -> None:
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        write_fn(pl.DataFrame(), write_fn_name)("x.csv", compression=fmt)
 
 
 @pytest.mark.parametrize("write_fn_name", ["write_csv", "sink_csv"])
-@pytest.mark.parametrize("filename", ["c", "csv", "a.b"])
-def test_write_non_std_ending_raise(write_fn_name: str, filename: str) -> None:
+@pytest.mark.parametrize("extension", ["gz", "zst", "zstd"])
+def test_write_intended_compression(write_fn_name: str, extension: str) -> None:
     with pytest.raises(
-        pl.exceptions.InvalidOperationError, match="does not conform to standard naming"
+        pl.exceptions.InvalidOperationError, match="use the compression parameter"
     ):
-        write_fn(pl.DataFrame(), write_fn_name)(filename)
+        write_fn(pl.DataFrame(), write_fn_name)(f"x.csv.{extension}")
 
 
 @pytest.mark.write_disk
 @pytest.mark.parametrize("write_fn_name", ["write_csv", "sink_csv"])
-@pytest.mark.parametrize("filename", ["c", "csv", "a.b"])
-def test_write_non_std_ending_ignore(
-    tmp_path: Path, write_fn_name: str, filename: str
+@pytest.mark.parametrize("extension", ["tsv", "xslb", "cs"])
+def test_write_alternative_extension(
+    tmp_path: Path, write_fn_name: str, extension: str
 ) -> None:
-    path = tmp_path / filename
-    write_fn(pl.DataFrame(), write_fn_name)(path, strict_naming=False)
+    path = tmp_path / f"x.{extension}"
+    write_fn(pl.DataFrame(), write_fn_name)(path)
     assert Path.exists(path)

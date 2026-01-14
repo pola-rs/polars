@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 pub struct CsvWriterOptions {
     pub include_bom: bool,
     pub compression: CsvCompression,
-    pub strict_naming: bool,
+    pub check_extension: bool,
     pub include_header: bool,
     pub batch_size: NonZeroUsize,
     pub serialize_options: Arc<SerializeOptions>,
@@ -23,7 +23,7 @@ impl Default for CsvWriterOptions {
         Self {
             include_bom: false,
             compression: CsvCompression::default(),
-            strict_naming: true,
+            check_extension: true,
             include_header: true,
             batch_size: NonZeroUsize::new(1024).unwrap(),
             serialize_options: SerializeOptions::default().into(),
@@ -51,13 +51,11 @@ pub enum CsvCompression {
 
 impl CsvCompression {
     /// Returns the expected file suffix associated with the compression format.
-    ///
-    /// Returns `None` if `strict_naming` is false or there is no expected file suffix.
     pub fn file_suffix(self) -> Option<&'static str> {
         match self {
             Self::Uncompressed => None,
-            Self::Gzip { .. } => Some(".csv.gz"),
-            Self::Zstd { .. } => Some(".csv.zst"),
+            Self::Gzip { .. } => Some(".gz"),
+            Self::Zstd { .. } => Some(".zst"),
         }
     }
 }

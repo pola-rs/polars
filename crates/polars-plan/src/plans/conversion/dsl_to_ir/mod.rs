@@ -1251,24 +1251,23 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 SinkType::File(options) => {
                     if let FileWriteFormat::Csv(csv_options) = &options.file_format {
                         if let SinkTarget::Path(path) = &options.target
-                            && csv_options.strict_naming
+                            && csv_options.check_extension
                         {
-                            let compression_suffix = csv_options.compression.file_suffix();
-                            let suffix = compression_suffix.unwrap_or(".csv");
                             let path_str = path.as_str();
 
-                            if compression_suffix.is_none()
-                                && (path_str.ends_with(".gz") || path_str.ends_with(".zst"))
+                            if let Some(suffix) = csv_options.compression.file_suffix() {
+                                polars_ensure!(
+                                    path_str.ends_with(suffix) || !path_str.contains('.'),
+                                    InvalidOperation: "the path ({}) does not conform to standard naming, expected suffix: ({}), set `check_extension` to `False` if you don't want this behavior", path, suffix
+                                );
+                            } else if [".gz", ".zst", ".zstd"]
+                                .iter()
+                                .any(|extension| path_str.ends_with(extension))
                             {
                                 polars_bail!(
-                                    InvalidOperation: "use the compression parameter to control compression, or set `strict_naming` to `False` if you want to suffix an uncompressed file with an ending intended for compression"
+                                    InvalidOperation: "use the compression parameter to control compression, or set `check_extension` to `False` if you want to suffix an uncompressed filename with an ending intended for compression"
                                 );
                             }
-
-                            polars_ensure!(
-                                path_str.ends_with(suffix),
-                                InvalidOperation: "the path ({}) does not conform to standard naming, expected suffix: ({}), set `strict_naming` to `False` if you don't want this behavior", path, suffix
-                            );
                         }
                     }
 

@@ -760,7 +760,7 @@ impl PyLazyFrame {
 
     #[cfg(feature = "csv")]
     #[pyo3(signature = (
-        target, sink_options, include_bom, compression, compression_level, strict_naming,
+        target, sink_options, include_bom, compression, compression_level, check_extension,
         include_header, separator, line_terminator, quote_char, batch_size, datetime_format,
         date_format, time_format, float_scientific, float_precision, decimal_comma, null_value,
         quote_style
@@ -773,7 +773,7 @@ impl PyLazyFrame {
         include_bom: bool,
         compression: &str,
         compression_level: Option<u32>,
-        strict_naming: bool,
+        check_extension: bool,
         include_header: bool,
         separator: u8,
         line_terminator: Wrap<PlSmallStr>,
@@ -827,7 +827,7 @@ impl PyLazyFrame {
         let options = CsvWriterOptions {
             include_bom,
             compression,
-            strict_naming,
+            check_extension,
             include_header,
             batch_size,
             serialize_options: serialize_options.into(),

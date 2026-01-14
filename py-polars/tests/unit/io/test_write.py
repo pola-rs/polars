@@ -14,16 +14,13 @@ if TYPE_CHECKING:
 
 READ_WRITE_FUNC_PARAM = [
     (pl.read_parquet, pl.DataFrame.write_parquet),
-    (
-        lambda *a: pl.scan_csv(*a).collect(),
-        lambda df, path: pl.DataFrame.write_csv(df, path, strict_naming=False),
-    ),
+    (lambda *a: pl.scan_csv(*a).collect(), pl.DataFrame.write_csv),
     (lambda *a: pl.scan_ipc(*a).collect(), pl.DataFrame.write_ipc),
     # Sink
     (pl.read_parquet, lambda df, path: pl.DataFrame.lazy(df).sink_parquet(path)),
     (
         lambda *a: pl.scan_csv(*a).collect(),
-        lambda df, path: pl.DataFrame.lazy(df).sink_csv(path, strict_naming=False),
+        lambda df, path: pl.DataFrame.lazy(df).sink_csv(path),
     ),
     (
         lambda *a: pl.scan_ipc(*a).collect(),
@@ -73,11 +70,10 @@ def test_write_async_force_async(
     monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
     tmp_path.mkdir(exist_ok=True)
     path = opt_absolute_fn(tmp_path / "1")
-    extra_args = {"strict_naming": False} if "_csv" in str(write_func) else {}
 
     df = pl.DataFrame({"x": 1})
 
-    write_func(df, path, **extra_args)
+    write_func(df, path)
 
     assert_frame_equal(read_func(path), df)
 
@@ -104,8 +100,7 @@ def test_write_with_storage_options_22873(tmp_path: Path) -> None:
 
             continue
 
-        extra_args = {"strict_naming": False} if func == pl.DataFrame.write_csv else {}
-        func(df, path, storage_options={"test": "1"}, **extra_args)  # type: ignore[operator]
+        func(df, path, storage_options={"test": "1"})  # type: ignore[operator]
 
     lf = df.lazy()
 
@@ -115,5 +110,4 @@ def test_write_with_storage_options_22873(tmp_path: Path) -> None:
         pl.LazyFrame.sink_csv,
         pl.LazyFrame.sink_ndjson,
     ]:
-        extra_args = {"strict_naming": False} if func == pl.LazyFrame.sink_csv else {}
-        func(lf, path, storage_options={"test": "1"}, **extra_args)  # type: ignore[operator]
+        func(lf, path, storage_options={"test": "1"})  # type: ignore[operator]
