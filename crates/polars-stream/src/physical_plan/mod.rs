@@ -24,8 +24,6 @@ mod lower_expr;
 mod lower_group_by;
 mod lower_ir;
 mod to_graph;
-#[cfg(feature = "physical_plan_visualization")]
-pub mod visualization;
 
 pub use fmt::visualize_plan;
 use polars_plan::prelude::{FileWriteFormat, PlanCallback};
@@ -103,10 +101,7 @@ impl PhysStream {
 /// Behaviour when handling multiple DataFrames with different heights.
 
 #[derive(Clone, Debug, Copy)]
-#[cfg_attr(
-    feature = "physical_plan_visualization",
-    derive(serde::Serialize, serde::Deserialize)
-)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(
     feature = "physical_plan_visualization_schema",
     derive(schemars::JsonSchema)
@@ -121,10 +116,6 @@ pub enum ZipBehavior {
 }
 
 #[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "physical_plan_visualization",
-    derive(strum_macros::IntoStaticStr)
-)]
 pub enum PhysNodeKind {
     InMemorySource {
         df: Arc<DataFrame>,
