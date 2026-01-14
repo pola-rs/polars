@@ -45,12 +45,12 @@ impl RecordBatchEncoder {
             let (df, permit) = morsel.into_inner();
             let height = df.height();
             let columns = df.into_columns();
-            let flags = write_statistics_flags.then_some(
+            let flags = write_statistics_flags.then(|| {
                 columns
                     .iter()
                     .map(|c| c.get_flags().bits())
-                    .collect::<Vec<_>>(),
-            );
+                    .collect::<Vec<_>>()
+            });
             let custom_metadata = flags.map(|flags| {
                 vec![schema::key_value(
                     IPC_RW_RECORD_BATCH_FLAGS_KEY,

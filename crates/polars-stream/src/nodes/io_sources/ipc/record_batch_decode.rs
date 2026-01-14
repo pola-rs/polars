@@ -51,9 +51,9 @@ impl RecordBatchDecoder {
         // Extract statistics flags from the metadata
         let flags = self
             .read_statistics_flags
-            .then_some(reader.record_batch_custom_metadata(&mut message_scratch)?)
-            .as_ref()
-            .map(get_flags)
+            .then(|| reader.record_batch_custom_metadata(&mut message_scratch))
+            .transpose()?
+            .map(|meta| get_flags(&meta))
             .transpose()?;
 
         // Create the DataFrame with the appropriate schema based on the data.
