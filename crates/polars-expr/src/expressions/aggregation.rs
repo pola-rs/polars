@@ -9,6 +9,7 @@ use polars_core::utils::{_split_offsets, NoNull};
 use polars_ops::prelude::ArgAgg;
 #[cfg(feature = "propagate_nans")]
 use polars_ops::prelude::nan_propagating_aggregate;
+use polars_ops::series::ArgAgg;
 use rayon::prelude::*;
 
 use super::*;
@@ -624,6 +625,84 @@ impl PhysicalExpr for AggQuantileExpr {
             },
             Err(_) => Ok(input_field),
         }
+    }
+
+    fn is_scalar(&self) -> bool {
+        true
+    }
+}
+
+pub struct AggMinMaxByExpr {
+    input: Arc<dyn PhysicalExpr>,
+    by: Arc<dyn PhysicalExpr>,
+    is_max_by: bool,
+}
+
+impl AggMinMaxByExpr {
+    pub fn new_min_by(input: Arc<dyn PhysicalExpr>, by: Arc<dyn PhysicalExpr>) -> Self {
+        Self {
+            input,
+            by,
+            is_max_by: false,
+        }
+    }
+
+    pub fn new_max_by(input: Arc<dyn PhysicalExpr>, by: Arc<dyn PhysicalExpr>) -> Self {
+        Self {
+            input,
+            by,
+            is_max_by: true,
+        }
+    }
+}
+
+impl PhysicalExpr for AggMinMaxByExpr {
+    fn as_expression(&self) -> Option<&Expr> {
+        None
+    }
+
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+        let input = self.input.evaluate(df, state)?;
+        let by = self.by.evaluate(df, state)?;
+        polars_ensure!(
+            input.len() == by.len(),
+            ShapeMismatch: "input and by expressions must be of the same length"
+        );
+        let idx = if self.is_max_by {
+            by.as_materialized_series_maintain_scalar().arg_max()
+        } else {
+            by.as_materialized_series_maintain_scalar().arg_min()
+        }
+        .expect("TODO: [amber]");
+        let out = input.slice(idx as i64, 1);
+        assert!(out.len() == 1, "TODO: [amber] Handle empty results");
+        Ok(out)
+    }
+
+    #[allow(clippy::ptr_arg)]
+    fn evaluate_on_groups<'a>(
+        &self,
+        df: &DataFrame,
+        groups: &'a GroupPositions,
+        state: &ExecutionState,
+    ) -> PolarsResult<AggregationContext<'a>> {
+        let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
+        let mut ac_by = self.by.evaluate_on_groups(df, groups, state)?;
+        assert!(ac.groups.len() == ac_by.groups.len());
+
+        // AggregatedScalar has no defined group structure. We fix it up here, so that we can
+        // reliably call `agg_*` functions with the groups.
+        ac.set_groups_for_undefined_agg_states();
+        ac_by.set_groups_for_undefined_agg_states();
+
+        // TODO: [amber] LEFT HERE
+        // Look at SortBy for inspiration
+
+        todo!("[amber] implement AggMinMaxByExpr::evaluate_on_groups")
+    }
+
+    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
+        self.input.to_field(input_schema)
     }
 
     fn is_scalar(&self) -> bool {
