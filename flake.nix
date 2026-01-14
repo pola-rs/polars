@@ -429,23 +429,15 @@
                     # but fortify and fortify3.
                     export NIX_HARDENING_ENABLE="bindnow format pic relro stackclashprotection stackprotector strictoverflow zerocallusedregs"
 
-                    export PYO3_NO_REOCOMPILE=1
                     export PYO3_NO_RECOMPILE=1
 
-                    export POLARS_DOT_SVG_VIEWER="${openCmd} %file%"
-                    export PYO3_PYTHON=$($VENV/bin/python -c "import sys,os; print(os.path.abspath(sys.executable))")
                     export PYTHON_SHARED_LIB=$($VENV/bin/python -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")
 
-                    # Set `nix-ld` env vars for nixos users that need these to be able
-                    # to run `ruff`.
-                    export NIX_LD=${pkgs.stdenv.cc.bintools.dynamicLinker}
-                    export NIX_LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath runtimePkgs}:$PYTHON_SHARED_LIB"
-                    # Set openssl for `cargo test` to work.
-                    export LD_LIBRARY_PATH="${pkgs.openssl_3_4.out}/lib:${stdenv.cc.cc.lib}/lib:$PYTHON_SHARED_LIB"
+                    # - cc is needed for numpy to function
+                    # - python shared libs are required for rust-side tests
+                    export LD_LIBRARY_PATH="${stdenv.cc.cc.lib}/lib:$PYTHON_SHARED_LIB"
 
-                    export PYTHON_LIBS=$($VENV/bin/python -c "import site; print(site.getsitepackages()[0])")
-
-                    export PYTHONPATH="$PYTHONPATH:$PYTHON_LIBS"
+                    export POLARS_DOT_SVG_VIEWER="${openCmd} %file%"
 										export RUST_SRC_PATH="${rustToolchain.rust-src}/lib/rustlib/src/rust/library"
                   '';
 
