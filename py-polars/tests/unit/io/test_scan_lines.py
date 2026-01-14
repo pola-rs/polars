@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing.asserts.frame import assert_frame_equal
 
 
@@ -188,3 +189,12 @@ EEE
     for n_spaces in [1, 100]:
         for use_file_eol in [True, False]:
             f(n_spaces, use_file_eol)
+
+
+def test_scan_lines_negative_slice_reversed_read() -> None:
+    q = pl.scan_lines(b"\xff" + 500 * b"abc\n")
+
+    with pytest.raises(ComputeError, match="invalid utf8"):
+        q.collect()
+
+    q.tail(1).collect() == "abc"
