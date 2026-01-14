@@ -1,10 +1,10 @@
+use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 
 use super::BinaryViewArrayGeneric;
 use crate::array::binview::{View, ViewType};
 use crate::array::{FromFfi, ToFfi};
 use crate::bitmap::align;
-use crate::buffer::Buffer;
 use crate::ffi;
 
 unsafe impl<T: ViewType + ?Sized> ToFfi for BinaryViewArrayGeneric<T> {

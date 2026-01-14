@@ -1,8 +1,8 @@
 use arrow::array::{Array, BinaryArray};
 use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
 use arrow::offset::OffsetsBuffer;
+use polars_buffer::Buffer;
 use polars_compute::filter::filter_with_bitmap;
 
 use super::utils::dict_indices_decoder;

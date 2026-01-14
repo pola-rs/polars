@@ -15,12 +15,12 @@ use std::any::Any;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
+use polars_buffer::Buffer;
 use polars_error::*;
 use polars_utils::relaxed_cell::RelaxedCell;
 
 use crate::array::Array;
 use crate::bitmap::Bitmap;
-use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 
 mod private {

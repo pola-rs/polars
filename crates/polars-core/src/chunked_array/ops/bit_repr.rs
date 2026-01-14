@@ -1,4 +1,4 @@
-use arrow::buffer::Buffer;
+use polars_buffer::Buffer;
 use polars_error::feature_gated;
 
 use crate::prelude::*;

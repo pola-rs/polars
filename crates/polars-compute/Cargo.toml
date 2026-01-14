@@ -19,6 +19,7 @@ half = { workspace = true, optional = true, features = ["num-traits", "bytemuck"
 hashbrown = { workspace = true }
 itoa = { workspace = true, optional = true }
 num-traits = { workspace = true }
+polars-buffer = { workspace = true }
 polars-error = { workspace = true }
 polars-utils = { workspace = true }
 rand = { workspace = true }

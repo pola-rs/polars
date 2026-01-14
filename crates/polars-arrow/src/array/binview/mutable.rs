@@ -3,6 +3,7 @@ use std::fmt::{Debug, Formatter};
 use std::ops::Deref;
 
 use hashbrown::hash_map::Entry;
+use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 
@@ -13,7 +14,6 @@ use crate::array::binview::{
 };
 use crate::array::{Array, MutableArray, TryExtend, TryPush, View};
 use crate::bitmap::MutableBitmap;
-use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::trusted_len::TrustedLenPush;
 use crate::trusted_len::TrustedLen;

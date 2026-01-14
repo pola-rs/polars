@@ -2,7 +2,7 @@ use std::fmt::{Debug, Formatter};
 use std::fs::File;
 use std::sync::Arc;
 
-use arrow::buffer::Buffer;
+use polars_buffer::Buffer;
 use polars_core::error::{PolarsResult, feature_gated};
 use polars_error::polars_err;
 use polars_io::cloud::CloudOptions;

@@ -1,7 +1,7 @@
 use arrow::array::{GenericBinaryArray, PrimitiveArray};
 use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::buffer::Buffer;
 use arrow::offset::{Offset, Offsets, OffsetsBuffer};
+use polars_buffer::Buffer;
 use polars_utils::vec::{CapacityByFactor, PushUnchecked};
 
 use super::Index;

@@ -5,7 +5,7 @@ use std::hash::Hash;
 
 use arrow::bitmap::Bitmap;
 use arrow::bitmap::utils::{BitmapIter, ZipValidity};
-use arrow::buffer::Buffer;
+use polars_buffer::Buffer;
 use polars_utils::total_ord::TotalHash;
 
 use crate::prelude::*;

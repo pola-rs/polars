@@ -21,6 +21,7 @@ fallible-streaming-iterator = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
 hashbrown = { workspace = true }
 num-traits = { workspace = true }
+polars-buffer = { workspace = true }
 polars-compute = { workspace = true, features = ["approx_unique", "cast"] }
 polars-error = { workspace = true }
 polars-parquet-format = "0.1"
@@ -68,7 +69,7 @@ lz4_flex = ["dep:lz4_flex"]
 
 async = ["async-stream", "futures", "polars-parquet-format/async"]
 bloom_filter = ["xxhash-rust"]
-serde = ["dep:serde", "polars-utils/serde"]
+serde = ["dep:serde", "polars-buffer/serde", "polars-utils/serde"]
 dsl-schema = ["dep:schemars"]
 simd = ["polars-compute/simd"]
 

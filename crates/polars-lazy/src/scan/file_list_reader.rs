@@ -1,4 +1,4 @@
-use arrow::buffer::Buffer;
+use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;

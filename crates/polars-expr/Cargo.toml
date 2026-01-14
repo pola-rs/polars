@@ -18,6 +18,7 @@ chrono-tz = { workspace = true, optional = true }
 hashbrown = { workspace = true }
 libloading = { workspace = true, optional = true }
 num-traits = { workspace = true }
+polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
 polars-io = { workspace = true, features = ["lazy"] }

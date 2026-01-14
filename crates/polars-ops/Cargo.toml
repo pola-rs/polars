@@ -9,6 +9,7 @@ repository = { workspace = true }
 description = "More operations on Polars data structures"
 
 [dependencies]
+polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["algorithm_group_by", "zip_with"] }
 polars-error = { workspace = true }
@@ -95,6 +96,7 @@ find_many = ["aho-corasick"]
 serde = ["dep:serde", "polars-core/serde", "polars-utils/serde", "polars-schema/serde", "polars-compute/serde"]
 dsl-schema = [
   "dep:schemars",
+  "polars-buffer/serde",
   "polars-core/dsl-schema",
   "polars-utils/dsl-schema",
   "polars-schema/dsl-schema",

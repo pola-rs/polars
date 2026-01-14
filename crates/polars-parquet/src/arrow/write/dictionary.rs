@@ -2,11 +2,11 @@ use arrow::array::{
     Array, BinaryViewArray, DictionaryArray, DictionaryKey, PrimitiveArray, Utf8ViewArray,
 };
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::buffer::Buffer;
 use arrow::datatypes::{ArrowDataType, IntegerType, PhysicalType};
 use arrow::legacy::utils::CustomIterTools;
 use arrow::trusted_len::TrustMyLength;
 use arrow::types::NativeType;
+use polars_buffer::Buffer;
 use polars_compute::min_max::MinMaxKernel;
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::float16::pf16;

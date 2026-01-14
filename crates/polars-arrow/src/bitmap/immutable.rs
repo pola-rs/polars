@@ -3,6 +3,7 @@ use std::ops::Deref;
 use std::sync::LazyLock;
 
 use either::Either;
+use polars_buffer::SharedStorage;
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::relaxed_cell::RelaxedCell;
 
@@ -15,7 +16,6 @@ use crate::bitmap::iterator::{
 };
 use crate::bitmap::utils::bytes_for;
 use crate::legacy::utils::FromTrustedLenIterator;
-use crate::storage::SharedStorage;
 use crate::trusted_len::TrustedLen;
 
 const UNKNOWN_BIT_COUNT: u64 = u64::MAX;

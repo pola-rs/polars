@@ -1,6 +1,6 @@
 use arrow::array::*;
-use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
+use polars_buffer::Buffer;
 
 fn array() -> BinaryViewArrayGeneric<str> {
     let datatype = ArrowDataType::Utf8View;

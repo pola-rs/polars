@@ -1,9 +1,9 @@
 use arrow::array::*;
-use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
 use arrow::offset::{Offset, Offsets};
 use arrow::types::NativeType;
 use num_traits::AsPrimitive;
+use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 #[cfg(feature = "dtype-f16")]
 use polars_utils::float16::pf16;

@@ -3,9 +3,9 @@ use std::fmt::Debug;
 
 use arrow::array::{Array, BinaryViewArrayGeneric, View, ViewType};
 use arrow::bitmap::BitmapBuilder;
-use arrow::buffer::Buffer;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use hashbrown::hash_map::Entry;
+use polars_buffer::Buffer;
 use polars_core::prelude::gather::_update_gather_sorted_flag;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;

@@ -1,11 +1,11 @@
 use std::io::{Read, Seek};
 
+use polars_buffer::Buffer;
 use polars_error::polars_err;
 
 use super::super::read_basic::*;
 use super::*;
 use crate::array::{ArrayRef, BinaryViewArrayGeneric, View, ViewType};
-use crate::buffer::Buffer;
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_binview<T: ViewType + ?Sized, R: Read + Seek>(
