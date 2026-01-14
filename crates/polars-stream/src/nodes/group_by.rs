@@ -28,6 +28,12 @@ const DEFAULT_HOT_TABLE_SIZE: usize = 4;
 #[cfg(not(debug_assertions))]
 const DEFAULT_HOT_TABLE_SIZE: usize = 4096;
 
+struct PreAgg {
+    keys: HashKeys,
+    reduction_idxs: UnitVec<usize>,
+    reductions: Vec<Box<dyn GroupedReduction>>,
+}
+
 struct LocalGroupBySinkState {
     hot_grouper_per_input: Vec<Box<dyn HotGrouper>>,
     hot_grouped_reductions: Vec<Box<dyn GroupedReduction>>,
@@ -45,7 +51,7 @@ struct LocalGroupBySinkState {
 
     // Similar to the above, but for (evicted) pre-aggregates.
     // The UnitVec contains the indices of the grouped reductions.
-    pre_aggs: Vec<(HashKeys, UnitVec<usize>, Vec<Box<dyn GroupedReduction>>)>,
+    pre_aggs: Vec<PreAgg>,
     pre_agg_idxs_values_per_p: Vec<Vec<IdxSize>>,
     pre_agg_idxs_offsets_per_p: Vec<usize>,
 }
@@ -106,8 +112,12 @@ impl LocalGroupBySinkState {
         );
         self.pre_agg_idxs_offsets_per_p
             .extend(self.pre_agg_idxs_values_per_p.iter().map(|vp| vp.len()));
-        self.pre_aggs
-            .push((hash_keys, UnitVec::from_slice(reduction_idxs), reductions));
+        let pre_agg = PreAgg {
+            keys: hash_keys,
+            reduction_idxs: UnitVec::from_slice(reduction_idxs),
+            reductions,
+        };
+        self.pre_aggs.push(pre_agg);
     }
 }
 
@@ -252,11 +262,8 @@ impl GroupBySinkState {
                         }
                     }
 
-                    let mut opt_hot_reductions = l
-                        .hot_grouped_reductions
-                        .drain(..)
-                        .map(|r| Some(r))
-                        .collect_vec();
+                    let mut opt_hot_reductions =
+                        l.hot_grouped_reductions.drain(..).map(Some).collect_vec();
                     for (input_idx, r_idxs) in self.reductions_per_input.iter().enumerate() {
                         let hot_grouper = &mut l.hot_grouper_per_input[input_idx];
                         let hot_keys = hot_grouper.keys();
@@ -398,7 +405,11 @@ impl GroupBySinkState {
                         }
 
                         for (i, key_pre_aggs) in l_pre_aggs.iter().enumerate() {
-                            let (keys, r_idxs, pre_aggs) = key_pre_aggs;
+                            let PreAgg {
+                                keys,
+                                reduction_idxs: r_idxs,
+                                reductions: pre_aggs,
+                            } = key_pre_aggs;
                             unsafe {
                                 let p_pre_agg_idxs_start =
                                     l.pre_agg_idxs_offsets_per_p[i * num_partitions + p];
