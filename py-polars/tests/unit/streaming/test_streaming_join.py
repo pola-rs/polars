@@ -560,3 +560,34 @@ def test_join_dtypes(
     actual = q_mergejoin.collect(engine="streaming")
     assert "merge-join" in typing.cast("str", dot), "merge-join not used in plan"
     assert_frame_equal(actual, expected, check_row_order=False)
+
+
+@pytest.mark.parametrize("ignore_nulls", [False, True])
+def test_merge_join_exprs(ignore_nulls: bool) -> None:
+    left = pl.LazyFrame(
+        {
+            "key": ["zzzaaa", "zzzaaaa", "zzzcaaa"],
+            "key_ext": [1, 2, 3],
+            "value": [1, 2, 3],
+        }
+    ).set_sorted("key", "key_ext")
+    right = pl.LazyFrame(
+        {
+            "key": ["", "a", "b"],
+            "key_ext": [3, 2, 3],
+            "value": [4, 5, 6],
+        }
+    ).set_sorted("key", "key_ext")
+
+    q = left.join(
+        right,
+        left_on="key",
+        right_on=pl.concat_str(
+            pl.lit("zzz"), pl.col("key"), pl.lit("aaa"), ignore_nulls=ignore_nulls
+        ),
+        how="full",
+        maintain_order="none",
+    )
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "merge-join" in typing.cast("str", dot), "merge-join not used in plan"
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
