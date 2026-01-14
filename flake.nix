@@ -300,6 +300,8 @@
 
 									"duckdb"
 									"pandas"
+									"jax"
+									"torch"
 									"jupyterlab"
 
 									"pygithub"
