@@ -2938,6 +2938,7 @@ dependencies = [
  "getrandom 0.2.16",
  "getrandom 0.3.4",
  "polars-arrow",
+ "polars-buffer",
  "polars-compute",
  "polars-core",
  "polars-error",

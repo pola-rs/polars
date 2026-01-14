@@ -25,8 +25,8 @@ use super::UnifiedScanArgs;
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone)]
 pub enum ScanSources {
+    #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     Paths(Buffer<PlRefPath>),
-
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     Files(Arc<[File]>),
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
