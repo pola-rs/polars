@@ -79,40 +79,40 @@ pub enum FunctionIR {
     Hint(HintIR),
 }
 
-impl Eq for FunctionIR {}
+// impl Eq for FunctionIR {}
 
-impl PartialEq for FunctionIR {
-    fn eq(&self, other: &Self) -> bool {
-        use FunctionIR::*;
-        match (self, other) {
-            (Rechunk, Rechunk) => true,
-            (
-                FastCount {
-                    sources: srcs_l, ..
-                },
-                FastCount {
-                    sources: srcs_r, ..
-                },
-            ) => srcs_l == srcs_r,
-            (
-                Explode {
-                    columns: l,
-                    options: l_options,
-                    ..
-                },
-                Explode {
-                    columns: r,
-                    options: r_options,
-                    ..
-                },
-            ) => l == r && l_options == r_options,
-            #[cfg(feature = "pivot")]
-            (Unpivot { args: l, .. }, Unpivot { args: r, .. }) => l == r,
-            (RowIndex { name: l, .. }, RowIndex { name: r, .. }) => l == r,
-            _ => false,
-        }
-    }
-}
+// impl PartialEq for FunctionIR {
+//     fn eq(&self, other: &Self) -> bool {
+//         use FunctionIR::*;
+//         match (self, other) {
+//             (Rechunk, Rechunk) => true,
+//             (
+//                 FastCount {
+//                     sources: srcs_l, ..
+//                 },
+//                 FastCount {
+//                     sources: srcs_r, ..
+//                 },
+//             ) => srcs_l == srcs_r,
+//             (
+//                 Explode {
+//                     columns: l,
+//                     options: l_options,
+//                     ..
+//                 },
+//                 Explode {
+//                     columns: r,
+//                     options: r_options,
+//                     ..
+//                 },
+//             ) => l == r && l_options == r_options,
+//             #[cfg(feature = "pivot")]
+//             (Unpivot { args: l, .. }, Unpivot { args: r, .. }) => l == r,
+//             (RowIndex { name: l, .. }, RowIndex { name: r, .. }) => l == r,
+//             _ => false,
+//         }
+//     }
+// }
 
 impl Hash for FunctionIR {
     fn hash<H: Hasher>(&self, state: &mut H) {
