@@ -24,8 +24,6 @@ mod lower_expr;
 mod lower_group_by;
 mod lower_ir;
 mod to_graph;
-#[cfg(feature = "physical_plan_visualization")]
-pub mod visualization;
 
 pub use fmt::visualize_plan;
 use polars_plan::prelude::{FileWriteFormat, PlanCallback};
@@ -33,8 +31,8 @@ use polars_plan::prelude::{FileWriteFormat, PlanCallback};
 use polars_time::DynamicGroupOptions;
 use polars_time::{ClosedWindow, Duration};
 use polars_utils::arena::{Arena, Node};
+use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::plpath::PlPath;
 use polars_utils::slice_enum::Slice;
 use slotmap::{SecondaryMap, SlotMap};
 pub use to_graph::physical_plan_to_graph;
@@ -103,10 +101,7 @@ impl PhysStream {
 /// Behaviour when handling multiple DataFrames with different heights.
 
 #[derive(Clone, Debug, Copy)]
-#[cfg_attr(
-    feature = "physical_plan_visualization",
-    derive(serde::Serialize, serde::Deserialize)
-)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(
     feature = "physical_plan_visualization_schema",
     derive(schemars::JsonSchema)
@@ -121,10 +116,6 @@ pub enum ZipBehavior {
 }
 
 #[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "physical_plan_visualization",
-    derive(strum_macros::IntoStaticStr)
-)]
 pub enum PhysNodeKind {
     InMemorySource {
         df: Arc<DataFrame>,
@@ -203,7 +194,7 @@ pub enum PhysNodeKind {
 
     PartitionedSink {
         input: PhysStream,
-        base_path: Arc<PlPath>,
+        base_path: Arc<PlRefPath>,
         file_path_cb: Option<PartitionTargetCallback>,
         sink_options: SinkOptions,
         variant: PartitionVariantIR,

@@ -54,19 +54,21 @@ impl<T: NativeType, P: MinMaxPolicy> MinMaxWindow<'_, T, P> {
     }
 }
 
-impl<'a, T: NativeType, P: MinMaxPolicy> RollingAggWindowNulls<'a, T> for MinMaxWindow<'a, T, P> {
-    fn new(
+impl<T: NativeType, P: MinMaxPolicy> RollingAggWindowNulls<T> for MinMaxWindow<'_, T, P> {
+    type This<'a> = MinMaxWindow<'a, T, P>;
+
+    fn new<'a>(
         slice: &'a [T],
         validity: &'a Bitmap,
         start: usize,
         end: usize,
         params: Option<RollingFnParams>,
         _window_size: Option<usize>,
-    ) -> Self {
+    ) -> Self::This<'a> {
         assert!(params.is_none());
         assert!(start <= slice.len() && end <= slice.len() && start <= end);
 
-        let mut slf = Self {
+        let mut this = MinMaxWindow {
             values: slice,
             validity: Some(validity),
             monotonic_idxs: VecDeque::new(),
@@ -77,9 +79,9 @@ impl<'a, T: NativeType, P: MinMaxPolicy> RollingAggWindowNulls<'a, T> for MinMax
         };
         // SAFETY: We bounds checked `start` and `end`.
         unsafe {
-            RollingAggWindowNulls::update(&mut slf, start, end);
+            RollingAggWindowNulls::update(&mut this, start, end);
         }
-        slf
+        this
     }
 
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
@@ -106,18 +108,24 @@ impl<'a, T: NativeType, P: MinMaxPolicy> RollingAggWindowNulls<'a, T> for MinMax
     fn is_valid(&self, min_periods: usize) -> bool {
         self.nonnulls_in_window >= min_periods
     }
+
+    fn slice_len(&self) -> usize {
+        self.values.len()
+    }
 }
 
-impl<'a, T: NativeType, P: MinMaxPolicy> RollingAggWindowNoNulls<'a, T> for MinMaxWindow<'a, T, P> {
-    fn new(
+impl<T: NativeType, P: MinMaxPolicy> RollingAggWindowNoNulls<T> for MinMaxWindow<'_, T, P> {
+    type This<'a> = MinMaxWindow<'a, T, P>;
+
+    fn new<'a>(
         slice: &'a [T],
         start: usize,
         end: usize,
         params: Option<RollingFnParams>,
         _window_size: Option<usize>,
-    ) -> Self {
+    ) -> Self::This<'a> {
         assert!(params.is_none());
-        let mut slf = Self {
+        let mut this = MinMaxWindow {
             values: slice,
             validity: None,
             monotonic_idxs: VecDeque::new(),
@@ -127,9 +135,9 @@ impl<'a, T: NativeType, P: MinMaxPolicy> RollingAggWindowNoNulls<'a, T> for MinM
             policy: PhantomData,
         };
         unsafe {
-            RollingAggWindowNoNulls::update(&mut slf, start, end);
+            RollingAggWindowNoNulls::update(&mut this, start, end);
         }
-        slf
+        this
     }
 
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
@@ -145,5 +153,9 @@ impl<'a, T: NativeType, P: MinMaxPolicy> RollingAggWindowNoNulls<'a, T> for MinM
                 .front()
                 .map(|idx| *self.values.get_unchecked(*idx))
         }
+    }
+
+    fn slice_len(&self) -> usize {
+        self.values.len()
     }
 }

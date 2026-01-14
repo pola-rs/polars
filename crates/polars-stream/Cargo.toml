@@ -32,7 +32,6 @@ schemars = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 slotmap = { workspace = true }
-strum_macros = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["sync"] }
 
 arrow = { workspace = true }
@@ -89,14 +88,7 @@ dtype-extension = ["polars-core/dtype-extension", "polars-plan/dtype-extension"]
 ewma = ["polars-plan/ewma"]
 mode = ["polars-plan/mode"]
 object = ["polars-ops/object"]
-physical_plan_visualization = [
-  "dep:serde",
-  "dep:serde_json",
-  "polars-plan/ir_serde",
-  "strum_macros",
-]
 physical_plan_visualization_schema = [
-  "physical_plan_visualization",
   "dep:schemars",
   "polars-plan/dsl-schema",
   "polars-utils/dsl-schema",

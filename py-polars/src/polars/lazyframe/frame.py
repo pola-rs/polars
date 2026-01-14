@@ -3205,12 +3205,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             if storage_options is not None or credential_provider_builder is not None
             else None
         )
-        ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
-        stream = ldf.collect_batches(
+        stream = self.collect_batches(
             engine="streaming",
             maintain_order=True,
             chunk_size=None,
             lazy=True,
+            optimizations=optimizations,
         )
 
         if mode == "merge":
@@ -3222,7 +3222,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             else:
                 dt = target
 
-            return dt.merge(stream, **delta_merge_options)
+            return dt.merge(stream, **delta_merge_options)  # type: ignore[arg-type]
 
         else:
             if delta_write_options is None:
@@ -3230,7 +3230,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
             write_deltalake(
                 table_or_uri=target,
-                data=stream,
+                data=stream,  # type: ignore[call-overload]
                 mode=mode,
                 storage_options=storage_options,
                 **delta_write_options,
@@ -4134,6 +4134,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             def __next__(self) -> DataFrame:
                 pydf = next(self._inner)
                 return pl.DataFrame._from_pydf(pydf)
+
+            def __arrow_c_stream__(
+                self, requested_schema: object | None = None
+            ) -> object:
+                return self._inner.__arrow_c_stream__(requested_schema)
 
         ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
         inner = ldf.collect_batches(

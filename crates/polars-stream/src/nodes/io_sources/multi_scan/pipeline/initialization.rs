@@ -145,12 +145,7 @@ async fn finish_initialize_multi_scan_pipeline(
         // In cloud execution the entries may not exist at this point due to DSL resolution
         // happening on a separate machine.
         polars_io::file_cache::init_entries_from_uri_list(
-            config
-                .sources
-                .as_paths()
-                .unwrap()
-                .iter()
-                .map(|path| Arc::from(path.to_str())),
+            config.sources.as_paths().unwrap().iter().cloned(),
             config.cloud_options.as_deref(),
         )?;
     }
