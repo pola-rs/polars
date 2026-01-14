@@ -211,14 +211,8 @@ from polars.functions import (
 )
 from polars.interchange import CompatLevel
 from polars.io import (
-    BasePartitionContext,
     FileProviderArgs,
-    KeyedPartition,
-    KeyedPartitionContext,
     PartitionBy,
-    PartitionByKey,
-    PartitionMaxSize,
-    PartitionParted,
     ScanCastOptions,
     defer,
     read_avro,
@@ -335,13 +329,7 @@ __all__ = [
     # polars.io
     "defer",
     "FileProviderArgs",
-    "KeyedPartition",
-    "BasePartitionContext",
-    "KeyedPartitionContext",
     "PartitionBy",
-    "PartitionByKey",
-    "PartitionMaxSize",
-    "PartitionParted",
     "ScanCastOptions",
     "read_avro",
     "read_clipboard",
