@@ -116,7 +116,7 @@ pub fn dictionaries_to_encode(
                 .downcast_ref::<UnionArray>()
                 .unwrap()
                 .fields();
-            let fields = &field.fields[..]; // todo: error instead
+            let fields = field.fields.as_slice(); // todo: error instead
             if values.len() != fields.len() {
                 polars_bail!(InvalidOperation:
                     "The number of fields in a union must equal the number of children in IpcField"
