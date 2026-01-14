@@ -226,12 +226,7 @@ impl ComputeNode for ShiftNode {
                 send[0] = PortState::Blocked;
             },
             Self::Shifting(shift_state) => {
-                if send[0] == PortState::Done {
-                    // if send gets closed by consumer (e.g. head) we propagate that to the recv
-                    recv[0] = PortState::Done;
-                } else if recv[0] == PortState::Done
-                    && shift_state.rows_sent < shift_state.rows_received
-                {
+                if recv[0] == PortState::Done && shift_state.rows_sent < shift_state.rows_received {
                     send[0] = PortState::Ready;
                 } else {
                     recv[..1].swap_with_slice(send);
