@@ -225,8 +225,6 @@ impl PhysicalExpr for AggregationExpr {
                     AggregatedScalar(agg_c.with_name(keep_name))
                 },
                 GroupByMethod::ArgMin => {
-                    eprintln!("HIT GroupByMethod::ArgMin in AggregationExpr::evaluate_on_groups");
-
                     let (c, groups) = ac.get_final_aggregation();
                     let agg_c = c.agg_arg_min(&groups); // you will add this
                     AggregatedScalar(agg_c.with_name(keep_name))
