@@ -1754,7 +1754,7 @@ class ExprStringNameSpace:
         by: IntoExpr,
         *,
         inclusive: bool = False,
-        regex: bool = False,
+        literal: bool = True,
         strict: bool = True,
     ) -> Expr:
         r"""
@@ -1766,8 +1766,8 @@ class ExprStringNameSpace:
             Substring to split by.
         inclusive
             If True, include the split character/string in the results.
-        regex
-            If True, interpret the split character/string as a regex.
+        literal
+            Treat `by` as a literal string, not as a regular expression.
         strict
             Raise an error if the underlying pattern is not a valid regex,
             otherwise mask out with a null value.
@@ -1858,7 +1858,7 @@ class ExprStringNameSpace:
         """
         by_pyexpr = parse_into_expression(by, str_as_lit=True)
 
-        if regex:
+        if not literal:
             if inclusive:
                 return wrap_expr(
                     self._pyexpr.str_split_regex_inclusive(by_pyexpr, strict)

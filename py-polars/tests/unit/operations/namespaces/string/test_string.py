@@ -2217,7 +2217,7 @@ def test_json_decode_categorical_enum(dtype: pl.DataType) -> None:
 def test_str_split_regex() -> None:
     df = pl.DataFrame({"s": ["foo1bar", "foo99bar", "foo1bar2baz"]})
 
-    out = df.select(split=pl.col("s").str.split(by=r"\d+", regex=True))
+    out = df.select(split=pl.col("s").str.split(by=r"\d+", literal=False))
     expected = pl.DataFrame(
         {"split": [["foo", "bar"], ["foo", "bar"], ["foo", "bar", "baz"]]}
     )
@@ -2228,7 +2228,9 @@ def test_str_split_regex() -> None:
 def test_str_split_regex_inclusive() -> None:
     df = pl.DataFrame({"s": ["foo1bar", "foo99bar", "foo1bar2baz"]})
 
-    out = df.select(split=pl.col("s").str.split(by=r"\d+", regex=True, inclusive=True))
+    out = df.select(
+        split=pl.col("s").str.split(by=r"\d+", literal=False, inclusive=True)
+    )
     expected = pl.DataFrame(
         {"split": [["foo1", "bar"], ["foo99", "bar"], ["foo1", "bar2", "baz"]]}
     )
@@ -2244,7 +2246,7 @@ def test_str_split_regex_expr() -> None:
         }
     )
 
-    out = df.select(split=pl.col("s").str.split(by=pl.col("by"), regex=True))
+    out = df.select(split=pl.col("s").str.split(by=pl.col("by"), literal=False))
     expected = pl.DataFrame(
         {"split": [["foo", "bar"], ["foo", "bar"], ["foo", "bar baz"]]}
     )
@@ -2261,7 +2263,7 @@ def test_str_split_regex_expr_inclusive() -> None:
     )
 
     out = df.select(
-        split=pl.col("s").str.split(by=pl.col("by"), regex=True, inclusive=True)
+        split=pl.col("s").str.split(by=pl.col("by"), literal=False, inclusive=True)
     )
     expected = pl.DataFrame(
         {"split": [["foo1", "bar"], ["foo ", "bar"], ["foo-", "bar baz"]]}
@@ -2274,13 +2276,13 @@ def test_str_split_regex_invalid_pattern_strict_true() -> None:
     df = pl.DataFrame({"s": ["foo1bar", "abc", "123xyz"]})
 
     with pytest.raises(ComputeError):
-        df.select(split=pl.col("s").str.split(by="(", regex=True, strict=True))
+        df.select(split=pl.col("s").str.split(by="(", literal=False, strict=True))
 
 
 def test_str_split_regex_invalid_pattern_strict_false() -> None:
     df = pl.DataFrame({"s": ["foo1bar", "abc", "123xyz"]})
 
-    out = df.select(split=pl.col("s").str.split(by="(", regex=True, strict=False))
+    out = df.select(split=pl.col("s").str.split(by="(", literal=False, strict=False))
 
     expected = pl.DataFrame(
         {
@@ -2298,7 +2300,9 @@ def test_str_split_regex_invalid_pattern_strict_false() -> None:
 def test_str_split_regex_scalar_string_expr() -> None:
     df = pl.DataFrame({"by": [r"\d", r"\d+", r"bar"]})
 
-    out = df.select(split=pl.lit("foo1bar2baz").str.split(by=pl.col("by"), regex=True))
+    out = df.select(
+        split=pl.lit("foo1bar2baz").str.split(by=pl.col("by"), literal=False)
+    )
 
     expected = pl.DataFrame(
         {
