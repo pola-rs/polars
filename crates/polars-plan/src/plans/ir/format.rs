@@ -461,8 +461,6 @@ impl Display for ExprIRDisplay<'_> {
                             write!(f, ".max()")
                         }
                     },
-                    ArgMin { input } => write!(f, "{}.arg_min()", self.with_root(input)),
-                    ArgMax { input } => write!(f, "{}.arg_max()", self.with_root(input)),
                     MinBy { input, by } => {
                         let input = self.with_root(input);
                         let by = self.with_root(by);

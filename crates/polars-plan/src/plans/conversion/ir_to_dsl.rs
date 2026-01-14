@@ -206,14 +206,6 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 }
                 .into()
             },
-            IRAggExpr::ArgMin { input } => {
-                let exp = node_to_expr(input, expr_arena);
-                AggExpr::ArgMin(Arc::new(exp)).into()
-            },
-            IRAggExpr::ArgMax { input } => {
-                let exp = node_to_expr(input, expr_arena);
-                AggExpr::ArgMax(Arc::new(exp)).into()
-            },
         },
         AExpr::Ternary {
             predicate,

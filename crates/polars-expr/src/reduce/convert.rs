@@ -80,8 +80,6 @@ pub fn into_reduction(
             IRAggExpr::NUnique(_) => todo!(),
             IRAggExpr::Implode(_) => todo!(),
             IRAggExpr::AggGroups(_) => todo!(),
-            IRAggExpr::ArgMin { .. } => todo!(),
-            IRAggExpr::ArgMax { .. } => todo!(),
         },
         AExpr::Len => {
             if let Some(first_column) = schema.iter_names().next() {

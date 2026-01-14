@@ -29,8 +29,6 @@ pub enum AggExpr {
         input: Arc<Expr>,
         propagate_nans: bool,
     },
-    ArgMin(Arc<Expr>),
-    ArgMax(Arc<Expr>),
     MinBy {
         input: Arc<Expr>,
         by: Arc<Expr>,
@@ -88,8 +86,6 @@ impl AsRef<Expr> for AggExpr {
             AggGroups(e) => e,
             Std(e, _) => e,
             Var(e, _) => e,
-            ArgMin(e) => e,
-            ArgMax(e) => e,
         }
     }
 }

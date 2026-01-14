@@ -263,14 +263,6 @@ pub(super) fn to_aexpr_impl(
                         output_name,
                     )
                 },
-                AggExpr::ArgMin(input) => {
-                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
-                    (IRAggExpr::ArgMin { input }, output_name)
-                },
-                AggExpr::ArgMax(input) => {
-                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
-                    (IRAggExpr::ArgMax { input }, output_name)
-                },
                 AggExpr::MinBy { input, by } => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     let (by, _) = to_aexpr_mat_lit_arc!(by)?;

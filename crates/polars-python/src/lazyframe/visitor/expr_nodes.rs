@@ -667,16 +667,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 arguments: vec![input.0],
                 options: propagate_nans.into_py_any(py)?,
             },
-            IRAggExpr::ArgMin { input } => Agg {
-                name: "arg_min".into_py_any(py)?,
-                arguments: vec![input.0],
-                options: py.None(),
-            },
-            IRAggExpr::ArgMax { input } => Agg {
-                name: "arg_max".into_py_any(py)?,
-                arguments: vec![input.0],
-                options: py.None(),
-            },
             IRAggExpr::MinBy { input, by } => Agg {
                 name: "min_by".into_py_any(py)?,
                 arguments: vec![input.0, by.0],

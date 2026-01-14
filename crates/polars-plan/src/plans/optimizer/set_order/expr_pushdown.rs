@@ -250,9 +250,7 @@ impl<'a> ObservableOrdersResolver<'a> {
                 | IRAggExpr::First(node)
                 | IRAggExpr::FirstNonNull(node)
                 | IRAggExpr::Last(node)
-                | IRAggExpr::LastNonNull(node)
-                | IRAggExpr::ArgMin { input: node, .. }
-                | IRAggExpr::ArgMax { input: node, .. } => {
+                | IRAggExpr::LastNonNull(node) => {
                     if rec!(*node).column_ordering_observable() {
                         return Err(ColumnOrderObserved);
                     }

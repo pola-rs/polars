@@ -473,8 +473,6 @@ impl IRAggExpr {
         match self {
             Min { input, .. } => Single(*input),
             Max { input, .. } => Single(*input),
-            ArgMin { input } => Single(*input),
-            ArgMax { input } => Single(*input),
             MinBy { input, by } => Many(vec![*input, *by]),
             MaxBy { input, by } => Many(vec![*input, *by]),
             Median(input) => Single(*input),
@@ -499,8 +497,6 @@ impl IRAggExpr {
         let node = match self {
             Min { input, .. } => input,
             Max { input, .. } => input,
-            ArgMin { input } => input,
-            ArgMax { input } => input,
             Median(input) => input,
             NUnique(input) => input,
             First(input) => input,

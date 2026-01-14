@@ -43,8 +43,6 @@ macro_rules! push_expr {
                 match agg_e {
                     Max { input, .. } => $push($c, input),
                     Min { input, .. } => $push($c, input),
-                    ArgMin(e) => $push($c, e),
-                    ArgMax(e) => $push($c, e),
                     MinBy { input, by } => {
                         $push($c, by);
                         $push($c, input);

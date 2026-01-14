@@ -612,22 +612,6 @@ fn expand_expression_rec(
                         })
                     },
                 )?,
-                AggExpr::ArgMin(expr) => expand_single(
-                    expr.as_ref(),
-                    ignored_selector_columns,
-                    schema,
-                    out,
-                    opt_flags,
-                    |e| Expr::Agg(AggExpr::ArgMin(Arc::new(e))),
-                )?,
-                AggExpr::ArgMax(expr) => expand_single(
-                    expr.as_ref(),
-                    ignored_selector_columns,
-                    schema,
-                    out,
-                    opt_flags,
-                    |e| Expr::Agg(AggExpr::ArgMax(Arc::new(e))),
-                )?,
             }
         },
         Expr::Ternary {
