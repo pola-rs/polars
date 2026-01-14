@@ -445,11 +445,6 @@ fn create_physical_expr_inner(
             function: function @ (IRFunctionExpr::ArgMin | IRFunctionExpr::ArgMax),
             options,
         } if options.flags.returns_scalar() => {
-            polars_ensure!(
-                input.len() == 1,
-                ComputeError: "arg_min/arg_max expects a single input"
-            );
-
             let phys_input =
                 create_physical_expr_inner(input[0].node(), expr_arena, schema, state)?;
 
