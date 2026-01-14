@@ -237,6 +237,7 @@ impl Read for CompressedReader {
 /// Constructor for `WriteableTrait` compressed encoders.
 pub struct CompressedWriter;
 
+#[cfg(feature = "decompress")]
 pub struct ZstdEncoder<T: Write>(Option<zstd::Encoder<'static, T>>);
 
 impl CompressedWriter {
@@ -260,6 +261,7 @@ impl CompressedWriter {
     }
 }
 
+#[cfg(feature = "decompress")]
 impl<T: WriteableTrait> WriteableTrait for flate2::write::GzEncoder<T> {
     fn close(&mut self) -> std::io::Result<()> {
         self.try_finish()?;
@@ -275,6 +277,7 @@ impl<T: WriteableTrait> WriteableTrait for flate2::write::GzEncoder<T> {
     }
 }
 
+#[cfg(feature = "decompress")]
 impl<T: Write> Write for ZstdEncoder<T> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.0.as_mut().unwrap().write(buf)
@@ -285,6 +288,7 @@ impl<T: Write> Write for ZstdEncoder<T> {
     }
 }
 
+#[cfg(feature = "decompress")]
 impl<T: WriteableTrait> WriteableTrait for ZstdEncoder<T> {
     fn close(&mut self) -> std::io::Result<()> {
         let mut inner = self.0.take().unwrap().finish()?;
