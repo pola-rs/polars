@@ -1812,9 +1812,9 @@ class ExprStringNameSpace:
 
         >>> df = pl.DataFrame({"s": ["foo1bar", "foo99bar", "foo1bar2baz"]})
         >>> df.with_columns(
-        ...     pl.col("s").str.split(by=r"\d+", regex=True).alias("split_regex"),
+        ...     pl.col("s").str.split(by=r"\d+", literal=False).alias("split_regex"),
         ...     pl.col("s")
-        ...     .str.split(by=r"\d+", regex=True, inclusive=True)
+        ...     .str.split(by=r"\d+", literal=False, inclusive=True)
         ...     .alias("split_regex_inclusive"),
         ... )
         shape: (3, 3)
@@ -1835,9 +1835,11 @@ class ExprStringNameSpace:
         ...     }
         ... )
         >>> df.with_columns(
-        ...     pl.col("s").str.split(by=pl.col("by"), regex=True).alias("split_regex"),
         ...     pl.col("s")
-        ...     .str.split(by=pl.col("by"), regex=True, inclusive=True)
+        ...     .str.split(by=pl.col("by"), literal=False)
+        ...     .alias("split_regex"),
+        ...     pl.col("s")
+        ...     .str.split(by=pl.col("by"), literal=False, inclusive=True)
         ...     .alias("split_regex_inclusive"),
         ... )
         shape: (3, 4)
