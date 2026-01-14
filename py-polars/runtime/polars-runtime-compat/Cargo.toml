@@ -1,7 +1,7 @@
 [package]
 name = "polars-runtime-compat"
 # example: 1.35.0-beta.1
-version = "1.36.1"
+version = "1.37.1"
 edition = "2021"
 
 [lib]
@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 [dependencies]
 libc = { workspace = true }
 polars-python = { workspace = true, features = ["allocator", "c_api", "pymethods", "iejoin", "rtcompat"] }
-pyo3 = { workspace = true, features = ["abi3-py39", "chrono", "extension-module", "multiple-pymethods"] }
+pyo3 = { workspace = true, features = ["abi3-py310", "chrono", "extension-module", "multiple-pymethods"] }
 
 either = { workspace = true }
 

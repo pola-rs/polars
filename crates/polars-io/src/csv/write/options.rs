@@ -1,4 +1,5 @@
 use std::num::NonZeroUsize;
+use std::sync::Arc;
 
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
@@ -12,7 +13,7 @@ pub struct CsvWriterOptions {
     pub include_bom: bool,
     pub include_header: bool,
     pub batch_size: NonZeroUsize,
-    pub serialize_options: SerializeOptions,
+    pub serialize_options: Arc<SerializeOptions>,
 }
 
 impl Default for CsvWriterOptions {
@@ -21,7 +22,7 @@ impl Default for CsvWriterOptions {
             include_bom: false,
             include_header: true,
             batch_size: NonZeroUsize::new(1024).unwrap(),
-            serialize_options: SerializeOptions::default(),
+            serialize_options: SerializeOptions::default().into(),
         }
     }
 }

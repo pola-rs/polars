@@ -64,15 +64,15 @@ pub fn _use_rolling_kernels(
 }
 
 // Use an aggregation window that maintains the state
-pub fn _rolling_apply_agg_window_nulls<'a, Agg, T, O>(
-    values: &'a [T],
-    validity: &'a Bitmap,
+pub fn _rolling_apply_agg_window_nulls<Agg, T, O>(
+    values: &[T],
+    validity: &Bitmap,
     offsets: O,
     params: Option<RollingFnParams>,
 ) -> PrimitiveArray<T>
 where
     O: Iterator<Item = (IdxSize, IdxSize)> + TrustedLen,
-    Agg: RollingAggWindowNulls<'a, T>,
+    Agg: RollingAggWindowNulls<T>,
     T: IsFloat + NativeType,
 {
     if values.is_empty() {
@@ -84,9 +84,7 @@ where
     // these represent the number of groups in the group_by operation
     let output_len = offsets.size_hint().0;
     // start with a dummy index, will be overwritten on first iteration.
-    // SAFETY:
-    // we are in bounds
-    let mut agg_window = unsafe { Agg::new(values, validity, 0, 0, params, None) };
+    let mut agg_window = Agg::new(values, validity, 0, 0, params, None);
 
     let mut validity = MutableBitmap::with_capacity(output_len);
     validity.extend_constant(output_len, true);
@@ -115,14 +113,14 @@ where
 }
 
 // Use an aggregation window that maintains the state.
-pub fn _rolling_apply_agg_window_no_nulls<'a, Agg, T, O>(
-    values: &'a [T],
+pub fn _rolling_apply_agg_window_no_nulls<Agg, T, O>(
+    values: &[T],
     offsets: O,
     params: Option<RollingFnParams>,
 ) -> PrimitiveArray<T>
 where
     // items (offset, len) -> so offsets are offset, offset + len
-    Agg: RollingAggWindowNoNulls<'a, T>,
+    Agg: RollingAggWindowNoNulls<T>,
     O: Iterator<Item = (IdxSize, IdxSize)> + TrustedLen,
     T: IsFloat + NativeType,
 {

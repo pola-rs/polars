@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
 from polars.testing.asserts.frame import assert_frame_equal
+from tests.unit.io.conftest import format_file_uri
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 READ_WRITE_FUNC_PARAM = [
     (pl.read_parquet, pl.DataFrame.write_parquet),
@@ -41,7 +45,7 @@ def test_write_async(
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
     path = (tmp_path / "1").absolute()
-    path = f"file://{path}"  # type: ignore[assignment]
+    path = format_file_uri(path)  # type: ignore[assignment]
 
     df = pl.DataFrame({"x": 1})
 

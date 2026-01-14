@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from contextlib import contextmanager
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, Union, cast, overload
+from typing import IO, TYPE_CHECKING, Any, cast, overload
 
 from polars._dependencies import _FSSPEC_AVAILABLE, fsspec
 from polars._utils.various import (
@@ -341,8 +341,6 @@ def get_sources(
     if not isinstance(source, Sequence) or isinstance(source, (str, bytes)):
         out: list[bytes | str | IO[bytes] | IO[str]] = [source]
 
-        return cast(
-            "Union[list[bytes], list[str], list[IO[bytes]], list[IO[str]]]", out
-        )
+        return cast("list[bytes] | list[str] | list[IO[bytes]] | list[IO[str]]", out)
 
     return source

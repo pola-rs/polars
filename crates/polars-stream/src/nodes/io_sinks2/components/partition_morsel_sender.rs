@@ -77,10 +77,18 @@ impl PartitionMorselSender {
                     available_row_capacity = if self.file_size_limit.get() == RowCountAndSize::MAX {
                         RowCountAndSize::MAX
                     } else {
-                        self.file_size_limit
-                            .get()
-                            .checked_sub(used_row_capacity)
-                            .unwrap()
+                        let file_size_limit = self.file_size_limit.get();
+                        RowCountAndSize {
+                            num_rows: IdxSize::checked_sub(
+                                file_size_limit.num_rows,
+                                used_row_capacity.num_rows,
+                            )
+                            .unwrap(),
+                            num_bytes: u64::saturating_sub(
+                                file_size_limit.num_bytes,
+                                used_row_capacity.num_bytes,
+                            ),
+                        }
                     };
                 }};
             }
@@ -204,15 +212,15 @@ impl PartitionMorselSender {
             assert!((1..=available_row_capacity.num_rows).contains(&morsel_height));
 
             if let Some(hstack_keys) = self.hstack_keys.as_ref() {
-                let columns = morsel.df().get_columns();
+                let columns = morsel.df().columns();
                 let height = morsel.df().height();
                 let new_columns = hstack_keys.hstack_columns_broadcast(
                     height,
                     columns,
-                    partition.keys_df.get_columns(),
+                    partition.keys_df.columns(),
                 );
 
-                *morsel.df_mut() = unsafe { DataFrame::new_no_checks(height, new_columns) };
+                *morsel.df_mut() = unsafe { DataFrame::new_unchecked(height, new_columns) };
             };
 
             if file_sink_task_data.morsel_tx.send(morsel).await.is_err() {

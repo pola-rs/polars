@@ -82,7 +82,7 @@ impl BinviewHashGrouper {
             );
             let s =
                 Series::from_chunks_and_dtype_unchecked(name.clone(), vec![Box::new(keys)], dtype);
-            DataFrame::new(vec![Column::from(s)]).unwrap()
+            DataFrame::new_unchecked(s.len(), vec![Column::from(s)])
         }
     }
 }

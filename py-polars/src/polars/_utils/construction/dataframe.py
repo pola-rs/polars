@@ -9,7 +9,6 @@ from operator import itemgetter
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
 )
 
 import polars._reexport as pl
@@ -60,7 +59,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import PyDataFrame
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, MutableMapping
+    from collections.abc import Callable, Iterable, MutableMapping
 
     from polars import DataFrame, Series
     from polars._plr import PySeries
@@ -132,6 +131,7 @@ def dict_to_pydf(
                                 ),
                                 list(data.items()),
                             ),
+                            strict=True,
                         )
                     )
             except FileNotFoundError:
@@ -952,7 +952,7 @@ def _establish_dataclass_or_model_schema(
             )
 
     if model_fields and len(model_fields) == len(overrides):
-        overrides = dict(zip(model_fields, overrides.values()))
+        overrides = dict(zip(model_fields, overrides.values(), strict=True))
 
     return unpack_nested, column_names, schema_overrides, overrides
 
@@ -1099,17 +1099,20 @@ def pandas_to_pydf(
     _check_pandas_columns(data, include_index=include_index)
 
     convert_index = include_index and not _pandas_has_default_index(data)
-    if not convert_index and all(
-        is_simple_numpy_backed_pandas_series(data[col]) for col in data.columns
-    ):
-        # Convert via NumPy directly, no PyArrow needed.
-        return pl.DataFrame(
-            {str(col): data[col].to_numpy() for col in data.columns},
-            schema=schema,
-            strict=strict,
-            schema_overrides=schema_overrides,
-            nan_to_null=nan_to_null,
-        )._df
+
+    if not convert_index:
+        if data.shape[1] == 0:
+            return PyDataFrame.empty_with_height(data.shape[0])
+
+        if all(is_simple_numpy_backed_pandas_series(data[col]) for col in data.columns):
+            # Convert via NumPy directly, no PyArrow needed.
+            return pl.DataFrame(
+                {str(col): data[col].to_numpy() for col in data.columns},
+                schema=schema,
+                strict=strict,
+                schema_overrides=schema_overrides,
+                nan_to_null=nan_to_null,
+            )._df
 
     if not _PYARROW_AVAILABLE:
         msg = (
@@ -1188,6 +1191,8 @@ def arrow_to_pydf(
     batches: list[pa.RecordBatch]
     if isinstance(data, pa.RecordBatch):
         batches = [data]
+    elif data.num_columns == 0:
+        return PyDataFrame.empty_with_height(data.num_rows)
     else:
         batches = data.to_batches()
 
@@ -1239,6 +1244,9 @@ def numpy_to_pydf(
             n_columns = 1
 
         elif len(shape) == 2:
+            if shape[1] == 0:
+                return PyDataFrame.empty_with_height(shape[0])
+
             if orient is None and schema is None:
                 # default convention; first axis is rows, second axis is columns
                 n_columns = shape[1]
@@ -1292,7 +1300,7 @@ def numpy_to_pydf(
                 strict=strict,
                 nan_to_null=nan_to_null,
             )._s
-            for series_name, record_name in zip(column_names, record_names)
+            for series_name, record_name in zip(column_names, record_names, strict=True)
         ]
     elif shape == (0,) and n_columns == 0:
         data_series = []

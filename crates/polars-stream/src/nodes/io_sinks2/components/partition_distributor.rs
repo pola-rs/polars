@@ -281,7 +281,7 @@ impl PartitionDistributor {
                     assert_eq!(partition.buffered_size(), partition.total_size);
 
                     let mut df = std::mem::take(&mut partition.buffered_rows);
-                    rechunk_par(unsafe { df.get_columns_mut() }).await;
+                    rechunk_par(unsafe { df.columns_mut_retain_schema() }).await;
                     let df = Arc::new(df);
 
                     #[expect(unused)]

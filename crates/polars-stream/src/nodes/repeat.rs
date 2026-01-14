@@ -45,7 +45,7 @@ impl ComputeNode for RepeatNode {
         if recv[0] == PortState::Done && recv[1] == PortState::Done {
             if let Self::GatheringParams { value, repeats } = self {
                 let repeats = repeats.get_output()?.unwrap();
-                let repeats_item = repeats.get_columns()[0].get(0)?;
+                let repeats_item = repeats.columns()[0].get(0)?;
                 let repeats_left = repeats_item.extract::<usize>().unwrap();
 
                 let value = value.get_output()?.unwrap();

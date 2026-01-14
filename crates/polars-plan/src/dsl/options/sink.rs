@@ -13,12 +13,13 @@ use polars_io::utils::file::Writeable;
 use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_utils::IdxSize;
 use polars_utils::arena::Arena;
+use polars_utils::pl_path::{CloudScheme, PlRefPath};
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::plpath::{CloudScheme, PlPath};
 
-use super::{ExprIR, FileType};
+use super::FileWriteFormat;
 use crate::dsl::sink2::FileProviderType;
 use crate::dsl::{AExpr, Expr, PartitionStrategy, PartitionStrategyIR, SpecialEq, UnifiedSinkArgs};
+use crate::plans::ExprIR;
 use crate::prelude::PlanCallback;
 
 /// Options that apply to all sinks.
@@ -50,14 +51,14 @@ type DynSinkTarget = SpecialEq<Arc<std::sync::Mutex<Option<Writeable>>>>;
 
 #[derive(Clone, PartialEq, Eq)]
 pub enum SinkTarget {
-    Path(PlPath),
+    Path(PlRefPath),
     Dyn(DynSinkTarget),
 }
 
 impl SinkTarget {
     pub fn cloud_scheme(&self) -> Option<CloudScheme> {
         match self {
-            SinkTarget::Path(p) => CloudScheme::from_uri(p.to_str()),
+            SinkTarget::Path(p) => CloudScheme::from_path(p.as_str()),
             SinkTarget::Dyn(_) => None,
         }
     }
@@ -71,11 +72,11 @@ impl SinkTarget {
         match self {
             SinkTarget::Path(path) => {
                 if mkdir {
-                    polars_io::utils::mkdir::mkdir_recursive(path.as_ref())?;
+                    polars_io::utils::mkdir::mkdir_recursive(path)?;
                 }
 
                 polars_io::utils::file::Writeable::try_new(
-                    path.as_ref(),
+                    path.clone(),
                     cloud_options,
                     cloud_upload_chunk_size,
                 )
@@ -95,11 +96,11 @@ impl SinkTarget {
             match self {
                 SinkTarget::Path(path) => {
                     if mkdir {
-                        polars_io::utils::mkdir::tokio_mkdir_recursive(path.as_ref()).await?;
+                        polars_io::utils::mkdir::tokio_mkdir_recursive(path).await?;
                     }
 
                     polars_io::utils::file::Writeable::try_new(
-                        path.as_ref(),
+                        path.clone(),
                         cloud_options,
                         cloud_upload_chunk_size,
                     )
@@ -116,7 +117,7 @@ impl SinkTarget {
 
     pub fn to_display_string(&self) -> String {
         match self {
-            Self::Path(p) => p.display().to_string(),
+            Self::Path(p) => p.to_string(),
             Self::Dyn(_) => "dynamic-target".to_string(),
         }
     }
@@ -163,7 +164,7 @@ impl<'de> serde::Deserialize<'de> for SinkTarget {
     where
         D: serde::Deserializer<'de>,
     {
-        Ok(Self::Path(PlPath::deserialize(deserializer)?))
+        Ok(Self::Path(PlRefPath::deserialize(deserializer)?))
     }
 }
 
@@ -219,7 +220,7 @@ pub struct PartitionTargetContext {
     pub in_part_idx: usize,
     pub keys: Vec<PartitionTargetContextKey>,
     pub file_path: String,
-    pub full_path: PlPath,
+    pub full_path: PlRefPath,
 }
 
 #[cfg(feature = "python")]
@@ -247,7 +248,7 @@ impl PartitionTargetContext {
     }
     #[getter]
     pub fn full_path(&self) -> &str {
-        self.full_path.to_str()
+        self.full_path.as_str()
     }
 }
 #[cfg(feature = "python")]
@@ -554,12 +555,12 @@ pub struct SortColumnIR {
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq)]
 pub struct PartitionedSinkOptions {
-    pub base_path: PlPath,
+    pub base_path: PlRefPath,
     pub file_path_provider: Option<FileProviderType>,
     pub partition_strategy: PartitionStrategy,
     /// TODO: Move this to UnifiedSinkArgs
     pub finish_callback: Option<SinkFinishCallback>,
-    pub file_format: Arc<FileType>,
+    pub file_format: FileWriteFormat,
     pub unified_sink_args: UnifiedSinkArgs,
     pub max_rows_per_file: IdxSize,
     pub approximate_bytes_per_file: u64,
@@ -567,7 +568,7 @@ pub struct PartitionedSinkOptions {
 
 impl PartitionedSinkOptions {
     pub fn cloud_scheme(&self) -> Option<CloudScheme> {
-        CloudScheme::from_uri(self.base_path.to_str())
+        CloudScheme::from_path(self.base_path.as_str())
     }
 }
 
@@ -641,12 +642,12 @@ impl SinkTypeIR {
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, PartialEq)]
 pub struct PartitionedSinkOptionsIR {
-    pub base_path: PlPath,
+    pub base_path: PlRefPath,
     pub file_path_provider: FileProviderType,
     pub partition_strategy: PartitionStrategyIR,
     /// TODO: Move this to UnifiedSinkArgs
     pub finish_callback: Option<SinkFinishCallback>,
-    pub file_format: Arc<FileType>,
+    pub file_format: FileWriteFormat,
     pub unified_sink_args: UnifiedSinkArgs,
     pub max_rows_per_file: IdxSize,
     pub approximate_bytes_per_file: u64,
@@ -654,7 +655,7 @@ pub struct PartitionedSinkOptionsIR {
 
 impl PartitionedSinkOptionsIR {
     pub fn cloud_scheme(&self) -> Option<CloudScheme> {
-        CloudScheme::from_uri(self.base_path.to_str())
+        CloudScheme::from_path(self.base_path.as_str())
     }
 
     pub fn expr_irs_iter(&self) -> impl ExactSizeIterator<Item = &ExprIR> {
@@ -745,6 +746,6 @@ impl PartitionVariantIR {
 #[derive(Clone, Debug, Hash, PartialEq)]
 pub struct FileSinkOptions {
     pub target: SinkTarget,
-    pub file_format: Arc<FileType>,
+    pub file_format: FileWriteFormat,
     pub unified_sink_args: UnifiedSinkArgs,
 }

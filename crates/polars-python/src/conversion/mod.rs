@@ -655,7 +655,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ScanSources> {
         }
 
         enum MutableSources {
-            Paths(Vec<PlPath>),
+            Paths(Vec<PlRefPath>),
             Files(Vec<File>),
             Buffers(Vec<MemSlice>),
         }
@@ -1902,29 +1902,30 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DefaultFieldValues> {
     }
 }
 
-impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<PlPath> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<PlRefPath> {
     type Error = PyErr;
 
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         if let Ok(path) = ob.extract::<PyBackedStr>() {
-            Ok(Wrap(PlPath::new(&path)))
+            Ok(Wrap(PlRefPath::new(&*path)))
         } else if let Ok(path) = ob.extract::<std::path::PathBuf>() {
-            Ok(Wrap(PlPath::Local(path.into())))
+            Ok(Wrap(PlRefPath::try_from_path(&path).map_err(to_py_err)?))
         } else {
-            Err(
-                PyTypeError::new_err(format!("PlPath cannot be formed from '{}'", ob.get_type()))
-                    .into(),
-            )
+            Err(PyTypeError::new_err(format!(
+                "PlRefPath cannot be formed from '{}'",
+                ob.get_type()
+            ))
+            .into())
         }
     }
 }
 
-impl<'py> IntoPyObject<'py> for Wrap<PlPath> {
+impl<'py> IntoPyObject<'py> for Wrap<PlRefPath> {
     type Target = PyString;
     type Output = Bound<'py, Self::Target>;
     type Error = Infallible;
 
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        self.0.to_str().into_pyobject(py)
+        self.0.as_str().into_pyobject(py)
     }
 }

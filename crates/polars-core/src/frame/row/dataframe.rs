@@ -54,7 +54,7 @@ impl DataFrame {
         if schema.is_empty() {
             let height = rows.count();
             let columns = Vec::new();
-            return Ok(unsafe { DataFrame::new_no_checks(height, columns) });
+            return Ok(unsafe { DataFrame::new_unchecked(height, columns) });
         }
 
         let capacity = rows.size_hint().0;
@@ -75,6 +75,7 @@ impl DataFrame {
             }
             Ok(())
         })?;
+
         let v = buffers
             .into_iter()
             .zip(schema.iter_names())
@@ -90,7 +91,8 @@ impl DataFrame {
                 }
             })
             .collect();
-        DataFrame::new(v)
+
+        DataFrame::new(expected_len, v)
     }
 
     /// Create a new [`DataFrame`] from an iterator over rows. This should only be used when you have row wise data,
@@ -132,7 +134,8 @@ impl DataFrame {
                 }
             })
             .collect();
-        DataFrame::new(v)
+
+        DataFrame::new(expected_len, v)
     }
 
     /// Create a new [`DataFrame`] from rows. This should only be used when you have row wise data,

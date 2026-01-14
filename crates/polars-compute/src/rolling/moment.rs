@@ -205,19 +205,21 @@ where
     }
 }
 
-impl<'a, T, M> RollingAggWindowNoNulls<'a, T> for MomentWindow<'a, T, M>
+impl<T, M> RollingAggWindowNoNulls<T> for MomentWindow<'_, T, M>
 where
     T: NativeType + ToPrimitive + IsFloat + FromPrimitive,
     M: StateUpdate,
 {
-    fn new(
+    type This<'a> = MomentWindow<'a, T, M>;
+
+    fn new<'a>(
         slice: &'a [T],
         start: usize,
         end: usize,
         params: Option<RollingFnParams>,
         _window_size: Option<usize>,
-    ) -> Self {
-        let mut out = Self::new_impl(slice, None, params);
+    ) -> Self::This<'a> {
+        let mut out = MomentWindow::new_impl(slice, None, params);
         unsafe { RollingAggWindowNoNulls::update(&mut out, start, end) };
         out
     }
@@ -244,22 +246,30 @@ where
         self.last_end = end;
         self.finalize()
     }
+
+    fn slice_len(&self) -> usize {
+        self.slice.len()
+    }
 }
 
-impl<'a, T, M> RollingAggWindowNulls<'a, T> for MomentWindow<'a, T, M>
+impl<T, M> RollingAggWindowNulls<T> for MomentWindow<'_, T, M>
 where
     T: NativeType + ToPrimitive + IsFloat + FromPrimitive,
     M: StateUpdate,
 {
-    unsafe fn new(
+    type This<'a> = MomentWindow<'a, T, M>;
+
+    fn new<'a>(
         slice: &'a [T],
         validity: &'a Bitmap,
         start: usize,
         end: usize,
         params: Option<RollingFnParams>,
         _window_size: Option<usize>,
-    ) -> Self {
-        let mut out = Self::new_impl(slice, Some(validity), params);
+    ) -> Self::This<'a> {
+        assert!(start <= slice.len() && end <= slice.len() && start <= end);
+        let mut out = MomentWindow::new_impl(slice, Some(validity), params);
+        // SAFETY: We bounds checked `start` and `end`.
         unsafe { RollingAggWindowNulls::update(&mut out, start, end) };
         out
     }
@@ -302,5 +312,9 @@ where
     #[inline(always)]
     fn is_valid(&self, min_periods: usize) -> bool {
         ((self.last_end - self.last_start) - self.null_count) >= min_periods
+    }
+
+    fn slice_len(&self) -> usize {
+        self.slice.len()
     }
 }

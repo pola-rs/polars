@@ -5,7 +5,7 @@ use polars_core::utils::arrow::io::ipc::write::{EncodedData, WriteOptions};
 use polars_error::PolarsResult;
 use polars_io::ipc::IpcWriterOptions;
 use polars_io::pl_async;
-use polars_io::utils::sync_on_close::SyncOnCloseType;
+use polars_utils::IdxSize;
 use polars_utils::index::NonZeroIdxSize;
 
 use crate::async_executor::{self, TaskPriority};
@@ -14,7 +14,9 @@ use crate::nodes::io_sinks2::components::sink_morsel::{SinkMorsel, SinkMorselPer
 use crate::nodes::io_sinks2::components::size::{
     NonZeroRowCountAndSize, RowCountAndSize, TakeableRowsProvider,
 };
-use crate::nodes::io_sinks2::writers::interface::{FileWriterStarter, ideal_sink_morsel_size_env};
+use crate::nodes::io_sinks2::writers::interface::{
+    FileOpenTaskHandle, FileWriterStarter, ideal_sink_morsel_size_env,
+};
 use crate::nodes::io_sinks2::writers::ipc::initialization::build_ipc_write_components;
 use crate::utils::tokio_handle_ext;
 
@@ -23,10 +25,9 @@ mod io_writer;
 mod record_batch_encoder;
 
 pub struct IpcWriterStarter {
-    pub options: IpcWriterOptions,
+    pub options: Arc<IpcWriterOptions>,
     pub schema: SchemaRef,
-    pub pipeline_depth: usize,
-    pub sync_on_close: SyncOnCloseType,
+    pub record_batch_size: Option<IdxSize>,
 }
 
 enum IpcBatch {
@@ -43,14 +44,26 @@ impl FileWriterStarter for IpcWriterStarter {
     }
 
     fn takeable_rows_provider(&self) -> TakeableRowsProvider {
-        let (num_rows, num_bytes) = ideal_sink_morsel_size_env();
+        let max_size = if let Some(record_batch_size) = self.record_batch_size
+            && record_batch_size > 0
+        {
+            NonZeroRowCountAndSize::new(RowCountAndSize {
+                num_rows: record_batch_size,
+                num_bytes: u64::MAX,
+            })
+            .unwrap()
+        } else {
+            let (num_rows, num_bytes) = ideal_sink_morsel_size_env();
 
-        TakeableRowsProvider {
-            max_size: NonZeroRowCountAndSize::new(RowCountAndSize {
+            NonZeroRowCountAndSize::new(RowCountAndSize {
                 num_rows: num_rows.unwrap_or(122_880),
                 num_bytes: num_bytes.unwrap_or(u64::MAX),
             })
-            .unwrap(),
+            .unwrap()
+        };
+
+        TakeableRowsProvider {
+            max_size,
             byte_size_min_rows: NonZeroIdxSize::new(16384).unwrap(),
             allow_non_max_size: false,
         }
@@ -59,19 +72,16 @@ impl FileWriterStarter for IpcWriterStarter {
     fn start_file_writer(
         &self,
         morsel_rx: connector::Receiver<SinkMorsel>,
-        file: tokio_handle_ext::AbortOnDropHandle<
-            PolarsResult<polars_io::prelude::file::Writeable>,
-        >,
+        file: FileOpenTaskHandle,
+        num_pipelines: std::num::NonZeroUsize,
     ) -> PolarsResult<async_executor::JoinHandle<PolarsResult<()>>> {
         let file_schema = Arc::clone(&self.schema);
-        let pipeline_depth = self.pipeline_depth;
-        let options = self.options;
-        let sync_on_close = self.sync_on_close;
+        let options = Arc::clone(&self.options);
         let compression = self.options.compression.map(|x| x.into());
 
         let handle = async_executor::spawn(TaskPriority::High, async move {
             let (ipc_batch_tx, ipc_batch_rx) =
-                tokio::sync::mpsc::channel::<IpcBatch>(pipeline_depth);
+                tokio::sync::mpsc::channel::<IpcBatch>(num_pipelines.get());
 
             let (arrow_converters, ipc_fields, dictionary_id_offsets) =
                 build_ipc_write_components(file_schema.as_ref(), options.compat_level);
@@ -84,7 +94,6 @@ impl FileWriterStarter for IpcWriterStarter {
                         options,
                         schema: file_schema,
                         ipc_fields,
-                        sync_on_close,
                     }
                     .run(),
                 ),

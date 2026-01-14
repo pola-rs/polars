@@ -8,8 +8,8 @@ use polars_io::utils::file::Writeable;
 use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_utils::IdxSize;
 use polars_utils::arena::Arena;
+use polars_utils::pl_path::{CloudScheme, PlRefPath};
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::plpath::{CloudScheme, PlPath};
 
 use super::Expr;
 use super::sink::*;
@@ -22,7 +22,7 @@ pub enum SinkDestination {
         target: SinkTarget,
     },
     Partitioned {
-        base_path: PlPath,
+        base_path: PlRefPath,
         file_path_provider: Option<FileProviderType>,
         partition_strategy: PartitionStrategy,
         /// TODO: Remove
@@ -36,7 +36,7 @@ impl SinkDestination {
     pub fn cloud_scheme(&self) -> Option<CloudScheme> {
         match self {
             Self::File { target } => target.cloud_scheme(),
-            Self::Partitioned { base_path, .. } => base_path.cloud_scheme(),
+            Self::Partitioned { base_path, .. } => base_path.scheme(),
         }
     }
 }

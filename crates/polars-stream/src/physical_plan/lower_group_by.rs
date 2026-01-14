@@ -187,6 +187,11 @@ fn try_lower_elementwise_scalar_agg_expr(
         // Should be handled separately in `Eval`.
         AExpr::Element => unreachable!(),
 
+        AExpr::StructField(_) => {
+            // Reflecting StructEval expr state is not yet supported.
+            None
+        },
+
         AExpr::Column(_) => {
             // Implicit implode not yet supported.
             None
@@ -233,6 +238,29 @@ fn try_lower_elementwise_scalar_agg_expr(
                 expr,
                 evaluation,
                 variant,
+            }))
+        },
+
+        AExpr::StructEval { expr, evaluation } => {
+            // @TODO: Reflect the lowering result of `expr` into the respective
+            // StructField lowering calls.
+            let (expr, evaluation) = (*expr, evaluation.clone());
+            let expr = lower_rec!(expr)?;
+
+            let new_evaluation = evaluation
+                .into_iter()
+                .map(|i| {
+                    let new_node = lower_rec!(i.node())?;
+                    Some(ExprIR::new(
+                        new_node,
+                        OutputName::Alias(i.output_name().clone()),
+                    ))
+                })
+                .collect::<Option<Vec<_>>>()?;
+
+            Some(expr_arena.add(AExpr::StructEval {
+                expr,
+                evaluation: new_evaluation,
             }))
         },
 
@@ -443,6 +471,7 @@ fn try_build_streaming_group_by(
     }
 
     let mut uniq_agg_exprs = PlIndexMap::new();
+
     for agg in aggs {
         let trans_node = try_lower_elementwise_scalar_agg_expr(
             agg.node(),
@@ -491,9 +520,9 @@ fn try_build_streaming_group_by(
     let agg_node = phys_sm.insert(PhysNode::new(
         group_by_output_schema.clone(),
         PhysNodeKind::GroupBy {
-            input: pre_select,
-            key: trans_keys,
-            aggs: trans_agg_exprs,
+            inputs: vec![pre_select],
+            key_per_input: vec![trans_keys],
+            aggs_per_input: vec![trans_agg_exprs],
         },
     ));
 
@@ -587,6 +616,7 @@ pub fn try_build_sorted_group_by(
                 RowEncodingVariant::Ordered {
                     descending: None,
                     nulls_last: None,
+                    broadcast_nulls: None,
                 },
             ),
             expr_arena,
@@ -683,6 +713,7 @@ pub fn try_build_sorted_group_by(
                     RowEncodingVariant::Ordered {
                         descending: None,
                         nulls_last: None,
+                        broadcast_nulls: None,
                     },
                 ),
                 expr_arena,

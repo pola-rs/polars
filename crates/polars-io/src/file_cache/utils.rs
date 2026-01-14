@@ -1,9 +1,8 @@
-use std::path::Path;
 use std::sync::{Arc, LazyLock};
 use std::time::UNIX_EPOCH;
 
 use polars_error::{PolarsError, PolarsResult};
-use polars_utils::plpath::{CloudScheme, PlPathRef};
+use polars_utils::pl_path::{CloudScheme, PlRefPath};
 
 use super::cache::{FILE_CACHE, get_env_file_cache_ttl};
 use super::entry::FileCacheEntry;
@@ -12,16 +11,13 @@ use crate::cloud::{CloudLocation, CloudOptions, build_object_store, object_path_
 use crate::path_utils::{POLARS_TEMP_DIR_BASE_PATH, ensure_directory_init};
 use crate::pl_async;
 
-pub static FILE_CACHE_PREFIX: LazyLock<Box<Path>> = LazyLock::new(|| {
-    let path = POLARS_TEMP_DIR_BASE_PATH
-        .join("file-cache/")
-        .into_boxed_path();
+pub static FILE_CACHE_PREFIX: LazyLock<PlRefPath> = LazyLock::new(|| {
+    let path = PlRefPath::try_from_path(&POLARS_TEMP_DIR_BASE_PATH.join("file-cache/")).unwrap();
 
     if let Err(err) = ensure_directory_init(path.as_ref()) {
         panic!(
             "failed to create file cache directory: path = {}, err = {}",
-            path.to_str().unwrap(),
-            err
+            path, err
         );
     }
 
@@ -53,30 +49,30 @@ pub(super) fn update_last_accessed(file: &std::fs::File) {
 }
 
 pub fn init_entries_from_uri_list(
-    mut uri_list: impl ExactSizeIterator<Item = Arc<str>>,
+    mut uri_list: impl ExactSizeIterator<Item = PlRefPath>,
     cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<Vec<Arc<FileCacheEntry>>> {
     init_entries_from_uri_list_impl(&mut uri_list, cloud_options)
 }
 
 fn init_entries_from_uri_list_impl(
-    uri_list: &mut dyn ExactSizeIterator<Item = Arc<str>>,
+    uri_list: &mut dyn ExactSizeIterator<Item = PlRefPath>,
     cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<Vec<Arc<FileCacheEntry>>> {
-    #[expect(clippy::len_zero)]
+    #[allow(clippy::len_zero)]
     if uri_list.len() == 0 {
         return Ok(Default::default());
     }
 
     let mut uri_list = uri_list.peekable();
 
-    let first_uri = PlPathRef::new(uri_list.peek().unwrap().as_ref());
+    let first_uri = uri_list.peek().unwrap().clone();
 
     let file_cache_ttl = cloud_options
         .map(|x| x.file_cache_ttl)
         .unwrap_or_else(get_env_file_cache_ttl);
 
-    if first_uri.is_cloud_url() {
+    if first_uri.has_scheme() {
         let shared_object_store = (!matches!(
             first_uri.scheme(),
             Some(CloudScheme::Http | CloudScheme::Https) // Object stores for http are tied to the path.
@@ -95,28 +91,25 @@ fn init_entries_from_uri_list_impl(
                 let shared_object_store = shared_object_store.clone();
 
                 async move {
-                    let object_store = if let Some(shared_object_store) =
-                        shared_object_store.clone()
-                    {
-                        shared_object_store
-                    } else {
-                        let (_, object_store) =
-                            build_object_store(PlPathRef::new(&uri), cloud_options, false).await?;
-                        object_store
-                    };
+                    let object_store =
+                        if let Some(shared_object_store) = shared_object_store.clone() {
+                            shared_object_store
+                        } else {
+                            let (_, object_store) =
+                                build_object_store(uri.clone(), cloud_options, false).await?;
+                            object_store
+                        };
 
                     FILE_CACHE.init_entry(
                         uri.clone(),
                         &|| {
                             let CloudLocation { prefix, .. } =
-                                CloudLocation::new(PlPathRef::new(&uri), false).unwrap();
+                                CloudLocation::new(uri.clone(), false).unwrap();
                             let cloud_path = object_path_from_str(&prefix)?;
-
-                            let uri = uri.clone();
                             let object_store = object_store.clone();
 
                             Ok(Arc::new(CloudFileFetcher {
-                                uri,
+                                uri: uri.clone(),
                                 object_store,
                                 cloud_path,
                             }))
@@ -130,14 +123,14 @@ fn init_entries_from_uri_list_impl(
     } else {
         uri_list
             .map(|uri| {
-                let uri = std::fs::canonicalize(uri.as_ref()).map_err(|err| {
-                    let msg = Some(format!("{}: {}", err, uri.as_ref()).into());
+                let uri = std::fs::canonicalize(uri.as_str()).map_err(|err| {
+                    let msg = Some(format!("{}: {}", err, uri).into());
                     PolarsError::IO {
                         error: err.into(),
                         msg,
                     }
                 })?;
-                let uri = Arc::<str>::from(uri.to_str().unwrap());
+                let uri = PlRefPath::try_from_pathbuf(uri)?;
 
                 FILE_CACHE.init_entry(
                     uri.clone(),

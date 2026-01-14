@@ -31,10 +31,10 @@ pub trait MinMaxHorizontal {
 
 impl MinMaxHorizontal for DataFrame {
     fn min_horizontal(&self) -> PolarsResult<Option<Column>> {
-        min_horizontal(self.get_columns())
+        min_horizontal(self.columns())
     }
     fn max_horizontal(&self) -> PolarsResult<Option<Column>> {
-        max_horizontal(self.get_columns())
+        max_horizontal(self.columns())
     }
 }
 
@@ -54,10 +54,10 @@ pub trait SumMeanHorizontal {
 
 impl SumMeanHorizontal for DataFrame {
     fn sum_horizontal(&self, null_strategy: NullStrategy) -> PolarsResult<Option<Column>> {
-        sum_horizontal(self.get_columns(), null_strategy)
+        sum_horizontal(self.columns(), null_strategy)
     }
     fn mean_horizontal(&self, null_strategy: NullStrategy) -> PolarsResult<Option<Column>> {
-        mean_horizontal(self.get_columns(), null_strategy)
+        mean_horizontal(self.columns(), null_strategy)
     }
 }
 
@@ -374,7 +374,7 @@ mod tests {
         let b = Column::new("b".into(), [Some(1), None, None]);
         let c = Column::new("c".into(), [Some(4), None, Some(3)]);
 
-        let df = DataFrame::new(vec![a, b, c]).unwrap();
+        let df = DataFrame::new_infer_height(vec![a, b, c]).unwrap();
         assert_eq!(
             Vec::from(
                 df.mean_horizontal(NullStrategy::Ignore)

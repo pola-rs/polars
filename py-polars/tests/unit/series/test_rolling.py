@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 import pytest
 
@@ -47,6 +48,53 @@ def test_series_rolling_mean_by(values: pl.Series, by_col: pl.Series) -> None:
     actual = values.rolling_mean_by(by_col, "2i")
     expected = pl.Series([7.5, 7.5, 5.5, 5.5, 4.0, 4.0, 5.0, 5.0])
     assert_series_equal(actual, expected)
+
+
+@pytest.mark.parametrize(
+    ("op", "expected"),
+    [
+        ("mean", [None, None, 5.0, 5.0, 4.67, 4.67, 5.0, 5.0]),
+        ("sum", [0, 0, 5, 5, 14, 14, 20, 20]),
+        ("min", [None, None, 5, 5, 1, 1, 1, 1]),
+        ("max", [None, None, 5, 5, 8, 8, 8, 8]),
+        ("var", [None, None, None, None, 12.33, 12.33, 10.0, 10.0]),
+        ("std", [None, None, None, None, 3.51, 3.51, 3.16, 3.16]),
+    ],
+)
+def test_series_rolling_by_with_nulls(
+    values: pl.Series, by_col: pl.Series, op: str, expected: list[float]
+) -> None:
+    values[[0, 1, 2]] = None
+    actual = getattr(values, f"rolling_{op}_by")(by_col, "2i").round(2)
+    assert_series_equal(actual, pl.Series(expected))
+
+
+@pytest.mark.parametrize(
+    ("rank_op", "expected"),
+    [
+        ("average", [None, None, 1.0, 1.0, 1.0, 1.0, 3.0, 3.0]),
+        ("min", [None, None, 1, 1, 1, 1, 3, 3]),
+        ("max", [None, None, 1, 1, 1, 1, 3, 3]),
+        ("dense", [None, None, 1, 1, 1, 1, 3, 3]),
+        ("random", [None, None, 1, 1, 1, 1, 3, 3]),
+    ],
+)
+def test_series_rolling_rank_by_with_nulls(
+    values: pl.Series, by_col: pl.Series, rank_op: Any, expected: list[float]
+) -> None:
+    values[[0, 1, 2]] = None
+    actual = values.rolling_rank_by(by_col, "2i", rank_op).round(2)
+    dtype = pl.Float64 if rank_op == "average" else pl.UInt32
+    assert_series_equal(actual, pl.Series(expected, dtype=dtype))
+
+
+def test_series_rolling_quantile_by_with_nulls(
+    values: pl.Series, by_col: pl.Series
+) -> None:
+    values[[0, 1, 2]] = None
+    actual = values.rolling_quantile_by(by_col, "2i", quantile=0.35).round(2)
+    expected = [None, None, 5.0, 5.0, 5.0, 5.0, 4.0, 4.0]
+    assert_series_equal(actual, pl.Series(expected))
 
 
 def test_series_rolling_median_by(values: pl.Series, by_col: pl.Series) -> None:

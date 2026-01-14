@@ -483,7 +483,7 @@ def test_parquet_slice_pushdown_non_zero_offset(
     paths = [tmp_path / "1", tmp_path / "2", tmp_path / "3"]
     dfs = [pl.DataFrame({"x": i}) for i in range(len(paths))]
 
-    for df, p in zip(dfs, paths):
+    for df, p in zip(dfs, paths, strict=True):
         df.write_parquet(p)
 
     # Parquet files containing only the metadata - i.e. the data parts are removed.
@@ -647,7 +647,7 @@ def test_parquet_unaligned_schema_read(tmp_path: Path) -> None:
 
     paths = [tmp_path / "1", tmp_path / "2", tmp_path / "3"]
 
-    for df, path in zip(dfs, paths):
+    for df, path in zip(dfs, paths, strict=True):
         df.write_parquet(path)
 
     lf = pl.scan_parquet(paths, extra_columns="ignore")
@@ -693,7 +693,7 @@ def test_parquet_unaligned_schema_read_dtype_mismatch(
 
     paths = [tmp_path / "1", tmp_path / "2"]
 
-    for df, path in zip(dfs, paths):
+    for df, path in zip(dfs, paths, strict=True):
         df.write_parquet(path)
 
     lf = pl.scan_parquet(paths)
@@ -714,7 +714,7 @@ def test_parquet_unaligned_schema_read_missing_cols_from_first(
 
     paths = [tmp_path / "1", tmp_path / "2"]
 
-    for df, path in zip(dfs, paths):
+    for df, path in zip(dfs, paths, strict=True):
         df.write_parquet(path)
 
     lf = pl.scan_parquet(paths)
@@ -737,7 +737,7 @@ def test_parquet_schema_arg(
     dfs = [pl.DataFrame({"a": 1, "b": 1}), pl.DataFrame({"a": 2, "b": 2})]
     paths = [tmp_path / "1", tmp_path / "2"]
 
-    for df, path in zip(dfs, paths):
+    for df, path in zip(dfs, paths, strict=True):
         df.write_parquet(path)
 
     schema: dict[str, pl.DataType] = {
@@ -895,7 +895,7 @@ def test_scan_parquet_streaming_row_index_19606(
 
     dfs = [pl.DataFrame({"x": i}) for i in range(len(paths))]
 
-    for df, p in zip(dfs, paths):
+    for df, p in zip(dfs, paths, strict=True):
         df.write_parquet(p)
 
     assert_frame_equal(
@@ -947,6 +947,7 @@ print("OK", end="")
     assert out == b"OK"
 
 
+@pytest.mark.slow
 def test_scan_parquet_in_mem_to_streaming_dispatch_deadlock_22641() -> None:
     out = subprocess.check_output(
         [

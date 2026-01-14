@@ -38,7 +38,7 @@ jobs:
     # https://github.com/pola-rs/polars/issues/14255
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Rust
         run: rustup component add llvm-tools-preview
@@ -79,7 +79,7 @@ jobs:
         run: cargo llvm-cov report --lcov --output-path coverage-rust.lcov
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-rust
           path: coverage-rust.lcov
@@ -89,10 +89,10 @@ jobs:
     # https://github.com/pola-rs/polars/issues/14255
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           check-latest: true
@@ -176,7 +176,7 @@ jobs:
         run: cargo llvm-cov report --lcov --output-path coverage-python.lcov
 
       - name: Upload coverage reports
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-python
           path: |
@@ -190,10 +190,10 @@ jobs:
 
     steps:
       # Needed to fetch the Codecov config file
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Download coverage reports
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           merge-multiple: true
 

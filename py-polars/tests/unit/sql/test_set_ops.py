@@ -240,11 +240,11 @@ def test_union_nonmatching_colnames() -> None:
     ) as ctx:
         res = ctx.execute(
             query="""
-            SELECT u.* FROM (
-                SELECT * FROM df1
-                UNION
-                SELECT * FROM df2
-            ) u ORDER BY Value
+                SELECT u.* FROM (
+                    SELECT * FROM df1
+                    UNION
+                    SELECT * FROM df2
+                ) u ORDER BY Value
             """
         )
         assert res.schema == {
@@ -257,3 +257,24 @@ def test_union_nonmatching_colnames() -> None:
             (300, "world"),
             (400, "bar"),
         ]
+
+
+def test_union_with_join_state_isolation() -> None:
+    # confirm each branch of a UNION executes with isolated join state;
+    # ensures that aliases from one branch don't leak into the other
+    res = pl.sql(
+        query="""
+            WITH a AS (
+              SELECT 0 AS k
+            ), b AS (
+              SELECT 1 AS k
+            ), c AS (
+              SELECT 0 AS k
+            )
+            SELECT a.k FROM a JOIN c ON a.k = c.k
+            UNION ALL
+            SELECT b.k FROM b JOIN c ON b.k = c.k
+        """,
+        eager=True,
+    )
+    assert res.to_series().to_list() == [0]

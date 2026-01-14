@@ -21,7 +21,6 @@ from polars.io.cloud.credential_provider._providers import (
     CachingCredentialProvider,
     UserProvidedGCPToken,
 )
-from polars.io.partition import _SinkDirectory
 
 
 @pytest.mark.parametrize(
@@ -116,6 +115,7 @@ def test_credential_provider_serialization_auto_init(
         q.collect()
 
 
+@pytest.mark.slow
 def test_credential_provider_serialization_custom_provider() -> None:
     err_magic = "err_magic_3"
 
@@ -756,13 +756,11 @@ def test_cached_credential_provider_returns_copied_creds() -> None:
 @pytest.mark.parametrize(
     "partition_target",
     [
-        pl.PartitionByKey("s3://.../...", by=""),
-        pl.PartitionMaxSize("s3://.../...", max_size=1),
-        pl.PartitionParted("s3://.../...", by=""),
+        pl.PartitionBy("s3://.../...", key=""),
     ],
 )
 def test_credential_provider_init_from_partition_target(
-    partition_target: _SinkDirectory,
+    partition_target: pl.PartitionBy,
 ) -> None:
     assert isinstance(
         _init_credential_provider_builder(

@@ -24,17 +24,15 @@ mod lower_expr;
 mod lower_group_by;
 mod lower_ir;
 mod to_graph;
-#[cfg(feature = "physical_plan_visualization")]
-pub mod visualization;
 
 pub use fmt::visualize_plan;
-use polars_plan::prelude::{FileType, PlanCallback};
+use polars_plan::prelude::{FileWriteFormat, PlanCallback};
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::DynamicGroupOptions;
 use polars_time::{ClosedWindow, Duration};
 use polars_utils::arena::{Arena, Node};
+use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::plpath::PlPath;
 use polars_utils::slice_enum::Slice;
 use slotmap::{SecondaryMap, SlotMap};
 pub use to_graph::physical_plan_to_graph;
@@ -48,6 +46,12 @@ use crate::physical_plan::lower_expr::ExprCache;
 slotmap::new_key_type! {
     /// Key used for physical nodes.
     pub struct PhysNodeKey;
+}
+
+impl PhysNodeKey {
+    pub fn as_ffi(&self) -> u64 {
+        self.0.as_ffi()
+    }
 }
 
 /// A node in the physical plan.
@@ -97,10 +101,7 @@ impl PhysStream {
 /// Behaviour when handling multiple DataFrames with different heights.
 
 #[derive(Clone, Debug, Copy)]
-#[cfg_attr(
-    feature = "physical_plan_visualization",
-    derive(serde::Serialize, serde::Deserialize)
-)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(
     feature = "physical_plan_visualization_schema",
     derive(schemars::JsonSchema)
@@ -115,10 +116,6 @@ pub enum ZipBehavior {
 }
 
 #[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "physical_plan_visualization",
-    derive(strum_macros::IntoStaticStr)
-)]
 pub enum PhysNodeKind {
     InMemorySource {
         df: Arc<DataFrame>,
@@ -197,11 +194,11 @@ pub enum PhysNodeKind {
 
     PartitionedSink {
         input: PhysStream,
-        base_path: Arc<PlPath>,
+        base_path: Arc<PlRefPath>,
         file_path_cb: Option<PartitionTargetCallback>,
         sink_options: SinkOptions,
         variant: PartitionVariantIR,
-        file_type: FileType,
+        file_type: FileWriteFormat,
         cloud_options: Option<CloudOptions>,
         per_partition_sort_by: Option<Vec<SortColumnIR>>,
         finish_callback: Option<SinkFinishCallback>,
@@ -330,10 +327,11 @@ pub enum PhysNodeKind {
     },
 
     GroupBy {
-        input: PhysStream,
-        key: Vec<ExprIR>,
+        inputs: Vec<PhysStream>,
+        // Must have the same schema when applied for each input.
+        key_per_input: Vec<Vec<ExprIR>>,
         // Must be a 'simple' expression, a singular column feeding into a single aggregate, or Len.
-        aggs: Vec<ExprIR>,
+        aggs_per_input: Vec<Vec<ExprIR>>,
     },
 
     #[cfg(feature = "dynamic_group_by")]
@@ -458,8 +456,7 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::GatherEvery { input, .. }
             | PhysNodeKind::Rle(input)
             | PhysNodeKind::RleId(input)
-            | PhysNodeKind::PeakMinMax { input, .. }
-            | PhysNodeKind::GroupBy { input, .. } => {
+            | PhysNodeKind::PeakMinMax { input, .. } => {
                 rec!(input.node);
                 visit(input);
             },
@@ -563,7 +560,9 @@ fn visit_node_inputs_mut(
                 visit(repeats);
             },
 
-            PhysNodeKind::OrderedUnion { inputs } | PhysNodeKind::Zip { inputs, .. } => {
+            PhysNodeKind::GroupBy { inputs, .. }
+            | PhysNodeKind::OrderedUnion { inputs }
+            | PhysNodeKind::Zip { inputs, .. } => {
                 for input in inputs {
                     rec!(input.node);
                     visit(input);

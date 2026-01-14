@@ -67,7 +67,7 @@ pub fn cast_columns(
 
     if parallel {
         let cols = POOL.install(|| {
-            df.get_columns()
+            df.columns()
                 .into_par_iter()
                 .map(|s| {
                     if let Some(fld) = to_cast.iter().find(|fld| fld.name() == s.name()) {
@@ -78,7 +78,7 @@ pub fn cast_columns(
                 })
                 .collect::<PolarsResult<Vec<_>>>()
         })?;
-        *df = unsafe { DataFrame::new_no_checks(df.height(), cols) }
+        *df = unsafe { DataFrame::new_unchecked(df.height(), cols) }
     } else {
         // cast to the original dtypes in the schema
         for fld in to_cast {
@@ -87,8 +87,6 @@ pub fn cast_columns(
                 df.try_apply_at_idx(idx, |s| cast_fn(s, fld))?;
             }
         }
-
-        df.clear_schema();
     }
     Ok(())
 }
@@ -343,7 +341,7 @@ impl<'a> CoreReader<'a> {
             cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
 
             if let Some(ref row_index) = self.row_index {
-                df.insert_column(0, Series::new_empty(row_index.name.clone(), &IDX_DTYPE))?;
+                df.insert_column(0, Column::new_empty(row_index.name.clone(), &IDX_DTYPE))?;
             }
             return Ok(df);
         }
@@ -598,5 +596,5 @@ pub fn read_chunk(
         .into_iter()
         .map(|buf| buf.into_series().map(Column::from))
         .collect::<PolarsResult<Vec<_>>>()?;
-    Ok(unsafe { DataFrame::new_no_checks_height_from_first(columns) })
+    Ok(unsafe { DataFrame::new_unchecked_infer_height(columns) })
 }

@@ -89,54 +89,6 @@ pub enum FunctionIR {
     Hint(HintIR),
 }
 
-impl Eq for FunctionIR {}
-
-impl PartialEq for FunctionIR {
-    fn eq(&self, other: &Self) -> bool {
-        use FunctionIR::*;
-        match (self, other) {
-            (Rechunk, Rechunk) => true,
-            (
-                FastCount {
-                    sources: srcs_l, ..
-                },
-                FastCount {
-                    sources: srcs_r, ..
-                },
-            ) => srcs_l == srcs_r,
-            (
-                Explode {
-                    columns: l,
-                    options: l_options,
-                    ..
-                },
-                Explode {
-                    columns: r,
-                    options: r_options,
-                    ..
-                },
-            ) => l == r && l_options == r_options,
-            #[cfg(feature = "pivot")]
-            (Unpivot { args: l, .. }, Unpivot { args: r, .. }) => l == r,
-            (RowIndex { name: l, .. }, RowIndex { name: r, .. }) => l == r,
-            #[cfg(feature = "random")]
-            (
-                Sample {
-                    fraction: frac_l,
-                    with_replacement: wr_l,
-                    seed: seed_l,
-                },
-                Sample {
-                    fraction: frac_r,
-                    with_replacement: wr_r,
-                    seed: seed_r,
-                },
-            ) => frac_l == frac_r && wr_l == wr_r && seed_l == seed_r,
-            _ => false,
-        }
-    }
-}
-
 impl Hash for FunctionIR {
     fn hash<H: Hasher>(&self, state: &mut H) {
         std::mem::discriminant(self).hash(state);
@@ -286,7 +238,7 @@ impl FunctionIR {
                 alias,
             } => count::count_rows(sources, scan_type, cloud_options.as_ref(), alias.clone()),
             Rechunk => {
-                df.as_single_chunk_par();
+                df.rechunk_mut_par();
                 Ok(df)
             },
             Unnest { columns, separator } => {
@@ -321,7 +273,7 @@ impl FunctionIR {
                     && let Some(s) = s.first()
                 {
                     let idx = df.try_get_column_index(&s.column)?;
-                    let col = &mut unsafe { df.get_columns_mut() }[idx];
+                    let col = &mut unsafe { df.columns_mut_retain_schema() }[idx];
                     if let Some(d) = s.descending {
                         let flag = if d {
                             IsSorted::Descending

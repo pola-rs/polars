@@ -13,8 +13,7 @@ use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_mem_engine::scan_predicate::create_scan_predicate;
 use polars_plan::dsl::{
-    FileSinkOptions, JoinOptionsIR, PartitionStrategyIR, PartitionVariantIR,
-    PartitionedSinkOptionsIR, ScanSources,
+    FileSinkOptions, JoinOptionsIR, PartitionStrategyIR, PartitionedSinkOptionsIR, ScanSources,
 };
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, IR, IRAggExpr};
@@ -22,8 +21,8 @@ use polars_plan::prelude::FunctionFlags;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
+use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::plpath::PlPath;
 use polars_utils::relaxed_cell::RelaxedCell;
 use recursive::recursive;
 use slotmap::{SecondaryMap, SlotMap};
@@ -34,8 +33,6 @@ use crate::expression::StreamExpr;
 use crate::graph::{Graph, GraphNodeKey};
 use crate::morsel::{MorselSeq, get_ideal_morsel_size};
 use crate::nodes;
-use crate::nodes::io_sinks::SinkComputeNode;
-use crate::nodes::io_sinks::partition::PerPartitionSortBy;
 use crate::nodes::io_sources::multi_scan::config::MultiScanConfig;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
@@ -336,7 +333,6 @@ fn to_graph_rec<'a>(
                 target,
                 unified_sink_args: unified_sink_args.clone(),
                 input_schema,
-                num_pipelines: 0,
             };
 
             ctx.graph
@@ -525,113 +521,13 @@ fn to_graph_rec<'a>(
                 target,
                 unified_sink_args: unified_sink_args.clone(),
                 input_schema,
-                num_pipelines: 0,
             };
 
             ctx.graph
                 .add_node(IOSinkNode::new(config), [(input_key, input.port)])
         },
 
-        PartitionedSink {
-            input,
-            base_path,
-            file_path_cb,
-            sink_options,
-            variant,
-            file_type,
-            cloud_options,
-            per_partition_sort_by,
-            finish_callback,
-        } => {
-            let input_schema = ctx.phys_sm[input.node].output_schema.clone();
-            let input_key = to_graph_rec(input.node, ctx)?;
-
-            let base_path = base_path.clone();
-            let file_path_cb = file_path_cb.clone();
-            let ext = PlSmallStr::from_static(file_type.extension());
-            let create_new = nodes::io_sinks::partition::get_create_new_fn(
-                file_type.clone(),
-                sink_options.clone(),
-                cloud_options.clone(),
-                finish_callback.is_some(),
-            );
-
-            let per_partition_sort_by = match per_partition_sort_by.as_ref() {
-                None => None,
-                Some(c) => {
-                    let (selectors, descending, nulls_last) = c
-                        .iter()
-                        .map(|c| {
-                            Ok((
-                                create_stream_expr(&c.expr, ctx, &input_schema)?,
-                                c.descending,
-                                c.nulls_last,
-                            ))
-                        })
-                        .collect::<PolarsResult<(Vec<_>, Vec<_>, Vec<_>)>>()?;
-
-                    Some(PerPartitionSortBy {
-                        selectors,
-                        descending,
-                        nulls_last,
-                        maintain_order: true,
-                    })
-                },
-            };
-
-            let sink_compute_node = match variant {
-                PartitionVariantIR::MaxSize(max_size) => SinkComputeNode::from(
-                    nodes::io_sinks::partition::max_size::MaxSizePartitionSinkNode::new(
-                        input_schema,
-                        *max_size,
-                        base_path,
-                        file_path_cb,
-                        create_new,
-                        ext,
-                        sink_options.clone(),
-                        per_partition_sort_by,
-                        finish_callback.clone(),
-                    ),
-                ),
-                PartitionVariantIR::Parted {
-                    key_exprs,
-                    include_key,
-                } => SinkComputeNode::from(
-                    nodes::io_sinks::partition::parted::PartedPartitionSinkNode::new(
-                        input_schema,
-                        key_exprs.iter().map(|e| e.output_name().clone()).collect(),
-                        base_path,
-                        file_path_cb,
-                        create_new,
-                        ext,
-                        sink_options.clone(),
-                        *include_key,
-                        per_partition_sort_by,
-                        finish_callback.clone(),
-                    ),
-                ),
-                PartitionVariantIR::ByKey {
-                    key_exprs,
-                    include_key,
-                } => SinkComputeNode::from(
-                    nodes::io_sinks::partition::by_key::PartitionByKeySinkNode::new(
-                        input_schema,
-                        key_exprs.iter().map(|e| e.output_name().clone()).collect(),
-                        base_path,
-                        file_path_cb,
-                        create_new,
-                        ext,
-                        sink_options.clone(),
-                        *include_key,
-                        per_partition_sort_by,
-                        finish_callback.clone(),
-                    ),
-                ),
-            };
-
-            ctx.graph
-                .add_node(sink_compute_node, [(input_key, input.port)])
-        },
+        PartitionedSink { .. } => unreachable!(),
 
         InMemoryMap {
             input,
@@ -932,50 +828,71 @@ fn to_graph_rec<'a>(
             )
         },
 
-        GroupBy { input, key, aggs } => {
-            let input_key = to_graph_rec(input.node, ctx)?;
-
-            let input_schema = &ctx.phys_sm[input.node].output_schema;
-            let key_schema = compute_output_schema(input_schema, key, ctx.expr_arena)?;
-            let grouper = new_hash_grouper(key_schema.clone());
-
-            let key_selectors = key
-                .iter()
-                .map(|e| create_stream_expr(e, ctx, input_schema))
-                .try_collect_vec()?;
-
+        GroupBy {
+            inputs,
+            key_per_input,
+            aggs_per_input,
+        } => {
+            let mut key_ports = Vec::new();
+            let mut key_schema_per_input = Vec::new();
+            let mut key_selectors_per_input = Vec::new();
+            let mut reductions_per_input = Vec::new();
             let mut grouped_reductions = Vec::new();
             let mut grouped_reduction_cols = Vec::new();
             let mut has_order_sensitive_agg = false;
-            for agg in aggs {
-                has_order_sensitive_agg |= matches!(
-                    ctx.expr_arena.get(agg.node()),
-                    AExpr::Agg(
-                        IRAggExpr::First(_)
-                            | IRAggExpr::FirstNonNull(_)
-                            | IRAggExpr::Last(_)
-                            | IRAggExpr::LastNonNull(_)
-                    )
-                );
-                let (reduction, input_nodes) =
-                    into_reduction(agg.node(), ctx.expr_arena, input_schema)?;
-                let cols = input_nodes
+            for ((input, key), aggs) in inputs.iter().zip(key_per_input).zip(aggs_per_input) {
+                let input_key = to_graph_rec(input.node, ctx)?;
+                key_ports.push((input_key, input.port));
+
+                let input_schema = &ctx.phys_sm[input.node].output_schema;
+                let key_schema = compute_output_schema(input_schema, key, ctx.expr_arena)?;
+                key_schema_per_input.push(key_schema);
+
+                let key_selectors = key
                     .iter()
-                    .map(|node| {
-                        let AExpr::Column(col) = ctx.expr_arena.get(*node) else {
-                            unreachable!()
-                        };
-                        col.clone()
-                    })
-                    .collect();
-                grouped_reductions.push(reduction);
-                grouped_reduction_cols.push(cols);
+                    .map(|e| create_stream_expr(e, ctx, input_schema))
+                    .try_collect_vec()?;
+                key_selectors_per_input.push(key_selectors);
+
+                let mut reductions_for_this_input = Vec::new();
+                for agg in aggs {
+                    has_order_sensitive_agg |= matches!(
+                        ctx.expr_arena.get(agg.node()),
+                        AExpr::Agg(
+                            IRAggExpr::First(_)
+                                | IRAggExpr::FirstNonNull(_)
+                                | IRAggExpr::Last(_)
+                                | IRAggExpr::LastNonNull(_)
+                        )
+                    );
+                    let (reduction, input_nodes) =
+                        into_reduction(agg.node(), ctx.expr_arena, input_schema)?;
+                    let cols = input_nodes
+                        .iter()
+                        .map(|node| {
+                            let AExpr::Column(col) = ctx.expr_arena.get(*node) else {
+                                unreachable!()
+                            };
+                            col.clone()
+                        })
+                        .collect();
+                    reductions_for_this_input.push(grouped_reductions.len());
+                    grouped_reductions.push(reduction);
+                    grouped_reduction_cols.push(cols);
+                }
+
+                reductions_per_input.push(reductions_for_this_input);
             }
 
+            let key_schema = key_schema_per_input.swap_remove(0);
+            assert!(key_schema_per_input.iter().all(|s| **s == *key_schema));
+
+            let grouper = new_hash_grouper(key_schema.clone());
             ctx.graph.add_node(
                 nodes::group_by::GroupByNode::new(
                     key_schema,
-                    key_selectors,
+                    key_selectors_per_input,
+                    reductions_per_input,
                     grouper,
                     grouped_reduction_cols,
                     grouped_reductions,
@@ -984,7 +901,7 @@ fn to_graph_rec<'a>(
                     ctx.num_pipelines,
                     has_order_sensitive_agg,
                 ),
-                [(input_key, input.port)],
+                key_ports,
             )
         },
 
@@ -1367,7 +1284,10 @@ fn to_graph_rec<'a>(
                         let Some(mut df) = df else { return Ok(None) };
 
                         if let Some(simple_projection) = &simple_projection {
-                            df = unsafe { df.project(simple_projection.clone())? };
+                            df = unsafe {
+                                df.select_unchecked(simple_projection.iter_names())?
+                                    .with_schema(simple_projection.clone())
+                            };
                         }
 
                         if validate_schema {
@@ -1416,8 +1336,7 @@ fn to_graph_rec<'a>(
             }) as Arc<dyn FileReaderBuilder>;
 
             // Give multiscan a single scan source. (It doesn't actually read from this).
-            let sources =
-                ScanSources::Paths(Buffer::from_iter([PlPath::from_str("python-scan-0")]));
+            let sources = ScanSources::Paths(Buffer::from_iter([PlRefPath::new("python-scan-0")]));
             let cloud_options = None;
             let final_output_schema = output_schema.clone();
             let file_projection_builder = ProjectionBuilder::new(output_schema, None, None);

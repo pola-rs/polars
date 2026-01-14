@@ -6,7 +6,7 @@ use object_store::ObjectStore;
 use object_store::buffered::BufWriter;
 use object_store::path::Path;
 use polars_error::PolarsResult;
-use polars_utils::plpath::PlPathRef;
+use polars_utils::pl_path::PlRefPath;
 use tokio::io::AsyncWriteExt;
 
 use super::{CloudOptions, object_path_from_str};
@@ -48,7 +48,7 @@ impl BlockingCloudWriter {
     /// Wrapper around `BlockingCloudWriter::new_with_object_store` that is useful if you only have a single write task.
     /// TODO: Naming?
     pub async fn new(
-        uri: PlPathRef<'_>,
+        uri: PlRefPath,
         cloud_options: Option<&CloudOptions>,
         cloud_upload_chunk_size: usize,
     ) -> PolarsResult<Self> {
@@ -193,6 +193,8 @@ mod tests {
     #[cfg(feature = "csv")]
     #[test]
     fn cloudwriter_from_cloudlocation_test() {
+        use polars_utils::pl_path::format_file_uri;
+
         use super::*;
         use crate::SerReader;
         use crate::csv::write::CsvWriter;
@@ -206,7 +208,7 @@ mod tests {
 
         let mut cloud_writer = get_runtime()
             .block_on(BlockingCloudWriter::new(
-                PlPathRef::new(&format!("file://{path}")),
+                format_file_uri(path),
                 None,
                 get_upload_chunk_size(),
             ))

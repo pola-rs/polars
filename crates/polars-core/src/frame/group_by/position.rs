@@ -806,6 +806,13 @@ impl GroupPositions {
             } => Some(groups),
         }
     }
+
+    /// Compare groups based on inner pointer.
+    pub fn is_same(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.original, &other.original)
+            && self.offset == other.offset
+            && self.len == other.len
+    }
 }
 
 fn slice_groups_inner(g: &GroupsType, offset: i64, len: usize) -> ManuallyDrop<GroupsType> {
