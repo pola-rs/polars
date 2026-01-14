@@ -15,8 +15,8 @@ impl IRNode {
         &'a self,
         lp_arena: &'a Arena<IR>,
         expr_arena: &'a Arena<AExpr>,
-    ) -> HashableEqLP<'a> {
-        HashableEqLP {
+    ) -> IRHashWrap<'a> {
+        IRHashWrap {
             node: *self,
             lp_arena,
             expr_arena,
@@ -25,14 +25,14 @@ impl IRNode {
     }
 }
 
-pub(crate) struct HashableEqLP<'a> {
+pub(crate) struct IRHashWrap<'a> {
     node: IRNode,
     lp_arena: &'a Arena<IR>,
     expr_arena: &'a Arena<AExpr>,
     hash_as_equality: bool,
 }
 
-impl HashableEqLP<'_> {
+impl IRHashWrap<'_> {
     pub fn hash_as_equality(mut self) -> Self {
         self.hash_as_equality = true;
         self
@@ -68,23 +68,7 @@ fn hash_python_predicate<H: Hasher>(
     }
 }
 
-/// Specialized Eq that dispatches to `expr_ir_eq` rather than simply comparing `Node` equality.
-#[cfg(feature = "python")]
-fn python_predicate_eq(
-    l: &crate::prelude::PythonPredicate,
-    r: &crate::prelude::PythonPredicate,
-    expr_arena: &Arena<AExpr>,
-) -> bool {
-    use crate::prelude::PythonPredicate;
-    match (l, r) {
-        (PythonPredicate::None, PythonPredicate::None) => true,
-        (PythonPredicate::PyArrow(a), PythonPredicate::PyArrow(b)) => a == b,
-        (PythonPredicate::Polars(a), PythonPredicate::Polars(b)) => expr_ir_eq(a, b, expr_arena),
-        _ => false,
-    }
-}
-
-impl Hash for HashableEqLP<'_> {
+impl Hash for IRHashWrap<'_> {
     // This hashes the variant, not the whole plan
     fn hash<H: Hasher>(&self, state: &mut H) {
         let alp = self.node.to_alp(self.lp_arena);
@@ -268,25 +252,5 @@ impl Hash for HashableEqLP<'_> {
             },
             IR::Invalid => unreachable!(),
         }
-    }
-}
-
-fn expr_irs_eq(l: &[ExprIR], r: &[ExprIR], expr_arena: &Arena<AExpr>) -> bool {
-    l.len() == r.len() && l.iter().zip(r).all(|(l, r)| expr_ir_eq(l, r, expr_arena))
-}
-
-fn expr_ir_eq(l: &ExprIR, r: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
-    l.get_alias() == r.get_alias() && {
-        let l = AexprNode::new(l.node());
-        let r = AexprNode::new(r.node());
-        l.hashable_and_cmp(expr_arena) == r.hashable_and_cmp(expr_arena)
-    }
-}
-
-fn opt_expr_ir_eq(l: &Option<ExprIR>, r: &Option<ExprIR>, expr_arena: &Arena<AExpr>) -> bool {
-    match (l, r) {
-        (None, None) => true,
-        (Some(l), Some(r)) => expr_ir_eq(l, r, expr_arena),
-        _ => false,
     }
 }
