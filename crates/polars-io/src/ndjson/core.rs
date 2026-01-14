@@ -396,7 +396,7 @@ pub fn json_lines(bytes: &[u8]) -> impl Iterator<Item = &[u8]> {
     // our values are line-delimited. Turns out, custom splitting is very easy, and gives a very nice performance boost.
     bytes
         .split(|&byte| byte == b'\n')
-        .filter(|bytes| is_json_line(*bytes))
+        .filter(|bytes| is_json_line(bytes))
 }
 
 #[inline]
