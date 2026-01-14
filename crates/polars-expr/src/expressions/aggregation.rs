@@ -165,14 +165,26 @@ impl PhysicalExpr for AggregationExpr {
                 let opt = s.as_materialized_series().arg_min();
                 Ok(opt.map_or_else(
                     || Column::full_null(s.name().clone(), 1, &IDX_DTYPE),
-                    |idx| IdxCa::from_slice(s.name().clone(), &[idx as IdxSize]).into_column(),
+                    |idx| {
+                        Column::new_scalar(
+                            s.name().clone(),
+                            Scalar::new_idxsize(idx.try_into().unwrap()),
+                            1,
+                        )
+                    },
                 ))
             },
             GroupByMethod::ArgMax => {
                 let opt = s.as_materialized_series().arg_max();
                 Ok(opt.map_or_else(
                     || Column::full_null(s.name().clone(), 1, &IDX_DTYPE),
-                    |idx| IdxCa::from_slice(s.name().clone(), &[idx as IdxSize]).into_column(),
+                    |idx| {
+                        Column::new_scalar(
+                            s.name().clone(),
+                            Scalar::new_idxsize(idx.try_into().unwrap()),
+                            1,
+                        )
+                    },
                 ))
             },
         }
