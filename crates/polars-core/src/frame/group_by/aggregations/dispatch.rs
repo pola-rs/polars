@@ -255,13 +255,12 @@ impl Series {
             GroupsType::Idx(groups) => groups
                 .iter()
                 .map(|(_, idx)| {
-                    let mut pos: Option<IdxSize> = None;
-                    for (p, &ii) in idx.iter().enumerate() {
+                    for (p, &ii) in idx.iter().enumerate().rev() {
                         if validity.get_bit_unchecked(ii as usize) {
-                            pos = Some(p as IdxSize);
+                            return Some(p as IdxSize);
                         }
                     }
-                    pos
+                    None
                 })
                 .collect_ca(PlSmallStr::EMPTY),
 
