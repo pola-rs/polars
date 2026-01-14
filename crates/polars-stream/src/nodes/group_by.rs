@@ -615,7 +615,7 @@ impl ComputeNode for GroupByNode {
                         .collect::<Result<Vec<_>, _>>()
                 })?;
 
-                let df = dbg!(accumulate_dataframes_vertical_unchecked(dfs));
+                let df = accumulate_dataframes_vertical_unchecked(dfs);
                 let source = InMemorySourceNode::new(Arc::new(df), MorselSeq::new(0));
                 self.state = GroupByState::Source(source);
             },

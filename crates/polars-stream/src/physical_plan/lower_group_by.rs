@@ -515,6 +515,8 @@ fn try_build_streaming_group_by(
     }
 
     // We must lower the keys together with the elementwise inputs to the aggregations.
+    let mut elementwise_input_needed = false;
+    let mut all_keys_included_in_other_inputs = false;
     let mut elementwise_input_expr_ids = key_ids.clone();
     let mut aggs_with_elementwise_inputs = Vec::new();
     let mut other_agg_input_streams = PlIndexMap::new();
@@ -527,6 +529,7 @@ fn try_build_streaming_group_by(
         }) {
             aggs_with_elementwise_inputs.push(agg_expr.clone());
             elementwise_input_expr_ids.extend(input_ids.iter().copied());
+            elementwise_input_needed = true;
             continue;
         }
 
@@ -584,6 +587,7 @@ fn try_build_streaming_group_by(
                         return Ok(None);
                     };
                     other_agg_input_streams.insert(input_id, (input_stream, Vec::new()));
+                    all_keys_included_in_other_inputs = true;
                 },
                 _ => return Ok(None),
             }
@@ -604,6 +608,7 @@ fn try_build_streaming_group_by(
         .iter()
         .all(|e| is_input_independent(e.node(), expr_arena, expr_cache))
     {
+        elementwise_input_needed = true;
         let dummy_col_name = phys_sm[input.node].output_schema.get_at_index(0).unwrap().0;
         let dummy_col = expr_arena.add(AExpr::Column(dummy_col_name.clone()));
         elementwise_input_exprs.push(ExprIR::new(
@@ -621,26 +626,30 @@ fn try_build_streaming_group_by(
         ctx,
     )?;
 
-    let pre_select_schema = &phys_sm[pre_select.node].output_schema;
-
-    let mut group_by_output_schema = (*compute_output_schema(
-        pre_select_schema,
-        &[
+    // Reconstruct the output schema of this node.
+    let mut group_by_output_schema = Schema::default();
+    let mut inputs = Vec::new();
+    let mut key_per_input = Vec::new();
+    let mut aggs_per_input = Vec::new();
+    if elementwise_input_needed || !all_keys_included_in_other_inputs {
+        let this_input_schema = &phys_sm[pre_select.node].output_schema;
+        let exprs = [
             trans_keys.as_slice(),
             aggs_with_elementwise_inputs.as_slice(),
         ]
-        .concat(),
-        expr_arena,
-    )
-    .unwrap())
-    .clone();
-    let mut inputs = vec![pre_select];
-    let mut key_per_input = vec![trans_keys.clone()];
-    let mut aggs_per_input = vec![aggs_with_elementwise_inputs];
+        .concat();
+        let elementwise_out_schema =
+            compute_output_schema(this_input_schema, &exprs, expr_arena).unwrap();
+        group_by_output_schema.merge((*elementwise_out_schema).clone());
+        inputs.push(pre_select);
+        key_per_input.push(trans_keys.clone());
+        aggs_per_input.push(aggs_with_elementwise_inputs);
+    }
     for (_input_id, (stream, aggs)) in other_agg_input_streams {
         let this_input_schema = &phys_sm[stream.node].output_schema;
-        group_by_output_schema
-            .merge((*compute_output_schema(this_input_schema, &aggs, expr_arena).unwrap()).clone());
+        let exprs = [trans_keys.as_slice(), aggs.as_slice()].concat();
+        let this_out_schema = compute_output_schema(this_input_schema, &exprs, expr_arena).unwrap();
+        group_by_output_schema.merge((*this_out_schema).clone());
         inputs.push(stream);
         key_per_input.push(trans_keys.clone());
         aggs_per_input.push(aggs);
