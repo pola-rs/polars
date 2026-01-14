@@ -337,6 +337,12 @@ impl Borrow<PlPath> for PlRefPath {
     }
 }
 
+impl From<&str> for PlRefPath {
+    fn from(value: &str) -> Self {
+        Self::new(value)
+    }
+}
+
 macro_rules! impl_cloud_scheme {
     ($($t:ident = $n:literal,)+) => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
