@@ -143,7 +143,7 @@ impl BinaryChunked {
         }
     }
 
-    pub(crate) unsafe fn agg_arg_min<'a>(&'a self, groups: &GroupsType) -> Series {
+    pub(crate) unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
         // fast paths, consistent with other impls
         match self.is_sorted_flag() {
             IsSorted::Ascending => {
@@ -270,7 +270,7 @@ impl BinaryChunked {
         out.into_series()
     }
 
-    pub(crate) unsafe fn agg_arg_max<'a>(&'a self, groups: &GroupsType) -> Series {
+    pub(crate) unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
         // fast paths
         match (self.is_sorted_flag(), self.null_count()) {
             (IsSorted::Ascending, 0) => {
