@@ -2,8 +2,9 @@ use arrow::array::ValueSize;
 #[cfg(feature = "dtype-struct")]
 use arrow::array::{MutableArray, MutableUtf8Array};
 use polars_core::chunked_array::ops::arity::binary_elementwise_for_each;
-
-use super::*;
+use polars_core::prelude::*;
+use polars_utils::regex_cache::compile_regex;
+use regex::Regex;
 
 pub struct SplitNChars<'a> {
     s: &'a str,
@@ -221,5 +222,171 @@ where
             }
         },
         _ => polars_bail!(length_mismatch = "str.split", ca.len(), by.len()),
+    })
+}
+
+#[inline]
+fn split_inclusive<'a>(re: &'a Regex, s: &'a str) -> impl Iterator<Item = &'a str> + 'a {
+    let mut it = re.find_iter(s);
+    let mut last_end: usize = 0;
+    let mut yielded_any = false;
+    let mut done_tail = false;
+
+    std::iter::from_fn(move || {
+        if let Some(m) = it.next() {
+            let end = m.end();
+            let out = &s[last_end..end];
+            last_end = end;
+            yielded_any = true;
+            return Some(out);
+        }
+
+        if done_tail {
+            return None;
+        }
+        done_tail = true;
+
+        if last_end < s.len() {
+            Some(&s[last_end..])
+        } else if !yielded_any {
+            Some(s)
+        } else {
+            None
+        }
+    })
+}
+
+#[inline]
+fn invalid_regex_err(pat: &str) -> PolarsError {
+    polars_err!(ComputeError: "invalid regex pattern in str.split_regex: {}", pat)
+}
+
+#[inline]
+fn append_split_compiled(
+    builder: &mut ListStringChunkedBuilder,
+    s: &str,
+    re: &Regex,
+    inclusive: bool,
+) {
+    if inclusive {
+        builder.append_values_iter(split_inclusive(re, s));
+    } else {
+        builder.append_values_iter(re.split(s));
+    }
+}
+
+#[inline]
+fn append_split(
+    builder: &mut ListStringChunkedBuilder,
+    s: &str,
+    pat: &str,
+    inclusive: bool,
+    strict: bool,
+) -> PolarsResult<()> {
+    if pat.is_empty() {
+        builder.append_values_iter(split_chars(s));
+        return Ok(());
+    }
+
+    match compile_regex(pat) {
+        Ok(re) => {
+            append_split_compiled(builder, s, &re, inclusive);
+            Ok(())
+        },
+        Err(_) if strict => Err(invalid_regex_err(pat)),
+        Err(_) => {
+            builder.append_null();
+            Ok(())
+        },
+    }
+}
+
+pub fn split_regex_helper(
+    ca: &StringChunked,
+    by: &StringChunked,
+    inclusive: bool,
+    strict: bool,
+) -> PolarsResult<ListChunked> {
+    use polars_utils::regex_cache::compile_regex;
+
+    Ok(match (ca.len(), by.len()) {
+        // elementwise: string[i] with pattern[i]
+        (a, b) if a == b => {
+            let mut builder =
+                ListStringChunkedBuilder::new(ca.name().clone(), ca.len(), ca.get_values_size());
+
+            for (opt_s, opt_pat) in ca.into_iter().zip(by.into_iter()) {
+                match (opt_s, opt_pat) {
+                    (Some(s), Some(pat)) => append_split(&mut builder, s, pat, inclusive, strict)?,
+                    _ => builder.append_null(),
+                }
+            }
+
+            builder.finish()
+        },
+
+        // scalar string with per-row patterns
+        (1, _) => {
+            if let Some(s0) = ca.get(0) {
+                let mut builder = ListStringChunkedBuilder::new(
+                    by.name().clone(),
+                    by.len(),
+                    by.get_values_size(),
+                );
+
+                for opt_pat in by.into_iter() {
+                    match opt_pat {
+                        Some(pat) => append_split(&mut builder, s0, pat, inclusive, strict)?,
+                        None => builder.append_null(),
+                    }
+                }
+
+                builder.finish()
+            } else {
+                ListChunked::full_null_with_dtype(ca.name().clone(), by.len(), &DataType::String)
+            }
+        },
+
+        // per-row strings with scalar pattern
+        (_, 1) => {
+            if let Some(pat0) = by.get(0) {
+                let mut builder = ListStringChunkedBuilder::new(
+                    ca.name().clone(),
+                    ca.len(),
+                    ca.get_values_size(),
+                );
+
+                if pat0.is_empty() {
+                    ca.for_each(|opt_s| match opt_s {
+                        Some(s) => builder.append_values_iter(split_chars(s)),
+                        None => builder.append_null(),
+                    });
+                    builder.finish()
+                } else {
+                    let re = match compile_regex(pat0) {
+                        Ok(re) => re,
+                        Err(_) if strict => return Err(invalid_regex_err(pat0)),
+                        Err(_) => {
+                            return Ok(ListChunked::full_null_with_dtype(
+                                ca.name().clone(),
+                                ca.len(),
+                                &DataType::String,
+                            ));
+                        },
+                    };
+
+                    ca.for_each(|opt_s| match opt_s {
+                        Some(s) => append_split_compiled(&mut builder, s, &re, inclusive),
+                        None => builder.append_null(),
+                    });
+
+                    builder.finish()
+                }
+            } else {
+                ListChunked::full_null_with_dtype(ca.name().clone(), ca.len(), &DataType::String)
+            }
+        },
+
+        _ => polars_bail!(length_mismatch = "str.split_regex", ca.len(), by.len()),
     })
 }
