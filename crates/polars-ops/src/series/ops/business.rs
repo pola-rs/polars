@@ -34,14 +34,11 @@ pub fn business_day_count(
     start: &Series,
     end: &Series,
     week_mask: [bool; 7],
-    holidays: &[i32],
+    holidays: &Series,
 ) -> PolarsResult<Series> {
     if !week_mask.iter().any(|&x| x) {
         polars_bail!(ComputeError:"`week_mask` must have at least one business day");
     }
-
-    // TODO this will become input
-    let holidays = Series::new("".into(), [Series::new("".into(), holidays)]);
 
     let mut holidays_lists = HolidaysLists::new(holidays, week_mask)?;
     let start_dates = start.date()?;
@@ -158,7 +155,7 @@ pub fn add_business_days(
     start: &Series,
     n: &Series,
     week_mask: [bool; 7],
-    holidays: &[i32],
+    holidays: &Series,
     roll: Roll,
 ) -> PolarsResult<Series> {
     if !week_mask.iter().any(|&x| x) {
@@ -211,9 +208,6 @@ pub fn add_business_days(
         },
         _ => polars_bail!(InvalidOperation: "expected date or datetime, got {}", start.dtype()),
     }
-
-    // TODO this will become input
-    let holidays = Series::new("".into(), [Series::new("".into(), holidays)]);
 
     let mut holidays_lists = HolidaysLists::new(holidays, week_mask)?;
 
@@ -359,7 +353,7 @@ fn add_business_days_impl(
 pub fn is_business_day(
     dates: &Series,
     week_mask: [bool; 7],
-    holidays: &[i32],
+    holidays: &Series,
 ) -> PolarsResult<Series> {
     if !week_mask.iter().any(|&x| x) {
         polars_bail!(ComputeError:"`week_mask` must have at least one business day");
@@ -384,13 +378,10 @@ pub fn is_business_day(
         _ => polars_bail!(InvalidOperation: "expected date or datetime, got {}", dates.dtype()),
     }
 
-    // TODO this will become input
-    let holidays = Series::new("".into(), [Series::new("".into(), holidays)]);
-
     // Filter out null dates, to match
     // dates.physical().apply_nonnull_values_generic() we run below.
     let holidays = if holidays.len() > 1 {
-        holidays.filter(&dates.is_not_null())?
+        &holidays.filter(&dates.is_not_null())?
     } else {
         // A single-length Series means we just repeat the same value forever.
         holidays
@@ -472,15 +463,18 @@ fn normalise_holidays(holidays: &mut Vec<i32>, week_mask: &[bool; 7]) {
 }
 
 struct HolidaysLists {
+    // Days since epoch
     buffer: Vec<i32>,
+    // Offsets into buffer
     offsets: Vec<usize>,
     // Offset for iterating; can only iterate once:
     iter_index: usize,
 }
 
 impl HolidaysLists {
-    /// Accepts Series of List of Int32.
-    fn new(holidays: Series, week_mask: [bool; 7]) -> PolarsResult<Self> {
+    /// Accepts Series of List of Date.
+    fn new(holidays: &Series, week_mask: [bool; 7]) -> PolarsResult<Self> {
+        // TODO assert Series of List of Date
         let holidays = holidays.list()?;
         let mut buffer = Vec::with_capacity(holidays.lst_lengths().sum().unwrap_or(0) as usize);
         let mut offsets = Vec::with_capacity(holidays.len());
@@ -489,8 +483,8 @@ impl HolidaysLists {
         for s in holidays.amortized_iter() {
             debug_assert_eq!(staging.len(), 0);
             if let Some(s) = s {
-                // TODO error handling: more than one chunk, missing chunk, nulls.
-                let holidays_list = s.as_ref().i32()?.chunks()[0]
+                // TODO error handling: more than one chunk, missing chunk, nulls
+                let holidays_list = s.as_ref().date()?.physical().chunks()[0]
                     .as_any()
                     .downcast_ref::<PrimitiveArray<i32>>()
                     .map(|pa| pa.as_slice())

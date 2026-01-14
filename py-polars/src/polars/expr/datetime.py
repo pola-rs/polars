@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 from polars import functions as F
+from polars.functions.business import _holidays_to_expr
 from polars._utils.convert import parse_as_duration_string
 from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
 from polars._utils.parse import parse_into_expression, parse_into_list_of_expressions
@@ -12,6 +13,7 @@ from polars._utils.unstable import unstable
 from polars._utils.various import qualified_type_name
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32, Int64
+
 
 if TYPE_CHECKING:
     import sys
@@ -48,7 +50,7 @@ class ExprDateTimeNameSpace:
         self,
         n: int | IntoExpr,
         week_mask: Iterable[bool] = (True, True, True, True, True, False, False),
-        holidays: Iterable[dt.date] = (),
+        holidays: Iterable[dt.date] | Expr | pl.Series = (),
         roll: Roll = "raise",
     ) -> Expr:
         """
@@ -160,12 +162,12 @@ class ExprDateTimeNameSpace:
         └────────────┴─────────────────┘
         """
         n_pyexpr = parse_into_expression(n)
-        unix_epoch = dt.date(1970, 1, 1)
+        holidays_pyexpr = _holidays_to_expr(holidays)
         return wrap_expr(
             self._pyexpr.dt_add_business_days(
                 n_pyexpr,
                 list(week_mask),
-                [(holiday - unix_epoch).days for holiday in holidays],
+                holidays_pyexpr,
                 roll,
             )
         )
@@ -909,7 +911,7 @@ class ExprDateTimeNameSpace:
         self,
         *,
         week_mask: Iterable[bool] = (True, True, True, True, True, False, False),
-        holidays: Iterable[dt.date] = (),
+        holidays: Iterable[dt.date] | Expr | pl.Series = (),
     ) -> Expr:
         """
         Determine whether each day lands on a business day.
@@ -991,11 +993,10 @@ class ExprDateTimeNameSpace:
         │ 2020-01-05 ┆ false           │
         └────────────┴─────────────────┘
         """
-        unix_epoch = dt.date(1970, 1, 1)
         return wrap_expr(
             self._pyexpr.dt_is_business_day(
                 list(week_mask),
-                [(holiday - unix_epoch).days for holiday in holidays],
+                _holidays_to_expr(holidays),
             )
         )
 
