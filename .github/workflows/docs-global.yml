@@ -11,6 +11,9 @@ on:
       - python-release-docs
   workflow_dispatch:
 
+env:
+  RUSTFLAGS: -C debuginfo=0 # Do not produce debug symbols to keep memory usage down
+
 jobs:
   markdown-link-check:
     runs-on: ubuntu-latest

@@ -21,26 +21,30 @@ where
     _out: PhantomData<Out>,
 }
 
-impl<'a, T, Out, P> RollingAggWindowNoNulls<'a, T, Out> for RankWindow<'a, T, Out, P>
+impl<T, Out, P> RollingAggWindowNoNulls<T, Out> for RankWindow<'_, T, Out, P>
 where
     T: NativeType,
     Out: NativeType,
     P: RankPolicy<T, Out>,
 {
-    fn new(
+    type This<'a> = RankWindow<'a, T, Out, P>;
+
+    fn new<'a>(
         slice: &'a [T],
         start: usize,
         end: usize,
         params: Option<RollingFnParams>,
         window_size: Option<usize>,
-    ) -> Self {
+    ) -> Self::This<'a> {
+        assert!(start <= slice.len() && end <= slice.len() && start <= end);
+
         let cmp = |a: &&T, b: &&T| T::tot_cmp(*a, *b);
         let ost = match window_size {
             Some(ws) => OrderStatisticTree::with_capacity(ws, cmp),
             None => OrderStatisticTree::new(cmp),
         };
         let policy = P::new(&params.unwrap());
-        let mut slf = Self {
+        let mut this = RankWindow {
             slice,
             last_start: 0,
             last_end: 0,
@@ -48,10 +52,13 @@ where
             policy,
             _out: PhantomData,
         };
+
+        // SAFETY: We checked that `start` and `end` are in-bounds.
         unsafe {
-            slf.update(start, end);
+            this.update(start, end);
         }
-        slf
+
+        this
     }
 
     unsafe fn update(&mut self, new_start: usize, new_end: usize) -> Option<Out> {
@@ -76,8 +83,14 @@ where
         if self.last_end == 0 {
             return None;
         }
+        // SAFETY: We checked that `last_end` is not zero and the caller MUST uphold the function
+        // safety contract.
         let cur = unsafe { self.slice.get_unchecked(self.last_end - 1) };
         self.policy.rank(&self.ost, cur)
+    }
+
+    fn slice_len(&self) -> usize {
+        self.slice.len()
     }
 }
 

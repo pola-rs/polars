@@ -70,6 +70,16 @@ impl PlRefStr {
     pub fn ptr_eq(this: &Self, other: &Self) -> bool {
         Inner::ptr_eq(&this.0, &other.0)
     }
+
+    #[inline(always)]
+    pub fn get_mut(&mut self) -> Option<&mut str> {
+        Inner::get_mut(&mut self.0)
+    }
+
+    #[inline(always)]
+    pub fn make_mut(&mut self) -> &mut str {
+        Inner::make_mut(&mut self.0)
+    }
 }
 
 impl Default for PlRefStr {
@@ -146,7 +156,7 @@ impl From<String> for PlRefStr {
 impl From<PlRefStr> for String {
     #[inline(always)]
     fn from(value: PlRefStr) -> Self {
-        value.to_string()
+        value.into_string()
     }
 }
 
