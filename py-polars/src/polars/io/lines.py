@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 from typing import IO, TYPE_CHECKING, Any, Literal
 
+from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_ldf
 from polars.io._utils import get_sources
 from polars.io.cloud.credential_provider._builder import (
@@ -21,6 +22,7 @@ if TYPE_CHECKING:
     from polars.lazyframe.frame import LazyFrame
 
 
+@unstable()
 def read_lines(
     source: (
         str
@@ -47,6 +49,10 @@ def read_lines(
 ) -> DataFrame:
     r"""
     Read lines into a string column from a file.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
 
     Parameters
     ----------
@@ -128,6 +134,7 @@ def read_lines(
     ).collect()
 
 
+@unstable()
 def scan_lines(
     source: (
         str
@@ -154,6 +161,10 @@ def scan_lines(
 ) -> LazyFrame:
     r"""
     Construct a LazyFrame which scans lines into a string column from a file.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
 
     Parameters
     ----------
