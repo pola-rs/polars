@@ -479,13 +479,6 @@ def test_merge_join(
         expected = q.collect(engine="in-memory")
         actual = q.collect(engine="streaming")
 
-        import sys
-
-        print(f"{df_sorted(df_left).collect() = }", file=sys.stderr)
-        print(f"{df_sorted(df_right).collect() = }", file=sys.stderr)
-        print(f"{actual = }", file=sys.stderr)
-        print(f"{expected = }", file=sys.stderr)
-
         assert "merge-join" in typing.cast("str", dot), "merge-join not used in plan"
         assert_frame_equal(actual, expected, check_row_order=check_row_order)
 
