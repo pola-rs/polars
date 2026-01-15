@@ -40,6 +40,7 @@ fn path_and_creds_to_key(path: &PlPath, options: Option<&CloudOptions>) -> Vec<u
         |CloudOptions {
              // Destructure to ensure this breaks if anything changes.
              max_retries,
+             retry_config,
              #[cfg(feature = "file_cache")]
              file_cache_ttl,
              config,
@@ -48,6 +49,7 @@ fn path_and_creds_to_key(path: &PlPath, options: Option<&CloudOptions>) -> Vec<u
          }| {
             CloudOptions2 {
                 max_retries: *max_retries,
+                retry_config: retry_config.clone(),
                 #[cfg(feature = "file_cache")]
                 file_cache_ttl: *file_cache_ttl,
                 config: config.clone(),
@@ -84,6 +86,7 @@ fn path_and_creds_to_key(path: &PlPath, options: Option<&CloudOptions>) -> Vec<u
     #[cfg_attr(feature = "serde", derive(serde::Serialize))]
     struct CloudOptions2 {
         max_retries: usize,
+        retry_config: Option<super::RetryConfig>,
         #[cfg(feature = "file_cache")]
         file_cache_ttl: u64,
         config: Option<CloudConfig>,

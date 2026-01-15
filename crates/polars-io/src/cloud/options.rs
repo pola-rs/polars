@@ -1,9 +1,11 @@
+use std::hash::{Hash, Hasher};
 #[cfg(feature = "aws")]
 use std::io::Read;
 #[cfg(feature = "aws")]
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::LazyLock;
+use std::time::Duration;
 
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
 use object_store::ClientOptions;
@@ -20,7 +22,9 @@ use object_store::gcp::GoogleCloudStorageBuilder;
 #[cfg(feature = "gcp")]
 pub use object_store::gcp::GoogleConfigKey;
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
-use object_store::{BackoffConfig, RetryConfig};
+use object_store::{
+    BackoffConfig as ObjectStoreBackoffConfig, RetryConfig as ObjectStoreRetryConfig,
+};
 use polars_error::*;
 #[cfg(feature = "aws")]
 use polars_utils::cache::LruCache;
@@ -74,12 +78,83 @@ pub(crate) enum CloudConfig {
     Http { headers: Vec<(String, String)> },
 }
 
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct RetryBackoffConfig {
+    pub init_backoff: Duration,
+    pub max_backoff: Duration,
+    pub base: f64,
+}
+
+impl Default for RetryBackoffConfig {
+    fn default() -> Self {
+        Self {
+            init_backoff: Duration::from_millis(100),
+            max_backoff: Duration::from_secs(15),
+            base: 2.0,
+        }
+    }
+}
+
+impl PartialEq for RetryBackoffConfig {
+    fn eq(&self, other: &Self) -> bool {
+        self.init_backoff == other.init_backoff
+            && self.max_backoff == other.max_backoff
+            && self.base.to_bits() == other.base.to_bits()
+    }
+}
+
+impl Eq for RetryBackoffConfig {}
+
+impl Hash for RetryBackoffConfig {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.init_backoff.hash(state);
+        self.max_backoff.hash(state);
+        self.base.to_bits().hash(state);
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Hash, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct RetryConfig {
+    pub backoff: RetryBackoffConfig,
+    pub max_retries: usize,
+    pub retry_timeout: Duration,
+}
+
+impl Default for RetryConfig {
+    fn default() -> Self {
+        Self {
+            backoff: RetryBackoffConfig::default(),
+            max_retries: 2,
+            retry_timeout: Duration::from_secs(10),
+        }
+    }
+}
+
+impl RetryConfig {
+    #[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
+    fn to_object_store(&self) -> ObjectStoreRetryConfig {
+        ObjectStoreRetryConfig {
+            backoff: ObjectStoreBackoffConfig {
+                init_backoff: self.backoff.init_backoff,
+                max_backoff: self.backoff.max_backoff,
+                base: self.backoff.base,
+            },
+            max_retries: self.max_retries,
+            retry_timeout: self.retry_timeout,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Hash, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 /// Options to connect to various cloud providers.
 pub struct CloudOptions {
     pub max_retries: usize,
+    #[cfg_attr(feature = "dsl-schema", schemars(skip))]
+    pub retry_config: Option<RetryConfig>,
     #[cfg(feature = "file_cache")]
     pub file_cache_ttl: u64,
     pub(crate) config: Option<CloudConfig>,
@@ -99,6 +174,7 @@ impl CloudOptions {
     pub fn default_static_ref() -> &'static Self {
         static DEFAULT: LazyLock<CloudOptions> = LazyLock::new(|| CloudOptions {
             max_retries: 2,
+            retry_config: None,
             #[cfg(feature = "file_cache")]
             file_cache_ttl: get_env_file_cache_ttl(),
             config: None,
@@ -183,11 +259,17 @@ impl CloudType {
 }
 
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
-fn get_retry_config(max_retries: usize) -> RetryConfig {
-    RetryConfig {
-        backoff: BackoffConfig::default(),
-        max_retries,
-        retry_timeout: std::time::Duration::from_secs(10),
+fn get_retry_config(
+    max_retries: usize,
+    retry_config: Option<&RetryConfig>,
+) -> ObjectStoreRetryConfig {
+    match retry_config {
+        Some(config) => config.to_object_store(),
+        None => ObjectStoreRetryConfig {
+            backoff: ObjectStoreBackoffConfig::default(),
+            max_retries,
+            retry_timeout: Duration::from_secs(10),
+        },
     }
 }
 
@@ -256,6 +338,16 @@ impl CloudOptions {
     /// Set the maximum number of retries.
     pub fn with_max_retries(mut self, max_retries: usize) -> Self {
         self.max_retries = max_retries;
+        if let Some(config) = self.retry_config.as_mut() {
+            config.max_retries = max_retries;
+        }
+        self
+    }
+
+    /// Set the full retry configuration.
+    pub fn with_retry_config(mut self, retry_config: RetryConfig) -> Self {
+        self.max_retries = retry_config.max_retries;
+        self.retry_config = Some(retry_config);
         self
     }
 
@@ -399,7 +491,10 @@ impl CloudOptions {
             };
         };
 
-        let builder = builder.with_retry(get_retry_config(self.max_retries));
+        let builder = builder.with_retry(get_retry_config(
+            self.max_retries,
+            self.retry_config.as_ref(),
+        ));
 
         let opt_credential_provider = match opt_credential_provider {
             #[cfg(feature = "python")]
@@ -473,7 +568,10 @@ impl CloudOptions {
 
         let builder = builder
             .with_url(url.to_string())
-            .with_retry(get_retry_config(self.max_retries));
+            .with_retry(get_retry_config(
+                self.max_retries,
+                self.retry_config.as_ref(),
+            ));
 
         let builder =
             if let Some(v) = self.initialized_credential_provider(clear_cached_credentials)? {
@@ -535,7 +633,10 @@ impl CloudOptions {
 
         let builder = builder
             .with_url(url.to_string())
-            .with_retry(get_retry_config(self.max_retries));
+            .with_retry(get_retry_config(
+                self.max_retries,
+                self.retry_config.as_ref(),
+            ));
 
         let builder = if let Some(v) = credential_provider {
             builder.with_credentials(v.into_gcp_provider())

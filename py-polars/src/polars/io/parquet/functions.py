@@ -45,7 +45,7 @@ if TYPE_CHECKING:
         ParallelStrategy,
         SchemaDict,
     )
-    from polars.io.cloud import CredentialProviderFunction
+    from polars.io.cloud import CredentialProviderFunction, RetryConfig
     from polars.io.scan_options import ScanCastOptions
 
 
@@ -70,6 +70,7 @@ def read_parquet(
     storage_options: dict[str, Any] | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
     retries: int = 2,
+    retry_config: RetryConfig | None = None,
     use_pyarrow: bool = False,
     pyarrow_options: dict[str, Any] | None = None,
     memory_map: bool = True,
@@ -166,6 +167,8 @@ def read_parquet(
             at any point without it being considered a breaking change.
     retries
         Number of retries if accessing a cloud instance fails.
+    retry_config
+        Retry policy for cloud requests. Overrides `retries` when set.
     use_pyarrow
         Use PyArrow instead of the Rust-native Parquet reader. The PyArrow reader is
         more stable.
@@ -275,6 +278,7 @@ def read_parquet(
         storage_options=storage_options,
         credential_provider=credential_provider,
         retries=retries,
+        retry_config=retry_config,
         glob=glob,
         include_file_paths=include_file_paths,
         missing_columns=missing_columns,
@@ -376,6 +380,7 @@ def read_parquet_metadata(
     storage_options: dict[str, Any] | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
     retries: int = 2,
+    retry_config: RetryConfig | None = None,
 ) -> dict[str, str]:
     """
     Get file-level custom metadata of a Parquet file without reading data.
@@ -415,6 +420,8 @@ def read_parquet_metadata(
             at any point without it being considered a breaking change.
     retries
         Number of retries if accessing a cloud instance fails.
+    retry_config
+        Retry policy for cloud requests. Overrides `retries` when set.
 
     Returns
     -------
@@ -436,6 +443,7 @@ def read_parquet_metadata(
         ),
         credential_provider=credential_provider_builder,
         retries=retries,
+        retry_config=retry_config,
     )
 
 
@@ -461,6 +469,7 @@ def scan_parquet(
     storage_options: dict[str, Any] | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
     retries: int = 2,
+    retry_config: RetryConfig | None = None,
     include_file_paths: str | None = None,
     missing_columns: Literal["insert", "raise"] = "raise",
     allow_missing_columns: bool | None = None,
@@ -579,6 +588,8 @@ def scan_parquet(
             at any point without it being considered a breaking change.
     retries
         Number of retries if accessing a cloud instance fails.
+    retry_config
+        Retry policy for cloud requests. Overrides `retries` when set.
     include_file_paths
         Include the path of the source file(s) as a column with this name.
     missing_columns
@@ -702,6 +713,7 @@ def scan_parquet(
             ),
             credential_provider=credential_provider_builder,
             retries=retries,
+            retry_config=retry_config,
             column_mapping=_column_mapping,
             default_values=_default_values,
             deletion_files=_deletion_files,

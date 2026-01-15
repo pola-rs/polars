@@ -1,4 +1,5 @@
 use std::io::BufReader;
+use std::time::Duration;
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 use polars::prelude::ArrowSchema;
@@ -35,6 +36,7 @@ pub fn read_parquet_metadata(
     storage_options: Option<Vec<(String, String)>>,
     credential_provider: Option<Py<PyAny>>,
     retries: usize,
+    retry_config: Option<Py<PyAny>>,
 ) -> PyResult<Bound<PyDict>> {
     use std::io::Cursor;
 
@@ -55,6 +57,7 @@ pub fn read_parquet_metadata(
                 storage_options,
                 credential_provider,
                 retries,
+                retry_config,
             )?;
 
             if p.has_scheme() {
@@ -129,6 +132,7 @@ pub fn parse_cloud_options(
     storage_options: Option<Vec<(String, String)>>,
     credential_provider: Option<Py<PyAny>>,
     retries: usize,
+    retry_config: Option<Py<PyAny>>,
 ) -> PyResult<Option<CloudOptions>> {
     let result: Option<CloudOptions> = {
         #[cfg(feature = "cloud")]
@@ -139,14 +143,17 @@ pub fn parse_cloud_options(
 
             let cloud_options =
                 parse_cloud_options(cloud_scheme, storage_options.unwrap_or_default())?;
+            let retry_config = parse_retry_config(retry_config)?;
 
-            Some(
-                cloud_options
-                    .with_max_retries(retries)
-                    .with_credential_provider(
-                        credential_provider.map(PlCredentialProvider::from_python_builder),
-                    ),
-            )
+            let cloud_options = if let Some(retry_config) = retry_config {
+                cloud_options.with_retry_config(retry_config)
+            } else {
+                cloud_options.with_max_retries(retries)
+            };
+
+            Some(cloud_options.with_credential_provider(
+                credential_provider.map(PlCredentialProvider::from_python_builder),
+            ))
         }
 
         #[cfg(not(feature = "cloud"))]
@@ -155,4 +162,51 @@ pub fn parse_cloud_options(
         }
     };
     Ok(result)
+}
+
+#[cfg(feature = "cloud")]
+fn parse_retry_config(
+    retry_config: Option<Py<PyAny>>,
+) -> PyResult<Option<polars_io::cloud::RetryConfig>> {
+    #[derive(FromPyObject)]
+    struct PyBackoffConfig {
+        init_backoff: f64,
+        max_backoff: f64,
+        base: f64,
+    }
+
+    #[derive(FromPyObject)]
+    struct PyRetryConfig {
+        backoff: PyBackoffConfig,
+        max_retries: usize,
+        retry_timeout: f64,
+    }
+
+    fn to_duration(value: f64, name: &str) -> PyResult<Duration> {
+        if !value.is_finite() || value < 0.0 {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "{name} must be a non-negative finite number of seconds"
+            )));
+        }
+        Ok(Duration::from_secs_f64(value))
+    }
+
+    let Some(retry_config) = retry_config else {
+        return Ok(None);
+    };
+
+    Python::attach(|py| {
+        let config = retry_config.bind(py).extract::<PyRetryConfig>()?;
+        let backoff = polars_io::cloud::RetryBackoffConfig {
+            init_backoff: to_duration(config.backoff.init_backoff, "backoff.init_backoff")?,
+            max_backoff: to_duration(config.backoff.max_backoff, "backoff.max_backoff")?,
+            base: config.backoff.base,
+        };
+
+        Ok(Some(polars_io::cloud::RetryConfig {
+            backoff,
+            max_retries: config.max_retries,
+            retry_timeout: to_duration(config.retry_timeout, "retry_timeout")?,
+        }))
+    })
 }

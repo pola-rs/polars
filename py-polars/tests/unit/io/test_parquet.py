@@ -21,6 +21,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 import polars as pl
+from polars.io.cloud import BackoffConfig, RetryConfig
 from polars.io.parquet import ParquetFieldOverwrites
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes
@@ -3290,6 +3291,23 @@ def test_read_write_metadata(static: bool, lazy: bool) -> None:
     actual = pl.read_parquet_metadata(f)
     assert "ARROW:schema" in actual
     assert metadata == {k: v for k, v in actual.items() if k != "ARROW:schema"}
+
+
+def test_read_parquet_metadata_retry_config() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    f = io.BytesIO()
+    df.write_parquet(f)
+    f.seek(0)
+
+    actual = pl.read_parquet_metadata(
+        f,
+        retry_config=RetryConfig(
+            max_retries=1,
+            retry_timeout=1.0,
+            backoff=BackoffConfig(init_backoff=0.01, max_backoff=0.02, base=2.0),
+        ),
+    )
+    assert "ARROW:schema" in actual
 
 
 @pytest.mark.write_disk

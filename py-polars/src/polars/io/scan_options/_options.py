@@ -12,6 +12,7 @@ if TYPE_CHECKING:
         SchemaDict,
     )
     from polars.dataframe.frame import DataFrame
+    from polars.io.cloud import RetryConfig
     from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
     from polars.io.scan_options.cast_options import ScanCastOptions
 
@@ -51,6 +52,7 @@ class ScanOptions:
     storage_options: list[tuple[str, str]] | None = None
     credential_provider: CredentialProviderBuilder | None = None
     retries: int = 2
+    retry_config: RetryConfig | None = None
 
     column_mapping: ColumnMapping | None = None
     default_values: DefaultFieldValues | None = None

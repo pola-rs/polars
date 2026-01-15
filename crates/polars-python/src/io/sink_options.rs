@@ -42,8 +42,13 @@ impl PySinkOptions<'_> {
             retries,
         } = self.0.extract()?;
 
-        let cloud_options =
-            parse_cloud_options(cloud_scheme, storage_options, credential_provider, retries)?;
+        let cloud_options = parse_cloud_options(
+            cloud_scheme,
+            storage_options,
+            credential_provider,
+            retries,
+            None,
+        )?;
 
         let sync_on_close = sync_on_close.map_or(SyncOnCloseType::default(), |x| x.0);
 

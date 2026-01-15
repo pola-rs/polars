@@ -65,6 +65,7 @@ impl PyScanOptions<'_> {
             storage_options: Option<Vec<(String, String)>>,
             credential_provider: Option<Py<PyAny>>,
             retries: usize,
+            retry_config: Option<Py<PyAny>>,
             deletion_files: Option<Wrap<DeletionFilesList>>,
             table_statistics: Option<Wrap<TableStatistics>>,
             row_count: Option<(u64, u64)>,
@@ -89,13 +90,19 @@ impl PyScanOptions<'_> {
             storage_options,
             credential_provider,
             retries,
+            retry_config,
             deletion_files,
             table_statistics,
             row_count,
         } = self.0.extract()?;
 
-        let cloud_options =
-            parse_cloud_options(cloud_scheme, storage_options, credential_provider, retries)?;
+        let cloud_options = parse_cloud_options(
+            cloud_scheme,
+            storage_options,
+            credential_provider,
+            retries,
+            retry_config,
+        )?;
 
         let hive_schema = hive_schema.map(|s| Arc::new(s.0));
 
