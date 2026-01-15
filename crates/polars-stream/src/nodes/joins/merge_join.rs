@@ -1,8 +1,6 @@
-use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt;
-use std::mem::take;
 
 use arrow::bitmap::MutableBitmap;
 use either::{Either, Left, Right};
@@ -19,6 +17,7 @@ use rayon::slice::ParallelSliceMut;
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
 use crate::async_primitives::distributor_channel::distributor_channel;
+use crate::async_primitives::wait_group::WaitGroup;
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
@@ -51,7 +50,7 @@ pub struct MergeJoinNode {
     build_unmerged: DataFrameBuffer,
     probe_unmerged: DataFrameBuffer,
     unmatched: Vec<(MorselSeq, DataFrame)>,
-    mergeable_seq: MorselSeq,
+    output_seq: MorselSeq,
 }
 
 #[derive(Debug)]
@@ -78,8 +77,7 @@ impl MergeJoinParams {
         match self.args.maintain_order {
             MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft => false,
             MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight => true,
-            MaintainOrderJoin::None if self.args.how == JoinType::Right => false,
-            _ => true,
+            MaintainOrderJoin::None => self.args.how != JoinType::Right,
         }
     }
 
@@ -87,18 +85,18 @@ impl MergeJoinParams {
         match &self.args.maintain_order {
             MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight => !self.left_is_build(),
             MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft => self.left_is_build(),
-            _ => false,
+            MaintainOrderJoin::None => false,
         }
     }
 
-    pub fn build(&self) -> &MergeJoinSideParams {
+    pub fn build_params(&self) -> &MergeJoinSideParams {
         match self.left_is_build() {
             true => &self.left,
             false => &self.right,
         }
     }
 
-    pub fn probe(&self) -> &MergeJoinSideParams {
+    pub fn probe_params(&self) -> &MergeJoinSideParams {
         match self.left_is_build() {
             true => &self.right,
             false => &self.left,
@@ -163,12 +161,10 @@ impl MergeJoinNode {
             use_row_encoding,
             args,
         };
-        let build_idx = match params.left_is_build() {
-            true => 0,
-            false => 1,
+        let (build_schema, probe_schema) = match params.left_is_build() {
+            true => (&left_input_schema, &right_input_schema),
+            false => (&right_input_schema, &left_input_schema),
         };
-        let build_schema = [&left_input_schema, &right_input_schema][build_idx];
-        let probe_schema = [&left_input_schema, &right_input_schema][1 - build_idx];
         let build_unmerged = DataFrameBuffer::empty_with_schema(build_schema.clone());
         let probe_unmerged = DataFrameBuffer::empty_with_schema(probe_schema.clone());
         Ok(MergeJoinNode {
@@ -177,7 +173,7 @@ impl MergeJoinNode {
             build_unmerged,
             probe_unmerged,
             unmatched: Default::default(),
-            mergeable_seq: MorselSeq::default(),
+            output_seq: MorselSeq::default(),
         })
     }
 }
@@ -195,10 +191,9 @@ impl ComputeNode for MergeJoinNode {
     ) -> PolarsResult<()> {
         use MergeJoinState::*;
 
-        assert!(recv.len() == 2);
-        assert!(send.len() == 1);
+        assert!(recv.len() == 2 && send.len() == 1);
 
-        let input_channels_done = recv[0] == PortState::Done && recv[1] == PortState::Done;
+        let input_channels_done = recv.iter().all(|r| *r == PortState::Done);
         let output_channel_done = send[0] == PortState::Done;
         let input_buffers_empty = self.build_unmerged.is_empty() && self.probe_unmerged.is_empty();
         let unmatched_buffers_empty = self.unmatched.is_empty();
@@ -206,33 +201,25 @@ impl ComputeNode for MergeJoinNode {
             debug_assert!(unmatched_buffers_empty);
         }
 
-        if output_channel_done {
-            self.state = Done;
-        } else if !input_channels_done {
-            self.state = Running
-        } else if input_channels_done && !input_buffers_empty {
+        if matches!(self.state, Running) && input_channels_done {
             self.state = FlushInputBuffers;
-        } else if input_channels_done
-            && input_buffers_empty
-            && matches!(self.state, Running | FlushInputBuffers)
-        {
-            POOL.install(|| {
-                self.unmatched.par_sort_by_key(|(seq, _df)| *seq);
-            });
-            let mut all_unmatched = DataFrame::empty_with_schema(&self.params.output_schema);
-            for (_seq, df) in take(&mut self.unmatched).into_iter() {
-                all_unmatched.vstack_mut_owned(df)?;
+        }
+
+        if matches!(self.state, FlushInputBuffers) && input_buffers_empty {
+            if self.unmatched.is_empty() {
+                self.state = Done;
+            } else {
+                POOL.install(|| {
+                    self.unmatched.par_sort_by_key(|(seq, _df)| *seq);
+                });
+                let mut all_unmatched = DataFrame::empty_with_schema(&self.params.output_schema);
+                for (_seq, df) in self.unmatched.drain(..) {
+                    all_unmatched.vstack_mut_owned(df)?;
+                }
+                let src_node =
+                    InMemorySourceNode::new(Arc::new(all_unmatched), self.output_seq.successor());
+                self.state = EmitUnmatched(src_node);
             }
-            let src_node =
-                InMemorySourceNode::new(Arc::new(all_unmatched), self.mergeable_seq.successor());
-            self.state = EmitUnmatched(src_node);
-        } else if input_channels_done && input_buffers_empty && unmatched_buffers_empty {
-            self.build_unmerged.clear();
-            self.probe_unmerged.clear();
-            self.unmatched.clear();
-            self.state = Done;
-        } else {
-            unreachable!()
         }
 
         match &mut self.state {
@@ -254,27 +241,18 @@ impl ComputeNode for MergeJoinNode {
                 }
             },
             FlushInputBuffers => {
-                recv[0] = PortState::Done;
-                recv[1] = PortState::Done;
+                recv.fill(PortState::Done);
                 send[0] = PortState::Ready;
             },
             EmitUnmatched(src_node) => {
-                debug_assert!(self.build_unmerged.is_empty());
-                debug_assert!(self.probe_unmerged.is_empty());
-                debug_assert!(self.unmatched.is_empty());
-                recv[0] = PortState::Done;
-                recv[1] = PortState::Done;
+                recv.fill(PortState::Done);
                 src_node.update_state(&mut [], &mut send[..], state)?;
                 if send[0] == PortState::Done {
                     self.state = Done;
                 }
             },
             Done => {
-                debug_assert!(self.build_unmerged.is_empty());
-                debug_assert!(self.probe_unmerged.is_empty());
-                debug_assert!(self.unmatched.is_empty());
-                recv[0] = PortState::Done;
-                recv[1] = PortState::Done;
+                recv.fill(PortState::Done);
                 send[0] = PortState::Done;
             },
         }
@@ -292,15 +270,13 @@ impl ComputeNode for MergeJoinNode {
     ) {
         use MergeJoinState::*;
 
-        assert!(recv_ports.len() == 2);
-        assert!(send_ports.len() == 1);
+        assert!(recv_ports.len() == 2 && send_ports.len() == 1);
 
         let params = &self.params;
         let build_unmerged = &mut self.build_unmerged;
         let probe_unmerged = &mut self.probe_unmerged;
         let unmatched = &mut self.unmatched;
-        let mergeable_seq = &mut self.mergeable_seq;
-
+        let mergeable_seq = &mut self.output_seq;
         let build_idx = match self.params.left_is_build() {
             true => 0,
             false => 1,
@@ -433,27 +409,26 @@ async fn compute_join(
     build.rechunk_mut();
     probe.rechunk_mut();
 
-    let mut build_key = Cow::Borrowed(
-        build
-            .column(&params.build().key_col)
-            .unwrap()
-            .as_materialized_series(),
-    );
-    let mut probe_key = Cow::Borrowed(
-        probe
-            .column(&params.probe().key_col)
-            .unwrap()
-            .as_materialized_series(),
-    );
+    let mut build_key = build
+        .column(&params.build_params().key_col)
+        .unwrap()
+        .as_materialized_series();
+    let mut probe_key = probe
+        .column(&params.probe_params().key_col)
+        .unwrap()
+        .as_materialized_series();
 
+    let (str_build_key, str_probe_key);
     #[cfg(feature = "dtype-categorical")]
     {
         // Categoricals are lexicographically ordered, not by their physical values.
-        if matches!(build_key.dtype(), DataType::Categorical(_, _)) {
-            build_key = Cow::Owned(build_key.cast(&DataType::String)?);
+        if build_key.dtype().is_categorical() {
+            str_build_key = build_key.cast(&DataType::String)?;
+            build_key = &str_build_key;
         }
-        if matches!(probe_key.dtype(), DataType::Categorical(_, _)) {
-            probe_key = Cow::Owned(probe_key.cast(&DataType::String)?);
+        if probe_key.dtype().is_categorical() {
+            str_probe_key = probe_key.cast(&DataType::String)?;
+            probe_key = &str_probe_key;
         }
     }
 
@@ -463,6 +438,7 @@ async fn compute_join(
     arenas.matched_probe.clear();
     arenas.matched_probe.resize(probe_key.len(), false);
 
+    let wait_group = WaitGroup::default();
     let mut done = false;
     let mut skip_build_rows = 0;
     while !done {
@@ -474,8 +450,8 @@ async fn compute_join(
             &mut arenas.gather_build,
             &mut arenas.gather_probe,
             &mut arenas.matched_probe,
-            params.probe().emit_unmatched,
-            params.build().emit_unmatched,
+            params.probe_params().emit_unmatched,
+            params.build_params().emit_unmatched,
             params.key_descending,
             params.args.nulls_equal,
             morsel_size,
@@ -494,14 +470,16 @@ async fn compute_join(
             &params.output_schema,
         )?;
         if df.height() > 0 {
-            let morsel = Morsel::new(df, seq, source_token.clone());
+            let mut morsel = Morsel::new(df, seq, source_token.clone());
+            morsel.set_consume_token(wait_group.token());
             if send.send(morsel).await.is_err() {
                 return Ok(());
             };
+            wait_group.wait().await;
         }
     }
 
-    if params.probe().emit_unmatched {
+    if params.probe_params().emit_unmatched {
         arenas.gather_build.clear();
         arenas.gather_probe.clear();
         for (idx, _) in arenas
@@ -613,7 +591,7 @@ fn find_mergeable_partition(
 ) -> PolarsResult<UnitVec<(DataFrameBuffer, DataFrameBuffer)>> {
     let morsel_size = get_ideal_morsel_size();
 
-    if fmp.params.preserve_order_probe() || fmp.params.probe().emit_unmatched {
+    if fmp.params.preserve_order_probe() || fmp.params.probe_params().emit_unmatched {
         return Ok(UnitVec::from([(build, probe)]));
     }
 
@@ -649,8 +627,8 @@ fn find_mergeable_search(
         probe_done,
         params,
     } = fmp;
-    let build_params = params.build();
-    let probe_params = params.probe();
+    let build_params = params.build_params();
+    let probe_params = params.probe_params();
     let build_empty_buf = || DataFrameBuffer::empty_with_schema(build_params.input_schema.clone());
     let probe_empty_buf = || DataFrameBuffer::empty_with_schema(probe_params.input_schema.clone());
     let build_get = |idx| unsafe { build.get_bypass_validity(&build_params.key_col, idx, params) };
