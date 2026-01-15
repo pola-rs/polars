@@ -849,7 +849,7 @@ fn keys_cmp(lhs: &AnyValue, rhs: &AnyValue, params: &MergeJoinParams) -> Orderin
 #[derive(Clone)]
 struct DataFrameBuffer {
     schema: SchemaRef,
-    buf: BTreeMap<usize, DataFrame>,
+    dfs_at_offsets: BTreeMap<usize, DataFrame>,
     total_rows: usize,
     skip_rows: usize,
     frozen: bool,
@@ -865,7 +865,7 @@ impl DataFrameBuffer {
     fn empty_with_schema(schema: SchemaRef) -> Self {
         DataFrameBuffer {
             schema,
-            buf: BTreeMap::new(),
+            dfs_at_offsets: BTreeMap::new(),
             total_rows: 0,
             skip_rows: 0,
             frozen: false,
@@ -883,12 +883,12 @@ impl DataFrameBuffer {
         params: &MergeJoinParams,
     ) -> AnyValue<'_> {
         debug_assert!(row_index < self.total_rows);
-        let first_offset = match self.buf.first_key_value() {
+        let first_offset = match self.dfs_at_offsets.first_key_value() {
             Some((offset, _)) => *offset,
             None => 0,
         };
         let buf_index = self.skip_rows + first_offset + row_index;
-        let (df_offset, df) = self.buf.range(..=buf_index).next_back().unwrap();
+        let (df_offset, df) = self.dfs_at_offsets.range(..=buf_index).next_back().unwrap();
         let series_index = buf_index - df_offset;
         let series = df.column(column).unwrap().as_materialized_series();
         unsafe { series_get_bypass_validity(series, series_index, params) }
@@ -897,11 +897,11 @@ impl DataFrameBuffer {
     fn push_df(&mut self, df: DataFrame) {
         assert!(!self.frozen);
         let added_rows = df.height();
-        let offset = match self.buf.last_key_value() {
+        let offset = match self.dfs_at_offsets.last_key_value() {
             Some((last_key, last_df)) => last_key + last_df.height(),
             None => 0,
         };
-        self.buf.insert(offset, df);
+        self.dfs_at_offsets.insert(offset, df);
         self.total_rows += added_rows;
     }
 
@@ -926,16 +926,16 @@ impl DataFrameBuffer {
 
     fn into_df(self) -> DataFrame {
         let mut acc = DataFrame::empty_with_schema(&self.schema);
-        for df in self.buf.into_values() {
+        for df in self.dfs_at_offsets.into_values() {
             acc.vstack_mut_owned(df).unwrap();
         }
         acc.slice(self.skip_rows as i64, self.total_rows)
     }
 
     fn gc(&mut self) {
-        while let Some((_, df)) = self.buf.first_key_value() {
+        while let Some((_, df)) = self.dfs_at_offsets.first_key_value() {
             if self.skip_rows > df.height() {
-                let (_, df) = self.buf.pop_first().unwrap();
+                let (_, df) = self.dfs_at_offsets.pop_first().unwrap();
                 self.skip_rows -= df.height();
             } else {
                 break;
@@ -949,7 +949,7 @@ impl DataFrameBuffer {
 
     fn clear(&mut self) {
         assert!(!self.frozen);
-        self.buf.clear();
+        self.dfs_at_offsets.clear();
         self.total_rows = 0;
         self.skip_rows = 0;
     }
