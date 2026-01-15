@@ -417,6 +417,7 @@ fn visualize_plan_rec(
         },
         PhysNodeKind::Zip {
             inputs,
+            may_broadcast: _,
             zip_behavior,
         } => {
             let label = match zip_behavior {

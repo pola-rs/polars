@@ -107,7 +107,7 @@ impl PhysStream {
 pub enum ZipBehavior {
     /// Fill the shorter DataFrames with nulls to the height of the longest DataFrame.
     NullExtend,
-    /// All inputs must be the same height, or have length 1 in which case they are broadcast.
+    /// All inputs must be the same height, or have length 1 and be scalar in which case they are broadcast.
     Broadcast,
     /// Raise an error if the DataFrames have different heights.
     Strict,
@@ -275,6 +275,8 @@ pub enum PhysNodeKind {
 
     Zip {
         inputs: Vec<PhysStream>,
+        /// True for inputs which are scalars.
+        may_broadcast: Vec<bool>,
         zip_behavior: ZipBehavior,
     },
 
