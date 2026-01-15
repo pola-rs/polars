@@ -14,8 +14,18 @@ use polars_io::{expand_paths, expand_paths_hive, expanded_from_single_directory}
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
+use serde::{Deserializer, Serialize, Serializer, Deserialize};
 
 use super::UnifiedScanArgs;
+
+fn serialize_paths<S: Serializer>(paths: &Buffer<PlRefPath>, s: S) -> Result<S::Ok, S::Error> {
+    paths.as_slice().serialize(s)
+}
+
+fn deserialize_paths<'de, D: Deserializer<'de>>(d: D) -> Result<Buffer<PlRefPath>, D::Error> {
+    let v: Vec<PlRefPath> = Deserialize::deserialize(d)?;
+    Ok(Buffer::from(v))
+}
 
 /// Set of sources to scan from
 ///
@@ -25,7 +35,8 @@ use super::UnifiedScanArgs;
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone)]
 pub enum ScanSources {
-    #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_paths", deserialize_with = "deserialize_paths"))]
+    #[cfg_attr(feature = "dsl-schema", schemars(with = "Vec<PlRefPath>"))]
     Paths(Buffer<PlRefPath>),
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     Files(Arc<[File]>),
