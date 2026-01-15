@@ -290,7 +290,7 @@ impl<T: Pod> Buffer<T> {
 }
 
 impl<T: Clone> Buffer<T> {
-    pub fn make_mut(self) -> Vec<T> {
+    pub fn to_vec(self) -> Vec<T> {
         match self.into_mut() {
             Either::Right(v) => v,
             Either::Left(same) => same.as_slice().to_vec(),

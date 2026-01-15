@@ -305,7 +305,7 @@ impl<T: NativeType> PrimitiveArray<T> {
         if let Some(slice) = self.values.get_mut_slice() {
             f(slice)
         } else {
-            let mut values = self.values.to_vec();
+            let mut values = self.values.as_slice().to_vec();
             f(&mut values);
             self.values = Buffer::from(values);
         }

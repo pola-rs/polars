@@ -178,7 +178,7 @@ unsafe fn scatter_binview_impl<'a, V, T: ViewType + ?Sized>(
         }
     }
 
-    let mut buffers = Buffer::make_mut(core::mem::take(arr.data_buffers_mut()));
+    let mut buffers = Buffer::to_vec(core::mem::take(arr.data_buffers_mut()));
     buffers.extend(new_buffers.into_iter().map(Buffer::from));
     *arr.data_buffers_mut() = Buffer::from(buffers);
 }

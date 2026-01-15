@@ -411,7 +411,7 @@ impl ChunkSort<BinaryType> for BinaryChunked {
         let arr = ca.downcast_as_array().clone();
 
         let (views, buffers, validity, total_bytes_len, total_buffer_len) = arr.into_inner();
-        let mut views = views.make_mut();
+        let mut views = views.to_vec();
 
         let (partitioned_part, validity) = partition_nulls(&mut views, validity, options);
 
