@@ -25,6 +25,13 @@ pub struct ScalarColumn {
     materialized: OnceLock<Series>,
 }
 
+impl IntoColumn for &ScalarColumn {
+    #[inline(always)]
+    fn into_column(self) -> Column {
+        self.clone().into()
+    }
+}
+
 impl ScalarColumn {
     #[inline]
     pub fn new(name: PlSmallStr, scalar: Scalar, length: usize) -> Self {
