@@ -156,53 +156,6 @@ impl io::Write for Writeable {
     }
 }
 
-impl WriteableTrait for Writeable {
-    fn close(&mut self) -> std::io::Result<()> {
-        self.sync_all()?;
-
-        match std::mem::replace(self, Self::Dyn(Box::new(EmptyTakenWriter))) {
-            Self::Dyn(mut v) => v.close(),
-            Self::Local(v) => close_file(v),
-            #[cfg(feature = "cloud")]
-            Self::Cloud(mut v) => v.close(),
-        }
-    }
-
-    fn sync_all(&self) -> std::io::Result<()> {
-        self.sync_all()
-    }
-
-    fn sync_data(&self) -> std::io::Result<()> {
-        self.sync_data()
-    }
-}
-
-struct EmptyTakenWriter;
-
-impl io::Write for EmptyTakenWriter {
-    fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
-        unreachable!()
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        unreachable!()
-    }
-}
-
-impl WriteableTrait for EmptyTakenWriter {
-    fn close(&mut self) -> std::io::Result<()> {
-        unreachable!()
-    }
-
-    fn sync_all(&self) -> std::io::Result<()> {
-        unreachable!()
-    }
-
-    fn sync_data(&self) -> std::io::Result<()> {
-        unreachable!()
-    }
-}
-
 impl Deref for Writeable {
     type Target = dyn io::Write + Send;
 

@@ -39,7 +39,9 @@ impl IOWriter {
             // Natively convert into `AsyncWriteable` to allow native async optimizations.
             CsvCompression::Uncompressed => writable.try_into_async_writeable()?,
             // Our compression encoders only offer sync `io::Write` capabilities, so we wrap them in
-            // `task::block_in_place` provided by `AsyncDynWriteable`.
+            // `task::block_in_place` provided by `AsyncDynWriteable`. In theory this could
+            // bottleneck the pipeline if there are a large number of files being written into in
+            // parallel, since the tokio thread-pool is smaller than the computation thread-pool.
             CsvCompression::Gzip { level } => AsyncWriteable::Dyn(AsyncDynWriteable(Box::new(
                 CompressedWriter::gzip(writable, level),
             ))),

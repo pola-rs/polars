@@ -3119,9 +3119,9 @@ def test_write_compressed_disk(
     tmp_path: Path, write_fn_name: str, fmt: str, suffix: str, with_suffix: bool
 ) -> None:
     original = pl.DataFrame([pl.Series("A", [3.2, 6.2]), pl.Series("B", ["a", "z"])])
-    path = tmp_path / f"test_file.csv.{suffix}" if with_suffix else "test_file"
+    path = tmp_path / (f"test_file.csv.{suffix}" if with_suffix else "test_file")
     write_fn(original, write_fn_name)(path, compression=fmt)
-    with Path.open(path, "rb") as file:
+    with path.open("rb") as file:
         check_compression(file.read(), fmt)
     df = pl.scan_csv(path).collect()
     assert_frame_equal(df, original)

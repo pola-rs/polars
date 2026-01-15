@@ -1249,6 +1249,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 SinkType::Memory => SinkTypeIR::Memory,
                 SinkType::Callback(f) => SinkTypeIR::Callback(f),
                 SinkType::File(options) => {
+                    #[cfg(feature = "csv")]
                     if let FileWriteFormat::Csv(csv_options) = &options.file_format {
                         if let SinkTarget::Path(path) = &options.target
                             && csv_options.check_extension
