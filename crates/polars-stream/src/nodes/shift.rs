@@ -165,7 +165,9 @@ impl ComputeNode for ShiftNode {
         assert!(recv.len() <= 3 && send.len() == 1);
 
         // Are we done?
-        if recv[0] == PortState::Done {
+        if send[0] == PortState::Done {
+            *self = Self::Done;
+        } else if recv[0] == PortState::Done {
             if let Self::Shifting(shift_state) = self {
                 if shift_state.rows_sent == shift_state.rows_received {
                     *self = Self::Done;

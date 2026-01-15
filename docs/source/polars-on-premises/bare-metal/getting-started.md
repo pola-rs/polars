@@ -8,7 +8,7 @@ on-premises.
 The license can be read by running the following command:
 
 ```shell
-$ ./polars-on-premise service --print-eula /path/to/license.json
+$ ./polars-on-premises service --print-eula /path/to/license.json
 ```
 
 ## Running the binary
@@ -35,23 +35,27 @@ single-purpose (no worker role) and turns on observability.
 
 ```toml
 cluster_id = "polars-cluster"
-cublet_id = "scheduler"
+instance_id = "scheduler"
 license = "/etc/polars/license.json"
 memory_limit = 1073741824 # 1 GiB
 
 [scheduler]
 enabled = true
-allow_shared_disk = false
-anonymous_result_dst = "s3://bucket/path/to/key"
+allow_local_sinks = false
+anonymous_result_location.s3.url = "s3://bucket/path/to/key"
 n_workers = 4
 
 [observatory]
 enabled = true
 max_metrics_bytes_total = 0
 
+[monitoring]
+enabled = true
+
 [static_leader]
-leader_key = "scheduler"
-public_leader_addr = "192.168.1.1"
+leader_instance_id = "scheduler"
+observatory_service.public_addr = "192.168.1.1"
+scheduler_service.public_addr = "192.168.1.1"
 ```
 
 ### Example worker config
@@ -61,23 +65,23 @@ observability.
 
 ```toml
 cluster_id = "polars-cluster"
-cublet_id = "worker_0"
+instance_id = "worker_0"
 license = "/etc/polars/license.json"
 memory_limit = 10737418240 # 10 GiB
 
 [worker]
 enabled = true
-worker_ip = "192.168.1.2"
-flight_port = 5052
-service_port = 5053
-heartbeat_interval_secs = 5
-shuffle_data_path = "/opt/shuffle-data-path"
+shuffle_location.local.path = "/opt/shuffle-data-path"
 
 [observatory]
 enabled = true
 max_metrics_bytes_total = 0
 
+[monitoring]
+enabled = true
+
 [static_leader]
-leader_key = "scheduler"
-public_leader_addr = "192.168.1.1"
+leader_instance_id = "scheduler"
+observatory_service.public_addr = "192.168.1.1"
+scheduler_service.public_addr = "192.168.1.1"
 ```

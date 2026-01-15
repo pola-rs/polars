@@ -8,12 +8,12 @@ use polars_expr::groups::Grouper;
 use polars_expr::hash_keys::HashKeys;
 use polars_expr::hot_groups::{HotGrouper, new_hash_hot_grouper};
 use polars_expr::reduce::GroupedReduction;
-use polars_utils::IdxSize;
 use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::hashing::HashPartitioner;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::sparse_init_vec::SparseInitVec;
+use polars_utils::{IdxSize, UnitVec};
 use rayon::prelude::*;
 use tokio::sync::mpsc::{Receiver, channel};
 
@@ -28,8 +28,14 @@ const DEFAULT_HOT_TABLE_SIZE: usize = 4;
 #[cfg(not(debug_assertions))]
 const DEFAULT_HOT_TABLE_SIZE: usize = 4096;
 
+struct PreAgg {
+    keys: HashKeys,
+    reduction_idxs: UnitVec<usize>,
+    reductions: Vec<Box<dyn GroupedReduction>>,
+}
+
 struct LocalGroupBySinkState {
-    hot_grouper: Box<dyn HotGrouper>,
+    hot_grouper_per_input: Vec<Box<dyn HotGrouper>>,
     hot_grouped_reductions: Vec<Box<dyn GroupedReduction>>,
 
     // A cardinality sketch per partition for the keys seen by this builder.
@@ -44,7 +50,8 @@ struct LocalGroupBySinkState {
     morsel_idxs_offsets_per_p: Vec<usize>,
 
     // Similar to the above, but for (evicted) pre-aggregates.
-    pre_aggs: Vec<(HashKeys, Vec<Box<dyn GroupedReduction>>)>,
+    // The UnitVec contains the indices of the grouped reductions.
+    pre_aggs: Vec<PreAgg>,
     pre_agg_idxs_values_per_p: Vec<Vec<IdxSize>>,
     pre_agg_idxs_offsets_per_p: Vec<usize>,
 }
@@ -55,10 +62,13 @@ impl LocalGroupBySinkState {
         reductions: Vec<Box<dyn GroupedReduction>>,
         hot_table_size: usize,
         num_partitions: usize,
+        num_inputs: usize,
     ) -> Self {
-        let hot_grouper = new_hash_hot_grouper(key_schema, hot_table_size);
+        let hot_grouper_per_input = (0..num_inputs)
+            .map(|_| new_hash_hot_grouper(key_schema.clone(), hot_table_size))
+            .collect();
         Self {
-            hot_grouper,
+            hot_grouper_per_input,
             hot_grouped_reductions: reductions,
 
             sketch_per_p: vec![CardinalitySketch::new(); num_partitions],
@@ -73,19 +83,24 @@ impl LocalGroupBySinkState {
         }
     }
 
-    fn flush_evictions(&mut self, partitioner: &HashPartitioner) {
-        let hash_keys = self.hot_grouper.take_evicted_keys();
-        let reductions = self
-            .hot_grouped_reductions
-            .iter_mut()
-            .map(|hgr| hgr.take_evictions())
+    fn flush_evictions(
+        &mut self,
+        input_idx: usize,
+        reduction_idxs: &[usize],
+        partitioner: &HashPartitioner,
+    ) {
+        let hash_keys = self.hot_grouper_per_input[input_idx].take_evicted_keys();
+        let reductions = reduction_idxs
+            .iter()
+            .map(|r| self.hot_grouped_reductions[*r].take_evictions())
             .collect_vec();
-        self.add_pre_agg(hash_keys, reductions, partitioner);
+        self.add_pre_agg(hash_keys, reduction_idxs, reductions, partitioner);
     }
 
     fn add_pre_agg(
         &mut self,
         hash_keys: HashKeys,
+        reduction_idxs: &[usize],
         reductions: Vec<Box<dyn GroupedReduction>>,
         partitioner: &HashPartitioner,
     ) {
@@ -97,7 +112,12 @@ impl LocalGroupBySinkState {
         );
         self.pre_agg_idxs_offsets_per_p
             .extend(self.pre_agg_idxs_values_per_p.iter().map(|vp| vp.len()));
-        self.pre_aggs.push((hash_keys, reductions));
+        let pre_agg = PreAgg {
+            keys: hash_keys,
+            reduction_idxs: UnitVec::from_slice(reduction_idxs),
+            reductions,
+        };
+        self.pre_aggs.push(pre_agg);
     }
 }
 
@@ -149,10 +169,11 @@ impl GroupBySinkState {
                     };
                     let hash_keys = HashKeys::from_df(&keys, random_state.clone(), true, false);
 
+                    let hot_grouper = &mut local.hot_grouper_per_input[input_idx];
                     hot_idxs.clear();
                     hot_group_idxs.clear();
                     cold_idxs.clear();
-                    local.hot_grouper.insert_keys(
+                    hot_grouper.insert_keys(
                         &hash_keys,
                         &mut hot_idxs,
                         &mut hot_group_idxs,
@@ -178,7 +199,7 @@ impl GroupBySinkState {
                         }
                         unsafe {
                             // SAFETY: we resize the reduction to the number of groups beforehand.
-                            reduction.resize(local.hot_grouper.num_groups());
+                            reduction.resize(hot_grouper.num_groups());
                             reduction.update_groups_while_evicting(
                                 &in_cols,
                                 &hot_idxs,
@@ -213,8 +234,12 @@ impl GroupBySinkState {
                     }
 
                     // If we have too many evicted rows, flush them.
-                    if local.hot_grouper.num_evictions() >= get_ideal_morsel_size() {
-                        local.flush_evictions(&partitioner);
+                    if hot_grouper.num_evictions() >= get_ideal_morsel_size() {
+                        local.flush_evictions(
+                            input_idx,
+                            &reductions_per_input[input_idx],
+                            &partitioner,
+                        );
                     }
                 }
                 Ok(())
@@ -230,12 +255,24 @@ impl GroupBySinkState {
                 .into_par_iter()
                 .with_max_len(1)
                 .for_each(|l| {
-                    if l.hot_grouper.num_evictions() > 0 {
-                        l.flush_evictions(&self.partitioner);
+                    for (input_idx, r_idxs) in self.reductions_per_input.iter().enumerate() {
+                        let hot_grouper = &mut l.hot_grouper_per_input[input_idx];
+                        if hot_grouper.num_evictions() > 0 {
+                            l.flush_evictions(input_idx, r_idxs, &self.partitioner);
+                        }
                     }
-                    let hot_keys = l.hot_grouper.keys();
-                    let hot_reductions = core::mem::take(&mut l.hot_grouped_reductions);
-                    l.add_pre_agg(hot_keys, hot_reductions, &self.partitioner);
+
+                    let mut opt_hot_reductions =
+                        l.hot_grouped_reductions.drain(..).map(Some).collect_vec();
+                    for (input_idx, r_idxs) in self.reductions_per_input.iter().enumerate() {
+                        let hot_grouper = &mut l.hot_grouper_per_input[input_idx];
+                        let hot_keys = hot_grouper.keys();
+                        let hot_reductions = r_idxs
+                            .iter()
+                            .map(|r| opt_hot_reductions[*r].take().unwrap())
+                            .collect_vec();
+                        l.add_pre_agg(hot_keys, r_idxs, hot_reductions, &self.partitioner);
+                    }
                 });
         });
 
@@ -368,7 +405,11 @@ impl GroupBySinkState {
                         }
 
                         for (i, key_pre_aggs) in l_pre_aggs.iter().enumerate() {
-                            let (keys, pre_aggs) = key_pre_aggs;
+                            let PreAgg {
+                                keys,
+                                reduction_idxs: r_idxs,
+                                reductions: pre_aggs,
+                            } = key_pre_aggs;
                             unsafe {
                                 let p_pre_agg_idxs_start =
                                     l.pre_agg_idxs_offsets_per_p[i * num_partitions + p];
@@ -383,7 +424,8 @@ impl GroupBySinkState {
                                     p_pre_agg_idxs,
                                     Some(&mut group_idxs),
                                 );
-                                for (pre_agg, r) in pre_aggs.iter().zip(&mut p_reductions) {
+                                for (pre_agg, r_idx) in pre_aggs.iter().zip(r_idxs.iter()) {
+                                    let r = &mut p_reductions[*r_idx];
                                     r.resize(p_grouper.num_groups());
                                     r.combine_subset(&**pre_agg, p_pre_agg_idxs, &group_idxs)?;
                                 }
@@ -524,6 +566,7 @@ impl GroupByNode {
                     reductions,
                     hot_table_size,
                     num_partitions,
+                    num_inputs,
                 )
             })
             .collect();
@@ -560,7 +603,7 @@ impl ComputeNode for GroupByNode {
         send: &mut [PortState],
         state: &StreamingExecutionState,
     ) -> PolarsResult<()> {
-        assert!(recv.len() == 1 && send.len() == 1);
+        assert!(recv.len() == self.num_inputs && send.len() == 1);
 
         // State transitions.
         match &mut self.state {
@@ -568,8 +611,8 @@ impl ComputeNode for GroupByNode {
             _ if send[0] == PortState::Done => {
                 self.state = GroupByState::Done;
             },
-            // Input is done, transition to being a source.
-            GroupByState::Sink(_) if matches!(recv[0], PortState::Done) => {
+            // All inputs is done, transition to being a source.
+            GroupByState::Sink(_) if recv.iter().all(|r| matches!(r, PortState::Done)) => {
                 let GroupByState::Sink(mut sink) =
                     core::mem::replace(&mut self.state, GroupByState::Done)
                 else {
@@ -601,15 +644,15 @@ impl ComputeNode for GroupByNode {
         // Communicate our state.
         match &self.state {
             GroupByState::Sink { .. } => {
+                recv.fill(PortState::Ready);
                 send[0] = PortState::Blocked;
-                recv[0] = PortState::Ready;
             },
             GroupByState::Source(..) => {
-                recv[0] = PortState::Done;
+                recv.fill(PortState::Done);
                 send[0] = PortState::Ready;
             },
             GroupByState::Done => {
-                recv[0] = PortState::Done;
+                recv.fill(PortState::Done);
                 send[0] = PortState::Done;
             },
         }

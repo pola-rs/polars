@@ -7,7 +7,7 @@ pub struct MeanWindow<'a, T> {
     sum: SumWindow<'a, T, f64>,
 }
 
-impl<'a, T> RollingAggWindowNoNulls<'a, T> for MeanWindow<'a, T>
+impl<T> RollingAggWindowNoNulls<T> for MeanWindow<'_, T>
 where
     T: NativeType
         + IsFloat
@@ -20,15 +20,23 @@ where
         + Sub<Output = T>
         + PartialOrd,
 {
-    fn new(
+    type This<'a> = MeanWindow<'a, T>;
+
+    fn new<'a>(
         slice: &'a [T],
         start: usize,
         end: usize,
         params: Option<RollingFnParams>,
         window_size: Option<usize>,
-    ) -> Self {
-        Self {
-            sum: RollingAggWindowNoNulls::new(slice, start, end, params, window_size),
+    ) -> Self::This<'a> {
+        MeanWindow {
+            sum: <SumWindow<T, f64> as RollingAggWindowNoNulls<T>>::new(
+                slice,
+                start,
+                end,
+                params,
+                window_size,
+            ),
         }
     }
 
@@ -42,10 +50,13 @@ where
             Some(sum / NumCast::from(end - start).unwrap())
         }
     }
+
+    fn slice_len(&self) -> usize {
+        RollingAggWindowNulls::slice_len(&self.sum)
+    }
 }
 
 impl<
-    'a,
     T: NativeType
         + IsFloat
         + Add<Output = T>
@@ -55,18 +66,27 @@ impl<
         + AddAssign
         + SubAssign
         + PartialOrd,
-> RollingAggWindowNulls<'a, T> for MeanWindow<'a, T>
+> RollingAggWindowNulls<T> for MeanWindow<'_, T>
 {
-    fn new(
+    type This<'a> = MeanWindow<'a, T>;
+
+    fn new<'a>(
         slice: &'a [T],
         validity: &'a Bitmap,
         start: usize,
         end: usize,
         params: Option<RollingFnParams>,
         window_size: Option<usize>,
-    ) -> Self {
-        Self {
-            sum: RollingAggWindowNulls::new(slice, validity, start, end, params, window_size),
+    ) -> Self::This<'a> {
+        MeanWindow {
+            sum: <SumWindow<T, f64> as RollingAggWindowNulls<T>>::new(
+                slice,
+                validity,
+                start,
+                end,
+                params,
+                window_size,
+            ),
         }
     }
 
@@ -79,7 +99,12 @@ impl<
             sum.map(|sum| sum / NumCast::from(end - start - self.sum.null_count).unwrap())
         }
     }
+
     fn is_valid(&self, min_periods: usize) -> bool {
         self.sum.is_valid(min_periods)
+    }
+
+    fn slice_len(&self) -> usize {
+        RollingAggWindowNulls::slice_len(&self.sum)
     }
 }

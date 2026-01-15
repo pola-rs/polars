@@ -99,6 +99,7 @@ def test_deprecate_parameter_as_multi_positional_existing_arg(recwarn: Any) -> N
     assert result == hello(5, "x", "y")
 
 
+@pytest.mark.slow
 def test_identify_deprecations() -> None:
     dep = identify_deprecations()
     assert isinstance(dep, dict)

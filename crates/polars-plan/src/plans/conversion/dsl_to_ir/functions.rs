@@ -272,6 +272,8 @@ pub(super) fn convert_functions(
                 S::SplitExact { n, inclusive } => IS::SplitExact { n, inclusive },
                 #[cfg(feature = "dtype-struct")]
                 S::SplitN(v) => IS::SplitN(v),
+                #[cfg(feature = "regex")]
+                S::SplitRegex { inclusive, strict } => IS::SplitRegex { inclusive, strict },
                 #[cfg(feature = "temporal")]
                 S::Strptime(data_type, strptime_options) => {
                     let is_column_independent = is_column_independent_aexpr(e[0].node(), ctx.arena);

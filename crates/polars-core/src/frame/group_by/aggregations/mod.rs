@@ -64,15 +64,15 @@ pub fn _use_rolling_kernels(
 }
 
 // Use an aggregation window that maintains the state
-pub fn _rolling_apply_agg_window_nulls<'a, Agg, T, O>(
-    values: &'a [T],
-    validity: &'a Bitmap,
+pub fn _rolling_apply_agg_window_nulls<Agg, T, O>(
+    values: &[T],
+    validity: &Bitmap,
     offsets: O,
     params: Option<RollingFnParams>,
 ) -> PrimitiveArray<T>
 where
     O: Iterator<Item = (IdxSize, IdxSize)> + TrustedLen,
-    Agg: RollingAggWindowNulls<'a, T>,
+    Agg: RollingAggWindowNulls<T>,
     T: IsFloat + NativeType,
 {
     if values.is_empty() {
@@ -113,14 +113,14 @@ where
 }
 
 // Use an aggregation window that maintains the state.
-pub fn _rolling_apply_agg_window_no_nulls<'a, Agg, T, O>(
-    values: &'a [T],
+pub fn _rolling_apply_agg_window_no_nulls<Agg, T, O>(
+    values: &[T],
     offsets: O,
     params: Option<RollingFnParams>,
 ) -> PrimitiveArray<T>
 where
     // items (offset, len) -> so offsets are offset, offset + len
-    Agg: RollingAggWindowNoNulls<'a, T>,
+    Agg: RollingAggWindowNoNulls<T>,
     O: Iterator<Item = (IdxSize, IdxSize)> + TrustedLen,
     T: IsFloat + NativeType,
 {

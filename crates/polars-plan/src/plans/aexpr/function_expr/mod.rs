@@ -256,7 +256,7 @@ pub enum IRFunctionExpr {
     Log1p,
     #[cfg(feature = "log")]
     Exp,
-    Unique(bool),
+    Unique(/* maintain_order */ bool),
     #[cfg(feature = "round_series")]
     Round {
         decimals: u32,

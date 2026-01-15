@@ -168,6 +168,7 @@ pub enum PyStringFunction {
     SplitN,
     Strptime,
     Split,
+    SplitRegex,
     ToDecimal,
     Titlecase,
     Uppercase,
@@ -927,6 +928,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                         .into_py_any(py),
                     IRStringFunction::Split(inclusive) => {
                         (PyStringFunction::Split, inclusive).into_py_any(py)
+                    },
+                    IRStringFunction::SplitRegex { inclusive, strict } => {
+                        (PyStringFunction::SplitRegex, inclusive, strict).into_py_any(py)
                     },
                     IRStringFunction::ToDecimal { scale } => {
                         (PyStringFunction::ToDecimal, scale).into_py_any(py)

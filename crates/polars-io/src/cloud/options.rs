@@ -24,7 +24,7 @@ use object_store::{BackoffConfig, RetryConfig};
 use polars_error::*;
 #[cfg(feature = "aws")]
 use polars_utils::cache::LruCache;
-use polars_utils::plpath::{CloudScheme, PlPathRef};
+use polars_utils::pl_path::{CloudScheme, PlRefPath};
 #[cfg(feature = "http")]
 use reqwest::header::HeaderMap;
 #[cfg(feature = "serde")]
@@ -151,6 +151,7 @@ where
 pub enum CloudType {
     Aws,
     Azure,
+    /// URI with 'file:' scheme
     File,
     /// Google cloud platform
     Gcp,
@@ -283,7 +284,7 @@ impl CloudOptions {
     #[cfg(feature = "aws")]
     pub async fn build_aws(
         &self,
-        url: &str,
+        url: PlRefPath,
         clear_cached_credentials: bool,
     ) -> PolarsResult<impl object_store::ObjectStore> {
         use super::credential_provider::IntoCredentialProvider;
@@ -293,7 +294,7 @@ impl CloudOptions {
 
         let mut builder = AmazonS3Builder::from_env()
             .with_client_options(get_client_options())
-            .with_url(url);
+            .with_url(url.to_string());
 
         if let Some(credential_provider) = &opt_credential_provider {
             let storage_update_options = parse_untyped_config::<AmazonS3ConfigKey, _>(
@@ -353,7 +354,7 @@ impl CloudOptions {
                 .get_config_value(&AmazonS3ConfigKey::Region)
                 .is_none()
         {
-            let bucket = crate::cloud::CloudLocation::new(PlPathRef::new(url), false)?.bucket;
+            let bucket = crate::cloud::CloudLocation::new(url, false)?.bucket;
             let region = {
                 let mut bucket_region = BUCKET_REGION.lock().unwrap();
                 bucket_region.get(bucket.as_str()).cloned()
@@ -449,7 +450,7 @@ impl CloudOptions {
     #[cfg(feature = "azure")]
     pub fn build_azure(
         &self,
-        url: &str,
+        url: PlRefPath,
         clear_cached_credentials: bool,
     ) -> PolarsResult<impl object_store::ObjectStore> {
         use super::credential_provider::IntoCredentialProvider;
@@ -471,7 +472,7 @@ impl CloudOptions {
         }
 
         let builder = builder
-            .with_url(url)
+            .with_url(url.to_string())
             .with_retry(get_retry_config(self.max_retries));
 
         let builder =
@@ -508,7 +509,7 @@ impl CloudOptions {
     #[cfg(feature = "gcp")]
     pub fn build_gcp(
         &self,
-        url: &str,
+        url: PlRefPath,
         clear_cached_credentials: bool,
     ) -> PolarsResult<impl object_store::ObjectStore> {
         use super::credential_provider::IntoCredentialProvider;
@@ -533,7 +534,7 @@ impl CloudOptions {
         }
 
         let builder = builder
-            .with_url(url)
+            .with_url(url.to_string())
             .with_retry(get_retry_config(self.max_retries));
 
         let builder = if let Some(v) = credential_provider {
@@ -550,7 +551,7 @@ impl CloudOptions {
     #[cfg(feature = "http")]
     pub fn build_http(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
         let out = object_store::http::HttpBuilder::new()
-            .with_url(url)
+            .with_url(url.to_string())
             .with_client_options({
                 let mut opts = super::get_client_options();
                 if let Some(CloudConfig::Http { headers }) = &self.config {
@@ -643,7 +644,7 @@ impl CloudOptions {
                             let hf_home = std::env::var("HF_HOME");
                             let hf_home = hf_home.as_deref();
                             let hf_home = hf_home.unwrap_or("~/.cache/huggingface");
-                            let hf_home = resolve_homedir(&hf_home);
+                            let hf_home = resolve_homedir(hf_home);
                             let cached_token_path = hf_home.join("token");
 
                             let v = std::string::String::from_utf8(
@@ -653,10 +654,7 @@ impl CloudOptions {
                             .filter(|x| !x.is_empty());
 
                             if v.is_some() && verbose {
-                                eprintln!(
-                                    "HF token sourced from {}",
-                                    cached_token_path.to_str().unwrap()
-                                );
+                                eprintln!("HF token sourced from {:?}", cached_token_path);
                             }
 
                             v

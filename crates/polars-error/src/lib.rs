@@ -45,6 +45,7 @@ impl<T> From<T> for ErrString
 where
     T: Into<Cow<'static, str>>,
 {
+    #[track_caller]
     fn from(msg: T) -> Self {
         match &*ERROR_STRATEGY {
             ErrorStrategy::Panic => panic!("{}", msg.into()),
@@ -409,7 +410,7 @@ macro_rules! polars_err {
     };
     (bigidx, ctx = $ctx:expr, size = $size:expr) => {
         $crate::polars_err!(ComputeError: "\
-{} produces {} rows which is more than maximum allowed pow(2, 32) rows; \
+{} produces {} rows which is more than maximum allowed pow(2, 32)-1 rows; \
 consider compiling with bigidx feature (pip install polars[rt64])",
             $ctx,
             $size,
@@ -495,6 +496,9 @@ on startup."#.trim_start())
     };
     (invalid_field_use) => {
         $crate::polars_err!(InvalidOperation: "`field` is not allowed in this context")
+    };
+    (non_utf8_path) => {
+        $crate::polars_err!(ComputeError: "encountered non UTF-8 path characters")
     };
     (assertion_error = $objects:expr, $detail:expr, $lhs:expr, $rhs:expr) => {
         $crate::polars_err!(

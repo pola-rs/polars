@@ -14,7 +14,6 @@ pub struct QuantileWindow<'a, T: NativeType> {
 }
 
 impl<
-    'a,
     T: NativeType
         + Float
         + std::iter::Sum
@@ -26,21 +25,23 @@ impl<
         + Zero
         + SealedRolling
         + Sub<Output = T>,
-> RollingAggWindowNoNulls<'a, T> for QuantileWindow<'a, T>
+> RollingAggWindowNoNulls<T> for QuantileWindow<'_, T>
 {
-    fn new(
+    type This<'a> = QuantileWindow<'a, T>;
+
+    fn new<'a>(
         slice: &'a [T],
         start: usize,
         end: usize,
         params: Option<RollingFnParams>,
         window_size: Option<usize>,
-    ) -> Self {
+    ) -> Self::This<'a> {
         let params = params.unwrap();
         let RollingFnParams::Quantile(params) = params else {
             unreachable!("expected Quantile params");
         };
 
-        Self {
+        QuantileWindow {
             sorted: SortedBuf::new(slice, start, end, window_size),
             prob: params.prob,
             method: params.method,
@@ -100,6 +101,10 @@ impl<
         };
 
         Some(self.sorted.get(idx))
+    }
+
+    fn slice_len(&self) -> usize {
+        self.sorted.slice_len()
     }
 }
 

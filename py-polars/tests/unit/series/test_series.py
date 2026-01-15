@@ -527,7 +527,7 @@ def test_to_pandas(test_data: list[Any]) -> None:
     if a.dtype == pl.List:
         vals_b = [(None if x is None else x.tolist()) for x in b]
     else:
-        vals_b = b.replace({np.nan: None}).values.tolist()
+        vals_b = b.replace({np.nan: None}).values.tolist()  # type: ignore[dict-item]
 
     assert vals_b == test_data
 

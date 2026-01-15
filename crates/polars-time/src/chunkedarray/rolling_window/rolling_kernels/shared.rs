@@ -1,80 +1,101 @@
-use arrow::bitmap::{Bitmap, MutableBitmap};
+//! This module implements logic shared between nulls and no_nulls.
+
+use arrow::array::{ArrayRef, PrimitiveArray};
+use arrow::bitmap::MutableBitmap;
+use arrow::trusted_len::TrustedLen;
+use arrow::types::NativeType;
 use bytemuck::allocation::zeroed_vec;
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
+use polars_compute::rolling::no_nulls::RollingAggWindowNoNulls;
 use polars_compute::rolling::nulls::RollingAggWindowNulls;
-use polars_compute::rolling::{MeanWindow, RollingFnParams};
+use polars_core::prelude::*;
 
-use super::*;
+use crate::windows::duration::Duration;
+use crate::windows::group_by::{ClosedWindow, group_by_values_iter};
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn rolling_mean<'a, T>(
-    values: &'a [T],
-    validity: &'a Bitmap,
+pub(crate) trait RollingAggWindow<T: NativeType, Out: NativeType> {
+    /// # Safety
+    /// `start` and `end` must be in bounds of `slice` and associated structures.
+    unsafe fn update(&mut self, start: usize, end: usize) -> Option<Out>;
+
+    /// Returns the length of the underlying input.
+    fn slice_len(&self) -> usize;
+}
+
+#[repr(transparent)]
+pub(crate) struct RollingAggWindowNoNullsWrapper<T>(pub T);
+#[repr(transparent)]
+pub(crate) struct RollingAggWindowNullsWrapper<T>(pub T);
+
+impl<T: NativeType, Out: NativeType, Agg: RollingAggWindowNoNulls<T, Out>> RollingAggWindow<T, Out>
+    for RollingAggWindowNoNullsWrapper<Agg>
+{
+    unsafe fn update(&mut self, start: usize, end: usize) -> Option<Out> {
+        // SAFETY: Caller MUST uphold function safety contract.
+        unsafe { self.0.update(start, end) }
+    }
+
+    fn slice_len(&self) -> usize {
+        self.0.slice_len()
+    }
+}
+
+impl<T: NativeType, Out: NativeType, Agg: RollingAggWindowNulls<T, Out>> RollingAggWindow<T, Out>
+    for RollingAggWindowNullsWrapper<Agg>
+{
+    unsafe fn update(&mut self, start: usize, end: usize) -> Option<Out> {
+        // SAFETY: Caller MUST uphold function safety contract.
+        unsafe { self.0.update(start, end) }
+    }
+
+    fn slice_len(&self) -> usize {
+        self.0.slice_len()
+    }
+}
+
+#[expect(clippy::too_many_arguments)]
+pub(crate) fn rolling_apply_agg<T, Out, Agg>(
+    agg_window: &mut Agg,
     period: Duration,
     time: &[i64],
     closed_window: ClosedWindow,
     min_periods: usize,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-    _params: Option<RollingFnParams>,
     sorting_indices: Option<&[IdxSize]>,
 ) -> PolarsResult<ArrayRef>
 where
-    T: NativeType + Float + std::iter::Sum<T> + SubAssign + AddAssign + IsFloat,
+    T: NativeType,
+    Out: NativeType,
+    Agg: RollingAggWindow<T, Out>,
 {
     let offset_iter = match tz {
         #[cfg(feature = "timezones")]
         Some(tz) => group_by_values_iter(period, time, closed_window, tu, tz.parse::<Tz>().ok()),
         _ => group_by_values_iter(period, time, closed_window, tu, None),
     }?;
-    if sorting_indices.is_none() {
-        rolling_apply_agg_window_sorted::<MeanWindow<_>, _, _, _>(
-            values,
-            validity,
-            offset_iter,
-            min_periods,
-            None,
-        )
+
+    if let Some(indices) = sorting_indices {
+        rolling_apply_agg_window(agg_window, offset_iter, min_periods, indices)
     } else {
-        rolling_apply_agg_window::<MeanWindow<_>, _, _, _>(
-            values,
-            validity,
-            offset_iter,
-            min_periods,
-            None,
-            sorting_indices,
-        )
+        rolling_apply_agg_window_sorted(agg_window, offset_iter, min_periods)
     }
 }
 
 // Use an aggregation window that maintains the state.
 // Fastpath if values were known to already be sorted by time.
-pub(crate) fn rolling_apply_agg_window_sorted<'a, Agg, T, O, Out>(
-    values: &'a [T],
-    validity: &'a Bitmap,
+fn rolling_apply_agg_window_sorted<Agg, O, T, Out>(
+    agg_window: &mut Agg,
     offsets: O,
     min_periods: usize,
-    params: Option<RollingFnParams>,
 ) -> PolarsResult<ArrayRef>
 where
-    // items (offset, len) -> so offsets are offset, offset + len
-    Agg: RollingAggWindowNulls<'a, T, Out>,
+    Agg: RollingAggWindow<T, Out>,
     O: Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen,
-    T: Debug + NativeType,
-    Out: Debug + NativeType,
+    T: NativeType,
+    Out: NativeType,
 {
-    if values.is_empty() {
-        let out: Vec<T> = vec![];
-        return Ok(Box::new(PrimitiveArray::new(
-            T::PRIMITIVE.into(),
-            out.into(),
-            None,
-        )));
-    }
-    // start with a dummy index, will be overwritten on first iteration.
-    let mut agg_window = Agg::new(values, validity, 0, 0, params, None);
-
     let out = offsets
         .map(|result| {
             result.map(|(start, len)| {
@@ -86,8 +107,7 @@ where
                 if len < (min_periods as IdxSize) {
                     None
                 } else {
-                    // SAFETY:
-                    // we are in bounds
+                    // SAFETY: we are in bounds
                     unsafe { agg_window.update(start as usize, end as usize) }
                 }
             })
@@ -98,34 +118,19 @@ where
 }
 
 // Use an aggregation window that maintains the state
-pub(crate) fn rolling_apply_agg_window<'a, Agg, T, O, Out>(
-    values: &'a [T],
-    validity: &'a Bitmap,
+fn rolling_apply_agg_window<Agg, O, T, Out>(
+    agg_window: &mut Agg,
     offsets: O,
     min_periods: usize,
-    params: Option<RollingFnParams>,
-    sorting_indices: Option<&[IdxSize]>,
+    sorting_indices: &[IdxSize],
 ) -> PolarsResult<ArrayRef>
 where
-    // items (offset, len) -> so offsets are offset, offset + len
-    Agg: RollingAggWindowNulls<'a, T, Out>,
+    Agg: RollingAggWindow<T, Out>,
     O: Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen,
-    T: Debug + NativeType,
-    Out: Debug + NativeType,
+    T: NativeType,
+    Out: NativeType,
 {
-    if values.is_empty() {
-        let out: Vec<T> = vec![];
-        return Ok(Box::new(PrimitiveArray::new(
-            T::PRIMITIVE.into(),
-            out.into(),
-            None,
-        )));
-    }
-    let sorting_indices = sorting_indices.expect("`sorting_indices` should have been set");
-    // start with a dummy index, will be overwritten on first iteration.
-    let mut agg_window = Agg::new(values, validity, 0, 0, params, None);
-
-    let mut out = zeroed_vec(values.len());
+    let mut out = zeroed_vec(agg_window.slice_len());
     let mut validity: Option<MutableBitmap> = None;
     offsets.enumerate().try_for_each(|(idx, result)| {
         let (start, len) = result?;
@@ -147,14 +152,14 @@ where
             } else {
                 instantiate_bitmap_if_null_and_set_false_at_idx(
                     &mut validity,
-                    values.len(),
+                    agg_window.slice_len(),
                     *out_idx as usize,
                 )
             }
         } else {
             instantiate_bitmap_if_null_and_set_false_at_idx(
                 &mut validity,
-                values.len(),
+                agg_window.slice_len(),
                 *out_idx as usize,
             )
         }
