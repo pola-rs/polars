@@ -1,5 +1,6 @@
 use arrow::array::FixedSizeListArray;
 use arrow::compute::utils::combine_validities_and;
+use arrow::datatypes::{ArrowDataType, Field};
 use polars_compute::horizontal_flatten::horizontal_flatten_unchecked;
 use polars_core::prelude::{ArrayChunked, Column, CompatLevel, DataType, IntoColumn};
 use polars_core::series::Series;
@@ -129,14 +130,73 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
             unsafe { horizontal_flatten_unchecked(&arrays, &widths, output_height) }
         };
 
-        let arr = FixedSizeListArray::new(
-            dtype.to_arrow(CompatLevel::newest()),
-            output_height,
-            inner_arr,
-            outer_validity,
-        );
-        ArrayChunked::with_chunk(args[0].name().clone(), arr).into_column()
+        let arrow_dtype = match dtype.inner_dtype() {
+            Some(DataType::Enum(_, _)) => ArrowDataType::FixedSizeList(
+                Box::new(Field::new("item".into(), inner_arr.dtype().clone(), true)),
+                width,
+            ),
+            Some(_) => dtype.to_arrow(CompatLevel::newest()),
+            _ => unreachable!(),
+        };
+
+        let arr = FixedSizeListArray::new(arrow_dtype, output_height, inner_arr, outer_validity);
+        let mut chunked_array = ArrayChunked::with_chunk(args[0].name().clone(), arr);
+
+        if let Some(inner) = dtype.inner_dtype() {
+            if matches!(inner, DataType::Enum(_, _)) {
+                chunked_array.set_inner_dtype(inner.clone());
+            }
+        }
+
+        chunked_array.into_column()
     };
 
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use polars_core::prelude::*;
+
+    use super::*;
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_concat_arr_with_enum_columns() {
+        let categories = FrozenCategories::new(vec!["a", "b"]).unwrap();
+        let mapping = Arc::new(CategoricalMapping::new(2));
+        let _ = mapping.insert_cat("a");
+        let _ = mapping.insert_cat("b");
+
+        let enum_dtype = DataType::Enum(categories, mapping);
+
+        let s1 = Column::new("col1".into(), ["a", "b"])
+            .cast(&enum_dtype)
+            .unwrap();
+
+        let s2 = Column::new("col1".into(), ["b", "a"])
+            .cast(&enum_dtype)
+            .unwrap();
+
+        let d = DataType::Array(Box::new(enum_dtype.clone()), 2);
+
+        let columns = vec![s1, s2];
+        let output = concat_arr(&columns, &d).unwrap();
+
+        let series = output.as_materialized_series();
+        let flat = Series::new("col".into(), &["a", "b", "b", "a"])
+            .cast(&enum_dtype)
+            .unwrap();
+
+        let expected = flat
+            .reshape_array(&[
+                ReshapeDimension::Infer,
+                ReshapeDimension::Specified(Dimension::new(2)),
+            ])
+            .unwrap();
+
+        series.equals(&expected);
+    }
 }
