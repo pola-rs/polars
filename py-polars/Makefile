@@ -52,7 +52,7 @@ fix:
 lint: .venv  ## Run lint checks (only)
 	$(VENV_BIN)/ruff check
 	$(VENV_BIN)/typos ..
-	-$(VENV_BIN)/mypy
+	$(VENV_BIN)/mypy
 
 .PHONY: fmt
 fmt: .venv  ## Run autoformatting (python and rust)
