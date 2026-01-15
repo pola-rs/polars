@@ -13,9 +13,7 @@ pub enum ChunkReaderBuilder {
         ignore_errors: bool,
     },
     #[cfg(feature = "scan_lines")]
-    Lines {
-        name: PlSmallStr,
-    },
+    Lines,
 }
 
 #[derive(Clone)]
@@ -40,7 +38,7 @@ impl ChunkReaderBuilder {
                 ignore_errors: *ignore_errors,
             },
             #[cfg(feature = "scan_lines")]
-            Self::Lines { name } => {
+            Self::Lines => {
                 use polars_core::prelude::DataType;
 
                 assert!(projected_schema.len() <= 1);
@@ -48,10 +46,8 @@ impl ChunkReaderBuilder {
                 let projection = projected_schema
                     .get_at_index(0)
                     .map(|(projected_name, dtype)| {
-                        assert_eq!(projected_name, name);
                         assert!(matches!(dtype, DataType::String));
-
-                        name.clone()
+                        projected_name.clone()
                     });
 
                 ChunkReader::Lines { projection }
@@ -62,6 +58,7 @@ impl ChunkReaderBuilder {
     pub(super) fn is_line_fn(&self) -> fn(&[u8]) -> bool {
         match self {
             Self::NDJson { .. } => is_json_line,
+            #[cfg(feature = "scan_lines")]
             Self::Lines { .. } => |_: &[u8]| true,
         }
     }

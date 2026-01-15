@@ -184,7 +184,7 @@ impl RowSkipper {
                 *chunk
             }
             .split(|byte| *byte == LF)
-            .filter(|line| (self.is_line)(*line));
+            .filter(|line| (self.is_line)(line));
             let n_skipped = iter.by_ref().take(self.remaining_rows_to_skip()).count();
             self.n_rows_skipped += n_skipped;
 
@@ -211,7 +211,7 @@ impl RowSkipper {
             *chunk
         }
         .rsplit(|&c| c == LF)
-        .filter(|line| (self.is_line)(*line));
+        .filter(|line| (self.is_line)(line));
 
         let n_skipped = iter.by_ref().take(self.remaining_rows_to_skip()).count();
         self.n_rows_skipped += n_skipped;
