@@ -1,6 +1,7 @@
 use std::io::{Read, Seek};
 
-use polars_error::PolarsResult;
+use arrow_format::ipc::KeyValueRef;
+use polars_error::{PolarsResult, polars_err};
 
 use super::common::*;
 use super::file::{get_message_from_block, get_message_from_block_offset, get_record_batch};
@@ -221,8 +222,34 @@ impl<R: Read + Seek> BlockReader<R> {
 
         let message = get_message_from_block_offset(&mut self.reader, offset, message_scratch)?;
         let batch = get_record_batch(message)?;
-
         let out = batch.length().map(|l| usize::try_from(l).unwrap())?;
         Ok(out)
+    }
+
+    /// Reads the record batch header and returns the custom_metadata.
+    pub fn record_batch_custom_metadata<'a>(
+        &mut self,
+        message_scratch: &'a mut Vec<u8>,
+    ) -> PolarsResult<Option<Vec<KeyValueRef<'a>>>> {
+        let offset: u64 = 0;
+        let message = get_message_from_block_offset(&mut self.reader, offset, message_scratch)?;
+        let custom_metadata = message.custom_metadata()?;
+
+        custom_metadata
+            .map(|kv_results| {
+                kv_results
+                    .into_iter()
+                    .map(|res| {
+                        res.map_err(|e| {
+                            polars_err!(
+                                ComputeError:
+                                "failed to get KeyValue from IPC custom metadata: {}",
+                                e
+                            )
+                        })
+                    })
+                    .collect::<Result<Vec<KeyValueRef>, _>>()
+            })
+            .transpose()
     }
 }

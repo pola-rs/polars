@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use polars_core::config;
 use polars_core::schema::SchemaRef;
 use polars_core::utils::arrow::io::ipc::write::{EncodedData, WriteOptions};
 use polars_error::PolarsResult;
@@ -79,6 +80,18 @@ impl FileWriterStarter for IpcWriterStarter {
         let options = Arc::clone(&self.options);
         let compression = self.options.compression.map(|x| x.into());
 
+        // Note. Environment variable is unstable.
+        let write_statistics_flags = std::env::var("POLARS_IPC_RW_RECORD_BATCH_STATISTICS_FLAGS")
+            .as_deref()
+            .unwrap_or("")
+            == "1";
+
+        if write_statistics_flags && config::verbose() {
+            eprintln!(
+                "[IpcWriterStarter]: write_record_batch_statistics_flags: {write_statistics_flags}"
+            )
+        }
+
         let handle = async_executor::spawn(TaskPriority::High, async move {
             let (ipc_batch_tx, ipc_batch_rx) =
                 tokio::sync::mpsc::channel::<IpcBatch>(num_pipelines.get());
@@ -108,6 +121,7 @@ impl FileWriterStarter for IpcWriterStarter {
                         arrow_converters,
                         dictionary_id_offsets,
                         write_options: WriteOptions { compression },
+                        write_statistics_flags,
                     }
                     .run(),
                 ));

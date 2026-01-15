@@ -116,9 +116,6 @@ Sink to disk with differing partitioning strategies.
    :toctree: api/
 
    PartitionBy
-   PartitionByKey
-   PartitionMaxSize
-   PartitionParted
 
 .. currentmodule:: polars.io.partition
 
@@ -126,9 +123,6 @@ Sink to disk with differing partitioning strategies.
    :toctree: api/
 
    FileProviderArgs
-   KeyedPartition
-   BasePartitionContext
-   KeyedPartitionContext
 
 .. currentmodule:: polars
 
