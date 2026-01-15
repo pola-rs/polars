@@ -28,8 +28,8 @@ pub const KEY_COL_NAME: &str = "__POLARS_JOIN_KEY_TMP";
 
 #[derive(Clone, Copy, Debug)]
 enum NeedMore {
-    Left,
-    Right,
+    Build,
+    Probe,
     Both,
     Finished,
 }
@@ -344,7 +344,7 @@ impl ComputeNode for MergeJoinNode {
                                 *mergeable_seq = mergeable_seq.successor();
                             }
                         },
-                        Right(NeedMore::Left | NeedMore::Both) if recv_build.is_some() => {
+                        Right(NeedMore::Build | NeedMore::Both) if recv_build.is_some() => {
                             let Ok(m) = recv_build.as_mut().unwrap().recv().await else {
                                 buffer_unmerged_from_pipe(recv_probe.as_mut(), probe_unmerged)
                                     .await;
@@ -352,7 +352,7 @@ impl ComputeNode for MergeJoinNode {
                             };
                             build_unmerged.push_df(m.into_df());
                         },
-                        Right(NeedMore::Right | NeedMore::Both) if recv_probe.is_some() => {
+                        Right(NeedMore::Probe | NeedMore::Both) if recv_probe.is_some() => {
                             let Ok(m) = recv_probe.as_mut().unwrap().recv().await else {
                                 buffer_unmerged_from_pipe(recv_build.as_mut(), build_unmerged)
                                     .await;
@@ -591,8 +591,8 @@ fn find_mergeable_limiting(
     debug_assert!(*search_limit >= morsel_size);
     let mut mergeable = find_mergeable_search(build, probe, *search_limit, fmp.clone())?;
     while match mergeable {
-        Right(NeedMore::Left | NeedMore::Both) if *search_limit < build.height() => true,
-        Right(NeedMore::Right | NeedMore::Both) if *search_limit < probe.height() => true,
+        Right(NeedMore::Build | NeedMore::Both) if *search_limit < build.height() => true,
+        Right(NeedMore::Probe | NeedMore::Both) if *search_limit < probe.height() => true,
         _ => false,
     } {
         // Exponential increase
@@ -658,9 +658,9 @@ fn find_mergeable_search(
     if build_done && build.is_empty() && probe_done && probe.is_empty() {
         return Ok(Right(NeedMore::Finished));
     } else if build_done && build.is_empty() && !probe_done && probe.is_empty() {
-        return Ok(Right(NeedMore::Right));
+        return Ok(Right(NeedMore::Probe));
     } else if probe_done && probe.is_empty() && !build_done && build.is_empty() {
-        return Ok(Right(NeedMore::Left));
+        return Ok(Right(NeedMore::Build));
     } else if build_done && build.is_empty() && !probe_params.emit_unmatched {
         // We will never match on the remaining build keys
         probe.clear();
@@ -676,9 +676,9 @@ fn find_mergeable_search(
         let build_split = build.split_at(get_ideal_morsel_size());
         return Ok(Left((build_split, probe_empty_buf())));
     } else if build.is_empty() && !build_done {
-        return Ok(Right(NeedMore::Left));
+        return Ok(Right(NeedMore::Build));
     } else if probe.is_empty() && !probe_done {
-        return Ok(Right(NeedMore::Right));
+        return Ok(Right(NeedMore::Probe));
     }
 
     let build_first = build_get(0);
@@ -717,10 +717,10 @@ fn find_mergeable_search(
         return Ok(Right(NeedMore::Both));
     } else if build_first_incomplete == 0 {
         debug_assert!(!build_done);
-        return Ok(Right(NeedMore::Left));
+        return Ok(Right(NeedMore::Build));
     } else if probe_first_incomplete == 0 {
         debug_assert!(!probe_done);
-        return Ok(Right(NeedMore::Right));
+        return Ok(Right(NeedMore::Probe));
     }
 
     let build_last_completed_val = build_get(build_first_incomplete - 1);
