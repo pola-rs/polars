@@ -45,6 +45,7 @@ impl<T> From<T> for ErrString
 where
     T: Into<Cow<'static, str>>,
 {
+    #[track_caller]
     fn from(msg: T) -> Self {
         match &*ERROR_STRATEGY {
             ErrorStrategy::Panic => panic!("{}", msg.into()),
