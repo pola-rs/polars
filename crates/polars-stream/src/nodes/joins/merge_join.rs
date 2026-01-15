@@ -50,7 +50,6 @@ pub struct MergeJoinNode {
     probe_unmerged: DataFrameBuffer,
     unmatched: BTreeMap<MorselSeq, DataFrame>,
     mergeable_seq: MorselSeq,
-    max_seq_sent: MorselSeq,
 }
 
 #[derive(Debug)]
@@ -177,7 +176,6 @@ impl MergeJoinNode {
             probe_unmerged,
             unmatched: Default::default(),
             mergeable_seq: MorselSeq::default(),
-            max_seq_sent: MorselSeq::default(),
         })
     }
 }
@@ -221,7 +219,7 @@ impl ComputeNode for MergeJoinNode {
                 all_unmatched.vstack_mut_owned(df)?;
             }
             let src_node =
-                InMemorySourceNode::new(Arc::new(all_unmatched), self.max_seq_sent.successor());
+                InMemorySourceNode::new(Arc::new(all_unmatched), self.mergeable_seq.successor());
             self.state = EmitUnmatched(src_node);
         } else if input_channels_done && input_buffers_empty && unmatched_buffers_empty {
             self.build_unmerged.clear();
@@ -297,7 +295,6 @@ impl ComputeNode for MergeJoinNode {
         let probe_unmerged = &mut self.probe_unmerged;
         let unmatched = &mut self.unmatched;
         let mergeable_seq = &mut self.mergeable_seq;
-        let max_seq_sent = &mut self.max_seq_sent;
 
         let build_idx = match self.params.left_is_build() {
             true => 0,
@@ -313,7 +310,6 @@ impl ComputeNode for MergeJoinNode {
             let (mut distributor, dist_recv) =
                 distributor_channel(send.len(), *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
             let (unmatched_send, mut unmatched_recv) = tokio::sync::mpsc::channel(send.len());
-            let (max_seq_sent_send, mut max_seq_sent_recv) = tokio::sync::mpsc::channel(send.len());
 
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 let source_token = SourceToken::new();
@@ -376,7 +372,6 @@ impl ComputeNode for MergeJoinNode {
 
             join_handles.extend(dist_recv.into_iter().zip(send).map(|(mut recv, mut send)| {
                 let unmatched_send = unmatched_send.clone();
-                let max_seq_sent_send = max_seq_sent_send.clone();
                 scope.spawn_task(TaskPriority::High, async move {
                     let mut arenas = ComputeJoinArenas::default();
 
@@ -390,7 +385,6 @@ impl ComputeNode for MergeJoinNode {
                             &mut arenas,
                             &mut send,
                             unmatched_send.clone(),
-                            max_seq_sent_send.clone(),
                         )
                         .await?;
                     }
@@ -406,12 +400,6 @@ impl ComputeNode for MergeJoinNode {
                     } else {
                         unmatched.insert(seq, df);
                     }
-                }
-                Ok(())
-            }));
-            join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
-                while let Some(seq) = max_seq_sent_recv.recv().await {
-                    *max_seq_sent = (*max_seq_sent).max(seq);
                 }
                 Ok(())
             }));
@@ -436,7 +424,6 @@ async fn compute_join(
     arenas: &mut ComputeJoinArenas,
     send: &mut PortSender,
     unmatched_send: tokio::sync::mpsc::Sender<Morsel>,
-    max_seq_sent_send: tokio::sync::mpsc::Sender<MorselSeq>,
 ) -> PolarsResult<()> {
     let morsel_size = get_ideal_morsel_size();
 
@@ -547,10 +534,6 @@ async fn compute_join(
                 panic!("broken pipe");
             }
         }
-    }
-
-    if max_seq_sent_send.send(seq).await.is_err() {
-        panic!();
     }
     Ok(())
 }
