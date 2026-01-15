@@ -14,7 +14,7 @@ use polars_io::{expand_paths, expand_paths_hive, expanded_from_single_directory}
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
-use serde::{Deserializer, Serialize, Serializer, Deserialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::UnifiedScanArgs;
 
@@ -35,7 +35,13 @@ fn deserialize_paths<'de, D: Deserializer<'de>>(d: D) -> Result<Buffer<PlRefPath
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone)]
 pub enum ScanSources {
-    #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_paths", deserialize_with = "deserialize_paths"))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            serialize_with = "serialize_paths",
+            deserialize_with = "deserialize_paths"
+        )
+    )]
     #[cfg_attr(feature = "dsl-schema", schemars(with = "Vec<PlRefPath>"))]
     Paths(Buffer<PlRefPath>),
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
