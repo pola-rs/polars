@@ -194,10 +194,17 @@ def test_truncate_invalid_duration(dtype: PolarsTemporalType) -> None:
 
 def test_truncate_empty_22835() -> None:
     # Test with Datetime
-    df = pl.DataFrame(schema=[("timestamp", pl.Datetime), ("truncate_interval", pl.Utf8)])
-    result = df.with_columns(pl.col("timestamp").dt.truncate(pl.col("truncate_interval")))
+    df = pl.DataFrame(
+        schema=[("timestamp", pl.Datetime), ("truncate_interval", pl.Utf8)]
+    )
+    result = df.with_columns(
+        pl.col("timestamp").dt.truncate(pl.col("truncate_interval"))
+    )
     assert result.shape == (0, 2)
-    assert result.schema == {"timestamp": pl.Datetime("us"), "truncate_interval": pl.Utf8}
+    assert result.schema == {
+        "timestamp": pl.Datetime("us"),
+        "truncate_interval": pl.Utf8,
+    }
 
     # Test with Date
     df = pl.DataFrame(schema=[("date", pl.Date), ("truncate_interval", pl.Utf8)])
