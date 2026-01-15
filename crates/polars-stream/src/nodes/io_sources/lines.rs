@@ -3,7 +3,6 @@ use std::sync::Arc;
 use polars_core::config;
 use polars_io::cloud::CloudOptions;
 use polars_plan::dsl::ScanSource;
-use polars_utils::pl_str::PlSmallStr;
 
 use crate::nodes::io_sources::multi_scan::reader_interface::FileReader;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
@@ -12,9 +11,7 @@ use crate::nodes::io_sources::ndjson::NDJsonFileReader;
 use crate::nodes::io_sources::ndjson::chunk_reader::ChunkReaderBuilder;
 
 #[derive(Debug)]
-pub struct LineReaderBuilder {
-    pub name: PlSmallStr,
-}
+pub struct LineReaderBuilder {}
 
 impl FileReaderBuilder for LineReaderBuilder {
     fn reader_name(&self) -> &str {
@@ -34,9 +31,7 @@ impl FileReaderBuilder for LineReaderBuilder {
         _scan_source_idx: usize,
     ) -> Box<dyn FileReader> {
         let scan_source = source;
-        let chunk_reader_builder = ChunkReaderBuilder::Lines {
-            name: self.name.clone(),
-        };
+        let chunk_reader_builder = ChunkReaderBuilder::Lines;
         let verbose = config::verbose();
 
         let reader = NDJsonFileReader {
