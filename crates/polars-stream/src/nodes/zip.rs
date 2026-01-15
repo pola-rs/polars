@@ -129,10 +129,20 @@ pub struct ZipNode {
 }
 
 impl ZipNode {
-    pub fn new(zip_behavior: ZipBehavior, schemas: Vec<Arc<Schema>>) -> Self {
+    pub fn new(
+        zip_behavior: ZipBehavior,
+        schemas: Vec<Arc<Schema>>,
+        may_broadcast: &[bool],
+    ) -> Self {
         let input_heads = schemas
             .into_iter()
-            .map(|s| InputHead::new(s, matches!(zip_behavior, ZipBehavior::Broadcast)))
+            .zip(may_broadcast)
+            .map(|(s, &may_broadcast)| {
+                InputHead::new(
+                    s,
+                    matches!(zip_behavior, ZipBehavior::Broadcast) && may_broadcast,
+                )
+            })
             .collect();
         Self {
             zip_behavior,

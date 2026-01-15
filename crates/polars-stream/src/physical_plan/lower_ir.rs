@@ -15,7 +15,7 @@ use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{CallbackSinkType, ExtraColumnsPolicy, FileScanIR, SinkTypeIR};
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{
-    AExpr, FunctionIR, IR, IRAggExpr, LiteralValue, are_keys_sorted_any, is_sorted,
+    AExpr, FunctionIR, IR, IRAggExpr, LiteralValue, are_keys_sorted_any, is_scalar_ae, is_sorted,
     write_ir_non_recursive,
 };
 use polars_plan::prelude::*;
@@ -534,13 +534,21 @@ pub fn lower_ir(
             } else {
                 ZipBehavior::NullExtend
             };
+
+            let may_broadcast = inputs
+                .iter()
+                .map(|&input| is_scalar_ae(input, expr_arena))
+                .collect();
+
             let inputs = inputs
                 .clone() // Needed to borrow ir_arena mutably.
                 .into_iter()
                 .map(|input| lower_ir!(input))
                 .collect::<Result<_, _>>()?;
+
             PhysNodeKind::Zip {
                 inputs,
+                may_broadcast,
                 zip_behavior,
             }
         },

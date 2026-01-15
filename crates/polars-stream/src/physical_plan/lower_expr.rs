@@ -510,6 +510,7 @@ fn simplify_input_streams(
         for input_stream in input_streams {
             if let PhysNodeKind::Zip {
                 inputs,
+                may_broadcast: _,
                 zip_behavior: ZipBehavior::Broadcast,
             } = &ctx.phys_sm[input_stream.node].kind
             {
@@ -2232,6 +2233,10 @@ fn lower_exprs_with_ctx(
         .collect();
     let zip_kind = PhysNodeKind::Zip {
         inputs: zip_inputs,
+        may_broadcast: exprs
+            .iter()
+            .map(|&input| is_scalar_ae(input, ctx.expr_arena))
+            .collect(),
         zip_behavior: ZipBehavior::Broadcast,
     };
     let zip_node = ctx

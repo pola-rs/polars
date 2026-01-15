@@ -411,6 +411,7 @@ fn visualize_plan_rec(
         PhysNodeKind::OrderedUnion { inputs } => ("ordered-union".to_string(), inputs.as_slice()),
         PhysNodeKind::Zip {
             inputs,
+            may_broadcast: _,
             zip_behavior,
         } => {
             let label = match zip_behavior {

@@ -1,6 +1,7 @@
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError, ShapeError
 from polars.testing import assert_frame_equal
 
 
@@ -177,3 +178,17 @@ def test_with_columns_scalar_20981() -> None:
     lf = pl.LazyFrame({"a": [1.0, 2.0, 3.0]})
     assert_frame_equal(lf.with_columns(a=2.0).collect(), expected)
     assert_frame_equal(lf.with_columns(pl.col.a.mean()).collect(), expected)
+
+
+def test_with_columns_unit_length_non_scalar() -> None:
+    # <https://github.com/pola-rs/polars/issues/26023>
+    lf = pl.LazyFrame({"a": [1, 2]}).with_columns(pl.col("a").head(1))
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="Series a, length 1 doesn't match the DataFrame height of 2",
+    ):
+        lf.collect(engine="in-memory")
+
+    with pytest.raises(ShapeError, match="zip node received non-equal length inputs"):
+        lf.collect(engine="streaming")
