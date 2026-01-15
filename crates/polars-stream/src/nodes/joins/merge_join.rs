@@ -334,11 +334,11 @@ impl ComputeNode for MergeJoinNode {
                     };
                     match find_mergeable(build_unmerged, probe_unmerged, &mut search_limit, fmp)? {
                         Left(partitions) => {
-                            for (left_mergeable, right_mergeable) in partitions.into_iter() {
+                            for (build_mergeable, probe_mergeable) in partitions.into_iter() {
                                 if let Err((_, _, _, _)) = distributor
                                     .send((
-                                        left_mergeable,
-                                        right_mergeable,
+                                        build_mergeable,
+                                        probe_mergeable,
                                         *mergeable_seq,
                                         source_token.clone(),
                                     ))
