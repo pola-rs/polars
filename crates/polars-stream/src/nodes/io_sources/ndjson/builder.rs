@@ -9,6 +9,12 @@ use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderB
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
 use crate::nodes::io_sources::ndjson::chunk_reader::ChunkReaderBuilder;
 
+pub fn ndjson_reader_capabilities() -> ReaderCapabilities {
+    use ReaderCapabilities as RC;
+
+    RC::NEEDS_FILE_CACHE_INIT | RC::ROW_INDEX | RC::PRE_SLICE | RC::NEGATIVE_PRE_SLICE
+}
+
 #[cfg(feature = "json")]
 impl FileReaderBuilder for polars_plan::dsl::NDJsonReadOptions {
     fn reader_name(&self) -> &str {
@@ -16,9 +22,7 @@ impl FileReaderBuilder for polars_plan::dsl::NDJsonReadOptions {
     }
 
     fn reader_capabilities(&self) -> ReaderCapabilities {
-        use ReaderCapabilities as RC;
-
-        RC::NEEDS_FILE_CACHE_INIT | RC::ROW_INDEX | RC::PRE_SLICE | RC::NEGATIVE_PRE_SLICE
+        ndjson_reader_capabilities()
     }
 
     fn build_file_reader(

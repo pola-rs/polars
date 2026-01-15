@@ -8,6 +8,7 @@ use crate::nodes::io_sources::multi_scan::reader_interface::FileReader;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
 use crate::nodes::io_sources::ndjson::NDJsonFileReader;
+use crate::nodes::io_sources::ndjson::builder::ndjson_reader_capabilities;
 use crate::nodes::io_sources::ndjson::chunk_reader::ChunkReaderBuilder;
 
 #[derive(Debug)]
@@ -19,9 +20,7 @@ impl FileReaderBuilder for LineReaderBuilder {
     }
 
     fn reader_capabilities(&self) -> ReaderCapabilities {
-        use ReaderCapabilities as RC;
-
-        RC::NEEDS_FILE_CACHE_INIT | RC::ROW_INDEX | RC::PRE_SLICE | RC::NEGATIVE_PRE_SLICE
+        ndjson_reader_capabilities()
     }
 
     fn build_file_reader(
