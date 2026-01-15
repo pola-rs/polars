@@ -9,6 +9,8 @@ use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unique_id::UniqueId;
 
+#[cfg(all(feature = "strings", feature = "concat_str"))]
+use crate::plans::IRStringFunction;
 use crate::plans::{
     AExpr, ExprIR, FunctionIR, HintIR, IR, IRFunctionExpr, Sorted, ToFieldContext,
     constant_evaluate, into_column,
@@ -362,6 +364,7 @@ fn is_sorted_rec(
     sorted
 }
 
+#[derive(Debug, PartialEq)]
 pub struct AExprSorted {
     descending: Option<bool>,
     nulls_last: Option<bool>,
@@ -466,9 +469,9 @@ pub fn function_expr_sortedness(
     schema: &Schema,
     input_sorted: Option<&IRSorted>,
 ) -> Option<AExprSorted> {
-    macro_rules! first_input {
-        () => {{ aexpr_sortedness(arena.get(inputs[0].node()), arena, schema, input_sorted) }};
-    }
+    let nth_input =
+        |n: usize| aexpr_sortedness(arena.get(inputs[n].node()), arena, schema, input_sorted);
+
     match function {
         #[cfg(feature = "rle")]
         IRFunctionExpr::RLEID => Some(AExprSorted {
@@ -492,13 +495,11 @@ pub fn function_expr_sortedness(
         | IRFunctionExpr::DropNans
         | IRFunctionExpr::FillNullWithStrategy(
             FillNullStrategy::Forward(None) | FillNullStrategy::Backward(None),
-        ) => {
-            first_input!()
-        },
+        ) => nth_input(0),
         #[cfg(feature = "mode")]
         IRFunctionExpr::Mode {
             maintain_order: true,
-        } => first_input!(),
+        } => nth_input(0),
 
         #[cfg(feature = "range")]
         IRFunctionExpr::Range(range) => {
@@ -522,7 +523,7 @@ pub fn function_expr_sortedness(
         },
 
         IRFunctionExpr::Reverse => {
-            let mut sortedness = first_input!()?;
+            let mut sortedness = nth_input(0)?;
             if let Some(d) = &mut sortedness.descending {
                 *d = !*d;
             }
@@ -530,6 +531,19 @@ pub fn function_expr_sortedness(
                 *n ^= !*n;
             }
             Some(sortedness)
+        },
+
+        #[cfg(all(feature = "strings", feature = "concat_str"))]
+        IRFunctionExpr::StringExpr(IRStringFunction::ConcatHorizontal { ignore_nulls, .. }) => {
+            let sortedness = nth_input(0)?;
+            if *ignore_nulls && sortedness.nulls_last? != sortedness.descending? {
+                return None;
+            }
+            if (1..inputs.len()).all(|n| nth_input(n).as_ref() == Some(&sortedness)) {
+                Some(sortedness)
+            } else {
+                None
+            }
         },
 
         _ => None,

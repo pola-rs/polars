@@ -6,7 +6,7 @@ use polars_core::utils::dtypes_to_supertype;
 use polars_core::with_match_physical_numeric_polars_type;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
-use pyo3::types::PyList;
+use pyo3::types::{PyList, PyTuple};
 use pyo3::{IntoPyObjectExt, intern};
 
 use super::to_numpy_series::series_to_numpy;
@@ -38,6 +38,17 @@ pub(super) fn df_to_numpy(
     allow_copy: bool,
 ) -> PyResult<Py<PyAny>> {
     if df.shape_has_zero() {
+        if df.width() == 0 {
+            let shape = PyTuple::new(py, [df.height(), df.width()])?;
+            let numpy = super::utils::get_numpy_module(py)?;
+
+            return Ok(numpy
+                .call_method1(
+                    intern!(py, "zeros"),
+                    (shape, numpy.getattr(intern!(py, "int8"))?),
+                )?
+                .unbind());
+        }
         // Take this path to ensure a writable array.
         // This does not actually copy data for an empty DataFrame.
         return df_to_numpy_with_copy(py, df, order, true);
@@ -278,7 +289,7 @@ fn df_columns_to_numpy(
         arr
     });
 
-    let numpy = PyModule::import(py, intern!(py, "numpy"))?;
+    let numpy = super::utils::get_numpy_module(py)?;
     let np_array = match order {
         IndexOrder::C => numpy
             .getattr(intern!(py, "column_stack"))?

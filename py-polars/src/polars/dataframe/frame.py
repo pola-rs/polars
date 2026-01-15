@@ -249,6 +249,13 @@ class DataFrame:
     nan_to_null : bool, default False
         If the data comes from one or more numpy arrays, can optionally convert input
         data np.nan values to null instead. This is a no-op for all other input data.
+    height : int or None, default None
+        Allows constructing DataFrames with 0 width and a specified height. If
+        passed with data, ensures the resulting DataFrame has this height.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
     Notes
     -----
@@ -372,11 +379,19 @@ class DataFrame:
         orient: Orientation | None = None,
         infer_schema_length: int | None = N_INFER_DEFAULT,
         nan_to_null: bool = False,
+        height: int | None = None,
     ) -> None:
+        if height is not None:
+            msg = "the `height` parameter of `DataFrame` is considered unstable."
+            issue_unstable_warning(msg)
+
         if data is None:
             self._df = dict_to_pydf(
                 {}, schema=schema, schema_overrides=schema_overrides
             )
+
+            if height is not None and self.width == 0:
+                self._df = PyDataFrame.empty_with_height(height)
 
         elif isinstance(data, dict):
             self._df = dict_to_pydf(
@@ -464,6 +479,12 @@ class DataFrame:
                 " for the `data` parameter"
             )
             raise TypeError(msg)
+
+        if height is not None and self.height != height:
+            from polars.exceptions import ShapeError
+
+            msg = f"height of data ({self.height}) does not match specified height ({height})"
+            raise ShapeError(msg)
 
     @classmethod
     def deserialize(
@@ -1742,8 +1763,20 @@ class DataFrame:
         foo: [[1,2,3,4,5,6]]
         bar: [["a","b","c","d","e","f"]]
         """
-        if not self.width:  # 0x0 dataframe, cannot infer schema from batches
-            return pa.table({})
+        if self.width == 0:
+            if self.height == 0:
+                return pa.table({})
+
+            s = pl.Series([{}], dtype=Struct({}))
+
+            arr = s.new_from_index(0, min(self.height, (1 << 32) - 2)).to_arrow()
+
+            if len(arr) < self.height:
+                arr = pa.concat_arrays(
+                    [arr, s.new_from_index(0, self.height - len(arr)).to_arrow()]
+                )
+
+            return pa.table({"": arr}).select([])
 
         compat_level_py: int | bool
         if compat_level is None:
@@ -2552,6 +2585,9 @@ class DataFrame:
         ham    large_string[pyarrow]
         dtype: object
         """
+        if self.width == 0:
+            return pd.DataFrame(index=range(self.height))
+
         if use_pyarrow_extension_array:
             if parse_version(pd.__version__) < (1, 5):
                 msg = f'pandas>=1.5.0 is required for `to_pandas("use_pyarrow_extension_array=True")`, found Pandas {pd.__version__!r}'
