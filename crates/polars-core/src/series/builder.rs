@@ -14,7 +14,7 @@ pub struct SeriesBuilder {
 
 impl SeriesBuilder {
     pub fn new(dtype: DataType) -> Self {
-        // FIXME: get rid of this hack.
+        // TODO: get rid of this hack.
         #[cfg(feature = "object")]
         if matches!(dtype, DataType::Object(_)) {
             let builder = get_object_builder(PlSmallStr::EMPTY, 0).as_array_builder();

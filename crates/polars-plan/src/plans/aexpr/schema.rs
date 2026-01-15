@@ -547,7 +547,7 @@ fn get_arithmetic_field(
                     )
                 },
                 (list_dtype @ List(_), other_dtype) | (other_dtype, list_dtype @ List(_)) => {
-                    // FIXME: This should not use `try_get_supertype()`! It should instead recursively use the enclosing match block.
+                    // TODO: This should not use `try_get_supertype()`! It should instead recursively use the enclosing match block.
                     // Otherwise we will silently permit addition operations between logical types (see above).
                     // This currently doesn't cause any problems because the list arithmetic implementation checks and raises errors
                     // if the leaf types aren't numeric, but it means we don't raise an error until execution and the DSL schema

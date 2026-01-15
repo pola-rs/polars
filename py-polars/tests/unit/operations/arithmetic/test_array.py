@@ -263,7 +263,7 @@ def test_array_arithmetic_values(
 
     l, r, o = materialize_series(True, 3, 0)  # noqa: E741
     if array_side != "none":
-        # TODO: FIXME: We get an error on non-lists with this:
+        # TODO: We get an error on non-lists with this:
         # "floor_div operation not supported for dtype `bool`"
         assert_series_equal(exec_op(l, r, op.floordiv), o)
 
