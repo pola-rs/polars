@@ -192,7 +192,7 @@ EEE
 
 
 def test_scan_lines_negative_slice_reversed_read() -> None:
-    q = pl.scan_lines(b"\xff" + 2000 * b"abc\n")
+    q = pl.scan_lines(b"\xff" + 10000 * b"abc\n")
 
     with pytest.raises(ComputeError, match="invalid utf8"):
         q.collect()
@@ -200,5 +200,6 @@ def test_scan_lines_negative_slice_reversed_read() -> None:
     assert q.tail(1).collect().item() == "abc"
     assert q.tail(1).select(pl.len()).collect().item() == 1
 
-    # This succeeds because the line counter simply counts '\n' bytes
-    assert q.select(pl.len()).collect().item() == 2000
+    # This succeeds because the line counter simply counts '\n' bytes without
+    # parsing to string.
+    assert q.select(pl.len()).collect().item() == 10000

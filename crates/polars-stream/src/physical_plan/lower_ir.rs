@@ -652,7 +652,7 @@ pub fn lower_ir(
                     },
 
                     #[cfg(feature = "scan_lines")]
-                    FileScanIR::Lines { name } => {
+                    FileScanIR::Lines { name: _ } => {
                         Arc::new(crate::nodes::io_sources::lines::LineReaderBuilder {}) as _
                     },
 
