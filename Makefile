@@ -165,6 +165,16 @@ fix:
 py-lint: .venv  ## Run python lint checks (only)
 	@$(MAKE) -s -C py-polars lint $(ARGS)
 
+.PHONY: check-leftover-fixme
+check-leftover-fixme:
+	@cmd_exit=0; \
+	rg -q -i --glob '!/Makefile' 'FIXME' || cmd_exit=$$?; \
+	if [ $$cmd_exit -eq 0 ]; then \
+		rg -i --glob '!/Makefile' -C 2 'FIXME'; \
+		printf "\n[ERROR] Found leftover FIXME, use TODO for things that are ok to merge.\n"; \
+		exit 1; \
+	fi
+
 .PHONY: update-dsl-schema-hashes
 update-dsl-schema-hashes:  ## Update the DSL schema hashes file
 	cargo run --all-features --bin dsl-schema update-hashes
