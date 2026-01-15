@@ -100,7 +100,7 @@ JSON
    LazyFrame.sink_ndjson
 
 Lines
-~~~~
+~~~~~
 .. autosummary::
    :toctree: api/
 
