@@ -5,7 +5,7 @@ from datetime import date, datetime
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, ShapeError
 from polars.testing import assert_series_equal
 
 
@@ -58,6 +58,14 @@ def test_is_business_day(
     )["date"]
     expected = pl.Series("date", expected_values)
     assert_series_equal(result, expected)
+    # Holidays are in Series of List of Date, of length 1:
+    result = df.select(
+        pl.col("date").dt.is_business_day(
+            holidays=pl.Series([list(holidays)], dtype=pl.List(pl.Date)),
+            week_mask=week_mask,
+        )
+    )["date"]
+    assert_series_equal(result, expected)
     # Datetime
     df = pl.DataFrame({"date": [datetime(2020, 1, 1, 3), datetime(2020, 1, 2, 1)]})
     result = df.select(
@@ -74,10 +82,95 @@ def test_is_business_day(
     assert_series_equal(result, expected)
 
 
+@pytest.mark.parametrize(
+    ("dates", "holidays", "expected"),
+    [
+        # Each date is checked against the corresponding date:
+        (
+            [
+                date(2026, 5, 1),
+                date(2026, 9, 7),
+                date(2026, 5, 1),
+                date(2026, 9, 7),
+            ],
+            [
+                [date(2026, 9, 7)],
+                [date(2026, 9, 7)],
+                [date(2026, 5, 1)],
+                [date(2026, 5, 1)],
+            ],
+            [True, False, False, True],
+        ),
+        # Null dates still advance the holidays:
+        (
+            [
+                date(2026, 5, 1),
+                None,
+                date(2026, 5, 1),
+                date(2026, 9, 7),
+            ],
+            [
+                [date(2026, 9, 7)],
+                [date(2026, 9, 7)],
+                [date(2026, 5, 1)],
+                [date(2026, 5, 1)],
+            ],
+            [True, None, False, True],
+        ),
+        # Null holiday lists, or nulls inside the holiday list, result in null:
+        (
+            [
+                date(2026, 5, 1),
+                date(2026, 9, 7),
+                date(2026, 5, 1),
+            ],
+            [
+                None,
+                [date(2026, 9, 7), None],
+                [date(2026, 5, 1)],
+            ],
+            [None, None, False],
+        ),
+    ],
+)
+def test_different_holidays_per_day(
+    dates: list[date | None],
+    holidays: list[list[date | None] | None],
+    expected: list[bool | None],
+) -> None:
+    base_df = pl.DataFrame(
+        {
+            "date": dates,
+        }
+    )
+    holidays = pl.Series(holidays)
+    week_mask = [True] * 7
+    expected = pl.Series("date", expected)
+
+    # Check with holidays being both Series and an Expr:
+    for df, holidays_expr in [
+        (base_df, holidays),
+        (base_df.with_columns(holidays=holidays), pl.col("holidays")),
+    ]:
+        result = df.select(
+            pl.col("date").dt.is_business_day(
+                holidays=holidays_expr, week_mask=week_mask
+            )
+        )["date"]
+        assert_series_equal(result, expected)
+
+
 def test_is_business_day_invalid() -> None:
-    df = pl.DataFrame({"date": [date(2020, 1, 1), date(2020, 1, 2)]})
+    df = pl.DataFrame({"date": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)]})
+    # A 7-day weekend:
     with pytest.raises(ComputeError):
         df.select(pl.col("date").dt.is_business_day(week_mask=[False] * 7))
+    # Insufficient number of holidays lists:
+    holidays = pl.Series([[date(2020, 1, 1)], []])
+    with pytest.raises(ShapeError):
+        df.select(
+            pl.col("date").dt.is_business_day(holidays=holidays, week_mask=[True] * 7)
+        )
 
 
 def test_is_business_day_repr() -> None:
