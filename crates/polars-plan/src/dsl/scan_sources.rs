@@ -14,14 +14,17 @@ use polars_io::{expand_paths, expand_paths_hive, expanded_from_single_directory}
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::UnifiedScanArgs;
 
+#[cfg(feature = "serde")]
 fn serialize_paths<S: Serializer>(paths: &Buffer<PlRefPath>, s: S) -> Result<S::Ok, S::Error> {
     paths.as_slice().serialize(s)
 }
 
+#[cfg(feature = "serde")]
 fn deserialize_paths<'de, D: Deserializer<'de>>(d: D) -> Result<Buffer<PlRefPath>, D::Error> {
     let v: Vec<PlRefPath> = Deserialize::deserialize(d)?;
     Ok(Buffer::from(v))
