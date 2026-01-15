@@ -102,7 +102,7 @@ def test_add_business_days_schema() -> None:
     )
     assert result.collect_schema()["result"] == pl.Date
     assert result.collect().schema["result"] == pl.Date
-    assert 'col("start").add_business_days([col("n")])' in result.explain()
+    assert 'col("start").add_business_days([col("n"), Series])' in result.explain()
 
 
 def test_add_business_days_w_holidays() -> None:

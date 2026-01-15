@@ -117,7 +117,7 @@ def test_business_day_count_schema() -> None:
     )
     assert result.collect_schema()["business_day_count"] == pl.Int32
     assert result.collect().schema["business_day_count"] == pl.Int32
-    assert 'col("start").business_day_count([col("end")])' in result.explain()
+    assert 'col("start").business_day_count([col("end"), Series])' in result.explain()
 
 
 def test_business_day_count_w_holidays() -> None:
