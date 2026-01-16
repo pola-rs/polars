@@ -3,7 +3,7 @@ use std::sync::Arc;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
-    DataType, Field, IDX_DTYPE, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap,
+    DataType, Field, IDX_DTYPE, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap, PlIndexSet,
 };
 use polars_core::scalar::Scalar;
 use polars_core::schema::{Schema, SchemaExt};
@@ -501,12 +501,12 @@ fn build_fallback_node_with_ctx(
 
 fn simplify_input_streams(
     orig_input: PhysStream,
-    mut input_streams: PlHashSet<PhysStream>,
+    mut input_streams: PlIndexSet<PhysStream>,
     ctx: &mut LowerExprContext,
-) -> PolarsResult<PlHashSet<PhysStream>> {
+) -> PolarsResult<PlIndexSet<PhysStream>> {
     // Flatten nested zips (ensures the original input columns only occur once).
     if input_streams.len() > 1 {
-        let mut flattened_input_streams = PlHashSet::with_capacity(input_streams.len());
+        let mut flattened_input_streams = PlIndexSet::with_capacity(input_streams.len());
         for input_stream in input_streams {
             if let PhysNodeKind::Zip {
                 inputs,
@@ -611,7 +611,7 @@ fn lower_exprs_with_ctx(
     let mut fallback_subset = Vec::new();
 
     // Streams containing the columns used for executing transformed expressions.
-    let mut input_streams = PlHashSet::new();
+    let mut input_streams = PlIndexSet::new();
 
     // The final transformed expressions that will be selected from the zipped
     // together transformed nodes.
