@@ -393,7 +393,7 @@ pub fn csv_file_info(
                     (_, true) => Ok((schema_a, row_estimate_a)),
                     _ => {
                         schema_a.to_supertype(&schema_b)?;
-                        Ok((schema_a, row_estimate_a + row_estimate_b))
+                        Ok((schema_a, row_estimate_a.saturating_add(row_estimate_b)))
                     },
                 }
             },
