@@ -6,7 +6,6 @@ use polars_error::PolarsResult;
 use polars_io::utils::file::Writeable;
 use polars_utils::pl_str::PlSmallStr;
 
-use crate::plans::{AExpr, ExprIR};
 use crate::prelude::PlanCallback;
 
 #[derive(Debug)]

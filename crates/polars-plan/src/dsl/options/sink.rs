@@ -194,7 +194,7 @@ impl schemars::JsonSchema for SinkTarget {
     }
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        PathBuf::json_schema(generator)
+        PlRefPath::json_schema(generator)
     }
 }
 
