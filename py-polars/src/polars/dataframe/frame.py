@@ -3040,8 +3040,11 @@ class DataFrame:
             The compression level to use, typically 0-9 or `None` to let the
             engine choose.
         check_extension
-            Whether to check if the filename suffix conforms to standard naming
-            conventions. Only applies if the file is a path.
+            Whether to check if the filename matches the compression settings.
+            Will raise an error if compression is set to 'uncompressed' and the
+            filename ends in one of (".gz", ".zst", ".zstd") or if
+            compression != 'uncompressed' and the filename does not end in the
+            appropriate extension. Only applies if file is a path.
         include_header
             Whether to include header in the CSV output.
         separator
