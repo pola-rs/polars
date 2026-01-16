@@ -19,4 +19,4 @@ jobs:
       - name: Install ripgrep
         run: sudo apt-get update && sudo apt-get install -y ripgrep
       - name: Check for FIXME comments
-        run: make check-fixme
+      - run: make check-fixme
