@@ -43,11 +43,20 @@ impl NodeTimer {
     pub(super) fn finish(self) -> PolarsResult<DataFrame> {
         let mut data = self.data.lock().unwrap();
         let mut nodes = std::mem::take(&mut data.0);
+        let mut ticks = std::mem::take(&mut data.1);
+
+        if ticks.is_empty() {
+            let schema = Schema::from_iter(vec![
+                Field::new(PlSmallStr::from_static("node"), DataType::String),
+                Field::new(PlSmallStr::from_static("start"), DataType::UInt64),
+                Field::new(PlSmallStr::from_static("end"), DataType::UInt64),
+            ]);
+            return PolarsResult::Ok(DataFrame::empty_with_schema(&schema));
+        }
+
         nodes.push("optimization".to_string());
 
-        let mut ticks = std::mem::take(&mut data.1);
         // first value is end of optimization
-        polars_ensure!(!ticks.is_empty(), ComputeError: "no data to time");
         let start = ticks[0].0;
         ticks.push((Duration::from_nanos(0), start));
         let nodes_s = Column::new(PlSmallStr::from_static("node"), nodes);
@@ -69,5 +78,53 @@ impl NodeTimer {
         let columns = vec![nodes_s, start.into_column(), end.into_column()];
         let df = unsafe { DataFrame::new_unchecked(height, columns) };
         df.sort(vec!["start"], SortMultipleOptions::default())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Instant;
+
+    use super::*;
+
+    #[test]
+    fn test_empty_timer() {
+        let start_time = Instant::now();
+        let timer = NodeTimer::new(start_time);
+
+        let result = timer.finish();
+        assert!(result.is_ok());
+
+        let df = result.unwrap();
+        assert_eq!(df.height(), 0);
+        assert_eq!(df.width(), 3);
+
+        let expected_columns = vec!["node", "start", "end"];
+        let actual_columns: Vec<&str> = df.get_column_names().iter().map(|s| s.as_str()).collect();
+        assert_eq!(actual_columns, expected_columns);
+
+        assert_eq!(
+            df.dtypes(),
+            vec![DataType::String, DataType::UInt64, DataType::UInt64]
+        );
+    }
+
+    #[test]
+    fn test_timer_with_data() {
+        let start_time = Instant::now();
+        let timer = NodeTimer::new(start_time);
+
+        timer.store_duration(
+            Duration::from_millis(100),
+            Duration::from_millis(200),
+            "test_node".to_string(),
+        );
+
+        let result = timer.finish();
+        assert!(result.is_ok());
+
+        let df = result.unwrap();
+        assert_eq!(df.height(), 2); // test_node + optimization
+        assert_eq!(df.width(), 3);
     }
 }
