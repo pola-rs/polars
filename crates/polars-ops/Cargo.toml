@@ -99,7 +99,7 @@ serde = [
   "polars-core/serde",
   "polars-utils/serde",
   "polars-schema/serde",
-  "polars-compute/serde"
+  "polars-compute/serde",
 ]
 dsl-schema = [
   "dep:schemars",
