@@ -13,6 +13,7 @@ use crate::prelude::PlanCallback;
 #[derive(Debug)]
 pub struct FileProviderArgs {
     pub index_in_partition: usize,
+    /// Will always have a height of 1.
     pub partition_keys: Arc<DataFrame>,
 }
 
