@@ -64,7 +64,7 @@ impl LineBatchDistributor {
             let range = global_idx_map.map_range(range);
 
             let chunk = &global_bytes[range];
-            let mut remainders_combine_to_full_chunk = false;
+            let mut remainder_combines_to_full_chunk = false;
 
             // Split off the chunk occurring after the last newline char.
             let chunk_remainder = if chunk_idx == n_chunks - 1 {
@@ -76,7 +76,7 @@ impl LineBatchDistributor {
                 // remainder: -----
                 let eol_idx = chunk.iter().position(|c| *c == LF);
 
-                remainders_combine_to_full_chunk = eol_idx.is_some();
+                remainder_combines_to_full_chunk = eol_idx.is_some() && !prev_remainder.is_empty();
 
                 let end_idx = eol_idx.map_or(chunk.len(), |i| 1 + i);
 
@@ -84,11 +84,7 @@ impl LineBatchDistributor {
             } else {
                 // chunk:     ---------\n---
                 // remainder:            ---
-                let eol_idx = chunk.iter().rposition(|c| *c == LF);
-
-                remainders_combine_to_full_chunk = eol_idx.is_some();
-
-                let start_idx = eol_idx.map_or(0, |i| 1 + i);
+                let start_idx = chunk.iter().rposition(|c| *c == LF).map_or(0, |i| 1 + i);
 
                 &chunk[start_idx..]
             };
@@ -113,7 +109,7 @@ impl LineBatchDistributor {
                 )
             }
 
-            if !full_lines_chunk.is_empty() || remainders_combine_to_full_chunk {
+            if !full_lines_chunk.is_empty() || remainder_combines_to_full_chunk {
                 let mut full_lines_chunk = if prev_remainder.is_empty() {
                     full_lines_chunk
                 } else if full_lines_chunk.is_empty() {
