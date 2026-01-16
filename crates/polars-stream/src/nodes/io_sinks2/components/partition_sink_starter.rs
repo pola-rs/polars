@@ -4,7 +4,7 @@ use std::sync::Arc;
 use polars_error::PolarsResult;
 use polars_io::pl_async;
 use polars_io::utils::sync_on_close::SyncOnCloseType;
-use polars_plan::dsl::sink2::FileProviderArgs;
+use polars_plan::dsl::file_provider::FileProviderArgs;
 
 use crate::async_executor;
 use crate::async_primitives::connector;

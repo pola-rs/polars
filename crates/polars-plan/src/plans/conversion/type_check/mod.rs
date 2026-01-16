@@ -6,7 +6,7 @@ use polars_core::schema::Schema;
 use polars_utils::arena::{Arena, Node};
 
 use super::{AExpr, IR, OptimizationRule};
-use crate::dsl::{FileWriteFormat, PartitionStrategyIR, PartitionedSinkOptionsIR, SinkTypeIR};
+use crate::dsl::{FileWriteFormat, PartitionedSinkOptionsIR, SinkTypeIR};
 use crate::plans::conversion::get_input_schema;
 
 pub struct TypeCheckRule;
@@ -151,6 +151,8 @@ impl OptimizationRule for TypeCheckRule {
                         && let write_options @ ParquetWriteOptions { .. } = write_options.as_ref()
                         && !write_options.field_overwrites.is_empty()
                     {
+                        use crate::dsl::sink::PartitionStrategyIR;
+
                         let mut input_schema = get_input_schema(ir_arena, node);
 
                         if let SinkTypeIR::Partitioned(PartitionedSinkOptionsIR {

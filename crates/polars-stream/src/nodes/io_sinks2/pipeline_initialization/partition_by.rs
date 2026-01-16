@@ -9,7 +9,6 @@ use crate::async_executor::{self, TaskPriority};
 use crate::async_primitives::connector;
 use crate::execute::StreamingExecutionState;
 use crate::morsel::Morsel;
-use crate::nodes::io_sinks2::components::arg_sort::ArgSortBy;
 use crate::nodes::io_sinks2::components::error_capture::ErrorCapture;
 use crate::nodes::io_sinks2::components::file_provider::FileProvider;
 use crate::nodes::io_sinks2::components::partition_distributor::PartitionDistributor;
@@ -59,7 +58,6 @@ pub fn start_partition_sink_pipeline(
         include_keys_in_file,
         file_schema,
         file_size_limit,
-        per_partition_sort,
     } = *target;
 
     let node_name = node_name.clone();
@@ -92,7 +90,6 @@ pub fn start_partition_sink_pipeline(
             inflight_morsel_limit: {}, \
             takeable_rows_provider: {:?}, \
             file_size_limit: {:?}, \
-            per_partition_sort: {}, \
             upload_chunk_size: {}",
             partitioner.verbose_display(),
             file_writer_starter.writer_name(),
@@ -101,7 +98,6 @@ pub fn start_partition_sink_pipeline(
             inflight_morsel_limit,
             takeable_rows_provider,
             file_size_limit,
-            per_partition_sort.is_some(),
             upload_chunk_size
         );
     }
@@ -147,12 +143,6 @@ pub fn start_partition_sink_pipeline(
         error_capture: error_capture.clone(),
     };
 
-    let per_partition_sort = per_partition_sort.map(|(by, sort_options)| ArgSortBy {
-        by,
-        sort_options,
-        in_memory_exec_state,
-    });
-
     let partition_distributor_handle =
         async_executor::AbortOnDropHandle::new(async_executor::spawn(
             TaskPriority::High,
@@ -165,7 +155,6 @@ pub fn start_partition_sink_pipeline(
                 max_open_sinks,
                 open_sinks_semaphore,
                 partition_sink_starter,
-                per_partition_sort,
                 no_partition_keys,
                 verbose,
             }

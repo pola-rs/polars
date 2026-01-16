@@ -7,8 +7,8 @@ use polars_io::cloud::CloudOptions;
 use polars_io::pl_async;
 use polars_io::utils::HIVE_VALUE_ENCODE_CHARSET;
 use polars_io::utils::file::Writeable;
-use polars_plan::dsl::sink2::{FileProviderReturn, FileProviderType};
-use polars_plan::prelude::sink2::FileProviderArgs;
+use polars_plan::dsl::file_provider::{FileProviderReturn, FileProviderType};
+use polars_plan::prelude::file_provider::FileProviderArgs;
 use polars_utils::pl_path::PlRefPath;
 
 pub struct FileProvider {
@@ -58,8 +58,6 @@ impl FileProvider {
                     FileProviderReturn::Writeable(v) => return Ok(v),
                 }
             },
-
-            FileProviderType::Legacy(_) => unreachable!(),
         };
 
         let path = self.base_path.join(&provided_path);
