@@ -107,6 +107,7 @@ impl<T> Drop for SharedStorageInner<T> {
     }
 }
 
+#[repr(transparent)]
 pub struct SharedStorage<T> {
     inner: NonNull<SharedStorageInner<T>>,
     phantom: PhantomData<SharedStorageInner<T>>,
@@ -213,6 +214,17 @@ impl<T> SharedStorage<T> {
                 BackingStorage::Leaked,
             ));
         }
+    }
+
+    /// # Safety
+    /// The caller is responsible for ensuring the resulting slice is valid and aligned for U.
+    pub unsafe fn transmute_unchecked<U>(self) -> SharedStorage<U> {
+        let storage = SharedStorage {
+            inner: self.inner.cast(),
+            phantom: PhantomData,
+        };
+        std::mem::forget(self);
+        storage
     }
 }
 
@@ -365,13 +377,8 @@ impl<T: Pod> SharedStorage<T> {
         if !align_of::<T>().is_multiple_of(align_of::<U>()) && !inner.ptr.cast::<U>().is_aligned() {
             return Err(self);
         }
-
-        let storage = SharedStorage {
-            inner: self.inner.cast(),
-            phantom: PhantomData,
-        };
-        std::mem::forget(self);
-        Ok(storage)
+        
+        Ok(unsafe { self.transmute_unchecked::<U>() })
     }
 }
 
