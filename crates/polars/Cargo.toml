@@ -12,6 +12,7 @@ description = "DataFrame library based on Apache Arrow"
 
 [dependencies]
 arrow = { workspace = true }
+polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["algorithm_group_by"] }
 polars-error = { workspace = true }
@@ -74,7 +75,7 @@ default = [
 ]
 ndarray = ["polars-core/ndarray"]
 # serde support for dataframes and series
-serde = ["polars-core/serde", "polars-utils/serde"]
+serde = ["polars-buffer/serde", "polars-core/serde", "polars-utils/serde"]
 serde-lazy = [
   "polars-core/serde-lazy",
   "polars-lazy?/serde",
