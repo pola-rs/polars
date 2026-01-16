@@ -74,7 +74,7 @@ impl LineBatchDistributor {
                 // Remainder is on the left because we are parsing lines in reverse:
                 // N = '\n'
                 // chunk:     ---N---------
-                // remainder: ----
+                // remainder: ---N
                 let eol_idx = chunk.iter().position(|c| *c == LF);
 
                 remainder_combines_to_full_chunk = eol_idx.is_some() && !prev_remainder.is_empty();
