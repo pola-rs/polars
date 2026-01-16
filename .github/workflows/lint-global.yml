@@ -16,5 +16,5 @@ jobs:
         uses: dprint/check@v2.3
       - name: Spell Check with Typos
         uses: crate-ci/typos@v1.42.0
-      - name: Lint leftover FIXME
-      - run: make check-leftover-fixme
+      - name: Check for FIXME comments
+      - run: make check-fixme
