@@ -14,7 +14,7 @@ use super::stack_opt::ConversionOptimizer;
 use super::*;
 use crate::constants::get_pl_element_name;
 use crate::dsl::PartitionedSinkOptions;
-use crate::dsl::file_provider::FileProviderType;
+use crate::dsl::file_provider::{FileProviderType, HivePathProvider};
 use crate::dsl::functions::{all_horizontal, col};
 
 mod concat;
@@ -1284,9 +1284,9 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     let options = PartitionedSinkOptionsIR {
                         base_path,
                         file_path_provider: file_path_provider.unwrap_or_else(|| {
-                            FileProviderType::Hive {
+                            FileProviderType::Hive(HivePathProvider {
                                 extension: PlSmallStr::from_static(file_format.extension()),
-                            }
+                            })
                         }),
                         partition_strategy,
                         file_format,
