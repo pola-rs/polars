@@ -112,11 +112,7 @@ impl IR {
                         keys,
                         include_keys: _,
                         keys_pre_grouped: _,
-                        per_partition_sort_by,
-                    } => Exprs::Boxed(Box::new(
-                        keys.iter()
-                            .chain(per_partition_sort_by.iter().map(|x| &x.expr)),
-                    ) as _),
+                    } => Exprs::Slice(keys.iter()),
                     PartitionStrategyIR::FileSize => Exprs::Empty,
                 },
             },
@@ -188,11 +184,7 @@ impl IR {
                         keys,
                         include_keys: _,
                         keys_pre_grouped: _,
-                        per_partition_sort_by,
-                    } => ExprsMut::Boxed(Box::new(
-                        keys.iter_mut()
-                            .chain(per_partition_sort_by.iter_mut().map(|x| &mut x.expr)),
-                    ) as _),
+                    } => ExprsMut::Slice(keys.iter_mut()),
                     PartitionStrategyIR::FileSize => ExprsMut::Empty,
                 },
             },
