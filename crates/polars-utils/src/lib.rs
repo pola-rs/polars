@@ -35,6 +35,7 @@ pub mod parma;
 pub mod pl_path;
 mod pl_ref_str;
 pub mod pl_str;
+mod plpath;
 pub mod priority;
 pub mod regex_cache;
 pub mod relaxed_cell;
