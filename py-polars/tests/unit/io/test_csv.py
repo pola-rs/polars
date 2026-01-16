@@ -14,7 +14,11 @@ from typing import TYPE_CHECKING, TypedDict
 import numpy as np
 import pyarrow as pa
 import pytest
-import zstandard
+
+if sys.version_info >= (3, 14):
+    from compression import zstd
+else:
+    from backports import zstd
 
 import polars as pl
 from polars._utils.various import normalize_filepath
@@ -641,7 +645,7 @@ def test_compressed_csv(io_files_path: Path, monkeypatch: pytest.MonkeyPatch) ->
         assert_frame_equal(out, expected)
 
     # zstd compression
-    csv_bytes = zstandard.compress(csv.encode())
+    csv_bytes = zstd.compress(csv.encode())
     out = pl.read_csv(csv_bytes)
     assert_frame_equal(out, expected)
 
@@ -670,7 +674,7 @@ def test_partial_decompression(foods_file_path: Path) -> None:
         assert out.shape == (n_rows, 4)
 
     # zstd compression
-    csv_bytes = zstandard.compress(foods_file_path.read_bytes())
+    csv_bytes = zstd.compress(foods_file_path.read_bytes())
     for n_rows in [1, 5, 26]:
         out = pl.read_csv(csv_bytes, n_rows=n_rows)
         assert out.shape == (n_rows, 4)
@@ -2530,7 +2534,7 @@ def test_csv_compressed_new_columns_19916() -> None:
         }
     )
 
-    b = zstandard.compress(df.write_csv(include_header=False).encode())
+    b = zstd.compress(df.write_csv(include_header=False).encode())
 
     q = pl.scan_csv(b, has_header=False, new_columns=["a", "b", "c", "d", "e", "f"])
     assert_frame_equal(q.collect(), df)

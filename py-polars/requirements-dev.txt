@@ -45,7 +45,7 @@ xlsxwriter<=3.2.5
 # Other I/O
 deltalake>=1.1.4
 # Csv
-zstandard
+backports.zstd ; python_version < '3.14'
 # Plotting
 altair>=5.4.0
 # Styling

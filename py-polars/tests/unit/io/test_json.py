@@ -5,6 +5,7 @@ import io
 import json
 import math
 import re
+import sys
 import zlib
 from collections import OrderedDict
 from datetime import datetime
@@ -12,7 +13,11 @@ from decimal import Decimal as D
 from io import BytesIO
 from typing import TYPE_CHECKING
 
-import zstandard
+if sys.version_info >= (3, 14):
+    from compression import zstd
+else:
+    from backports import zstd
+
 from hypothesis import given
 
 from polars.datatypes.group import FLOAT_DTYPES
@@ -541,7 +546,7 @@ def test_compressed_json() -> None:
     assert_frame_equal(out, expected)
 
     # zstd
-    compressed_bytes = zstandard.compress(json_bytes)
+    compressed_bytes = zstd.compress(json_bytes)
     out = pl.read_json(compressed_bytes)
     assert_frame_equal(out, expected)
 
