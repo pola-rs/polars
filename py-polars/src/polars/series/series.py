@@ -4338,6 +4338,31 @@ class Series:
         ]
         """
 
+    def flatten(self) -> Series:
+        """
+        Flattens one level of nesting from a list or array series.
+
+        Alias for :func:`Series.list.explode` with `empty_as_null = False` and
+        `keep_nulls = False`.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[0], [], [1, 2], None, [3, 4, None], [5, 6]])
+        >>> s.flatten()
+        shape: (8,)
+        Series: 'a' [i64]
+        [
+                0
+                1
+                2
+                3
+                4
+                null
+                5
+                6
+        ]
+        """
+
     def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Series:
         """
         Explode a list Series.

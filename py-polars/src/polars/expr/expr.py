@@ -5029,9 +5029,10 @@ Consider using {self}.implode() instead"""
 
     def flatten(self) -> Expr:
         """
-        Flatten a list or string column.
+        Flattens one level of nesting from a list or array column.
 
-        Alias for :func:`Expr.list.explode`.
+        Alias for :func:`Expr.list.explode` with `empty_as_null = False` and
+        `keep_nulls = False`.
 
         Examples
         --------
@@ -5052,7 +5053,7 @@ Consider using {self}.implode() instead"""
         │ b     ┆ [2, 3, 4] │
         └───────┴───────────┘
         """
-        return self.explode(empty_as_null=True, keep_nulls=True)
+        return self.explode(empty_as_null=False, keep_nulls=False)
 
     def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Expr:
         """
