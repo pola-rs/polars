@@ -377,7 +377,7 @@ impl<T: Pod> SharedStorage<T> {
         if !align_of::<T>().is_multiple_of(align_of::<U>()) && !inner.ptr.cast::<U>().is_aligned() {
             return Err(self);
         }
-        
+
         Ok(unsafe { self.transmute_unchecked::<U>() })
     }
 }
