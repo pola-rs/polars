@@ -137,7 +137,7 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
         }
 
         polars_utils::python_convert_registry::register_converters(PythonConvertRegistry {
-            from_py: FromPythonConvertRegistry { 
+            from_py: FromPythonConvertRegistry {
                 file_provider_result: Arc::new(|py_f| {
                     Python::attach(|py| {
                         Ok(Box::new(py_f.extract::<Wrap<FileProviderReturn>>(py)?.0) as _)

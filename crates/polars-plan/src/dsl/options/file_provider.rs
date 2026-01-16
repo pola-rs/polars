@@ -1,18 +1,11 @@
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
 use polars_error::PolarsResult;
-use polars_io::cloud::CloudOptions;
 use polars_io::utils::file::Writeable;
-use polars_io::utils::sync_on_close::SyncOnCloseType;
-use polars_utils::IdxSize;
-use polars_utils::arena::Arena;
-use polars_utils::pl_path::{CloudScheme, PlRefPath};
 use polars_utils::pl_str::PlSmallStr;
 
-use super::Expr;
-use super::sink::*;
 use crate::plans::{AExpr, ExprIR};
 use crate::prelude::PlanCallback;
 
