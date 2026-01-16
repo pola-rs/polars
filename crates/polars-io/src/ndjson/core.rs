@@ -394,11 +394,16 @@ pub fn json_lines(bytes: &[u8]) -> impl Iterator<Item = &[u8]> {
     // things we don't need since we use simd_json for them. Also, `serde_json::StreamDeserializer` has a more
     // ambitious goal: it wants to parse potentially *non-delimited* sequences of JSON values, while we know
     // our values are line-delimited. Turns out, custom splitting is very easy, and gives a very nice performance boost.
-    bytes.split(|&byte| byte == b'\n').filter(|&bytes| {
-        bytes
-            .iter()
-            .any(|&byte| !matches!(byte, b' ' | b'\t' | b'\r'))
-    })
+    bytes
+        .split(|&byte| byte == b'\n')
+        .filter(|bytes| is_json_line(bytes))
+}
+
+#[inline]
+pub fn is_json_line(bytes: &[u8]) -> bool {
+    bytes
+        .iter()
+        .any(|byte| !matches!(*byte, b' ' | b'\t' | b'\r'))
 }
 
 fn parse_lines(

@@ -632,7 +632,7 @@ pub fn lower_ir(
                     FileScanIR::Csv { options } => Arc::new(Arc::clone(options)) as _,
 
                     #[cfg(feature = "json")]
-                    FileScanIR::NDJson { options } => Arc::new(Arc::new(options.clone())) as _,
+                    FileScanIR::NDJson { options } => Arc::new(options.clone()) as _,
 
                     #[cfg(feature = "python")]
                     FileScanIR::PythonDataset {
@@ -652,7 +652,9 @@ pub fn lower_ir(
                     },
 
                     #[cfg(feature = "scan_lines")]
-                    FileScanIR::Lines { name: _ } => todo!(),
+                    FileScanIR::Lines { name: _ } => {
+                        Arc::new(crate::nodes::io_sources::lines::LineReaderBuilder {}) as _
+                    },
 
                     FileScanIR::Anonymous { .. } => todo!("unimplemented: AnonymousScan"),
                 };

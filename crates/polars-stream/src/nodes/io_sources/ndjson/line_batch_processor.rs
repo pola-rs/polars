@@ -1,8 +1,6 @@
 use std::cmp::Reverse;
-use std::sync::Arc;
 
 use polars_error::PolarsResult;
-use polars_io::ndjson;
 use polars_utils::mmap::MemSlice;
 use polars_utils::priority::Priority;
 
@@ -22,7 +20,8 @@ pub(super) struct LineBatchProcessor {
     /// We need to hold a ref to this as `LineBatch` we receive contains `&[u8]`
     /// references to it.
     pub(super) global_bytes: MemSlice,
-    pub(super) chunk_reader: Arc<ChunkReader>,
+    pub(super) chunk_reader: ChunkReader,
+    pub(super) count_rows_fn: fn(&[u8]) -> usize,
 
     // Input
     pub(super) line_batch_rx: distributor_channel::Receiver<LineBatch>,
@@ -43,6 +42,7 @@ impl LineBatchProcessor {
             worker_idx,
             global_bytes: _global_bytes,
             chunk_reader,
+            count_rows_fn,
             mut line_batch_rx,
             mut output_port,
             needs_total_row_count,
@@ -59,15 +59,17 @@ impl LineBatchProcessor {
 
         let mut n_rows_processed: usize = 0;
 
-        while let Ok(LineBatch { bytes, chunk_idx }) = line_batch_rx.recv().await {
-            let df = chunk_reader.read_chunk(bytes)?;
+        if !matches!(output_port, LineBatchProcessorOutputPort::Closed) {
+            while let Ok(LineBatch { bytes, chunk_idx }) = line_batch_rx.recv().await {
+                let df = chunk_reader.read_chunk(bytes)?;
 
-            n_rows_processed = n_rows_processed.saturating_add(df.height());
+                n_rows_processed = n_rows_processed.saturating_add(df.height());
 
-            let morsel_seq = MorselSeq::new(chunk_idx as u64);
+                let morsel_seq = MorselSeq::new(chunk_idx as u64);
 
-            if output_port.send(morsel_seq, df).await.is_err() {
-                break;
+                if output_port.send(morsel_seq, df).await.is_err() {
+                    break;
+                }
             }
         }
 
@@ -81,7 +83,7 @@ impl LineBatchProcessor {
                 chunk_idx: _,
             }) = line_batch_rx.recv().await
             {
-                n_rows_processed = n_rows_processed.saturating_add(ndjson::count_rows(bytes));
+                n_rows_processed = n_rows_processed.saturating_add(count_rows_fn(bytes));
             }
         }
 

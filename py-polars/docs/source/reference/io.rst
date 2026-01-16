@@ -99,6 +99,14 @@ JSON
    DataFrame.write_ndjson
    LazyFrame.sink_ndjson
 
+Lines
+~~~~~
+.. autosummary::
+   :toctree: api/
+
+   read_lines
+   scan_lines
+
 
 Partition
 ~~~~~~~~~
