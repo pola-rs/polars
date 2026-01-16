@@ -149,7 +149,7 @@ is_in = ["polars/is_in"]
 json = [
   "polars/serde",
   "polars-buffer/serde",
-  "serde_json",
+  "dep:serde_json",
   "polars/json",
   "polars-utils/serde",
   "polars-mem-engine/json",

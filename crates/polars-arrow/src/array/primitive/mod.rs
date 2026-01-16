@@ -41,7 +41,7 @@ use polars_utils::slice::SliceAble;
 /// ```
 /// use polars_arrow::array::PrimitiveArray;
 /// use polars_arrow::bitmap::Bitmap;
-/// use polars_polars_buffer::Buffer;
+/// use polars_buffer::Buffer;
 ///
 /// let array = PrimitiveArray::from([Some(1i32), None, Some(10)]);
 /// assert_eq!(array.value(0), 1);

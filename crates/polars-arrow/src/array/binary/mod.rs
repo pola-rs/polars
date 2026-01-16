@@ -33,7 +33,7 @@ pub mod proptest;
 /// ```
 /// use polars_arrow::array::BinaryArray;
 /// use polars_arrow::bitmap::Bitmap;
-/// use polars_polars_buffer::Buffer;
+/// use polars_buffer::Buffer;
 ///
 /// let array = BinaryArray::<i32>::from([Some([1, 2].as_ref()), None, Some([3].as_ref())]);
 /// assert_eq!(array.value(0), &[1, 2]);

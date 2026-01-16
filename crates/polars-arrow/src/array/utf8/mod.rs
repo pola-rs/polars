@@ -36,7 +36,7 @@ impl<T: AsRef<str>> AsRef<[u8]> for StrAsBytes<T> {
 /// # Example
 /// ```
 /// use polars_arrow::bitmap::Bitmap;
-/// use polars_polars_buffer::Buffer;
+/// use polars_buffer::Buffer;
 /// use polars_arrow::array::Utf8Array;
 /// # fn main() {
 /// let array = Utf8Array::<i32>::from([Some("hi"), None, Some("there")]);

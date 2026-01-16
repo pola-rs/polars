@@ -18,7 +18,7 @@ use crate::storage::SharedStorage;
 ///
 /// # Examples
 /// ```
-/// use polars_polars_buffer::Buffer;
+/// use polars_buffer::Buffer;
 ///
 /// let mut buffer: Buffer<u32> = vec![1, 2, 3].into();
 /// assert_eq!(buffer.as_ref(), [1, 2, 3].as_ref());
