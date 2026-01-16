@@ -72,8 +72,9 @@ impl LineBatchDistributor {
                 &[]
             } else if reverse {
                 // Remainder is on the left because we are parsing lines in reverse:
-                // chunk:     ---\n---------
-                // remainder: -----
+                // N = '\n'
+                // chunk:     ---N---------
+                // remainder: ----
                 let eol_idx = chunk.iter().position(|c| *c == LF);
 
                 remainder_combines_to_full_chunk = eol_idx.is_some() && !prev_remainder.is_empty();
@@ -82,8 +83,9 @@ impl LineBatchDistributor {
 
                 &chunk[..end_idx]
             } else {
-                // chunk:     ---------\n---
-                // remainder:            ---
+                // N = '\n'
+                // chunk:     ---------N---
+                // remainder:           ---
                 let start_idx = chunk.iter().rposition(|c| *c == LF).map_or(0, |i| 1 + i);
 
                 &chunk[start_idx..]
