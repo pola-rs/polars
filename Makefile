@@ -168,9 +168,9 @@ py-lint: .venv  ## Run python lint checks (only)
 .PHONY: check-fixme
 check-fixme:
 	@cmd_exit=0; \
-	rg -q -i --glob '!/Makefile' --glob '!/.github/worksflows/lint-global.yml' 'FIXME' || cmd_exit=$$?; \
+	rg -q -i --hidden --glob '!/.git' --glob '!/Makefile' --glob '!/.github/workflows/lint-global.yml' 'FIXME' || cmd_exit=$$?; \
 	if [ $$cmd_exit -eq 0 ]; then \
-		rg -i --glob '!/Makefile' --glob '!/.github/worksflows/lint-global.yml' -C 2 'FIXME'; \
+		rg -i --hidden --glob '!/.git' --glob '!/Makefile' --glob '!/.github/workflows/lint-global.yml' -C 2 'FIXME'; \
 		printf "\n[ERROR] Found FIXME, use TODO for things that are ok to merge.\n"; \
 		exit 1; \
 	fi
