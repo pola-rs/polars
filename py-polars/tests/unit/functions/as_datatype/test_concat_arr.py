@@ -198,3 +198,17 @@ def test_concat_arr_expansion_23267() -> None:
     out = df.select(z=pl.concat_arr(pl.all())).to_series()
 
     assert_series_equal(out, pl.Series("z", [[1, 2]], dtype=pl.Array(pl.Int64, 2)))
+
+
+def test_concat_arr_on_enum_columns_20917() -> None:
+    enum_dtype = pl.Enum(["A", "B"])
+    array_dtype = pl.Array(enum_dtype, 2)
+    df = pl.DataFrame(
+        [
+            pl.Series(["A", "B"], dtype=enum_dtype),
+            pl.Series(["B", "A"], dtype=enum_dtype),
+        ]
+    )
+    output = df.select(out=pl.concat_arr(pl.all())).to_series()
+    expected_output = pl.Series("out", [["A", "B"], ["B", "A"]], dtype=array_dtype)
+    assert_series_equal(output, expected_output)
