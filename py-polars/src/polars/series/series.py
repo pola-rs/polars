@@ -59,6 +59,7 @@ from polars._utils.unstable import unstable
 from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
     _is_generator,
+    is_sequence,
     no_default,
     parse_version,
     qualified_type_name,
@@ -817,7 +818,7 @@ class Series:
             assert f is not None
             return self._from_pyseries(f(d))
 
-        if isinstance(other, Sequence) and not isinstance(other, str):
+        if is_sequence(other):
             if self.dtype in (List, Array):
                 other = [other]
             other = Series("", other)
