@@ -146,7 +146,9 @@ def _import_optional_adbc_driver(
         err_suffix="driver not detected",
         install_message=(
             "If ADBC supports this database, please run: pip install "
-            f"{module_name.replace('_', '-')}"
+            # DuckDB distributes adbc_driver_duckdb as a module in the duckdb package
+            f"{'duckdb' if module_name == 'adbc_driver_duckdb' else module_name.replace('_', '-')} "
+            "or install the driver with the `dbc` command line tool (https://docs.columnar.tech/dbc/)"
         ),
     )
     if not dbapi_submodule:
