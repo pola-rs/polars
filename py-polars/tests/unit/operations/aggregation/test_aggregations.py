@@ -1349,8 +1349,10 @@ def test_grouped_minmax_after_reverse_on_sorted_column_26141(
     expr = getattr(pl.col("a").reverse(), agg)()
     out = df.group_by(1).agg(expr)
 
-    expected = pl.DataFrame(
-        {"literal": [1], "a": [2]},
-        schema={"literal": pl.Int32, "a": pl.Int64},
+    expected_df = pl.DataFrame(
+        {
+            "literal": pl.Series([1], dtype=pl.Int32),
+            "a": [expected],
+        }
     )
     assert_frame_equal(out, expected_df)
