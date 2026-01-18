@@ -76,6 +76,7 @@ impl FileReader for NDJsonFileReader {
                 },
 
             predicate: None,
+            sample: None,
             cast_columns_policy: _,
         } = args
         else {

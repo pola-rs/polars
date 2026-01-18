@@ -522,3 +522,50 @@ impl fmt::Debug for ScanIOPredicate {
         f.write_str("scan_io_predicate")
     }
 }
+
+/// A predicate for hash-based sampling that uses a row index column.
+/// This is used for pre-filtered decode optimization where we generate
+/// a sample mask before decoding the actual data columns.
+#[derive(Clone)]
+pub struct SamplePredicate {
+    /// Fraction of rows to sample (0.0 to 1.0).
+    pub fraction: f64,
+    /// Seed for deterministic hash-based sampling.
+    pub seed: u64,
+    /// Name of the row index column to use for sampling.
+    pub row_index_name: PlSmallStr,
+}
+
+impl PhysicalIoExpr for SamplePredicate {
+    fn evaluate_io(&self, df: &DataFrame) -> PolarsResult<Series> {
+        use std::hash::{Hash, Hasher};
+        use std::collections::hash_map::DefaultHasher;
+
+        let row_idx_col = df.column(&self.row_index_name)?;
+        let row_idx = row_idx_col.idx()?;
+
+        let mask: BooleanChunked = row_idx
+            .iter()
+            .map(|opt_idx| {
+                opt_idx.map(|idx| {
+                    // Deterministic hash based on seed and row position
+                    let mut hasher = DefaultHasher::new();
+                    self.seed.hash(&mut hasher);
+                    idx.hash(&mut hasher);
+                    let hash = hasher.finish();
+                    // Convert hash to probability [0, 1)
+                    let prob = (hash as f64) / (u64::MAX as f64);
+                    prob < self.fraction
+                })
+            })
+            .collect();
+
+        Ok(mask.into_series())
+    }
+}
+
+impl fmt::Debug for SamplePredicate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "sample_predicate(fraction={}, seed={})", self.fraction, self.seed)
+    }
+}

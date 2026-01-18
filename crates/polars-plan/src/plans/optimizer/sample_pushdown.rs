@@ -2,6 +2,9 @@
 //!
 //! This optimization pushes `FunctionIR::Sample` operations into `IR::Scan` nodes,
 //! allowing sampling to happen at the scan level for better memory efficiency.
+//! 
+//! When sample is pushed to the Scan node, the parquet reader can use pre-filtered
+//! decode to only decode columns for sampled rows, dramatically reducing memory usage.
 
 use polars_utils::arena::{Arena, Node};
 
@@ -14,10 +17,14 @@ pub fn sample_pushdown(root: Node, ir_arena: &mut Arena<IR>, _expr_arena: &Arena
     let mut stack = vec![root];
 
     while let Some(node) = stack.pop() {
-        {
-            let ir = ir_arena.get(node);
-            ir.copy_inputs(&mut stack);
+        let ir = ir_arena.get(node);
+
+        // Skip Invalid nodes (left over from previous swaps in this pass)
+        if matches!(ir, IR::Invalid) {
+            continue;
         }
+
+        ir.copy_inputs(&mut stack);
 
         // Extract sample info if this is a MapFunction(Sample)
         let sample_info: Option<(Node, f64, bool, u64)> = {
@@ -40,7 +47,7 @@ pub fn sample_pushdown(root: Node, ir_arena: &mut Arena<IR>, _expr_arena: &Arena
 
         // If we found a Sample, check if input is a Scan and push down
         if let Some((input_node, fraction, with_replacement, seed)) = sample_info {
-            // Check if input is a Scan
+            // Check if input is a Scan that doesn't already have a sample
             let can_push = {
                 let input_ir = ir_arena.get(input_node);
                 matches!(input_ir, IR::Scan { unified_scan_args, .. } if unified_scan_args.sample.is_none())

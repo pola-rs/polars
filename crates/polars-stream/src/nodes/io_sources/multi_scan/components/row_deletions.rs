@@ -155,6 +155,7 @@ impl DeletionFilesProvider {
                                     row_index: None,
                                     pre_slice: None,
                                     predicate: None,
+                                    sample: None,
                                     cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
                                     num_pipelines,
                                     callbacks: FileReaderCallbacks {

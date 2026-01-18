@@ -30,7 +30,7 @@ use crate::nodes::io_sources::multi_scan::pipeline::models::{
 use crate::nodes::io_sources::multi_scan::pipeline::tasks::post_apply_extra_ops::PostApplyExtraOps;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
 use crate::nodes::io_sources::multi_scan::reader_interface::{
-    BeginReadArgs, FileReader, FileReaderCallbacks, Projection,
+    BeginReadArgs, FileReader, FileReaderCallbacks, Projection, SampleConfig,
 };
 
 /// Starts readers, potentially multiple at the same time if it can.
@@ -598,11 +598,20 @@ async fn start_reader_impl(
         predicate.set_external_constant_columns(external_predicate_cols);
     }
 
+    // Extract sample config from extra_ops_post for pushing to reader.
+    // The reader will handle sampling at decode time for efficiency.
+    // Take it from extra_ops_post so it's not applied again later.
+    let sample = extra_ops_post.sample.take().map(|s| SampleConfig {
+        fraction: s.fraction,
+        seed: s.seed,
+    });
+
     let begin_read_args = BeginReadArgs {
         projection: projection_to_reader,
         row_index,
         pre_slice,
         predicate,
+        sample,
         cast_columns_policy: cast_columns_policy.clone(),
         num_pipelines,
         callbacks,

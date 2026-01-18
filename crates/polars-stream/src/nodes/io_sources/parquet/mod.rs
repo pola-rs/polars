@@ -166,6 +166,7 @@ impl FileReader for ParquetFileReader {
             row_index,
             pre_slice: pre_slice_arg,
             predicate,
+            sample,
             cast_columns_policy,
             num_pipelines,
             callbacks:
@@ -267,6 +268,10 @@ impl FileReader for ParquetFileReader {
             projected_arrow_fields,
             is_full_projection,
             predicate,
+            sample: sample.map(|s| row_group_decode::SampleConfig {
+                fraction: s.fraction,
+                seed: s.seed,
+            }),
             // TODO: Refactor to avoid full clone
             options: Arc::unwrap_or_clone(self.config.clone()),
             byte_source,
@@ -365,6 +370,7 @@ struct ParquetReadImpl {
     projected_arrow_fields: Arc<[ArrowFieldProjection]>,
     is_full_projection: bool,
     predicate: Option<ScanIOPredicate>,
+    sample: Option<row_group_decode::SampleConfig>,
     options: ParquetOptions,
     byte_source: Arc<DynByteSource>,
     normalized_pre_slice: Option<(usize, usize)>,

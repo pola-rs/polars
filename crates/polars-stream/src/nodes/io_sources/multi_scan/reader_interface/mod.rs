@@ -132,6 +132,15 @@ pub trait FileReader: Send + Sync {
     }
 }
 
+/// Configuration for hash-based sampling at the file reader level.
+#[derive(Clone, Debug)]
+pub struct SampleConfig {
+    /// Fraction of rows to sample (0.0 to 1.0).
+    pub fraction: f64,
+    /// Seed for deterministic hash-based sampling.
+    pub seed: u64,
+}
+
 #[derive(Debug)]
 pub struct BeginReadArgs {
     /// Columns to project from the file.
@@ -140,6 +149,10 @@ pub struct BeginReadArgs {
     pub row_index: Option<RowIndex>,
     pub pre_slice: Option<Slice>,
     pub predicate: Option<ScanIOPredicate>,
+
+    /// Optional sample configuration for pre-filtered decode optimization.
+    /// When set, the reader should use hash-based sampling to only decode sampled rows.
+    pub sample: Option<SampleConfig>,
 
     /// User-configured policy for when datatypes do not match.
     ///
@@ -163,6 +176,7 @@ impl Default for BeginReadArgs {
             row_index: None,
             pre_slice: None,
             predicate: None,
+            sample: None,
             // TODO: Use less restrictive default
             cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
             num_pipelines: 1,

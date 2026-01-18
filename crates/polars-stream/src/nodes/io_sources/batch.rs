@@ -178,6 +178,7 @@ impl FileReader for BatchFnReader {
             row_index: None,
             pre_slice: None,
             predicate: None,
+            sample: None,
             cast_columns_policy: _,
             num_pipelines: _,
             callbacks:

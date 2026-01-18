@@ -135,6 +135,7 @@ impl FileReader for CsvFileReader {
             row_index,
             pre_slice,
             predicate: None,
+            sample: None,
             cast_columns_policy: _,
             num_pipelines,
             callbacks:

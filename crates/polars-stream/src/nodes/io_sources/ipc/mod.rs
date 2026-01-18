@@ -160,6 +160,7 @@ impl FileReader for IpcFileReader {
             row_index,
             pre_slice: pre_slice_arg,
             predicate: None,
+            sample: None,
             cast_columns_policy: _,
             num_pipelines,
             callbacks:

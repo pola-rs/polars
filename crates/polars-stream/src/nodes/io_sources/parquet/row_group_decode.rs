@@ -21,6 +21,15 @@ use crate::async_executor::TaskPriority;
 use crate::async_primitives::opt_spawned_future::parallelize_first_to_local;
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
 
+/// Configuration for hash-based sampling at the parquet reader level.
+#[derive(Clone, Debug)]
+pub(crate) struct SampleConfig {
+    /// Fraction of rows to sample (0.0 to 1.0).
+    pub fraction: f64,
+    /// Seed for deterministic hash-based sampling.
+    pub seed: u64,
+}
+
 /// Turns row group data into DataFrames.
 pub(super) struct RowGroupDecoder {
     pub(super) num_pipelines: usize,
@@ -34,6 +43,8 @@ pub(super) struct RowGroupDecoder {
     /// Indices into `projected_arrow_fields. This must be sorted.
     pub(super) non_predicate_field_indices: Arc<[usize]>,
     pub(super) target_values_per_thread: usize,
+    /// Optional sample configuration for pre-filtered decode optimization.
+    pub(super) sample: Option<SampleConfig>,
 }
 
 impl RowGroupDecoder {
@@ -47,10 +58,16 @@ impl RowGroupDecoder {
             slice.0 == 0 && slice.1 >= row_group_data.row_group_metadata.num_rows()
         });
 
-        if self.use_prefiltered.is_some()
+        // Use prefiltered decode when:
+        // 1. Prefiltering is enabled
+        // 2. No slice is applied
+        // 3. Either we have predicate columns to decode first, OR we have sample config
+        //    (sample can generate mask without decoding any columns)
+        let use_prefiltered = self.use_prefiltered.is_some()
             && row_group_data.slice.is_none()
-            && !self.predicate_field_indices.is_empty()
-        {
+            && (!self.predicate_field_indices.is_empty() || self.sample.is_some());
+
+        if use_prefiltered {
             self.row_group_data_to_df_prefiltered(row_group_data).await
         } else {
             self.row_group_data_to_df_impl(row_group_data).await
@@ -392,12 +409,43 @@ fn decode_column_in_filter(
 }
 
 impl RowGroupDecoder {
+    /// Generate a sample mask using hash-based deterministic sampling.
+    fn generate_sample_mask(&self, row_group_data: &RowGroupData) -> BooleanChunked {
+        use std::hash::{Hash, Hasher};
+        use std::collections::hash_map::DefaultHasher;
+
+        let sample = self.sample.as_ref().unwrap();
+        let num_rows = row_group_data.row_group_metadata.num_rows();
+        let row_offset = row_group_data.row_offset as u64;
+
+        let mask: BooleanChunked = (0..num_rows)
+            .map(|local_idx| {
+                let global_idx = row_offset + local_idx as u64;
+                // Deterministic hash based on seed and global row position
+                let mut hasher = DefaultHasher::new();
+                sample.seed.hash(&mut hasher);
+                global_idx.hash(&mut hasher);
+                let hash = hasher.finish();
+                // Convert hash to probability [0, 1)
+                let prob = (hash as f64) / (u64::MAX as f64);
+                prob < sample.fraction
+            })
+            .collect();
+
+        mask
+    }
+
     async fn row_group_data_to_df_prefiltered(
         &self,
         row_group_data: RowGroupData,
     ) -> PolarsResult<DataFrame> {
         debug_assert!(row_group_data.slice.is_none()); // Invariant of the optimizer.
         assert!(self.predicate_field_indices.len() <= self.projected_arrow_fields.len());
+
+        // Sample-only path: no predicate columns, just sample mask
+        if self.predicate.is_none() && self.sample.is_some() {
+            return self.row_group_data_to_df_sample_only(row_group_data).await;
+        }
 
         let row_group_data = Arc::new(row_group_data);
         let projection_height = row_group_data.row_group_metadata.num_rows();
@@ -630,6 +678,106 @@ impl RowGroupDecoder {
         let mut merged = live_columns;
         merged.extend(dead_cols);
         let df = unsafe { DataFrame::new_unchecked(expected_num_rows, merged) };
+        Ok(df)
+    }
+
+    /// Optimized path for sample-only (no predicate) prefiltered decode.
+    /// All columns are decoded only for sampled rows.
+    async fn row_group_data_to_df_sample_only(
+        &self,
+        row_group_data: RowGroupData,
+    ) -> PolarsResult<DataFrame> {
+        debug_assert!(row_group_data.slice.is_none());
+        debug_assert!(self.predicate.is_none());
+        debug_assert!(self.sample.is_some());
+
+        let projection_height = row_group_data.row_group_metadata.num_rows();
+
+        // Generate sample mask based on row positions
+        let mut mask = self.generate_sample_mask(&row_group_data);
+
+        let row_group_data = Arc::new(row_group_data);
+
+        // Materialize row_index if requested by user
+        let mut live_columns = Vec::with_capacity(
+            self.row_index.is_some() as usize + self.projected_arrow_fields.len(),
+        );
+
+        if let Some(s) = self.materialize_row_index(
+            row_group_data.as_ref(),
+            0..row_group_data.row_group_metadata.num_rows(),
+        )? {
+            live_columns.push(s);
+        }
+
+        mask.rechunk_mut();
+        let mask_bitmap = mask.downcast_as_array();
+        let mask_bitmap = match mask_bitmap.validity() {
+            None => mask_bitmap.values().clone(),
+            Some(v) => mask_bitmap.values() & v,
+        };
+
+        assert_eq!(mask_bitmap.len(), projection_height);
+
+        let expected_num_rows = mask_bitmap.set_bits();
+
+        // Filter row_index if present
+        if !live_columns.is_empty() {
+            let filtered =
+                filter_cols(live_columns, &mask, self.target_values_per_thread).await?;
+            live_columns = filtered;
+        }
+
+        // All projected columns are "non-predicate" columns (sample doesn't need any column data)
+        let cols_per_thread = (self
+            .projected_arrow_fields
+            .len()
+            .div_ceil(self.num_pipelines))
+        .max(1);
+
+        let task_handles = {
+            let projected_arrow_fields = self.projected_arrow_fields.clone();
+            let num_fields = projected_arrow_fields.len();
+            let row_group_data = row_group_data.clone();
+
+            parallelize_first_to_local(
+                TaskPriority::Low,
+                (0..num_fields)
+                    .step_by(cols_per_thread)
+                    .map(move |offset| {
+                        let row_group_data = row_group_data.clone();
+                        let projected_arrow_fields = projected_arrow_fields.clone();
+                        let mask = mask.clone();
+                        let mask_bitmap = mask_bitmap.clone();
+
+                        async move {
+                            (offset..offset.saturating_add(cols_per_thread).min(num_fields))
+                                .map(|i| {
+                                    let projection = &projected_arrow_fields[i];
+
+                                    let col = decode_column_prefiltered(
+                                        projection.arrow_field(),
+                                        row_group_data.as_ref(),
+                                        &mask,
+                                        &mask_bitmap,
+                                        expected_num_rows,
+                                    )?;
+
+                                    projection.apply_transform(col)
+                                })
+                                .collect::<PolarsResult<UnitVec<_>>>()
+                        }
+                    }),
+            )
+        };
+
+        drop(row_group_data);
+
+        for fut in task_handles {
+            live_columns.extend(fut.await?);
+        }
+
+        let df = unsafe { DataFrame::new_unchecked(expected_num_rows, live_columns) };
         Ok(df)
     }
 }

@@ -263,10 +263,17 @@ impl ParquetReadImpl {
         let row_index = self.row_index.clone();
         let target_values_per_thread = self.config.target_values_per_thread;
         let predicate = self.predicate.clone();
+        let sample = self.sample.clone();
 
+        // Enable prefiltering when:
+        // 1. Explicitly requested via ParallelStrategy::Prefiltered
+        // 2. OR there's a predicate with Auto strategy
+        // 3. OR there's a sample config (sample can use prefiltering without any predicate columns)
         let mut use_prefiltered = matches!(self.options.parallel, ParallelStrategy::Prefiltered);
         use_prefiltered |=
             predicate.is_some() && matches!(self.options.parallel, ParallelStrategy::Auto);
+        use_prefiltered |=
+            sample.is_some() && matches!(self.options.parallel, ParallelStrategy::Auto);
 
         let predicate_field_indices: Arc<[usize]> =
             if use_prefiltered && let Some(predicate) = predicate.as_ref() {
@@ -297,11 +304,19 @@ impl ParquetReadImpl {
         };
 
         if use_prefiltered.is_some() && self.verbose {
-            eprintln!(
-                "[ParquetFileReader]: Pre-filtered decode enabled ({} live, {} non-live)",
-                predicate_field_indices.len(),
-                non_predicate_field_indices.len()
-            )
+            if sample.is_some() {
+                eprintln!(
+                    "[ParquetFileReader]: Pre-filtered decode enabled for sampling ({} live, {} non-live)",
+                    predicate_field_indices.len(),
+                    non_predicate_field_indices.len()
+                )
+            } else {
+                eprintln!(
+                    "[ParquetFileReader]: Pre-filtered decode enabled ({} live, {} non-live)",
+                    predicate_field_indices.len(),
+                    non_predicate_field_indices.len()
+                )
+            }
         }
 
         let allow_column_predicates = predicate
@@ -323,6 +338,7 @@ impl ParquetReadImpl {
             predicate_field_indices,
             non_predicate_field_indices,
             target_values_per_thread,
+            sample,
         }
     }
 }
