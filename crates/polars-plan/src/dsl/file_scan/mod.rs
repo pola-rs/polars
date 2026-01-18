@@ -308,6 +308,39 @@ pub struct UnifiedScanArgs {
     ///
     /// Note, intentionally store u64 instead of IdxSize to avoid erroring if it's unused.
     pub row_count: Option<(u64, u64)>,
+    /// Sampling pushdown configuration. Applied at scan level for memory efficiency.
+    pub sample: Option<ScanSampleArgs>,
+}
+
+/// Arguments for scan-level sampling pushdown.
+#[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub struct ScanSampleArgs {
+    /// Fraction of rows to sample.
+    pub fraction: f64,
+    /// If true, uses Poisson sampling (allows duplicates). If false, uses Bernoulli sampling.
+    pub with_replacement: bool,
+    /// Seed for deterministic sampling.
+    pub seed: u64,
+}
+
+impl PartialEq for ScanSampleArgs {
+    fn eq(&self, other: &Self) -> bool {
+        self.fraction.to_bits() == other.fraction.to_bits()
+            && self.with_replacement == other.with_replacement
+            && self.seed == other.seed
+    }
+}
+
+impl Eq for ScanSampleArgs {}
+
+impl std::hash::Hash for ScanSampleArgs {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.fraction.to_bits().hash(state);
+        self.with_replacement.hash(state);
+        self.seed.hash(state);
+    }
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -349,6 +382,7 @@ impl Default for UnifiedScanArgs {
             deletion_files: None,
             table_statistics: None,
             row_count: None,
+            sample: None,
         }
     }
 }

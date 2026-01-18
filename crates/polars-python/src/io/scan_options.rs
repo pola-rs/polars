@@ -136,6 +136,7 @@ impl PyScanOptions<'_> {
             deletion_files: DeletionFilesList::filter_empty(deletion_files.map(|x| x.0)),
             table_statistics: table_statistics.map(|x| x.0),
             row_count,
+            sample: None,
         };
 
         Ok(unified_scan_args)

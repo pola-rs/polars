@@ -319,6 +319,9 @@ pub enum PhysNodeKind {
 
         /// Schema of columns contained in the file. Does not contain external columns (e.g. hive / row_index).
         file_schema: SchemaRef,
+
+        /// Sampling pushdown configuration.
+        sample: Option<polars_plan::dsl::ScanSampleArgs>,
     },
 
     #[cfg(feature = "python")]

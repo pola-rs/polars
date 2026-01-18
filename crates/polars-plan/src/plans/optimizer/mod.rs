@@ -21,6 +21,8 @@ mod expand_datasets;
 pub use expand_datasets::ExpandedPythonScan;
 mod predicate_pushdown;
 mod projection_pushdown;
+#[cfg(feature = "random")]
+mod sample_pushdown;
 pub mod set_order;
 mod simplify_expr;
 mod slice_pushdown_expr;
@@ -205,6 +207,10 @@ pub fn optimize(
             &opt_flags,
         )?;
     }
+
+    // Push sample operations into scan nodes
+    #[cfg(feature = "random")]
+    sample_pushdown::sample_pushdown(root, ir_arena, expr_arena);
 
     // Make sure its before slice pushdown.
     if opt_flags.fast_projection() {

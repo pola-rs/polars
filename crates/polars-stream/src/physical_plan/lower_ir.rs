@@ -729,6 +729,7 @@ pub fn lower_ir(
                         ),
                         table_statistics: unified_scan_args.table_statistics,
                         file_schema,
+                        sample: unified_scan_args.sample,
                     };
 
                     let PhysNodeKind::MultiScan {

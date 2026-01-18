@@ -448,6 +448,7 @@ where
         table_statistics,
         deletion_files,
         row_count,
+        sample: _,
     } = unified_scan_args.as_mut()
     else {
         panic!("{unified_scan_args:?}")

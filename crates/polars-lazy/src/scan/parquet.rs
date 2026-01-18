@@ -100,6 +100,7 @@ impl LazyFileListReader for LazyParquetReader {
             deletion_files: None,
             table_statistics: None,
             row_count: None,
+            sample: None,
         };
 
         let mut lf: LazyFrame =

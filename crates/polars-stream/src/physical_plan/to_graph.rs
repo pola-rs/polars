@@ -759,6 +759,7 @@ fn to_graph_rec<'a>(
             deletion_files,
             table_statistics,
             file_schema,
+            sample,
         } => {
             let hive_parts = hive_parts.clone();
 
@@ -797,6 +798,7 @@ fn to_graph_rec<'a>(
             let cast_columns_policy = cast_columns_policy.clone();
             let deletion_files = deletion_files.clone();
             let table_statistics = table_statistics.clone();
+            let sample = *sample;
 
             let verbose = config::verbose();
 
@@ -818,6 +820,7 @@ fn to_graph_rec<'a>(
                     cast_columns_policy,
                     deletion_files,
                     table_statistics,
+                    sample,
                     // Initialized later
                     num_pipelines: RelaxedCell::new_usize(0),
                     n_readers_pre_init: RelaxedCell::new_usize(0),
@@ -1371,6 +1374,7 @@ fn to_graph_rec<'a>(
                     cast_columns_policy,
                     deletion_files,
                     table_statistics,
+                    sample: None, // Python scans don't support sample pushdown
                     // Initialized later
                     num_pipelines: RelaxedCell::new_usize(0),
                     n_readers_pre_init: RelaxedCell::new_usize(0),

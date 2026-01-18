@@ -464,6 +464,7 @@ fn visualize_plan_rec(
             deletion_files,
             table_statistics: _,
             file_schema: _,
+            sample: _,
         } => {
             let mut out = format!("multi-scan[{}]", file_reader_builder.reader_name());
             let mut f = EscapeLabel(&mut out);

@@ -32,6 +32,17 @@ pub struct InitializedPipelineState {
     pub bridge_state: Arc<Mutex<BridgeState>>,
 }
 
+/// Sampling configuration for scan-level sampling pushdown.
+#[derive(Debug, Clone)]
+pub struct ScanSample {
+    /// Fraction of rows to sample (0.0 to 1.0 for Bernoulli, can be > 1.0 for Poisson with replacement).
+    pub fraction: f64,
+    /// If true, uses Poisson sampling (allows duplicates). If false, uses Bernoulli sampling.
+    pub with_replacement: bool,
+    /// Seed for the random number generator. Combined with file/row position for determinism.
+    pub seed: u64,
+}
+
 /// Anything aside from reading columns from the file. E.g. row_index, slice, predicate etc.
 ///
 /// Note that hive partition columns are tracked separately.
@@ -46,6 +57,8 @@ pub struct ExtraOperations {
     /// Index of the file path column in the final output.
     pub file_path_col_idx: usize,
     pub predicate: Option<ScanIOPredicate>,
+    /// Sampling pushdown - applied after predicate.
+    pub sample: Option<ScanSample>,
 }
 
 impl ExtraOperations {

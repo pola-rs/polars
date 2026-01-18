@@ -19,7 +19,8 @@ use crate::nodes::io_sources::multi_scan::components::row_deletions::{
 use crate::nodes::io_sources::multi_scan::config::MultiScanConfig;
 use crate::nodes::io_sources::multi_scan::functions::resolve_slice::resolve_to_positive_slice;
 use crate::nodes::io_sources::multi_scan::pipeline::models::{
-    ExtraOperations, InitializedPipelineState, ResolvedSliceInfo, StartReaderArgsConstant,
+    ExtraOperations, InitializedPipelineState, ResolvedSliceInfo, ScanSample,
+    StartReaderArgsConstant,
 };
 use crate::nodes::io_sources::multi_scan::pipeline::tasks::attach_reader_to_bridge::AttachReaderToBridge;
 use crate::nodes::io_sources::multi_scan::pipeline::tasks::bridge::spawn_bridge;
@@ -204,6 +205,12 @@ async fn finish_initialize_multi_scan_pipeline(
     let missing_columns_policy = config.missing_columns_policy;
     let include_file_paths = config.include_file_paths.clone();
 
+    let sample = config.sample.map(|s| ScanSample {
+        fraction: s.fraction,
+        with_replacement: s.with_replacement,
+        seed: s.seed,
+    });
+
     let extra_ops = ExtraOperations {
         row_index,
         row_index_col_idx: config.row_index.as_ref().map_or(usize::MAX, |x| {
@@ -215,6 +222,7 @@ async fn finish_initialize_multi_scan_pipeline(
             config.final_output_schema.index_of(x).unwrap()
         }),
         predicate,
+        sample,
     };
 
     if verbose {

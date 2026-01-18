@@ -18,7 +18,7 @@ use crate::nodes::io_sources::multi_scan::components::column_selector::builder::
 use crate::nodes::io_sources::multi_scan::components::errors::missing_column_err;
 use crate::nodes::io_sources::multi_scan::components::projection::Projection;
 use crate::nodes::io_sources::multi_scan::components::row_deletions::ExternalFilterMask;
-use crate::nodes::io_sources::multi_scan::pipeline::models::ExtraOperations;
+use crate::nodes::io_sources::multi_scan::pipeline::models::{ExtraOperations, ScanSample};
 
 /// Apply extra operations onto morsels originating from a reader. This should be initialized
 /// per-reader (it contains e.g. file path).
@@ -51,6 +51,8 @@ pub enum ApplyExtraOps {
         /// This will have include_file_paths, hive columns, missing columns.
         column_selectors: Option<Vec<ColumnSelector>>,
         predicate: Option<ScanIOPredicate>,
+        /// Sampling pushdown - applied after predicate.
+        sample: Option<ScanSample>,
     },
 
     /// No-op.
@@ -89,6 +91,7 @@ impl ApplyExtraOps {
                         include_file_paths,
                         file_path_col_idx,
                         predicate,
+                        sample,
                     },
                 scan_source,
                 scan_source_idx,
@@ -208,6 +211,7 @@ impl ApplyExtraOps {
                     row_index: row_index.map(|ri| (ri, row_index_col_idx)),
                     column_selectors,
                     predicate,
+                    sample,
                 };
 
                 // Return a `Noop` if our initialized state does not have any operations. Downstream
@@ -219,6 +223,7 @@ impl ApplyExtraOps {
                         row_index: None,
                         column_selectors: None,
                         predicate: None,
+                        sample: None,
                     } => Self::Noop,
 
                     Initialized { .. } => out,
@@ -245,6 +250,7 @@ impl ApplyExtraOps {
             row_index,
             column_selectors,
             predicate,
+            sample,
         } = ({
             use ApplyExtraOps::*;
 
@@ -336,6 +342,108 @@ impl ApplyExtraOps {
             *df = df.filter_seq(mask.bool().expect("predicate not boolean"))?;
         }
 
+        // Apply sampling after predicate (if configured)
+        if let Some(sample) = sample {
+            *df = apply_sample(df, sample, current_row_position)?;
+        }
+
         Ok(())
+    }
+}
+
+/// Apply deterministic sampling to a DataFrame.
+/// Uses hash-based sampling for reproducibility across parallel readers.
+fn apply_sample(
+    df: &DataFrame,
+    sample: &ScanSample,
+    current_row_position: RowCounter,
+) -> PolarsResult<DataFrame> {
+    use polars_core::prelude::BooleanChunked;
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let height = df.height();
+    if height == 0 {
+        return Ok(df.clone());
+    }
+
+    let fraction = sample.fraction;
+    let with_replacement = sample.with_replacement;
+    let seed = sample.seed;
+
+    if !with_replacement {
+        // Bernoulli sampling: include each row with probability `fraction`
+        // Use deterministic hash for reproducibility
+        let base_row = current_row_position.num_physical_rows();
+        
+        let mask: BooleanChunked = (0..height)
+            .map(|i| {
+                let row_idx = base_row + i;
+                // Deterministic hash based on seed and row position
+                let mut hasher = DefaultHasher::new();
+                seed.hash(&mut hasher);
+                row_idx.hash(&mut hasher);
+                let hash = hasher.finish();
+                // Convert hash to probability [0, 1)
+                let prob = (hash as f64) / (u64::MAX as f64);
+                prob < fraction
+            })
+            .collect();
+
+        df.filter(&mask)
+    } else {
+        // Poisson sampling: each row appears Poisson(fraction) times on average
+        // For simplicity, use rejection sampling with hash-based determinism
+        use polars_core::prelude::IdxCa;
+        use polars_core::prelude::IdxSize;
+        use polars_utils::pl_str::PlSmallStr;
+
+        let base_row = current_row_position.num_physical_rows();
+        let expected_size = (height as f64 * fraction) as usize;
+        let mut indices = Vec::with_capacity(expected_size);
+
+        for i in 0..height {
+            let row_idx = base_row + i;
+            // Generate deterministic count based on hash
+            let mut hasher = DefaultHasher::new();
+            seed.hash(&mut hasher);
+            row_idx.hash(&mut hasher);
+            let hash = hasher.finish();
+            
+            // Approximate Poisson using hash - for small fractions this is reasonable
+            // For larger fractions, we could iterate multiple times
+            let count = if fraction <= 1.0 {
+                if (hash as f64) / (u64::MAX as f64) < fraction { 1 } else { 0 }
+            } else {
+                // For fraction > 1, generate approximate Poisson count
+                // Using inverse transform sampling with hash-based randomness
+                let mut count = 0usize;
+                let mut hasher2 = DefaultHasher::new();
+                seed.hash(&mut hasher2);
+                row_idx.hash(&mut hasher2);
+                let mut h = hasher2.finish();
+                
+                loop {
+                    let p = (h as f64) / (u64::MAX as f64);
+                    if p >= (-fraction).exp() {
+                        break;
+                    }
+                    count += 1;
+                    // Generate next hash
+                    let mut hasher3 = DefaultHasher::new();
+                    h.hash(&mut hasher3);
+                    h = hasher3.finish();
+                }
+                count
+            };
+
+            for _ in 0..count {
+                indices.push(i as IdxSize);
+            }
+        }
+
+        let idx = IdxCa::new_vec(PlSmallStr::EMPTY, indices);
+        // SAFETY: indices are in bounds
+        Ok(unsafe { df.take_unchecked(&idx) })
     }
 }

@@ -210,6 +210,7 @@ pub(super) fn expand_datasets(
                             deletion_files,
                             table_statistics,
                             row_count,
+                            sample: _,
                         } = resolved_unified_scan_args.as_ref()
                         else {
                             panic!(

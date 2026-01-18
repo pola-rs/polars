@@ -6,7 +6,8 @@ use polars_io::cloud::CloudOptions;
 use polars_io::predicates::ScanIOPredicate;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
-    CastColumnsPolicy, MissingColumnsPolicy, PredicateFileSkip, ScanSources, TableStatistics,
+    CastColumnsPolicy, MissingColumnsPolicy, PredicateFileSkip, ScanSampleArgs, ScanSources,
+    TableStatistics,
 };
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::pl_str::PlSmallStr;
@@ -43,6 +44,8 @@ pub struct MultiScanConfig {
     pub forbid_extra_columns: Option<ForbidExtraColumns>,
     pub deletion_files: Option<DeletionFilesList>,
     pub table_statistics: Option<TableStatistics>,
+    /// Sampling pushdown configuration.
+    pub sample: Option<ScanSampleArgs>,
 
     pub num_pipelines: RelaxedCell<usize>,
     /// Number of readers to initialize concurrently. e.g. Parquet will want to fetch metadata in this
