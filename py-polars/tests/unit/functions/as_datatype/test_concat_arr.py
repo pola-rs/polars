@@ -200,15 +200,36 @@ def test_concat_arr_expansion_23267() -> None:
     assert_series_equal(out, pl.Series("z", [[1, 2]], dtype=pl.Array(pl.Int64, 2)))
 
 
-def test_concat_arr_on_enum_columns_20917() -> None:
-    enum_dtype = pl.Enum(["A", "B"])
-    array_dtype = pl.Array(enum_dtype, 2)
-    df = pl.DataFrame(
-        [
-            pl.Series(["A", "B"], dtype=enum_dtype),
-            pl.Series(["B", "A"], dtype=enum_dtype),
-        ]
+def test_concat_arr_logical_types_20917() -> None:
+    assert_series_equal(
+        pl.select(
+            pl.concat_arr(
+                pl.Series(["A"], dtype=pl.Categorical("test")),
+                pl.Series(["B"], dtype=pl.Categorical("test")),
+            )
+        ).to_series(),
+        pl.Series([["A", "B"]], dtype=pl.Array(pl.Categorical("test"), 2)),
     )
-    output = df.select(out=pl.concat_arr(pl.all())).to_series()
-    expected_output = pl.Series("out", [["A", "B"], ["B", "A"]], dtype=array_dtype)
-    assert_series_equal(output, expected_output)
+
+    assert_series_equal(
+        pl.select(
+            pl.concat_arr(
+                pl.Series(["A", "B"], dtype=pl.Categorical("test")),
+                pl.Series(["B", "C"], dtype=pl.Categorical("test")),
+            )
+        ).to_series(),
+        pl.Series([["A", "B"], ["B", "C"]], dtype=pl.Array(pl.Categorical("test"), 2)),
+    )
+
+    assert_series_equal(
+        pl.select(
+            pl.concat_arr(
+                pl.Series(["A", "B"], dtype=pl.List(pl.Categorical("test"))),
+                pl.Series(["B", "C"], dtype=pl.List(pl.Categorical("test"))),
+            )
+        ).to_series(),
+        pl.Series(
+            [[["A"], ["B"]], [["B"], ["C"]]],
+            dtype=pl.Array(pl.List(pl.Categorical("test")), 2),
+        ),
+    )
