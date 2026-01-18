@@ -1,6 +1,7 @@
 use std::borrow::{Borrow, Cow};
 
 use arrow_format::ipc;
+use arrow_format::ipc::KeyValue;
 use arrow_format::ipc::planus::Builder;
 use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_utils::compression::ZstdLevel;
@@ -358,6 +359,7 @@ pub fn encode_record_batch(
         variadic_buffer_counts,
         buffers,
         nodes,
+        None,
         encoded_message,
     );
 }
@@ -368,6 +370,7 @@ pub fn commit_encoded_arrays(
     variadic_buffer_counts: Vec<i64>,
     buffers: Vec<ipc::Buffer>,
     nodes: Vec<ipc::FieldNode>,
+    custom_metadata: Option<Vec<KeyValue>>,
     encoded_message: &mut EncodedData,
 ) {
     let variadic_buffer_counts = if variadic_buffer_counts.is_empty() {
@@ -390,7 +393,7 @@ pub fn commit_encoded_arrays(
             },
         ))),
         body_length: encoded_message.arrow_data.len() as i64,
-        custom_metadata: None,
+        custom_metadata,
     };
 
     let mut builder = Builder::new();

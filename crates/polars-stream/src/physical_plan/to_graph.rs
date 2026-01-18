@@ -339,23 +339,19 @@ fn to_graph_rec<'a>(
                 .add_node(IOSinkNode::new(config), [(input_key, input.port)])
         },
 
-        PartitionedSink2 {
+        PartitionedSink {
             input,
             options:
                 PartitionedSinkOptionsIR {
                     base_path,
                     file_path_provider,
                     partition_strategy,
-                    finish_callback: _,
                     file_format,
                     unified_sink_args,
                     max_rows_per_file,
                     approximate_bytes_per_file,
                 },
         } => {
-            use polars_core::prelude::SortMultipleOptions;
-            use polars_plan::prelude::SortColumnIR;
-
             use crate::nodes::io_sinks2::IOSinkNode;
             use crate::nodes::io_sinks2::components::exclude_keys_projection::ExcludeKeysProjection;
             use crate::nodes::io_sinks2::components::hstack_columns::HStackColumns;
@@ -374,14 +370,12 @@ fn to_graph_rec<'a>(
             let mut exclude_keys_from_file: Option<ExcludeKeysProjection> = None;
             let mut hstack_keys: Option<HStackColumns> = None;
             let mut include_keys_in_file = false;
-            let mut per_partition_sort: Option<(Arc<[StreamExpr]>, SortMultipleOptions)> = None;
 
             let partitioner: Partitioner = match partition_strategy {
                 PartitionStrategyIR::Keyed {
                     keys,
                     include_keys,
                     keys_pre_grouped: _,
-                    per_partition_sort_by,
                 } => {
                     include_keys_in_file = *include_keys;
 
@@ -447,38 +441,6 @@ fn to_graph_rec<'a>(
                         exclude_keys_projection: Some(exclude_keys_projection),
                     };
 
-                    if !per_partition_sort_by.is_empty() {
-                        let (by_exprs, descending, nulls_last): (
-                            Vec<StreamExpr>,
-                            Vec<bool>,
-                            Vec<bool>,
-                        ) = per_partition_sort_by
-                            .iter()
-                            .map(
-                                |SortColumnIR {
-                                     expr,
-                                     descending,
-                                     nulls_last,
-                                 }| {
-                                    create_stream_expr(expr, ctx, &schema_including_keys)
-                                        .map(|e| (e, *descending, *nulls_last))
-                                },
-                            )
-                            .collect::<PolarsResult<_>>()?;
-
-                        let by_exprs: Arc<[StreamExpr]> = Arc::from_iter(by_exprs);
-
-                        let sort_options = SortMultipleOptions {
-                            descending,
-                            nulls_last,
-                            multithreaded: false,
-                            maintain_order: true,
-                            limit: None,
-                        };
-
-                        per_partition_sort = Some((by_exprs, sort_options))
-                    }
-
                     Partitioner::Keyed(keyed)
                 },
                 PartitionStrategyIR::FileSize => {
@@ -513,7 +475,6 @@ fn to_graph_rec<'a>(
                 include_keys_in_file,
                 file_schema,
                 file_size_limit,
-                per_partition_sort,
             }));
 
             let config = IOSinkNodeConfig {
@@ -526,8 +487,6 @@ fn to_graph_rec<'a>(
             ctx.graph
                 .add_node(IOSinkNode::new(config), [(input_key, input.port)])
         },
-
-        PartitionedSink { .. } => unreachable!(),
 
         InMemoryMap {
             input,
@@ -1168,7 +1127,7 @@ fn to_graph_rec<'a>(
 
         #[cfg(feature = "python")]
         PythonScan { options } => {
-            use arrow::buffer::Buffer;
+            use polars_buffer::Buffer;
             use polars_plan::dsl::python_dsl::PythonScanSource as S;
             use polars_plan::plans::PythonPredicate;
             use polars_utils::relaxed_cell::RelaxedCell;

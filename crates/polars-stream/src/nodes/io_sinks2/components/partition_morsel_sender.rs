@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
-use futures::StreamExt;
 use polars_core::frame::DataFrame;
 use polars_error::PolarsResult;
-use polars_plan::dsl::sink2::FileProviderArgs;
+use polars_plan::dsl::file_provider::FileProviderArgs;
 use polars_utils::IdxSize;
 
 use crate::async_executor::{self, TaskPriority};
@@ -29,14 +28,6 @@ pub struct PartitionMorselSender {
     pub error_capture: ErrorCapture,
 }
 
-pub enum NextMorsel {
-    TakeFromBuffered {
-        num_rows: IdxSize,
-    },
-    /// Sorted finalize will receive morsels from a stream.
-    Morsel(SinkMorsel),
-}
-
 impl PartitionMorselSender {
     /// # Panics
     /// Panics if `partition.file_sink_task_data` is `None`.
@@ -44,24 +35,7 @@ impl PartitionMorselSender {
         &self,
         partition: &mut PartitionState,
         flush: bool,
-        // Sorted finalize
-        morsel_stream: Option<(futures::stream::BoxStream<'static, (SinkMorsel, bool)>, u64)>,
     ) -> PolarsResult<()> {
-        #[expect(unused)]
-        let row_byte_size: u64;
-
-        let mut sorted_finalize_stream = if let Some((stream, _)) = morsel_stream {
-            // row_byte_size = row_byte_size_;
-
-            assert_eq!(partition.sinked_size, RowCountAndSize::default());
-            assert_eq!(partition.buffered_rows.height(), 0);
-
-            Some(stream)
-        } else {
-            // row_byte_size = partition.buffered_size().row_byte_size();
-            None
-        };
-
         loop {
             let file_sink_task_data = partition.file_sink_task_data.as_mut().unwrap();
 
@@ -102,49 +76,32 @@ impl PartitionMorselSender {
                 };
             }
 
-            let (next_morsel, start_new_sink) = if let Some(sorted_finalize_stream) =
-                sorted_finalize_stream.as_mut()
-            {
-                let Some((morsel, start_new_sink)) = sorted_finalize_stream.next().await else {
-                    return Ok(());
-                };
+            let buffered_size = partition.buffered_size();
 
-                (NextMorsel::Morsel(morsel), start_new_sink)
+            if buffered_size.num_rows == 0 {
+                return Ok(());
+            }
+
+            let Some(num_rows_to_take) = self
+                .takeable_rows_provider
+                .num_rows_takeable_from(buffered_size, flush)
+            else {
+                return Ok(());
+            };
+
+            let file_min_available_rows_for_byte_size =
+                NonZeroRowCountAndSize::get(self.takeable_rows_provider.max_size)
+                    .num_rows
+                    .saturating_sub(used_row_capacity.num_rows);
+
+            let max_takeable_rows: IdxSize = available_row_capacity
+                .num_rows_takeable_from(buffered_size, file_min_available_rows_for_byte_size);
+
+            let start_new_sink = max_takeable_rows == 0;
+            let num_rows_to_take = if start_new_sink {
+                num_rows_to_take
             } else {
-                let buffered_size = partition.buffered_size();
-
-                if buffered_size.num_rows == 0 {
-                    return Ok(());
-                }
-
-                let Some(num_rows_to_take) = self
-                    .takeable_rows_provider
-                    .num_rows_takeable_from(buffered_size, flush)
-                else {
-                    return Ok(());
-                };
-
-                let file_min_available_rows_for_byte_size =
-                    NonZeroRowCountAndSize::get(self.takeable_rows_provider.max_size)
-                        .num_rows
-                        .saturating_sub(used_row_capacity.num_rows);
-
-                let max_takeable_rows: IdxSize = available_row_capacity
-                    .num_rows_takeable_from(buffered_size, file_min_available_rows_for_byte_size);
-
-                let start_new_sink = max_takeable_rows == 0;
-                let num_rows_to_take = if start_new_sink {
-                    num_rows_to_take
-                } else {
-                    num_rows_to_take.min(max_takeable_rows)
-                };
-
-                (
-                    NextMorsel::TakeFromBuffered {
-                        num_rows: num_rows_to_take,
-                    },
-                    start_new_sink,
-                )
+                num_rows_to_take.min(max_takeable_rows)
             };
 
             if start_new_sink {
@@ -180,26 +137,21 @@ impl PartitionMorselSender {
                 calc_used_and_available_capacities!(file_sink_task_data);
             }
 
-            let mut morsel = match next_morsel {
-                NextMorsel::TakeFromBuffered { num_rows } => {
-                    let (df, remaining) = partition.buffered_rows.split_at(
-                        #[allow(clippy::unnecessary_fallible_conversions)]
-                        i64::try_from(num_rows).unwrap(),
-                    );
+            let (df, remaining) = partition.buffered_rows.split_at(
+                #[allow(clippy::unnecessary_fallible_conversions)]
+                i64::try_from(num_rows_to_take).unwrap(),
+            );
 
-                    partition.buffered_rows = remaining;
+            partition.buffered_rows = remaining;
 
-                    let morsel_permit = self
-                        .inflight_morsel_semaphore
-                        .clone()
-                        .acquire_owned()
-                        .await
-                        .unwrap();
+            let morsel_permit = self
+                .inflight_morsel_semaphore
+                .clone()
+                .acquire_owned()
+                .await
+                .unwrap();
 
-                    SinkMorsel::new(df, morsel_permit)
-                },
-                NextMorsel::Morsel(sink_morsel) => sink_morsel,
-            };
+            let mut morsel = SinkMorsel::new(df, morsel_permit);
 
             let morsel_height: IdxSize = IdxSize::try_from(morsel.df().height()).unwrap();
 

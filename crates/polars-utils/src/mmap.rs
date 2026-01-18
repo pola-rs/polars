@@ -414,7 +414,7 @@ impl MMapSemaphore {
 
         #[cfg(target_family = "unix")]
         {
-            // FIXME: We aren't handling the case where the file is already open in write-mode here.
+            // TODO: We aren't handling the case where the file is already open in write-mode here.
 
             use std::os::unix::fs::MetadataExt;
             let metadata = file.metadata()?;

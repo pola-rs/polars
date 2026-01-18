@@ -5,7 +5,7 @@ use arrow::io::ipc::write::encode_dictionary_values;
 use polars_core::series::ToArrowConverter;
 use polars_core::utils::arrow;
 use polars_core::utils::arrow::io::ipc::write::{
-    EncodedData, WriteOptions, commit_encoded_arrays, encode_array,
+    EncodedData, WriteOptions, commit_encoded_arrays, encode_array, schema,
 };
 use polars_error::PolarsResult;
 use polars_utils::concat_vec::ConcatVec as _;
@@ -14,6 +14,7 @@ use crate::async_executor::{self, TaskPriority};
 use crate::async_primitives::connector;
 use crate::async_primitives::opt_spawned_future::parallelize_first_to_local;
 use crate::nodes::io_sinks2::components::sink_morsel::SinkMorsel;
+use crate::nodes::io_sinks2::writers::interface::IPC_RW_RECORD_BATCH_FLAGS_KEY;
 use crate::nodes::io_sinks2::writers::ipc::IpcBatch;
 
 pub struct RecordBatchEncoder {
@@ -22,6 +23,8 @@ pub struct RecordBatchEncoder {
     pub arrow_converters: Vec<ToArrowConverter>,
     pub dictionary_id_offsets: Arc<[usize]>,
     pub write_options: WriteOptions,
+    // Unstable.
+    pub write_statistics_flags: bool,
 }
 
 impl RecordBatchEncoder {
@@ -32,6 +35,7 @@ impl RecordBatchEncoder {
             mut arrow_converters,
             dictionary_id_offsets,
             write_options,
+            write_statistics_flags,
         } = self;
 
         let mut record_batch_arrow_arrays: Vec<Box<dyn Array>> =
@@ -41,6 +45,18 @@ impl RecordBatchEncoder {
             let (df, permit) = morsel.into_inner();
             let height = df.height();
             let columns = df.into_columns();
+            let flags = write_statistics_flags.then(|| {
+                columns
+                    .iter()
+                    .map(|c| c.get_flags().bits())
+                    .collect::<Vec<_>>()
+            });
+            let custom_metadata = flags.map(|flags| {
+                vec![schema::key_value(
+                    IPC_RW_RECORD_BATCH_FLAGS_KEY,
+                    serde_json::to_string(&flags).unwrap(),
+                )]
+            });
 
             assert!(record_batch_arrow_arrays.is_empty());
             assert_eq!(arrow_converters.len(), columns.len());
@@ -134,6 +150,7 @@ impl RecordBatchEncoder {
                         variadic_buffer_counts,
                         buffers,
                         nodes,
+                        custom_metadata,
                         &mut encoded_data,
                     );
 

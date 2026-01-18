@@ -11,8 +11,7 @@ use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
     CastColumnsPolicy, FileSinkOptions, JoinTypeOptionsIR, MissingColumnsPolicy,
-    PartitionTargetCallback, PartitionVariantIR, PartitionedSinkOptionsIR, PredicateFileSkip,
-    ScanSources, SinkFinishCallback, SinkOptions, SortColumnIR, TableStatistics,
+    PartitionedSinkOptionsIR, PredicateFileSkip, ScanSources, TableStatistics,
 };
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::{AExpr, DataFrameUdf, IR};
@@ -26,12 +25,11 @@ mod lower_ir;
 mod to_graph;
 
 pub use fmt::visualize_plan;
-use polars_plan::prelude::{FileWriteFormat, PlanCallback};
+use polars_plan::prelude::PlanCallback;
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::DynamicGroupOptions;
 use polars_time::{ClosedWindow, Duration};
 use polars_utils::arena::{Arena, Node};
-use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
 use slotmap::{SecondaryMap, SlotMap};
@@ -193,18 +191,6 @@ pub enum PhysNodeKind {
     },
 
     PartitionedSink {
-        input: PhysStream,
-        base_path: Arc<PlRefPath>,
-        file_path_cb: Option<PartitionTargetCallback>,
-        sink_options: SinkOptions,
-        variant: PartitionVariantIR,
-        file_type: FileWriteFormat,
-        cloud_options: Option<CloudOptions>,
-        per_partition_sort_by: Option<Vec<SortColumnIR>>,
-        finish_callback: Option<SinkFinishCallback>,
-    },
-
-    PartitionedSink2 {
         input: PhysStream,
         options: PartitionedSinkOptionsIR,
     },
@@ -447,7 +433,6 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::CallbackSink { input, .. }
             | PhysNodeKind::FileSink { input, .. }
             | PhysNodeKind::PartitionedSink { input, .. }
-            | PhysNodeKind::PartitionedSink2 { input, .. }
             | PhysNodeKind::InMemoryMap { input, .. }
             | PhysNodeKind::SortedGroupBy { input, .. }
             | PhysNodeKind::Map { input, .. }

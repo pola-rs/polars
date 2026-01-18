@@ -58,7 +58,7 @@ pub fn serialize_schema(
     }
 }
 
-fn key_value(key: impl Into<String>, val: impl Into<String>) -> arrow_format::ipc::KeyValue {
+pub fn key_value(key: impl Into<String>, val: impl Into<String>) -> arrow_format::ipc::KeyValue {
     arrow_format::ipc::KeyValue {
         key: Some(key.into()),
         value: Some(val.into()),

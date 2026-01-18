@@ -6,13 +6,12 @@ use polars_core::prelude::{DataType, PlHashMap, PlHashSet};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_core::{SchemaExtPl, config};
-use polars_error::{PolarsResult, polars_ensure};
+use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_plan::constants::get_literal_name;
 use polars_plan::dsl::default_values::DefaultFieldValues;
 use polars_plan::dsl::deletion::DeletionFilesList;
-use polars_plan::dsl::sink2::FileProviderType;
 use polars_plan::dsl::{CallbackSinkType, ExtraColumnsPolicy, FileScanIR, SinkTypeIR};
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{
@@ -272,15 +271,9 @@ pub fn lower_ir(
             },
 
             SinkTypeIR::Partitioned(options) => {
-                polars_ensure!(
-                    !matches!(options.file_path_provider, FileProviderType::Legacy(_)) && options.finish_callback.is_none(),
-                    ComputeError:
-                    "legacy file provider API not supported (use pl.PartitionBy)"
-                );
-
                 let options = options.clone();
                 let input = lower_ir!(*input)?;
-                PhysNodeKind::PartitionedSink2 { input, options }
+                PhysNodeKind::PartitionedSink { input, options }
             },
         },
 
@@ -632,7 +625,7 @@ pub fn lower_ir(
                     FileScanIR::Csv { options } => Arc::new(Arc::clone(options)) as _,
 
                     #[cfg(feature = "json")]
-                    FileScanIR::NDJson { options } => Arc::new(Arc::new(options.clone())) as _,
+                    FileScanIR::NDJson { options } => Arc::new(options.clone()) as _,
 
                     #[cfg(feature = "python")]
                     FileScanIR::PythonDataset {
@@ -652,7 +645,9 @@ pub fn lower_ir(
                     },
 
                     #[cfg(feature = "scan_lines")]
-                    FileScanIR::Lines { name: _ } => todo!(),
+                    FileScanIR::Lines { name: _ } => {
+                        Arc::new(crate::nodes::io_sources::lines::LineReaderBuilder {}) as _
+                    },
 
                     FileScanIR::Anonymous { .. } => todo!("unimplemented: AnonymousScan"),
                 };

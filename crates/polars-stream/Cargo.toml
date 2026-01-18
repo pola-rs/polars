@@ -36,6 +36,7 @@ tokio = { workspace = true, features = ["sync"] }
 
 arrow = { workspace = true }
 memchr = { workspace = true }
+polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["partition_by"] }
 polars-error = { workspace = true }
@@ -67,11 +68,25 @@ dynamic_group_by = [
   "arrow/timezones",
 ]
 strings = []
-ipc = ["polars-mem-engine/ipc", "polars-plan/ipc", "polars-io/ipc"]
+ipc = [
+  "polars-mem-engine/ipc",
+  "polars-plan/ipc",
+  "polars-io/ipc",
+  "dep:serde_json",
+]
 parquet = ["polars-mem-engine/parquet", "polars-plan/parquet", "cloud"]
 csv = ["polars-mem-engine/csv", "polars-plan/csv", "polars-io/csv"]
-json = ["polars-mem-engine/json", "polars-plan/json", "polars-io/json", "dep:polars-json"]
-scan_lines = ["polars-mem-engine/scan_lines", "polars-plan/scan_lines", "polars-io/scan_lines"]
+json = [
+  "polars-mem-engine/json",
+  "polars-plan/json",
+  "polars-io/json",
+  "dep:polars-json",
+]
+scan_lines = [
+  "polars-mem-engine/scan_lines",
+  "polars-plan/scan_lines",
+  "polars-io/scan_lines",
+]
 cloud = ["polars-mem-engine/cloud", "polars-plan/cloud", "polars-io/cloud"]
 diff = ["polars-ops/diff", "polars-plan/diff", "polars-plan/abs"]
 dtype-array = ["polars-core/dtype-array"]
@@ -82,7 +97,10 @@ dtype-i8 = ["polars-core/dtype-i8", "polars-plan/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16", "polars-plan/dtype-i16"]
 dtype-i128 = ["polars-core/dtype-i128", "polars-plan/dtype-i128"]
 dtype-f16 = ["polars-core/dtype-f16", "polars-plan/dtype-f16"]
-dtype-categorical = ["polars-core/dtype-categorical", "polars-plan/dtype-categorical"]
+dtype-categorical = [
+  "polars-core/dtype-categorical",
+  "polars-plan/dtype-categorical",
+]
 dtype-decimal = ["polars-core/dtype-decimal", "polars-plan/dtype-decimal"]
 dtype-extension = ["polars-core/dtype-extension", "polars-plan/dtype-extension"]
 ewma = ["polars-plan/ewma"]
@@ -93,7 +111,12 @@ physical_plan_visualization_schema = [
   "polars-plan/dsl-schema",
   "polars-utils/dsl-schema",
 ]
-python = ["pyo3", "polars-plan/python", "polars-mem-engine/python", "polars-error/python"]
+python = [
+  "pyo3",
+  "polars-plan/python",
+  "polars-mem-engine/python",
+  "polars-error/python",
+]
 semi_anti_join = ["polars-plan/semi_anti_join", "polars-ops/semi_anti_join"]
 is_in = ["polars-ops/is_in", "polars-plan/is_in", "semi_anti_join"]
 replace = ["polars-ops/replace", "polars-plan/replace"]
