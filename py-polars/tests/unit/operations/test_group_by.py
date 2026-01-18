@@ -581,8 +581,9 @@ def test_group_by_agg_input_types(input: Any) -> None:
 
 
 @pytest.mark.xfail(
+    strict=False,
     reason="Test isolation issue: fails in full test suite but passes individually. "
-    "Known to fail after test_errors.py::test_err_invalid_comparison due to object() type pollution."
+    "Known to fail after test_errors.py::test_err_invalid_comparison due to object() type pollution.",
 )
 @pytest.mark.parametrize("input", [str, "b".join])
 def test_group_by_agg_bad_input_types(input: Any) -> None:
