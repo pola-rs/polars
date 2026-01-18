@@ -82,30 +82,30 @@ def test_distinct_with_expressions(df_distinct: pl.DataFrame) -> None:
     )
 
 
-# def test_distinct_with_full_outer_join(df_distinct: pl.DataFrame) -> None:
-#     """Test DISTINCT with FULL OUTER JOIN producing NULLs on both sides."""
-#     df_extended = pl.DataFrame(
-#         {
-#             "category": ["A", "D", "E"],
-#             "extra_info": ["info_a", "info_d", "info_e"],
-#         }
-#     )
-#     assert_sql_matches(
-#         frames={"data": df_distinct, "extended": df_extended},
-#         query="""
-#             SELECT DISTINCT
-#                 COALESCE(d.category, e.category) AS category,
-#                 e.extra_info
-#             FROM (SELECT DISTINCT category FROM data WHERE category IS NOT NULL) d
-#             FULL JOIN extended e USING (category)
-#             ORDER BY category
-#         """,
-#         compare_with=["sqlite"],
-#         expected={
-#             "category": ["A", "B", "C", "D", "E"],
-#             "extra_info": ["info_a", None, None, "info_d", "info_e"],
-#         },
-#     )
+def test_distinct_with_full_outer_join(df_distinct: pl.DataFrame) -> None:
+    """Test DISTINCT with FULL OUTER JOIN producing NULLs on both sides."""
+    df_extended = pl.DataFrame(
+        {
+            "category": ["A", "D", "E"],
+            "extra_info": ["info_a", "info_d", "info_e"],
+        }
+    )
+    assert_sql_matches(
+        frames={"data": df_distinct, "extended": df_extended},
+        query="""
+            SELECT DISTINCT
+                COALESCE(d.category, e.category) AS category,
+                e.extra_info
+            FROM (SELECT DISTINCT category FROM data WHERE category IS NOT NULL) d
+            FULL JOIN extended e USING (category)
+            ORDER BY category
+        """,
+        compare_with=["sqlite"],
+        expected={
+            "category": ["A", "B", "C", "D", "E"],
+            "extra_info": ["info_a", None, None, "info_d", "info_e"],
+        },
+    )
 
 
 def test_distinct_with_group_by(df_distinct: pl.DataFrame) -> None:

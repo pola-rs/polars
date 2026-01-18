@@ -1875,19 +1875,7 @@ impl LazyFrame {
     /// # Arguments
     /// * `fraction` - Fraction of items to return (between 0.0 and 1.0, or > 1.0 with replacement).
     /// * `with_replacement` - Allow values to be sampled more than once.
-    /// * `shuffle` - Shuffle the order of sampled data points.
     /// * `seed` - Seed for the random number generator. If `None`, a random seed is used.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use polars_core::prelude::*;
-    /// use polars_lazy::prelude::*;
-    ///
-    /// fn example(df: DataFrame) -> LazyFrame {
-    ///     df.lazy().sample_frac(0.5, false, Some(42))
-    /// }
-    /// ```
     #[cfg(feature = "random")]
     pub fn sample_frac(
         self,

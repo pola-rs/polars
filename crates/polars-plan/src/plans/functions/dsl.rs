@@ -52,14 +52,10 @@ pub enum DslFunction {
     Stats(StatsFunction),
     /// FillValue
     FillNan(Expr),
-    /// Sample rows from a DataFrame using Bernoulli sampling
     #[cfg(feature = "random")]
     Sample {
-        /// Fraction of rows to sample (0.0 to 1.0+)
         fraction: f64,
-        /// Allow sampling with replacement (uses Poisson sampling when fraction > 1.0)
         with_replacement: bool,
-        /// Random seed for reproducibility
         seed: Option<u64>,
     },
     // Function that is already converted to IR.

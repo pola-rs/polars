@@ -76,14 +76,10 @@ pub enum FunctionIR {
         // used for formatting
         fmt_str: PlSmallStr,
     },
-    /// Sample rows from a DataFrame using Bernoulli sampling
     #[cfg(feature = "random")]
     Sample {
-        /// Fraction of rows to sample (0.0 to 1.0+)
         fraction: f64,
-        /// Allow sampling with replacement (uses Poisson sampling when fraction > 1.0)
         with_replacement: bool,
-        /// Random seed for reproducibility
         seed: Option<u64>,
     },
     Hint(HintIR),
@@ -159,7 +155,7 @@ impl FunctionIR {
             OpaquePython(OpaquePythonUdf { streamable, .. }) => *streamable,
             RowIndex { .. } => false,
             #[cfg(feature = "random")]
-            Sample { .. } => true,  // Bernoulli sampling is streamable
+            Sample { .. } => true,
             Hint(_) => true,
         }
     }
@@ -192,7 +188,7 @@ impl FunctionIR {
             Rechunk | Unnest { .. } | Explode { .. } | Hint(_) => true,
             RowIndex { .. } | FastCount { .. } => false,
             #[cfg(feature = "random")]
-            Sample { .. } => true,  // Bernoulli sampling allows predicate pushdown
+            Sample { .. } => true,
         }
     }
 
@@ -263,7 +259,6 @@ impl FunctionIR {
                 with_replacement,
                 seed,
             } => {
-                // Use Bernoulli/Poisson sampling (preserves row order)
                 let frac_series = Series::new(PlSmallStr::EMPTY, &[*fraction]);
                 df.sample_frac_ordered(&frac_series, *with_replacement, *seed)
             },
@@ -302,7 +297,7 @@ impl FunctionIR {
             FunctionIR::Unpivot { .. } => true,
             FunctionIR::Opaque { .. } => true,
             #[cfg(feature = "random")]
-            FunctionIR::Sample { .. } => is_input_ordered,  // Bernoulli preserves order
+            FunctionIR::Sample { .. } => is_input_ordered,
             FunctionIR::Hint(_) => is_input_ordered,
         }
     }
@@ -337,7 +332,7 @@ impl FunctionIR {
             #[cfg(feature = "pivot")]
             Self::Unpivot { .. } => false,
             #[cfg(feature = "random")]
-            Self::Sample { .. } => true,  // Bernoulli sampling preserves row order
+            Self::Sample { .. } => true,
             Self::RowIndex { .. }
             | Self::FastCount { .. }
             | Self::Explode { .. }
