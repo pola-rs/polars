@@ -682,6 +682,26 @@ fn create_physical_plan_impl(
         MapFunction {
             input, function, ..
         } => {
+            // For Sample operations, use streaming to avoid loading all data into memory.
+            // This allows O(result) memory usage instead of O(input).
+            #[cfg(feature = "random")]
+            if let FunctionIR::Sample { .. } = &function {
+                // Build a streaming query that includes the sample operation.
+                // This processes data in batches, sampling each batch, so only sampled
+                // rows accumulate in memory.
+                if let Some(builder) = build_streaming_executor {
+                    // Reconstruct the MapFunction node in the arena
+                    let map_node = lp_arena.add(IR::MapFunction {
+                        input,
+                        function: function.clone(),
+                    });
+                    let sink_node = lp_arena.add(IR::Sink {
+                        input: map_node,
+                        payload: SinkTypeIR::Memory,
+                    });
+                    return builder(sink_node, lp_arena, expr_arena);
+                }
+            }
             let input = recurse!(input, state)?;
             Ok(Box::new(executors::UdfExec { input, function }))
         },

@@ -8,7 +8,7 @@ use rand_distr::{Normal, StandardNormal, StandardUniform, Uniform};
 use crate::prelude::DataType::Float64;
 use crate::prelude::*;
 use crate::random::get_global_random_u64;
-use crate::utils::NoNull;
+use crate::utils::{accumulate_dataframes_vertical_unchecked, NoNull};
 
 fn create_rand_index_with_replacement(n: usize, len: usize, seed: Option<u64>) -> IdxCa {
     if len == 0 {
@@ -240,6 +240,7 @@ impl DataFrame {
     }
 
     /// Sample using Bernoulli/Poisson distribution (preserves row order).
+    /// Processes in chunks to avoid O(N) memory allocation.
     pub fn sample_frac_ordered(
         &self,
         frac: &Series,
@@ -274,24 +275,63 @@ impl DataFrame {
 
                 if with_replacement {
                     // Poisson sampling: each row appears Poisson(fraction) times
+                    // Process in chunks to limit memory usage
                     use rand_distr::Poisson;
                     let poisson = Poisson::new(fraction).map_err(to_compute_err)?;
 
-                    let mut indices = Vec::with_capacity((height as f64 * fraction) as usize);
-                    for i in 0..height as IdxSize {
-                        let count = poisson.sample(&mut rng) as usize;
-                        for _ in 0..count {
-                            indices.push(i);
+                    const CHUNK_SIZE: usize = 1_000_000;
+                    let mut result_dfs = Vec::new();
+
+                    for chunk_start in (0..height).step_by(CHUNK_SIZE) {
+                        let chunk_end = (chunk_start + CHUNK_SIZE).min(height);
+                        let mut indices =
+                            Vec::with_capacity(((chunk_end - chunk_start) as f64 * fraction) as usize);
+
+                        for i in chunk_start..chunk_end {
+                            let count = poisson.sample(&mut rng) as usize;
+                            for _ in 0..count {
+                                indices.push(i as IdxSize);
+                            }
+                        }
+
+                        if !indices.is_empty() {
+                            let idx = IdxCa::new_vec(PlSmallStr::EMPTY, indices);
+                            result_dfs.push(unsafe { self.take_unchecked(&idx) });
                         }
                     }
 
-                    let idx = IdxCa::new_vec(PlSmallStr::EMPTY, indices);
-                    Ok(unsafe { self.take_unchecked(&idx) })
+                    if result_dfs.is_empty() {
+                        return Ok(self.clear());
+                    }
+
+                    Ok(accumulate_dataframes_vertical_unchecked(result_dfs))
                 } else {
-                    // Bernoulli sampling: each row included with probability `fraction`
+                    // Bernoulli sampling: process in chunks to avoid O(N) mask allocation
+                    const CHUNK_SIZE: usize = 1_000_000;
                     let dist = Bernoulli::new(fraction).map_err(to_compute_err)?;
-                    let mask: BooleanChunked = (0..height).map(|_| dist.sample(&mut rng)).collect();
-                    self.filter(&mask)
+
+                    let mut result_dfs = Vec::new();
+
+                    for chunk_start in (0..height).step_by(CHUNK_SIZE) {
+                        let chunk_end = (chunk_start + CHUNK_SIZE).min(height);
+                        let chunk_len = chunk_end - chunk_start;
+
+                        let mask: BooleanChunked =
+                            (0..chunk_len).map(|_| dist.sample(&mut rng)).collect();
+
+                        let chunk_df = self.slice(chunk_start as i64, chunk_len);
+                        let filtered = chunk_df.filter(&mask)?;
+
+                        if filtered.height() > 0 {
+                            result_dfs.push(filtered);
+                        }
+                    }
+
+                    if result_dfs.is_empty() {
+                        return Ok(self.clear());
+                    }
+
+                    Ok(accumulate_dataframes_vertical_unchecked(result_dfs))
                 }
             },
             None => Ok(self.clear()),

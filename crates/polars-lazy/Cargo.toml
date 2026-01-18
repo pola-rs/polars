@@ -247,7 +247,7 @@ diff = ["polars-expr/diff", "polars-stream?/diff"]
 pct_change = ["polars-expr/pct_change"]
 moment = ["polars-expr/moment", "polars-ops/moment"]
 abs = ["polars-expr/abs"]
-random = ["polars-expr/random"]
+random = ["polars-expr/random", "polars-stream?/random"]
 dynamic_group_by = [
   "polars-plan/dynamic_group_by",
   "polars-time",

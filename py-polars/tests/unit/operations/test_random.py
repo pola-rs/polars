@@ -241,6 +241,11 @@ def test_sample_lazy_frame_reproducibility() -> None:
 
     assert_frame_equal(result1, result2)
 
+    lf_10_chunks = _force_n_chunks_like(lf, 100, 10)
+    result1_10_chunks = lf_10_chunks.sample(fraction=0.5, seed=42, with_replacement=True).collect()
+    result2_10_chunks = lf_10_chunks.sample(fraction=0.5, seed=42, with_replacement=True).collect()
+    assert_frame_equal(result1_10_chunks, result2_10_chunks)
+
 
 def test_sample_lazy_frame_different_seeds() -> None:
     """Test that LazyFrame.sample produces different results with different seeds."""
