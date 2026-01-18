@@ -1340,14 +1340,17 @@ def test_min_max_by(agg_funcs: Any, by_col: str) -> None:
         assert_frame_equal(result, expected, check_row_order=False)
 
 
-def test_grouped_max_after_reverse_on_sorted_column_26141() -> None:
+@pytest.mark.parametrize(("agg", "expected"), [("max", 2), ("min", 0)])
+def test_grouped_minmax_after_reverse_on_sorted_column_26141(
+    agg: str, expected: int
+) -> None:
     df = pl.DataFrame({"a": [0, 1, 2]}).sort("a")
 
-    out = df.group_by(1).agg(pl.col("a").reverse().max())
+    expr = getattr(pl.col("a").reverse(), agg)()
+    out = df.group_by(1).agg(expr)
 
     expected = pl.DataFrame(
         {"literal": [1], "a": [2]},
         schema={"literal": pl.Int32, "a": pl.Int64},
     )
-
-    assert_frame_equal(out, expected)
+    assert_frame_equal(out, expected_df)
