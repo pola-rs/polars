@@ -504,12 +504,11 @@ pub fn columns_to_hashes(
     let build_hasher = build_hasher.unwrap_or_default();
 
     if keys.width() == 0 {
-        StructChunked::with_chunk(
-            PlSmallStr::EMPTY,
-            StructArray::new(ArrowDataType::Struct(vec![]), keys.height(), vec![], None),
-        )
-        .into_column()
-        .vec_hash(build_hasher.clone(), hashes)?;
+        let null_h = get_null_hash_value(&build_hasher);
+
+        for _ in 0..keys.height() {
+            hashes.push(null_h);
+        }
 
         return Ok(build_hasher);
     }
