@@ -76,8 +76,7 @@ impl PolarsTruncate for DatetimeChunked {
         }
 
         // A sqrt(n) cache is not too small, not too large.
-        let mut duration_cache =
-            LruCache::with_capacity(((every.len() as f64).sqrt() as usize).max(1));
+        let mut duration_cache = LruCache::with_capacity((every.len() as f64).sqrt() as usize);
 
         let func = match self.time_unit() {
             TimeUnit::Nanoseconds => Window::truncate_ns,
@@ -136,7 +135,7 @@ impl PolarsTruncate for DateChunked {
             _ => broadcast_try_binary_elementwise(self.physical(), every, |opt_t, opt_every| {
                 // A sqrt(n) cache is not too small, not too large.
                 let mut duration_cache =
-                    LruCache::with_capacity(((every.len() as f64).sqrt() as usize).max(1));
+                    LruCache::with_capacity((every.len() as f64).sqrt() as usize);
                 match (opt_t, opt_every) {
                     (Some(t), Some(every)) => {
                         let every =
