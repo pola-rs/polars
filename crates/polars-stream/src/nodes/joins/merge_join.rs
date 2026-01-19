@@ -468,7 +468,8 @@ async fn compute_join_and_send(
         .unwrap()
         .as_materialized_series();
 
-    let (str_build_key, str_probe_key);
+    #[cfg(feature = "dtype-categorical")]
+    let (str_probe_key, str_build_key);
     #[cfg(feature = "dtype-categorical")]
     {
         // Categoricals are lexicographically ordered, not by their physical values.
