@@ -16,8 +16,8 @@ use crate::series::coalesce_columns;
 
 #[allow(clippy::too_many_arguments)]
 pub fn match_keys(
-    left_keys: &Series,
-    right_keys: &Series,
+    build_keys: &Series,
+    probe_keys: &Series,
     gather_build: &mut Vec<IdxSize>,
     gather_probe: &mut Vec<IdxSize>,
     gather_unmatched_probe: &mut Vec<IdxSize>,
@@ -31,10 +31,10 @@ pub fn match_keys(
     probe_last_matched: usize,
 ) -> (usize, usize, usize) {
     macro_rules! dispatch {
-        ($left_keys_ca:expr) => {
+        ($build_keys_ca:expr) => {
             match_keys_impl(
-                $left_keys_ca,
-                right_keys.as_ref().as_ref(),
+                $build_keys_ca,
+                probe_keys.as_ref().as_ref(),
                 gather_build,
                 gather_probe,
                 gather_unmatched_probe,
@@ -50,28 +50,28 @@ pub fn match_keys(
         };
     }
 
-    assert_eq!(left_keys.dtype(), right_keys.dtype());
-    match left_keys.dtype() {
+    assert_eq!(build_keys.dtype(), probe_keys.dtype());
+    match build_keys.dtype() {
         dt if dt.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(dt, |$T| {
                 type PhysCa = ChunkedArray<$T>;
-                let left_keys_ca: &PhysCa  = left_keys.as_ref().as_ref();
-                dispatch!(left_keys_ca)
+                let build_keys_ca: &PhysCa  = build_keys.as_ref().as_ref();
+                dispatch!(build_keys_ca)
             })
         },
-        DataType::Boolean => dispatch!(left_keys.bool().unwrap()),
-        DataType::String => dispatch!(left_keys.str().unwrap()),
-        DataType::Binary => dispatch!(left_keys.binary().unwrap()),
-        DataType::BinaryOffset => dispatch!(left_keys.binary_offset().unwrap()),
+        DataType::Boolean => dispatch!(build_keys.bool().unwrap()),
+        DataType::String => dispatch!(build_keys.str().unwrap()),
+        DataType::Binary => dispatch!(build_keys.binary().unwrap()),
+        DataType::BinaryOffset => dispatch!(build_keys.binary_offset().unwrap()),
         #[cfg(feature = "dtype-categorical")]
         DataType::Enum(cats, _) => with_match_categorical_physical_type!(cats.physical(), |$C| {
             type PhysCa = ChunkedArray<<$C as PolarsCategoricalType>::PolarsPhysical>;
-            let left_keys_ca: &PhysCa = left_keys.as_ref().as_ref();
-            dispatch!(left_keys_ca)
+            let build_keys_ca: &PhysCa = build_keys.as_ref().as_ref();
+            dispatch!(build_keys_ca)
         }),
         DataType::Null => match_null_keys_impl(
-            left_keys.len(),
-            right_keys.len(),
+            build_keys.len(),
+            probe_keys.len(),
             gather_build,
             gather_probe,
             gather_unmatched_probe,
@@ -173,8 +173,8 @@ where
 
 #[allow(clippy::mut_range_bound, clippy::too_many_arguments)]
 fn match_null_keys_impl(
-    left_n: usize,
-    right_n: usize,
+    build_n: usize,
+    probe_n: usize,
     gather_build: &mut Vec<IdxSize>,
     gather_probe: &mut Vec<IdxSize>,
     gather_probe_unmatched: &mut Vec<IdxSize>,
@@ -191,11 +191,11 @@ fn match_null_keys_impl(
     assert!(gather_probe.is_empty());
 
     if nulls_equal {
-        while build_row_offset < left_n {
+        while build_row_offset < build_n {
             if gather_build.len() >= limit_results {
                 return (build_row_offset, probe_row_offset, probe_last_matched);
             }
-            for probe_idx in probe_row_offset..right_n {
+            for probe_idx in probe_row_offset..probe_n {
                 gather_build.push(build_row_offset as IdxSize);
                 gather_probe.push(probe_idx as IdxSize);
             }
@@ -203,15 +203,15 @@ fn match_null_keys_impl(
         }
     } else {
         if build_emit_unmatched {
-            gather_build.extend(0..left_n as IdxSize);
-            gather_probe.extend(repeat_n(IdxSize::MAX, left_n));
+            gather_build.extend(0..build_n as IdxSize);
+            gather_probe.extend(repeat_n(IdxSize::MAX, build_n));
         }
         if probe_emit_unmatched {
-            gather_probe_unmatched.extend(probe_last_matched as IdxSize..right_n as IdxSize);
-            probe_last_matched = right_n;
+            gather_probe_unmatched.extend(probe_last_matched as IdxSize..probe_n as IdxSize);
+            probe_last_matched = probe_n;
         }
     }
-    probe_row_offset = right_n;
+    probe_row_offset = probe_n;
     (build_row_offset, probe_row_offset, probe_last_matched)
 }
 
