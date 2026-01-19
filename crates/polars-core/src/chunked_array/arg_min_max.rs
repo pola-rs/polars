@@ -7,9 +7,10 @@ use crate::chunked_array::ops::float_sorted_arg_max::{
     float_arg_max_sorted_ascending, float_arg_max_sorted_descending,
 };
 use crate::datatypes::{
-    BinaryChunked, BooleanChunked, CategoricalChunked, PolarsCategoricalType, PolarsDataType,
-    PolarsNumericType, StringChunked,
+    BinaryChunked, BooleanChunked, PolarsDataType, PolarsNumericType, StringChunked,
 };
+#[cfg(feature = "dtype-categorical")]
+use crate::datatypes::{CategoricalChunked, PolarsCategoricalType};
 use crate::series::IsSorted;
 
 pub fn arg_min_opt_iter<T, I>(iter: I) -> Option<usize>
