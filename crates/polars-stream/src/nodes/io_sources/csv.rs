@@ -135,7 +135,7 @@ impl FileReader for CsvFileReader {
             row_index,
             pre_slice,
             predicate: None,
-            sample: _, // Sample is handled in extra_ops for readers that don't support SAMPLE capability
+            sample: _,
             cast_columns_policy: _,
             num_pipelines,
             callbacks:

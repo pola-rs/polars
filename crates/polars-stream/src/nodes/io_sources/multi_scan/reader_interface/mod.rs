@@ -184,6 +184,51 @@ impl SampleConfig {
 
         (mask, counts)
     }
+
+    /// Apply sampling to a DataFrame.
+    /// For Bernoulli: filter by mask.
+    /// For Poisson: expand rows by counts.
+    pub fn apply_to_df(
+        &self,
+        df: &polars_core::frame::DataFrame,
+        row_offset: u64,
+    ) -> polars_error::PolarsResult<polars_core::frame::DataFrame> {
+        use polars_core::prelude::BooleanChunked;
+
+        let height = df.height();
+        if height == 0 {
+            return Ok(df.clone());
+        }
+
+        if !self.with_replacement {
+            // Bernoulli sampling
+            let mask_vec = self.generate_bernoulli_mask(height, row_offset);
+            let mask: BooleanChunked = mask_vec.into_iter().collect();
+            df.filter(&mask)
+        } else {
+            // Poisson sampling: expand rows by counts
+            use polars_core::prelude::{IdxCa, IdxSize};
+            use polars_utils::pl_str::PlSmallStr;
+
+            let (_, counts) = self.generate_poisson_counts(height, row_offset);
+            let expected_size = counts.iter().sum::<u32>() as usize;
+            let mut indices = Vec::with_capacity(expected_size);
+
+            for (i, &count) in counts.iter().enumerate() {
+                for _ in 0..count {
+                    indices.push(i as IdxSize);
+                }
+            }
+
+            if indices.is_empty() {
+                return Ok(df.clear());
+            }
+
+            let idx = IdxCa::new_vec(PlSmallStr::EMPTY, indices);
+            // SAFETY: indices are in bounds
+            Ok(unsafe { df.take_unchecked(&idx) })
+        }
+    }
 }
 
 #[derive(Debug)]

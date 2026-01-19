@@ -265,10 +265,6 @@ impl ParquetReadImpl {
         let predicate = self.predicate.clone();
         let sample = self.sample.clone();
 
-        // Enable prefiltering when:
-        // 1. Explicitly requested via ParallelStrategy::Prefiltered
-        // 2. OR there's a predicate with Auto strategy
-        // 3. OR there's a sample config (sample can use prefiltering without any predicate columns)
         let mut use_prefiltered = matches!(self.options.parallel, ParallelStrategy::Prefiltered);
         use_prefiltered |=
             predicate.is_some() && matches!(self.options.parallel, ParallelStrategy::Auto);

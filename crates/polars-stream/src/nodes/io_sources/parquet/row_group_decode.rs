@@ -19,6 +19,7 @@ use polars_utils::{IdxSize, UnitVec};
 use super::row_group_data_fetch::RowGroupData;
 use crate::async_executor::TaskPriority;
 use crate::async_primitives::opt_spawned_future::parallelize_first_to_local;
+use crate::nodes::io_sources::multi_scan::reader_interface::SampleConfig;
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
 
 /// Turns row group data into DataFrames.
@@ -34,6 +35,8 @@ pub(super) struct RowGroupDecoder {
     /// Indices into `projected_arrow_fields. This must be sorted.
     pub(super) non_predicate_field_indices: Arc<[usize]>,
     pub(super) target_values_per_thread: usize,
+    /// Optional sample configuration for scan-level sampling.
+    pub(super) sample: Option<SampleConfig>,
 }
 
 impl RowGroupDecoder {
@@ -47,10 +50,15 @@ impl RowGroupDecoder {
             slice.0 == 0 && slice.1 >= row_group_data.row_group_metadata.num_rows()
         });
 
-        if self.use_prefiltered.is_some()
+        // Use prefiltered decode when:
+        // 1. Prefiltering is enabled
+        // 2. No slice is applied
+        // 3. Either we have predicate columns to decode first, OR we have sample config
+        let use_prefiltered = self.use_prefiltered.is_some()
             && row_group_data.slice.is_none()
-            && !self.predicate_field_indices.is_empty()
-        {
+            && (!self.predicate_field_indices.is_empty() || self.sample.is_some());
+
+        if use_prefiltered {
             self.row_group_data_to_df_prefiltered(row_group_data).await
         } else {
             self.row_group_data_to_df_impl(row_group_data).await
@@ -61,6 +69,7 @@ impl RowGroupDecoder {
         &self,
         row_group_data: RowGroupData,
     ) -> PolarsResult<DataFrame> {
+        let base_row_offset = row_group_data.row_offset;
         let row_group_data = Arc::new(row_group_data);
 
         let out_width = self.row_index.is_some() as usize + self.projected_arrow_fields.len();
@@ -87,6 +96,7 @@ impl RowGroupDecoder {
         .await?;
 
         drop(row_group_data);
+        let row_offset = (base_row_offset + slice_range.start) as u64;
 
         let projection_height = slice_range.len();
 
@@ -113,6 +123,11 @@ impl RowGroupDecoder {
         };
 
         assert_eq!(df.width(), out_width); // `out_width` should have been calculated correctly
+
+        // Apply sample if configured (fallback path for non-prefiltered decode)
+        if let Some(sample) = &self.sample {
+            return sample.apply_to_df(&df, row_offset);
+        }
 
         Ok(df)
     }
@@ -399,6 +414,12 @@ impl RowGroupDecoder {
         debug_assert!(row_group_data.slice.is_none()); // Invariant of the optimizer.
         assert!(self.predicate_field_indices.len() <= self.projected_arrow_fields.len());
 
+        // Sample-only path: no predicate, just sample mask for prefiltered decode
+        if self.predicate.is_none() && self.sample.is_some() {
+            return self.row_group_data_to_df_sample_only(row_group_data).await;
+        }
+
+        let row_offset = row_group_data.row_offset as u64;
         let row_group_data = Arc::new(row_group_data);
         let projection_height = row_group_data.row_group_metadata.num_rows();
 
@@ -493,7 +514,7 @@ impl RowGroupDecoder {
             }
         }
 
-        let (live_df_filtered, mut mask) = if use_column_predicates {
+        let (mut live_df_filtered, mut mask) = if use_column_predicates {
             assert!(scan_predicate.column_predicates.is_sumwise_complete);
             if let [mask] = masks.as_slice() {
                 (
@@ -554,8 +575,50 @@ impl RowGroupDecoder {
             )
         };
 
+        // Combine predicate mask with sample mask if configured
+        let poisson_counts: Option<Vec<u32>> = if let Some(sample) = &self.sample {
+            if !sample.with_replacement {
+                // Bernoulli: AND predicate mask with sample mask
+                let sample_mask_vec = sample.generate_bernoulli_mask(projection_height, row_offset);
+                let sample_mask: BooleanChunked = sample_mask_vec.into_iter().collect();
+                mask = &mask & &sample_mask;
+                // Re-filter live_columns with the combined mask
+                let filtered = filter_cols(
+                    live_df_filtered.into_columns(),
+                    &mask,
+                    self.target_values_per_thread,
+                )
+                .await?;
+                let filtered_height = mask.num_trues();
+                live_df_filtered = unsafe { DataFrame::new_unchecked(filtered_height, filtered) };
+                None
+            } else {
+                // Poisson: AND predicate mask with (count > 0) mask, save counts for expansion
+                let (sample_mask_vec, counts) =
+                    sample.generate_poisson_counts(projection_height, row_offset);
+                let sample_mask: BooleanChunked = sample_mask_vec.into_iter().collect();
+                mask = &mask & &sample_mask;
+                // Re-filter live_columns with the combined mask
+                let filtered = filter_cols(
+                    live_df_filtered.into_columns(),
+                    &mask,
+                    self.target_values_per_thread,
+                )
+                .await?;
+                let filtered_height = mask.num_trues();
+                live_df_filtered = unsafe { DataFrame::new_unchecked(filtered_height, filtered) };
+                Some(counts)
+            }
+        } else {
+            None
+        };
+
         if self.non_predicate_field_indices.is_empty() {
             // User or test may have explicitly requested prefiltering
+            // Apply Poisson expansion if needed
+            if let Some(counts) = poisson_counts {
+                return self.apply_poisson_expansion(live_df_filtered, &counts, &mask);
+            }
             return Ok(live_df_filtered);
         }
 
@@ -575,6 +638,9 @@ impl RowGroupDecoder {
             .len()
             .div_ceil(self.num_pipelines))
         .max(1);
+
+        // Clone mask for later use in Poisson expansion (before it's moved into closure)
+        let mask_for_expansion = poisson_counts.as_ref().map(|_| mask.clone());
 
         let task_handles = {
             let non_predicate_field_indices = self.non_predicate_field_indices.clone();
@@ -630,6 +696,182 @@ impl RowGroupDecoder {
         let mut merged = live_columns;
         merged.extend(dead_cols);
         let df = unsafe { DataFrame::new_unchecked(expected_num_rows, merged) };
+
+        // Apply Poisson expansion if needed
+        if let Some(counts) = poisson_counts {
+            let mask = mask_for_expansion.unwrap();
+            return self.apply_poisson_expansion(df, &counts, &mask);
+        }
+
+        Ok(df)
+    }
+
+    /// Apply Poisson expansion to decoded DataFrame using original counts and combined mask.
+    fn apply_poisson_expansion(
+        &self,
+        df: DataFrame,
+        counts: &[u32],
+        combined_mask: &BooleanChunked,
+    ) -> PolarsResult<DataFrame> {
+        use polars_core::prelude::IdxCa;
+
+        let sample = self.sample.as_ref().unwrap();
+        let expected_size = (combined_mask.len() as f64 * sample.fraction) as usize;
+        let mut indices = Vec::with_capacity(expected_size);
+
+        // Map from original row index to decoded row index, then expand by count
+        let mut decoded_idx: IdxSize = 0;
+        for (original_idx, included) in combined_mask.iter().enumerate() {
+            if included == Some(true) {
+                let count = counts[original_idx];
+                for _ in 0..count {
+                    indices.push(decoded_idx);
+                }
+                decoded_idx += 1;
+            }
+        }
+
+        if indices.is_empty() {
+            return Ok(df.clear());
+        }
+
+        let idx = IdxCa::new_vec(PlSmallStr::EMPTY, indices);
+        Ok(unsafe { df.take_unchecked(&idx) })
+    }
+
+    /// Sample-only path for prefiltered decode (no predicate, just sample).
+    async fn row_group_data_to_df_sample_only(
+        &self,
+        row_group_data: RowGroupData,
+    ) -> PolarsResult<DataFrame> {
+        debug_assert!(row_group_data.slice.is_none());
+        debug_assert!(self.predicate.is_none());
+        debug_assert!(self.sample.is_some());
+
+        let sample = self.sample.as_ref().unwrap();
+        let row_offset = row_group_data.row_offset as u64;
+        let projection_height = row_group_data.row_group_metadata.num_rows();
+
+        // Generate sample mask and optional Poisson counts
+        let (mut mask, poisson_counts) = if !sample.with_replacement {
+            let mask_vec = sample.generate_bernoulli_mask(projection_height, row_offset);
+            let mask: BooleanChunked = mask_vec.into_iter().collect();
+            (mask, None)
+        } else {
+            let (mask_vec, counts) = sample.generate_poisson_counts(projection_height, row_offset);
+            let mask: BooleanChunked = mask_vec.into_iter().collect();
+            (mask, Some(counts))
+        };
+
+        let row_group_data = Arc::new(row_group_data);
+
+        let mut live_columns = Vec::with_capacity(
+            self.row_index.is_some() as usize + self.projected_arrow_fields.len(),
+        );
+
+        if let Some(s) = self.materialize_row_index(
+            row_group_data.as_ref(),
+            0..row_group_data.row_group_metadata.num_rows(),
+        )? {
+            live_columns.push(s);
+        }
+
+        mask.rechunk_mut();
+        let mask_bitmap = mask.downcast_as_array();
+        let mask_bitmap = match mask_bitmap.validity() {
+            None => mask_bitmap.values().clone(),
+            Some(v) => mask_bitmap.values() & v,
+        };
+
+        assert_eq!(mask_bitmap.len(), projection_height);
+        let expected_num_rows = mask_bitmap.set_bits();
+
+        // Filter row_index if present
+        if !live_columns.is_empty() {
+            live_columns =
+                filter_cols(live_columns, &mask, self.target_values_per_thread).await?;
+        }
+
+        // Decode all projected columns using prefiltered decode
+        let cols_per_thread = self
+            .projected_arrow_fields
+            .len()
+            .div_ceil(self.num_pipelines)
+            .max(1);
+
+        // Clone mask for Poisson expansion
+        let mask_for_expansion = poisson_counts.as_ref().map(|_| mask.clone());
+
+        let task_handles = {
+            let projected_arrow_fields = self.projected_arrow_fields.clone();
+            let num_fields = projected_arrow_fields.len();
+            let row_group_data = row_group_data.clone();
+
+            parallelize_first_to_local(
+                TaskPriority::Low,
+                (0..num_fields)
+                    .step_by(cols_per_thread)
+                    .map(move |offset| {
+                        let row_group_data = row_group_data.clone();
+                        let projected_arrow_fields = projected_arrow_fields.clone();
+                        let mask = mask.clone();
+                        let mask_bitmap = mask_bitmap.clone();
+
+                        async move {
+                            (offset..offset.saturating_add(cols_per_thread).min(num_fields))
+                                .map(|i| {
+                                    let projection = &projected_arrow_fields[i];
+
+                                    let col = decode_column_prefiltered(
+                                        projection.arrow_field(),
+                                        row_group_data.as_ref(),
+                                        &mask,
+                                        &mask_bitmap,
+                                        expected_num_rows,
+                                    )?;
+
+                                    projection.apply_transform(col)
+                                })
+                                .collect::<PolarsResult<UnitVec<_>>>()
+                        }
+                    }),
+            )
+        };
+
+        for fut in task_handles {
+            live_columns.extend(fut.await?);
+        }
+
+        drop(row_group_data);
+
+        let df = unsafe { DataFrame::new_unchecked(expected_num_rows, live_columns) };
+
+        // For Poisson sampling, expand rows based on counts
+        if let (Some(counts), Some(expansion_mask)) = (poisson_counts, mask_for_expansion) {
+            use polars_core::prelude::IdxCa;
+
+            let expected_size = (expansion_mask.len() as f64 * sample.fraction) as usize;
+            let mut indices = Vec::with_capacity(expected_size);
+
+            let mut decoded_idx: IdxSize = 0;
+            for (original_idx, included) in expansion_mask.iter().enumerate() {
+                if included == Some(true) {
+                    let count = counts[original_idx];
+                    for _ in 0..count {
+                        indices.push(decoded_idx);
+                    }
+                    decoded_idx += 1;
+                }
+            }
+
+            if indices.is_empty() {
+                return Ok(df.clear());
+            }
+
+            let idx = IdxCa::new_vec(PlSmallStr::EMPTY, indices);
+            return Ok(unsafe { df.take_unchecked(&idx) });
+        }
+
         Ok(df)
     }
 }

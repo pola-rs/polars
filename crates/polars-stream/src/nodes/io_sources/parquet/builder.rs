@@ -45,7 +45,7 @@ impl FileReaderBuilder for ParquetReaderBuilder {
             | RC::NEGATIVE_PRE_SLICE
             | RC::PARTIAL_FILTER
             | RC::MAPPED_COLUMN_PROJECTION
-            | RC::SAMPLE; // Parquet supports sampling at decode time
+            | RC::SAMPLE;
 
         if matches!(
             self.options.parallel,

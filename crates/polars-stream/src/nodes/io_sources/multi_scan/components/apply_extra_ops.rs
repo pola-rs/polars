@@ -51,7 +51,7 @@ pub enum ApplyExtraOps {
         /// This will have include_file_paths, hive columns, missing columns.
         column_selectors: Option<Vec<ColumnSelector>>,
         predicate: Option<ScanIOPredicate>,
-        /// Sampling pushdown - applied after predicate.
+        /// Sampling pushdown
         sample: Option<ScanSample>,
     },
 
@@ -342,7 +342,7 @@ impl ApplyExtraOps {
             *df = df.filter_seq(mask.bool().expect("predicate not boolean"))?;
         }
 
-        // Apply sampling after predicate (if configured)
+        // Apply sampling
         if let Some(sample) = sample {
             *df = apply_sample(df, sample, current_row_position)?;
         }
@@ -351,57 +351,21 @@ impl ApplyExtraOps {
     }
 }
 
-/// Apply deterministic sampling to a DataFrame.
-/// Uses seeded RNG sampling for reproducibility across parallel readers.
+/// Apply sampling.
 fn apply_sample(
     df: &DataFrame,
     sample: &ScanSample,
     current_row_position: RowCounter,
 ) -> PolarsResult<DataFrame> {
     use crate::nodes::io_sources::multi_scan::reader_interface::SampleConfig;
-    use polars_core::prelude::BooleanChunked;
-
-    let height = df.height();
-    if height == 0 {
-        return Ok(df.clone());
-    }
 
     let base_row = current_row_position.num_physical_rows() as u64;
 
-    // Create SampleConfig for the shared sampling logic
     let sample_config = SampleConfig {
         fraction: sample.fraction,
         with_replacement: sample.with_replacement,
         seed: sample.seed,
     };
 
-    if !sample.with_replacement {
-        // Bernoulli sampling: use batch method
-        let mask_vec = sample_config.generate_bernoulli_mask(height, base_row);
-        let mask: BooleanChunked = mask_vec.into_iter().collect();
-        df.filter(&mask)
-    } else {
-        // Poisson sampling: use batch method
-        use polars_core::prelude::IdxCa;
-        use polars_core::prelude::IdxSize;
-        use polars_utils::pl_str::PlSmallStr;
-
-        let (_, counts) = sample_config.generate_poisson_counts(height, base_row);
-        let expected_size = (height as f64 * sample.fraction) as usize;
-        let mut indices = Vec::with_capacity(expected_size);
-
-        for (i, &count) in counts.iter().enumerate() {
-            for _ in 0..count {
-                indices.push(i as IdxSize);
-            }
-        }
-
-        if indices.is_empty() {
-            return Ok(df.clear());
-        }
-
-        let idx = IdxCa::new_vec(PlSmallStr::EMPTY, indices);
-        // SAFETY: indices are in bounds
-        Ok(unsafe { df.take_unchecked(&idx) })
-    }
+    sample_config.apply_to_df(df, base_row)
 }
