@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-from typing import IO, TYPE_CHECKING, Any, Literal
+from typing import IO, TYPE_CHECKING, Literal
 
 from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_ldf
@@ -17,6 +17,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from polars._typing import StorageOptionsDict
     from polars.dataframe.frame import DataFrame
     from polars.io.cloud import CredentialProviderFunction
     from polars.lazyframe.frame import LazyFrame
@@ -41,7 +42,7 @@ def read_lines(
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     glob: bool = True,
-    storage_options: dict[str, Any] | None = None,
+    storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
     include_file_paths: str | None = None,
 ) -> DataFrame:
@@ -143,7 +144,7 @@ def scan_lines(
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     glob: bool = True,
-    storage_options: dict[str, Any] | None = None,
+    storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
     include_file_paths: str | None = None,
 ) -> LazyFrame:

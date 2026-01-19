@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, Literal
+from typing import IO, TYPE_CHECKING, Literal
 
 from polars._utils.deprecation import (
     deprecate_renamed_parameter,
@@ -21,7 +21,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     from polars import DataFrame, LazyFrame
-    from polars._typing import SchemaDefinition
+    from polars._typing import SchemaDefinition, StorageOptionsDict
     from polars.io.cloud import CredentialProviderFunction
 
 
@@ -46,7 +46,7 @@ def read_ndjson(
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     ignore_errors: bool = False,
-    storage_options: dict[str, Any] | None = None,
+    storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
     retries: int | None = None,
     file_cache_ttl: int | None = None,
@@ -208,7 +208,7 @@ def scan_ndjson(
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     ignore_errors: bool = False,
-    storage_options: dict[str, Any] | None = None,
+    storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
     retries: int | None = None,
     file_cache_ttl: int | None = None,

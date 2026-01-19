@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import contextlib
 import warnings
-import io
 from functools import partial
 from typing import TYPE_CHECKING
 
@@ -120,18 +119,15 @@ def test_storage_options_retries(
 
     with pytest.raises(
         DeprecationWarning,
-        match="the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead",
+        match=r"the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead",
     ):
         function(retries=7)
 
     capfd.readouterr()
 
-    with warnings.catch_warnings():
+    with warnings.catch_warnings(), contextlib.suppress(OSError):
         warnings.simplefilter("ignore")
-        try:
-            function(retries=7)
-        except OSError:
-            pass
+        function(retries=7)
 
     capture = capfd.readouterr().err
     assert "max_retries: 7" in capture
@@ -149,11 +145,11 @@ def test_storage_options_retries(
     capture = capfd.readouterr().err
     assert "file_cache_ttl: 13" in capture
 
-    with pytest.raises(
-        DeprecationWarning,
-        match="the `file_cache_ttl` parameter was deprecated in 1.37.1; specify 'file_cache_ttl' in `storage_options` instead",
+    with (
+        pytest.raises(
+            DeprecationWarning,
+            match=r"the `file_cache_ttl` parameter was deprecated in 1.37.1; specify 'file_cache_ttl' in `storage_options` instead",
+        ),
+        contextlib.suppress(OSError),
     ):
-        try:
-            function(file_cache_ttl=13)
-        except OSError:
-            pass
+        function(file_cache_ttl=13)

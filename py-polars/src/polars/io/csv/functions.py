@@ -5,7 +5,7 @@ import os
 from collections.abc import Sequence
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, Literal
+from typing import IO, TYPE_CHECKING, Literal
 
 import polars._reexport as pl
 import polars.functions as F
@@ -42,7 +42,12 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
     from polars import DataFrame, LazyFrame
-    from polars._typing import CsvEncoding, PolarsDataType, SchemaDict
+    from polars._typing import (
+        CsvEncoding,
+        PolarsDataType,
+        SchemaDict,
+        StorageOptionsDict,
+    )
     from polars.io.cloud import CredentialProviderFunction
     from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
 
@@ -78,7 +83,7 @@ def read_csv(
     low_memory: bool = False,
     rechunk: bool = False,
     use_pyarrow: bool = False,
-    storage_options: dict[str, Any] | None = None,
+    storage_options: StorageOptionsDict | None = None,
     skip_rows_after_header: int = 0,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
@@ -1108,7 +1113,7 @@ def scan_csv(
     truncate_ragged_lines: bool = False,
     decimal_comma: bool = False,
     glob: bool = True,
-    storage_options: dict[str, Any] | None = None,
+    storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
     retries: int | None = None,
     file_cache_ttl: int | None = None,
@@ -1459,7 +1464,7 @@ def _scan_csv_impl(
     truncate_ragged_lines: bool = True,
     decimal_comma: bool = False,
     glob: bool = True,
-    storage_options: dict[str, Any] | None = None,
+    storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderBuilder | None = None,
     include_file_paths: str | None = None,
 ) -> LazyFrame:

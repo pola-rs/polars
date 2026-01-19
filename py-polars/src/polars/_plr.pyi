@@ -828,7 +828,6 @@ class PyLazyFrame:
         include_file_paths: str | None,
         cloud_options: dict[str, Any] | None,
         credential_provider: Any | None,
-        file_cache_ttl: int | None,
     ) -> PyLazyFrame: ...
     @staticmethod
     def new_from_csv(
@@ -862,7 +861,6 @@ class PyLazyFrame:
         schema: Any | None,
         cloud_options: dict[str, Any] | None,
         credential_provider: Any | None,
-        file_cache_ttl: int | None,
         include_file_paths: str | None,
     ) -> PyLazyFrame: ...
     @staticmethod
@@ -878,7 +876,6 @@ class PyLazyFrame:
     def new_from_ipc(
         sources: Any,
         scan_options: ScanOptions,
-        file_cache_ttl: int | None,
     ) -> PyLazyFrame: ...
     @staticmethod
     def new_from_scan_lines(
@@ -886,7 +883,6 @@ class PyLazyFrame:
         *,
         name: str,
         scan_options: ScanOptions,
-        file_cache_ttl: int | None,
     ) -> PyLazyFrame: ...
     @staticmethod
     def new_from_dataset_object(dataset_object: Any) -> PyLazyFrame: ...

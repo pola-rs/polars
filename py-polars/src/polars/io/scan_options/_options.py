@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal
 
-from typing_extensions import TypedDict
-
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
@@ -12,16 +10,13 @@ if TYPE_CHECKING:
         DefaultFieldValues,
         DeletionFiles,
         SchemaDict,
+        StorageOptionsDict,
     )
     from polars.dataframe.frame import DataFrame
     from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
     from polars.io.scan_options.cast_options import ScanCastOptions
 
 from dataclasses import dataclass
-
-
-class StorageOptionsDict(TypedDict, extra_items=str):
-    retries: int
 
 
 @dataclass(kw_only=True)

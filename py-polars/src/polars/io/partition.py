@@ -19,10 +19,9 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from typing import IO
 
-    from polars._typing import SyncOnCloseMethod
+    from polars._typing import StorageOptionsDict, SyncOnCloseMethod
     from polars.expr import Expr
     from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
-    from polars.io.scan_options._options import StorageOptionsDict
 
 
 class PartitionBy:

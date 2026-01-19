@@ -44,10 +44,10 @@ if TYPE_CHECKING:
         FileSource,
         ParallelStrategy,
         SchemaDict,
+        StorageOptionsDict,
     )
     from polars.io.cloud import CredentialProviderFunction
     from polars.io.scan_options import ScanCastOptions
-    from polars.io.scan_options._options import StorageOptionsDict
 
 
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
@@ -304,7 +304,7 @@ def _read_parquet_with_pyarrow(
     | list[bytes],
     *,
     columns: list[int] | list[str] | None = None,
-    storage_options: dict[str, Any] | None = None,
+    storage_options: StorageOptionsDict | None = None,
     pyarrow_options: dict[str, Any] | None = None,
     memory_map: bool = True,
     rechunk: bool = True,
@@ -377,7 +377,7 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
 
 def read_parquet_metadata(
     source: str | Path | IO[bytes] | bytes,
-    storage_options: dict[str, Any] | None = None,
+    storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
     retries: int | None = None,
 ) -> dict[str, str]:

@@ -25,6 +25,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from typing import TypeAlias
 
+    from polars._typing import StorageOptionsDict
+
 # https://docs.rs/object_store/latest/object_store/enum.ClientConfigKey.html
 OBJECT_STORE_CLIENT_OPTIONS: Final[frozenset[str]] = frozenset(
     [
@@ -306,7 +308,7 @@ def _init_credential_provider_builder(
     | Literal["auto"]
     | None,
     source: Any,
-    storage_options: dict[str, Any] | None,
+    storage_options: StorageOptionsDict | None,
     caller_name: str,
 ) -> CredentialProviderBuilder | None:
     def f() -> CredentialProviderBuilder | None:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import os
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, Literal
+from typing import IO, TYPE_CHECKING, Literal
 
 import polars._reexport as pl
 import polars.functions as F
@@ -38,7 +38,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from polars import DataFrame, DataType, LazyFrame
-    from polars._typing import SchemaDict
+    from polars._typing import SchemaDict, StorageOptionsDict
     from polars.io.cloud import CredentialProviderFunction
 
 
@@ -51,7 +51,7 @@ def read_ipc(
     n_rows: int | None = None,
     use_pyarrow: bool = False,
     memory_map: bool = True,
-    storage_options: dict[str, Any] | None = None,
+    storage_options: StorageOptionsDict | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     rechunk: bool = True,
@@ -242,7 +242,7 @@ def read_ipc_stream(
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
     use_pyarrow: bool = False,
-    storage_options: dict[str, Any] | None = None,
+    storage_options: StorageOptionsDict | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     rechunk: bool = True,
@@ -385,7 +385,7 @@ def scan_ipc(
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     glob: bool = True,
-    storage_options: dict[str, Any] | None = None,
+    storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
     memory_map: bool = True,
     retries: int | None = None,

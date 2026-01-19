@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
     import deltalake
 
-    from polars._typing import SchemaDict
+    from polars._typing import SchemaDict, StorageOptionsDict
     from polars.catalog.unity.models import DataSourceFormat, TableType
     from polars.dataframe.frame import DataFrame
     from polars.io.cloud import (
@@ -30,7 +30,6 @@ if TYPE_CHECKING:
         CredentialProviderFunctionReturn,
     )
     from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
-    from polars.io.scan_options._options import StorageOptionsDict
     from polars.lazyframe import LazyFrame
 
 with contextlib.suppress(ImportError):
@@ -607,7 +606,7 @@ class Catalog:
     def _init_credentials(
         self,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-        storage_options: dict[str, Any] | None,
+        storage_options: StorageOptionsDict | None,
         table_info: TableInfo,
         *,
         write: bool,

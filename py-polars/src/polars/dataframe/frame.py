@@ -185,6 +185,7 @@ if TYPE_CHECKING:
         SingleIndexSelector,
         SizeUnit,
         StartBy,
+        StorageOptionsDict,
         UniqueKeepStrategy,
         UnstackDirection,
     )
@@ -2962,7 +2963,7 @@ class DataFrame:
         decimal_comma: bool = ...,
         null_value: str | None = ...,
         quote_style: CsvQuoteStyle | None = ...,
-        storage_options: dict[str, Any] | None = ...,
+        storage_options: StorageOptionsDict | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
         retries: int | None = ...,
     ) -> str: ...
@@ -2986,7 +2987,7 @@ class DataFrame:
         decimal_comma: bool = ...,
         null_value: str | None = ...,
         quote_style: CsvQuoteStyle | None = ...,
-        storage_options: dict[str, Any] | None = ...,
+        storage_options: StorageOptionsDict | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
         retries: int | None = ...,
     ) -> None: ...
@@ -3009,7 +3010,7 @@ class DataFrame:
         decimal_comma: bool = False,
         null_value: str | None = None,
         quote_style: CsvQuoteStyle | None = None,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
@@ -3815,7 +3816,7 @@ class DataFrame:
         compression: IpcCompression = "uncompressed",
         compat_level: CompatLevel | None = None,
         record_batch_size: int | None = None,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
@@ -3830,7 +3831,7 @@ class DataFrame:
         compression: IpcCompression = "uncompressed",
         compat_level: CompatLevel | None = None,
         record_batch_size: int | None = None,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
@@ -3845,7 +3846,7 @@ class DataFrame:
         compression: IpcCompression = "uncompressed",
         compat_level: CompatLevel | None = None,
         record_batch_size: int | None = None,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
@@ -4030,7 +4031,7 @@ class DataFrame:
         pyarrow_options: dict[str, Any] | None = None,
         partition_by: str | Sequence[str] | None = None,
         partition_chunk_size_bytes: int = 4_294_967_296,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
