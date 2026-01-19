@@ -321,8 +321,8 @@ fn to_graph_rec<'a>(
                     unified_sink_args,
                 },
         } => {
-            use crate::nodes::io_sinks2::IOSinkNode;
-            use crate::nodes::io_sinks2::config::{IOSinkNodeConfig, IOSinkTarget};
+            use crate::nodes::io_sinks::IOSinkNode;
+            use crate::nodes::io_sinks::config::{IOSinkNodeConfig, IOSinkTarget};
 
             let input_schema = ctx.phys_sm[input.node].output_schema.clone();
             let input_key = to_graph_rec(input.node, ctx)?;
@@ -353,14 +353,14 @@ fn to_graph_rec<'a>(
                     approximate_bytes_per_file,
                 },
         } => {
-            use crate::nodes::io_sinks2::IOSinkNode;
-            use crate::nodes::io_sinks2::components::exclude_keys_projection::ExcludeKeysProjection;
-            use crate::nodes::io_sinks2::components::hstack_columns::HStackColumns;
-            use crate::nodes::io_sinks2::components::partitioner::{KeyedPartitioner, Partitioner};
-            use crate::nodes::io_sinks2::components::size::{
+            use crate::nodes::io_sinks::IOSinkNode;
+            use crate::nodes::io_sinks::components::exclude_keys_projection::ExcludeKeysProjection;
+            use crate::nodes::io_sinks::components::hstack_columns::HStackColumns;
+            use crate::nodes::io_sinks::components::partitioner::{KeyedPartitioner, Partitioner};
+            use crate::nodes::io_sinks::components::size::{
                 NonZeroRowCountAndSize, RowCountAndSize,
             };
-            use crate::nodes::io_sinks2::config::{
+            use crate::nodes::io_sinks::config::{
                 IOSinkNodeConfig, IOSinkTarget, PartitionedTarget,
             };
 
