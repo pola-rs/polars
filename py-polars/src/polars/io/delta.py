@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 from polars._dependencies import _DELTALAKE_AVAILABLE, deltalake
 from polars.datatypes import Null, Time
 from polars.datatypes.convert import unpack_dtypes
-from polars.io.cloud._utils import _get_path_scheme, POLARS_STORAGE_CONFIG_KEYS
+from polars.io.cloud._utils import POLARS_STORAGE_CONFIG_KEYS, _get_path_scheme
 from polars.io.parquet import scan_parquet
 from polars.io.pyarrow_dataset.functions import scan_pyarrow_dataset
 from polars.io.scan_options.cast_options import ScanCastOptions
