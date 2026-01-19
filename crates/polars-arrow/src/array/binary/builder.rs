@@ -171,8 +171,6 @@ impl<O: Offset> StaticArrayBuilder for BinaryArrayBuilder<O> {
             self.values.reserve(total_len);
 
             for idx in idxs {
-                // FIXME: This is incorrect.  This is *opt*_gather_extend, so `idxs` can actually
-                // contain out-of-bounds indices.
                 let start_offset = other_offsets.get_unchecked(*idx as usize).to_usize();
                 let stop_offset = other_offsets.get_unchecked(*idx as usize + 1).to_usize();
                 self.values
