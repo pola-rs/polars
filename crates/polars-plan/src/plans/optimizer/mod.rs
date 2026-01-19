@@ -21,8 +21,6 @@ mod expand_datasets;
 pub use expand_datasets::ExpandedPythonScan;
 mod predicate_pushdown;
 mod projection_pushdown;
-#[cfg(feature = "random")]
-mod sample_pushdown;
 pub mod set_order;
 mod simplify_expr;
 mod slice_pushdown_expr;
@@ -96,7 +94,72 @@ pub(super) fn run_projection_predicate_pushdown(
         ir_arena.replace(root, ir);
     }
 
+    // Push sample operations into scan nodes (simple single-pass optimization)
+    #[cfg(feature = "random")]
+    sample_pushdown(root, ir_arena);
+
     Ok(())
+}
+
+/// Push `FunctionIR::Sample` operations into `IR::Scan` nodes for better memory efficiency.
+#[cfg(feature = "random")]
+fn sample_pushdown(root: Node, ir_arena: &mut Arena<IR>) {
+    use crate::dsl::ScanSampleArgs;
+    use crate::plans::FunctionIR;
+
+    let mut stack = vec![root];
+
+    while let Some(node) = stack.pop() {
+        let ir = ir_arena.get(node);
+
+        if matches!(ir, IR::Invalid) {
+            continue;
+        }
+
+        ir.copy_inputs(&mut stack);
+
+        // Check if this is MapFunction(Sample)
+        let sample_info: Option<(Node, f64, bool, u64)> = {
+            if let IR::MapFunction { input, function } = ir {
+                if let FunctionIR::Sample {
+                    fraction,
+                    with_replacement,
+                    seed,
+                } = function
+                {
+                    Some((*input, *fraction, *with_replacement, seed.unwrap_or(0)))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        };
+
+        if let Some((input_node, fraction, with_replacement, seed)) = sample_info {
+            // Check if input is a Scan without sample
+            let can_push = {
+                let input_ir = ir_arena.get(input_node);
+                matches!(input_ir, IR::Scan { unified_scan_args, .. } if unified_scan_args.sample.is_none())
+            };
+
+            if can_push {
+                if let IR::Scan {
+                    unified_scan_args, ..
+                } = ir_arena.get_mut(input_node)
+                {
+                    unified_scan_args.sample = Some(ScanSampleArgs {
+                        fraction,
+                        with_replacement,
+                        seed,
+                    });
+                }
+
+                let scan = ir_arena.take(input_node);
+                ir_arena.replace(node, scan);
+            }
+        }
+    }
 }
 
 pub fn optimize(
@@ -207,10 +270,6 @@ pub fn optimize(
             &opt_flags,
         )?;
     }
-
-    // Push sample operations into scan nodes
-    #[cfg(feature = "random")]
-    sample_pushdown::sample_pushdown(root, ir_arena, expr_arena);
 
     // Make sure its before slice pushdown.
     if opt_flags.fast_projection() {

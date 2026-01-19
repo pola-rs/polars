@@ -577,38 +577,51 @@ impl RowGroupDecoder {
 
         // Combine predicate mask with sample mask if configured
         let poisson_counts: Option<Vec<u32>> = if let Some(sample) = &self.sample {
-            if !sample.with_replacement {
-                // Bernoulli: AND predicate mask with sample mask
+            // Generate sample mask at projection_height
+            let (sample_mask, counts) = if !sample.with_replacement {
                 let sample_mask_vec = sample.generate_bernoulli_mask(projection_height, row_offset);
                 let sample_mask: BooleanChunked = sample_mask_vec.into_iter().collect();
-                mask = &mask & &sample_mask;
-                // Re-filter live_columns with the combined mask
-                let filtered = filter_cols(
-                    live_df_filtered.into_columns(),
-                    &mask,
-                    self.target_values_per_thread,
-                )
-                .await?;
-                let filtered_height = mask.num_trues();
-                live_df_filtered = unsafe { DataFrame::new_unchecked(filtered_height, filtered) };
-                None
+                (sample_mask, None)
             } else {
-                // Poisson: AND predicate mask with (count > 0) mask, save counts for expansion
                 let (sample_mask_vec, counts) =
                     sample.generate_poisson_counts(projection_height, row_offset);
                 let sample_mask: BooleanChunked = sample_mask_vec.into_iter().collect();
-                mask = &mask & &sample_mask;
-                // Re-filter live_columns with the combined mask
+                (sample_mask, Some(counts))
+            };
+
+            // Combine predicate mask with sample mask for prefiltered decode
+            let combined_mask = &mask & &sample_mask;
+
+            // Filter live_df_filtered: it may already be filtered by predicate,
+            // so we need a relative mask (sample mask filtered to predicate-passing rows)
+            let live_height = live_df_filtered.height();
+            if live_height == projection_height {
+                // Not filtered yet (use_column_predicates single-mask case) - use combined mask
                 let filtered = filter_cols(
                     live_df_filtered.into_columns(),
-                    &mask,
+                    &combined_mask,
                     self.target_values_per_thread,
                 )
                 .await?;
-                let filtered_height = mask.num_trues();
+                let filtered_height = combined_mask.num_trues();
                 live_df_filtered = unsafe { DataFrame::new_unchecked(filtered_height, filtered) };
-                Some(counts)
+            } else {
+                // Already filtered by predicate - apply relative sample mask
+                // relative_sample_mask = which of the predicate-passing rows pass the sample
+                let relative_sample_mask = sample_mask.filter(&mask)?;
+                let filtered = filter_cols(
+                    live_df_filtered.into_columns(),
+                    &relative_sample_mask,
+                    self.target_values_per_thread,
+                )
+                .await?;
+                let filtered_height = relative_sample_mask.num_trues();
+                live_df_filtered = unsafe { DataFrame::new_unchecked(filtered_height, filtered) };
             }
+
+            // Update mask for prefiltered decode of non-predicate columns
+            mask = combined_mask;
+            counts
         } else {
             None
         };
