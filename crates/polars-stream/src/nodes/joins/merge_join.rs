@@ -16,7 +16,7 @@ use rayon::slice::ParallelSliceMut;
 
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
-use crate::async_primitives::distributor_channel::distributor_channel;
+use crate::async_primitives::distributor_channel::{self, distributor_channel};
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
@@ -41,24 +41,6 @@ struct ComputeJoinArenas {
     gather_probe: Vec<IdxSize>,
     matched_probe: MutableBitmap,
     df_builders: Option<(DataFrameBuilder, DataFrameBuilder)>,
-}
-
-#[derive(Debug)]
-pub struct MergeJoinNode {
-    state: MergeJoinState,
-    params: MergeJoinParams,
-    build_unmerged: DataFrameBuffer,
-    probe_unmerged: DataFrameBuffer,
-    unmatched: Vec<(MorselSeq, DataFrame)>,
-    output_seq: MorselSeq,
-}
-
-#[derive(Debug)]
-pub struct MergeJoinSideParams {
-    pub input_schema: SchemaRef,
-    pub on: Vec<PlSmallStr>,
-    pub key_col: PlSmallStr,
-    pub emit_unmatched: bool,
 }
 
 #[derive(Debug)]
@@ -113,6 +95,24 @@ enum MergeJoinState {
     Done,
 }
 
+#[derive(Debug)]
+pub struct MergeJoinNode {
+    state: MergeJoinState,
+    params: MergeJoinParams,
+    build_unmerged: DataFrameBuffer,
+    probe_unmerged: DataFrameBuffer,
+    unmatched: Vec<(MorselSeq, DataFrame)>,
+    output_seq: MorselSeq,
+}
+
+#[derive(Debug)]
+pub struct MergeJoinSideParams {
+    pub input_schema: SchemaRef,
+    pub on: Vec<PlSmallStr>,
+    pub key_col: PlSmallStr,
+    pub emit_unmatched: bool,
+}
+
 impl MergeJoinNode {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -130,7 +130,7 @@ impl MergeJoinNode {
             left_input_schema.contains(KEY_COL_NAME) == right_input_schema.contains(KEY_COL_NAME)
         );
         let use_row_encoding = left_input_schema.contains(KEY_COL_NAME);
-        let state: MergeJoinState = MergeJoinState::Running;
+        let state = MergeJoinState::Running;
         let left_key_col;
         let right_key_col;
         if use_row_encoding {
@@ -194,7 +194,6 @@ impl ComputeNode for MergeJoinNode {
         assert!(recv.len() == 2 && send.len() == 1);
 
         let input_channels_done = recv.iter().all(|r| *r == PortState::Done);
-        let output_channel_done = send[0] == PortState::Done;
         let input_buffers_empty = self.build_unmerged.is_empty() && self.probe_unmerged.is_empty();
         let unmatched_buffers_empty = self.unmatched.is_empty();
         if self.params.args.maintain_order == MaintainOrderJoin::None {
@@ -272,127 +271,182 @@ impl ComputeNode for MergeJoinNode {
 
         assert!(recv_ports.len() == 2 && send_ports.len() == 1);
 
-        let params = &self.params;
-        let build_unmerged = &mut self.build_unmerged;
-        let probe_unmerged = &mut self.probe_unmerged;
-        let unmatched = &mut self.unmatched;
-        let mergeable_seq = &mut self.output_seq;
-        let build_idx = match self.params.left_is_build() {
-            true => 0,
-            false => 1,
-        };
-        let mut recv_build = recv_ports[build_idx].take().map(RecvPort::serial);
-        let mut recv_probe = recv_ports[1 - build_idx].take().map(RecvPort::serial);
+        match &mut self.state {
+            Running | FlushInputBuffers => {
+                let params = &self.params;
+                let build_unmerged = &mut self.build_unmerged;
+                let probe_unmerged = &mut self.probe_unmerged;
+                let unmatched = &mut self.unmatched;
+                let mergeable_seq = &mut self.output_seq;
+                let build_idx = match self.params.left_is_build() {
+                    true => 0,
+                    false => 1,
+                };
+                let recv_build = recv_ports[build_idx].take().map(RecvPort::serial);
+                let recv_probe = recv_ports[1 - build_idx].take().map(RecvPort::serial);
 
-        if matches!(self.state, Running | FlushInputBuffers) {
-            assert!(send_ports[0].is_some());
-
-            let send = send_ports[0].take().unwrap().parallel();
-            let (mut distributor, dist_recv) =
-                distributor_channel(send.len(), *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
-            let (unmatched_send, mut unmatched_recv) = tokio::sync::mpsc::channel(send.len());
-
-            join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                let source_token = SourceToken::new();
-                let mut search_limit = get_ideal_morsel_size();
-
-                loop {
-                    if source_token.stop_requested() {
-                        buffer_unmerged_from_pipe(recv_build.as_mut(), build_unmerged).await;
-                        buffer_unmerged_from_pipe(recv_probe.as_mut(), probe_unmerged).await;
-                        return Ok(());
-                    }
-
-                    let fmp = FindMergeableParams {
-                        build_done: recv_build.is_none(),
-                        probe_done: recv_probe.is_none(),
+                assert!(send_ports[0].is_some());
+                let send = send_ports[0].take().unwrap().parallel();
+                let (mut distributor, dist_recv) =
+                    distributor_channel(send.len(), *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
+                let (unmatched_send, mut unmatched_recv) = tokio::sync::mpsc::channel(send.len());
+                join_handles.push(scope.spawn_task(TaskPriority::High, async move {
+                    find_mergeable_task(
+                        recv_build,
+                        recv_probe,
+                        build_unmerged,
+                        probe_unmerged,
+                        &mut distributor,
                         params,
-                    };
-                    match find_mergeable(build_unmerged, probe_unmerged, &mut search_limit, fmp)? {
-                        Left(partitions) => {
-                            for (build_mergeable, probe_mergeable) in partitions.into_iter() {
-                                if let Err((_, _, _, _)) = distributor
-                                    .send((
-                                        build_mergeable,
-                                        probe_mergeable,
-                                        *mergeable_seq,
-                                        source_token.clone(),
-                                    ))
-                                    .await
-                                {
-                                    return Ok(());
-                                }
-                                *mergeable_seq = mergeable_seq.successor();
-                            }
-                        },
-                        Right(NeedMore::Build | NeedMore::Both) if recv_build.is_some() => {
-                            let Ok(m) = recv_build.as_mut().unwrap().recv().await else {
-                                buffer_unmerged_from_pipe(recv_probe.as_mut(), probe_unmerged)
-                                    .await;
-                                return Ok(());
-                            };
-                            build_unmerged.push_df(m.into_df());
-                        },
-                        Right(NeedMore::Probe | NeedMore::Both) if recv_probe.is_some() => {
-                            let Ok(m) = recv_probe.as_mut().unwrap().recv().await else {
-                                buffer_unmerged_from_pipe(recv_build.as_mut(), build_unmerged)
-                                    .await;
-                                return Ok(());
-                            };
-                            probe_unmerged.push_df(m.into_df());
-                        },
-                        Right(NeedMore::Finished) => {
-                            return Ok(());
-                        },
-                        Right(other) => {
-                            unreachable!("unexpected NeedMore value: {other:?}");
-                        },
-                    }
-                }
-            }));
-
-            join_handles.extend(dist_recv.into_iter().zip(send).map(|(mut recv, mut send)| {
-                let unmatched_send = unmatched_send.clone();
-                scope.spawn_task(TaskPriority::High, async move {
-                    let mut arenas = ComputeJoinArenas::default();
-
-                    while let Ok((build, probe, seq, source_token)) = recv.recv().await {
-                        compute_join(
-                            build,
-                            probe,
-                            seq,
-                            source_token,
-                            params,
-                            &mut arenas,
-                            &mut send,
-                            unmatched_send.clone(),
-                        )
-                        .await?;
+                        mergeable_seq,
+                    )
+                    .await
+                }));
+                join_handles.extend(dist_recv.into_iter().zip(send).map(|(recv, send)| {
+                    let unmatched_send = unmatched_send.clone();
+                    scope.spawn_task(TaskPriority::High, async move {
+                        compute_join_and_send_task(recv, send, params, unmatched_send).await
+                    })
+                }));
+                join_handles.push(scope.spawn_task(TaskPriority::High, async move {
+                    while let Some(morsel) = unmatched_recv.recv().await {
+                        let (df, seq, _st, _) = morsel.into_inner();
+                        unmatched.push((seq, df));
                     }
                     Ok(())
-                })
-            }));
-
-            join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                while let Some(morsel) = unmatched_recv.recv().await {
-                    let (df, seq, _st, _) = morsel.into_inner();
-                    unmatched.push((seq, df));
-                }
-                Ok(())
-            }));
-        } else if let EmitUnmatched(src_node) = &mut self.state {
-            assert!(recv_ports[0].is_none());
-            assert!(recv_ports[1].is_none());
-            assert!(send_ports[0].is_some());
-            src_node.spawn(scope, &mut [], send_ports, state, join_handles);
-        } else {
-            unreachable!()
+                }));
+            },
+            EmitUnmatched(src_node) => {
+                assert!(recv_ports[0].is_none());
+                assert!(recv_ports[1].is_none());
+                assert!(send_ports[0].is_some());
+                src_node.spawn(scope, &mut [], send_ports, state, join_handles);
+            },
+            Done => {
+                unreachable!();
+            },
         }
     }
 }
 
+async fn find_mergeable_task(
+    mut recv_build: Option<PortReceiver>,
+    mut recv_probe: Option<PortReceiver>,
+    build_unmerged: &mut DataFrameBuffer,
+    probe_unmerged: &mut DataFrameBuffer,
+    distributor: &mut distributor_channel::Sender<(
+        DataFrameBuffer,
+        DataFrameBuffer,
+        MorselSeq,
+        SourceToken,
+    )>,
+    params: &MergeJoinParams,
+    mergeable_seq: &mut MorselSeq,
+) -> PolarsResult<()> {
+    let source_token = SourceToken::new();
+    let mut search_limit = get_ideal_morsel_size();
+
+    loop {
+        if source_token.stop_requested() {
+            stop_and_buffer_pipe_contents(recv_build.as_mut(), build_unmerged).await;
+            stop_and_buffer_pipe_contents(recv_probe.as_mut(), probe_unmerged).await;
+            return Ok(());
+        }
+
+        let fmp = FindMergeableParams {
+            build_done: recv_build.is_none(),
+            probe_done: recv_probe.is_none(),
+            params,
+        };
+        match find_mergeable(build_unmerged, probe_unmerged, &mut search_limit, fmp)? {
+            Left(partitions) => {
+                for (build_mergeable, probe_mergeable) in partitions.into_iter() {
+                    if let Err((_, _, _, _)) = distributor
+                        .send((
+                            build_mergeable,
+                            probe_mergeable,
+                            *mergeable_seq,
+                            source_token.clone(),
+                        ))
+                        .await
+                    {
+                        return Ok(());
+                    }
+                    *mergeable_seq = mergeable_seq.successor();
+                }
+            },
+            Right(NeedMore::Build | NeedMore::Both) if recv_build.is_some() => {
+                let Ok(m) = recv_build.as_mut().unwrap().recv().await else {
+                    stop_and_buffer_pipe_contents(recv_probe.as_mut(), probe_unmerged).await;
+                    return Ok(());
+                };
+                build_unmerged.push_df(m.into_df());
+            },
+            Right(NeedMore::Probe | NeedMore::Both) if recv_probe.is_some() => {
+                let Ok(m) = recv_probe.as_mut().unwrap().recv().await else {
+                    stop_and_buffer_pipe_contents(recv_build.as_mut(), build_unmerged).await;
+                    return Ok(());
+                };
+                probe_unmerged.push_df(m.into_df());
+            },
+            Right(NeedMore::Finished) => {
+                return Ok(());
+            },
+            Right(other) => {
+                unreachable!("unexpected NeedMore value: {other:?}");
+            },
+        }
+    }
+}
+
+async fn stop_and_buffer_pipe_contents(
+    port: Option<&mut PortReceiver>,
+    unmerged: &mut DataFrameBuffer,
+) {
+    let Some(port) = port else {
+        return;
+    };
+    let Ok(morsel) = port.recv().await else {
+        return;
+    };
+    morsel.source_token().stop();
+    unmerged.push_df(morsel.into_df());
+
+    while let Ok(morsel) = port.recv().await {
+        unmerged.push_df(morsel.into_df());
+    }
+}
+
+async fn compute_join_and_send_task(
+    mut recv: distributor_channel::Receiver<(
+        DataFrameBuffer,
+        DataFrameBuffer,
+        MorselSeq,
+        SourceToken,
+    )>,
+    mut send: PortSender,
+    params: &MergeJoinParams,
+    unmatched_send: tokio::sync::mpsc::Sender<Morsel>,
+) -> PolarsResult<()> {
+    let mut arenas = ComputeJoinArenas::default();
+    while let Ok((build, probe, seq, source_token)) = recv.recv().await {
+        compute_join_and_send(
+            build,
+            probe,
+            seq,
+            source_token,
+            params,
+            &mut arenas,
+            &mut send,
+            unmatched_send.clone(),
+        )
+        .await?;
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
-async fn compute_join(
+async fn compute_join_and_send(
     build: DataFrameBuffer,
     probe: DataFrameBuffer,
     seq: MorselSeq,
@@ -504,7 +558,8 @@ async fn compute_join(
             &params.output_schema,
         )?;
         if df_unmatched.height() > 0 {
-            let morsel = Morsel::new(df_unmatched, seq, source_token.clone());
+            let mut morsel = Morsel::new(df_unmatched, seq, source_token.clone());
+            morsel.set_consume_token(wait_group.token());
             if params.args.maintain_order == MaintainOrderJoin::None {
                 if send.send(morsel).await.is_err() {
                     return Ok(());
@@ -512,27 +567,10 @@ async fn compute_join(
             } else if unmatched_send.send(morsel).await.is_err() {
                 panic!("broken pipe");
             }
+            wait_group.wait().await;
         }
     }
     Ok(())
-}
-
-async fn buffer_unmerged_from_pipe(
-    port: Option<&mut PortReceiver>,
-    unmerged: &mut DataFrameBuffer,
-) {
-    let Some(port) = port else {
-        return;
-    };
-    let Ok(morsel) = port.recv().await else {
-        return;
-    };
-    morsel.source_token().stop();
-    unmerged.push_df(morsel.into_df());
-
-    while let Ok(morsel) = port.recv().await {
-        unmerged.push_df(morsel.into_df());
-    }
 }
 
 #[derive(Clone, Debug)]
