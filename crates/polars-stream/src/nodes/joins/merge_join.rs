@@ -1,6 +1,5 @@
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
-use std::fmt;
 use std::iter::repeat_n;
 
 use either::{Either, Left, Right};
@@ -832,19 +831,13 @@ fn keys_cmp(lhs: &AnyValue, rhs: &AnyValue, params: &MergeJoinParams) -> Orderin
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct DataFrameBuffer {
     schema: SchemaRef,
     dfs_at_offsets: BTreeMap<usize, DataFrame>,
     total_rows: usize,
     skip_rows: usize,
     frozen: bool,
-}
-
-impl fmt::Debug for DataFrameBuffer {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.clone().into_df().fmt(f)
-    }
 }
 
 impl DataFrameBuffer {
@@ -893,13 +886,13 @@ impl DataFrameBuffer {
 
     fn split_at(&mut self, mut at: usize) -> Self {
         at = at.clamp(0, self.total_rows);
-        let mut left = self.clone();
-        left.total_rows = at;
-        left.frozen = true;
+        let mut top = self.clone();
+        top.total_rows = at;
+        top.frozen = true;
         self.skip_rows += at;
         self.total_rows -= at;
         self.gc();
-        left
+        top
     }
 
     fn slice(mut self, offset: usize, len: usize) -> Self {
