@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import pickle
 from datetime import datetime, time, timedelta
 from typing import TYPE_CHECKING
@@ -34,6 +35,13 @@ SIMPLE_DTYPES: list[DataTypeClass] = [
     pl.Null,
     pl.Unknown,
 ]
+
+
+def test_datatype_copy_14771() -> None:
+    dtype = pl.Int64()
+    result = copy.deepcopy(dtype)
+    assert dtype == result
+    assert isinstance(result, pl.Int64)
 
 
 @pytest.mark.parametrize("dtype", SIMPLE_DTYPES)
