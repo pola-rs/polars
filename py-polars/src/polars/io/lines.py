@@ -43,8 +43,6 @@ def read_lines(
     glob: bool = True,
     storage_options: dict[str, Any] | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
-    retries: int = 2,
-    file_cache_ttl: int | None = None,
     include_file_paths: str | None = None,
 ) -> DataFrame:
     r"""
@@ -93,12 +91,6 @@ def read_lines(
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
-    retries
-        Number of retries if accessing a cloud instance fails.
-    file_cache_ttl
-        Amount of time to keep downloaded cloud files since their last access time,
-        in seconds. Uses the `POLARS_FILE_CACHE_TTL` environment variable
-        (which defaults to 1 hour) if not given.
     include_file_paths
         Include the path of the source file(s) as a column with this name.
 
@@ -128,8 +120,6 @@ def read_lines(
         glob=glob,
         storage_options=storage_options,
         credential_provider=credential_provider,
-        retries=retries,
-        file_cache_ttl=file_cache_ttl,
         include_file_paths=include_file_paths,
     ).collect()
 
@@ -155,8 +145,6 @@ def scan_lines(
     glob: bool = True,
     storage_options: dict[str, Any] | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
-    retries: int = 2,
-    file_cache_ttl: int | None = None,
     include_file_paths: str | None = None,
 ) -> LazyFrame:
     r"""
@@ -205,12 +193,6 @@ def scan_lines(
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
-    retries
-        Number of retries if accessing a cloud instance fails.
-    file_cache_ttl
-        Amount of time to keep downloaded cloud files since their last access time,
-        in seconds. Uses the `POLARS_FILE_CACHE_TTL` environment variable
-        (which defaults to 1 hour) if not given.
     include_file_paths
         Include the path of the source file(s) as a column with this name.
 
@@ -253,10 +235,8 @@ def scan_lines(
                 list(storage_options.items()) if storage_options is not None else None
             ),
             credential_provider=credential_provider_builder,
-            retries=retries,
         ),
         name=name,
-        file_cache_ttl=file_cache_ttl,
     )
 
     return wrap_ldf(pylf)

@@ -39,7 +39,7 @@ impl PyStorageOptions<'_> {
                 .extract()?,
         );
 
-        let mut retries: usize = 2;
+        let mut max_retries: usize = 2;
 
         for v in storage_options_dict
             .call_method0(intern!(py, "items"))?
@@ -60,8 +60,10 @@ impl PyStorageOptions<'_> {
             }
 
             match &*key {
-                "retries" => {
-                    retries = value.extract().map_err(expected_type!("retries", "int"))?;
+                "max_retries" => {
+                    max_retries = value
+                        .extract()
+                        .map_err(expected_type!("max_retries", "int"))?;
                 },
                 _ => {
                     let value: String = value.extract().map_err(expected_type!(&key, "str"))?;
@@ -72,7 +74,7 @@ impl PyStorageOptions<'_> {
 
         let cloud_options = CloudOptions::from_untyped_config(cloud_scheme, storage_options)
             .map_err(to_py_err)?
-            .with_max_retries(retries)
+            .with_max_retries(max_retries)
             .with_credential_provider(
                 credential_provider.map(PlCredentialProvider::from_python_builder),
             );

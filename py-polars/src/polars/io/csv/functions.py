@@ -9,7 +9,11 @@ from typing import IO, TYPE_CHECKING, Any, Literal
 
 import polars._reexport as pl
 import polars.functions as F
-from polars._utils.deprecation import deprecate_renamed_parameter, deprecated
+from polars._utils.deprecation import (
+    deprecate_renamed_parameter,
+    deprecated,
+    issue_deprecation_warning,
+)
 from polars._utils.various import (
     _process_null_values,
     is_path_or_str_sequence,
@@ -1106,7 +1110,7 @@ def scan_csv(
     glob: bool = True,
     storage_options: dict[str, Any] | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
-    retries: int = 2,
+    retries: int | None = None,
     file_cache_ttl: int | None = None,
     include_file_paths: str | None = None,
 ) -> LazyFrame:
@@ -1250,10 +1254,16 @@ def scan_csv(
             at any point without it being considered a breaking change.
     retries
         Number of retries if accessing a cloud instance fails.
+
+        .. deprecated:: 1.37.1
+            Pass {"max_retries": n} via `storage_options` instead.
     file_cache_ttl
         Amount of time to keep downloaded cloud files since their last access time,
         in seconds. Uses the `POLARS_FILE_CACHE_TTL` environment variable
         (which defaults to 1 hour) if not given.
+
+        .. deprecated:: 1.37.1
+            Pass {"file_cache_ttl": n} via `storage_options` instead.
     include_file_paths
         Include the path of the source file(s) as a column with this name.
 
@@ -1359,6 +1369,18 @@ def scan_csv(
     if not infer_schema:
         infer_schema_length = 0
 
+    if retries is not None:
+        msg = "the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead."
+        issue_deprecation_warning(msg)
+        storage_options = storage_options or {}
+        storage_options["max_retries"] = retries
+
+    if file_cache_ttl is not None:
+        msg = "the `file_cache_ttl` parameter was deprecated in 1.37.1; specify 'file_cache_ttl' in `storage_options` instead."
+        issue_deprecation_warning(msg)
+        storage_options = storage_options or {}
+        storage_options["file_cache_ttl"] = file_cache_ttl
+
     credential_provider_builder = _init_credential_provider_builder(
         credential_provider, source, storage_options, "scan_csv"
     )
@@ -1393,10 +1415,8 @@ def scan_csv(
         truncate_ragged_lines=truncate_ragged_lines,
         decimal_comma=decimal_comma,
         glob=glob,
-        retries=retries,
         storage_options=storage_options,
         credential_provider=credential_provider_builder,
-        file_cache_ttl=file_cache_ttl,
         include_file_paths=include_file_paths,
     )
 
@@ -1441,8 +1461,6 @@ def _scan_csv_impl(
     glob: bool = True,
     storage_options: dict[str, Any] | None = None,
     credential_provider: CredentialProviderBuilder | None = None,
-    retries: int = 2,
-    file_cache_ttl: int | None = None,
     include_file_paths: str | None = None,
 ) -> LazyFrame:
     dtype_list: list[tuple[str, PolarsDataType]] | None = None
@@ -1460,12 +1478,6 @@ def _scan_csv_impl(
         source = None  # type: ignore[assignment]
     else:
         sources = []
-
-    if storage_options:
-        storage_options = list(storage_options.items())  # type: ignore[assignment]
-    else:
-        # Handle empty dict input
-        storage_options = None
 
     pylf = PyLazyFrame.new_from_csv(
         source,
@@ -1498,8 +1510,6 @@ def _scan_csv_impl(
         schema=schema,
         cloud_options=storage_options,
         credential_provider=credential_provider,
-        retries=retries,
-        file_cache_ttl=file_cache_ttl,
         include_file_paths=include_file_paths,
     )
     return wrap_ldf(pylf)

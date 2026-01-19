@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from polars._typing import SyncOnCloseMethod
     from polars.expr import Expr
     from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
+    from polars.io.scan_options._options import StorageOptionsDict
 
 
 class PartitionBy:
@@ -174,9 +175,8 @@ class _SinkOptions:
     sync_on_close: SyncOnCloseMethod | None = None
 
     # Cloud
-    storage_options: list[tuple[str, str]] | None = None
+    storage_options: StorageOptionsDict | None = None
     credential_provider: CredentialProviderBuilder | None = None
-    retries: int = 2
 
 
 def _parse_to_pyexpr_list(

@@ -237,7 +237,7 @@ class Catalog:
             Number of retries if accessing a cloud instance fails.
 
             .. deprecated:: 1.37.1
-                Pass {"retries": n} via `storage_options` instead.
+                Pass {"max_retries": n} via `storage_options` instead.
 
         """
         table_info = self.get_table_info(catalog_name, namespace, table_name)
@@ -246,10 +246,10 @@ class Catalog:
         )
 
         if retries is not None:
-            msg = "the `retries` parameter was deprecated in 1.37.1; specify 'retries' in `storage_options` instead."
+            msg = "the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead."
             issue_deprecation_warning(msg)
             storage_options = storage_options or {}
-            storage_options["retries"] = retries
+            storage_options["max_retries"] = retries
 
         credential_provider, storage_options = self._init_credentials(  # type: ignore[assignment]
             credential_provider,
@@ -291,7 +291,6 @@ class Catalog:
                 table_name,
                 credential_provider=credential_provider,
                 cloud_options=storage_options,
-                retries=retries,
             )
         )
 

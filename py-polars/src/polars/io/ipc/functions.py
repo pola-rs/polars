@@ -8,7 +8,10 @@ from typing import IO, TYPE_CHECKING, Any, Literal
 import polars._reexport as pl
 import polars.functions as F
 from polars._dependencies import import_optional
-from polars._utils.deprecation import deprecate_renamed_parameter
+from polars._utils.deprecation import (
+    deprecate_renamed_parameter,
+    issue_deprecation_warning,
+)
 from polars._utils.various import (
     is_str_sequence,
     normalize_filepath,
@@ -385,7 +388,7 @@ def scan_ipc(
     storage_options: dict[str, Any] | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
     memory_map: bool = True,
-    retries: int = 2,
+    retries: int | None = None,
     file_cache_ttl: int | None = None,
     hive_partitioning: bool | None = None,
     hive_schema: SchemaDict | None = None,
@@ -450,10 +453,16 @@ def scan_ipc(
         Only uncompressed IPC files can be memory mapped.
     retries
         Number of retries if accessing a cloud instance fails.
+
+        .. deprecated:: 1.37.1
+            Pass {"max_retries": n} via `storage_options` instead.
     file_cache_ttl
         Amount of time to keep downloaded cloud files since their last access time,
         in seconds. Uses the `POLARS_FILE_CACHE_TTL` environment variable
         (which defaults to 1 hour) if not given.
+
+        .. deprecated:: 1.37.1
+            Pass {"file_cache_ttl": n} via `storage_options` instead.
     hive_partitioning
         Infer statistics and schema from Hive partitioned URL and use them
         to prune reads. This is unset by default (i.e. `None`), meaning it is
@@ -475,6 +484,18 @@ def scan_ipc(
     _ = memory_map
 
     sources = get_sources(source)
+
+    if retries is not None:
+        msg = "the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead."
+        issue_deprecation_warning(msg)
+        storage_options = storage_options or {}
+        storage_options["max_retries"] = retries
+
+    if file_cache_ttl is not None:
+        msg = "the `file_cache_ttl` parameter was deprecated in 1.37.1; specify 'file_cache_ttl' in `storage_options` instead."
+        issue_deprecation_warning(msg)
+        storage_options = storage_options or {}
+        storage_options["file_cache_ttl"] = file_cache_ttl
 
     credential_provider_builder = _init_credential_provider_builder(
         credential_provider, sources, storage_options, "scan_parquet"
@@ -501,9 +522,7 @@ def scan_ipc(
                 list(storage_options.items()) if storage_options is not None else None
             ),
             credential_provider=credential_provider_builder,
-            retries=retries,
         ),
-        file_cache_ttl=file_cache_ttl,
     )
 
     return wrap_ldf(pylf)
