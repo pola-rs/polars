@@ -82,8 +82,7 @@ impl OptPyCloudOptions<'_> {
             }
         }
 
-        #[cfg_attr(feature = "cloud", expect(unused_mut))]
-        let mut cloud_options = CloudOptions::from_untyped_config(cloud_scheme, storage_options)
+        let cloud_options = CloudOptions::from_untyped_config(cloud_scheme, storage_options)
             .map_err(to_py_err)?
             .with_max_retries(max_retries);
 
