@@ -443,7 +443,7 @@ fn create_physical_expr_inner(
         Function {
             input,
             function: function @ (IRFunctionExpr::ArgMin | IRFunctionExpr::ArgMax),
-            options,
+            options: _,
         } => {
             let phys_input =
                 create_physical_expr_inner(input[0].node(), expr_arena, schema, state)?;
