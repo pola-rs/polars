@@ -1,5 +1,6 @@
 use polars::prelude::CloudScheme;
 use polars_core::config::verbose_print_sensitive;
+use polars_io::cloud::CloudOptions;
 use pyo3::exceptions::PyValueError;
 use pyo3::intern;
 use pyo3::prelude::*;
@@ -20,15 +21,11 @@ impl<'a, 'py> FromPyObject<'a, 'py> for OptPyCloudOptions<'py> {
 }
 
 impl OptPyCloudOptions<'_> {
-    #[cfg(feature = "cloud")]
     pub fn extract_opt_cloud_options(
         &self,
         cloud_scheme: Option<CloudScheme>,
         credential_provider: Option<Py<PyAny>>,
-    ) -> PyResult<Option<polars_io::cloud::CloudOptions>> {
-        use polars_io::cloud::CloudOptions;
-        use polars_io::cloud::credential_provider::PlCredentialProvider;
-
+    ) -> PyResult<Option<CloudOptions>> {
         if self.0.is_none() && credential_provider.is_none() {
             return Ok(None);
         }
@@ -85,13 +82,18 @@ impl OptPyCloudOptions<'_> {
             }
         }
 
+        #[cfg_attr(feature = "cloud", expect(unused_mut))]
         let mut cloud_options = CloudOptions::from_untyped_config(cloud_scheme, storage_options)
             .map_err(to_py_err)?
-            .with_max_retries(max_retries)
-            .with_credential_provider(
-                credential_provider.map(PlCredentialProvider::from_python_builder),
-            );
+            .with_max_retries(max_retries);
 
+        #[cfg(feature = "cloud")]
+        let mut cloud_options =
+            cloud_options.with_credential_provider(credential_provider.map(
+                polars_io::cloud::credential_provider::PlCredentialProvider::from_python_builder,
+            ));
+
+        #[cfg(feature = "cloud")]
         if file_cache_ttl > 0 {
             cloud_options.file_cache_ttl = file_cache_ttl;
         }
