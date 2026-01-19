@@ -968,6 +968,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::CumMin { reverse } => F::CumMin { reverse },
         #[cfg(feature = "cum_agg")]
         IF::CumMax { reverse } => F::CumMax { reverse },
+        #[cfg(feature = "cum_agg")]
+        IF::CumMean { reverse } => F::CumMean { reverse },
         IF::Reverse => F::Reverse,
         #[cfg(feature = "dtype-struct")]
         IF::ValueCounts {

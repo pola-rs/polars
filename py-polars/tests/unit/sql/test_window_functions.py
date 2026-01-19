@@ -72,9 +72,10 @@ def test_over_with_cumulative_window_funcs(df_test: pl.DataFrame) -> None:
         SELECT
             category,
             value,
-            SUM(value) OVER (PARTITION BY category ORDER BY value) AS cumsum,
-            MIN(value) OVER (PARTITION BY category ORDER BY value) AS cummin,
-            MAX(value) OVER (PARTITION BY category ORDER BY value) AS cummax
+            AVG(value) OVER (PARTITION BY category ORDER BY value) AS cum_avg,
+            MIN(value) OVER (PARTITION BY category ORDER BY value) AS cum_min,
+            MAX(value) OVER (PARTITION BY category ORDER BY value) AS cum_max,
+            SUM(value) OVER (PARTITION BY category ORDER BY value) AS cum_sum
         FROM self
         ORDER BY category, value
     """
@@ -85,9 +86,10 @@ def test_over_with_cumulative_window_funcs(df_test: pl.DataFrame) -> None:
         expected={
             "category": ["A", "A", "A", "B", "B", "B", "C"],
             "value": [10, 20, 30, 15, 25, 40, 35],
-            "cumsum": [10, 30, 60, 15, 40, 80, 35],
-            "cummin": [10, 10, 10, 15, 15, 15, 35],
-            "cummax": [10, 20, 30, 15, 25, 40, 35],
+            "cum_avg": [10.0, 15.0, 20.0, 15.0, 20.0, 26.666666666, 35.0],
+            "cum_min": [10, 10, 10, 15, 15, 15, 35],
+            "cum_max": [10, 20, 30, 15, 25, 40, 35],
+            "cum_sum": [10, 30, 60, 15, 40, 80, 35],
         },
     )
 

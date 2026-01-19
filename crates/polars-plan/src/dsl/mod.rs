@@ -695,6 +695,12 @@ impl Expr {
         self.map_unary(FunctionExpr::CumMax { reverse })
     }
 
+    /// Get an array with the cumulative mean computed at every element.
+    #[cfg(feature = "cum_agg")]
+    pub fn cum_mean(self, reverse: bool) -> Self {
+        self.map_unary(FunctionExpr::CumMean { reverse })
+    }
+
     /// Get the product aggregation of an expression.
     pub fn product(self) -> Self {
         self.map_unary(FunctionExpr::Product)

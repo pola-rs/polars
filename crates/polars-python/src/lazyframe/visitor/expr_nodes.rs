@@ -1272,6 +1272,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::CumProd { reverse } => ("cum_prod", reverse).into_py_any(py),
                 IRFunctionExpr::CumMin { reverse } => ("cum_min", reverse).into_py_any(py),
                 IRFunctionExpr::CumMax { reverse } => ("cum_max", reverse).into_py_any(py),
+                IRFunctionExpr::CumMean { reverse } => ("cum_mean", reverse).into_py_any(py),
                 IRFunctionExpr::Reverse => ("reverse",).into_py_any(py),
                 IRFunctionExpr::ValueCounts {
                     sort,

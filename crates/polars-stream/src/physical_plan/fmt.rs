@@ -396,6 +396,7 @@ fn visualize_plan_rec(
                         CumAggKind::Sum => "sum",
                         CumAggKind::Count => "count",
                         CumAggKind::Prod => "prod",
+                        CumAggKind::Mean => "mean",
                     }
                 ),
                 &[*input][..],

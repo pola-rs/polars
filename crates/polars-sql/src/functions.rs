@@ -1523,7 +1523,7 @@ impl SQLFunctionVisitor<'_> {
             // ----
             // Aggregate functions
             // ----
-            Avg => self.visit_unary(Expr::mean),
+            Avg => self.visit_unary_with_opt_cumulative(Expr::mean, Expr::cum_mean),
             Corr => self.visit_binary(polars_lazy::dsl::pearson_corr),
             Count => self.visit_count(),
             CovarPop => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 0)),
@@ -1847,9 +1847,10 @@ impl SQLFunctionVisitor<'_> {
     /// Window specs that map to cumulative functions.
     ///
     /// Converts SQL window functions with ORDER BY to compatible cumulative ops:
-    /// - `SUM(a) OVER (ORDER BY b)` → `a.cum_sum().over(order_by=b)`
+    /// - `AVG(a) OVER (ORDER BY b)` → `a.cum_mean().over(order_by=b)`
     /// - `MAX(a) OVER (ORDER BY b)` → `a.cum_max().over(order_by=b)`
     /// - `MIN(a) OVER (ORDER BY b)` → `a.cum_min().over(order_by=b)`
+    /// - `SUM(a) OVER (ORDER BY b)` → `a.cum_sum().over(order_by=b)`
     ///
     /// ROWS vs RANGE Semantics (show default behaviour if no frame spec):
     ///
