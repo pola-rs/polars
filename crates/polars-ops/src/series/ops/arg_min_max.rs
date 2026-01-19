@@ -1,7 +1,10 @@
 use polars_core::chunked_array::arg_min_max::{
-    arg_max_binary, arg_max_bool, arg_max_cat, arg_max_numeric, arg_max_str, arg_min_binary,
-    arg_min_bool, arg_min_cat, arg_min_numeric, arg_min_str,
+    arg_max_binary, arg_max_bool, arg_max_numeric, arg_max_str, arg_min_binary, arg_min_bool,
+    arg_min_numeric, arg_min_str,
 };
+#[cfg(feature = "dtype-categorical")]
+use polars_core::chunked_array::arg_min_max::{arg_max_cat, arg_min_cat};
+#[cfg(feature = "dtype-categorical")]
 use polars_core::with_match_categorical_physical_type;
 
 use super::*;
