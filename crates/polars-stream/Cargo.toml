@@ -26,6 +26,7 @@ percent-encoding = { workspace = true }
 pin-project-lite = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rand = { workspace = true }
+rand_distr = { workspace = true }
 rayon = { workspace = true }
 recursive = { workspace = true }
 schemars = { workspace = true, optional = true }

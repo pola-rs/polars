@@ -352,94 +352,52 @@ impl ApplyExtraOps {
 }
 
 /// Apply deterministic sampling to a DataFrame.
-/// Uses hash-based sampling for reproducibility across parallel readers.
+/// Uses seeded RNG sampling for reproducibility across parallel readers.
 fn apply_sample(
     df: &DataFrame,
     sample: &ScanSample,
     current_row_position: RowCounter,
 ) -> PolarsResult<DataFrame> {
+    use crate::nodes::io_sources::multi_scan::reader_interface::SampleConfig;
     use polars_core::prelude::BooleanChunked;
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
 
     let height = df.height();
     if height == 0 {
         return Ok(df.clone());
     }
 
-    let fraction = sample.fraction;
-    let with_replacement = sample.with_replacement;
-    let seed = sample.seed;
+    let base_row = current_row_position.num_physical_rows() as u64;
 
-    if !with_replacement {
-        // Bernoulli sampling: include each row with probability `fraction`
-        // Use deterministic hash for reproducibility
-        let base_row = current_row_position.num_physical_rows();
-        
-        let mask: BooleanChunked = (0..height)
-            .map(|i| {
-                let row_idx = base_row + i;
-                // Deterministic hash based on seed and row position
-                let mut hasher = DefaultHasher::new();
-                seed.hash(&mut hasher);
-                row_idx.hash(&mut hasher);
-                let hash = hasher.finish();
-                // Convert hash to probability [0, 1)
-                let prob = (hash as f64) / (u64::MAX as f64);
-                prob < fraction
-            })
-            .collect();
+    // Create SampleConfig for the shared sampling logic
+    let sample_config = SampleConfig {
+        fraction: sample.fraction,
+        with_replacement: sample.with_replacement,
+        seed: sample.seed,
+    };
 
+    if !sample.with_replacement {
+        // Bernoulli sampling: use batch method
+        let mask_vec = sample_config.generate_bernoulli_mask(height, base_row);
+        let mask: BooleanChunked = mask_vec.into_iter().collect();
         df.filter(&mask)
     } else {
-        // Poisson sampling: each row appears Poisson(fraction) times on average
-        // For simplicity, use rejection sampling with hash-based determinism
+        // Poisson sampling: use batch method
         use polars_core::prelude::IdxCa;
         use polars_core::prelude::IdxSize;
         use polars_utils::pl_str::PlSmallStr;
 
-        let base_row = current_row_position.num_physical_rows();
-        let expected_size = (height as f64 * fraction) as usize;
+        let (_, counts) = sample_config.generate_poisson_counts(height, base_row);
+        let expected_size = (height as f64 * sample.fraction) as usize;
         let mut indices = Vec::with_capacity(expected_size);
 
-        for i in 0..height {
-            let row_idx = base_row + i;
-            // Generate deterministic count based on hash
-            let mut hasher = DefaultHasher::new();
-            seed.hash(&mut hasher);
-            row_idx.hash(&mut hasher);
-            let hash = hasher.finish();
-            
-            // Approximate Poisson using hash - for small fractions this is reasonable
-            // For larger fractions, we could iterate multiple times
-            let count = if fraction <= 1.0 {
-                if (hash as f64) / (u64::MAX as f64) < fraction { 1 } else { 0 }
-            } else {
-                // For fraction > 1, generate approximate Poisson count
-                // Using inverse transform sampling with hash-based randomness
-                let mut count = 0usize;
-                let mut hasher2 = DefaultHasher::new();
-                seed.hash(&mut hasher2);
-                row_idx.hash(&mut hasher2);
-                let mut h = hasher2.finish();
-                
-                loop {
-                    let p = (h as f64) / (u64::MAX as f64);
-                    if p >= (-fraction).exp() {
-                        break;
-                    }
-                    count += 1;
-                    // Generate next hash
-                    let mut hasher3 = DefaultHasher::new();
-                    h.hash(&mut hasher3);
-                    h = hasher3.finish();
-                }
-                count
-            };
-
+        for (i, &count) in counts.iter().enumerate() {
             for _ in 0..count {
                 indices.push(i as IdxSize);
             }
+        }
+
+        if indices.is_empty() {
+            return Ok(df.clear());
         }
 
         let idx = IdxCa::new_vec(PlSmallStr::EMPTY, indices);

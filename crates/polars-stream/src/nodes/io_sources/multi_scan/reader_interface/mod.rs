@@ -132,13 +132,58 @@ pub trait FileReader: Send + Sync {
     }
 }
 
-/// Configuration for hash-based sampling at the file reader level.
+/// Configuration for sampling at the file reader level.
 #[derive(Clone, Debug)]
 pub struct SampleConfig {
-    /// Fraction of rows to sample (0.0 to 1.0).
+    /// Fraction of rows to sample.
+    /// For Bernoulli (with_replacement=false): 0.0 to 1.0
+    /// For Poisson (with_replacement=true): can be > 1.0
     pub fraction: f64,
-    /// Seed for deterministic hash-based sampling.
+    /// If true, uses Poisson sampling (rows can appear multiple times).
+    /// If false, uses Bernoulli sampling (each row included with probability `fraction`).
+    pub with_replacement: bool,
+    /// Seed for deterministic sampling.
     pub seed: u64,
+}
+
+impl SampleConfig {
+    /// Create a seeded RNG for a specific row group/batch.
+    /// Combines the global seed with the row offset for deterministic results.
+    fn create_rng(&self, row_offset: u64) -> rand::rngs::SmallRng {
+        use rand::SeedableRng;
+        // Combine seed with row_offset for deterministic per-batch randomness
+        rand::rngs::SmallRng::seed_from_u64(self.seed.wrapping_add(row_offset))
+    }
+
+    /// Generate a Bernoulli sample mask for a batch of rows.
+    /// Each row is independently included with probability `fraction`.
+    pub fn generate_bernoulli_mask(&self, num_rows: usize, row_offset: u64) -> Vec<bool> {
+        use rand::prelude::Distribution;
+        use rand_distr::Bernoulli;
+
+        let mut rng = self.create_rng(row_offset);
+        let dist = Bernoulli::new(self.fraction).unwrap();
+
+        (0..num_rows).map(|_| dist.sample(&mut rng)).collect()
+    }
+
+    /// Generate Poisson counts for a batch of rows.
+    /// Each row appears Poisson(fraction) times on average.
+    /// Returns (mask, counts) where mask[i] = counts[i] > 0.
+    pub fn generate_poisson_counts(&self, num_rows: usize, row_offset: u64) -> (Vec<bool>, Vec<u32>) {
+        use rand::prelude::Distribution;
+        use rand_distr::Poisson;
+
+        let mut rng = self.create_rng(row_offset);
+        let dist = Poisson::new(self.fraction).unwrap();
+
+        let counts: Vec<u32> = (0..num_rows)
+            .map(|_| dist.sample(&mut rng) as u32)
+            .collect();
+        let mask: Vec<bool> = counts.iter().map(|&c| c > 0).collect();
+
+        (mask, counts)
+    }
 }
 
 #[derive(Debug)]

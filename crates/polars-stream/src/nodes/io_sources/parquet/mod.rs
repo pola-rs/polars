@@ -18,7 +18,7 @@ use polars_utils::slice_enum::Slice;
 
 use super::multi_scan::reader_interface::output::{FileReaderOutputRecv, FileReaderOutputSend};
 use super::multi_scan::reader_interface::{
-    BeginReadArgs, FileReader, FileReaderCallbacks, calc_row_position_after_slice,
+    BeginReadArgs, FileReader, FileReaderCallbacks, SampleConfig, calc_row_position_after_slice,
 };
 use crate::async_executor::{self};
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
@@ -268,10 +268,7 @@ impl FileReader for ParquetFileReader {
             projected_arrow_fields,
             is_full_projection,
             predicate,
-            sample: sample.map(|s| row_group_decode::SampleConfig {
-                fraction: s.fraction,
-                seed: s.seed,
-            }),
+            sample,
             // TODO: Refactor to avoid full clone
             options: Arc::unwrap_or_clone(self.config.clone()),
             byte_source,
@@ -370,7 +367,7 @@ struct ParquetReadImpl {
     projected_arrow_fields: Arc<[ArrowFieldProjection]>,
     is_full_projection: bool,
     predicate: Option<ScanIOPredicate>,
-    sample: Option<row_group_decode::SampleConfig>,
+    sample: Option<SampleConfig>,
     options: ParquetOptions,
     byte_source: Arc<DynByteSource>,
     normalized_pre_slice: Option<(usize, usize)>,

@@ -178,7 +178,7 @@ impl FileReader for BatchFnReader {
             row_index: None,
             pre_slice: None,
             predicate: None,
-            sample: None,
+            sample: _, // Sample is handled in extra_ops for readers that don't support SAMPLE capability
             cast_columns_policy: _,
             num_pipelines: _,
             callbacks:

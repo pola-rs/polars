@@ -160,7 +160,7 @@ impl FileReader for IpcFileReader {
             row_index,
             pre_slice: pre_slice_arg,
             predicate: None,
-            sample: None,
+            sample: _, // Sample is handled in extra_ops for readers that don't support SAMPLE capability
             cast_columns_policy: _,
             num_pipelines,
             callbacks:

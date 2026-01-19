@@ -598,13 +598,18 @@ async fn start_reader_impl(
         predicate.set_external_constant_columns(external_predicate_cols);
     }
 
-    // Extract sample config from extra_ops_post for pushing to reader.
-    // The reader will handle sampling at decode time for efficiency.
-    // Take it from extra_ops_post so it's not applied again later.
-    let sample = extra_ops_post.sample.take().map(|s| SampleConfig {
-        fraction: s.fraction,
-        seed: s.seed,
-    });
+    // Extract sample config from extra_ops_post for pushing to reader if reader supports it.
+    // Only readers with SAMPLE capability (e.g., Parquet) can handle sampling at decode time.
+    // For other readers, sample stays in extra_ops_post and is applied after reading.
+    let sample = if reader_capabilities.contains(ReaderCapabilities::SAMPLE) {
+        extra_ops_post.sample.take().map(|s| SampleConfig {
+            fraction: s.fraction,
+            with_replacement: s.with_replacement,
+            seed: s.seed,
+        })
+    } else {
+        None
+    };
 
     let begin_read_args = BeginReadArgs {
         projection: projection_to_reader,

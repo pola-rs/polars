@@ -3569,6 +3569,7 @@ dependencies = [
  "polars-utils",
  "pyo3",
  "rand 0.9.2",
+ "rand_distr",
  "rayon",
  "recursive",
  "schemars",
