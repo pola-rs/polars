@@ -117,6 +117,7 @@ impl PyLazyFrame {
 
         let mut r = LazyJsonLineReader::new_with_sources(sources);
 
+        #[cfg(feature = "cloud")]
         if let Some(first_path) = first_path {
             let first_path_url = first_path.as_str();
 
@@ -221,6 +222,7 @@ impl PyLazyFrame {
 
         let mut r = LazyCsvReader::new_with_sources(sources);
 
+        #[cfg(feature = "cloud")]
         if let Some(first_path) = first_path {
             let first_path_url = first_path.as_str();
             let cloud_options = cloud_options.extract_opt_cloud_options(

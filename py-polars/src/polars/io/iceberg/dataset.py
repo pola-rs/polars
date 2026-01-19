@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     import pyiceberg.schema
     from pyiceberg.table import Table
 
+    from polars._typing import StorageOptionsDict
     from polars.lazyframe.frame import LazyFrame
 
 
@@ -521,7 +522,7 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
     # access the statistics loader directly to inspect the values before
     # coalescing.
     statistics_loader: IcebergStatisticsLoader | None
-    storage_options: dict[str, str] | None
+    storage_options: StorageOptionsDict | None
     # (physical, deleted)
     row_count: tuple[int, int] | None
     _snapshot_id_key: str

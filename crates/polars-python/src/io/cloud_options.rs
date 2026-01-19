@@ -1,7 +1,5 @@
 use polars::prelude::CloudScheme;
 use polars_core::config::verbose_print_sensitive;
-use polars_io::cloud::CloudOptions;
-use polars_io::cloud::credential_provider::PlCredentialProvider;
 use pyo3::exceptions::PyValueError;
 use pyo3::intern;
 use pyo3::prelude::*;
@@ -22,11 +20,15 @@ impl<'a, 'py> FromPyObject<'a, 'py> for OptPyCloudOptions<'py> {
 }
 
 impl OptPyCloudOptions<'_> {
+    #[cfg(feature = "cloud")]
     pub fn extract_opt_cloud_options(
         &self,
         cloud_scheme: Option<CloudScheme>,
         credential_provider: Option<Py<PyAny>>,
-    ) -> PyResult<Option<CloudOptions>> {
+    ) -> PyResult<Option<polars_io::cloud::CloudOptions>> {
+        use polars_io::cloud::CloudOptions;
+        use polars_io::cloud::credential_provider::PlCredentialProvider;
+
         if self.0.is_none() && credential_provider.is_none() {
             return Ok(None);
         }
