@@ -1,6 +1,5 @@
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
-use std::iter::repeat_n;
 
 use either::{Either, Left, Right};
 use polars_core::POOL;
@@ -511,8 +510,8 @@ async fn compute_join_and_send(
         let df = gather_and_postprocess(
             build.clone(),
             probe.clone(),
-            &arenas.gather_build,
-            &arenas.gather_probe,
+            Some(&arenas.gather_build),
+            Some(&arenas.gather_probe),
             &mut arenas.df_builders,
             &params.args,
             &params.left.on,
@@ -531,15 +530,11 @@ async fn compute_join_and_send(
     }
 
     if params.probe_params().emit_unmatched {
-        arenas.gather_build.clear();
-        arenas
-            .gather_build
-            .extend(repeat_n(IdxSize::MAX, arenas.gather_probe_unmatched.len()));
         let df_unmatched = gather_and_postprocess(
             build,
             probe,
-            &arenas.gather_build,
-            &arenas.gather_probe_unmatched,
+            None,
+            Some(&arenas.gather_probe_unmatched),
             &mut arenas.df_builders,
             &params.args,
             &params.left.on,

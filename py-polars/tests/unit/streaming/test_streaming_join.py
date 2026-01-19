@@ -512,7 +512,11 @@ def test_merge_join(
         (["a", "c", "b"], pl.Categorical),
     ],
 )
-def test_join_dtypes(keys: list[Any], dtype: pl.DataType) -> None:
+@pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_join_dtypes(
+    keys: list[Any], dtype: pl.DataType, how: JoinStrategy, nulls_equal: bool
+) -> None:
     df_left = pl.DataFrame({"key": pl.Series("key", keys[:2], dtype=dtype)})
     df_right = pl.DataFrame({"key": pl.Series("key", keys[2:], dtype=dtype)})
 
@@ -530,7 +534,8 @@ def test_join_dtypes(keys: list[Any], dtype: pl.DataType) -> None:
     q_hashjoin = df_left.lazy().join(
         df_right.lazy(),
         on="key",
-        how="inner",
+        how=how,
+        nulls_equal=nulls_equal,
         maintain_order="none",
     )
     dot = q_hashjoin.show_graph(
@@ -544,7 +549,8 @@ def test_join_dtypes(keys: list[Any], dtype: pl.DataType) -> None:
     q_mergejoin = df_sorted(df_left).join(
         df_sorted(df_right),
         on="key",
-        how="inner",
+        how=how,
+        nulls_equal=nulls_equal,
         maintain_order="none",
     )
     dot = q_mergejoin.show_graph(

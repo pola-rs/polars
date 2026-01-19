@@ -211,6 +211,7 @@ fn match_null_keys_impl(
             probe_last_matched = probe_n;
         }
     }
+    build_row_offset = build_n;
     probe_row_offset = probe_n;
     (build_row_offset, probe_row_offset, probe_last_matched)
 }
@@ -219,8 +220,8 @@ fn match_null_keys_impl(
 pub fn gather_and_postprocess(
     build: DataFrame,
     probe: DataFrame,
-    gather_build: &[IdxSize],
-    gather_probe: &[IdxSize],
+    gather_build: Option<&[IdxSize]>,
+    gather_probe: Option<&[IdxSize]>,
     df_builders: &mut Option<(DataFrameBuilder, DataFrameBuilder)>,
     args: &JoinArgs,
     left_on: &[PlSmallStr],
@@ -290,19 +291,28 @@ pub fn gather_and_postprocess(
     }
 
     let (left_build, right_build) = df_builders.as_mut().unwrap();
-    if right_emit_unmatched {
-        left_build.opt_gather_extend(&left, gather_left, ShareStrategy::Never);
-    } else {
-        unsafe { left_build.gather_extend(&left, gather_left, ShareStrategy::Never) };
-    }
-    if left_emit_unmatched {
-        right_build.opt_gather_extend(&right, gather_right, ShareStrategy::Never);
-    } else {
-        unsafe { right_build.gather_extend(&right, gather_right, ShareStrategy::Never) };
-    }
-
-    let mut left = left_build.freeze_reset();
-    let mut right = right_build.freeze_reset();
+    let mut left = match gather_left {
+        Some(gather_left) if right_emit_unmatched => {
+            left_build.opt_gather_extend(&left, gather_left, ShareStrategy::Never);
+            left_build.freeze_reset()
+        },
+        Some(gather_left) => unsafe {
+            left_build.gather_extend(&left, gather_left, ShareStrategy::Never);
+            left_build.freeze_reset()
+        },
+        None => DataFrame::full_null(left.schema(), gather_right.unwrap().len()),
+    };
+    let mut right = match gather_right {
+        Some(gather_right) if left_emit_unmatched => {
+            right_build.opt_gather_extend(&right, gather_right, ShareStrategy::Never);
+            right_build.freeze_reset()
+        },
+        Some(gather_right) => unsafe {
+            right_build.gather_extend(&right, gather_right, ShareStrategy::Never);
+            right_build.freeze_reset()
+        },
+        None => DataFrame::full_null(right.schema(), gather_left.unwrap().len()),
+    };
 
     // Coalsesce the key columns
     if args.how == JoinType::Left && should_coalesce {
