@@ -313,7 +313,11 @@ fn read_compressed_bitmap<R: Read + Seek>(
         })?
     };
 
-    polars_ensure!(length.div_ceil(8) == decompressed_bytes, ComputeError: "Malformed IPC file: got unexpected decompressed output length {decompressed_bytes}, expected {}", length.div_ceil(8));
+    // We allow for untruncated buffers up to 8-byte alignment (this includes 1-byte, 4-byte, 8-byte alignment)
+    // See https://github.com/pola-rs/polars/issues/26126
+    // and https://github.com/apache/arrow/issues/48883
+    polars_ensure!(length.div_ceil(8).div_ceil(8) == decompressed_bytes.div_ceil(8),
+        ComputeError: "Malformed IPC file: got unexpected decompressed output length {decompressed_bytes}, expected {}", length.div_ceil(8));
 
     if decompressed_len_field == -1 {
         return Ok(bytemuck::cast_slice(&scratch[8..]).to_vec());
