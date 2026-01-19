@@ -344,7 +344,6 @@ async fn find_mergeable_task(
     mergeable_seq: &mut MorselSeq,
 ) -> PolarsResult<()> {
     let source_token = SourceToken::new();
-    let mut search_limit = get_ideal_morsel_size();
 
     loop {
         if source_token.stop_requested() {
@@ -358,7 +357,7 @@ async fn find_mergeable_task(
             probe_done: recv_probe.is_none(),
             params,
         };
-        match find_mergeable(build_unmerged, probe_unmerged, &mut search_limit, fmp)? {
+        match find_mergeable(build_unmerged, probe_unmerged, get_ideal_morsel_size(), fmp)? {
             Left(partitions) => {
                 for (build_mergeable, probe_mergeable) in partitions.into_iter() {
                     if let Err((_, _, _, _)) = distributor
@@ -583,7 +582,7 @@ struct FindMergeableParams<'a> {
 fn find_mergeable(
     build: &mut DataFrameBuffer,
     probe: &mut DataFrameBuffer,
-    search_limit: &mut usize,
+    search_limit: usize,
     fmp: FindMergeableParams,
 ) -> PolarsResult<Either<UnitVec<(DataFrameBuffer, DataFrameBuffer)>, NeedMore>> {
     let (build_mergeable, probe_mergeable) =
@@ -600,24 +599,19 @@ fn find_mergeable(
 fn find_mergeable_limiting(
     build: &mut DataFrameBuffer,
     probe: &mut DataFrameBuffer,
-    search_limit: &mut usize,
+    mut search_limit: usize,
     fmp: FindMergeableParams,
 ) -> PolarsResult<Either<(DataFrameBuffer, DataFrameBuffer), NeedMore>> {
     const SEARCH_LIMIT_BUMP_FACTOR: usize = 2;
-    let morsel_size = get_ideal_morsel_size();
-    debug_assert!(*search_limit >= morsel_size);
-    let mut mergeable = find_mergeable_search(build, probe, *search_limit, fmp.clone())?;
+    let mut mergeable = find_mergeable_search(build, probe, search_limit, fmp.clone())?;
     while match mergeable {
-        Right(NeedMore::Build | NeedMore::Both) if *search_limit < build.height() => true,
-        Right(NeedMore::Probe | NeedMore::Both) if *search_limit < probe.height() => true,
+        Right(NeedMore::Build | NeedMore::Both) if search_limit < build.height() => true,
+        Right(NeedMore::Probe | NeedMore::Both) if search_limit < probe.height() => true,
         _ => false,
     } {
         // Exponential increase
-        *search_limit *= SEARCH_LIMIT_BUMP_FACTOR;
-        mergeable = find_mergeable_search(build, probe, *search_limit, fmp.clone())?;
-    }
-    if mergeable.is_left() {
-        *search_limit = morsel_size;
+        search_limit *= SEARCH_LIMIT_BUMP_FACTOR;
+        mergeable = find_mergeable_search(build, probe, search_limit, fmp.clone())?;
     }
     Ok(mergeable)
 }
