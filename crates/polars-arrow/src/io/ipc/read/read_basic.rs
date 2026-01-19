@@ -1,13 +1,13 @@
 use std::collections::VecDeque;
 use std::io::{Read, Seek, SeekFrom};
 
+use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 
 use super::super::compression;
 use super::super::endianness::is_native_little_endian;
 use super::{Compression, IpcBuffer, Node, OutOfSpecKind};
 use crate::bitmap::Bitmap;
-use crate::buffer::Buffer;
 use crate::types::NativeType;
 
 fn read_swapped<T: NativeType, R: Read + Seek>(

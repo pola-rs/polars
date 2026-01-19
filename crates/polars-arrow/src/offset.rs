@@ -3,10 +3,10 @@
 use std::hint::unreachable_unchecked;
 use std::ops::Deref;
 
+use polars_buffer::Buffer;
 use polars_error::{PolarsError, PolarsResult, polars_bail, polars_err};
 
 use crate::array::Splitable;
-use crate::buffer::Buffer;
 pub use crate::types::Offset;
 
 /// A wrapper type of [`Vec<O>`] representing the invariants of Arrow's offsets.

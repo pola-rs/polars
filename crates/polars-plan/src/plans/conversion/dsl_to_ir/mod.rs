@@ -14,8 +14,8 @@ use super::stack_opt::ConversionOptimizer;
 use super::*;
 use crate::constants::get_pl_element_name;
 use crate::dsl::PartitionedSinkOptions;
+use crate::dsl::file_provider::{FileProviderType, HivePathProvider};
 use crate::dsl::functions::{all_horizontal, col};
-use crate::dsl::sink2::FileProviderType;
 
 mod concat;
 mod datatype_fn_to_ir;
@@ -1278,7 +1278,6 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     base_path,
                     file_path_provider,
                     partition_strategy,
-                    finish_callback,
                     file_format,
                     unified_sink_args,
                     max_rows_per_file,
@@ -1295,30 +1294,13 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             keys,
                             include_keys,
                             keys_pre_grouped,
-                            per_partition_sort_by,
                         } => {
                             let keys = to_expr_irs(keys, expr_to_ir_cx)?;
-                            let per_partition_sort_by: Vec<SortColumnIR> = per_partition_sort_by
-                                .into_iter()
-                                .map(|s| {
-                                    let SortColumn {
-                                        expr,
-                                        descending,
-                                        nulls_last,
-                                    } = s;
-                                    Ok(SortColumnIR {
-                                        expr: to_expr_ir(expr, expr_to_ir_cx)?,
-                                        descending,
-                                        nulls_last,
-                                    })
-                                })
-                                .collect::<PolarsResult<_>>()?;
 
                             PartitionStrategyIR::Keyed {
                                 keys,
                                 include_keys,
                                 keys_pre_grouped,
-                                per_partition_sort_by,
                             }
                         },
                         PartitionStrategy::FileSize => PartitionStrategyIR::FileSize,
@@ -1327,12 +1309,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     let options = PartitionedSinkOptionsIR {
                         base_path,
                         file_path_provider: file_path_provider.unwrap_or_else(|| {
-                            FileProviderType::Hive {
+                            FileProviderType::Hive(HivePathProvider {
                                 extension: PlSmallStr::from_static(file_format.extension()),
-                            }
+                            })
                         }),
                         partition_strategy,
-                        finish_callback,
                         file_format,
                         unified_sink_args,
                         max_rows_per_file,
