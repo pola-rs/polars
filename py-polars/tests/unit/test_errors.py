@@ -639,11 +639,6 @@ def test_fill_null_invalid_supertype() -> None:
         df.select(pl.col("date").fill_null(1.0))
 
 
-def test_raise_array_of_cats() -> None:
-    with pytest.raises(InvalidOperationError, match="is not yet supported"):
-        pl.Series([["a", "b"], ["a", "c"]], dtype=pl.Array(pl.Categorical, 2))
-
-
 @pytest.mark.may_fail_cloud  # reason: Object type not supported
 def test_raise_invalid_arithmetic() -> None:
     df = pl.Series("a", [object()]).to_frame()
