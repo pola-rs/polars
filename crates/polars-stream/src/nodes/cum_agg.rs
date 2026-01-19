@@ -1,9 +1,11 @@
-use polars_core::prelude::{AnyValue, IntoColumn};
+use polars_core::prelude::{AnyValue, DataType, IntoColumn};
 use polars_core::utils::last_non_null;
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_bail};
+#[cfg(feature = "dtype-decimal")]
+use polars_ops::series::cum_mean_decimal_with_init;
 use polars_ops::series::{
-    cum_count_with_init, cum_max_with_init, cum_min_with_init, cum_prod_with_init,
-    cum_sum_with_init,
+    cum_count_with_init, cum_max_with_init, cum_mean_with_init, cum_min_with_init,
+    cum_prod_with_init, cum_sum_with_init,
 };
 
 use super::ComputeNode;
@@ -13,8 +15,27 @@ use crate::graph::PortState;
 use crate::pipe::{RecvPort, SendPort};
 
 pub struct CumAggNode {
-    state: AnyValue<'static>,
+    state: CumAggState,
     kind: CumAggKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum CumAggState {
+    Single(AnyValue<'static>),
+    Mean(CumMeanState),
+}
+
+#[derive(Debug, Clone)]
+pub enum CumMeanState {
+    Float {
+        sum: f64,
+        count: u64,
+    },
+    #[cfg(feature = "dtype-decimal")]
+    Decimal {
+        sum: i128,
+        count: u64,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -24,14 +45,21 @@ pub enum CumAggKind {
     Sum,
     Count,
     Prod,
+    Mean,
 }
 
 impl CumAggNode {
-    pub fn new(kind: CumAggKind) -> Self {
-        Self {
-            state: AnyValue::Null,
-            kind,
-        }
+    #[allow(unused_variables)]
+    pub fn new(kind: CumAggKind, dtype: &DataType) -> Self {
+        let state = match kind {
+            #[cfg(feature = "dtype-decimal")]
+            CumAggKind::Mean if matches!(dtype, DataType::Decimal(_, _)) => {
+                CumAggState::Mean(CumMeanState::Decimal { sum: 0, count: 0 })
+            },
+            CumAggKind::Mean => CumAggState::Mean(CumMeanState::Float { sum: 0.0, count: 0 }),
+            _ => CumAggState::Single(AnyValue::Null),
+        };
+        Self { state, kind }
     }
 }
 
@@ -43,6 +71,7 @@ impl ComputeNode for CumAggNode {
             CumAggKind::Sum => "cum_sum",
             CumAggKind::Count => "cum_count",
             CumAggKind::Prod => "cum_prod",
+            CumAggKind::Mean => "cum_mean",
         }
     }
 
@@ -78,27 +107,59 @@ impl ComputeNode for CumAggNode {
                 if m.df().height() == 0 {
                     continue;
                 }
-
                 let s = m.df()[0].as_materialized_series();
-                let out = match self.kind {
-                    CumAggKind::Min => cum_min_with_init(s, false, &self.state),
-                    CumAggKind::Max => cum_max_with_init(s, false, &self.state),
-                    CumAggKind::Sum => cum_sum_with_init(s, false, &self.state),
-                    CumAggKind::Count => {
-                        cum_count_with_init(s, false, self.state.extract().unwrap_or_default())
+                let out = match (&mut self.state, self.kind) {
+                    (CumAggState::Mean(mean_state), CumAggKind::Mean) => match mean_state {
+                        #[cfg(feature = "dtype-decimal")]
+                        CumMeanState::Decimal { sum, count } => {
+                            let (out, new_sum, new_count) =
+                                cum_mean_decimal_with_init(s, false, Some(*sum), Some(*count))?;
+                            *sum = new_sum;
+                            *count = new_count;
+                            out
+                        },
+                        #[cfg(feature = "dtype-decimal")]
+                        CumMeanState::Float { .. }
+                            if matches!(s.dtype(), DataType::Decimal(_, _)) =>
+                        {
+                            polars_bail!(InvalidOperation: "incorrect state type; expected MeanState::Decimal")
+                        },
+                        CumMeanState::Float { sum, count } => {
+                            let (out, new_sum, new_count) =
+                                cum_mean_with_init(s, false, Some(*sum), Some(*count))?;
+                            *sum = new_sum;
+                            *count = new_count;
+                            out
+                        },
                     },
-                    CumAggKind::Prod => cum_prod_with_init(s, false, &self.state),
-                }?;
-
-                // Find the last non-null value and set that as the state.
-                let last_non_null_idx = if out.has_nulls() {
-                    last_non_null(out.chunks().iter().map(|arr| arr.as_ref()), out.len())
-                } else {
-                    Some(out.len() - 1)
+                    (CumAggState::Single(init), kind) => {
+                        let out = match kind {
+                            CumAggKind::Count => {
+                                cum_count_with_init(s, false, init.extract().unwrap_or_default())
+                            },
+                            CumAggKind::Max => cum_max_with_init(s, false, &*init),
+                            CumAggKind::Min => cum_min_with_init(s, false, &*init),
+                            CumAggKind::Prod => cum_prod_with_init(s, false, &*init),
+                            CumAggKind::Sum => cum_sum_with_init(s, false, &*init),
+                            CumAggKind::Mean => polars_bail!(
+                                InvalidOperation: "should be used with CumAggState::Mean"
+                            ),
+                        }?;
+                        // Update state with the last non-null value.
+                        let last_non_null_idx = if out.has_nulls() {
+                            last_non_null(out.chunks().iter().map(|arr| arr.as_ref()), out.len())
+                        } else {
+                            Some(out.len() - 1)
+                        };
+                        if let Some(idx) = last_non_null_idx {
+                            *init = out.get(idx).unwrap().into_static();
+                        }
+                        out
+                    },
+                    (state, kind) => polars_bail!(
+                        InvalidOperation: "unexpected state {:?} for kind {:?} in CumAggNode", state, kind
+                    ),
                 };
-                if let Some(idx) = last_non_null_idx {
-                    self.state = out.get(idx).unwrap().into_static();
-                }
                 *m.df_mut() = out.into_column().into_frame();
 
                 if send.send(m).await.is_err() {

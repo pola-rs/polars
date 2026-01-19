@@ -836,6 +836,8 @@ pub(super) fn convert_functions(
         F::CumMin { reverse } => I::CumMin { reverse },
         #[cfg(feature = "cum_agg")]
         F::CumMax { reverse } => I::CumMax { reverse },
+        #[cfg(feature = "cum_agg")]
+        F::CumMean { reverse } => I::CumMean { reverse },
         F::Reverse => I::Reverse,
         #[cfg(feature = "dtype-struct")]
         F::ValueCounts {

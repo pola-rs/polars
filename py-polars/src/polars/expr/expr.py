@@ -1778,6 +1778,63 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.cum_count(reverse))
 
+    def cum_mean(self, *, reverse: bool = False) -> Expr:
+        """
+        Get an array with the cumulative mean computed at every element.
+
+        Parameters
+        ----------
+        reverse
+            Reverse the operation.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 4]})
+        >>> df.with_columns(
+        ...     pl.col("a").cum_mean().alias("cum_mean"),
+        ...     pl.col("a").cum_mean(reverse=True).alias("cum_mean_reverse"),
+        ... )
+        shape: (4, 3)
+        ┌─────┬──────────┬──────────────────┐
+        │ a   ┆ cum_mean ┆ cum_mean_reverse │
+        │ --- ┆ ---      ┆ ---              │
+        │ i64 ┆ f64      ┆ f64              │
+        ╞═════╪══════════╪══════════════════╡
+        │ 1   ┆ 1.0      ┆ 2.5              │
+        │ 2   ┆ 1.5      ┆ 3.0              │
+        │ 3   ┆ 2.0      ┆ 3.5              │
+        │ 4   ┆ 2.5      ┆ 4.0              │
+        └─────┴──────────┴──────────────────┘
+
+        Null values are excluded, but can also be filled by calling
+        `fill_null(strategy="forward")`.
+
+        >>> df = pl.DataFrame({"values": [None, 10, None, 8, 9, None, 16, None]})
+        >>> df.with_columns(
+        ...     pl.col("values").cum_mean().alias("cum_mean"),
+        ...     pl.col("values")
+        ...     .cum_mean()
+        ...     .fill_null(strategy="forward")
+        ...     .alias("cum_mean_all_filled"),
+        ... )
+        shape: (8, 3)
+        ┌────────┬──────────┬─────────────────────┐
+        │ values ┆ cum_mean ┆ cum_mean_all_filled │
+        │ ---    ┆ ---      ┆ ---                 │
+        │ i64    ┆ f64      ┆ f64                 │
+        ╞════════╪══════════╪═════════════════════╡
+        │ null   ┆ null     ┆ null                │
+        │ 10     ┆ 10.0     ┆ 10.0                │
+        │ null   ┆ null     ┆ 10.0                │
+        │ 8      ┆ 9.0      ┆ 9.0                 │
+        │ 9      ┆ 9.0      ┆ 9.0                 │
+        │ null   ┆ null     ┆ 9.0                 │
+        │ 16     ┆ 10.75    ┆ 10.75               │
+        │ null   ┆ null     ┆ 10.75               │
+        └────────┴──────────┴─────────────────────┘
+        """
+        return wrap_expr(self._pyexpr.cum_mean(reverse))
+
     def floor(self) -> Expr:
         """
         Rounds down to the nearest integer value.

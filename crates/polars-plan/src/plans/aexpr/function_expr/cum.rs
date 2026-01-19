@@ -42,4 +42,21 @@ pub(super) mod dtypes {
             _ => Int64,
         }
     }
+
+    pub fn cum_mean(dt: &DataType) -> DataType {
+        match dt {
+            #[cfg(feature = "dtype-duration")]
+            Duration(_) => dt.clone(),
+            #[cfg(feature = "dtype-datetime")]
+            Datetime(tu, tz) => Datetime(*tu, tz.clone()),
+            #[cfg(feature = "dtype-date")]
+            Date => Datetime(polars_core::prelude::TimeUnit::Microseconds, None),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(precision, scale) => Decimal(*precision, *scale),
+            #[cfg(feature = "dtype-f16")]
+            Float16 => Float16,
+            Float32 => Float32,
+            _ => Float64,
+        }
+    }
 }

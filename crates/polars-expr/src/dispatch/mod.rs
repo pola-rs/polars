@@ -325,6 +325,8 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         F::CumMin { reverse } => map!(cum::cum_min, reverse),
         #[cfg(feature = "cum_agg")]
         F::CumMax { reverse } => map!(cum::cum_max, reverse),
+        #[cfg(feature = "cum_agg")]
+        F::CumMean { reverse } => map!(cum::cum_mean, reverse),
         #[cfg(feature = "dtype-struct")]
         F::ValueCounts {
             sort,
