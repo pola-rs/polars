@@ -1,8 +1,8 @@
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt;
+use std::iter::repeat_n;
 
-use arrow::bitmap::MutableBitmap;
 use either::{Either, Left, Right};
 use polars_core::POOL;
 use polars_core::frame::builder::DataFrameBuilder;
@@ -11,7 +11,6 @@ use polars_core::utils::Container;
 use polars_ops::frame::merge_join::*;
 use polars_ops::frame::{JoinArgs, JoinType, MaintainOrderJoin};
 use polars_utils::UnitVec;
-use polars_utils::itertools::Itertools;
 use rayon::slice::ParallelSliceMut;
 
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
@@ -39,7 +38,7 @@ enum NeedMore {
 struct ComputeJoinArenas {
     gather_build: Vec<IdxSize>,
     gather_probe: Vec<IdxSize>,
-    matched_probe: MutableBitmap,
+    gather_probe_unmatched: Vec<IdxSize>,
     df_builders: Option<(DataFrameBuilder, DataFrameBuilder)>,
 }
 
@@ -456,6 +455,7 @@ async fn compute_join_and_send(
     unmatched_send: tokio::sync::mpsc::Sender<Morsel>,
 ) -> PolarsResult<()> {
     let morsel_size = get_ideal_morsel_size();
+    let wait_group = WaitGroup::default();
 
     let mut build = build.into_df();
     let mut probe = probe.into_df();
@@ -488,28 +488,28 @@ async fn compute_join_and_send(
     let build_key = build_key.to_physical_repr();
     let probe_key = probe_key.to_physical_repr();
 
-    arenas.matched_probe.clear();
-    arenas.matched_probe.resize(probe_key.len(), false);
-
-    let wait_group = WaitGroup::default();
-    let mut done = false;
-    let mut skip_build_rows = 0;
-    while !done {
+    let mut build_row_offset = 0;
+    let mut probe_row_offset = 0;
+    let mut probe_last_matched = 0;
+    while build_row_offset < build.height() || probe_row_offset < probe.height() {
         arenas.gather_build.clear();
         arenas.gather_probe.clear();
-        (done, skip_build_rows) = match_keys(
+        (build_row_offset, probe_row_offset, probe_last_matched) = match_keys(
             &build_key,
             &probe_key,
             &mut arenas.gather_build,
             &mut arenas.gather_probe,
-            &mut arenas.matched_probe,
-            params.probe_params().emit_unmatched,
+            &mut arenas.gather_probe_unmatched,
             params.build_params().emit_unmatched,
+            params.probe_params().emit_unmatched,
             params.key_descending,
             params.args.nulls_equal,
             morsel_size,
-            skip_build_rows,
+            build_row_offset,
+            probe_row_offset,
+            probe_last_matched,
         );
+
         let df = gather_and_postprocess(
             build.clone(),
             probe.clone(),
@@ -534,21 +534,14 @@ async fn compute_join_and_send(
 
     if params.probe_params().emit_unmatched {
         arenas.gather_build.clear();
-        arenas.gather_probe.clear();
-        for (idx, _) in arenas
-            .matched_probe
-            .iter()
-            .enumerate_idx()
-            .filter(|(_, m)| !m)
-        {
-            arenas.gather_build.push(IdxSize::MAX);
-            arenas.gather_probe.push(idx);
-        }
+        arenas
+            .gather_build
+            .extend(repeat_n(IdxSize::MAX, arenas.gather_probe_unmatched.len()));
         let df_unmatched = gather_and_postprocess(
             build,
             probe,
             &arenas.gather_build,
-            &arenas.gather_probe,
+            &arenas.gather_probe_unmatched,
             &mut arenas.df_builders,
             &params.args,
             &params.left.on,

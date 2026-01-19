@@ -1,9 +1,9 @@
 use std::borrow::Cow;
 use std::cmp::Ordering;
+use std::iter::repeat_n;
 
 use arrow::array::Array;
 use arrow::array::builder::ShareStrategy;
-use arrow::bitmap::MutableBitmap;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
@@ -20,14 +20,16 @@ pub fn match_keys(
     right_keys: &Series,
     gather_build: &mut Vec<IdxSize>,
     gather_probe: &mut Vec<IdxSize>,
-    matched_probe: &mut MutableBitmap,
-    probe_mark_matched: bool,
+    gather_unmatched_probe: &mut Vec<IdxSize>,
     build_emit_unmatched: bool,
+    probe_emit_unmatched: bool,
     descending: bool,
     nulls_equal: bool,
     limit_results: usize,
-    skip_build_rows: usize,
-) -> (bool, usize) {
+    build_row_offset: usize,
+    probe_row_offset: usize,
+    probe_last_matched: usize,
+) -> (usize, usize, usize) {
     macro_rules! dispatch {
         ($left_keys_ca:expr) => {
             match_keys_impl(
@@ -35,13 +37,15 @@ pub fn match_keys(
                 right_keys.as_ref().as_ref(),
                 gather_build,
                 gather_probe,
-                matched_probe,
-                probe_mark_matched,
+                gather_unmatched_probe,
                 build_emit_unmatched,
+                probe_emit_unmatched,
                 descending,
                 nulls_equal,
                 limit_results,
-                skip_build_rows,
+                build_row_offset,
+                probe_row_offset,
+                probe_last_matched,
             )
         };
     }
@@ -70,13 +74,15 @@ pub fn match_keys(
             right_keys.len(),
             gather_build,
             gather_probe,
-            matched_probe,
-            probe_mark_matched,
+            gather_unmatched_probe,
             build_emit_unmatched,
+            probe_emit_unmatched,
             descending,
             nulls_equal,
             limit_results,
-            skip_build_rows,
+            build_row_offset,
+            probe_row_offset,
+            probe_last_matched,
         ),
         dt => unimplemented!("merge-join kernel not implemented for {:?}", dt),
     }
@@ -84,46 +90,44 @@ pub fn match_keys(
 
 #[allow(clippy::mut_range_bound, clippy::too_many_arguments)]
 fn match_keys_impl<'a, T: PolarsDataType>(
-    left_keys: &'a ChunkedArray<T>,
-    right_keys: &'a ChunkedArray<T>,
-    gather_left: &mut Vec<IdxSize>,
-    gather_right: &mut Vec<IdxSize>,
-    matched_right: &mut MutableBitmap,
-    probe_mark_matched: bool,
+    build_keys: &'a ChunkedArray<T>,
+    probe_keys: &'a ChunkedArray<T>,
+    gather_build: &mut Vec<IdxSize>,
+    gather_probe: &mut Vec<IdxSize>,
+    gather_probe_unmatched: &mut Vec<IdxSize>,
     build_emit_unmatched: bool,
+    probe_emit_unmatched: bool,
     descending: bool,
     nulls_equal: bool,
     limit_results: usize,
-    mut skip_build_rows: usize,
-) -> (bool, usize)
+    mut build_row_offset: usize,
+    mut probe_row_offset: usize,
+    mut probe_first_unmatched: usize,
+) -> (usize, usize, usize)
 where
     T::Physical<'a>: TotalOrd,
 {
-    assert!(gather_left.is_empty());
-    assert!(gather_right.is_empty());
-    if probe_mark_matched {
-        assert_eq!(matched_right.len(), right_keys.len());
-    }
+    assert!(gather_build.is_empty());
+    assert!(gather_probe.is_empty());
 
-    let left_key = left_keys.downcast_as_array();
-    let right_key = right_keys.downcast_as_array();
+    let build_key = build_keys.downcast_as_array();
+    let probe_key = probe_keys.downcast_as_array();
 
-    let mut iterator = left_key.iter().enumerate().skip(skip_build_rows).peekable();
-    if iterator.peek().is_none() {
-        return (true, skip_build_rows);
-    }
-    let mut skip_ahead_right = 0;
-    for (idxl, left_keyval) in iterator {
-        if gather_left.len() >= limit_results {
-            return (false, skip_build_rows);
+    while build_row_offset < build_key.len() {
+        if gather_build.len() >= limit_results {
+            return (build_row_offset, probe_row_offset, probe_first_unmatched);
         }
-        let left_keyval = left_keyval.as_ref();
-        let mut matched = false;
-        if nulls_equal || left_keyval.is_some() {
-            for idxr in skip_ahead_right..right_key.len() {
-                let right_keyval = unsafe { right_key.get_unchecked(idxr) };
-                let right_keyval = right_keyval.as_ref();
-                let mut ord: Option<Ordering> = match (&left_keyval, &right_keyval) {
+
+        let build_keyval = unsafe { build_key.get_unchecked(build_row_offset) };
+        let build_keyval = build_keyval.as_ref();
+        let mut build_keyval_matched = false;
+
+        if nulls_equal || build_keyval.is_some() {
+            for probe_idx in probe_row_offset..probe_key.len() {
+                let probe_keyval = unsafe { probe_key.get_unchecked(probe_idx) };
+                let probe_keyval = probe_keyval.as_ref();
+
+                let mut ord: Option<Ordering> = match (&build_keyval, &probe_keyval) {
                     (None, None) if nulls_equal => Some(Ordering::Equal),
                     (Some(l), Some(r)) => Some(TotalOrd::tot_cmp(*l, *r)),
                     _ => None,
@@ -131,27 +135,40 @@ where
                 if descending {
                     ord = ord.map(Ordering::reverse);
                 }
+
                 if ord == Some(Ordering::Equal) {
-                    matched = true;
-                    if probe_mark_matched {
-                        matched_right.set(idxr, true);
+                    if probe_emit_unmatched {
+                        gather_probe_unmatched
+                            .extend(probe_first_unmatched as IdxSize..probe_idx as IdxSize);
+                        probe_first_unmatched = probe_first_unmatched.max(probe_idx + 1);
                     }
-                    gather_left.push(idxl as IdxSize);
-                    gather_right.push(idxr as IdxSize);
+                    gather_build.push(build_row_offset as IdxSize);
+                    gather_probe.push(probe_idx as IdxSize);
+                    build_keyval_matched = true;
                 } else if ord == Some(Ordering::Greater) {
-                    skip_ahead_right = idxr;
+                    if probe_emit_unmatched {
+                        gather_probe_unmatched
+                            .extend(probe_first_unmatched as IdxSize..=probe_idx as IdxSize);
+                        probe_first_unmatched = probe_first_unmatched.max(probe_idx + 1);
+                    }
+                    probe_row_offset = probe_idx + 1;
                 } else if ord == Some(Ordering::Less) {
                     break;
                 }
             }
         }
-        if build_emit_unmatched && !matched {
-            gather_left.push(idxl as IdxSize);
-            gather_right.push(IdxSize::MAX);
+        if build_emit_unmatched && !build_keyval_matched {
+            gather_build.push(build_row_offset as IdxSize);
+            gather_probe.push(IdxSize::MAX);
         }
-        skip_build_rows += 1;
+        build_row_offset += 1;
     }
-    (true, skip_build_rows)
+    if probe_emit_unmatched {
+        gather_probe_unmatched.extend(probe_first_unmatched as IdxSize..probe_key.len() as IdxSize);
+        probe_first_unmatched = probe_key.len();
+    }
+    probe_row_offset = probe_key.len();
+    (build_row_offset, probe_row_offset, probe_first_unmatched)
 }
 
 #[allow(clippy::mut_range_bound, clippy::too_many_arguments)]
@@ -160,41 +177,42 @@ fn match_null_keys_impl(
     right_n: usize,
     gather_build: &mut Vec<IdxSize>,
     gather_probe: &mut Vec<IdxSize>,
-    matched_probe: &mut MutableBitmap,
-    probe_mark_matched: bool,
+    gather_probe_unmatched: &mut Vec<IdxSize>,
     build_emit_unmatched: bool,
+    probe_emit_unmatched: bool,
     _descending: bool,
     nulls_equal: bool,
     limit_results: usize,
-    mut skip_build_rows: usize,
-) -> (bool, usize) {
+    mut build_row_offset: usize,
+    mut probe_row_offset: usize,
+    mut probe_last_matched: usize,
+) -> (usize, usize, usize) {
     assert!(gather_build.is_empty());
     assert!(gather_probe.is_empty());
-    if probe_mark_matched {
-        assert_eq!(matched_probe.len(), right_n);
-    }
-    if !nulls_equal {
-        return (true, skip_build_rows);
-    }
 
-    for idxl in skip_build_rows..left_n {
-        for idxr in 0..right_n {
-            gather_build.push(idxl as IdxSize);
-            gather_probe.push(idxr as IdxSize);
-            if probe_mark_matched {
-                matched_probe.set(idxr, true);
+    if nulls_equal {
+        while build_row_offset < left_n {
+            if gather_build.len() >= limit_results {
+                return (build_row_offset, probe_row_offset, probe_last_matched);
             }
+            for probe_idx in probe_row_offset..right_n {
+                gather_build.push(build_row_offset as IdxSize);
+                gather_probe.push(probe_idx as IdxSize);
+            }
+            build_row_offset += 1;
         }
-        if build_emit_unmatched && right_n == 0 {
-            gather_probe.push(idxl as IdxSize);
-            gather_probe.push(IdxSize::MAX);
+    } else {
+        if build_emit_unmatched {
+            gather_build.extend(0..left_n as IdxSize);
+            gather_probe.extend(repeat_n(IdxSize::MAX, left_n));
         }
-        skip_build_rows += 1;
-        if gather_build.len() >= limit_results {
-            return (false, skip_build_rows);
+        if probe_emit_unmatched {
+            gather_probe_unmatched.extend(probe_last_matched as IdxSize..right_n as IdxSize);
+            probe_last_matched = right_n;
         }
     }
-    (true, skip_build_rows)
+    probe_row_offset = right_n;
+    (build_row_offset, probe_row_offset, probe_last_matched)
 }
 
 #[allow(clippy::too_many_arguments)]
