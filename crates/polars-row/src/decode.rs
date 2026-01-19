@@ -1,9 +1,9 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
 use arrow::offset::OffsetsBuffer;
 use arrow::types::NativeType;
+use polars_buffer::Buffer;
 use polars_dtype::categorical::CatNative;
 
 use self::encode::fixed_size;

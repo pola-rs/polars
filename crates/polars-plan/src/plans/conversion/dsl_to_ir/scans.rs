@@ -1,8 +1,8 @@
 use std::io::BufReader;
 use std::sync::LazyLock;
 
-use arrow::buffer::Buffer;
 use either::Either;
+use polars_buffer::Buffer;
 use polars_io::RowIndex;
 use polars_io::csv::read::streaming::read_until_start_and_infer_schema;
 #[cfg(feature = "cloud")]

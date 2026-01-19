@@ -81,7 +81,7 @@ fn split_lines_to_rows_impl(bytes: &[u8], max_buffer_size: usize) -> PolarsResul
 
 #[cfg(test)]
 mod tests {
-    use arrow::buffer::Buffer;
+    use polars_buffer::Buffer;
     use polars_error::PolarsError;
 
     use crate::scan_lines::split_lines_to_rows_impl;

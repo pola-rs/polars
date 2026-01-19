@@ -1127,7 +1127,7 @@ fn to_graph_rec<'a>(
 
         #[cfg(feature = "python")]
         PythonScan { options } => {
-            use arrow::buffer::Buffer;
+            use polars_buffer::Buffer;
             use polars_plan::dsl::python_dsl::PythonScanSource as S;
             use polars_plan::plans::PythonPredicate;
             use polars_utils::relaxed_cell::RelaxedCell;

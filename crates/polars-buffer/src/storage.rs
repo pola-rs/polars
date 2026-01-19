@@ -33,14 +33,11 @@ impl VecVTable {
     }
 }
 
-use crate::ffi::InternalArrowArray;
-
 enum BackingStorage {
     Vec {
         original_capacity: usize, // Elements, not bytes.
         vtable: &'static VecVTable,
     },
-    InternalArrowArray(InternalArrowArray),
     ForeignOwner(Box<dyn Any + Send + 'static>),
 
     /// Backed by some external method which we do not need to take care of,
@@ -87,7 +84,6 @@ impl<T> SharedStorageInner<T> {
 impl<T> Drop for SharedStorageInner<T> {
     fn drop(&mut self) {
         match core::mem::replace(&mut self.backing, BackingStorage::External) {
-            BackingStorage::InternalArrowArray(a) => drop(a),
             BackingStorage::ForeignOwner(o) => drop(o),
             BackingStorage::Vec {
                 original_capacity,
@@ -178,31 +174,28 @@ impl<T> SharedStorage<T> {
         }
     }
 
-    pub fn from_vec(v: Vec<T>) -> Self {
-        Self {
-            inner: NonNull::new(Box::into_raw(Box::new(SharedStorageInner::from_vec(v)))).unwrap(),
-            phantom: PhantomData,
-        }
-    }
-
-    /// # Safety
-    /// The range [ptr, ptr+len) needs to be valid while arr lives, and ptr
-    /// must be aligned for T. ptr may not be null.
-    pub unsafe fn from_internal_arrow_array(
-        ptr: *const T,
-        len: usize,
-        arr: InternalArrowArray,
-    ) -> Self {
-        assert!(!ptr.is_null() && ptr.is_aligned());
+    pub fn from_owner<O: Send + AsRef<[T]> + 'static>(owner: O) -> Self {
+        let owner = Box::new(owner);
+        let slice: &[T] = (*owner).as_ref();
+        #[expect(clippy::manual_slice_size_calculation)]
+        let length_in_bytes = slice.len() * size_of::<T>();
+        let ptr = slice.as_ptr().cast_mut();
         let inner = SharedStorageInner {
             ref_count: AtomicU64::new(1),
-            ptr: ptr.cast_mut(),
-            length_in_bytes: len * size_of::<T>(),
-            backing: BackingStorage::InternalArrowArray(arr),
+            ptr,
+            length_in_bytes,
+            backing: BackingStorage::ForeignOwner(owner),
             phantom: PhantomData,
         };
         Self {
             inner: NonNull::new(Box::into_raw(Box::new(inner))).unwrap(),
+            phantom: PhantomData,
+        }
+    }
+
+    pub fn from_vec(v: Vec<T>) -> Self {
+        Self {
+            inner: NonNull::new(Box::into_raw(Box::new(SharedStorageInner::from_vec(v)))).unwrap(),
             phantom: PhantomData,
         }
     }
@@ -257,6 +250,11 @@ impl<T> SharedStorage<T> {
     #[inline(always)]
     pub fn len(&self) -> usize {
         self.inner().length_in_bytes / size_of::<T>()
+    }
+
+    #[inline(always)]
+    pub fn is_empty(&self) -> bool {
+        self.inner().length_in_bytes == 0
     }
 
     #[inline(always)]

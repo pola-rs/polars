@@ -1,10 +1,10 @@
 #![allow(unsafe_op_in_unsafe_fn)]
+use polars_buffer::SharedStorage;
 use polars_utils::IdxSize;
 use polars_utils::slice::load_padded_le_u64;
 
 use super::bitmask::BitMask;
 use crate::bitmap::{Bitmap, MutableBitmap};
-use crate::storage::SharedStorage;
 use crate::trusted_len::TrustedLen;
 
 /// Used to build bitmaps bool-by-bool in sequential order.
