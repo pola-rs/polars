@@ -686,31 +686,17 @@ impl PhysicalExpr for AggMinMaxByExpr {
         groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let mut ac_in = self.input.evaluate_on_groups(df, groups, state)?;
+        let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
         let mut ac_by = self.by.evaluate_on_groups(df, groups, state)?;
-        assert!(ac_in.groups.len() == ac_by.groups.len());
+        assert!(ac.groups.len() == ac_by.groups.len());
 
-        ac_in.set_groups_for_undefined_agg_states();
+        // AggregatedScalar has no defined group structure. We fix it up here, so that we can
+        // reliably call `agg_*` functions with the groups.
+        ac.set_groups_for_undefined_agg_states();
         ac_by.set_groups_for_undefined_agg_states();
-
-        let all_literal = matches!(ac_in.state, AggState::LiteralScalar(_))
-            && matches!(ac_by.state, AggState::LiteralScalar(_));
-
-        if all_literal {
-            return Ok(ac_in);
-        } else {
-            if matches!(ac_in.state, AggState::LiteralScalar(_)) {
-                ac_in.aggregated();
-            }
-            if matches!(ac_by.state, AggState::LiteralScalar(_)) {
-                ac_by.aggregated();
-            }
-        }
 
         // TODO: [amber] LEFT HERE
         // Look at SortBy for inspiration
-
-        // First handle if every input is a LiteralScalar
 
         todo!("[amber] implement AggMinMaxByExpr::evaluate_on_groups")
     }
