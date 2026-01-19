@@ -591,6 +591,86 @@ impl BinaryChunked {
                 .reduce(MinMax::min_ignore_nan),
         }
     }
+    pub fn arg_min_binary(&self) -> Option<IdxSize> {
+        if self.is_empty() || self.null_count() == self.len() {
+            return None;
+        }
+
+        match self.is_sorted_flag() {
+            IsSorted::Ascending => self.first_non_null().map(|i| i as IdxSize),
+            IsSorted::Descending => self.last_non_null().map(|i| i as IdxSize),
+            IsSorted::Not => {
+                let mut best_idx: Option<IdxSize> = None;
+                let mut best_val: Option<&[u8]> = None;
+
+                let mut offset: IdxSize = 0;
+
+                for arr in self.downcast_iter() {
+                    for (i, opt_v) in arr.iter().enumerate() {
+                        let Some(v) = opt_v else { continue };
+                        let idx = offset + i as IdxSize;
+
+                        match best_val {
+                            None => {
+                                best_val = Some(v);
+                                best_idx = Some(idx);
+                            },
+                            Some(cur) => {
+                                if v < cur {
+                                    best_val = Some(v);
+                                    best_idx = Some(idx);
+                                }
+                            },
+                        }
+                    }
+
+                    offset += arr.len() as IdxSize;
+                }
+
+                best_idx
+            },
+        }
+    }
+
+    pub fn arg_max_binary(&self) -> Option<IdxSize> {
+        if self.is_empty() || self.null_count() == self.len() {
+            return None;
+        }
+
+        match self.is_sorted_flag() {
+            IsSorted::Ascending => self.last_non_null().map(|i| i as IdxSize),
+            IsSorted::Descending => self.first_non_null().map(|i| i as IdxSize),
+
+            IsSorted::Not => {
+                let mut best: Option<(IdxSize, &[u8])> = None;
+                let mut offset: IdxSize = 0;
+
+                for arr in self.downcast_iter() {
+                    // `arr.iter()` yields Option<&[u8]> for binary arrays.
+                    for (i, opt_v) in arr.iter().enumerate() {
+                        let Some(v) = opt_v else { continue };
+                        let idx = offset + i as IdxSize;
+
+                        best = match best {
+                            None => Some((idx, v)),
+                            Some((best_idx, best_v)) => {
+                                // Keep first occurrence on ties (strict >).
+                                if v > best_v {
+                                    Some((idx, v))
+                                } else {
+                                    Some((best_idx, best_v))
+                                }
+                            },
+                        };
+                    }
+
+                    offset += arr.len() as IdxSize;
+                }
+
+                best.map(|(idx, _)| idx)
+            },
+        }
+    }
 }
 
 impl ChunkAggSeries for BinaryChunked {

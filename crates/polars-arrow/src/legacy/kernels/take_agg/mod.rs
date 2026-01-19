@@ -123,6 +123,47 @@ pub unsafe fn take_agg_bin_iter_unchecked<
     }
 }
 
+/// # Safety
+/// caller must ensure iterators indexes are in bounds
+#[inline]
+pub unsafe fn take_agg_bin_iter_unchecked_arg<
+    'a,
+    I: IntoIterator<Item = usize>,
+    F: Fn((usize, &'a [u8]), (usize, &'a [u8])) -> (usize, &'a [u8]),
+>(
+    arr: &'a BinaryViewArray,
+    indices: I,
+    f: F,
+    len: IdxSize,
+) -> Option<IdxSize> {
+    let mut null_count = 0 as IdxSize;
+    let validity = arr.validity().unwrap();
+
+    let out = indices
+        .into_iter()
+        .map(|idx| {
+            if validity.get_bit_unchecked(idx) {
+                Some((idx, arr.value_unchecked(idx)))
+            } else {
+                None
+            }
+        })
+        .reduce(|acc, opt_val| match (acc, opt_val) {
+            (Some(acc), Some(cur)) => Some(f(acc, cur)),
+            (_, None) => {
+                null_count += 1;
+                acc
+            },
+            (None, Some(cur)) => Some(cur),
+        });
+
+    if null_count == len {
+        None
+    } else {
+        out.flatten().map(|(idx, _)| idx as IdxSize)
+    }
+}
+
 /// Take kernel for single chunk and an iterator as index.
 /// # Safety
 /// caller must ensure iterators indexes are in bounds
@@ -140,4 +181,23 @@ pub unsafe fn take_agg_bin_iter_unchecked_no_null<
         .into_iter()
         .map(|idx| arr.value_unchecked(idx))
         .reduce(|acc, str_val| f(acc, str_val))
+}
+
+/// # Safety
+/// caller must ensure iterators indexes are in bounds
+#[inline]
+pub unsafe fn take_agg_bin_iter_unchecked_no_null_arg<
+    'a,
+    I: IntoIterator<Item = usize>,
+    F: Fn((usize, &'a [u8]), (usize, &'a [u8])) -> (usize, &'a [u8]),
+>(
+    arr: &'a BinaryViewArray,
+    indices: I,
+    f: F,
+) -> Option<IdxSize> {
+    indices
+        .into_iter()
+        .map(|idx| (idx, arr.value_unchecked(idx)))
+        .reduce(f)
+        .map(|(idx, _)| idx as IdxSize)
 }
