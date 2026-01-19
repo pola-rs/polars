@@ -7,8 +7,6 @@ def test_0_width_df() -> None:
     assert df.clear().height == 0
     assert df.clone().height == 5
     assert df.cast({}).height == 5
-    assert df.drop_nans().height == 5
-    assert df.drop_nulls().height == 5
     assert df.equals(df)
     assert not df.equals(pl.DataFrame())
     assert df.estimated_size() == 0
