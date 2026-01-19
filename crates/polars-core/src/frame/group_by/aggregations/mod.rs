@@ -790,7 +790,7 @@ where
                         debug_assert!(len <= self.len() as IdxSize);
                         match len {
                             0 => None,
-                            1 => Some((first + len) as IdxSize),
+                            1 => Some(0 as IdxSize),
                             _ => {
                                 let group_ca = _slice_from_offsets(self, first, len);
                                 let pos_in_group: Option<usize> = arg_max_numeric(&group_ca);
