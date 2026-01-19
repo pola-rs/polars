@@ -33,7 +33,7 @@ def test_scan_nonexistent_cloud_path_17444(format: str) -> None:
         # NDJSON does not have a `retries` parameter yet - so use the default
         result = scan_function(path_str)
     else:
-        result = scan_function(path_str, retries=0)
+        result = scan_function(path_str, storage_options={"max_retries": 0})
     assert isinstance(result, pl.LazyFrame)
 
     # Upon collection, it should fail
@@ -131,6 +131,16 @@ def test_storage_options_retries(
 
     capture = capfd.readouterr().err
     assert "max_retries: 7" in capture
+
+    with contextlib.suppress(OSError):
+        function(storage_options={"max_retries": 13})
+    capture = capfd.readouterr().err
+    assert "max_retries: 13" in capture
+
+    with pytest.raises(
+        ValueError, match=r"invalid value for 'max_retries': '1' \(expected int\)"
+    ):
+        function(storage_options={"max_retries": "1"})
 
     capfd.readouterr()
     with warnings.catch_warnings():

@@ -27,55 +27,59 @@ impl OptPyCloudOptions<'_> {
         cloud_scheme: Option<CloudScheme>,
         credential_provider: Option<Py<PyAny>>,
     ) -> PyResult<Option<CloudOptions>> {
-        if self.0.is_none() {
+        if self.0.is_none() && credential_provider.is_none() {
             return Ok(None);
         }
 
         let py = self.0.py();
 
-        let storage_options_dict: Bound<'_, PyDict> = self.0.extract()?;
-        let mut storage_options: Vec<(PyBackedStr, String)> = Vec::with_capacity(
-            storage_options_dict
-                .call_method0(intern!(py, "__len__"))?
-                .extract()?,
-        );
-
+        let mut storage_options: Vec<(PyBackedStr, String)> = vec![];
         let mut max_retries: usize = 2;
         let mut file_cache_ttl: u64 = 0;
 
-        for v in storage_options_dict
-            .call_method0(intern!(py, "items"))?
-            .try_iter()?
-        {
-            let (key, value): (PyBackedStr, Bound<'_, PyAny>) = v?.extract()?;
+        let storage_options_dict: Option<Bound<'_, PyDict>> = self.0.extract()?;
 
-            macro_rules! expected_type {
-                ($key_name:expr, $type_name:expr) => {{
-                    |_| {
-                        let key_name = $key_name;
-                        let type_name = $type_name;
-                        PyValueError::new_err(format!(
-                            "invalid value for '{key_name}': '{value}': (expected {type_name})"
-                        ))
-                    }
-                }};
-            }
+        if let Some(storage_options_dict) = storage_options_dict {
+            storage_options.reserve(
+                storage_options_dict
+                    .call_method0(intern!(py, "__len__"))?
+                    .extract()?,
+            );
 
-            match &*key {
-                "max_retries" => {
-                    max_retries = value
-                        .extract()
-                        .map_err(expected_type!("max_retries", "int"))?;
-                },
-                "file_cache_ttl" => {
-                    file_cache_ttl = value
-                        .extract()
-                        .map_err(expected_type!("file_cache_ttl", "int"))?;
-                },
-                _ => {
-                    let value: String = value.extract().map_err(expected_type!(&key, "str"))?;
-                    storage_options.push((key, value))
-                },
+            for v in storage_options_dict
+                .call_method0(intern!(py, "items"))?
+                .try_iter()?
+            {
+                let (key, value): (PyBackedStr, Bound<'_, PyAny>) = v?.extract()?;
+
+                macro_rules! expected_type {
+                    ($key_name:expr, $type_name:expr) => {{
+                        |_| {
+                            let key_name = $key_name;
+                            let type_name = $type_name;
+                            PyValueError::new_err(format!(
+                                "invalid value for '{key_name}': '{value}' (expected {type_name})"
+                            ))
+                        }
+                    }};
+                }
+
+                match &*key {
+                    "max_retries" => {
+                        max_retries = value
+                            .extract()
+                            .map_err(expected_type!("max_retries", "int"))?;
+                    },
+                    "file_cache_ttl" => {
+                        file_cache_ttl = value
+                            .extract()
+                            .map_err(expected_type!("file_cache_ttl", "int"))?;
+                    },
+                    _ => {
+                        let value: String = value.extract().map_err(expected_type!(&key, "str"))?;
+                        storage_options.push((key, value))
+                    },
+                }
             }
         }
 
