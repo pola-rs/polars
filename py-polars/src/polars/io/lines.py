@@ -231,9 +231,7 @@ def scan_lines(
             pre_slice=(0, n_rows) if n_rows is not None else None,
             include_file_paths=include_file_paths,
             glob=glob,
-            storage_options=(
-                list(storage_options.items()) if storage_options is not None else None
-            ),
+            storage_options=storage_options,
             credential_provider=credential_provider_builder,
         ),
         name=name,

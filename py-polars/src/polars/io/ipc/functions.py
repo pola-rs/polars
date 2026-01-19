@@ -518,9 +518,7 @@ def scan_ipc(
             try_parse_hive_dates=try_parse_hive_dates,
             rechunk=rechunk,
             cache=cache,
-            storage_options=(
-                list(storage_options.items()) if storage_options is not None else None
-            ),
+            storage_options=storage_options,
             credential_provider=credential_provider_builder,
         ),
     )

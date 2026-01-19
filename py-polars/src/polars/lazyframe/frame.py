@@ -2917,9 +2917,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             mkdir=mkdir,
             maintain_order=maintain_order,
             sync_on_close=sync_on_close,
-            storage_options=(
-                list(storage_options.items()) if storage_options is not None else None
-            ),
+            storage_options=storage_options,
             credential_provider=credential_provider_builder,
         )
 
@@ -3466,9 +3464,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             mkdir=mkdir,
             maintain_order=maintain_order,
             sync_on_close=sync_on_close,
-            storage_options=(
-                list(storage_options.items()) if storage_options is not None else None
-            ),
+            storage_options=storage_options,
             credential_provider=credential_provider_builder,
         )
 
@@ -3989,9 +3985,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             mkdir=mkdir,
             maintain_order=maintain_order,
             sync_on_close=sync_on_close,
-            storage_options=(
-                list(storage_options.items()) if storage_options is not None else None
-            ),
+            storage_options=storage_options,
             credential_provider=credential_provider_builder,
         )
 
