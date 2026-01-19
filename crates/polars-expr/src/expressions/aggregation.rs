@@ -9,7 +9,6 @@ use polars_core::utils::{_split_offsets, NoNull};
 use polars_ops::prelude::ArgAgg;
 #[cfg(feature = "propagate_nans")]
 use polars_ops::prelude::nan_propagating_aggregate;
-use polars_ops::series::ArgAgg;
 use rayon::prelude::*;
 
 use super::*;

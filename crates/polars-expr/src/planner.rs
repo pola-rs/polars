@@ -391,15 +391,39 @@ fn create_physical_expr_inner(
                     return Ok(Arc::new(AggQuantileExpr::new(input, quantile, interpol)));
                 },
                 IRAggExpr::MinBy { input, by } => {
-                    let input = create_physical_expr_inner(input, expr_arena, schema, state)?;
-                    let by = create_physical_expr_inner(by, expr_arena, schema, state)?;
-                    return Ok(Arc::new(AggMinMaxByExpr::new_min_by(input, by)));
+                    let arg_min_aexpr = AExpr::Function {
+                        input: vec![ExprIR::from_node(by, expr_arena)],
+                        function: IRFunctionExpr::ArgMin,
+                        options: FunctionOptions::aggregation(),
+                    };
+                    let arg_min = expr_arena.add(arg_min_aexpr);
+                    let gather_aexpr = AExpr::Gather {
+                        expr: input,
+                        idx: arg_min,
+                        returns_scalar: true,
+                        null_on_oob: false,
+                    };
+                    let gather = expr_arena.add(gather_aexpr);
+
+                    return create_physical_expr_inner(gather, expr_arena, schema, state);
                 },
 
                 IRAggExpr::MaxBy { input, by } => {
-                    let input = create_physical_expr_inner(input, expr_arena, schema, state)?;
-                    let by = create_physical_expr_inner(by, expr_arena, schema, state)?;
-                    return Ok(Arc::new(AggMinMaxByExpr::new_max_by(input, by)));
+                    let arg_min_aexpr = AExpr::Function {
+                        input: vec![ExprIR::from_node(by, expr_arena)],
+                        function: IRFunctionExpr::ArgMax,
+                        options: FunctionOptions::aggregation(),
+                    };
+                    let arg_min = expr_arena.add(arg_min_aexpr);
+                    let gather_aexpr = AExpr::Gather {
+                        expr: input,
+                        idx: arg_min,
+                        returns_scalar: true,
+                        null_on_oob: false,
+                    };
+                    let gather = expr_arena.add(gather_aexpr);
+
+                    return create_physical_expr_inner(gather, expr_arena, schema, state);
                 },
                 _ => {},
             }
