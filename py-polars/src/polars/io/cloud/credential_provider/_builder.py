@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 
 
 # `storage_options` keys that are ignored when auto-initializing a credential provider.
-AUTOINIT_IGNORED_KEY: Final[frozenset[str]] = frozenset(
+AUTOINIT_IGNORED_KEYS: Final[frozenset[str]] = frozenset(
     [
         # Object store client options
         # https://docs.rs/object_store/latest/object_store/enum.ClientConfigKey.html
@@ -394,7 +394,7 @@ def _init_credential_provider_builder(
                         tenant_id = v
                     elif k in {"azure_storage_account_name", "account_name"}:
                         storage_account = v
-                    elif k in AUTOINIT_IGNORED_KEY:
+                    elif k in AUTOINIT_IGNORED_KEYS:
                         continue
                     else:
                         # We assume some sort of access key was given, so we
@@ -445,7 +445,7 @@ def _init_credential_provider_builder(
                         "endpoint_url",
                     }:
                         has_endpoint_url = True
-                    elif k in AUTOINIT_IGNORED_KEY:
+                    elif k in AUTOINIT_IGNORED_KEYS:
                         continue
                     else:
                         # We assume this is some sort of access key
@@ -486,7 +486,7 @@ def _init_credential_provider_builder(
                     # https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html
                     if k in {"token", "bearer_token"}:
                         token = v
-                    elif k in AUTOINIT_IGNORED_KEY:
+                    elif k in AUTOINIT_IGNORED_KEYS:
                         continue
                     else:
                         # We assume some sort of access key was given, so we

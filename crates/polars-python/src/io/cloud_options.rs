@@ -9,7 +9,7 @@ use pyo3::types::PyDict;
 
 use crate::utils::to_py_err;
 
-/// Interface to `class ScanOptions` on the Python side
+/// Interface to `StorageOptionsDict | None` on the Python side
 pub struct OptPyCloudOptions<'py>(Bound<'py, PyAny>);
 
 impl<'a, 'py> FromPyObject<'a, 'py> for OptPyCloudOptions<'py> {
