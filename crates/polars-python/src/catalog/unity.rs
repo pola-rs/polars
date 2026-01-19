@@ -12,7 +12,7 @@ use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyAnyMethods, PyDict, PyList, PyNone, PyTuple};
 use pyo3::{Bound, IntoPyObject, Py, PyAny, PyResult, Python, pyclass, pymethods};
 
-use crate::io::cloud_options::PyStorageOptions;
+use crate::io::cloud_options::OptPyCloudOptions;
 use crate::lazyframe::PyLazyFrame;
 use crate::prelude::Wrap;
 use crate::utils::{EnterPolarsExt, to_py_err};
@@ -239,7 +239,7 @@ impl PyCatalogClient {
         catalog_name: &str,
         namespace: &str,
         table_name: &str,
-        cloud_options: PyStorageOptions,
+        cloud_options: OptPyCloudOptions,
         credential_provider: Option<Py<PyAny>>,
     ) -> PyResult<PyLazyFrame> {
         let table_info = py.enter_polars(|| {
@@ -256,16 +256,14 @@ impl PyCatalogClient {
             ));
         };
 
-        let cloud_options = cloud_options.extract_cloud_options(
+        let cloud_options = cloud_options.extract_opt_cloud_options(
             CloudScheme::from_path(storage_location),
             credential_provider,
         )?;
 
-        Ok(
-            LazyFrame::scan_catalog_table(&table_info, Some(cloud_options))
-                .map_err(to_py_err)?
-                .into(),
-        )
+        Ok(LazyFrame::scan_catalog_table(&table_info, cloud_options)
+            .map_err(to_py_err)?
+            .into())
     }
 
     #[pyo3(signature = (catalog_name, comment, storage_root))]

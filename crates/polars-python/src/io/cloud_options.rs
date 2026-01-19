@@ -1,4 +1,5 @@
 use polars::prelude::CloudScheme;
+use polars_core::config::verbose_print_sensitive;
 use polars_io::cloud::CloudOptions;
 use polars_io::cloud::credential_provider::PlCredentialProvider;
 use pyo3::exceptions::PyValueError;
@@ -10,9 +11,9 @@ use pyo3::types::PyDict;
 use crate::utils::to_py_err;
 
 /// Interface to `class ScanOptions` on the Python side
-pub struct PyStorageOptions<'py>(Bound<'py, PyAny>);
+pub struct OptPyCloudOptions<'py>(Bound<'py, PyAny>);
 
-impl<'a, 'py> FromPyObject<'a, 'py> for PyStorageOptions<'py> {
+impl<'a, 'py> FromPyObject<'a, 'py> for OptPyCloudOptions<'py> {
     type Error = PyErr;
 
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
@@ -20,14 +21,14 @@ impl<'a, 'py> FromPyObject<'a, 'py> for PyStorageOptions<'py> {
     }
 }
 
-impl PyStorageOptions<'_> {
-    pub fn extract_cloud_options(
+impl OptPyCloudOptions<'_> {
+    pub fn extract_opt_cloud_options(
         &self,
         cloud_scheme: Option<CloudScheme>,
         credential_provider: Option<Py<PyAny>>,
-    ) -> PyResult<CloudOptions> {
+    ) -> PyResult<Option<CloudOptions>> {
         if self.0.is_none() {
-            return Ok(CloudOptions::default());
+            return Ok(None);
         }
 
         let py = self.0.py();
@@ -40,6 +41,7 @@ impl PyStorageOptions<'_> {
         );
 
         let mut max_retries: usize = 2;
+        let mut file_cache_ttl: u64 = 0;
 
         for v in storage_options_dict
             .call_method0(intern!(py, "items"))?
@@ -65,6 +67,11 @@ impl PyStorageOptions<'_> {
                         .extract()
                         .map_err(expected_type!("max_retries", "int"))?;
                 },
+                "file_cache_ttl" => {
+                    file_cache_ttl = value
+                        .extract()
+                        .map_err(expected_type!("file_cache_ttl", "int"))?;
+                },
                 _ => {
                     let value: String = value.extract().map_err(expected_type!(&key, "str"))?;
                     storage_options.push((key, value))
@@ -72,13 +79,19 @@ impl PyStorageOptions<'_> {
             }
         }
 
-        let cloud_options = CloudOptions::from_untyped_config(cloud_scheme, storage_options)
+        let mut cloud_options = CloudOptions::from_untyped_config(cloud_scheme, storage_options)
             .map_err(to_py_err)?
             .with_max_retries(max_retries)
             .with_credential_provider(
                 credential_provider.map(PlCredentialProvider::from_python_builder),
             );
 
-        Ok(cloud_options)
+        if file_cache_ttl > 0 {
+            cloud_options.file_cache_ttl = file_cache_ttl;
+        }
+
+        verbose_print_sensitive(|| format!("extracted cloud_options: {:?}", &cloud_options));
+
+        Ok(Some(cloud_options))
     }
 }

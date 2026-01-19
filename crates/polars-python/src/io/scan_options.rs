@@ -14,7 +14,7 @@ use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 
 use crate::PyDataFrame;
-use crate::io::cloud_options::PyStorageOptions;
+use crate::io::cloud_options::OptPyCloudOptions;
 use crate::prelude::Wrap;
 
 /// Interface to `class ScanOptions` on the Python side
@@ -62,7 +62,7 @@ impl PyScanOptions<'_> {
             try_parse_hive_dates: bool,
             rechunk: bool,
             cache: bool,
-            storage_options: Option<PyStorageOptions<'a>>,
+            storage_options: OptPyCloudOptions<'a>,
             credential_provider: Option<Py<PyAny>>,
             deletion_files: Option<Wrap<DeletionFilesList>>,
             table_statistics: Option<Wrap<TableStatistics>>,
@@ -92,9 +92,8 @@ impl PyScanOptions<'_> {
             row_count,
         } = self.0.extract()?;
 
-        let cloud_options = storage_options
-            .map(|x| x.extract_cloud_options(cloud_scheme, credential_provider))
-            .transpose()?;
+        let cloud_options =
+            storage_options.extract_opt_cloud_options(cloud_scheme, credential_provider)?;
 
         let hive_schema = hive_schema.map(|s| Arc::new(s.0));
 
