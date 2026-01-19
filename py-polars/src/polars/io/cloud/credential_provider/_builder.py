@@ -9,7 +9,7 @@ import polars._utils.logging
 from polars._utils.cache import LRUCache
 from polars._utils.logging import eprint, verbose
 from polars._utils.unstable import issue_unstable_warning
-from polars.io.cloud._utils import NoPickleOption
+from polars.io.cloud._utils import POLARS_STORAGE_CONFIG_KEYS, NoPickleOption
 from polars.io.cloud.credential_provider._providers import (
     CachedCredentialProvider,
     CachingCredentialProvider,
@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from typing import TypeAlias
 
     from polars._typing import StorageOptionsDict
+
 
 # `storage_options` keys that are ignored when auto-initializing a credential provider.
 AUTOINIT_IGNORED_KEY: Final[frozenset[str]] = frozenset(
@@ -49,9 +50,7 @@ AUTOINIT_IGNORED_KEY: Final[frozenset[str]] = frozenset(
         "proxy_excludes",
         "timeout",
         "user_agent",
-        # Polars custom keys
-        "max_retries",
-        "file_cache_ttl",
+        *POLARS_STORAGE_CONFIG_KEYS,
         # Azure
         "azure_use_azure_cli",
         "use_azure_cli",

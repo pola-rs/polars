@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 from polars._dependencies import _DELTALAKE_AVAILABLE, deltalake
 from polars.datatypes import Null, Time
 from polars.datatypes.convert import unpack_dtypes
-from polars.io.cloud._utils import _get_path_scheme
+from polars.io.cloud._utils import _get_path_scheme, POLARS_STORAGE_CONFIG_KEYS
 from polars.io.parquet import scan_parquet
 from polars.io.pyarrow_dataset.functions import scan_pyarrow_dataset
 from polars.io.scan_options.cast_options import ScanCastOptions
@@ -445,6 +445,14 @@ def _get_delta_lake_table(
     `here <https://delta-io.github.io/delta-rs/usage/installation/>`_.
     """
     _check_if_delta_available()
+
+    if storage_options is not None:
+        # Don't pass these to delta as it errors on non-string type values.
+        storage_options = {
+            k: v
+            for k, v in storage_options.items()
+            if k not in POLARS_STORAGE_CONFIG_KEYS
+        }
 
     if isinstance(table_path, deltalake.DeltaTable):
         if any(

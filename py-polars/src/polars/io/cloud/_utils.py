@@ -1,10 +1,18 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Generic, TypeVar
+from typing import Any, Final, Generic, TypeVar
 
 from polars._utils.various import is_path_or_str_sequence
 from polars.io.partition import PartitionBy
+
+# Custom polars config keys
+POLARS_STORAGE_CONFIG_KEYS: Final[frozenset[str]] = frozenset(
+    [
+        "max_retries",
+        "file_cache_ttl",
+    ]
+)
 
 T = TypeVar("T")
 
