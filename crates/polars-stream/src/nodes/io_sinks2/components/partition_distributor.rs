@@ -3,15 +3,13 @@ use std::sync::Arc;
 
 use polars_core::prelude::{InitHashMaps, PlHashSet, PlIndexMap};
 use polars_error::PolarsResult;
-use polars_plan::dsl::sink2::FileProviderArgs;
+use polars_plan::dsl::file_provider::FileProviderArgs;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::async_executor::{self, TaskPriority};
-use crate::nodes::io_sinks2::components::arg_sort::ArgSortBy;
 use crate::nodes::io_sinks2::components::error_capture::{ErrorCapture, ErrorHandle};
 use crate::nodes::io_sinks2::components::file_sink::FileSinkPermit;
-use crate::nodes::io_sinks2::components::par_utils::rechunk_par;
 use crate::nodes::io_sinks2::components::partition_key::PartitionKey;
 use crate::nodes::io_sinks2::components::partition_morsel_sender::PartitionMorselSender;
 use crate::nodes::io_sinks2::components::partition_sink_starter::PartitionSinkStarter;
@@ -30,7 +28,6 @@ pub struct PartitionDistributor {
     pub max_open_sinks: usize,
     pub open_sinks_semaphore: Arc<tokio::sync::Semaphore>,
     pub partition_sink_starter: PartitionSinkStarter,
-    pub per_partition_sort: Option<ArgSortBy>,
     pub no_partition_keys: bool,
     pub verbose: bool,
 }
@@ -46,7 +43,6 @@ impl PartitionDistributor {
             max_open_sinks,
             open_sinks_semaphore,
             partition_sink_starter,
-            per_partition_sort,
             no_partition_keys,
             verbose,
         } = self;
@@ -116,7 +112,7 @@ impl PartitionDistributor {
                     .takeable_rows_provider
                     .num_rows_takeable_from(buffered_size, false);
 
-                if per_partition_sort.is_none() && num_ready_to_send_rows.is_some() {
+                if num_ready_to_send_rows.is_some() {
                     if partition_data.file_sink_task_data.is_none()
                         && let Ok(file_permit) = open_sinks_semaphore.clone().try_acquire_owned()
                     {
@@ -200,7 +196,7 @@ impl PartitionDistributor {
                 };
 
                 partition_morsel_sender
-                    .send_morsels(partition, false, None)
+                    .send_morsels(partition, false)
                     .await?;
             }
 
@@ -208,13 +204,7 @@ impl PartitionDistributor {
         }
 
         if verbose {
-            let with = if per_partition_sort.is_some() {
-                " with sort"
-            } else {
-                ""
-            };
-
-            eprintln!("{node_name}: Begin finalize{with}");
+            eprintln!("{node_name}: Begin finalize");
         }
 
         assert!(ready_to_send_partitions.is_empty());
@@ -274,26 +264,8 @@ impl PartitionDistributor {
             }
 
             if residual_size.num_rows > 0 {
-                let opt_morsel_stream = if let Some(per_partition_sort) = per_partition_sort.clone()
-                {
-                    // Should not have written any rows above if there was a sort.
-                    assert_eq!(partition.sinked_size, RowCountAndSize::default());
-                    assert_eq!(partition.buffered_size(), partition.total_size);
-
-                    let mut df = std::mem::take(&mut partition.buffered_rows);
-                    rechunk_par(unsafe { df.columns_mut_retain_schema() }).await;
-                    let df = Arc::new(df);
-
-                    #[expect(unused)]
-                    let gather_indices = per_partition_sort.arg_sort_by_par(&df).await?;
-
-                    todo!()
-                } else {
-                    None
-                };
-
                 partition_morsel_sender
-                    .send_morsels(partition, true, opt_morsel_stream)
+                    .send_morsels(partition, true)
                     .await?;
 
                 assert_eq!(

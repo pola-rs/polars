@@ -883,6 +883,14 @@ class PyLazyFrame:
         file_cache_ttl: int | None,
     ) -> PyLazyFrame: ...
     @staticmethod
+    def new_from_scan_lines(
+        sources: Any,
+        *,
+        name: str,
+        scan_options: ScanOptions,
+        file_cache_ttl: int | None,
+    ) -> PyLazyFrame: ...
+    @staticmethod
     def new_from_dataset_object(dataset_object: Any) -> PyLazyFrame: ...
     @staticmethod
     def scan_from_python_function_arrow_schema(

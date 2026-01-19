@@ -37,6 +37,7 @@ tokio = { workspace = true, features = ["sync"] }
 
 arrow = { workspace = true }
 memchr = { workspace = true }
+polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["partition_by"] }
 polars-error = { workspace = true }

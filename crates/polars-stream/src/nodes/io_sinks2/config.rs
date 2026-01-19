@@ -1,13 +1,10 @@
 use std::num::NonZeroUsize;
-use std::sync::Arc;
 
-use polars_core::prelude::SortMultipleOptions;
 use polars_core::schema::SchemaRef;
-use polars_plan::dsl::sink2::FileProviderType;
+use polars_plan::dsl::file_provider::FileProviderType;
 use polars_plan::dsl::{FileWriteFormat, SinkTarget, UnifiedSinkArgs};
 use polars_utils::pl_path::{CloudScheme, PlRefPath};
 
-use crate::expression::StreamExpr;
 use crate::nodes::io_sinks2::components::hstack_columns::HStackColumns;
 use crate::nodes::io_sinks2::components::partitioner::Partitioner;
 use crate::nodes::io_sinks2::components::size::NonZeroRowCountAndSize;
@@ -100,5 +97,4 @@ pub struct PartitionedTarget {
     pub include_keys_in_file: bool,
     pub file_schema: SchemaRef,
     pub file_size_limit: Option<NonZeroRowCountAndSize>,
-    pub per_partition_sort: Option<(Arc<[StreamExpr]>, SortMultipleOptions)>,
 }

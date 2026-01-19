@@ -2,12 +2,11 @@ use std::borrow::Cow;
 
 use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::BitmapBuilder;
-use arrow::buffer::Buffer;
-use arrow::storage::SharedStorage;
 use arrow::types::NativeType;
 use num_traits::AsPrimitive;
 use numpy::{Element, PyArray1, PyArrayMethods, PyUntypedArrayMethods};
 use polars::prelude::*;
+use polars_buffer::{Buffer, SharedStorage};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 

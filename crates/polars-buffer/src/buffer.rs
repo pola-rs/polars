@@ -4,8 +4,6 @@ use std::ops::Deref;
 use bytemuck::{Pod, Zeroable};
 use either::Either;
 
-use super::IntoIter;
-use crate::array::{ArrayAccessor, Splitable};
 use crate::storage::SharedStorage;
 
 /// [`Buffer`] is a contiguous memory region that can be shared across
@@ -20,7 +18,7 @@ use crate::storage::SharedStorage;
 ///
 /// # Examples
 /// ```
-/// use polars_arrow::buffer::Buffer;
+/// use polars_buffer::Buffer;
 ///
 /// let mut buffer: Buffer<u32> = vec![1, 2, 3].into();
 /// assert_eq!(buffer.as_ref(), [1, 2, 3].as_ref());
@@ -145,25 +143,13 @@ impl<T> Buffer<T> {
         }
     }
 
-    /// Returns the byte slice stored in this buffer
+    /// Returns the byte slice stored in this buffer.
     #[inline]
     pub fn as_slice(&self) -> &[T] {
         // SAFETY:
         // invariant of this struct `offset + length <= data.len()`
         debug_assert!(self.offset() + self.length <= self.storage.len());
         unsafe { std::slice::from_raw_parts(self.ptr, self.length) }
-    }
-
-    /// Returns the byte slice stored in this buffer
-    ///
-    /// # Safety
-    /// `index` must be smaller than `len`
-    #[inline]
-    pub(super) unsafe fn get_unchecked(&self, index: usize) -> &T {
-        // SAFETY:
-        // invariant of this function
-        debug_assert!(index < self.length);
-        unsafe { &*self.ptr.add(index) }
     }
 
     /// Returns a new [`Buffer`] that is a slice of this buffer starting at `offset`.
@@ -219,7 +205,7 @@ impl<T> Buffer<T> {
 
     /// Returns a pointer to the start of the storage underlying this buffer.
     #[inline]
-    pub(crate) fn storage_ptr(&self) -> *const T {
+    pub fn storage_ptr(&self) -> *const T {
         self.storage.as_ptr()
     }
 
@@ -304,7 +290,7 @@ impl<T: Pod> Buffer<T> {
 }
 
 impl<T: Clone> Buffer<T> {
-    pub fn make_mut(self) -> Vec<T> {
+    pub fn to_vec(self) -> Vec<T> {
         match self.into_mut() {
             Either::Right(v) => v,
             Either::Left(same) => same.as_slice().to_vec(),
@@ -348,52 +334,6 @@ impl<T> FromIterator<T> for Buffer<T> {
     }
 }
 
-impl<T: Copy> IntoIterator for Buffer<T> {
-    type Item = T;
-
-    type IntoIter = IntoIter<T>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        IntoIter::new(self)
-    }
-}
-
-unsafe impl<'a, T: 'a> ArrayAccessor<'a> for Buffer<T> {
-    type Item = &'a T;
-
-    unsafe fn value_unchecked(&'a self, index: usize) -> Self::Item {
-        unsafe { &*self.ptr.add(index) }
-    }
-
-    fn len(&self) -> usize {
-        Buffer::len(self)
-    }
-}
-
-impl<T> Splitable for Buffer<T> {
-    #[inline(always)]
-    fn check_bound(&self, offset: usize) -> bool {
-        offset <= self.len()
-    }
-
-    unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
-        let storage = &self.storage;
-
-        (
-            Self {
-                storage: storage.clone(),
-                ptr: self.ptr,
-                length: offset,
-            },
-            Self {
-                storage: storage.clone(),
-                ptr: self.ptr.wrapping_add(offset),
-                length: self.length - offset,
-            },
-        )
-    }
-}
-
 #[cfg(feature = "serde")]
 mod _serde_impl {
     use serde::{Deserialize, Serialize};
@@ -425,17 +365,77 @@ mod _serde_impl {
     }
 }
 
-#[cfg(feature = "dsl-schema")]
-impl<T: schemars::JsonSchema> schemars::JsonSchema for Buffer<T> {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        <[T] as schemars::JsonSchema>::schema_name()
-    }
+impl<T: Copy> IntoIterator for Buffer<T> {
+    type Item = T;
 
-    fn schema_id() -> std::borrow::Cow<'static, str> {
-        <[T] as schemars::JsonSchema>::schema_id()
-    }
+    type IntoIter = IntoIter<T>;
 
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        <[T] as schemars::JsonSchema>::json_schema(generator)
+    fn into_iter(self) -> Self::IntoIter {
+        IntoIter::new(self)
     }
 }
+
+/// This crates' equivalent of [`std::vec::IntoIter`] for [`Buffer`].
+#[derive(Debug, Clone)]
+pub struct IntoIter<T: Copy> {
+    values: Buffer<T>,
+    index: usize,
+    end: usize,
+}
+
+impl<T: Copy> IntoIter<T> {
+    #[inline]
+    fn new(values: Buffer<T>) -> Self {
+        let end = values.len();
+        Self {
+            values,
+            index: 0,
+            end,
+        }
+    }
+}
+
+impl<T: Copy> Iterator for IntoIter<T> {
+    type Item = T;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index == self.end {
+            return None;
+        }
+        let old = self.index;
+        self.index += 1;
+        Some(*unsafe { self.values.get_unchecked(old) })
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.end - self.index, Some(self.end - self.index))
+    }
+
+    #[inline]
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        let new_index = self.index + n;
+        if new_index > self.end {
+            self.index = self.end;
+            None
+        } else {
+            self.index = new_index;
+            self.next()
+        }
+    }
+}
+
+impl<T: Copy> DoubleEndedIterator for IntoIter<T> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.index == self.end {
+            None
+        } else {
+            self.end -= 1;
+            Some(*unsafe { self.values.get_unchecked(self.end) })
+        }
+    }
+}
+
+impl<T: Copy> ExactSizeIterator for IntoIter<T> {}

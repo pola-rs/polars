@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
-use arrow::buffer::Buffer;
+use polars_buffer::Buffer;
 use polars_core::config;
 use polars_core::error::{PolarsResult, polars_bail, to_compute_err};
 use polars_utils::pl_path::{CloudScheme, PlRefPath};
