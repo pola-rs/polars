@@ -308,8 +308,7 @@ impl ComputeNode for MergeJoinNode {
                     })
                 }));
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                    while let Some(morsel) = unmatched_recv.recv().await {
-                        let (df, seq, _st, _) = morsel.into_inner();
+                    while let Some((seq, df)) = unmatched_recv.recv().await {
                         unmatched.push((seq, df));
                     }
                     Ok(())
@@ -424,7 +423,7 @@ async fn compute_join_and_send_task(
     )>,
     mut send: PortSender,
     params: &MergeJoinParams,
-    unmatched_send: tokio::sync::mpsc::Sender<Morsel>,
+    unmatched_send: tokio::sync::mpsc::Sender<(MorselSeq, DataFrame)>,
 ) -> PolarsResult<()> {
     let mut arenas = ComputeJoinArenas::default();
     while let Ok((build, probe, seq, source_token)) = recv.recv().await {
@@ -452,7 +451,7 @@ async fn compute_join_and_send(
     params: &MergeJoinParams,
     arenas: &mut ComputeJoinArenas,
     send: &mut PortSender,
-    unmatched_send: tokio::sync::mpsc::Sender<Morsel>,
+    unmatched_send: tokio::sync::mpsc::Sender<(MorselSeq, DataFrame)>,
 ) -> PolarsResult<()> {
     let morsel_size = get_ideal_morsel_size();
     let wait_group = WaitGroup::default();
@@ -550,13 +549,13 @@ async fn compute_join_and_send(
             &params.output_schema,
         )?;
         if df_unmatched.height() > 0 {
-            let mut morsel = Morsel::new(df_unmatched, seq, source_token.clone());
-            morsel.set_consume_token(wait_group.token());
             if params.args.maintain_order == MaintainOrderJoin::None {
+                let mut morsel = Morsel::new(df_unmatched, seq, source_token.clone());
+                morsel.set_consume_token(wait_group.token());
                 if send.send(morsel).await.is_err() {
                     return Ok(());
                 }
-            } else if unmatched_send.send(morsel).await.is_err() {
+            } else if unmatched_send.send((seq, df_unmatched)).await.is_err() {
                 panic!("broken pipe");
             }
             wait_group.wait().await;
