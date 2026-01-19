@@ -292,7 +292,13 @@ impl<T> SharedStorage<T> {
     }
 
     pub fn try_as_mut_slice(&mut self) -> Option<&mut [T]> {
-        self.is_exclusive().then(|| {
+        // We don't know if what we're created from may be mutated unless we're
+        // backed by an exclusive Vec. Perhaps in the future we can add a
+        // mutability bit?
+        let inner = self.inner();
+        let may_mut = inner.ref_count.load(Ordering::Acquire) == 1
+            && matches!(inner.backing, BackingStorage::Vec { .. });
+        may_mut.then(|| {
             let inner = self.inner();
             let len = inner.length_in_bytes / size_of::<T>();
             unsafe { core::slice::from_raw_parts_mut(inner.ptr, len) }
