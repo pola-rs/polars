@@ -64,15 +64,15 @@ impl OptPyCloudOptions<'_> {
                 }
 
                 match &*key {
-                    "max_retries" => {
-                        max_retries = value
-                            .extract()
-                            .map_err(expected_type!("max_retries", "int"))?;
-                    },
                     "file_cache_ttl" => {
                         file_cache_ttl = value
                             .extract()
                             .map_err(expected_type!("file_cache_ttl", "int"))?;
+                    },
+                    "max_retries" => {
+                        max_retries = value
+                            .extract()
+                            .map_err(expected_type!("max_retries", "int"))?;
                     },
                     _ => {
                         let value: String = value.extract().map_err(expected_type!(&key, "str"))?;
