@@ -2394,7 +2394,6 @@ class PyCatalogClient:
         table_name: str,
         cloud_options: dict[str, str] | None,
         credential_provider: Any | None,
-        retries: int,
     ) -> PyLazyFrame: ...
     def create_catalog(
         self, catalog_name: str, comment: str | None, storage_root: str | None

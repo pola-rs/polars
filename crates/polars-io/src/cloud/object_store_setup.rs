@@ -199,6 +199,8 @@ impl PolarsObjectStoreBuilder {
             None
         };
 
+        verbose_print_sensitive(|| format!("Building object store: {:?}", self.options));
+
         let store = self.build_impl(false).await?;
         let store = PolarsObjectStore::new_from_inner(store, self);
 

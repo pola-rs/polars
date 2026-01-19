@@ -35,11 +35,11 @@ impl PyStorageOptions<'_> {
         let storage_options_dict: Bound<'_, PyDict> = self.0.extract()?;
         let mut storage_options: Vec<(PyBackedStr, String)> = Vec::with_capacity(
             storage_options_dict
-                .call_method0(intern!(py, "len"))?
+                .call_method0(intern!(py, "__len__"))?
                 .extract()?,
         );
 
-        let mut retries: usize = 3;
+        let mut retries: usize = 2;
 
         for v in storage_options_dict
             .call_method0(intern!(py, "items"))?

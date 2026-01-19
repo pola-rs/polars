@@ -47,6 +47,7 @@ if TYPE_CHECKING:
     )
     from polars.io.cloud import CredentialProviderFunction
     from polars.io.scan_options import ScanCastOptions
+    from polars.io.scan_options._options import StorageOptionsDict
 
 
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
@@ -67,9 +68,9 @@ def read_parquet(
     try_parse_hive_dates: bool = True,
     rechunk: bool = False,
     low_memory: bool = False,
-    storage_options: dict[str, Any] | None = None,
+    storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
-    retries: int = 2,
+    retries: int | None = None,
     use_pyarrow: bool = False,
     pyarrow_options: dict[str, Any] | None = None,
     memory_map: bool = True,
@@ -166,6 +167,9 @@ def read_parquet(
             at any point without it being considered a breaking change.
     retries
         Number of retries if accessing a cloud instance fails.
+
+        .. deprecated:: 1.37.1
+            Pass {"retries": n} via `storage_options` instead.
     use_pyarrow
         Use PyArrow instead of the Rust-native Parquet reader. The PyArrow reader is
         more stable.
@@ -221,6 +225,12 @@ def read_parquet(
         msg = "the `hive_schema` parameter of `read_parquet` is considered unstable."
         issue_unstable_warning(msg)
 
+    if retries is not None:
+        msg = "the `retries` parameter was deprecated in 1.37.1; specify 'retries' in `storage_options` instead."
+        issue_deprecation_warning(msg)
+        storage_options = storage_options or {}
+        storage_options["retries"] = retries
+
     # Dispatch to pyarrow if requested
     if use_pyarrow:
         if n_rows is not None:
@@ -274,7 +284,6 @@ def read_parquet(
         cache=False,
         storage_options=storage_options,
         credential_provider=credential_provider,
-        retries=retries,
         glob=glob,
         include_file_paths=include_file_paths,
         missing_columns=missing_columns,
@@ -431,9 +440,7 @@ def read_parquet_metadata(
 
     return _read_parquet_metadata(
         source,
-        storage_options=(
-            list(storage_options.items()) if storage_options is not None else None
-        ),
+        storage_options=storage_options,
         credential_provider=credential_provider_builder,
         retries=retries,
     )
@@ -458,9 +465,9 @@ def scan_parquet(
     rechunk: bool = False,
     low_memory: bool = False,
     cache: bool = True,
-    storage_options: dict[str, Any] | None = None,
+    storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
-    retries: int = 2,
+    retries: int | None = None,
     include_file_paths: str | None = None,
     missing_columns: Literal["insert", "raise"] = "raise",
     allow_missing_columns: bool | None = None,
@@ -579,6 +586,9 @@ def scan_parquet(
             at any point without it being considered a breaking change.
     retries
         Number of retries if accessing a cloud instance fails.
+
+        .. deprecated:: 1.37.1
+            Pass {"retries": n} via `storage_options` instead.
     include_file_paths
         Include the path of the source file(s) as a column with this name.
     missing_columns
@@ -661,6 +671,12 @@ def scan_parquet(
 
         missing_columns = "insert" if allow_missing_columns else "raise"
 
+    if retries is not None:
+        msg = "the `retries` parameter was deprecated in 1.37.1; specify 'retries' in `storage_options` instead."
+        issue_deprecation_warning(msg)
+        storage_options = storage_options or {}
+        storage_options["retries"] = retries
+
     sources = get_sources(source)
 
     credential_provider_builder = _init_credential_provider_builder(
@@ -697,11 +713,8 @@ def scan_parquet(
             try_parse_hive_dates=try_parse_hive_dates,
             rechunk=rechunk,
             cache=cache,
-            storage_options=(
-                list(storage_options.items()) if storage_options is not None else None
-            ),
+            storage_options=storage_options,
             credential_provider=credential_provider_builder,
-            retries=retries,
             column_mapping=_column_mapping,
             default_values=_default_values,
             deletion_files=_deletion_files,

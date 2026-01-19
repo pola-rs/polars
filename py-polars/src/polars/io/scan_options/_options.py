@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal
 
+from typing_extensions import TypedDict
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
@@ -16,6 +18,10 @@ if TYPE_CHECKING:
     from polars.io.scan_options.cast_options import ScanCastOptions
 
 from dataclasses import dataclass
+
+
+class StorageOptionsDict(TypedDict, extra_items=str):
+    retries: int
 
 
 @dataclass(kw_only=True)
@@ -48,9 +54,8 @@ class ScanOptions:
     cache: bool = True
 
     # Cloud
-    storage_options: list[tuple[str, str]] | None = None
+    storage_options: StorageOptionsDict | None = None
     credential_provider: CredentialProviderBuilder | None = None
-    retries: int = 2
 
     column_mapping: ColumnMapping | None = None
     default_values: DefaultFieldValues | None = None

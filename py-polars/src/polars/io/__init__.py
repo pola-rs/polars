@@ -22,7 +22,7 @@ from polars.io.partition import (
 )
 from polars.io.plugins import _defer as defer
 from polars.io.pyarrow_dataset import scan_pyarrow_dataset
-from polars.io.scan_options import ScanCastOptions
+from polars.io.scan_options import ScanCastOptions, StorageOptionsDict
 from polars.io.spreadsheet import read_excel, read_ods
 
 __all__ = [
@@ -56,4 +56,5 @@ __all__ = [
     "scan_parquet",
     "scan_pyarrow_dataset",
     "ScanCastOptions",
+    "StorageOptionsDict",
 ]
