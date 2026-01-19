@@ -489,6 +489,7 @@ async fn compute_join_and_send(
     let mut build_row_offset = 0;
     let mut probe_row_offset = 0;
     let mut probe_last_matched = 0;
+    arenas.gather_probe_unmatched.clear();
     while build_row_offset < build.height() || probe_row_offset < probe.height() {
         arenas.gather_build.clear();
         arenas.gather_probe.clear();
