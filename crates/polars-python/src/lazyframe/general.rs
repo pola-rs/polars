@@ -35,7 +35,7 @@ use crate::{PyDataFrame, PyExpr, PyLazyGroupBy};
 
 fn pyobject_to_first_path_and_scan_sources(
     obj: Py<PyAny>,
-) -> PyResult<(Option<PlPath>, ScanSources)> {
+) -> PyResult<(Option<PlRefPath>, ScanSources)> {
     use crate::file::{PythonScanSourceInput, get_python_scan_source_input};
     Ok(match get_python_scan_source_input(obj, false)? {
         PythonScanSourceInput::Path(path) => (
@@ -112,7 +112,7 @@ impl PyLazyFrame {
 
         let sources = sources.0;
         let (first_path, sources) = match source {
-            None => (sources.first_path().map(|p| p.into_owned()), sources),
+            None => (sources.first_path().cloned(), sources),
             Some(source) => pyobject_to_first_path_and_scan_sources(source)?,
         };
 
@@ -120,10 +120,10 @@ impl PyLazyFrame {
 
         #[cfg(feature = "cloud")]
         if let Some(first_path) = first_path {
-            let first_path_url = first_path.to_str();
+            let first_path_url = first_path.as_str();
 
             let mut cloud_options = parse_cloud_options(
-                CloudScheme::from_uri(first_path_url),
+                CloudScheme::from_path(first_path_url),
                 cloud_options.unwrap_or_default(),
             )?;
             cloud_options = cloud_options
@@ -231,7 +231,7 @@ impl PyLazyFrame {
 
         let sources = sources.0;
         let (first_path, sources) = match source {
-            None => (sources.first_path().map(|p| p.into_owned()), sources),
+            None => (sources.first_path().cloned(), sources),
             Some(source) => pyobject_to_first_path_and_scan_sources(source)?,
         };
 
@@ -239,10 +239,10 @@ impl PyLazyFrame {
 
         #[cfg(feature = "cloud")]
         if let Some(first_path) = first_path {
-            let first_path_url = first_path.to_str();
+            let first_path_url = first_path.as_str();
 
             let mut cloud_options = parse_cloud_options(
-                CloudScheme::from_uri(first_path_url),
+                CloudScheme::from_path(first_path_url),
                 cloud_options.unwrap_or_default(),
             )?;
             if let Some(file_cache_ttl) = file_cache_ttl {
@@ -335,13 +335,10 @@ impl PyLazyFrame {
         };
 
         let sources = sources.0;
-        let first_path = sources.first_path().map(|p| p.into_owned());
+        let first_path = sources.first_path();
 
-        let unified_scan_args = scan_options.extract_unified_scan_args(
-            first_path
-                .as_ref()
-                .and_then(|p| CloudScheme::from_uri(p.to_str())),
-        )?;
+        let unified_scan_args =
+            scan_options.extract_unified_scan_args(first_path.and_then(|x| x.scheme()))?;
 
         let lf: LazyFrame = DslBuilder::scan_parquet(sources, options, unified_scan_args)
             .map_err(to_py_err)?
@@ -362,14 +359,10 @@ impl PyLazyFrame {
         let options = IpcScanOptions;
 
         let sources = sources.0;
-        let first_path = sources.first_path().map(|p| p.into_owned());
+        let first_path = sources.first_path().cloned();
 
-        let mut unified_scan_args = scan_options.extract_unified_scan_args(
-            first_path
-                .as_ref()
-                .map(|p| p.as_ref())
-                .and_then(|x| CloudScheme::from_uri(x.to_str())),
-        )?;
+        let mut unified_scan_args =
+            scan_options.extract_unified_scan_args(first_path.as_ref().and_then(|x| x.scheme()))?;
 
         if let Some(file_cache_ttl) = file_cache_ttl {
             unified_scan_args
@@ -393,14 +386,10 @@ impl PyLazyFrame {
         file_cache_ttl: Option<u64>,
     ) -> PyResult<Self> {
         let sources = sources.0;
-        let first_path = sources.first_path().map(|p| p.into_owned());
+        let first_path = sources.first_path();
 
-        let mut unified_scan_args = scan_options.extract_unified_scan_args(
-            first_path
-                .as_ref()
-                .map(|p| p.as_ref())
-                .and_then(|x| CloudScheme::from_uri(x.to_str())),
-        )?;
+        let mut unified_scan_args =
+            scan_options.extract_unified_scan_args(first_path.and_then(|x| x.scheme()))?;
 
         if let Some(file_cache_ttl) = file_cache_ttl {
             unified_scan_args
@@ -771,8 +760,9 @@ impl PyLazyFrame {
 
     #[cfg(feature = "csv")]
     #[pyo3(signature = (
-        target, sink_options, include_bom, include_header, separator, line_terminator, quote_char, batch_size,
-        datetime_format, date_format, time_format, float_scientific, float_precision, decimal_comma, null_value,
+        target, sink_options, include_bom, compression, compression_level, check_extension,
+        include_header, separator, line_terminator, quote_char, batch_size, datetime_format,
+        date_format, time_format, float_scientific, float_precision, decimal_comma, null_value,
         quote_style
     ))]
     fn sink_csv(
@@ -781,6 +771,9 @@ impl PyLazyFrame {
         target: PyFileSinkDestination,
         sink_options: PySinkOptions,
         include_bom: bool,
+        compression: &str,
+        compression_level: Option<u32>,
+        check_extension: bool,
         include_header: bool,
         separator: u8,
         line_terminator: Wrap<PlSmallStr>,
@@ -814,8 +807,27 @@ impl PyLazyFrame {
             quote_style,
         };
 
+        let compression = match compression {
+            "uncompressed" => CsvCompression::Uncompressed,
+            "gzip" => CsvCompression::Gzip {
+                level: compression_level,
+            },
+            "zstd" => CsvCompression::Zstd {
+                level: compression_level,
+            },
+            _ => {
+                return Err(PyErr::from(PyPolarsErr::from(
+                    PolarsError::InvalidOperation(
+                        format!("Invalid compression lvel: ({compression})").into(),
+                    ),
+                )));
+            },
+        };
+
         let options = CsvWriterOptions {
             include_bom,
+            compression,
+            check_extension,
             include_header,
             batch_size,
             serialize_options: serialize_options.into(),

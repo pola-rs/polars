@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use polars_plan::dsl::{PartitionStrategyIR, PartitionVariantIR};
+use polars_plan::dsl::PartitionStrategyIR;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, EscapeLabel};
 use polars_plan::prelude::FileWriteFormat;
@@ -264,31 +264,6 @@ fn visualize_plan_rec(
         ),
         PhysNodeKind::InMemorySink { input } => ("in-memory-sink".to_string(), from_ref(input)),
         PhysNodeKind::CallbackSink { input, .. } => ("callback-sink".to_string(), from_ref(input)),
-        PhysNodeKind::PartitionedSink {
-            input,
-            file_type,
-            variant,
-            ..
-        } => {
-            let variant = match variant {
-                PartitionVariantIR::ByKey { .. } => "partition-by-key-sink",
-                PartitionVariantIR::MaxSize { .. } => "partition-max-size-sink",
-                PartitionVariantIR::Parted { .. } => "partition-parted-sink",
-            };
-
-            match file_type {
-                #[cfg(feature = "parquet")]
-                FileWriteFormat::Parquet(_) => (format!("{variant}[parquet]"), from_ref(input)),
-                #[cfg(feature = "ipc")]
-                FileWriteFormat::Ipc(_) => (format!("{variant}[ipc]"), from_ref(input)),
-                #[cfg(feature = "csv")]
-                FileWriteFormat::Csv(_) => (format!("{variant}[csv]"), from_ref(input)),
-                #[cfg(feature = "json")]
-                FileWriteFormat::NDJson(_) => (format!("{variant}[ndjson]"), from_ref(input)),
-                #[allow(unreachable_patterns)]
-                _ => todo!(),
-            }
-        },
         PhysNodeKind::FileSink { input, options } => match options.file_format {
             #[cfg(feature = "parquet")]
             FileWriteFormat::Parquet(_) => ("parquet-sink".to_string(), from_ref(input)),
@@ -301,7 +276,7 @@ fn visualize_plan_rec(
             #[allow(unreachable_patterns)]
             _ => todo!(),
         },
-        PhysNodeKind::PartitionedSink2 { input, options } => {
+        PhysNodeKind::PartitionedSink { input, options } => {
             let variant = match options.partition_strategy {
                 PartitionStrategyIR::Keyed { .. } => "partition-keyed",
                 PartitionStrategyIR::FileSize => "partition-file-size",
@@ -528,15 +503,11 @@ fn visualize_plan_rec(
             key_per_input,
             aggs_per_input,
         } => {
-            let mut out = String::new();
+            let mut out = String::from("group-by");
             for (key, aggs) in key_per_input.iter().zip(aggs_per_input) {
-                if !out.is_empty() {
-                    out.push('\n');
-                }
-
                 write!(
                     &mut out,
-                    "group-by\\nkey:\\n{}\\naggs:\\n{}",
+                    "\\nkey:\\n{}\\naggs:\\n{}",
                     fmt_exprs_to_label(key, expr_arena, FormatExprStyle::Select),
                     fmt_exprs_to_label(aggs, expr_arena, FormatExprStyle::Select)
                 )

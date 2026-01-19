@@ -22,11 +22,11 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan, allow_local_scans: bool) -> P
                 sources, scan_type, ..
             } => {
                 match sources {
-                    ScanSources::Paths(addrs) => {
+                    ScanSources::Paths(paths) => {
                         if !allow_local_scans
-                            && addrs
+                            && paths
                                 .iter()
-                                .any(|p| !p.is_cloud_url() && p.to_str() != POLARS_PLACEHOLDER)
+                                .any(|p| !p.has_scheme() && p.as_str() != POLARS_PLACEHOLDER)
                         {
                             return ineligible_error("contains scan of local file system");
                         }

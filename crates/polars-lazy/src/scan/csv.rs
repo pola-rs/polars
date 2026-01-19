@@ -1,5 +1,5 @@
 #[cfg(feature = "csv")]
-use arrow::buffer::Buffer;
+use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::csv::read::{
@@ -10,7 +10,7 @@ use polars_io::path_utils::expand_paths;
 use polars_io::utils::compression::CompressedReader;
 use polars_io::{HiveOptions, RowIndex};
 use polars_utils::mmap::MemSlice;
-use polars_utils::plpath::PlPath;
+use polars_utils::pl_path::PlRefPath;
 use polars_utils::slice_enum::Slice;
 
 use crate::prelude::*;
@@ -37,7 +37,7 @@ impl LazyCsvReader {
         self
     }
 
-    pub fn new_paths(paths: Buffer<PlPath>) -> Self {
+    pub fn new_paths(paths: Buffer<PlRefPath>) -> Self {
         Self::new_with_sources(ScanSources::Paths(paths))
     }
 
@@ -52,7 +52,7 @@ impl LazyCsvReader {
         }
     }
 
-    pub fn new(path: PlPath) -> Self {
+    pub fn new(path: PlRefPath) -> Self {
         Self::new_with_sources(ScanSources::Paths(Buffer::from_iter([path])))
     }
 
@@ -280,7 +280,7 @@ impl LazyCsvReader {
                 };
 
                 infer_schema(MemSlice::from_file(&polars_utils::open_file(
-                    path.as_ref().as_local_path().unwrap(),
+                    path.as_std_path(),
                 )?)?)?
             },
             ScanSources::Files(files) => {

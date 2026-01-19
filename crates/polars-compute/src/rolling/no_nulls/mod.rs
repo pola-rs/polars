@@ -23,25 +23,30 @@ pub use sum::*;
 
 use super::*;
 
-pub trait RollingAggWindowNoNulls<'a, T: NativeType, Out: NativeType = T> {
+pub trait RollingAggWindowNoNulls<T: NativeType, Out: NativeType = T> {
+    type This<'a>: RollingAggWindowNoNulls<T, Out>;
+
     fn new(
-        slice: &'a [T],
+        slice: &[T],
         start: usize,
         end: usize,
         params: Option<RollingFnParams>,
         window_size: Option<usize>,
-    ) -> Self;
+    ) -> Self::This<'_>;
 
     /// Update and recompute the window
     ///
     /// # Safety
     /// `start` and `end` must be within the windows bounds
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<Out>;
+
+    /// Returns the length of the underlying input.
+    fn slice_len(&self) -> usize;
 }
 
 // Use an aggregation window that maintains the state
-pub(super) fn rolling_apply_agg_window<'a, Agg, T, O, Fo>(
-    values: &'a [T],
+pub(super) fn rolling_apply_agg_window<Agg, T, O, Fo>(
+    values: &[T],
     window_size: usize,
     min_periods: usize,
     det_offsets_fn: Fo,
@@ -49,7 +54,7 @@ pub(super) fn rolling_apply_agg_window<'a, Agg, T, O, Fo>(
 ) -> PolarsResult<ArrayRef>
 where
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
-    Agg: RollingAggWindowNoNulls<'a, T, O>,
+    Agg: RollingAggWindowNoNulls<T, O>,
     T: Debug + NativeType + Num,
     O: Debug + NativeType + Num,
 {

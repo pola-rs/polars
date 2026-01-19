@@ -10,6 +10,7 @@ from hypothesis import example, given
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric.strategies import dataframes
+from tests.unit.io.conftest import format_file_uri
 
 if TYPE_CHECKING:
     from polars._typing import EngineType
@@ -406,7 +407,7 @@ def test_file_path_cb_new_cloud_path(tmp_path: Path) -> None:
 
     def new_path(_: Any) -> str:
         nonlocal i
-        p = f"file://{tmp_path}/pms-{i:08}.parquet"
+        p = format_file_uri(f"{tmp_path}/pms-{i:08}.parquet")
         i += 1
         return p
 

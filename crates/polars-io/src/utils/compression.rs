@@ -1,11 +1,15 @@
 use std::cmp;
-use std::io::Read;
+use std::io::{Read, Write};
 
 use polars_core::prelude::*;
 use polars_error::{feature_gated, to_compute_err};
 use polars_utils::mmap::{MemReader, MemSlice};
 
+use crate::utils::file::{Writeable, WriteableTrait};
+use crate::utils::sync_on_close::SyncOnCloseType;
+
 /// Represents the compression algorithms that we have decoders for
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub enum SupportedCompression {
     GZIP,
     ZLIB,
@@ -228,5 +232,83 @@ impl Read for CompressedReader {
             #[cfg(feature = "decompress")]
             CompressedReader::Zstd(decoder) => decoder.read(buf),
         }
+    }
+}
+
+/// Constructor for `WriteableTrait` compressed encoders.
+pub enum CompressedWriter {
+    #[cfg(feature = "decompress")]
+    Gzip(Option<flate2::write::GzEncoder<Writeable>>),
+    #[cfg(feature = "decompress")]
+    Zstd(Option<zstd::Encoder<'static, Writeable>>),
+}
+
+impl CompressedWriter {
+    pub fn gzip(writer: Writeable, level: Option<u32>) -> Self {
+        feature_gated!("decompress", {
+            Self::Gzip(Some(flate2::write::GzEncoder::new(
+                writer,
+                level.map(flate2::Compression::new).unwrap_or_default(),
+            )))
+        })
+    }
+
+    pub fn zstd(writer: Writeable, level: Option<u32>) -> std::io::Result<Self> {
+        feature_gated!("decompress", {
+            zstd::Encoder::new(writer, level.unwrap_or(3) as i32)
+                .map(Some)
+                .map(Self::Zstd)
+        })
+    }
+}
+
+impl Write for CompressedWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        feature_gated!("decompress", {
+            match self {
+                Self::Gzip(encoder) => encoder.as_mut().unwrap().write(buf),
+                Self::Zstd(encoder) => encoder.as_mut().unwrap().write(buf),
+            }
+        })
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        feature_gated!("decompress", {
+            match self {
+                Self::Gzip(encoder) => encoder.as_mut().unwrap().flush(),
+                Self::Zstd(encoder) => encoder.as_mut().unwrap().flush(),
+            }
+        })
+    }
+}
+
+impl WriteableTrait for CompressedWriter {
+    fn close(&mut self) -> std::io::Result<()> {
+        feature_gated!("decompress", {
+            let writer = match self {
+                Self::Gzip(encoder) => encoder.take().unwrap().finish()?,
+                Self::Zstd(encoder) => encoder.take().unwrap().finish()?,
+            };
+
+            writer.close(SyncOnCloseType::All)
+        })
+    }
+
+    fn sync_all(&self) -> std::io::Result<()> {
+        feature_gated!("decompress", {
+            match self {
+                Self::Gzip(encoder) => encoder.as_ref().unwrap().get_ref().sync_all(),
+                Self::Zstd(encoder) => encoder.as_ref().unwrap().get_ref().sync_all(),
+            }
+        })
+    }
+
+    fn sync_data(&self) -> std::io::Result<()> {
+        feature_gated!("decompress", {
+            match self {
+                Self::Gzip(encoder) => encoder.as_ref().unwrap().get_ref().sync_data(),
+                Self::Zstd(encoder) => encoder.as_ref().unwrap().get_ref().sync_data(),
+            }
+        })
     }
 }

@@ -258,7 +258,7 @@ impl PyCatalogClient {
         };
 
         let cloud_options = parse_cloud_options(
-            CloudScheme::from_uri(storage_location),
+            CloudScheme::from_path(storage_location),
             cloud_options.unwrap_or_default(),
         )?
         .with_max_retries(retries)

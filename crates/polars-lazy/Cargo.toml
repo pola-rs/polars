@@ -12,6 +12,7 @@ description = "Lazy query engine for the Polars DataFrame library"
 arrow = { workspace = true }
 chrono = { workspace = true }
 futures = { workspace = true, optional = true }
+polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
 polars-expr = { workspace = true }
@@ -295,6 +296,7 @@ regex = ["polars-expr/regex"]
 serde = [
   "polars-plan/serde",
   "arrow/serde",
+  "polars-buffer/serde",
   "polars-core/serde-lazy",
   "polars-time?/serde",
   "polars-io/serde",

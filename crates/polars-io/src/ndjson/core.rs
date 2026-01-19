@@ -135,8 +135,8 @@ where
 
 impl JsonLineReader<'_, File> {
     /// This is the recommended way to create a json reader as this allows for fastest parsing.
-    pub fn from_path<P: Into<PathBuf>>(path: P) -> PolarsResult<Self> {
-        let path = crate::resolve_homedir(&path.into());
+    pub fn from_path<P: AsRef<std::path::Path> + ?Sized>(path: &P) -> PolarsResult<Self> {
+        let path = crate::resolve_homedir(path.as_ref());
         let f = polars_utils::open_file(&path)?;
         Ok(Self::new(f).with_path(Some(path)))
     }
@@ -394,11 +394,16 @@ pub fn json_lines(bytes: &[u8]) -> impl Iterator<Item = &[u8]> {
     // things we don't need since we use simd_json for them. Also, `serde_json::StreamDeserializer` has a more
     // ambitious goal: it wants to parse potentially *non-delimited* sequences of JSON values, while we know
     // our values are line-delimited. Turns out, custom splitting is very easy, and gives a very nice performance boost.
-    bytes.split(|&byte| byte == b'\n').filter(|&bytes| {
-        bytes
-            .iter()
-            .any(|&byte| !matches!(byte, b' ' | b'\t' | b'\r'))
-    })
+    bytes
+        .split(|&byte| byte == b'\n')
+        .filter(|bytes| is_json_line(bytes))
+}
+
+#[inline]
+pub fn is_json_line(bytes: &[u8]) -> bool {
+    bytes
+        .iter()
+        .any(|byte| !matches!(*byte, b' ' | b'\t' | b'\r'))
 }
 
 fn parse_lines(

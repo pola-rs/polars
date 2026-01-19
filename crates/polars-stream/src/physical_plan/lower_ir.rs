@@ -6,17 +6,13 @@ use polars_core::prelude::{DataType, PlHashMap, PlHashSet};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_core::{SchemaExtPl, config};
-use polars_error::{PolarsResult, polars_bail};
+use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_plan::constants::get_literal_name;
 use polars_plan::dsl::default_values::DefaultFieldValues;
 use polars_plan::dsl::deletion::DeletionFilesList;
-use polars_plan::dsl::sink2::FileProviderType;
-use polars_plan::dsl::{
-    CallbackSinkType, ExtraColumnsPolicy, FileScanIR, PartitionStrategyIR, PartitionVariantIR,
-    PartitionedSinkOptionsIR, SinkOptions, SinkTypeIR, UnifiedSinkArgs,
-};
+use polars_plan::dsl::{CallbackSinkType, ExtraColumnsPolicy, FileScanIR, SinkTypeIR};
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{
     AExpr, FunctionIR, IR, IRAggExpr, LiteralValue, are_keys_sorted_any, is_sorted,
@@ -274,143 +270,10 @@ pub fn lower_ir(
                 PhysNodeKind::FileSink { input, options }
             },
 
-            SinkTypeIR::Partitioned(options)
-                if !matches!(options.file_path_provider, FileProviderType::Legacy(_))
-                    && options.finish_callback.is_none()
-                    && match options.file_format {
-                        #[cfg(feature = "parquet")]
-                        polars_plan::dsl::FileWriteFormat::Parquet(_) => true,
-                        #[cfg(feature = "ipc")]
-                        polars_plan::dsl::FileWriteFormat::Ipc(_) => true,
-                        #[cfg(feature = "csv")]
-                        polars_plan::dsl::FileWriteFormat::Csv(_) => true,
-                        #[cfg(feature = "json")]
-                        polars_plan::dsl::FileWriteFormat::NDJson(_) => true,
-                        #[cfg(not(any(
-                            feature = "parquet",
-                            feature = "ipc",
-                            feature = "csv",
-                            feature = "json"
-                        )))]
-                        _ => panic!("no enum variants on FileType (hint: missing feature flags?)"),
-                    } =>
-            {
+            SinkTypeIR::Partitioned(options) => {
                 let options = options.clone();
                 let input = lower_ir!(*input)?;
-                PhysNodeKind::PartitionedSink2 { input, options }
-            },
-
-            SinkTypeIR::Partitioned(PartitionedSinkOptionsIR {
-                base_path,
-                file_path_provider,
-                partition_strategy,
-                finish_callback,
-                file_format,
-                unified_sink_args,
-                max_rows_per_file,
-                approximate_bytes_per_file: _,
-            }) => {
-                // Convert to old parameters for now
-
-                let base_path = base_path.clone();
-                let file_path_cb = match file_path_provider {
-                    FileProviderType::Legacy(callback) => Some(callback.clone()),
-                    FileProviderType::Hive { .. } => None,
-                    FileProviderType::Function(_) => None,
-                };
-                let file_type = file_format.clone();
-                let finish_callback = finish_callback.clone();
-
-                let (variant, per_partition_sort_by) = match partition_strategy {
-                    PartitionStrategyIR::Keyed {
-                        keys,
-                        include_keys,
-                        keys_pre_grouped,
-                        per_partition_sort_by,
-                    } => {
-                        let v = if *keys_pre_grouped {
-                            PartitionVariantIR::Parted {
-                                key_exprs: keys.clone(),
-                                include_key: *include_keys,
-                            }
-                        } else {
-                            PartitionVariantIR::ByKey {
-                                key_exprs: keys.clone(),
-                                include_key: *include_keys,
-                            }
-                        };
-
-                        (v, per_partition_sort_by)
-                    },
-                    PartitionStrategyIR::FileSize => {
-                        (PartitionVariantIR::MaxSize(*max_rows_per_file), &vec![])
-                    },
-                };
-
-                let per_partition_sort_by = per_partition_sort_by.clone();
-
-                let UnifiedSinkArgs {
-                    mkdir,
-                    maintain_order,
-                    sync_on_close,
-                    cloud_options,
-                } = unified_sink_args.clone();
-
-                let sink_options = SinkOptions {
-                    sync_on_close,
-                    maintain_order,
-                    mkdir,
-                };
-
-                let mut input = lower_ir!(*input)?;
-                match &variant {
-                    PartitionVariantIR::MaxSize(_) => {},
-                    PartitionVariantIR::Parted {
-                        key_exprs,
-                        include_key: _,
-                    }
-                    | PartitionVariantIR::ByKey {
-                        key_exprs,
-                        include_key: _,
-                    } => {
-                        if key_exprs.is_empty() {
-                            polars_bail!(InvalidOperation: "cannot partition by-key without key expressions");
-                        }
-
-                        let input_schema = &phys_sm[input.node].output_schema;
-                        let mut select_output_schema = input_schema.as_ref().clone();
-                        for key_expr in key_exprs.iter() {
-                            select_output_schema.insert(
-                                key_expr.output_name().clone(),
-                                key_expr.dtype(input_schema.as_ref(), expr_arena)?.clone(),
-                            );
-                        }
-
-                        let select_output_schema = Arc::new(select_output_schema);
-                        let node = phys_sm.insert(PhysNode {
-                            output_schema: select_output_schema,
-                            kind: PhysNodeKind::Select {
-                                input,
-                                selectors: key_exprs.clone(),
-                                extend_original: true,
-                            },
-                        });
-                        input = PhysStream::first(node);
-                    },
-                };
-
-                PhysNodeKind::PartitionedSink {
-                    input,
-                    base_path: Arc::new(base_path),
-                    file_path_cb,
-                    sink_options,
-                    variant,
-                    file_type,
-                    cloud_options: cloud_options.map(Arc::unwrap_or_clone),
-                    per_partition_sort_by: (!per_partition_sort_by.is_empty())
-                        .then_some(per_partition_sort_by),
-                    finish_callback,
-                }
+                PhysNodeKind::PartitionedSink { input, options }
             },
         },
 
@@ -762,7 +625,7 @@ pub fn lower_ir(
                     FileScanIR::Csv { options } => Arc::new(Arc::clone(options)) as _,
 
                     #[cfg(feature = "json")]
-                    FileScanIR::NDJson { options } => Arc::new(Arc::new(options.clone())) as _,
+                    FileScanIR::NDJson { options } => Arc::new(options.clone()) as _,
 
                     #[cfg(feature = "python")]
                     FileScanIR::PythonDataset {
@@ -782,7 +645,9 @@ pub fn lower_ir(
                     },
 
                     #[cfg(feature = "scan_lines")]
-                    FileScanIR::Lines { name: _ } => todo!(),
+                    FileScanIR::Lines { name: _ } => {
+                        Arc::new(crate::nodes::io_sources::lines::LineReaderBuilder {}) as _
+                    },
 
                     FileScanIR::Anonymous { .. } => todo!("unimplemented: AnonymousScan"),
                 };

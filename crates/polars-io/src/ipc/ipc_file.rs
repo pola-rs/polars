@@ -39,6 +39,7 @@ use arrow::datatypes::{ArrowSchemaRef, Metadata};
 use arrow::io::ipc::read::{self, get_row_count};
 use arrow::record_batch::RecordBatch;
 use polars_core::prelude::*;
+use polars_utils::pl_str::PlRefStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -87,7 +88,7 @@ pub struct IpcReader<R: MmapBytesReader> {
     pub(super) projection: Option<Vec<usize>>,
     pub(crate) columns: Option<Vec<String>>,
     hive_partition_columns: Option<Vec<Series>>,
-    include_file_path: Option<(PlSmallStr, Arc<str>)>,
+    include_file_path: Option<(PlSmallStr, PlRefStr)>,
     pub(super) row_index: Option<RowIndex>,
     // Stores the as key semaphore to make sure we don't write to the memory mapped file.
     pub(super) memory_map: Option<PathBuf>,
@@ -152,7 +153,7 @@ impl<R: MmapBytesReader> IpcReader<R> {
 
     pub fn with_include_file_path(
         mut self,
-        include_file_path: Option<(PlSmallStr, Arc<str>)>,
+        include_file_path: Option<(PlSmallStr, PlRefStr)>,
     ) -> Self {
         self.include_file_path = include_file_path;
         self
@@ -315,7 +316,7 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
                     col,
                     Scalar::new(
                         DataType::String,
-                        AnyValue::StringOwned(value.as_ref().into()),
+                        AnyValue::StringOwned(value.as_str().into()),
                     ),
                     df.height(),
                 ))

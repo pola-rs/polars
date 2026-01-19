@@ -9,7 +9,6 @@ pub struct QuantileWindow<'a, T: NativeType + IsFloat + PartialOrd> {
 }
 
 impl<
-    'a,
     T: NativeType
         + IsFloat
         + Float
@@ -23,21 +22,23 @@ impl<
         + SealedRolling
         + PartialOrd
         + Sub<Output = T>,
-> RollingAggWindowNulls<'a, T> for QuantileWindow<'a, T>
+> RollingAggWindowNulls<T> for QuantileWindow<'_, T>
 {
-    fn new(
+    type This<'a> = QuantileWindow<'a, T>;
+
+    fn new<'a>(
         slice: &'a [T],
         validity: &'a Bitmap,
         start: usize,
         end: usize,
         params: Option<RollingFnParams>,
         window_size: Option<usize>,
-    ) -> Self {
+    ) -> Self::This<'a> {
         let params = params.unwrap();
         let RollingFnParams::Quantile(params) = params else {
             unreachable!("expected Quantile params");
         };
-        Self {
+        QuantileWindow {
             sorted: SortedBufNulls::new(slice, validity, start, end, window_size),
             prob: params.prob,
             method: params.method,
@@ -101,6 +102,10 @@ impl<
 
     fn is_valid(&self, min_periods: usize) -> bool {
         self.sorted.is_valid(min_periods)
+    }
+
+    fn slice_len(&self) -> usize {
+        self.sorted.slice_len()
     }
 }
 
@@ -166,8 +171,8 @@ where
 
 #[cfg(test)]
 mod test {
-    use arrow::buffer::Buffer;
     use arrow::datatypes::ArrowDataType;
+    use polars_buffer::Buffer;
 
     use super::*;
 

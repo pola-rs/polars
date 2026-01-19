@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any, Generic, TypeVar
 
 from polars._utils.various import is_path_or_str_sequence
-from polars.io.partition import PartitionBy, _SinkDirectory
+from polars.io.partition import PartitionBy
 
 T = TypeVar("T")
 
@@ -40,8 +40,6 @@ def _first_scan_path(
         return source
     elif is_path_or_str_sequence(source) and source:
         return source[0]
-    elif isinstance(source, _SinkDirectory):
-        return source._base_path
     elif isinstance(source, PartitionBy):
         return source._pl_partition_by.base_path
 

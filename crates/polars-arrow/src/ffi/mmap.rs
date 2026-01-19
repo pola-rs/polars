@@ -1,14 +1,13 @@
 //! Functionality to mmap in-memory data regions.
 use std::sync::Arc;
 
+use polars_buffer::{Buffer, SharedStorage};
 use polars_error::{PolarsResult, polars_bail};
 
 use super::{ArrowArray, InternalArrowArray};
 use crate::array::{BooleanArray, FromFfi, PrimitiveArray};
 use crate::bitmap::Bitmap;
-use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
-use crate::storage::SharedStorage;
 use crate::types::NativeType;
 
 #[allow(dead_code)]

@@ -1005,8 +1005,9 @@ def test_hybrid_rle() -> None:
         literal_rle.append(np.repeat(i + 2, 15))
     literal_literal.append(np.random.randint(0, 10, size=2007))
     literal_rle.append(np.random.randint(0, 10, size=7))
-    literal_literal = np.concatenate(literal_literal)
-    literal_rle = np.concatenate(literal_rle)
+
+    literal_literal_flat = np.concatenate(literal_literal)
+    literal_rle_flat = np.concatenate(literal_rle)
     df = pl.DataFrame(
         {
             # Primitive types
@@ -1027,10 +1028,10 @@ def test_hybrid_rle() -> None:
             ),
             # Literal run that is not a multiple of 8 followed by consecutive
             # run initially long enough to RLE but not after padding literal
-            "literal_literal": literal_literal,
+            "literal_literal": literal_literal_flat,
             # Literal run that is not a multiple of 8 followed by consecutive
             # run long enough to RLE even after padding literal
-            "literal_rle": literal_rle,
+            "literal_rle": literal_rle_flat,
             # Final run not long enough to RLE
             "final_literal": np.concatenate(
                 [np.random.randint(0, 100, 10_000), np.repeat(-1, 7)]

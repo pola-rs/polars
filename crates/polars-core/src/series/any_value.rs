@@ -428,7 +428,7 @@ fn any_values_to_binary(values: &[AnyValue], strict: bool) -> PolarsResult<Binar
                 AnyValue::Binary(b) => Some(*b),
                 AnyValue::BinaryOwned(b) => Some(&**b),
                 AnyValue::String(s) => Some(s.as_bytes()),
-                AnyValue::StringOwned(s) => Some(s.as_str().as_bytes()),
+                AnyValue::StringOwned(s) => Some(s.as_bytes()),
                 _ => None,
             })
             .collect_trusted()

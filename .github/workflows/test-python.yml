@@ -39,10 +39,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        python-version: ['3.10', '3.12', '3.13', '3.13t']
+        python-version: ['3.10', '3.12', '3.13', '3.14', '3.14t']
         include:
           - os: windows-latest
-            python-version: '3.13'
+            python-version: '3.14'
 
     steps:
       - uses: actions/checkout@v6
@@ -50,6 +50,13 @@ jobs:
       - name: Free some disk space (remove unused packages)
         uses: jlumbroso/free-disk-space@v1.3.1
         if: ${{ matrix.os != 'windows-latest' }}
+
+      - name: Enable long paths on Windows
+        if: matrix.os == 'windows-latest'
+        shell:
+          powershell
+        run: |
+          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name 'LongPathsEnabled' -Value 1
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -69,13 +76,13 @@ jobs:
           echo "VENV=$GITHUB_WORKSPACE/py-polars/.venv" >> $GITHUB_ENV
 
       - name: Install maturin
-        if: matrix.python-version == '3.13t'
+        if: matrix.python-version == '3.14t'
         run: |
           pip install uv
           uv pip install maturin
 
       - name: Install Python dependencies
-        if: matrix.python-version != '3.13t'
+        if: matrix.python-version != '3.14t'
         run: |
           pip install uv
           # Install typing-extensions separately whilst the `--extra-index-url` in `requirements-ci.txt`
@@ -100,33 +107,33 @@ jobs:
           maturin develop --manifest-path runtime/polars-runtime-32/Cargo.toml
 
       - name: Run doctests
-        if: github.ref_name != 'main' && matrix.python-version == '3.13' && matrix.os == 'ubuntu-latest'
+        if: github.ref_name != 'main' && matrix.python-version == '3.14' && matrix.os == 'ubuntu-latest'
         run: |
           python tests/docs/run_doctest.py
           pytest tests/docs/test_user_guide.py -m docs
 
       - name: Run tests
-        if: github.ref_name != 'main' && matrix.python-version != '3.13t'
+        if: github.ref_name != 'main' && matrix.python-version != '3.14t'
         env:
           POLARS_TIMEOUT_MS: 60000
         run: pytest -n auto -m "not release and not benchmark and not docs"
 
       - name: Run tests with new streaming engine
-        if: github.ref_name != 'main' && matrix.python-version != '3.13t'
+        if: github.ref_name != 'main' && matrix.python-version != '3.14t'
         env:
           POLARS_AUTO_NEW_STREAMING: 1
           POLARS_TIMEOUT_MS: 60000
         run: pytest -n auto -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only"
 
       - name: Run tests async reader tests
-        if: github.ref_name != 'main' && matrix.os != 'windows-latest' && matrix.python-version != '3.13t'
+        if: github.ref_name != 'main' && matrix.os != 'windows-latest' && matrix.python-version != '3.14t'
         env:
           POLARS_FORCE_ASYNC: 1
           POLARS_TIMEOUT_MS: 60000
         run: pytest -n auto -m "not release and not benchmark and not docs" tests/unit/io/
 
       - name: Run tests multiscan force empty capabilities
-        if: github.ref_name != 'main' && matrix.python-version != '3.13t'
+        if: github.ref_name != 'main' && matrix.python-version != '3.14t'
         env:
           POLARS_FORCE_EMPTY_READER_CAPABILITIES: 1
           POLARS_TIMEOUT_MS: 60000
@@ -136,7 +143,7 @@ jobs:
           pytest -n auto -m "not release and not benchmark and not docs" tests/unit/io/test_iceberg.py
 
       - name: Check import without optional dependencies
-        if: github.ref_name != 'main' && matrix.os == 'ubuntu-latest' && (matrix.python-version == '3.13' || matrix.python-version == '3.13t')
+        if: github.ref_name != 'main' && matrix.os == 'ubuntu-latest' && (matrix.python-version == '3.14' || matrix.python-version == '3.14t')
         run: |
           declare -a deps=("pandas"
           "pyarrow"

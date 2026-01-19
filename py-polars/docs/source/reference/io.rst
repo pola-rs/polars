@@ -99,6 +99,14 @@ JSON
    DataFrame.write_ndjson
    LazyFrame.sink_ndjson
 
+Lines
+~~~~~
+.. autosummary::
+   :toctree: api/
+
+   read_lines
+   scan_lines
+
 
 Partition
 ~~~~~~~~~
@@ -108,9 +116,6 @@ Sink to disk with differing partitioning strategies.
    :toctree: api/
 
    PartitionBy
-   PartitionByKey
-   PartitionMaxSize
-   PartitionParted
 
 .. currentmodule:: polars.io.partition
 
@@ -118,9 +123,6 @@ Sink to disk with differing partitioning strategies.
    :toctree: api/
 
    FileProviderArgs
-   KeyedPartition
-   BasePartitionContext
-   KeyedPartitionContext
 
 .. currentmodule:: polars
 
