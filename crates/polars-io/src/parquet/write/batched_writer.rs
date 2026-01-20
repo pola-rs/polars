@@ -81,7 +81,7 @@ impl<W: Write> BatchedWriter<W> {
         // Lock before looping so that order is maintained under contention.
         let mut writer = self.writer.lock().unwrap();
         for group in row_group_iter {
-            writer.write(group?)?;
+            writer.write(u64::MAX, group?)?;
         }
         Ok(())
     }
@@ -91,14 +91,19 @@ impl<W: Write> BatchedWriter<W> {
         writer.parquet_schema()
     }
 
-    pub fn write_row_group(&mut self, rg: &[Vec<CompressedPage>]) -> PolarsResult<()> {
+    /// Note: `num_rows` can be passed as `u64::MAX` to infer `num_rows` from the encoded data.
+    pub fn write_row_group(
+        &mut self,
+        num_rows: u64,
+        rg: &[Vec<CompressedPage>],
+    ) -> PolarsResult<()> {
         let writer = self.writer.get_mut().unwrap();
         let rg = DynIter::new(rg.iter().map(|col_pages| {
             Ok(DynStreamingIterator::new(
                 fallible_streaming_iterator::convert(col_pages.iter().map(PolarsResult::Ok)),
             ))
         }));
-        writer.write(rg)?;
+        writer.write(num_rows, rg)?;
         Ok(())
     }
 
@@ -113,7 +118,7 @@ impl<W: Write> BatchedWriter<W> {
         // Lock before looping so that order is maintained.
         let mut writer = self.writer.lock().unwrap();
         for group in rgs {
-            writer.write(group)?;
+            writer.write(u64::MAX, group)?;
         }
         Ok(())
     }

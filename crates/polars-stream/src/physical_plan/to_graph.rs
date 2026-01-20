@@ -368,7 +368,6 @@ fn to_graph_rec<'a>(
             let input_key = to_graph_rec(input.node, ctx)?;
 
             let file_schema: SchemaRef;
-            let mut exclude_keys_from_file: Option<ExcludeKeysProjection> = None;
             let mut hstack_keys: Option<HStackColumns> = None;
             let mut include_keys_in_file = false;
 
@@ -404,10 +403,6 @@ fn to_graph_rec<'a>(
                         } else {
                             ExcludeKeysProjection::Indices(exclude_keys_projection)
                         };
-
-                    if !*include_keys {
-                        exclude_keys_from_file = Some(exclude_keys_projection.clone());
-                    }
 
                     let schema_excluding_keys: Schema = exclude_keys_projection
                         .iter_indices()
@@ -449,11 +444,6 @@ fn to_graph_rec<'a>(
                     Partitioner::FileSize
                 },
             };
-
-            if let Some(exclude_keys_from_file) = exclude_keys_from_file.as_ref() {
-                // Should have been checked in IR.
-                assert!(exclude_keys_from_file.len() > 0);
-            }
 
             let mut file_size_limit = RowCountAndSize::MAX;
 
