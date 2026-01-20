@@ -167,10 +167,7 @@ def lit(
 
     elif isinstance(value, pl.Series):
         value = value._s
-        if value.len() == 1:
-            return wrap_expr(plr.lit(value, allow_object, is_scalar=True).alias(value.name()))
-        else:
-            return wrap_expr(plr.lit(value, allow_object, is_scalar=False))
+        return wrap_expr(plr.lit(value, allow_object, is_scalar=value.len() == 1))
 
     elif _check_for_numpy(value) and isinstance(value, np.ndarray):
         return lit(pl.Series("literal", value, dtype=dtype))
