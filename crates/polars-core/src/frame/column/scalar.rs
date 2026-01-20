@@ -86,7 +86,6 @@ impl ScalarColumn {
 
     /// Materialize the [`ScalarColumn`] into a [`Series`].
     pub fn to_series(&self) -> Series {
-        println!("SCALAR COLUMN {} LENGTH IS {}", self.name, self.length);
         Self::_to_series(self.name.clone(), self.scalar.clone(), self.length)
     }
 
