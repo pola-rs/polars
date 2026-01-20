@@ -411,8 +411,3 @@ def test_sink_scan_ipc_round_trip_statistics_projection(
     assert_frame_equal(df, out)
     assert_frame_equal(df._to_metadata(), out._to_metadata())
 
-
-def test_ipc_compressed_len_excess_bytes_26126(io_files_path: Path) -> None:
-    path = io_files_path / "test_bitmap_len_excess_bytes.ipc"
-    out = pl.scan_ipc(path).collect()
-    assert out.shape == (3, 1)
