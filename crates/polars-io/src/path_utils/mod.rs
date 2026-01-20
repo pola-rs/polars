@@ -481,9 +481,11 @@ pub fn expand_paths_hive(
                     paths_scratch.sort_unstable();
 
                     for path in paths_scratch.drain(..) {
-                        if path.is_dir() {
+                        let md = path.metadata()?;
+
+                        if md.is_dir() {
                             stack.push_back(path);
-                        } else if path.metadata()?.len() > 0 {
+                        } else if md.len() > 0 {
                             out_paths.push(PlRefPath::try_from_path(&path)?);
                         }
                     }
@@ -503,7 +505,8 @@ pub fn expand_paths_hive(
 
                 for path in paths {
                     let path = path.map_err(to_compute_err)?;
-                    if !path.is_dir() && path.metadata()?.len() > 0 {
+                    let md = path.metadata()?;
+                    if !md.is_dir() && md.len() > 0 {
                         out_paths.push(PlRefPath::try_from_path(&path)?);
                     }
                 }
