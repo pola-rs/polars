@@ -83,7 +83,7 @@ FILTER_PIP_WARNINGS=| grep -v "don't match your environment"; test $${PIPESTATUS
 .PHONY: requirements
 requirements:  ## Install/refresh Python project requirements
 	@unset CONDA_PREFIX \
-	&& python3 -m venv $(VENV) --upgrade \
+	&& $(VENV_BIN)/python -m venv $(VENV) --clear \
 	&& $(VENV_BIN)/python -m pip install --upgrade uv \
 	&& $(VENV_BIN)/uv pip install --upgrade --compile-bytecode --no-build \
 	   -r py-polars/requirements-dev.txt \
