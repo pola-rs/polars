@@ -127,33 +127,37 @@ where
                 let probe_keyval = unsafe { probe_key.get_unchecked(probe_idx) };
                 let probe_keyval = probe_keyval.as_ref();
 
-                let mut ord: Option<Ordering> = match (&build_keyval, &probe_keyval) {
-                    (None, None) if nulls_equal => Some(Ordering::Equal),
-                    (Some(l), Some(r)) => Some(TotalOrd::tot_cmp(*l, *r)),
-                    _ => None,
+                let mut ord: Ordering = match (&build_keyval, &probe_keyval) {
+                    (None, None) if nulls_equal => Ordering::Equal,
+                    (Some(l), Some(r)) => TotalOrd::tot_cmp(*l, *r),
+                    _ => continue,
                 };
                 if descending {
-                    ord = ord.map(Ordering::reverse);
+                    ord = ord.reverse();
                 }
 
-                if ord == Some(Ordering::Equal) {
-                    if probe_emit_unmatched {
-                        gather_probe_unmatched
-                            .extend(probe_first_unmatched as IdxSize..probe_idx as IdxSize);
-                        probe_first_unmatched = probe_first_unmatched.max(probe_idx + 1);
+                match ord {
+                    Ordering::Equal => {
+                        if probe_emit_unmatched {
+                            gather_probe_unmatched
+                                .extend(probe_first_unmatched as IdxSize..probe_idx as IdxSize);
+                            probe_first_unmatched = probe_first_unmatched.max(probe_idx + 1);
+                        }
+                        gather_build.push(build_row_offset as IdxSize);
+                        gather_probe.push(probe_idx as IdxSize);
+                        build_keyval_matched = true;
                     }
-                    gather_build.push(build_row_offset as IdxSize);
-                    gather_probe.push(probe_idx as IdxSize);
-                    build_keyval_matched = true;
-                } else if ord == Some(Ordering::Greater) {
-                    if probe_emit_unmatched {
-                        gather_probe_unmatched
-                            .extend(probe_first_unmatched as IdxSize..=probe_idx as IdxSize);
-                        probe_first_unmatched = probe_first_unmatched.max(probe_idx + 1);
+                    Ordering::Greater => {
+                        if probe_emit_unmatched {
+                            gather_probe_unmatched
+                                .extend(probe_first_unmatched as IdxSize..=probe_idx as IdxSize);
+                            probe_first_unmatched = probe_first_unmatched.max(probe_idx + 1);
+                        }
+                        probe_row_offset = probe_idx + 1;
+                    },
+                    Ordering::Less => {
+                        break;
                     }
-                    probe_row_offset = probe_idx + 1;
-                } else if ord == Some(Ordering::Less) {
-                    break;
                 }
             }
         }
@@ -233,20 +237,14 @@ pub fn gather_and_postprocess(
     let left_emit_unmatched = matches!(args.how, JoinType::Left | JoinType::Full);
     let right_emit_unmatched = matches!(args.how, JoinType::Right | JoinType::Full);
 
-    let mut left;
-    let gather_left;
-    let mut right;
-    let gather_right;
+    let (mut left, mut right);
+    let (gather_left, gather_right);
     if left_is_build {
-        left = build;
-        gather_left = gather_build;
-        right = probe;
-        gather_right = gather_probe;
+        (left, right) = (build, probe);
+        (gather_left, gather_right) = (gather_build, gather_probe);
     } else {
-        right = build;
-        gather_right = gather_build;
-        left = probe;
-        gather_left = gather_probe;
+        (left, right) = (probe, build);
+        (gather_left, gather_right) = (gather_probe, gather_build);
     }
 
     // Remove non-payload columns
