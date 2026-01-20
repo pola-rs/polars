@@ -1277,3 +1277,39 @@ def test_scan_file_uri_hostname_component() -> None:
         match="unsupported: non-empty hostname for 'file:' URI: 'hostname:80'",
     ):
         q.collect()
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("polars_force_async", ["0", "1"])
+def test_scan_path_expansion_sorting_24528(
+    tmp_path: Path,
+    polars_force_async: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("POLARS_FORCE_ASYNC", polars_force_async)
+    Path.mkdir(tmp_path / "a")
+
+    relpaths = ["a.parquet", "a/a.parquet", "ab.parquet"]
+
+    for p in relpaths:
+        pl.DataFrame({"relpath": p}).write_parquet(tmp_path / p)
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path).collect(),
+        pl.DataFrame({"relpath": relpaths}),
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path / "**/*").collect(),
+        pl.DataFrame({"relpath": relpaths}),
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(format_file_uri(tmp_path) + "/").collect(),
+        pl.DataFrame({"relpath": relpaths}),
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(format_file_uri(tmp_path / "**/*")).collect(),
+        pl.DataFrame({"relpath": relpaths}),
+    )

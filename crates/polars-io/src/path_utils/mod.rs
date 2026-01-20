@@ -420,83 +420,78 @@ pub fn expand_paths_hive(
                 }
 
                 let glob_start_idx = get_glob_start_idx(path.as_bytes());
+                let sort_start_idx = out_paths.paths.len();
 
-                let path = if glob && glob_start_idx.is_some() {
-                    path.clone()
-                } else {
+                if !glob || glob_start_idx.is_none() {
                     let (expand_start_idx, paths) =
                         expand_path_cloud(path.into_owned(), cloud_options.as_ref())?;
                     out_paths.extend_from_slice(&paths);
                     hive_idx_tracker.update(expand_start_idx, path_idx)?;
-                    continue;
-                };
-
-                hive_idx_tracker.update(0, path_idx)?;
-
-                let iter = crate::pl_async::get_runtime().block_in_place_on(crate::async_glob(
-                    path.into_owned(),
-                    cloud_options.as_ref(),
-                ))?;
-
-                if first_path_has_scheme {
-                    out_paths.extend(iter.into_iter().map(PlRefPath::new))
                 } else {
-                    // FORCE_ASYNC, remove leading file:// as the caller may not be expecting a
-                    // URI result.
-                    out_paths.extend(iter.iter().map(|x| &x[7..]).map(PlRefPath::new))
+                    hive_idx_tracker.update(0, path_idx)?;
+
+                    let iter = crate::pl_async::get_runtime().block_in_place_on(
+                        crate::async_glob(path.into_owned(), cloud_options.as_ref()),
+                    )?;
+
+                    if first_path_has_scheme {
+                        out_paths.extend(iter.into_iter().map(PlRefPath::new))
+                    } else {
+                        // FORCE_ASYNC, remove leading file:// as the caller may not be expecting a
+                        // URI result.
+                        out_paths.extend(iter.iter().map(|x| &x[7..]).map(PlRefPath::new))
+                    };
                 };
+
+                if let Some(mut_slice) = out_paths.paths.get_mut(sort_start_idx..) {
+                    mut_slice.sort_unstable();
+                }
             }
         }
         #[cfg(not(feature = "cloud"))]
         panic!("Feature `cloud` must be enabled to use globbing patterns with cloud urls.")
     } else {
-        let mut stack = VecDeque::new();
-        let mut paths_scratch: Vec<Cow<'_, Path>> = vec![];
+        let mut stack: VecDeque<Cow<'_, Path>> = VecDeque::new();
+        let mut paths_scratch: Vec<PathBuf> = vec![];
 
         for (path_idx, path) in paths.iter().enumerate() {
             stack.clear();
+            let sort_start_idx = out_paths.paths.len();
 
             if path.as_std_path().is_dir() {
                 let i = path.as_str().len();
-                let path = Cow::Borrowed(path.as_std_path());
 
                 hive_idx_tracker.update(i, path_idx)?;
 
-                stack.push_back(path.clone());
+                stack.push_back(Cow::Borrowed(path.as_std_path()));
 
                 while let Some(dir) = stack.pop_front() {
                     let mut last_err = Ok(());
 
                     paths_scratch.clear();
-                    paths_scratch.extend(std::fs::read_dir(dir)?.map_while(|x| match x {
-                        Ok(v) => Some(Cow::Owned(v.path())),
-                        Err(e) => {
-                            last_err = Err(e);
-                            None
-                        },
+                    paths_scratch.extend(std::fs::read_dir(dir)?.map_while(|x| {
+                        match x.map(|x| x.path()) {
+                            Ok(v) => Some(v),
+                            Err(e) => {
+                                last_err = Err(e);
+                                None
+                            },
+                        }
                     }));
 
                     last_err?;
-
-                    paths_scratch.sort_unstable();
 
                     for path in paths_scratch.drain(..) {
                         let md = path.metadata()?;
 
                         if md.is_dir() {
-                            stack.push_back(path);
+                            stack.push_back(Cow::Owned(path));
                         } else if md.len() > 0 {
                             out_paths.push(PlRefPath::try_from_path(&path)?);
                         }
                     }
                 }
-
-                continue;
-            }
-
-            let i = get_glob_start_idx(path.as_bytes());
-
-            if glob && i.is_some() {
+            } else if glob && let Some(i) = get_glob_start_idx(path.as_bytes()) {
                 hive_idx_tracker.update(0, path_idx)?;
 
                 let Ok(paths) = glob::glob(path.as_str()) else {
@@ -513,6 +508,10 @@ pub fn expand_paths_hive(
             } else {
                 hive_idx_tracker.update(0, path_idx)?;
                 out_paths.push(path.clone());
+            };
+
+            if let Some(mut_slice) = out_paths.paths.get_mut(sort_start_idx..) {
+                mut_slice.sort_unstable();
             }
         }
     }
