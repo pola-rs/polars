@@ -135,7 +135,7 @@ def test_is_column_selection(
 )
 def test_is_literal(value: Any) -> None:
     e = pl.lit(value)
-    assert e.meta.is_literal()
+    assert e.meta.is_literal(allow_aliasing=True)
 
     e = pl.lit(value).alias("foo")
     assert not e.meta.is_literal()
