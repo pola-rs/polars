@@ -769,6 +769,8 @@ unsafe fn series_get_bypass_validity<'a>(
     }
 }
 
+/// Computes the first point on where `predicate` is true, assuming it is first
+/// always false and then always true.
 fn binary_search<P>(
     vec: &DataFrameBuffer,
     predicate: P,
