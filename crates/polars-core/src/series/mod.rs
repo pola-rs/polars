@@ -1090,6 +1090,12 @@ impl Series {
     }
 }
 
+impl Default for Series {
+    fn default() -> Self {
+        NullChunked::new(PlSmallStr::EMPTY, 0).into_series()
+    }
+}
+
 impl Deref for Series {
     type Target = dyn SeriesTrait;
 
@@ -1101,12 +1107,6 @@ impl Deref for Series {
 impl<'a> AsRef<dyn SeriesTrait + 'a> for Series {
     fn as_ref(&self) -> &(dyn SeriesTrait + 'a) {
         self.0.as_ref()
-    }
-}
-
-impl Default for Series {
-    fn default() -> Self {
-        Int64Chunked::default().into_series()
     }
 }
 
