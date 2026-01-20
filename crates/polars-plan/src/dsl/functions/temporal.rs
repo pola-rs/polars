@@ -337,7 +337,7 @@ impl DurationArgs {
             if !av.is_integer() {
                 return None;
             };
-            av.extract::<i64>()
+            av.extract::<i64>().map(i128::from)
         };
         let extract_f64 = |e: &Expr| {
             let Expr::Literal(lv) = e else { return None };
@@ -345,22 +345,22 @@ impl DurationArgs {
             av.extract::<f64>()
         };
 
-        let mut acc_i64 = Some(0);
-        let mut try_add_to_i64 = |rhs| {
-            acc_i64 = match (acc_i64, rhs) {
+        let mut acc_i128 = Some(0);
+        let mut try_add_to_i128 = |rhs| {
+            acc_i128 = match (acc_i128, rhs) {
                 (Some(acc), Some(x)) => Some(acc + x),
                 _ => None,
             }
         };
 
-        try_add_to_i64(extract_i64(&self.weeks).map(|v| v * 7 * NANOSECONDS_IN_DAY));
-        try_add_to_i64(extract_i64(&self.days).map(|v| v * NANOSECONDS_IN_DAY));
-        try_add_to_i64(extract_i64(&self.hours).map(|v| v * 3600 * NANOSECONDS));
-        try_add_to_i64(extract_i64(&self.minutes).map(|v| v * 60 * NANOSECONDS));
-        try_add_to_i64(extract_i64(&self.seconds).map(|v| v * NANOSECONDS));
-        try_add_to_i64(extract_i64(&self.milliseconds).map(|v| v * 1_000_000));
-        try_add_to_i64(extract_i64(&self.microseconds).map(|v| v * 1_000));
-        try_add_to_i64(extract_i64(&self.nanoseconds));
+        try_add_to_i128(extract_i64(&self.weeks).map(|v| v * 7 * NANOSECONDS_IN_DAY as i128));
+        try_add_to_i128(extract_i64(&self.days).map(|v| v * NANOSECONDS_IN_DAY as i128));
+        try_add_to_i128(extract_i64(&self.hours).map(|v| v * 3600 * NANOSECONDS as i128));
+        try_add_to_i128(extract_i64(&self.minutes).map(|v| v * 60 * NANOSECONDS as i128));
+        try_add_to_i128(extract_i64(&self.seconds).map(|v| v * NANOSECONDS as i128));
+        try_add_to_i128(extract_i64(&self.milliseconds).map(|v| v * 1_000_000));
+        try_add_to_i128(extract_i64(&self.microseconds).map(|v| v * 1_000));
+        try_add_to_i128(extract_i64(&self.nanoseconds));
 
         let mut acc_f64 = Some(0.0);
         let mut try_add_to_f64 = |rhs| {
@@ -379,8 +379,8 @@ impl DurationArgs {
         try_add_to_f64(extract_f64(&self.microseconds).map(|v| v * 1_000.0));
         try_add_to_f64(extract_f64(&self.nanoseconds));
 
-        let d = if let Some(acc) = acc_i64 {
-            convert_time_units(acc, TimeUnit::Nanoseconds, self.time_unit)
+        let d = if let Some(acc) = acc_i128 {
+            convert_time_units(acc, TimeUnit::Nanoseconds, self.time_unit) as i64
         } else if let Some(acc) = acc_f64 {
             convert_time_units(acc, TimeUnit::Nanoseconds, self.time_unit) as i64
         } else {

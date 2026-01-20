@@ -351,9 +351,18 @@ def test_duration_total_units_fractional(
     s: pl.Series,
 ) -> None:
     expected = s.cast(pl.Float64) * time_unit_scale / total_units_scale
+
     actual = total_units_fn(
         pl.select(pl.duration(**{time_unit_kw: s}, time_unit=time_unit).alias("a"))  # type: ignore[arg-type]
         .to_series()
         .dt,
     )
     assert_series_equal(actual, expected)
+
+    # Check scalar case separately, since it's handled separately
+    actual = total_units_fn(
+        pl.select(pl.duration(**{time_unit_kw: s[0]}, time_unit=time_unit).alias("a"))  # type: ignore[arg-type]
+        .to_series()
+        .dt,
+    )
+    assert_series_equal(actual, expected.slice(0, 1))
