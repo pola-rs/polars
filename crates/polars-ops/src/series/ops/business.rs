@@ -469,8 +469,7 @@ fn normalise_holidays(holidays: &mut Vec<i32>, week_mask: &[bool; 7]) {
 /// Convert from List of Date to normalized List of Int32 (see
 /// `normalize_holidays`), trying to minimize allocations along the way.
 ///
-/// If a List contains a null, that is considered an error (what does a null
-/// holiday mean?).
+/// If a List contains a null, that is considered an error.
 fn prep_holidays(holidays: &Series, week_mask: [bool; 7]) -> PolarsResult<ListChunked> {
     polars_ensure!(
         holidays.dtype().is_list() && holidays.dtype().inner_dtype() == Some(&DataType::Date),
