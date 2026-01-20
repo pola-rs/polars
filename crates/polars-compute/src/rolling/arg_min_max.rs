@@ -10,9 +10,10 @@ use super::RollingFnParams;
 use super::no_nulls::RollingAggWindowNoNulls;
 use super::nulls::RollingAggWindowNulls;
 
-/// Same internal state as MinMaxWindow
+// Algorithm: https://cs.stackexchange.com/questions/120915/interview-question-with-arrays-and-consecutive-subintervals/120936#120936
+// Modified to return the argmin/argmax instead of the value:
 pub struct ArgMinMaxWindow<'a, T, P> {
-    values: &'a [T],
+    pub(crate) values: &'a [T],
     validity: Option<&'a Bitmap>,
     // values[monotonic_idxs[i]] is better than values[monotonic_idxs[i+1]] for
     // all i, as per the policy.
@@ -100,13 +101,9 @@ impl<T: NativeType, P: MinMaxPolicy> RollingAggWindowNulls<T, IdxSize>
 
             self.last_start = start;
             self.last_end = end;
-            if self.nonnulls_in_window == 0 {
-                None
-            } else {
-                self.monotonic_idxs
-                    .front()
-                    .map(|&best_abs| (best_abs - start) as IdxSize)
-            }
+            self.monotonic_idxs
+                .front()
+                .map(|&best_abs| (best_abs - start) as IdxSize)
         }
     }
 
