@@ -411,6 +411,7 @@ async fn find_mergeable_task(
     }
 }
 
+/// Tell the sender to this port to stop, and buffer everything that is still in the pipe.
 async fn stop_and_buffer_pipe_contents(
     port: Option<&mut PortReceiver>,
     unmerged: &mut DataFrameBuffer,
