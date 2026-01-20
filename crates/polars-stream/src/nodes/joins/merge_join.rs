@@ -401,13 +401,9 @@ async fn stop_and_buffer_pipe_contents(
     let Some(port) = port else {
         return;
     };
-    let Ok(morsel) = port.recv().await else {
-        return;
-    };
-    morsel.source_token().stop();
-    unmerged.push_df(morsel.into_df());
 
     while let Ok(morsel) = port.recv().await {
+        morsel.source_token().stop();
         unmerged.push_df(morsel.into_df());
     }
 }
@@ -551,8 +547,8 @@ async fn compute_join_and_send(
                 if send.send(morsel).await.is_err() {
                     return Ok(());
                 }
-            } else if unmatched_send.send((seq, df_unmatched)).await.is_err() {
-                panic!("broken pipe");
+            } else {
+                unmatched_send.send((seq, df_unmatched)).await.unwrap();
             }
             wait_group.wait().await;
         }
@@ -615,23 +611,23 @@ fn find_mergeable_partition(
         return Ok(UnitVec::from([(build, probe)]));
     }
 
-    let partition_count = (build.height() * probe.height() + build.height() + probe.height())
-        .div_ceil(morsel_size.pow(2));
+    let est_out_rows = build.height() * probe.height() + build.height() + probe.height();
+    let normal_out_rows = morsel_size.pow(2);
+    let partition_count = est_out_rows.div_ceil(normal_out_rows);
     if partition_count <= 1 {
         return Ok(UnitVec::from([(build, probe)]));
     }
 
     let chunk_size = build.height().div_ceil(partition_count);
-    let mut offset = 0;
     let mut partitions = UnitVec::with_capacity(partition_count);
-    while offset < build.height() - chunk_size {
-        let partition_chunk = build.clone().slice(offset, chunk_size);
-        partitions.push((partition_chunk, probe.clone()));
+
+    // Always make sure that there is at least one partition, even if the build side is empty.
+    partitions.push((build.clone().slice(0, chunk_size), probe.clone()));
+    let mut offset = chunk_size;
+    while offset < build.height() {
+        partitions.push((build.clone().slice(offset, chunk_size), probe.clone()));
         offset += chunk_size;
     }
-    // Always make sure that there is at least one partition, even if the build side is empty.
-    let build_chunk = build.slice(offset, chunk_size);
-    partitions.push((build_chunk, probe));
 
     Ok(partitions)
 }
@@ -686,13 +682,13 @@ fn find_mergeable_search(
     // First return chunks of nulls if there are any
     if !params.args.nulls_equal && !params.key_nulls_last && build_first == AnyValue::Null {
         let build_first_nonnull_idx =
-            binary_search_upper(build, &AnyValue::Null, params, build_params)?;
+            binary_search_upper(build, &AnyValue::Null, params, build_params);
         let build_split = build.split_at(build_first_nonnull_idx);
         return Ok(Left((build_split, probe_empty_buf())));
     }
     if !params.args.nulls_equal && !params.key_nulls_last && probe_first == AnyValue::Null {
         let probe_first_nonnull_idx =
-            binary_search_upper(probe, &AnyValue::Null, params, probe_params)?;
+            binary_search_upper(probe, &AnyValue::Null, params, probe_params);
         let right_split = probe.split_at(probe_first_nonnull_idx);
         return Ok(Left((build_empty_buf(), right_split)));
     }
@@ -700,14 +696,14 @@ fn find_mergeable_search(
     let build_last_idx = usize::min(build.height(), search_limit);
     let build_last = build_get(build_last_idx - 1);
     let build_first_incomplete = match build_done {
-        false => binary_search_lower(build, &build_last, params, build_params)?,
+        false => binary_search_lower(build, &build_last, params, build_params),
         true => build.height(),
     };
 
     let probe_last_idx = usize::min(probe.height(), search_limit);
     let probe_last = probe_get(probe_last_idx - 1);
     let probe_first_incomplete = match probe_done {
-        false => binary_search_lower(probe, &probe_last, params, probe_params)?,
+        false => binary_search_lower(probe, &probe_last, params, probe_params),
         true => probe.height(),
     };
 
@@ -738,7 +734,7 @@ fn find_mergeable_search(
             &build_get(build_mergeable_until - 1),
             params,
             probe_params,
-        )?;
+        );
     } else if ord.is_gt() {
         probe_mergeable_until = probe_first_incomplete;
         build_mergeable_until = binary_search_upper(
@@ -746,7 +742,7 @@ fn find_mergeable_search(
             &probe_get(probe_mergeable_until - 1),
             params,
             build_params,
-        )?;
+        );
     } else {
         unreachable!();
     }
@@ -780,7 +776,7 @@ fn binary_search(
     is_before: fn(Ordering) -> bool,
     params: &MergeJoinParams,
     sp: &MergeJoinSideParams,
-) -> PolarsResult<usize> {
+) -> usize {
     let mut lower = 0;
     let mut upper = vec.height();
     while lower < upper {
@@ -792,7 +788,7 @@ fn binary_search(
             lower = mid + 1;
         }
     }
-    Ok(lower)
+    lower
 }
 
 fn binary_search_lower(
@@ -800,7 +796,7 @@ fn binary_search_lower(
     sv: &AnyValue,
     params: &MergeJoinParams,
     sp: &MergeJoinSideParams,
-) -> PolarsResult<usize> {
+) -> usize {
     binary_search(vec, sv, Ordering::is_le, params, sp)
 }
 
@@ -809,22 +805,19 @@ fn binary_search_upper(
     sv: &AnyValue,
     params: &MergeJoinParams,
     sp: &MergeJoinSideParams,
-) -> PolarsResult<usize> {
+) -> usize {
     binary_search(vec, sv, Ordering::is_lt, params, sp)
 }
 
 fn keys_cmp(lhs: &AnyValue, rhs: &AnyValue, params: &MergeJoinParams) -> Ordering {
-    match AnyValue::partial_cmp(lhs, rhs) {
-        Some(Ordering::Equal) => Ordering::Equal,
+    match AnyValue::partial_cmp(lhs, rhs).unwrap() {
+        Ordering::Equal => Ordering::Equal,
         _ if lhs.is_null() && params.key_nulls_last => Ordering::Greater,
         _ if rhs.is_null() && params.key_nulls_last => Ordering::Less,
         _ if lhs.is_null() => Ordering::Less,
         _ if rhs.is_null() => Ordering::Greater,
-        Some(Ordering::Greater) if params.key_descending => Ordering::Less,
-        Some(Ordering::Less) if params.key_descending => Ordering::Greater,
-        Some(Ordering::Greater) => Ordering::Greater,
-        Some(Ordering::Less) => Ordering::Less,
-        None => unreachable!(),
+        ord if params.key_descending => ord.reverse(),
+        ord => ord,
     }
 }
 
