@@ -828,8 +828,6 @@ class PyLazyFrame:
         include_file_paths: str | None,
         cloud_options: dict[str, Any] | None,
         credential_provider: Any | None,
-        retries: int,
-        file_cache_ttl: int | None,
     ) -> PyLazyFrame: ...
     @staticmethod
     def new_from_csv(
@@ -863,8 +861,6 @@ class PyLazyFrame:
         schema: Any | None,
         cloud_options: dict[str, Any] | None,
         credential_provider: Any | None,
-        retries: int,
-        file_cache_ttl: int | None,
         include_file_paths: str | None,
     ) -> PyLazyFrame: ...
     @staticmethod
@@ -880,7 +876,13 @@ class PyLazyFrame:
     def new_from_ipc(
         sources: Any,
         scan_options: ScanOptions,
-        file_cache_ttl: int | None,
+    ) -> PyLazyFrame: ...
+    @staticmethod
+    def new_from_scan_lines(
+        sources: Any,
+        *,
+        name: str,
+        scan_options: ScanOptions,
     ) -> PyLazyFrame: ...
     @staticmethod
     def new_from_dataset_object(dataset_object: Any) -> PyLazyFrame: ...
@@ -966,6 +968,9 @@ class PyLazyFrame:
         target: SinkTarget,
         sink_options: Any,
         include_bom: bool,
+        compression: Literal["uncompressed", "gzip", "zstd"],
+        compression_level: int | None,
+        check_extension: bool,
         include_header: bool,
         separator: int,
         line_terminator: str,
@@ -1883,6 +1888,8 @@ class PyExpr:
     def str_split_exact(self, by: PyExpr, n: int) -> PyExpr: ...
     def str_split_exact_inclusive(self, by: PyExpr, n: int) -> PyExpr: ...
     def str_splitn(self, by: PyExpr, n: int) -> PyExpr: ...
+    def str_split_regex(self, by: PyExpr, strict: bool) -> PyExpr: ...
+    def str_split_regex_inclusive(self, by: PyExpr, strict: bool) -> PyExpr: ...
     def str_to_decimal(self, scale: int) -> PyExpr: ...
     def str_contains_any(
         self,
@@ -2217,7 +2224,7 @@ def concat_df_horizontal(dfs: Any, strict: bool = False) -> PyDataFrame: ...
 # functions.io
 def read_ipc_schema(py_f: Any) -> dict[str, Any]: ...
 def read_parquet_metadata(
-    py_f: Any, storage_options: Any, credential_provider: Any, retries: int
+    py_f: Any, storage_options: Any, credential_provider: Any
 ) -> dict[str, str]: ...
 def read_clipboard_string() -> str: ...
 def write_clipboard_string(s: str) -> None: ...
@@ -2387,7 +2394,6 @@ class PyCatalogClient:
         table_name: str,
         cloud_options: dict[str, str] | None,
         credential_provider: Any | None,
-        retries: int,
     ) -> PyLazyFrame: ...
     def create_catalog(
         self, catalog_name: str, comment: str | None, storage_root: str | None

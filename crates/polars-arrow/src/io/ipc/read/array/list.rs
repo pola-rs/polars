@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::io::{Read, Seek};
 
+use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_err};
 
 use super::super::super::IpcField;
@@ -8,7 +9,6 @@ use super::super::deserialize::{read, skip};
 use super::super::read_basic::*;
 use super::super::{Compression, Dictionaries, IpcBuffer, Node, Version};
 use crate::array::ListArray;
-use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 use crate::io::ipc::read::array::{try_get_array_length, try_get_field_node};
 use crate::offset::Offset;

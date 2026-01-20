@@ -25,7 +25,7 @@ DST = "s3://my-nonexistent-bucket/output"
     ],
 )
 def test_prepare_cloud_plan(lf: pl.LazyFrame) -> None:
-    result = prepare_cloud_plan(lf, allow_local_scans=False)
+    (result, _flags) = prepare_cloud_plan(lf, allow_local_scans=False)
     assert isinstance(result, bytes)
 
     deserialized = pl.LazyFrame.deserialize(BytesIO(result))
@@ -53,7 +53,7 @@ def test_prepare_cloud_plan(lf: pl.LazyFrame) -> None:
     ],
 )
 def test_prepare_cloud_plan_udf(lf: pl.LazyFrame) -> None:
-    result = prepare_cloud_plan(lf, allow_local_scans=False)
+    (result, _flags) = prepare_cloud_plan(lf, allow_local_scans=False)
     assert isinstance(result, bytes)
 
     deserialized = pl.LazyFrame.deserialize(BytesIO(result))
@@ -63,7 +63,7 @@ def test_prepare_cloud_plan_udf(lf: pl.LazyFrame) -> None:
 def test_prepare_cloud_plan_optimization_toggle() -> None:
     lf = pl.LazyFrame({"a": [1, 2], "b": [3, 4]}).sink_parquet(DST, lazy=True)
 
-    result = prepare_cloud_plan(
+    (result, _flags) = prepare_cloud_plan(
         lf,
         allow_local_scans=False,
         optimizations=pl.QueryOptFlags(projection_pushdown=False),
@@ -102,5 +102,5 @@ def test_prepare_cloud_plan_fail_on_local_data_source(lf: pl.LazyFrame) -> None:
     ],
 )
 def test_prepare_cloud_plan_succeed_on_local_data_source(lf: pl.LazyFrame) -> None:
-    result = prepare_cloud_plan(lf, allow_local_scans=True)
+    (result, _flags) = prepare_cloud_plan(lf, allow_local_scans=True)
     assert isinstance(result, bytes)

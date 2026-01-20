@@ -1410,3 +1410,8 @@ def test_0_width_df_roundtrip() -> None:
     pandas_df = pl.DataFrame(height=(1 << 32) - 1).to_pandas()
     assert pandas_df.shape == ((1 << 32) - 1, 0)
     assert pl.DataFrame(pandas_df).shape == ((1 << 32) - 1, 0)
+
+    df = pl.DataFrame(height=5)
+
+    assert pl.DataFrame.deserialize(df.serialize()).shape == (5, 0)
+    assert pl.LazyFrame.deserialize(df.lazy().serialize()).collect().shape == (5, 0)

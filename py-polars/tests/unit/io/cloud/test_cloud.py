@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 import contextlib
+import warnings
 from functools import partial
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from typing import Any
+
 
 import pytest
 
@@ -27,7 +33,7 @@ def test_scan_nonexistent_cloud_path_17444(format: str) -> None:
         # NDJSON does not have a `retries` parameter yet - so use the default
         result = scan_function(path_str)
     else:
-        result = scan_function(path_str, retries=0)
+        result = scan_function(path_str, storage_options={"max_retries": 0})
     assert isinstance(result, pl.LazyFrame)
 
     # Upon collection, it should fail
@@ -84,3 +90,76 @@ def test_is_aws_cloud() -> None:
         scheme="https",
         first_scan_path="https://bucket.s3.eu-west-1.amazonaws.com/key?",
     )
+
+
+@pytest.mark.parametrize(
+    "function",
+    [
+        partial(pl.scan_parquet, "file:///dummy"),
+        partial(pl.scan_csv, "file:///dummy"),
+        partial(pl.scan_ipc, "file:///dummy"),
+        partial(pl.scan_ndjson, "file:///dummy"),
+        partial(pl.read_parquet, "file:///dummy"),
+        partial(pl.read_ndjson, "file:///dummy"),
+        partial(pl.DataFrame().write_parquet, "file:///dummy"),
+        partial(pl.DataFrame().write_csv, "file:///dummy"),
+        partial(pl.DataFrame().write_ipc, "file:///dummy"),
+        partial(pl.LazyFrame().sink_parquet, "file:///dummy"),
+        partial(pl.LazyFrame().sink_csv, "file:///dummy"),
+        partial(pl.LazyFrame().sink_ipc, "file:///dummy"),
+        partial(pl.LazyFrame().sink_ndjson, "file:///dummy"),
+    ],
+)
+def test_storage_options_retries(
+    function: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+
+    with pytest.raises(
+        DeprecationWarning,
+        match=r"the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead",
+    ):
+        function(retries=7)
+
+    capfd.readouterr()
+
+    with warnings.catch_warnings(), contextlib.suppress(OSError):
+        warnings.simplefilter("ignore")
+        function(retries=7)
+
+    capture = capfd.readouterr().err
+    assert "max_retries: 7" in capture
+
+    with contextlib.suppress(OSError):
+        function(storage_options={"max_retries": 13})
+    capture = capfd.readouterr().err
+    assert "max_retries: 13" in capture
+
+    with pytest.raises(
+        ValueError, match=r"invalid value for 'max_retries': '1' \(expected int\)"
+    ):
+        function(storage_options={"max_retries": "1"})
+
+    capfd.readouterr()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        try:
+            function(file_cache_ttl=13)
+        except OSError:
+            pass
+        except TypeError:
+            return
+
+    capture = capfd.readouterr().err
+    assert "file_cache_ttl: 13" in capture
+
+    with (
+        pytest.raises(
+            DeprecationWarning,
+            match=r"the `file_cache_ttl` parameter was deprecated in 1.37.1; specify 'file_cache_ttl' in `storage_options` instead",
+        ),
+        contextlib.suppress(OSError),
+    ):
+        function(file_cache_ttl=13)

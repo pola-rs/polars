@@ -79,6 +79,8 @@ where
 {
 }
 
+unsafe impl<T: Copy> TrustedLen for polars_buffer::buffer::IntoIter<T> {}
+
 unsafe impl<K, V> TrustedLen for hashbrown::hash_map::IntoIter<K, V> {}
 
 #[derive(Clone)]

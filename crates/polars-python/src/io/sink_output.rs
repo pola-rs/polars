@@ -1,4 +1,4 @@
-use polars::prelude::sink2::{FileProviderFunction, FileProviderType};
+use polars::prelude::file_provider::{FileProviderFunction, FileProviderType};
 use polars::prelude::{PartitionStrategy, PlRefPath, SinkDestination, SpecialEq};
 use polars_utils::IdxSize;
 use polars_utils::python_function::PythonObject;
@@ -60,7 +60,6 @@ impl PyFileSinkDestination<'_> {
                 keys: partition_by.into_iter().map(|x| x.inner).collect(),
                 include_keys: include_key.unwrap_or(true),
                 keys_pre_grouped: false,
-                per_partition_sort_by: vec![],
             }
         } else {
             // Should be validated on Python side
@@ -77,7 +76,6 @@ impl PyFileSinkDestination<'_> {
                 )))
             }),
             partition_strategy,
-            finish_callback: None,
             max_rows_per_file: max_rows_per_file.unwrap_or(IdxSize::MAX),
             approximate_bytes_per_file,
         })

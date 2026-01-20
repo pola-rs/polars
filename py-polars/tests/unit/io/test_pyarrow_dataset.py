@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timezone
 from typing import TYPE_CHECKING
 
+import pyarrow as pa
 import pyarrow.dataset as ds
 import pytest
 
@@ -321,3 +322,28 @@ def test_pyarrow_dataset_allow_pyarrow_filter_false(tmp_path: Path) -> None:
         .collect()
     )
     assert_frame_equal(result, expected)
+
+
+def test_scan_pyarrow_dataset_filter_with_timezone_26029() -> None:
+    table = pa.table(
+        {
+            "valid_from": [
+                datetime(2025, 8, 26, 10, 0, 0, tzinfo=timezone.utc),
+                datetime(2025, 8, 26, 11, 0, 0, tzinfo=timezone.utc),
+            ],
+            "valid_to": [
+                datetime(2025, 8, 26, 12, 0, 0, tzinfo=timezone.utc),
+                datetime(2025, 8, 26, 13, 0, 0, tzinfo=timezone.utc),
+            ],
+            "value": [1, 2],
+        }
+    )
+    dataset = ds.dataset(table)
+
+    lower_bound_time = datetime(2025, 8, 26, 11, 30, 0, tzinfo=timezone.utc)
+    lf = pl.scan_pyarrow_dataset(dataset).filter(
+        (pl.col("valid_from") <= lower_bound_time)
+        & (pl.col("valid_to") > lower_bound_time)
+    )
+
+    assert_frame_equal(lf.collect(), pl.DataFrame(table))
