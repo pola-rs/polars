@@ -25,6 +25,10 @@ pub(super) fn business_day_count(s: &[Column], week_mask: [bool; 7]) -> PolarsRe
     let start = &s[0];
     let end = &s[1];
     let holidays = &s[2];
+    polars_ensure!(
+        holidays.len() == 1 || start.len() == 1 || end.len() == 1 || holidays.len() == start.len(),
+        ShapeMismatch: "number of holiday lists must be either 1 or the number of dates"
+    );
     polars_ops::prelude::business_day_count(
         start.as_materialized_series(),
         end.as_materialized_series(),
