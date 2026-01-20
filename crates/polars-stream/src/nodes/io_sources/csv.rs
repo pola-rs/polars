@@ -378,7 +378,7 @@ impl LineBatchSource {
         let mut row_offset = 0usize;
         let mut morsel_seq = MorselSeq::default();
         let mut n_rows_skipped: usize = 0;
-        let mut read_size = CompressedReader::ideal_read_size();
+        let mut read_size = CompressedReader::initial_read_size();
 
         loop {
             let (mem_slice, bytes_read) = reader.read_next_slice(&prev_leftover, read_size)?;
@@ -396,7 +396,7 @@ impl LineBatchSource {
 
             if batch_slice.is_empty() && !is_eof {
                 // This allows the slice to grow until at least a single row is included. To avoid a quadratic run-time for large row sizes, we double the read size.
-                read_size = read_size.saturating_sub(2);
+                read_size = read_size.saturating_mul(2);
                 continue;
             }
 

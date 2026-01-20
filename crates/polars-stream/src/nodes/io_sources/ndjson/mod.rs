@@ -11,6 +11,7 @@ use negative_slice_pass::MorselStreamReverser;
 use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_io::cloud::CloudOptions;
 use polars_io::prelude::estimate_n_lines_in_file;
+#[expect(deprecated)] // Will be removed soon
 use polars_io::utils::compression::maybe_decompress_bytes;
 use polars_plan::dsl::ScanSource;
 use polars_utils::IdxSize;
@@ -463,6 +464,7 @@ impl NDJsonFileReader {
 
             let memslice = {
                 let mut out = vec![];
+                #[expect(deprecated)] // Will be removed soon
                 maybe_decompress_bytes(&source, &mut out)?;
 
                 if out.is_empty() {
