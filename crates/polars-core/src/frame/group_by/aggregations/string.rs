@@ -193,12 +193,9 @@ impl BinaryChunked {
                             |acc, cur| if cur.1 < acc.1 { cur } else { acc },
                         )
                     } else {
-                        take_agg_bin_iter_unchecked_arg(
-                            arr,
-                            indexes_to_usizes(idx),
-                            |acc, cur| if cur.1 < acc.1 { cur } else { acc },
-                            idx.len() as IdxSize,
-                        )
+                        take_agg_bin_iter_unchecked_arg(arr, indexes_to_usizes(idx), |acc, cur| {
+                            if cur.1 < acc.1 { cur } else { acc }
+                        })
                     }
                 })
             },
@@ -263,12 +260,9 @@ impl BinaryChunked {
                         |acc, cur| if cur.1 > acc.1 { cur } else { acc },
                     )
                 } else {
-                    take_agg_bin_iter_unchecked_arg(
-                        arr,
-                        indexes_to_usizes(idx),
-                        |acc, cur| if cur.1 > acc.1 { cur } else { acc },
-                        idx.len() as IdxSize,
-                    )
+                    take_agg_bin_iter_unchecked_arg(arr, indexes_to_usizes(idx), |acc, cur| {
+                        if cur.1 > acc.1 { cur } else { acc }
+                    })
                 }
             }),
 

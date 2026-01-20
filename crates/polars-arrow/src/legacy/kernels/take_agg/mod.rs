@@ -129,39 +129,26 @@ pub unsafe fn take_agg_bin_iter_unchecked<
 pub unsafe fn take_agg_bin_iter_unchecked_arg<
     'a,
     I: IntoIterator<Item = usize>,
-    F: Fn((usize, &'a [u8]), (usize, &'a [u8])) -> (usize, &'a [u8]),
+    F: Fn((IdxSize, &'a [u8]), (IdxSize, &'a [u8])) -> (IdxSize, &'a [u8]),
 >(
     arr: &'a BinaryViewArray,
     indices: I,
     f: F,
-    len: IdxSize,
 ) -> Option<IdxSize> {
-    let mut null_count = 0 as IdxSize;
     let validity = arr.validity().unwrap();
 
-    let out = indices
+    indices
         .into_iter()
-        .map(|idx| {
+        .enumerate()
+        .filter_map(|(pos, idx)| {
             if validity.get_bit_unchecked(idx) {
-                Some((idx, arr.value_unchecked(idx)))
+                Some((pos as IdxSize, arr.value_unchecked(idx)))
             } else {
                 None
             }
         })
-        .reduce(|acc, opt_val| match (acc, opt_val) {
-            (Some(acc), Some(cur)) => Some(f(acc, cur)),
-            (_, None) => {
-                null_count += 1;
-                acc
-            },
-            (None, Some(cur)) => Some(cur),
-        });
-
-    if null_count == len {
-        None
-    } else {
-        out.flatten().map(|(idx, _)| idx as IdxSize)
-    }
+        .reduce(f)
+        .map(|(pos, _)| pos)
 }
 
 /// Take kernel for single chunk and an iterator as index.
@@ -189,7 +176,7 @@ pub unsafe fn take_agg_bin_iter_unchecked_no_null<
 pub unsafe fn take_agg_bin_iter_unchecked_no_null_arg<
     'a,
     I: IntoIterator<Item = usize>,
-    F: Fn((usize, &'a [u8]), (usize, &'a [u8])) -> (usize, &'a [u8]),
+    F: Fn((IdxSize, &'a [u8]), (IdxSize, &'a [u8])) -> (IdxSize, &'a [u8]),
 >(
     arr: &'a BinaryViewArray,
     indices: I,
@@ -197,7 +184,8 @@ pub unsafe fn take_agg_bin_iter_unchecked_no_null_arg<
 ) -> Option<IdxSize> {
     indices
         .into_iter()
-        .map(|idx| (idx, arr.value_unchecked(idx)))
+        .enumerate()
+        .map(|(pos, idx)| (pos as IdxSize, arr.value_unchecked(idx)))
         .reduce(f)
-        .map(|(idx, _)| idx as IdxSize)
+        .map(|(pos, _)| pos)
 }
