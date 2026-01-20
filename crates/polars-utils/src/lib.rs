@@ -8,6 +8,7 @@
 pub mod abs_diff;
 pub mod algebraic_ops;
 pub mod arena;
+pub mod array;
 pub mod binary_search;
 pub mod cache;
 pub mod cardinality_sketch;
