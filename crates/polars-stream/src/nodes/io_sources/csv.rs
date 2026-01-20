@@ -13,7 +13,7 @@ use polars_io::prelude::_csv_read_internal::{
 };
 use polars_io::prelude::buffer::validate_utf8;
 use polars_io::prelude::{CsvEncoding, CsvParseOptions, CsvReadOptions};
-use polars_io::utils::compression::CompressedReader;
+use polars_io::utils::compression::{CompressedReader, ReaderPrefetch};
 use polars_io::utils::slice::SplitSlicePosition;
 use polars_plan::dsl::ScanSource;
 use polars_utils::IdxSize;
@@ -165,7 +165,8 @@ impl FileReader for CsvFileReader {
             _ => {},
         }
 
-        let mut reader = CompressedReader::try_new(self.cached_bytes.clone().unwrap())?;
+        let mut reader =
+            CompressedReader::try_new(self.cached_bytes.clone().unwrap(), ReaderPrefetch::Auto)?;
 
         let (inferred_schema, base_leftover) = read_until_start_and_infer_schema(
             &self.options,

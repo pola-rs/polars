@@ -21,7 +21,7 @@ use crate::RowIndex;
 use crate::csv::read::{CsvReadOptions, read_until_start_and_infer_schema};
 use crate::mmap::ReaderBytes;
 use crate::predicates::PhysicalIoExpr;
-use crate::utils::compression::{CompressedReader, SupportedCompression};
+use crate::utils::compression::{CompressedReader, ReaderPrefetch, SupportedCompression};
 use crate::utils::update_row_counts2;
 
 pub fn cast_columns(
@@ -192,7 +192,7 @@ impl<'a> CoreReader<'a> {
             },
             ReaderBytes::Owned(slice) => slice.clone(),
         };
-        let mut compressed_reader = CompressedReader::try_new(reader_slice)?;
+        let mut compressed_reader = CompressedReader::try_new(reader_slice, ReaderPrefetch::Auto)?;
 
         let read_options = CsvReadOptions {
             parse_options: parse_options.clone(),

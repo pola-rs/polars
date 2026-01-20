@@ -7,7 +7,7 @@ use polars_io::csv::read::{
     read_until_start_and_infer_schema,
 };
 use polars_io::path_utils::expand_paths;
-use polars_io::utils::compression::CompressedReader;
+use polars_io::utils::compression::{CompressedReader, ReaderPrefetch};
 use polars_io::{HiveOptions, RowIndex};
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_path::PlRefPath;
@@ -256,7 +256,7 @@ impl LazyCsvReader {
         let n_threads = self.read_options.n_threads;
 
         let infer_schema = |bytes: MemSlice| {
-            let mut reader = CompressedReader::try_new(bytes)?;
+            let mut reader = CompressedReader::try_new(bytes, ReaderPrefetch::None)?;
 
             let (inferred_schema, _) =
                 read_until_start_and_infer_schema(&self.read_options, None, None, &mut reader)?;

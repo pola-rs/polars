@@ -1,8 +1,10 @@
 use std::cmp;
 use std::io::{Read, Write};
 
+use polars_core::config;
 use polars_core::prelude::*;
 use polars_error::{feature_gated, to_compute_err};
+use polars_utils::mem::prefetch::get_memory_prefetch_func;
 use polars_utils::mmap::{MemReader, MemSlice};
 
 use crate::utils::file::{Writeable, WriteableTrait};
@@ -70,6 +72,12 @@ pub fn maybe_decompress_bytes<'a>(bytes: &'a [u8], out: &'a mut Vec<u8>) -> Pola
     })
 }
 
+#[derive(Copy, Clone)]
+pub enum ReaderPrefetch {
+    None,
+    Auto,
+}
+
 /// Reader that implements a streaming read trait for uncompressed, gzip, zlib and zstd
 /// compression.
 ///
@@ -88,8 +96,15 @@ pub enum CompressedReader {
 }
 
 impl CompressedReader {
-    pub fn try_new(slice: MemSlice) -> PolarsResult<Self> {
+    pub fn try_new(slice: MemSlice, prefetch: ReaderPrefetch) -> PolarsResult<Self> {
         let algo = SupportedCompression::check(&slice);
+
+        match prefetch {
+            ReaderPrefetch::None => (),
+            ReaderPrefetch::Auto => {
+                get_memory_prefetch_func(config::verbose())(&slice);
+            },
+        }
 
         Ok(match algo {
             None => CompressedReader::Uncompressed { slice, offset: 0 },

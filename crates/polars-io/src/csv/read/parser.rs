@@ -15,7 +15,7 @@ use super::options::{CommentPrefix, NullValuesCompiled};
 use super::splitfields::SplitFields;
 use crate::csv::read::read_until_start_and_infer_schema;
 use crate::prelude::CsvReadOptions;
-use crate::utils::compression::CompressedReader;
+use crate::utils::compression::{CompressedReader, ReaderPrefetch};
 
 /// Read the number of rows without parsing columns
 /// useful for count(*) queries
@@ -69,7 +69,7 @@ pub fn count_rows_from_slice_par(
     skip_rows_before_header: usize,
     skip_rows_after_header: usize,
 ) -> PolarsResult<usize> {
-    let mut reader = CompressedReader::try_new(mem_slice)?;
+    let mut reader = CompressedReader::try_new(mem_slice, ReaderPrefetch::Auto)?;
 
     let reader_options = CsvReadOptions {
         parse_options: Arc::new(CsvParseOptions {
