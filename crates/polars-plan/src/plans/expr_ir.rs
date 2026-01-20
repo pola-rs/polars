@@ -9,7 +9,7 @@ use polars_utils::format_pl_smallstr;
 use serde::{Deserialize, Serialize};
 
 use super::*;
-use crate::constants::{get_len_name, get_literal_name, get_pl_element_name};
+use crate::constants::{get_len_name, get_pl_element_name};
 
 #[derive(Default, Debug, Clone, Hash, PartialEq, Eq)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
@@ -146,11 +146,7 @@ impl ExprIR {
                     break;
                 },
                 AExpr::Literal(lv) => {
-                    if let LiteralValue::Series(s) = lv {
-                        out.output_name = OutputName::LiteralLhs(s.name().clone());
-                    } else {
-                        out.output_name = OutputName::LiteralLhs(get_literal_name());
-                    }
+                    out.output_name = OutputName::LiteralLhs(lv.output_column_name());
                     break;
                 },
                 AExpr::Function {
