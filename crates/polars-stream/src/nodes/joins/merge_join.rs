@@ -373,7 +373,7 @@ async fn find_mergeable_task(
             probe_done: recv_probe.is_none(),
             params,
         };
-        match find_mergeable(build_unmerged, probe_unmerged, get_ideal_morsel_size(), fmp)? {
+        match find_mergeable(build_unmerged, probe_unmerged, fmp)? {
             Ok(partitions) => {
                 for (build_mergeable, probe_mergeable) in partitions.into_iter() {
                     if let Err((_, _, _, _)) = distributor
@@ -555,11 +555,10 @@ struct FindMergeableParams<'a> {
 fn find_mergeable(
     build: &mut DataFrameBuffer,
     probe: &mut DataFrameBuffer,
-    search_limit: usize,
     fmp: FindMergeableParams,
 ) -> PolarsResult<Result<UnitVec<(DataFrameBuffer, DataFrameBuffer)>, NeedMore>> {
     let (build_mergeable, probe_mergeable) =
-        match find_mergeable_limiting(build, probe, search_limit, fmp.clone())? {
+        match find_mergeable_limiting(build, probe, fmp.clone())? {
             Ok((build, probe)) => (build, probe),
             Err(need_more) => return Ok(Err(need_more)),
         };
@@ -572,10 +571,10 @@ fn find_mergeable(
 fn find_mergeable_limiting(
     build: &mut DataFrameBuffer,
     probe: &mut DataFrameBuffer,
-    mut search_limit: usize,
     fmp: FindMergeableParams,
 ) -> PolarsResult<Result<(DataFrameBuffer, DataFrameBuffer), NeedMore>> {
     const SEARCH_LIMIT_BUMP_FACTOR: usize = 2;
+    let mut search_limit = get_ideal_morsel_size();
     let mut mergeable = find_mergeable_search(build, probe, search_limit, fmp.clone())?;
     while match mergeable {
         Err(NeedMore::Build | NeedMore::Both) if search_limit < build.height() => true,
